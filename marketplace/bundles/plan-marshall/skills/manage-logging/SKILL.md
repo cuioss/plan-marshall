@@ -321,7 +321,7 @@ log_entry('work', 'example-plan', 'INFO', '[ARTIFACT] Created deliverable')
 
 **Error behavior**: Logging calls are fire-and-forget. If the target directory doesn't exist or a write fails, the error is silently swallowed to avoid disrupting the calling script. This is intentional — logging should never cause a script to fail.
 
-A malformed `plan_id` handed to the Python API is rejected at `get_log_path`, the shared path resolver every entry point routes through, so the entry is **dropped** rather than falling back to the global log — a client-supplied identifier never reaches path resolution unvalidated. An **absent** `plan_id` (`None`) is unaffected: it remains the first-class global path described above.
+`plan_id` validity is enforced below this API as well — see the `invalid_plan_id` note under [Error Responses](#error-responses).
 
 ---
 

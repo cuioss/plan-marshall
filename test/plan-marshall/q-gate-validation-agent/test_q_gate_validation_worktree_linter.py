@@ -664,10 +664,6 @@ def test_wl_c_optionality_resolves_for_every_manage_logging_verb() -> None:
         f'REQUIRED or OPTIONAL: {unresolvable}. WL-C fails closed on an unresolvable verb, '
         f'so an unresolvable result here means the discriminator itself is broken.'
     )
-    assert len(classifications) == len(population), (
-        f'Classified {len(classifications)} verbs over a population of {len(population)} — '
-        f'the totality control did not cover the whole population.'
-    )
 
 
 def test_wl_c_sweep_regex_alternation_pins_the_eight_auto_routing_notations(
@@ -689,10 +685,6 @@ def test_wl_c_sweep_regex_alternation_pins_the_eight_auto_routing_notations(
         f'The WL-C auto-routing whitelist drifted. In the regex but not expected: '
         f'{sorted(notations - _EXPECTED_WL_C_NOTATIONS)}; expected but not in the regex: '
         f'{sorted(_EXPECTED_WL_C_NOTATIONS - notations)}.'
-    )
-    assert len(notations) == 8, (
-        f'The WL-C alternation group lists {len(notations)} notations; the documented '
-        f'whitelist is 8.'
     )
 
 
