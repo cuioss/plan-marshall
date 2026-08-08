@@ -74,7 +74,9 @@ Skills the caller MUST forward in `skills[]`: none (the workflow reads files wit
 
 ## HEAD-dependency
 
-`pre-submission-self-review` declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). Its verdict is a **structural review of the plan's diff**, so the verdict is a function of that diff: a loop-back fix task that advances HEAD past the recorded `head_at_completion` produces a diff this step never examined, and a `done` record carried across that advance would stand as green for a diff no check ever ran against. The dispatcher MUST therefore re-fire this step against the newer HEAD. Capture `git rev-parse HEAD` immediately before the terminal `mark-step-done` call and forward it via `--head-at-completion {sha}`.
+`pre-submission-self-review` declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). Its verdict is a **structural review of the plan's diff**, so the verdict is a function of that diff: a loop-back fix task that advances HEAD past the recorded `head_at_completion` produces a diff this step never examined, and a `done` record carried across that advance would stand as green for a diff no check ever ran against. The dispatcher MUST therefore re-fire this step against the newer HEAD. Capture `git rev-parse HEAD` immediately before EVERY terminal `mark-step-done` call — Branch A and Branch B alike — and forward it via `--head-at-completion {sha}`.
+
+The recorded SHA carries a **second, independent** load: it is the **delta anchor** the next round scopes itself against (Step 1 reads it back and passes it as `--since-ref`). That is why it is written on the `failed` branch too, where the dispatcher's retry decision does not need it, and why its absence on a `done` record is now REFUSED rather than tolerated — `manage-status mark-step-done` returns `error: missing_head_at_completion` and writes nothing when a `head_dependent: true` step records `done` without it. An unanchored record would leave the following round unable to define its delta, silently degrading it to a full re-sweep.
 
 ## Execution
 
@@ -105,14 +107,39 @@ python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery 
 
 Parse the discovered implementors' `self_review` script notations from the returned TOON. Select the first implementor whose notation **resolves in the current executor** (in the meta-project this is `pm-plugin-development:ext-self-review-plan-marshall:self_review`, preserving current behavior bit-for-bit).
 
-**Resolvable implementor path**: invoke the resolved implementor's `surface` subcommand exactly as today. The implementor derives the plan footprint live from the worktree (`{base}...HEAD` ∪ porcelain), computes the staged diff against the worktree's base branch, and emits the twenty candidate sub-lists in a single TOON document on stdout. Forward `--contract-radius {N}` derived from `{cov_scope}` (`change-set` → `1`; `artifact`/`inherit` → `3`; `component`/`module`/`overall` → `5`):
+**Resolve the delta anchor first.** This step re-fires on every loop-back, and without an anchor each round re-surfaces the entire plan diff — including every file the preceding round already examined and no fix has touched since. Read this step's OWN prior record and take its `head_at_completion` as the anchor:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
+  --plan-id {plan_id}
+```
+
+Locate `metadata.phase_steps.6-finalize.pre-submission-self-review.head_at_completion` and capture it as `{since_ref}`. Exactly one of two cases holds:
+
+- **A prior record carries a non-empty SHA** → this is a **delta round**. Pass `--since-ref {since_ref}` on the surface call below. The surfacer narrows the file set to the footprint intersected with the paths changed since that SHA.
+- **No prior record, or its `head_at_completion` is absent/empty** → this is a **full round** (round 1, or a first run after a record that carried no anchor). Do NOT pass `--since-ref` at all. Never substitute the base branch, `HEAD`, or any other ref for a missing anchor — a fabricated anchor would silently scope the round against a boundary no round ever completed at.
+
+Passing `--since-ref` narrows WHICH FILES are surfaced, never how deeply a surfaced file is reviewed: hunks are still computed against the base branch, so every surviving file is still reviewed against its full plan diff.
+
+**Resolvable implementor path**: invoke the resolved implementor's `surface` subcommand. The implementor derives the plan footprint live from the worktree (`{base}...HEAD` ∪ porcelain), computes the staged diff against the worktree's base branch, and emits the twenty candidate sub-lists in a single TOON document on stdout. Forward `--contract-radius {N}` derived from `{cov_scope}` (`change-set` → `1`; `artifact`/`inherit` → `3`; `component`/`module`/`overall` → `5`):
 
 ```bash
 python3 .plan/execute-script.py {resolved_implementor_notation} \
   surface --plan-id {plan_id} --contract-radius {N}
 ```
 
+On a delta round, append `--since-ref {since_ref}`:
+
+```bash
+python3 .plan/execute-script.py {resolved_implementor_notation} \
+  surface --plan-id {plan_id} --contract-radius {N} --since-ref {since_ref}
+```
+
 `{resolved_implementor_notation}` is the notation selected above — in the meta-project this resolves to `pm-plugin-development:ext-self-review-plan-marshall:self_review`, preserving current behavior bit-for-bit; a consumer project resolving a different domain implementor invokes that implementor's notation instead. Auto-resolves the worktree from `--plan-id`. Add `--project-dir {worktree_path}` only when the explicit override is required. The `inherit`/default radius of `3` reproduces today's surfacer breadth.
+
+The surfacer echoes `surface_scope` (`delta` or `full`), `since_ref`, and `files_in_scope`, so the round variant that produced a verdict is legible from the returned TOON without reconstructing it. A `--since-ref` that does not resolve is refused by the surfacer with `since_ref_unresolvable` — that is a helper non-zero exit and takes the halt path below; it is never silently widened into a full sweep.
+
+**A delta round cannot close the step on its own evidence.** A delta-scoped round examined only the files that changed since the previous round, so a clean result from it is a *filter* result, not a closing verdict: it says nothing about the files it did not look at. When a delta round returns zero findings, re-run this step ONCE at full scope — repeat the surface call WITHOUT `--since-ref` and carry that full candidate set through Steps 1b–3 — and record the outcome from that full-surface pass. Only a full-surface clean pass may record `done` (see Step 4 Branch A). A delta round that DOES return findings needs no confirmation sweep: it has already found the work that sends the step round the loop again.
 
 If the resolved implementor exits non-zero, halt and proceed to **Step 4 — Mark Step Complete (Failure)**, surfacing the helper error in the `display_detail` payload. Do NOT dispatch the LLM cognitive phase below.
 
@@ -278,6 +305,8 @@ Record the outcome on the live plan so the `phase_steps_complete` handshake inva
 
 **Branch A — findings list is empty**: read the `display_detail` returned by the workflow verbatim (the workflow computes the candidate count for the human-readable message).
 
+**Precondition — the clean result MUST come from a full-surface pass.** Before recording `done`, confirm the returned verdict was produced by a run that carried NO `--since-ref` (the surfacer echoes `surface_scope: full`). A `done` recorded off a delta-scoped clean result would close the step on evidence covering only the files that changed since the previous round. When the clean result came from a delta round, do NOT record `done` here — go back to Step 1, re-run the surface call at full scope, and record the outcome from that pass instead.
+
 Immediately before invoking `mark-step-done`, resolve the worktree HEAD SHA so the dispatcher can detect a stale completion record after a downstream loop-back commit advances HEAD (see § HEAD-dependency above):
 
 ```bash
@@ -304,15 +333,20 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
   --component pm-plugin-development:ext-self-review-plan-marshall --severity warning
 ```
 
-Then record the failed outcome:
+Then resolve the worktree HEAD SHA — the same call and the same `{worktree_path}` as Branch A — and record the failed outcome carrying it:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome failed \
-  --display-detail "{display_detail_from_workflow}"
+  --display-detail "{display_detail_from_workflow}" \
+  --head-at-completion {sha}
 ```
 
-Branch A (empty findings) persists nothing — there are no findings to write. Branch B does not need `--head-at-completion`: the dispatcher unconditionally retries `failed` records on re-entry regardless of HEAD, so the SHA carries no decision value here.
+Branch A (empty findings) persists nothing — there are no findings to write. Branch B forwards `--head-at-completion` even though the dispatcher retries `failed` records unconditionally: the SHA carries no *retry* decision value, but it IS the delta anchor the NEXT round reads in Step 1. A `failed` record written without it leaves the following round with no anchor, which silently degrades that round to a full sweep — the exact re-sweep this scoping exists to remove. The anchor is written on both terminal branches for that reason, not for the dispatcher's benefit.
 
 The dispatcher's existing failure handling halts the phase on `outcome=failed`, matching the gating-step contract used by `pre-push-quality-gate`. The operator must address every finding (amend the diff: rename, tighten regex, rewrite wording, delete duplicate section, fix contract drift), re-run the step, and only then advance to `push`.
 

@@ -3455,3 +3455,152 @@ class TestCandidateListRegistry:
         assert registry_keys <= set(data), (
             f'Payload is missing registry keys: {sorted(registry_keys - set(data))}'
         )
+
+
+# =============================================================================
+# Test: --since-ref delta scoping (a follow-up round re-examines only the delta)
+# =============================================================================
+
+
+class TestSinceRefDeltaScoping:
+    """``--since-ref`` narrows the surfaced FILE SET to the delta since a round.
+
+    Every case drives the REAL ``surface`` path over a REAL git fixture, because
+    the behaviour under test is the intersection of two git-derived sets — a
+    mocked stand-in would pin the mock rather than the scoping.
+
+    The delta case and the no-anchor case are a MATCHED PAIR over one identical
+    repository: the ONLY difference between them is whether ``--since-ref`` is
+    passed. The control is load-bearing rather than decorative — without it, the
+    delta assertion would pass just as well against a fixture that never carried
+    the excluded file, which would make the narrowing claim vacuous.
+    """
+
+    @staticmethod
+    def _build_two_round_repo(tmp_path: Path) -> tuple[Path, str]:
+        """A branch carrying two candidate-bearing files, then a one-file fix.
+
+        Returns ``(repo, since_ref)``, where ``since_ref`` is the SHA at which a
+        first review round would have completed — exactly the anchor a real
+        second round reads back off its own prior step record.
+        """
+        repo = tmp_path / 'repo'
+        _init_repo(repo)
+        _commit(repo, 'base', {'base.txt': 'base\n'})
+        _git(repo, 'checkout', '-b', 'feature')
+        # Round 1's surface: BOTH files carry a regex literal, so both surface.
+        _commit(
+            repo,
+            'round-1 work',
+            {
+                'alpha.py': 'import re\n_A = re.compile(r"^alpha-[0-9]+$")\n',
+                'beta.py': 'import re\n_B = re.compile(r"^beta-[0-9]+$")\n',
+            },
+        )
+        rc, out, err = _run_git(repo, 'rev-parse', 'HEAD')
+        assert rc == 0, f'rev-parse failed: {err}'
+        since_ref = out.strip()
+        # The loop-back fix: ONLY beta.py changes after round 1 completed.
+        _commit(
+            repo,
+            'round-2 fix',
+            {'beta.py': 'import re\n_B = re.compile(r"^beta-[0-9a-f]+$")\n'},
+        )
+        return repo, since_ref
+
+    @staticmethod
+    def _surface(repo: Path, *extra: str):
+        from conftest import get_script_path, run_script
+
+        script = get_script_path(
+            'pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py'
+        )
+        return run_script(
+            script,
+            'surface',
+            '--plan-id',
+            'delta-scope-plan',
+            '--project-dir',
+            str(repo),
+            '--base-branch',
+            'main',
+            *extra,
+        )
+
+    def test_since_ref_narrows_the_surfaced_file_set(self, tmp_path):
+        repo, since_ref = self._build_two_round_repo(tmp_path)
+
+        result = self._surface(repo, '--since-ref', since_ref)
+        assert result.success, f'surface failed: stderr={result.stderr}'
+        data = result.toon()
+
+        assert data['surface_scope'] == 'delta'
+        assert data['since_ref'] == since_ref
+        assert int(data['files_in_scope']) == 1
+
+        surfaced = {entry['file'] for entry in data['regexes']}
+        assert surfaced == {'beta.py'}, (
+            'A delta round must surface only the files changed since the anchor. '
+            f'alpha.py was untouched after {since_ref}, so re-examining it is the '
+            'full re-sweep this argument exists to remove. Surfaced: '
+            f'{sorted(surfaced)}'
+        )
+
+    def test_no_since_ref_sweeps_the_full_surface(self, tmp_path):
+        # The matched control for the case above, over the SAME fixture: with no
+        # anchor the round is a full sweep and alpha.py IS re-examined. This is
+        # what proves the narrowing above came from --since-ref rather than from
+        # a fixture that never carried alpha.py in scope.
+        repo, _ = self._build_two_round_repo(tmp_path)
+
+        result = self._surface(repo)
+        assert result.success, f'surface failed: stderr={result.stderr}'
+        data = result.toon()
+
+        assert data['surface_scope'] == 'full'
+        assert int(data['files_in_scope']) == 2
+
+        surfaced = {entry['file'] for entry in data['regexes']}
+        assert surfaced == {'alpha.py', 'beta.py'}
+
+    def test_unresolvable_since_ref_is_refused_never_widened(self, tmp_path):
+        # A silent fall-through to the full sweep is the prohibited behaviour: it
+        # would report a full-surface verdict a caller reads as delta-scoped.
+        repo, _ = self._build_two_round_repo(tmp_path)
+
+        result = self._surface(
+            repo, '--since-ref', 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
+        )
+
+        assert not result.success
+        data = result.toon()
+        assert data['error'] == 'since_ref_unresolvable'
+        # The refusal is total — no candidate payload is emitted alongside it, so
+        # no caller can mistake the refused round for a completed one.
+        assert 'regexes' not in data
+
+    def test_empty_delta_surfaces_nothing_rather_than_widening(self, tmp_path):
+        # since_ref == HEAD, so nothing changed since the anchor and the
+        # intersection is EMPTY. An empty allow-set must surface NOTHING. The
+        # defect this pins is the truthiness collapse: treating an empty
+        # allow-set as "no filter" re-surfaces the entire plan diff precisely
+        # when the round had nothing to review, inverting the scoping.
+        repo, _ = self._build_two_round_repo(tmp_path)
+        rc, out, err = _run_git(repo, 'rev-parse', 'HEAD')
+        assert rc == 0, f'rev-parse failed: {err}'
+        head = out.strip()
+
+        result = self._surface(repo, '--since-ref', head)
+        assert result.success, f'surface failed: stderr={result.stderr}'
+        data = result.toon()
+
+        assert data['surface_scope'] == 'delta'
+        assert int(data['files_in_scope']) == 0
+        assert int(data['counts']['total']) == 0
+
+    def test_parser_defaults_since_ref_to_none(self):
+        # Omitting the flag is the full-sweep path (round 1, and the closing
+        # confirmation pass), so the default must be None rather than a ref.
+        args = _build_parser().parse_args(['surface', '--plan-id', 'defaults-plan'])
+
+        assert args.since_ref is None

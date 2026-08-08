@@ -24,7 +24,21 @@ can detect when the worktree HEAD has advanced past the SHA at which the
 previous run completed and re-fire the gate accordingly. The SHA is treated as
 informational metadata: re-call with same outcome+display_detail but a
 different head_at_completion is a "changed" overwrite without requiring
-``--force``. The ``--loop-back-target`` flag classifies loop-back outcomes
+``--force``.
+
+The SHA is also the DELTA ANCHOR a later review round scopes itself against
+(``self_review surface --since-ref``), so on a ``done`` outcome its absence is
+refused rather than tolerated: when the step's authoritative doc declares
+``head_dependent: true`` and no ``--head-at-completion`` was supplied, the
+handler returns ``error: missing_head_at_completion`` and writes NOTHING. The
+declaration is read through the registry's own discovery path, so no second
+frontmatter parser exists to drift from it. When that derivation cannot run at
+all, the record IS written and carries a ``warning`` field naming the
+unresolved derivation — an unresolvable derivation must not manufacture an
+unsubstantiated refusal, but must not pass silently either. The obligation is
+declared in ``extension-api/standards/ext-point-finalize-step.md``.
+
+The ``--loop-back-target`` flag classifies loop-back outcomes
 into the two granularity tiers — ``5-execute`` for fix-task-required
 dispositions (full phase rollback) and ``6-finalize`` for inline-fixable
 dispositions (replay the same finalize step from the resumable re-entry
@@ -47,6 +61,7 @@ reported as ``changed: true`` rather than silently swallowed.
 """
 
 import argparse
+from pathlib import Path
 from typing import Any
 
 from _status_core import require_status, write_status
@@ -54,6 +69,64 @@ from _step_key_canonical import canonicalize_step_key
 
 VALID_OUTCOMES = ('done', 'skipped', 'loop_back', 'failed')
 VALID_LOOP_BACK_TARGETS = ('5-execute', '6-finalize')
+
+#: The ext-point whose implementors declare the ``head_dependent`` fact.
+_FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
+
+#: The frontmatter key that IS the head-dependence declaration.
+_HEAD_DEPENDENT_KEY = 'head_dependent'
+
+
+def _derive_head_dependence(step: str) -> tuple[bool, str | None]:
+    """Derive whether ``step`` declares ``head_dependent: true`` in its own doc.
+
+    Reuses the registry's OWN discovery path — ``find_implementors`` for the
+    population and ``extension_discovery._read_frontmatter_fields`` for the fact —
+    so no second frontmatter parser exists to drift from the one the dispatcher
+    and the derivation guard already read. Both sides of the comparison are run
+    through :func:`canonicalize_step_key`, because discovery names a built-in step
+    ``default:{name}`` while the caller writes the bare canonical key.
+
+    Returns ``(is_head_dependent, unresolved_reason)``:
+
+    * ``(True, None)`` / ``(False, None)`` — the derivation RESOLVED. A step that
+      is simply absent from the finalize-step population resolves to ``False``
+      rather than "unresolved": ``mark-step-done`` records steps for every phase,
+      so a phase-5 step legitimately matches no finalize-step implementor and must
+      not raise a warning on every call.
+    * ``(False, reason)`` — the derivation MACHINERY could not run at all (import
+      failure, discovery error, or an empty implementor population). The caller
+      writes the record and carries the reason as a ``warning``, following this
+      project's diagnosable-WARNING idiom: an unresolvable derivation must not
+      manufacture an unsubstantiated refusal, but it must not pass silently
+      either.
+    """
+    try:
+        import extension_discovery
+        from extension_discovery import find_implementors
+    except ImportError as exc:
+        return False, f'extension_discovery is not importable ({exc})'
+
+    try:
+        records = find_implementors(_FINALIZE_STEP_EXT_POINT)
+    except Exception as exc:  # noqa: BLE001 - any discovery failure is diagnosable, not fatal
+        return False, f'find_implementors({_FINALIZE_STEP_EXT_POINT!r}) failed ({exc})'
+
+    if not records:
+        return False, (
+            f'find_implementors({_FINALIZE_STEP_EXT_POINT!r}) discovered no finalize-step '
+            'implementors, so head-dependence could not be derived for any step'
+        )
+
+    for record in records:
+        if canonicalize_step_key(str(record.get('name', ''))) != step:
+            continue
+        fields = extension_discovery._read_frontmatter_fields(
+            Path(str(record.get('path', ''))), (_HEAD_DEPENDENT_KEY,)
+        )
+        return bool(fields.get(_HEAD_DEPENDENT_KEY, False)), None
+
+    return False, None
 
 
 def _parse_facts(raw: list[str] | None) -> tuple[dict[str, str] | None, str | None]:
@@ -75,6 +148,18 @@ def _parse_facts(raw: list[str] | None) -> tuple[dict[str, str] | None, str | No
             return None, token
         facts[key] = value
     return facts, None
+
+
+def _with_warning(result: dict[str, Any], warning: str | None) -> dict[str, Any]:
+    """Attach a diagnosable ``warning`` to a success record, when one was raised.
+
+    Omitted entirely when no warning applies, so the ordinary record keeps its
+    historical shape — the same omit-when-absent convention ``head_at_completion``
+    and ``loop_back_target`` follow.
+    """
+    if warning:
+        result['warning'] = warning
+    return result
 
 
 def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
@@ -168,6 +253,32 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
             ),
         }
 
+    # Head-anchor validation: a head-dependent step's terminal ``done`` record is
+    # what the NEXT round scopes its delta against (self_review --since-ref), and
+    # what the dispatcher's re-entry check compares the live HEAD to. A ``done``
+    # with no SHA therefore records a verdict nobody can locate in history — it
+    # reads as green for a diff it may never have examined. The absence is refused
+    # rather than tolerated; the obligation is declared in
+    # ``extension-api/standards/ext-point-finalize-step.md``.
+    head_derivation_warning: str | None = None
+    if outcome == 'done':
+        is_head_dependent, head_derivation_warning = _derive_head_dependence(step)
+        if is_head_dependent and not head_at_completion:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'missing_head_at_completion',
+                'phase': phase,
+                'step': step,
+                'message': (
+                    f'Step {step!r} declares head_dependent: true, so --head-at-completion '
+                    'is required when --outcome=done. Nothing was written. Resolve the '
+                    'worktree HEAD immediately before this call and pass it as '
+                    '--head-at-completion {sha}. See the ext-point-finalize-step.md '
+                    '"head_dependent" field contract for the fail-closed obligation.'
+                ),
+            }
+
     metadata: dict[str, Any] = status.setdefault('metadata', {})
     phase_steps: dict[str, Any] = metadata.setdefault('phase_steps', {})
     phase_entry: dict[str, Any] = phase_steps.setdefault(phase, {})
@@ -218,18 +329,21 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
             and existing_loop_back_target == loop_back_target
             and existing_facts == facts
         ):
-            return {
-                'status': 'success',
-                'plan_id': args.plan_id,
-                'phase': phase,
-                'step': step,
-                'outcome': outcome,
-                'display_detail': display_detail,
-                'head_at_completion': head_at_completion,
-                'loop_back_target': loop_back_target,
-                'facts': facts,
-                'changed': False,
-            }
+            return _with_warning(
+                {
+                    'status': 'success',
+                    'plan_id': args.plan_id,
+                    'phase': phase,
+                    'step': step,
+                    'outcome': outcome,
+                    'display_detail': display_detail,
+                    'head_at_completion': head_at_completion,
+                    'loop_back_target': loop_back_target,
+                    'facts': facts,
+                    'changed': False,
+                },
+                head_derivation_warning,
+            )
         if existing_outcome == outcome and (
             existing_detail != display_detail
             or existing_head != head_at_completion
@@ -240,23 +354,26 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                 phase_entry.pop(existing_key, None)
             phase_entry[step] = new_entry
             write_status(args.plan_id, status)
-            return {
-                'status': 'success',
-                'plan_id': args.plan_id,
-                'phase': phase,
-                'step': step,
-                'outcome': outcome,
-                'display_detail': display_detail,
-                'head_at_completion': head_at_completion,
-                'loop_back_target': loop_back_target,
-                'facts': facts,
-                'changed': True,
-                'previous_outcome': existing_outcome,
-                'previous_display_detail': existing_detail,
-                'previous_head_at_completion': existing_head,
-                'previous_loop_back_target': existing_loop_back_target,
-                'previous_facts': existing_facts,
-            }
+            return _with_warning(
+                {
+                    'status': 'success',
+                    'plan_id': args.plan_id,
+                    'phase': phase,
+                    'step': step,
+                    'outcome': outcome,
+                    'display_detail': display_detail,
+                    'head_at_completion': head_at_completion,
+                    'loop_back_target': loop_back_target,
+                    'facts': facts,
+                    'changed': True,
+                    'previous_outcome': existing_outcome,
+                    'previous_display_detail': existing_detail,
+                    'previous_head_at_completion': existing_head,
+                    'previous_loop_back_target': existing_loop_back_target,
+                    'previous_facts': existing_facts,
+                },
+                head_derivation_warning,
+            )
         if existing_outcome != outcome and not args.force:
             return {
                 'status': 'error',
@@ -289,23 +406,26 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
     phase_entry[step] = new_entry
     write_status(args.plan_id, status)
 
-    return {
-        'status': 'success',
-        'plan_id': args.plan_id,
-        'phase': phase,
-        'step': step,
-        'outcome': outcome,
-        'display_detail': display_detail,
-        'head_at_completion': head_at_completion,
-        'loop_back_target': loop_back_target,
-        'facts': facts,
-        'changed': True,
-        'previous_outcome': previous_outcome,
-        'previous_display_detail': previous_detail,
-        'previous_head_at_completion': previous_head,
-        'previous_loop_back_target': previous_loop_back_target,
-        'previous_facts': previous_facts,
-    }
+    return _with_warning(
+        {
+            'status': 'success',
+            'plan_id': args.plan_id,
+            'phase': phase,
+            'step': step,
+            'outcome': outcome,
+            'display_detail': display_detail,
+            'head_at_completion': head_at_completion,
+            'loop_back_target': loop_back_target,
+            'facts': facts,
+            'changed': True,
+            'previous_outcome': previous_outcome,
+            'previous_display_detail': previous_detail,
+            'previous_head_at_completion': previous_head,
+            'previous_loop_back_target': previous_loop_back_target,
+            'previous_facts': previous_facts,
+        },
+        head_derivation_warning,
+    )
 
 
 def _build_entry(

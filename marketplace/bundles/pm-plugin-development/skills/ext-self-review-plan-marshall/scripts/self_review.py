@@ -16,21 +16,31 @@ population instead of the diff, and reports the population size the verdict was
 drawn against — so a zero-contradiction result is distinguishable from a
 zero-population one.
 
+``surface`` accepts an optional ``--since-ref``, which narrows the surfaced file
+set to the footprint intersected with the paths changed since a previous round's
+recorded HEAD. Only the file set narrows — hunks are still computed against the
+base branch, so a surviving file is always reviewed against its full plan diff.
+
 Storage: stateless — reads the worktree diff and derives the plan footprint
 live from the worktree (``compute-footprint``: ``{base}...HEAD`` ∪ porcelain).
 Output: TOON to stdout.
 
 Usage:
     python3 self_review.py surface --plan-id EXAMPLE-PLAN --project-dir /path/to/worktree
+    python3 self_review.py surface --plan-id EXAMPLE-PLAN --since-ref abc1234
     python3 self_review.py scan-worked-examples --plan-id EXAMPLE-PLAN \\
         --paths-glob 'marketplace/bundles/*/skills/*/standards/*.md'
 """
 
 import argparse
+import subprocess
 import textwrap
 from pathlib import Path
 from typing import Any
 
+from _references_core import (
+    compute_plan_branch_diff,
+)
 from _self_review_detectors import (
     _detect_advertised_form_help_strings,
     _detect_contract_sources,
@@ -130,6 +140,40 @@ def _compose_candidate_output(detected: dict[str, list]) -> dict[str, Any]:
     return payload
 
 
+def _resolve_since_delta(project_dir: Path, since_ref: str) -> set[str] | None:
+    """Return the repo-relative paths changed since ``since_ref``, or ``None``.
+
+    ``since_ref`` is the previous review round's recorded ``head_at_completion``.
+    The delta is the union of the name-only diff between that ref and ``HEAD``
+    (what landed in commits after the previous round closed) and the porcelain
+    working-tree state (what this round's loop-back fixes changed but have not
+    committed yet — the same reason ``_diff_hunks`` targets the working tree).
+
+    The union is computed by ``compute_plan_branch_diff``, the declared single
+    source of truth for "diff name set ∪ porcelain state", which this module
+    reuses rather than re-implementing. Its diff leg is the three-dot
+    ``{since_ref}...HEAD`` form, which is EQUIVALENT to the two-dot form here:
+    ``since_ref`` is a previously recorded ``HEAD`` of this same branch and is
+    therefore always an ancestor of the current ``HEAD``, so the merge-base the
+    three-dot form anchors on IS ``since_ref``. An absorb merge from the base
+    branch does not disturb that — it only adds descendants — so the two forms
+    cannot diverge for any ref this argument accepts.
+
+    Returns ``None`` when ``since_ref`` does not resolve to a commit inside the
+    worktree, or when git fails while computing the delta. The caller MUST treat
+    ``None`` as a diagnosable error and refuse: silently falling through to the
+    full sweep would turn an unresolvable anchor into an unrecorded full round,
+    which is exactly the ambiguity the anchor exists to remove.
+    """
+    rc, _, _ = _run_git(project_dir, 'rev-parse', '--verify', f'{since_ref}^{{commit}}')
+    if rc != 0:
+        return None
+    try:
+        return compute_plan_branch_diff(project_dir, since_ref)
+    except subprocess.CalledProcessError:
+        return None
+
+
 def _cmd_surface(args: argparse.Namespace) -> int:
     plan_id = require_valid_plan_id(args)
 
@@ -178,12 +222,32 @@ def _cmd_surface(args: argparse.Namespace) -> int:
 
     modified_files = _resolve_footprint(project_dir, base_branch)
 
+    # The allow-set is tri-state on purpose. ``None`` means "do not filter" (the
+    # footprint was unresolvable), while an EMPTY set means "filter to nothing" —
+    # a delta round whose intersection is empty has genuinely nothing to review
+    # and MUST surface nothing. Collapsing the two into a truthiness test would
+    # make an empty delta surface the entire diff, inverting the scoping.
+    allow_set: set[str] | None = set(modified_files) if modified_files else None
+
+    since_ref = args.since_ref
+    if since_ref is not None:
+        delta = _resolve_since_delta(project_dir, since_ref)
+        if delta is None:
+            output_toon_error(
+                'since_ref_unresolvable',
+                f'--since-ref {since_ref!r} does not resolve to a commit inside '
+                f'{project_dir}, so the delta surface cannot be computed. The '
+                'round is refused rather than silently widened to a full sweep.',
+            )
+            return 1
+        allow_set = delta if allow_set is None else (allow_set & delta)
+        modified_files = sorted(allow_set)
+
     diff_text = _diff_hunks(project_dir, base_branch)
     added = _iter_added_lines(diff_text)
 
-    if modified_files:
-        allowed = set(modified_files)
-        added = [(p, ln, c) for (p, ln, c) in added if p in allowed]
+    if allow_set is not None:
+        added = [(p, ln, c) for (p, ln, c) in added if p in allow_set]
 
     regexes = _detect_regexes(added)
     user_facing = _detect_user_facing_strings(added)
@@ -201,9 +265,8 @@ def _cmd_surface(args: argparse.Namespace) -> int:
     unguarded_boundaries = _detect_unguarded_boundaries(added, project_dir)
     count_prose = _detect_count_prose(modified_files, project_dir)
     changed_pairs = _iter_changed_line_pairs(diff_text)
-    if modified_files:
-        allowed = set(modified_files)
-        changed_pairs = [pr for pr in changed_pairs if pr[0] in allowed]
+    if allow_set is not None:
+        changed_pairs = [pr for pr in changed_pairs if pr[0] in allow_set]
     touched_claims = _detect_touched_claims(changed_pairs)
     advertised_form_help_strings = _detect_advertised_form_help_strings(
         added, project_dir
@@ -244,6 +307,9 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'plan_id': plan_id,
         'project_dir': str(project_dir),
         'base_branch': base_branch,
+        'since_ref': since_ref or '',
+        'surface_scope': 'delta' if since_ref is not None else 'full',
+        'files_in_scope': len(modified_files),
         **_compose_candidate_output(detected),
     }
     output_toon(output)
@@ -422,6 +488,22 @@ def _build_parser() -> argparse.ArgumentParser:
         '--base-branch',
         default='main',
         help='Base branch for diff computation (default: main).',
+    )
+    p_surface.add_argument(
+        '--since-ref',
+        required=False,
+        default=None,
+        help=(
+            "Previous review round's recorded head_at_completion SHA. When "
+            'supplied, the surfaced file set is narrowed to the footprint '
+            'intersected with the paths changed since that ref, so a follow-up '
+            'round re-examines only what the preceding loop-back actually '
+            'changed. Hunks are still computed against --base-branch, so every '
+            'surviving file is reviewed against its FULL plan diff — this '
+            'narrows which files are reviewed, never how deeply one is. Omit it '
+            'for round 1 and for the closing full-surface confirmation sweep. A '
+            'ref that does not resolve is refused, never widened to a full sweep.'
+        ),
     )
     p_surface.add_argument(
         '--contract-radius',

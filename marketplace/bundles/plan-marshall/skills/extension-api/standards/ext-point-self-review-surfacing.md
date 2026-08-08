@@ -45,17 +45,25 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 | `--plan-id` | string | Yes | Plan identifier (kebab-case). Drives both the on-demand footprint derivation (`{base}...HEAD` ∪ porcelain, computed live from the worktree) and worktree resolution via `manage-status get-worktree-path`. |
 | `--project-dir` | path | No | Absolute path to the active git worktree (escape hatch). When omitted, the path is auto-resolved from `--plan-id`. |
 | `--base-branch` | string | No | Base branch for diff computation (default: `main`). |
+| `--since-ref` | string | No | The previous review round's recorded `head_at_completion` SHA. When supplied, the surfaced FILE SET is the footprint intersected with the paths changed since that ref, so a follow-up round re-examines only what the preceding loop-back actually changed. Omitted on round 1 and on the closing full-surface confirmation pass. |
+
+**`--since-ref` narrows the file set, never the examination of a file.** Hunks stay anchored on `--base-branch`, so every file that survives the intersection is still reviewed against its FULL plan diff rather than against only its incremental hunks. An implementor that narrowed the hunk basis instead would be cutting review depth, which this argument does not authorize.
+
+**A delta-scoped round cannot close the step.** The narrowed round is a cheap filter whose clean verdict covers only the files it looked at. The consumer re-runs the surface call once WITHOUT `--since-ref` before recording a terminal `done`, so the step can still only close on a full-surface clean pass — see [`../../phase-6-finalize/workflow/pre-submission-self-review.md`](../../phase-6-finalize/workflow/pre-submission-self-review.md) Step 1 and Step 4 Branch A. An implementor supplies the narrowing; it does not decide termination.
 
 ### Pre-Conditions
 
 - `--plan-id` resolves to an active plan whose `references.json` carries `base_branch` (used as the footprint diff anchor).
 - The resolved worktree is a valid git working tree.
 - The base branch ref resolves inside the worktree.
+- When `--since-ref` is supplied, it resolves to a commit inside the worktree. An unresolvable value is a diagnosable error — an implementor MUST NOT fall through to the full sweep, because a silent widening would report a full-surface verdict a caller would read as delta-scoped, and vice versa.
 
 ### Post-Conditions
 
 - TOON to stdout carrying the twenty candidate sub-lists below (some MAY be empty).
-- Non-zero exit on git-unavailable, base-branch-missing, or worktree-resolution failure.
+- The echo fields `since_ref`, `surface_scope`, and `files_in_scope` state which round variant produced the payload, so a consumer never has to reconstruct it.
+- An empty intersection surfaces NOTHING. A delta round whose intersection is empty genuinely has no files to review, so the implementor MUST emit empty candidate lists rather than falling back to the unfiltered diff.
+- Non-zero exit on git-unavailable, base-branch-missing, worktree-resolution, or since-ref-resolution failure.
 
 ### Output Schema
 
@@ -64,6 +72,9 @@ status: success
 plan_id: {plan_id}
 project_dir: {project_dir}
 base_branch: {base_branch}
+since_ref: {sha or empty when the round was not delta-scoped}
+surface_scope: delta | full
+files_in_scope: N
 counts:
   regexes: N1
   user_facing_strings: N2
@@ -189,8 +200,10 @@ The `ext-self-review-plan-marshall` implementor's detection heuristics are docum
 |-----------|--------|
 | No domain implementor resolved (consumer dispatch, no surfacer in the executor) | Zero-candidate clean run — the consumer step succeeds without dispatching the LLM cognitive phase (`outcome=done`, empty candidate envelope) |
 | Live footprint empty (no `{base}...HEAD` ∪ porcelain changes) | `status: success` with empty candidate lists (no diff scope) |
+| `--since-ref` supplied and the intersection is empty | `status: success` with empty candidate lists (`surface_scope: delta`) — nothing changed since the previous round, which is a real answer, NOT a signal to widen |
 | Git unavailable or wrong cwd | `status: error\nerror: git_unavailable\nmessage: ...` (exit 1) |
 | Base branch not found | `status: error\nerror: base_branch_not_found\nbase_branch: {base}` (exit 1) |
+| `--since-ref` does not resolve to a commit | `status: error\nerror: since_ref_unresolvable\nmessage: ...` (exit 1) — the round is refused, never silently widened to a full sweep |
 | `--plan-id` worktree resolution fails | `status: error\nerror: worktree_resolution_failed\nmessage: ...` (exit 2) |
 
 The consumer dispatcher (`phase-6-finalize/workflow/pre-submission-self-review.md` Step 1) translates non-zero exits into `outcome=failed` on the manifest step without dispatching the LLM cognitive phase.
