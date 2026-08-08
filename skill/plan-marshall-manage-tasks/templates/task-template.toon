@@ -1,0 +1,31 @@
+number: {NUMBER}
+title: {TITLE}
+status: pending
+
+deliverable: {DELIVERABLE}
+
+depends_on: {DEPENDS_ON}
+
+description: |
+  {DESCRIPTION}
+
+domain: {DOMAIN}
+profile: {PROFILE}
+origin: {ORIGIN}
+
+skills[{SKILL_COUNT}]:
+- {SKILL_1}
+- {SKILL_2}
+
+steps[{STEP_COUNT}]{number,target,status}:
+1,{STEP_1_TARGET},pending
+2,{STEP_2_TARGET},pending
+3,{STEP_3_TARGET},pending
+
+verification:
+  commands[{CMD_COUNT}]:
+  - {VERIFICATION_COMMAND}
+  criteria: {SUCCESS_CRITERIA}
+  manual: false
+
+current_step: 1

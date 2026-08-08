@@ -1,0 +1,87 @@
+---
+name: pm-dev-java-java-quarkus
+description: Quarkus-specific CDI standards with testing, native image support, GraalVM reflection configuration, and inbound REST input validation
+compatibility: Adapted from plan-marshall marketplace (Claude Code native)
+---
+
+# Java CDI Quarkus Skill
+
+**REFERENCE MODE**: This skill provides reference material. Load specific standards on-demand based on current task.
+
+Quarkus-specific CDI standards extending core CDI patterns with Quarkus testing, native image support, and GraalVM reflection configuration.
+
+## Prerequisites
+
+This skill applies to Quarkus projects:
+- `io.quarkus:quarkus-junit5` (Quarkus testing)
+- `io.quarkus:quarkus-jacoco` (coverage)
+
+## Workflow
+
+### Step 1: Load Quarkus Testing Standards
+
+Load this standard for any Quarkus testing work.
+
+```text
+Read: standards/quarkus-testing.md
+```
+
+This provides foundational rules for:
+- @QuarkusTest and @QuarkusIntegrationTest
+- JaCoCo configuration for Quarkus
+- REST Assured patterns
+
+### Step 2: Load Additional Standards (As Needed)
+
+**External Integration Testing** (load for Docker-based IT):
+
+See `pm-dev-java:junit-integration` → `standards/external-integration-testing.md`. For Quarkus-specific paths, use `/q/health` and `/q/metrics` on the management interface.
+
+**Native Image** (load for GraalVM work):
+```text
+Read: standards/quarkus-native.md
+```
+
+Use when: Building native images or troubleshooting native compilation.
+
+**Reflection Registration** (load for native issues):
+```text
+Read: standards/quarkus-reflection.md
+```
+
+Use when: Resolving reflection issues in native builds.
+
+**Container Standards** (load for Docker deployment):
+```text
+Read: standards/container.md
+```
+
+Use when: Configuring container images, Docker Compose, health checks, or certificate management.
+
+**Inbound REST Validation** (load for validating REST resource inputs):
+```text
+Read: standards/quarkus-rest-validation.md
+```
+
+Use when: Validating untrusted REST request bodies, query/path/header parameters with jakarta.validation (`@Valid`, `@NotNull`, `@Size`, `@Pattern`), or testing negative-path 400 responses.
+
+## Templates
+
+- `templates/quarkus-test.java.tmpl` — @QuarkusTest with CDI injection and nested test structure
+- `templates/quarkus-integration-test.java.tmpl` — @QuarkusIntegrationTest with REST Assured (HTTP-only, no CDI)
+
+## Related Skills
+
+- `pm-dev-java:java-cdi` - Core CDI patterns
+- `pm-dev-java:junit-integration` - Maven integration testing
+- `pm-dev-java:junit-core` - JUnit 5 core patterns
+
+## Standards Reference
+
+| Standard | Purpose |
+|----------|---------|
+| quarkus-testing.md | @QuarkusTest, JaCoCo, REST Assured |
+| quarkus-rest-validation.md | Inbound Bean Validation on REST resources (jakarta.validation, @Valid, ConstraintViolationException → 400, adversarial REST tests) |
+| quarkus-native.md | GraalVM native image builds |
+| quarkus-reflection.md | Reflection registration for native |
+| container.md | Docker deployment, health checks, certificate management |

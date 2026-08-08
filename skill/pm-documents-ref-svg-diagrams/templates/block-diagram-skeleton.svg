@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Block diagram skeleton — three-column producer / store / consumer.
+
+  theme-handling: A (theme-neutral)
+  see  pm-documents:ref-svg-diagrams/standards/theme-handling.md
+
+  Replace title / desc / column headers / item rows / arrow labels.
+  See  pm-documents:ref-svg-diagrams/standards/diagram-type-block.md
+  for placement conventions and  visual-language.md  for palette / typography.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500"
+     role="img" aria-labelledby="title desc"
+     font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
+  <title id="title">PLACEHOLDER — one-sentence accessible name</title>
+  <desc  id="desc">PLACEHOLDER — paragraph-length description of what the diagram shows and means</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
+    </marker>
+    <style>
+      .col-header { font-size: 15px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
+      .col-sub    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .item       { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+      .item-bold  { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-weight: 700; }
+      .item-c     { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; text-anchor: middle; }
+      .arrow-lbl  { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .stroke     { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .arrow      { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow-fill { fill: #6e7681; }
+      .sep        { stroke: #6e7681; stroke-width: 0.6; stroke-dasharray: 3 3; }
+    </style>
+  </defs>
+
+  <!-- ============================================================ -->
+  <!-- COLUMN 1 (left) — left-aligned hierarchical content           -->
+  <!-- ============================================================ -->
+  <text x="150" y="28" class="col-header">COLUMN 1</text>
+  <rect class="stroke" x="20" y="44" width="260" height="420" rx="6" ry="6"/>
+
+  <text x="36" y="80"  class="item-bold">item-header-1</text>
+  <text x="36" y="100" class="item">sub-item-1</text>
+
+  <text x="36" y="135" class="item-bold">item-header-2</text>
+  <text x="36" y="155" class="item">sub-item-2</text>
+
+  <text x="150" y="430" class="col-sub">optional footer caption</text>
+
+  <!-- ============================================================ -->
+  <!-- COLUMN 2 (middle) — center-aligned flat list                  -->
+  <!-- ============================================================ -->
+  <text x="450" y="28" class="col-header">COLUMN 2</text>
+  <text x="450" y="44" class="col-sub">optional subtitle</text>
+  <rect class="stroke" x="320" y="60" width="260" height="404" rx="6" ry="6"/>
+
+  <text x="450" y="100" class="item-c">flat-item-1</text>
+  <text x="450" y="125" class="item-c">flat-item-2</text>
+  <line class="sep" x1="360" y1="140" x2="540" y2="140"/>
+  <text x="450" y="170" class="item-c">flat-item-3</text>
+  <text x="450" y="195" class="item-c">flat-item-4</text>
+
+  <text x="450" y="430" class="col-sub">optional footer caption</text>
+
+  <!-- ============================================================ -->
+  <!-- COLUMN 3 (right) — left-aligned hierarchical content          -->
+  <!-- ============================================================ -->
+  <text x="750" y="28" class="col-header">COLUMN 3</text>
+  <rect class="stroke" x="620" y="44" width="260" height="420" rx="6" ry="6"/>
+
+  <text x="636" y="80"  class="item-bold">item-header-3</text>
+  <text x="636" y="100" class="item">sub-item-3</text>
+
+  <text x="636" y="135" class="item-bold">item-header-4</text>
+  <text x="636" y="155" class="item">sub-item-4</text>
+
+  <text x="750" y="430" class="col-sub">optional footer caption</text>
+
+  <!-- ============================================================ -->
+  <!-- Arrows between columns                                        -->
+  <!-- ============================================================ -->
+
+  <!-- column 1 → column 2 -->
+  <line class="arrow" x1="280" y1="220" x2="316" y2="220" marker-end="url(#arrow)"/>
+  <text x="298" y="212" class="arrow-lbl">verb-1</text>
+
+  <!-- column 2 → column 3 -->
+  <line class="arrow" x1="584" y1="205" x2="616" y2="205" marker-end="url(#arrow)"/>
+  <text x="600" y="197" class="arrow-lbl">verb-2</text>
+
+  <!-- column 3 → column 2 (bi-directional pair) -->
+  <line class="arrow" x1="616" y1="240" x2="584" y2="240" marker-end="url(#arrow)"/>
+  <text x="600" y="232" class="arrow-lbl">verb-3</text>
+
+</svg>

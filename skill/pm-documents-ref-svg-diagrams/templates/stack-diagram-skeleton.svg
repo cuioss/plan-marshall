@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Stack diagram skeleton — three layered slabs with a consumer on the
+  right. Left region is the label gutter, right region is the content,
+  inter-slab dashed dividers.
+
+  theme-handling: A (theme-neutral)
+  see  pm-documents:ref-svg-diagrams/standards/theme-handling.md
+
+  Replace title / desc / layer labels / contents / consumer label.
+  See  pm-documents:ref-svg-diagrams/standards/diagram-type-stack.md
+  for placement conventions.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 480"
+     role="img" aria-labelledby="title desc"
+     font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
+  <title id="title">PLACEHOLDER — one-sentence accessible name</title>
+  <desc  id="desc">PLACEHOLDER — paragraph describing the layered stack, what each layer holds, and (if present) the consumer that reads from every layer</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
+    </marker>
+    <style>
+      .layer-header   { font-size: 15px; font-weight: 600; fill: #6e7681; text-anchor: start; }
+      .layer-sub      { font-size: 11px; fill: #6e7681; text-anchor: start; font-style: italic; }
+      .item           { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+      .item-sub       { font-size: 11px; fill: #6e7681; font-style: italic; }
+      .slab           { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .gutter-sep     { stroke: #6e7681; stroke-width: 0.6; stroke-dasharray: 2 3; }
+      .inter-divider  { stroke: #6e7681; stroke-width: 0.6; stroke-dasharray: 3 3; }
+      .connector      { stroke: #6e7681; stroke-width: 1; fill: none; }
+      .arrow-fill     { fill: #6e7681; }
+      .consumer       { stroke: #6e7681; stroke-width: 1.4; fill: none; }
+      .consumer-lbl   { font-size: 14px; font-weight: 600; fill: #6e7681; text-anchor: middle; }
+      .consumer-sub   { font-size: 11px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+      .caption        { font-size: 12px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+    </style>
+  </defs>
+
+  <!-- ============================================================ -->
+  <!-- LAYER 1 — slim slab (low content density)                     -->
+  <!-- ============================================================ -->
+  <rect class="slab" x="40" y="40" width="720" height="90" rx="6" ry="6"/>
+  <line class="gutter-sep" x1="220" y1="48" x2="220" y2="122"/>
+  <text x="60" y="74" class="layer-header">LAYER 1</text>
+  <text x="60" y="92" class="layer-sub">slim layer — low density</text>
+  <text x="240" y="80" class="item">content-line-1</text>
+  <text x="240" y="100" class="item">content-line-2</text>
+
+  <!-- Inter-slab dashed divider -->
+  <line class="inter-divider" x1="40" y1="142" x2="760" y2="142"/>
+
+  <!-- ============================================================ -->
+  <!-- LAYER 2 — medium slab (medium content density)                -->
+  <!-- ============================================================ -->
+  <rect class="slab" x="40" y="156" width="720" height="120" rx="6" ry="6"/>
+  <line class="gutter-sep" x1="220" y1="164" x2="220" y2="268"/>
+  <text x="60" y="190" class="layer-header">LAYER 2</text>
+  <text x="60" y="208" class="layer-sub">medium layer</text>
+  <text x="240" y="186" class="item">content-line-1</text>
+  <text x="240" y="206" class="item">content-line-2</text>
+  <text x="240" y="226" class="item">content-line-3</text>
+  <text x="240" y="246" class="item">content-line-4</text>
+  <text x="240" y="264" class="item-sub">descriptive note about the layer's contents</text>
+
+  <!-- Inter-slab dashed divider -->
+  <line class="inter-divider" x1="40" y1="288" x2="760" y2="288"/>
+
+  <!-- ============================================================ -->
+  <!-- LAYER 3 — taller slab (high content density)                  -->
+  <!-- ============================================================ -->
+  <rect class="slab" x="40" y="302" width="720" height="130" rx="6" ry="6"/>
+  <line class="gutter-sep" x1="220" y1="310" x2="220" y2="424"/>
+  <text x="60" y="336" class="layer-header">LAYER 3</text>
+  <text x="60" y="354" class="layer-sub">dense layer</text>
+  <text x="240" y="332" class="item">content-line-1</text>
+  <text x="240" y="352" class="item">content-line-2</text>
+  <text x="240" y="372" class="item">content-line-3</text>
+  <text x="240" y="392" class="item">content-line-4</text>
+  <text x="240" y="412" class="item">content-line-5</text>
+
+  <!-- ============================================================ -->
+  <!-- CONSUMER NODE — right side, vertically centred on the stack   -->
+  <!-- ============================================================ -->
+  <rect class="consumer" x="820" y="200" width="240" height="80" rx="6" ry="6"/>
+  <text x="940" y="232" class="consumer-lbl">consumer</text>
+  <text x="940" y="252" class="consumer-sub">reads from every layer</text>
+
+  <!-- ============================================================ -->
+  <!-- CONNECTORS — from right edge of each slab to consumer left     -->
+  <!-- ============================================================ -->
+  <line class="connector" x1="760" y1="85" x2="818" y2="220" marker-end="url(#arrow)"/>
+  <line class="connector" x1="760" y1="216" x2="818" y2="240" marker-end="url(#arrow)"/>
+  <line class="connector" x1="760" y1="367" x2="818" y2="260" marker-end="url(#arrow)"/>
+
+  <!-- ============================================================ -->
+  <!-- Footer caption                                                -->
+  <!-- ============================================================ -->
+  <text x="550" y="464" class="caption">Layered stack: slabs differ in density; all feed a single consumer.</text>
+
+</svg>

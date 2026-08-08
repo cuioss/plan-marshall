@@ -1,0 +1,277 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Deterministic core for the unified change-ledger primitive.
+
+Notation: imported as a module (PYTHONPATH) — ``from _ledger_core import
+append_entry, read_entries, build_record, change_record, resolve_ledger_path``.
+NOT an executor entry point.
+
+This module is the single read/write/construct surface for the one append-only
+change-ledger (``.plan/work/change-ledger.jsonl``). The ledger is the unified
+``worktree_sha``-stamped record of working-tree transitions; it subsumes the
+former "build-registry" idea entirely (there is NO separate ``builds.jsonl``).
+Both writers — the executor dispatch-boundary ``kind=build`` writer and the
+phase-5 ``kind=change`` writer — and both readers — the ``query`` verb and the
+``pre-commit-verify-freshness`` gate — go through this core so entries are
+shaped identically and parsed identically.
+
+**Tracked-config-dir resolution, NOT plan-scoped.** The ledger resolves via
+:func:`file_ops.get_tracked_config_dir` (modeled on ``manage-locks``), so it
+serves plan-less orchestrator builds just as well as plan-scoped task builds.
+A plan-less build is recorded under the ``NO_PLAN`` sentinel, never as
+``plan_id: null``: ``plan_id`` is a required ``str`` on both
+:func:`build_record` and :func:`job_record`, so every row is attributable.
+
+**Pure-append concurrency.** :func:`append_entry` writes exactly one
+``json.dumps(record) + '\\n'`` line per call with a single ``open(..., 'a')``.
+On the small per-record size this is atomic enough for a POSIX append, and
+:func:`read_entries` tolerates (skips) malformed lines, so no lock is
+introduced. The shape is deliberately pure-append — no read-modify-write, no
+find-and-update — so no check-then-act window exists and the cooperative-lock
+class does not apply. (See the TOCTOU / check-then-act mitigation menu in
+``ref-code-quality/standards/code-organization.md`` — the pure-append
+shape avoids the window entirely.)
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+from file_ops import get_tracked_config_dir, now_utc_iso
+
+KIND_BUILD = 'build'
+KIND_CHANGE = 'change'
+KIND_JOB = 'job'
+
+# The statuses a build WRAPPER may claim for itself in its stdout TOON — the
+# wrapper's own vocabulary (see script-shared/scripts/build/_build_shared.py).
+# The executor dispatch boundary compares a payload's `status` against THIS set
+# and no wider one, so a wrapper can never mint a derived-only verdict below.
+WRAPPER_CLAIMABLE_BUILD_STATUSES = frozenset({'success', 'error', 'timeout'})
+
+# The statuses ONLY the executor dispatch boundary derives; a wrapper claiming
+# one is not believed, because each records the ABSENCE of the very evidence a
+# claim would be. `killed` marks a child terminated by a POSIX signal (negative
+# returncode). `unknown` marks an exit-0 dispatch whose payload carried no
+# claimable status — the outcome is undetermined, and deriving `success` there
+# would be a confident green over a signal that was never read.
+DERIVED_ONLY_BUILD_STATUSES = frozenset({'killed', 'unknown'})
+
+# The full truthful build-outcome vocabulary carried by every kind=build entry's
+# `status` field: the wrapper-claimable statuses plus the boundary-derived ones.
+# The freshness gate requires status == 'success', so every other member —
+# `unknown` included — fails it closed; exit_code is retained as orthogonal
+# diagnostic detail.
+BUILD_STATUSES = WRAPPER_CLAIMABLE_BUILD_STATUSES | DERIVED_ONLY_BUILD_STATUSES
+
+
+def resolve_ledger_path() -> Path:
+    """Resolve the single change-ledger path under the tracked-config dir.
+
+    ``<tracked-config-dir>/work/change-ledger.jsonl``. NOT plan-scoped — one
+    ledger per repository working tree, covering plan-less orchestrator builds.
+    """
+    return get_tracked_config_dir() / 'work' / 'change-ledger.jsonl'
+
+
+def append_entry(record: dict[str, Any], path: Path | None = None) -> None:
+    """Append exactly one JSONL line for ``record``. Pure-append.
+
+    Creates the ``work/`` parent directory if absent, then writes one
+    ``json.dumps(record) + '\\n'`` line with a single ``open(path, 'a')``. No
+    read-modify-write, no in-place mutation.
+    """
+    ledger_path = path if path is not None else resolve_ledger_path()
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(record, sort_keys=True) + '\n'
+    with open(ledger_path, 'a', encoding='utf-8') as handle:
+        handle.write(line)
+
+
+def read_entries(path: Path | None = None) -> list[dict[str, Any]]:
+    """Read the change-ledger JSONL file, skipping malformed lines.
+
+    Returns the parsed entries in file order, or ``[]`` when the ledger is
+    absent. This is the library reader the gate imports directly rather than
+    shelling out to the ``query`` verb.
+    """
+    ledger_path = path if path is not None else resolve_ledger_path()
+    if not ledger_path.is_file():
+        return []
+    entries: list[dict[str, Any]] = []
+    try:
+        with open(ledger_path, encoding='utf-8') as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(parsed, dict):
+                    entries.append(parsed)
+    except OSError:
+        pass
+    return entries
+
+
+def build_record(
+    *,
+    notation: str,
+    plan_id: str,
+    args: str | None,
+    exit_code: int,
+    status: str,
+    worktree_sha: str | None,
+    log_file: str | None,
+    command: str | None = None,
+    duration_seconds: float | None = None,
+    outcome: dict[str, Any] | None = None,
+    timestamp_iso: str | None = None,
+) -> dict[str, Any]:
+    """Construct a ``kind=build`` ledger record.
+
+    Written by the executor dispatch boundary after every build-class
+    invocation. ``status`` is the outcome of record — one of
+    :data:`BUILD_STATUSES` (``success`` / ``error`` / ``timeout`` /
+    ``killed`` / ``unknown``), derived truthfully at the dispatch boundary (a
+    timed-out build carries ``status: timeout`` despite its exit code 0, and an
+    exit-0 dispatch whose payload carried no claimable status carries
+    ``status: unknown`` rather than a green it cannot substantiate).
+    ``killed`` and ``unknown`` are :data:`DERIVED_ONLY_BUILD_STATUSES` — the
+    boundary produces them, a wrapper never claims them. ``exit_code``
+    is retained as orthogonal diagnostic detail. Both are stamped against the
+    working-tree ``worktree_sha`` at capture time. A build is NOT a commit, so
+    this record does NOT carry ``commit_sha`` or ``changed_paths``.
+
+    ``plan_id`` is a required ``str`` — every build is attributable. A build
+    invoked outside any plan is recorded under the ``NO_PLAN`` sentinel; the
+    caller resolves it before constructing the record, so no row can carry
+    ``plan_id: null``.
+
+    **``args`` and ``command`` are two distinct layers — neither substitutes
+    for the other.** ``args`` is the EXECUTOR argv: the arguments the caller
+    handed to ``.plan/execute-script.py`` (e.g.
+    ``run --command-args "verify plan-marshall"``). ``command`` is what the
+    build WRAPPER resolved that argv into and actually ran (e.g.
+    ``./pw verify plan-marshall``). The mapping between them is the wrapper's
+    own resolution — a build-tool switch or a routing decision changes
+    ``command`` while ``args`` stays byte-identical — so a reader that needs
+    "what did the operator ask for" reads ``args`` and one that needs "what
+    actually ran" reads ``command``.
+
+    ``command``, ``duration_seconds`` and ``outcome`` are all sourced from the
+    wrapper's stdout TOON and are therefore OPTIONAL: they default to ``None``
+    and stay ``None`` when the payload is absent or unparseable (a killed or
+    crashed build), and for a hand-appended row that legitimately has no
+    resolved command, no measured duration and no wrapper payload. ``outcome``
+    is the wrapper's whole stdout TOON as a dict, retained verbatim so a
+    reader gets the wrapper's own report (log file path, per-error rows)
+    without re-reading the build log.
+
+    **Secrets discipline — a DELIBERATE divergence from the build-server audit
+    log, not an oversight.** ``build_server._audit_log`` refuses to record the
+    resolved ``command``, ``exec_path``, ``project_path`` or any spec field on
+    the ground that they may carry secrets; this record deliberately keeps
+    ``command`` and the verbatim ``outcome``, both of which can. A resolved
+    build command line can carry a registry credential or a ``-D`` token, and
+    ``outcome``'s ``errors[]`` rows are lifted from the build log, which can
+    echo anything the build printed. Three properties make that acceptable HERE
+    and not there: the ledger is written to ``.plan/work/`` — inside the
+    blanket ``.plan/*`` gitignore, so no row can reach a commit or a PR; the
+    audit log's own consumers are cross-session and operator-facing whereas the
+    ledger's are the freshness gate and local inspection; and the identical text
+    is ALREADY co-resident in plaintext in the ``log_file`` this row points at,
+    so the row discloses nothing to a reader who cannot already read that log.
+    The one asymmetry a future change must respect: the build log ages out under
+    the ``build_results_days`` retention target, while the ledger is append-only
+    with no cleanup target, so the excerpt outlives the log it came from. Do NOT
+    widen this record with a field sourced from anywhere other than the wrapper
+    payload, and do NOT copy this exemption into a store that leaves the
+    machine.
+    """
+    return {
+        'kind': KIND_BUILD,
+        'notation': notation,
+        'plan_id': plan_id,
+        'args': args,
+        'command': command,
+        'duration_seconds': duration_seconds,
+        'outcome': outcome,
+        'exit_code': exit_code,
+        'status': status,
+        'worktree_sha': worktree_sha,
+        'log_file': log_file,
+        'timestamp_iso': timestamp_iso if timestamp_iso is not None else now_utc_iso(),
+    }
+
+
+def change_record(
+    *,
+    deliverable_id: str,
+    worktree_sha: str | None,
+    commit_sha: str,
+    changed_paths: list[str],
+    timestamp_iso: str | None = None,
+) -> dict[str, Any]:
+    """Construct a ``kind=change`` ledger record.
+
+    Written by the phase-5 execute loop after each deliverable completes and
+    commits. ``commit_sha`` and ``changed_paths`` are git-sourced by the caller
+    (from ``git diff-tree`` against the just-produced commit) — this constructor
+    stores the caller-supplied list VERBATIM; it does NOT compute or re-derive
+    changed paths. Self-computed / ``affected_files``-snapshotted paths are
+    PROHIBITED at the call site.
+    """
+    return {
+        'kind': KIND_CHANGE,
+        'deliverable_id': deliverable_id,
+        'commit_sha': commit_sha,
+        'changed_paths': list(changed_paths),
+        'worktree_sha': worktree_sha,
+        'timestamp_iso': timestamp_iso if timestamp_iso is not None else now_utc_iso(),
+    }
+
+
+def job_record(
+    *,
+    job_id: str,
+    plan_id: str,
+    fingerprint: str,
+    notation: str,
+    worktree_sha: str | None,
+    timestamp_iso: str | None = None,
+) -> dict[str, Any]:
+    """Construct a ``kind=job`` ledger record.
+
+    Written by the ``build-server-client`` skill's ``submit`` verb at submit
+    time, this record persists the daemon-assigned ``job_id`` into the plan's
+    durable artifacts so a rebuilt or harness-reaped session can RE-ATTACH to an
+    in-flight build from plan state alone — it re-issues ``wait`` against the
+    recorded ``job_id`` rather than losing the running build. The ``fingerprint``
+    is the idempotent-submit digest (plan + command + tree) the daemon's
+    scheduler keys on, so a consumer can correlate a ledger row to a specific
+    submission; ``notation`` is the executor notation that was dispatched.
+
+    Unlike ``kind=build`` (a completed build outcome) this is a SUBMISSION
+    record — the job may still be running — so it carries no ``exit_code`` or
+    ``status``. The freshness gate ignores ``kind=job`` entirely (it consumes
+    only ``kind=build``); ``kind=job`` rows exist for re-attach and audit.
+
+    ``plan_id`` is a required ``str``, on the same never-null contract as
+    :func:`build_record`: a plan-less submission is recorded under the
+    ``NO_PLAN`` sentinel. The re-attach lookup matches on that same value, so
+    a plan-less submit stays recoverable.
+    """
+    return {
+        'kind': KIND_JOB,
+        'job_id': job_id,
+        'plan_id': plan_id,
+        'fingerprint': fingerprint,
+        'notation': notation,
+        'worktree_sha': worktree_sha,
+        'timestamp_iso': timestamp_iso if timestamp_iso is not None else now_utc_iso(),
+    }
