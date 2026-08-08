@@ -11,14 +11,21 @@ daemon logs it.
 **S1 — positional argv-template check**
 
 1. The command is non-empty.
-2. ``command[0]`` (the interpreter) is an accepted Python interpreter, never an
-   arbitrary client-supplied binary. There is NO registered baseline: a project
-   registration carries no interpreter field. When a caller supplies an explicit
-   ``baseline_interpreter`` pin, ``command[0]`` must match it (exact path or
-   basename); when no pin is supplied — what the shipped daemon does —
-   ``command[0]`` must carry one of the canonical ``python3`` / ``python``
-   basenames. Either way this is a daemon-wide argv-shape check, never
-   per-project state.
+2. ``command[0]`` carries an accepted Python interpreter NAME. There is NO
+   registered baseline: a project registration carries no interpreter field.
+   When a caller supplies an explicit ``baseline_interpreter`` pin,
+   ``command[0]`` must match it (exact path or basename); when no pin is
+   supplied — what the shipped daemon does — ``command[0]`` must carry one of
+   the canonical ``python3`` / ``python`` basenames. Either way this is a
+   daemon-wide argv-shape check, never per-project state.
+
+   Being basename-only, it constrains the interpreter's NAME and not its
+   LOCATION: a path such as ``/tmp/x/python3`` satisfies it. It is therefore
+   NOT a containment control against a submitter naming an arbitrary binary —
+   what contains that is the owner-only socket (``0600`` inside a ``0700``
+   directory), which admits only the daemon-owning user, who can already
+   execute anything directly. Do not rely on this check as a trust boundary,
+   and re-derive that reasoning before widening the socket's reachability.
 3. ``command[1]`` is exactly ``{exec_path}/.plan/execute-script.py`` — the
    executor inside the submitted tree, not an arbitrary script.
 4. ``command[2]`` (the executor notation) is in the project's
