@@ -72,6 +72,26 @@ On a failed boundary check, **reject** — deny by default; never silently coerc
 
 ---
 
+## Boundary Containment Is Total
+
+**Maps to:** CWE-73 · CWE-178 · CWE-755 · OWASP A01 · ASVS V2
+
+Containment at a boundary is not satisfied by guarding the *obvious* input. It holds only when **every** value the caller can set, and **every** failure the boundary's own side effects can raise, is contained. One sibling field left unchecked, one key compared before normalization, one side effect left unguarded, or one module-level lookup bound to the ambient environment — and the boundary is open. Four obligations, each traceable to a landed fix:
+
+**(a) Contain every client-settable field, not just the primary one.** A daemon or privileged executor that accepts several independently client-settable fields reaching execution or a filesystem path — binary, working directory, environment, argv, config path — MUST containment-verify **each** field independently against the trusted registration or policy. Verifying the field that names the program while leaving the field that names its working directory unconstrained is not containment: either field steers the privileged operation on its own. The integration test MUST assert the containment failure for **each** field **in isolation**, because a test that exercises only the primary field passes cleanly over an unguarded sibling (CWE-501, CWE-20).
+
+**(b) Normalize a caller-controlled key before any membership test.** Case-normalize — and, where the key space admits it, Unicode- and whitespace-normalize — the caller's key into the same canonical form the denylist or reserved-key set is stored in, **before** the membership check. A reserved key compared in the caller's own casing is not reserved: the caller supplies a different casing and writes straight past the set (CWE-178). This is the set-membership instance of [Canonicalization MUST Precede Validation](#canonicalization-must-precede-validation) above — that section owns the canonicalization discipline; this obligation is where it lands on a membership test.
+
+**(c) A lazy read-path migration must contain every failure its side effects raise.** A read verb that opportunistically migrates on-disk state performs side effects — rename, write, persist, chmod — and every one of them can fail. Guard **every** side effect, not only the concurrency-derived ones, and return one of the verb's own declared status values rather than letting an unanticipated error propagate into the caller. A migration that contains its race but not its permission error converts a read into an unhandled exception at an arbitrary call site (CWE-755).
+
+**(d) Never bind importability to the ambient environment.** Resolving `Path.home()` or `os.environ['HOME']` at **module level** makes the whole module unimportable wherever that variable is unset — a bare container, a CI runner, a stripped service account — so an unrelated import fails for a purely environmental reason. Defer the resolution behind a `try`/`except` with an environment-or-temp fallback, or make it lazy so only the caller that actually needs the path pays for it.
+
+These four are **one rule seen from four angles**: containment fails wherever the boundary trusts something it never verified — a sibling field, a key's spelling, an unguarded side effect, or the ambient environment.
+
+Provenance: promoted from the landed lessons `2026-07-18-17-001`, `2026-06-30-16-001`, `2026-07-17-21-001`, and `2026-07-17-21-002`.
+
+---
+
 ## Practical Reinforcements
 
 - **Centralize validation** in a shared library/framework for consistent rules, less duplication, tractable review, and centralized failure logging.
@@ -121,3 +141,4 @@ The three classes below are each a distinct failure at a particular trust bounda
 - [`authentication-authorization.md`](authentication-authorization.md) — IDOR/BOLA, the access-control side of semantic validation.
 - [`secure-design-principles.md`](secure-design-principles.md) — fail securely, complete mediation.
 - [`secure-logging.md`](secure-logging.md) — sanitizing untrusted data at the log sink.
+- **Boundary Containment Is Total** — [`secure-design-principles.md`](secure-design-principles.md) for complete mediation and fail securely (the design principles the four obligations enforce), and [`threat-modeling-stride.md`](threat-modeling-stride.md) because each client-settable execution parameter is its own Tampering / Elevation-of-Privilege boundary crossing and must be modelled as one.

@@ -9,7 +9,7 @@ profiles: [security]
 
 # Persona: Security Expert
 
-**REFERENCE MODE**: This skill is the security-expert work identity AND the deep authoritative index for cross-cutting security knowledge. It declares the persona composition it resolves to, and it indexes the nine `standards/` sub-documents that hold the substantive cross-cutting security content. Load a sub-document on-demand when its topic is in scope; do not load all nine at once.
+**REFERENCE MODE**: This skill is the security-expert work identity AND the deep authoritative index for cross-cutting security knowledge. It declares the persona composition it resolves to, and it indexes the ten `standards/` sub-documents that hold the substantive cross-cutting security content. Load a sub-document on-demand when its topic is in scope; do not load all ten at once.
 
 The security expert is the work-activity persona for security review and hardening. Its primary profile is `security`. The `security` profile is registered in `ExtensionBase.APPLICABLE_PROFILES` (resolution-only — not auto-included in phase-4 task creation), so a domain declaring `skills_by_profile.security` resolves its focused per-domain security skill under this persona.
 
@@ -42,6 +42,7 @@ The `standards/` sub-documents follow two conventions that future authors MUST p
 | [`standards/authentication-authorization.md`](standards/authentication-authorization.md) | Reviewing authentication (passwords, MFA, sessions), authorization (access control, IDOR/BOLA, least privilege), and API security (token validation, rate limiting) |
 | [`standards/secure-design-principles.md`](standards/secure-design-principles.md) | Evaluating the design itself: defense in depth, least privilege, fail securely, secure by default, complete mediation, configuration hardening |
 | [`standards/dependency-supply-chain.md`](standards/dependency-supply-chain.md) | Reviewing dependency vetting, lock-file discipline, SBOM/provenance (SLSA), typosquat/confusion defense, and CI/CD pipeline hardening |
+| [`standards/adversarial-refute.md`](standards/adversarial-refute.md) | Applying the adversarial-refute methodology to candidate security findings during the verify stage |
 
 ## Per-Domain Security Surfaces
 
@@ -79,3 +80,4 @@ The persona resolver (`manage-personas resolve`) flattens this persona's composi
 | authentication-authorization.md | Password/MFA/session controls, access control, IDOR/BOLA, least privilege, RBAC/ABAC/ReBAC, API security |
 | secure-design-principles.md | Defense in depth, least privilege, fail securely, secure by default, complete mediation, economy of mechanism, minimize attack surface, configuration hardening, exceptional conditions |
 | dependency-supply-chain.md | Dependency vetting, lock files, SBOM, provenance (SLSA), artifact signing, typosquat/confusion defense, CI/CD hardening |
+| adversarial-refute.md | The refute-before-triage methodology and its refutation lenses for the security verify profile |
