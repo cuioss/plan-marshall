@@ -617,7 +617,9 @@ Inverse of `convert-to-plan`: move every `lesson-*.md` at a plan directory's roo
 
 `action` and `status` pair exactly as the table shows; `restored` never rides with `status: error`. That is what `restore_incomplete` buys: an aborted move used to report `action: restored` with `restored_count: 0`, so a consumer branching on the closed vocabulary — which this contract instructs callers to do rather than re-listing literals — concluded at least one lesson had landed when none had.
 
-An **absent** plan directory is deliberately `plan_dir_unresolved`, not `no_lesson_file`: "the plan never existed" and "I looked in the wrong store" are indistinguishable from inside the verb, and reporting either as a verified-empty plan is exactly the fail-open this contract closes. `store_resolution` sub-discriminates the two ways it happens — `unresolved` means the store itself was unreachable, while `main_anchored` / `override` means the store resolved but does not hold that plan directory.
+An **absent** plan directory is deliberately `plan_dir_unresolved`, not `no_lesson_file`: "the plan never existed" and "I looked in the wrong store" are indistinguishable from inside the verb, and reporting either as a verified-empty plan is exactly the fail-open this contract closes. `store_resolution` sub-discriminates the two ways it happens — `unresolved` means a required store itself was unreachable, while `main_anchored` / `override` means the store resolved but does not hold that plan directory.
+
+The verb needs **both** the plans root and the lessons corpus, so a could-not-look return always reports the resolution of the store that actually **failed**, never a sibling that happened to resolve — and `unresolved_store` names which of the two it was (`plans` / `lessons`, empty when both resolved). The distinction is load-bearing because `store_resolution` is the field this contract tells consumers to branch on: emitting the plans store's resolved value while the *corpus* was the unreachable one reads as "the corpus is fine, the plan is simply absent" to a caller that never reached the corpus at all. `list-stalled` states the same rule for its own `store_unresolved` return; the two surfaces answer it identically.
 
 A pre-existing destination file is never clobbered: the move fails fast with `destination_exists` under `action: restore_incomplete`, and any lessons restored before the collision remain in the corpus and are reported in `restored_lessons`.
 
@@ -636,6 +638,7 @@ plan_id: EXAMPLE-PLAN
 action: restored
 store_resolution: main_anchored
 plans_root: /abs/path/to/.plan/local/plans
+unresolved_store: ""
 restored_count: 1
 restored_lessons:
   - lesson_id: 2025-12-02-15-001
@@ -704,9 +707,11 @@ The classification logic for the read-side corpus operations lives under `refere
 | Error Code | Cause |
 |------------|-------|
 | `not_found` | Lesson ID doesn't exist (get, update, set-body, convert-to-plan) |
-| `plan_dir_unresolved` | `restore-from-plan` could not resolve the named plan directory under the main-anchored plans root, so it was **never scanned** for lesson files. Deliberately distinct from `action: no_lesson_file`, which asserts the directory WAS scanned and held none — reporting an unreachable directory as lesson-free is the fail-open this code closes. `store_resolution` says which way it happened: `unresolved` (the store itself was unreachable) versus a resolved store that does not hold that plan |
+| `plan_dir_unresolved` | `restore-from-plan` **never scanned** for lesson files. Either the named plan directory could not be resolved under the main-anchored plans root, **or** the main-anchored lessons corpus itself did not resolve so there was nowhere to restore into. Deliberately distinct from `action: no_lesson_file`, which asserts the directory WAS scanned and held none — reporting an unreachable directory as lesson-free is the fail-open this code closes. `store_resolution` says which way it happened: `unresolved` (a required store was unreachable) versus a resolved store that does not hold that plan; on the unreachable branch it is always the resolution of the store that **failed**, and `unresolved_store` names which one (`plans` / `lessons`) |
 | `store_unresolved` | `list-stalled` could not resolve the main-anchored plans root **or** lessons corpus, so no plan directory was ever scanned. `unresolved_store` names which of the two failed, `store_resolution` is that store's `unresolved` — never a sibling's resolved value — and `plans_root_state` is `unknown`. Distinct from the non-faulting `plans_root_state: missing` (the store resolved, but the plans root does not exist) and from `plans_root_state: present` with `stalled_count: 0` (the scan looked and found nothing) |
 | `destination_exists` | `restore-from-plan` refused to clobber an existing corpus file for a restored lesson id; reported under `action: restore_incomplete`, never `restored`. Any lessons moved before the collision remain restored and are reported in `restored_lessons`, so `restored_count` may be `0` (first-file collision) or non-zero. `list-stalled` surfaces the same condition ahead of time as a `duplicate_lessons[]` row |
+| `invalid_id` | `restore-from-plan` rejected the supplied `--plan-id` **before any path resolution**: the identifier carries a path separator or a `..` traversal sequence. Nothing was resolved and nothing was scanned, so it rides `action: plan_dir_unresolved` |
+| `path_traversal` | A resolved path escaped its intended parent directory. Reachable at two points, distinguished by the `action` it rides: **pre-scan** (`action: plan_dir_unresolved`), when the plan directory resolves outside the main-anchored plans root — nothing was scanned; and **mid-loop** (`action: restore_incomplete`), when a carried lesson's derived id or its corpus destination resolves outside its parent — lessons moved before the guard fired remain restored and are reported in `restored_lessons` |
 | `copy_failed` | `convert-to-plan` failed to copy the lesson to the plan directory (I/O error or read-back content mismatch); source lesson is left intact, no partial artifact survives |
 | `invalid_category` | Category not in: bug, improvement, anti-pattern, arch-constraint |
 | `missing_rule` | `add --category arch-constraint` invoked without the required `--rule` dedup key |

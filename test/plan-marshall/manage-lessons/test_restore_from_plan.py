@@ -21,6 +21,12 @@ zeros separately covered because telling them apart is the whole contract:
 both sides: ``restored`` is asserted only on the clean-complete branch, and the
 first-file and mid-sequence collisions are asserted NOT to claim it.
 
+The verb needs BOTH the plans root and the lessons corpus, so the
+could-not-resolve arm is covered from either side: the discriminator must
+report the resolution of the store that actually failed, never the sibling that
+happened to resolve, because the documented consumer branches on that one
+field.
+
 Tests also cover the destination-exists guard that refuses to clobber, and
 path-traversal rejection on ``plan_id``.
 """
@@ -124,6 +130,8 @@ Body content here.
         assert result['action'] == 'no_lesson_file'
         # The full documented field set rides every branch, including this one.
         assert result['store_resolution'] == 'override'
+        # Empty on every branch where both required stores resolved.
+        assert result['unresolved_store'] == ''
         assert result['restored_count'] == 0
         assert result['restored_lessons'] == []
 
@@ -143,8 +151,94 @@ Body content here.
         assert result['action'] == 'plan_dir_unresolved'
         # The store itself resolved fine — it simply does not hold this plan.
         assert result['store_resolution'] == 'override'
+        # Both required stores resolved, so no store is named as the failure.
+        assert result['unresolved_store'] == ''
         assert result['restored_count'] == 0
         assert result['restored_lessons'] == []
+
+    def test_unresolved_lessons_corpus_is_not_reported_as_a_resolved_store(
+        self, tmp_path, monkeypatch
+    ):
+        """The discriminator names the store that FAILED, not the one that resolved.
+
+        The verb needs both stores. Here the plans root resolves and the lessons
+        corpus does not, so nothing could be restored — but reporting the PLANS
+        store emits a RESOLVED ``store_resolution`` next to
+        ``error: plan_dir_unresolved``. SKILL.md documents that field as the
+        sub-discriminator for exactly this code (``unresolved`` = a required
+        store was unreachable; ``main_anchored`` / ``override`` = the store
+        resolved but does not hold that plan), so a resolved value tells the
+        caller "the corpus is fine, the plan is simply absent" while nothing ever
+        reached the corpus — the fail-open this contract closes, one field
+        removed.
+
+        ``cmd_list_stalled`` already answers this the same way and
+        ``_stalled_payload``'s docstring states the rule normatively for both
+        surfaces; ``restore-from-plan`` was the one branch that violated it.
+        """
+        import _lessons_query
+
+        # A real plan directory, so the ONLY reason to bail is the corpus.
+        (tmp_path / 'plans' / 'some-plan').mkdir(parents=True)
+        real_resolve = _lessons_query.resolve_lesson_store
+
+        def _only_plans_resolves(subpath='lessons-learned'):
+            if str(subpath) == 'plans':
+                return real_resolve(subpath)
+            return _lessons_query.LessonStore(
+                None, 'unresolved', 'cannot resolve the lessons corpus (test stub)'
+            )
+
+        monkeypatch.setattr(_lessons_query, 'resolve_lesson_store', _only_plans_resolves)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+        result = cmd_restore_from_plan(Namespace(plan_id='some-plan'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'plan_dir_unresolved'
+        assert result['action'] == 'plan_dir_unresolved'
+        assert result['store_resolution'] == 'unresolved', (
+            'The payload reported the resolution of the plans store, which '
+            'succeeded, while the LESSONS corpus was the store that failed.'
+        )
+        assert result['unresolved_store'] == 'lessons'
+        # Nothing was scanned, so no plans root may be claimed either.
+        assert result['plans_root'] == ''
+        assert result['restored_count'] == 0
+        assert result['restored_lessons'] == []
+        # Both values come from the closed vocabularies consumers assert on.
+        assert result['unresolved_store'] in _lessons_query.UNRESOLVED_STORES
+        assert result['action'] in _lessons_query.RESTORE_ACTIONS
+
+    def test_unresolved_plans_root_names_the_plans_store(self, tmp_path, monkeypatch):
+        """The mirror arm: when the PLANS store fails, that is what is named.
+
+        Keeps ``unresolved_store`` from being a constant that happens to read
+        correctly on one arm — the two arms must disagree, or the field carries
+        no information.
+        """
+        import _lessons_query
+
+        real_resolve = _lessons_query.resolve_lesson_store
+
+        def _only_lessons_resolves(subpath='lessons-learned'):
+            if str(subpath) == 'plans':
+                return _lessons_query.LessonStore(
+                    None, 'unresolved', 'cannot resolve the plans root (test stub)'
+                )
+            return real_resolve(subpath)
+
+        monkeypatch.setattr(_lessons_query, 'resolve_lesson_store', _only_lessons_resolves)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+        result = cmd_restore_from_plan(Namespace(plan_id='some-plan'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'plan_dir_unresolved'
+        assert result['store_resolution'] == 'unresolved'
+        assert result['unresolved_store'] == 'plans'
+        assert result['plans_root'] == ''
+        assert result['restored_count'] == 0
 
     def test_restore_from_plan_destination_exists(self, tmp_path):
         """Should refuse to clobber a pre-existing file in lessons-learned/."""

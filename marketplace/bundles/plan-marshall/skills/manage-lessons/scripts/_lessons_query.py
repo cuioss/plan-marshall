@@ -325,6 +325,7 @@ def _restore_payload(
     store: LessonStore,
     *,
     restored: list[dict] | None = None,
+    unresolved_store: str = '',
     error: str = '',
     message: str = '',
     **extra: object,
@@ -337,6 +338,22 @@ def _restore_payload(
     ``store_resolution`` or ``restored_count`` gets them on the could-not-look
     path exactly as on the restored path.
 
+    ``store`` MUST be the store whose resolution the payload is reporting — on
+    a could-not-look return that is the store that actually FAILED, never a
+    sibling that happened to resolve. ``store_resolution`` is the documented
+    sub-discriminator for ``plan_dir_unresolved``, so a resolved value emitted
+    beside that error tells the caller "the corpus is fine, the plan is simply
+    absent" while nothing ever reached the corpus. The rule is identical to the
+    one :func:`_stalled_payload` states for the sibling verb, and it binds here
+    for the same reason.
+
+    Because this verb needs BOTH the plans root and the lessons corpus,
+    ``unresolved_store`` names WHICH one failed rather than leaving the caller
+    to infer it from the prose message. It mirrors the identically-named field
+    on :func:`_stalled_payload` and takes its values from
+    :data:`UNRESOLVED_STORES`; it is the empty string on every branch where
+    both stores resolved.
+
     ``status`` is derived from ``error`` rather than passed separately, so a
     payload can never claim success while naming an error code.
     """
@@ -347,6 +364,7 @@ def _restore_payload(
         'action': action,
         'store_resolution': store.resolution,
         'plans_root': '' if store.path is None else str(store.path),
+        'unresolved_store': unresolved_store,
         'restored_count': len(restored_lessons),
         'restored_lessons': restored_lessons,
     }
@@ -378,7 +396,10 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
     structured ``status: error`` with that error code. ``store_resolution``
     sub-discriminates the two ways that can happen: ``unresolved`` (the store
     itself was unreachable) versus a resolved store that simply does not hold
-    the named plan directory.
+    the named plan directory. The verb needs BOTH the plans root and the
+    lessons corpus, so an unresolved store is reported through the store that
+    FAILED, and ``unresolved_store`` (over :data:`UNRESOLVED_STORES`) names
+    which of the two it was.
 
     An absent plan directory is deliberately the non-benign outcome, not the
     benign one: "the plan never existed" and "I looked in the wrong store" are
@@ -410,6 +431,7 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
             args.plan_id,
             'plan_dir_unresolved',
             plans_store,
+            unresolved_store='plans',
             error='plan_dir_unresolved',
             message=(
                 f'Cannot resolve the main-anchored plans root, so the plan directory '
@@ -419,10 +441,19 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
 
     lessons_store = resolve_lesson_store()
     if lessons_store.path is None:
+        # Report the resolution of the store that ACTUALLY failed. Passing the
+        # plans store here emitted a RESOLVED ``store_resolution`` beside
+        # ``error: plan_dir_unresolved``, and the documented consumer reads that
+        # field as the sub-discriminator — so it concluded the corpus was
+        # reachable and the plan simply absent, when nothing had reached the
+        # corpus at all. ``plans_root`` correctly becomes ``''`` here: no plan
+        # directory was scanned. Mirrors ``cmd_list_stalled``'s handling of the
+        # same split.
         return _restore_payload(
             args.plan_id,
             'plan_dir_unresolved',
-            plans_store,
+            lessons_store,
+            unresolved_store='lessons',
             error='plan_dir_unresolved',
             message=(
                 f'Cannot resolve the main-anchored lessons corpus, so no lesson could '
@@ -531,10 +562,13 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
 #: Consumers assert against this set rather than re-listing the literals.
 PLANS_ROOT_STATES = frozenset({'present', 'missing', 'unknown'})
 
-#: Which store :func:`cmd_list_stalled` names in ``unresolved_store``. The verb
-#: needs BOTH the plans root and the lessons corpus, so a caller reading
-#: ``error: store_unresolved`` must be told which one failed — the two demand
-#: different remediation. Empty string on every branch where both resolved.
+#: Which store :func:`cmd_list_stalled` and :func:`cmd_restore_from_plan` name
+#: in ``unresolved_store``. Both verbs need BOTH the plans root and the lessons
+#: corpus, so a caller reading their could-not-look error (``store_unresolved``
+#: and ``plan_dir_unresolved`` respectively) must be told which one failed — the
+#: two demand different remediation. Empty string on every branch where both
+#: resolved. One vocabulary for both surfaces, so a consumer carrying the value
+#: across them reads it the same way.
 UNRESOLVED_STORES = frozenset({'', 'plans', 'lessons'})
 
 
