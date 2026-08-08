@@ -114,8 +114,10 @@ actionable_content_markers:
                                   # body, which is what makes that body droppable.
 refusal_patterns:                 # EMPTY — no refusal of any kind observed on #103 or #1078.
                                   # Fail-closed: a refusal is never claimed without positive evidence,
-                                  # so this bot's non-participation resolves to absent / in_progress,
-                                  # never refused.
+                                  # so this bot's non-participation resolves to one of the non-refusal
+                                  # members — participated_stale (the common steady state, given
+                                  # participation_requires_update above), in_progress, not_triggered,
+                                  # or absent — never refused.
 rate_limit_class: unknown         # UNVERIFIED — no refusal of any kind observed on #103 or #1078.
                                   # Fail-closed per ADR-009: never assume a refusal is awaitable
                                   # without evidence.
@@ -217,7 +219,12 @@ predicate that could drop a real coverage signal.
 
 Dropping the Guide here does not make the bot look absent: `participated_bots` is computed from
 the raw comment list *before* the pre-filter runs, so a suppressed clean Guide resolves PR-Agent to
-`participated_but_empty` — see [`bot-participation-contract.md`](bot-participation-contract.md).
+`participated_but_empty` **on the fetch that first observes it**. On every later fetch the unchanged
+Guide fails the `participation_requires_update` currency test, so the bot is reported in
+`stale_participation_bots[]` and resolves to `participated_stale` — a blocking state whose remedy is
+the `/review` re-review trigger, **not** `absent`. Either way the drop removes the bot's findings
+without removing its participation evidence. See
+[`bot-participation-contract.md`](bot-participation-contract.md).
 
 ## Rate-limit class — `unknown` (UNVERIFIED)
 
@@ -325,6 +332,15 @@ consequential in both directions:
   the bot with reviewing code it never saw. That is the false-positive direction, and
   `participation_requires_update: true` closes it: evidence requires either **first presence** (the
   comment is newly observed) or observed **`updated_at` movement**.
+
+**`participation_requires_update: true` makes PR-Agent today the ONLY bot that can reach
+`participated_stale`.** No other registry record declares the field, so no other bot has a currency
+test to fail: for every other bot a declared publish shape is either proven participation or nothing
+at all. That is a property of the current registry, not of the taxonomy — a second bot adopting
+in-place editing inherits the state with no code or contract change, which is exactly why the member
+is defined against `participation_requires_update` rather than against this bot's name. And a failed
+currency test is emphatically **not** `absent`: PR-Agent published, so the remedy is the `/review`
+re-review trigger rather than escalating a reviewer that never engaged.
 
 The evidence proves PR-Agent *participated*, never that its review was good. This bot is the
 motivating case for that ceiling: on #1027 it posted its Guide — valid participation under this

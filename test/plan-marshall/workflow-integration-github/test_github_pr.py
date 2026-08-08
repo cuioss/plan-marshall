@@ -18,6 +18,12 @@ alike:
        a ``bot_kind`` — the fail-closed empty-marker short-circuit, the
        ``all(required)`` conjunction member-by-member, the ``any(disqualifying)``
        veto, the strip-before-compare normalization, and the layer ordering.
+    4. The ``stale_participation_bots[]`` observation — the
+       ``participation_requires_update`` currency-test failure is REPORTED rather
+       than discarded, over a bot population derived from the registry: the
+       unchanged-comment stale case, the ``updated_at``-movement case that credits
+       participation instead, and the proven-set subtraction that keeps a bot with
+       one stale and one fresh comment out of the stale set.
 
 The findings store is REAL (isolated via the autouse ``plan_context``
 ``PLAN_BASE_DIR`` sandbox); only the GitHub provider surface (``check_auth``,
@@ -2066,3 +2072,151 @@ def test_layer_three_is_consulted_only_after_layers_one_and_two_miss(monkeypatch
     # Neither matches — only now is layer 3 consulted.
     assert github_pr._is_obvious_noise(OBSERVED_CLEAN_GUIDE, 'pr-agent') is True
     assert calls == ['pr-agent']
+
+
+# =============================================================================
+# stale_participation_bots — the currency-test failure is REPORTED, not discarded
+# =============================================================================
+#
+# For a bot declaring ``participation_requires_update`` the movement guard denies
+# credit to a stale unchanged comment. At that point the comment's ``kind`` has
+# ALREADY matched a declared ``participation_evidence`` publish shape — only the
+# currency test failed — so silently discarding the observation collapsed a stale
+# review into ``absent``. The two states have OPPOSITE remedies (re-trigger a
+# re-review vs escalate a bot that never engaged), which is why the observation is
+# now emitted instead of dropped.
+#
+# The bot population is DERIVED from the registry rather than named, so a bot that
+# newly opts into ``participation_requires_update`` inherits every case below
+# instead of silently escaping it. The population is guarded against vacuity.
+
+_UPDATE_REQUIRING_BOTS = tuple(
+    bot for bot in bot_registry.bot_kinds() if bot_registry.participation_requires_update(bot)
+)
+
+#: ``bot_kind`` -> ``author_login``, inverted from the registry's forward map so a
+#: comment fixture can be authored for a derived bot without naming its login.
+_BOT_KIND_TO_LOGIN = {kind: login for login, kind in bot_registry.login_to_bot_kind().items()}
+
+
+def test_at_least_one_registered_bot_requires_update_movement():
+    """The derived population must be non-empty or every case below is vacuous.
+
+    A parametrize over an empty tuple produces a skip, not a failure, so the
+    stale-participation sweep could report clean while covering nothing. This
+    asserts the population exists before anything parametrizes over it.
+    """
+    assert _UPDATE_REQUIRING_BOTS, (
+        'no registered bot declares participation_requires_update — the '
+        'participated_stale cases below would parametrize over an empty set'
+    )
+
+
+def _publish_comment(bot_kind, comment_id, *, created_at, updated_at=None, body=None):
+    """A comment in ``bot_kind``'s FIRST declared publish shape.
+
+    ``updated_at`` defaults to ``created_at`` — the unchanged shape the movement
+    guard denies. The body is substantive and carries no clean-shape marker, so no
+    pre-filter layer drops it: these cases are about the movement guard, not noise.
+    The ``kind`` is read from the registry rather than written literally, so the
+    comment is always in a shape that bot really publishes.
+    """
+    return {
+        'id': comment_id,
+        'author': _BOT_KIND_TO_LOGIN[bot_kind],
+        'thread_id': '',
+        'kind': bot_registry.participation_evidence(bot_kind)[0],
+        'body': body or 'The retry helper drops the final attempt when max_attempts is 1.',
+        'resolved': False,
+        'created_at': created_at,
+        'updated_at': updated_at or created_at,
+    }
+
+
+@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+def test_unchanged_comment_reports_stale_participation_on_a_later_fetch(
+    bot_kind, plan_context, monkeypatch
+):
+    """First presence credits participation; the same unchanged comment later is STALE.
+
+    The two fetches are the whole point. On the fetch that first observes the
+    comment the bot is a proven participant. On a later fetch the comment is
+    already observed and its ``updated_at`` has not moved, so it proves only a
+    review of some EARLIER HEAD — and that observation now lands in
+    ``stale_participation_bots`` instead of being dropped into silence.
+    """
+    plan_id = f'gh-pr-stale-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+    _patch_provider(monkeypatch, [comment])
+
+    first = _run_fetch(130, plan_id)
+    assert first['status'] == 'success'
+    assert first['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
+    # The field is on the returned dict unconditionally, not only when non-empty.
+    assert 'stale_participation_bots' in first
+    assert first['stale_participation_bots'] == []
+
+    second = _run_fetch(130, plan_id)
+    assert second['status'] == 'success'
+    # No longer a proven participant...
+    assert second['participated_bots'] == []
+    # ...and the reason is REPORTED rather than collapsed into absence.
+    assert second['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
+    ]
+
+
+@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+def test_updated_at_movement_credits_participation_and_reports_no_stale(
+    bot_kind, plan_context, monkeypatch
+):
+    """An EDITED comment is a fresh review — participation, never stale.
+
+    The complement of the case above, and the reason the stale state cannot be
+    inferred from "already observed" alone: a bot that re-reviews by editing its
+    one persistent comment shows its new pass as ``updated_at`` movement, so the
+    movement arm must still credit it on a later fetch.
+    """
+    plan_id = f'gh-pr-moved-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+    _patch_provider(monkeypatch, [comment])
+    _run_fetch(131, plan_id)
+
+    edited = _publish_comment(bot_kind, 'guide-1', created_at=_at(1), updated_at=_at(9))
+    _patch_provider(monkeypatch, [edited])
+    second = _run_fetch(131, plan_id)
+
+    assert second['status'] == 'success'
+    assert second['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': edited['kind']}]
+    assert second['stale_participation_bots'] == []
+
+
+@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+def test_a_fresh_comment_outranks_a_stale_one_through_the_subtraction(
+    bot_kind, plan_context, monkeypatch
+):
+    """One stale and one fresh comment resolves ``participated``, never both states.
+
+    The stale comment is listed FIRST, which is the ordering under which the
+    subtraction is load-bearing: the stale observation is recorded before the fresh
+    comment is reached, so without subtracting the proven set the bot would be
+    reported in BOTH sets and the classifier's branch order would be settling a
+    question the producer should have settled.
+    """
+    plan_id = f'gh-pr-stale-subtract-{bot_kind}'
+    stale = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+    _patch_provider(monkeypatch, [stale])
+    _run_fetch(132, plan_id)
+
+    fresh = _publish_comment(
+        bot_kind,
+        'guide-2',
+        created_at=_at(5),
+        body='A second pass: this comparison uses == on floats, use math.isclose instead.',
+    )
+    _patch_provider(monkeypatch, [stale, fresh])
+    second = _run_fetch(132, plan_id)
+
+    assert second['status'] == 'success'
+    assert second['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': fresh['kind']}]
+    assert second['stale_participation_bots'] == []

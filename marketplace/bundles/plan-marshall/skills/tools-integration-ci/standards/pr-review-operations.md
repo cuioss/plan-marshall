@@ -237,3 +237,43 @@ movement_matched_bots[0]:
 `rate_limited_bots[]` (bot-agnostic, default empty) carries one `{bot_kind, rate_limit_class, eta}` record per REGISTERED reviewer bot whose newest comment on the PR is a rate-limit / service notice posted in place of a review, rather than an actual review. An empty list means no registered bot is rate-limited. It is an additive discriminator — the poll behaviour and every other field are unchanged; a caller that ignores it sees identical semantics. See [api-contract.md](api-contract.md) § "Provider Field Mapping" → `pr wait-for-comments` for the authoritative per-field contract, which this section does not restate.
 
 When the list is non-empty, the just-observed comment growth is a status notice from those bots, not reviewable feedback, so the caller should not triage the notice as a finding. Whether to WAIT for the limit to lift is decided per record by `rate_limit_class`, never uniformly: `awaitable_window` reopens on its own so awaiting the reset is productive, `hard_quota` does not reopen on a useful timescale so awaiting only burns budget, and `unknown` is the fail-closed value for a bot whose refusal shape has never been observed and MUST NOT be awaited. The example row above is illustrative of the shape — the bot set and every per-bot value are registry data, not literals in this contract.
+
+---
+
+## The widened participation taxonomy
+
+Every review operation on this surface feeds ONE downstream classification: the closed
+non-participation taxonomy owned by
+[`automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md).
+That taxonomy has **seven** members, and this section records only which observation on this surface
+feeds which member — the semantics, the severity rules, and the closure statement live in the contract
+and are not restated here.
+
+| Member | Fed by |
+|--------|--------|
+| `participated` / `participated_but_empty` | `github_pr fetch_findings` → `participated_bots[]` (evidence-typed publish shapes) |
+| `participated_stale` | `github_pr fetch_findings` → `stale_participation_bots[]` (publish shape matched, `participation_requires_update` currency test failed) |
+| `refused_awaitable` / `refused_hard` | `github_pr fetch_findings` → `refused_bots[]`, unioned with `pr wait-for-comments` → `rate_limited_bots[]`; the split comes from each bot's registry `rate_limit_class` |
+| `in_progress` | `github_pr bot_completion` → the non-terminal check state at the poll bound |
+| `not_triggered` | `checks pull-request-runs` → `not_triggered` (PR-wide: no `pull_request`-event run exists at all) |
+| `absent` | no observation of any kind — the fail-closed fall-through |
+
+Two of those members are **refinements of `absent` whose remedies are its opposite**, which is why a
+consumer must not flatten them back together:
+
+- `participated_stale` — the bot DID publish; the review merely predates this HEAD. Remedy:
+  **re-trigger** the review.
+- `not_triggered` — nothing ran on account of the PR, so no bot was ever asked. Remedy: **trigger** the
+  review at all.
+
+`absent`, by contrast, means a reviewer was asked and did not answer — remedy: **escalate** the
+non-participation. A consumer that renders all three as "the bot did not review" prescribes escalation
+in two cases where a trigger was the correct and cheaper answer.
+
+**Provider coverage is not uniform, and the gap is explicit.** `stale_participation_bots[]` and the
+`not_triggered` observable are both GitHub-only today: `checks pull-request-runs` returns a structured
+unsupported error on GitLab (see [api-contract.md](api-contract.md#checks-pull-request-runs) for the
+refusal and its rationale), and `gitlab_pr fetch_findings` declares neither `--required-bots` nor
+`--optional-bots`, so the whole participation-classification arm is a GitHub capability there. On a
+GitLab host the taxonomy is therefore reachable only as far as the provider's own reads allow — a
+capability gap surfaced at the point of use, never a silently narrower verdict.

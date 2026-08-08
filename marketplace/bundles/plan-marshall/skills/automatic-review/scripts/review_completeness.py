@@ -57,13 +57,14 @@ and had nothing to say — ``participated_but_empty``, an accounted-for outcome,
 an incompleteness. This stops the guard manufacturing an infinite loop-back for a
 bot whose review landed as pure noise.
 
-Every required bot is classified into exactly one **state**. Five of the six are
+Every required bot is classified into exactly one **state**. Seven of the eight are
 the closed non-participation taxonomy owned by
 ``standards/bot-participation-contract.md`` (``absent``, ``in_progress``,
-``refused_awaitable``, ``refused_hard``, ``participated_but_empty``); the sixth,
-``participated``, is its complement — the bot delivered a usable review — and is
-not a non-participation. The refusal states are split by the refusing bot's
-registry ``rate_limit_class``, so no bot-name literal appears here.
+``refused_awaitable``, ``refused_hard``, ``participated_but_empty``,
+``participated_stale``, ``not_triggered``); the eighth, ``participated``, is its
+complement — the bot delivered a usable review — and is not a non-participation. The
+refusal states are split by the refusing bot's registry ``rate_limit_class``, so no
+bot-name literal appears here.
 
 ``participation_complete`` is TRIAGE-STATE AWARE (``triage_ran``):
 
@@ -88,7 +89,7 @@ state — the quorum is vacuously satisfied and ``participation_complete`` is
 ``true``.
 
 Usage:
-    review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--triage-ran]
+    review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--not-triggered] [--triage-ran]
     review_completeness.py --help
 
 Every list flag above takes an OPTIONAL value: it may be supplied bare (the flag
@@ -121,23 +122,42 @@ import sys
 import bot_registry
 from _findings_core import query_findings
 
-# The state every classified bot resolves to. Five members are the closed
+# The state every classified bot resolves to. Seven members are the closed
 # NON-participation taxonomy owned by
 # ``standards/bot-participation-contract.md``; ``participated`` is its complement
-# (the bot delivered a usable review) and is deliberately NOT a sixth member of
+# (the bot delivered a usable review) and is deliberately NOT an eighth member of
 # that taxonomy — it is the success case the taxonomy exists to distinguish from.
 STATE_ABSENT = 'absent'
 STATE_IN_PROGRESS = 'in_progress'
 STATE_REFUSED_AWAITABLE = 'refused_awaitable'
 STATE_REFUSED_HARD = 'refused_hard'
 STATE_PARTICIPATED_BUT_EMPTY = 'participated_but_empty'
+# Never the bare ``stale``: the state is a PARTICIPATION that went stale, and the
+# short name loses the distinction from a bot that never published at all.
+STATE_PARTICIPATED_STALE = 'participated_stale'
+# A REFINEMENT of ``absent``, not a sibling of it: the bot published nothing AND
+# nothing could have been published, because no pull_request-event run exists for
+# the PR at all. It is PR-wide rather than per-bot — the same condition holds for
+# every bot on the PR — which is why its input is a single bool rather than an
+# observation set keyed by bot.
+STATE_NOT_TRIGGERED = 'not_triggered'
 STATE_PARTICIPATED = 'participated'
 
 # The states that leave a REQUIRED bot's participation unproven. A required bot in
 # any of these holds the step open; ``participated_but_empty`` and ``participated``
-# are both accounted-for outcomes and never block.
+# are both accounted-for outcomes and never block. ``participated_stale`` DOES
+# block — the bot published against an earlier HEAD, so nothing has reviewed the
+# current diff — but its remedy is a re-review trigger, not the non-participation
+# escalation ``absent`` calls for.
 _UNPROVEN_STATES = frozenset(
-    {STATE_ABSENT, STATE_IN_PROGRESS, STATE_REFUSED_AWAITABLE, STATE_REFUSED_HARD}
+    {
+        STATE_ABSENT,
+        STATE_IN_PROGRESS,
+        STATE_REFUSED_AWAITABLE,
+        STATE_REFUSED_HARD,
+        STATE_PARTICIPATED_STALE,
+        STATE_NOT_TRIGGERED,
+    }
 )
 
 
@@ -175,13 +195,20 @@ def classify_bot(
     has_findings: bool,
     in_progress: set[str],
     refused: set[str],
+    stale_participants: set[str] | None = None,
+    not_triggered: bool = False,
 ) -> str:
     """Return the single state ``bot`` resolves to.
 
     The branches are evaluated in evidence-strength order, so exactly one state is
     assigned. Proven participation is checked FIRST because it is positive,
     diff-derived evidence the bot actually reviewed — it outranks the awaiting and
-    refusal signals, which are both statements about the absence of a review.
+    refusal signals, which are both statements about the absence of a review. The
+    same ordering logic settles the refusal-outranks-stale edge: a bot that has a
+    stale publish AND a refusal is classified refused, because the refusal is the
+    NEWER and more actionable signal — it names a reason the bot will not review now,
+    whereas a stale publish only says the last review predates this HEAD, and the two
+    call for different remedies (wait out or accept the refusal vs re-trigger).
 
     - **``participated``** — proven participant that filed at least one finding.
     - **``participated_but_empty``** — proven participant that filed none. It did
@@ -189,7 +216,17 @@ def classify_bot(
     - **``refused_awaitable`` / ``refused_hard``** — the bot published a refusal.
       Which member is decided by its registry ``rate_limit_class``: a window that
       reopens on its own is awaitable, anything else is not. No bot-name literal.
+    - **``participated_stale``** — the bot published in a declared evidence shape,
+      but the currency test failed: the comment was already observed and its
+      ``updated_at`` has not moved, so the review it proves predates this HEAD.
+      Unproven and therefore blocking, but the remedy is to re-trigger a re-review
+      — the opposite of ``absent``, where there is no review to refresh.
     - **``in_progress``** — the bot's review is still running.
+    - **``not_triggered``** — PR-wide: no ``pull_request``-event workflow run exists
+      for this PR at all, so NO bot could have published and this bot's silence
+      says nothing about this bot. A refinement of ``absent`` rather than a sibling
+      — hence the last branch before it — whose remedy is to trigger the review
+      rather than to escalate a reviewer that was asked and did not answer.
     - **``absent``** — no evidence of any kind. The fail-closed default, which is
       also where a bot declaring NO evidence shape necessarily lands, since it can
       never be proven a participant.
@@ -199,8 +236,16 @@ def classify_bot(
     if bot in refused:
         awaitable = bot_registry.rate_limit_class(bot) == 'awaitable_window'
         return STATE_REFUSED_AWAITABLE if awaitable else STATE_REFUSED_HARD
+    if bot in (stale_participants or set()):
+        return STATE_PARTICIPATED_STALE
     if bot in in_progress:
         return STATE_IN_PROGRESS
+    # Last branch before the fallthrough: every earlier state is POSITIVE evidence
+    # about this specific bot, and a PR-wide "nothing ran" must never override an
+    # observation that something did. Placing it here means no existing verdict
+    # moves — only what would otherwise have been ``absent`` is refined.
+    if not_triggered:
+        return STATE_NOT_TRIGGERED
     return STATE_ABSENT
 
 
@@ -212,6 +257,8 @@ def check_completeness(
     participated_bots: dict[str, str] | None = None,
     in_progress_bots: list[str] | None = None,
     refused_bots: list[str] | None = None,
+    stale_participation_bots: list[str] | None = None,
+    not_triggered: bool = False,
 ) -> dict:
     """Classify each bot's PARTICIPATION against the plan's ``pr-comment`` findings store.
 
@@ -246,6 +293,24 @@ def check_completeness(
                            STATE is split by each bot's registry
                            ``rate_limit_class``; the caller supplies only the
                            observation, never the classification.
+        stale_participation_bots:
+                           Bots whose observed comment matched a declared
+                           ``participation_evidence`` publish shape but failed the
+                           ``participation_requires_update`` currency test, as
+                           reported by ``github_pr fetch_findings``'s
+                           ``stale_participation_bots[]``. They resolve to
+                           ``participated_stale`` — unproven and blocking, but whose
+                           remedy is a re-review trigger rather than the
+                           non-participation escalation ``absent`` calls for. The
+                           producer already subtracted the proven set, so a bot with
+                           one stale and one fresh comment never arrives here.
+        not_triggered:     PR-WIDE observable: ``True`` when no
+                           ``pull_request``-event workflow run exists for this PR,
+                           as reported by ``github_pr pull_request_runs`` /
+                           ``ci checks pull-request-runs``. A single bool rather
+                           than a per-bot set, because the condition holds for
+                           every bot at once. It refines what would otherwise be
+                           ``absent`` and overrides no positive observation.
 
     Returns:
         Dict with the TOON-serialisable fields ``status``,
@@ -255,7 +320,9 @@ def check_completeness(
 
         ``bot_states`` spans required ∪ optional and assigns exactly one state per
         bot. ``unproven_bots`` is the subset whose state leaves participation
-        unproven (``absent`` / ``in_progress`` / either refusal member);
+        unproven — the members of ``_UNPROVEN_STATES`` (``absent`` /
+        ``in_progress`` / either refusal member / ``participated_stale`` /
+        ``not_triggered``);
         ``pending_bots`` is the subset carrying an untriaged finding. Both span
         required ∪ optional for visibility, but only the REQUIRED subset gates
         ``participation_complete``, and only ``pending``'s contribution
@@ -278,6 +345,7 @@ def check_completeness(
     proven = dict(participated_bots or {})
     in_progress = set(in_progress_bots or [])
     refused = set(refused_bots or [])
+    stale = set(stale_participation_bots or [])
     required_set = set(required_bots)
     # Required first, then the optional bots not already listed as required, so
     # the reported lists read in a stable, caller-meaningful order.
@@ -288,7 +356,9 @@ def check_completeness(
     unproven_bots: list[str] = []
     for bot in classified:
         bot_findings = [f for f in findings if f.get('bot_kind') == bot]
-        state = classify_bot(bot, proven, bool(bot_findings), in_progress, refused)
+        state = classify_bot(
+            bot, proven, bool(bot_findings), in_progress, refused, stale, not_triggered
+        )
         bot_states.append({'bot_kind': bot, 'state': state})
         if state in _UNPROVEN_STATES:
             unproven_bots.append(bot)
@@ -370,6 +440,8 @@ def cmd_check(args: argparse.Namespace) -> int:
         participated_bots=parse_participation(args.participated_bots),
         in_progress_bots=_split_bots(args.in_progress_bots),
         refused_bots=_split_bots(args.refused_bots),
+        stale_participation_bots=_split_bots(args.stale_participation_bots),
+        not_triggered=args.not_triggered,
     )
     _emit_toon(payload)
     return 0 if payload.get('status') == 'success' else 1
@@ -457,6 +529,39 @@ def main(argv: list[str] | None = None) -> int:
             "refused_awaitable / refused_hard from each bot's registry "
             'rate_limit_class, never by the caller. May be supplied bare (no '
             'value), which reads as the empty list.'
+        ),
+    )
+    check_parser.add_argument(
+        '--stale-participation-bots',
+        nargs='?',
+        const='',
+        default='',
+        help=(
+            'Comma-separated review-bot kinds whose observed comment matched a '
+            'declared participation_evidence publish shape but failed the '
+            'participation_requires_update currency test, as reported by github_pr '
+            "fetch_findings's stale_participation_bots[]. A required bot here is "
+            'classified participated_stale and blocks — it published against an '
+            'earlier HEAD, so nothing has reviewed the current diff — but the remedy '
+            'is a re-review trigger, not the non-participation escalation absent '
+            'calls for. May be supplied bare (no value), which reads as the empty '
+            'list.'
+        ),
+    )
+    check_parser.add_argument(
+        '--not-triggered',
+        action='store_true',
+        default=False,
+        help=(
+            'PR-WIDE: pass when no pull_request-event workflow run exists for this '
+            'PR, as reported by github_pr pull_request_runs / ci checks '
+            'pull-request-runs. Every required bot then resolves not_triggered '
+            'instead of absent — still blocking, but the remedy is to trigger the '
+            'review rather than escalate a reviewer that was asked and stayed '
+            'silent. A store_true bool, not a bot list: the condition holds for '
+            'every bot at once. Omit it whenever a pull_request run exists, '
+            'INCLUDING one that concluded skipped — a skipped run was still '
+            'triggered.'
         ),
     )
     check_parser.add_argument(

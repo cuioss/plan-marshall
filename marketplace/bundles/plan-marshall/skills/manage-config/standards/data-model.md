@@ -285,7 +285,7 @@ The whole block is validated by `validate_orchestrator_block` (`_config_defaults
 The `plan-marshall:automatic-review` step owns three participation params nested in its entry of the
 `phase-6-finalize.steps` keyed map. They replace the retired `enabled_bots` knob outright — there is
 no deprecation shim. The participation SEMANTICS (required-vs-optional meaning, the ask posture, the
-five-member failure taxonomy) are owned by
+failure taxonomy) are owned by
 [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md);
 this section documents only the storage shape and defaults.
 

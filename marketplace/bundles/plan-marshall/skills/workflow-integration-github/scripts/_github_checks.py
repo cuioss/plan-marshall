@@ -144,6 +144,59 @@ def _classify_check_buckets(
     return failing, wait, non_failing
 
 
+# The workflow-run ``event`` value marking a run as triggered BY the pull request
+# itself. A ``push`` run on the same SHA is NOT evidence the PR was reviewed: a
+# branch push fires a workflow without any pull_request event existing, which is
+# exactly the state a PR opened as a draft (or against a repo whose review bots
+# are not installed) sits in.
+_PULL_REQUEST_EVENT = 'pull_request'
+
+
+def _is_pull_request_event_run(run: Any) -> bool:
+    """Shape-validated test: is ``run`` a ``pull_request``-event workflow run?
+
+    Every field read is guarded first, because the input is a decoded API
+    response rather than a value this process constructed: a non-dict element, a
+    missing ``event`` key, or a non-string ``event`` all resolve ``False`` rather
+    than raising. Validating per element (not per list) keeps one malformed entry
+    from discarding the well-formed entries beside it.
+
+    The run's ``conclusion`` is deliberately NOT consulted. A ``pull_request``
+    run that exists and concluded ``skipped`` means the workflow WAS triggered and
+    then declined to do work — the bot was asked. Only the ABSENCE of any
+    ``pull_request`` run means nothing ever asked it, so folding ``skipped`` into
+    the negative would collapse two states whose remedies differ.
+    """
+    if not isinstance(run, dict):
+        return False
+    event = run.get('event')
+    if not isinstance(event, str):
+        return False
+    return event == _PULL_REQUEST_EVENT
+
+
+def _has_pull_request_event_run(runs: Any) -> bool:
+    """True when ANY element of ``runs`` is a ``pull_request``-event workflow run.
+
+    The PR-wide observable behind the ``not_triggered`` participation state, and
+    an EXISTENCE predicate only: it never compares a timestamp against another,
+    and never asks whether a run is recent, current, or newer than a review. A
+    time comparison would make the answer depend on clock skew between the
+    provider and this process, and the question being asked — "was anything ever
+    triggered by this pull request?" — has no time component.
+
+    A non-list input resolves ``False``, which is the fail-closed direction for
+    this predicate's consumer: reporting "no pull_request run exists" from a
+    malformed response would claim the bots were never triggered on evidence that
+    was never actually read. The caller is responsible for distinguishing a failed
+    fetch from a genuinely empty run list — see the calling handler, which reports
+    a fetch failure rather than passing an empty list in.
+    """
+    if not isinstance(runs, list):
+        return False
+    return any(_is_pull_request_event_run(run) for run in runs)
+
+
 def _derive_overall_status(checks: list[dict]) -> tuple[str, list[dict], list[dict]]:
     """Derive ``overall | final_status`` plus failing-checks transport.
 

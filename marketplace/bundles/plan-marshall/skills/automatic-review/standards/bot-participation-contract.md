@@ -49,30 +49,63 @@ await — and that is a legitimate configured state, not a misconfiguration to w
 ## Failure taxonomy
 
 When a bot does not deliver a usable review, the non-participation is classified into exactly one of
-five members. The taxonomy is closed: every non-participation resolves to one of these.
+seven members. The taxonomy is closed: every non-participation resolves to one of these.
 
 | Member | Condition | Interpretation |
 |--------|-----------|----------------|
 | `absent` | No comment posted and no completion check-run observed; the review window closed with nothing. | The bot never engaged at all. |
+| `not_triggered` | No `pull_request`-event workflow run exists for the PR at all, so nothing could have been published — a PR-wide condition, not a per-bot one. | The reviewers were never asked. The remedy is to trigger the review, not to escalate a reviewer that stayed silent. |
 | `in_progress` | The bot's completion check-run is still running when the poll budget expires. | The bot engaged but did not finish in time; left to the pre-merge comment barrier. |
 | `refused_awaitable` | The bot posted a refusal whose limit reopens on its own (`rate_limit_class: awaitable_window`). | Worth awaiting — the window resets. |
 | `refused_hard` | The bot posted a refusal that does not reopen on a useful timescale (`rate_limit_class: hard_quota`), or a structural refusal such as a size/diff ceiling. | Not worth awaiting; whether the absence is tolerable is a required-vs-optional question, not a waiting question. |
 | `participated_but_empty` | The bot posted at least one comment, but every comment was filtered out (noise) so it stored zero findings. | **Accounted-for, not a failure.** The bot did its pass and had nothing actionable to say. |
+| `participated_stale` | The bot's comment matched a declared `participation_evidence` publish shape but failed the `participation_requires_update` currency test — the comment was already observed and its `updated_at` has not moved. | The bot reviewed an **earlier** HEAD, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
 
 `participated_but_empty` is the member most often misread. A bot that reviewed and found nothing is a
 *successful* review, not a silent one — it must never be treated as an incompleteness, or a clean PR
 would hold the step open forever.
+
+### Two members are refinements, not siblings — and their remedies are opposite
+
+Five of the seven members are mutually independent observations. The remaining two exist because
+`absent` was doing two other jobs badly, and each carries a remedy that `absent`'s does not:
+
+- **`participated_stale` is the opposite of `absent`.** `absent` means there is no review to refresh,
+  so the remedy is to escalate a reviewer that was asked and did not answer. `participated_stale`
+  means there **is** a review — it simply predates this HEAD — so the remedy is to **re-trigger** it.
+  Collapsing the stale case into `absent` therefore prescribes escalation where a re-review was the
+  correct and cheaper answer.
+- **`not_triggered` is a refinement of `absent`,** and it is **PR-wide rather than per-bot**: the same
+  condition holds for every bot on the PR at once, which is why its input is a single bool rather
+  than an observation set keyed by bot. Its remedy is also the opposite of `absent`'s: no reviewer
+  was asked, so escalating one names the wrong failure.
+
+The two refinements narrow differently, and only one of them is strictly `absent`-narrowing.
+`not_triggered` is evaluated as the **last** branch before the `absent` fall-through, so it can never
+override a positive observation about a specific bot — only what would otherwise have been `absent`
+is refined. `participated_stale` is narrower in origin but not in effect: it is evaluated after the
+refusal branches but **before** `in_progress`, so a bot observed in both sets is classified
+`participated_stale` rather than `in_progress`. That precedence is deliberate — a review that exists
+but predates this HEAD is a more actionable signal than an in-flight run of unknown outcome, and it
+carries the cheaper remedy (re-trigger rather than wait). A **refusal outranks a stale publish**: a
+bot with both is classified refused, because the refusal is newer still (it names a reason the bot
+will not review now, whereas a stale publish only says the last review predates this HEAD).
 
 ### Severity by classification
 
 The taxonomy member describes *what happened*; the required/optional classification decides *whether
 it matters*:
 
-- A **required** bot resolving to `absent`, `in_progress`, `refused_awaitable`, or `refused_hard` is
-  a completeness failure — the step is not markable done without an explicitly recorded force-done
-  reason.
+- A **required** bot resolving to `absent`, `not_triggered`, `in_progress`, `refused_awaitable`,
+  `refused_hard`, or `participated_stale` is a completeness failure — the step is not markable done
+  without an explicitly recorded force-done reason.
 - An **optional** bot resolving to any member never blocks.
 - Any bot resolving to `participated_but_empty` is accounted-for regardless of classification.
+
+A completeness failure is not one undifferentiated state: `participated_stale` and `not_triggered`
+block exactly as the other four do, but each names a **different remedy** (re-trigger the review /
+trigger the review at all), so a consumer that renders every blocking member as "the bot did not
+review" discards the one thing the widened taxonomy exists to carry.
 
 ## Evidence taxonomy
 
@@ -150,6 +183,12 @@ proves only that it reviewed **once, at some earlier HEAD** — after a force-pu
 comment would silently credit it with reviewing code it never saw. Its evidence therefore requires
 either **first presence** (the comment is newly observed) or observed **`updated_at` movement**.
 
+A failed movement test is **not the same as no evidence at all**, and the taxonomy keeps the two
+apart: the bot published in a declared shape, so the producer reports it in
+`stale_participation_bots[]` and it resolves to `participated_stale` — blocking, but with a
+re-review trigger as the remedy. Discarding the failed movement test toward `absent` would lose
+exactly that distinction and prescribe escalating a reviewer whose review only needed refreshing.
+
 ## Participation is not review quality
 
 The quorum proves that every required bot **participated**. It never proves the diff was **reviewed
@@ -209,8 +248,9 @@ learning notices, summary tables); reusing it for refusal detection would classi
 successful reviews as refusals. The two lists answer different questions and must stay distinct.
 
 A bot whose `refusal_patterns[]` is empty has no observed refusal shape; its non-participation
-resolves to `absent` or `in_progress` rather than to either refusal member. This is the fail-closed
-default — a refusal is only ever claimed on positive evidence.
+resolves to one of the non-refusal members — `participated_stale`, `in_progress`, `not_triggered`, or
+`absent` — rather than to either refusal member. This is the fail-closed default: a refusal is only
+ever claimed on positive evidence.
 
 ### A refusal is never noise — it is a branch
 
@@ -257,14 +297,17 @@ clean review is. Reading *the drop* as `absent` would turn a successful review i
 failure.
 
 That is a claim about the drop in isolation, and it is deliberately **not** an absolute: it does not
-say a dropped comment can never resolve to `absent`. Credit still has to clear the movement
+say a dropped comment can never resolve to a blocking state. Credit still has to clear the movement
 requirement below, and `review_completeness.classify_bot()` assigns `participated_but_empty` only to a
-bot present in `proven_participants` — a bot absent from `participated_bots[]` falls through to
-`absent`, an unproven state that blocks the quorum. For a bot declaring
-`participation_requires_update` (today, only PR-Agent, the sole bot that opts into the contentless
-drop) an unchanged clean comment is credited on the fetch that first observes it and denied on every
-later fetch, so in the steady state a dropped clean Guide does resolve to `absent`. That is the
-intended reading of a stale unchanged comment, not a defect in the drop.
+bot present in `proven_participants` — a bot absent from `participated_bots[]` falls through to an
+unproven state that blocks the quorum. For a bot declaring `participation_requires_update` (today,
+only PR-Agent, the sole bot that opts into the contentless drop) an unchanged clean comment is
+credited on the fetch that first observes it and denied on every later fetch, so in the steady state a
+dropped clean Guide resolves to **`participated_stale`, not `absent`** — the producer saw the comment
+in a declared publish shape and reports the bot in `stale_participation_bots[]`, so what the steady
+state records is a review that predates this HEAD rather than a reviewer that never engaged. That is
+the intended reading of a stale unchanged comment, not a defect in the drop, and the member it lands
+on is the one whose remedy — re-trigger the review — actually fits it.
 
 **Surviving the drop is not the same as being exempt from the movement requirement.** For a bot
 declaring `participation_requires_update` the evidence that survives the drop must still show **first
@@ -292,10 +335,22 @@ positive `participation_requires_update` exists to close.
 | Consumer | What it reads |
 |----------|---------------|
 | `automatic-review/SKILL.md` | Both lists, to drive the completion-aware poll, the re-review trigger set, and the step-done guard. |
-| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]`; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it; each bot's `contentless_review_markers` / `actionable_content_markers`, to drop a fully clean review comment as noise. |
-| `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` to split the two refusal states. |
+| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]` **and the `stale_participation_bots[]` set that carries `participated_stale`**; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it; each bot's `contentless_review_markers` / `actionable_content_markers`, to drop a fully clean review comment as noise. |
+| `github_pr pull_request_runs` / `ci checks pull-request-runs` | Nothing from this contract — it is the **observation channel for `not_triggered`**, answering the PR-wide question of whether any `pull_request`-event workflow run exists for the PR at all. Its verdict reaches the predicate as the single `--not-triggered` bool. |
+| `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` to split the two refusal states. Consumes `stale_participation_bots[]` via `--stale-participation-bots` to assign `participated_stale`, and the PR-wide `--not-triggered` bool to refine what would otherwise be `absent`. |
 | `github_ops pr wait-for-comments` | Each bot's `participation_requires_update`, to select the `updated_at`-movement arm of its completion predicate over the count-growth arm; `participation_evidence` plus `bot_kinds()`, to decide whether the await is answerable at all (`detector_answerable`). |
 | `marshall-steward` | Both lists, to ask the wizard question and record the provenance. |
+
+### Recorded exclusions
+
+Four further surfaces mention participation or the movement test and were **swept and deliberately
+excluded** from the taxonomy's documented consumer set, so their absence reads as a decision rather
+than as a gap: `_github_pr.py` (the private helper the producer calls — it computes the observation
+and carries no taxonomy vocabulary of its own), `standards/coderabbit.md` and `standards/sourcery.md`
+(neither bot declares `participation_requires_update`, so neither can reach `participated_stale`, and
+a registry doc declares per-bot data rather than taxonomy semantics), and
+`test_pr_wait_for_comments_predicate.py` (it pins the await predicate's movement arm, which is the
+*input* to the currency test rather than the classification it feeds).
 
 See [`../SKILL.md`](../SKILL.md) for the step body that applies this contract and
 [`../../manage-config/standards/data-model.md`](../../manage-config/standards/data-model.md) for the

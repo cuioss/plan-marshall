@@ -1083,6 +1083,22 @@ def build_parser(
         help='Wait until status flips to this value; default any non-pending flip',
     )
 
+    # checks pull-request-runs — the PR-wide "was anything ever triggered?" read.
+    # Kebab-case here to match its sibling verbs (wait-for-status-flip); the
+    # github_pr front-end exposes the same observable under the snake_case
+    # pull_request_runs, matching ITS sibling verbs (fetch_findings /
+    # post_responses / bot_completion). Both entry points call one shared handler.
+    ci_pull_request_runs = checks_sub.add_parser(
+        'pull-request-runs',
+        help=(
+            'Report whether any pull_request-event workflow run exists for the PR '
+            '(the not_triggered observable: nothing ever ran on account of this PR, '
+            'so no review bot could have published)'
+        ),
+        allow_abbrev=False,
+    )
+    ci_pull_request_runs.add_argument('--pr-number', required=True, type=int, help='PR number')
+
     # -- issue --------------------------------------------------------
     issue_parser = subparsers.add_parser('issue', help='Issue operations', allow_abbrev=False)
     issue_sub = issue_parser.add_subparsers(dest='issue_command', required=True)

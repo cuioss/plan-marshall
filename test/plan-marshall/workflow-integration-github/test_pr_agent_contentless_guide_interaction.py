@@ -39,7 +39,10 @@ Seven arms:
    and NOT on the second, while a Guide edited in place between fetches is
    credited again. Both directions are asserted because the drop removes the
    comment from the findings store, which is where ``_has_update_movement``'s
-   first-presence arm used to read its evidence from.
+   first-presence arm used to read its evidence from. The uncredited second fetch
+   additionally REPORTS the bot in ``stale_participation_bots``, so its steady
+   state is ``participated_stale`` rather than ``absent`` — the same blocking
+   verdict, under the state whose remedy is a re-review trigger.
 7. **Rendering-invariance arm** — the drop must not depend on which emphasis
    PR-Agent emits. The verbatim observed #1078 body (HTML ``<strong>`` inside a
    ``<table>``) and the same Guide in GitHub's markdown ``**`` rendering are both
@@ -409,6 +412,13 @@ def test_second_fetch_of_an_unchanged_guide_does_not_re_credit_participation(pla
     ``updated_at == created_at`` so no edit movement is available either. The only
     thing that differs between them is what the plan has already observed, which is
     precisely the signal the drop removed from the findings store.
+
+    The steady state is now REPORTED rather than silent: the second fetch names the
+    bot in ``stale_participation_bots``, so the completeness layer classifies it
+    ``participated_stale`` instead of ``absent``. That is a rename of the state, not
+    a change of gate — the bot is still not a proven participant and still blocks a
+    required quorum; what changes is that the remedy the operator is pointed at is a
+    re-review trigger rather than an escalation for a bot that never engaged.
     """
     plan_id = 'pr-agent-guide-unchanged-second-fetch'
     guide = _guide_comment(OBSERVED_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_CREATED_AT)
@@ -429,8 +439,16 @@ def test_second_fetch_of_an_unchanged_guide_does_not_re_credit_participation(pla
 
     # First presence — the plan is observing this comment for the first time.
     assert {'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'} in first['participated_bots']
+    # On the crediting fetch there is nothing stale to report.
+    assert first['stale_participation_bots'] == []
     # Second fetch: already observed and unmoved, so there is no new review to credit.
     assert second['participated_bots'] == []
+    # ...and the reason is now SURFACED as a stale publish rather than dropped into
+    # silence, so the classifier reports participated_stale instead of absent. Still
+    # unproven, still blocking — only the named state and its remedy change.
+    assert second['stale_participation_bots'] == [
+        {'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'}
+    ]
 
 
 def test_guide_edited_between_fetches_credits_participation_again(plan_context, monkeypatch):
