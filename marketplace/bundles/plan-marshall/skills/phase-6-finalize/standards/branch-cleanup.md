@@ -702,19 +702,36 @@ The placeholders are still double-quoted above, and should stay quoted — quoti
 (non-executor) invocation. Just do not read it as the empty-value defence: **never rely on quoting
 alone to make an empty list safe.**
 
+⚠ **This producer call takes NO participation-state flag beyond the two classification lists above.**
+`fetch_findings` is the PRODUCER of `stale_participation_bots[]` — it declares neither
+`--stale-participation-bots` nor `--not-triggered`, both of which live only on the
+`review_completeness check` parser. Adding either here would document an argparse rejection (exit 2),
+not a richer call. The two flags belong at § "Predicate 2" below, which is the CONSUMER.
+
 > **GitLab provider asymmetry**: the GitLab producer `gitlab_pr fetch_findings` has NEITHER a `--required-bots` nor an `--optional-bots` flag (the same asymmetry the FIND stage already documents). On GitLab, invoke it without them; every comment is considered and none is classified.
 
 ##### UNKNOWN — the re-fetch itself failed
 
 When this `fetch_findings` call exits **non-zero**, OR its return carries **no `participated_bots`
-field at all**, the barrier's participation inputs (`participated_bots`, `refused_bots`) were never
-produced. A zero exit is NOT sufficient on its own: a truncated or malformed return that omits the
-participation fields leaves exactly the same absent inputs as a crash, so this trigger is symmetric
-with its sibling branch below rather than exit-code-only. The barrier **MUST NOT proceed to
-Predicate 2** with absent participation inputs: feeding an empty `--participated-bots` to a predicate
-that fails closed would render every required bot `absent`, and feeding nothing at all would make the
-verdict a fiction either way. An absent input is an UNKNOWN verdict, never a `false` the operator can
-act on and never a `true`.
+field at all**, the barrier's participation inputs (`participated_bots`, `stale_participation_bots`,
+`refused_bots`) were never produced. A zero exit is NOT sufficient on its own: a truncated or malformed
+return that omits the participation fields leaves exactly the same absent inputs as a crash, so this
+trigger is symmetric with its sibling branch below rather than exit-code-only. The barrier **MUST NOT
+proceed to Predicate 2** with absent participation inputs: feeding an empty `--participated-bots` to a
+predicate that fails closed would render every required bot `absent`, and feeding nothing at all would
+make the verdict a fiction either way. An absent input is an UNKNOWN verdict, never a `false` the
+operator can act on and never a `true`.
+
+**The same rule covers each of the new inputs, in its own way.** An absent `stale_participation_bots`
+is an UNKNOWN on exactly the terms above — the field is produced by this same call, so its absence is
+the same absence. The PR-wide `not_triggered` read (`ci checks pull-request-runs`, § "Predicate 2") is
+a separate call and fails separately: when IT returns `status: unconfigured` or `status: error` the
+observable was never read, and neither polarity may be assumed — omitting the flag would silently
+assert *"a run exists"*, and passing it would silently assert *"none does"*. Both are fictions, so an
+unreadable observable routes here too. The **one** case that is NOT an UNKNOWN is GitLab's structured
+unsupported refusal: that is a KNOWN provider-capability gap rather than a failed read, so the barrier
+omits the flag, records the gap, and proceeds — `not_triggered` is simply unavailable on that provider
+and `absent` remains the correct classification there.
 
 Log at ERROR naming which call failed, its exit code, and its stderr verbatim, under the configured
 `{barrier_mode}`:
@@ -722,7 +739,7 @@ Log at ERROR naming which call failed, its exit code, and its stderr verbatim, u
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR \
-  --message "[ERROR] (plan-marshall:phase-6-finalize) Pre-merge review barrier UNKNOWN: github_pr fetch_findings exited non-zero or returned no participated_bots (exit_code={exit_code}, stderr={stderr}) — participation inputs absent, NOT evaluating Predicate 2; pre_merge_comment_barrier={barrier_mode} (merge blocked)"
+  --message "[ERROR] (plan-marshall:phase-6-finalize) Pre-merge review barrier UNKNOWN: {failed_call} exited non-zero or returned no participation field (exit_code={exit_code}, stderr={stderr}) — participation inputs absent, NOT evaluating Predicate 2; pre_merge_comment_barrier={barrier_mode} (merge blocked)"
 ```
 
 Then take the dedicated § "UNKNOWN disposition — blocked, and never authorizable" below. That
@@ -740,17 +757,31 @@ Parse the returned `findings` list; let `{count}` be its length.
 
 #### Predicate 2 — required-bot participation against this HEAD
 
-Retain `participated_bots` and `refused_bots` from the `fetch_findings` return above — that call observed every bot comment on the PR at the current HEAD, so its participation sets are the freshest evidence available and no second provider round-trip is needed. Feed them to the same predicate the FIND step uses:
+Retain `participated_bots`, `stale_participation_bots`, and `refused_bots` from the `fetch_findings` return above — that call observed every bot comment on the PR at the current HEAD, so its participation sets are the freshest evidence available and no second provider round-trip is needed. `stale_participation_bots[]` is the set whose comment matched a declared publish shape but failed the `participation_requires_update` currency test; feeding it forward is what makes the barrier distinguish a review that merely predates this HEAD from a reviewer that never engaged.
+
+One input is NOT available from the re-fetch, because no earlier call observes it — the PR-wide question of whether any `pull_request`-event workflow run exists for this PR at all. Read it here:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci --project-dir {worktree_path} checks pull-request-runs \
+    --pr-number {pr_number}
+```
+
+Read `has_pull_request_run` from the returned TOON. When it is `false`, pass the bare `--not-triggered` flag on the predicate call below; omit the flag otherwise, INCLUDING for a `pull_request` run that concluded `skipped` — a skipped run was still triggered. A `status: unconfigured` or `status: error` return is an UNKNOWN input, NOT a licence to assume either polarity: take § "UNKNOWN — the re-fetch itself failed" below, which names this read among the calls that route there. On GitLab the verb returns a structured unsupported error, so the `not_triggered` refinement is unavailable there and the barrier omits the flag — a bot that published nothing resolves to `absent` as before.
+
+Feed the retained sets to the same predicate the FIND step uses:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness \
   check --plan-id {plan_id} --required-bots "{required_bots}" --optional-bots "{optional_bots}" \
-  --participated-bots "{participated_bots}" --refused-bots "{refused_bots}"
+  --participated-bots "{participated_bots}" --refused-bots "{refused_bots}" \
+  --stale-participation-bots "{stale_participation_bots}"
 ```
 
+Append the bare `--not-triggered` flag to that call when and only when the read above reported `has_pull_request_run: false`. It is a `store_true` bool carrying no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the five list flags only.
+
 This site never passes `--in-progress-bots` — the barrier has no completion-poll observation of its
-own — so the four above are the complete set here. Each is legitimately empty in normal operation (no
-optional bots, no refusals). **The load-bearing defence is the parser, not the quoting.** The generated
+own — so the five list flags above are the complete set here. Each is legitimately empty in normal
+operation (no optional bots, no refusals, no stale publishes). **The load-bearing defence is the parser, not the quoting.** The generated
 executor strips every empty-string argument before argparse sees it (`script_args = [a for a in
 script_args if a]` in `.plan/execute-script.py`), so through the executor `--refused-bots ""` arrives
 as a bare `--refused-bots` exactly as an unquoted empty placeholder would — the quotes do NOT survive
@@ -764,7 +795,9 @@ The placeholders are still double-quoted above, and should stay quoted — quoti
 (non-executor) invocation. Just do not read it as the empty-value defence: **never rely on quoting
 alone to make an empty list safe.**
 
-Read `participation_complete` and `unproven_bots` from the returned TOON. The predicate is fail-closed over the REQUIRED set: a required bot that published nothing resolves to `absent` and yields `participation_complete: false`. An unproven OPTIONAL bot never blocks — a bot on a hard quota that will not clear inside this plan's lifetime belongs in `optional_bots`, which is the configured way to accept its silence, rather than in a force-done that accepts every bot's silence at once.
+Read `participation_complete`, `unproven_bots`, and `bot_states` from the returned TOON. The predicate is fail-closed over the REQUIRED set: a required bot that published nothing resolves to `absent` and yields `participation_complete: false`. An unproven OPTIONAL bot never blocks — a bot on a hard quota that will not clear inside this plan's lifetime belongs in `optional_bots`, which is the configured way to accept its silence, rather than in a force-done that accepts every bot's silence at once.
+
+**Read `bot_states` before disposing of a block, because two of the seven blocking members name a different remedy than the others.** A required bot on `participated_stale` DID publish — its review merely predates this HEAD — so the productive action is a re-review trigger; and a PR-wide `not_triggered` means no reviewer was ever asked, so the productive action is to generate the trigger event at all. Both are still blocks and neither shortens the barrier, but a `{barrier_mode} == ask` prompt that renders them as *"the bot did not review"* asks the operator to accept the wrong gap. See [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md) § "Two members are refinements, not siblings — and their remedies are opposite".
 
 > **`participation_complete: true` proves PARTICIPATION, never review QUALITY.** It means each required bot published an artifact against this diff — not that the diff was reviewed well. Do not render a satisfied quorum as a reviewed diff in any log line, `display_detail`, or PR-body claim. See [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md) § "Participation is not review quality".
 

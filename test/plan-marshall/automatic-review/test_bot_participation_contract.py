@@ -28,8 +28,8 @@ CONTRACT the components jointly implement:
 Every set-guarding assertion derives its population from the registry (for bots),
 from a repository scan (for call sites), or from the live argparse surface (for
 list flags) rather than a hard-coded literal list, so a bot added or retired in a
-standards doc, a fifth call site added in a future doc, or a sixth list flag added
-to the parser is covered here automatically instead of silently escaping the
+standards doc, a fifth call site added in a future doc, or a further list flag
+added to the parser is covered here automatically instead of silently escaping the
 sweep. Each sub-population is additionally guarded against vacuity: a derivation
 that matched nothing FAILS rather than reporting a healthy aggregate over an
 empty set.
@@ -417,9 +417,11 @@ class TestFailureTaxonomyIsExhaustive:
 _MARKETPLACE_DOCS = PROJECT_ROOT / 'marketplace' / 'bundles'
 
 #: The list flags whose interpolated placeholders must be quoted, derived from
-#: the live ``check`` parser so a sixth flag is swept without an edit here. The
-#: ``review_completeness`` family may carry all of them; the ``fetch_findings``
-#: family declares only the first two.
+#: the live ``check`` parser so a newly added flag is swept without an edit here.
+#: The ``review_completeness`` family may carry all of them; the ``fetch_findings``
+#: family declares only the first two. The derivation matches the ``--*-bots``
+#: family only, so the ``store_true`` ``--not-triggered`` is correctly absent: it
+#: has no value to quote.
 _ALL_LIST_FLAGS = tuple(flag for flag, _dest in derive_bot_flags(_RC_SCRIPT, 'check'))
 
 _FAMILY_A = 'review_completeness check'
@@ -427,22 +429,29 @@ _FAMILY_B = 'github_pr fetch_findings'
 
 #: ``(family, doc-suffix, section-substring, expected list-flag count)`` for the
 #: four CONFIRMED call sites. The counts differ per site and are asserted per
-#: site: the participation guard passes all five, the pre-merge barrier's
-#: Predicate 2 passes four (it never observes an in-progress bot of its own), and
+#: site: the participation guard passes all six, the pre-merge barrier's
+#: Predicate 2 passes five (it never observes an in-progress bot of its own), and
 #: both producer sites pass the two classification flags.
+#:
+#: ``--not-triggered`` deliberately moves NEITHER count. It is a ``store_true``
+#: bool rather than a ``--*-bots`` list flag, so it carries no interpolated
+#: placeholder to quote — which is also why ``derive_bot_flags`` does not surface
+#: it and why the quoting sweep has nothing to say about it. Both family-A sites
+#: pass it bare; only ``--stale-participation-bots`` added an interpolation, which
+#: is the single +1 on each count.
 _CONFIRMED_SITES = (
     pytest.param(
         _FAMILY_A,
         'automatic-review/SKILL.md',
         'Step-done participation guard',
-        5,
+        6,
         id='family-a-step-done-participation-guard',
     ),
     pytest.param(
         _FAMILY_A,
         'phase-6-finalize/standards/branch-cleanup.md',
         'Predicate 2',
-        4,
+        5,
         id='family-a-premerge-barrier-predicate-2',
     ),
     pytest.param(
@@ -596,7 +605,7 @@ class TestCallSitePopulation:
         WHICH site regressed, and a site that stopped being discovered at all
         would silently shrink the aggregate rather than fail. The expected flag
         count is per-site, because the sites genuinely differ — the pre-merge
-        barrier passes four flags, not the participation guard's five.
+        barrier passes five flags, not the participation guard's six.
         """
         _family, doc, section, command = _find_confirmed(family, doc_suffix, section_substring)
 
@@ -778,7 +787,7 @@ class TestAdvertisedFormsAgreeWithArgparse:
 
     @pytest.mark.parametrize('flag', _ALL_LIST_FLAGS)
     def test_review_completeness_argparse_declares_optional_values(self, flag):
-        """The live parser renders all five list flags with an optional value."""
+        """The live parser renders every derived list flag with an optional value."""
         usage = _help_text(_RC_SCRIPT, 'check')
 
         assert _optional_value_form(flag).search(usage), f'{flag} usage: {usage}'

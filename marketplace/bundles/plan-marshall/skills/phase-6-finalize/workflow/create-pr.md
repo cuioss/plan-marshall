@@ -196,9 +196,18 @@ empty heading. Fix the draft and re-invoke; do not proceed with a body carrying 
 > to reach — a reviewer can now echo the intent back without reading the diff. That is why the
 > participation predicate treats an intent-echoing review as `participated_but_empty` rather than a
 > discharged review obligation, and why its verdict must be identical-or-stricter on an
-> Intent-bearing PR. See
+> Intent-bearing PR.
+>
+> `participated_but_empty` is one member of a **closed seven-member** non-participation taxonomy —
+> `absent`, `not_triggered`, `in_progress`, `refused_awaitable`, `refused_hard`,
+> `participated_but_empty`, `participated_stale` — whose complement is `participated`. It is the ONLY
+> member that is accounted-for rather than blocking, which is exactly why an intent-echo lands there
+> rather than on a blocking member: the bot did run and did say something. The enumeration is recorded
+> here so the parity requirement above reads against the real member set rather than an implied
+> smaller one. See
 > [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md)
-> § "Participation is not review quality".
+> § "Participation is not review quality" for the parity obligation and § "Failure taxonomy" for the
+> members themselves.
 
 #### Step 3.5: Resolve the PR title from the persisted status field
 
