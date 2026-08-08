@@ -1285,7 +1285,15 @@ def main() -> int:
     # restore-from-plan
     restore_parser = subparsers.add_parser(
         'restore-from-plan',
-        help='Move a lesson-{id}.md file from a plan directory back to the global lessons directory',
+        help=(
+            'Move a lesson-{id}.md file from a plan directory back to the global '
+            'lessons directory; reports restored (every carried file landed) / '
+            'restore_incomplete (the move aborted on a collision or traversal '
+            'guard; restored_count says how many landed first, possibly none) / '
+            'no_lesson_file (the plan directory was scanned and held none) / '
+            'plan_dir_unresolved (it could not be resolved to the main-anchored '
+            'store, so it was never scanned)'
+        ),
         allow_abbrev=False,
     )
     add_plan_id_arg(restore_parser)
@@ -1295,8 +1303,10 @@ def main() -> int:
     list_stalled_parser = subparsers.add_parser(
         'list-stalled',
         help=(
-            'Read-only scanner: list lesson-sourced plans whose relocated lesson '
-            'is stranded (stalled in 5-execute/6-finalize without restore-from-plan)'
+            'Read-only scanner: list plans that carry a lesson-*.md file and are '
+            'stranded (stalled in 5-execute/6-finalize without restore-from-plan); '
+            'also reports carried lesson ids that already exist in the active '
+            'corpus, and states whether the store was actually resolved and scanned'
         ),
         allow_abbrev=False,
     )

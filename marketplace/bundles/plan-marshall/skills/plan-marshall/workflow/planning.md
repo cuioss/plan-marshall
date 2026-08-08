@@ -448,7 +448,7 @@ See [`workflow/planning-outline.md`](planning-outline.md) for the full workflow.
 
 ## Action: cleanup
 
-Multi-pass user-facing maintenance: remove completed plans, prune redundant superseded-lesson stubs, prune orphan plan directories, and restore lessons trapped inside stalled lesson-sourced plans. Each destructive or restorative pass confirms with the user before acting.
+Multi-pass user-facing maintenance: remove completed plans, prune redundant superseded-lesson stubs, prune orphan plan directories, and restore lessons trapped inside stalled plans. Each destructive or restorative pass confirms with the user before acting.
 
 ---
 
@@ -618,36 +618,62 @@ For each orphan entry:
 
 ---
 
-### Step 4: Stalled-lesson-sourced-plan restore
+### Step 4: Stalled-lesson restore
 
-Restore lessons trapped inside stalled lesson-sourced plans. A lesson-sourced plan relocates its lesson into the plan directory via `convert-to-plan` (`plans/{plan_id}/lesson-{id}.md`), taking it out of the active corpus. If the plan stalls or is abandoned in `5-execute`/`6-finalize` without running `restore-from-plan`, the lesson stays stranded and is silently lost. This pass detects every such plan and restores its lesson(s) to the active corpus. Running `Action: cleanup` over the current corpus therefore doubles as the one-time scan-and-restore over all presently-stalled lesson-sourced plans.
+Restore lessons trapped inside stalled plans. A plan relocates a lesson into its plan directory via `convert-to-plan` (`plans/{plan_id}/lesson-{id}.md`), taking it out of the active corpus. If the plan stalls or is abandoned in `5-execute`/`6-finalize` without running `restore-from-plan`, the lesson stays stranded and is silently lost. This pass detects every such plan and restores its lesson(s) to the active corpus. Running `Action: cleanup` over the current corpus therefore doubles as the one-time scan-and-restore over all presently-stalled plans.
 
-**`restore-from-plan` is the mandatory inverse**: it MUST run before a stalled lesson-sourced plan is dormated or deleted, so its lesson is never stranded.
+**`restore-from-plan` is the mandatory inverse**: it MUST run before a stalled plan carrying a lesson is dormated or deleted, so its lesson is never stranded.
 
-**4a — Enumerate stalled lesson-sourced plans:**
+**4a — Enumerate stalled plans:**
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list-stalled
 ```
 
-Parse `stalled_plans[]` from the TOON output. Each entry exposes `plan_id`, `plan_source`, `current_phase`, `phase_status`, `lesson_ids[]`, and `restore_command` (the exact `restore-from-plan --plan-id {plan_id}` invocation). If `stalled_count` is `0`, log and finish the cleanup action:
+The payload carries THREE independent outcomes plus a discriminator, and each is logged differently. **Branch on the discriminator before the counts** — a zero count means nothing until you know the scan actually looked:
+
+**(i) Could-not-look — `status: error` (`store_unresolved`), or `plans_root_state: missing`.** The scan never reached the store, so this is NOT evidence that no lesson is stranded. Log it as the failure to look that it is, and do NOT report a clean pass:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id global --level WARNING \
+  --message "(plan-marshall:plan-marshall:cleanup) Stalled-lesson scan could not read the store (store_resolution={store_resolution}, plans_root_state={plans_root_state}) — restore pass INCONCLUSIVE, not clean"
+```
+
+**(ii) Genuinely clean — `plans_root_state: present` with `stalled_count: 0`, `duplicate_count: 0` **and** `unclassifiable_count: 0`.** All three counts must be zero: `unclassifiable_count` is independent of the other two, so a scan that classified nothing would otherwise satisfy this branch and emit the clean line — absorbing the very residual case (iv) below exists to keep visible. A plan carrying a lesson whose `status.json` could not be read was neither confirmed stalled nor cleared, so its lesson may well be trapped and the pass is not clean. Only when all three are zero did the scan look at `scanned_plan_count` plan(s) and find nothing to restore:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id global --level INFO \
-  --message "(plan-marshall:plan-marshall:cleanup) No stalled lesson-sourced plans to restore — skipping stalled-lesson restore pass"
+  --message "(plan-marshall:plan-marshall:cleanup) No stalled lessons to restore — scanned {scanned_plan_count} plan(s) under {plans_root}, skipping stalled-lesson restore pass"
 ```
 
-**4b — Confirm and restore:** When `stalled_plans[]` is non-empty, present the entries via `AskUserQuestion` (multiSelect) so the user can pick which stalled plans to restore in one pass:
+**(iii) Duplication — `duplicate_count > 0`.** Each `duplicate_lessons[]` row names a carried `lesson_id` that ALREADY exists in the active corpus, so `restore-from-plan` on that plan will fail with `destination_exists`. This is a distinct outcome from an absence and MUST NOT be folded into the stalled count or reported as "nothing to restore". Surface it to the user for manual reconciliation and log it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id global --level WARNING \
+  --message "(plan-marshall:plan-marshall:cleanup) {duplicate_count} carried lesson(s) already exist in the active corpus — restore would collide: {duplicate_lessons}"
+```
+
+**(iv) Unclassifiable — `unclassifiable_count > 0`.** Each row is a plan carrying a lesson whose `status.json` could not be read, so it could be neither confirmed stalled nor cleared. Log it so the residual is visible rather than absorbed into the clean count:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id global --level WARNING \
+  --message "(plan-marshall:plan-marshall:cleanup) {unclassifiable_count} plan(s) carry a lesson but could not be classified: {unclassifiable_plans}"
+```
+
+**4b — Confirm and restore:** When `stalled_plans[]` is non-empty, present the entries via `AskUserQuestion` (multiSelect) so the user can pick which stalled plans to restore in one pass. Correlate each row against `duplicate_lessons[]` by `plan_id` and mark a colliding entry in its description — restoring it will fail, so the user must know before choosing:
 
 ```text
 AskUserQuestion:
-  question: "Select stalled lesson-sourced plans whose lesson(s) should be restored to the active corpus."
+  question: "Select stalled plans whose lesson(s) should be restored to the active corpus."
   header: "Restore"
   options:
     # For each stalled plan:
     - label: "{plan_id}"
-      description: "stalled in {current_phase} ({phase_status}) — lesson(s): {comma-separated lesson_ids}"
+      description: "stalled in {current_phase} ({phase_status}) — lesson(s): {comma-separated lesson_ids}{' — COLLIDES with an existing corpus entry' when correlated in duplicate_lessons}"
   multiSelect: true
 ```
 
@@ -658,13 +684,39 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons rest
   --plan-id {plan_id}
 ```
 
-Log each restore:
+**Branch on the returned `action`, never on `status` alone** — the verb reports four distinguishable outcomes (see [`../../manage-lessons/SKILL.md`](../../manage-lessons/SKILL.md) § `restore-from-plan`):
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id global --level INFO \
-  --message "(plan-marshall:plan-marshall:cleanup) Restored stalled lesson(s) {lesson_ids} from plan {plan_id} to the active corpus"
-```
+- **`action: restored`** — every carried lesson landed. Log the restore:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id global --level INFO \
+    --message "(plan-marshall:plan-marshall:cleanup) Restored stalled lesson(s) {lesson_ids} from plan {plan_id} to the active corpus"
+  ```
+
+- **`action: restore_incomplete`** (`status: error`) — the plan directory WAS scanned and carried lesson files, but the move aborted on a collision or a traversal guard. `restored_count` says how many landed before the abort and is legitimately `0`; the ones that did land before it are named in `restored_lessons`, and the rest remain in the plan directory. This is NOT a completed restore: the plan MUST stay on the stranded list for the un-landed lessons, and the collision (typically `destination_exists`, the duplication case (iii) already flagged as a `duplicate_lessons[]` row) needs manual reconciliation:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id global --level ERROR \
+    --message "(plan-marshall:plan-marshall:cleanup) Restore INCOMPLETE for plan {plan_id} ({error}) — {restored_count} lesson(s) landed, the rest are still stranded"
+  ```
+
+- **`action: plan_dir_unresolved`** (`status: error`) — the plan directory was NEVER scanned, so the lesson's fate is unknown. This is a non-benign outcome: it MUST NOT be logged or reported as a completed restore, and the plan MUST stay on the stranded list for the operator:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id global --level ERROR \
+    --message "(plan-marshall:plan-marshall:cleanup) Restore FAILED to look at plan {plan_id} (store_resolution={store_resolution}) — lesson(s) {lesson_ids} status UNKNOWN, still stranded"
+  ```
+
+- **`action: no_lesson_file`** — the plan directory was scanned and held no `lesson-*.md`. Benign, but worth recording because `list-stalled` had reported one: the file moved between the scan and the restore.
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id global --level INFO \
+    --message "(plan-marshall:plan-marshall:cleanup) Plan {plan_id} scanned and held no lesson file — nothing to restore"
+  ```
 
 For each stalled plan the user declines, log the decline:
 

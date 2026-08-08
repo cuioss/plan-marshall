@@ -1,6 +1,6 @@
 ---
 name: manage-status
-description: Manage status.json files with phase tracking, metadata, and lifecycle operations for plans, the HEAD-bound and gap-class-bound merge-authorization record the pre-merge barrier gates on, plus the lean kind=orchestrator status store for orchestrator epics
+description: Manage status.json files with phase tracking, metadata, and lifecycle operations for plans, the HEAD-bound and gap-class-bound merge-authorization record the pre-merge barrier gates on, the delete-plan lesson carry-back that resolves the corpus main-anchored and vetoes the deletion when a carried lesson did not land, plus the lean kind=orchestrator status store for orchestrator epics
 user-invocable: false
 mode: script-executor
 scope: plan
@@ -722,8 +722,44 @@ Delete an entire plan directory. Used when user selects "Replace" for an existin
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete-plan \
-  --plan-id {plan_id}
+  --plan-id {plan_id} \
+  [--no-restore-lessons]
 ```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--no-restore-lessons` (optional): Skip the lesson carry-back entirely. Because the carry-back owns the veto below, opting out of the carry-back also opts out of the veto — the directory is deleted and any lesson it carries is discarded. The payload reports this branch as `lesson_carry_back_action: not_attempted` with `lesson_store_resolution: unresolved`: nothing was scanned and no store was resolved, so it may claim neither the benign scanned-and-empty zero nor a resolution it never performed.
+
+#### Lesson carry-back (and the veto)
+
+A plan directory can hold `lesson-*.md` files moved in by `manage-lessons convert-to-plan`, and for such a lesson the plan directory is the **only copy** — deleting the directory destroys it. `delete-plan` therefore runs a carry-back FIRST, moving every carried lesson back into the corpus, and that carry-back can **veto the deletion**.
+
+The destination is resolved through the **main-anchored** lessons-store handle, never the cwd-keyed `base_path()`. A worktree-pinned `delete-plan` would otherwise restore into the worktree's own ephemeral corpus — a store that is discarded when the worktree goes away, which loses the lesson just as thoroughly as deleting it.
+
+`lesson_carry_back_action` reports which kind of answer the carry-back is giving. Every value it shares with `manage-lessons restore-from-plan`'s `action` vocabulary carries the identical meaning there, so the two lesson-restore surfaces answer the "which kind of zero is this?" question the same way. The sets are **not equal**, and deliberately so: `not_attempted` is producible only here, because only `delete-plan` has an opt-out flag.
+
+| `lesson_carry_back_action` | Meaning |
+|----------------------------|---------|
+| `restored` | The plan directory was scanned, DID carry lesson files, and **every** one of them landed in the corpus. `restored_lesson_ids` names them; `skipped_lessons` is empty. |
+| `restore_incomplete` | The plan directory was scanned and carried lesson files, but at least one did **not** land. `restored_lesson_ids` is legitimately empty when none did. This is the state that fires the veto below. |
+| `no_lesson_file` | The plan directory was scanned and carried none. The benign zero. |
+| `plan_dir_unresolved` | The carry-back could not look — the directory is gone, or the main-anchored store did not resolve **and** the directory carried lesson files that consequently could not land. `lesson_store_resolution` says which. |
+| `not_attempted` | `--no-restore-lessons` opted out: nothing was scanned, no store was resolved, and any carried lesson is discarded with the directory. `lesson_store_resolution` is `unresolved` and `lessons_dir` is empty. |
+
+The last two are the two ways this payload can carry a zero that is **not** evidence the plan carried no lesson. Keeping them out of `no_lesson_file` is what lets an audit tell "deleted a plan that verifiably carried no lesson" from "deleted a plan whose lessons went unexamined" — the same distinction the carry-back exists to make, applied to the branch that can actually destroy one.
+
+**Read both fields — neither answers both questions.** `lesson_carry_back_action` reports what the scan *found*; `lesson_store_resolution` reports whether the corpus was *reachable*. An unresolvable store over a directory that carried lesson files is `plan_dir_unresolved`, because those lessons could not land. The same unresolvable store over a directory carrying **none** is `no_lesson_file` — correctly, since the directory was scanned and there was nothing to land — and `lesson_store_resolution: unresolved` is what carries the could-not-look half of that answer. A consumer branching on `lesson_carry_back_action` alone would read the second case as a fully-verified benign zero.
+
+**The veto**: when `skipped_lessons` is non-empty, at least one carried lesson did NOT land, so the plan directory still holds the only copy of it. The delete is **refused** with `error: lesson_carry_back_incomplete` and the directory is left intact. The refusal is what makes silent corpus loss unreachable on this path: a skipped lesson plus an unconditional delete would destroy the only copy with no signal anywhere. Resolve the cause (or pass `--no-restore-lessons` to delete and discard deliberately), then retry.
+
+Each `skipped_lessons` row carries the `reason` that kept it from landing, over this closed vocabulary:
+
+| `reason` | Meaning |
+|----------|---------|
+| `destination_exists` | The corpus already holds an entry under that lesson id. The destination is claimed with a no-replace create, so the collision test and the claim are one operation — an incumbent lesson can never be overwritten by a destination that appeared mid-carry-back. |
+| `path_traversal` | The lesson id is traversal-shaped, or the destination it produces would land outside the corpus directory. |
+| `store_unresolved` | The main-anchored lessons store did not resolve, so the carry-back could not reach the corpus at all. Every carried lesson gets this reason. |
+| `unsafe_source` | The `lesson-*.md` entry is not a regular file — a symlink, directory, or other non-regular entry. Carrying it back would relocate whatever it points AT, removing an arbitrary external file, on the very path that deletes the plan directory next. Rejecting it as a reported skip (rather than following it) is what keeps that reachable-only-through-the-veto. |
 
 **Output** (TOON format):
 
@@ -732,8 +768,32 @@ On success:
 status: success
 plan_id: my-feature
 action: deleted
-path: /path/to/.plan/plans/my-feature
+path: /path/to/.plan/local/plans/my-feature
 files_removed: 5
+lesson_carry_back_action: restored
+lesson_store_resolution: main_anchored
+lessons_dir: /abs/path/to/.plan/local/lessons-learned
+lesson_restored: true
+restored_lesson_ids[1]:
+  - 2025-12-02-15-001
+skipped_lessons[0]:
+```
+
+On refusal (a carried lesson did not land — the directory is NOT deleted):
+```toon
+status: error
+plan_id: my-feature
+error: lesson_carry_back_incomplete
+action: refused
+path: /path/to/.plan/local/plans/my-feature
+lesson_carry_back_action: restore_incomplete
+lesson_store_resolution: main_anchored
+lessons_dir: /abs/path/to/.plan/local/lessons-learned
+lesson_restored: false
+restored_lesson_ids[0]:
+skipped_lessons[1]{lesson_id,reason}:
+  2025-12-02-15-001,destination_exists
+message: 1 carried lesson(s) could not be restored (2025-12-02-15-001); the plan directory holds the only copy, so it was NOT deleted.
 ```
 
 On error (plan not found):
@@ -741,12 +801,12 @@ On error (plan not found):
 status: error
 plan_id: my-feature
 error: plan_not_found
-message: Plan directory does not exist: /path/to/.plan/plans/my-feature
+message: Plan directory does not exist: /path/to/.plan/local/plans/my-feature
 ```
 
 **Use case**: Called by plan-init when user selects "Replace" to delete existing plan before creating new one. See `plan-marshall:phase-1-init/standards/plan-overwrite.md` for the full workflow.
 
-**Warning**: This recursively deletes the entire plan directory including all subdirectories (logs, tasks, work artifacts). There is no undo.
+**Warning**: This recursively deletes the entire plan directory including all subdirectories (logs, tasks, work artifacts). There is no undo. The carry-back veto is the one guard against that irreversibility taking a lesson with it.
 
 ### route
 
@@ -975,7 +1035,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `list` | `[--filter PHASE]` | Discover all plans across the main checkout and its worktrees (each entry tagged `location: current`/`worktree`), optionally filtered by phase |
 | `transition` | `--plan-id --completed` | Mark phase done, advance to next |
 | `archive` | `--plan-id [--dry-run] [--reason REASON]` | Archive completed plan; `--reason` persists to `status.metadata.archived_reason` (used by `plan-doctor stuck-low-confidence-archive` rule) |
-| `delete-plan` | `--plan-id` | Delete entire plan directory |
+| `delete-plan` | `--plan-id [--no-restore-lessons]` | Delete entire plan directory. Runs the lesson carry-back FIRST, resolving the corpus through the **main-anchored** store handle (never the cwd-keyed `base_path()`), and reports `lesson_carry_back_action` over the closed vocabulary enumerated in full under [Lesson carry-back (and the veto)](#lesson-carry-back-and-the-veto) — that table is the single home for the value set — plus `lesson_store_resolution`, `lessons_dir`, `restored_lesson_ids`, and `skipped_lessons`. **Vetoes the deletion** with `error: lesson_carry_back_incomplete` when any carried lesson did not land — the directory holds the only copy, so it is left intact. `--no-restore-lessons` skips the carry-back and therefore the veto. |
 | `route` | `--phase` | Get skill name for phase |
 | `get-routing-context` | `--plan-id` | Get combined routing context |
 | `change-type-heuristic` | `--plan-id [--persist]` | Deterministic change-type classifier for phase-3-outline Step 4. Reads the clarified-request narrative (falling back to original_input) and scores it against a fixed keyword table — returns one of `feature`, `bug_fix`, `tech_debt`, `enhancement`, `verification`, `analysis`, or `ambiguous=true` when no keyword fires / two change types tie / confidence < 0.7. With `--persist`, writes the resolved change_type to `status.metadata.change_type` (skipped in the ambiguous branch so the LLM `detect-change-type` workflow is the single writer there). |
@@ -1109,8 +1169,10 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-ro
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete-plan \
-  --plan-id PLAN_ID
+  --plan-id PLAN_ID [--no-restore-lessons]
 ```
+
+The lesson carry-back runs by default and can VETO the deletion: when any carried `lesson-*.md` did not land in the main-anchored corpus, the verb returns `error: lesson_carry_back_incomplete` and leaves the plan directory intact (it holds the only copy). `--no-restore-lessons` skips the carry-back, and therefore the veto, deleting any carried lesson with the directory.
 
 ### mark-step-done
 
@@ -1238,6 +1300,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status self-t
 | `phase_not_found` | 1 | Phase doesn't exist in this plan's status.json phases array |
 | `unknown_phase` | 1 | Phase name not in the static valid phases set (`1-init` through `6-finalize`); only used by `route` command |
 | `plan_not_found` | 1 | Plan directory does not exist (delete-plan command) |
+| `lesson_carry_back_incomplete` | 1 | `delete-plan`: at least one `lesson-*.md` the plan carries did NOT land in the main-anchored corpus (a destination collision, a traversal-shaped lesson id, or a store that would not resolve), so the plan directory holds the only copy of it. **The directory is NOT deleted.** `skipped_lessons[]` names each un-landed id with its `reason`, and `lesson_store_resolution` reports which substrate was reached. Resolve the collision, or pass `--no-restore-lessons` to delete and discard the lesson deliberately. |
 | `not_found` | 1 | Plan directory not found (archive command) |
 | `not_found` | 0 | Metadata field doesn't exist — valid query result (returns `value: null`), not an error |
 | `conflict` | 1 | `mark-step-done`: step already has a different outcome and `--force` was not supplied |

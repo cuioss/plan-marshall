@@ -94,6 +94,45 @@ def corpus(tmp_path, monkeypatch):
     return tmp_path
 
 
+def test_restore_from_plan_help_names_every_restore_action(monkeypatch, capsys):
+    """The published help must name every ``RESTORE_ACTIONS`` member.
+
+    The subcommand help is where a CLI caller learns the closed ``action``
+    vocabulary, and nothing else reads the help string and the frozenset
+    together — so a value added to (or renamed in) ``RESTORE_ACTIONS`` without a
+    matching help edit leaves the published contract stale and silently wrong.
+
+    Population-derived: the expected members are read from the module rather
+    than re-listed here, so the guard cannot pass by agreeing with a stale copy
+    of the vocabulary.
+
+    Scope, stated plainly: argparse renders a subcommand's ``help=`` string only
+    in the PARENT parser's listing, so the assertion ranges over the whole
+    rendered help rather than the ``restore-from-plan`` entry alone. Two members
+    (``restore_incomplete``, ``plan_dir_unresolved``) are named nowhere else, so
+    a dropped restore help string still fails here — but a member that another
+    subcommand's help happens to mention would not be caught by this guard.
+    """
+    lessons_query = load_script_module(
+        'plan-marshall', 'manage-lessons', '_lessons_query.py', '_dispatch_lessons_query'
+    )
+    actions = lessons_query.RESTORE_ACTIONS
+    assert actions, 'RESTORE_ACTIONS is empty — the check below would be vacuous.'
+
+    monkeypatch.setattr(sys, 'argv', ['manage-lessons.py', '--help'])
+    with pytest.raises(SystemExit) as exc:
+        _mod.main()
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+
+    missing = sorted(action for action in actions if action not in help_text)
+    assert not missing, (
+        f'The manage-lessons help does not name {missing} from RESTORE_ACTIONS '
+        f'({sorted(actions)}) — the restore-from-plan help string and the closed '
+        f'vocabulary have drifted apart.'
+    )
+
+
 class TestMainCreationVerbs:
     """``add`` / ``from-error`` dispatch through main() and emit a fresh path."""
 
@@ -185,11 +224,22 @@ class TestMainReadVerbs:
         assert toon['status'] == 'success'
         assert toon['filtered'] == 2
 
-    def test_main_list_stalled_empty_corpus_reports_zero(self, corpus, monkeypatch, capsys):
+    def test_main_list_stalled_absent_plans_root_reports_could_not_look(
+        self, corpus, monkeypatch, capsys
+    ):
+        """Through main(), an absent plans root reports WHICH kind of zero it is.
+
+        The corpus fixture seeds no ``plans/`` directory, so the scan could not
+        look. The verb stays non-faulting (a sweep is never aborted by it), but
+        the payload must carry ``plans_root_state: missing`` — a bare
+        ``stalled_count: 0`` here is indistinguishable from a clean corpus.
+        """
         code, toon = _run_main(monkeypatch, capsys, ['list-stalled'])
         assert code == 0
         assert toon['status'] == 'success'
+        assert toon['plans_root_state'] == 'missing'
         assert toon['stalled_count'] == 0
+        assert toon['scanned_plan_count'] == 0
 
 
 class TestMainMutationVerbs:
@@ -348,13 +398,25 @@ class TestMainRelocationVerbs:
         assert toon2['restored_count'] == 1
         assert (corpus / 'lessons-learned' / '2025-01-01-01-080.md').exists()
 
-    def test_main_restore_from_plan_no_lesson_is_idempotent(self, corpus, monkeypatch, capsys):
+    def test_main_restore_from_plan_absent_dir_reports_unresolved(
+        self, corpus, monkeypatch, capsys
+    ):
+        """Through main(), an absent plan dir is the non-benign outcome.
+
+        The verb never scanned anything, so it must NOT report ``no_lesson_file``
+        — that would claim the plan verifiably carries no lesson. Per the
+        manage-* output contract an operation failure exits 0 and carries its
+        verdict in the TOON, so the exit code stays 0 while ``status`` is
+        ``error``.
+        """
         code, toon = _run_main(
             monkeypatch, capsys, ['restore-from-plan', '--plan-id', 'empty-plan']
         )
         assert code == 0
-        assert toon['status'] == 'success'
-        assert toon['action'] == 'no_lesson_file'
+        assert toon['status'] == 'error'
+        assert toon['error'] == 'plan_dir_unresolved'
+        assert toon['action'] == 'plan_dir_unresolved'
+        assert toon['restored_count'] == 0
 
 
 class TestMainAggregateVerb:
