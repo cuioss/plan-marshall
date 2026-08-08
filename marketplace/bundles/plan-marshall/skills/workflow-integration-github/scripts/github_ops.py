@@ -23,7 +23,7 @@ Subcommands:
     ci rerun        Rerun a workflow run
     ci logs         Get failed run logs
     checks pull-request-runs  Report whether any pull_request-event workflow run
-                    exists for the PR's head branch (the not_triggered observable)
+                    exists for the requested PR (the not_triggered observable)
     issue create    Create an issue
     issue comment   Post a comment on an existing issue
     issue view      View issue details
@@ -1563,7 +1563,9 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
 #
 # The observable behind the ``not_triggered`` participation state. It answers one
 # question: does ANY workflow run triggered by the pull_request event exist for
-# this PR's head branch? A negative means nothing ever ran on account of the PR
+# this PR? The head branch is how the runs are FETCHED, not what the answer is
+# scoped to — a run is excluded only when its ``pull_requests`` association
+# reliably names a different PR. A negative means nothing ever ran on account of the PR
 # — the review bots were never asked — which is a different condition from a bot
 # that was asked and stayed silent, and it carries the opposite remedy (trigger
 # the review vs escalate a non-participating bot).
@@ -1575,7 +1577,7 @@ def cmd_repo_merge_queue_enable(args: argparse.Namespace) -> dict:
 #   ``UNKNOWN`` while it is still computing, so keying a participation state on it
 #   would make the verdict depend on when the question was asked.
 # * any timestamp comparison — the predicate is existence only (see
-#   ``_has_pull_request_event_run``).
+#   ``_pull_request_event_runs_for_pr``).
 # * a run's ``conclusion`` — a ``pull_request`` run that concluded ``skipped``
 #   still proves the PR triggered a workflow, so it is NOT ``not_triggered``.
 

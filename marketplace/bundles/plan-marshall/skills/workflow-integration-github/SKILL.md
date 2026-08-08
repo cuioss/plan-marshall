@@ -12,7 +12,7 @@ GitHub provider for the findings-pipeline `pr-comment` producer. The provider su
 - **`fetch_findings`** — fetch PR review comments, apply the pre-filter (`comment-patterns.json`), exclude the batched response body `post_responses` itself posted, and file one `pr-comment` finding per surviving comment via `manage-findings add`. The untrusted comment body is quarantined under `raw_input.{body}` (never embedded raw in the top-level `detail`); the batched `manage-findings ingest` pass promotes it to top-level only after `validate_struct`. A bounded guard reports a non-converging respond → re-fetch cycle as a `(self-response-loop)` Q-Gate finding.
 - **`post_responses`** — apply already-decided triage dispositions back to the PR, keyed by each finding's own `hash_id`, via a three-way transmit keyed on the finding's `kind`: thread-reply-then-resolve for a thread-bearing finding (untransmitted, never batched, when its thread is missing), ONE batched PR-level comment for the genuinely threadless kinds, and `skipped` only when there is genuinely nothing to say.
 - **`bot_completion`** — report a review bot's registry `completion_check_name` check-run state (`{status, in_progress, completed}`) for the PR HEAD, so the `automatic-review` completion-aware poll can wait for a slow bot to finish before fetching; a bot with no completion check-run reports `no_check_name` and the caller falls back to the `review_bot_buffer_seconds` wait.
-- **`pull_request_runs`** — report whether ANY `pull_request`-event workflow run exists for the PR's head branch. This is the PR-WIDE observable behind the `not_triggered` participation state: when no such run exists, nothing ever ran on account of the PR, so no bot could have published and a required bot's silence says nothing about that bot. A run that EXISTS and concluded `skipped` keeps the observable false — the workflow *was* triggered. Never reads `mergeable_state`.
+- **`pull_request_runs`** — report whether ANY `pull_request`-event workflow run exists for the requested PR. The head branch is how the runs are FETCHED, not what the answer is scoped to: a run is excluded only when its `pull_requests` association reliably names a DIFFERENT PR. This is the PR-WIDE observable behind the `not_triggered` participation state: when no such run exists, nothing ever ran on account of the PR, so no bot could have published and a required bot's silence says nothing about that bot. A run that EXISTS and concluded `skipped` keeps the observable false — the workflow *was* triggered. Never reads `mergeable_state`.
 
 All four verbs FAIL LOUD when GitHub is not configured (a typed `unconfigured` status, never a silent no-op). Uses the `gh` CLI for all GitHub operations.
 
@@ -508,7 +508,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
 
 The provider-level entry point for the PR-wide `pull_request`-run observable behind `not_triggered`.
 Its body is shared verbatim with `github_pr pull_request_runs` — see that block below for the return
-contract and the three caller obligations, which are not restated here.
+contract and the caller obligations, which are not restated here.
 
 ### github_ops checks rerun
 

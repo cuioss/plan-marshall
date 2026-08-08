@@ -354,7 +354,9 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci checks pul
 ```
 
 `checks pull-request-runs` is a pure read answering one PR-wide question: does ANY
-`pull_request`-event workflow run exist for the PR's head branch? It is the observable behind the
+`pull_request`-event workflow run exist for the requested PR? The head branch is how the runs are
+fetched, not what the answer is scoped to — a run is excluded only when its `pull_requests`
+association reliably names a different PR. It is the observable behind the
 `not_triggered` review-participation state — when no such run exists, nothing ever ran on account of
 the PR, so no review bot could have published and a required bot's silence says nothing about that
 bot. It returns `has_pull_request_run` and its exact complement `not_triggered`, alongside

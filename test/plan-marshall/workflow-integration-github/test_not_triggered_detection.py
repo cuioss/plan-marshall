@@ -48,6 +48,7 @@ targets globals the code under test does not read. The sibling suites
 
 import inspect
 import json
+import re
 
 import _github_checks
 import github_ops
@@ -68,6 +69,79 @@ def _code_without_docstring(func):
     source = inspect.getsource(func)
     doc = func.__doc__
     return source.replace(doc, '') if doc else source
+
+
+#: The two modules the detection path is spread across. The entry point lives in
+#: ``github_ops``; the PR-boundary predicate and its helper live in
+#: ``_github_checks``, so a walk confined to one module would miss half the path.
+_DETECTION_MODULES = (github_ops, _github_checks)
+
+
+def _resolve_detection_func(name):
+    """Return the function ``name`` refers to, searched across both path modules."""
+    for module in _DETECTION_MODULES:
+        candidate = getattr(module, name, None)
+        if inspect.isfunction(candidate) and candidate.__module__ in {
+            m.__name__ for m in _DETECTION_MODULES
+        }:
+            return candidate
+    return None
+
+
+def _module_level_functions():
+    """Every function defined in either path module, keyed by name."""
+    own = {m.__name__ for m in _DETECTION_MODULES}
+    found = {}
+    for module in _DETECTION_MODULES:
+        for name, obj in vars(module).items():
+            if inspect.isfunction(obj) and obj.__module__ in own:
+                found.setdefault(name, obj)
+    return found
+
+
+def _calls_in(func):
+    """The identifiers ``func`` calls, as a set."""
+    return set(re.findall(r'\b([A-Za-z_][A-Za-z0-9_]*)\s*\(', inspect.getsource(func)))
+
+
+def _detection_path_functions():
+    """Derive the detection-path function set by walking the entry point's calls.
+
+    Naming the set as a literal is what let the PR-boundary fix add two helpers to
+    the path while the sweep below kept reporting full coverage over the three
+    names it happened to know. The population is therefore derived: start at the
+    handler, follow every call to a function defined in either path module, then
+    keep only the functions PRIVATE to that path.
+
+    The privacy filter is what makes the derivation usable rather than merely
+    wide. A transitive walk also reaches shared provider primitives — a generic
+    PR-data read, the ``gh`` wrapper — which many unrelated handlers call and
+    which legitimately surface ``mergeable_state`` for their own callers. The
+    prohibition governs code authored FOR this observable, so a reachable
+    function stays in the population only when every module-level caller of it is
+    itself on the path. A helper added to the path tomorrow is private to it and
+    is swept; a shared primitive the path merely consumes is not.
+    """
+    module_funcs = _module_level_functions()
+
+    reachable: set[str] = set()
+    frontier = ['cmd_checks_pull_request_runs']
+    while frontier:
+        name = frontier.pop()
+        if name in reachable or name not in module_funcs:
+            continue
+        reachable.add(name)
+        frontier.extend(ident for ident in _calls_in(module_funcs[name]) if ident not in reachable)
+
+    callers: dict[str, set[str]] = {name: set() for name in module_funcs}
+    for caller, func in module_funcs.items():
+        for callee in _calls_in(func):
+            if callee in callers and callee != caller:
+                callers[callee].add(caller)
+
+    return tuple(
+        sorted(name for name in reachable if callers[name] <= reachable)
+    )
 
 
 def _run(event, conclusion='success'):
@@ -209,14 +283,36 @@ def test_the_pagination_flags_are_actually_passed(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    'func',
-    [
-        'pull_request_runs_result',
-        'fetch_branch_workflow_runs',
-        'cmd_checks_pull_request_runs',
-    ],
-)
+#: The functions the prohibition sweeps. DERIVED from the entry point's call
+#: graph rather than named, so a helper added to the detection path inherits the
+#: sweep instead of silently escaping it — the failure mode that let
+#: ``_run_names_a_different_pr`` and ``_pull_request_event_runs_for_pr`` join the
+#: path while a three-name literal kept reporting full coverage.
+_DETECTION_PATH_FUNCS = _detection_path_functions()
+
+
+def test_the_detection_path_derivation_is_not_vacuous():
+    """The derived population must be non-empty and reach past the entry point.
+
+    A derivation that resolved to nothing — or to the entry point alone — would
+    make the prohibition sweep below pass over an empty set while still reporting
+    a healthy per-function result, which is the exact shape the derivation
+    replaced.
+    """
+    assert 'cmd_checks_pull_request_runs' in _DETECTION_PATH_FUNCS
+    assert len(_DETECTION_PATH_FUNCS) > 1, (
+        f'the call-graph walk reached only {_DETECTION_PATH_FUNCS} — it never left the '
+        f'entry point, so the sweep would be vacuous'
+    )
+    # The two helpers the PR-boundary fix introduced must be reachable, or the
+    # walk is not actually following the path it claims to follow.
+    for helper in ('_pull_request_event_runs_for_pr', '_run_names_a_different_pr'):
+        assert helper in _DETECTION_PATH_FUNCS, (
+            f'{helper} is on the detection path but the derivation missed it'
+        )
+
+
+@pytest.mark.parametrize('func', _DETECTION_PATH_FUNCS)
 def test_no_function_in_the_detection_path_mentions_mergeable_state(func):
     """Source-level prohibition, per function in the new detection path.
 
@@ -227,7 +323,7 @@ def test_no_function_in_the_detection_path_mentions_mergeable_state(func):
     keep passing if a future edit read the field and merely did not change the
     outcome on these fixtures.
     """
-    source = _code_without_docstring(getattr(github_ops, func))
+    source = _code_without_docstring(_resolve_detection_func(func))
 
     assert 'mergeable_state' not in source
     assert 'mergeStateStatus' not in source
