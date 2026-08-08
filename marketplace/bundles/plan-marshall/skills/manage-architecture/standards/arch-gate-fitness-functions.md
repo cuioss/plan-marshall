@@ -35,11 +35,11 @@ The negative control is what makes those two states distinguishable, and it is t
 
 Because vacuity is stated here as a property of the rule rather than of any mechanism that produced it, the obligation closes the whole class rather than an enumeration of its observed members. An empty match set, a selector scoped to a package that no longer exists, a condition composed so that it asserts the opposite of its intent, a filter that silently excluded every candidate — and every mechanism not yet observed — all yield the same green report, and the same negative control separates every one of them from a rule that genuinely holds. A rule is consequently never accepted on the strength of the mechanism it avoids; it is accepted on the strength of the rejection it demonstrates.
 
-This is the single-rule form of the anti-vacuity principle already accepted in this repository:
+This is the single-rule form of the anti-vacuity principle already recorded in this repository:
 
 * **ADR-014** — an aggregation carries producer identity and no producer suppresses an element silently, so a working-but-empty result stays distinguishable from an inert one. A negative control does for one rule what producer identity does for an aggregation: it makes "examined and found nothing" distinguishable from "examined nothing".
 
-The per-domain arch-gate skills bind this obligation to their native tool's rule form and to the tool-specific ways a rule can go vacuous there; the obligation itself stays here and is not restated by them.
+The obligation itself stays here and is never restated by a per-domain arch-gate skill. What a per-domain skill adds is the binding to its native tool's rule form and to the tool-specific ways a rule can go vacuous under that tool. `pm-dev-java:arch-gate-java` carries the ArchUnit binding.
 
 ## Single per-deliverable read-only execution model
 
