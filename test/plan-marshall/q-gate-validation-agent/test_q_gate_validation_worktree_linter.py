@@ -578,6 +578,16 @@ def _probe_usage_line(*verb_chain: str) -> str:
     return usage
 
 
+# The choices set rendered in an argparse usage line, e.g. ``{work,decision}``.
+# Deliberately the same pattern as plugin-doctor's canonical ``_CHOICES_RE``
+# (``_analyze_manage_invocation.py``) rather than a second, quietly diverging
+# mirror of a parse this repository already owns: ``[^{}]+`` cannot match
+# across a nested brace by construction, and it admits a verb name carrying a
+# digit or underscore (``read-v2`` / ``read_all``), which a ``[a-z,\-]`` class
+# would fail to match at all.
+_CHOICES_RE = re.compile(r'\{([^{}]+)\}')
+
+
 def _derive_manage_logging_verb_population() -> tuple[str, ...]:
     """Derive the complete manage-logging verb set from the script's own parser.
 
@@ -585,12 +595,23 @@ def _derive_manage_logging_verb_population() -> tuple[str, ...]:
     vacuous if it iterated a tuple a future verb addition never updated.
     """
     usage = _probe_usage_line()
-    choices_match = re.search(r'\{([a-z,\-]+)\}', usage)
-    assert choices_match is not None, (
+    # The subparser choices group is the one immediately followed by ``...``,
+    # the same disambiguation the canonical ``_parse_subcommand_choices``
+    # applies. Taking the first braced group instead happens to be correct for
+    # manage-logging today, but not for the reason the canonical parse is
+    # correct — so mirror the reason, not just the result.
+    verbs: tuple[str, ...] = ()
+    for match in _CHOICES_RE.finditer(usage):
+        if usage[match.end() :].lstrip().startswith('...'):
+            verbs = tuple(name.strip() for name in match.group(1).split(',') if name.strip())
+            break
+    # Fail LOUD when the population cannot be derived: an empty verb set would
+    # make every control that iterates it silently vacuous.
+    assert verbs, (
         f'Could not derive the manage-logging subcommand choices from its top-level '
         f'usage line: {usage!r}'
     )
-    return tuple(choices_match.group(1).split(','))
+    return verbs
 
 
 @pytest.fixture(scope='module')
