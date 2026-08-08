@@ -684,14 +684,22 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons rest
   --plan-id {plan_id}
 ```
 
-**Branch on the returned `action`, never on `status` alone** — the verb reports three distinguishable outcomes (see [`../../manage-lessons/SKILL.md`](../../manage-lessons/SKILL.md) § `restore-from-plan`):
+**Branch on the returned `action`, never on `status` alone** — the verb reports four distinguishable outcomes (see [`../../manage-lessons/SKILL.md`](../../manage-lessons/SKILL.md) § `restore-from-plan`):
 
-- **`action: restored`** — the lesson(s) landed. Log the restore:
+- **`action: restored`** — every carried lesson landed. Log the restore:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
     decision --plan-id global --level INFO \
     --message "(plan-marshall:plan-marshall:cleanup) Restored stalled lesson(s) {lesson_ids} from plan {plan_id} to the active corpus"
+  ```
+
+- **`action: restore_incomplete`** (`status: error`) — the plan directory WAS scanned and carried lesson files, but the move aborted on a collision or a traversal guard. `restored_count` says how many landed before the abort and is legitimately `0`. This is NOT a completed restore: the plan MUST stay on the stranded list for the un-landed lessons, and the collision (typically `destination_exists`, which `list-stalled` had already flagged as a `duplicate_lessons[]` row) needs manual reconciliation:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id global --level ERROR \
+    --message "(plan-marshall:plan-marshall:cleanup) Restore INCOMPLETE for plan {plan_id} ({error}) — {restored_count} lesson(s) landed, the rest are still stranded"
   ```
 
 - **`action: plan_dir_unresolved`** (`status: error`) — the plan directory was NEVER scanned, so the lesson's fate is unknown. This is a non-benign outcome: it MUST NOT be logged or reported as a completed restore, and the plan MUST stay on the stranded list for the operator:

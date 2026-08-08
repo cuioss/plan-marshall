@@ -32,14 +32,21 @@ from marketplace_paths import (
 #:   git common dir, which is the production path.
 #: - ``override`` — a ``PLAN_BASE_DIR`` / ``set_base_dir()`` override stood in
 #:   for the main checkout, which is the test path.
-#: - ``unresolved`` — NEITHER could be resolved, so the caller could not look at
-#:   the store at all.
+#: - ``unresolved`` — the store was NOT reached, so the caller could not look at
+#:   it at all. :func:`resolve_lesson_store` returns this when neither anchor
+#:   could be resolved; a consumer reporting the field for a path that never
+#:   attempted resolution (``manage-status delete-plan --no-restore-lessons``)
+#:   also reports ``unresolved``, because "I did not look" is the fact the
+#:   field states and the reason it did not look is carried by the sibling
+#:   action value.
 #:
 #: The third value is the one that carries the contract: without it a caller
 #: cannot tell "I looked at the corpus and it was empty" from "I never reached
 #: the corpus", and every lesson-retirement site collapsed those two into the
-#: same benign zero. Consumers assert against this set rather than re-listing
-#: the literals.
+#: same benign zero. It follows that a resolved value must never be reported
+#: for a store that was not reached — including by borrowing a sibling store's
+#: resolution when the one being reported on is the one that failed. Consumers
+#: assert against this set rather than re-listing the literals.
 STORE_RESOLUTIONS = frozenset({'main_anchored', 'override', 'unresolved'})
 
 

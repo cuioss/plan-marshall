@@ -1287,9 +1287,12 @@ def main() -> int:
         'restore-from-plan',
         help=(
             'Move a lesson-{id}.md file from a plan directory back to the global '
-            'lessons directory; reports restored / no_lesson_file (the plan '
-            'directory was scanned and held none) / plan_dir_unresolved (it could '
-            'not be resolved to the main-anchored store, so it was never scanned)'
+            'lessons directory; reports restored (every carried file landed) / '
+            'restore_incomplete (the move aborted on a collision or traversal '
+            'guard; restored_count says how many landed first, possibly none) / '
+            'no_lesson_file (the plan directory was scanned and held none) / '
+            'plan_dir_unresolved (it could not be resolved to the main-anchored '
+            'store, so it was never scanned)'
         ),
         allow_abbrev=False,
     )

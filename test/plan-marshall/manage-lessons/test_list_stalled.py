@@ -20,6 +20,11 @@ plans root (non-faulting ``plans_root_state: missing``), and a genuine
 scanned-and-clean result (``plans_root_state: present`` with
 ``scanned_plan_count`` set).
 
+The verb needs BOTH the plans root and the lessons corpus, so the unresolvable
+arm is covered from either side: the discriminator must report the resolution
+of the store that actually failed, never the sibling that happened to resolve,
+because the documented consumer branches on that one field.
+
 Tests cover the stalled-in-5-execute and stalled-in-6-finalize positives, the
 completed-plan negative, the unset-``plan_source`` positive, the three zeros,
 the duplication direction (a carried id already in the active corpus), the
@@ -173,6 +178,8 @@ class TestCmdListStalled:
         assert result['plans_root_state'] == 'present'
         assert result['scanned_plan_count'] == 0
         assert result['store_resolution'] == 'override'
+        # The field rides every branch, empty when both stores resolved.
+        assert result['unresolved_store'] == ''
 
     def test_missing_plans_root_reports_could_not_look(self, tmp_path):
         """An absent plans root reports missing — it is NOT a scanned zero.
@@ -189,6 +196,88 @@ class TestCmdListStalled:
         assert result['plans_root_state'] == 'missing'
         assert result['stalled_count'] == 0
         assert result['scanned_plan_count'] == 0
+        # ``missing`` is an ASSERTION about a resolved store's plans root, so it
+        # is reachable only when both stores resolved. The could-not-resolve
+        # case is the distinct ``unknown``.
+        assert result['store_resolution'] == 'override'
+        assert result['unresolved_store'] == ''
+
+    def test_unresolved_lessons_corpus_is_not_reported_as_a_resolved_store(
+        self, tmp_path, monkeypatch
+    ):
+        """The discriminator names the store that FAILED, not the one that resolved.
+
+        The verb needs both stores, and here the plans root resolves while the
+        lessons corpus does not. Reporting the plans store emits
+        ``store_resolution: override`` — a RESOLVED value — next to
+        ``error: store_unresolved``, a real ``plans_root``, and a
+        ``plans_root_state`` asserting the plans root is absent when nothing
+        established that.
+
+        It matters because the documented consumer
+        (``finalize-step-lessons-housekeeping`` Step 2) uses this verb purely
+        as the LESSONS-corpus substrate probe and branches on
+        ``store_resolution == 'unresolved'`` to take its "corpus unresolved —
+        nothing read" exit. A resolved value here walks it straight past that
+        exit and into a reconciliation against a corpus it never reached.
+        """
+        import _lessons_query
+
+        (tmp_path / 'plans').mkdir(parents=True)
+        real_resolve = _lessons_query.resolve_lesson_store
+
+        def _only_plans_resolves(subpath='lessons-learned'):
+            if str(subpath) == 'plans':
+                return real_resolve(subpath)
+            return _lessons_query.LessonStore(
+                None, 'unresolved', 'cannot resolve the lessons corpus (test stub)'
+            )
+
+        monkeypatch.setattr(_lessons_query, 'resolve_lesson_store', _only_plans_resolves)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+        result = cmd_list_stalled(Namespace())
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'store_unresolved'
+        # The three fields must agree with each other and with the error.
+        assert result['store_resolution'] == 'unresolved'
+        assert result['plans_root_state'] == 'unknown'
+        assert result['unresolved_store'] == 'lessons'
+        assert result['stalled_count'] == 0
+        assert result['scanned_plan_count'] == 0
+        # Both values come from the closed vocabularies consumers assert on.
+        assert result['plans_root_state'] in _lessons_query.PLANS_ROOT_STATES
+        assert result['unresolved_store'] in _lessons_query.UNRESOLVED_STORES
+
+    def test_unresolved_plans_root_names_the_plans_store(self, tmp_path, monkeypatch):
+        """The mirror arm: when the PLANS store fails, that is what is named.
+
+        Keeps ``unresolved_store`` from being a constant that happens to read
+        correctly on one arm — the two arms must disagree, or the field carries
+        no information.
+        """
+        import _lessons_query
+
+        real_resolve = _lessons_query.resolve_lesson_store
+
+        def _only_lessons_resolves(subpath='lessons-learned'):
+            if str(subpath) == 'plans':
+                return _lessons_query.LessonStore(
+                    None, 'unresolved', 'cannot resolve the plans root (test stub)'
+                )
+            return real_resolve(subpath)
+
+        monkeypatch.setattr(_lessons_query, 'resolve_lesson_store', _only_lessons_resolves)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+
+        result = cmd_list_stalled(Namespace())
+
+        assert result['status'] == 'error'
+        assert result['store_resolution'] == 'unresolved'
+        assert result['plans_root_state'] == 'unknown'
+        assert result['unresolved_store'] == 'plans'
+        assert result['unresolved_store'] in _lessons_query.UNRESOLVED_STORES
 
     def test_duplicate_carried_lesson_is_reported_separately(self, tmp_path):
         """A carried id already in the active corpus is its own outcome.

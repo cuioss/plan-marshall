@@ -291,19 +291,32 @@ def cmd_consult(args: argparse.Namespace) -> dict:
 
 #: The closed vocabulary :func:`cmd_restore_from_plan` reports as ``action``.
 #:
-#: - ``restored`` — the plan directory resolved, was scanned, and at least one
-#:   ``lesson-*.md`` was moved back into the corpus.
+#: - ``restored`` — the plan directory resolved, was scanned, carried at least
+#:   one ``lesson-*.md``, and EVERY carried file landed in the corpus. Pairs
+#:   with ``status: success``.
+#: - ``restore_incomplete`` — the plan directory resolved, was scanned, and
+#:   carried lesson files, but the move aborted on a guard (a traversal-shaped
+#:   id, or a destination that already exists). ``restored_count`` states how
+#:   many landed BEFORE the abort and is legitimately ``0`` when the very first
+#:   file collided. Pairs with ``status: error``.
 #: - ``no_lesson_file`` — the plan directory GENUINELY resolved, WAS scanned,
 #:   and held no ``lesson-*.md``. This is the benign zero.
 #: - ``plan_dir_unresolved`` — the plan directory could not be resolved to the
 #:   main-anchored store, so the verb never looked. This is the NON-benign zero.
 #:
-#: Splitting the last value out of ``no_lesson_file`` is the whole point of the
-#: contract: the two were previously the same answer, so a plan directory
-#: reached through the wrong store — or not reached at all — reported as a plan
-#: that verifiably carried no lesson. Consumers assert against this set rather
-#: than re-listing the literals.
-RESTORE_ACTIONS = frozenset({'restored', 'no_lesson_file', 'plan_dir_unresolved'})
+#: Splitting ``plan_dir_unresolved`` out of ``no_lesson_file`` is the whole
+#: point of the contract: the two were previously the same answer, so a plan
+#: directory reached through the wrong store — or not reached at all — reported
+#: as a plan that verifiably carried no lesson. ``restore_incomplete`` exists
+#: for the same reason one level down: an aborted move used to report
+#: ``action: restored`` alongside ``status: error`` and ``restored_count: 0``,
+#: so a consumer asserting against this set — which this contract instructs
+#: callers to do rather than re-listing literals — concluded at least one
+#: lesson had landed when none had. ``restored`` now means exactly what it
+#: says, and never rides with an error status.
+RESTORE_ACTIONS = frozenset(
+    {'restored', 'restore_incomplete', 'no_lesson_file', 'plan_dir_unresolved'}
+)
 
 
 def _restore_payload(
@@ -353,7 +366,7 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
     Plans that consolidate several lessons may carry more than one
     ``lesson-*.md`` file at the plan-dir root; every match is restored.
 
-    The verb reports THREE distinguishable outcomes over the closed
+    The verb reports FOUR distinguishable outcomes over the closed
     :data:`RESTORE_ACTIONS` vocabulary, modelled on
     ``_orchestrator_inbox.cmd_inbox_list``'s ``epic_not_found`` /
     ``inbox_state: missing`` / ``present with count: 0`` triple: the
@@ -374,7 +387,12 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
 
     Refuses to clobber a pre-existing destination file (fail-fast on the first
     collision; any lessons restored before the collision remain in
-    ``lessons-learned/`` and are reported in ``restored_lessons``).
+    ``lessons-learned/`` and are reported in ``restored_lessons``). An aborted
+    move is the fourth outcome, ``action: restore_incomplete`` — NOT
+    ``restored``: on a collision with the very first match nothing has landed,
+    and reporting that as ``restored`` claims the one thing the value promises.
+    ``restored`` is therefore reachable only from the final return, where every
+    carried file moved.
     """
     plans_store = resolve_lesson_store('plans')
 
@@ -455,7 +473,7 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
         if any(sep in lesson_id for sep in ('/', '\\', '..')) or source.parent != plan_dir:
             return _restore_payload(
                 args.plan_id,
-                'restored',
+                'restore_incomplete',
                 plans_store,
                 restored=restored_lessons,
                 error='path_traversal',
@@ -467,7 +485,7 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
         if destination.parent != lessons_dir:
             return _restore_payload(
                 args.plan_id,
-                'restored',
+                'restore_incomplete',
                 plans_store,
                 restored=restored_lessons,
                 error='path_traversal',
@@ -477,7 +495,7 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
         if destination.exists():
             return _restore_payload(
                 args.plan_id,
-                'restored',
+                'restore_incomplete',
                 plans_store,
                 restored=restored_lessons,
                 error='destination_exists',
@@ -498,14 +516,26 @@ def cmd_restore_from_plan(args: argparse.Namespace) -> dict:
 
 
 #: The closed vocabulary :func:`cmd_list_stalled` reports as ``plans_root_state``.
-#: ``present`` means the enumeration looked at a real plans directory;
-#: ``missing`` means it COULD NOT look because the main-anchored plans root does
-#: not exist. As in ``_orchestrator_inbox.cmd_inbox_list``, an absent root is
-#: NOT a fault — the verb still returns ``status: success`` so a sweep is never
-#: aborted by it, and the two zeros are told apart by the PAYLOAD rather than by
-#: the status. Consumers assert against this set rather than re-listing the
-#: literals.
-PLANS_ROOT_STATES = frozenset({'present', 'missing'})
+#:
+#: - ``present`` — the enumeration looked at a real plans directory.
+#: - ``missing`` — the store RESOLVED, and the main-anchored plans root it
+#:   points at does not exist, so the enumeration could not look. As in
+#:   ``_orchestrator_inbox.cmd_inbox_list``, an absent root is NOT a fault — the
+#:   verb still returns ``status: success`` so a sweep is never aborted by it,
+#:   and the two zeros are told apart by the PAYLOAD rather than by the status.
+#: - ``unknown`` — a required store did not resolve at all, so whether the
+#:   plans root exists was never determined. Reporting that case as ``missing``
+#:   asserts a fact about the filesystem the verb never established; it rides
+#:   only with the ``store_unresolved`` error.
+#:
+#: Consumers assert against this set rather than re-listing the literals.
+PLANS_ROOT_STATES = frozenset({'present', 'missing', 'unknown'})
+
+#: Which store :func:`cmd_list_stalled` names in ``unresolved_store``. The verb
+#: needs BOTH the plans root and the lessons corpus, so a caller reading
+#: ``error: store_unresolved`` must be told which one failed — the two demand
+#: different remediation. Empty string on every branch where both resolved.
+UNRESOLVED_STORES = frozenset({'', 'plans', 'lessons'})
 
 
 def _stalled_payload(
@@ -516,6 +546,7 @@ def _stalled_payload(
     stalled: list[dict] | None = None,
     duplicates: list[dict] | None = None,
     unclassifiable: list[dict] | None = None,
+    unresolved_store: str = '',
     error: str = '',
     message: str = '',
 ) -> dict:
@@ -524,6 +555,13 @@ def _stalled_payload(
     Every return of :func:`cmd_list_stalled` routes through here, so a
     could-not-look return states every count the documented Output contract
     promises unconditionally instead of emitting a bare ``stalled_count: 0``.
+
+    ``store`` MUST be the store whose resolution the payload is reporting — on
+    a could-not-look return that is the store that actually FAILED, never a
+    sibling that happened to resolve. ``store_resolution`` is the field the
+    documented consumer branches on, so a resolved value emitted next to
+    ``error: store_unresolved`` sends that consumer past its could-not-look
+    exit and into a reconciliation against a corpus nothing ever read.
     """
     stalled_plans = stalled if stalled is not None else []
     duplicate_lessons = duplicates if duplicates is not None else []
@@ -533,6 +571,7 @@ def _stalled_payload(
         'store_resolution': store.resolution,
         'plans_root': '' if store.path is None else str(store.path),
         'plans_root_state': plans_root_state,
+        'unresolved_store': unresolved_store,
         'scanned_plan_count': scanned_plan_count,
         'stalled_count': len(stalled_plans),
         'stalled_plans': stalled_plans,
@@ -600,25 +639,45 @@ def cmd_list_stalled(args: argparse.Namespace) -> dict:  # noqa: ARG001
     check the duplicate list first or the restore will fail on the collision.
 
     **Every zero states which kind of zero it is.** An unresolvable store is a
-    structured ``status: error`` (``store_unresolved``); an absent plans root is
-    the non-faulting ``plans_root_state: missing``; and a plan whose
-    ``status.json`` cannot be read is surfaced in ``unclassifiable_plans``
-    instead of being silently dropped from the population. ``stalled_count: 0``
-    is therefore never bare — it always rides with the discriminators that say
-    whether the store was actually resolved and scanned.
+    structured ``status: error`` (``store_unresolved``) carrying
+    ``store_resolution: unresolved``, ``plans_root_state: unknown``, and the
+    ``unresolved_store`` name of the store that failed; an absent plans root
+    under a store that DID resolve is the non-faulting
+    ``plans_root_state: missing``; and a plan whose ``status.json`` cannot be
+    read is surfaced in ``unclassifiable_plans`` instead of being silently
+    dropped from the population. ``stalled_count: 0`` is therefore never bare —
+    it always rides with the discriminators that say whether the store was
+    actually resolved and scanned.
+
+    **The verb needs BOTH stores**, so both are resolved up front and either
+    one failing is a could-not-look return. The discriminator reports the store
+    that failed, not the one that happened to succeed: an unresolved lessons
+    corpus reported as ``store_resolution: main_anchored`` is the same
+    could-not-look-reports-benign collapse this verb exists to close, one field
+    removed.
     """
     plans_store = resolve_lesson_store('plans')
     lessons_store = resolve_lesson_store()
 
     if plans_store.path is None or lessons_store.path is None:
+        # Report the resolution of the store that ACTUALLY failed. Passing the
+        # plans store here emitted a RESOLVED ``store_resolution`` next to
+        # ``error: store_unresolved`` whenever the LESSONS corpus was the
+        # unreachable one — and the documented consumer branches on
+        # ``store_resolution``, so it skipped its could-not-look exit and
+        # reconciled against a corpus it never reached. ``plans_root_state`` is
+        # ``unknown`` rather than ``missing`` for the same reason: nothing here
+        # established that the plans root is absent.
+        unresolved_name = 'plans' if plans_store.path is None else 'lessons'
         unresolved = plans_store if plans_store.path is None else lessons_store
         return _stalled_payload(
-            plans_store,
-            'missing',
+            unresolved,
+            'unknown',
+            unresolved_store=unresolved_name,
             error='store_unresolved',
             message=(
-                f'Cannot resolve the main-anchored store, so no plan directory was '
-                f'ever scanned: {unresolved.detail}'
+                f'Cannot resolve the main-anchored {unresolved_name} store, so no '
+                f'plan directory was ever scanned: {unresolved.detail}'
             ),
         )
 

@@ -114,12 +114,14 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list
 
 Read `store_resolution` (`main_anchored` / `override` / `unresolved`) and `plans_root` from the payload. `list-stalled` is used here purely as the substrate probe — it resolves the same main-anchored store `list` reads and is the only verb that REPORTS the resolution. Retain both values as `{store_resolution}` and `{corpus_path}` (the lessons-learned sibling of the reported `plans_root`); every outcome line below names them.
 
+The verb resolves two stores — the plans root and the lessons corpus — and reports the resolution of whichever one **failed**, so `store_resolution: unresolved` here means the corpus this step reconciles against was not reached, whether or not the plans root was. `unresolved_store` (`plans` | `lessons`) names which one, and `plans_root` is empty on that branch; both are for the log line, not for the branch. Branch on `store_resolution` alone.
+
 **Unresolvable-store exit (`store_resolution: unresolved`)**: the corpus was never reached, so this step has classified nothing. It MUST NOT report a clean reconciliation. Record the step `done` (housekeeping is non-fatal and must never block finalize) with a `display_detail` that names the failure to look:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level WARNING \
-  --message "[STATUS] (project:finalize-step-lessons-housekeeping) Lessons corpus UNRESOLVED — nothing was read or reconciled, this is NOT a clean-corpus result"
+  --message "[STATUS] (project:finalize-step-lessons-housekeeping) Lessons corpus UNRESOLVED (unresolved_store={unresolved_store}) — nothing was read or reconciled, this is NOT a clean-corpus result"
 ```
 
 Then mark done with `--display-detail "corpus unresolved — nothing read"` following the HEAD-capture sequence below.

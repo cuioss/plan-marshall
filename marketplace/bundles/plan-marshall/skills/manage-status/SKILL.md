@@ -728,7 +728,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status delete
 
 **Parameters**:
 - `--plan-id` (required): Plan identifier
-- `--no-restore-lessons` (optional): Skip the lesson carry-back entirely. Because the carry-back owns the veto below, opting out of the carry-back also opts out of the veto — the directory is deleted and any lesson it carries is discarded.
+- `--no-restore-lessons` (optional): Skip the lesson carry-back entirely. Because the carry-back owns the veto below, opting out of the carry-back also opts out of the veto — the directory is deleted and any lesson it carries is discarded. The payload reports this branch as `lesson_carry_back_action: not_attempted` with `lesson_store_resolution: unresolved`: nothing was scanned and no store was resolved, so it may claim neither the benign scanned-and-empty zero nor a resolution it never performed.
 
 #### Lesson carry-back (and the veto)
 
@@ -736,13 +736,17 @@ A plan directory can hold `lesson-*.md` files moved in by `manage-lessons conver
 
 The destination is resolved through the **main-anchored** lessons-store handle, never the cwd-keyed `base_path()`. A worktree-pinned `delete-plan` would otherwise restore into the worktree's own ephemeral corpus — a store that is discarded when the worktree goes away, which loses the lesson just as thoroughly as deleting it.
 
-`lesson_carry_back_action` reports which kind of answer the carry-back is giving, over the same closed vocabulary `manage-lessons restore-from-plan` uses:
+`lesson_carry_back_action` reports which kind of answer the carry-back is giving. Every value it shares with `manage-lessons restore-from-plan`'s `action` vocabulary carries the identical meaning there, so the two lesson-restore surfaces answer the "which kind of zero is this?" question the same way. The sets are **not equal**, and deliberately so: `not_attempted` is producible only here, because only `delete-plan` has an opt-out flag.
 
 | `lesson_carry_back_action` | Meaning |
 |----------------------------|---------|
-| `restored` | The plan directory was scanned and DID carry lesson files, so the carry-back ran. `restored_lesson_ids` / `skipped_lessons` say how many actually landed. |
+| `restored` | The plan directory was scanned, DID carry lesson files, and **every** one of them landed in the corpus. `restored_lesson_ids` names them; `skipped_lessons` is empty. |
+| `restore_incomplete` | The plan directory was scanned and carried lesson files, but at least one did **not** land. `restored_lesson_ids` is legitimately empty when none did. This is the state that fires the veto below. |
 | `no_lesson_file` | The plan directory was scanned and carried none. The benign zero. |
 | `plan_dir_unresolved` | The carry-back could not look — the directory is gone, or the main-anchored store did not resolve. `lesson_store_resolution` says which. |
+| `not_attempted` | `--no-restore-lessons` opted out: nothing was scanned, no store was resolved, and any carried lesson is discarded with the directory. `lesson_store_resolution` is `unresolved` and `lessons_dir` is empty. |
+
+The last two are the two ways this payload can carry a zero that is **not** evidence the plan carried no lesson. Keeping them out of `no_lesson_file` is what lets an audit tell "deleted a plan that verifiably carried no lesson" from "deleted a plan whose lessons went unexamined" — the same distinction the carry-back exists to make, applied to the branch that can actually destroy one.
 
 **The veto**: when `skipped_lessons` is non-empty — a destination collision, a traversal-shaped lesson id, or a store that would not resolve — at least one carried lesson did NOT land, so the plan directory still holds the only copy of it. The delete is **refused** with `error: lesson_carry_back_incomplete` and the directory is left intact. The refusal is what makes silent corpus loss unreachable on this path: a skipped lesson plus an unconditional delete would destroy the only copy with no signal anywhere. Resolve the collision (or pass `--no-restore-lessons` to delete and discard deliberately), then retry.
 
@@ -771,7 +775,7 @@ plan_id: my-feature
 error: lesson_carry_back_incomplete
 action: refused
 path: /path/to/.plan/local/plans/my-feature
-lesson_carry_back_action: restored
+lesson_carry_back_action: restore_incomplete
 lesson_store_resolution: main_anchored
 lessons_dir: /abs/path/to/.plan/local/lessons-learned
 lesson_restored: false

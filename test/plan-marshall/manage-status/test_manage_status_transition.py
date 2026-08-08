@@ -5,8 +5,9 @@
 Split from test_manage_status.py: covers cmd_transition (incl. inline
 strict-verify guard for guarded boundaries, and last-phase symmetry with
 cmd_archive), cmd_archive (incl. --reason flag), cmd_delete_plan (incl. the main-anchored
-lesson carry-back, its three-value ``lesson_carry_back_action``, and the veto
-that refuses the deletion when a carried lesson did not land), cmd_list (incl.
+lesson carry-back, its five-value ``lesson_carry_back_action`` and that
+vocabulary's stated relationship to ``_lessons_query.RESTORE_ACTIONS``, and the
+veto that refuses the deletion when a carried lesson did not land), cmd_list (incl.
 worktree moved-in plan discovery), cmd_list_orphans, and cmd_mark_step_done
 loop-back target validation.
 """
@@ -147,6 +148,92 @@ def test_delete_plan_no_restore_lessons_flag_skips_restoration(plan_context):
     # The lesson file was discarded along with the plan dir
     assert not plan_dir.exists()
     assert not (plan_context.fixture_dir / 'lessons-learned' / '2025-01-01-002.md').exists()
+
+
+def test_delete_plan_no_restore_lessons_does_not_claim_the_benign_zero(plan_context):
+    """The opt-out path may claim neither a scan nor a resolution it never did.
+
+    ``no_lesson_file`` is defined as "the plan directory was SCANNED and carried
+    none — the benign zero", and ``main_anchored`` asserts a resolution
+    performed. This branch scans nothing and never calls
+    ``resolve_lesson_store``, yet it is the ONE branch that can silently
+    discard a carried lesson. Reporting the verified-benign zero for it leaves
+    an auditor unable to tell "deleted a plan that verifiably carried no
+    lesson" from "deleted a plan whose lessons went unexamined" — the same
+    could-not-look-reports-benign collapse, in the opt-out path of its own fix.
+
+    The lesson file below is deliberately present: the payload must not read as
+    a clean scan while the carry-back is discarding a real lesson.
+    """
+    import _lessons_io
+
+    plan_dir = plan_context.plan_dir_for('optout-2025-05-05-005')
+    (plan_dir / 'lesson-2025-05-05-005.md').write_text(
+        'id=2025-05-05-005\ncomponent=foo\ncategory=bug\ncreated=2025-05-05\n\n# Lesson\n\nBody.\n'
+    )
+
+    result = cmd_delete_plan(
+        Namespace(plan_id='optout-2025-05-05-005', no_restore_lessons=True)
+    )
+
+    assert result['status'] == 'success'
+    assert result['lesson_carry_back_action'] == 'not_attempted'
+    assert result['lesson_carry_back_action'] != 'no_lesson_file'
+    assert result['lesson_carry_back_action'] in _lifecycle.CARRY_BACK_ACTIONS
+    # No resolution was performed, so none may be reported.
+    assert result['lesson_store_resolution'] == 'unresolved'
+    assert result['lesson_store_resolution'] in _lessons_io.STORE_RESOLUTIONS
+    assert result['lessons_dir'] == ''
+    assert result['restored_lesson_ids'] == []
+
+
+def test_carry_back_vocabulary_agrees_with_restore_from_plan(plan_context):
+    """The two lesson-restore vocabularies must not claim a false identity.
+
+    ``CARRY_BACK_ACTIONS`` documents its relationship to
+    ``_lessons_query.RESTORE_ACTIONS``; a stated relationship that the sets do
+    not satisfy is a contract a consumer can be misled by when it carries a
+    meaning across the two surfaces. The relationship is a strict superset by
+    exactly one value — ``not_attempted``, producible only here because only
+    ``delete-plan`` has an opt-out flag.
+    """
+    lessons_query = load_script_module(
+        'plan-marshall', 'manage-lessons', '_lessons_query.py', '_transition_lessons_query'
+    )
+
+    assert _lifecycle.CARRY_BACK_ACTIONS - {'not_attempted'} == (
+        lessons_query.RESTORE_ACTIONS
+    )
+    assert 'not_attempted' not in lessons_query.RESTORE_ACTIONS
+    # ``restored`` is the value the two used to define incompatibly.
+    assert 'restored' in _lifecycle.CARRY_BACK_ACTIONS
+    assert 'restore_incomplete' in _lifecycle.CARRY_BACK_ACTIONS
+
+
+def test_delete_plan_partial_carry_back_reports_restore_incomplete(plan_context):
+    """A carry-back where one lesson did not land is not ``restored``.
+
+    ``restored`` asserts every carried lesson landed. Here one collides, so the
+    veto fires and ``restored_lesson_ids`` is empty — reporting ``restored``
+    over that is the same overclaim ``restore-from-plan`` made on a first-file
+    collision, and the two surfaces must answer it the same way.
+    """
+    lessons_dir = plan_context.fixture_dir / 'lessons-learned'
+    lessons_dir.mkdir(parents=True, exist_ok=True)
+    (lessons_dir / '2025-06-06-006.md').write_text('id=2025-06-06-006\n\n# Incumbent\n\nCorpus.\n')
+
+    plan_dir = plan_context.plan_dir_for('partial-carry-back')
+    (plan_dir / 'lesson-2025-06-06-006.md').write_text(
+        'id=2025-06-06-006\ncomponent=foo\ncategory=bug\ncreated=2025-06-06\n\n# Carried\n\nPlan.\n'
+    )
+
+    result = cmd_delete_plan(Namespace(plan_id='partial-carry-back', no_restore_lessons=False))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'lesson_carry_back_incomplete'
+    assert result['lesson_carry_back_action'] == 'restore_incomplete'
+    assert result['lesson_carry_back_action'] != 'restored'
+    assert result['restored_lesson_ids'] == []
 
 
 def test_delete_plan_restores_all_lesson_files(plan_context):

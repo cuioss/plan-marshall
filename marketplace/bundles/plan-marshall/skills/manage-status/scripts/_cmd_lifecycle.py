@@ -475,18 +475,38 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     return {'status': 'success', 'plan_id': args.plan_id, 'archived_to': str(archive_path)}
 
 
-#: The closed vocabulary :attr:`LessonCarryBack.action` reports, deliberately
-#: identical to ``_lessons_query.RESTORE_ACTIONS`` so the two lesson-restore
-#: surfaces answer the "which kind of zero is this?" question the same way.
+#: The closed vocabulary :attr:`LessonCarryBack.action` reports.
 #:
-#: - ``restored`` — the plan directory was scanned and DID carry ``lesson-*.md``
-#:   files, so the carry-back ran. How many actually landed is stated by
-#:   ``restored_ids`` / ``skipped``, not by this value.
+#: - ``restored`` — the plan directory was scanned, DID carry ``lesson-*.md``
+#:   files, and EVERY one of them landed in the corpus.
+#: - ``restore_incomplete`` — the plan directory was scanned and carried lesson
+#:   files, but at least one did NOT land. ``restored_ids`` / ``skipped`` say
+#:   which; ``restored_ids`` is legitimately empty when none landed. This is
+#:   the state that fires the ``cmd_delete_plan`` veto.
 #: - ``no_lesson_file`` — the plan directory was scanned and carried none. The
 #:   benign zero.
 #: - ``plan_dir_unresolved`` — the carry-back could not look: the plan directory
 #:   is gone, or the main-anchored lessons store could not be resolved.
-CARRY_BACK_ACTIONS = frozenset({'restored', 'no_lesson_file', 'plan_dir_unresolved'})
+#: - ``not_attempted`` — the carry-back was opted out of via
+#:   ``--no-restore-lessons``, so nothing was scanned and no store was
+#:   resolved. Any lesson the directory carries is discarded with it.
+#:
+#: The four values this set SHARES with ``_lessons_query.RESTORE_ACTIONS``
+#: carry identical meanings there, so the two lesson-restore surfaces answer
+#: the "which kind of zero is this?" question the same way. The sets are NOT
+#: equal, and deliberately so: ``not_attempted`` is producible only here,
+#: because only ``delete-plan`` has an opt-out flag. Claiming equality while
+#: the two disagreed on what ``restored`` means was itself a contract drift —
+#: a consumer trusting the claim would carry the wrong meaning across surfaces.
+CARRY_BACK_ACTIONS = frozenset(
+    {
+        'restored',
+        'restore_incomplete',
+        'no_lesson_file',
+        'plan_dir_unresolved',
+        'not_attempted',
+    }
+)
 
 
 class LessonCarryBack(NamedTuple):
@@ -501,9 +521,12 @@ class LessonCarryBack(NamedTuple):
     Attributes:
         action: One of :data:`CARRY_BACK_ACTIONS`.
         store_resolution: How the lessons store resolved, over
-            ``_lessons_io.STORE_RESOLUTIONS``.
+            ``_lessons_io.STORE_RESOLUTIONS``. ``unresolved`` on the
+            ``not_attempted`` path too — that path resolves no store, and
+            reporting a resolution it never performed is the same fail-open in
+            miniature.
         lessons_dir: The corpus path lessons were moved into, or ``''`` when the
-            store did not resolve.
+            store did not resolve or was never consulted.
         restored_ids: Lesson ids that successfully landed in the corpus.
         skipped: One ``{lesson_id, reason}`` row per carried lesson that did NOT
             land. A non-empty list means the plan directory still holds the only
@@ -610,8 +633,16 @@ def _restore_lesson_from_plan_dir(plan_id: str, plan_dir: Path) -> LessonCarryBa
         )
         restored_ids.append(lesson_id)
 
+    # ``restored`` asserts that every carried lesson landed. When any did not,
+    # the honest value is ``restore_incomplete`` — reporting ``restored`` over a
+    # possibly-empty ``restored_ids`` claims the one thing the value promises.
     return LessonCarryBack(
-        'restored', store.resolution, str(lessons_dir), restored_ids, skipped, store.detail
+        'restore_incomplete' if skipped else 'restored',
+        store.resolution,
+        str(lessons_dir),
+        restored_ids,
+        skipped,
+        store.detail,
     )
 
 
@@ -627,7 +658,12 @@ def cmd_delete_plan(args: argparse.Namespace) -> dict[str, Any]:
     previously-silent per-file skip impossible to lose a lesson through.
 
     ``--no-restore-lessons`` opts out of the carry-back entirely; the veto is
-    part of the carry-back, so opting out also opts out of the veto.
+    part of the carry-back, so opting out also opts out of the veto. That path
+    reports ``lesson_carry_back_action: not_attempted`` with
+    ``lesson_store_resolution: unresolved`` — it scanned nothing and resolved
+    nothing, so it may claim neither the benign scanned-and-empty outcome nor a
+    resolution it never performed. The distinction is the whole audit value of
+    the payload: this is the one branch that can destroy a carried lesson.
     """
     require_valid_plan_id(args)
 
@@ -644,7 +680,24 @@ def cmd_delete_plan(args: argparse.Namespace) -> dict[str, Any]:
     # Auto-restore moved lesson files (default behaviour; opt-out via
     # ``--no-restore-lessons``). Plans derived from multiple lessons can
     # carry more than one ``lesson-*.md`` file; restore them all.
-    carry_back = LessonCarryBack('no_lesson_file', 'main_anchored', '', [], [], 'carry-back skipped via --no-restore-lessons')
+    #
+    # The opt-out sentinel must NOT borrow the benign scanned-and-empty answer:
+    # this path scans nothing and never calls ``resolve_lesson_store``, so
+    # claiming ``no_lesson_file`` (defined as "SCANNED and carried none") and
+    # ``main_anchored`` (a resolution that never happened) reports the verified
+    # zero for the one branch that can silently discard a carried lesson. An
+    # auditor reading the payload could not tell "deleted a plan that verifiably
+    # carried no lesson" from "deleted a plan whose lessons went unexamined".
+    carry_back = LessonCarryBack(
+        'not_attempted',
+        'unresolved',
+        '',
+        [],
+        [],
+        'carry-back not attempted (--no-restore-lessons): the plan directory was '
+        'never scanned and no lessons store was resolved, so any lesson it '
+        'carries is discarded with it',
+    )
     if not getattr(args, 'no_restore_lessons', False):
         carry_back = _restore_lesson_from_plan_dir(args.plan_id, plan_dir)
 
