@@ -351,7 +351,7 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons rest
   --plan-id {plan_id}
 ```
 
-Branch on its `action` rather than on `status` alone: `restored` is the success path and means every carried lesson landed; `restore_incomplete` means the move aborted part-way, so `restored_count` lessons landed and the rest are still stranded; `no_lesson_file` means the plan directory was scanned and held nothing; `plan_dir_unresolved` means it was never scanned, which must be reported as a failure to look, never as "nothing to restore". See [`../manage-lessons/SKILL.md`](../manage-lessons/SKILL.md) § `restore-from-plan` for the four-state contract.
+Branch on its `action` rather than on `status` alone: only `restored` is a completed restore, and `restore_incomplete` / `plan_dir_unresolved` must each be reported as the outcome it is — never as "nothing to restore". See [`../manage-lessons/SKILL.md`](../manage-lessons/SKILL.md) § `restore-from-plan`, the single home for the four-state contract.
 
 This detection note is the per-plan counterpart of the corpus-wide tooling: `list-stalled` (see [`../manage-lessons/SKILL.md`](../manage-lessons/SKILL.md) § `list-stalled`) is the shared scanner, and the `Action: cleanup` stalled-lesson restore pass (see [`../plan-marshall/workflow/planning.md`](../plan-marshall/workflow/planning.md) § "Action: cleanup" → "Stalled-lesson restore") restores them in bulk. Keep this addition thin — it is a detection-and-prompt note that consumes an existing signal, not a new script-backed aspect in the Step 3 table.
 

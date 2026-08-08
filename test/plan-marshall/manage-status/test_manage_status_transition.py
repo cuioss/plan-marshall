@@ -210,32 +210,6 @@ def test_carry_back_vocabulary_agrees_with_restore_from_plan(plan_context):
     assert 'restore_incomplete' in _lifecycle.CARRY_BACK_ACTIONS
 
 
-def test_delete_plan_partial_carry_back_reports_restore_incomplete(plan_context):
-    """A carry-back where one lesson did not land is not ``restored``.
-
-    ``restored`` asserts every carried lesson landed. Here one collides, so the
-    veto fires and ``restored_lesson_ids`` is empty — reporting ``restored``
-    over that is the same overclaim ``restore-from-plan`` made on a first-file
-    collision, and the two surfaces must answer it the same way.
-    """
-    lessons_dir = plan_context.fixture_dir / 'lessons-learned'
-    lessons_dir.mkdir(parents=True, exist_ok=True)
-    (lessons_dir / '2025-06-06-006.md').write_text('id=2025-06-06-006\n\n# Incumbent\n\nCorpus.\n')
-
-    plan_dir = plan_context.plan_dir_for('partial-carry-back')
-    (plan_dir / 'lesson-2025-06-06-006.md').write_text(
-        'id=2025-06-06-006\ncomponent=foo\ncategory=bug\ncreated=2025-06-06\n\n# Carried\n\nPlan.\n'
-    )
-
-    result = cmd_delete_plan(Namespace(plan_id='partial-carry-back', no_restore_lessons=False))
-
-    assert result['status'] == 'error'
-    assert result['error'] == 'lesson_carry_back_incomplete'
-    assert result['lesson_carry_back_action'] == 'restore_incomplete'
-    assert result['lesson_carry_back_action'] != 'restored'
-    assert result['restored_lesson_ids'] == []
-
-
 def test_delete_plan_restores_all_lesson_files(plan_context):
     """delete-plan restores every lesson-*.md file in the plan dir (multi-lesson plans)."""
     plan_dir = plan_context.plan_dir_for('consolidate-multi')
@@ -268,6 +242,12 @@ def test_delete_plan_refuses_when_carried_lesson_collides(plan_context):
     of the carried lesson, so a silent per-file skip followed by an
     unconditional delete destroys it with no signal. The veto is what makes that
     unreachable — the directory MUST survive.
+
+    The same arrangement pins the action vocabulary: ``restored`` asserts every
+    carried lesson landed, and here none did, so the honest value is
+    ``restore_incomplete``. Reporting ``restored`` over an empty
+    ``restored_lesson_ids`` is the same overclaim ``restore-from-plan`` made on
+    a first-file collision, and the two surfaces must answer it the same way.
     """
     lessons_dir = plan_context.fixture_dir / 'lessons-learned'
     lessons_dir.mkdir(parents=True, exist_ok=True)
@@ -284,6 +264,8 @@ def test_delete_plan_refuses_when_carried_lesson_collides(plan_context):
     assert result['status'] == 'error'
     assert result['error'] == 'lesson_carry_back_incomplete'
     assert result['action'] == 'refused'
+    assert result['lesson_carry_back_action'] == 'restore_incomplete'
+    assert result['lesson_carry_back_action'] != 'restored'
     assert result['skipped_lessons'] == [
         {'lesson_id': '2025-03-03-003', 'reason': 'destination_exists'}
     ]

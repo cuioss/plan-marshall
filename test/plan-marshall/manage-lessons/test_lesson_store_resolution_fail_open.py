@@ -50,7 +50,7 @@ def _write_plan_status(plan_dir, current_phase: str, phase_status: str, plan_sou
     """Write a minimal ``status.json`` beside a carried lesson.
 
     ``plan_source`` is omitted entirely when ``None`` — that unset shape is the
-    live ``convert-to-plan`` case case (b) reproduces.
+    live ``convert-to-plan`` case that case (b) reproduces.
     """
     import json
 

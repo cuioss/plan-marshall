@@ -132,7 +132,7 @@ Body content here.
 
         The verb never scanned anything, so it cannot claim the plan carries no
         lesson. Reporting this as ``no_lesson_file`` is precisely the fail-open
-        the three-state contract closes: "I could not look" must not render as
+        the four-state contract closes: "I could not look" must not render as
         "I looked and it was empty".
         """
         with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):

@@ -11,10 +11,11 @@ load-bearing property, not an implementation detail. A roster-derived
 population — "the manage-lessons verbs", "the finalize steps" — is closed under
 the roster, so it excludes by construction any resolver living outside it. Such
 a check would have reported this very surface clean while
-``manage-status/scripts/_cmd_lifecycle.py`` sat outside the roster carrying all
-three failure directions. Deriving from the declaring source instead (resolver
-call sites, the shared constant, and the bare quoted literal) makes the
-population closed under the store, which is the thing the audit is about.
+``manage-status/scripts/_cmd_lifecycle.py`` sat outside the roster carrying both
+failure directions plus the silent per-file skip. Deriving from the declaring
+source instead (resolver call sites, the shared constant, and the bare quoted
+literal) makes the population closed under the store, which is the thing the
+audit is about.
 
 The check publishes the derived population size and asserts it is non-empty, so
 it can never pass vacuously from an empty population; and it asserts
