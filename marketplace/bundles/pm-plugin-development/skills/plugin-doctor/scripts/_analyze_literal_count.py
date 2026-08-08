@@ -459,8 +459,19 @@ def _section_body(lines: list[str], heading_text: str) -> list[tuple[int, str]] 
 
 
 def _table_link_set(body: list[tuple[int, str]]) -> set[str]:
-    """Collect the ``standards/<name>.md`` link targets in an index-table body."""
-    return {name for _, line in body for name in _PSE_TABLE_LINK_RE.findall(line)}
+    """Collect the ``standards/<name>.md`` link targets in an index-table body.
+
+    Only table rows are considered, mirroring :func:`_table_first_cell_set`. A
+    prose link to ``standards/<name>.md`` that sits in the section but outside
+    the table is NOT an index entry — counting it would mask a genuinely
+    missing table row and let the surface report a clean pass (fail-open).
+    """
+    names: set[str] = set()
+    for _, line in body:
+        if not line.lstrip().startswith('|'):
+            continue
+        names.update(_PSE_TABLE_LINK_RE.findall(line))
+    return names
 
 
 def _table_first_cell_set(body: list[tuple[int, str]]) -> set[str]:
@@ -620,8 +631,28 @@ def _scan_persona_security_expert_index(skill_md: Path, standards_dir: Path) -> 
     """Check the persona-security-expert standards index against its derived population."""
     try:
         text = skill_md.read_text(encoding='utf-8')
-    except (OSError, UnicodeDecodeError):
-        return []
+    except (OSError, UnicodeDecodeError) as exc:
+        # The caller already gated on is_file(), so this path means the governed
+        # file EXISTS but cannot be read or is not valid UTF-8. Only an ABSENT
+        # governed file is out of scope; an unreadable one must fail closed, or
+        # a broken index is indistinguishable from a clean one.
+        return [
+            Finding(
+                type=RULE_ID,
+                file=str(skill_md),
+                line=1,
+                severity='warning',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=(
+                    f'the persona-security-expert SKILL.md exists but could not be read '
+                    f'({type(exc).__name__}), so none of its standards-index claims are '
+                    f'verifiable (literal-count-drift)'
+                ),
+                details={'surface': 'unreadable', 'error': type(exc).__name__},
+                extra={'rule': RULE_NAME},
+            ).to_dict()
+        ]
     lines = text.splitlines()
     population = _standards_population(standards_dir)
     if not population:

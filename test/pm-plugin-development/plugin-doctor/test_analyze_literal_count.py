@@ -40,8 +40,10 @@ Test layers:
     a document, and a table listing an absent document are each flagged. Every
     fixture carries a decoy sentence whose anchor phrase is preceded by an
     ordinary word, guarding the count-token discriminator in every case.
-  * Standards index fail-closed: empty population, missing index section, and an
-    unanchored prose count each emit a finding rather than passing silently.
+  * Standards index fail-closed: empty population, missing index section, an
+    unanchored prose count, a prose link sitting outside the table, and a
+    governed file that exists but cannot be read each emit a finding rather
+    than passing silently.
 """
 
 from pathlib import Path
@@ -150,6 +152,7 @@ def _write_persona_security_expert(
     reference_listed: list[str] | None = None,
     include_load_section: bool = True,
     include_reference_section: bool = True,
+    load_section_prose: str | None = None,
 ) -> Path:
     """Write a persona-security-expert skill whose index may agree or disagree with ``standards``.
 
@@ -157,6 +160,10 @@ def _write_persona_security_expert(
     ``load_listed`` / ``reference_listed`` are the three hand-maintained mirrors;
     each defaults to agreeing with the population so a test states only the
     mirror it is drifting.
+
+    ``load_section_prose``, when given, is appended INSIDE the "Available
+    Standards" section but AFTER the table — ordinary prose that is part of the
+    section body yet is not a table row.
     """
     skill_dir = root.joinpath(*_PSE_PARTS)
     standards_dir = skill_dir / 'standards'
@@ -192,6 +199,8 @@ def _write_persona_security_expert(
         ]
         out += [f'| [`standards/{n}`](standards/{n}) | when relevant |' for n in load_rows]
         out += ['']
+        if load_section_prose is not None:
+            out += [load_section_prose, '']
     if include_reference_section:
         out += ['## Standards Reference', '', '| Standard | Purpose |', '|----------|---------|']
         out += [f'| {n} | purpose |' for n in reference_rows]
@@ -501,6 +510,53 @@ class TestPersonaSecurityExpertFailsClosed:
         assert details['surface'] == 'Standards Reference'
         assert details['missing'] == ['alpha.md', 'beta.md']
         assert details['population_size'] == 2
+
+    def test_prose_link_outside_the_table_does_not_mask_a_missing_row(
+        self, tmp_path: Path
+    ) -> None:
+        # The "Available Standards" set is collected from TABLE ROWS only. A
+        # prose link to standards/gamma.md that sits in the section but outside
+        # the table is not an index entry: counting it would complete the set
+        # and let a genuinely missing row report clean (fail-open).
+        _write_persona_security_expert(
+            tmp_path,
+            ['alpha.md', 'beta.md', 'gamma.md'],
+            prose='three',
+            load_listed=['alpha.md', 'beta.md'],
+            load_section_prose=(
+                'See also [`standards/gamma.md`](standards/gamma.md) for the deep dive.'
+            ),
+        )
+
+        findings = analyze_literal_count(tmp_path)
+
+        assert len(findings) == 1, f'the missing gamma.md row must still be flagged, got {findings}'
+        details = findings[0]['details']
+        assert details['surface'] == 'Available Standards'
+        assert details['missing'] == ['gamma.md']
+        assert details['unknown'] == []
+        assert details['population_size'] == 3
+
+    def test_unreadable_governed_file_is_flagged(self, tmp_path: Path) -> None:
+        # analyze_literal_count gates on is_file(), so this path is reached only
+        # for a file that EXISTS but cannot be decoded. Only an ABSENT governed
+        # file is out of scope (see test_persona_security_expert_absent_...);
+        # returning no findings here would make a broken index indistinguishable
+        # from a clean one.
+        skill_md = _write_persona_security_expert(tmp_path, ['alpha.md', 'beta.md'], prose='two')
+        skill_md.write_bytes(b'# Persona: Security Expert\n\xff\xfe not valid utf-8\n')
+
+        findings = analyze_literal_count(tmp_path)
+
+        assert len(findings) == 1
+        finding = findings[0]
+        assert finding['rule_id'] == RULE_ID
+        assert finding['type'] == RULE_ID
+        assert finding['file'] == str(skill_md)
+        assert finding['severity'] == 'warning'
+        assert finding['fixable'] is False
+        assert finding['details']['surface'] == 'unreadable'
+        assert finding['details']['error'] == 'UnicodeDecodeError'
 
     def test_unanchored_prose_count_is_flagged(self, tmp_path: Path) -> None:
         # A body that states the count in an unrecognised phrasing is UNVERIFIED,
