@@ -33,6 +33,12 @@ surface (``check_auth``, ``fetch_pr_comments_data``, ``fetch_pr_head_sha``):
         grants moments earlier) does NOT satisfy this barrier, while the
         barrier's own ``barrier-ask-override`` at that same HEAD does.
         HEAD-binding alone is not sufficient: admissibility is per-gap.
+    (g) widened-member parity — the two taxonomy members that refine ``absent``
+        (``participated_stale`` and ``not_triggered``) gate the merge EXACTLY as
+        ``absent`` does. The barrier-relevant projection of the verdict is compared
+        against the ``absent`` verdict for the SAME scenario rather than against a
+        transcribed expectation, with a matched ``participated`` negative control
+        proving the comparison can fail.
 
 Per lesson 2026-07-09-14-001 the provider response is built from a real fixture
 shape (mirroring ``test_github_pr.py``), so a green fixture cannot diverge from
@@ -40,6 +46,8 @@ production provider behaviour.
 """
 
 import argparse
+
+import pytest
 
 from conftest import load_script_module
 
@@ -314,12 +322,20 @@ def _participation_csv(fetch_result):
     )
 
 
-def _completeness(plan_id, participated_csv, required, optional):
+def _completeness(plan_id, participated_csv, required, optional, **observation):
+    """Run the participation predicate as the barrier does.
+
+    ``observation`` forwards any further observation set the barrier may supply
+    (``stale_participation_bots``, ``not_triggered``, …) straight through to
+    ``check_completeness``, so a scenario differs from its baseline by exactly the
+    one observation under test and nothing else.
+    """
     return review_completeness.check_completeness(
         plan_id,
         required_bots=required,
         optional_bots=optional,
         participated_bots=review_completeness.parse_participation(participated_csv),
+        **observation,
     )
 
 
@@ -597,3 +613,130 @@ def test_consent_over_a_different_gap_at_the_same_head_does_not_satisfy_barrier(
     assert reseeked['admissible_kinds'] == ['barrier-ask-override']
     # The consent is still reported — never hidden, just not admissible here.
     assert reseeked['inadmissible_kinds'] == ['pre-merge-consent']
+
+
+# --- Widened-member parity: stale and not-triggered gate exactly as absent ----
+#
+# ``participated_stale`` and ``not_triggered`` were added to the taxonomy to carry a
+# REMEDY that ``absent`` prescribes wrongly — re-trigger a review that exists, or
+# trigger one that was never asked for — and for no other reason. The distinction is
+# only worth having if it is free at the merge gate, so the parity is the load-bearing
+# property: a widened member that quietly RELAXED the barrier would have bought better
+# diagnostics with a weaker merge, and one that quietly TIGHTENED it would block
+# merges that used to pass. Both failures are silent at every other surface, because
+# every other surface reads the member NAME rather than the verdict it produces.
+#
+# The comparison is against the ``absent`` verdict itself, never a transcribed copy of
+# it: if the ``absent`` verdict ever legitimately changes, the parity moves with it
+# instead of pinning yesterday's value and failing for the wrong reason.
+
+
+def _state_of(verdict, bot):
+    """Return the single taxonomy member ``verdict`` assigned to ``bot``."""
+    return {row['bot_kind']: row['state'] for row in verdict['bot_states']}[bot]
+
+
+def _barrier_projection(verdict, pending):
+    """Project a verdict onto the fields the barrier's merge decision rests on.
+
+    Deliberately EXCLUDES ``bot_states``: its ``state`` differs by construction,
+    since naming the member is the entire point of the widened taxonomy, so
+    including it would compare the one field that MUST differ and could never
+    assert parity. The exclusion is safe precisely because the caller pins the
+    member separately — the projection asserts the verdicts agree, the member
+    assertions assert the scenarios genuinely differed.
+    """
+    return {
+        'participation_complete': verdict['participation_complete'],
+        'unproven_bots': verdict['unproven_bots'],
+        'pending_bots': verdict['pending_bots'],
+        'proves': verdict['proves'],
+        # Predicate 1 ∧ Predicate 2, composed as the barrier composes them: any
+        # pending comment blocks, and an unproven required bot blocks independently.
+        'merge_allowed': verdict['participation_complete'] and not pending,
+    }
+
+
+#: Each case carries an EXPLICIT id naming the member under test. Left to pytest
+#: the id would be derived from both arguments — and the second is a dict, which
+#: pytest can only name positionally — yielding
+#: ``[participated_stale-observation0]``: an index into an implementation detail
+#: that also shifts if the cases are ever reordered. The member name is the one
+#: thing a reader of a failing node id needs.
+@pytest.mark.parametrize(
+    ('member', 'observation'),
+    [
+        pytest.param(
+            review_completeness.STATE_PARTICIPATED_STALE,
+            {'stale_participation_bots': ['pr-agent']},
+            id='participated_stale',
+        ),
+        pytest.param(
+            review_completeness.STATE_NOT_TRIGGERED,
+            {'not_triggered': True},
+            id='not_triggered',
+        ),
+    ],
+)
+def test_widened_member_gates_byte_identically_to_absent(
+    member, observation, plan_context, monkeypatch
+):
+    """A widened member's merge verdict equals ``absent``'s, and the check can fail.
+
+    One scenario is built once — CodeRabbit reviewed, the required ``pr-agent`` did
+    not, triage cleared every comment that exists — so Predicate 1 is clean and the
+    merge decision rests entirely on Predicate 2. The predicate is then run against
+    that same store three ways: with no further observation (``absent``), with the
+    widened member's observation, and with ``pr-agent`` proven as a participant.
+
+    Three assertions carry the property, and each answers a different way the test
+    could pass while proving nothing:
+
+    * the member assertions prove the observation LANDED. Without them the parity
+      would hold just as well when the observation was ignored and both runs
+      classified ``pr-agent`` ``absent`` — an equality that passes for the wrong
+      reason, which is exactly how a mis-keyed observation set would slip through.
+    * the projection equality is the property itself: no merge verdict moves.
+    * the ``participated`` control proves the comparison CAN fail, so the equality
+      is a property of the widened members rather than of a projection too coarse
+      to distinguish any two verdicts at all.
+    """
+    plan_id = f'barrier-parity-{member.replace("_", "-")}'
+
+    _patch_provider(monkeypatch, _CODERABBIT_ONLY)
+    result = _run_fetch(210, plan_id)
+    assert result['status'] == 'success'
+    _resolve_all_pending(plan_id)
+    pending = _pending(plan_id)
+    assert pending == []
+
+    participated_csv = _participation_csv(result)
+    required = ['pr-agent']
+    optional = ['coderabbit']
+
+    absent_verdict = _completeness(plan_id, participated_csv, required, optional)
+    widened_verdict = _completeness(plan_id, participated_csv, required, optional, **observation)
+
+    # The scenarios genuinely differ upstream of the projection.
+    assert _state_of(absent_verdict, 'pr-agent') == review_completeness.STATE_ABSENT
+    assert _state_of(widened_verdict, 'pr-agent') == member
+
+    # THE property: the barrier cannot tell the two apart.
+    assert _barrier_projection(widened_verdict, pending) == _barrier_projection(
+        absent_verdict, pending
+    )
+
+    # Matched negative control, same store and same required set: a proven
+    # participant's verdict MUST differ. The evidence kind comes from the registry
+    # rather than a literal, so the control cannot rot into an inadmissible pair
+    # that is silently dropped — which would make it pass by failing to prove
+    # participation at all.
+    evidence_kind = review_completeness.bot_registry.participation_evidence('pr-agent')[0]
+    participated_verdict = _completeness(
+        plan_id, f'{participated_csv},pr-agent:{evidence_kind}', required, optional
+    )
+
+    assert _state_of(participated_verdict, 'pr-agent') != review_completeness.STATE_ABSENT
+    assert _barrier_projection(participated_verdict, pending) != _barrier_projection(
+        absent_verdict, pending
+    )

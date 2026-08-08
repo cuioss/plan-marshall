@@ -17,22 +17,28 @@ CONTRACT the components jointly implement:
 * an unlisted bot is warned-about and STILL ingested (the warn-but-ingest rule);
 * the failure taxonomy is EXHAUSTIVE — every classified bot lands in exactly one
   member, over a bot set derived from ``bot_registry.bot_kinds()``;
+* the taxonomy's doc/code closure holds in BOTH directions — no classifier member
+  is undocumented, no documented member is unproducible — and the contract's own
+  closure-count sentence agrees with the derived member count;
 * every DOCUMENTED call site of the two invocation families quotes its
   interpolated list-flag placeholders, over a site population derived by scanning
   the marketplace tree;
 * a crashed participation gate is an UNKNOWN verdict at both families and at both
   consuming documents — never a recorded pass;
 * each advertised invocation form agrees with its live argparse surface on the
-  optionality of every list flag.
+  optionality of every list flag;
+* the FULL declared optional-flag surface of ``review_completeness check`` is
+  classified — every long option the live parser declares is assigned a coverage
+  arm, so a flag whose shape the ``--*-bots`` family pattern cannot match (the
+  ``store_true`` ``--not-triggered``) cannot escape every sweep unnoticed.
 
 Every set-guarding assertion derives its population from the registry (for bots),
 from a repository scan (for call sites), or from the live argparse surface (for
-list flags) rather than a hard-coded literal list, so a bot added or retired in a
-standards doc, a fifth call site added in a future doc, or a further list flag
-added to the parser is covered here automatically instead of silently escaping the
-sweep. Each sub-population is additionally guarded against vacuity: a derivation
-that matched nothing FAILS rather than reporting a healthy aggregate over an
-empty set.
+flags) rather than a hard-coded literal list, so a bot added or retired in a
+standards doc, a fifth call site added in a future doc, or a further flag added to
+the parser is covered here automatically instead of silently escaping the sweep.
+Each sub-population is additionally guarded against vacuity: a derivation that
+matched nothing FAILS rather than reporting a healthy aggregate over an empty set.
 """
 
 from __future__ import annotations
@@ -45,7 +51,7 @@ from unittest.mock import patch
 
 import pytest
 
-from _bot_flag_derivation import derive_bot_flags
+from _bot_flag_derivation import derive_bot_flags, derive_declared_flags
 from conftest import PLAN_DIR_NAME, PROJECT_ROOT, get_script_path, run_script
 
 _AR_SCRIPTS = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py').parent
@@ -80,15 +86,79 @@ def _live_step_params() -> dict:
 # itself rather than restated as a convenience literal.
 _PROVENANCE_STATES = ('never_asked', 'migrated', 'answered')
 
-# The five closed NON-participation members. ``participated`` is deliberately NOT
-# a member — it is the complement the taxonomy exists to distinguish from.
+# The closed NON-participation members. ``participated`` is deliberately NOT a
+# member — it is the complement the taxonomy exists to distinguish from.
+#
+# The last two are the REFINEMENTS of ``absent``, listed after the five mutually
+# independent observations because that is what they are: each says the bot
+# published nothing, and each carries a remedy opposite to ``absent``'s escalation
+# (re-trigger the stale review / trigger the review at all). This tuple's LENGTH is
+# load-bearing — the closure-count check below reads the contract's own prose count
+# back as an integer and compares it against ``len`` here, which is what stops a
+# member reaching the classifier and the table while the prose still claims fewer.
 _NON_PARTICIPATION_MEMBERS = (
     rc.STATE_ABSENT,
     rc.STATE_IN_PROGRESS,
     rc.STATE_REFUSED_AWAITABLE,
     rc.STATE_REFUSED_HARD,
     rc.STATE_PARTICIPATED_BUT_EMPTY,
+    rc.STATE_PARTICIPATED_STALE,
+    rc.STATE_NOT_TRIGGERED,
 )
+
+#: A member row of the failure-taxonomy table: the backticked identifier that opens
+#: the row's leading cell. Anchored at the line start so only table rows match.
+_MEMBER_ROW = re.compile(r'^\|\s*`(?P<member>[a-z_]+)`\s*\|', re.MULTILINE)
+
+#: The contract's own closure-count sentence. Whitespace is collapsed before
+#: matching, because the sentence wraps across a line break in the source.
+_CLOSURE_COUNT = re.compile(r'classified into exactly one of (?P<count>\w+) members')
+
+#: Cardinal number words indexed by the value they name. The contract states its
+#: closure count in PROSE, so reading it back has to cross the word/integer
+#: boundary rather than grep for a digit that is not there.
+_NUMBER_WORDS = (
+    'zero',
+    'one',
+    'two',
+    'three',
+    'four',
+    'five',
+    'six',
+    'seven',
+    'eight',
+    'nine',
+    'ten',
+    'eleven',
+    'twelve',
+)
+
+
+def _failure_taxonomy_section() -> str:
+    """Return the contract's ``## Failure taxonomy`` section body.
+
+    Scoped to that ONE section deliberately: the document carries several other
+    tables (provenance, publish shapes, marker surfaces, consumers) whose leading
+    cell is also a backticked identifier, and a whole-document scan would admit
+    those as phantom taxonomy members — inflating the documented set until the
+    doc-to-code direction below could never fail.
+    """
+    doc = _CONTRACT_DOC.read_text(encoding='utf-8')
+    section = re.search(
+        r'^## Failure taxonomy$(?P<body>.*?)(?=^## )', doc, re.DOTALL | re.MULTILINE
+    )
+    assert section, 'the contract must carry a "## Failure taxonomy" section'
+    return section.group('body')
+
+
+def _documented_members() -> tuple[str, ...]:
+    """The taxonomy members the CONTRACT documents, derived by parsing its table."""
+    members = tuple(dict.fromkeys(_MEMBER_ROW.findall(_failure_taxonomy_section())))
+    assert members, (
+        'the failure-taxonomy table parsed to zero members — the scan is vacuous and '
+        'the doc-to-code direction would pass over an empty set'
+    )
+    return members
 
 
 def _registered_bots() -> list[str]:
@@ -298,14 +368,71 @@ class TestWarnButIngest:
 class TestFailureTaxonomyIsExhaustive:
     """Every classified bot lands in exactly one taxonomy member."""
 
-    def test_the_contract_documents_all_five_non_participation_members(self):
+    def test_the_contract_documents_every_non_participation_member(self):
+        """Direction one — CODE to DOC: no classifier member is undocumented.
+
+        The identifier names no count on purpose. A count in the name is a second
+        place the cardinality is stated, and the one that goes stale silently: it
+        keeps asserting truthfully while reading as a claim about a set size that
+        has moved. The count belongs in the closure check below, where it is
+        derived rather than spelled.
+        """
         doc = _CONTRACT_DOC.read_text(encoding='utf-8')
         for member in _NON_PARTICIPATION_MEMBERS:
             assert f'`{member}`' in doc, f'{member} must be a documented taxonomy member'
 
+    def test_every_documented_member_is_one_the_classifier_can_produce(self):
+        """Direction two — DOC to CODE, which the direction above cannot see.
+
+        A subset check in one direction only is satisfied by a documented set that
+        has grown BEYOND the classifier: a member added to the contract table that
+        ``classify_bot`` can never assign would leave the code-to-doc sweep green
+        while the contract promised a state no consumer will ever observe. Closing
+        the pair makes the two surfaces equal rather than merely overlapping.
+        """
+        documented = set(_documented_members())
+        classifiable = set(_NON_PARTICIPATION_MEMBERS)
+
+        assert documented <= classifiable, (
+            f'the contract documents {sorted(documented - classifiable)} which the '
+            f'classifier cannot produce — a documented member no consumer can observe'
+        )
+
+    def test_the_contracts_closure_count_agrees_with_the_derived_member_count(self):
+        """The contract's prose count is checked against the derived cardinality.
+
+        The two subset directions above make the table and the classifier agree,
+        but neither reads the CLOSURE SENTENCE that tells a human how many members
+        to expect. A widened taxonomy whose prose still says "five" understates the
+        set at the one place a reader looks first, and nothing else in this suite
+        would notice.
+        """
+        collapsed = ' '.join(_failure_taxonomy_section().split())
+        match = _CLOSURE_COUNT.search(collapsed)
+        assert match, 'the failure taxonomy must state its closure count in prose'
+
+        word = match.group('count')
+        assert word in _NUMBER_WORDS, (
+            f'the closure count reads {word!r}, which is not a cardinal number word '
+            f'this check can compare — spell the count as a word'
+        )
+        assert _NUMBER_WORDS.index(word) == len(_NON_PARTICIPATION_MEMBERS), (
+            f'the contract closes the taxonomy at {word} members but '
+            f'{len(_NON_PARTICIPATION_MEMBERS)} are derived: '
+            f'{sorted(_NON_PARTICIPATION_MEMBERS)}'
+        )
+
     @pytest.mark.parametrize(
         'observation',
-        ['none', 'in_progress', 'refused', 'participated_empty', 'participated_with_findings'],
+        [
+            'none',
+            'in_progress',
+            'refused',
+            'participated_empty',
+            'participated_with_findings',
+            'participated_stale',
+            'not_triggered',
+        ],
     )
     def test_every_registered_bot_classifies_into_exactly_one_member(
         self, observation, plan_context
@@ -315,6 +442,11 @@ class TestFailureTaxonomyIsExhaustive:
         The population comes from ``bot_registry.bot_kinds()``, so a bot added in a
         standards doc is swept automatically. The assertion is totality and
         mutual exclusivity — never a spot-check of one bot.
+
+        The two widened shapes are swept here rather than spot-checked for the same
+        reason as the original five: the property being pinned is that the taxonomy
+        stays TOTAL and mutually exclusive over the whole bot population, and a
+        member exercised against one bot proves neither.
         """
         # ``_`` is not admissible in a plan_id (``^[a-z][a-z0-9-]*$``), and the
         # observation labels carry them. Derive the id through the same character
@@ -329,6 +461,19 @@ class TestFailureTaxonomyIsExhaustive:
             kwargs['in_progress_bots'] = bots
         elif observation == 'refused':
             kwargs['refused_bots'] = bots
+        elif observation == 'participated_stale':
+            # Matched by EXACT equality, and placed ahead of the prefix branch
+            # below on purpose: ``participated_stale`` also starts with
+            # ``participated``, so the prefix test would swallow it and feed the
+            # shape through the proven-participation path instead — where every bot
+            # resolves ``participated_but_empty`` and the widened member would
+            # never be exercised while the case still reported green.
+            kwargs['stale_participation_bots'] = bots
+        elif observation == 'not_triggered':
+            # PR-wide rather than per-bot: a single bool, because the condition
+            # ("no pull_request-event run exists for this PR") holds for every bot
+            # at once. There is no observation set to key by bot here.
+            kwargs['not_triggered'] = True
         elif observation.startswith('participated'):
             kwargs['participated_bots'] = {
                 bot: bot_registry.participation_evidence(bot)[0] for bot in bots
@@ -423,6 +568,37 @@ _MARKETPLACE_DOCS = PROJECT_ROOT / 'marketplace' / 'bundles'
 #: family only, so the ``store_true`` ``--not-triggered`` is correctly absent: it
 #: has no value to quote.
 _ALL_LIST_FLAGS = tuple(flag for flag, _dest in derive_bot_flags(_RC_SCRIPT, 'check'))
+
+#: The FULL declared optional-flag surface of ``review_completeness check``, derived
+#: from the same live parser by the wider entry point. This is the POPULATION the
+#: coverage ledger below is asserted total over, and the reason a valueless flag can
+#: no longer escape every sweep: ``_ALL_LIST_FLAGS`` comes from a ``--*-bots``
+#: family pattern that structurally cannot match ``--not-triggered``, so a
+#: consumer measuring its coverage against the family alone measured it against a
+#: population the boolean was never in.
+_ALL_DECLARED_FLAGS = derive_declared_flags(_RC_SCRIPT, 'check')
+
+#: The declared flags OUTSIDE the ``--*-bots`` family, each mapped to the arm that
+#: covers it. Together with ``_ALL_LIST_FLAGS`` this must exhaust
+#: ``_ALL_DECLARED_FLAGS``; the equality is what turns a newly declared flag into a
+#: FAILURE demanding classification rather than a silent coverage hole. A flag of a
+#: shape no existing derivation matches therefore cannot be added without someone
+#: naming where it is covered.
+_NON_LIST_FLAG_COVERAGE = {
+    '--plan-id': (
+        'the required findings-store selector — exercised at the constructed-argv '
+        'boundary by every check invocation in TestCrashedGateNeverRecordsAPass'
+    ),
+    '--not-triggered': (
+        'the store_true PR-wide observable — the member it assigns is swept over the '
+        'whole bot population by the not_triggered shape of the taxonomy parametrize, '
+        'and its CLI boundary is owned by test_review_completeness.py'
+    ),
+    '--triage-ran': (
+        'the store_true verdict modifier — owned by test_review_completeness.py, '
+        "whose triage-state matrix pins both of the predicate's two modes"
+    ),
+}
 
 _FAMILY_A = 'review_completeness check'
 _FAMILY_B = 'github_pr fetch_findings'
@@ -824,4 +1000,61 @@ class TestAdvertisedFormsAgreeWithArgparse:
 
         assert _optional_value_form(flag).search(docstring), (
             f'{flag} must be advertised with an optional value on the Usage: line'
+        )
+
+
+# =============================================================================
+# Declared-flag population closure — the sweep is total over the parser surface
+# =============================================================================
+
+
+class TestDeclaredFlagPopulationIsFullyClassified:
+    """Every flag the live ``check`` parser declares is assigned a coverage arm.
+
+    The gap this closes is structural rather than accidental. Every flag sweep in
+    this suite derived its population from ``derive_bot_flags``, whose
+    ``--[a-z][a-z-]*-bots`` pattern can only ever match the list-flag family — so a
+    flag of any other shape was not *missed* by those sweeps, it was never a member
+    of the population they swept. The boolean ``--not-triggered`` is the case that
+    proved it: nothing in this suite could have failed on its account, and the
+    absence of a failure read as coverage.
+    """
+
+    def test_the_boolean_not_triggered_flag_is_a_member_by_construction(self):
+        """The widened population contains the flag the family pattern cannot match.
+
+        The second assertion is the matched negative control for the first: it
+        proves the two derivations genuinely differ HERE, on this flag, so the
+        membership above is a property of the wider derivation rather than
+        something the narrow one would have delivered anyway.
+        """
+        assert '--not-triggered' in _ALL_DECLARED_FLAGS, (
+            f'--not-triggered must be derived from the live parser, not appended by '
+            f'hand. derived population ({len(_ALL_DECLARED_FLAGS)}): '
+            f'{list(_ALL_DECLARED_FLAGS)}'
+        )
+        assert '--not-triggered' not in _ALL_LIST_FLAGS, (
+            'the --*-bots family derivation must NOT surface a valueless flag — if it '
+            'does, the wider derivation is redundant and this ledger is dead weight'
+        )
+
+    def test_the_declared_flag_population_is_fully_classified(self):
+        """The covered set EQUALS the population — a strict subset must FAIL.
+
+        Asserted as equality in both directions on purpose. A subset check would
+        pass while a newly declared flag sat outside every arm, which is precisely
+        the state this suite was in; a superset check would pass while the ledger
+        named a flag the parser no longer declares, leaving a retired flag's arm
+        standing as coverage of nothing. The population size travels in the failure
+        message so a derivation that silently SHRANK is visible as a number rather
+        than as a smaller sweep reporting clean.
+        """
+        population = set(_ALL_DECLARED_FLAGS)
+        covered = set(_ALL_LIST_FLAGS) | set(_NON_LIST_FLAG_COVERAGE)
+
+        assert covered == population, (
+            f'declared population ({len(population)}): {sorted(population)}; '
+            f'covered ({len(covered)}): {sorted(covered)}; '
+            f'unclassified: {sorted(population - covered)}; '
+            f'no longer declared: {sorted(covered - population)}'
         )
