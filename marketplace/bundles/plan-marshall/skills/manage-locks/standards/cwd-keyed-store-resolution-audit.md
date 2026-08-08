@@ -58,7 +58,7 @@ so the fix belongs at the authority-bearing CONSUMERS, not the resolver.
 
 | Site | Disposition |
 |------|-------------|
-| `get_lessons_dir()` | **JUSTIFY (already main-anchored).** Resolves the lessons store via `resolve_main_anchored_path(DIR_LESSONS)` — the single sanctioned main-anchored resolver, NOT the cwd-relative `get_base_dir`. It therefore resolves to the SAME store regardless of which worktree the caller is pinned to, so a cross-session read is never scope-blind. `guard_component_store_match` additionally fails closed when a component's store does not match the resolved repo, so a foreign store cannot be silently written. This is the already-sound exemplar the FIX sites are brought toward. |
+| `get_lessons_dir()` | **JUSTIFY (the RESOLVER is already main-anchored — this claim covers the resolver only).** Resolves the lessons store via `resolve_main_anchored_path(DIR_LESSONS)` — the single sanctioned main-anchored resolver, NOT the cwd-relative `get_base_dir`. It therefore resolves to the SAME store regardless of which worktree the caller is pinned to, so a cross-session read through it is never scope-blind. `guard_component_store_match` additionally fails closed when a component's store does not match the resolved repo, so a foreign store cannot be silently written. **Scope of this row:** it dispositions the resolver, NOT the lesson path as a whole. This audit never surveyed the resolver's CONSUMERS, and that is where the could-not-look-reports-benign collapse actually lived — including one consumer (`manage-status/scripts/_cmd_lifecycle.py::_restore_lesson_from_plan_dir`) that bypassed this resolver entirely via `base_path('lessons-learned')`. Those consumers are enumerated and dispositioned in the sibling audit [`../../manage-lessons/standards/cwd-keyed-store-resolution-audit.md`](../../manage-lessons/standards/cwd-keyed-store-resolution-audit.md). |
 
 ### manage-locks/scripts/_locks_core.py + merge_lock.py
 
@@ -81,6 +81,17 @@ so the fix belongs at the authority-bearing CONSUMERS, not the resolver.
   `_plan_dir_on_current_checkout`), is already dual-probe main-aware
   (`cmd_locate_plan_checkout`), or is the resolver itself which raises rather than
   returning an empty sentinel (`get_base_dir` / `get_worktree_root`) — each
-  justified above.
-- No deferred tail: the surveyed universe is fully dispositioned here, so no
-  follow-up split is recorded.
+  justified above. For `get_lessons_dir` that justification is **scoped to the
+  resolver**; its consumers are a separate surveyed universe with its own
+  dispositions (next bullet).
+- **The lesson path's CONSUMERS are surveyed elsewhere.** This audit's population
+  is the plan/worktree enumeration surface, so it reached the lessons resolver but
+  not the sites that consume it — and a consumer can carry the failure shape even
+  when its resolver does not, either by collapsing an unreachable store into a
+  benign zero or by bypassing the resolver outright. That population is derived
+  from the store-path sweep (not from any roster) and dispositioned in
+  [`../../manage-lessons/standards/cwd-keyed-store-resolution-audit.md`](../../manage-lessons/standards/cwd-keyed-store-resolution-audit.md).
+- No deferred tail **within this audit's surveyed universe**: every site in the
+  plan/worktree enumeration surface is fully dispositioned here. The lesson-store
+  consumer surface is not a deferred tail of this audit — it is a distinct
+  population with its own complete enumeration in the sibling audit above.

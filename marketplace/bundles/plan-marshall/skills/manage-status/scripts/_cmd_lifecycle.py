@@ -5,13 +5,15 @@ Lifecycle command handlers for manage-status: create, transition, archive, delet
 """
 
 import argparse
+import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from _handshake_commands import cmd_capture, cmd_verify
 from _invariants import _BLOCKING_BOUNDARIES
+from _lessons_query import RESTORE_ACTIONS
 from _short_description import derive_short_description
 from _status_core import (
     _surface_drive,
@@ -475,58 +477,248 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     return {'status': 'success', 'plan_id': args.plan_id, 'archived_to': str(archive_path)}
 
 
-def _restore_lesson_from_plan_dir(plan_id: str, plan_dir: Path) -> tuple[bool, list[str]]:
-    """Scan ``plan_dir`` for lesson-{id}.md files and move each one back to the
-    global lessons-learned directory.
+#: The closed vocabulary :attr:`LessonCarryBack.action` reports.
+#:
+#: - ``restored`` — the plan directory was scanned, DID carry ``lesson-*.md``
+#:   files, and EVERY one of them landed in the corpus.
+#: - ``restore_incomplete`` — the plan directory was scanned and carried lesson
+#:   files, but at least one did NOT land. ``restored_ids`` / ``skipped`` say
+#:   which; ``restored_ids`` is legitimately empty when none landed. This is
+#:   the state that fires the ``cmd_delete_plan`` veto.
+#: - ``no_lesson_file`` — the plan directory was scanned and carried none. The
+#:   benign zero.
+#: - ``plan_dir_unresolved`` — the carry-back could not look: the plan directory
+#:   is gone, or the main-anchored lessons store could not be resolved AND the
+#:   directory carried lesson files that consequently could not land. A
+#:   store-unresolved scan over a directory carrying NO lesson file is
+#:   ``no_lesson_file``, not this value: that directory WAS scanned and holds
+#:   nothing to restore, so the benign zero is the honest action and
+#:   ``store_resolution: unresolved`` is what records that the corpus was never
+#:   reached. Consumers therefore read BOTH fields — ``action`` says what the
+#:   scan found, ``store_resolution`` says whether the corpus was reachable —
+#:   and neither alone answers both questions.
+#: - ``not_attempted`` — the carry-back was opted out of via
+#:   ``--no-restore-lessons``, so nothing was scanned and no store was
+#:   resolved. Any lesson the directory carries is discarded with it.
+#:
+#: The four values this set SHARES with ``_lessons_query.RESTORE_ACTIONS``
+#: carry identical meanings there, so the two lesson-restore surfaces answer
+#: the "which kind of zero is this?" question the same way. That relationship
+#: is ENCODED as a union rather than restated as literals, so the shared four
+#: cannot drift apart silently. The sets are NOT equal, and deliberately so:
+#: ``not_attempted`` is producible only here, because only ``delete-plan`` has
+#: an opt-out flag. A superset derivation is precisely not the equality claim
+#: this docstring once made — claiming equality while the two disagreed on what
+#: ``restored`` means was itself a contract drift, and a consumer trusting the
+#: claim would carry the wrong meaning across surfaces.
+CARRY_BACK_ACTIONS = RESTORE_ACTIONS | frozenset({'not_attempted'})
 
-    Returns ``(restored_any, lesson_ids)`` — ``restored_any=False, lesson_ids=[]``
-    when nothing was restored (no lesson files, plan dir missing). When the plan
-    directory contains multiple ``lesson-*.md`` files (e.g., a plan derived from
-    consolidating several lessons), every file is restored; per-file skips
-    (destination collision, path-traversal id) are silently dropped from the
-    returned list so the caller sees only the ids that successfully landed back
-    in ``lessons-learned/``. ``restored_any`` is ``True`` iff at least one file
-    was restored.
+
+class LessonCarryBack(NamedTuple):
+    """Outcome of the ``delete-plan`` lesson carry-back.
+
+    Replaces the previous ``(bool, list[str])`` tuple outright: that shape could
+    not express EITHER of the two ways the carry-back fails silently — a plan
+    directory it never looked at, and a lesson it looked at but did not land.
+    Both mattered here more than anywhere else on the lesson path, because the
+    caller deletes the directory holding the only copy immediately afterwards.
+
+    Attributes:
+        action: One of :data:`CARRY_BACK_ACTIONS`.
+        store_resolution: How the lessons store resolved, over
+            ``_lessons_io.STORE_RESOLUTIONS``. ``unresolved`` on the
+            ``not_attempted`` path too — that path resolves no store, and
+            reporting a resolution it never performed is the same fail-open in
+            miniature.
+        lessons_dir: The corpus path lessons were moved into, or ``''`` when the
+            store did not resolve or was never consulted.
+        restored_ids: Lesson ids that successfully landed in the corpus.
+        skipped: One ``{lesson_id, reason}`` row per carried lesson that did NOT
+            land. A non-empty list means the plan directory still holds the only
+            copy of those lessons.
+        detail: Human-readable provenance naming the substrate or the failure.
     """
-    from file_ops import base_path
+
+    action: str
+    store_resolution: str
+    lessons_dir: str
+    restored_ids: list[str]
+    skipped: list[dict[str, str]]
+    detail: str
+
+
+def _restore_lesson_from_plan_dir(plan_id: str, plan_dir: Path) -> LessonCarryBack:
+    """Scan ``plan_dir`` for lesson-{id}.md files and move each back to the corpus.
+
+    The destination resolves through the main-anchored lessons-store handle
+    (``_lessons_io.resolve_lesson_store``), NOT through the cwd-keyed
+    ``base_path()``: this helper runs from ``delete-plan``, which a
+    worktree-pinned caller invokes routinely, and a cwd-keyed resolution would
+    restore the lesson into the worktree's own empty corpus — a store that is
+    discarded when the worktree goes away.
+
+    Every carried lesson that does not land is REPORTED in
+    :attr:`LessonCarryBack.skipped` rather than silently ``continue``-skipped.
+    The silent skip was the sharpest edge on the whole lesson path: the caller
+    deletes the plan directory right after this returns, so a dropped collision
+    destroyed the only copy of a lesson with no signal anywhere.
+
+    Args:
+        plan_id: The plan being deleted (used for the work-log entry).
+        plan_dir: The plan directory to scan.
+
+    Returns:
+        A :class:`LessonCarryBack` describing what was scanned, what landed, and
+        what did not.
+    """
+    from _lessons_io import resolve_lesson_store
 
     if not plan_dir.exists():
-        return False, []
+        return LessonCarryBack(
+            'plan_dir_unresolved',
+            'unresolved',
+            '',
+            [],
+            [],
+            f'Plan directory {plan_dir} does not exist, so it was never scanned '
+            f'for lesson files.',
+        )
 
     matches = sorted(plan_dir.glob('lesson-*.md'))
-    if not matches:
-        return False, []
 
-    lessons_dir = base_path('lessons-learned').resolve()
+    store = resolve_lesson_store()
+    if store.path is None:
+        # Could not look at the corpus. When the plan directory carries lessons,
+        # every one of them is un-landed and the caller MUST NOT delete the
+        # directory holding them.
+        return LessonCarryBack(
+            'plan_dir_unresolved' if matches else 'no_lesson_file',
+            store.resolution,
+            '',
+            [],
+            [
+                {'lesson_id': m.stem[len('lesson-'):], 'reason': 'store_unresolved'}
+                for m in matches
+            ],
+            store.detail,
+        )
+
+    if not matches:
+        return LessonCarryBack(
+            'no_lesson_file', store.resolution, str(store.path), [], [], store.detail
+        )
+
+    lessons_dir = store.path.resolve()
     lessons_dir.mkdir(parents=True, exist_ok=True)
 
     restored_ids: list[str] = []
+    skipped: list[dict[str, str]] = []
     for match in matches:
-        source = match.resolve()
-        lesson_id = source.stem[len('lesson-'):]
+        # The id comes from the MATCHED name, never from a resolved one. A
+        # symlinked ``lesson-*.md`` resolves OUT of the plan directory, so an id
+        # read off the resolved path describes the link's target rather than the
+        # file the plan actually carries — and the traversal guard below would
+        # then be inspecting the wrong name entirely.
+        lesson_id = match.stem[len('lesson-'):]
         if any(sep in lesson_id for sep in ('/', '\\', '..')):
+            skipped.append({'lesson_id': lesson_id, 'reason': 'path_traversal'})
+            continue
+
+        # Only a regular, non-symlinked file may be carried back. For a symlink
+        # (or a directory, FIFO, device node) the move would relocate whatever
+        # the entry points AT — an arbitrary file outside the plan directory,
+        # removed from its own location — on the code path whose caller deletes
+        # that directory immediately afterwards. Reporting the rejection as a
+        # skip is what routes it into the veto instead of dropping it silently.
+        if match.is_symlink() or not match.is_file():
+            skipped.append({'lesson_id': lesson_id, 'reason': 'unsafe_source'})
             continue
 
         destination = (lessons_dir / f'{lesson_id}.md').resolve()
-        if destination.parent != lessons_dir or destination.exists():
+        if destination.parent != lessons_dir:
+            skipped.append({'lesson_id': lesson_id, 'reason': 'path_traversal'})
             continue
 
-        shutil.move(str(source), str(destination))
+        # Claim the destination with a no-replace create: ``O_EXCL`` makes the
+        # collision test and the claim ONE operation. A separate ``exists()``
+        # probe followed by a replacing move is a TOCTOU pair — a destination
+        # created between the two is silently overwritten and the incumbent
+        # lesson is lost, which is exactly the irrecoverable loss this
+        # carry-back exists to prevent. A lost race is the ordinary
+        # ``destination_exists`` skip, so it fires the veto like any other.
+        try:
+            claim_fd = os.open(destination, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            skipped.append({'lesson_id': lesson_id, 'reason': 'destination_exists'})
+            continue
+
+        # Write THROUGH the claim fd. Closing it and handing the PATH back to a
+        # copy helper would discard the guarantee the claim just bought: the
+        # reopen is a SECOND name lookup, and between the close and it a
+        # concurrent process can unlink the claimed entry and leave a symlink
+        # under that name — which a ``'wb'`` reopen follows, truncating whatever
+        # it points at. The claim would then protect only the collision test and
+        # never the write it exists to make safe. A descriptor names the claimed
+        # inode itself, so nothing swapped in under the name afterwards can be
+        # written to. ``os.fdopen`` takes ownership of the fd, and entering it
+        # FIRST means the ``with`` closes it exactly once even when opening the
+        # source raises.
+        #
+        # Copy-then-unlink rather than move: the source stays in place until the
+        # claim is filled, so no failure between the claim and the copy can
+        # leave the lesson existing nowhere.
+        try:
+            with os.fdopen(claim_fd, 'wb') as claimed, match.open('rb') as carried:
+                shutil.copyfileobj(carried, claimed)
+        except OSError:
+            # The empty claim must not outlive a failed copy — left behind, it
+            # turns every later carry-back of this id into a
+            # ``destination_exists`` skip against a corpus entry holding none
+            # of the lesson.
+            destination.unlink(missing_ok=True)
+            raise
+        match.unlink()
         log_entry(
             'work',
             plan_id,
             'INFO',
             f'[RESTORE] (plan-marshall:manage-status:delete-plan) Restored lesson file '
-            f'lesson-{lesson_id}.md to .plan/local/lessons-learned/{lesson_id}.md before '
-            'plan-dir deletion',
+            f'lesson-{lesson_id}.md to {destination} before plan-dir deletion',
         )
         restored_ids.append(lesson_id)
 
-    return bool(restored_ids), restored_ids
+    # ``restored`` asserts that every carried lesson landed. When any did not,
+    # the honest value is ``restore_incomplete`` — reporting ``restored`` over a
+    # possibly-empty ``restored_ids`` claims the one thing the value promises.
+    return LessonCarryBack(
+        'restore_incomplete' if skipped else 'restored',
+        store.resolution,
+        str(lessons_dir),
+        restored_ids,
+        skipped,
+        store.detail,
+    )
 
 
 def cmd_delete_plan(args: argparse.Namespace) -> dict[str, Any]:
-    """Delete an entire plan directory."""
+    """Delete an entire plan directory.
+
+    The lesson carry-back runs FIRST and can VETO the deletion. When any lesson
+    the plan carries did not land in the main-anchored corpus — a destination
+    collision, a traversal-shaped id, or a store that would not resolve — the
+    plan directory holds the only copy, so the delete is refused with
+    ``error: lesson_carry_back_incomplete`` and the directory is left intact.
+    Deleting anyway is unrecoverable, and the refusal is what makes the
+    previously-silent per-file skip impossible to lose a lesson through.
+
+    ``--no-restore-lessons`` opts out of the carry-back entirely; the veto is
+    part of the carry-back, so opting out also opts out of the veto. That path
+    reports ``lesson_carry_back_action: not_attempted`` with
+    ``lesson_store_resolution: unresolved`` — it scanned nothing and resolved
+    nothing, so it may claim neither the benign scanned-and-empty outcome nor a
+    resolution it never performed. The distinction is the whole audit value of
+    the payload: this is the one branch that can destroy a carried lesson.
+    """
     require_valid_plan_id(args)
 
     plan_dir = get_plan_dir(args.plan_id)
@@ -542,10 +734,61 @@ def cmd_delete_plan(args: argparse.Namespace) -> dict[str, Any]:
     # Auto-restore moved lesson files (default behaviour; opt-out via
     # ``--no-restore-lessons``). Plans derived from multiple lessons can
     # carry more than one ``lesson-*.md`` file; restore them all.
-    lesson_restored = False
-    restored_lesson_ids: list[str] = []
+    #
+    # The opt-out sentinel must NOT borrow the benign scanned-and-empty answer:
+    # this path scans nothing and never calls ``resolve_lesson_store``, so
+    # claiming ``no_lesson_file`` (defined as "SCANNED and carried none") and
+    # ``main_anchored`` (a resolution that never happened) reports the verified
+    # zero for the one branch that can silently discard a carried lesson. An
+    # auditor reading the payload could not tell "deleted a plan that verifiably
+    # carried no lesson" from "deleted a plan whose lessons went unexamined".
+    carry_back = LessonCarryBack(
+        'not_attempted',
+        'unresolved',
+        '',
+        [],
+        [],
+        'carry-back not attempted (--no-restore-lessons): the plan directory was '
+        'never scanned and no lessons store was resolved, so any lesson it '
+        'carries is discarded with it',
+    )
     if not getattr(args, 'no_restore_lessons', False):
-        lesson_restored, restored_lesson_ids = _restore_lesson_from_plan_dir(args.plan_id, plan_dir)
+        carry_back = _restore_lesson_from_plan_dir(args.plan_id, plan_dir)
+
+    # Carry-back veto: refuse to delete the directory holding the only copy of a
+    # lesson that did not land. Membership is tested against the skipped list's
+    # LENGTH, never its truthiness, so the guard reads the same whether the list
+    # is empty or absent.
+    if len(carry_back.skipped) > 0:
+        skipped_ids = [row['lesson_id'] for row in carry_back.skipped]
+        log_entry(
+            'work',
+            args.plan_id,
+            'ERROR',
+            f'[BLOCKED] (plan-marshall:manage-status:delete-plan) Refusing to delete '
+            f'{plan_dir}: {len(skipped_ids)} carried lesson(s) did not land in the '
+            f'corpus — {", ".join(skipped_ids)}',
+        )
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'lesson_carry_back_incomplete',
+            'action': 'refused',
+            'path': str(plan_dir),
+            'lesson_carry_back_action': carry_back.action,
+            'lesson_store_resolution': carry_back.store_resolution,
+            'lessons_dir': carry_back.lessons_dir,
+            'lesson_restored': len(carry_back.restored_ids) > 0,
+            'restored_lesson_ids': carry_back.restored_ids,
+            'skipped_lessons': carry_back.skipped,
+            'message': (
+                f'{len(skipped_ids)} carried lesson(s) could not be restored '
+                f'({", ".join(skipped_ids)}); the plan directory holds the only copy, '
+                f'so it was NOT deleted. Resolve the conflict, or pass '
+                f'--no-restore-lessons to delete anyway and discard them. '
+                f'Store: {carry_back.detail}'
+            ),
+        }
 
     # Count files before deletion for audit trail
     files_removed = sum(1 for _ in plan_dir.rglob('*') if _.is_file())
@@ -559,10 +802,13 @@ def cmd_delete_plan(args: argparse.Namespace) -> dict[str, Any]:
             'action': 'deleted',
             'path': str(plan_dir),
             'files_removed': files_removed,
-            'lesson_restored': lesson_restored,
+            'lesson_carry_back_action': carry_back.action,
+            'lesson_store_resolution': carry_back.store_resolution,
+            'lessons_dir': carry_back.lessons_dir,
+            'lesson_restored': len(carry_back.restored_ids) > 0,
+            'restored_lesson_ids': carry_back.restored_ids,
+            'skipped_lessons': carry_back.skipped,
         }
-        if restored_lesson_ids:
-            result['restored_lesson_ids'] = restored_lesson_ids
         return result
     except PermissionError as e:
         return {

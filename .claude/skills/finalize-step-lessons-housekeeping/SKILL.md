@@ -5,7 +5,7 @@ lane:
   prunable_when: footprint_no_lesson_component
   cost_size: L
 name: finalize-step-lessons-housekeeping
-description: Finalize-phase wrapper that reconciles the just-finished plan's outcome against the lessons-learned corpus, removing fully-covered lessons, promoting reusable residue into the governing skill before retiring the lesson, and trimming partially-covered ones
+description: Finalize-phase wrapper that reconciles the just-finished plan's outcome against the lessons-learned corpus — resolving that corpus through the explicit main-anchored store handle so the step's position in the finalize order cannot decide what it sees, then removing fully-covered lessons, promoting reusable residue into the governing skill before retiring the lesson, trimming partially-covered ones, and naming the substrate every reported count was computed from
 user-invocable: false
 mode: workflow
 allowed-tools: Bash, Read, Edit
@@ -104,18 +104,42 @@ python3 .plan/execute-script.py plan-marshall:manage-files:manage-files read \
 
 Together these establish what the plan changed (modified files), why (the request), and the verified outcome — the basis for coverage classification.
 
-### Step 2: Enumerate the lessons corpus
+### Step 2: Resolve the corpus substrate, then enumerate it
+
+**Resolve the substrate FIRST.** This step's position in the finalize order must not determine which corpus it can see: it runs in the pre-merge settle band with cwd pinned to the plan's worktree, and a cwd-keyed corpus read there would reach a different — usually empty — store than the one the plan's lessons actually live in. Resolve the store through the explicit main-anchored handle and capture how it resolved:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list-stalled
+```
+
+Read `store_resolution` (`main_anchored` / `override` / `unresolved`) and `plans_root` from the payload. `list-stalled` is used here purely as the substrate probe — it resolves the same main-anchored store `list` reads and is the only verb that REPORTS the resolution. Retain both values as `{store_resolution}` and `{corpus_path}` (the lessons-learned sibling of the reported `plans_root`); every outcome line below names them.
+
+The verb resolves two stores — the plans root and the lessons corpus — and **both are required**, so `store_resolution: unresolved` here means *a required store* was not reached. It does **not** say which: the verb reports the first failing store, preferring `plans`, so `unresolved_store: plans` is silent about whether the lessons corpus resolved. Read `unresolved_store` (`plans` | `lessons`) as the name of the store that actually failed and carry it into every outcome line below, so this step names the store it observed failing instead of asserting a state it never observed. `plans_root` is empty on that branch.
+
+Branch on `store_resolution` alone. Either store failing leaves this step with no scanned corpus, so `unresolved_store` selects the wording, never the branch.
+
+**Unresolvable-store exit (`store_resolution: unresolved`)**: a required store was never reached, so this step scanned no corpus and classified nothing. It MUST NOT report a clean reconciliation. Record the step `done` (housekeeping is non-fatal and must never block finalize) with a `display_detail` that names the failure to look:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level WARNING \
+  --message "[STATUS] (project:finalize-step-lessons-housekeeping) Required store UNRESOLVED: {unresolved_store} — nothing was read or reconciled, this is NOT a clean-corpus result"
+```
+
+Then mark done with `--display-detail "{unresolved_store} store unresolved — nothing read"` following the HEAD-capture sequence below.
+
+**Enumerate** (only when the store resolved):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list --full
 ```
 
-**Empty-corpus skip-clean exit**: if zero lessons exist, log and record the step as done, then return:
+**Empty-corpus skip-clean exit**: if zero lessons exist, log and record the step as done, then return. The line MUST name the substrate the zero was computed from — a bare "0 lessons" cannot be told apart from a corpus that was never read:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[STATUS] (project:finalize-step-lessons-housekeeping) 0 lessons — nothing to reconcile"
+  --message "[STATUS] (project:finalize-step-lessons-housekeeping) 0 lessons in {corpus_path} ({store_resolution}) — nothing to reconcile"
 ```
 
 Resolve the worktree HEAD SHA immediately before marking done, per § HEAD-dependency (substitute `.` for `{worktree_path}` on the main-checkout flow):
@@ -129,9 +153,11 @@ Capture stdout as `{sha}` and forward it via `--head-at-completion`:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-lessons-housekeeping --outcome done \
-  --display-detail "0 lessons — nothing to reconcile" \
+  --display-detail "0 lessons in {store_resolution} corpus — nothing to reconcile" \
   --head-at-completion {sha}
 ```
+
+**Out of scope — the classify/apply split.** Resolving the substrate explicitly closes the *which corpus did I read* question, not the *where may I write* one. Splitting this step into a main-anchored classify pass and a separately-scheduled pushable apply pass is deliberately NOT done here: it is a finalize band-contract change (whether a `mutates_source: true` step may run post-merge, and the reordering that follows) owned by `PLAN-CIS-034`.
 
 ### Step 3: Classify each lesson's coverage against the plan outcome
 
@@ -253,18 +279,26 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 7: Record the step outcome
 
+**The outcome line MUST name the substrate the counts were computed from.** `0 removed, 0 promoted, 0 adapted` is the same sentence whether the corpus was read and found clean or was never reached at all, and the two demand opposite responses. Carry `{store_resolution}` and `{corpus_path}` from Step 2 into both the work-log line and the `display_detail`, so no count in this step's record is ever substrate-blind.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  work --plan-id {plan_id} --level INFO \
+  --message "[STATUS] (project:finalize-step-lessons-housekeeping) {N} removed, {P} promoted, {M} adapted, {K} retained over {C} lesson(s) in {corpus_path} ({store_resolution})"
+```
+
 Resolve the worktree HEAD SHA immediately before marking done, per § HEAD-dependency (substitute `.` for `{worktree_path}` on the main-checkout flow):
 
 ```bash
 git -C {worktree_path} rev-parse HEAD
 ```
 
-Capture stdout as `{sha}` and forward it via `--head-at-completion`:
+Capture stdout as `{sha}` and forward it via `--head-at-completion`. The `display_detail` is capped at 80 ASCII chars, so it carries the resolution token rather than the full path — the work-log line above carries the path:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-lessons-housekeeping --outcome done \
-  --display-detail "{N} removed, {P} promoted, {M} adapted, {K} retained" \
+  --display-detail "{N} rm, {P} promo, {M} adapt, {K} keep ({store_resolution} corpus)" \
   --head-at-completion {sha}
 ```
 
@@ -272,7 +306,8 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 | Scenario | Action |
 |----------|--------|
-| Empty lessons corpus | Skip-clean exit — record `mark-step-done --outcome done --display-detail "0 lessons — nothing to reconcile" --head-at-completion {sha}` so the `phase_steps_complete` handshake counts the step as done and a later HEAD advance re-fires it |
+| Unresolvable required store (`store_resolution: unresolved` from the Step 2 substrate probe; `unresolved_store` names whether the `plans` root or the `lessons` corpus failed) | Non-fatal, but **never reported as clean** — no corpus was scanned, so nothing was classified. Record `mark-step-done --outcome done --display-detail "{unresolved_store} store unresolved — nothing read" --head-at-completion {sha}` and emit the WARNING work-log line naming the store that failed. Distinguishing this from an empty corpus is the whole point: the two produce identical counts and demand opposite responses. |
+| Empty lessons corpus (store resolved, zero lessons in it) | Skip-clean exit — record `mark-step-done --outcome done --display-detail "0 lessons in {store_resolution} corpus — nothing to reconcile" --head-at-completion {sha}` so the `phase_steps_complete` handshake counts the step as done and a later HEAD advance re-fires it. The `display_detail` names the substrate so the zero is not substrate-blind. |
 | Coverage ambiguous (including ambiguous residue home) | Retain the lesson untouched (bias to retain) and log the no-action decision via `manage-logging decision` |
 | `manage-lessons remove` failure on one lesson | Non-fatal — log the failure, leave that lesson in place, and continue with the remaining lessons. Housekeeping must never block finalize. |
 | `manage-lessons remove` **evidence rejection** on one lesson (`--coverage-verdict completely_covered` without both evidence flags — argparse exit 2, or `error: missing_coverage_evidence` on the handler path) | Non-fatal per-lesson — the lesson is left in place by construction (the rejection precedes any unlink). Treat it as a **classification defect, not a call-shape defect**: the verdict claimed coverage the Step 3 Evidence bar could not evidence, so downgrade the lesson to Partially covered and route it to the Step 5 trim. Never re-issue the call with invented or placeholder evidence values to get past the rejection. Log the downgrade and continue with the remaining lessons. |
@@ -281,7 +316,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 | Promote-then-retire disposition — commit carriage | The step issues no tree-mutating git call (its only git calls are the read-only `rev-parse HEAD` in Steps 2 and 7). Its promotion edits are committed onto the feature branch by the dispatcher's commit instrumentation (phase-6-finalize Step 3 item 5f); because the step runs in the settle band it never writes source after the push barrier, every promotion edit it makes is still ahead of that commit and is therefore carried onto the branch — no promotion can be stranded as an uncommitted edit. |
 | Adaptation `Edit` failure on one lesson | Non-fatal — log the failure, leave that lesson untouched, and continue. |
 | Missing `quality-verification-report.md` | Non-fatal — proceed using `request.md` + `modified_files` alone; log that the retrospective report was unavailable |
-| Step completes | Record `mark-step-done --outcome done --display-detail "{N} removed, {P} promoted, {M} adapted, {K} retained" --head-at-completion {sha}` |
+| Step completes | Record `mark-step-done --outcome done --display-detail "{N} rm, {P} promo, {M} adapt, {K} keep ({store_resolution} corpus)" --head-at-completion {sha}`, plus the Step 7 work-log line naming `{corpus_path}`. Every count this step reports rides with the substrate it was computed from. |
 
 The step's posture is **non-fatal throughout**: finalize must never abort because lessons housekeeping hit a snag on an individual lesson.
 

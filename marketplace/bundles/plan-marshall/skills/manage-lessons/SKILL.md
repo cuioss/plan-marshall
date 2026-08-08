@@ -1,6 +1,6 @@
 ---
 name: manage-lessons
-description: Manage lessons learned with global scope
+description: Manage lessons learned with global scope, including the main-anchored store handle and the fail-closed retirement surface — restore-from-plan's four-state outcome, list-stalled's file-presence-derived population plus its duplication direction, and the store-resolution discriminator that makes every zero state whether the store was actually resolved and scanned
 user-invocable: false
 mode: script-executor
 scope: global
@@ -553,14 +553,18 @@ Singletons (lessons that match no other lesson at any signal tier) are dropped �
 
 ### list-stalled
 
-Read-only scanner that surfaces lesson-sourced plans whose relocated lesson is **stranded** (stalled). When a lesson is moved into a plan directory via `convert-to-plan` (`plans/{plan_id}/lesson-{id}.md`), it leaves the active corpus. If that plan then stalls or is abandoned in `5-execute`/`6-finalize` without running `restore-from-plan`, the lesson stays trapped inside the plan directory and is silently lost. This verb reports every such plan so callers can decide whether to restore or discard. It never mutates lesson files or plan directories.
+Read-only scanner that surfaces plans whose relocated lesson is **stranded** (stalled). When a lesson is moved into a plan directory via `convert-to-plan` (`plans/{plan_id}/lesson-{id}.md`), it leaves the active corpus. If that plan then stalls or is abandoned in `5-execute`/`6-finalize` without running `restore-from-plan`, the lesson stays trapped inside the plan directory and is silently lost. This verb reports every such plan so callers can decide whether to restore or discard. It never mutates lesson files or plan directories.
+
+**The candidate population is the observable file, not a metadata field.** A plan is a candidate exactly when its directory holds a `lesson-*.md`. The population is deliberately NOT filtered by `status.metadata.plan_source`: a gate requiring a lesson-id-shaped `plan_source` excludes every `convert-to-plan`-carried plan (whose `plan_source` is unset), so the verb would report a clean zero over a population that had already discarded the plans it exists to find. A file on disk cannot be argued with; a metadata field that was never written can. `plan_source` is still reported on each row as context; it classifies nothing.
 
 Detection algorithm (deterministic, read-only):
 
-1. Resolve the plans root and glob `*/lesson-*.md` to find plan dirs still holding a relocated lesson; group the matched lesson files by owning plan dir.
-2. For each such plan dir, read the sibling `status.json` (a missing or corrupt `status.json` yields a skipped entry rather than a crash).
-3. Classify the plan as **stalled** when `metadata.plan_source` matches the lesson-id pattern (`YYYY-MM-DD-HH-NNN`, i.e. lesson-sourced) AND it is NOT in a terminal state — `current_phase` is one of `5-execute` / `6-finalize` and that phase's row `status != done`. A lesson-sourced plan whose current phase has fully completed is NOT stalled (its lesson was, or will be, restored on the normal terminal path).
+1. Resolve the main-anchored plans root and lessons corpus. **Both are required**, so either one failing is a structured `store_unresolved` error — never a zero. The error names the store that actually failed: `store_resolution: unresolved`, `plans_root_state: unknown`, and `unresolved_store: plans | lessons`. Reporting the sibling store's resolution here would emit a resolved `store_resolution` next to the error, and the documented consumers branch on that field. An absent plans root under a store that DID resolve is the separate, non-faulting `plans_root_state: missing`, which says the scan could not look.
+2. Glob `*/lesson-*.md` under the plans root to find plan dirs still holding a relocated lesson; group the matched lesson files by owning plan dir. `scanned_plan_count` reports the size of that population.
+3. For each candidate, report both directions. **Absence direction**: read the sibling `status.json` and classify the plan as **stalled** when it is NOT in a terminal state — `current_phase` is one of `5-execute` / `6-finalize` and that phase's row `status != done`. A plan whose current phase has fully completed is NOT stalled (its lesson was, or will be, restored on the normal terminal path). A `status.json` that is missing, unreadable, or not a JSON object yields an `unclassifiable_plans[]` row carrying the reason — it is surfaced, never silently skipped out of the population. **Duplication direction**: every carried lesson id that ALREADY exists in the active corpus is emitted as a `duplicate_lessons[]` row, whatever the plan's stalled classification.
 4. Emit each stalled plan with the exact `restore-from-plan --plan-id {plan_id}` invocation in `restore_command`.
+
+`stalled_plans[]` and `duplicate_lessons[]` are independent views over the same scan, correlated by `plan_id`. A plan may legitimately appear in both, and a caller intending to run `restore_command` MUST check the duplicate list first — restoring a duplicate id fails with `destination_exists`.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list-stalled
@@ -568,9 +572,14 @@ python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons list
 
 **Parameters**: none.
 
-**Output** (TOON):
+**Output** (TOON) — every field below is emitted on every branch, including the could-not-look ones:
 ```toon
 status: success
+store_resolution: main_anchored
+plans_root: /abs/path/to/.plan/local/plans
+plans_root_state: present
+unresolved_store: ""
+scanned_plan_count: 2
 stalled_count: 1
 stalled_plans:
   - plan_id: 2025-12-02-001-example-plan
@@ -580,13 +589,70 @@ stalled_plans:
     lesson_ids:
       - 2025-12-02-15-001
     restore_command: "python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons restore-from-plan --plan-id 2025-12-02-001-example-plan"
+duplicate_count: 1
+duplicate_lessons:
+  - plan_id: 2025-12-04-002-other-plan
+    lesson_id: 2025-12-04-09-002
+    corpus_path: /abs/path/to/.plan/local/lessons-learned/2025-12-04-09-002.md
+unclassifiable_count: 0
+unclassifiable_plans: []
 ```
 
-An empty corpus (no plans root, or no stalled lesson-sourced plans) returns `stalled_count: 0` with an empty `stalled_plans`.
+**Every zero states which kind of zero it is.** `stalled_count: 0` is never bare — it always rides with `store_resolution`, `plans_root`, `plans_root_state`, `unresolved_store`, and `scanned_plan_count`. A genuinely clean corpus is `plans_root_state: present` with `scanned_plan_count: 0`; a scan that could not look is `plans_root_state: missing` (still `status: success`, so a sweep is never aborted by it) or a `store_unresolved` error. Read the discriminator, not the count alone.
+
+`plans_root_state` is a closed three-value vocabulary. `present` and `missing` both assert a fact about the resolved plans root — it exists, or it does not. **`unknown` is the third value because neither assertion is available when a store did not resolve**: nothing established whether the plans root exists, so claiming `missing` would report a filesystem fact the verb never observed. `unknown` rides only with the `store_unresolved` error, and `unresolved_store` names which of the two required stores failed.
+
+### restore-from-plan
+
+Inverse of `convert-to-plan`: move every `lesson-*.md` at a plan directory's root back into the active corpus at `.plan/local/lessons-learned/{lesson_id}.md`. Plans that consolidate several lessons carry more than one file; every match is restored.
+
+**Four distinguishable outcomes.** The verb reports which kind of answer it is giving over the closed `action` vocabulary, modelled on `marshall-orchestrator`'s `inbox list` triple — the discriminator rides the payload, and the verb stays non-faulting for the benign zero:
+
+| `action` | `status` | Meaning |
+|----------|----------|---------|
+| `restored` | `success` | The plan directory resolved, was scanned, carried at least one lesson file, and **every** carried file was moved back. |
+| `restore_incomplete` | `error` | The plan directory resolved, was scanned, and carried lesson files, but the move **aborted** on a collision, a traversal guard, or a carried entry that is not a regular file. `restored_count` states how many landed before the abort and is legitimately `0` when the very first file collided. |
+| `no_lesson_file` | `success` | The plan directory **genuinely resolved, was scanned, and held no** `lesson-*.md`. The benign zero. |
+| `plan_dir_unresolved` | `error` | The plan directory could not be resolved under the main-anchored plans root, so it was **never scanned**. The non-benign zero. |
+
+`action` and `status` pair exactly as the table shows; `restored` never rides with `status: error`. That is what `restore_incomplete` buys: an aborted move used to report `action: restored` with `restored_count: 0`, so a consumer branching on the closed vocabulary — which this contract instructs callers to do rather than re-listing literals — concluded at least one lesson had landed when none had.
+
+An **absent** plan directory is deliberately `plan_dir_unresolved`, not `no_lesson_file`: "the plan never existed" and "I looked in the wrong store" are indistinguishable from inside the verb, and reporting either as a verified-empty plan is exactly the fail-open this contract closes. `store_resolution` sub-discriminates the two ways it happens — `unresolved` means a required store itself was unreachable, while `main_anchored` / `override` means the store resolved but does not hold that plan directory.
+
+The verb needs **both** the plans root and the lessons corpus, so a could-not-look return always reports the resolution of the store that actually **failed**, never a sibling that happened to resolve — and `unresolved_store` names which of the two it was (`plans` / `lessons`, empty when both resolved). The distinction is load-bearing because `store_resolution` is the field this contract tells consumers to branch on: emitting the plans store's resolved value while the *corpus* was the unreachable one reads as "the corpus is fine, the plan is simply absent" to a caller that never reached the corpus at all. `list-stalled` states the same rule for its own `store_unresolved` return; the two surfaces answer it identically.
+
+A pre-existing destination file is never clobbered: the move fails fast with `destination_exists` under `action: restore_incomplete`, and any lessons restored before the collision remain in the corpus and are reported in `restored_lessons`.
+
+Only a **regular, non-symlinked file** is ever moved. Each carried lesson id is derived from the matched filename, never from a resolved path — a symlink resolves out of the plan directory, so an id read off the resolution names the link's *target* rather than the file the plan actually carries. A carried entry that is a symlink or not a regular file fails fast with `unsafe_source` under `action: restore_incomplete`, because moving it would relocate whatever the link points at out of its own location, or plant a directory in the corpus where every later reader expects a markdown file. Testing the resolved parent alone would not catch either: it rejects only entries that escape *out* of the plan directory, while a link or directory resolving back inside it passes untouched — so the entry's **type** is what is tested. `manage-status`'s pre-deletion carry-back applies the identical predicate, reporting it as a `skipped[]` row with `reason: unsafe_source`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-lessons:manage-lessons restore-from-plan \
+  --plan-id EXAMPLE-PLAN
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan directory under the main-anchored `.plan/local/plans/` to scan
+
+**Output** (TOON) — every field below is emitted on every branch, success and error alike:
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+action: restored
+store_resolution: main_anchored
+plans_root: /abs/path/to/.plan/local/plans
+unresolved_store: ""
+restored_count: 1
+restored_lessons:
+  - lesson_id: 2025-12-02-15-001
+    source: /abs/path/to/.plan/local/plans/EXAMPLE-PLAN/lesson-2025-12-02-15-001.md
+    destination: /abs/path/to/.plan/local/lessons-learned/2025-12-02-15-001.md
+```
 
 #### Stalled-lesson lifecycle gap
 
-`convert-to-plan` is the move that takes a lesson out of the active corpus and into a plan directory; `restore-from-plan` is its inverse, returning the relocated lesson back to `.plan/local/lessons-learned/`. When a lesson-sourced plan stalls or is abandoned before reaching a terminal state, the relocated lesson is trapped at the plan-dir root and never resurfaces. `list-stalled` is the detection half of closing that gap — it identifies every trapped lesson; `restore-from-plan` is the remediation half that frees it. The `Action: cleanup` workflow consumes both as a paired scan-and-restore pass.
+`convert-to-plan` is the move that takes a lesson out of the active corpus and into a plan directory; `restore-from-plan` is its inverse, returning the relocated lesson back to `.plan/local/lessons-learned/`. When a plan stalls or is abandoned before reaching a terminal state, the relocated lesson is trapped at the plan-dir root and never resurfaces. `list-stalled` is the detection half of closing that gap — it identifies every trapped lesson; `restore-from-plan` is the remediation half that frees it. The `Action: cleanup` workflow consumes both as a paired scan-and-restore pass.
+
+Closing the gap requires both verbs to distinguish their zeros, because the pass is only as trustworthy as its weakest report: a `list-stalled` that could not read the store, or a `restore-from-plan` that reports an unreachable plan directory as lesson-free, makes the paired pass emit a confident "nothing to do" over a corpus it never saw. Both verbs therefore carry the `store_resolution` discriminator, and the cleanup workflow branches on it rather than on the counts alone. The store-resolution population and its per-site dispositions are enumerated in [`standards/cwd-keyed-store-resolution-audit.md`](standards/cwd-keyed-store-resolution-audit.md).
 
 ---
 
@@ -617,10 +683,10 @@ The classification logic for the read-side corpus operations lives under `refere
 | `convert-to-plan` | `--lesson-id --plan-id` | Move lesson into a plan directory as `lesson-{id}.md`. This is the move-semantics replacement for marking a lesson "applied". |
 | `remove` | `--lesson-id --reason --coverage-verdict [--covering-clause] [--covering-input] [--force]` | Delete a lesson and write a tombstone. `--coverage-verdict` is required with no default; `completely_covered` additionally requires both evidence flags, and all supplied values are recorded on the tombstone. See [Retirement evidence](#retirement-evidence-the-two-key-remove-path). |
 | `supersede` | `--lesson-id --by --reason` | Mark a lesson superseded by a canonical lesson: merge the source body into the canonical, write a tombstone carrying `superseded_by`, and replace the source body with a `[SUPERSEDED]` redirect stub. |
-| `restore-from-plan` | `--plan-id` | Inverse of `convert-to-plan`: move the relocated `lesson-*.md` back from a plan directory to the active corpus (`.plan/local/lessons-learned/`). Run on stall/abandon so a stranded lesson resurfaces. |
+| `restore-from-plan` | `--plan-id` | Inverse of `convert-to-plan`: move the relocated `lesson-*.md` back from a plan directory to the active corpus (`.plan/local/lessons-learned/`). Run on stall/abandon so a stranded lesson resurfaces. Reports a four-value `action` — enumerated in full under [restore-from-plan](#restore-from-plan), the single home for the value set — so an unreachable plan directory is never reported as a lesson-free one, and an aborted move is never reported as a completed one. |
 | `cleanup-superseded` | `[--lesson-id ID ...] \| [--retention-days N] [--dry-run]` | Prune superseded `.md` stubs while preserving tombstones. Age-filtered when `--retention-days` (falls back to `system.retention.lessons_superseded_days`, hard fallback 7); explicit when `--lesson-id` is repeated. |
 | `retire-quiet` | `[--quiet-days N] [--dry-run]` | Retire-on-quiet for `arch-constraint` lessons: tombstone + unlink every active arch-constraint lesson whose `last_seen` is at least the quiet window old. Window falls back to `system.retention.arch_constraint_quiet_days`, then a hard fallback. |
-| `list-stalled` | (none) | Read-only scanner: report lesson-sourced plans whose relocated lesson is stranded in a non-terminal `5-execute`/`6-finalize` state. Returns `stalled_count` and per-plan `restore_command`. Never mutates lesson files or plan dirs. |
+| `list-stalled` | (none) | Read-only scanner: report plans holding a `lesson-*.md` that is stranded in a non-terminal `5-execute`/`6-finalize` state. Population is derived from the observable lesson file, NOT from `metadata.plan_source`. Returns `stalled_count` with per-plan `restore_command`, the separately-counted `duplicate_lessons` (a carried id already in the corpus), `unclassifiable_plans` (unreadable `status.json`), and the `store_resolution` / `plans_root_state` / `unresolved_store` discriminators that say which kind of zero a zero is — reporting the resolution of the store that actually failed, never a sibling that happened to resolve. Never mutates lesson files or plan dirs. |
 | `auto-suggest` | `--plan-id [--max-suggestions N] [--no-emit]` | Recipe-registry matcher for phase-1-init Step 5c. Scans the live recipe registry (`manage-config list-recipes`) and returns up to `--max-suggestions` recipes (default 3) ordered by deterministic confidence — keyword overlap (request narrative ∩ recipe description) + domain alignment + scope alignment. Each suggestion is also written as a plan-scoped `tip` finding (`artifacts/findings/tip.jsonl`) so the orchestrator can surface them in the audit log; pass `--no-emit` to inspect without writing findings. No LLM dispatch — the matcher is pure regex + set algebra. Falls through to the existing Step 5c LLM path when no recipe clears the 0.35 confidence floor. |
 
 ---
@@ -643,6 +709,12 @@ The classification logic for the read-side corpus operations lives under `refere
 | Error Code | Cause |
 |------------|-------|
 | `not_found` | Lesson ID doesn't exist (get, update, set-body, convert-to-plan) |
+| `plan_dir_unresolved` | `restore-from-plan` **never scanned** for lesson files. Either the named plan directory could not be resolved under the main-anchored plans root, **or** the main-anchored lessons corpus itself did not resolve so there was nowhere to restore into. Deliberately distinct from `action: no_lesson_file`, which asserts the directory WAS scanned and held none — reporting an unreachable directory as lesson-free is the fail-open this code closes. `store_resolution` says which way it happened: `unresolved` (a required store was unreachable) versus a resolved store that does not hold that plan; on the unreachable branch it is always the resolution of the store that **failed**, and `unresolved_store` names which one (`plans` / `lessons`) |
+| `store_unresolved` | `list-stalled` could not resolve the main-anchored plans root **or** lessons corpus, so no plan directory was ever scanned. `unresolved_store` names which of the two failed, `store_resolution` is that store's `unresolved` — never a sibling's resolved value — and `plans_root_state` is `unknown`. Distinct from the non-faulting `plans_root_state: missing` (the store resolved, but the plans root does not exist) and from `plans_root_state: present` with `stalled_count: 0` (the scan looked and found nothing) |
+| `destination_exists` | `restore-from-plan` refused to clobber an existing corpus file for a restored lesson id; reported under `action: restore_incomplete`, never `restored`. Any lessons moved before the collision remain restored and are reported in `restored_lessons`, so `restored_count` may be `0` (first-file collision) or non-zero. `list-stalled` surfaces the same condition ahead of time as a `duplicate_lessons[]` row |
+| `invalid_id` | `restore-from-plan` rejected the supplied `--plan-id` **before any path resolution**: the identifier carries a path separator or a `..` traversal sequence. Nothing was resolved and nothing was scanned, so it rides `action: plan_dir_unresolved` |
+| `unsafe_source` | `restore-from-plan` refused to move a carried `lesson-*.md` that is a **symlink or not a regular file** (a directory, FIFO, or device node). Moving a link would relocate whatever it points AT — an arbitrary file outside the plan directory, removed from its own location — and moving a directory would leave a directory where every later reader expects a markdown file, so each subsequent read of that id raises `IsADirectoryError`. Rides `action: restore_incomplete`; lessons moved before the guard fired remain restored and are reported in `restored_lessons`. Distinct from `path_traversal`, which tests where a path *resolves* — this one tests what the entry *is*, and a link resolving back inside the plan directory passes the traversal guard untouched. The `manage-status` pre-deletion carry-back applies the same predicate as a `skipped[]` row with `reason: unsafe_source` |
+| `path_traversal` | A resolved path escaped its intended parent directory. Reachable at two points, distinguished by the `action` it rides: **pre-scan** (`action: plan_dir_unresolved`), when the plan directory resolves outside the main-anchored plans root — nothing was scanned; and **mid-loop** (`action: restore_incomplete`), when a carried lesson's derived id or its corpus destination resolves outside its parent — lessons moved before the guard fired remain restored and are reported in `restored_lessons` |
 | `copy_failed` | `convert-to-plan` failed to copy the lesson to the plan directory (I/O error or read-back content mismatch); source lesson is left intact, no partial artifact survives |
 | `invalid_category` | Category not in: bug, improvement, anti-pattern, arch-constraint |
 | `missing_rule` | `add --category arch-constraint` invoked without the required `--rule` dedup key |
