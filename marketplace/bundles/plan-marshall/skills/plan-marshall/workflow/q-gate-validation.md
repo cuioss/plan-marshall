@@ -688,7 +688,7 @@ A sweep whose coverage is non-clean passes neither criterion: it has not establi
 
 **Positive example (WL-B)**: Outline deliverable modifies an agent file that contains `worktree_path: /Users/oliver/git/plan-marshall/.claude/worktrees/foo`. The WL-B sweep returns that path; finding emitted citing the TASK-4 migration.
 
-**Positive example (WL-C)**: Outline deliverable modifies a skill that contains `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read --task-number 5` (no `--plan-id`). The WL-C sweep returns that path as a **candidate**; the optionality-resolution step probes `manage-tasks read --help` and finds `--plan-id` surviving the bracket strip (REQUIRED), so the candidate becomes a finding citing the TASK-10 auto-routing contract.
+**Positive example (WL-C)**: Outline deliverable modifies a skill that contains `python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks read --task-number 5` (no `--plan-id`). The WL-C sweep returns that path as a **candidate**; the optionality-resolution step probes that verb's own help output and finds `--plan-id` surviving the bracket strip (REQUIRED), so the candidate becomes a finding citing the TASK-10 auto-routing contract.
 
 **Negative example (WL-C — optional verb)**: A skill contains an auto-routing invocation whose verb declares `--plan-id` inside a `[...]` group in its `usage:` line (OPTIONAL). The WL-C sweep returns that path as a candidate; the optionality-resolution step suppresses it at step 4 and emits **no** finding — the omission is the verb's documented call shape, not a worktree-isolation defect.
 
