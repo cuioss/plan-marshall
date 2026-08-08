@@ -30,7 +30,11 @@ CONTRACT the components jointly implement:
 * the FULL declared optional-flag surface of ``review_completeness check`` is
   classified — every long option the live parser declares is assigned a coverage
   arm, so a flag whose shape the ``--*-bots`` family pattern cannot match (the
-  ``store_true`` ``--not-triggered``) cannot escape every sweep unnoticed.
+  ``store_true`` ``--not-triggered``) cannot escape every sweep unnoticed;
+* every ``N blocking members`` count stated anywhere in the marketplace tree
+  agrees with the blocking subset derived from ``_UNPROVEN_STATES`` — which is
+  strictly smaller than the taxonomy, so reaching for the taxonomy's size there
+  is the specific error guarded.
 
 Every set-guarding assertion derives its population from the registry (for bots),
 from a repository scan (for call sites), or from the live argparse surface (for
@@ -68,15 +72,6 @@ import review_completeness as rc  # noqa: E402
 
 _CONTRACT_DOC = _AR_SCRIPTS.parent / 'standards' / 'bot-participation-contract.md'
 _AR_SKILL = _AR_SCRIPTS.parent / 'SKILL.md'
-
-#: The docs that CONSUME the taxonomy and act on a block. The closure-count check
-#: below reads the contract doc alone, so a wrong count restated on a consumer
-#: surface was historically unreachable by this suite — which is how the same
-#: defect class survived two review rounds at two different consumer sites.
-_CONSUMER_DOCS = (
-    _AR_SKILL,
-    _AR_SCRIPTS.parent.parent / 'phase-6-finalize' / 'standards' / 'branch-cleanup.md',
-)
 _RC_SCRIPT = get_script_path('plan-marshall', 'automatic-review', 'review_completeness.py')
 
 # THIS repository's tracked config, resolved through conftest's project anchor so
@@ -192,6 +187,23 @@ def _stated_blocking_counts(text: str) -> tuple[int, ...]:
         elif word.isdigit():
             counts.append(int(word))
     return tuple(counts)
+
+
+def _blocking_count_sites() -> tuple[tuple[str, int], ...]:
+    """Return ``(relative_doc, stated_count)`` for every blocking-count claim.
+
+    The population is DERIVED by walking the marketplace tree — the same shape
+    ``_scan_invocation_sites()`` uses — rather than named in a literal doc list.
+    A literal would be complete only until the next doc states a count, which is
+    exactly the silent-escape this suite's population-derivation rule exists to
+    prevent. Deriving it also reaches the contract doc itself, whose own
+    blocking-subset prose is otherwise guarded by nothing.
+    """
+    sites: list[tuple[str, int]] = []
+    for path in sorted(_MARKETPLACE_DOCS.rglob('*.md')):
+        for stated in _stated_blocking_counts(path.read_text(encoding='utf-8')):
+            sites.append((str(path.relative_to(_MARKETPLACE_DOCS)), stated))
+    return tuple(sites)
 
 
 def _registered_bots() -> list[str]:
@@ -455,20 +467,21 @@ class TestFailureTaxonomyIsExhaustive:
             f'{sorted(_NON_PARTICIPATION_MEMBERS)}'
         )
 
-    def test_consumer_blocking_counts_agree_with_the_derived_blocking_subset(self):
-        """Consumer-side ``N blocking members`` prose is checked against the code.
+    def test_stated_blocking_counts_agree_with_the_derived_blocking_subset(self):
+        """Every ``N blocking members`` claim in the tree is checked against code.
 
-        The closure-count check above reads the CONTRACT doc only, so a count
-        restated on a consumer surface is outside its reach. That gap is not
-        hypothetical: the same wrong count appeared at two consumer sites, and
-        one of them contradicted its own enumeration three lines above, with
-        nothing in this suite able to see either.
+        The closure-count check above reads the CONTRACT doc's one closure
+        sentence, so a count restated anywhere else is outside its reach. That
+        gap is not hypothetical: the same wrong count appeared at two consumer
+        sites, one of them contradicting its own enumeration three lines above,
+        with nothing in this suite able to see either.
 
         The blocking subset is ``_UNPROVEN_STATES``, which is strictly smaller
         than the taxonomy — ``participated_but_empty`` is a member that never
         blocks — so reaching for the taxonomy's size here is the specific error
-        this guards. Prefer no count at all in consumer prose; this check only
-        constrains a count that IS stated.
+        guarded. Stating no count at all is the preferred shape, so a zero-match
+        tree is a legitimate pass; the population guard below is what keeps that
+        pass honest rather than vacuous.
         """
         blocking = len(rc._UNPROVEN_STATES)
         assert 0 < blocking < len(_NON_PARTICIPATION_MEMBERS), (
@@ -477,22 +490,22 @@ class TestFailureTaxonomyIsExhaustive:
             f'cannot distinguish the two counts it exists to keep apart'
         )
 
-        # Population is the DOC SET, not the match set: with no count stated
-        # anywhere (the preferred shape) there are zero matches, and a zero-match
-        # pass is only honest if the docs were actually read.
-        scanned = 0
-        for doc in _CONSUMER_DOCS:
-            assert doc.is_file(), f'consumer doc {doc} is missing — the scan would be vacuous'
-            scanned += 1
-            for stated in _stated_blocking_counts(doc.read_text(encoding='utf-8')):
-                assert stated == blocking, (
-                    f'{doc.name} claims {stated} blocking members but {blocking} are derived '
-                    f'from _UNPROVEN_STATES: {sorted(rc._UNPROVEN_STATES)}. Note the '
-                    f'taxonomy has {len(_NON_PARTICIPATION_MEMBERS)} members — the '
-                    f'blocking subset excludes the never-blocking ones'
-                )
+        # The scanned population is the marketplace doc tree, NOT the match set:
+        # zero matches is the preferred state, so the denominator that makes a
+        # zero-match pass meaningful is how many docs were actually read.
+        scanned = sum(1 for _ in _MARKETPLACE_DOCS.rglob('*.md'))
+        assert scanned > 0, (
+            f'{_MARKETPLACE_DOCS} yielded no markdown — the sweep is vacuous and a '
+            f'clean result would mean nothing'
+        )
 
-        assert scanned == len(_CONSUMER_DOCS), 'every consumer doc must be scanned'
+        for doc, stated in _blocking_count_sites():
+            assert stated == blocking, (
+                f'{doc} claims {stated} blocking members but {blocking} are derived '
+                f'from _UNPROVEN_STATES: {sorted(rc._UNPROVEN_STATES)}. Note the '
+                f'taxonomy has {len(_NON_PARTICIPATION_MEMBERS)} members — the '
+                f'blocking subset excludes the never-blocking ones'
+            )
 
     def test_the_blocking_count_extractor_reads_real_counts_and_skips_qualifiers(self):
         """Positive and negative controls for the extractor the scan above uses.
