@@ -76,6 +76,9 @@ since_ref: {sha or empty when the round was not delta-scoped}
 surface_scope: delta | full
 files_in_scope: N
 counts:
+  by_family:
+    structural: {sum of the in_total structural lists}
+    prose_contract: {sum of the in_total prose_contract lists}
   regexes: N1
   user_facing_strings: N2
   markdown_sections: N3
@@ -160,7 +163,24 @@ worked_example_pairs[N20]{file,line,clause,required_predicate,example_predicate,
   ...
 ```
 
-The `total` count covers the fifteen line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`, `ordinal_references`, `scan_derived_keys`, `worked_example_pairs`) only. `contract_sources`, `schema_bearing_files`, `count_prose`, and `advertised_form_help_strings` are review-anchor categories not summed into `total`; `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` and likewise does not contribute.
+The `total` count covers the line-level heuristic lists only. `contract_sources`, `schema_bearing_files`, `count_prose`, and `advertised_form_help_strings` are review-anchor categories not summed into `total`; `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` and likewise does not contribute. The authoritative membership is the implementor's `CANDIDATE_LISTS` registry `in_total` field, from which both the emitted key set and the `total` formula are derived — a consumer reads the emitted `counts` block rather than re-deriving the sum from a hand-maintained name list.
+
+### `counts.by_family` — the per-round detector mix
+
+`counts.by_family` partitions the SAME `in_total` population that `total` sums, by each registry entry's `family`, over a closed two-member vocabulary:
+
+| Family | Reads |
+|--------|-------|
+| `structural` | Code SHAPE — a pattern, a pair of names, a guard, a call site |
+| `prose_contract` | PROSE or contract consistency — a heading, a description, a count claim, a documented schema |
+
+Contract obligations on an implementor:
+
+- **The two family counts MUST sum exactly to `counts.total`.** Both are derived from one traversal of the same `in_total` population, so the mix cannot drift from the total it decomposes.
+- **BOTH families are always reported, including a zero.** A round that surfaced only prose candidates is a detector-mix signal about the change under review; an omitted key would read as "not measured" rather than "none found", which is the distinction the block exists to preserve.
+- **Every registry entry carries exactly one family.** The field is required with no default, so the partition is total by construction rather than by convention.
+
+The mix is reported HERE, in the return TOON, rather than in `display_detail`: this block is the authoritative contract surface and is unbudgeted, while `display_detail` is capped at 80 characters and its no-check-matched verdict (`"self-review clean: {N} candidates examined, no check matched"`) already renders to 61 characters at `{N}=9999` — 19 characters of headroom, too narrow to carry a two-family mix in any readable form. Consumers read `counts.by_family` for the mix.
 
 ### Required Candidate Sub-Lists
 

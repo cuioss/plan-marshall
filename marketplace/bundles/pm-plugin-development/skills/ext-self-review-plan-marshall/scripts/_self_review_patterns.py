@@ -475,17 +475,36 @@ _DISCARD_STATEMENT = re.compile(r'^[ \t]*(?:continue|break)\b')
 # =============================================================================
 
 
+#: The closed detector-family vocabulary. ``structural`` detectors read code
+#: SHAPE (a regex, a pair of function names, a guard, a call site);
+#: ``prose_contract`` detectors read PROSE or contract consistency (a heading, a
+#: description, a count claim, a documented schema).
+#:
+#: The vocabulary is closed at two members on purpose. Its job is to make a
+#: LOPSIDED round legible — a round that surfaced only prose candidates says
+#: something different about the change under review than one that surfaced only
+#: structural ones — and a finer partition would report detector taxonomy rather
+#: than that signal.
+CANDIDATE_FAMILIES: tuple[str, ...] = ('structural', 'prose_contract')
+
+
 class CandidateList(NamedTuple):
     """One candidate list in the surfacer's emitted vocabulary.
 
     ``key`` is the payload and ``counts`` key; ``label`` is the human name used
     in derived help prose; ``in_total`` records whether the list's cardinality is
-    summed into ``counts.total``.
+    summed into ``counts.total``; ``family`` places the list in the closed
+    :data:`CANDIDATE_FAMILIES` partition that ``counts.by_family`` reports.
+
+    ``family`` is a REQUIRED field with no default, which is what makes the
+    partition total by construction: a registry entry added without one is a
+    ``TypeError`` at import, not a list silently missing from the reported mix.
     """
 
     key: str
     label: str
     in_total: bool
+    family: str
 
 
 #: The canonical candidate-list vocabulary — the single code-side source of
@@ -500,32 +519,70 @@ class CandidateList(NamedTuple):
 #: ``plan-marshall:extension-api/standards/ext-point-self-review-surfacing.md``
 #: § Output Schema and is NOT restated here.
 CANDIDATE_LISTS: tuple[CandidateList, ...] = (
-    CandidateList('regexes', 'regexes', True),
-    CandidateList('user_facing_strings', 'user-facing strings', True),
-    CandidateList('markdown_sections', 'markdown sections', True),
-    CandidateList('symmetric_pairs', 'symmetric pairs', True),
-    CandidateList('flag_guard_pairs', 'flag-guard pairs', True),
-    CandidateList('contract_sources', 'contract sources', False),
-    CandidateList('schema_bearing_files', 'schema-bearing files', False),
-    CandidateList('keep_markers', 'keep markers', True),
-    CandidateList('protected_identifiers', 'protected identifiers', False),
-    CandidateList('producer_consumer', 'producer-consumer pairs', True),
-    CandidateList('source_of_truth', 'source-of-truth duplicates', True),
+    CandidateList('regexes', 'regexes', True, 'structural'),
+    CandidateList('user_facing_strings', 'user-facing strings', True, 'prose_contract'),
+    CandidateList('markdown_sections', 'markdown sections', True, 'prose_contract'),
+    CandidateList('symmetric_pairs', 'symmetric pairs', True, 'structural'),
+    CandidateList('flag_guard_pairs', 'flag-guard pairs', True, 'structural'),
+    CandidateList('contract_sources', 'contract sources', False, 'prose_contract'),
     CandidateList(
-        'same_document_consistency', 'same-document normative directives', True
+        'schema_bearing_files', 'schema-bearing files', False, 'prose_contract'
     ),
-    CandidateList('description_vs_body', 'description-vs-body frontmatter', True),
-    CandidateList('unguarded_boundaries', 'lone-unguarded-boundary calls', True),
-    CandidateList('count_prose', 'stale count-prose', False),
-    CandidateList('touched_claims', 'near-identical-hunk touched claims', True),
+    CandidateList('keep_markers', 'keep markers', True, 'structural'),
     CandidateList(
-        'advertised_form_help_strings', 'advertised-form help strings', False
+        'protected_identifiers', 'protected identifiers', False, 'structural'
     ),
-    CandidateList('ordinal_references', 'same-document ordinal references', True),
-    CandidateList('scan_derived_keys', 'scan-derived keys', True),
-    CandidateList('worked_example_pairs', 'worked-example clause pairs', True),
-    CandidateList('duplicate_claimable_keys', 'duplicate-claimable keys', True),
-    CandidateList('discard_without_report', 'discard paths without a report path', True),
+    CandidateList('producer_consumer', 'producer-consumer pairs', True, 'structural'),
+    CandidateList(
+        'source_of_truth', 'source-of-truth duplicates', True, 'structural'
+    ),
+    CandidateList(
+        'same_document_consistency',
+        'same-document normative directives',
+        True,
+        'prose_contract',
+    ),
+    CandidateList(
+        'description_vs_body',
+        'description-vs-body frontmatter',
+        True,
+        'prose_contract',
+    ),
+    CandidateList(
+        'unguarded_boundaries', 'lone-unguarded-boundary calls', True, 'structural'
+    ),
+    CandidateList('count_prose', 'stale count-prose', False, 'prose_contract'),
+    CandidateList(
+        'touched_claims',
+        'near-identical-hunk touched claims',
+        True,
+        'prose_contract',
+    ),
+    CandidateList(
+        'advertised_form_help_strings',
+        'advertised-form help strings',
+        False,
+        'prose_contract',
+    ),
+    CandidateList(
+        'ordinal_references',
+        'same-document ordinal references',
+        True,
+        'prose_contract',
+    ),
+    CandidateList('scan_derived_keys', 'scan-derived keys', True, 'structural'),
+    CandidateList(
+        'worked_example_pairs', 'worked-example clause pairs', True, 'prose_contract'
+    ),
+    CandidateList(
+        'duplicate_claimable_keys', 'duplicate-claimable keys', True, 'structural'
+    ),
+    CandidateList(
+        'discard_without_report',
+        'discard paths without a report path',
+        True,
+        'structural',
+    ),
 )
 
 

@@ -78,6 +78,7 @@ from _self_review_diff import (
     _verify_base_branch,
 )
 from _self_review_patterns import (
+    CANDIDATE_FAMILIES,
     CANDIDATE_LISTS,
     candidate_list_prose,
 )
@@ -119,6 +120,10 @@ def _compose_candidate_output(detected: dict[str, list]) -> dict[str, Any]:
     is owned by
     ``plan-marshall:extension-api/standards/ext-point-self-review-surfacing.md``
     § Output Schema.
+
+    ``counts.by_family`` partitions that SAME ``in_total`` population by each
+    entry's registry ``family``, so the per-family figures sum exactly to
+    ``total`` and the mix cannot drift from the total it decomposes.
     """
     registered = {spec.key for spec in CANDIDATE_LISTS}
     if detected.keys() != registered:
@@ -128,12 +133,26 @@ def _compose_candidate_output(detected: dict[str, list]) -> dict[str, Any]:
             f'detected: {sorted(registered - detected.keys())}'
         )
 
-    counts: dict[str, int] = {
+    counts: dict[str, Any] = {
         spec.key: len(detected[spec.key]) for spec in CANDIDATE_LISTS
     }
     counts['total'] = sum(
         len(detected[spec.key]) for spec in CANDIDATE_LISTS if spec.in_total
     )
+
+    # ``by_family`` is derived from the SAME registry and the SAME ``in_total``
+    # population as ``total``, so the family counts sum EXACTLY to ``total``.
+    # Deriving both from one traversal is what keeps the mix from drifting from
+    # the total for the same structural reason the total cannot drift from the
+    # emitted key set. Every declared family is seeded to zero first, so a round
+    # in which one family surfaced nothing REPORTS a zero rather than omitting
+    # the key — an all-prose round must be legible as a detector-mix signal, and
+    # a missing key would read as "not measured" instead of "none found".
+    by_family: dict[str, int] = dict.fromkeys(CANDIDATE_FAMILIES, 0)
+    for spec in CANDIDATE_LISTS:
+        if spec.in_total:
+            by_family[spec.family] += len(detected[spec.key])
+    counts['by_family'] = by_family
 
     payload: dict[str, Any] = {'counts': counts}
     payload.update({spec.key: detected[spec.key] for spec in CANDIDATE_LISTS})

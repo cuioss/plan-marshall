@@ -13,7 +13,11 @@ from _resolve_project_dir_fixtures import (
     assert_sentinel_accepted,
     assert_worktree_face_routes_through_resolver,
 )
-from _self_review_patterns import CANDIDATE_LISTS, candidate_list_prose
+from _self_review_patterns import (
+    CANDIDATE_FAMILIES,
+    CANDIDATE_LISTS,
+    candidate_list_prose,
+)
 from self_review import (
     _build_parser,
     _compose_candidate_output,
@@ -3032,6 +3036,13 @@ class TestCountsTotalInvariant:
         spec.key for spec in CANDIDATE_LISTS if not spec.in_total
     )
 
+    #: ``counts`` keys that are NOT a per-list cardinality: the ``total`` sum and
+    #: the nested ``by_family`` decomposition. Both are derived FROM the per-list
+    #: counts, so summing them alongside would double-count — and ``by_family``
+    #: is a mapping, not an int, so including it would raise rather than
+    #: mis-count.
+    _NON_LIST_COUNT_KEYS = ('total', 'by_family')
+
     def _surface(self, repo: Path):
         from conftest import get_script_path, run_script
 
@@ -3081,7 +3092,8 @@ class TestCountsTotalInvariant:
         included_sum = sum(
             int(v)
             for k, v in counts.items()
-            if k != 'total' and k not in self._EXCLUDED_FROM_TOTAL
+            if k not in self._NON_LIST_COUNT_KEYS
+            and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
 
@@ -3102,7 +3114,8 @@ class TestCountsTotalInvariant:
         included_sum = sum(
             int(v)
             for k, v in counts.items()
-            if k != 'total' and k not in self._EXCLUDED_FROM_TOTAL
+            if k not in self._NON_LIST_COUNT_KEYS
+            and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
 
@@ -3136,7 +3149,8 @@ class TestCountsTotalInvariant:
         included_sum = sum(
             int(v)
             for k, v in counts.items()
-            if k != 'total' and k not in self._EXCLUDED_FROM_TOTAL
+            if k not in self._NON_LIST_COUNT_KEYS
+            and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
         assert 'ordinal_references' not in self._EXCLUDED_FROM_TOTAL
@@ -3175,7 +3189,8 @@ class TestCountsTotalInvariant:
         included_sum = sum(
             int(v)
             for k, v in counts.items()
-            if k != 'total' and k not in self._EXCLUDED_FROM_TOTAL
+            if k not in self._NON_LIST_COUNT_KEYS
+            and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
         assert 'scan_derived_keys' not in self._EXCLUDED_FROM_TOTAL
@@ -3204,7 +3219,8 @@ class TestCountsTotalInvariant:
         included_sum = sum(
             int(v)
             for k, v in counts.items()
-            if k != 'total' and k not in self._EXCLUDED_FROM_TOTAL
+            if k not in self._NON_LIST_COUNT_KEYS
+            and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
         assert 'worked_example_pairs' not in self._EXCLUDED_FROM_TOTAL
@@ -3227,7 +3243,8 @@ class TestCountsTotalInvariant:
         included_sum = sum(
             int(v)
             for k, v in counts.items()
-            if k != 'total' and k not in self._EXCLUDED_FROM_TOTAL
+            if k not in self._NON_LIST_COUNT_KEYS
+            and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
 
@@ -3247,7 +3264,8 @@ class TestCountsTotalInvariant:
         included_sum = sum(
             int(v)
             for k, v in counts.items()
-            if k != 'total' and k not in self._EXCLUDED_FROM_TOTAL
+            if k not in self._NON_LIST_COUNT_KEYS
+            and k not in self._EXCLUDED_FROM_TOTAL
         )
         assert int(counts['total']) == included_sum
 
@@ -3360,6 +3378,86 @@ class TestCandidateListRegistry:
         assert len(set(labels)) == len(labels), f'Duplicate registry label: {labels}'
         assert all(keys) and all(labels), 'Registry entries must be non-empty'
 
+    def test_every_entry_carries_a_family_from_the_closed_vocabulary(self):
+        """The family partition is TOTAL over the registry population.
+
+        Computed over the registry itself rather than a hardcoded name list, so
+        a list added later is covered with no edit here — and the population
+        size is published in the failure message, because an assertion that
+        iterates an empty registry passes while proving nothing.
+        """
+        population = len(CANDIDATE_LISTS)
+        assert population, (
+            'CANDIDATE_LISTS is EMPTY, so every registry assertion in this class '
+            'passes vacuously.'
+        )
+
+        offenders = [
+            spec.key for spec in CANDIDATE_LISTS if spec.family not in CANDIDATE_FAMILIES
+        ]
+
+        assert not offenders, (
+            f'{len(offenders)} of {population} registry entries carry a family '
+            f'outside the closed vocabulary {CANDIDATE_FAMILIES}: {offenders}. '
+            'The mix cannot be reported over a partition that is not total.'
+        )
+
+    def test_family_partition_is_not_degenerate(self):
+        # Both families must be populated. A registry where every entry carried
+        # the same family would make by_family a relabelled copy of total, and
+        # the lopsided-round signal it exists to publish would be unobservable.
+        by_family: dict[str, list[str]] = {family: [] for family in CANDIDATE_FAMILIES}
+        for spec in CANDIDATE_LISTS:
+            by_family[spec.family].append(spec.key)
+
+        empty = [family for family, keys in by_family.items() if not keys]
+
+        assert not empty, (
+            f'These declared families have no registry member: {empty}. '
+            f'Population: {len(CANDIDATE_LISTS)} entries across '
+            f'{ {f: len(k) for f, k in by_family.items()} }'
+        )
+
+    def test_by_family_sums_to_total_over_the_in_total_population(self):
+        """``by_family`` decomposes ``total`` — same population, same sum.
+
+        Driven through the real ``_compose_candidate_output`` with one candidate
+        seeded into EVERY registry entry, so each entry contributes and the two
+        figures are compared over a non-trivial count rather than over zeros.
+        """
+        detected = {spec.key: [{'file': 'a.py', 'line': 1}] for spec in CANDIDATE_LISTS}
+
+        counts = _compose_candidate_output(detected)['counts']
+        by_family = counts['by_family']
+
+        assert set(by_family) == set(CANDIDATE_FAMILIES), (
+            f'by_family must report EVERY declared family, including a zero. '
+            f'Got {sorted(by_family)}, expected {sorted(CANDIDATE_FAMILIES)}'
+        )
+        assert sum(by_family.values()) == counts['total'], (
+            f'by_family {by_family} sums to {sum(by_family.values())}, but total '
+            f'is {counts["total"]}. The two must share one population — an '
+            f'in_total entry excluded from by_family breaks the decomposition.'
+        )
+        # Non-vacuous: the seeded fixture puts a real count on both sides.
+        assert counts['total'] == sum(1 for spec in CANDIDATE_LISTS if spec.in_total)
+
+    def test_by_family_reports_a_zero_family_rather_than_omitting_it(self):
+        # An all-one-family round must still name both families. An omitted key
+        # reads as "not measured"; a zero reads as "none found", and the two are
+        # the distinction the block exists to preserve.
+        detected: dict[str, list] = {spec.key: [] for spec in CANDIDATE_LISTS}
+        first_structural = next(
+            spec for spec in CANDIDATE_LISTS if spec.in_total and spec.family == 'structural'
+        )
+        detected[first_structural.key] = [{'file': 'a.py', 'line': 1}]
+
+        by_family = _compose_candidate_output(detected)['counts']['by_family']
+
+        assert by_family['structural'] == 1
+        assert by_family['prose_contract'] == 0
+        assert set(by_family) == set(CANDIDATE_FAMILIES)
+
     def test_in_total_partition_is_not_degenerate(self):
         # Both sides of the partition must be populated. A registry where every
         # entry carried the same in_total value would make the total formula
@@ -3451,7 +3549,10 @@ class TestCandidateListRegistry:
 
         registry_keys = {spec.key for spec in CANDIDATE_LISTS}
 
-        assert set(data['counts']) - {'total'} == registry_keys
+        # ``total`` and ``by_family`` are DERIVED entries in the counts block,
+        # not per-list cardinalities, so they are excluded before the key set is
+        # compared against the registry.
+        assert set(data['counts']) - {'total', 'by_family'} == registry_keys
         assert registry_keys <= set(data), (
             f'Payload is missing registry keys: {sorted(registry_keys - set(data))}'
         )

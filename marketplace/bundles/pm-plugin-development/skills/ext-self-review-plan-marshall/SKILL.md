@@ -77,6 +77,19 @@ Surfaces twenty-two candidate lists from the worktree's staged diff against the 
 
 Because `--since-ref` is always a previously recorded `HEAD` of the same branch, it is necessarily an ancestor of the current `HEAD`; the intersection therefore reuses the shared `compute_plan_branch_diff` footprint primitive rather than re-implementing the diff ∪ porcelain union, whose three-dot diff leg anchors on a merge-base that IS `--since-ref` in exactly that case.
 
+### Detector families
+
+Every entry in the `CANDIDATE_LISTS` registry carries a required `family` over a closed two-member vocabulary, so the partition is total by construction — a registry entry added without one fails at import rather than going silently unreported:
+
+| Family | Reads | Member detection rules |
+|--------|-------|------------------------|
+| `structural` | Code SHAPE — a pattern, a pair of names, a guard, a call site, a claim into a collection | regexes, symmetric pairs, flag-guard pairs, keep markers (and the derived protected-identifiers index), producer-consumer pairs, source-of-truth duplicates, lone unguarded boundaries, scan-derived keys, duplicate-claimable keys, discard paths without a report path |
+| `prose_contract` | PROSE or contract consistency — a heading, a description, a count claim, a documented schema | user-facing strings, markdown sections, contract sources, schema-bearing files, same-document normative directives, description-vs-body frontmatter, stale count-prose, near-identical-hunk touched claims, advertised-form help strings, same-document ordinal references, worked-example clause pairs |
+
+`counts.by_family` reports the per-round mix over the SAME `in_total` population `counts.total` sums, so the two family figures add up to `total` exactly. Both families are always reported, including a zero: a round that surfaced only prose candidates is a detector-mix signal about the change under review, and an omitted key would read as "not measured" rather than "none found".
+
+The vocabulary is deliberately closed at two members. Its job is to make a lopsided round legible, not to publish a detector taxonomy — a finer partition would report the latter and bury the former.
+
 ### Output
 
 TOON to stdout. The candidate-list keys are always present (possibly empty):
@@ -90,6 +103,9 @@ since_ref: {sha, or empty when the round was not delta-scoped}
 surface_scope: delta | full
 files_in_scope: N
 counts:
+  by_family:
+    structural: {sum of the in_total structural lists}
+    prose_contract: {sum of the in_total prose_contract lists}
   regexes: N1
   user_facing_strings: N2
   markdown_sections: N3
