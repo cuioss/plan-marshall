@@ -139,8 +139,15 @@ orchestrator.
    queue verb — never by hand-editing `status.json`.
 5. **Write the landing record** at `landings/{ORCH-PLAN-ID}.md` in the epic tree. Once step 6 removes
    the cloud plan and its report, this record plus the PR is the durable account — so it carries the
-   outcome per deliverable, any refuted premise, the findings routed out, and any contract gap the
-   run exposed.
+   outcome per deliverable, any refuted premise, the findings routed out, any contract gap the
+   run exposed, **the run's reviewer-participation verdicts** (the per-reviewer
+   `reviewed` / `rate-limited` / `silent` record and the N-of-M coverage, so a landing that merged on
+   partial review coverage stays legible after the report is deleted), and **the run's cost line with
+   its stated population** (tokens and wall-clock, carried forward exactly as the report qualifies
+   them — never copied in a way that implies parity with a `metrics.toon` total). Both survive the
+   report's deletion only if this record carries them: a cloud run that reported its cost and then had
+   its report removed would otherwise vanish from the corpus entirely, which is the silent-exclusion
+   this closes.
 6. **Remove the cloud plan from the doc path** — delete `doc/plans/{epic}/{NNN}-{cloud-plan}/` entirely,
    plan and reports together. That removal *is* the state change; nothing else records it.
    `doc/plans/` is a queue of open work, not an archive: the content stays in git history, and step 5
