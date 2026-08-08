@@ -1710,11 +1710,23 @@ def _live_version_dirs(bundle_dir: Path) -> list[Path]:
 def _retention_pinned_versions(base_path: Path | None, bundle_dir: Path) -> set[str]:
     """Return the version names the retention policy pins for ``bundle_dir``.
 
-    A pinned version MUST NEVER be marked ``.orphaned_at``. The pins mirror the
-    non-count arms of the ``marshall-steward`` ``cache_retention sweep``
-    keep-union: the newest dir on disk (what the resolver selects), the version
-    named by ``marshal.json``'s ``system.provisioned_version``, and the version
-    named by the installed ``dist-manifest.json``.
+    A pinned version MUST NEVER be marked ``.orphaned_at``. The pins mirror THREE
+    OF THE FOUR *dir-naming* arms of the ``marshall-steward``
+    ``cache_retention sweep`` keep-union — the arms that name one specific
+    directory rather than applying a threshold to all of them: the newest dir on
+    disk (what the resolver selects), the version named by ``marshal.json``'s
+    ``system.provisioned_version``, and the version named by the installed
+    ``dist-manifest.json``. The fourth dir-naming arm — the version dir the sweep
+    is itself executing from — is deliberately NOT mirrored: self-deletion is the
+    sweep's own hazard, not the marker-writer's. The union's remaining two arms
+    (newest-``N``, younger-than-``D``-days) are thresholds and pin nothing.
+
+    The label is ``dir-naming``, not ``non-count``: the ``younger-than-D-days``
+    arm is an age threshold rather than a count, so "non-count" would admit it
+    and yield a third arity for the same phrase. The canonical statement of the
+    keep-union and of this pin-vs-keep-set distinction lives in
+    ``manage-config/standards/data-model.md`` § "Plugin-cache retention
+    semantics"; this docstring must agree with it member-for-member.
 
     Pinning these is what makes marker saturation structurally impossible: the dir
     the resolver selects is pinned unconditionally, so at least one live version
