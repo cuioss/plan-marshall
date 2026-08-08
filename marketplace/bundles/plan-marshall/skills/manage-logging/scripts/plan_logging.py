@@ -39,7 +39,7 @@ from constants import (
     VALID_WORK_CATEGORIES,
 )
 from file_ops import get_base_dir, get_store_dir, now_utc_iso
-from input_validation import is_valid_plan_id
+from input_validation import NO_PLAN_SENTINEL, is_valid_plan_id
 
 # =============================================================================
 # CONFIGURATION
@@ -219,7 +219,8 @@ def get_log_path(plan_id: str | None, log_type: str = 'script', store: str = 'pl
     if plan_id is not None and not is_valid_plan_id(plan_id):
         raise ValueError(
             f'invalid plan_id {plan_id!r}: a log path resolves only for a well-formed '
-            f'plan identifier, or None for the global fallback'
+            f'plan identifier, the {NO_PLAN_SENTINEL} sentinel, or None for the '
+            f'global fallback'
         )
 
     log_type = log_type.lower()
