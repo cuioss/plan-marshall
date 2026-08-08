@@ -620,15 +620,38 @@ def _stalled_payload(
     return payload
 
 
+#: The closed vocabulary :func:`_read_plan_status` reports as an
+#: ``unclassifiable_plans[]`` row's ``reason``.
+#:
+#: - ``status_json_missing`` — the plan carries a lesson file but no
+#:   ``status.json`` at all, so its phase state was never established.
+#: - ``status_json_unreadable`` — ``status.json`` is present but could not be
+#:   read or parsed (an I/O error, or malformed JSON).
+#: - ``status_json_not_an_object`` — the file held valid JSON that is not a
+#:   mapping (a list, a string, a number), so reading a field off it would
+#:   raise rather than answer.
+#:
+#: A row carrying any of these was neither confirmed stalled NOR cleared. The
+#: reason is what keeps it visible in the payload instead of silently dropped
+#: out of the population — a silent skip is the could-not-look-reports-benign
+#: collapse at row granularity. The empty string that :func:`_read_plan_status`
+#: returns beside a successful read is the success sentinel, not a member of
+#: this set: it never reaches a row. Consumers assert against this set rather
+#: than re-listing the literals.
+UNCLASSIFIABLE_REASONS = frozenset(
+    {'status_json_missing', 'status_json_unreadable', 'status_json_not_an_object'}
+)
+
+
 def _read_plan_status(status_path: Path) -> tuple[dict | None, str]:
     """Read and parse a plan's ``status.json``, reporting WHY a read failed.
 
     Returns ``(status, reason)`` where exactly one side is meaningful: a parsed
-    mapping with an empty reason, or ``None`` with a reason token naming why the
-    plan could not be classified. The reason is what keeps an unclassifiable
-    plan visible in the payload instead of being silently skipped out of the
-    population — a silent skip is the same could-not-look-reports-benign
-    collapse at row granularity.
+    mapping with an empty reason, or ``None`` with a reason token from
+    :data:`UNCLASSIFIABLE_REASONS` naming why the plan could not be classified.
+    The reason is what keeps an unclassifiable plan visible in the payload
+    instead of being silently skipped out of the population — a silent skip is
+    the same could-not-look-reports-benign collapse at row granularity.
     """
     if not status_path.exists():
         return None, 'status_json_missing'

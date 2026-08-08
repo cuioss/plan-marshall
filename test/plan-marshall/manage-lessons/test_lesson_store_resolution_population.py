@@ -31,6 +31,7 @@ which is the single home for that enforcement-critical content.
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
 from _dispatch_roster import section_lines
 
@@ -71,12 +72,19 @@ _DERIVATION_ARMS = (
 _OUTSIDE_SKILL_ANCHOR = 'manage-status/scripts/_cmd_lifecycle.py'
 
 
-def _derive_population() -> list[str]:
+@lru_cache(maxsize=1)
+def _derive_population() -> tuple[str, ...]:
     """Return every marketplace script that resolves the lessons-learned store.
 
     Walks the real ``marketplace/bundles/**/scripts/**/*.py`` tree and keeps a
     file when any derivation arm matches its text. Returns repo-relative
     POSIX paths, sorted, so the population is deterministic.
+
+    Memoised: the sweep reads several thousand files and three tests call it,
+    so an unmemoised version walks the tree once per test. The return is a
+    TUPLE rather than a list precisely because it is now shared — a cached list
+    would be the same object for every caller, so one test mutating it would
+    corrupt the others' population.
     """
     members: set[str] = set()
     repo_root = MARKETPLACE_ROOT.parent.parent
@@ -91,7 +99,7 @@ def _derive_population() -> list[str]:
             raise AssertionError(f'Could not read candidate script: {path}') from None
         if any(arm.search(text) for arm in _DERIVATION_ARMS):
             members.add(path.relative_to(repo_root).as_posix())
-    return sorted(members)
+    return tuple(sorted(members))
 
 
 def _dispositioned_paths() -> list[str]:

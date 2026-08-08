@@ -222,11 +222,15 @@ class TestCmdListStalled:
         exit and into a reconciliation against a corpus it never reached.
         """
         import _lessons_query
+        from _lessons_io import DIR_LESSONS
 
         (tmp_path / 'plans').mkdir(parents=True)
         real_resolve = _lessons_query.resolve_lesson_store
 
-        def _only_plans_resolves(subpath='lessons-learned'):
+        # The default MUST be the constant the production signature defaults to:
+        # ``cmd_list_stalled`` calls ``resolve_lesson_store()`` with no argument,
+        # so the stub's default is what actually runs.
+        def _only_plans_resolves(subpath=DIR_LESSONS):
             if str(subpath) == 'plans':
                 return real_resolve(subpath)
             return _lessons_query.LessonStore(
@@ -258,10 +262,14 @@ class TestCmdListStalled:
         no information.
         """
         import _lessons_query
+        from _lessons_io import DIR_LESSONS
 
         real_resolve = _lessons_query.resolve_lesson_store
 
-        def _only_lessons_resolves(subpath='lessons-learned'):
+        # This stub FORWARDS ``subpath`` to the real resolver, so a stale
+        # literal default would resolve the wrong directory rather than merely
+        # mislabelling it — the constant is load-bearing here.
+        def _only_lessons_resolves(subpath=DIR_LESSONS):
             if str(subpath) == 'plans':
                 return _lessons_query.LessonStore(
                     None, 'unresolved', 'cannot resolve the plans root (test stub)'
@@ -332,6 +340,8 @@ class TestCmdListStalled:
         population would be the same could-not-look-reports-benign collapse at
         row granularity — the plan would simply vanish from the report.
         """
+        import _lessons_query
+
         plan_dir = tmp_path / 'plans' / 'no-status'
         plan_dir.mkdir(parents=True)
         (plan_dir / 'lesson-2025-06-06-14-006.md').write_text('id=x\n\n# L\n\nB.\n')
@@ -345,12 +355,16 @@ class TestCmdListStalled:
         row = result['unclassifiable_plans'][0]
         assert row['plan_id'] == 'no-status'
         assert row['reason'] == 'status_json_missing'
+        # The value comes from the closed vocabulary consumers assert on.
+        assert row['reason'] in _lessons_query.UNCLASSIFIABLE_REASONS
         assert row['lesson_ids'] == ['2025-06-06-14-006']
         # It WAS counted in the scanned population — it is not invisible.
         assert result['scanned_plan_count'] == 1
 
     def test_corrupt_status_json_is_surfaced_not_silently_skipped(self, tmp_path):
         """A plan whose status.json is unparseable is surfaced with its reason."""
+        import _lessons_query
+
         plan_dir = tmp_path / 'plans' / 'corrupt-status'
         plan_dir.mkdir(parents=True)
         (plan_dir / 'lesson-2025-07-07-15-007.md').write_text('id=x\n\n# L\n\nB.\n')
@@ -362,7 +376,60 @@ class TestCmdListStalled:
         assert result['status'] == 'success'
         assert result['stalled_count'] == 0
         assert result['unclassifiable_count'] == 1
-        assert result['unclassifiable_plans'][0]['reason'] == 'status_json_unreadable'
+        reason = result['unclassifiable_plans'][0]['reason']
+        assert reason == 'status_json_unreadable'
+        assert reason in _lessons_query.UNCLASSIFIABLE_REASONS
+
+    def test_non_object_status_json_is_surfaced_not_silently_skipped(self, tmp_path):
+        """Valid JSON that is not a mapping is its OWN unclassifiable reason.
+
+        The third arm of the vocabulary, and the one the other two do not
+        reach: the file parses cleanly, so it passes the unreadable guard, and
+        it exists, so it passes the missing guard — yet reading a field off it
+        would raise. Without this case the branch that prevents that error is
+        uncovered, and a regression to a bare ``status.get()`` would surface as
+        an uncaught ``AttributeError`` aborting the whole scan rather than as
+        one surfaced row.
+        """
+        import _lessons_query
+
+        plan_dir = tmp_path / 'plans' / 'list-status'
+        plan_dir.mkdir(parents=True)
+        (plan_dir / 'lesson-2025-10-10-18-012.md').write_text('id=x\n\n# L\n\nB.\n')
+        # Valid JSON, but an array rather than an object.
+        (plan_dir / 'status.json').write_text('["not", "an", "object"]')
+
+        with patch.dict('os.environ', {'PLAN_BASE_DIR': str(tmp_path)}):
+            result = cmd_list_stalled(Namespace())
+
+        assert result['status'] == 'success'
+        assert result['stalled_count'] == 0
+        assert result['unclassifiable_count'] == 1
+        row = result['unclassifiable_plans'][0]
+        assert row['plan_id'] == 'list-status'
+        assert row['reason'] == 'status_json_not_an_object'
+        assert row['reason'] in _lessons_query.UNCLASSIFIABLE_REASONS
+        # Surfaced as a row, and still counted in the scanned population.
+        assert result['scanned_plan_count'] == 1
+
+    def test_every_unclassifiable_reason_is_covered_by_this_suite(self):
+        """The suite covers the WHOLE published vocabulary, not a subset.
+
+        Population-derived: the expected set is read from the module rather
+        than re-listed, so a reason added to ``UNCLASSIFIABLE_REASONS`` without
+        a covering case fails here instead of silently going untested.
+        """
+        import _lessons_query
+
+        covered = {
+            'status_json_missing',
+            'status_json_unreadable',
+            'status_json_not_an_object',
+        }
+        assert covered == _lessons_query.UNCLASSIFIABLE_REASONS, (
+            'The unclassifiable-reason vocabulary changed but this suite still '
+            f'covers {sorted(covered)} — add a case for every member.'
+        )
 
     def test_multiple_lessons_reports_all_ids(self, tmp_path):
         """A plan consolidating several lesson-*.md reports all ids sorted."""
