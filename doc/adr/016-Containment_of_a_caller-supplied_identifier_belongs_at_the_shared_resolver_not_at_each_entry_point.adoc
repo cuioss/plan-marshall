@@ -1,0 +1,213 @@
+= ADR-016: Containment of a caller-supplied identifier belongs at the shared resolver, not at each entry point
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: A caller-supplied identifier that a shared resolver turns into a filesystem path is grammar-checked once at that resolver, so every entry point is contained by construction; the per-entry-point checks that return a structured error envelope are retained above it for diagnosability, never as the containment mechanism.
+// tags: input-validation, trust-boundary, choke-point, path-resolution, fail-closed, containment, single-resolver
+// affects: plan-marshall, manage-logging, script-shared, persona-security-expert, marshall-orchestrator
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+A module commonly exposes several entry points that all funnel a
+caller-supplied identifier into one internal resolver, and that resolver
+composes a filesystem path out of it. The identifier is untrusted in the
+ordinary sense: it arrives from a library caller, from a command line, or —
+in the worst case — is extracted from raw argument text before any command-line
+parser has had a chance to reject it.
+
+Validating such an identifier once per entry point turns containment into a
+set-membership obligation over a growing set. Every new entry point must
+remember to validate, and the entry points most likely to forget are exactly
+the ones where forgetting matters most: the best-effort ones, which wrap their
+whole body in a broad exception handler so that a logging or auditing failure
+never propagates into the caller's control flow. Those handlers make a missing
+check invisible — there is no error to observe — while the resolver behind them
+still turns whatever it was handed into a path.
+
+The asymmetry that results is not detectable by reading any single call site.
+Each validating caller looks correct in isolation, and the unguarded ones look
+unremarkable; only an enumeration of every caller reveals that the guard covers
+some and not others. Worse, the same resolver may serve more than one store,
+where one store's branch already contains the value and the other does not —
+so the concept is present in the function, just not applied uniformly.
+
+Two different obligations are also easily conflated, and conflating them
+produces either duplicated checks or a deletion of the wrong one:
+
+* a *caller-facing validation* whose job is to give the caller a diagnosable,
+  structured error when it supplies a malformed identifier;
+* a *containment guard* whose job is to make it impossible for an unsafe value
+  to become a path at all.
+
+The architectural question this ADR settles is therefore: at which layer is the
+containment obligation discharged — once per caller, or once at the single
+point where the untrusted value acquires its dangerous meaning?
+
+== Decision
+
+Containment is discharged at the shared resolver: the one function through
+which every entry point must pass on its way to a path.
+
+The principle, stated in one line:
+
+[quote]
+A value is contained where it becomes dangerous, not where it arrives.
+
+The mechanisms that realise it:
+
+* **One guard at the funnel.** The resolver rejects any non-absent identifier
+  that fails the project's identifier grammar, before any path component is
+  composed. Because every entry point routes through the resolver, one guard
+  closes the gap for all of them — including entry points that do not exist
+  yet.
+* **The guard sits above the store branch.** Placing the check before the
+  resolver's per-store branching contains every store, rather than leaving the
+  same asymmetry one level deeper. This is sound only because the stores share
+  one identifier grammar; where two stores would need different grammars, they
+  are different resolvers, not one resolver with two contracts.
+* **Absence stays first-class.** An absent identifier, and any declared
+  sentinel standing for "deliberately no identity", are legitimate inputs and
+  remain so. The guard rejects malformed identifiers, not missing ones — a
+  containment check that also rejected the legal absent case would be a
+  behaviour change disguised as a security fix.
+* **The caller-facing checks are retained, not replaced.** Entry points that
+  already validate keep validating, because their check produces a structured
+  error envelope callers depend on. Removing them once the resolver guards
+  would convert a diagnosable error into a silent drop — the resolver's
+  rejection is contained by the best-effort handlers and is, by design, quiet.
+* **Rejection fails closed.** On a best-effort entry point, a rejected
+  identifier degrades to "this entry was dropped". Losing one audit line is
+  strictly preferable to resolving a path from an unvalidated value, and the
+  invocation that supplied the malformed value still fails loudly at its own
+  command-line boundary, so the malformed call is not silent overall.
+
+== Consequences
+
+=== Positive
+
+* Containment is a property of the module rather than a property of its
+  callers. A new entry point is contained the moment it is written, with no
+  reviewer obligation to notice a missing guard.
+* The number of places that encode the identifier grammar drops to the places
+  that need to *report* on it, so the grammar has one enforcement point and
+  cannot drift between callers.
+* The two obligations stay legible: diagnosability lives at the entry point,
+  containment lives at the funnel, and a reader can tell which is which by
+  where the check is.
+
+=== Negative
+
+* The rejection at the resolver is, on best-effort paths, deliberately quiet.
+  An operator debugging a missing audit line must know that a malformed
+  identifier is one of the causes; the guard trades a small amount of
+  observability for the containment property.
+* Callers that pass an identifier through several layers now discover a
+  malformed value later than they would with an entry-point check — at the
+  funnel rather than at the door. The retained entry-point checks bound this
+  for the callers that have them.
+
+=== Risks
+
+* A shared resolver serving stores whose identifier grammars later diverge
+  would make the single guard either too strict for one store or too lax for
+  the other. The mitigation is structural rather than defensive: divergent
+  grammars are the signal to split the resolver, not to weaken the guard.
+* A test suite written before the guard may use identifiers the grammar
+  rejects. The correct response is to fix the fixture, never to relax the
+  grammar — a guard weakened to accommodate a test no longer contains
+  anything.
+
+== Alternatives Considered
+
+=== Add one more per-entry-point check
+
+Give each still-unguarded entry point the same validation the guarded ones
+already have.
+
+*Rejected because:* it re-instantiates the obligation it is meant to discharge.
+The gap did not arise from a hard decision but from a set that grew past the
+attention of the person adding to it; adding the Nth check leaves the N+1th
+entry point in exactly the position the Nth was in. Symmetry restored by hand
+is symmetry that must be restored again.
+
+=== Sanitize or normalize the identifier at the resolver instead of rejecting it
+
+Strip separators and traversal segments, or rewrite the identifier into a safe
+form, and proceed.
+
+*Rejected because:* a rewritten identifier resolves to a different, entirely
+valid-looking location. A loud containment failure becomes a silent misfiling,
+which is a worse outcome than either rejecting or failing. Normalization also
+constitutes a second, implicit specification of the grammar that must be kept
+consistent with the explicit one.
+
+=== Validate at the outer command-line boundary only
+
+Rely on the command-line parser, which already validates the identifier flag,
+and add nothing inside the module.
+
+*Rejected because:* the command-line boundary does not dominate every path into
+the resolver. The module is also consumed as a library, and at least one entry
+point reads the identifier out of raw argument text precisely so that it can
+record an invocation the parser is about to reject. A boundary that some
+callers bypass is not a containment boundary.
+
+=== Replace the entry-point checks with the resolver guard
+
+Treat the resolver guard as the single check and delete the now-redundant
+per-caller validation.
+
+*Rejected because:* the two checks answer different questions. The entry-point
+check exists so a caller receives a structured, actionable error; the resolver
+guard exists so no value can become a path. Deleting the former in the name of
+de-duplication converts a diagnosable failure into a silent one and degrades
+the interface the callers were written against.
+
+=== Why these alternatives fall in one class
+
+Each alternative keeps containment attached to the *arrival* of the value —
+adding another arrival check, cleaning the value on arrival, trusting one
+privileged arrival, or collapsing arrival and use into a single check. The
+decision instead attaches containment to the *use* of the value, which is the
+only place that is common to every arrival, present and future.
+
+== Generalisation
+
+Stated independently of this codebase:
+
+When N call sites funnel an untrusted value into one function that gives that
+value its dangerous meaning — a filesystem path, a query, a command line, a
+deserialization target — the containment check belongs at the funnel. Checks at
+the call sites are for diagnosability.
+
+The diagnostic question that separates the two:
+
+> Does this check exist so the caller gets a good error, or so the value can
+> never do harm?
+
+The first answer belongs at the entry point, where the caller is. The second
+belongs at the narrowest shared point the value must pass through, because that
+is the only location whose coverage does not depend on remembering.
+
+A corollary worth stating: when the funnel already contains the value on one of
+its branches and not on another, the gap is an asymmetry rather than a missing
+concept — and asymmetries within one function are cheaper to close correctly
+than to replicate outward.
+
+== References
+
+* xref:008-Machine-global_home-root_anchor_tier.adoc[ADR-008: Machine-global home-root anchor tier] — the path-anchoring tiers whose composition this guard sits in front of.
+* xref:015-An_absent_identity_is_a_stated_sentinel_value_and_every_presence_guard_becomes_a_meaning_guard.adoc[ADR-015: An absent identity is a stated sentinel value] — the sentinel carve-out the guard must preserve.
+* `marketplace/bundles/plan-marshall/skills/persona-security-expert/standards/input-validation-trust-boundaries.md` — the trust-boundary standard that owns the containment obligations, including the fail-closed posture this decision instantiates.
+* `marketplace/bundles/plan-marshall/skills/manage-logging/SKILL.md` — the module whose resolver carries the guard and whose documented error behaviour states it.

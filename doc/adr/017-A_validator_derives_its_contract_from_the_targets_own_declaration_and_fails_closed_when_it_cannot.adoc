@@ -1,0 +1,201 @@
+= ADR-017: A validator derives its contract from the target's own declaration, and fails closed when it cannot
+:toc: left
+:toclevels: 2
+:sectnums:
+
+// adr-metadata
+// Progressive-disclosure metadata block (see manage-adr SKILL.md → "ADR Template
+// Structure"). Read by `manage-adr.py scan` so a caller can assess an ADR's
+// relevance without reading the full file. List fields are comma-separated.
+// summary: A rule that validates call sites against a tool's interface resolves the contract from that tool's own live declaration at validation time rather than restating it, emits when the declaration cannot be resolved, and is never relaxed by annotating the artefact it wrongly flagged.
+// tags: validation, source-of-truth, linter, false-positive, fail-closed, contract-duplication, self-review
+// affects: plan-marshall, plugin-doctor, manage-logging, ext-self-review-plan-marshall
+// supersedes:
+// end-adr-metadata
+
+== Status
+
+Proposed
+
+== Context
+
+A project that checks its own documentation and call sites accumulates rules:
+a pattern sweep finds candidate invocations, and a rule decides whether each
+candidate is a violation. Every such rule encodes a contract about the tool
+being invoked — which subcommands exist, which flags are mandatory, which
+shapes are legal.
+
+The tool encodes the same contract, independently, in its own interface
+declaration. Two copies of one contract exist, and only one of them is the one
+the runtime obeys.
+
+When the copies disagree, the disagreement has a characteristic direction: the
+rule is *stricter* than the tool. A rule that asserts "this flag is always
+required" against a tool that declares the flag optional for some of its verbs
+reports a violation for every correct use of the declared-optional form. The
+symptom presents as a false positive against an artefact that is not wrong,
+and the artefact most likely to be flagged is the one that documents the legal
+form deliberately — the worked example whose entire purpose is to demonstrate
+the case the rule refuses to admit.
+
+The pressure at that point is to annotate the flagged artefact: add a
+suppression marker, add the file to an exemption list, add the tool to a
+carve-out. Each of those relocates the defect into the innocent file and makes
+the over-strict contract permanent, because the rule now has a maintained
+mechanism for absorbing its own false positives and no remaining pressure to
+be correct.
+
+The structural question this ADR settles is: where does a validator get the
+contract it enforces?
+
+== Decision
+
+A validator resolves the contract from the target's own declaration, at
+validation time.
+
+The principle, stated in one line:
+
+[quote]
+A check never out-ranks the artefact it checks.
+
+The mechanisms that realise it:
+
+* **The sweep detects candidates; it does not decide violations.** The pattern
+  that finds invocations remains a candidate detector. A candidate becomes a
+  finding only after a resolution step consults the target.
+* **Resolution reads the live declaration.** For each candidate the validator
+  resolves the invoked verb chain in full — requiredness is declared on the
+  leaf of a nested command surface, so truncating the chain mis-resolves every
+  nested invocation — and reads the tool's own published interface for that
+  chain, applying the tool's own optionality notation as the discriminator.
+* **One documented fallback, applying the same discriminator.** When the live
+  declaration is unreachable, the validator falls back to the target's
+  canonical documented interface block and applies the identical rule to it.
+  The fallback is a second *source*, never a second *contract*.
+* **Unresolvable is not permission.** When neither source resolves, the
+  validator emits the finding. A narrowing that treated an unresolvable case as
+  compliant would convert every resolution failure into a silent pass, which is
+  the one direction a validator must never fail in.
+* **The narrowing is one-directional.** The resolution step can only turn an
+  emitted finding into a suppressed one; it can never create a finding that the
+  sweep did not already produce. This bounds the change to the false-positive
+  class and leaves the rule's true-positive arm untouched.
+* **No annotation on the target.** No suppression marker, no per-file
+  exemption, no hardcoded list of exempt tools or verbs. Any of those would
+  reintroduce the second copy of the contract in a new shape.
+
+== Consequences
+
+=== Positive
+
+* The rule and the tool cannot disagree, because there is only one contract and
+  the rule reads it. A tool that changes its interface changes the rule's
+  verdict on the next run, with nothing to update.
+* The false-positive class disappears at its source rather than being absorbed,
+  so correct artefacts stay annotation-free and continue to read as
+  documentation rather than as linter appeasement.
+* The rule's authority is legible: a reader can see which declaration a verdict
+  came from, instead of having to reconstruct an assertion buried in the rule's
+  prose.
+
+=== Negative
+
+* Validation costs a resolution per candidate rather than a pure pattern match.
+  The cost is bounded by the candidate set, not by the tree being validated,
+  and is largely shared with other passes that resolve the same interfaces.
+* The rule now depends on the target being interrogable in the validation
+  environment. The documented fallback source and the fail-closed default bound
+  that dependency, at the price of the rule occasionally being stricter than a
+  fully-resolved run would be — which is the safe direction.
+
+=== Risks
+
+* A narrowing can degenerate into a blanket exemption without anyone noticing:
+  a discriminator that silently returns "unresolvable" for every candidate
+  fails closed, keeps the rule behaving exactly as it did before, and passes
+  both a positive and a negative control while delivering nothing. The
+  countermeasure is a population-derived totality control that publishes the
+  size of the population it ranged over and asserts that every member resolved
+  to a definite verdict.
+* A control that guards a narrowing can pass both before and after the change
+  it is meant to pin. The countermeasure is a mutation obligation: each control
+  is accepted only after the property it guards has been broken and the control
+  observed failing.
+
+== Alternatives Considered
+
+=== Annotate the flagged artefact with a suppression marker
+
+Mark the correct file, or the correct line, as exempt from the rule.
+
+*Rejected because:* it records the correct artefact as the exception and leaves
+the incorrect contract enforced everywhere else. The next correct artefact of
+the same shape is flagged too, and the remedy scales by accumulating markers in
+files whose only fault is being right. It also destroys the signal: a
+suppressed finding is indistinguishable from an absent one.
+
+=== Hardcode an exemption list of tools or verbs inside the rule
+
+Enumerate, in the rule, the cases where the flag is genuinely optional.
+
+*Rejected because:* the enumeration is a second specification of a contract the
+tool already publishes, and it drifts on the first verb added. It also silently
+exempts genuinely-required cases that happen to share a name, converting a
+false positive into a false negative — a strictly worse trade for a validator.
+
+=== Delete the rule
+
+Conclude that a rule capable of contradicting its target has no basis and
+remove it.
+
+*Rejected because:* the rule's true-positive arm detects a real defect class.
+The problem is the rule's *authority*, not its existence. Whether the rule's
+wider premise holds — whether the condition it flags is a defect at all for
+this class of target — is a separate question with a different blast radius,
+and answering it is not a prerequisite for removing the rule's ability to
+out-rank its target.
+
+=== Treat an unresolvable candidate as compliant
+
+Suppress the finding when the target's declaration cannot be read, on the
+grounds that the validator has no evidence of a violation.
+
+*Rejected because:* it makes silence the reward for unreachability. Any
+environment in which resolution routinely fails would then report a clean pass
+over an unchecked population, which is the vacuous-green outcome a gate exists
+to prevent.
+
+=== Why these alternatives fall in one class
+
+Each alternative preserves the rule's private copy of the contract and manages
+the consequences of that copy — by exempting the artefacts it contradicts, by
+enumerating the exceptions, by deleting the rule outright, or by making its
+failures quiet. The decision instead removes the copy.
+
+== Generalisation
+
+Stated independently of this codebase:
+
+When a checking layer and a checked artefact both encode the same contract,
+exactly one of them must be the source, and it is always the artefact the
+runtime obeys. A check that restates a contract will eventually restate it
+more strictly than the target declares it, and the first symptom is a "false
+positive" against something correct.
+
+The diagnostic question:
+
+> If the target changed its declaration tomorrow, would this check notice?
+
+If the answer is no, the check owns a copy, and the copy must be replaced by a
+resolution against the source. Two corollaries follow. A check whose resolution
+can fail must fail toward reporting, because a validator's silence is read as
+a guarantee. And a change that narrows a check must be proven to have narrowed
+it — by a control over the whole population that publishes the population's
+size, and by observing each control fail when the property it guards is broken.
+
+== References
+
+* xref:001-Skills_are_the_source_of_truth_for_script_calls_drift_detection_is_dev-time_post-hoc.adoc[ADR-001: Skills are the source of truth for script calls] — the companion decision on *where* the drift check runs; this ADR settles *whose declaration* it enforces. Both rest on the tool's published interface being the live truth.
+* xref:009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc[ADR-009: Status reporting fails closed with an explicit unknown state] — the same fail-closed posture applied to an unresolvable verdict.
+* `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/q-gate-validation.md` — the validator surface where the resolution step and its fail-closed rule are documented.
+* `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_manage_invocation.py` — the precedent implementation that derives required flags from the target's published interface.
