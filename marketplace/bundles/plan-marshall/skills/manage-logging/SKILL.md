@@ -304,14 +304,14 @@ Scripts run via the executor have PYTHONPATH set up for cross-skill imports:
 from plan_logging import log_entry
 
 # Function signature:
-# log_entry(log_type: str, plan_id: str, level: str, message: str) -> None
+# log_entry(log_type: str, plan_id: str | None, level: str, message: str) -> None
 #   log_type: 'script', 'work', or 'decision'
-#   plan_id:  plan identifier, or 'global' for global logs
+#   plan_id:  plan identifier, or None for the global log
 #   level:    'INFO', 'WARNING', or 'ERROR'
 #   message:  log message text
 
 # Log to global script log
-log_entry('script', 'global', 'INFO', '[MY-COMPONENT] Processing started')
+log_entry('script', None, 'INFO', '[MY-COMPONENT] Processing started')
 
 # Log to plan-specific log
 log_entry('work', 'EXAMPLE-PLAN', 'INFO', '[ARTIFACT] Created deliverable')
@@ -320,6 +320,8 @@ log_entry('work', 'EXAMPLE-PLAN', 'INFO', '[ARTIFACT] Created deliverable')
 **Note**: IDE warnings about unresolved imports are expected - PYTHONPATH is set at runtime by the executor.
 
 **Error behavior**: Logging calls are fire-and-forget. If the target directory doesn't exist or a write fails, the error is silently swallowed to avoid disrupting the calling script. This is intentional — logging should never cause a script to fail.
+
+A malformed `plan_id` handed to the Python API is rejected at `get_log_path`, the shared path resolver every entry point routes through, so the entry is **dropped** rather than falling back to the global log — a client-supplied identifier never reaches path resolution unvalidated. An **absent** `plan_id` (`None`) is unaffected: it remains the first-class global path described above.
 
 ---
 
@@ -383,6 +385,8 @@ log_entry('work', 'EXAMPLE-PLAN', 'INFO', '[ARTIFACT] Created deliverable')
 | `write_failed` | File system permission denied or directory missing |
 
 **Note**: Write operations are fire-and-forget — the Python `log_entry()` function silently swallows errors to avoid disrupting callers. The CLI script (`manage-logging`) returns exit code 1 on validation errors but silently succeeds on I/O failures.
+
+**Note**: `invalid_plan_id` is also enforced below the CLI boundary. A malformed `plan_id` handed to the Python API is rejected at `get_log_path` — the shared path resolver — so the entry is **dropped** instead of falling back to the global log; an absent (`None`) `plan_id` remains the first-class global path. The read verbs surface this as the `invalid_plan_id` TOON error, while the fire-and-forget write verbs swallow it per the note above.
 
 ---
 

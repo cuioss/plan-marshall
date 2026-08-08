@@ -181,13 +181,31 @@ def get_log_path(plan_id: str | None, log_type: str = 'script', store: str = 'pl
         Path to log file in logs/ subdirectory
 
     Raises:
-        ValueError: when ``store`` is not one of :data:`VALID_STORES`. The guard
-            closes the silent fall-through where any string other than
-            ``'orchestrator'`` slipped past to the plans/global branch.
+        ValueError: when ``store`` is not one of :data:`VALID_STORES` — closing
+            the silent fall-through where any string other than
+            ``'orchestrator'`` slipped past to the plans/global branch — or when
+            ``plan_id`` is a non-None value that fails :func:`is_valid_plan_id`.
+
+            The plan_id guard is the SHARED containment point for every entry
+            point that turns a client-supplied identifier into a log file path:
+            ``log_entry``, ``log_script_execution``, ``log_separator``,
+            ``log_work``, ``log_decision``, ``read_work_log`` and
+            ``read_decision_log`` all resolve through here, so the check lives
+            once at this resolver rather than being repeated per caller.
+            ``plan_id is None`` remains the first-class global-fallback path and
+            is never rejected, and the ``NO_PLAN`` sentinel keeps resolving
+            because :func:`validate_plan_id` carves it out ahead of the
+            kebab-case test.
     """
     if store not in VALID_STORES:
         raise ValueError(
             f'unknown store {store!r}: expected one of {list(VALID_STORES)}'
+        )
+
+    if plan_id is not None and not is_valid_plan_id(plan_id):
+        raise ValueError(
+            f'invalid plan_id {plan_id!r}: a log path resolves only for a well-formed '
+            f'plan identifier, or None for the global fallback'
         )
 
     log_type = log_type.lower()
