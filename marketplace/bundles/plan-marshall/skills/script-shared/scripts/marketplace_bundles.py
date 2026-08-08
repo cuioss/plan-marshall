@@ -27,6 +27,17 @@ def _partition_version_dirs(
     ``live`` is the subset of ``eligible`` whose marker does not disqualify it: an
     unmarked dir, or the bundle's newest-on-disk (retention-pinned) dir whose mark
     is ignored outright.
+
+    **Only the EXISTENCE of ``.orphaned_at`` is ever consulted. Its content is
+    never read, parsed, or compared.** This is a binding invariant, not an
+    incidental property of the ``.exists()`` call below. The reason is that the
+    field has a foreign co-producer: Claude Code's own plugin GC writes the same
+    filename with a raw epoch-ms payload, while our writer
+    (``generate_executor._mark_superseded_version_dirs``) writes ISO-8601 UTC. Any
+    content-dependent read here would couple this repository to a format it does
+    not own and cannot version. The marker is therefore a pure boolean flag whose
+    payload is deliberately opaque, and the encoding split is inert precisely
+    because nothing downstream looks inside it.
     """
     try:
         version_dirs = [d for d in bundle_dir.iterdir() if d.is_dir() and not d.name.startswith('.')]
@@ -73,6 +84,14 @@ def select_live_version_dir(bundle_dir: Path, is_candidate: Callable[[Path], boo
 
     Policy:
 
+    - **Existence only.** Every rule below turns on whether ``.orphaned_at`` is
+      PRESENT, never on what it contains — the marker's content is never read,
+      parsed, or compared anywhere in this module. The field has a foreign
+      co-producer (Claude Code's plugin GC writes it as raw epoch-ms, our writer
+      writes ISO-8601 UTC), so a content-dependent rule would bind the selector to
+      a format this repository does not own. Treat the marker as a boolean flag
+      with a deliberately opaque payload. See
+      :func:`_partition_version_dirs`, the single read site.
     - The bundle's **newest-on-disk** version dir is retention-pinned: it is what
       the highest-version-wins resolver — and the ``marshall-steward``
       ``cache_retention sweep`` keep-union — actually selects, so a ``.orphaned_at``

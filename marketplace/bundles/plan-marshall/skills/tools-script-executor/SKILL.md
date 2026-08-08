@@ -307,6 +307,18 @@ underneath it (parsing each version-dir name into a comparable integer tuple,
 outright; and when every eligible dir is marked, the newest eligible dir is
 returned with a diagnosable stderr line.
 
+**Only the marker's existence is consulted — never its content.** Every clause of
+that policy turns on whether `.orphaned_at` is PRESENT; nothing reads, parses, or
+compares what is inside it. This is a binding invariant, not an incidental property
+of the current implementation, because the field has a foreign co-producer: Claude
+Code's own plugin GC writes the same filename with a raw epoch-ms payload, while our
+writer (`generate_executor._mark_superseded_version_dirs`) writes ISO-8601 UTC. Two
+producers write one field in two encodings, so a content-dependent rule would bind
+the selector to a format this repository does not own and cannot version. The marker
+is a boolean flag whose payload is deliberately opaque, and the encoding split is
+inert precisely because of that. `_partition_version_dirs` is the single read site
+and states the same invariant in code, so the two cannot drift apart.
+
 Selecting the live newest — rather than the lexically-first `iterdir` result — is
 load-bearing: a stale older version dir (e.g. `1.0.0` alongside `1.0.10`) would
 otherwise shadow the current one on the cross-skill import path. Routing every leg
