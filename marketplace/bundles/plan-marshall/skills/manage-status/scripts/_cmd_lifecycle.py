@@ -5,6 +5,7 @@ Lifecycle command handlers for manage-status: create, transition, archive, delet
 """
 
 import argparse
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -609,21 +610,58 @@ def _restore_lesson_from_plan_dir(plan_id: str, plan_dir: Path) -> LessonCarryBa
     restored_ids: list[str] = []
     skipped: list[dict[str, str]] = []
     for match in matches:
-        source = match.resolve()
-        lesson_id = source.stem[len('lesson-'):]
+        # The id comes from the MATCHED name, never from a resolved one. A
+        # symlinked ``lesson-*.md`` resolves OUT of the plan directory, so an id
+        # read off the resolved path describes the link's target rather than the
+        # file the plan actually carries — and the traversal guard below would
+        # then be inspecting the wrong name entirely.
+        lesson_id = match.stem[len('lesson-'):]
         if any(sep in lesson_id for sep in ('/', '\\', '..')):
             skipped.append({'lesson_id': lesson_id, 'reason': 'path_traversal'})
+            continue
+
+        # Only a regular, non-symlinked file may be carried back. For a symlink
+        # (or a directory, FIFO, device node) the move would relocate whatever
+        # the entry points AT — an arbitrary file outside the plan directory,
+        # removed from its own location — on the code path whose caller deletes
+        # that directory immediately afterwards. Reporting the rejection as a
+        # skip is what routes it into the veto instead of dropping it silently.
+        if match.is_symlink() or not match.is_file():
+            skipped.append({'lesson_id': lesson_id, 'reason': 'unsafe_source'})
             continue
 
         destination = (lessons_dir / f'{lesson_id}.md').resolve()
         if destination.parent != lessons_dir:
             skipped.append({'lesson_id': lesson_id, 'reason': 'path_traversal'})
             continue
-        if destination.exists():
+
+        # Claim the destination with a no-replace create: ``O_EXCL`` makes the
+        # collision test and the claim ONE operation. A separate ``exists()``
+        # probe followed by a replacing move is a TOCTOU pair — a destination
+        # created between the two is silently overwritten and the incumbent
+        # lesson is lost, which is exactly the irrecoverable loss this
+        # carry-back exists to prevent. A lost race is the ordinary
+        # ``destination_exists`` skip, so it fires the veto like any other.
+        try:
+            claim_fd = os.open(destination, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
             skipped.append({'lesson_id': lesson_id, 'reason': 'destination_exists'})
             continue
+        os.close(claim_fd)
 
-        shutil.move(str(source), str(destination))
+        # Copy-then-unlink rather than move: the source stays in place until the
+        # claim is filled, so no failure between the claim and the copy can
+        # leave the lesson existing nowhere.
+        try:
+            shutil.copyfile(match, destination)
+        except OSError:
+            # The empty claim must not outlive a failed copy — left behind, it
+            # turns every later carry-back of this id into a
+            # ``destination_exists`` skip against a corpus entry holding none
+            # of the lesson.
+            destination.unlink(missing_ok=True)
+            raise
+        match.unlink()
         log_entry(
             'work',
             plan_id,

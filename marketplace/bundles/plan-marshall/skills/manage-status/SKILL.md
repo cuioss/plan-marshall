@@ -748,7 +748,16 @@ The destination is resolved through the **main-anchored** lessons-store handle, 
 
 The last two are the two ways this payload can carry a zero that is **not** evidence the plan carried no lesson. Keeping them out of `no_lesson_file` is what lets an audit tell "deleted a plan that verifiably carried no lesson" from "deleted a plan whose lessons went unexamined" — the same distinction the carry-back exists to make, applied to the branch that can actually destroy one.
 
-**The veto**: when `skipped_lessons` is non-empty — a destination collision, a traversal-shaped lesson id, or a store that would not resolve — at least one carried lesson did NOT land, so the plan directory still holds the only copy of it. The delete is **refused** with `error: lesson_carry_back_incomplete` and the directory is left intact. The refusal is what makes silent corpus loss unreachable on this path: a skipped lesson plus an unconditional delete would destroy the only copy with no signal anywhere. Resolve the collision (or pass `--no-restore-lessons` to delete and discard deliberately), then retry.
+**The veto**: when `skipped_lessons` is non-empty, at least one carried lesson did NOT land, so the plan directory still holds the only copy of it. The delete is **refused** with `error: lesson_carry_back_incomplete` and the directory is left intact. The refusal is what makes silent corpus loss unreachable on this path: a skipped lesson plus an unconditional delete would destroy the only copy with no signal anywhere. Resolve the cause (or pass `--no-restore-lessons` to delete and discard deliberately), then retry.
+
+Each `skipped_lessons` row carries the `reason` that kept it from landing, over this closed vocabulary:
+
+| `reason` | Meaning |
+|----------|---------|
+| `destination_exists` | The corpus already holds an entry under that lesson id. The destination is claimed with a no-replace create, so the collision test and the claim are one operation — an incumbent lesson can never be overwritten by a destination that appeared mid-carry-back. |
+| `path_traversal` | The lesson id is traversal-shaped, or the destination it produces would land outside the corpus directory. |
+| `store_unresolved` | The main-anchored lessons store did not resolve, so the carry-back could not reach the corpus at all. Every carried lesson gets this reason. |
+| `unsafe_source` | The `lesson-*.md` entry is not a regular file — a symlink, directory, or other non-regular entry. Carrying it back would relocate whatever it points AT, removing an arbitrary external file, on the very path that deletes the plan directory next. Rejecting it as a reported skip (rather than following it) is what keeps that reachable-only-through-the-veto. |
 
 **Output** (TOON format):
 

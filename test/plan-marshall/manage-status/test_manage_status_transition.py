@@ -319,6 +319,120 @@ def test_delete_plan_reports_unresolvable_store_instead_of_nothing_to_restore(
     assert (plan_dir / 'lesson-2025-04-04-004.md').exists()
 
 
+def test_delete_plan_refuses_symlinked_lesson_and_spares_its_target(plan_context):
+    """A symlinked lesson-*.md is rejected, and its target is left where it is.
+
+    Deriving the id from a RESOLVED path let a symlink walk the carry-back out
+    of the plan directory: the traversal guard then inspected the target's stem
+    (which is perfectly well-formed), and the move relocated — i.e. REMOVED —
+    an arbitrary external file, on the path whose caller deletes the plan
+    directory next. The rejection must be a REPORTED skip, so it fires the veto
+    rather than dropping the entry silently.
+    """
+    outside = plan_context.fixture_dir / 'outside-the-plan.md'
+    outside.write_text('id=2025-06-06-006\n\n# External\n\nNot the plan to move.\n')
+
+    plan_dir = plan_context.plan_dir_for('symlink-carry-back')
+    (plan_dir / 'request.md').write_text('# Request')
+    (plan_dir / 'lesson-2025-06-06-006.md').symlink_to(outside)
+
+    result = cmd_delete_plan(Namespace(plan_id='symlink-carry-back', no_restore_lessons=False))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'lesson_carry_back_incomplete'
+    assert result['lesson_carry_back_action'] == 'restore_incomplete'
+    assert result['skipped_lessons'] == [
+        {'lesson_id': '2025-06-06-006', 'reason': 'unsafe_source'}
+    ]
+    assert result['restored_lesson_ids'] == []
+
+    # The external target is an ordinary file the plan has no claim on; it must
+    # still be there, with its content untouched.
+    assert outside.exists(), (
+        'The carry-back followed a symlink out of the plan directory and moved '
+        'the external target away — the id must be derived from the MATCHED '
+        'name and non-regular entries rejected before any move.'
+    )
+    assert '# External' in outside.read_text()
+    # Nothing was written into the corpus under that id either.
+    assert not (plan_context.fixture_dir / 'lessons-learned' / '2025-06-06-006.md').exists()
+    # The veto held.
+    assert plan_dir.exists()
+
+
+def test_delete_plan_refuses_non_regular_lesson_entry(plan_context):
+    """A non-regular ``lesson-*.md`` entry is an ``unsafe_source`` skip.
+
+    The glob matches by name, so a directory (or FIFO, or device node) named
+    ``lesson-*.md`` reaches the move loop exactly as a file would. Pins the
+    second branch of the regular-file guard, not just the symlink one.
+    """
+    plan_dir = plan_context.plan_dir_for('nonregular-carry-back')
+    (plan_dir / 'request.md').write_text('# Request')
+    (plan_dir / 'lesson-2025-07-07-007.md').mkdir()
+
+    result = cmd_delete_plan(Namespace(plan_id='nonregular-carry-back', no_restore_lessons=False))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'lesson_carry_back_incomplete'
+    assert result['skipped_lessons'] == [
+        {'lesson_id': '2025-07-07-007', 'reason': 'unsafe_source'}
+    ]
+    assert plan_dir.exists()
+
+
+def test_delete_plan_destination_claim_does_not_rely_on_an_exists_probe(
+    plan_context, monkeypatch
+):
+    """The incumbent survives even when an ``exists()`` probe reports absence.
+
+    ``destination.exists()`` and the move were a TOCTOU pair: a destination
+    created between the two was silently overwritten and the incumbent lesson
+    lost. Lying about ``exists()`` simulates exactly that window — the claim
+    must be a no-replace create, so the collision is caught by the claim itself
+    and reported as the ordinary ``destination_exists`` skip.
+    """
+    lessons_dir = plan_context.fixture_dir / 'lessons-learned'
+    lessons_dir.mkdir(parents=True, exist_ok=True)
+    incumbent = lessons_dir / '2025-08-08-008.md'
+    incumbent.write_text('id=2025-08-08-008\n\n# Incumbent\n\nCorpus copy.\n')
+
+    plan_dir = plan_context.plan_dir_for('toctou-carry-back')
+    (plan_dir / 'lesson-2025-08-08-008.md').write_text(
+        'id=2025-08-08-008\ncomponent=foo\ncategory=bug\ncreated=2025-08-08\n\n# Carried\n\nPlan copy.\n'
+    )
+
+    original_exists = Path.exists
+
+    def lying_exists(self, *args, **kwargs):
+        # Scoped to the one destination path, matched on name rather than
+        # equality so a symlinked fixture root (macOS /tmp) still hits.
+        if self.name == incumbent.name and self.parent.name == lessons_dir.name:
+            return False
+        return original_exists(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'exists', lying_exists)
+
+    result = cmd_delete_plan(Namespace(plan_id='toctou-carry-back', no_restore_lessons=False))
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'lesson_carry_back_incomplete'
+    assert result['skipped_lessons'] == [
+        {'lesson_id': '2025-08-08-008', 'reason': 'destination_exists'}
+    ]
+    assert result['restored_lesson_ids'] == []
+
+    monkeypatch.undo()
+    assert 'Corpus copy.' in incumbent.read_text(), (
+        'The incumbent corpus lesson was overwritten — the destination claim '
+        'is still gated on a separate exists() probe instead of a no-replace '
+        'create, so a destination appearing inside the window is clobbered.'
+    )
+    # The veto held: the plan directory still holds its only copy.
+    assert plan_dir.exists()
+    assert (plan_dir / 'lesson-2025-08-08-008.md').exists()
+
+
 def test_cli_transition_not_found_exits_zero(plan_context):
     """Regression: transition with missing status.json exits 0 with TOON error output."""
     result = run_script(SCRIPT_PATH, 'transition', '--plan-id', 'nonexistent', '--completed', '1-init')
