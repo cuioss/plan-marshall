@@ -917,13 +917,32 @@ def _cache_path(executor: Path, notation: str, digest: str) -> Path:
 
 
 def _read_cache(cache_path: Path) -> ScriptSurface | None:
+    """Read a cached surface; a malformed entry is a cache MISS, never a crash.
+
+    The cache is a pure optimization on BOTH sides — the same property
+    :func:`_write_cache` states for writes. Deserialization must therefore
+    degrade to ``None`` for every shape a corrupt file can take, not just for the
+    two the structural walk happens to raise most often:
+
+    - ``ValueError`` — ``_node_from_dict`` calls ``int()`` on every
+      ``flag_arity`` value, so a non-numeric count raises here. The first block
+      catches ``ValueError`` around ``json.loads``; omitting it from the second
+      made the asymmetry live inside one function.
+    - ``AttributeError`` — ``from_dict`` calls ``.get`` on ``data`` and
+      ``_node_from_dict`` calls ``.items()`` on ``children`` / ``flag_arity``, so
+      a non-mapping value at any of those positions raises here.
+
+    Left to propagate, either aborts the whole ``derive_surface`` batch and takes
+    down both consumers — plugin-doctor's edit-time rules and the executor
+    generator — over a corrupt file in a git-ignored temp dir.
+    """
     try:
         data = json.loads(cache_path.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return None
     try:
         return ScriptSurface.from_dict(data)
-    except (KeyError, TypeError):
+    except (AttributeError, KeyError, TypeError, ValueError):
         return None
 
 

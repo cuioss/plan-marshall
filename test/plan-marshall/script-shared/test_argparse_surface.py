@@ -814,6 +814,91 @@ class TestPureParsers:
 
 
 # ---------------------------------------------------------------------------
+# On-disk cache: a malformed entry is a MISS, never a crash
+# ---------------------------------------------------------------------------
+
+# Each payload is a shape a corrupt cache file can actually take. Three of the
+# guard's four types have a live producer in the current walk and each is
+# covered below:
+#
+#   ValueError     — ``_node_from_dict`` calls ``int()`` on every flag_arity value
+#   AttributeError — ``.get`` / ``.items()`` on a non-mapping at any position
+#   TypeError      — ``set()`` over a non-iterable, ``int(None)``
+#
+# ``KeyError`` is carried over from the pre-widening guard and has NO producer in
+# the walk as written — every read goes through ``.get`` with a default. It is
+# kept because the guard's job is degradation, not an exhaustive claim about
+# today's walk, but it is deliberately not asserted here: a case fabricated to
+# raise it would test the fixture rather than the code.
+_MALFORMED_CACHE_PAYLOADS = [
+    pytest.param({'root': {'flag_arity': {'plan-id': 'not-a-number'}}}, id='arity-not-numeric'),
+    pytest.param({'root': []}, id='root-is-a-list'),
+    pytest.param({'root': {'children': ['read']}}, id='children-is-a-list'),
+    pytest.param({'root': {'flag_arity': ['plan-id']}}, id='arity-is-a-list'),
+    pytest.param({'root': {'children': {'read': 'not-a-node'}}}, id='child-is-a-string'),
+    pytest.param([], id='top-level-is-a-list'),
+    pytest.param({'root': {'flag_arity': {'plan-id': None}}}, id='arity-value-is-null'),
+    pytest.param({'root': {'flags': 7}}, id='flags-is-an-int'),
+]
+
+
+class TestCacheReadDegradesToAMiss:
+    """The cache is a pure optimization on the READ side too.
+
+    ``_write_cache`` already documents that a failure must never break the
+    analysis, and swallows every ``OSError``. The read side has the same
+    obligation and a wider blast radius: a propagating exception aborts the whole
+    ``derive_surface`` batch, so ONE corrupt file in a git-ignored temp dir takes
+    down both consumers — plugin-doctor's edit-time rules and the executor
+    generator — for every script, not just the cached one.
+
+    Every malformed case below first proves the payload genuinely raises out of
+    ``from_dict``. Without that, ``_read_cache(...) is None`` would pass just as
+    happily over a payload that deserializes cleanly, and the guard would never
+    be exercised at all.
+    """
+
+    def test_a_well_formed_entry_still_round_trips(self, tmp_path):
+        """Positive control: the guard must not be an unconditional ``None``.
+
+        A ``_read_cache`` that returned ``None`` for everything would satisfy
+        every degradation assertion below while disabling the cache entirely —
+        correct-looking and silently paying a full re-derivation every run.
+        """
+        path = tmp_path / 'entry.json'
+        payload = {'root': {'flags': ['plan-id'], 'flag_arity': {'plan-id': 1}, 'children': {}}}
+        path.write_text(json.dumps(payload), encoding='utf-8')
+
+        result = surf._read_cache(path)
+
+        assert result is not None, 'a well-formed entry must be a cache HIT'
+        assert 'plan-id' in result.root.flags
+        assert result.root.flag_arity['plan-id'] == 1
+
+    @pytest.mark.parametrize('payload', _MALFORMED_CACHE_PAYLOADS)
+    def test_a_malformed_entry_is_a_miss(self, tmp_path, payload):
+        path = tmp_path / 'entry.json'
+        path.write_text(json.dumps(payload), encoding='utf-8')
+
+        with pytest.raises((AttributeError, KeyError, TypeError, ValueError)):
+            surf.ScriptSurface.from_dict(payload)
+
+        assert surf._read_cache(path) is None, (
+            'a malformed cache entry escaped the guard — it would abort the '
+            'whole derivation batch instead of costing one re-derivation'
+        )
+
+    def test_unparseable_json_is_a_miss(self, tmp_path):
+        path = tmp_path / 'entry.json'
+        path.write_text('{not json at all', encoding='utf-8')
+
+        assert surf._read_cache(path) is None
+
+    def test_an_absent_entry_is_a_miss(self, tmp_path):
+        assert surf._read_cache(tmp_path / 'never-written.json') is None
+
+
+# ---------------------------------------------------------------------------
 # Live-tree characterization
 # ---------------------------------------------------------------------------
 
@@ -882,7 +967,30 @@ class TestLiveTreeCharacterization:
                 f'spelling — this is the false rejection the promotion removes'
             )
 
+    @pytest.mark.slow_live
     def test_every_registered_notation_is_confident_or_explicitly_not_derivable(self):
+        """The one test in the suite that can approach the hang detector.
+
+        Marked ``slow_live`` and registered as such in ``pyproject.toml``, which
+        is the SINGLE source of truth for custom markers. Two things follow: a
+        fast local loop deselects it with ``-m 'not slow_live'``, and the
+        ``timeout = 300`` rationale beside that registry can describe the suite
+        honestly — everything else is a warm sub-second unit, this is a live
+        derivation over the whole registry.
+
+        Why the marker rather than a smaller budget: the assertion below floors
+        the population at ``len(notations) // 2``. A budget that truncates a COLD
+        run flips notations to ``NotDerivable(budget_exhausted)`` and can drive
+        the confident count under that floor, converting a real bound into a
+        flaky failure. Lowering it is only defensible from a measured cold-cache
+        run — and the number that matters is CI's cold run, not this host's warm
+        one (measured warm at ~2.6s, which says nothing: the disk cache under
+        ``.plan/temp/plugin-doctor-help-cache/`` was populated by a previous run
+        of this same test, and the conftest executor bootstrap does not warm it
+        because the generator threads a WIDER ``cache_key`` through
+        ``derive_surface`` than ``build_surface_index`` uses here). So the budget
+        stays where it is and the slow test is labelled instead.
+        """
         executor = _live_executor()
         notations = sorted(_registered_notations(executor))
         assert notations, (
@@ -891,6 +999,11 @@ class TestLiveTreeCharacterization:
             'would certify nothing'
         )
 
+        # COUPLED TO pyproject.toml's ``timeout = 300`` pytest-timeout hang
+        # detector: this is a TRUE TOTAL wall-clock deadline for the whole batch,
+        # so it is a declared ceiling for this test's runtime and must stay
+        # comfortably BELOW 300 or the hang detector fires on a healthy run.
+        # Moving either number without the other re-opens that collision.
         config = surf.DerivationConfig(total_budget_seconds=240.0)
         index = surf.build_surface_index(notations, executor, config=config)
 
@@ -1045,24 +1158,74 @@ def _registered_notations(executor: Path) -> set[str]:
 
     Parsed from the generated file rather than imported: the executor is a
     script, not a module, and importing it would run its bootstrap.
-    """
-    import re
 
-    text = executor.read_text(encoding='utf-8')
-    key_re = re.compile(
-        r'^\s*"(?P<notation>[A-Za-z0-9_\-]+:[A-Za-z0-9_\-]+:[A-Za-z0-9_\-]+)":'
-    )
-    notations: set[str] = set()
-    in_block = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not in_block:
-            if stripped.startswith('SCRIPTS') and '=' in stripped and '{' in stripped:
-                in_block = True
+    Parsed with :mod:`ast` for the same reason ``_template_literal`` gives — a
+    scan over a brace-delimited literal keys on formatting, not on structure —
+    but the consequence here is worse than a wrong value. This set IS the
+    population the live characterization grades, so a reformatted generated
+    executor (two keys on one line, a wrapped value, a re-indented block) shrinks
+    it SILENTLY. The only guard downstream is a bare ``assert notations``, which
+    fires solely at the extreme of zero: a partial collapse passes green while
+    certifying a fraction of what the test claims to cover.
+
+    Scans the module-level body rather than :func:`ast.walk`, so a ``SCRIPTS``
+    name bound anywhere else in the file cannot be picked up ahead of the real
+    registry. ``ast.literal_eval`` then rejects a non-literal assignment loudly
+    instead of yielding a partial read.
+    """
+    import ast
+
+    source = executor.read_text(encoding='utf-8')
+    for node in ast.parse(source).body:
+        if not isinstance(node, ast.Assign):
             continue
-        if stripped == '}':
-            break
-        match = key_re.match(line)
-        if match:
-            notations.add(match.group('notation'))
-    return notations
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == 'SCRIPTS':
+                mapping = ast.literal_eval(node.value)
+                assert isinstance(mapping, dict), (
+                    f'SCRIPTS in {executor} is no longer a dict literal (parsed '
+                    f'a {type(mapping).__name__}) — the population this '
+                    f'characterization grades changed shape'
+                )
+                return set(mapping)
+    raise AssertionError(
+        f'no module-level SCRIPTS literal in {executor} — the registry this '
+        f'characterization derives its population from is unreadable, so a '
+        f'green run here would grade nothing'
+    )
+
+
+class TestRegisteredNotationsReader:
+    """The population reader must fail loudly, not shrink quietly.
+
+    Both cases below exist because the reader's failure mode is invisible at the
+    call site: the characterization test receives a smaller ``notations`` set and
+    keeps passing, its published counts shrinking in step so even the assertion
+    message reads consistent.
+    """
+
+    def test_an_absent_literal_raises_rather_than_returning_an_empty_set(self, tmp_path):
+        fake = tmp_path / 'execute-script.py'
+        fake.write_text(
+            '#!/usr/bin/env python3\nMAPPINGS = {"bundle:skill:script": "a.py"}\n',
+            encoding='utf-8',
+        )
+
+        with pytest.raises(AssertionError):
+            _registered_notations(fake)
+
+    def test_the_literal_is_read_independently_of_its_formatting(self, tmp_path):
+        """Two keys on one line — the exact shape a line-anchored scan drops."""
+        fake = tmp_path / 'execute-script.py'
+        fake.write_text(
+            '#!/usr/bin/env python3\n'
+            'SCRIPTS = {\n'
+            '    "bundle:skill:script": "a.py", "bundle:skill:other": "b.py",\n'
+            '}\n',
+            encoding='utf-8',
+        )
+
+        assert _registered_notations(fake) == {
+            'bundle:skill:script',
+            'bundle:skill:other',
+        }
