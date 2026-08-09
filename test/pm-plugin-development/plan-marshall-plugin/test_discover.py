@@ -275,6 +275,102 @@ def test_discover_commands_from_plugin_data():
 
 
 # =============================================================================
+# Component-reference traversal containment
+# =============================================================================
+#
+# Component references were normalised with a CHARACTER-SET strip, which removes
+# every leading ``.`` and ``/`` rather than one exact ``./`` prefix. A reference
+# of ``../decoy/x`` was therefore flattened to ``decoy/x`` — silently resolving
+# to a DIFFERENT component that really does exist inside the bundle, and
+# registering it under the traversal reference's identity.
+#
+# The decoy below is deliberately seeded INSIDE the bundle at exactly the path
+# the strip would flatten onto. Without it the traversal reference would fail
+# the ``is_dir()`` / ``is_file()`` existence test anyway and the test would pass
+# against the pre-fix source for the wrong reason.
+
+
+def _seed_traversal_bundle(root: Path) -> Path:
+    """Lay out a bundle with a real component and a same-named decoy."""
+    bundle = root / 'bundle'
+    frontmatter = '---\ndescription: seeded\n---\n\nbody\n'
+
+    skill_md = bundle / 'skills' / 'real-skill' / 'SKILL.md'
+    skill_md.parent.mkdir(parents=True, exist_ok=True)
+    skill_md.write_text(frontmatter, encoding='utf-8')
+
+    decoy_skill = bundle / 'decoy' / 'other-skill' / 'SKILL.md'
+    decoy_skill.parent.mkdir(parents=True, exist_ok=True)
+    decoy_skill.write_text(frontmatter, encoding='utf-8')
+
+    for rel in (
+        'agents/real-agent.md',
+        'decoy/other-agent.md',
+        'commands/real-command.md',
+        'decoy/other-command.md',
+    ):
+        path = bundle / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(frontmatter, encoding='utf-8')
+
+    return bundle
+
+
+def test_discover_skills_refuses_traversal_reference():
+    """A ``..`` skill reference is skipped, not flattened onto the decoy."""
+    with tempfile.TemporaryDirectory() as td:
+        bundle = _seed_traversal_bundle(Path(td))
+
+        packages = discover_skills(bundle, {'skills': ['./skills/real-skill', '../decoy/other-skill']})
+
+        assert set(packages) == {'skill:real-skill'}
+        # The plain ``./`` reference still resolves, with exactly the prefix removed.
+        assert packages['skill:real-skill']['path'] == 'skills/real-skill'
+
+
+def test_discover_agents_refuses_traversal_reference():
+    """A ``..`` agent reference is skipped, not flattened onto the decoy."""
+    with tempfile.TemporaryDirectory() as td:
+        bundle = _seed_traversal_bundle(Path(td))
+
+        packages = discover_agents(bundle, {'agents': ['./agents/real-agent.md', '../decoy/other-agent.md']})
+
+        assert set(packages) == {'agent:real-agent'}
+        assert packages['agent:real-agent']['path'] == 'agents/real-agent.md'
+
+
+def test_discover_commands_refuses_traversal_reference():
+    """A ``..`` command reference is skipped, not flattened onto the decoy."""
+    with tempfile.TemporaryDirectory() as td:
+        bundle = _seed_traversal_bundle(Path(td))
+
+        packages = discover_commands(
+            bundle, {'commands': ['./commands/real-command.md', '../decoy/other-command.md']}
+        )
+
+        assert set(packages) == {'command:real-command'}
+        assert packages['command:real-command']['path'] == 'commands/real-command.md'
+
+
+def test_discover_preserves_a_leading_dot_directory_reference():
+    """Negative control: only an exact ``./`` is removed, not every leading dot.
+
+    A reference into a dot-directory must keep its leading ``.`` — the
+    character-set strip would have rewritten ``.hidden/x`` into ``hidden/x``.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        bundle = Path(td) / 'bundle'
+        skill_md = bundle / '.hidden' / 'dot-skill' / 'SKILL.md'
+        skill_md.parent.mkdir(parents=True, exist_ok=True)
+        skill_md.write_text('---\ndescription: seeded\n---\n', encoding='utf-8')
+
+        packages = discover_skills(bundle, {'skills': ['.hidden/dot-skill']})
+
+        assert set(packages) == {'skill:dot-skill'}
+        assert packages['skill:dot-skill']['path'] == '.hidden/dot-skill'
+
+
+# =============================================================================
 # build_bundle_module
 # =============================================================================
 

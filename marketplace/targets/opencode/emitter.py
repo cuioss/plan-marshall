@@ -89,6 +89,31 @@ def iter_bundle_dirs(marketplace_dir: Path, bundles: list[str] | None) -> Iterat
             yield candidate
 
 
+def _bundle_relative_ref(ref: str) -> str | None:
+    """Return ``ref`` with an exact leading ``./`` removed, or ``None`` to skip it.
+
+    ``removeprefix`` rather than a character-set strip: the latter takes a SET
+    OF CHARACTERS, not a prefix, so it strips EVERY leading ``.`` and ``/`` —
+    rewriting ``.claude/x`` into ``claude/x`` and ``../other/x`` into ``other/x``. The
+    emitter would then read a DIFFERENT file than the descriptor named and copy
+    it into the generated output under the intended component's identity.
+
+    A ``..`` segment is refused rather than flattened, extending to these two
+    resolvers the same containment rule :func:`iter_bundle_dirs` already applies
+    to bundle names.
+
+    Args:
+        ref: A ``plugin.json`` component reference, e.g. ``./skills/foo``.
+
+    Returns:
+        The bundle-relative path, or ``None`` when the reference is unsafe.
+    """
+    rel = ref.removeprefix('./')
+    if '..' in rel.split('/'):
+        return None
+    return rel
+
+
 def _read_plugin_json(bundle_dir: Path) -> dict:
     plugin_json = bundle_dir / '.claude-plugin' / 'plugin.json'
     if not plugin_json.exists():
@@ -313,7 +338,9 @@ def _resolve_skill_dirs(bundle_dir: Path, plugin_config: dict) -> list[Path]:
     skills: list[Path] = []
     if refs:
         for ref in refs:
-            ref_str = str(ref).lstrip('./')
+            ref_str = _bundle_relative_ref(str(ref))
+            if ref_str is None:
+                continue
             candidate = bundle_dir / ref_str
             if candidate.is_dir():
                 skills.append(candidate)
@@ -329,7 +356,9 @@ def _resolve_md_components(bundle_dir: Path, plugin_config: dict, key: str, fall
     paths: list[Path] = []
     if refs:
         for ref in refs:
-            ref_str = str(ref).lstrip('./')
+            ref_str = _bundle_relative_ref(str(ref))
+            if ref_str is None:
+                continue
             candidate = bundle_dir / ref_str
             if candidate.is_file():
                 paths.append(candidate)

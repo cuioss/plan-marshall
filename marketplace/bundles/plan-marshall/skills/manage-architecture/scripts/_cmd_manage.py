@@ -198,8 +198,18 @@ def _is_marketplace_bundle_module(module_data: dict[str, Any], project_path: Pat
     module_rel = paths.get('module') or ''
     if not module_rel:
         return False
-    # Normalise the path string — strip leading ``./`` and use POSIX separators.
-    rel = Path(module_rel).as_posix().lstrip('./')
+    # Normalise the path string — remove an exact leading ``./`` and use POSIX
+    # separators. ``removeprefix`` rather than a character-set strip: the latter
+    # takes a SET OF CHARACTERS, not a prefix, so it eats every leading ``.``
+    # and ``/`` and would rewrite ``.plan/x`` into ``plan/x`` — a different path
+    # that could then match the bundle prefix by accident.
+    rel = Path(module_rel).as_posix().removeprefix('./')
+    # A traversal segment is refused outright rather than normalised away: a
+    # path that climbs out of the tree is not a marketplace bundle module, and
+    # answering True for one would extend bundle-only classification to a file
+    # outside ``marketplace/bundles/``.
+    if '..' in rel.split('/'):
+        return False
     return rel.startswith(_MARKETPLACE_BUNDLE_PREFIX) or rel == _MARKETPLACE_BUNDLE_PREFIX.rstrip('/')
 
 
