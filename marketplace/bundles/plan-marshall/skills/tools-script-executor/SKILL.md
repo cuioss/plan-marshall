@@ -124,12 +124,18 @@ this check existed:
 | The notation has no `SCRIPT_SURFACES` entry | Spawn unvalidated |
 | A node's child listing is not marked confident | Stop the walk, spawn |
 | The resolved node's flag set is not marked known | Skip flag checks, spawn |
+| A flag's value arity is unknown while a verb is still expected | Spawn |
 | `--help` appears anywhere in the invocation | Spawn (argparse prints usage) |
 
-The asymmetry is the whole safety argument: the worst case of a derivation gap
-is today's behaviour, never a valid call refused. A missing accept-set therefore
-cannot manufacture a refusal, and an executor generated with no surfaces at all
-is a **safe** configuration rather than a broken one.
+The asymmetry is the safety argument, and it is a claim about **knowledge**, not
+about the check as a whole: a derivation gap degrades to today's behaviour, so a
+missing accept-set cannot manufacture a refusal and an executor generated with
+no surfaces at all is a **safe** configuration rather than a broken one. What
+the asymmetry does *not* buy on its own is correctness of the walk that decides
+*which* node's accept-set applies — a walk that resolves the wrong node rejects
+from knowledge that is real but attached to the wrong parser, and that is a
+false rejection with none of the fail-open branches above involved. The
+[argv walk](#resolving-argv-to-a-parser-node) is what carries that half.
 
 Four long flags are accepted on every node regardless of the derived surface,
 because each is invisible to the derivation for a structural reason: `help`
@@ -137,6 +143,38 @@ because each is invisible to the derivation for a structural reason: `help`
 set), `audit-plan-id` (consumed by the executor before the target's argparse
 runs), and `plan-id` / `project-dir` (honoured on every subcommand through
 parent-flag propagation but often rendered only in the root's help).
+
+#### Resolving argv to a parser node
+
+Deciding which node's accept-set applies means walking argv, and that walk has
+to know **which flags bind a following token as their value**. A top-level
+routing flag such as `--project-dir` must PRECEDE the subcommand (argparse
+rejects it afterwards), so `architecture --project-dir . find --pattern P` is
+the only correct spelling — and a walk that does not know `--project-dir` takes
+a value reads `find` as that value, stays on the root node, and then refuses
+`--pattern` against the root's flags. Nothing in the fail-open table above fires:
+every input was confident, and the refusal was still wrong.
+
+The `flag_arity` map each surface node carries is the anchor that resolves it.
+It is derived narrowly — only from the option-invocation region of an option
+line, never from help prose — and is a strict subset of the node's `flags` set,
+which is deliberately over-collected. An **absent** key means the arity is
+unknown, never that it is zero, and the walk resolves the three states
+differently:
+
+| Flag's value arity | Behaviour |
+|--------------------|-----------|
+| Known (`0`, `1`, `N`) | Step over exactly that many tokens; stop early at a `-`-prefixed token or end of argv |
+| Unknown, and the current node still expects a verb | Abandon the walk and spawn — the next token is either the value or the verb, and both readings resolve different nodes |
+| Unknown, verb path already resolved | Step over the token; it is not a verb under either reading, so nothing is lost |
+
+The over/under asymmetry is why arity is the one anchor derived narrowly: an
+over-collected FLAG only widens an accept-set, but an over-confident ARITY
+re-tokenizes argv and moves the resolved node. Abbreviated spellings are **not**
+accepted, because the marketplace-wide `argparse_safety` rule requires every
+parser and subparser to pass `allow_abbrev=False` — no script in the tree binds
+an abbreviation, so honouring one here would model a behaviour that does not
+exist.
 
 #### Where the accept-set comes from
 
@@ -150,10 +188,13 @@ so the edit-time and dispatch-time guards cannot disagree about what a script
 accepts.
 
 Each embedded entry carries a source digest covering the script, every `.py`
-beside it, and the injected shared-module directories, so a change in an
-**imported** module invalidates the dependent surface. A regeneration reuses any
-entry whose digest still matches — the generated executor is its own cache, with
-no additional state file.
+beside it, the injected shared-module directories, and the derivation's own
+schema version, so a change in an **imported** module — or in the shape of the
+surface itself — invalidates the dependent entry. A regeneration reuses any
+entry whose digest still matches, so the generated executor is its own cache
+with no additional state file; folding the schema version in is what stops a
+widened node shape from being served indefinitely from entries derived under the
+old one.
 
 **Cost, and which path a slow generation is on.** A cold derivation runs one
 `--help` per parser node across every registered script and takes minutes; a

@@ -27,7 +27,7 @@ was abandoned; it is deliberately NOT retained here as a fallback, because a
 too-small accept-set is strictly more dangerous than no accept-set — it
 rejects valid calls.
 
-Four parse anchors
+Five parse anchors
 ------------------
 =========================== ================================ ==========================
 Anchor                      Rendered by argparse as          Used for
@@ -35,8 +35,19 @@ Anchor                      Rendered by argparse as          Used for
 Choice list                 ``{prepare-add,...,read,get}``   acceptance set (exact)
 Per-verb listing line       ``read (get)``                   canonical/alias grouping
 Long-option tokens          ``--plan-id PLAN_ID``            flag set (over-approx.)
+Option invocation line      ``  --plan-id PLAN_ID   help``   value arity (exact-or-absent)
 Section headers             ``options:`` etc.                structural evidence
 =========================== ================================ ==========================
+
+**Value arity** answers a question the flag set alone cannot: does ``--plan-id``
+bind the NEXT argv token as its value, or is that token the subcommand? A
+consumer that walks argv to resolve a parser node must know, because guessing
+wrong in EITHER direction is a false rejection — swallow a verb and every
+subcommand flag looks unknown; leave a value stranded and it looks like an
+unregistered verb. Arity is therefore read only from the option INVOCATION
+region of an option line (the part before the two-space help gutter), never from
+help prose, and a flag whose rendering is ambiguous (``[FOO ...]``) or
+contradictory across lines contributes NO entry — absent, not guessed.
 
 **Aliases** are recovered two-tier by design. The choice list is the
 acceptance oracle and carries aliases FLAT — argparse populates the subparser
@@ -114,7 +125,8 @@ Public API
 - :func:`build_surface_index` — notation -> surface index, derived in parallel.
 - :func:`resolve_executor` — locate ``.plan/execute-script.py`` from a root.
 - :func:`parse_help_node` / :func:`parse_choice_list` / :func:`parse_alias_groups`
-  — the pure parsers, exposed for testing against synthetic help text.
+  / :func:`parse_flag_arity` — the pure parsers, exposed for testing against
+  synthetic help text.
 """
 
 from __future__ import annotations
@@ -150,7 +162,9 @@ DEFAULT_MAX_WORKERS = min(16, (os.cpu_count() or 4) * 2)
 # v3: consolidation into this shared module — adds alias grouping, per-node
 # confidence flags, whole-output flag harvesting (asymmetric-error rule), and
 # the positional-arguments-section choice list.
-CACHE_VERSION = 3
+# v4: adds per-node ``flag_arity`` (how many argv tokens each long flag binds as
+# its value), read from the option-invocation region of each option line.
+CACHE_VERSION = 4
 
 
 @dataclass(frozen=True)
@@ -194,6 +208,15 @@ class ParserNode:
     spelling to its canonical spelling and exists ONLY to phrase correctives;
     it is never consulted to decide acceptance.
 
+    ``flag_arity`` maps a long-flag name to the number of argv tokens it binds
+    as its value (``0`` for a bare switch, ``1`` for the ordinary
+    ``--flag VALUE`` shape, ``N`` for ``nargs=N``). It is a STRICT SUBSET of
+    ``flags``-worthy names by construction: a flag whose rendering is
+    variable-arity or contradictory contributes no entry, and an ABSENT key
+    means "arity unknown", never "arity zero". Consumers that walk argv must
+    treat the absent case as unknowable rather than defaulting either way — see
+    the module docstring's value-arity anchor.
+
     The two confidence flags are independent on purpose. ``flags_confident``
     false means "this node's flag surface is unknown, skip flag validation";
     ``children_confident`` false means "this node's child listing is unknown,
@@ -203,6 +226,7 @@ class ParserNode:
 
     flags: set[str] = field(default_factory=set)
     required_flags: set[str] = field(default_factory=set)
+    flag_arity: dict[str, int] = field(default_factory=dict)
     children: dict[str, ParserNode] = field(default_factory=dict)
     alias_of: dict[str, str] = field(default_factory=dict)
     flags_confident: bool = True
@@ -350,6 +374,7 @@ def _node_to_dict(node: ParserNode) -> dict:
     return {
         'flags': sorted(node.flags),
         'required_flags': sorted(node.required_flags),
+        'flag_arity': dict(sorted(node.flag_arity.items())),
         'alias_of': dict(sorted(node.alias_of.items())),
         'flags_confident': node.flags_confident,
         'children_confident': node.children_confident,
@@ -363,6 +388,13 @@ def _node_from_dict(data: dict) -> ParserNode:
     return ParserNode(
         flags=set(data.get('flags', [])),
         required_flags=set(data.get('required_flags', [])),
+        # An entry written before ``flag_arity`` existed deserializes to the
+        # empty map, which reads as "no flag's arity is known" — the same
+        # fail-open state a script whose help renders no options produces.
+        flag_arity={
+            str(name): int(count)
+            for name, count in (data.get('flag_arity') or {}).items()
+        },
         alias_of=dict(data.get('alias_of', {})),
         flags_confident=bool(data.get('flags_confident', True)),
         children_confident=bool(data.get('children_confident', True)),
@@ -400,6 +432,30 @@ _SECTION_HEADERS: tuple[str, ...] = (
     'options:',
     'optional arguments:',
 )
+
+# One OPTION INVOCATION line. argparse renders an action inside a section at an
+# indent of exactly two spaces, while its wrapped help text is indented to the
+# help column (always deeper). Anchoring on the exact two-space indent is what
+# separates an option's own invocation string from help PROSE that happens to
+# mention ``--another-flag`` at the start of a wrapped line — prose whose arity
+# would otherwise be read off the following English word.
+_OPTION_INVOCATION_LINE_RE = re.compile(r'^ {2}(-\S.*)$')
+
+# The two-or-more-space gutter argparse puts between an action's invocation
+# string and its help text. Splitting on it isolates the invocation region,
+# whose tokens are the option strings and their metavars.
+_HELP_GUTTER_RE = re.compile(r'\s{2,}')
+
+# One long option string plus whatever metavar text follows it, within an
+# already-isolated invocation region: ``--plan-id PLAN_ID``, ``--verbose``,
+# ``--coords X Y``, ``--tags [TAGS ...]``.
+_LONG_OPTION_SPEC_RE = re.compile(r'^--([A-Za-z][A-Za-z0-9_\-]*)(.*)$')
+
+# Metavar text that makes an option's value count VARIABLE rather than fixed:
+# argparse renders ``nargs='?'`` / ``'*'`` / ``'+'`` with square brackets and an
+# ellipsis. A variable count cannot be turned into "consume exactly N tokens",
+# so such a flag contributes no arity entry at all.
+_VARIABLE_ARITY_MARKERS: tuple[str, ...] = ('[', ']', '...')
 
 # ANSI CSI escape sequences — the SGR color codes Python 3.14 wraps around
 # ``usage:``, subcommand choices, and ``--flag`` tokens in colorized argparse
@@ -542,6 +598,76 @@ def parse_alias_groups(help_text: str) -> dict[str, str]:
     return alias_of
 
 
+def _option_invocation_regions(help_text: str) -> list[str]:
+    """Return the invocation region of every option line in ``help_text``.
+
+    An option line is a body line indented by EXACTLY two spaces whose first
+    non-space character is ``-`` — argparse's rendering of one action inside a
+    section. The region returned is the part before the two-space help gutter,
+    i.e. the option strings and their metavars with the help prose removed.
+
+    The exact-indent anchor is the whole point. Help text wraps to the help
+    column (deeper than two), and a wrapped line can legitimately BEGIN with
+    ``--some-flag`` when the prose cross-references another option
+    ("Mutually exclusive with --plan-id."). Reading arity from such a line would
+    take the next English word for a metavar and report a bare switch as
+    value-taking, or vice versa.
+    """
+    _usage, body = split_help_sections(help_text)
+    regions: list[str] = []
+    for line in body:
+        match = _OPTION_INVOCATION_LINE_RE.match(line.rstrip())
+        if match is None:
+            continue
+        regions.append(_HELP_GUTTER_RE.split(match.group(1), 1)[0].strip())
+    return regions
+
+
+def parse_flag_arity(help_text: str) -> dict[str, int]:
+    """Return ``{long_flag: value_token_count}`` for every unambiguous option.
+
+    The count is how many argv tokens argparse binds to the flag: ``0`` for a
+    bare switch (``--verbose``), ``1`` for the ordinary ``--flag VALUE`` shape,
+    ``N`` for ``nargs=N`` (``--coords X Y``).
+
+    Three sources of doubt each resolve to ABSENCE rather than to a guess,
+    because both directions of a wrong guess are false rejections downstream:
+
+    - a variable-arity rendering (``[TAGS ...]``, ``TAGS [TAGS ...]``) has no
+      fixed count;
+    - two option lines disagreeing about the same flag name;
+    - a flag rendered nowhere in an option-invocation region at all (declared
+      with ``help=SUPPRESS``, or injected by a wrapper outside this parser).
+
+    A key's ABSENCE therefore means "unknown", never "zero" — the asymmetric-
+    error rule applied to arity: an over-collected FLAG only widens acceptance,
+    but an over-confident ARITY re-tokenizes argv and can move the resolved
+    parser node, so arity is the one anchor derived narrowly.
+    """
+    observed: dict[str, set[int]] = {}
+    for region in _option_invocation_regions(help_text):
+        for part in region.split(','):
+            spec = part.strip()
+            if not spec.startswith('--'):
+                continue
+            match = _LONG_OPTION_SPEC_RE.match(spec)
+            if match is None:
+                continue
+            name = match.group(1)
+            metavar = match.group(2).strip()
+            if any(marker in metavar for marker in _VARIABLE_ARITY_MARKERS):
+                # Record an out-of-band value so a later fixed-arity rendering
+                # of the same name cannot silently win the disagreement.
+                observed.setdefault(name, set()).add(-1)
+                continue
+            observed.setdefault(name, set()).add(len(metavar.split()))
+    return {
+        name: next(iter(counts))
+        for name, counts in observed.items()
+        if len(counts) == 1 and next(iter(counts)) >= 0
+    }
+
+
 def strip_grouping_constructs(text: str) -> str:
     """Remove balanced ``[...]`` and ``(...)`` groups (nesting-aware).
 
@@ -598,6 +724,12 @@ def parse_help_node(help_text: str) -> ParserNode:
     the asymmetric-error rule: a flag declared in a custom argument group
     renders under that group's own title, and omitting it would reject a valid
     call. Over-collecting only ever accepts more.
+
+    ``flag_arity`` is derived the OPPOSITE way — narrowly, from the option
+    invocation regions only (see :func:`parse_flag_arity`) — because an
+    over-collected arity re-tokenizes argv rather than merely widening a set.
+    The two anchors therefore disagree in size by design: ``flags`` is a
+    superset of the script's real options, ``flag_arity`` a subset.
     """
     structured = has_argparse_structure(help_text)
     usage_block, _body = split_help_sections(help_text)
@@ -610,6 +742,7 @@ def parse_help_node(help_text: str) -> ParserNode:
     return ParserNode(
         flags=flags,
         required_flags=required,
+        flag_arity=parse_flag_arity(help_text),
         flags_confident=structured,
         children_confident=structured,
     )

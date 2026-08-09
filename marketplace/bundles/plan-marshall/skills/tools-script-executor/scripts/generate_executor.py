@@ -710,7 +710,10 @@ def generate_mappings_code(mappings: dict[str, str]) -> str:
 # SyntaxError-executor-on-format-skew defect class.
 #
 # v2: adds the SCRIPT_SURFACES placeholder (per-notation argparse accept-sets).
-_SUPPORTED_TEMPLATE_FORMAT_VERSION = 2
+# v3: each SCRIPT_SURFACES node additionally carries ``flag_arity`` (how many
+#     argv tokens a long flag binds as its value), which the executor's pre-spawn
+#     walk needs to tell a flag's VALUE from the next verb.
+_SUPPORTED_TEMPLATE_FORMAT_VERSION = 3
 
 # Matches the template's ``# TEMPLATE_FORMAT_VERSION: N`` marker comment.
 _TEMPLATE_FORMAT_VERSION_RE = re.compile(r'^#\s*TEMPLATE_FORMAT_VERSION:\s*(\d+)\s*$', re.MULTILINE)
@@ -909,12 +912,21 @@ def _shared_dirs_digest(shared_dirs: list[Path]) -> str:
 def compute_surface_digest(script_path: str, shared_digest: str) -> str:
     """Digest the inputs that can change one script's argparse surface.
 
-    Three contributors: the script's own bytes, every ``*.py`` beside it (its
+    Four contributors: the script's own bytes, every ``*.py`` beside it (its
     skill's other modules — the ``ci.py`` / ``ci_base.py`` relationship, where
-    the parser is assembled in a sibling), and the shared-module aggregate. A
-    surface whose digest still matches is reused verbatim on the next
-    regeneration, which is what keeps a routine ``preflight`` at its current
-    cost: an unchanged script set performs ZERO help invocations.
+    the parser is assembled in a sibling), the shared-module aggregate, and the
+    derivation's own ``CACHE_VERSION``. A surface whose digest still matches is
+    reused verbatim on the next regeneration, which is what keeps a routine
+    ``preflight`` at its current cost: an unchanged script set performs ZERO
+    help invocations.
+
+    The ``CACHE_VERSION`` contributor is what makes a change to the SURFACE
+    SCHEMA invalidate every entry. Without it, widening a node (a new
+    ``flag_arity`` map, say) leaves every unchanged script reusing an entry
+    derived under the old schema, so the executor keeps the shape the fix was
+    meant to replace and the fix appears to do nothing until a script happens to
+    change. Schema currency is an input to the surface exactly as script content
+    is.
     """
     path = Path(script_path)
     hasher = hashlib.sha256()
@@ -924,6 +936,7 @@ def compute_surface_digest(script_path: str, shared_digest: str) -> str:
         hasher.update(b'<unreadable>')
     hasher.update(_dir_digest(path.parent).encode('utf-8'))
     hasher.update(shared_digest.encode('utf-8'))
+    hasher.update(f'surface-schema-v{surface_api.CACHE_VERSION}'.encode())
     return hasher.hexdigest()
 
 

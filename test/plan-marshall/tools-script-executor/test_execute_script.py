@@ -781,14 +781,24 @@ def _spawn_marker_script(tmp_path: Path) -> tuple[Path, Path]:
     return script, marker
 
 
-def _surface_entry(children: dict, *, root_flags=(), confident=True) -> dict:
-    """Build one SCRIPT_SURFACES entry in the shape the generator emits."""
+def _surface_entry(
+    children: dict, *, root_flags=(), root_arity=None, confident=True
+) -> dict:
+    """Build one SCRIPT_SURFACES entry in the shape the generator emits.
+
+    ``root_arity`` is the root node's derived ``{flag: value_token_count}`` map.
+    It is deliberately independent of ``root_flags``: the real derivation
+    over-collects flags from help prose but derives arity only from option
+    invocation lines, so a flag present in one and absent from the other is the
+    NORMAL case, not a malformed fixture.
+    """
     return {
         'digest': 'test-digest',
         'surface': {
             'root': {
                 'flags': list(root_flags),
                 'required_flags': [],
+                'flag_arity': dict(root_arity or {}),
                 'alias_of': {},
                 'flags_confident': confident,
                 'children_confident': confident,
@@ -798,10 +808,13 @@ def _surface_entry(children: dict, *, root_flags=(), confident=True) -> dict:
     }
 
 
-def _node(flags=(), required=(), children=None, alias_of=None, confident=True) -> dict:
+def _node(
+    flags=(), required=(), arity=None, children=None, alias_of=None, confident=True
+) -> dict:
     return {
         'flags': list(flags),
         'required_flags': list(required),
+        'flag_arity': dict(arity or {}),
         'alias_of': dict(alias_of or {}),
         'flags_confident': confident,
         'children_confident': confident,
@@ -1102,6 +1115,226 @@ def test_flag_value_is_not_mistaken_for_a_verb():
         result, marker = _dispatch(Path(tmp), surfaces, ['read', '--plan-id', 'nuke'])
 
         assert marker.exists(), f'a flag value was walked as a verb: {result.stdout!r}'
+
+    assert result.returncode == 0
+
+
+# =============================================================================
+# Top-level (router) flags BEFORE the verb — the walk must not desynchronise
+# =============================================================================
+#
+# The defect these pin: the verb-path walk collected only the LEADING run of
+# non-flag tokens, so ``--project-dir . find --pattern P`` parked the walk on
+# the ROOT node — ``find`` was swallowed as if it were the flag's value — and
+# every flag declared on ``find`` was then measured against the root's
+# accept-set and refused. The call is correct as written: argparse requires a
+# top-level optional to PRECEDE the subcommand and rejects it afterwards, so
+# there is no alternative spelling the caller could have used.
+#
+# Every case below pairs a positive control (a valid call spawns) with the
+# matching negative control (a genuinely invalid call is STILL refused with the
+# same top-level flag present). Without the negatives, the whole group would
+# pass on an implementation that simply stopped validating once it saw a flag.
+
+# The router-flag surface: a value-taking ``--project-dir`` and a bare
+# ``--verbose``, both declared on the ROOT, plus a ``find`` verb owning
+# ``--pattern``. The two root flags differ in arity ON PURPOSE — an
+# implementation that assumed "every leading flag takes a value" passes the
+# first case and swallows the verb in the second.
+_ROUTER_SURFACE = {
+    _SPAWN_NOTATION: _surface_entry(
+        {'find': _node(flags=['pattern'], arity={'pattern': 1})},
+        root_flags=['project-dir', 'verbose', 'coords'],
+        root_arity={'project-dir': 1, 'verbose': 0, 'coords': 2},
+    )
+}
+
+
+def test_value_taking_top_level_flag_before_the_verb_spawns():
+    """Named positive control — the exact reported invocation shape.
+
+    Live form (against the real executor):
+      ``plan-marshall:manage-architecture:architecture --project-dir . find
+      --pattern "*.template"`` — refused pre-fix with
+      ``reason: unknown_flag / rejected: --pattern / accepted: content, pre``.
+      The ``accepted`` set was the tell: it is the ROOT's flag set, proving the
+      walk never reached the ``find`` node.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(
+            Path(tmp), _ROUTER_SURFACE, ['--project-dir', '.', 'find', '--pattern', '*.md']
+        )
+
+        assert marker.exists(), (
+            f'a valid call was refused because a top-level flag preceded the '
+            f'verb: {result.stdout!r}'
+        )
+
+    assert result.returncode == 0
+
+
+def test_bare_top_level_flag_before_the_verb_spawns():
+    """A zero-arity root switch must NOT swallow the verb that follows it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(
+            Path(tmp), _ROUTER_SURFACE, ['--verbose', 'find', '--pattern', '*.md']
+        )
+
+        assert marker.exists(), (
+            f'a bare top-level switch consumed the verb behind it: {result.stdout!r}'
+        )
+
+    assert result.returncode == 0
+
+
+def test_equals_joined_top_level_flag_before_the_verb_spawns():
+    """``--flag=value`` binds no following token, whatever its arity says."""
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(
+            Path(tmp), _ROUTER_SURFACE, ['--project-dir=.', 'find', '--pattern', '*.md']
+        )
+
+        assert marker.exists(), (
+            f'the =-joined form of a routing flag was mishandled: {result.stdout!r}'
+        )
+
+    assert result.returncode == 0
+
+
+def test_multi_token_flag_value_before_the_verb_is_stepped_over():
+    """An ``nargs=2`` root flag consumes exactly two tokens, then the verb runs."""
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(
+            Path(tmp),
+            _ROUTER_SURFACE,
+            ['--coords', '3', '4', 'find', '--pattern', '*.md'],
+        )
+
+        assert marker.exists(), (
+            f'a two-token flag value desynchronised the walk: {result.stdout!r}'
+        )
+
+    assert result.returncode == 0
+
+
+def test_unregistered_verb_is_still_rejected_behind_a_top_level_flag():
+    """Negative control: the fix must not disable verb validation."""
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(
+            Path(tmp), _ROUTER_SURFACE, ['--project-dir', '.', 'nuke', '--pattern', '*.md']
+        )
+
+        assert not marker.exists(), (
+            'an unregistered verb slipped through once a routing flag preceded it'
+        )
+
+    assert result.returncode == 2
+    assert 'reason: unknown_verb' in result.stdout
+    assert 'rejected: nuke' in result.stdout
+
+
+def test_unregistered_flag_is_still_rejected_behind_a_top_level_flag():
+    """Negative control: the fix must not disable flag validation either.
+
+    The rejection must ALSO name the verb node's accept-set rather than the
+    root's — that is the positive proof the walk reached ``find``, where the
+    defect's ``accepted: content, pre`` was the proof it had not.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(
+            Path(tmp),
+            _ROUTER_SURFACE,
+            ['--project-dir', '.', 'find', '--made-up-flag', 'x'],
+        )
+
+        assert not marker.exists(), (
+            'an unregistered flag slipped through once a routing flag preceded it'
+        )
+
+    assert result.returncode == 2
+    assert 'reason: unknown_flag' in result.stdout
+    assert 'rejected: --made-up-flag' in result.stdout
+    assert 'pattern' in result.stdout, (
+        f"the corrective did not name the ``find`` node's own flags, so the "
+        f'walk resolved the wrong node: {result.stdout!r}'
+    )
+
+
+def test_unknown_arity_flag_before_a_verb_degrades_to_spawn():
+    """Fail-closed control: no confident reading of argv means SPAWN, not reject.
+
+    ``--mystery`` has no derived arity, so the token behind it is either its
+    value or the verb — two readings that resolve different parser nodes.
+    Guessing either way can refuse a valid call, so the walk abandons and the
+    dispatch proceeds exactly as it would with no surface at all.
+
+    The fixture is deliberately one where guessing WOULD reject: under the
+    "consume nothing" reading, ``x`` is an unregistered verb.
+    """
+    surfaces = {
+        _SPAWN_NOTATION: _surface_entry(
+            {'find': _node(flags=['pattern'], arity={'pattern': 1})},
+            root_flags=['mystery'],
+            root_arity={},
+        )
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(
+            Path(tmp), surfaces, ['--mystery', 'x', 'find', '--pattern', '*.md']
+        )
+
+        assert marker.exists(), (
+            f'an unknowable flag arity produced a rejection instead of a '
+            f'spawn — the fail-closed invariant: {result.stdout!r}'
+        )
+
+    assert result.returncode == 0
+
+
+def test_unknown_arity_flag_after_the_verb_still_permits_flag_rejection():
+    """The fail-open carve-out is scoped to where the ambiguity MATTERS.
+
+    Once the verb path is resolved, the token behind an unknown-arity flag
+    cannot be a verb under any reading, so the walk keeps going and the flag
+    itself is still measured against the accept-set. Without this the previous
+    test's degradation would silently generalise, and every invented flag that
+    carries a value would become unrejectable.
+    """
+    surfaces = {
+        _SPAWN_NOTATION: _surface_entry(
+            {'find': _node(flags=['pattern'], arity={'pattern': 1})}
+        )
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(
+            Path(tmp), surfaces, ['find', '--made-up-flag', 'some-value']
+        )
+
+        assert not marker.exists(), (
+            'an invented flag carrying a value became unrejectable'
+        )
+
+    assert result.returncode == 2
+    assert 'reason: unknown_flag' in result.stdout
+
+
+def test_required_flag_supplied_after_a_top_level_flag_is_not_reported_missing():
+    """The required-flag check reads the SAME resolved node as the flag check."""
+    surfaces = {
+        _SPAWN_NOTATION: _surface_entry(
+            {'find': _node(flags=['pattern'], required=['pattern'], arity={'pattern': 1})},
+            root_flags=['project-dir'],
+            root_arity={'project-dir': 1},
+        )
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(
+            Path(tmp), surfaces, ['--project-dir', '.', 'find', '--pattern', '*.md']
+        )
+
+        assert marker.exists(), (
+            f'a supplied required flag was reported missing: {result.stdout!r}'
+        )
 
     assert result.returncode == 0
 

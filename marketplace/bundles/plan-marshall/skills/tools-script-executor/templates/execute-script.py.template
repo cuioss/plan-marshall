@@ -48,7 +48,7 @@ Examples:
     python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory --audit-plan-id EXAMPLE-PLAN --include-descriptions
 """
 
-# TEMPLATE_FORMAT_VERSION: 2
+# TEMPLATE_FORMAT_VERSION: 3
 # Deterministic decoupling contract between this template's placeholder shapes
 # (the double-brace-wrapped `SHARED_MODULE_DIRS`, `SCRIPT_MAPPINGS` and
 # `SCRIPT_SURFACES` tokens) and
@@ -732,6 +732,10 @@ def emit_dispatch_failure_work_log(
 #   - the notation has no SCRIPT_SURFACES entry          -> spawn
 #   - a node's child listing is not confident            -> stop walking, spawn
 #   - the resolved node's flag set is not known          -> skip flag checks
+#   - a flag's value arity is unknown WHILE a verb is
+#     still expected (so the next token is either that
+#     flag's value or the verb, and no reading of argv
+#     resolves the parser node)                          -> spawn
 #
 # The asymmetry is the whole safety argument: rejecting is only ever done from
 # POSITIVE knowledge that a token is not accepted. Absent knowledge is never
@@ -739,9 +743,10 @@ def emit_dispatch_failure_work_log(
 # behaviour, never a valid call refused.
 
 
-# Long flags accepted on EVERY node regardless of what the derived surface says.
-# Each is invisible to the derivation for a structural reason, so validating
-# against the surface alone rejects calls that are unambiguously valid:
+# Long flags accepted on EVERY node regardless of what the derived surface says,
+# mapped to the number of argv tokens each binds as its value. Each is invisible
+# to the derivation for a structural reason, so validating against the surface
+# alone rejects calls that are unambiguously valid:
 #
 #   - ``help``           — every argparse parser declares it, and the derivation
 #                          strips it deliberately (it carries no information
@@ -756,11 +761,23 @@ def emit_dispatch_failure_work_log(
 #                          already covers the root-declared case; the allowlist
 #                          is the guarantee for the executor-injected one.
 #
+# The arity values are a LAST-RESORT fallback, consulted only for a flag the
+# derived surface has no arity for: the same structural invisibility that puts a
+# flag on this list is what can keep it out of every node's rendered help, and
+# these four have a fixed, known shape. A derived arity always wins, so a script
+# that declares one of these names differently is described by its own help.
+#
 # Deliberately mirrors ``_UNIVERSAL_FLAG_ALLOWLIST`` in plugin-doctor's
 # manage-invocation analyzer, which carries the same members for the same
 # reasons — the two guards read one accept-set, so they must also agree on what
 # that accept-set structurally cannot contain.
-_ALWAYS_ACCEPTED_FLAGS = frozenset({'help', 'audit-plan-id', 'plan-id', 'project-dir'})
+_ALWAYS_ACCEPTED_FLAG_ARITY = {
+    'help': 0,
+    'audit-plan-id': 1,
+    'plan-id': 1,
+    'project-dir': 1,
+}
+_ALWAYS_ACCEPTED_FLAGS = frozenset(_ALWAYS_ACCEPTED_FLAG_ARITY)
 
 
 def _surface_for(notation: str) -> dict | None:
@@ -775,34 +792,9 @@ def _surface_for(notation: str) -> dict | None:
     return root if isinstance(root, dict) else None
 
 
-def _split_invocation_args(script_args: list) -> tuple:
-    """Split argv into ``(positional_tokens, long_flags)``.
-
-    Positionals are the LEADING run of non-flag tokens — the verb path argparse
-    resolves before any optional. The run stops at the first ``-``-prefixed
-    token, because everything after that is either a flag or a flag's value, and
-    a value must never be mistaken for a verb.
-
-    Long flags are collected from anywhere in argv. ``--flag=value`` is split on
-    the first ``=``. Short flags are ignored: they are not part of the accept-set
-    this module derives, so asserting on them would reject from ignorance.
-    """
-    positionals = []
-    flags = []
-    seen_flag = False
-    for arg in script_args:
-        if arg.startswith('--'):
-            seen_flag = True
-            name = arg[2:].split('=', 1)[0]
-            if name:
-                flags.append(name)
-            continue
-        if arg.startswith('-'):
-            seen_flag = True
-            continue
-        if not seen_flag:
-            positionals.append(arg)
-    return positionals, flags
+def _mentions_help(script_args: list) -> bool:
+    """True when argv carries ``--help`` in either spelling."""
+    return any(arg == '--help' or arg.startswith('--help=') for arg in script_args)
 
 
 def _closest_spelling(token: str, candidates) -> str | None:
@@ -860,42 +852,120 @@ def _corrective_for_verb(notation: str, chain: list, token: str, node: dict) -> 
     return f'Use `{prefix} {suggestion}` — registered: {children}'
 
 
-def _validate_invocation(notation: str, script_args: list) -> dict | None:
-    """Return a rejection dict when the dispatch is provably invalid, else ``None``.
+def _consume_flag_value(name, arity: dict, node: dict, script_args: list, index: int):
+    """How many argv tokens the flag preceding ``index`` binds as its value.
 
-    ``None`` means "spawn" and covers BOTH "this call is valid" and "I do not
-    know enough to judge" — the two are deliberately indistinguishable to the
-    caller, because both must dispatch.
+    ``None`` means the answer is BOTH unknown and load-bearing, and is the
+    signal for the caller to abandon validation and spawn.
+
+    Three cases, in order:
+
+    1. Nothing follows, or the next token is itself ``-``-prefixed. argparse
+       binds no value here whatever the declared arity is, so the answer is a
+       confident ``0`` and no arity lookup is needed.
+    2. The arity is known. Consume that many tokens, stopping early at a
+       ``-``-prefixed token or at the end of argv.
+    3. The arity is unknown. The next token is either this flag's value or the
+       next verb, and the two readings resolve DIFFERENT parser nodes — so the
+       answer only matters while the current node still expects a verb. When it
+       does, return ``None`` (spawn); when it does not, the token is not a verb
+       under any reading, so consuming it is safe and loses nothing.
+
+    ``name`` is ``None`` for a short flag or cluster: the derivation models long
+    flags only, so case 2 can never apply to one. Lookup is by EXACT name — the
+    marketplace-wide ``argparse_safety`` rule requires every parser and
+    subparser to pass ``allow_abbrev=False``, so no abbreviated spelling ever
+    binds a value and resolving one here would model a behaviour the scripts
+    deliberately do not have.
     """
-    node = _surface_for(notation)
-    if node is None:
-        return None
+    if index >= len(script_args) or script_args[index].startswith('-'):
+        return 0
+    declared = arity.get(name) if name else None
+    if declared is None:
+        return None if node.get('children') else 1
+    consumed = 0
+    while consumed < declared and index + consumed < len(script_args):
+        if script_args[index + consumed].startswith('-'):
+            break
+        consumed += 1
+    return consumed
 
-    positionals, flags = _split_invocation_args(script_args)
 
-    # ``--help`` short-circuits the whole check. argparse handles it at whatever
-    # depth it appears and prints usage instead of running the verb, so a
-    # partial or misspelled verb path alongside it is not an error to report —
-    # and refusing it would break the derivation's own probe.
-    if 'help' in flags:
-        return None
+def _resolve_invocation(notation: str, root: dict, script_args: list) -> tuple:
+    """Walk argv against the surface tree, consuming flag values by derived arity.
 
-    # Walk the verb path. Each level is checked only while the node's child
-    # listing is confident; an unconfident listing has no basis to call a token
-    # wrong, so the walk stops there and flag validation runs against what was
-    # resolved so far.
+    A single left-to-right pass does BOTH jobs, because neither can be done
+    without the other: tokenizing argv needs the current node's arity map (which
+    flags bind a following token), and reaching the current node needs argv
+    already tokenized. Splitting them is what let a leading ``--project-dir .``
+    swallow the verb that followed it, leaving the walk parked on the ROOT node
+    and every subcommand-declared flag looking unknown.
+
+    Returns ``(resolution, rejection)`` — at most one is ever non-``None``, and
+    both are ``None`` when the walk cannot judge:
+
+    - ``(None, None)``       — no confident reading of argv; the caller spawns.
+    - ``(None, rejection)``  — a positional named an unregistered child.
+    - ``(resolution, None)`` — argv resolved; the mapping carries the verb
+      ``chain``, the deepest ``node``, the long ``flags`` used, the ancestor-
+      union ``inherited`` accept-set, and whether that set is ``flags_known``.
+    """
+    node = root
     chain = []
-    inherited_flags = set(node.get('flags') or []) | _ALWAYS_ACCEPTED_FLAGS
-    flags_known = bool(node.get('flags_confident', True))
-    for token in positionals:
+    flags = []
+    inherited = set(root.get('flags') or []) | _ALWAYS_ACCEPTED_FLAGS
+    arity = dict(_ALWAYS_ACCEPTED_FLAG_ARITY)
+    arity.update(root.get('flag_arity') or {})
+    flags_known = bool(root.get('flags_confident', True))
+
+    index = 0
+    total = len(script_args)
+    while index < total:
+        token = script_args[index]
+        index += 1
+
+        if token == '--':
+            # argparse's end-of-options marker: every later token is a
+            # positional VALUE. A node still expecting a verb can no longer get
+            # one from argv, so there is nothing left to resolve against.
+            if node.get('children'):
+                return None, None
+            break
+
+        if token.startswith('--'):
+            name = token[2:].split('=', 1)[0]
+            if not name:
+                return None, None
+            flags.append(name)
+            if '=' in token[2:]:
+                # ``--flag=value`` carries its value inline and binds no
+                # following token, so its arity is irrelevant here.
+                continue
+            consumed = _consume_flag_value(name, arity, node, script_args, index)
+            if consumed is None:
+                return None, None
+            index += consumed
+            continue
+
+        if token.startswith('-'):
+            # A short flag or cluster. Its own acceptance is never asserted (the
+            # derived surface models long flags only), but its VALUE still has
+            # to be stepped over so it is not walked as a verb.
+            consumed = _consume_flag_value(None, arity, node, script_args, index)
+            if consumed is None:
+                return None, None
+            index += consumed
+            continue
+
         children = node.get('children') or {}
         if not children:
-            break
+            # A leaf's positional ARGUMENT, not a verb. Nothing to validate.
+            continue
         if not node.get('children_confident', True):
-            return None
+            return None, None
         child = children.get(token)
         if child is None:
-            return {
+            return None, {
                 'reason': 'unknown_verb',
                 'token': token,
                 'corrective': _corrective_for_verb(notation, chain, token, node),
@@ -903,11 +973,48 @@ def _validate_invocation(notation: str, script_args: list) -> dict | None:
             }
         chain.append(token)
         node = child
-        inherited_flags |= set(node.get('flags') or [])
+        inherited |= set(node.get('flags') or [])
+        arity.update(node.get('flag_arity') or {})
         flags_known = flags_known and bool(node.get('flags_confident', True))
 
-    if not flags_known:
+    resolution = {
+        'chain': chain,
+        'node': node,
+        'flags': flags,
+        'inherited': inherited,
+        'flags_known': flags_known,
+    }
+    return resolution, None
+
+
+def _validate_invocation(notation: str, script_args: list) -> dict | None:
+    """Return a rejection dict when the dispatch is provably invalid, else ``None``.
+
+    ``None`` means "spawn" and covers BOTH "this call is valid" and "I do not
+    know enough to judge" — the two are deliberately indistinguishable to the
+    caller, because both must dispatch.
+    """
+    root = _surface_for(notation)
+    if root is None:
         return None
+
+    # ``--help`` short-circuits the whole check. argparse handles it at whatever
+    # depth it appears and prints usage instead of running the verb, so a
+    # partial or misspelled verb path alongside it is not an error to report —
+    # and refusing it would break the derivation's own probe.
+    if _mentions_help(script_args):
+        return None
+
+    resolution, rejection = _resolve_invocation(notation, root, script_args)
+    if rejection is not None:
+        return rejection
+    if resolution is None or not resolution['flags_known']:
+        return None
+
+    node = resolution['node']
+    chain = resolution['chain']
+    inherited_flags = resolution['inherited']
+    flags = resolution['flags']
 
     for flag in flags:
         if flag in inherited_flags:

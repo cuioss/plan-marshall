@@ -260,6 +260,34 @@ def _custom_group_source() -> str:
     ''').lstrip()
 
 
+def _routing_flag_source() -> str:
+    """A ROOT parser with a value-taking routing flag AND a bare switch.
+
+    The shape behind the executor's false-rejection defect: ``--project-dir``
+    binds the next argv token, ``--verbose`` binds none, and both are legal
+    BEFORE the subcommand (argparse rejects a top-level optional placed after
+    it). A consumer walking argv cannot resolve the ``find`` node without
+    knowing which of the two swallows the token that follows it.
+    """
+    return textwrap.dedent('''
+        import argparse
+
+        def main():
+            parser = argparse.ArgumentParser(prog='syn', allow_abbrev=False)
+            parser.add_argument('--project-dir')
+            parser.add_argument('--verbose', action='store_true')
+            parser.add_argument('--coords', nargs=2)
+            parser.add_argument('--tags', nargs='*')
+            subparsers = parser.add_subparsers(dest='cmd')
+            find = subparsers.add_parser('find', allow_abbrev=False)
+            find.add_argument('--pattern', required=True)
+            parser.parse_args()
+
+        if __name__ == '__main__':
+            main()
+    ''').lstrip()
+
+
 def _nonzero_exit_source() -> str:
     """``--help`` exits non-zero — an import-time failure, a crashing main."""
     return textwrap.dedent('''
@@ -382,6 +410,52 @@ class TestPositiveControls:
         assert node is None
         assert unknown == 'phase-9-nope'
         assert chain == ['plan']
+
+    def test_root_routing_flags_carry_their_derived_value_arity(self, tmp_path: Path):
+        """The anchor the executor's argv walk depends on, per rendering shape.
+
+        Four shapes in one probe because the value of the arity map is that it
+        DISCRIMINATES: a test covering only ``--project-dir`` would pass on a
+        derivation that reported ``1`` for every flag it saw.
+        """
+        result = _derive(tmp_path, _routing_flag_source())
+        assert surf.is_derivable(result), result
+        arity = result.root.flag_arity
+
+        assert arity.get('project-dir') == 1, (
+            f'a value-taking routing flag must report arity 1: {arity}'
+        )
+        assert arity.get('verbose') == 0, (
+            f'a store_true switch must report arity 0, not be conflated with a '
+            f'value-taking flag: {arity}'
+        )
+        assert arity.get('coords') == 2, f'nargs=2 must report arity 2: {arity}'
+        assert 'tags' not in arity, (
+            f"nargs='*' has no fixed count, so it must contribute NO entry "
+            f'rather than a guessed one: {arity}'
+        )
+
+    def test_subcommand_flag_arity_is_derived_on_the_child_node(self, tmp_path: Path):
+        result = _derive(tmp_path, _routing_flag_source())
+        assert surf.is_derivable(result)
+        assert result.root.children['find'].flag_arity.get('pattern') == 1
+
+    def test_help_prose_mentioning_a_flag_contributes_no_arity(self, tmp_path: Path):
+        """A flag NAMED in help prose must not get an arity read off that prose.
+
+        ``flags`` deliberately over-collects every ``--long`` token anywhere in
+        the output, so a subcommand description that says "requires --content"
+        puts ``content`` in the ROOT's flag set. Reading arity from the same
+        text would take the following English word for a metavar. Arity is read
+        only from option-invocation regions, so such a name is absent — which
+        the executor treats as unknown and fails open on.
+        """
+        result = _derive(tmp_path, _routing_flag_source())
+        assert surf.is_derivable(result)
+        # ``pattern`` is declared on the CHILD, and argparse renders no mention
+        # of it in the root help, so the root knows neither the flag nor its
+        # arity. The load-bearing half is the arity absence.
+        assert 'pattern' not in result.root.flag_arity
 
     def test_custom_argument_group_flag_is_in_the_flag_set(self, tmp_path: Path):
         """Asymmetric-error control: a group-declared flag must not be lost."""
@@ -526,6 +600,89 @@ class TestPureParsers:
     def test_unstructured_output_has_no_argparse_structure(self):
         assert not surf.has_argparse_structure('usage: syn [options]\nhand rolled\n')
         assert surf.has_argparse_structure('usage: syn\n\noptions:\n  -h, --help\n')
+
+    def test_flag_arity_reads_the_invocation_region_not_the_help_prose(self):
+        """The exact-two-space indent anchor, against a wrapped help line.
+
+        The third option's help wraps onto a line that BEGINS with
+        ``--project-dir.`` — a cross-reference, not a declaration. Read as an
+        option line it would report ``project-dir`` as a bare switch, colliding
+        with its real arity of 1 and (under the disagreement rule) erasing the
+        entry the executor needs. The two-space anchor is what keeps that line
+        out of the scan entirely.
+        """
+        help_text = textwrap.dedent('''
+            usage: syn [-h] [--project-dir PROJECT_DIR] [--verbose] {find} ...
+
+            positional arguments:
+              {find} ...
+
+            options:
+              -h, --help            show this help message and exit
+              --project-dir PROJECT_DIR
+                                    Project directory (default: cwd).
+              --verbose             Chatty output. Ignored when
+                                    --project-dir. is absent.
+        ''').lstrip()
+
+        arity = surf.parse_flag_arity(help_text)
+
+        assert arity['project-dir'] == 1, (
+            f'a wrapped help line beginning with --project-dir. was read as an '
+            f'option declaration and erased the real arity: {arity}'
+        )
+        assert arity['verbose'] == 0
+        assert arity['help'] == 0
+
+    def test_flag_arity_omits_a_variable_arity_option(self):
+        help_text = textwrap.dedent('''
+            usage: syn [-h] [--tags [TAGS ...]] [--paths PATHS [PATHS ...]]
+
+            options:
+              -h, --help                  show this help message and exit
+              --tags [TAGS ...]           zero or more tags
+              --paths PATHS [PATHS ...]   one or more paths
+        ''').lstrip()
+
+        arity = surf.parse_flag_arity(help_text)
+
+        assert 'tags' not in arity, f"nargs='*' must contribute no entry: {arity}"
+        assert 'paths' not in arity, f"nargs='+' must contribute no entry: {arity}"
+
+    def test_flag_arity_handles_a_short_long_pair_and_a_choices_metavar(self):
+        help_text = textwrap.dedent('''
+            usage: syn [-h] [-p PLAN_ID] [--mode {a,b}]
+
+            options:
+              -h, --help            show this help message and exit
+              -p PLAN_ID, --plan-id PLAN_ID
+                                    the plan
+              --mode {a,b}          the mode
+        ''').lstrip()
+
+        arity = surf.parse_flag_arity(help_text)
+
+        assert arity['plan-id'] == 1, (
+            f'the long half of a short/long pair must be found: {arity}'
+        )
+        assert arity['mode'] == 1, (
+            f'a comma-bearing choices metavar is ONE value token: {arity}'
+        )
+
+    def test_flag_arity_drops_a_name_two_option_lines_disagree_about(self):
+        """Contradiction resolves to ABSENCE, never to the first-seen reading."""
+        help_text = textwrap.dedent('''
+            usage: syn [-h] [--scope SCOPE]
+
+            options:
+              -h, --help      show this help message and exit
+              --scope SCOPE   the scope
+
+            extra options:
+              --scope         a contradictory bare rendering
+        ''').lstrip()
+
+        assert 'scope' not in surf.parse_flag_arity(help_text)
 
     def test_ansi_escapes_are_stripped_before_parsing(self):
         colored = '\x1b[36musage:\x1b[0m syn [-h] \x1b[36m{a,b}\x1b[0m ...\n\noptions:\n'

@@ -439,19 +439,184 @@ def test_validator_returns_none_when_the_notation_has_no_surface(executor_with_m
     assert executor._validate_invocation('bundle:skill:unmapped', ['anything']) is None
 
 
-def test_split_invocation_args_stops_positionals_at_the_first_flag(
+# =============================================================================
+# The argv walk — one pass that tokenizes and resolves together
+# =============================================================================
+#
+# These drive ``_resolve_invocation`` directly, one property per test, because
+# the subprocess-level tests in test_execute_script.py can only observe the
+# walk's VERDICT (spawn / refuse). Which node the walk landed on, and how many
+# tokens each flag consumed getting there, are the things that actually broke —
+# and both are invisible from the verdict when a wrong node happens to accept.
+
+_ROOT_WITH_ROUTING_FLAGS = {
+    'flags': ['project-dir', 'verbose'],
+    'required_flags': [],
+    'flag_arity': {'project-dir': 1, 'verbose': 0},
+    'alias_of': {},
+    'flags_confident': True,
+    'children_confident': True,
+    'children': {
+        'plan': {
+            'flags': [],
+            'required_flags': [],
+            'flag_arity': {},
+            'alias_of': {},
+            'flags_confident': True,
+            'children_confident': True,
+            'children': {
+                'get': {
+                    'flags': ['field'],
+                    'required_flags': [],
+                    'flag_arity': {'field': 1},
+                    'alias_of': {},
+                    'flags_confident': True,
+                    'children_confident': True,
+                    'children': {},
+                }
+            },
+        }
+    },
+}
+
+
+def test_walk_steps_over_a_routing_flag_value_and_reaches_the_leaf(
     executor_with_mock_log_entry,
 ):
-    """A flag's value must never be collected as a verb-path token."""
+    """The headline regression, asserted on the RESOLVED NODE rather than the verdict."""
     executor, _mock = executor_with_mock_log_entry
 
-    positionals, flags = executor._split_invocation_args(
-        ['plan', 'get', '--field', 'compatibility', '--audit-plan-id=X', '-q']
+    resolution, rejection = executor._resolve_invocation(
+        'test:skill:script',
+        _ROOT_WITH_ROUTING_FLAGS,
+        ['--project-dir', '/x', 'plan', 'get', '--field', 'compatibility'],
     )
 
-    assert positionals == ['plan', 'get'], (
-        f'positional run must stop at the first flag; got {positionals!r}'
+    assert rejection is None, rejection
+    assert resolution is not None
+    assert resolution['chain'] == ['plan', 'get'], (
+        f"the routing flag's value swallowed the verb path; got "
+        f'{resolution["chain"]!r}'
     )
-    assert flags == ['field', 'audit-plan-id'], (
-        f'long flags only, ``=``-split, short flags ignored; got {flags!r}'
+    assert resolution['flags'] == ['project-dir', 'field']
+    assert 'field' in resolution['inherited'], (
+        'the leaf-declared flag is missing from the accept-set, so the walk '
+        'resolved a shallower node than it reached'
     )
+
+
+def test_walk_does_not_step_over_a_bare_switch(executor_with_mock_log_entry):
+    """A zero-arity flag consumes nothing, so the next token IS the verb."""
+    executor, _mock = executor_with_mock_log_entry
+
+    resolution, rejection = executor._resolve_invocation(
+        'test:skill:script', _ROOT_WITH_ROUTING_FLAGS, ['--verbose', 'plan', 'get']
+    )
+
+    assert rejection is None
+    assert resolution['chain'] == ['plan', 'get'], (
+        f'a bare switch consumed the verb behind it; got {resolution["chain"]!r}'
+    )
+
+
+def test_walk_treats_an_equals_joined_flag_as_binding_no_token(
+    executor_with_mock_log_entry,
+):
+    executor, _mock = executor_with_mock_log_entry
+
+    resolution, _rejection = executor._resolve_invocation(
+        'test:skill:script', _ROOT_WITH_ROUTING_FLAGS, ['--project-dir=/x', 'plan', 'get']
+    )
+
+    assert resolution['chain'] == ['plan', 'get']
+    assert resolution['flags'] == ['project-dir']
+
+
+def test_walk_never_binds_a_following_flag_token_as_a_value(
+    executor_with_mock_log_entry,
+):
+    """Declared arity does not override argparse's own "a flag ends a value" rule."""
+    executor, _mock = executor_with_mock_log_entry
+
+    resolution, _rejection = executor._resolve_invocation(
+        'test:skill:script',
+        _ROOT_WITH_ROUTING_FLAGS,
+        ['--project-dir', '--verbose', 'plan', 'get'],
+    )
+
+    assert resolution['chain'] == ['plan', 'get'], (
+        f'an arity-1 flag consumed the FLAG that followed it and then lost the '
+        f'verb path; got {resolution["chain"]!r}'
+    )
+    assert resolution['flags'] == ['project-dir', 'verbose']
+
+
+def test_walk_abandons_when_an_unknown_arity_flag_precedes_a_verb(
+    executor_with_mock_log_entry,
+):
+    """Both readings resolve different nodes, so neither may be assumed.
+
+    ``--mystery`` is on neither the derived arity map nor the structural
+    allowlist, which is what makes its arity genuinely unknowable here.
+    """
+    executor, _mock = executor_with_mock_log_entry
+    root = dict(_ROOT_WITH_ROUTING_FLAGS, flags=['mystery'], flag_arity={})
+
+    resolution, rejection = executor._resolve_invocation(
+        'test:skill:script', root, ['--mystery', 'plan', 'get']
+    )
+
+    assert (resolution, rejection) == (None, None), (
+        'an unknowable arity in front of a verb must abandon the walk, not '
+        f'guess: got {resolution!r} / {rejection!r}'
+    )
+
+
+def test_walk_resolves_an_allowlisted_flag_arity_the_surface_does_not_declare(
+    executor_with_mock_log_entry,
+):
+    """The structural allowlist is the fallback that keeps the common shape precise.
+
+    ``--project-dir`` is honoured on every subcommand but is frequently rendered
+    in no node's help, so the derived map has no arity for it. Without the
+    allowlist fallback the single most common dispatch shape in the tree would
+    degrade to an unvalidated spawn — the pair with the test above is what shows
+    the fallback WIDENS knowledge rather than replacing the derivation.
+    """
+    executor, _mock = executor_with_mock_log_entry
+    root = dict(_ROOT_WITH_ROUTING_FLAGS, flag_arity={})
+
+    resolution, rejection = executor._resolve_invocation(
+        'test:skill:script', root, ['--project-dir', '/x', 'plan', 'get']
+    )
+
+    assert rejection is None
+    assert resolution['chain'] == ['plan', 'get']
+
+
+def test_walk_reports_an_unregistered_verb_with_the_parent_accept_set(
+    executor_with_mock_log_entry,
+):
+    executor, _mock = executor_with_mock_log_entry
+
+    resolution, rejection = executor._resolve_invocation(
+        'test:skill:script', _ROOT_WITH_ROUTING_FLAGS, ['--project-dir', '/x', 'nuke']
+    )
+
+    assert resolution is None
+    assert rejection['reason'] == 'unknown_verb'
+    assert rejection['token'] == 'nuke'
+    assert rejection['accepted'] == ['plan']
+
+
+def test_always_accepted_flags_and_their_arity_share_one_definition(
+    executor_with_mock_log_entry,
+):
+    """The allowlist and its arity map cannot drift apart — they are one object."""
+    executor, _mock = executor_with_mock_log_entry
+
+    assert set(executor._ALWAYS_ACCEPTED_FLAGS) == set(
+        executor._ALWAYS_ACCEPTED_FLAG_ARITY
+    )
+    assert executor._ALWAYS_ACCEPTED_FLAG_ARITY['project-dir'] == 1
+    assert executor._ALWAYS_ACCEPTED_FLAG_ARITY['help'] == 0

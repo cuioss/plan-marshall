@@ -2057,6 +2057,11 @@ def _routing_flag_nested_source() -> str:
     invocation places ``--project-dir X`` BEFORE ``pr prepare-comment`` — the
     parser must skip the routing flag and resolve the ``pr prepare-comment``
     chain, never mis-read it as a missing/unknown subcommand.
+
+    ``--verbose`` is a BARE top-level switch alongside it, and the two differ in
+    arity on purpose: an extractor that assumes every leading flag carries a
+    value skips ``--verbose pr`` together and loses the subcommand, which is the
+    same walk-desynchronisation defect in the other direction.
     """
     return textwrap.dedent('''
         import argparse
@@ -2064,6 +2069,7 @@ def _routing_flag_nested_source() -> str:
         def main():
             parser = argparse.ArgumentParser()
             parser.add_argument('--project-dir')
+            parser.add_argument('--verbose', action='store_true')
             subparsers = parser.add_subparsers(dest='cmd')
 
             pr = subparsers.add_parser('pr')
@@ -2153,6 +2159,49 @@ class TestLeadingRoutingFlagBeforeSubcommand:
         assert invalid == [], (
             f'concrete routing-flag value produced false positives: {invalid}'
         )
+
+    def test_bare_routing_switch_before_subcommand_validates_clean(
+        self, tmp_path: Path
+    ) -> None:
+        """A ZERO-arity top-level switch must not swallow the subcommand.
+
+        The skip consumed one value token per leading flag unconditionally, so
+        ``--verbose pr`` dropped ``pr`` and the invocation was then reported as
+        missing its sub-verb. Consulting the flag's derived arity is what makes
+        the two shapes distinguishable — the same anchor the executor's
+        pre-spawn walk resolves the identical ambiguity from.
+        """
+        index = self._index(tmp_path)
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} '
+            f'--verbose pr prepare-comment --plan-id p --pr-number 7\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+        invalid = [
+            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+        ]
+        assert invalid == [], (
+            f'a bare leading switch swallowed the subcommand: {invalid}'
+        )
+
+    def test_wrong_sub_verb_after_bare_routing_switch_still_flagged(
+        self, tmp_path: Path
+    ) -> None:
+        """Negative control for the arity-aware skip — it must not blind the rule."""
+        index = self._index(tmp_path)
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} '
+            f'--verbose pr bogus-verb --plan-id p\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+        invalid = [
+            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+        ]
+        assert len(invalid) == 1, (
+            f'wrong sub-verb after a bare switch should still be flagged: {invalid}'
+        )
+        assert invalid[0]['details']['reason'] == 'sub_verb_unknown'
+        assert invalid[0]['details']['sub_verb'] == 'bogus-verb'
 
     def test_wrong_sub_verb_after_routing_flag_still_flagged(
         self, tmp_path: Path

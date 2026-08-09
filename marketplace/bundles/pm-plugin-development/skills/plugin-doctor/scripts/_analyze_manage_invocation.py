@@ -131,9 +131,18 @@ RULE_DESCRIPTORS = [
 #     case where the flag is in NO node's surface.
 #
 # This allowlist is read-side only — it never mutates the cached surface tree.
-_UNIVERSAL_FLAG_ALLOWLIST: frozenset[str] = frozenset(
-    {'audit-plan-id', 'project-dir', 'plan-id'}
-)
+#
+# Each member is mapped to the number of argv tokens it binds as its value. The
+# arity is what lets the leading-routing-flag skip step over exactly the right
+# number of tokens (see ``_skip_leading_routing_flags``); the KEY SET is the
+# allowlist itself, derived below so acceptance and arity cannot name different
+# flags. A DERIVED arity from the probed surface always wins over these.
+_UNIVERSAL_FLAG_ARITY: dict[str, int] = {
+    'audit-plan-id': 1,
+    'project-dir': 1,
+    'plan-id': 1,
+}
+_UNIVERSAL_FLAG_ALLOWLIST: frozenset[str] = frozenset(_UNIVERSAL_FLAG_ARITY)
 
 # Router-level verbs handled by a script's ``main()`` BEFORE argparse subparser
 # dispatch, so they never appear in the script's ``--help`` choices group and
@@ -473,8 +482,10 @@ def _join_continuation_lines(content: str) -> list[tuple[int, str]]:
 # Long-flag token at the current scan position: leading whitespace run, then
 # ``--name``. Used to skip a leading run of top-level routing/global flags that
 # argparse consumes BEFORE the subcommand positional (``--project-dir X``,
-# ``--plan-id Y``, ``--audit-plan-id Z``).
-_LEADING_FLAG_RE = re.compile(r'\s+--[A-Za-z][A-Za-z0-9_\-]*')
+# ``--plan-id Y``, ``--audit-plan-id Z``). The name is captured so the skip can
+# consult the flag's DERIVED value arity rather than assume one.
+_LEADING_FLAG_RE = re.compile(r'\s+--(?P<name>[A-Za-z][A-Za-z0-9_\-]*)')
+
 
 # Any non-flag, non-whitespace value token at the current scan position: a
 # leading whitespace run, then a run of non-whitespace NOT beginning with ``-``.
@@ -485,7 +496,9 @@ _LEADING_FLAG_RE = re.compile(r'\s+--[A-Za-z][A-Za-z0-9_\-]*')
 _VALUE_TOKEN_RE = re.compile(r'\s+(?P<val>[^\s\-][^\s]*)')
 
 
-def _skip_leading_routing_flags(rest: str) -> int:
+def _skip_leading_routing_flags(
+    rest: str, flag_arity: dict[str, int] | None = None
+) -> int:
     """Return the scan offset past any leading ``--flag value`` run in ``rest``.
 
     A top-level routing/global flag (``--project-dir``, ``--plan-id``,
@@ -494,11 +507,20 @@ def _skip_leading_routing_flags(rest: str) -> int:
     the first bare positional — to follow any top-level optionals, so a leading
     flag token can never BE the subcommand.
 
-    The skip rule (per the executor router idiom, whose global flags all take a
-    value): while the next token is a ``--flag``, consume it AND its one
-    following value token, unless that following token is itself a ``--flag``
-    (the flag was a bare switch) or there is no further token. Stop at the first
-    bare positional token — that is the subcommand.
+    The skip rule: while the next token is a ``--flag``, consume it and as many
+    following value tokens as its arity says. ``flag_arity`` is the ROOT node's
+    DERIVED ``{name: value_token_count}`` map (unioned with the structural
+    counts for the executor-injected flags); a flag it does not cover falls back
+    to the historical one-value assumption, which is correct for the executor
+    router idiom whose global flags all take a value. A following ``--flag``
+    token or end-of-line ends the value run regardless.
+
+    Consulting the arity is what keeps a BARE top-level switch from swallowing
+    the subcommand behind it — the ``--verbose read`` shape, where the
+    one-value assumption drops ``read`` and then reports the invocation as
+    missing its sub-verb. No script in the tree currently declares such a root
+    switch, so this is a latent case rather than a live one; the executor's
+    pre-spawn walk resolves the identical ambiguity from the identical anchor.
 
     Returning the post-skip offset lets ``_extract_positional_tokens`` begin
     where the real subcommand chain starts, so an invocation that places a
@@ -508,30 +530,37 @@ def _skip_leading_routing_flags(rest: str) -> int:
     is reported — the routing flag is skipped, the real subcommand is THEN
     validated.
     """
+    arity = dict(_UNIVERSAL_FLAG_ARITY)
+    arity.update(flag_arity or {})
     pos = 0
     while True:
         flag_match = _LEADING_FLAG_RE.match(rest, pos)
         if not flag_match:
             break
         pos = flag_match.end()
-        # Consume the flag's value token unless the next token is another flag
-        # (this flag was a bare switch) or the line ended.
-        if _LEADING_FLAG_RE.match(rest, pos) is not None:
-            continue
-        value_match = _VALUE_TOKEN_RE.match(rest, pos)
-        if value_match is None:
-            break
-        pos = value_match.end()
+        wanted = arity.get(flag_match.group('name'), 1)
+        for _ in range(wanted):
+            # A following flag token ends the value run: this flag bound fewer
+            # values than declared, exactly as argparse would see it.
+            if _LEADING_FLAG_RE.match(rest, pos) is not None:
+                break
+            value_match = _VALUE_TOKEN_RE.match(rest, pos)
+            if value_match is None:
+                break
+            pos = value_match.end()
     return pos
 
 
-def _extract_positional_tokens(rest: str, max_positionals: int = 8) -> list[str]:
+def _extract_positional_tokens(
+    rest: str, max_positionals: int = 8, flag_arity: dict[str, int] | None = None
+) -> list[str]:
     """Extract the leading run of positional tokens from ``rest``.
 
     A leading run of top-level routing/global flags (``--project-dir X``,
     ``--plan-id Y``) is skipped first so the FIRST extracted positional is the
-    real subcommand even when a routing flag precedes it. See
-    ``_skip_leading_routing_flags``.
+    real subcommand even when a routing flag precedes it. ``flag_arity`` is
+    forwarded to ``_skip_leading_routing_flags`` so the skip consumes each
+    flag's declared number of value tokens rather than assuming one.
 
     Stops at the first flag token (``-`` prefix) AFTER the subcommand chain
     starts, or end-of-line. The default cap is generous (8) because argparse
@@ -541,7 +570,7 @@ def _extract_positional_tokens(rest: str, max_positionals: int = 8) -> list[str]
     arguments, so over-collecting here is harmless.
     """
     tokens: list[str] = []
-    pos = _skip_leading_routing_flags(rest)
+    pos = _skip_leading_routing_flags(rest, flag_arity)
     while pos < len(rest) and len(tokens) < max_positionals:
         match = _NEXT_POSITIONAL_RE.match(rest, pos)
         if not match:
@@ -849,7 +878,7 @@ def _analyze_one_invocation(
     if _positional_region_is_templated(rest):
         return findings
 
-    positionals = _extract_positional_tokens(rest)
+    positionals = _extract_positional_tokens(rest, flag_arity=tree.root.flag_arity)
     declared_flags = _extract_flag_tokens(rest)
 
     # Router-level verbs (handled in main() before argparse dispatch) are valid
