@@ -3817,6 +3817,14 @@ def _write_ii_plan(
             any_missing = 'true' if phases_missing_end_time else 'false'
             metrics_lines.append(f'partial: {any_missing}')
             metrics_lines.append(f'unrecorded_phases: {phases_missing_end_time}')
+        elif marker_schema != 'pre-#812':
+            # The selector is TOTAL. Without this branch any unrecognised value
+            # writes neither key pair — which is exactly a `pre-#812` record — so
+            # a typo at a call site would silently produce a valid-looking
+            # pre-#812 fixture and the three-state tests would keep passing. The
+            # fixture must be able to tell "the test asked for pre-#812" from
+            # "the test asked for a value this helper does not know".
+            raise ValueError(f'unknown marker_schema: {marker_schema!r}')
         for phase, tokens in phase_tokens.items():
             metrics_lines.append(f'[{phase}]')
             metrics_lines.append(f'  total_tokens: {tokens}')

@@ -517,13 +517,26 @@ def test_the_two_deliverable_extractors_share_one_heading_pattern():
     `data-format.md` and in `_count_deliverables`' docstring rested on a
     coincidence. This pins the collapse: exactly one compiled pattern object,
     referenced by both.
+
+    The guard is over the module's compiled OBJECTS, not over its source text. A
+    `source.count("re.compile(r'^###")` scan matches one exact spelling, so a
+    reintroduced private copy written with double quotes, with the prefix on the
+    next line, or with leading whitespace inside the pattern would leave the
+    count at 1 and the test would pass while the two extractors again held
+    separate objects — a guard that cannot fail against the very thing it
+    watches for.
     """
     pattern = _plan_parsing.DELIVERABLE_HEADING_PATTERN
 
-    source = Path(_plan_parsing.__file__).read_text(encoding='utf-8')
-    inline_copies = source.count("re.compile(r'^###")
+    # Population-derived rather than text-derived: every compiled pattern the
+    # module holds, not one spelling of one call site.
+    heading_patterns = [
+        value
+        for value in vars(_plan_parsing).values()
+        if isinstance(value, re.Pattern) and value.pattern.startswith('^###')
+    ]
 
-    assert inline_copies == 1, (
+    assert heading_patterns == [pattern], (
         'the deliverable heading regex is compiled more than once — the two '
         'extractors are back to private copies that agree only by convention'
     )
