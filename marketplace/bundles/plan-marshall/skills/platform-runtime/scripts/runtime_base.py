@@ -134,10 +134,11 @@ class Runtime(ABC):
         """Install the full terminal-title hook wiring into a named settings file.
 
         Reads (or creates) *target* and installs the SessionStart capture entry,
-        render entries across all seven render-trigger hook events (SessionStart,
-        UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion,
-        PreToolUse:Bash, PostToolUse), the ``statusLine`` command, and
-        ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE = "1"``.
+        nine render entries across six render-trigger hook events
+        (SessionStart:matcher-less, SessionStart:clear, UserPromptSubmit,
+        Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash,
+        PostToolUse:AskUserQuestion, PostToolUse:Bash), the ``statusLine``
+        command, and ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE = "1"``.
 
         Re-invocation CONVERGES an existing entry on the current shape rather
         than making no change: an already-present entry whose hook ``timeout``

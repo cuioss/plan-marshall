@@ -481,7 +481,7 @@ class TestExecutorGuardFailSoft:
 class TestInstallTerminalTitleHooks:
     """Tests for ClaudeRuntime.project_install_hook covering the full terminal-title wiring.
 
-    Covers (a) fresh install creates all seven render-trigger hook entries plus
+    Covers (a) fresh install creates all nine render-trigger hook entries plus
     statusLine plus env entry; (b) re-running is idempotent; (c) existing
     statusLine with a different command yields already_present_other; (d)
     existing env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE with a different value

@@ -321,20 +321,20 @@ _HOOK_COMMAND = (
     f"{_EXECUTOR_GUARD_SUFFIX}"
 )
 
-# Render-title hook command installed across all seven render-trigger events
-# plus statusLine. Invoked by Claude Code on SessionStart (ONE matcher-less
-# entry, which already fires for every source including "clear"; the renderer
-# branches on ``source == "clear"`` and performs a session TEARDOWN instead of a
-# render, so a second ``matcher: "clear"`` entry would be redundant),
-# UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion,
-# PreToolUse:Bash, and PostToolUse (matcher-less — every tool call); the
+# Render-title hook command installed across all nine render-trigger entries
+# plus statusLine. Invoked by Claude Code on SessionStart (TWO entries: the
+# matcher-less one, which fires for every source, and a separate
+# ``matcher: "clear"`` one that routes the session teardown — the renderer
+# branches on ``source == "clear"`` and performs a TEARDOWN instead of a
+# render), UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion,
+# PreToolUse:Bash, PostToolUse:AskUserQuestion, and PostToolUse:Bash; the
 # statusLine variant appends ``--statusline`` for plain-text emission. The
 # PreToolUse:Bash entry surfaces the ⚙ busy icon BEFORE a long-running shell
 # command runs, so the title no longer shows the misleading ➤ active arrow
-# while the command is in flight. The matcher-less PostToolUse entry refreshes
-# the title after EVERY tool call, so the tab title tracks phase progress at the
-# same cadence as the statusLine footer instead of only after Bash /
-# AskUserQuestion calls. The statusLine variant is
+# while the command is in flight. The PostToolUse entries stay matcher-SCOPED
+# rather than widened to a matcher-less entry: PostToolUse:Bash is the entry
+# the machine-owned build-busy clear rides, and the render cadence is among the
+# largest recurring script costs in this project. The statusLine variant is
 # built explicitly (not by appending to the guarded render command) so
 # ``--statusline`` lands on the python3 invocation, not after ``|| true``.
 _RENDER_HOOK_COMMAND = (
@@ -364,9 +364,9 @@ _ENFORCEMENT_HOOK_COMMAND = (
 )
 
 # Render-trigger hook events that each receive a single matcher-less entry
-# invoking the renderer. SessionStart also receives a single matcher-less entry
-# but must coexist with the session-capture entry, so it is handled separately
-# below.
+# invoking the renderer. SessionStart receives TWO render entries (the
+# matcher-less one plus the ``matcher: "clear"`` one) and must coexist with the
+# session-capture entry, so it is handled separately below.
 _RENDER_TRIGGER_EVENTS: tuple[str, ...] = (
     "UserPromptSubmit",
     "Notification",
@@ -908,10 +908,12 @@ def _install_terminal_title_hooks(
     Installs:
 
     - ``hooks.SessionStart`` — the existing ``claude_hook`` session-capture
-      entry (preserved when present, inserted when absent) **and** ONE
-      matcher-less render entry. The matcher-less entry already fires for every
-      source, and the renderer performs a session teardown when
-      ``source == "clear"``, so no separate ``matcher: "clear"`` entry is wired.
+      entry (preserved when present, inserted when absent) **and** TWO render
+      entries: the matcher-less one, which fires for every source, and a
+      separate ``matcher: "clear"`` one. The clear entry is what routes a
+      cleared session into the teardown, and it is a label the display health
+      check expects, so it is installed in its own right rather than left to
+      the matcher-less entry.
     - ``hooks.UserPromptSubmit``, ``hooks.Notification``, ``hooks.Stop`` —
       single matcher-less render entries each.
     - ``hooks.PreToolUse`` — two render entries: one with
@@ -944,11 +946,12 @@ def _install_terminal_title_hooks(
 
         - ``io_ok`` (bool): True iff the file was read AND written successfully.
         - ``installed_events`` (list[str]): event labels whose render entry was
-          freshly added on this call. The tool-scoped PreToolUse entries
-          use matcher-qualified labels (``PreToolUse:AskUserQuestion``,
-          ``PreToolUse:Bash``) so each can be reported individually; the
-          matcher-less PostToolUse entry is reported under the single label
-          ``PostToolUse``.
+          freshly added on this call. The tool-scoped PreToolUse and PostToolUse
+          entries use matcher-qualified labels (``PreToolUse:AskUserQuestion``,
+          ``PreToolUse:Bash``, ``PostToolUse:AskUserQuestion``,
+          ``PostToolUse:Bash``) so each can be reported individually, and
+          SessionStart's two render entries carry the qualifiers
+          ``SessionStart:matcher-less`` and ``SessionStart:clear``.
         - ``already_present_events`` (list[str]): event labels where our render
           entry was already present AND already correct.
         - ``migrated_events`` (list[str]): event labels where our render entry
