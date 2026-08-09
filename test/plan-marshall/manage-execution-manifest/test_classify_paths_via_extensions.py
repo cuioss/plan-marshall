@@ -434,13 +434,14 @@ def test_specificity_raising_is_treated_as_zero():
 # Stage 3 — generic owner-less infrastructure-config recognition (fallback)
 # =============================================================================
 
-# One representative of each of the three infrastructure-config glob families.
+# One representative of each infrastructure-config anchoring group.
 _CI_WORKFLOW_YAML = '.github/workflows/python-verify.yml'
 _COMPOSE_YAML = 'docker-compose.yml'
 _CONTAINER_SERVICE_YAML = 'src/main/docker/application.yaml'
+_REVIEW_BOT_DESCRIPTOR = '.pr_agent.toml'
 
 # A footprint consisting exclusively of infrastructure-config paths, spanning
-# every family the table declares. Used by the D3(b) Q-Gate-outcome assertion.
+# every group the table declares. Used by the D3(b) Q-Gate-outcome assertion.
 _INFRA_ONLY_FOOTPRINT = (
     _CI_WORKFLOW_YAML,
     '.github/dependabot.yml',
@@ -452,6 +453,9 @@ _INFRA_ONLY_FOOTPRINT = (
     '.hadolint.yaml',
     '.trivyignore',
     '.dockerignore',
+    _REVIEW_BOT_DESCRIPTOR,
+    '.coderabbit.yaml',
+    '.coderabbit.yml',
 )
 
 
@@ -489,6 +493,9 @@ def test_infra_config_family_is_location_or_basename_anchored_never_bare_suffix(
         '.hadolint.yaml',
         '.trivyignore',
         '.dockerignore',
+        '.pr_agent.toml',
+        '.coderabbit.yaml',
+        '.coderabbit.yml',
     ):
         assert _is_infrastructure_config_path(path), path
 
@@ -501,9 +508,40 @@ def test_infra_config_family_is_location_or_basename_anchored_never_bare_suffix(
         assert not _is_infrastructure_config_path(path), path
 
 
+def test_review_bot_descriptors_are_recognized_by_basename():
+    """The review-bot descriptor group is a member of the basename family.
+
+    Each name is one an external reviewer resolves at a fixed location, so the
+    file is that tool's configuration wherever it sits.
+    """
+    for path in ('.pr_agent.toml', '.coderabbit.yaml', '.coderabbit.yml'):
+        assert _is_infrastructure_config_path(path), path
+
+
+def test_review_bot_recognition_is_an_enumeration_not_a_toml_suffix_rule():
+    """The negative control for the widening.
+
+    An arbitrary repo-root ``.toml`` that no reviewer resolves by name is NOT a
+    member and still reaches ``unknown``. Without this case the widening would be
+    indistinguishable from a bare ``*.toml`` suffix rule, which is exactly the
+    shape the family is anchored to avoid.
+    """
+    assert not _is_infrastructure_config_path('settings.toml')
+    assert not _is_infrastructure_config_path('config/arbitrary.toml')
+
+    bucket, unclaimed = _classify_paths_via_extensions(['settings.toml'], extensions=[])
+    assert bucket == 'unknown'
+    assert unclaimed == ['settings.toml']
+
+
 def test_each_infra_config_family_resolves_to_a_non_unknown_bucket():
-    """Each of the three families is recognized generically — no extension needed."""
-    for path in (_CI_WORKFLOW_YAML, _COMPOSE_YAML, _CONTAINER_SERVICE_YAML):
+    """Each anchoring group is recognized generically — no extension needed."""
+    for path in (
+        _CI_WORKFLOW_YAML,
+        _COMPOSE_YAML,
+        _CONTAINER_SERVICE_YAML,
+        _REVIEW_BOT_DESCRIPTOR,
+    ):
         bucket, unclaimed = _classify_paths_via_extensions([path], extensions=[])
         assert bucket != 'unknown', path
         assert unclaimed == [], path

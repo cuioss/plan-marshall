@@ -49,6 +49,25 @@ python3 marketplace/targets/generate.py --target opencode --output target/openco
 
 The OpenCode adapter produces output conforming to the OpenCode specification; only the Claude target is validated end-to-end. Adapter implementations register in `TARGET_REGISTRY` (see `marketplace/targets/generate.py`).
 
+=== The `pr-agent` target — a generated, committed configuration
+
+Not every target emits an assistant bundle tree. The `pr-agent` target emits a reviewer configuration: a `.pr_agent.toml` carrying one per-domain instruction pack under `[pr_reviewer].extra_instructions`, read by the org's PR-Agent reviewer.
+
+[source,bash]
+----
+python3 marketplace/targets/generate.py --target pr-agent --output .
+----
+
+Two consequences follow from that difference, and both are load-bearing.
+
+**Its output is committed, not gitignored.** `target/claude/` and `target/opencode/` are build artifacts. `.pr_agent.toml` is not: the reviewer resolves it from the repository's DEFAULT BRANCH, so it must be tracked in git. It is nonetheless generated rather than hand-maintained — regenerate it instead of editing it, and a regeneration must reproduce the committed file byte-for-byte. This repository's own `.pr_agent.toml` carries the `python` pack: the repository's defect surface is Python, and the pack's rules are this organisation's own Python security standards.
+
+**The generic bundle-tree post-emit steps are gated off for it.** The CLI stamps the deterministic version into every bundle `plugin.json` and emits a `dist-manifest.json` at each output root. Both are bundle-tree semantics and would be wrong artifacts in a reviewer-config directory, so `TargetBase` declares an `emits_bundle_tree` property (default `true`) that this target overrides to `false`. The gate is not optional: `--target all` reaches that path for every registered target.
+
+The pack composition — the derived domain set, the cross-cutting spine, the ten-category ceiling, and the verbatim substantiation and anti-fabrication clauses — is documented in link:../../marketplace/targets/README.md[`marketplace/targets/README.md`] § PR-Agent target.
+
+A repo-root reviewer descriptor is recognized by the change-footprint classifier as owner-less infrastructure config, so it classifies `config` rather than `unknown`; see link:../../marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md[`decision-rules.md`] § "Owner-less recognition (no build owner)".
+
 == Deterministic Versioning and Staleness Signaling
 
 The generator derives a deterministic, monotonic version from source alone and emits it — together with content fingerprints — into a per-target `dist-manifest.json`. The installed executor and `marshal.json` embed the version and fingerprints they were provisioned at, so a later session can detect when its derived state has fallen behind the published marketplace.

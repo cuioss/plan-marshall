@@ -21,8 +21,11 @@ infrastructure config by family (:data:`_INFRA_CONFIG_BASENAME_GLOBS` /
 The infrastructure-config table names an owner-less **family**, not a suffix.
 Membership is deliberately NOT "any ``.yml``": it is anchored either on a
 location (a CI/automation definition tree, a container service-config tree) or
-on a basename (a container-orchestration or container lint/scan descriptor), so
-an arbitrary YAML file elsewhere in a tree is not swept in. The predicate is
+on a basename (a descriptor an external tool resolves by a fixed, tool-defined
+name — container orchestration, container lint/scan, review bots), so an
+arbitrary YAML file elsewhere in a tree is not swept in. The basename family is
+OPEN and grows as tools are adopted; it is described by that rule rather than by
+an enumeration, so a widening does not falsify this paragraph. The predicate is
 consumed **only as a fallback over the paths no build extension claimed** — it
 never runs ahead of the build extensions, so it can never take a path a build
 system legitimately owns (``src/main/resources/application.yml`` stays
@@ -131,8 +134,16 @@ _INFRA_CONFIG_PARENT_DIRS: tuple[tuple[str, ...], ...] = (('.github',),)
 # tree. Deliberately narrow — this pair is the only place a suffix participates.
 _INFRA_CONFIG_PARENT_DIR_SUFFIXES: tuple[str, ...] = ('.yml', '.yaml')
 
-# Container-orchestration manifests and container lint/scan descriptors,
-# recognized by basename regardless of where in the tree they sit.
+# Tool descriptors a repository carries at a FIXED, tool-defined basename,
+# recognized regardless of where in the tree they sit. The RULE is the membership
+# test, not the list: a file belongs when an external tool resolves it by that
+# exact name, so the name is not the author's to choose and the file is
+# configuration for that tool wherever it sits. The list is therefore OPEN — it
+# grows as tools are adopted — which is why no size or closure claim about it is
+# stated here or anywhere else.
+#
+# Entries are grouped by the tool that resolves them: container orchestration,
+# container lint/scan, and review bots.
 _INFRA_CONFIG_BASENAME_GLOBS: tuple[str, ...] = (
     'docker-compose*.yml',
     'docker-compose*.yaml',
@@ -144,6 +155,9 @@ _INFRA_CONFIG_BASENAME_GLOBS: tuple[str, ...] = (
     '.hadolint.yaml',
     '.trivyignore',
     '.dockerignore',
+    '.pr_agent.toml',
+    '.coderabbit.yaml',
+    '.coderabbit.yml',
 )
 
 

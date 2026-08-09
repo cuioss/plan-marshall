@@ -1,0 +1,48 @@
+# Repository-local PR-Agent configuration — GENERATED, do not edit by hand.
+#
+# Pack: python. Regenerate with:
+#   python3 marketplace/targets/generate.py --target pr-agent --output .
+#
+# Merged ABOVE the organisation-wide cuioss/pr-agent-settings configuration, so this
+# file carries the per-domain reviewer pack ONLY and inherits every other key — model,
+# token budgets, output suppression — from that file. Restating those here would
+# decentralize the configuration that file exists to centralize.
+#
+# A repository carries exactly ONE pack: a regeneration REPLACES the pack below rather
+# than appending to it.
+
+[pr_reviewer]
+extra_instructions = '''
+Prioritise security and correctness over style. This pack is scoped to the python domain.
+
+Report every issue you can substantiate, in these categories:
+- Concurrency and time-of-check/time-of-use races; non-atomic file or state mutation; operations that are unsafe to retry or to run twice.
+- Resource lifecycle: handles, locks, temporary files and subprocesses that leak or are not released on the error path.
+- Fail-open error handling where fail-closed is required; swallowed exceptions; a guard whose predicate cannot fire; validation that admits the empty or degenerate input.
+- Correctness bugs whose impact is data loss, state corruption, or a silently wrong result.
+- Injection, deserialization, path traversal, SSRF and unsafe reflection.
+- Authentication, authorization and trust-boundary errors; privilege escalation.
+- Secret and credential handling, including values reaching logs or error messages.
+- Dependency and supply-chain risk introduced by the change.
+- Missing negative or adversarial test coverage for any of the above.
+- Defects specific to python: the rules this organisation enforces for python code, listed under "Domain rules" below.
+
+Cross-cutting foundations to apply in every review: adversarial refute, authentication authorization, cryptography key management, dependency supply chain, input validation trust boundaries, owasp top ten, secrets handling, secure design principles, secure logging, threat modeling stride.
+
+Domain rules — this organisation's own standards for python code. A diff that breaks one of these is a finding, and the rule already names the mechanism:
+- Do not pass untrusted input to `subprocess` with `shell=True`; use an argv list
+- Do not `pickle.load`/`pickle.loads` untrusted bytes, nor `yaml.load` without a safe loader
+- Do not `eval`/`exec`/`compile` externally-sourced strings; use `ast.literal_eval` for literals
+- Do not interpolate user values into SQL query strings; use DB-API placeholders with a params tuple
+- Every externally-sourced value (request data, file contents, environment, CLI args) is untrusted at stdlib boundaries
+- User-supplied paths must be validated against a safe base to prevent traversal
+- Reject untrusted input that fails a boundary check; never coerce it through
+
+For each finding, name the input or state that triggers it and what goes wrong. Overlap with other reviewers is acceptable — report the issue regardless of whether another tool might also catch it. Do not withhold a substantiated finding because it seems minor or obvious.
+
+If the pull request description states what the change is intended to do, treat that as a claim to be checked, not as established fact. Report where the implementation diverges from the stated intent, and never treat agreement with it as evidence that the code is correct.
+
+Severity is not a reporting threshold. Report a finding you can substantiate even when it is narrow, cheap to fix, or confined to test code — the reader decides what to act on, and a finding declined as minor costs one line of triage. Do not weigh whether an issue is important enough to mention.
+
+An empty list remains the correct answer when the diff genuinely carries nothing substantiable, and you must never invent a finding, pad the list, or report an issue whose mechanism you have not traced in the code shown. But do not return an empty list because nothing reached a bar of severity or importance. There is no such bar.
+'''
