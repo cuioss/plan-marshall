@@ -170,6 +170,38 @@ def _legacy_work_failure(ts_suffix: str, notation: str, exit_code: int, failure_
     )
 
 
+def _prefix_drifted_work_failure(
+    ts_suffix: str, notation: str, exit_code: int, failure_kind: str, detail: str
+) -> str:
+    """The producer's own failure line with ONLY its record prefix reshaped.
+
+    Single-variable by construction: the tail is rendered from
+    :data:`EMITTED_MESSAGE_FORMAT`, so the sole difference from a line the
+    parser accepts is the leading ``(...:execute-script:N)`` construct. That
+    construct is the one both patterns used to share, which is what made a
+    drift in it defeat the parser and the recognition guard together.
+    """
+    line = _work_failure(ts_suffix, notation, exit_code, failure_kind, detail)
+    drifted = re.sub(
+        r'\([^()]*execute-script:\d+\)', '(plan-marshall:dispatcher)', line, count=1
+    )
+    assert drifted != line, (
+        'the record prefix this fixture reshapes is no longer present in the '
+        f'producer format: {EMITTED_MESSAGE_FORMAT!r}'
+    )
+    return drifted
+
+
+def _unprefixed_work_failure(
+    ts_suffix: str, notation: str, exit_code: int, failure_kind: str, detail: str
+) -> str:
+    """The producer's failure line with the record prefix removed entirely."""
+    line = _work_failure(ts_suffix, notation, exit_code, failure_kind, detail)
+    stripped = re.sub(r'\([^()]*execute-script:\d+\)\s*', '', line, count=1)
+    assert stripped != line, 'the record prefix this fixture strips is no longer present'
+    return stripped
+
+
 def _work_status(ts_suffix: str, msg: str) -> str:
     """A non-failure work.log line (STATUS/ARTIFACT) — must never be parsed as a failure."""
     return f'[2026-05-26T11:00:{ts_suffix}Z] [INFO] [wlog{ts_suffix}] [STATUS] (plan-marshall:phase-5-execute) {msg}'
@@ -375,6 +407,88 @@ class TestProducerDerivedLineShape:
         scan = _mod.parse_work_log_failures(lines)
         assert scan.failures == []
         assert scan.unrecognized_lines == 1
+
+
+class TestRecognitionGuardIsPrefixIndependent:
+    """The guard must survive a drift the PARSER does not survive.
+
+    A guard that shares a leading construct with the pattern it backstops is
+    defeated by the same drift, and the sink then reports a clean zero over a
+    log that still carries the failure marker — indistinguishable from a log
+    with no failures at all, which is precisely the state the guard exists to
+    make visible.
+    """
+
+    _NOTATION = 'plan-marshall:manage-status:manage-status'
+    _DETAIL = "manage-status: error: unrecognized arguments: --field"
+
+    def test_record_prefix_drift_reports_unrecognized_not_clean_zero(self):
+        """Reshaping ONLY the record prefix must still register as drift.
+
+        The prefix embeds the exit code as its trailing number, so it is a
+        varying value rather than a fixed marker — anchoring the guard on it
+        made the guard exactly as fragile as the parser.
+        """
+        lines = [
+            _prefix_drifted_work_failure(
+                '01', self._NOTATION, 2, 'argparse_rejection', self._DETAIL
+            ),
+        ]
+
+        scan = _mod.parse_work_log_failures(lines)
+
+        assert scan.failures == [], 'the drifted line must not parse into a record'
+        assert scan.unrecognized_lines == 1, (
+            'a record-prefix drift reported a clean zero — the guard is coupled '
+            'to the same leading construct as the parser'
+        )
+
+    def test_marker_fires_with_no_record_prefix_at_all(self):
+        """The guard is anchored on nothing to the LEFT of ``script_failure``."""
+        lines = [
+            _unprefixed_work_failure(
+                '02', self._NOTATION, 2, 'argparse_rejection', self._DETAIL
+            ),
+        ]
+
+        scan = _mod.parse_work_log_failures(lines)
+
+        assert scan.failures == []
+        assert scan.unrecognized_lines == 1
+
+    def test_narrative_mention_of_the_token_is_not_counted_as_drift(self):
+        """work.log is a prose sink — a bare token in narrative is not a record.
+
+        Several skills legitimately write ``script_failure`` in prose. A
+        bare-token marker would count those lines as drift and manufacture a
+        false alarm, trading a silent false negative for a noisy false positive.
+        The structural pair is what separates an emitted record from prose.
+        """
+        lines = [
+            _work_status('03', 'triaging the script_failure findings from this run'),
+            _work_status(
+                '04',
+                'every script_failure record carries a notation field and an exit code',
+            ),
+        ]
+
+        scan = _mod.parse_work_log_failures(lines)
+
+        assert scan.failures == []
+        assert scan.unrecognized_lines == 0, (
+            'ordinary prose mentioning the token was counted as producer drift'
+        )
+
+    def test_intact_producer_line_still_parses_rather_than_counting_as_drift(self):
+        """Negative control: the widened guard did not swallow the happy path."""
+        lines = [
+            _work_failure('05', self._NOTATION, 2, 'argparse_rejection', self._DETAIL),
+        ]
+
+        scan = _mod.parse_work_log_failures(lines)
+
+        assert len(scan.failures) == 1
+        assert scan.unrecognized_lines == 0
 
 
 class TestDedupeFindings:

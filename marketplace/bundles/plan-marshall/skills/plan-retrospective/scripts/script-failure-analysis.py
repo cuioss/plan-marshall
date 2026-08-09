@@ -150,13 +150,30 @@ _WORK_LOG_FAILURE_RE = re.compile(
     r'(?:\s+detail=(?P<detail>.*))?$',
 )
 
-# Structural marker for an executor dispatch-failure line, independent of which
-# trailing fields follow it. A line that carries this marker but does NOT
-# satisfy _WORK_LOG_FAILURE_RE is a RECOGNITION failure — the producer's field
-# shape drifted away from what the parser knows — and is counted separately so
-# the sink can report "I recognised no line shape" distinctly from "there were
-# no failures". Both states previously returned zero and were indistinguishable.
-_WORK_LOG_FAILURE_MARKER_RE = re.compile(r'\(\S*?execute-script:\d+\)\s+script_failure\b')
+# Structural marker for an executor dispatch-failure line. A line that carries
+# this marker but does NOT satisfy _WORK_LOG_FAILURE_RE is a RECOGNITION failure
+# — the producer's line shape drifted away from what the parser knows — and is
+# counted separately so the sink can report "I recognised no line shape"
+# distinctly from "there were no failures". Both states otherwise return zero
+# and are indistinguishable.
+#
+# The marker MUST NOT share a leading construct with _WORK_LOG_FAILURE_RE, or a
+# drift in that construct defeats both patterns at once and the guard reports a
+# clean zero over a log that still carries the failure marker. In particular it
+# is anchored on nothing to the LEFT of ``script_failure``: the record prefix
+# ``(plan-marshall:execute-script:N)`` embeds the EXIT CODE as its trailing
+# number — a varying value, not a fixed marker — so anchoring on it made the
+# guard as fragile as the parser it was meant to backstop.
+#
+# The anchor is the structural PAIR ``script_failure notation=``, which only the
+# emitter produces. A bare ``script_failure`` token is not usable: work.log is a
+# prose sink and several skills legitimately write that token in narrative, so a
+# bare-token marker would count ordinary prose as unrecognized lines and
+# manufacture a false drift alarm — trading a silent false negative for a noisy
+# false positive. The residual blind spot is deliberate and named: renaming
+# ``script_failure`` or ``notation=`` itself still defeats the guard, because
+# nothing narrower than the pair separates an emitted record from prose.
+_WORK_LOG_FAILURE_MARKER_RE = re.compile(r'\bscript_failure\s+notation=')
 
 # Leading manage-logging header for a work.log line: ``[ts] [LEVEL] [hash] ``.
 # Used only to recover the timestamp for the failure record's representative
