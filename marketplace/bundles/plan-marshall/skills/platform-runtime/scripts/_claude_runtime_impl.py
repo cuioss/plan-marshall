@@ -103,7 +103,14 @@ class ClaudeRuntime(Runtime):
 
         Installs the SessionStart capture entry, seven render-trigger hook
         entries, the ``statusLine`` command, and
-        ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE``. Each block is idempotent.
+        ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE``. Re-invocation CONVERGES an
+        already-present entry on the current shape rather than always making no
+        change: an entry carrying a stale hook ``timeout`` is rewritten, and that
+        outcome is reported distinguishably — in ``migrated_events`` on the
+        terminal-title path and as ``enforcement_status: migrated`` on the
+        enforcement path. ``already_present`` is False whenever anything was
+        installed OR migrated, so it never reads as "nothing changed" over a run
+        that rewrote a stale value.
 
         When ``enforcement`` is True, installs ONLY the orthogonal PreToolUse
         enforcement entry (the ``claude_pretooluse_hook`` matcher-less entry) and
@@ -169,6 +176,10 @@ class ClaudeRuntime(Runtime):
                     f"Failed to install enforcement hook into {settings_path}",
                 )
             enforcement_status = enforcement_result["enforcement_status"]
+            # ``migrated`` is a DISTINCT status member, never a flavour of
+            # ``already_present``, so this equality still means "nothing
+            # changed": a converged entry reports ``migrated`` and therefore
+            # already_present: False.
             return toon_success(
                 "project install-hook",
                 {
@@ -194,10 +205,15 @@ class ClaudeRuntime(Runtime):
 
         installed_events = install_result["installed_events"]
         already_present_events = install_result["already_present_events"]
-        # Top-level convenience signal: True iff nothing fresh was installed
-        # AND no overwrite-other signal needs the caller's attention.
+        migrated_events = install_result["migrated_events"]
+        # Top-level convenience signal: True iff nothing fresh was installed,
+        # nothing was converged, AND no overwrite-other signal needs the
+        # caller's attention. A run that rewrote a stale timeout DID change the
+        # file, so ``migrated_events`` clears this flag exactly as
+        # ``installed_events`` does.
         all_already_present = (
             not installed_events
+            and not migrated_events
             and install_result["statusLine_status"]
             in ("already_present", "already_present_other")
             and install_result["env_status"]
@@ -213,6 +229,7 @@ class ClaudeRuntime(Runtime):
                 "already_present": all_already_present,
                 "installed_events": installed_events,
                 "already_present_events": already_present_events,
+                "migrated_events": migrated_events,
                 "statusLine_status": install_result["statusLine_status"],
                 "env_status": install_result["env_status"],
             },

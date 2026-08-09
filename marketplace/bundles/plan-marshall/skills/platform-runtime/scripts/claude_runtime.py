@@ -704,6 +704,83 @@ def _has_enforcement_entry(entries: list[Any]) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# Hook-entry timeout — SECONDS — and the staleness predicate the migrate path
+# reads.
+#
+# Claude Code reads a hook entry's ``timeout`` field in SECONDS. The three
+# builders below emit that field, and every sibling ``subprocess.run(...,
+# timeout=N)`` call in this module uses small integer seconds (3, 5, 10, 15) —
+# the convention the value below belongs to.
+#
+# All three builders deliberately emit the SAME value, and the identity is a
+# stated position rather than an unexamined default. Each of the three hooks is
+# one guarded executor dispatch that reads local JSON and returns: no network,
+# no build, no user wait. ``_enforcement_entry`` arms a PreToolUse hook that
+# runs on EVERY tool call while ``_render_entry`` / ``_capture_entry`` fire on
+# session and render events, but that difference governs how OFTEN each runs,
+# not how long any of them may legitimately take. A hook of any of the three
+# kinds that has not finished within this ceiling is hung, not slow, so a
+# per-hook-type divergence would encode a latency difference that does not
+# exist.
+_HOOK_TIMEOUT_SECONDS = 5
+
+# Upper bound of the plausible hook-seconds range, read only by
+# ``_hook_timeout_is_stale``. The predicate is RANGE-based rather than an
+# equality test against one known-bad literal: a milliseconds-shaped value lands
+# far above this bound and is converged, while a deliberate operator value
+# inside the range is preserved. The bound has exactly ONE definition — both
+# installers' migrate branches and the regression test read the predicate rather
+# than restating the number, because a second copy is what lets the two drift.
+_HOOK_TIMEOUT_PLAUSIBLE_MAX_SECONDS = 120
+
+
+def _hook_timeout_is_stale(timeout: object) -> bool:
+    """Return True when a hook entry's ``timeout`` needs converging.
+
+    Stale means "outside the plausible seconds range". A milliseconds-shaped
+    value, a non-positive one, a non-integer one, and an absent one all qualify;
+    a value inside the plausible range is a credible operator choice and is left
+    untouched. The predicate exists to catch a unit error, not to enforce one
+    particular number.
+    """
+    if isinstance(timeout, bool) or not isinstance(timeout, int):
+        return True
+    return not (1 <= timeout <= _HOOK_TIMEOUT_PLAUSIBLE_MAX_SECONDS)
+
+
+def _migrate_hook_timeout(
+    entries: list[Any], command: str, matcher: str | None = None
+) -> bool:
+    """Converge a stale ``timeout`` on the already-present entry for *command*.
+
+    Traverses *entries* exactly as the ``_has_*_entry`` probes do — optionally
+    scoped to *matcher* — and rewrites every stale ``timeout`` it finds to
+    :data:`_HOOK_TIMEOUT_SECONDS`.
+
+    Returns True iff at least one value was rewritten, so the caller can report
+    the outcome as migrated instead of as a no-op. Reporting a rewritten entry
+    as ``already_present`` would be a false "nothing changed" signal, which is
+    the failure this path exists to remove.
+    """
+    migrated = False
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if matcher is not None and entry.get("matcher", "") != matcher:
+            continue
+        hooks = entry.get("hooks", [])
+        if not isinstance(hooks, list):
+            continue
+        for hook in hooks:
+            if not isinstance(hook, dict) or hook.get("command") != command:
+                continue
+            if _hook_timeout_is_stale(hook.get("timeout")):
+                hook["timeout"] = _HOOK_TIMEOUT_SECONDS
+                migrated = True
+    return migrated
+
+
 def _render_entry(matcher: str = "") -> dict[str, Any]:
     """Build a render-hook entry with the given matcher."""
     return {
@@ -712,7 +789,7 @@ def _render_entry(matcher: str = "") -> dict[str, Any]:
             {
                 "type": "command",
                 "command": _RENDER_HOOK_COMMAND,
-                "timeout": 5000,
+                "timeout": _HOOK_TIMEOUT_SECONDS,
             }
         ],
     }
@@ -726,7 +803,7 @@ def _capture_entry() -> dict[str, Any]:
             {
                 "type": "command",
                 "command": _HOOK_COMMAND,
-                "timeout": 5000,
+                "timeout": _HOOK_TIMEOUT_SECONDS,
             }
         ],
     }
@@ -740,20 +817,27 @@ def _enforcement_entry() -> dict[str, Any]:
             {
                 "type": "command",
                 "command": _ENFORCEMENT_HOOK_COMMAND,
-                "timeout": 5000,
+                "timeout": _HOOK_TIMEOUT_SECONDS,
             }
         ],
     }
 
 
 def _install_enforcement_hook(settings_path: Path) -> dict[str, Any]:
-    """Idempotently install ONLY the PreToolUse enforcement entry into *settings_path*.
+    """Install ONLY the PreToolUse enforcement entry into *settings_path*.
 
     Adds the matcher-less enforcement entry to ``hooks.PreToolUse`` without
     touching any existing entry — the terminal-title render matchers
     (``AskUserQuestion`` / ``Bash``) in the same block, and every SessionStart
     capture/render entry, are preserved verbatim. The install is orthogonal to
     the terminal-title bundle: it never installs render wiring.
+
+    Re-invocation CONVERGES an already-present entry on the current shape rather
+    than always making no change: when the present entry carries a stale
+    ``timeout`` (:func:`_hook_timeout_is_stale`) the value is rewritten and the
+    outcome is reported as ``migrated``. An entry that is already correct is
+    still left entirely alone — that case returns early WITHOUT writing the
+    file, which is the property the dedup-on-command-string design exists for.
 
     Args:
         settings_path: Path to the JSON settings file. Created (with parent
@@ -764,7 +848,9 @@ def _install_enforcement_hook(settings_path: Path) -> dict[str, Any]:
 
         - ``io_ok`` (bool): True iff the file was read AND written successfully.
         - ``enforcement_status`` (str): ``installed`` when freshly added,
-          ``already_present`` when the entry was already there (no write).
+          ``migrated`` when an already-present entry's stale ``timeout`` was
+          rewritten (a write occurred), ``already_present`` when the entry was
+          already there and already correct (no write).
 
         Returns ``io_ok: False`` with ``enforcement_status: error`` on any I/O
         failure.
@@ -786,7 +872,11 @@ def _install_enforcement_hook(settings_path: Path) -> dict[str, Any]:
             hooks_block["PreToolUse"] = pre_tool_use
 
         if _has_enforcement_entry(pre_tool_use):
-            return {"io_ok": True, "enforcement_status": "already_present"}
+            if not _migrate_hook_timeout(pre_tool_use, _ENFORCEMENT_HOOK_COMMAND):
+                return {"io_ok": True, "enforcement_status": "already_present"}
+            if not _write_json(settings_path, settings_data):
+                return failure
+            return {"io_ok": True, "enforcement_status": "migrated"}
 
         pre_tool_use.append(_enforcement_entry())
         if not _write_json(settings_path, settings_data):
@@ -804,7 +894,20 @@ def _install_terminal_title_hooks(
 ) -> dict[str, Any]:
     """Install the full terminal-title hook wiring into *settings_path*.
 
-    Installs (each block dedup-idempotent on the canonical command string):
+    Each block dedups on the canonical command string, so a re-install never
+    duplicates an entry. Dedup is not the whole story: an entry that is already
+    present is additionally CONVERGED on the current shape — a stale ``timeout``
+    (:func:`_hook_timeout_is_stale`) is rewritten to
+    :data:`_HOOK_TIMEOUT_SECONDS` and the event is reported in
+    ``migrated_events`` instead of ``already_present_events``. Re-invocation is
+    therefore convergent rather than a guaranteed no-op.
+
+    The SessionStart capture entry is converged on the same rule, and — exactly
+    as its fresh insertion is — its convergence is unreported: the three event
+    lists partition the nine RENDER labels, and the capture entry has never
+    carried one.
+
+    Installs:
 
     - ``hooks.SessionStart`` — the existing ``claude_hook`` session-capture
       entry (preserved when present, inserted when absent) **and** ONE
@@ -849,10 +952,17 @@ def _install_terminal_title_hooks(
           matcher-less PostToolUse entry is reported under the single label
           ``PostToolUse``.
         - ``already_present_events`` (list[str]): event labels where our render
-          entry was already present (no write).
+          entry was already present AND already correct.
+        - ``migrated_events`` (list[str]): event labels where our render entry
+          was already present but carried a stale ``timeout`` that this call
+          rewrote.
         - ``statusLine_status`` (str): one of ``installed``, ``already_present``,
           ``already_present_other``, ``overwritten``.
         - ``env_status`` (str): same enum for the env entry.
+
+        The three event lists PARTITION the nine render labels: every label
+        appears in exactly one of them, so a migrated event is never also
+        reported as already-present.
 
         Returns ``io_ok: False`` (with the per-event lists empty and the
         statuses set to ``error``) on any I/O failure.
@@ -861,6 +971,7 @@ def _install_terminal_title_hooks(
         "io_ok": False,
         "installed_events": [],
         "already_present_events": [],
+        "migrated_events": [],
         "statusLine_status": "error",
         "env_status": "error",
     }
@@ -876,6 +987,24 @@ def _install_terminal_title_hooks(
 
         installed_events: list[str] = []
         already_present_events: list[str] = []
+        migrated_events: list[str] = []
+
+        def _record_render_entry(
+            entries: list[Any], label: str, matcher: str
+        ) -> None:
+            """Install-or-converge one render entry and record its single outcome.
+
+            The three lists are appended to from HERE only, which is what keeps
+            them a partition of the nine labels: exactly one branch runs per
+            call, so no label can land in two lists.
+            """
+            if not _has_render_entry(entries, matcher=matcher):
+                entries.append(_render_entry(matcher=matcher))
+                installed_events.append(label)
+            elif _migrate_hook_timeout(entries, _RENDER_HOOK_COMMAND, matcher=matcher):
+                migrated_events.append(label)
+            else:
+                already_present_events.append(label)
 
         # --- SessionStart: capture entry + ONE matcher-less render entry. ---
         session_start = hooks_block.setdefault("SessionStart", [])
@@ -883,17 +1012,17 @@ def _install_terminal_title_hooks(
             session_start = []
             hooks_block["SessionStart"] = session_start
 
-        # Capture entry: preserve when already present, insert when absent.
-        # This is the existing claude_hook session-id-capture entry; it must
-        # coexist with the new render entries.
+        # Capture entry: insert when absent, converge when present. This is the
+        # existing claude_hook session-id-capture entry; it must coexist with the
+        # render entries. Neither its insertion nor its convergence carries an
+        # event label — it is not one of the nine render labels the three lists
+        # partition.
         if not _has_capture_entry(session_start):
             session_start.append(_capture_entry())
-
-        if not _has_render_entry(session_start, matcher=""):
-            session_start.append(_render_entry(matcher=""))
-            installed_events.append("SessionStart:matcher-less")
         else:
-            already_present_events.append("SessionStart:matcher-less")
+            _migrate_hook_timeout(session_start, _HOOK_COMMAND)
+
+        _record_render_entry(session_start, "SessionStart:matcher-less", "")
 
         # The matcher:"clear" variant is installed as its OWN entry: it is the
         # trigger that routes a cleared session into the teardown, and the
@@ -901,11 +1030,7 @@ def _install_terminal_title_hooks(
         # keeps the expected and installed sets in agreement — an expectation
         # the installer never satisfies would make every fresh install report
         # unhealthy.
-        if not _has_render_entry(session_start, matcher="clear"):
-            session_start.append(_render_entry(matcher="clear"))
-            installed_events.append("SessionStart:clear")
-        else:
-            already_present_events.append("SessionStart:clear")
+        _record_render_entry(session_start, "SessionStart:clear", "clear")
 
         # --- Single matcher-less render-trigger events. ---
         for event_name in _RENDER_TRIGGER_EVENTS:
@@ -913,11 +1038,7 @@ def _install_terminal_title_hooks(
             if not isinstance(event_entries, list):
                 event_entries = []
                 hooks_block[event_name] = event_entries
-            if not _has_render_entry(event_entries, matcher=""):
-                event_entries.append(_render_entry(matcher=""))
-                installed_events.append(event_name)
-            else:
-                already_present_events.append(event_name)
+            _record_render_entry(event_entries, event_name, "")
 
         # --- PreToolUse with matcher:"AskUserQuestion" and matcher:"Bash". ---
         # AskUserQuestion flips the "?" icon before the prompt is answered; Bash
@@ -926,16 +1047,8 @@ def _install_terminal_title_hooks(
         if not isinstance(pre_tool_use, list):
             pre_tool_use = []
             hooks_block["PreToolUse"] = pre_tool_use
-        if not _has_render_entry(pre_tool_use, matcher="AskUserQuestion"):
-            pre_tool_use.append(_render_entry(matcher="AskUserQuestion"))
-            installed_events.append("PreToolUse:AskUserQuestion")
-        else:
-            already_present_events.append("PreToolUse:AskUserQuestion")
-        if not _has_render_entry(pre_tool_use, matcher="Bash"):
-            pre_tool_use.append(_render_entry(matcher="Bash"))
-            installed_events.append("PreToolUse:Bash")
-        else:
-            already_present_events.append("PreToolUse:Bash")
+        _record_render_entry(pre_tool_use, "PreToolUse:AskUserQuestion", "AskUserQuestion")
+        _record_render_entry(pre_tool_use, "PreToolUse:Bash", "Bash")
 
         # --- PostToolUse: TWO matcher-scoped render entries. ---
         # Deliberately NOT widened to a matcher-less entry, and nothing is
@@ -949,11 +1062,7 @@ def _install_terminal_title_hooks(
             post_tool_use = []
             hooks_block["PostToolUse"] = post_tool_use
         for matcher in ("AskUserQuestion", "Bash"):
-            if not _has_render_entry(post_tool_use, matcher=matcher):
-                post_tool_use.append(_render_entry(matcher=matcher))
-                installed_events.append(f"PostToolUse:{matcher}")
-            else:
-                already_present_events.append(f"PostToolUse:{matcher}")
+            _record_render_entry(post_tool_use, f"PostToolUse:{matcher}", matcher)
 
         # --- statusLine: command entry with overwrite-on-request semantics. ---
         statusline_block: dict[str, Any] = {
@@ -1000,6 +1109,7 @@ def _install_terminal_title_hooks(
             "io_ok": True,
             "installed_events": installed_events,
             "already_present_events": already_present_events,
+            "migrated_events": migrated_events,
             "statusLine_status": statusline_status,
             "env_status": env_status,
         }
@@ -2458,7 +2568,15 @@ _BUILD_JOB_STATUS_TO_OUTCOME: dict[str, str] = {
 }
 """Daemon wire status -> normalised outcome. ``killed`` keeps its own outcome
 rather than folding into ``failed``: an externally reaped job is not a flaky
-build and must not be blind-retried."""
+build and must not be blind-retried.
+
+The ``"timeout"`` KEY above is a marshalld wire-status NAME, not a hook-entry
+timeout value — it is the fourth and last ``"timeout":`` occurrence in this
+module, and it is deliberately unrelated to :data:`_HOOK_TIMEOUT_SECONDS`. The
+hook-timeout emit-site population is exactly the three entry builders
+(``_render_entry`` / ``_capture_entry`` / ``_enforcement_entry``), so any sweep
+over emit sites must be anchored on those symbols rather than on a ``"timeout":``
+text scan, which would fold this status name into the count."""
 
 _BUILD_JOB_NON_TERMINAL_STATUSES: frozenset[str] = frozenset({"queued", "running"})
 """Wire statuses that mean "keep waiting" — never a verdict either way."""

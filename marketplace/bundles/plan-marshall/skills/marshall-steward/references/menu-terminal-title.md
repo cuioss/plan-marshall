@@ -82,10 +82,10 @@ and surfaces explicit prompts for the two conflict cases (`statusLine` /
 ### Step 1: Detect
 
 Probe the current `.claude/settings.local.json` to discover what is already
-wired up. Because the install operation is idempotent and reports a precise
-per-event summary, the same call drives both detect and install — the
-`installed_events` / `already_present_events` / `statusLine_status` / `env_status`
-fields in the response distinguish the cases.
+wired up. Because the install operation never duplicates an entry and reports a
+precise per-event summary, the same call drives both detect and install — the
+`installed_events` / `already_present_events` / `migrated_events` /
+`statusLine_status` / `env_status` fields in the response distinguish the cases.
 
 For a non-mutating probe before any user prompt, use the platform-runtime
 health-check:
@@ -133,20 +133,47 @@ session teardown when a session is cleared.
 sets returns `status: error` with `error: display_unhealthy`, not a `success`
 carrying `all_healthy: false`. Branch on the status, not on the text.
 
-When `display` reports `status: success` (no line contains `MISSING`),
-everything is wired up. Print an "already configured" message and return to the
-Configuration menu WITHOUT prompting:
+When `display` reports `status: success` (no line contains `MISSING`), every
+entry is present. **Presence is not correctness**: the `display` check keys on
+the hook command string alone and never inspects an entry's `timeout`, so an
+entry provisioned by an earlier version can be present and still carry a stale
+value. A re-run of the install converges any such entry, so this branch offers
+the re-run rather than returning silently:
 
 ```text
 Terminal title is already configured.
 
 All nine render-trigger hook entries, the statusLine command, and the
 CLAUDE_CODE_DISABLE_TERMINAL_TITLE env entry are present in
-./.claude/settings.local.json. A fresh Claude Code session will drive the live
-tab title and statusline automatically.
+./.claude/settings.local.json.
+
+The presence check does not inspect hook timeouts, so an entry installed by an
+earlier version may still carry a stale one. Re-running the install rewrites
+only such stale values and leaves everything else untouched.
 ```
 
-Otherwise proceed to Step 2.
+```text
+AskUserQuestion:
+  question: "Every entry is present. Re-run the install to converge any stale hook timeouts in ./.claude/settings.local.json?"
+  header: "Terminal Title"
+  options:
+    - label: "Re-run install"
+      description: "Rewrite any hook timeout that falls outside the plausible seconds range; entries already correct are left untouched and nothing is duplicated"
+    - label: "Leave as is"
+      description: "Make no changes and return to the Configuration menu"
+  multiSelect: false
+```
+
+On **Leave as is**: write nothing and return to the Configuration menu. The
+detect probe above is non-mutating, so declining leaves the settings file
+exactly as found.
+
+On **Re-run install**: proceed to Step 3 (Install), skipping the Step 2 enable
+prompt — the user has already consented to this write. Report the outcome from
+the per-event summary below; `migrated_events` names each entry that was
+converged, and an empty `migrated_events` means every entry was already correct.
+
+When any line DOES contain `MISSING`, proceed to Step 2.
 
 ### Step 2: Confirm
 
@@ -186,23 +213,29 @@ Inspect the TOON response:
 
 #### Per-event summary
 
-Two fields list which render-trigger events landed and which were already
-present:
+Three fields list which render-trigger events landed, which were converged, and
+which needed nothing:
 
 - `installed_events` — the events whose render entry was freshly inserted on
   this call.
+- `migrated_events` — the events where our render entry was already installed
+  but carried a stale `timeout` that this call rewrote.
 - `already_present_events` — the events where our render entry was already
-  installed (no write was needed).
+  installed and already correct.
 
-The union of the two lists is always `["SessionStart:matcher-less",
+The union of the three lists is always `["SessionStart:matcher-less",
 "SessionStart:clear", "UserPromptSubmit", "Notification", "Stop",
 "PreToolUse:AskUserQuestion", "PreToolUse:Bash", "PostToolUse:AskUserQuestion",
 "PostToolUse:Bash"]` — the same nine labels the `display` check reports, so the
 installer's output and the health check's expectation can be compared directly.
-Report the breakdown so the user can see exactly which entries were added:
+The three lists PARTITION those labels: each label appears in exactly one of
+them, so a converged event is never also reported as already-present. Report the
+breakdown so the user can see exactly which entries were added and which were
+rewritten:
 
 ```text
 Installed render entries: <installed_events>
+Converged (stale timeout): <migrated_events>
 Already present:          <already_present_events>
 ```
 
@@ -285,7 +318,7 @@ Once all conflicts (if any) are resolved, report the outcome:
 ```text
 Terminal title enabled.
 
-Render hooks: <installed_events ∪ already_present_events>
+Render hooks: <installed_events ∪ migrated_events ∪ already_present_events>
 statusLine:   <statusLine_status>
 env entry:    <env_status>
 

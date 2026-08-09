@@ -124,11 +124,15 @@ and is kept ORTHOGONAL to the terminal-title bundle (a project may enable one
 without the other).
 
 - **Install surface.** `project install-hook --enforcement` (in
-  `claude_runtime.py`, routed through `platform_runtime.py`) idempotently adds
-  ONLY the matcher-less PreToolUse enforcement entry to
-  `.claude/settings.local.json`, without touching the terminal-title render /
-  statusLine / env entries. It reports `enforcement_status` (`installed` /
-  `already_present`).
+  `claude_runtime.py`, routed through `platform_runtime.py`) adds ONLY the
+  matcher-less PreToolUse enforcement entry to `.claude/settings.local.json`,
+  without touching the terminal-title render / statusLine / env entries, and
+  never duplicates an entry that is already there. It reports
+  `enforcement_status` (`installed` / `already_present` / `migrated`).
+  `migrated` fires when the entry was already present but carried a stale hook
+  `timeout` — a value outside the plausible seconds range, which the re-install
+  rewrites to the current one. An entry that is already correct reports
+  `already_present` and the file is not written at all.
 - **Detect surface.** The `health-check --checks display` diagnostic emits a
   dedicated `PreToolUse:enforcement: present` / `MISSING` label, keyed on the
   enforcement command (not the render command), so a partial or absent

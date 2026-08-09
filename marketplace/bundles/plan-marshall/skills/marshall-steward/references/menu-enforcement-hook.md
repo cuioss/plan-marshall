@@ -33,7 +33,8 @@ the project is being set up for the first time or is already configured.
 The flow mirrors the terminal-title Action A
 ([`menu-terminal-title.md`](menu-terminal-title.md) § Action A): a non-mutating
 probe via `health-check --checks display`, an `AskUserQuestion` confirmation,
-then an idempotent `project install-hook --enforcement` install.
+then a convergent `project install-hook --enforcement` install — one that never
+duplicates an entry and brings an already-present one onto the current shape.
 
 ### Step 1: Detect
 
@@ -49,16 +50,45 @@ Inspect the `display` entry in the `results` array. Its `detail` field reports
 every required surface on its own line; scan for the dedicated
 `PreToolUse:enforcement` line:
 
-- `PreToolUse:enforcement: present` — the enforcement hook is already installed.
-  Print an "already configured" message and return to the Configuration menu
-  WITHOUT prompting:
+- `PreToolUse:enforcement: present` — the enforcement entry is installed.
+  **Presence is not correctness**: the `display` check keys on the hook command
+  string alone and never inspects the entry's `timeout`, so an entry
+  provisioned by an earlier version can be present and still carry a stale
+  value. A re-run of the install converges such an entry, so offer it rather
+  than returning silently:
 
   ```text
   The PreToolUse enforcement hook is already configured.
 
   The enforcement entry is present in ./.claude/settings.local.json. A fresh
   Claude Code session arms the hook automatically.
+
+  The presence check does not inspect the hook timeout, so an entry installed
+  by an earlier version may still carry a stale one. Re-running the install
+  rewrites only such a stale value; an entry already correct is left untouched
+  and the file is not written at all.
   ```
+
+  ```text
+  AskUserQuestion:
+    question: "The enforcement entry is present. Re-run the install to converge a stale hook timeout in ./.claude/settings.local.json?"
+    header: "Enforcement Hook"
+    options:
+      - label: "Re-run install"
+        description: "Rewrite the hook timeout only if it falls outside the plausible seconds range; nothing is duplicated and a correct entry is not written at all"
+      - label: "Leave as is"
+        description: "Make no changes and return to the Configuration menu"
+    multiSelect: false
+  ```
+
+  On **Leave as is**: write nothing and return to the Configuration menu. The
+  detect probe above is non-mutating, so declining leaves the settings file
+  exactly as found.
+
+  On **Re-run install**: proceed to Step 3 (Install), skipping the Step 2
+  enable prompt — the user has already consented to this write. Expect
+  `enforcement_status: migrated` when a stale value was rewritten, or
+  `already_present` when the entry was already correct.
 
 - `PreToolUse:enforcement: MISSING` — the enforcement hook is not installed.
   Proceed to Step 2.
@@ -101,9 +131,15 @@ Inspect the TOON response:
 
 - `status: success` — the call landed. Read `enforcement_status`:
   - `installed` — the enforcement entry was freshly added.
-  - `already_present` — the entry was already there (no write needed).
+  - `migrated` — the entry was already there but carried a stale `timeout`,
+    which this call rewrote to the current value.
+  - `already_present` — the entry was already there and already correct (no
+    write needed).
 - `status: error` — report the `message` field and advise the user to check
   write permissions on `./.claude/settings.local.json`.
+
+The top-level `already_present` field is True only for the third case: a run
+that installed or converged anything reports `false`.
 
 #### Final report
 

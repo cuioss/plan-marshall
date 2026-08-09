@@ -98,7 +98,7 @@ message: Target 'foobar' is not in the registry; valid targets are: claude, open
 
 ### `project install-hook`
 
-Install only the SessionStart hook into a caller-specified settings file. Unlike `project initial-setup`, this does not create `.plan/` or seed `marshal.json` — it is the targeted hook-installation primitive. Idempotent: re-invocation when the hook is already present makes no change.
+Install only the SessionStart hook into a caller-specified settings file. Unlike `project initial-setup`, this does not create `.plan/` or seed `marshal.json` — it is the targeted hook-installation primitive. Convergent: re-invocation never duplicates an entry, and it brings an already-present entry onto the current shape rather than making no change — an entry carrying a stale hook `timeout` is rewritten and reported as migrated. An entry that is already correct is left untouched.
 
 **Arguments**: `--target <settings-file-path>` (required)
 
@@ -111,7 +111,7 @@ hook_installed: true
 already_present: false
 ```
 
-**Success (Claude — hook already present)**:
+**Success (Claude — hook already present and already correct)**:
 ```toon
 status: success
 operation: project install-hook
@@ -119,6 +119,17 @@ target: .claude/settings.local.json
 hook_installed: true
 already_present: true
 ```
+
+**Success (Claude — hook already present, stale `timeout` converged)**:
+```toon
+status: success
+operation: project install-hook
+target: .claude/settings.local.json
+hook_installed: true
+already_present: false
+```
+
+`already_present: true` is reported only for a genuine no-op. A run that converged anything reports `false` and names the converged entries — `migrated_events` on the terminal-title path, `enforcement_status: migrated` on the `--enforcement` path.
 
 **Error (Claude — write failure)**:
 ```toon
