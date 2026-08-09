@@ -507,7 +507,7 @@ def test_deliverable_count_agrees_with_the_sibling_producer(plan_context, label)
     )
 
 
-def test_the_two_deliverable_extractors_share_one_heading_pattern():
+def test_the_two_deliverable_extractors_share_one_heading_pattern(monkeypatch):
     """The agreement above is by construction, not by two matching literals.
 
     `extract_deliverable_headings` (what `generate` counts with) and
@@ -525,6 +525,15 @@ def test_the_two_deliverable_extractors_share_one_heading_pattern():
     count at 1 and the test would pass while the two extractors again held
     separate objects — a guard that cannot fail against the very thing it
     watches for.
+
+    Counting the module's objects is still only half the claim. `vars()` sees
+    module-level bindings, so an extractor that compiles a FUNCTION-LOCAL copy
+    is invisible to it: the population stays at one, the count assertion stays
+    green, and the two extractors are once more on separate objects. The
+    substitution below closes that half — it swaps the shared object for a
+    sentinel grammar and calls both extractors, so "each extractor matches
+    through THIS object" is asserted by identity rather than inferred from an
+    inventory.
     """
     pattern = _plan_parsing.DELIVERABLE_HEADING_PATTERN
 
@@ -541,6 +550,31 @@ def test_the_two_deliverable_extractors_share_one_heading_pattern():
         'extractors are back to private copies that agree only by convention'
     )
     assert pattern.pattern == r'^###\s+(\d+)\.\s+(.+)$'
+
+    # The reference, not the inventory. With the module attribute replaced by a
+    # grammar that recognises `@@@ N. Title` and NOT `### N. Title`, an
+    # extractor that genuinely dereferences `DELIVERABLE_HEADING_PATTERN`
+    # follows the substitution and reports only the sentinel heading; one
+    # holding any private copy keeps reporting the `###` heading instead. The
+    # probe carries one heading of each grammar so both directions are pinned
+    # by a single expected list — a stale extractor yields `['Stale grammar']`,
+    # never a silently-equal count.
+    sentinel = re.compile(r'^@@@\s+(\d+)\.\s+(.+)$', re.MULTILINE)
+    monkeypatch.setattr(_plan_parsing, 'DELIVERABLE_HEADING_PATTERN', sentinel)
+
+    probe = '### 1. Stale grammar\n\nbody\n\n@@@ 2. Substituted grammar\n\nbody\n'
+
+    headings = _plan_parsing.extract_deliverable_headings(probe)
+    assert [item['title'] for item in headings] == ['Substituted grammar'], (
+        'extract_deliverable_headings does not match through '
+        'DELIVERABLE_HEADING_PATTERN — it holds a copy of its own'
+    )
+
+    blocks = _plan_parsing.split_deliverable_blocks(probe)
+    assert [item['title'] for item in blocks] == ['Substituted grammar'], (
+        'split_deliverable_blocks does not split on DELIVERABLE_HEADING_PATTERN '
+        '— it holds a copy of its own'
+    )
 
 
 # =============================================================================
@@ -561,13 +595,20 @@ def test_sampling_point_reuses_the_modules_single_discriminator_vocabulary():
     tuple whose members are all strings — and the three known discriminators are
     asserted to be IN it, so the derivation cannot silently shrink past them
     either.
+
+    The derivation deliberately does NOT filter on truthiness. An `and value`
+    term in the comprehension reads like a harmless type narrowing, but it
+    excludes exactly the specimen the loop below exists to reject: a public
+    vocabulary declared as `()`. Filtered out at derivation, an empty tuple
+    could never reach the per-member assertions, so "no vocabulary is empty"
+    would hold over a population from which every empty vocabulary had already
+    been removed. Emptiness is therefore asserted, not selected away.
     """
     vocabularies = {
         name: value
         for name, value in vars(manage_metrics).items()
         if not name.startswith('_')
         and isinstance(value, tuple)
-        and value
         and all(isinstance(item, str) for item in value)
     }
 
@@ -582,5 +623,9 @@ def test_sampling_point_reuses_the_modules_single_discriminator_vocabulary():
         )
 
     # Total over the derived population, not over a hand-listed subset of it.
+    # Two distinct shapes are rejected here: a vocabulary that offers NO value
+    # at all, and one that offers an empty string as a value. Both would let a
+    # write site persist a discriminator that discriminates nothing.
     for name, vocabulary in vocabularies.items():
+        assert vocabulary, f'{name} is an empty vocabulary — it admits no value'
         assert all(value for value in vocabulary), f'{name} carries an empty value'
