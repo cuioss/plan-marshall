@@ -1209,7 +1209,15 @@ def generate_executor(
         print('=== execute-script.py ===')
         print(_substitute('')[:2000])
         print('... (truncated)')
-        return {'status': 'success', 'dry_run': True, 'surface_stats': _EMPTY_SURFACE_STATS}
+        return {
+            'status': 'success',
+            'dry_run': True,
+            # A COPY, matching the OSError degradation path below and the CLI
+            # consumer: the module-level default is shared, and handing it out
+            # by reference makes the next in-place aggregation corrupt every
+            # later caller's baseline.
+            'surface_stats': dict(_EMPTY_SURFACE_STATS),
+        }
 
     # Guard 1 — format handshake: refuse a template whose declared format
     # version the generator does not support (never write a file).

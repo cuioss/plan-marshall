@@ -3161,3 +3161,37 @@ def test_format_skew_refuses_before_spending_the_accept_set_derivation(
         'the throwaway probe executor leaked — it is written only for the '
         'derivation and unlinked on every exit path'
     )
+
+
+def test_dry_run_surface_stats_is_a_copy_of_the_shared_default(capsys):
+    """The dry-run path hands out a COPY of the module-level empty default.
+
+    ``_EMPTY_SURFACE_STATS`` is a mutable module-level dict serving as the
+    baseline for three producers. Returning it by reference makes any caller
+    that aggregates in place — ``stats['scripts_registered'] += n``, the exact
+    shape the OSError path already uses on its own copy — permanently rewrite
+    the baseline every LATER caller receives. The second dry run below is what
+    makes the identity assertion bite: it observes the consequence, not just
+    the mechanism.
+    """
+    module = load_module()
+
+    first = module.generate_executor({}, MARKETPLACE_ROOT, dry_run=True)
+    capsys.readouterr()
+
+    assert first['surface_stats'] is not module._EMPTY_SURFACE_STATS
+    assert first['surface_stats'] == module._EMPTY_SURFACE_STATS
+
+    baseline = dict(module._EMPTY_SURFACE_STATS)
+    first['surface_stats']['scripts_registered'] = 99
+
+    assert module._EMPTY_SURFACE_STATS == baseline, (
+        'mutating the returned stats rewrote the shared module-level default'
+    )
+
+    second = module.generate_executor({}, MARKETPLACE_ROOT, dry_run=True)
+    capsys.readouterr()
+
+    assert second['surface_stats'] == baseline, (
+        'a later dry run inherited the earlier caller mutation'
+    )
