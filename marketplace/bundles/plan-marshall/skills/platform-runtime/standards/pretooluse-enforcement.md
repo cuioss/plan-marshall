@@ -53,10 +53,52 @@ rule the leaf emits a `permissionDecision: deny` envelope carrying a one-line
 
 | Rule | Fires on | Redirect reason (substance) |
 |------|----------|-----------------------------|
-| **R1 shell-construct compound** | A Bash command containing an **unquoted** `&&`, `;`, `&`, newline, `for`/`while` loop, `$(...)` command substitution, or leading `VAR=val cmd` inline env-var assignment. Quoting is resolved first, so an operator confined to a quoted argument is data and does not fire — but a `$(...)` or backtick substitution still fires inside **double** quotes, where the shell still executes it | One command per Bash call — use separate Bash calls or dedicated tools |
+| **R1 shell-construct compound** | A Bash command containing an **unquoted, unescaped** `&&`, `;`, `&`, newline, `for`/`while` loop, `$(...)` command substitution, or leading `VAR=val cmd` inline env-var assignment. Quoting and backslash escapes are resolved first, so an operator confined to a quoted argument is data and does not fire — but a `$(...)` or backtick substitution still fires inside **double** quotes, where the shell still executes it | One command per Bash call — use separate Bash calls or dedicated tools |
 | **R2 Bash file-ops** | A Bash command whose program is `cat` / `grep` / `head` / `tail` / `find` / `ls`, **or** `git` whose subcommand (after any global options) is `grep` | Use the Read/Glob/Grep tools, not Bash, for file operations; for a content sweep run `architecture search --content --pattern P` |
 | **R3 generated-executor edit** | An Edit/Write whose path is the generated `.plan/execute-script.py` | Regenerate the executor via `/sync-plugin-cache` + `/marshall-steward`; never edit it |
 | **R4 hard-coded build** | A Bash command invoking `./pw` or a bare `mvn` / `npm` / `gradle` | Resolve build commands via `plan-marshall:manage-architecture:architecture resolve` |
+
+### R1 — quoting and escape resolution
+
+A metacharacter that OPERATES and one that is DATA are the same character; only
+the quoting tells them apart. R1 therefore scans two masked views of the command
+rather than the raw string, because its two marker classes are neutralized by
+*different* quoting:
+
+| View | Masks | Why |
+|------|-------|-----|
+| operator | single- AND double-quoted spans | `&&`, `;`, `&`, a newline, a loop keyword and a leading assignment are inert inside either quote kind |
+| substitution | single-quoted spans ONLY | `$(...)` and a backtick stay LIVE inside double quotes — `echo "$(rm -rf /)"` really does substitute, so masking them there would open the bypass the rule exists to prevent |
+
+A **backslash escape is resolved before any quote-state transition**, in
+unquoted context and inside a double-quoted span alike; inside a single-quoted
+span the shell reads a backslash as an ordinary literal, so the escape is not
+applied there. Both the backslash and the character it escapes are masked in
+BOTH views, because an escaped character is never an operator and never a
+substitution opener. Resolving the escape only inside double quotes was wrong in
+both directions at once:
+
+- **Bypass.** In unquoted context an unresolved backslash let the character that
+  FOLLOWED it change the span state, so the first command below opened a
+  single-quoted span, masked the `;` and closed cleanly — while the shell reads
+  the escaped quotes as literal data and the `;` as a live separator, making it
+  two commands.
+- **False positive.** Copying the raw escaped pair into the substitution view
+  left the marker intact there, so the second command below — literal data to
+  the shell — denied on the substitution check.
+
+```bash
+echo \'a; b\'      # two commands: the ; is live, so R1 must deny
+echo "\`date\`"    # one command: the backtick is literal, so R1 must allow
+```
+
+One consequence worth naming: an escaped newline is a line **continuation**, so
+a command broken across lines with a trailing backslash is a single command and
+does not fire the newline check. A bare unquoted newline still does.
+
+**Malformed quoting** — a span that never closes — yields no mask, and every R1
+check re-runs against the RAW command. That degradation keeps a lexing ambiguity
+a false positive at worst, never a silent bypass.
 
 ### R2 — the `git grep` arm
 
