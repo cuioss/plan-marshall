@@ -509,7 +509,7 @@ This analyzer scopes its scan to `bash`/`sh` fences and therefore carries NO mar
 
 **Scope**: All `*.md` files under `marketplace/bundles/**/skills/**`.
 
-**Intent**: Replace the deleted runtime SUBCOMMANDS pre-flight validator with a dev-time drift detector. The runtime executor is now a dumb dispatcher; drift between documented invocations and the script's actual argparse interface is caught here, before the prose ships. The rule consumes argparse's published interface (`--help` text) rather than parsing the script source via AST — `--help` is the canonical interface, and AST walking proved fragile against argparse's dynamic shapes.
+**Intent**: Catch drift between documented invocations and the script's actual argparse interface at dev time, before the prose ships. The rule consumes argparse's published interface (`--help` text) rather than parsing the script source via AST — `--help` is the canonical interface, and AST walking proved fragile against argparse's dynamic shapes. The executor also validates before it spawns, from the same derivation, but that guard is deliberately fail-open (see **Rationale**), so this rule remains the complete-coverage check rather than a redundant one.
 
 **Detection logic**:
 1. Regex-match `python3 .plan/execute-script.py {notation} [verb] [flags...]` invocations in skill markdown.
@@ -521,7 +521,13 @@ This analyzer scopes its scan to `bash`/`sh` fences and therefore carries NO mar
 
 **Activation**: Opt-in via `--rules script_call_drift` on the `analyze` subcommand. NOT included in the unconditional `quality-gate` set — the subprocess overhead is too high for an unattended build gate. Invoke explicitly for drift sweeps after large skill-prose changes.
 
-**Rationale**: The pre-flight runtime validator (removed in plan `fix-generate-executor-ast-subcommands`) embedded a stale SUBCOMMANDS allowlist at executor-generation time and rejected valid calls when the allowlist drifted. The new architecture moves drift detection to dev time: the doctor consumes the same argparse interface the runtime would, but it runs against the latest source on every invocation rather than against a snapshot embedded in the executor. The post-hoc complement (plan-retrospective `script-failure-analysis` pass) mines `script-execution.log` for argparse rejections to catch any drift the doctor missed at edit time.
+**Rationale**: Drift is caught at three points, and this rule is the only one of the three with complete coverage.
+
+- **Edit time (this rule)** — the doctor runs against the latest source on every invocation, so it sees the interface as it is now rather than as it was when some artifact was generated. It judges every documented invocation in skill prose, whether or not that invocation is ever dispatched.
+- **Dispatch time (the executor's pre-spawn validator)** — the executor carries the same help-derived surface this rule consumes, embedded at generation time and keyed by script content so a stale entry is re-derived rather than trusted. It refuses only what it can PROVE invalid: `_validate_invocation` returns `None` for "this call is valid" and for "I cannot judge this" alike, and the two are deliberately indistinguishable to the caller because both must dispatch. Every uncertainty path — an underivable surface, an unconfident node, an unknown flag arity that would change which node argv resolves to — spawns. That fail-open boundary is what makes the guard safe to run in front of every dispatch, and equally what stops it from being a coverage claim.
+- **Post hoc (the plan-retrospective `script-failure-analysis` pass)** — mines `script-execution.log` and `work.log` for argparse rejections, catching drift that reached a real dispatch.
+
+Sharing one derivation across the first two points is the load-bearing property: the edit-time rule and the dispatch-time rejection read the same accept-set, so they cannot disagree about what a script accepts.
 
 **Suppression mechanism**: None — fix the prose or the argparse declaration to converge.
 

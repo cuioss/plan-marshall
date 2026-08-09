@@ -93,6 +93,30 @@ Option B for resolvable cases plus Option A as opt-in for runtime-resolved itera
 
 Each option extends the safety-net validator with more cleverness. The safety net itself is the over-engineering: the runtime contract argparse already enforces is the contract; the genuine value-add of a pre-flight layer would be edit-time enforcement, which moves to a static analyzer (the dev-time `script-call-drift` rule), not the runtime executor.
 
+== Amendment: the executor carries a fail-open pre-spawn validator derived from `--help`
+
+The executor validates an invocation before it spawns. The Decision above states that it carries no pre-flight validator and that its role narrows to notation resolution and dispatch; those two statements are superseded by this amendment. Everything else in this ADR — the Context, the Alternatives-Considered analysis, and the Generalisation — stands unchanged, because the design this amendment admits is not one of the designs that section rejected.
+
+=== What the validator is
+
+`.plan/execute-script.py` embeds, per notation, the argparse surface derived by running the script's own `--help` and recursing into each published verb. Before dispatch it walks argv against that surface and refuses an invocation it can prove invalid, writing a structured `status: error` TOON to stdout that names the rejected token and the closest accepted spelling.
+
+Three properties make it a different proposal from Options A, B and C:
+
+* **It is derived, not declared.** The accept-set comes from argparse's own published help output, so no maintainer writes or maintains a second specification of the contract. Option A's per-script constant and its drift-the-moment-you-add-a-verb failure mode do not arise.
+* **It is not static analysis of source.** No AST walk reads the script's declarations, so the subcommand-registration pattern is irrelevant: a verb registered in a loop, behind a conditional, from a runtime-resolved iterable, or by a parser assembled in an imported module is published in `--help` exactly like a literal one, and is therefore in the accept-set. Options B and C exist only to work around a limitation this approach does not have.
+* **It is generated from the same derivation the dev-time rule consumes.** One derivation, two consumers, so the edit-time rule and the dispatch-time rejection cannot disagree about what a script accepts. The "second specification whose correctness must be tracked" that the Context names as the structural problem is not created.
+
+=== The fail-open boundary
+
+The validator refuses ONLY what it can prove invalid. `_validate_invocation` returns "spawn" for both "this call is valid" and "I cannot judge this call", and the two are deliberately indistinguishable to the caller because both must dispatch. Every uncertainty path resolves that way: a notation whose surface was not derivable, a parser node whose flag set or child listing the derivation could not confidently establish, an argv reading that hinges on a flag arity the derivation does not know, and any invocation mentioning a help flag.
+
+The boundary is what keeps this amendment consistent with the principle in the Context. The validator adds no second authority over the contract: argparse still owns the schema and still produces the authoritative rejection. What the pre-spawn refusal adds is a CORRECTION delivered to a caller that would otherwise receive an argparse usage dump on stderr and nothing structured to act on.
+
+=== What is unchanged
+
+`script-call-drift` remains the complete-coverage check. Because the runtime guard fails open, and because it can only judge invocations that are actually dispatched, it is not a substitute for the edit-time rule that reads every documented invocation in marketplace prose. The post-hoc retrospective sweep is likewise unchanged. The three layers are ordered by coverage, not by redundancy: edit time is complete, dispatch time is best-effort on the dispatched subset, post hoc catches what reached a real rejection.
+
 == Generalisation
 
 The pattern, stated independently of this codebase:
