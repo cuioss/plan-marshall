@@ -24,6 +24,14 @@ negative controls are legitimate near-misses that must stay silent (a fully
 reconciled corpus, a ``running`` row that is present-but-excluded rather than
 missing, an ``unverifiable`` verdict that must NOT be read as a refutation).
 
+A further group pins the fenced-code-block state every line-wise markdown scan
+carries. A ``#`` comment inside a fence is not a heading and a ``- item`` inside
+one is not a bullet; admitting either truncates the enclosing section, which
+drops Expected Surface paths behind a confident no-overlap and makes later
+claims vanish from ``--claim-index`` addressing. Each detector there carries a
+matched pair, because suppression that also disabled real headings would be a
+different defect wearing the same green.
+
 Two population guards keep the module non-vacuous: the fixture-materialization
 guard below fails loudly when the fixture epic did not land on disk, and the
 single-implementation guard enumerates the marketplace Python surface at test
@@ -54,6 +62,10 @@ cmd_corpus_verdicts = _orch.cmd_corpus_verdicts
 cmd_corpus_set_verdict = _orch.cmd_corpus_set_verdict
 format_verdict_line = _orch._format_verdict_line
 parse_verdict_text = _orch._parse_verdict_text
+fenced_mask = _orch._fenced_mask
+section_span = _orch._section_span
+expected_surface_paths = _orch._expected_surface_paths
+EXPECTED_SURFACE_HEADING_RE = _orch.EXPECTED_SURFACE_HEADING_RE
 VERDICT_KEYS = _orch.VERDICT_KEYS
 VERDICT_SEPARATOR = _orch.VERDICT_SEPARATOR
 VERDICT_VALUES = _orch.VERDICT_VALUES
@@ -81,6 +93,10 @@ OTHER_PATH = 'marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cm
 #: reference, but NOT an orchestrator spec pointer — the near-miss the
 #: deliberately narrow ``SPEC_POINTER_RE`` exists to keep silent.
 SHARED_LESSON = '.plan/local/lessons-learned/LESSON-001-shared-origin.md'
+#: A THIRD real path, cited outside the ``## Expected Surface`` section. The
+#: section boundary must still exclude it once fenced lines stop truncating the
+#: body — widening the body past a fenced comment is not the same as unbounding it.
+OUTSIDE_PATH = 'marketplace/bundles/plan-marshall/skills/manage-files/scripts/manage-files.py'
 
 
 # =============================================================================
@@ -1214,6 +1230,236 @@ class TestCorpusReadOnlyBoundary:
 
         after = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
         assert after == before
+
+
+# =============================================================================
+# Fenced-code-block state — suppression of the heading and bullet scans
+# =============================================================================
+#
+# Every line-wise markdown scan in the module runs against a fence mask, because
+# a ``#`` comment inside a fenced example is not a heading and a ``- item``
+# inside one is not a bullet. Without the mask a fenced comment TERMINATES the
+# enclosing section: the Expected Surface body is truncated at that line and
+# every later path is dropped, so ``corpus cross-check`` reports a confident
+# no-overlap while still counting the spec in ``specs_scanned`` — a silently
+# narrowed population behind a clean zero. In ``_parse_claims`` the same
+# truncation makes every later claim vanish, shifting ``--claim-index``
+# addressing and understating ``claims_total``.
+#
+# Every detector carries a MATCHED PAIR. The positive controls prove a REAL
+# heading still terminates the scan (the suppression is fence-scoped, not a
+# blanket disable); the negative controls prove the fenced look-alike does not.
+
+#: A fenced Expected Surface path list whose FIRST body line is a ``#`` comment —
+#: the exact shape that truncated the section. ``OTHER_PATH`` is deliberately
+#: LAST, so an assertion that finds it proves the whole list survived.
+_FENCED_SURFACE = [
+    '```text',
+    '# the files this spec expects to touch',
+    SHARED_PATH,
+    OTHER_PATH,
+    '```',
+]
+
+#: Two real claims with a fenced example between them. The fence carries both a
+#: ``#`` comment (a heading look-alike) and a ``- `` line (a bullet look-alike),
+#: so one fixture exercises both suppressions.
+_FENCED_CLAIMS = [
+    _DEFAULT_CLAIM,
+    '',
+    '```text',
+    '# an illustrative fragment, not a heading',
+    '- an illustrative bullet, not a claim',
+    '```',
+    '',
+    '- OBSERVED: a second claim — read at `b.py` § `g`',
+]
+
+
+class TestFenceMask:
+    """The mask itself, asserted against a published per-line population."""
+
+    def test_should_mark_only_the_fenced_run(self):
+        lines = ['before', '```text', '# not a heading', '```', '# a real heading']
+
+        mask = fenced_mask(lines)
+
+        assert len(mask) == len(lines), 'the mask must carry one entry per scanned line'
+        assert mask == [False, True, True, True, False]
+
+    def test_an_unterminated_fence_runs_to_the_end_of_the_document(self):
+        # CommonMark's rule, and the conservative reading: text that may be code
+        # is treated as code rather than admitted as a heading.
+        lines = ['```text', '# not a heading', 'still inside the block']
+
+        mask = fenced_mask(lines)
+
+        assert len(mask) == len(lines)
+        assert mask == [True, True, True]
+
+    def test_a_tilde_line_does_not_close_a_backtick_fence(self):
+        # A close must be built from the character that OPENED the block.
+        lines = ['```text', '~~~', '# still fenced', '```', '# a real heading']
+
+        mask = fenced_mask(lines)
+
+        assert len(mask) == len(lines)
+        assert mask == [True, True, True, True, False]
+
+    def test_an_unfenced_document_masks_nothing(self):
+        # Negative control on the mask itself: a REAL document with real
+        # headings, not an empty one, must produce an all-False mask.
+        lines = ['## Expected Surface', '', SHARED_PATH, '', '## Objective']
+
+        mask = fenced_mask(lines)
+
+        assert len(mask) == len(lines)
+        assert not any(mask)
+
+
+class TestFencedSectionSpan:
+    def test_a_real_heading_still_ends_a_section(self):
+        # Positive control: the terminator works, so the negative control below
+        # is testing suppression rather than a scan that never terminates.
+        lines = ['## Expected Surface', '', SHARED_PATH, '', '## Objective', '', OTHER_PATH]
+
+        start, end = section_span(lines, EXPECTED_SURFACE_HEADING_RE)
+
+        body = '\n'.join(lines[start:end])
+        assert (start, end) == (1, 4)
+        assert SHARED_PATH in body
+        assert OTHER_PATH not in body
+
+    def test_a_hash_line_inside_a_fence_does_not_end_a_section(self):
+        lines = ['## Expected Surface', '', *_FENCED_SURFACE, '', '## Objective']
+
+        start, end = section_span(lines, EXPECTED_SURFACE_HEADING_RE)
+
+        body = '\n'.join(lines[start:end])
+        assert '# the files this spec expects to touch' in body
+        assert OTHER_PATH in body, 'a fenced comment truncated the section body'
+
+    def test_a_fenced_heading_does_not_open_a_section(self):
+        # The opening scan carries the same state: a fenced ``## Expected
+        # Surface`` line inside an earlier example is not this document's section.
+        lines = ['```text', '## Expected Surface', OTHER_PATH, '```']
+
+        assert section_span(lines, EXPECTED_SURFACE_HEADING_RE) == (-1, -1)
+
+
+class TestFencedExpectedSurface:
+    def test_a_fenced_path_list_with_a_leading_comment_yields_every_path(self):
+        declared = (SHARED_PATH, OTHER_PATH)
+        text = _spec_text([_DEFAULT_CLAIM], list(_FENCED_SURFACE))
+
+        paths = expected_surface_paths(text)
+
+        assert len(paths) == len(declared), (
+            f'{len(declared)} path(s) declared in the fenced list, {len(paths)} extracted'
+        )
+        assert paths == set(declared)
+
+    def test_a_path_outside_the_section_is_still_excluded(self):
+        # Negative control: the fix widens the body past a fenced comment, it
+        # does not stop bounding the section.
+        text = _spec_text(
+            [_DEFAULT_CLAIM],
+            list(_FENCED_SURFACE),
+            objective=f'Background reading: {OUTSIDE_PATH} explains the seam.',
+        )
+
+        paths = expected_surface_paths(text)
+
+        assert OUTSIDE_PATH not in paths
+        assert paths == {SHARED_PATH, OTHER_PATH}
+
+    def test_cross_check_reports_the_overlap_a_fenced_comment_used_to_hide(self, plan_context):
+        # The end-to-end consequence: the overlap is on the LAST path of the
+        # fenced list, the one a truncated body drops.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=list(_FENCED_SURFACE))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH])
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['specs_scanned'] == 1, 'the own corpus did not materialize'
+        assert result['candidates_scanned'] == 1, 'the candidate population did not materialize'
+        assert result['file_overlap_match_count'] == 1
+        assert result['file_overlap_matches'][0]['overlapping_files'] == OTHER_PATH
+        assert result['collision_detected'] is True
+
+
+class TestFencedClaimParsing:
+    def test_a_real_heading_still_ends_the_claim_section(self, plan_context):
+        # Positive control: ``_DEFAULT_SURFACE`` is itself a top-level bullet, so
+        # a claim count of 1 proves the ``## Expected Surface`` heading terminated
+        # the claim section rather than the scan simply finding one bullet.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+
+        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+
+        assert result['specs_scanned'] == 1
+        assert result['claims_scanned'] == 1
+
+    def test_a_fenced_bullet_is_not_counted_and_later_claims_survive(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', _FENCED_CLAIMS)
+
+        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+
+        assert result['specs_scanned'] == 1
+        assert result['claims_scanned'] == 2, (
+            'the fenced bullet was counted as a claim, or the fenced comment '
+            'truncated the section and dropped the claim after it'
+        )
+
+    def test_claim_index_addressing_survives_a_fenced_block(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', _FENCED_CLAIMS)
+
+        stamped = cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 1, evidence='second only'))
+        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+
+        assert stamped['status'] == 'success'
+        assert stamped['claims_total'] == 2
+        assert result['count'] == 1
+        assert result['claims'][0]['claim_index'] == 1
+        assert result['claims'][0]['evidence'] == 'second only'
+
+    def test_a_verdict_stamped_before_a_fence_round_trips(self, plan_context):
+        # Exercises ``_claim_block_end`` with fence state: the insertion point for
+        # a claim whose block CONTAINS a fenced example.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', _FENCED_CLAIMS)
+
+        cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 0, evidence='first only'))
+        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+
+        assert result['claims_scanned'] == 2, 'the stamp changed the claim population'
+        assert result['count'] == 1
+        assert result['claims'][0]['claim_index'] == 0
+        assert result['claims'][0]['evidence'] == 'first only'
+
+
+# =============================================================================
+# Separate vocabularies, separate bindings
+# =============================================================================
+
+
+def test_the_parse_outcome_and_the_readiness_verdict_have_distinct_bindings():
+    """Two independent vocabularies must not share one module-level binding.
+
+    They coincide in spelling, so a single ``INDETERMINATE`` name would let a
+    change to either silently move the other. The value equality is asserted
+    alongside the binding separation so this reads as "two names, same spelling"
+    rather than as an accidental divergence.
+    """
+    assert _orch.VERDICT_INDETERMINATE == 'indeterminate'
+    assert _orch.READINESS_INDETERMINATE == 'indeterminate'
+    assert not hasattr(_orch, 'INDETERMINATE'), (
+        'the shadowed shared binding is back — each vocabulary owns its own name'
+    )
 
 
 # =============================================================================

@@ -143,8 +143,11 @@ VERDICT_SEPARATOR = ' | '
 VERDICT_MAX_SPLITS = len(VERDICT_KEYS) - 1
 VERDICT_PREFIX = f'{VERDICT_KEYS[0]}:'
 # The verdict reported for a bullet that does not parse. Never a fourth member of
-# VERDICT_VALUES: it is a parse outcome, not a settlement.
-INDETERMINATE = 'indeterminate'
+# VERDICT_VALUES: it is a parse outcome, not a settlement. Named apart from the
+# readiness vocabulary's :data:`READINESS_INDETERMINATE` even though the two share
+# a spelling — they are independent vocabularies, and one binding for both would
+# let a change to either silently move the other.
+VERDICT_INDETERMINATE = 'indeterminate'
 BLOCKING_RESCOPED = 'no'
 CONTRADICTED = 'contradicted'
 NOT_APPLICABLE = 'n/a'
@@ -191,7 +194,10 @@ _RATIO_CLAIM_RE = re.compile(r'R\s*=\s*(?P<numerator>\d+)\s+of\s+(?P<denominator
 READINESS_ORDER = ('not_ready', 'indeterminate', 'ready')
 READY = 'ready'
 NOT_READY = 'not_ready'
-INDETERMINATE = 'indeterminate'
+#: The readiness verdict for an arm whose surface could not be observed. Distinct
+#: from :data:`VERDICT_INDETERMINATE`, which is a re-grounding PARSE outcome — the
+#: two vocabularies coincide in spelling only, so each carries its own binding.
+READINESS_INDETERMINATE = 'indeterminate'
 
 #: The verdict an arm reports when the surface it would observe is owned by
 #: another component. It is deliberately NOT a member of
@@ -220,6 +226,15 @@ SPEC_POINTER_RE = re.compile(
 _HEADING_RE = re.compile(r'^#{1,6}\s')
 _BULLET_RE = re.compile(r'^(?P<indent>[ \t]*)-\s+(?P<text>.*)$')
 _CHECKED_AT_RE = re.compile(r'^[0-9a-f]{7,40}$')
+# A fenced-code-block delimiter line: three-or-more backticks or tildes, with any
+# info string. Group ``fence`` carries the run so a delimiter can be matched to
+# the character that OPENED the block — a ``~~~`` line inside a backtick fence is
+# body text, not a close. Every line-wise markdown scan below runs against the
+# mask this builds, because a ``# comment`` inside a fence is not a heading and a
+# ``- item`` inside one is not a bullet. This mirrors the fence suppression the
+# sibling detector in ``pm-plugin-development:ext-self-review-plan-marshall``
+# already applies for the same reason.
+_FENCE_DELIMITER_RE = re.compile(r'^\s*(?P<fence>`{3,}|~{3,})')
 
 
 def _error(slug: str, error: str, message: str, **extra: Any) -> dict[str, Any]:
@@ -805,28 +820,67 @@ def _current_head_sha() -> str:
     return output or ''
 
 
-def _section_span(lines: list[str], heading_re: re.Pattern[str]) -> tuple[int, int]:
+def _fenced_mask(lines: list[str]) -> list[bool]:
+    """Return a per-line mask marking every line that belongs to a fenced block.
+
+    Delimiter lines are masked along with the body, so a caller can test one
+    index without also testing its neighbours. A block closes only on a
+    delimiter built from the SAME fence character that opened it, and an
+    unterminated fence runs to the end of the document — the CommonMark rule,
+    and the conservative reading: text that may be code is treated as code.
+
+    Every line-wise scan in this module consumes this mask. Without it a
+    ``# comment`` inside a fenced example matches :data:`_HEADING_RE` and
+    truncates the enclosing section, which silently narrows a population while
+    the count that rides beside it still reports the full denominator.
+    """
+    mask = [False] * len(lines)
+    open_fence = ''
+    for index, line in enumerate(lines):
+        match = _FENCE_DELIMITER_RE.match(line)
+        if match is None:
+            mask[index] = bool(open_fence)
+            continue
+        mask[index] = True
+        marker = match.group('fence')[0]
+        if not open_fence:
+            open_fence = marker
+        elif marker == open_fence:
+            open_fence = ''
+    return mask
+
+
+def _section_span(
+    lines: list[str], heading_re: re.Pattern[str], fenced: list[bool] | None = None
+) -> tuple[int, int]:
     """Return the ``[start, end)`` line span of one section's body.
 
     ``(-1, -1)`` when the document carries no matching heading. The body ends at
     the next heading of any level, so a subsection never leaks into the parent.
+
+    Both heading scans — the one that OPENS the section and the one that closes
+    it — skip fenced lines, per :func:`_fenced_mask`. ``fenced`` is computed from
+    ``lines`` when not supplied, so a caller that already holds the mask passes
+    it rather than rebuilding it.
     """
+    if fenced is None:
+        fenced = _fenced_mask(lines)
     start = -1
     for index, line in enumerate(lines):
-        if heading_re.match(line):
+        if not fenced[index] and heading_re.match(line):
             start = index + 1
             break
     if start < 0:
         return (-1, -1)
     for index in range(start, len(lines)):
-        if _HEADING_RE.match(lines[index]):
+        if not fenced[index] and _HEADING_RE.match(lines[index]):
             return (start, index)
     return (start, len(lines))
 
 
-def _claim_labels_span(lines: list[str]) -> tuple[int, int]:
+def _claim_labels_span(lines: list[str], fenced: list[bool] | None = None) -> tuple[int, int]:
     """Return the ``[start, end)`` line span of the ``## Claim Labels`` body."""
-    return _section_span(lines, CLAIM_LABELS_HEADING_RE)
+    return _section_span(lines, CLAIM_LABELS_HEADING_RE, fenced)
 
 
 def _expected_surface_paths(text: str) -> set[str]:
@@ -836,6 +890,11 @@ def _expected_surface_paths(text: str) -> set[str]:
     staged spec carries its surface here, where a launched plan carries it in
     ``references.json`` ``affected_files``. The extraction itself is
     ``_cmd_sibling_collision``'s, unchanged — only the entry point differs.
+
+    The section body is delimited against the fence mask, so a fenced path list
+    whose first line is a ``#`` comment does not truncate the section and drop
+    every path after it. Paths INSIDE the fence still count: a fenced list is the
+    ordinary way a spec declares its surface.
     """
     lines = text.splitlines()
     start, end = _section_span(lines, EXPECTED_SURFACE_HEADING_RE)
@@ -868,12 +927,20 @@ def _parse_claims(lines: list[str]) -> list[dict[str, Any]]:
     Each returned record carries ``block_end``: the insertion point for a new
     verdict bullet, being one past the claim's own wrapped text lines and before
     any further bullet, with trailing blank lines excluded.
+
+    Fenced lines are skipped on both scans: a ``- item`` inside a fenced example
+    is not a claim, and a ``#`` comment inside one does not end the section.
+    Admitting either would shift every later ``--claim-index`` and understate
+    ``claims_total``.
     """
-    start, end = _claim_labels_span(lines)
+    fenced = _fenced_mask(lines)
+    start, end = _claim_labels_span(lines, fenced)
     if start < 0:
         return []
     claims: list[dict[str, Any]] = []
     for index in range(start, end):
+        if fenced[index]:
+            continue
         match = _BULLET_RE.match(lines[index])
         if match is None:
             continue
@@ -886,7 +953,7 @@ def _parse_claims(lines: list[str]) -> list[dict[str, Any]]:
                     'line': index,
                     'indent': indent,
                     'text': text,
-                    'block_end': _claim_block_end(lines, index, end),
+                    'block_end': _claim_block_end(lines, index, end, fenced),
                     'verdict_line': -1,
                     'verdict_text': '',
                 }
@@ -897,11 +964,20 @@ def _parse_claims(lines: list[str]) -> list[dict[str, Any]]:
     return claims
 
 
-def _claim_block_end(lines: list[str], claim_line: int, section_end: int) -> int:
-    """One past the claim bullet's own text block — the verdict insertion point."""
+def _claim_block_end(
+    lines: list[str], claim_line: int, section_end: int, fenced: list[bool] | None = None
+) -> int:
+    """One past the claim bullet's own text block — the verdict insertion point.
+
+    The bullet/heading terminators are tested against the fence mask, so a fenced
+    example nested under a claim does not end the claim's block early and place
+    the verdict bullet inside the fence.
+    """
+    if fenced is None:
+        fenced = _fenced_mask(lines)
     end = claim_line + 1
     while end < section_end:
-        if _BULLET_RE.match(lines[end]) or _HEADING_RE.match(lines[end]):
+        if not fenced[end] and (_BULLET_RE.match(lines[end]) or _HEADING_RE.match(lines[end])):
             break
         end += 1
     while end > claim_line + 1 and not lines[end - 1].strip():
@@ -964,7 +1040,7 @@ def _verdict_row(spec_name: str, claim: dict[str, Any], line: str, head: str) ->
         return {
             'spec': spec_name,
             'claim_index': claim['index'],
-            'verdict': INDETERMINATE,
+            'verdict': VERDICT_INDETERMINATE,
             'checked_at': '',
             'by': '',
             'rescoped': '',
@@ -1407,7 +1483,7 @@ def _readiness_floor(verdicts: list[str]) -> str:
     nothing was observed, which is not the same as everything being fine.
     """
     if not verdicts:
-        return INDETERMINATE
+        return READINESS_INDETERMINATE
     return min(verdicts, key=READINESS_ORDER.index)
 
 
@@ -1417,7 +1493,7 @@ def _phase_signal(status_doc: dict[str, Any]) -> dict[str, Any]:
     if not phase:
         return _signal(
             'phase',
-            INDETERMINATE,
+            READINESS_INDETERMINATE,
             'status.json carries no readable phase',
             'status.json: 0 phase field read',
         )
@@ -1430,7 +1506,7 @@ def _running_plans_signal(status_doc: dict[str, Any]) -> dict[str, Any]:
     if not status_doc or not isinstance(raw, list):
         return _signal(
             'running_plans',
-            INDETERMINATE,
+            READINESS_INDETERMINATE,
             'the plan queue could not be read',
             'plans[]: not readable',
         )
@@ -1460,7 +1536,7 @@ def _corpus_signal(slug: str) -> dict[str, Any]:
     if result.get('status') != 'success':
         return _signal(
             'corpus_reconciliation',
-            INDETERMINATE,
+            READINESS_INDETERMINATE,
             f'corpus enumerate could not run: {result.get("error", "unknown")}',
             'queue rows and spec files: not enumerable',
         )
@@ -1470,7 +1546,7 @@ def _corpus_signal(slug: str) -> dict[str, Any]:
     if result['unreadable_count']:
         return _signal(
             'corpus_reconciliation',
-            INDETERMINATE,
+            READINESS_INDETERMINATE,
             f'{result["unreadable_count"]} spec file(s) could not be read',
             population,
         )
@@ -1498,7 +1574,7 @@ def _inbox_signal(slug: str) -> dict[str, Any]:
     if not counts.present:
         return _signal(
             'inbox',
-            INDETERMINATE,
+            READINESS_INDETERMINATE,
             'inbox/ is absent so the queue could not be looked at',
             'inbox/: missing',
         )
@@ -1515,10 +1591,12 @@ def _worktree_signal() -> dict[str, Any]:
     without the cleanliness is not an observation a restart decision can use."""
     head, head_error = _git_read(['rev-parse', 'HEAD'])
     if head is None:
-        return _signal('worktree', INDETERMINATE, head_error, 'git: not readable')
+        return _signal('worktree', READINESS_INDETERMINATE, head_error, 'git: not readable')
     porcelain, porcelain_error = _git_read(['status', '--porcelain'])
     if porcelain is None:
-        return _signal('worktree', INDETERMINATE, porcelain_error, 'git: not readable')
+        return _signal(
+            'worktree', READINESS_INDETERMINATE, porcelain_error, 'git: not readable'
+        )
     changed = [line for line in porcelain.splitlines() if line.strip()]
     population = f'git status --porcelain: {len(changed)} changed path(s) at {head}'
     if changed:

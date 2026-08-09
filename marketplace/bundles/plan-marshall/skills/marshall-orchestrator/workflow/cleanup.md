@@ -81,19 +81,9 @@ Call the compaction stage; do **not** re-implement it. When the stage has not la
 
 ### Step 9 (Phase C): Archive — retire consumed messages, relocate settled narrative
 
-Enumerate the inbox and retire each consumed message through the existing drain calls:
+⛔ **Do not drain the inbox. This phase relocates settled narrative and reports the refusal; it retires no message.** The step's only executable act today is emitting `archive_drain: refused` with its reason into the report.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox list \
-  --slug {slug}
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox archive \
-  --slug {slug} --message {name}
-```
-
-⛔ **This phase is NOT the `archive` verb.** [`archive.md`](archive.md) relocates a *closed epic tree*; this phase retires consumed inbox messages and relocates settled narrative inside a live epic. This phase MUST NOT call the `archive` verb.
+⛔ **This phase is NOT the `archive` verb.** [`archive.md`](archive.md) relocates a *closed epic tree*; this phase would retire consumed inbox messages and relocates settled narrative inside a live epic. This phase MUST NOT call the `archive` verb.
 
 **The refusal branch is the permanent documented default.** Three facts, stated plainly rather than as a hypothetical:
 
@@ -104,6 +94,18 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
 ⛔ Quiescence is **never** derived from a timer, and **never** from a merge landing. Both are recorded hazards and both are prohibited derivations — a later author must not reinvent either as a convenience.
 
 The refusal is a **first-class reported outcome, not a silent skip**: it occupies the named `archive_drain` / `archive_drain_reason` report fields, so an operator reading a clean report can tell "nothing needed draining" from "draining was refused". Draining a stale or unreachable narrative is strictly worse than deferring it, which is why refusing is the correct default rather than a degraded one.
+
+**Deferred mechanism — not an instruction.** When a successor spec supplies the quiescence signal, the drain needs no new machinery: the existing `inbox list` / `inbox archive` calls already enumerate and retire consumed messages, so that successor gates these two calls on its signal rather than introducing a third inbox surface. Both are recorded here as the surface that successor will reuse, and neither is run by this step:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox list \
+  --slug {slug}
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox archive \
+  --slug {slug} --message {name}
+```
 
 ### Step 10 (Phase D): Restart-readiness verdict
 
