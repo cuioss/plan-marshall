@@ -160,12 +160,20 @@ already_present: false
 
 The capture entry needs its own field because it carries none of the nine render labels the three event lists partition, and the terminal-title path writes the settings file unconditionally. A run whose nine render entries were all already correct and whose capture entry was inserted or converged therefore did change the file; `capture_status` (`installed` / `migrated` / `already_present`) is what makes that visible and what keeps `already_present` honest for it.
 
-**Error (Claude — write failure)**:
+**Error (Claude — write failure, terminal-title path)**:
 ```toon
 status: error
 operation: project install-hook
 error: io_error
 message: Failed to install terminal-title hooks into .claude/settings.local.json
+```
+
+**Error (Claude — write failure, `--enforcement` path)**:
+```toon
+status: error
+operation: project install-hook
+error: io_error
+message: Failed to install enforcement hook into .claude/settings.local.json
 ```
 
 **No-op (OpenCode)**:
