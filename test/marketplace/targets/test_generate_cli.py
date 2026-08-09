@@ -62,6 +62,48 @@ class TestGenerateCli:
         assert result.returncode == 0, result.stderr
         assert (out / '.pr_agent.toml').is_file()
 
+    def test_packs_flag_selects_the_composed_domains(self, tmp_path):
+        out = tmp_path / 'pr-agent-packs-out'
+
+        result = _run_cli('--target', 'pr-agent', '--output', str(out), '--packs', 'python,plugin')
+
+        assert result.returncode == 0, result.stderr
+        emitted = (out / '.pr_agent.toml').read_text(encoding='utf-8')
+        assert '# Pack: python,plugin.' in emitted
+        assert 'scoped to the python and plugin domains' in emitted
+
+    def test_packs_flag_narrows_to_a_single_domain(self, tmp_path):
+        """Negative control for the flag: a one-domain selection is not composed.
+
+        Without this, the composed assertion above could not distinguish "the
+        flag selected two domains" from "the pack always names both".
+        """
+        out = tmp_path / 'pr-agent-single-out'
+
+        result = _run_cli('--target', 'pr-agent', '--output', str(out), '--packs', 'python')
+
+        assert result.returncode == 0, result.stderr
+        emitted = (out / '.pr_agent.toml').read_text(encoding='utf-8')
+        assert '# Pack: python.' in emitted
+        assert 'scoped to the python domain' in emitted
+        assert 'plugin' not in emitted.split('[pr_reviewer]')[0]
+
+    def test_unknown_pack_in_the_selection_exits_two(self, tmp_path):
+        out = tmp_path / 'pr-agent-bad-out'
+
+        result = _run_cli('--target', 'pr-agent', '--output', str(out), '--packs', 'python,cobol')
+
+        assert result.returncode == 2
+        assert 'unknown pack' in (result.stderr + result.stdout)
+
+    def test_packs_flag_is_ignored_by_a_non_pack_target(self, tmp_path):
+        """`--packs` is meaningful only for pr-agent; another target must not break."""
+        out = tmp_path / 'opencode-packs-out'
+
+        result = _run_cli('--target', 'opencode', '--output', str(out), '--packs', 'python,plugin')
+
+        assert result.returncode == 0, result.stderr
+
     def test_all_target_known_choice(self, tmp_path):
         out = tmp_path / 'all-out'
         result = _run_cli('--target', 'all', '--output', str(out))

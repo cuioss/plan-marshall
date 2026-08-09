@@ -91,7 +91,8 @@ python3 marketplace/targets/generate.py --target claude
 python3 marketplace/targets/generate.py --target opencode --output target/opencode
 
 # PR-Agent reviewer pack → ./.pr_agent.toml at the repository root
-python3 marketplace/targets/generate.py --target pr-agent --output .
+# --packs composes one pack from several derived domains; omit it for the default
+python3 marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
 
 # Every target at once (claude → target/claude/, opencode → target/opencode/,
 # pr-agent → target/pr-agent/.pr_agent.toml)
@@ -148,26 +149,49 @@ instruction pack under `[pr_reviewer].extra_instructions`. Every other key
 organisation-wide `cuioss/pr-agent-settings` configuration, which is merged
 beneath the repository-local file.
 
-Two properties are load-bearing:
+Three properties are load-bearing:
 
 * **The domain set is derived, never hand-transcribed.** The target scans
   `marketplace/bundles/` for the per-domain standards skills —
   `*-security`, `arch-gate-*` and `ext-triage-*` — so a bundle added to the
   marketplace appears in the derived domain set with no code edit. Each
   pack carries the cross-cutting `plan-marshall:persona-security-expert`
-  spine plus that domain's own rules, harvested from the domain security
-  skill's `## Enforcement` block.
+  spine plus the selected domains' own rules, harvested from the domain
+  security skill's `## Enforcement` block.
+* **One pack may compose several domains.** A repository is not always one
+  language: this marketplace is both Python and marketplace-tooling, so its
+  own pack is `--packs python,plugin` and carries both domains' rules. A
+  single-domain selection is just the one-element case of the same
+  mechanism.
 * **A repository carries exactly one pack, and swaps rather than
   accumulates.** Pack selection is an argument to the target; a run writes
-  one `.pr_agent.toml`, replacing whatever pack was there before.
+  one `.pr_agent.toml`, replacing whatever pack was there before. The
+  generated header states the selection and the exact `--packs` command
+  that reproduces the file — following a regenerate line without it would
+  silently narrow the repository's review to the default.
 
 The composition is bounded and guarded. The category bullet list is capped
 at ten entries (past roughly ten, the answer is a second focused pass, not
 an eleventh bullet); the substantiation bar and the anti-fabrication clause
 are carried verbatim into every pack; and withholding language — the
 measured cause of five consecutive empty reviews — is dropped from any
-harvested rule that carries it. `test/marketplace/targets/pr_agent/`
-enforces those invariants across the whole derived pack population.
+harvested rule that carries it.
+
+**Composition holds the ceiling by grouping, not by widening it.** The ten
+is an observed organisation rule quoted in `pr-agent-settings`' README, not
+an internal number this target may raise. A composed pack therefore
+contributes exactly **one** domain category bullet naming every selected
+domain, and groups the per-domain rules under the single "Domain rules"
+block, each tagged with the domain that contributed it. One category per
+domain would put a two-domain pack at eleven bullets; grouping keeps an
+N-domain pack at ten for every N. Rules are not categories and are
+deliberately not governed by that ceiling — they carry their own per-domain
+cap, so a composed pack's rule list grows with the number of domains.
+
+`test/marketplace/targets/pr_agent/` enforces those invariants across the
+whole emittable pack population — every single-domain pack **and** the
+widest composition the marketplace admits, which is the shape most likely
+to breach the ceiling.
 
 ## Claude target — emitted artifacts
 

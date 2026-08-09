@@ -55,16 +55,18 @@ Not every target emits an assistant bundle tree. The `pr-agent` target emits a r
 
 [source,bash]
 ----
-python3 marketplace/targets/generate.py --target pr-agent --output .
+python3 marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
 ----
 
-Two consequences follow from that difference, and both are load-bearing.
+Three consequences follow from that difference, and all are load-bearing.
 
-**Its output is committed, not gitignored.** `target/claude/` and `target/opencode/` are build artifacts. `.pr_agent.toml` is not: the reviewer resolves it from the repository's DEFAULT BRANCH, so it must be tracked in git. It is nonetheless generated rather than hand-maintained — regenerate it instead of editing it, and a regeneration must reproduce the committed file byte-for-byte. This repository's own `.pr_agent.toml` carries the `python` pack: the repository's defect surface is Python, and the pack's rules are this organisation's own Python security standards.
+**Its output is committed, not gitignored.** `target/claude/` and `target/opencode/` are build artifacts. `.pr_agent.toml` is not: the reviewer resolves it from the repository's DEFAULT BRANCH, so it must be tracked in git. It is nonetheless generated rather than hand-maintained — regenerate it instead of editing it, and a regeneration must reproduce the committed file byte-for-byte.
+
+**One pack may compose several domains, and this repository's does.** `--packs` names the derived domains composed into the single emitted pack. This repository is both a Python codebase and a marketplace-tooling codebase, so its `.pr_agent.toml` carries `python,plugin` — both domains' rules. A selection naming one domain is the one-element case of the same mechanism; a consumer repository whose surface is Java selects `java`. The generated header states the selection and the exact `--packs` command that reproduces the file, because a regenerate line without it would name a command producing a different file and silently narrow the review.
 
 **The generic bundle-tree post-emit steps are gated off for it.** The CLI stamps the deterministic version into every bundle `plugin.json` and emits a `dist-manifest.json` at each output root. Both are bundle-tree semantics and would be wrong artifacts in a reviewer-config directory, so `TargetBase` declares an `emits_bundle_tree` property (default `true`) that this target overrides to `false`. The gate is not optional: `--target all` reaches that path for every registered target.
 
-The pack composition — the derived domain set, the cross-cutting spine, the ten-category ceiling, and the verbatim substantiation and anti-fabrication clauses — is documented in link:../../marketplace/targets/README.md[`marketplace/targets/README.md`] § PR-Agent target.
+The pack composition — the derived domain set, the cross-cutting spine, the ten-category ceiling that composition holds by grouping rather than widening, and the verbatim substantiation and anti-fabrication clauses — is documented in link:../../marketplace/targets/README.md[`marketplace/targets/README.md`] § PR-Agent target.
 
 A repo-root reviewer descriptor is recognized by the change-footprint classifier as owner-less infrastructure config, so it classifies `config` rather than `unknown`; see link:../../marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md[`decision-rules.md`] § "Owner-less recognition (no build owner)".
 

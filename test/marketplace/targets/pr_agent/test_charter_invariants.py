@@ -2,7 +2,7 @@
 """Charter regression guard over every pack the pr-agent target can emit.
 
 The subject is not the pack this repository happens to carry — it is the WHOLE
-derived pack population, so a domain added to the marketplace is guarded the
+emittable pack population, so a domain added to the marketplace is guarded the
 moment it becomes derivable. Four invariants protect the charter from the
 dilution that produced five consecutive empty reviews:
 
@@ -10,6 +10,14 @@ dilution that produced five consecutive empty reviews:
 (b) the substantiation requirement is present verbatim in every pack;
 (c) no pack's category bullet list exceeds the ceiling;
 (d) no pack carries withholding language.
+
+**The population covers COMPOSED packs, not only single-domain ones.** A
+repository's emitted pack may compose several derived domains, and that shape is
+one ``compose_packs`` never produces — guarding only single-domain packs would
+leave the ceiling unmeasured on exactly the shape most likely to breach it. The
+population therefore adds the widest composition the marketplace admits: every
+derived domain in one pack. If the ceiling holds there it holds for every subset,
+because the composition contributes ONE domain category bullet for any N.
 
 **Check topology.** The population is DERIVED; the expectations it is measured
 against are NOT. Every expected value below is a literal declared in this module
@@ -31,15 +39,34 @@ from pathlib import Path
 
 import pytest
 
-from marketplace.targets.pr_agent.target import compose_packs
+from marketplace.targets.pr_agent.target import compose_packs, compose_selection
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 MARKETPLACE_BUNDLES = PROJECT_ROOT / 'marketplace' / 'bundles'
 
-#: The derived pack population, computed at collection time from the REAL
+
+def _emittable_packs() -> dict[str, str]:
+    """Every pack the target can emit from the REAL marketplace.
+
+    The single-domain packs plus the widest composition — every derived domain in
+    one pack, the shape that stresses the ceiling hardest.
+    """
+    packs = dict(compose_packs(MARKETPLACE_BUNDLES))
+    domains = sorted(packs)
+    if len(domains) > 1:
+        packs[f'composed:{",".join(domains)}'] = compose_selection(MARKETPLACE_BUNDLES, domains)
+    return packs
+
+
+#: The emittable pack population, computed at collection time from the REAL
 #: marketplace. This is the ONLY derived input in the module.
-PACKS: dict[str, str] = compose_packs(MARKETPLACE_BUNDLES)
+PACKS: dict[str, str] = _emittable_packs()
 PACK_IDS: list[str] = sorted(PACKS)
+
+#: The composed-pack ids inside the population. Named separately so the guard can
+#: assert the composed shape is actually PRESENT — a population that silently
+#: lost it would still pass every invariant below, over single-domain packs only.
+COMPOSED_PACK_IDS: list[str] = [pack_id for pack_id in PACK_IDS if pack_id.startswith('composed:')]
 
 # ---------------------------------------------------------------------------
 # Expectations — literals, copied from the org charter. Never imported.
@@ -113,6 +140,18 @@ class TestPopulation:
         print(f'pr-agent charter guard population: {len(PACKS)} pack(s) — {", ".join(PACK_IDS)}')
         assert len(PACKS) == len(PACK_IDS)
         assert len(PACKS) >= 1
+
+    def test_population_includes_the_composed_shape(self):
+        """The composed shape must be IN the population, not merely composable.
+
+        The ceiling invariant is the one composition can breach; a population
+        that quietly held single-domain packs only would report green while the
+        emitted composed pack went unmeasured.
+        """
+        assert COMPOSED_PACK_IDS, (
+            'the guard population carries no composed pack; the real marketplace '
+            f'derived {len(PACKS)} domain(s), and a composition needs at least two'
+        )
 
 
 @pytest.mark.parametrize('domain', PACK_IDS)

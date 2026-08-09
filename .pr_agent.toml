@@ -1,7 +1,7 @@
 # Repository-local PR-Agent configuration — GENERATED, do not edit by hand.
 #
-# Pack: python. Regenerate with:
-#   python3 marketplace/targets/generate.py --target pr-agent --output .
+# Pack: python,plugin. Regenerate with:
+#   python3 marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
 #
 # Merged ABOVE the organisation-wide cuioss/pr-agent-settings configuration, so this
 # file carries the per-domain reviewer pack ONLY and inherits every other key — model,
@@ -9,11 +9,13 @@
 # decentralize the configuration that file exists to centralize.
 #
 # A repository carries exactly ONE pack: a regeneration REPLACES the pack below rather
-# than appending to it.
+# than appending to it. One pack may COMPOSE several derived domains — a repository is
+# not always one language — and the composed pack still contributes exactly one review
+# category, so composition never widens the category ceiling.
 
 [pr_reviewer]
 extra_instructions = '''
-Prioritise security and correctness over style. This pack is scoped to the python domain.
+Prioritise security and correctness over style. This pack is scoped to the python and plugin domains.
 
 Report every issue you can substantiate, in these categories:
 - Concurrency and time-of-check/time-of-use races; non-atomic file or state mutation; operations that are unsafe to retry or to run twice.
@@ -25,18 +27,25 @@ Report every issue you can substantiate, in these categories:
 - Secret and credential handling, including values reaching logs or error messages.
 - Dependency and supply-chain risk introduced by the change.
 - Missing negative or adversarial test coverage for any of the above.
-- Defects specific to python: the rules this organisation enforces for python code, listed under "Domain rules" below.
+- Defects specific to python and plugin: the rules this organisation enforces for python and plugin code are listed under "Domain rules" below.
 
 Cross-cutting foundations to apply in every review: adversarial refute, authentication authorization, cryptography key management, dependency supply chain, input validation trust boundaries, owasp top ten, secrets handling, secure design principles, secure logging, threat modeling stride.
 
-Domain rules — this organisation's own standards for python code. A diff that breaks one of these is a finding, and the rule already names the mechanism:
-- Do not pass untrusted input to `subprocess` with `shell=True`; use an argv list
-- Do not `pickle.load`/`pickle.loads` untrusted bytes, nor `yaml.load` without a safe loader
-- Do not `eval`/`exec`/`compile` externally-sourced strings; use `ast.literal_eval` for literals
-- Do not interpolate user values into SQL query strings; use DB-API placeholders with a params tuple
-- Every externally-sourced value (request data, file contents, environment, CLI args) is untrusted at stdlib boundaries
-- User-supplied paths must be validated against a safe base to prevent traversal
-- Reject untrusted input that fails a boundary check; never coerce it through
+Domain rules — this organisation's own standards for python and plugin code. A diff that breaks one of these is a finding, and the rule already names the mechanism:
+- [python] Do not pass untrusted input to `subprocess` with `shell=True`; use an argv list
+- [python] Do not `pickle.load`/`pickle.loads` untrusted bytes, nor `yaml.load` without a safe loader
+- [python] Do not `eval`/`exec`/`compile` externally-sourced strings; use `ast.literal_eval` for literals
+- [python] Do not interpolate user values into SQL query strings; use DB-API placeholders with a params tuple
+- [python] Every externally-sourced value (request data, file contents, environment, CLI args) is untrusted at stdlib boundaries
+- [python] User-supplied paths must be validated against a safe base to prevent traversal
+- [python] Reject untrusted input that fails a boundary check; never coerce it through
+- [plugin] Never read an environment variable (`os.environ.get(...)`) and construct a filesystem `Path`, a subprocess argv element, or a network target from it without validating it against a safe base or allow-list first. Environment is an untrusted boundary in a tool a consumer project drives.
+- [plugin] Never pass a value sourced from an extension's `get_skill_domains()` (a `domain` key, a profile name, a skill notation) into a downstream filesystem, subprocess, or import call without confirming it against the declared allow-list of known domains/profiles. Extension data is bundle-author-controlled, not core-controlled.
+- [plugin] Never add a new external-content ingestion surface (web page, GitHub issue/PR/comment body, Sonar message, or any other attacker-influenceable text) that consumes raw bytes in a write-capable or skill-loading context without routing the candidate struct through the deterministic `plan-marshall:untrusted-ingestion:validate_struct` gate.
+- [plugin] Never author skill/command/agent prose that interpolates untrusted external text into instructions the model will execute, nor that can be read as an instruction-injection vector.
+- [plugin] Strictly comply with all rules from `plan-marshall:persona-plan-marshall-agent`, especially tool usage and workflow step discipline.
+- [plugin] Every externally-sourced value (environment, CLI args, file contents read from a consumer project, extension-provided data, external web/issue/Sonar text) is untrusted at the boundary where the marketplace script or doc first consumes it.
+- [plugin] Reject untrusted input that fails a boundary check; never coerce it through. Fail closed.
 
 For each finding, name the input or state that triggers it and what goes wrong. Overlap with other reviewers is acceptable — report the issue regardless of whether another tool might also catch it. Do not withhold a substantiated finding because it seems minor or obvious.
 

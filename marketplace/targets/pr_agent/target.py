@@ -8,19 +8,37 @@ repo-local ``.pr_agent.toml`` carrying exactly one composed instruction pack in
 ``False``, so the CLI skips its generic bundle-tree post-emit steps (version
 stamping and the dist-manifest) for this target.
 
-Two properties of the composition are load-bearing:
+Three properties of the composition are load-bearing:
 
 * **The domain set is DERIVED, never hand-transcribed.** ``discover_domains``
   scans ``marketplace_dir`` for the per-domain standards skills — ``*-security``,
   ``arch-gate-*`` and ``ext-triage-*`` — so a bundle added to the marketplace
   appears in the derived set with no edit to this module.
+* **A repository's pack may COMPOSE several domains.** A repository is not
+  always one language: this marketplace is both Python and marketplace-tooling,
+  so its reviewer needs the ``python`` and ``plugin`` rules together. The
+  selection is therefore a SET of derived domains, and the composed pack carries
+  every selected domain's rules.
 * **Pack SELECTION is an argument, not an accumulation.** A run emits exactly
   ONE pack to ``{output_dir}/.pr_agent.toml``; a second run REPLACES that file
-  rather than appending to it, so a repository carries exactly one pack.
+  rather than appending to it, so a repository carries exactly one pack — even
+  when that one pack composes several domains.
 
 The substantiation clause and the anti-fabrication clause are carried VERBATIM
 into every pack, and the category bullet list is capped at
 :data:`MAX_CATEGORY_BULLETS` entries.
+
+**The category ceiling survives composition by GROUPING, not by widening.** The
+ceiling is an observed organisation rule quoted in ``pr-agent-settings``'
+README — past roughly ten entries the answer is a second focused pass, not an
+eleventh bullet — so it is not this module's number to raise. A composed pack
+therefore contributes exactly ONE domain category bullet naming every selected
+domain, and groups the per-domain rules under the single "Domain rules" block.
+Allocating one category per domain would put a two-domain pack at eleven
+entries; grouping keeps an N-domain pack at exactly :data:`MAX_CATEGORY_BULLETS`
+for every N. Rules are NOT categories and are deliberately not governed by that
+ceiling — a composed pack's rule list grows with the number of domains, each
+domain capped at :data:`MAX_DOMAIN_RULES`.
 
 The pack-selection rules live as module-level constants here rather than as a
 sibling JSON config: a new ``marketplace/targets/**/*.json`` path is claimed by
@@ -31,6 +49,7 @@ classifier and are not a precedent a new file may follow.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -98,13 +117,24 @@ _WITHHOLDING_PHRASES = (
 #: focused pass, not an eleventh bullet.
 MAX_CATEGORY_BULLETS = 10
 
-#: Ceiling on the harvested per-domain rule list. Rules are not review
-#: categories, so they are not governed by :data:`MAX_CATEGORY_BULLETS`; the
-#: separate cap keeps a pack from growing without bound as standards are added.
+#: Ceiling on the harvested per-domain rule list, applied PER DOMAIN. Rules are
+#: not review categories, so they are not governed by
+#: :data:`MAX_CATEGORY_BULLETS`; the separate cap keeps a pack from growing
+#: without bound as standards are added. A composed pack carries up to this many
+#: rules per selected domain — composition widens the rule list on purpose,
+#: because dropping a second domain's rules to hit a single total is exactly the
+#: silent under-review this target exists to fix.
 MAX_DOMAIN_RULES = 12
 
-#: Pack emitted when the caller names none.
-DEFAULT_PACK = 'python'
+#: Separator for a multi-domain pack selection, in the CLI and in the target
+#: constructor alike.
+PACK_SEPARATOR = ','
+
+#: Pack selection emitted when the caller names none. This repository is both a
+#: Python codebase and a marketplace-tooling codebase, so its own reviewer needs
+#: both domains' rules; a single-language default would silently under-review
+#: whichever half it omitted.
+DEFAULT_PACK = 'python,plugin'
 
 #: Output filename. A run REPLACES this file — packs swap, they never accumulate.
 CONFIG_FILENAME = '.pr_agent.toml'
@@ -343,42 +373,100 @@ def discover_spine_topics(marketplace_dir: Path) -> tuple[str, ...]:
 # ---------------------------------------------------------------------------
 
 
-def _domain_category_bullet(contribution: DomainContribution) -> str:
-    """Render the single derived domain category bullet.
+def _join_terms(terms: Sequence[str]) -> str:
+    """Join terms as English prose: ``a``, ``a and b``, ``a, b and c``."""
+    if not terms:
+        return ''
+    if len(terms) == 1:
+        return terms[0]
+    return f'{", ".join(terms[:-1])} and {terms[-1]}'
 
-    The bullet states only what the pack actually carries: it points at the
-    "Domain rules" block when rules were harvested, and otherwise instructs the
-    reviewer to apply every category to the domain's own sources — it never
-    promises a list that is not there.
+
+def parse_pack_selection(value: str | Sequence[str]) -> tuple[str, ...]:
+    """Normalize a pack selection into an ordered, deduped tuple of domains.
+
+    Accepts either a :data:`PACK_SEPARATOR`-separated string (the CLI and config
+    form) or an already-split sequence. Order is the caller's, because it is the
+    order the domains are named in the composed pack's prose; duplicates are
+    dropped so ``python,python`` cannot double a rule list.
+
+    Raises:
+        ValueError: When the selection names no domain at all.
     """
-    if contribution.rules:
-        return (
-            f'Defects specific to {contribution.domain}: the rules this organisation enforces for '
-            f'{contribution.domain} code, listed under "Domain rules" below.'
+    raw = value.split(PACK_SEPARATOR) if isinstance(value, str) else list(value)
+    selection: list[str] = []
+    for item in raw:
+        token = item.strip()
+        if token and token not in selection:
+            selection.append(token)
+    if not selection:
+        raise ValueError('empty pack selection: name at least one derived domain')
+    return tuple(selection)
+
+
+def _domain_category_bullet(contributions: Sequence[DomainContribution]) -> str:
+    """Render the SINGLE derived domain category bullet covering every selection.
+
+    Exactly one bullet regardless of how many domains the pack composes. That is
+    the grouping that keeps a composed pack inside :data:`MAX_CATEGORY_BULLETS`:
+    one category per domain would put a two-domain pack at eleven entries and
+    over a ceiling this module does not own (see the module docstring).
+
+    The bullet states only what the pack actually carries. Domains whose rules
+    were harvested point at the "Domain rules" block; domains that contributed no
+    rules are instead named with the standards that govern them, so the reviewer
+    is never promised a list that is not there.
+    """
+    domains = [c.domain for c in contributions]
+    with_rules = [c for c in contributions if c.rules]
+    without_rules = [c for c in contributions if not c.rules]
+
+    clauses: list[str] = []
+    if with_rules:
+        named = _join_terms([c.domain for c in with_rules])
+        clauses.append(
+            f'the rules this organisation enforces for {named} code are listed under '
+            f'"Domain rules" below'
         )
-    labels = [_KIND_LABELS[kind] for kind in contribution.kinds]
-    joined = f'{", ".join(labels[:-1])} and {labels[-1]}' if len(labels) > 1 else labels[0]
-    return (
-        f'Defects specific to {contribution.domain}: this organisation governs {contribution.domain} '
-        f'through its {joined} standards — apply every category above to {contribution.domain} sources '
-        f'and idioms, not only to the repository\'s primary language.'
-    )
+    for contribution in without_rules:
+        labels = _join_terms([_KIND_LABELS[kind] for kind in contribution.kinds])
+        clauses.append(
+            f'this organisation governs {contribution.domain} through its {labels} standards — '
+            f'apply every category above to {contribution.domain} sources and idioms, not only to '
+            f'the repository\'s primary language'
+        )
+    return f'Defects specific to {_join_terms(domains)}: ' + '; '.join(clauses) + '.'
 
 
-def compose_pack(contribution: DomainContribution, spine_topics: tuple[str, ...] = ()) -> str:
-    """Compose one domain's instruction pack.
+def compose_pack(
+    contributions: DomainContribution | Sequence[DomainContribution],
+    spine_topics: tuple[str, ...] = (),
+) -> str:
+    """Compose one instruction pack over one or more derived domains.
 
-    The category bullet list is the cross-cutting spine plus exactly one derived
-    domain bullet, capped at :data:`MAX_CATEGORY_BULLETS`; the domain bullet is
-    never the entry dropped by the cap. The substantiation and anti-fabrication
-    clauses are appended verbatim.
+    The category bullet list is the cross-cutting spine plus exactly ONE derived
+    domain bullet — however many domains are composed — capped at
+    :data:`MAX_CATEGORY_BULLETS`; the domain bullet is never the entry dropped by
+    the cap. The substantiation and anti-fabrication clauses are appended
+    verbatim.
+
+    Args:
+        contributions: One contribution, or the ordered set composing the pack.
+        spine_topics: Cross-cutting foundation topics, from
+            :func:`discover_spine_topics`.
     """
+    selected = (contributions,) if isinstance(contributions, DomainContribution) else tuple(contributions)
+    if not selected:
+        raise ValueError('compose_pack requires at least one domain contribution')
+
+    domains = [c.domain for c in selected]
+    scope = f'{_join_terms(domains)} domain' + ('s' if len(domains) > 1 else '')
+
     spine_budget = MAX_CATEGORY_BULLETS - 1
-    categories = [*SPINE_CATEGORIES[:spine_budget], _domain_category_bullet(contribution)]
+    categories = [*SPINE_CATEGORIES[:spine_budget], _domain_category_bullet(selected)]
 
     lines: list[str] = [
-        f'Prioritise security and correctness over style. This pack is scoped to the '
-        f'{contribution.domain} domain.',
+        f'Prioritise security and correctness over style. This pack is scoped to the {scope}.',
         '',
         'Report every issue you can substantiate, in these categories:',
     ]
@@ -390,13 +478,21 @@ def compose_pack(contribution: DomainContribution, spine_topics: tuple[str, ...]
             'Cross-cutting foundations to apply in every review: ' + ', '.join(spine_topics) + '.'
         )
 
-    if contribution.rules:
+    rule_bearing = [c for c in selected if c.rules]
+    if rule_bearing:
+        named = _join_terms([c.domain for c in rule_bearing])
         lines.append('')
         lines.append(
-            f'Domain rules — this organisation\'s own standards for {contribution.domain} code. A diff '
+            f'Domain rules — this organisation\'s own standards for {named} code. A diff '
             f'that breaks one of these is a finding, and the rule already names the mechanism:'
         )
-        lines.extend(f'- {rule}' for rule in contribution.rules)
+        # A composed pack tags each rule with the domain that contributed it, so
+        # the reviewer can tell a Python rule from a marketplace-tooling one. A
+        # single-domain pack needs no tag: the whole pack is that domain.
+        tag = len(rule_bearing) > 1
+        for contribution in rule_bearing:
+            prefix = f'[{contribution.domain}] ' if tag else ''
+            lines.extend(f'- {prefix}{rule}' for rule in contribution.rules)
 
     for clause in (SUBSTANTIATION_CLAUSE, INTENT_CLAUSE, SEVERITY_CLAUSE, ANTI_FABRICATION_CLAUSE):
         lines.append('')
@@ -406,7 +502,7 @@ def compose_pack(contribution: DomainContribution, spine_topics: tuple[str, ...]
 
 
 def compose_packs(marketplace_dir: Path, bundles: list[str] | None = None) -> dict[str, str]:
-    """Compose every pack the derived domain set can produce.
+    """Compose the single-domain pack for every derived domain.
 
     The population is derived, not hand-written: a consumer enumerating packs
     (e.g. the charter regression guard) asks this function rather than iterating
@@ -419,20 +515,60 @@ def compose_packs(marketplace_dir: Path, bundles: list[str] | None = None) -> di
     }
 
 
-def render_config(domain: str, pack: str) -> str:
+def compose_selection(
+    marketplace_dir: Path,
+    selection: Sequence[str],
+    bundles: list[str] | None = None,
+) -> str:
+    """Compose the ONE pack a repository carries for the given domain selection.
+
+    This is the composition the target emits, and the one a guard must measure:
+    a composed selection is a pack shape that :func:`compose_packs` — which only
+    enumerates single-domain packs — never produces.
+
+    Raises:
+        ValueError: When the marketplace derives no domain at all, or when the
+            selection names a domain that is not derivable.
+    """
+    derived = discover_domains(marketplace_dir, bundles=bundles)
+    if not derived:
+        raise ValueError(
+            f'no review domains derived from {marketplace_dir}: expected at least one bundle '
+            f'carrying a *-security, arch-gate-* or ext-triage-* skill'
+        )
+    unknown = [domain for domain in selection if domain not in derived]
+    if unknown:
+        raise ValueError(
+            f'unknown pack {PACK_SEPARATOR.join(unknown)!r}; derived packs are: '
+            f'{", ".join(sorted(derived))}'
+        )
+    return compose_pack(
+        [derived[domain] for domain in selection],
+        discover_spine_topics(marketplace_dir),
+    )
+
+
+def render_config(selection: Sequence[str], pack: str) -> str:
     """Render the repo-local ``.pr_agent.toml`` carrying exactly one pack.
 
     The pack is emitted as a TOML multi-line LITERAL string: harvested rule text
     can contain backslashes (regex fragments, path separators), which a basic
     ``\"\"\"`` string would read as escape sequences.
+
+    The header states the selection and the command that reproduces the file,
+    including ``--packs``. That is load-bearing for a composed selection: a
+    regenerate line that omitted the selection would name a command producing a
+    DIFFERENT file, and following it would silently narrow the repository's
+    review to the default.
     """
     if "'''" in pack:
         raise ValueError('composed pack contains a TOML literal-string terminator; cannot render')
+    joined = PACK_SEPARATOR.join(selection)
     return (
         '# Repository-local PR-Agent configuration — GENERATED, do not edit by hand.\n'
         '#\n'
-        f'# Pack: {domain}. Regenerate with:\n'
-        '#   python3 marketplace/targets/generate.py --target pr-agent --output .\n'
+        f'# Pack: {joined}. Regenerate with:\n'
+        f'#   python3 marketplace/targets/generate.py --target pr-agent --output . --packs {joined}\n'
         '#\n'
         '# Merged ABOVE the organisation-wide cuioss/pr-agent-settings configuration, so this\n'
         '# file carries the per-domain reviewer pack ONLY and inherits every other key — model,\n'
@@ -440,7 +576,9 @@ def render_config(domain: str, pack: str) -> str:
         '# decentralize the configuration that file exists to centralize.\n'
         '#\n'
         '# A repository carries exactly ONE pack: a regeneration REPLACES the pack below rather\n'
-        '# than appending to it.\n'
+        '# than appending to it. One pack may COMPOSE several derived domains — a repository is\n'
+        '# not always one language — and the composed pack still contributes exactly one review\n'
+        '# category, so composition never widens the category ceiling.\n'
         '\n'
         '[pr_reviewer]\n'
         "extra_instructions = '''\n"
@@ -456,14 +594,16 @@ def render_config(domain: str, pack: str) -> str:
 class PrAgentTarget(TargetBase):
     """Build target emitting a per-domain PR-Agent instruction pack."""
 
-    def __init__(self, pack: str = DEFAULT_PACK) -> None:
-        """Bind the target to ONE pack selection.
+    def __init__(self, pack: str | Sequence[str] = DEFAULT_PACK) -> None:
+        """Bind the target to ONE pack selection, over one or more domains.
 
         Args:
-            pack: The derived domain whose pack this run emits. Selection is an
-                argument, never an accumulation — one run, one pack.
+            pack: The derived domain(s) whose composed pack this run emits —
+                either a :data:`PACK_SEPARATOR`-separated string or a sequence.
+                Selection is an argument, never an accumulation: one run emits
+                one pack, and that pack may compose several domains.
         """
-        self._pack = pack
+        self._packs = parse_pack_selection(pack)
 
     @property
     def name(self) -> str:
@@ -490,9 +630,14 @@ class PrAgentTarget(TargetBase):
         return False
 
     @property
+    def packs(self) -> tuple[str, ...]:
+        """The selected derived domains this run composes into one pack."""
+        return self._packs
+
+    @property
     def pack(self) -> str:
-        """The selected pack (derived-domain identifier) this run emits."""
-        return self._pack
+        """The selection in its canonical string form (the header/CLI spelling)."""
+        return PACK_SEPARATOR.join(self._packs)
 
     def generate(
         self,
@@ -505,20 +650,11 @@ class PrAgentTarget(TargetBase):
                 'PrAgentTarget requires --output: pass an output directory '
                 '(e.g. the repository root, which is where .pr_agent.toml lives)'
             )
-        packs = compose_packs(marketplace_dir, bundles=bundles)
-        if not packs:
-            raise ValueError(
-                f'no review domains derived from {marketplace_dir}: expected at least one bundle '
-                f'carrying a *-security, arch-gate-* or ext-triage-* skill'
-            )
-        if self._pack not in packs:
-            raise ValueError(
-                f'unknown pack {self._pack!r}; derived packs are: {", ".join(sorted(packs))}'
-            )
+        pack = compose_selection(marketplace_dir, self._packs, bundles=bundles)
 
         output_dir.mkdir(parents=True, exist_ok=True)
         config_path = output_dir / CONFIG_FILENAME
-        config_path.write_text(render_config(self._pack, packs[self._pack]), encoding='utf-8')
+        config_path.write_text(render_config(self._packs, pack), encoding='utf-8')
         return [config_path]
 
 
@@ -530,13 +666,16 @@ __all__ = [
     'INTENT_CLAUSE',
     'MAX_CATEGORY_BULLETS',
     'MAX_DOMAIN_RULES',
+    'PACK_SEPARATOR',
     'PrAgentTarget',
     'SEVERITY_CLAUSE',
     'SPINE_CATEGORIES',
     'SUBSTANTIATION_CLAUSE',
     'compose_pack',
     'compose_packs',
+    'compose_selection',
     'discover_domains',
     'discover_spine_topics',
+    'parse_pack_selection',
     'render_config',
 ]

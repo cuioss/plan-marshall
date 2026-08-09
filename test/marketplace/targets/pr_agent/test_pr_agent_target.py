@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the pr-agent instruction-pack export target.
 
-The subject is the target's DERIVATION and EMISSION contract: the domain set is
-scanned out of the source marketplace rather than hand-transcribed, a run emits
-exactly one pack, and the target declares itself not-a-bundle-tree so the CLI's
-generic post-emit steps stay off its output.
+The subject is the target's DERIVATION, COMPOSITION and EMISSION contract: the
+domain set is scanned out of the source marketplace rather than hand-transcribed,
+a run emits exactly one pack (which may compose several domains), and the target
+declares itself not-a-bundle-tree so the CLI's generic post-emit steps stay off
+its output.
 
 Every test builds its own fixture marketplace, so the assertions do not depend on
 which bundles the real marketplace happens to ship today.
@@ -24,8 +25,10 @@ from marketplace.targets.pr_agent.target import (
     SUBSTANTIATION_CLAUSE,
     PrAgentTarget,
     compose_packs,
+    compose_selection,
     discover_domains,
     discover_spine_topics,
+    parse_pack_selection,
 )
 
 # The pack text is measured against literals declared HERE, never against a value
@@ -82,6 +85,19 @@ def _fixture_marketplace(tmp_path: Path) -> Path:
     spine_standards.mkdir(parents=True)
     (spine_standards / 'owasp-top-ten.md').write_text('# owasp\n', encoding='utf-8')
     (spine_standards / 'secrets-handling.md').write_text('# secrets\n', encoding='utf-8')
+    return bundles
+
+
+def _two_domain_marketplace(tmp_path: Path) -> Path:
+    """A marketplace deriving TWO rule-bearing domains, for composition tests."""
+    bundles = _fixture_marketplace(tmp_path)
+    _write_skill(
+        bundles,
+        'pm-fixture-ruby',
+        'ruby-security',
+        prohibited=('Do not eval untrusted input',),
+        constraints=('Gems are pinned by checksum',),
+    )
     return bundles
 
 
@@ -273,6 +289,126 @@ class TestPackComposition:
         assert 'listed under "Domain rules" below' not in pack
 
 
+class TestPackSelectionParsing:
+    """A selection is normalized once, and an empty one is rejected loudly."""
+
+    def test_single_domain_string(self):
+        assert parse_pack_selection('java') == ('java',)
+
+    def test_comma_separated_string_splits_in_order(self):
+        assert parse_pack_selection('python,plugin') == ('python', 'plugin')
+
+    def test_whitespace_around_entries_is_stripped(self):
+        assert parse_pack_selection(' python , plugin ') == ('python', 'plugin')
+
+    def test_sequence_input_is_accepted(self):
+        assert parse_pack_selection(['python', 'plugin']) == ('python', 'plugin')
+
+    def test_duplicates_are_dropped_preserving_first_position(self):
+        # A duplicate would double the domain's rule list in the composed pack.
+        assert parse_pack_selection('python,plugin,python') == ('python', 'plugin')
+
+    def test_empty_selection_is_rejected(self):
+        with pytest.raises(ValueError, match='empty pack selection'):
+            parse_pack_selection(' , ')
+
+
+class TestComposedSelection:
+    """A pack may compose several domains — grouped, and inside the ceiling."""
+
+    def test_composed_pack_carries_every_selected_domains_rules(self, tmp_path):
+        bundles = _two_domain_marketplace(tmp_path)
+
+        pack = compose_selection(bundles, ('java', 'ruby'))
+
+        assert 'Do not log credentials' in pack
+        assert 'Do not eval untrusted input' in pack
+
+    def test_composed_pack_stays_within_the_category_ceiling(self, tmp_path):
+        """The ceiling is held by GROUPING, not by widening it.
+
+        This is the invariant the composition exists to preserve: one category
+        per domain would put a two-domain pack at eleven bullets.
+        """
+        bundles = _two_domain_marketplace(tmp_path)
+
+        bullets = _category_bullets(compose_selection(bundles, ('java', 'ruby')))
+
+        assert len(bullets) <= EXPECTED_CATEGORY_CEILING
+
+    def test_composing_a_domain_adds_no_category_bullet(self, tmp_path):
+        """CONTROL for the grouping claim: the bullet count does not grow with N.
+
+        Without this, the ceiling assertion above would also pass for a
+        composition that happened to sit one under the ceiling by luck.
+        """
+        bundles = _two_domain_marketplace(tmp_path)
+
+        one = _category_bullets(compose_selection(bundles, ('java',)))
+        two = _category_bullets(compose_selection(bundles, ('java', 'ruby')))
+
+        assert len(one) == len(two)
+
+    def test_composed_domain_bullet_names_every_selected_domain(self, tmp_path):
+        bundles = _two_domain_marketplace(tmp_path)
+
+        bullets = _category_bullets(compose_selection(bundles, ('java', 'ruby')))
+        domain_bullet = next(b for b in bullets if b.startswith('Defects specific to'))
+
+        assert 'java' in domain_bullet
+        assert 'ruby' in domain_bullet
+
+    def test_composed_rules_are_tagged_with_their_domain(self, tmp_path):
+        bundles = _two_domain_marketplace(tmp_path)
+
+        pack = compose_selection(bundles, ('java', 'ruby'))
+
+        assert '- [java] Do not log credentials' in pack
+        assert '- [ruby] Do not eval untrusted input' in pack
+
+    def test_single_domain_rules_carry_no_tag(self, tmp_path):
+        """A one-domain pack needs no tag — the whole pack is that domain."""
+        bundles = _two_domain_marketplace(tmp_path)
+
+        pack = compose_selection(bundles, ('java',))
+
+        assert '- Do not log credentials' in pack
+        assert '[java]' not in pack
+
+    def test_selection_order_is_the_caller_s(self, tmp_path):
+        bundles = _two_domain_marketplace(tmp_path)
+
+        assert 'scoped to the java and ruby domains' in compose_selection(bundles, ('java', 'ruby'))
+        assert 'scoped to the ruby and java domains' in compose_selection(bundles, ('ruby', 'java'))
+
+    def test_composed_pack_keeps_the_charter_clauses(self, tmp_path):
+        bundles = _two_domain_marketplace(tmp_path)
+
+        pack = compose_selection(bundles, ('java', 'ruby'))
+
+        assert SUBSTANTIATION_CLAUSE in pack
+        assert ANTI_FABRICATION_CLAUSE in pack
+
+    def test_ruleless_domain_in_a_composition_promises_no_rule_list(self, tmp_path):
+        bundles = _two_domain_marketplace(tmp_path)
+        _write_skill(bundles, 'pm-fixture-docs', 'ext-triage-docs')
+
+        bullets = _category_bullets(compose_selection(bundles, ('java', 'docs')))
+        domain_bullet = next(b for b in bullets if b.startswith('Defects specific to'))
+
+        # java's rules are promised; docs is described by its standards instead.
+        assert 'java code are listed under "Domain rules" below' in domain_bullet
+        assert 'governs docs through its defect-triage standards' in domain_bullet
+
+    def test_unknown_domain_in_a_selection_is_rejected(self, tmp_path):
+        bundles = _two_domain_marketplace(tmp_path)
+
+        with pytest.raises(ValueError, match='unknown pack') as excinfo:
+            compose_selection(bundles, ('java', 'cobol'))
+
+        assert 'cobol' in str(excinfo.value)
+
+
 class TestEmission:
     """A run emits exactly one pack, and a re-run swaps rather than accumulates."""
 
@@ -349,3 +485,50 @@ class TestEmission:
 
         with pytest.raises(ValueError, match='no review domains derived'):
             PrAgentTarget(pack='java').generate(bundles, tmp_path / 'out')
+
+    def test_emits_one_file_for_a_composed_selection(self, tmp_path):
+        bundles = _two_domain_marketplace(tmp_path)
+        out = tmp_path / 'out'
+
+        written = PrAgentTarget(pack='java,ruby').generate(bundles, out)
+
+        assert written == [out / CONFIG_FILENAME]
+        assert sorted(p.name for p in out.iterdir()) == [CONFIG_FILENAME]
+
+    def test_composed_selection_reaches_the_emitted_config(self, tmp_path):
+        bundles = _two_domain_marketplace(tmp_path)
+        out = tmp_path / 'out'
+
+        PrAgentTarget(pack='java,ruby').generate(bundles, out)
+        instructions = tomllib.loads((out / CONFIG_FILENAME).read_text(encoding='utf-8'))[
+            'pr_reviewer'
+        ]['extra_instructions']
+
+        assert 'Do not log credentials' in instructions
+        assert 'Do not eval untrusted input' in instructions
+
+    def test_header_regenerate_command_reproduces_the_composed_file(self, tmp_path):
+        """The header's regenerate line must name the SELECTION, not just the target.
+
+        A regenerate line without --packs would name a command producing a
+        different file, and following it would silently narrow the repository's
+        review to the default selection.
+        """
+        bundles = _two_domain_marketplace(tmp_path)
+        out = tmp_path / 'out'
+
+        PrAgentTarget(pack='java,ruby').generate(bundles, out)
+        emitted = (out / CONFIG_FILENAME).read_text(encoding='utf-8')
+
+        assert '# Pack: java,ruby.' in emitted
+        assert '--packs java,ruby' in emitted
+
+    def test_target_selection_is_available_both_split_and_joined(self):
+        target = PrAgentTarget(pack='java,ruby')
+
+        assert target.packs == ('java', 'ruby')
+        assert target.pack == 'java,ruby'
+
+    def test_default_selection_composes_this_repository_s_two_domains(self):
+        """The no-argument default is the composed selection, not one language."""
+        assert PrAgentTarget().packs == ('python', 'plugin')
