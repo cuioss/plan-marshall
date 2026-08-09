@@ -433,26 +433,17 @@ class TestSharedDerivationConsolidation:
 
     Asserting the two modules produce the same ANSWER for a sample would not
     close that: two copies can agree on a sample and drift on the next edit.
-    These tests assert IDENTITY with the shared module instead — the analyzer's
-    surface types and probe entry points ARE the shared ones.
+    These tests assert IDENTITY with the shared module instead — every name the
+    analyzer still binds locally IS the shared one. The pure parsers and the
+    remaining probe helpers need no assertion: the analyzer holds no binding for
+    them, so every consumer reaches the shared module directly and there is no
+    second name that could come to mean something else.
     """
 
-    def test_surface_types_are_the_shared_ones(self):
+    def test_locally_bound_names_are_the_shared_ones(self):
         assert _ami._ScriptTree is surf.ScriptSurface
         assert _ami._LeafParser is surf.ParserNode
-
-    def test_probe_helpers_are_the_shared_ones(self):
-        assert _ami._run_help is surf.run_help
         assert _ami._resolve_executor is surf.resolve_executor
-        assert _ami._script_path_for_notation is surf.script_path_for_notation
-        assert _ami._content_hash is surf.content_hash
-
-    def test_pure_parsers_are_the_shared_ones(self):
-        assert _ami._parse_subcommand_choices is surf.parse_choice_list
-        assert _ami._parse_leaf_flags is surf.parse_help_node
-        assert _ami._parse_required_flags is surf.parse_required_flags
-        assert _ami._split_help_sections is surf.split_help_sections
-        assert _ami._strip_grouping_constructs is surf.strip_grouping_constructs
 
     def test_no_ast_walk_remains_on_the_accept_set_path(self):
         """The static ``add_parser`` walk is deleted, not kept as a fallback.

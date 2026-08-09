@@ -810,13 +810,6 @@ def _check_emitted_path_provenance(emitted_paths: list[str], base_path: Path) ->
 # ARGPARSE ACCEPT-SET DERIVATION (SCRIPT_SURFACES)
 # ============================================================================
 
-# Bounds for generation-time derivation. Deliberately tighter than the module
-# defaults on the two axes that matter here: a per-invocation timeout small
-# enough that one hanging import cannot stall a regeneration, and a total
-# wall-clock budget after which the remaining scripts simply contribute no
-# entry. Exhausting the budget degrades to today's behaviour (no surface, no
-# rejection) rather than failing the generation — the fail-closed-on-
-# uncertainty invariant applied to the generator's own cost.
 _SURFACE_DERIVATION_BUDGET_ENV = 'PM_SURFACE_BUDGET_SECONDS'
 _DEFAULT_SURFACE_BUDGET_SECONDS = 180.0
 

@@ -412,11 +412,12 @@ class NotDerivable:
     reason: str
 
 
-#: Reason codes carried by :class:`NotDerivable`.
+#: Reason codes carried by :class:`NotDerivable`. One per uncertainty path that
+#: actually fires — a code with no producer would be a claim the derivation
+#: cannot make.
 REASON_HELP_FAILED = 'help_failed'
 REASON_NO_STRUCTURE = 'no_structure'
 REASON_BUDGET_EXHAUSTED = 'budget_exhausted'
-REASON_SCRIPT_UNRESOLVED = 'script_unresolved'
 
 
 def is_derivable(result: ScriptSurface | NotDerivable) -> TypeGuard[ScriptSurface]:

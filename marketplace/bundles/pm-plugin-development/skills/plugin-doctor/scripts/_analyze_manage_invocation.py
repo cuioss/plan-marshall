@@ -84,17 +84,8 @@ from argparse_surface import (
     ParserNode,
     ScriptSurface,
     build_surface_index,
-    content_hash,
     derive_surface,
-    parse_choice_list,
-    parse_help_node,
-    parse_required_flags,
     resolve_executor,
-    run_help,
-    script_path_for_notation,
-    split_help_sections,
-    strip_ansi,
-    strip_grouping_constructs,
 )
 
 # =============================================================================
@@ -316,37 +307,26 @@ def discover_in_scope_scripts(
 
 
 # The surface model is the shared one. These aliases keep this module's
-# historical private names working for its own body and its tests; they are
-# the SAME classes, not parallel definitions.
+# historical private names working for its own body; they are the SAME classes,
+# not parallel definitions.
+#
+# Nothing is re-bound here for a consumer's benefit alone. The pure parsers, the
+# probe, the recursion, and the caches all live in ``argparse_surface`` and every
+# consumer imports them from there directly — a local alias for a symbol this
+# module does not itself use would be a second name for one implementation,
+# which is the drift the consolidation removed.
 _LeafParser = ParserNode
 _ScriptTree = ScriptSurface
-
-
-# =============================================================================
-# ``--help`` parsing — re-exported from the shared derivation
-# =============================================================================
-
-# The pure parsers live in ``argparse_surface`` and are re-bound here under the
-# names this module's tests already use. Same functions, one implementation.
-_split_help_sections = split_help_sections
-_parse_subcommand_choices = parse_choice_list
-_parse_leaf_flags = parse_help_node
-_parse_required_flags = parse_required_flags
-_strip_grouping_constructs = strip_grouping_constructs
 
 
 # =============================================================================
 # Live ``--help`` probing with caching
 # =============================================================================
 
-# The probe, the recursion, the in-process memo, and the content-hash-keyed
-# on-disk cache all live in ``argparse_surface`` now. These bindings keep the
-# names this module's own body, its tests, and ``doctor-marketplace.py`` import.
+# The one surviving function alias. Unlike the parser/probe bindings this module
+# does not call, ``resolve_executor`` IS used below — and ``doctor-marketplace``
+# imports it under this name.
 _resolve_executor = resolve_executor
-_script_path_for_notation = script_path_for_notation
-_content_hash = content_hash
-_run_help = run_help
-_strip_ansi = strip_ansi
 
 
 def derive_script_tree(notation: str, executor: Path) -> _ScriptTree | None:
