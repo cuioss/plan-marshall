@@ -3,8 +3,8 @@
 """Thin scaffolding script for the marshall-orchestrator skill.
 
 Deliberately lean, per the orchestrator's lean posture: everything that
-requires judgement stays LLM-workflow; this script owns five deterministic
-operations against the main-anchored orchestrator store
+requires judgement stays LLM-workflow; this script owns six deterministic
+operation groups against the main-anchored orchestrator store
 (``.plan/local/orchestrator/{slug}/``, resolved via
 ``file_ops.get_store_dir('orchestrator', slug)``):
 
@@ -21,6 +21,13 @@ operations against the main-anchored orchestrator store
 - ``archive --slug S`` — relocate a *closed* epic tree to
   ``.plan/local/archived-orchestrators/{slug}/`` (a mechanical, post-close
   directory move that requires no judgement; refuses a non-closed epic).
+- ``corpus {enumerate,verdicts,set-verdict}`` — the epic's staged spec corpus:
+  reconcile the ``status.json`` ``plans[]`` queue against the ``plans/PLAN-*.md``
+  spec files in BOTH directions, and read/write the re-grounding verdict field
+  defined once in ``persona-marshall-orchestrator/standards/orchestration-model.md``
+  § Re-Grounding Verdict Field. ``set-verdict`` is the group's single write
+  action and the ONLY code path that formats a ``verdict:`` line; ``verdicts``
+  is the only one that interprets one.
 - ``inbox {write,validate,list,archive,detect}`` — the epic's plan-writable
   OUTBOX and its orchestrator-side drain: append one
   ``inbox/{sender_id}-{NNN}.md`` message, validate an existing message against
@@ -37,7 +44,10 @@ No implementation-side capability (no build/CI/source verbs) exists here.
 """
 
 import argparse
+import re
 import shutil
+import subprocess
+from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -88,6 +98,41 @@ TERMINAL_PLAN_STATUSES = ('shipped', 'landed')
 # The result links a terminal row must carry, in the fixed order the gap marker
 # names them.
 TERMINAL_REQUIRED_FIELDS = ('pr', 'landing')
+
+# --- corpus group ----------------------------------------------------------
+
+# The epic subdirectory holding the staged plan specs, and the filename shape
+# the layout contract gives them (``plans/PLAN-NN-{plan_slug}.md``).
+PLANS_SUBDIR = 'plans'
+SPEC_GLOB = 'PLAN-*.md'
+
+# A row at this status is enumerated but carries ``excluded_reason`` so a caller
+# cannot re-scope it: re-scoping a spec mid-execution changes the brief under a
+# running plan (orchestration-model.md § Cleanup Contract, running-row exclusion).
+RUNNING_STATUS = 'running'
+
+# The re-grounding verdict field. The grammar is defined ONCE, in
+# ``persona-marshall-orchestrator/standards/orchestration-model.md``
+# § Re-Grounding Verdict Field; these constants are its only implementation.
+VERDICT_KEYS = ('verdict', 'checked_at', 'by', 'rescoped', 'evidence')
+VERDICT_VALUES = ('corroborated', 'contradicted', 'unverifiable')
+RESCOPED_VALUES = ('yes', 'no', 'n/a')
+VERDICT_SEPARATOR = ' | '
+# At most four splits, so ``evidence`` is the whole remainder of the line and a
+# ``' | '`` inside the evidence text survives intact.
+VERDICT_MAX_SPLITS = len(VERDICT_KEYS) - 1
+VERDICT_PREFIX = f'{VERDICT_KEYS[0]}:'
+# The verdict reported for a bullet that does not parse. Never a fourth member of
+# VERDICT_VALUES: it is a parse outcome, not a settlement.
+INDETERMINATE = 'indeterminate'
+BLOCKING_RESCOPED = 'no'
+CONTRADICTED = 'contradicted'
+NOT_APPLICABLE = 'n/a'
+
+CLAIM_LABELS_HEADING_RE = re.compile(r'^##\s+Claim Labels\s*$')
+_HEADING_RE = re.compile(r'^#{1,6}\s')
+_BULLET_RE = re.compile(r'^(?P<indent>[ \t]*)-\s+(?P<text>.*)$')
+_CHECKED_AT_RE = re.compile(r'^[0-9a-f]{7,40}$')
 
 
 def _error(slug: str, error: str, message: str, **extra: Any) -> dict[str, Any]:
@@ -513,6 +558,446 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _spec_paths(root: Path) -> list[Path]:
+    """Enumerate the epic's staged spec files, sorted for determinism."""
+    plans_dir = root / PLANS_SUBDIR
+    if not plans_dir.is_dir():
+        return []
+    return sorted(path for path in plans_dir.glob(SPEC_GLOB) if path.is_file())
+
+
+def _spec_matches_row(path: Path, plan_id: str) -> bool:
+    """True when ``path`` is the spec file of the queue row ``plan_id``.
+
+    The layout contract names specs ``plans/PLAN-NN-{plan_slug}.md`` while the
+    row id is the bare ``PLAN-NN`` prefix, so the match is exact-or-prefix on the
+    stem WITH the separating hyphen. The hyphen is load-bearing: without it
+    ``PLAN-1`` would claim ``PLAN-10-foo.md``.
+    """
+    return path.stem == plan_id or path.stem.startswith(f'{plan_id}-')
+
+
+def _read_spec(path: Path) -> tuple[str | None, str]:
+    """Read one spec file, returning ``(text, error_code)``.
+
+    A file that cannot be read is REPORTED, never silently dropped — the same
+    report-never-skip rule ``inbox list`` applies. ``error_code`` is the empty
+    string on success.
+    """
+    try:
+        return path.read_text(encoding='utf-8'), ''
+    except (OSError, UnicodeDecodeError):
+        return None, 'unreadable'
+
+
+def _current_head_sha() -> str:
+    """Return the current HEAD sha, or the empty string when it cannot be read.
+
+    Used only to derive the ``stale`` flag on a parsed verdict. An unresolvable
+    HEAD yields ``stale: false`` for every row and rides in the payload as an
+    empty ``head_sha``, so a caller can tell "not stale" from "staleness was not
+    computable" instead of reading an unqualified boolean.
+    """
+    try:
+        completed = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, check=False
+        )
+    except OSError:
+        return ''
+    if completed.returncode != 0:
+        return ''
+    return completed.stdout.strip()
+
+
+def _claim_labels_span(lines: list[str]) -> tuple[int, int]:
+    """Return the ``[start, end)`` line span of the ``## Claim Labels`` body.
+
+    ``(-1, -1)`` when the spec carries no such section.
+    """
+    start = -1
+    for index, line in enumerate(lines):
+        if CLAIM_LABELS_HEADING_RE.match(line):
+            start = index + 1
+            break
+    if start < 0:
+        return (-1, -1)
+    for index in range(start, len(lines)):
+        if _HEADING_RE.match(lines[index]):
+            return (start, index)
+    return (start, len(lines))
+
+
+def _parse_claims(lines: list[str]) -> list[dict[str, Any]]:
+    """Parse the claim bullets of the ``## Claim Labels`` section.
+
+    A claim is a TOP-LEVEL ``- `` bullet inside the section. Its verdict is the
+    nested child bullet whose text begins with the literal ``verdict:`` token —
+    association is by NESTING, never by ordinal position, so inserting or
+    reordering a claim never re-binds an existing verdict to a different claim.
+
+    Each returned record carries ``block_end``: the insertion point for a new
+    verdict bullet, being one past the claim's own wrapped text lines and before
+    any further bullet, with trailing blank lines excluded.
+    """
+    start, end = _claim_labels_span(lines)
+    if start < 0:
+        return []
+    claims: list[dict[str, Any]] = []
+    for index in range(start, end):
+        match = _BULLET_RE.match(lines[index])
+        if match is None:
+            continue
+        indent = match.group('indent')
+        text = match.group('text').strip()
+        if not indent:
+            claims.append(
+                {
+                    'index': len(claims),
+                    'line': index,
+                    'indent': indent,
+                    'text': text,
+                    'block_end': _claim_block_end(lines, index, end),
+                    'verdict_line': -1,
+                    'verdict_text': '',
+                }
+            )
+        elif claims and text.startswith(VERDICT_PREFIX) and claims[-1]['verdict_line'] < 0:
+            claims[-1]['verdict_line'] = index
+            claims[-1]['verdict_text'] = text
+    return claims
+
+
+def _claim_block_end(lines: list[str], claim_line: int, section_end: int) -> int:
+    """One past the claim bullet's own text block — the verdict insertion point."""
+    end = claim_line + 1
+    while end < section_end:
+        if _BULLET_RE.match(lines[end]) or _HEADING_RE.match(lines[end]):
+            break
+        end += 1
+    while end > claim_line + 1 and not lines[end - 1].strip():
+        end -= 1
+    return end
+
+
+def _parse_verdict_text(text: str) -> dict[str, str] | None:
+    """Parse one ``verdict:`` bullet body, or ``None`` when it does not conform.
+
+    The parse rule both sides use: split on ``' | '`` with at most four splits,
+    yielding five parts, so ``evidence`` is the fifth part and therefore the
+    whole remainder of the line. Returning ``None`` is what makes a malformed
+    bullet ``indeterminate`` at the caller instead of silently admitting it.
+    """
+    parts = text.split(VERDICT_SEPARATOR, VERDICT_MAX_SPLITS)
+    if len(parts) != len(VERDICT_KEYS):
+        return None
+    parsed: dict[str, str] = {}
+    for key, part in zip(VERDICT_KEYS, parts, strict=True):
+        prefix = f'{key}:'
+        if not part.startswith(prefix):
+            return None
+        parsed[key] = part[len(prefix) :].strip()
+    if _invalid_verdict_values(parsed):
+        return None
+    return parsed
+
+
+def _invalid_verdict_values(parsed: dict[str, str]) -> bool:
+    """True when a parsed verdict violates the grammar's value rules."""
+    return (
+        parsed['verdict'] not in VERDICT_VALUES
+        or parsed['rescoped'] not in RESCOPED_VALUES
+        or (parsed['verdict'] != CONTRADICTED and parsed['rescoped'] != NOT_APPLICABLE)
+        or not _CHECKED_AT_RE.match(parsed['checked_at'])
+        or not parsed['by']
+        or not parsed['evidence']
+    )
+
+
+def _format_verdict_line(values: dict[str, str]) -> str:
+    """Format the verdict body. The ONLY formatter of this line in the tree."""
+    return VERDICT_SEPARATOR.join(f'{key}: {values[key]}' for key in VERDICT_KEYS)
+
+
+def _admits(verdict: str, rescoped: str) -> bool:
+    """The admission predicate: block iff ``contradicted`` AND ``rescoped: no``.
+
+    Every other settled state admits — an absent field is an open clause, and an
+    ``unverifiable`` verdict is an unreached population, not a refutation.
+    """
+    return not (verdict == CONTRADICTED and rescoped == BLOCKING_RESCOPED)
+
+
+def _verdict_row(spec_name: str, claim: dict[str, Any], line: str, head: str) -> dict[str, Any]:
+    """Build one ``verdicts`` payload row for a claim carrying a verdict bullet."""
+    parsed = _parse_verdict_text(str(claim['verdict_text']))
+    if parsed is None:
+        return {
+            'spec': spec_name,
+            'claim_index': claim['index'],
+            'verdict': INDETERMINATE,
+            'checked_at': '',
+            'by': '',
+            'rescoped': '',
+            'evidence': '',
+            'admits': False,
+            'stale': False,
+            'line': line,
+        }
+    return {
+        'spec': spec_name,
+        'claim_index': claim['index'],
+        'verdict': parsed['verdict'],
+        'checked_at': parsed['checked_at'],
+        'by': parsed['by'],
+        'rescoped': parsed['rescoped'],
+        'evidence': parsed['evidence'],
+        'admits': _admits(parsed['verdict'], parsed['rescoped']),
+        'stale': bool(head) and not head.startswith(parsed['checked_at']),
+        'line': line,
+    }
+
+
+def cmd_corpus_enumerate(args: argparse.Namespace) -> dict[str, Any]:
+    """Reconcile the ``plans[]`` queue against the spec files, in BOTH directions.
+
+    The enumeration authority is ``status.json``'s ``plans[]`` — never a
+    ``plans/`` directory glob, which would return a different set the moment a
+    spec is staged without a row (or a row recorded without a spec). The two
+    directions are separate fields with separate causes: ``rows_without_spec``
+    (a queue row whose spec file is absent) and ``specs_without_row`` (a spec
+    file with no queue row) are never collapsed into one symmetric-difference
+    count.
+
+    Every count rides with the population it was computed over, so no figure is
+    publishable without its denominator. Read-only: resolves through the
+    archived read-fallback and writes nothing.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    status_doc = _read_status(args.slug, allow_archived=True)
+    if not status_doc:
+        return _error(
+            args.slug, 'file_not_found', 'status.json not found in orchestrator store'
+        )
+    root = _epic_root(args.slug, allow_archived=True)
+    rows = [row for row in status_doc.get('plans', []) if isinstance(row, dict)]
+    specs = _spec_paths(root)
+    matched: set[Path] = set()
+    row_records: list[dict[str, Any]] = []
+    rows_without_spec: list[dict[str, str]] = []
+    for row in rows:
+        plan_id = str(row.get('id', ''))
+        row_status = str(row.get('status', ''))
+        spec = next((path for path in specs if _spec_matches_row(path, plan_id)), None) if plan_id else None
+        if spec is not None:
+            matched.add(spec)
+        else:
+            rows_without_spec.append({'id': plan_id, 'status': row_status})
+        row_records.append(
+            {
+                'id': plan_id,
+                'status': row_status,
+                'spec': spec.name if spec is not None else '',
+                'excluded_reason': RUNNING_STATUS if row_status == RUNNING_STATUS else '',
+            }
+        )
+    unreadable = [
+        {'spec': spec.name, 'error': error}
+        for spec, error in ((spec, _read_spec(spec)[1]) for spec in specs)
+        if error
+    ]
+    tally = Counter(record['status'] for record in row_records)
+    return {
+        'status': 'success',
+        'operation': 'corpus-enumerate',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'rows_total': len(rows),
+        'rows_scanned': sum(1 for record in row_records if record['id']),
+        'specs_total': len(specs),
+        'specs_scanned': len(specs) - len(unreadable),
+        'status_tally': [
+            {'status': name, 'count': count} for name, count in sorted(tally.items())
+        ],
+        'rows': row_records,
+        'rows_without_spec_count': len(rows_without_spec),
+        'rows_without_spec': rows_without_spec,
+        'specs_without_row_count': sum(1 for spec in specs if spec not in matched),
+        'specs_without_row': [spec.name for spec in specs if spec not in matched],
+        'unreadable_count': len(unreadable),
+        'unreadable': unreadable,
+    }
+
+
+def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
+    """Parse every re-grounding verdict bullet across the corpus. Read-only.
+
+    The ONLY interpreter of the verdict line in the tree. One row per claim that
+    carries a verdict bullet, with the five parsed keys plus the derived
+    ``admits`` and ``stale`` booleans. A bullet that does not parse is returned
+    with ``verdict: indeterminate``, ``admits: false`` and the offending line
+    quoted verbatim — never dropped. ``specs_scanned`` and ``claims_scanned``
+    ride the payload so a ``count: 0`` states which zero it is.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+    specs = _spec_paths(root)
+    head = _current_head_sha()
+    rows: list[dict[str, Any]] = []
+    unreadable: list[dict[str, str]] = []
+    specs_scanned = 0
+    claims_scanned = 0
+    for spec in specs:
+        text, error = _read_spec(spec)
+        if text is None:
+            unreadable.append({'spec': spec.name, 'error': error})
+            continue
+        specs_scanned += 1
+        lines = text.splitlines()
+        claims = _parse_claims(lines)
+        claims_scanned += len(claims)
+        rows.extend(
+            _verdict_row(spec.name, claim, lines[claim['verdict_line']].strip(), head)
+            for claim in claims
+            if claim['verdict_line'] >= 0
+        )
+    return {
+        'status': 'success',
+        'operation': 'corpus-verdicts',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'head_sha': head,
+        'specs_total': len(specs),
+        'specs_scanned': specs_scanned,
+        'claims_scanned': claims_scanned,
+        'count': len(rows),
+        'blocking_count': sum(1 for row in rows if not row['admits']),
+        'claims': rows,
+        'unreadable_count': len(unreadable),
+        'unreadable': unreadable,
+    }
+
+
+def _validate_set_verdict_args(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Return the rejection envelope for an invalid ``set-verdict`` call, else ``None``.
+
+    Every grammar rule is enforced HERE, at the sole emitter, so an invalid
+    combination cannot reach disk. In particular ``rescoped`` must be ``n/a``
+    whenever the verdict is not ``contradicted``: allowing ``no`` there would
+    manufacture a blocking state out of a corroboration.
+    """
+    if args.verdict not in VERDICT_VALUES:
+        return _error(
+            args.slug,
+            'invalid_verdict',
+            f'--verdict must be one of {sorted(VERDICT_VALUES)}, got: {args.verdict}',
+        )
+    if args.rescoped not in RESCOPED_VALUES:
+        return _error(
+            args.slug,
+            'invalid_rescoped',
+            f'--rescoped must be one of {sorted(RESCOPED_VALUES)}, got: {args.rescoped}',
+        )
+    if args.verdict != CONTRADICTED and args.rescoped != NOT_APPLICABLE:
+        return _error(
+            args.slug,
+            'invalid_rescoped_combination',
+            f'--rescoped must be {NOT_APPLICABLE!r} when --verdict is not {CONTRADICTED!r}, '
+            f'got: {args.rescoped}',
+        )
+    if not _CHECKED_AT_RE.match(args.checked_at):
+        return _error(
+            args.slug,
+            'invalid_checked_at',
+            f'--checked-at must be 7-40 lowercase hex characters, got: {args.checked_at}',
+        )
+    if not args.by.strip() or not args.evidence.strip():
+        return _error(
+            args.slug, 'wrong_parameters', '--by and --evidence must both be non-empty'
+        )
+    if VERDICT_SEPARATOR in args.by or VERDICT_SEPARATOR in args.checked_at:
+        return _error(
+            args.slug,
+            'wrong_parameters',
+            f'--by and --checked-at must not contain the {VERDICT_SEPARATOR!r} separator',
+        )
+    return None
+
+
+def cmd_corpus_set_verdict(args: argparse.Namespace) -> dict[str, Any]:
+    """Stamp one re-grounding verdict onto one claim. The group's single write.
+
+    The ONLY formatter of the verdict line in the tree. Writes exactly one
+    nested bullet under the addressed claim, REPLACING an existing one in place
+    rather than appending a second — so re-stamping is idempotent by
+    construction and a claim can never carry two verdicts.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    rejection = _validate_set_verdict_args(args)
+    if rejection is not None:
+        return rejection
+    specs = _spec_paths(_epic_root(args.slug))
+    spec = next((path for path in specs if _spec_matches_row(path, args.plan)), None)
+    if spec is None:
+        return _error(
+            args.slug,
+            'spec_not_found',
+            f'no spec file for plan {args.plan!r} in {PLANS_SUBDIR}/',
+            available_specs=[path.name for path in specs],
+        )
+    text, error = _read_spec(spec)
+    if text is None:
+        return _error(args.slug, error, f'spec {spec.name!r} could not be read', spec=spec.name)
+    lines = text.splitlines()
+    claims = _parse_claims(lines)
+    if not 0 <= args.claim_index < len(claims):
+        return _error(
+            args.slug,
+            'claim_index_out_of_range',
+            f'--claim-index {args.claim_index} is outside the parsed claim list',
+            spec=spec.name,
+            claims_total=len(claims),
+        )
+    claim = claims[args.claim_index]
+    body = _format_verdict_line(
+        {
+            'verdict': args.verdict,
+            'checked_at': args.checked_at,
+            'by': args.by,
+            'rescoped': args.rescoped,
+            'evidence': args.evidence,
+        }
+    )
+    bullet = f'{claim["indent"]}  - {body}'
+    replaced = claim['verdict_line'] >= 0
+    previous_line = lines[claim['verdict_line']].strip() if replaced else ''
+    if replaced:
+        lines[claim['verdict_line']] = bullet
+    else:
+        lines.insert(int(claim['block_end']), bullet)
+    spec.write_text('\n'.join(lines) + ('\n' if text.endswith('\n') else ''), encoding='utf-8')
+    return {
+        'status': 'success',
+        'operation': 'corpus-set-verdict',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'plan': args.plan,
+        'spec': spec.name,
+        'claim_index': args.claim_index,
+        'claims_total': len(claims),
+        'replaced': replaced,
+        'previous_line': previous_line,
+        'line': bullet.strip(),
+    }
+
+
 def _add_slug_arg(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('--slug', required=True, help='Epic slug (kebab-case)')
 
@@ -523,7 +1008,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         description=(
             'Thin scaffolding for marshall-orchestrator epics: scaffold the '
             'epic tree, read/transition/stamp the plan queue, generate the '
-            'START-HERE resume summary, archive a closed epic, and drive the '
+            'START-HERE resume summary, archive a closed epic, reconcile the '
+            'staged spec corpus and its re-grounding verdicts, and drive the '
             'plan-writable inbox OUTBOX and its drain.'
         ),
         allow_abbrev=False,
@@ -598,9 +1084,82 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     _add_slug_arg(archive)
     archive.set_defaults(handler=cmd_archive)
 
+    _add_corpus_group(subparsers)
     _add_inbox_group(subparsers)
 
     return parser
+
+
+def _add_corpus_group(subparsers: Any) -> None:
+    """Register the ``corpus`` verb group.
+
+    Sub-verbs: ``enumerate``, ``verdicts``, ``set-verdict``. The first two are
+    read-only; ``set-verdict`` is the group's single write action, and the only
+    surface in the tree that formats a ``verdict:`` line.
+    """
+    corpus = subparsers.add_parser(
+        'corpus',
+        help=(
+            "Epic spec corpus: reconcile the queue against the plans/ specs in both "
+            'directions, and read or stamp the re-grounding verdict field.'
+        ),
+        allow_abbrev=False,
+    )
+    actions = corpus.add_subparsers(dest='corpus_action', required=True)
+
+    enumerate_specs = actions.add_parser(
+        'enumerate',
+        help=(
+            'Reconcile status.json plans[] against plans/PLAN-*.md in both '
+            'directions, every count carrying its population (read-only).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(enumerate_specs)
+    enumerate_specs.set_defaults(handler=cmd_corpus_enumerate)
+
+    verdicts = actions.add_parser(
+        'verdicts',
+        help='Parse every re-grounding verdict bullet across the corpus (read-only).',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(verdicts)
+    verdicts.set_defaults(handler=cmd_corpus_verdicts)
+
+    set_verdict = actions.add_parser(
+        'set-verdict',
+        help='Stamp one re-grounding verdict onto one claim (replaces in place).',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(set_verdict)
+    set_verdict.add_argument(
+        '--plan', required=True, metavar='PLAN-NN', help='Plan id whose spec carries the claim.'
+    )
+    set_verdict.add_argument(
+        '--claim-index',
+        required=True,
+        type=int,
+        metavar='N',
+        help='Zero-based index of the claim bullet within the spec\'s ## Claim Labels section.',
+    )
+    set_verdict.add_argument(
+        '--verdict', required=True, help=f'One of {sorted(VERDICT_VALUES)}.'
+    )
+    set_verdict.add_argument(
+        '--checked-at', required=True, metavar='SHA', help='The 7-40 hex HEAD sha the check ran against.'
+    )
+    set_verdict.add_argument(
+        '--by', required=True, metavar='PRODUCER', help='Producer that wrote it, as {slug}/{verb}.'
+    )
+    set_verdict.add_argument(
+        '--rescoped',
+        required=True,
+        help=f'One of {sorted(RESCOPED_VALUES)}; must be {NOT_APPLICABLE!r} unless the verdict is {CONTRADICTED!r}.',
+    )
+    set_verdict.add_argument(
+        '--evidence', required=True, metavar='TEXT', help='Non-empty evidence text (may contain the separator).'
+    )
+    set_verdict.set_defaults(handler=cmd_corpus_set_verdict)
 
 
 def _add_inbox_group(subparsers: Any) -> None:
