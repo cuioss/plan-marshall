@@ -113,8 +113,13 @@ one of two forms: a bare nearest spelling as in the example above (`reed` →
 is within threshold — an invented verb resembling nothing registered, the normal
 shape for a token like `nuke` — the corrective falls back to a third form naming
 no single verb: `` Use a registered verb for `{notation}`: [...] ``. For
-`unknown_flag` the corrective names the declared flag set for the resolved leaf
-(`` Use a declared flag for `{notation} {verb}`: [...] ``); for
+`unknown_flag` the corrective runs the SAME nearest-match pick over the
+resolved node's declared flag set, and takes one of two forms by the same
+threshold rule: within threshold it names the closest declared flag
+(`` Use `--plan-id` for `{notation} {verb}` — declared: [...] ``, the form a
+typo'd flag actually hits — the common case the feature exists for); outside
+threshold it falls back to naming the whole declared set
+(`` Use a declared flag for `{notation} {verb}`: [...] ``). For
 `missing_required_flag` it lists the flags still owed
 (`` Add the required flag(s) to `{notation} {verb}`: [...] ``). A refusal
 without a corrective would be the empty stdout this contract exists to replace.

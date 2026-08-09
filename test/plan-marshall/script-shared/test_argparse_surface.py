@@ -556,6 +556,129 @@ class TestBounds:
 
 
 # ---------------------------------------------------------------------------
+# ``build_surface_index``'s shared TOTAL wall-clock budget
+# ---------------------------------------------------------------------------
+
+
+def _brief_sleep_source(seconds: float) -> str:
+    """Sleeps ``seconds`` before rendering a normal confident surface.
+
+    Lets one script's ``--help`` consume a controlled slice of wall-clock, so a
+    shared budget can be proven to have actually been SPENT by the time a
+    sibling notation's turn comes.
+    """
+    return textwrap.dedent(f'''
+        import argparse
+        import time
+
+        def main():
+            time.sleep({seconds})
+            parser = argparse.ArgumentParser(prog='syn')
+            subparsers = parser.add_subparsers(dest='cmd')
+            subparsers.add_parser('alpha')
+            parser.parse_args()
+
+        if __name__ == '__main__':
+            main()
+    ''').lstrip()
+
+
+def _instant_source() -> str:
+    """Renders a normal confident surface with no delay at all."""
+    return textwrap.dedent('''
+        import argparse
+
+        def main():
+            parser = argparse.ArgumentParser(prog='syn')
+            subparsers = parser.add_subparsers(dest='cmd')
+            subparsers.add_parser('beta')
+            parser.parse_args()
+
+        if __name__ == '__main__':
+            main()
+    ''').lstrip()
+
+
+class TestSharedBudgetAcrossNotations:
+    """``build_surface_index``'s ``total_budget_seconds`` bounds the WHOLE batch.
+
+    The regression this pins: ``_derive_surface_uncached`` used to build a
+    FRESH ``_Budget`` per notation, so a config-declared "total" wall-clock
+    budget was actually spent once PER SCRIPT — an operator-set
+    ``PM_SURFACE_BUDGET_SECONDS=N`` bounded each script's own slice rather than
+    the regeneration as a whole, which could run roughly
+    ``budget * ceil(script_count / max_workers)`` instead of the advertised
+    ``budget``.
+    """
+
+    _SLOW_NOTATION = 'plan-marshall:manage-slow:manage-slow'
+    _FAST_NOTATION = 'plan-marshall:manage-fast:manage-fast'
+
+    def test_a_slow_notation_exhausts_the_shared_budget_for_a_sibling(self, tmp_path: Path):
+        """One slow script spends the WHOLE shared deadline; its sibling gets none.
+
+        ``max_workers=1`` forces sequential processing so the ordering is
+        deterministic: the slow notation runs first and alone consumes more
+        than the 0.2s shared budget in its own ``--help`` sleep, so the fast
+        sibling's own probe never even starts — despite needing none of that
+        time itself. A per-script budget (the defect) would hand the fast
+        notation a FRESH 0.2s window and it would derive fine.
+        """
+        slow_script = tmp_path / 'slow.py'
+        slow_script.write_text(_brief_sleep_source(0.5), encoding='utf-8')
+        fast_script = tmp_path / 'fast.py'
+        fast_script.write_text(_instant_source(), encoding='utf-8')
+        executor = _make_executor(
+            tmp_path,
+            {self._SLOW_NOTATION: slow_script, self._FAST_NOTATION: fast_script},
+        )
+        surf.clear_memo()
+        config = surf.DerivationConfig(
+            use_disk_cache=False, max_workers=1, total_budget_seconds=0.2
+        )
+
+        index = surf.build_surface_index(
+            [self._SLOW_NOTATION, self._FAST_NOTATION], executor, config=config
+        )
+
+        fast_result = index[self._FAST_NOTATION]
+        assert isinstance(fast_result, surf.NotDerivable), (
+            f'the fast sibling derived a surface despite the shared budget '
+            f'already being spent by the slow notation: {fast_result!r}'
+        )
+        assert fast_result.reason == surf.REASON_BUDGET_EXHAUSTED
+
+    def test_the_same_pair_derives_fine_without_a_tight_shared_budget(self, tmp_path: Path):
+        """Matched control: the fast sibling's failure above is the BUDGET, not the fixture.
+
+        Same two notations and the same ``max_workers=1`` ordering, but no
+        ``total_budget_seconds`` at all — proving the prior test's failure
+        traces to the tight shared deadline and not to some unrelated defect
+        in the two-script setup.
+        """
+        slow_script = tmp_path / 'slow.py'
+        slow_script.write_text(_brief_sleep_source(0.1), encoding='utf-8')
+        fast_script = tmp_path / 'fast.py'
+        fast_script.write_text(_instant_source(), encoding='utf-8')
+        executor = _make_executor(
+            tmp_path,
+            {self._SLOW_NOTATION: slow_script, self._FAST_NOTATION: fast_script},
+        )
+        surf.clear_memo()
+        config = surf.DerivationConfig(use_disk_cache=False, max_workers=1)
+
+        index = surf.build_surface_index(
+            [self._SLOW_NOTATION, self._FAST_NOTATION], executor, config=config
+        )
+
+        assert surf.is_derivable(index[self._FAST_NOTATION]), (
+            f'the fast sibling failed even with no tight shared budget — the '
+            f'fixture itself is broken, independent of any budget logic: '
+            f'{index[self._FAST_NOTATION]!r}'
+        )
+
+
+# ---------------------------------------------------------------------------
 # Pure-parser units (no subprocess)
 # ---------------------------------------------------------------------------
 

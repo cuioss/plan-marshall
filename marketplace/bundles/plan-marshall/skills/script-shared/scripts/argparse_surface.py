@@ -1018,28 +1018,69 @@ def run_help(
     return stdout
 
 
+class _Deadline:
+    """A wall-clock cutoff that many independent :class:`_Budget` instances can share.
+
+    Holds nothing but the cutoff time and the lock guarding it — no node count
+    — which is exactly what lets :func:`build_surface_index` share ONE instance
+    across every notation's OWN ``_Budget`` while each keeps its own node cap
+    (see :class:`_Budget`). ``total_budget_seconds=None`` produces a deadline
+    that never expires, matching :class:`_Budget`'s previous no-deadline
+    behaviour exactly.
+    """
+
+    def __init__(self, total_budget_seconds: float | None) -> None:
+        self._at: float | None = (
+            time.monotonic() + total_budget_seconds
+            if total_budget_seconds is not None
+            else None
+        )
+        self._lock = threading.Lock()
+
+    def expired(self) -> bool:
+        """True once wall-clock has passed the cutoff. Always False when unset."""
+        if self._at is None:
+            return False
+        with self._lock:
+            return time.monotonic() >= self._at
+
+
 class _Budget:
-    """Per-script node and wall-clock bounds, shared across the recursion.
+    """Per-script node cap, plus a wall-clock deadline that may be shared.
+
+    A caller deriving a SINGLE notation (:func:`derive_surface` invoked
+    directly, with no ``deadline`` supplied) gets a private :class:`_Deadline`
+    scoped to just that script — the node cap and the deadline both apply
+    per-script, exactly as before this class existed. A caller deriving MANY
+    notations (:func:`build_surface_index`) constructs exactly ONE
+    :class:`_Deadline` and threads it into a FRESH ``_Budget`` built for every
+    notation, so the wall-clock bound is a genuine TOTAL across the whole batch
+    while the node cap — a structural bound on one script's own recursion
+    depth, never advertised as a total — stays scoped per-script. Sharing the
+    node cap too would starve every script in a large batch of the allowance
+    each individually needs (512 default nodes split across ~145 scripts is
+    ~3.5 nodes each), which is not what any of the three "total wall-clock
+    budget" claims this class backs describe.
 
     Both caps are checked at the same place — before spending a subprocess on a
     child — so exhaustion always resolves to "this node's child listing is not
-    confident" rather than to a silently truncated accept-set.
+    confident" rather than to a silently truncated accept-set. A script whose
+    turn comes after a shared deadline is already expired derives nothing at
+    all, which is the SAME fail-closed-on-uncertainty outcome as any other
+    budget exhaustion (:data:`REASON_BUDGET_EXHAUSTED`) — safe by construction,
+    never a false accept.
     """
 
-    def __init__(self, config: DerivationConfig) -> None:
+    def __init__(self, config: DerivationConfig, deadline: _Deadline | None = None) -> None:
         self._remaining_nodes = config.max_nodes
-        self._deadline: float | None = (
-            time.monotonic() + config.total_budget_seconds
-            if config.total_budget_seconds is not None
-            else None
-        )
+        self._deadline = deadline if deadline is not None else _Deadline(config.total_budget_seconds)
         self._lock = threading.Lock()
         self.exhausted = False
 
     def take_node(self) -> bool:
         """Claim budget for one more ``--help`` probe. False when exhausted."""
         with self._lock:
-            if self._deadline is not None and time.monotonic() >= self._deadline:
+            if self._deadline.expired():
                 self.exhausted = True
                 return False
             if self._remaining_nodes <= 0:
@@ -1126,9 +1167,18 @@ def _derive_surface_uncached(
     executor: Path,
     notation: str,
     config: DerivationConfig,
+    deadline: _Deadline | None = None,
 ) -> ScriptSurface | NotDerivable:
-    """Probe ``--help`` recursively and build the full N-level surface."""
-    budget = _Budget(config)
+    """Probe ``--help`` recursively and build the full N-level surface.
+
+    ``deadline`` lets a caller deriving many notations (:func:`build_surface_index`)
+    share ONE wall-clock cutoff across all of them, so the configured budget is
+    a true total across the batch rather than a per-script allowance — while
+    this script still gets its own FRESH node cap (see :class:`_Budget`).
+    Omitted, a private deadline scoped to this one script is built — the shape
+    a direct :func:`derive_surface` call gets.
+    """
+    budget = _Budget(config, deadline)
     if not budget.take_node():
         return NotDerivable(notation=notation, reason=REASON_BUDGET_EXHAUSTED)
     top_help = run_help(executor, notation, config=config)
@@ -1148,6 +1198,7 @@ def derive_surface(
     *,
     config: DerivationConfig = DEFAULT_CONFIG,
     cache_key: str | None = None,
+    deadline: _Deadline | None = None,
 ) -> ScriptSurface | NotDerivable:
     """Cached ``--help`` derivation of one script's canonical surface.
 
@@ -1170,6 +1221,14 @@ def derive_surface(
     a shared-module edit would invalidate the generator's entry while this
     module's cache kept handing back the surface derived before it. Omitting it
     falls back to :func:`content_hash` (the script plus its sibling modules).
+
+    ``deadline`` lets :func:`build_surface_index` share ONE wall-clock
+    :class:`_Deadline` across every notation it derives, so
+    ``config.total_budget_seconds`` bounds the WHOLE batch rather than each
+    script individually — while this script still gets its own fresh node cap
+    (see :class:`_Budget`). Omitted (the shape a caller deriving a single
+    notation gets), a private deadline scoped to this one script is built. A
+    cache hit never touches the deadline at all, on either path.
 
     When the script file cannot be located and no ``cache_key`` was supplied,
     derivation still runs live but skips the on-disk cache. The memo key then
@@ -1198,7 +1257,7 @@ def derive_surface(
                 _SURFACE_MEMO[memo_key] = on_disk
                 return on_disk
 
-        derived = _derive_surface_uncached(executor, notation, config)
+        derived = _derive_surface_uncached(executor, notation, config, deadline)
         if not isinstance(derived, ScriptSurface):
             return derived
         _SURFACE_MEMO[memo_key] = derived
@@ -1210,7 +1269,7 @@ def derive_surface(
     memoized = _SURFACE_MEMO.get(memo_key)
     if memoized is not None:
         return memoized
-    derived = _derive_surface_uncached(executor, notation, config)
+    derived = _derive_surface_uncached(executor, notation, config, deadline)
     if not isinstance(derived, ScriptSurface):
         return derived
     _SURFACE_MEMO[memo_key] = derived
@@ -1237,6 +1296,18 @@ def build_surface_index(
     notations landed in each bucket) read both, which is why a not-derivable
     notation is never silently dropped here.
 
+    ``config.total_budget_seconds`` bounds the WHOLE call, not each notation:
+    a single :class:`_Deadline` is constructed once and threaded into a fresh
+    ``_Budget`` for every notation's :func:`derive_surface`, so an
+    operator-set deadline holds however many notations end up needing a live
+    probe — while each notation still gets its own full ``max_nodes``
+    allowance, since that cap is a per-script structural bound, never
+    advertised as a total (see :class:`_Budget`). A notation whose turn comes
+    after the shared deadline has already expired derives nothing at all
+    (:data:`REASON_BUDGET_EXHAUSTED`) rather than getting its own fresh
+    wall-clock allowance — safe by construction, per the
+    fail-closed-on-uncertainty invariant.
+
     Derivation runs concurrently across scripts: each call is independent
     (distinct notation → distinct memo key, cache file, and probe subprocesses)
     and the probes are subprocess-bound, so the worker blocks on I/O and
@@ -1247,9 +1318,17 @@ def build_surface_index(
     if not notations:
         return {}
 
+    # ONE deadline for the whole batch — see the ``config.total_budget_seconds``
+    # paragraph above. Every worker's own ``_Budget`` consults the same
+    # ``_Deadline``, which is why it guards its cutoff with a lock: several
+    # threads race to read "has wall-clock passed the cutoff" concurrently.
+    deadline = _Deadline(config.total_budget_seconds)
+
     def _derive(notation: str) -> tuple[str, ScriptSurface | NotDerivable]:
         key = cache_keys.get(notation) if cache_keys else None
-        return notation, derive_surface(notation, executor, config=config, cache_key=key)
+        return notation, derive_surface(
+            notation, executor, config=config, cache_key=key, deadline=deadline
+        )
 
     workers = max(1, min(len(notations), config.max_workers))
     index: dict[str, ScriptSurface | NotDerivable] = {}

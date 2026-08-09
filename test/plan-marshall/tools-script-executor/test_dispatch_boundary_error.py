@@ -540,6 +540,115 @@ def test_validator_returns_none_when_the_notation_has_no_surface(executor_with_m
 
 
 # =============================================================================
+# ``unknown_flag`` — the two documented message forms (SKILL.md § "Pre-spawn
+# invocation rejection"), pinned to ``_validate_invocation``'s real output the
+# same way the verb correctives above are pinned. SKILL.md named only the
+# fallback form before this fix; the nearest-spelling form below is the one a
+# typo'd flag actually hits — the common case the feature exists for — so it
+# is pinned as a first-class case, not an afterthought.
+# =============================================================================
+
+_FLAG_REJECTION_NOTATION = 'plan-marshall:manage-tasks:manage-tasks'
+
+# Mirrors the shape a real derived surface has: a root with no flags of its
+# own and one leaf (``read``) declaring the two flags the correctives below
+# are computed against.
+_FLAG_SURFACE_ROOT: dict = {
+    'flags': [],
+    'required_flags': [],
+    'flag_arity': {},
+    'alias_of': {},
+    'flags_confident': True,
+    'children_confident': True,
+    'children': {
+        'read': {
+            'flags': ['plan-id', 'task-number'],
+            'required_flags': [],
+            'flag_arity': {'plan-id': 1, 'task-number': 1},
+            'alias_of': {},
+            'flags_confident': True,
+            'children_confident': True,
+            'children': {},
+        },
+    },
+}
+
+
+def _install_flag_surface(executor) -> None:
+    """Point the loaded module's ``SCRIPT_SURFACES`` global at the fixture above."""
+    executor.SCRIPT_SURFACES = {
+        _FLAG_REJECTION_NOTATION: {
+            'digest': 'test',
+            'surface': {'root': _FLAG_SURFACE_ROOT},
+        }
+    }
+
+
+def test_unknown_flag_corrective_nearest_spelling_form(executor_with_mock_log_entry):
+    """A flag token within the edit-distance threshold names the nearest declared flag.
+
+    ``--plna-id`` is 2 edits from ``plan-id``, well inside
+    ``max(2, len(token) // 2) == 3`` — the undocumented form the live executor
+    actually emits for a typo'd flag.
+    """
+    executor, _mock = executor_with_mock_log_entry
+    _install_flag_surface(executor)
+
+    rejection = executor._validate_invocation(
+        _FLAG_REJECTION_NOTATION, ['read', '--plna-id', 'x']
+    )
+
+    assert rejection is not None
+    assert rejection['reason'] == 'unknown_flag'
+    assert rejection['corrective'] == (
+        "Use `--plan-id` for `plan-marshall:manage-tasks:manage-tasks read` — "
+        "declared: ['plan-id', 'task-number']"
+    )
+    # Control: the nearest-spelling form never falls back to the whole set.
+    assert 'Use a declared flag for' not in rejection['corrective']
+
+
+def test_unknown_flag_corrective_no_suggestion_form(executor_with_mock_log_entry):
+    """A flag token outside the edit-distance threshold falls back to the whole declared set.
+
+    This is the ONLY form SKILL.md documented before this fix — but it is the
+    RARER branch: the nearest-spelling form above is what a real typo hits.
+    """
+    executor, _mock = executor_with_mock_log_entry
+    _install_flag_surface(executor)
+
+    rejection = executor._validate_invocation(
+        _FLAG_REJECTION_NOTATION, ['read', '--zzzzzzzzzzzz', 'x']
+    )
+
+    assert rejection is not None
+    assert rejection['reason'] == 'unknown_flag'
+    assert rejection['corrective'] == (
+        "Use a declared flag for `plan-marshall:manage-tasks:manage-tasks read`: "
+        "['plan-id', 'task-number']"
+    )
+    # Control: the fallback form never names a single suggested flag.
+    assert not rejection['corrective'].startswith('Use `--')
+
+
+def test_unknown_flag_closest_spelling_threshold_separates_the_two_forms(
+    executor_with_mock_log_entry,
+):
+    """Matched control: pins the edit-distance threshold driving both forms.
+
+    Directly exercises ``_closest_spelling`` — the SAME function the verb-level
+    correctives delegate to — so the two flag correctives above are shown to
+    diverge for the documented reason (a threshold crossing) and not for an
+    unrelated one.
+    """
+    executor, _mock = executor_with_mock_log_entry
+    declared = ['plan-id', 'task-number']
+
+    assert executor._closest_spelling('plna-id', declared) == 'plan-id'
+    assert executor._closest_spelling('zzzzzzzzzzzz', declared) is None
+
+
+# =============================================================================
 # The argv walk — one pass that tokenizes and resolves together
 # =============================================================================
 #
