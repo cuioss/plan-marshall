@@ -101,7 +101,7 @@ class ClaudeRuntime(Runtime):
     ) -> str:
         """Install the full terminal-title hook wiring into the named settings file.
 
-        Installs the SessionStart capture entry, seven render-trigger hook
+        Installs the SessionStart capture entry, nine render-trigger hook
         entries, the ``statusLine`` command, and
         ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE``. Re-invocation CONVERGES an
         already-present entry on the current shape rather than always making no
