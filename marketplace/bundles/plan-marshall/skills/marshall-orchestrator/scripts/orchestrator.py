@@ -3,7 +3,7 @@
 """Thin scaffolding script for the marshall-orchestrator skill.
 
 Deliberately lean, per the orchestrator's lean posture: everything that
-requires judgement stays LLM-workflow; this script owns six deterministic
+requires judgement stays LLM-workflow; this script owns seven deterministic
 operation groups against the main-anchored orchestrator store
 (``.plan/local/orchestrator/{slug}/``, resolved via
 ``file_ops.get_store_dir('orchestrator', slug)``):
@@ -32,6 +32,11 @@ operation groups against the main-anchored orchestrator store
   § Re-Grounding Verdict Field. ``set-verdict`` is the group's single write
   action and the ONLY code path that formats a ``verdict:`` line; ``verdicts``
   is the only one that interprets one.
+- ``cleanup restart-check --slug S`` — the restart-readiness verdict: one row
+  per observed signal, each carrying its own three-valued verdict, its own
+  evidence, and the population it was derived from, plus the floor over the
+  participating rows and the sample instant. An unreadable or disagreeing
+  observation resolves to ``indeterminate`` and never to ``not_ready``.
 - ``inbox {write,validate,list,archive,detect}`` — the epic's plan-writable
   OUTBOX and its orchestrator-side drain: append one
   ``inbox/{sender_id}-{NNN}.md`` message, validate an existing message against
@@ -139,6 +144,31 @@ INDETERMINATE = 'indeterminate'
 BLOCKING_RESCOPED = 'no'
 CONTRADICTED = 'contradicted'
 NOT_APPLICABLE = 'n/a'
+
+# --- cleanup group ---------------------------------------------------------
+
+#: The readiness vocabulary, ordered WORST-FIRST. The order IS the floor: the
+#: overall verdict is ``min`` over the participating signals under this order,
+#: so a single unobservable signal degrades the report to ``indeterminate`` and
+#: only a definite hazard reaches ``not_ready``. Keeping the two apart is the
+#: point — collapsing an unobservable signal into a failing one is the
+#: confident-signal defect this verb exists to remove.
+READINESS_ORDER = ('not_ready', 'indeterminate', 'ready')
+READY = 'ready'
+NOT_READY = 'not_ready'
+INDETERMINATE = 'indeterminate'
+
+#: The verdict an arm reports when the surface it would observe is owned by
+#: another component. It is deliberately NOT a member of
+#: :data:`READINESS_ORDER`: such an arm is neither ready nor not-ready, so it is
+#: excluded from the floor — a floor over an unowned surface would let another
+#: component's gap veto this one's verdict.
+NOT_AVAILABLE = 'not_available'
+
+#: The spec that owns the registry/executor parity surface. Named in the
+#: ``registry_parity`` arm's evidence so the report points at the owner rather
+#: than leaving a silent gap. This component observes that surface not at all.
+REGISTRY_PARITY_OWNER = 'PLAN-TRUTH-059'
 
 CLAIM_LABELS_HEADING_RE = re.compile(r'^##\s+Claim Labels\s*$')
 EXPECTED_SURFACE_HEADING_RE = re.compile(r'^##\s+Expected Surface\s*$')
@@ -612,6 +642,25 @@ def _read_spec(path: Path) -> tuple[str | None, str]:
         return None, 'unreadable'
 
 
+def _git_read(argv: list[str]) -> tuple[str | None, str]:
+    """Run one read-only git command, returning ``(stdout, error)``.
+
+    The single git seam in this script. ``(None, reason)`` is returned whenever
+    the command could not be observed — git unreachable, or a non-zero exit —
+    and the reason names which. Callers translate that into an *unobservable*
+    outcome, never into a failing one.
+    """
+    try:
+        completed = subprocess.run(
+            ['git', *argv], capture_output=True, text=True, check=False
+        )
+    except OSError as exc:
+        return None, f'git could not be run ({exc.__class__.__name__})'
+    if completed.returncode != 0:
+        return None, f'git {" ".join(argv)} exited {completed.returncode}'
+    return completed.stdout.strip(), ''
+
+
 def _current_head_sha() -> str:
     """Return the current HEAD sha, or the empty string when it cannot be read.
 
@@ -620,15 +669,8 @@ def _current_head_sha() -> str:
     empty ``head_sha``, so a caller can tell "not stale" from "staleness was not
     computable" instead of reading an unqualified boolean.
     """
-    try:
-        completed = subprocess.run(
-            ['git', 'rev-parse', 'HEAD'], capture_output=True, text=True, check=False
-        )
-    except OSError:
-        return ''
-    if completed.returncode != 0:
-        return ''
-    return completed.stdout.strip()
+    output, _ = _git_read(['rev-parse', 'HEAD'])
+    return output or ''
 
 
 def _section_span(lines: list[str], heading_re: re.Pattern[str]) -> tuple[int, int]:
@@ -1210,6 +1252,206 @@ def cmd_corpus_set_verdict(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _signal(name: str, verdict: str, evidence: str, population: str) -> dict[str, Any]:
+    """Build one restart-readiness signal row.
+
+    The four-field shape is uniform across every arm on purpose: a verdict a
+    reader cannot trace back to what was observed, and to how large the observed
+    set was, is exactly the confident-signal shape this verb refuses to emit.
+    Field values carry no commas, so each row stays one well-formed TOON record.
+    """
+    return {
+        'signal': name,
+        'verdict': verdict,
+        'evidence': evidence,
+        'population': population,
+    }
+
+
+def _readiness_floor(verdicts: list[str]) -> str:
+    """The floor over the PARTICIPATING verdicts, under :data:`READINESS_ORDER`.
+
+    An empty participating set yields ``indeterminate`` rather than ``ready``:
+    nothing was observed, which is not the same as everything being fine.
+    """
+    if not verdicts:
+        return INDETERMINATE
+    return min(verdicts, key=READINESS_ORDER.index)
+
+
+def _phase_signal(status_doc: dict[str, Any]) -> dict[str, Any]:
+    """The epic's own phase. Never ``not_ready`` — a phase is a fact, not a hazard."""
+    phase = str(status_doc.get('phase', '')).strip()
+    if not phase:
+        return _signal(
+            'phase',
+            INDETERMINATE,
+            'status.json carries no readable phase',
+            'status.json: 0 phase field read',
+        )
+    return _signal('phase', READY, f'phase={phase}', 'status.json: 1 phase field read')
+
+
+def _running_plans_signal(status_doc: dict[str, Any]) -> dict[str, Any]:
+    """In-flight plans. A restart mid-run loses the run's context, so it blocks."""
+    raw = status_doc.get('plans')
+    if not status_doc or not isinstance(raw, list):
+        return _signal(
+            'running_plans',
+            INDETERMINATE,
+            'the plan queue could not be read',
+            'plans[]: not readable',
+        )
+    rows = [row for row in raw if isinstance(row, dict)]
+    population = f'plans[]: {len(rows)} row(s) scanned'
+    running = sorted(
+        str(row.get('id', '')) for row in rows if str(row.get('status', '')) == RUNNING_STATUS
+    )
+    if running:
+        return _signal(
+            'running_plans',
+            NOT_READY,
+            f'{len(running)} plan row(s) still running: {_OVERLAP_JOIN.join(running)}',
+            population,
+        )
+    return _signal('running_plans', READY, 'no plan row is running', population)
+
+
+def _corpus_signal(slug: str) -> dict[str, Any]:
+    """Corpus reconciliation, consuming ``corpus enumerate`` rather than re-deriving it.
+
+    An unreadable spec outranks an orphan: a corpus that could not be fully read
+    is unobservable, so it yields ``indeterminate`` even when the readable part
+    also reconciles badly.
+    """
+    result = cmd_corpus_enumerate(argparse.Namespace(slug=slug))
+    if result.get('status') != 'success':
+        return _signal(
+            'corpus_reconciliation',
+            INDETERMINATE,
+            f'corpus enumerate could not run: {result.get("error", "unknown")}',
+            'queue rows and spec files: not enumerable',
+        )
+    population = (
+        f'{result["rows_total"]} queue row(s) and {result["specs_total"]} spec file(s)'
+    )
+    if result['unreadable_count']:
+        return _signal(
+            'corpus_reconciliation',
+            INDETERMINATE,
+            f'{result["unreadable_count"]} spec file(s) could not be read',
+            population,
+        )
+    orphan_rows = result['rows_without_spec_count']
+    orphan_specs = result['specs_without_row_count']
+    if orphan_rows or orphan_specs:
+        return _signal(
+            'corpus_reconciliation',
+            NOT_READY,
+            f'{orphan_rows} row(s) without a spec and {orphan_specs} spec(s) without a row',
+            population,
+        )
+    return _signal(
+        'corpus_reconciliation', READY, 'queue and specs reconcile both ways', population
+    )
+
+
+def _inbox_signal(slug: str) -> dict[str, Any]:
+    """Inbox drain state, reusing :func:`inbox_counts`'s two-kinds-of-zero discriminator.
+
+    An absent ``inbox/`` is *could not look*, not *nothing queued* — it renders
+    as ``missing`` and yields ``indeterminate``, never a confident ``ready``.
+    """
+    counts = inbox_counts(_epic_root(slug, allow_archived=True) / INBOX_SUBDIR)
+    if not counts.present:
+        return _signal(
+            'inbox',
+            INDETERMINATE,
+            'inbox/ is absent so the queue could not be looked at',
+            'inbox/: missing',
+        )
+    population = f'inbox/: {counts.queued} queued and {counts.archived} archived'
+    if counts.queued:
+        return _signal(
+            'inbox', NOT_READY, f'{counts.queued} message(s) still queued', population
+        )
+    return _signal('inbox', READY, 'no queued message', population)
+
+
+def _worktree_signal() -> dict[str, Any]:
+    """Repository HEAD plus worktree cleanliness — one signal, since the sha
+    without the cleanliness is not an observation a restart decision can use."""
+    head, head_error = _git_read(['rev-parse', 'HEAD'])
+    if head is None:
+        return _signal('worktree', INDETERMINATE, head_error, 'git: not readable')
+    porcelain, porcelain_error = _git_read(['status', '--porcelain'])
+    if porcelain is None:
+        return _signal('worktree', INDETERMINATE, porcelain_error, 'git: not readable')
+    changed = [line for line in porcelain.splitlines() if line.strip()]
+    population = f'git status --porcelain: {len(changed)} changed path(s) at {head}'
+    if changed:
+        return _signal(
+            'worktree', NOT_READY, f'{len(changed)} uncommitted path(s) at {head}', population
+        )
+    return _signal('worktree', READY, f'clean worktree at {head}', population)
+
+
+def _registry_parity_signal() -> dict[str, Any]:
+    """The one arm whose surface this component does not own.
+
+    Reported in the same three-part shape the ledger-compaction stage uses for
+    an unowned surface — the field is present, its value is ``not_available``,
+    and it names the spec that owns the surface — so the report carries ONE
+    convention for "a real signal this component does not own" rather than two.
+    Being outside :data:`READINESS_ORDER`, it never reaches the floor.
+    """
+    return _signal(
+        'registry_parity',
+        NOT_AVAILABLE,
+        f'this component observes no parity surface; it is owned by {REGISTRY_PARITY_OWNER}',
+        'not_applicable — the surface belongs to another component',
+    )
+
+
+def cmd_cleanup_restart_check(args: argparse.Namespace) -> dict[str, Any]:
+    """Report whether the session is safe to restart. Read-only.
+
+    One row per signal, each carrying its own verdict, its own evidence, and the
+    population it was derived from, plus the sample instant. The overall verdict
+    is the floor over the rows whose verdict is a member of
+    :data:`READINESS_ORDER`; a ``not_available`` arm is excluded, so an unowned
+    surface cannot veto a verdict this component CAN reach. Every unreadable or
+    unobservable arm resolves to ``indeterminate`` and never to ``not_ready``.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+    status_doc = _read_status(args.slug, allow_archived=True)
+    signals = [
+        _phase_signal(status_doc),
+        _running_plans_signal(status_doc),
+        _corpus_signal(args.slug),
+        _inbox_signal(args.slug),
+        _worktree_signal(),
+        _registry_parity_signal(),
+    ]
+    scored = [row['verdict'] for row in signals if row['verdict'] in READINESS_ORDER]
+    return {
+        'status': 'success',
+        'operation': 'cleanup-restart-check',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'sampled_at': now_utc_iso(),
+        'verdict': _readiness_floor(scored),
+        'signals_total': len(signals),
+        'signals_scored': len(scored),
+        'signals': signals,
+    }
+
+
 def _add_slug_arg(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('--slug', required=True, help='Epic slug (kebab-case)')
 
@@ -1221,8 +1463,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             'Thin scaffolding for marshall-orchestrator epics: scaffold the '
             'epic tree, read/transition/stamp the plan queue, generate the '
             'START-HERE resume summary, archive a closed epic, reconcile the '
-            'staged spec corpus and its re-grounding verdicts, and drive the '
-            'plan-writable inbox OUTBOX and its drain.'
+            'staged spec corpus and its re-grounding verdicts, report the '
+            'restart-readiness verdict, and drive the plan-writable inbox '
+            'OUTBOX and its drain.'
         ),
         allow_abbrev=False,
     )
@@ -1297,6 +1540,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     archive.set_defaults(handler=cmd_archive)
 
     _add_corpus_group(subparsers)
+    _add_cleanup_group(subparsers)
     _add_inbox_group(subparsers)
 
     return parser
@@ -1305,9 +1549,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 def _add_corpus_group(subparsers: Any) -> None:
     """Register the ``corpus`` verb group.
 
-    Sub-verbs: ``enumerate``, ``verdicts``, ``set-verdict``. The first two are
-    read-only; ``set-verdict`` is the group's single write action, and the only
-    surface in the tree that formats a ``verdict:`` line.
+    Sub-verbs: ``enumerate``, ``cross-check``, ``verdicts``, ``set-verdict``.
+    The first three are read-only; ``set-verdict`` is the group's single write
+    action, and the only surface in the tree that formats a ``verdict:`` line.
     """
     corpus = subparsers.add_parser(
         'corpus',
@@ -1383,6 +1627,32 @@ def _add_corpus_group(subparsers: Any) -> None:
         '--evidence', required=True, metavar='TEXT', help='Non-empty evidence text (may contain the separator).'
     )
     set_verdict.set_defaults(handler=cmd_corpus_set_verdict)
+
+
+def _add_cleanup_group(subparsers: Any) -> None:
+    """Register the ``cleanup`` verb group.
+
+    Sub-verb: ``restart-check``, read-only. The cleanup verb's judgement half
+    lives in ``workflow/cleanup.md``; this group carries only the deterministic
+    readiness enumeration that doc calls.
+    """
+    cleanup = subparsers.add_parser(
+        'cleanup',
+        help='Cleanup-stage deterministic seams: report whether the session is safe to restart.',
+        allow_abbrev=False,
+    )
+    actions = cleanup.add_subparsers(dest='cleanup_action', required=True)
+
+    restart_check = actions.add_parser(
+        'restart-check',
+        help=(
+            'Report one readiness verdict per signal — each with its evidence and '
+            'its population — plus the floor over them (read-only).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(restart_check)
+    restart_check.set_defaults(handler=cmd_cleanup_restart_check)
 
 
 def _add_inbox_group(subparsers: Any) -> None:
