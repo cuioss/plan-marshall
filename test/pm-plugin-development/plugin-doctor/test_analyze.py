@@ -13,6 +13,8 @@ from argparse import Namespace
 from pathlib import Path
 
 # Import shared infrastructure
+from _plugin_doctor_dispatching_executor import write_dispatching_executor
+
 from conftest import create_temp_file, get_script_path, load_script_module, run_script
 
 # Script under test
@@ -1176,95 +1178,6 @@ def test_display_detail_subdoc_em_dash_surfaces_in_subdoc_analysis():
 # any env-var setup.
 
 
-def _write_fake_executor(plan_dir: Path, notations: list[str]) -> Path:
-    """Write a working ``execute-script.py`` that both REGISTERS and DISPATCHES.
-
-    Two jobs, because the cluster reads the executor two ways:
-
-    - ``load_registered_notations`` regex-parses the ``SCRIPTS = { ... }``
-      literal, so the dict keeps its one-quoted-notation-per-line shape;
-    - ``build_script_index`` now derives each script's accept-set by running
-      that script's own ``--help`` THROUGH this executor, so it must actually
-      dispatch rather than stand in as a lookup stub.
-
-    Resolution mirrors the real executor: ``bundle:skill:script`` maps to
-    ``{root}/marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py``,
-    computed at dispatch time. That ordering matters — several tests write the
-    executor BEFORE the script it will dispatch to, so a path baked in here
-    would point at a file that does not exist yet.
-
-    Dispatch is in-process via ``runpy.run_path`` under redirected streams: the
-    derivation already spawns this executor as a subprocess, and an inner spawn
-    would double the interpreter cold-start of every probe.
-    """
-    plan_dir.mkdir(parents=True, exist_ok=True)
-    executor = plan_dir / 'execute-script.py'
-    lines = [
-        '#!/usr/bin/env python3',
-        'import contextlib',
-        'import io',
-        'import runpy',
-        'import sys',
-        'from pathlib import Path',
-        '',
-        'SCRIPTS = {',
-    ]
-    for notation in notations:
-        lines.append(f'    "{notation}": "resolved-at-dispatch",')
-    lines.extend(
-        [
-            '}',
-            '',
-            '',
-            'def _resolve(notation):',
-            '    parts = notation.split(":", 2)',
-            '    if len(parts) != 3:',
-            '        return None',
-            '    bundle, skill, script = parts',
-            '    root = Path(__file__).parent.parent',
-            '    candidate = (',
-            '        root / "marketplace" / "bundles" / bundle / "skills" / skill',
-            '        / "scripts" / (script + ".py")',
-            '    )',
-            '    return candidate if candidate.is_file() else None',
-            '',
-            '',
-            'def main():',
-            '    if len(sys.argv) < 2:',
-            '        sys.exit(2)',
-            '    notation = sys.argv[1]',
-            '    target = _resolve(notation)',
-            '    if target is None:',
-            '        sys.stderr.write("Unknown notation: " + notation + "\\n")',
-            '        sys.exit(2)',
-            '    out_buf = io.StringIO()',
-            '    err_buf = io.StringIO()',
-            '    rc = 0',
-            '    saved_argv = sys.argv',
-            '    sys.argv = [str(target), *sys.argv[2:]]',
-            '    try:',
-            '        with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):',
-            '            runpy.run_path(str(target), run_name="__main__")',
-            '    except SystemExit as exc:',
-            '        code = exc.code',
-            '        rc = 0 if code is None else (code if isinstance(code, int) else 1)',
-            '    finally:',
-            '        sys.argv = saved_argv',
-            '    sys.stdout.write(out_buf.getvalue())',
-            '    sys.stderr.write(err_buf.getvalue())',
-            '    sys.stdout.flush()',
-            '    sys.stderr.flush()',
-            '    sys.exit(rc)',
-            '',
-            '',
-            'if __name__ == "__main__":',
-            '    main()',
-        ]
-    )
-    executor.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-    return executor
-
-
 def _write_fake_script(
     marketplace_root: Path,
     notation: str,
@@ -1377,7 +1290,7 @@ def test_argument_naming_notation_invalid_snake_case_bundle(tmp_path):
     # Register a kebab-case notation where the third segment differs from
     # the second so the snake_case-form prose does not also satisfy the
     # ``third_segment_repeats_second`` reason check (which has priority).
-    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:tasks'])
+    write_dispatching_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:tasks'])
     _write_fake_script(
         marketplace_root,
         'plan-marshall:manage-tasks:tasks',
@@ -1409,7 +1322,7 @@ def test_argument_naming_notation_invalid_snake_case_bundle(tmp_path):
 def test_argument_naming_notation_invalid_self_referential_repetition(tmp_path):
     """``foo:foo:foo``-shape notation triggers NOTATION_INVALID with repetition reason."""
     marketplace_root = _build_fixture_root(tmp_path)
-    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-providers:providers'])
+    write_dispatching_executor(tmp_path / '.plan', ['plan-marshall:manage-providers:providers'])
     _write_fake_script(
         marketplace_root,
         'plan-marshall:manage-providers:providers',
@@ -1438,7 +1351,7 @@ def test_argument_naming_notation_invalid_unregistered_notation(tmp_path):
     """Notation not present in executor SCRIPTS dict triggers NOTATION_INVALID."""
     marketplace_root = _build_fixture_root(tmp_path)
     # Register one notation; reference a different one in prose.
-    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:manage-tasks'])
+    write_dispatching_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:manage-tasks'])
     _write_fake_script(
         marketplace_root,
         'plan-marshall:manage-tasks:manage-tasks',
@@ -1469,7 +1382,7 @@ def test_argument_naming_notation_invalid_unregistered_notation(tmp_path):
 def test_argument_naming_notation_canonical_form_no_finding(tmp_path):
     """Properly registered kebab-case notation produces no NOTATION_INVALID finding."""
     marketplace_root = _build_fixture_root(tmp_path)
-    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:manage-tasks'])
+    write_dispatching_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:manage-tasks'])
     _write_fake_script(
         marketplace_root,
         'plan-marshall:manage-tasks:manage-tasks',
@@ -1498,7 +1411,7 @@ def test_argument_naming_notation_canonical_form_no_finding(tmp_path):
 def test_argument_naming_subcommand_unknown_emits_finding(tmp_path):
     """Prose using an undeclared subcommand on a registered script triggers SUBCOMMAND_UNKNOWN."""
     marketplace_root = _build_fixture_root(tmp_path)
-    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-references:manage-references'])
+    write_dispatching_executor(tmp_path / '.plan', ['plan-marshall:manage-references:manage-references'])
     _write_fake_script(
         marketplace_root,
         'plan-marshall:manage-references:manage-references',
@@ -1531,7 +1444,7 @@ def test_argument_naming_subcommand_unknown_emits_finding(tmp_path):
 def test_argument_naming_subcommand_known_no_finding(tmp_path):
     """Declared subcommand emits no SUBCOMMAND_UNKNOWN finding."""
     marketplace_root = _build_fixture_root(tmp_path)
-    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-references:manage-references'])
+    write_dispatching_executor(tmp_path / '.plan', ['plan-marshall:manage-references:manage-references'])
     _write_fake_script(
         marketplace_root,
         'plan-marshall:manage-references:manage-references',
@@ -1560,7 +1473,7 @@ def test_argument_naming_subcommand_known_no_finding(tmp_path):
 def test_argument_naming_flag_unknown_emits_finding(tmp_path):
     """Undeclared flag on a known subcommand triggers FLAG_UNKNOWN."""
     marketplace_root = _build_fixture_root(tmp_path)
-    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-files:manage-files'])
+    write_dispatching_executor(tmp_path / '.plan', ['plan-marshall:manage-files:manage-files'])
     _write_fake_script(
         marketplace_root,
         'plan-marshall:manage-files:manage-files',
@@ -1594,7 +1507,7 @@ def test_argument_naming_flag_unknown_emits_finding(tmp_path):
 def test_argument_naming_flag_known_no_finding(tmp_path):
     """Declared flag yields no FLAG_UNKNOWN finding."""
     marketplace_root = _build_fixture_root(tmp_path)
-    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-files:manage-files'])
+    write_dispatching_executor(tmp_path / '.plan', ['plan-marshall:manage-files:manage-files'])
     _write_fake_script(
         marketplace_root,
         'plan-marshall:manage-files:manage-files',
@@ -1623,7 +1536,7 @@ def test_argument_naming_flag_known_no_finding(tmp_path):
 def test_argument_naming_canonical_forms_drift_flag_mismatch(tmp_path):
     """Canonical Forms row prescribing a flag that argparse does not declare emits drift finding."""
     marketplace_root = _build_fixture_root(tmp_path)
-    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:manage-tasks'])
+    write_dispatching_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:manage-tasks'])
     # Real argparse declares ``--task`` (post-rename: would be ``--task-number``);
     # the fixture row prescribes ``--foo`` which is undeclared → drift.
     _write_fake_script(
@@ -1651,7 +1564,7 @@ def test_argument_naming_canonical_forms_drift_flag_mismatch(tmp_path):
 def test_argument_naming_canonical_forms_match_no_finding(tmp_path):
     """Canonical Forms row matching argparse declaration produces no drift finding."""
     marketplace_root = _build_fixture_root(tmp_path)
-    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:manage-tasks'])
+    write_dispatching_executor(tmp_path / '.plan', ['plan-marshall:manage-tasks:manage-tasks'])
     _write_fake_script(
         marketplace_root,
         'plan-marshall:manage-tasks:manage-tasks',
@@ -1718,7 +1631,7 @@ def test_argument_naming_documented_alias_is_not_reported_unknown(tmp_path):
     """
     marketplace_root = _build_fixture_root(tmp_path)
     notation = 'plan-marshall:manage-tasks:manage-tasks'
-    _write_fake_executor(tmp_path / '.plan', [notation])
+    write_dispatching_executor(tmp_path / '.plan', [notation])
     _write_alias_script(
         marketplace_root, notation, canonical='read', alias='get', flags=['plan-id']
     )
@@ -1743,7 +1656,7 @@ def test_argument_naming_canonical_spelling_still_accepted_alongside_alias(tmp_p
     """Adding alias awareness must not cost the canonical spelling its acceptance."""
     marketplace_root = _build_fixture_root(tmp_path)
     notation = 'plan-marshall:manage-tasks:manage-tasks'
-    _write_fake_executor(tmp_path / '.plan', [notation])
+    write_dispatching_executor(tmp_path / '.plan', [notation])
     _write_alias_script(
         marketplace_root, notation, canonical='read', alias='get', flags=['plan-id']
     )
@@ -1770,7 +1683,7 @@ def test_argument_naming_undeclared_verb_still_reported_with_aliases_present(tmp
     """
     marketplace_root = _build_fixture_root(tmp_path)
     notation = 'plan-marshall:manage-tasks:manage-tasks'
-    _write_fake_executor(tmp_path / '.plan', [notation])
+    write_dispatching_executor(tmp_path / '.plan', [notation])
     _write_alias_script(
         marketplace_root, notation, canonical='read', alias='get', flags=['plan-id']
     )
@@ -1809,7 +1722,7 @@ def test_recurrence_signature_verb_paraphrase_is_caught(tmp_path):
     """Signature 1 — a verb that names the goal but is not the declared one."""
     marketplace_root = _build_fixture_root(tmp_path)
     notation = 'plan-marshall:manage-findings:manage-findings'
-    _write_fake_executor(tmp_path / '.plan', [notation])
+    write_dispatching_executor(tmp_path / '.plan', [notation])
     _write_fake_script(
         marketplace_root, notation, subcommands={'list': ['plan-id'], 'add': ['plan-id']}
     )
@@ -1833,7 +1746,7 @@ def test_recurrence_signature_doubled_bundle_prefix_is_caught(tmp_path):
     """Signature 3 — the trailing notation segment repeated as first positional."""
     marketplace_root = _build_fixture_root(tmp_path)
     notation = 'plan-marshall:tools-integration-ci:ci'
-    _write_fake_executor(tmp_path / '.plan', [notation])
+    write_dispatching_executor(tmp_path / '.plan', [notation])
     _write_fake_script(
         marketplace_root, notation, subcommands={'pr': ['plan-id'], 'checks': ['pr-number']}
     )
@@ -1862,7 +1775,7 @@ def test_recurrence_signature_verb_scoped_flag_at_top_level_is_caught(tmp_path):
     """
     marketplace_root = _build_fixture_root(tmp_path)
     notation = 'plan-marshall:manage-architecture:architecture'
-    _write_fake_executor(tmp_path / '.plan', [notation])
+    write_dispatching_executor(tmp_path / '.plan', [notation])
     _write_fake_script(
         marketplace_root, notation, subcommands={'resolve': ['command', 'module']}
     )
@@ -1886,7 +1799,7 @@ def test_recurrence_signature_status_instead_of_resolution_is_caught(tmp_path):
     """Signature 4 — a plausible-but-wrong flag name substituted for the real one."""
     marketplace_root = _build_fixture_root(tmp_path)
     notation = 'plan-marshall:manage-findings:manage-findings'
-    _write_fake_executor(tmp_path / '.plan', [notation])
+    write_dispatching_executor(tmp_path / '.plan', [notation])
     _write_fake_script(
         marketplace_root,
         notation,
@@ -1907,6 +1820,257 @@ def test_recurrence_signature_status_instead_of_resolution_is_caught(tmp_path):
     assert len(flag) == 1, flag
     assert flag[0]['details']['flag'] == 'status'
     assert 'resolution' in flag[0]['details']['known_flags']
+
+
+# -----------------------------------------------------------------------------
+# ParserNode confidence flags — the adapter must not manufacture findings out of
+# a surface that never claimed to know its own accept-set
+# -----------------------------------------------------------------------------
+#
+# The shared derivation marks a node ``flags_confident=False`` /
+# ``children_confident=False`` when it could not probe that node (a ``--help``
+# that timed out, a node/wall-clock budget that ran out, a non-zero exit, or a
+# depth cap). Every such marker means "unknown", and an adapter that reads it as
+# "empty" builds a too-small accept-set — the failure the module docstring calls
+# strictly more dangerous than no accept-set at all, because it rejects valid
+# calls.
+#
+# These tests drive ``_entry_from_surface`` and the two scanners with
+# hand-built surfaces rather than through ``--help``, because the unconfident
+# states are produced by probe FAILURES that a healthy fixture script cannot be
+# made to exhibit deterministically. Each suppression is paired with a
+# same-shaped confident control, so "no finding" cannot be satisfied by a
+# cluster that stopped reporting anything.
+
+_ParserNode = _analyze_argument_naming_mod.ParserNode
+_ScriptSurface = _analyze_argument_naming_mod.ScriptSurface
+_entry_from_surface = _analyze_argument_naming_mod._entry_from_surface
+scan_subcommand = _analyze_argument_naming_mod.scan_subcommand
+scan_flag = _analyze_argument_naming_mod.scan_flag
+scan_canonical_forms = _analyze_argument_naming_mod.scan_canonical_forms
+
+
+def _surface(root_flags=(), children=None, **root_markers) -> object:
+    """Build a ``ScriptSurface`` whose root carries ``root_flags`` and ``children``."""
+    return _ScriptSurface(
+        root=_ParserNode(
+            flags=set(root_flags), children=dict(children or {}), **root_markers
+        )
+    )
+
+
+def test_unconfident_child_keeps_its_name_but_withdraws_its_flag_set():
+    """An unprobeable child stays ACCEPTED by name with its flag surface unknown.
+
+    This is the live production shape: ``_derive_node`` registers a child whose
+    own ``--help`` probe failed as ``ParserNode(flags_confident=False,
+    children_confident=False)``. The choice list that named the child IS the
+    confident acceptance oracle, so dropping the key would make the subcommand
+    rule report a perfectly valid verb as invented — a finding manufactured out
+    of the very uncertainty the marker exists to signal.
+    """
+    entry = _entry_from_surface(
+        _surface(
+            root_flags=['plan-id'],
+            children={
+                'probed': _ParserNode(flags={'field'}),
+                'unprobeable': _ParserNode(
+                    flags_confident=False, children_confident=False
+                ),
+            },
+        )
+    )
+
+    assert 'unprobeable' in entry.subcommands, 'unprobeable verb lost its acceptance'
+    assert entry.subcommands['unprobeable'] is None, 'unknown flag surface read as empty'
+    assert entry.subcommands['probed'] == {'plan-id', 'field'}
+
+
+def test_unconfident_descendant_withdraws_the_whole_subtree_union():
+    """An unconfident GRANDchild withdraws its ancestor's union, not just its own.
+
+    The index is flat, so a subcommand's value is the union of its whole
+    subtree. A descendant whose flags were never derived makes that union an
+    under-approximation, and an under-approximated accept-set rejects flags the
+    script really declares two levels down.
+    """
+    entry = _entry_from_surface(
+        _surface(
+            children={
+                'plan': _ParserNode(
+                    flags={'audit-plan-id'},
+                    children={'phase-5-execute': _ParserNode(flags_confident=False)},
+                )
+            }
+        )
+    )
+
+    assert entry.subcommands['plan'] is None
+
+
+def test_unconfident_root_flag_surface_withdraws_every_scope():
+    """An unconfident ROOT flag surface poisons the root AND every subcommand.
+
+    Each subcommand's value is widened with the root's own flags, because
+    argparse honours a root-declared flag on every subcommand while rendering it
+    only in the root's help. When those root flags were never derived, no
+    subcommand's union can be trusted either. The reachable producer is the
+    deserialization path — ``_node_from_dict`` rehydrates the markers verbatim
+    from a cached entry.
+    """
+    entry = _entry_from_surface(
+        _surface(children={'read': _ParserNode(flags={'plan-id'})}, flags_confident=False)
+    )
+
+    assert entry.root_flags is None
+    assert entry.subcommands['read'] is None
+    assert entry.subcommands_confident is True, 'flag uncertainty must not suppress verbs'
+
+
+def test_confident_surface_still_yields_concrete_accept_sets():
+    """Control: a fully confident surface produces sets, never ``None``."""
+    entry = _entry_from_surface(
+        _surface(root_flags=['plan-id'], children={'read': _ParserNode(flags={'task'})})
+    )
+
+    assert entry.root_flags == {'plan-id'}
+    assert entry.subcommands == {'read': {'plan-id', 'task'}}
+    assert entry.subcommands_confident is True
+
+
+def _write_invocation_md(marketplace_root: Path, notation: str, invocation: str) -> Path:
+    """Write a SKILL.md carrying one executor invocation line."""
+    return _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'manage-tasks',
+        f'# Fixture\n\n```bash\npython3 .plan/execute-script.py {notation} {invocation}\n```\n',
+    )
+
+
+def test_unconfident_child_listing_suppresses_subcommand_unknown(tmp_path):
+    """An unconfident root CHILD LISTING makes an unlisted verb unjudgeable."""
+    marketplace_root = _build_fixture_root(tmp_path)
+    notation = 'plan-marshall:manage-tasks:manage-tasks'
+    _write_invocation_md(marketplace_root, notation, 'unlisted --plan-id X')
+    index = {
+        notation: _entry_from_surface(
+            _surface(children={'read': _ParserNode()}, children_confident=False)
+        )
+    }
+
+    assert scan_subcommand(marketplace_root, index) == []
+
+
+def test_confident_child_listing_still_reports_unknown_subcommand(tmp_path):
+    """Negative control for the suppression above — same tree, marker flipped."""
+    marketplace_root = _build_fixture_root(tmp_path)
+    notation = 'plan-marshall:manage-tasks:manage-tasks'
+    _write_invocation_md(marketplace_root, notation, 'unlisted --plan-id X')
+    index = {notation: _entry_from_surface(_surface(children={'read': _ParserNode()}))}
+
+    findings = scan_subcommand(marketplace_root, index)
+    assert len(findings) == 1, findings
+    assert findings[0]['details']['subcommand'] == 'unlisted'
+
+
+def test_unconfident_child_suppresses_flag_unknown(tmp_path):
+    """A verb whose flag surface is unknown yields no FLAG_UNKNOWN finding."""
+    marketplace_root = _build_fixture_root(tmp_path)
+    notation = 'plan-marshall:manage-tasks:manage-tasks'
+    _write_invocation_md(marketplace_root, notation, 'unprobeable --invented X')
+    index = {
+        notation: _entry_from_surface(
+            _surface(children={'unprobeable': _ParserNode(flags_confident=False)})
+        )
+    }
+
+    assert scan_flag(marketplace_root, index) == []
+
+
+def test_confident_sibling_verb_still_reports_unknown_flag(tmp_path):
+    """Negative control: the skip is scoped to the unconfident verb, not global.
+
+    Both verbs live under ONE root, so a suppression that leaked to the whole
+    script — rather than to the node that disclaimed its surface — would silence
+    this finding too.
+    """
+    marketplace_root = _build_fixture_root(tmp_path)
+    notation = 'plan-marshall:manage-tasks:manage-tasks'
+    _write_invocation_md(marketplace_root, notation, 'read --invented X')
+    index = {
+        notation: _entry_from_surface(
+            _surface(
+                children={
+                    'read': _ParserNode(flags={'plan-id'}),
+                    'unprobeable': _ParserNode(flags_confident=False),
+                }
+            )
+        )
+    }
+
+    findings = scan_flag(marketplace_root, index)
+    assert len(findings) == 1, findings
+    assert findings[0]['details']['flag'] == 'invented'
+
+
+def test_unconfident_root_flags_suppress_root_scope_flag_unknown(tmp_path):
+    """A root-scope invocation is unjudgeable when the root's flags are unknown."""
+    marketplace_root = _build_fixture_root(tmp_path)
+    notation = 'plan-marshall:manage-tasks:manage-tasks'
+    _write_invocation_md(marketplace_root, notation, '--invented X')
+    index = {notation: _entry_from_surface(_surface(flags_confident=False))}
+
+    assert scan_flag(marketplace_root, index) == []
+
+
+def test_confident_root_flags_still_report_root_scope_unknown_flag(tmp_path):
+    """Negative control for the root-scope suppression above."""
+    marketplace_root = _build_fixture_root(tmp_path)
+    notation = 'plan-marshall:manage-tasks:manage-tasks'
+    _write_invocation_md(marketplace_root, notation, '--invented X')
+    index = {notation: _entry_from_surface(_surface(root_flags=['plan-id']))}
+
+    findings = scan_flag(marketplace_root, index)
+    assert len(findings) == 1, findings
+    assert findings[0]['details']['flag'] == 'invented'
+
+
+def test_canonical_forms_row_unjudgeable_against_unconfident_surface(tmp_path):
+    """The Canonical Forms cross-check honours the same markers as the scanners.
+
+    Without this the third consumer would keep reading ``None`` as an empty
+    accept-set: it indexed ``entry.subcommands[sub]`` directly and would have
+    raised or reported every prescribed flag as drift.
+    """
+    marketplace_root = _build_fixture_root(tmp_path)
+    notation = 'plan-marshall:manage-tasks:manage-tasks'
+    _write_canonical_forms_md(
+        marketplace_root,
+        ['| `manage-tasks` | Read | `manage-tasks unprobeable --plan-id {id}` |'],
+    )
+    index = {
+        notation: _entry_from_surface(
+            _surface(children={'unprobeable': _ParserNode(flags_confident=False)})
+        )
+    }
+
+    assert scan_canonical_forms(marketplace_root, index) == []
+
+
+def test_canonical_forms_row_still_reports_drift_against_confident_surface(tmp_path):
+    """Negative control for the Canonical Forms suppression above."""
+    marketplace_root = _build_fixture_root(tmp_path)
+    notation = 'plan-marshall:manage-tasks:manage-tasks'
+    _write_canonical_forms_md(
+        marketplace_root,
+        ['| `manage-tasks` | Read | `manage-tasks read --invented {id}` |'],
+    )
+    index = {notation: _entry_from_surface(_surface(children={'read': _ParserNode()}))}
+
+    findings = scan_canonical_forms(marketplace_root, index)
+    assert len(findings) == 1, findings
+    assert findings[0]['details']['reason'] == 'flag_drift'
 
 
 # =============================================================================

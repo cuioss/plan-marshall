@@ -492,8 +492,19 @@ def _skip_leading_routing_flags(
     the subcommand behind it — the ``--verbose read`` shape, where the
     one-value assumption drops ``read`` and then reports the invocation as
     missing its sub-verb. No script in the tree currently declares such a root
-    switch, so this is a latent case rather than a live one; the executor's
-    pre-spawn walk resolves the identical ambiguity from the identical anchor.
+    switch, so this is a latent case rather than a live one.
+
+    Where the arity is UNCOVERED the two guards deliberately DIVERGE, and this
+    one is the permissive side. Here an uncovered flag falls back to the
+    one-value guess and the skip continues. The executor's pre-spawn walk reads
+    the identical anchor and refuses to guess: ``_consume_flag_value`` in
+    ``execute-script.py.template`` returns ``None`` when the arity is unknown
+    AND the current node still expects a verb, and ``_resolve_invocation``
+    turns that into ``(None, None)`` — it abandons the walk and spawns. The
+    divergence follows from what each guard costs when it is wrong: a doctor
+    finding is advisory, so a mis-skipped token costs one false positive a
+    human dismisses, while a dispatch refusal is terminal and must fail closed.
+    Do not "restore parity" by copying either behaviour into the other.
 
     Returning the post-skip offset lets ``_extract_positional_tokens`` begin
     where the real subcommand chain starts, so an invocation that places a

@@ -67,7 +67,10 @@ Public API
   ``SCRIPTS = { ... }`` literal and returns the set of registered notations.
 - ``build_script_index(registered_notations, marketplace_root)``: thin adapter
   over the shared ``argparse_surface`` derivation, flattening each script's
-  verb tree to ``{subcommand: set[flags]}`` plus a ``root_flags`` set.
+  verb tree to ``{subcommand: set[flags] | None}`` plus a ``root_flags`` set
+  and a ``subcommands_confident`` marker. ``None`` in either flag position
+  propagates the derivation's own ``flags_confident`` / ``children_confident``
+  markers as "unknown surface, skip validation here" — see ``_ScriptEntry``.
 
 Rule IDs registered
 -------------------
@@ -178,10 +181,28 @@ class _ScriptEntry:
     ``subcommands`` maps each registered subcommand name to the set of
     declared ``--flag`` names on that subparser. ``root_flags`` holds
     flags declared directly on the root ``ArgumentParser``.
+
+    ``None`` is the explicit "unknown surface" value in BOTH flag positions,
+    carried through from the shared derivation's ``flags_confident`` /
+    ``children_confident`` markers. It is not the same as an empty set: an
+    empty set says "this scope declares no flags, so every ``--flag`` is
+    drift", while ``None`` says "this scope's flag surface was never derived,
+    so no flag can be judged". Consumers MUST skip flag validation on ``None``
+    rather than treating it as an empty accept-set — a too-small accept-set
+    rejects valid calls, which the module docstring names as strictly more
+    dangerous than no accept-set at all.
+
+    ``subcommands_confident`` is the separate verb-listing marker. ``False``
+    means the child listing is incomplete, so a name absent from
+    ``subcommands`` may still be accepted and verb validation must be skipped.
+    The two markers stay independent for the reason the shared ``ParserNode``
+    docstring gives: collapsing them would let an unknown flag set suppress
+    verb validation that WAS confidently derived, and vice versa.
     """
 
-    subcommands: dict[str, set[str]]
-    root_flags: set[str]
+    subcommands: dict[str, set[str] | None]
+    root_flags: set[str] | None
+    subcommands_confident: bool = True
 
 
 # =============================================================================
@@ -222,8 +243,8 @@ def load_registered_notations(executor_path: Path) -> set[str]:
 # =============================================================================
 
 
-def _subtree_flags(node: ParserNode) -> set[str]:
-    """Union the flag surfaces of ``node`` and every descendant.
+def _subtree_flags(node: ParserNode) -> set[str] | None:
+    """Union the flag surfaces of ``node`` and every descendant, or ``None``.
 
     Widening, per the asymmetric-error rule. This index is flat — it keys only
     on the FIRST positional — while argparse chains can be three levels deep
@@ -231,10 +252,25 @@ def _subtree_flags(node: ParserNode) -> set[str]:
     first-level node's own flags would report ``--field`` as unknown on a
     perfectly valid call. Unioning the subtree accepts a flag that is really
     declared two levels down, which over-accepts and never over-rejects.
+
+    Returns ``None`` — "this subtree's flag surface is unknown" — as soon as any
+    reachable node disclaims either marker. ``flags_confident=False`` means that
+    node's own flags were never derived, and ``children_confident=False`` means
+    there may be unlisted descendants whose flags the union therefore misses.
+    Both make the union an UNDER-approximation, and an under-approximated
+    accept-set rejects valid calls, so the union is withdrawn rather than
+    returned smaller. The live producer is
+    ``argparse_surface._derive_node``'s unprobeable-child path, which registers
+    a child whose own ``--help`` probe failed as a node with both markers false.
     """
+    if not node.flags_confident or not node.children_confident:
+        return None
     flags = set(node.flags)
     for child in node.children.values():
-        flags |= _subtree_flags(child)
+        child_flags = _subtree_flags(child)
+        if child_flags is None:
+            return None
+        flags |= child_flags
     return flags
 
 
@@ -248,13 +284,28 @@ def _entry_from_surface(surface: ScriptSurface) -> _ScriptEntry:
     widened with the root parser's own flags, because argparse honours a
     root-declared flag (``--plan-id``, ``--project-dir``) on every subcommand
     while rendering it only in the root's help.
+
+    A key is retained even when its flag surface is unknown, with ``None`` as
+    the value. Dropping the key instead would make the subcommand rule report
+    the name as undeclared — a false finding manufactured out of the very
+    uncertainty the marker exists to signal — because the choice list that
+    named the child IS the confident acceptance oracle; only the child's own
+    surface is missing. An unconfident root flag surface poisons every
+    subcommand's value too, since each is widened with the root's flags.
     """
-    root_flags = set(surface.root.flags)
-    subcommands = {
-        name: root_flags | _subtree_flags(child)
-        for name, child in surface.root.children.items()
-    }
-    return _ScriptEntry(subcommands=subcommands, root_flags=root_flags)
+    root_flags = set(surface.root.flags) if surface.root.flags_confident else None
+    subcommands: dict[str, set[str] | None] = {}
+    for name, child in surface.root.children.items():
+        child_flags = _subtree_flags(child)
+        if root_flags is None or child_flags is None:
+            subcommands[name] = None
+        else:
+            subcommands[name] = root_flags | child_flags
+    return _ScriptEntry(
+        subcommands=subcommands,
+        root_flags=root_flags,
+        subcommands_confident=surface.root.children_confident,
+    )
 
 
 def build_script_index(
@@ -437,6 +488,10 @@ def scan_subcommand(
                 # Script declares no subparsers — any "subcommand" token
                 # is actually a positional argument. Skip silently.
                 continue
+            if not entry.subcommands_confident:
+                # The child listing is incomplete, so absence from the index
+                # is not evidence of an invented verb. Skip.
+                continue
             if inv.subcommand in entry.subcommands:
                 continue
 
@@ -480,12 +535,17 @@ def scan_flag(
                 continue
             allowed: set[str]
             if inv.subcommand is None:
+                # ``None`` root flags means the root's own flag surface was
+                # never derived — no flag can be judged against it.
+                if entry.root_flags is None:
+                    continue
                 allowed = entry.root_flags
                 scope_label = '<root>'
             else:
-                # Subcommand may be unknown; in that case, the subcommand
-                # rule reports — we still avoid false flag findings by
-                # falling back to root flags.
+                # ``None`` covers both "subcommand not in the index" (the
+                # subcommand rule reports that) and "this subcommand's flag
+                # surface is unknown". Either way there is no accept-set to
+                # judge against, so emit nothing.
                 sub_allowed = entry.subcommands.get(inv.subcommand)
                 if sub_allowed is None:
                     continue
@@ -634,7 +694,7 @@ def scan_canonical_forms(
             continue
 
         entry = script_index[notation]
-        if sub not in entry.subcommands:
+        if sub not in entry.subcommands and entry.subcommands_confident:
             findings.append(
                 Finding(
                     type=RULE_CANONICAL_FORMS_DRIFT,
@@ -660,7 +720,12 @@ def scan_canonical_forms(
             )
             continue
 
-        allowed = entry.subcommands[sub]
+        allowed = entry.subcommands.get(sub)
+        if allowed is None:
+            # Either the verb is absent from an unconfident child listing, or
+            # its own flag surface was never derived. No accept-set, no
+            # flag-drift verdict.
+            continue
         for token in rest:
             if not token.startswith('--'):
                 continue

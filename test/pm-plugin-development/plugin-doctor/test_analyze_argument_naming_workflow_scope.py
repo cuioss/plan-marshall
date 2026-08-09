@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from _plugin_doctor_dispatching_executor import write_dispatching_executor
 from conftest import load_script_module
 
 # ---------------------------------------------------------------------------
@@ -36,91 +37,10 @@ analyze_argument_naming = _aan.analyze_argument_naming
 
 
 # ---------------------------------------------------------------------------
-# Fixture helpers (self-contained — mirrors the layout used by
-# ``test_analyze.py``'s argument-naming cluster but does not import the
-# private helpers from that module).
+# Fixture helpers. The dispatching executor is the SHARED definition in
+# ``_plugin_doctor_dispatching_executor``; the markdown/script writers below
+# are local because their shapes are specific to the workflow-scope cases.
 # ---------------------------------------------------------------------------
-
-
-def _write_fake_executor(plan_dir: Path, notations: list[str]) -> Path:
-    """Write a working ``execute-script.py`` that both REGISTERS and DISPATCHES.
-
-    The cluster reads the executor two ways: ``load_registered_notations``
-    regex-parses the ``SCRIPTS = { ... }`` literal, and ``build_script_index``
-    derives each script's accept-set by running that script's ``--help``
-    THROUGH this executor. A lookup-only stub satisfies the first and silently
-    empties the second, which turns every finding-expecting test in this file
-    into a vacuous pass.
-
-    Resolution is computed at dispatch time from the notation, because callers
-    write the executor before the script it will dispatch to.
-    """
-    plan_dir.mkdir(parents=True, exist_ok=True)
-    executor = plan_dir / 'execute-script.py'
-    lines = [
-        '#!/usr/bin/env python3',
-        'import contextlib',
-        'import io',
-        'import runpy',
-        'import sys',
-        'from pathlib import Path',
-        '',
-        'SCRIPTS = {',
-    ]
-    for notation in notations:
-        lines.append(f'    "{notation}": "resolved-at-dispatch",')
-    lines.extend(
-        [
-            '}',
-            '',
-            '',
-            'def _resolve(notation):',
-            '    parts = notation.split(":", 2)',
-            '    if len(parts) != 3:',
-            '        return None',
-            '    bundle, skill, script = parts',
-            '    root = Path(__file__).parent.parent',
-            '    candidate = (',
-            '        root / "marketplace" / "bundles" / bundle / "skills" / skill',
-            '        / "scripts" / (script + ".py")',
-            '    )',
-            '    return candidate if candidate.is_file() else None',
-            '',
-            '',
-            'def main():',
-            '    if len(sys.argv) < 2:',
-            '        sys.exit(2)',
-            '    target = _resolve(sys.argv[1])',
-            '    if target is None:',
-            '        sys.stderr.write("Unknown notation: " + sys.argv[1] + "\\n")',
-            '        sys.exit(2)',
-            '    out_buf = io.StringIO()',
-            '    err_buf = io.StringIO()',
-            '    rc = 0',
-            '    saved_argv = sys.argv',
-            '    sys.argv = [str(target), *sys.argv[2:]]',
-            '    try:',
-            '        with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):',
-            '            runpy.run_path(str(target), run_name="__main__")',
-            '    except SystemExit as exc:',
-            '        code = exc.code',
-            '        rc = 0 if code is None else (code if isinstance(code, int) else 1)',
-            '    finally:',
-            '        sys.argv = saved_argv',
-            '    sys.stdout.write(out_buf.getvalue())',
-            '    sys.stderr.write(err_buf.getvalue())',
-            '    sys.stdout.flush()',
-            '    sys.stderr.flush()',
-            '    sys.exit(rc)',
-            '',
-            '',
-            'if __name__ == "__main__":',
-            '    main()',
-        ]
-    )
-    executor.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-    return executor
-
 
 def _write_fake_script(
     marketplace_root: Path,
@@ -186,7 +106,7 @@ def test_workflow_md_invented_subcommand_emits_subcommand_unknown(tmp_path):
     extended scope MUST flag the bad subcommand at the exact line.
     """
     marketplace_root = tmp_path / 'marketplace'
-    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-status:manage_status'])
+    write_dispatching_executor(tmp_path / '.plan', ['plan-marshall:manage-status:manage_status'])
     _write_fake_script(
         marketplace_root,
         'plan-marshall:manage-status:manage_status',
@@ -219,7 +139,7 @@ def test_workflow_md_invented_subcommand_emits_subcommand_unknown(tmp_path):
 def test_workflow_md_canonical_subcommand_no_finding(tmp_path):
     """Canonical subcommand inside a workflow/*.md file yields no finding."""
     marketplace_root = tmp_path / 'marketplace'
-    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-status:manage_status'])
+    write_dispatching_executor(tmp_path / '.plan', ['plan-marshall:manage-status:manage_status'])
     _write_fake_script(
         marketplace_root,
         'plan-marshall:manage-status:manage_status',
@@ -257,7 +177,7 @@ def test_workflow_md_invented_flag_emits_flag_unknown(tmp_path):
     drift documented in lesson 2026-05-20-15-004.
     """
     marketplace_root = tmp_path / 'marketplace'
-    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-findings:manage-findings'])
+    write_dispatching_executor(tmp_path / '.plan', ['plan-marshall:manage-findings:manage-findings'])
     _write_fake_script(
         marketplace_root,
         'plan-marshall:manage-findings:manage-findings',
@@ -292,7 +212,7 @@ def test_workflow_md_invented_flag_emits_flag_unknown(tmp_path):
 def test_workflow_md_canonical_flag_no_finding(tmp_path):
     """Canonical flags inside a workflow/*.md file yield no FLAG_UNKNOWN finding."""
     marketplace_root = tmp_path / 'marketplace'
-    _write_fake_executor(tmp_path / '.plan', ['plan-marshall:manage-findings:manage-findings'])
+    write_dispatching_executor(tmp_path / '.plan', ['plan-marshall:manage-findings:manage-findings'])
     _write_fake_script(
         marketplace_root,
         'plan-marshall:manage-findings:manage-findings',
