@@ -30,7 +30,11 @@ one is not a bullet; admitting either truncates the enclosing section, which
 drops Expected Surface paths behind a confident no-overlap and makes later
 claims vanish from ``--claim-index`` addressing. Each detector there carries a
 matched pair, because suppression that also disabled real headings would be a
-different defect wearing the same green.
+different defect wearing the same green. The delimiter comparison is pinned on
+both sides of the run-LENGTH boundary — a four-backtick block carrying a
+three-backtick example, with the shorter, equal and longer closes around it —
+because a mask that compares only the delimiter CHARACTER passes every
+same-length case while leaving a nested block's body unmasked.
 
 Two population guards keep the module non-vacuous: the fixture-materialization
 guard below fails loudly when the fixture epic did not land on disk, and the
@@ -1261,6 +1265,26 @@ _FENCED_SURFACE = [
     '```',
 ]
 
+#: The same Expected Surface list written with a FOUR-backtick outer fence that
+#: CONTAINS a three-backtick example — the ordinary way a spec shows a fenced
+#: snippet inside a fenced block. CommonMark closes only on a run at least as
+#: long as the opener, so the inner ``` lines are body text and the outer block
+#: runs to the ```` line. A mask that compares only the delimiter CHARACTER ends
+#: the block at the first inner ```, after which the ``#`` comment on the next
+#: line reads as a heading and truncates the section. ``OTHER_PATH`` sits after
+#: the inner example, so an assertion that finds it proves the whole list
+#: survived the nesting.
+_NESTED_FENCED_SURFACE = [
+    '````text',
+    '# the files this spec expects to touch',
+    '```',
+    '# an inner example, not the close of the outer block',
+    '```',
+    SHARED_PATH,
+    OTHER_PATH,
+    '````',
+]
+
 #: Two real claims with a fenced example between them. The fence carries both a
 #: ``#`` comment (a heading look-alike) and a ``- `` line (a bullet look-alike),
 #: so one fixture exercises both suppressions.
@@ -1300,6 +1324,64 @@ class TestFenceMask:
     def test_a_tilde_line_does_not_close_a_backtick_fence(self):
         # A close must be built from the character that OPENED the block.
         lines = ['```text', '~~~', '# still fenced', '```', '# a real heading']
+
+        mask = fenced_mask(lines)
+
+        assert len(mask) == len(lines)
+        assert mask == [True, True, True, True, False]
+
+    def test_a_four_backtick_block_masks_a_three_backtick_example(self):
+        # The straddling case: the run LENGTH decides the close, not just the
+        # character. Reading the character alone ends the outer block at the
+        # first inner ```, leaving the real fenced body — and the paths after
+        # it — unmasked behind a mask that still reports one entry per line.
+        lines = ['before', *_NESTED_FENCED_SURFACE, '# a real heading']
+
+        mask = fenced_mask(lines)
+
+        assert len(mask) == len(lines), 'the mask must carry one entry per scanned line'
+        assert sum(mask) == len(_NESTED_FENCED_SURFACE), (
+            f'{sum(mask)} of {len(lines)} lines masked, expected exactly the '
+            f'{len(_NESTED_FENCED_SURFACE)}-line fenced block'
+        )
+        assert mask == [False, *[True] * len(_NESTED_FENCED_SURFACE), False]
+
+    def test_a_shorter_run_does_not_close_a_longer_opener(self):
+        # No delimiter here is long enough to close, so the block runs to the
+        # end of the document — the unterminated-fence reading, reached through
+        # the run-length comparison rather than through an absent delimiter.
+        lines = ['````text', '```', '# still fenced', '```', 'also still fenced']
+
+        mask = fenced_mask(lines)
+
+        assert len(mask) == len(lines)
+        assert sum(mask) == len(lines), (
+            f'{sum(mask)} of {len(lines)} lines masked, expected every line: a '
+            'three-backtick run cannot close a four-backtick opener'
+        )
+
+    def test_an_equal_length_run_closes_the_block(self):
+        # Control against a fix that passes by never closing a long fence.
+        lines = ['````text', '# not a heading', '````', '# a real heading']
+
+        mask = fenced_mask(lines)
+
+        assert len(mask) == len(lines)
+        assert mask == [True, True, True, False]
+
+    def test_a_longer_run_closes_a_shorter_opener(self):
+        # CommonMark closes on AT LEAST the opening length, not on equality.
+        lines = ['```text', '# not a heading', '`````', '# a real heading']
+
+        mask = fenced_mask(lines)
+
+        assert len(mask) == len(lines)
+        assert mask == [True, True, True, False]
+
+    def test_a_delimiter_carrying_an_info_string_does_not_close_a_block(self):
+        # Only the OPENING fence may carry an info string, so a ```python line
+        # inside a block is body text — the same conservative direction.
+        lines = ['```text', '```python', '# still fenced', '```', '# a real heading']
 
         mask = fenced_mask(lines)
 
@@ -1358,6 +1440,40 @@ class TestFencedExpectedSurface:
             f'{len(declared)} path(s) declared in the fenced list, {len(paths)} extracted'
         )
         assert paths == set(declared)
+
+    def test_a_nested_fenced_path_list_yields_every_path(self):
+        # The consumer-level proof that the run-length comparison reaches the
+        # defect it was filed for: with the outer block ended at the first inner
+        # ```, the following ``#`` comment reads as a heading and truncates the
+        # section, dropping every path declared after it.
+        declared = (SHARED_PATH, OTHER_PATH)
+        text = _spec_text([_DEFAULT_CLAIM], list(_NESTED_FENCED_SURFACE))
+
+        paths = expected_surface_paths(text)
+
+        assert len(paths) == len(declared), (
+            f'{len(declared)} path(s) declared in the nested fenced list, '
+            f'{len(paths)} extracted'
+        )
+        assert paths == set(declared)
+
+    def test_cross_check_reports_an_overlap_declared_after_a_nested_fence(self, plan_context):
+        # End to end through the verb: the overlapping path sits after the inner
+        # three-backtick example, so a truncated section reports a confident
+        # no-overlap while still counting the spec in ``specs_scanned``.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(
+            plan_context, 'PLAN-01-alpha.md', surface_lines=list(_NESTED_FENCED_SURFACE)
+        )
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH])
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['specs_scanned'] == 1, 'the own corpus did not materialize'
+        assert result['candidates_scanned'] == 1, 'the candidate population did not materialize'
+        assert result['file_overlap_match_count'] == 1
+        assert result['file_overlap_matches'][0]['overlapping_files'] == OTHER_PATH
+        assert result['collision_detected'] is True
 
     def test_a_path_outside_the_section_is_still_excluded(self):
         # Negative control: the fix widens the body past a fenced comment, it

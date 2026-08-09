@@ -227,14 +227,18 @@ _HEADING_RE = re.compile(r'^#{1,6}\s')
 _BULLET_RE = re.compile(r'^(?P<indent>[ \t]*)-\s+(?P<text>.*)$')
 _CHECKED_AT_RE = re.compile(r'^[0-9a-f]{7,40}$')
 # A fenced-code-block delimiter line: three-or-more backticks or tildes, with any
-# info string. Group ``fence`` carries the run so a delimiter can be matched to
-# the character that OPENED the block — a ``~~~`` line inside a backtick fence is
-# body text, not a close. Every line-wise markdown scan below runs against the
-# mask this builds, because a ``# comment`` inside a fence is not a heading and a
-# ``- item`` inside one is not a bullet. This mirrors the fence suppression the
-# sibling detector in ``pm-plugin-development:ext-self-review-plan-marshall``
-# already applies for the same reason.
-_FENCE_DELIMITER_RE = re.compile(r'^\s*(?P<fence>`{3,}|~{3,})')
+# info string. Group ``fence`` carries the WHOLE RUN — both the character and its
+# length — because CommonMark closes a block only on a run of the same character
+# that is AT LEAST AS LONG as the opener: a ``~~~`` line inside a backtick fence
+# is body text, and so is a ``` line inside a ```` block. Group ``info`` carries
+# whatever follows the run, because only the OPENING fence may carry an info
+# string; a delimiter with one is body text, never a close. Every line-wise
+# markdown scan below runs against the mask this builds, because a ``# comment``
+# inside a fence is not a heading and a ``- item`` inside one is not a bullet.
+# This mirrors the fence suppression the sibling detector in
+# ``pm-plugin-development:ext-self-review-plan-marshall`` already applies for the
+# same reason.
+_FENCE_DELIMITER_RE = re.compile(r'^\s*(?P<fence>`{3,}|~{3,})(?P<info>.*)$')
 
 
 def _error(slug: str, error: str, message: str, **extra: Any) -> dict[str, Any]:
@@ -824,10 +828,15 @@ def _fenced_mask(lines: list[str]) -> list[bool]:
     """Return a per-line mask marking every line that belongs to a fenced block.
 
     Delimiter lines are masked along with the body, so a caller can test one
-    index without also testing its neighbours. A block closes only on a
-    delimiter built from the SAME fence character that opened it, and an
-    unterminated fence runs to the end of the document — the CommonMark rule,
-    and the conservative reading: text that may be code is treated as code.
+    index without also testing its neighbours. Closing follows the CommonMark
+    rule exactly, so the mask agrees with what the spec author sees rendered: a
+    block closes only on a delimiter run built from the SAME character as the
+    opener, AT LEAST AS LONG as the opener, and carrying no info string. The
+    opening run's LENGTH is therefore retained, not just its character — a
+    four-backtick block that contains a three-backtick example stays open across
+    that example instead of ending at it. An unterminated fence runs to the end
+    of the document. Every branch reads the same way: text that may be code is
+    treated as code, never the reverse.
 
     Every line-wise scan in this module consumes this mask. Without it a
     ``# comment`` inside a fenced example matches :data:`_HEADING_RE` and
@@ -835,18 +844,23 @@ def _fenced_mask(lines: list[str]) -> list[bool]:
     the count that rides beside it still reports the full denominator.
     """
     mask = [False] * len(lines)
-    open_fence = ''
+    open_char = ''
+    open_length = 0
     for index, line in enumerate(lines):
         match = _FENCE_DELIMITER_RE.match(line)
         if match is None:
-            mask[index] = bool(open_fence)
+            mask[index] = bool(open_char)
             continue
         mask[index] = True
-        marker = match.group('fence')[0]
-        if not open_fence:
-            open_fence = marker
-        elif marker == open_fence:
-            open_fence = ''
+        run = match.group('fence')
+        if not open_char:
+            open_char, open_length = run[0], len(run)
+        elif (
+            run[0] == open_char
+            and len(run) >= open_length
+            and not match.group('info').strip()
+        ):
+            open_char, open_length = '', 0
     return mask
 
 
