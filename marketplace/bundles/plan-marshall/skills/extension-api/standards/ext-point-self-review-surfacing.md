@@ -4,7 +4,7 @@
 
 ## Overview
 
-Self-review surfacing extensions provide the deterministic candidate-surface phase of the `default:pre-submission-self-review` finalize step. Each implementor inspects the worktree's staged diff in a domain-appropriate way (regex literals in `.py`/`.md`, Java imports + JavaDoc strings, JSX template literals, AsciiDoc include directives, etc.) and emits a TOON envelope carrying twenty candidate sub-lists for the LLM cognitive review pass to consume.
+Self-review surfacing extensions provide the deterministic candidate-surface phase of the `default:pre-submission-self-review` finalize step. Each implementor inspects the worktree's staged diff in a domain-appropriate way (regex literals in `.py`/`.md`, Java imports + JavaDoc strings, JSX template literals, AsciiDoc include directives, etc.) and emits a TOON envelope carrying one candidate sub-list per registry entry for the LLM cognitive review pass to consume.
 
 The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Consumer projects (Java, frontend, application code) MAY contribute their own implementor by following the contract below.
 
@@ -33,7 +33,7 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 | Subcommand | Required | Description |
 |------------|:--------:|-------------|
-| `surface` | Yes | Emit the twenty candidate sub-lists from the worktree diff as TOON. |
+| `surface` | Yes | Emit one candidate sub-list per registry entry from the worktree diff as TOON. |
 | `scan-worked-examples` | No | Run the `worked_example_pairs` adjudication over a supplied file population (`--paths-glob`) instead of the diff, reporting the population size the verdict was drawn against. Implemented by the plan-marshall-domain implementor; a consumer-domain implementor MAY omit it, and no consumer of this ext-point dispatches it. |
 
 ## Runtime Invocation Contract
@@ -60,7 +60,7 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 ### Post-Conditions
 
-- TOON to stdout carrying the twenty candidate sub-lists below (some MAY be empty).
+- TOON to stdout carrying one candidate sub-list per registry entry, as enumerated below (some MAY be empty).
 - The echo fields `since_ref`, `surface_scope`, and `files_in_scope` state which round variant produced the payload, so a consumer never has to reconstruct it.
 - An empty intersection surfaces NOTHING. A delta round whose intersection is empty genuinely has no files to review, so the implementor MUST emit empty candidate lists rather than falling back to the unfiltered diff.
 - Non-zero exit on git-unavailable, base-branch-missing, worktree-resolution, or since-ref-resolution failure.
@@ -99,7 +99,9 @@ counts:
   ordinal_references: N18
   scan_derived_keys: N19
   worked_example_pairs: N20
-  total: N1+N2+N3+N4+N5+N8+N10+N11+N12+N13+N14+N16+N18+N19+N20
+  duplicate_claimable_keys: N21
+  discard_without_report: N22
+  total: the sum of every registry entry whose in_total flag is set
 
 regexes[N1]{file,line,pattern}:
   ...
@@ -184,7 +186,7 @@ The mix is reported HERE, in the return TOON, rather than in `display_detail`: t
 
 ### Required Candidate Sub-Lists
 
-All twenty keys MUST appear in the output (possibly with empty payloads) — a consumer-domain implementor whose language or format carries no equivalent signal for a given key MUST still emit that key with an empty payload rather than omitting it. This applies to `scan_derived_keys` exactly as it does to every other key: a domain with no scan-versus-anchor derivation shape emits `scan_derived_keys` empty, and the consumer's `total` formula stays well-defined. It applies equally to `worked_example_pairs`: a domain whose documentation carries no BAD/GOOD worked-example convention emits that key empty. The fifteen LLM cognitive checks consume:
+Every registry key MUST appear in the output (possibly with empty payloads) — a consumer-domain implementor whose language or format carries no equivalent signal for a given key MUST still emit that key with an empty payload rather than omitting it. This applies to `scan_derived_keys` exactly as it does to every other key: a domain with no scan-versus-anchor derivation shape emits `scan_derived_keys` empty, and the consumer's `total` formula stays well-defined. It applies equally to `worked_example_pairs`: a domain whose documentation carries no BAD/GOOD worked-example convention emits that key empty. The fifteen LLM cognitive checks consume:
 
 | Sub-list | Purpose | Consumed By |
 |----------|---------|-------------|
