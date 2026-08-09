@@ -19,6 +19,7 @@ import re
 import shlex
 import subprocess
 import sys
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -546,12 +547,15 @@ def _diagnose_display_entries(settings_data: dict[str, Any]) -> tuple[list[str],
             healthy = False
 
     # Enforcement-hook entry — keyed on _ENFORCEMENT_HOOK_COMMAND, NOT the render
-    # command, so it has its own present/MISSING label. The opt-in enforcement
+    # command, so it has its own present/MISSING label, and scoped to the
+    # matcher-less entry, because only a matcher-less entry actually enforces on
+    # every tool: an entry parked under some matcher must read MISSING here, or
+    # the label reports enforcement that is not running. The opt-in enforcement
     # install is orthogonal to the terminal-title bundle: its absence does NOT
     # mark the display unhealthy (a user may enable terminal-title without it).
     pre_tool_use = hooks_block.get("PreToolUse", [])
     enforcement_present = isinstance(pre_tool_use, list) and _has_enforcement_entry(
-        pre_tool_use
+        pre_tool_use, matcher=""
     )
     lines.append(
         f"PreToolUse:enforcement: {'present' if enforcement_present else 'MISSING'}"
@@ -685,15 +689,26 @@ def _has_capture_entry(entries: list[Any]) -> bool:
     return False
 
 
-def _has_enforcement_entry(entries: list[Any]) -> bool:
+def _has_enforcement_entry(entries: list[Any], matcher: str | None = None) -> bool:
     """Return True when *entries* already contains the PreToolUse enforcement hook.
 
     Keyed on ``_ENFORCEMENT_HOOK_COMMAND`` (not the render command), so the
     enforcement entry's presence is detected independently of the terminal-title
     render entries that may also live in ``hooks.PreToolUse``.
+
+    Takes the same optional *matcher* scope as its :func:`_has_render_entry`
+    sibling: None matches any entry carrying the command, a string additionally
+    requires the entry's ``matcher`` field to equal it. Every caller passes
+    ``matcher=""``, because being MATCHER-LESS is what makes the enforcement hook
+    run for every tool rather than for one matcher — an unscoped probe reports a
+    wrong-matcher entry as present, so the installer skips appending the real
+    matcher-less entry and reports success while enforcement runs for nothing but
+    that matcher.
     """
     for entry in entries:
         if not isinstance(entry, dict):
+            continue
+        if matcher is not None and entry.get("matcher", "") != matcher:
             continue
         hooks = entry.get("hooks", [])
         if not isinstance(hooks, list):
@@ -823,6 +838,27 @@ def _enforcement_entry() -> dict[str, Any]:
     }
 
 
+#: THE authoritative hook-entry builder population: every builder that emits a
+#: ``timeout`` field into a settings hook entry. Holding the SYMBOLS rather than
+#: their names is deliberate — a name can go stale silently, a symbol cannot.
+#:
+#: The population is enumerated by symbol and NEVER by a ``"timeout":`` text scan
+#: over this module. That scan returns a fourth hit which is not an emit site at
+#: all: the ``"timeout"`` KEY of ``_BUILD_JOB_STATUS_TO_OUTCOME``, a marshalld
+#: wire-status NAME. Anchoring on the builders is what keeps the population from
+#: absorbing it.
+#:
+#: The timeout regression suite derives its population from here instead of
+#: restating the builder names, so a future emit site cannot ship untested by
+#: being omitted from a test-local copy — the omission would have to be made
+#: here, next to the builders themselves.
+_HOOK_ENTRY_BUILDERS: tuple[Callable[..., dict[str, Any]], ...] = (
+    _render_entry,
+    _capture_entry,
+    _enforcement_entry,
+)
+
+
 def _install_enforcement_hook(settings_path: Path) -> dict[str, Any]:
     """Install ONLY the PreToolUse enforcement entry into *settings_path*.
 
@@ -871,8 +907,10 @@ def _install_enforcement_hook(settings_path: Path) -> dict[str, Any]:
             pre_tool_use = []
             hooks_block["PreToolUse"] = pre_tool_use
 
-        if _has_enforcement_entry(pre_tool_use):
-            if not _migrate_hook_timeout(pre_tool_use, _ENFORCEMENT_HOOK_COMMAND):
+        if _has_enforcement_entry(pre_tool_use, matcher=""):
+            if not _migrate_hook_timeout(
+                pre_tool_use, _ENFORCEMENT_HOOK_COMMAND, matcher=""
+            ):
                 return {"io_ok": True, "enforcement_status": "already_present"}
             if not _write_json(settings_path, settings_data):
                 return failure

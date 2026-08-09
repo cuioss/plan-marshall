@@ -1304,41 +1304,214 @@ class TestInstallEnforcementHook:
         assert "hooks" not in shared
 
 
-class TestHookEntryTimeoutEmitSites:
-    """Every hook-entry builder emits a SECONDS-range ``timeout``.
+class TestEnforcementEntryMustBeMatcherLess:
+    """The enforcement probe and its timeout migration are scoped to ``matcher: ""``.
 
-    Fails against the pre-fix code, where all three builders emitted the
-    milliseconds-shaped ``5000`` into a field Claude Code reads as seconds.
+    Being MATCHER-LESS is precisely what makes the enforcement hook run for every
+    tool rather than for one matcher, so an unscoped presence probe is a false
+    green on a guard: it accepts an entry parked under some matcher, the
+    installer takes the already-present branch, and ``install-hook --enforcement``
+    reports success while the matcher-less entry that actually enforces was never
+    appended. Each control below pairs the wrong-matcher case with the
+    matcher-less one, so a probe that simply answered False for everything could
+    not satisfy them.
     """
 
-    #: The emit-site population, enumerated BY SYMBOL — never by a ``"timeout":``
-    #: text scan over ``claude_runtime.py``. That scan returns FOUR hits: the
-    #: fourth is the ``"timeout"`` KEY of ``_BUILD_JOB_STATUS_TO_OUTCOME``, a
-    #: marshalld wire-status NAME that is not an emit site at all. Anchoring on
-    #: the builders is what keeps this population from absorbing it.
-    EMIT_SITE_BUILDERS = ("_render_entry", "_capture_entry", "_enforcement_entry")
+    @staticmethod
+    def _scoped_entries(matcher: str, timeout: int = 5) -> list[dict[str, Any]]:
+        """A PreToolUse entry carrying the enforcement command under *matcher*."""
+        return [
+            {
+                "matcher": matcher,
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": _ENFORCEMENT_HOOK_COMMAND,
+                        "timeout": timeout,
+                    }
+                ],
+            }
+        ]
 
-    def test_emit_site_population_is_non_empty_and_fully_resolved(self):
-        """The population resolves completely, is non-empty, and its size is published.
+    def _write_pre_tool_use(self, target: Path, entries: list[dict[str, Any]]) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps({"hooks": {"PreToolUse": entries}}), encoding="utf-8"
+        )
 
-        Guards the vacuous-pass shape head-on: a loop over an EMPTY population
-        passes while examining nothing, and a renamed builder would silently
-        shrink it. Both are ruled out by asserting the resolved count against
-        the declared one and reporting both numbers on failure.
+    def test_probe_is_scoped_like_its_render_sibling(self):
+        """``_has_enforcement_entry`` takes and applies the same matcher scope."""
+        import claude_runtime as _cr
+
+        scoped = self._scoped_entries("Bash")
+        matcher_less = self._scoped_entries("")
+
+        assert _cr._has_enforcement_entry(scoped, matcher="") is False
+        assert _cr._has_enforcement_entry(matcher_less, matcher="") is True
+        # matcher=None keeps the sibling's "any entry with this command" meaning,
+        # so the scoping is a caller decision rather than a hard-wired one.
+        assert _cr._has_enforcement_entry(scoped) is True
+
+    def test_wrong_matcher_entry_does_not_suppress_the_install(self, rt, tmp_path):
+        """A scoped entry must not be mistaken for the matcher-less one.
+
+        The regression: with an unscoped probe the installer reported
+        ``already_present`` here and returned without appending anything, so
+        enforcement ran for ``Bash`` alone while the operator was told it was
+        armed.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        self._write_pre_tool_use(target, self._scoped_entries("Bash"))
+
+        result = _parsed(rt.project_install_hook(str(target), enforcement=True))
+
+        assert result["enforcement_status"] == "installed"
+        assert result["enforcement_installed"] is True
+
+        pre = json.loads(target.read_text())["hooks"]["PreToolUse"]
+        # The foreign scoped entry is preserved and the matcher-less one added.
+        assert _count_command(pre, _ENFORCEMENT_HOOK_COMMAND) == 2
+        matchers = {
+            entry.get("matcher", "")
+            for entry in pre
+            if isinstance(entry, dict)
+            and any(
+                h.get("command") == _ENFORCEMENT_HOOK_COMMAND
+                for h in entry.get("hooks", [])
+            )
+        }
+        assert matchers == {"", "Bash"}
+
+    def test_matcher_less_entry_still_suppresses_the_install(self, rt, tmp_path):
+        """The matched negative: a correct entry is still recognised as present.
+
+        Without this, a probe hard-wired to return False would pass the
+        wrong-matcher control above while re-appending a duplicate entry on
+        every run.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        self._write_pre_tool_use(target, self._scoped_entries(""))
+
+        result = _parsed(rt.project_install_hook(str(target), enforcement=True))
+
+        assert result["enforcement_status"] == "already_present"
+        pre = json.loads(target.read_text())["hooks"]["PreToolUse"]
+        assert _count_command(pre, _ENFORCEMENT_HOOK_COMMAND) == 1
+
+    def test_migration_leaves_a_wrong_matcher_entry_alone(self, rt, tmp_path):
+        """A stale timeout on a scoped entry is not ours to converge.
+
+        Both halves are asserted because either alone is satisfiable by a wrong
+        implementation: the preserved 5000 alone would also hold if nothing
+        migrated at all, and the converged value alone would also hold if the
+        migration were still unscoped.
         """
         import claude_runtime as _cr
 
-        declared = len(self.EMIT_SITE_BUILDERS)
-        resolved = [
-            name for name in self.EMIT_SITE_BUILDERS if callable(getattr(_cr, name, None))
-        ]
-        assert declared > 0, "emit-site population is empty — nothing would be examined"
-        assert len(resolved) == declared, (
-            f"emit-site population incomplete: {len(resolved)} of {declared} builders "
-            f"resolve on claude_runtime — unresolved: "
-            f"{sorted(set(self.EMIT_SITE_BUILDERS) - set(resolved))}"
+        target = tmp_path / ".claude" / "settings.local.json"
+        self._write_pre_tool_use(target, self._scoped_entries("Bash", timeout=5000))
+
+        rt.project_install_hook(str(target), enforcement=True)
+
+        pre = json.loads(target.read_text())["hooks"]["PreToolUse"]
+        scoped = [e for e in pre if e.get("matcher", "") == "Bash"]
+        matcher_less = [e for e in pre if e.get("matcher", "") == ""]
+        assert _timeouts_for(scoped, _ENFORCEMENT_HOOK_COMMAND) == {5000}
+        assert _timeouts_for(matcher_less, _ENFORCEMENT_HOOK_COMMAND) == {
+            _cr._HOOK_TIMEOUT_SECONDS
+        }
+
+    def test_migration_still_converges_the_matcher_less_entry(self, rt, tmp_path):
+        """The matched positive: a stale matcher-less entry IS converged."""
+        import claude_runtime as _cr
+
+        target = tmp_path / ".claude" / "settings.local.json"
+        self._write_pre_tool_use(target, self._scoped_entries("", timeout=5000))
+
+        result = _parsed(rt.project_install_hook(str(target), enforcement=True))
+
+        assert result["enforcement_status"] == "migrated"
+        pre = json.loads(target.read_text())["hooks"]["PreToolUse"]
+        assert _timeouts_for(pre, _ENFORCEMENT_HOOK_COMMAND) == {
+            _cr._HOOK_TIMEOUT_SECONDS
+        }
+
+    def test_display_label_reads_missing_for_a_wrong_matcher_entry(self):
+        """The health-check label is truthful once the probe is scoped.
+
+        A wrong-matcher entry is enforcement that does not run for every tool, so
+        reporting it as present would be the same false green one layer up — in
+        the diagnostic the menu doc tells the operator to read.
+        """
+        import claude_runtime as _cr
+
+        scoped_lines, _ = _cr._diagnose_display_entries(
+            {"hooks": {"PreToolUse": self._scoped_entries("Bash")}}
         )
-        assert set(resolved) == {"_render_entry", "_capture_entry", "_enforcement_entry"}
+        assert "PreToolUse:enforcement: MISSING" in scoped_lines
+
+        matcher_less_lines, _ = _cr._diagnose_display_entries(
+            {"hooks": {"PreToolUse": self._scoped_entries("")}}
+        )
+        assert "PreToolUse:enforcement: present" in matcher_less_lines
+
+
+class TestHookEntryTimeoutEmitSites:
+    """Every hook-entry builder emits a SECONDS-range ``timeout``.
+
+    Fails against the pre-fix code, where every builder emitted the
+    milliseconds-shaped ``5000`` into a field Claude Code reads as seconds.
+
+    "Every" is meant literally: the population is read from
+    ``claude_runtime._HOOK_ENTRY_BUILDERS`` rather than restated here, so the
+    class covers whatever the module declares — including a builder added after
+    this class was written.
+    """
+
+    #: The emit-site population, taken from ``claude_runtime._HOOK_ENTRY_BUILDERS``
+    #: — the registry that sits next to the builders themselves. It is NOT a
+    #: test-local list of builder names: a hand-maintained copy cannot detect an
+    #: ADDITION to the real population, so a future timeout-emitting builder
+    #: omitted from it would leave every test in this class green.
+    #:
+    #: The population is enumerated BY SYMBOL, never by a ``"timeout":`` text scan
+    #: over ``claude_runtime.py``. That scan returns FOUR hits: the fourth is the
+    #: ``"timeout"`` KEY of ``_BUILD_JOB_STATUS_TO_OUTCOME``, a marshalld
+    #: wire-status NAME that is not an emit site at all. Anchoring on the builders
+    #: is what keeps this population from absorbing it — see
+    #: ``test_build_job_wire_status_key_is_not_an_emit_site``.
+    @staticmethod
+    def _builders() -> tuple:
+        import claude_runtime as _cr
+
+        return _cr._HOOK_ENTRY_BUILDERS
+
+    def test_emit_site_population_is_non_empty_and_module_anchored(self):
+        """The population is non-empty, callable throughout, and its size published.
+
+        Guards the vacuous-pass shape head-on: a loop over an EMPTY population
+        passes while examining nothing. The module-anchor check is what makes the
+        registry's membership mean something — every entry must be the very
+        attribute of ``claude_runtime`` that its own ``__name__`` names, so a
+        lambda or an unrelated callable slipped into the tuple fails here rather
+        than quietly widening the population with something that is not a
+        module-level builder.
+        """
+        import claude_runtime as _cr
+
+        builders = self._builders()
+        assert builders, "emit-site population is empty — nothing would be examined"
+
+        unanchored = [
+            getattr(builder, "__name__", repr(builder))
+            for builder in builders
+            if not callable(builder)
+            or getattr(_cr, getattr(builder, "__name__", ""), None) is not builder
+        ]
+        assert not unanchored, (
+            f"population={len(builders)} builder(s), unanchored={len(unanchored)}: "
+            f"{unanchored}"
+        )
 
     def test_every_emit_site_emits_a_plausible_seconds_timeout(self):
         """No builder emits a timeout outside the plausible seconds range.
@@ -1349,37 +1522,41 @@ class TestHookEntryTimeoutEmitSites:
         """
         import claude_runtime as _cr
 
+        builders = self._builders()
         examined = 0
         divergent: list[tuple[str, object]] = []
-        for name in self.EMIT_SITE_BUILDERS:
-            entry = getattr(_cr, name)()
+        for builder in builders:
+            entry = builder()
             for hook in entry["hooks"]:
                 examined += 1
                 timeout = hook.get("timeout")
                 if _cr._hook_timeout_is_stale(timeout):
-                    divergent.append((name, timeout))
+                    divergent.append((builder.__name__, timeout))
 
-        assert examined == len(self.EMIT_SITE_BUILDERS), (
+        assert examined == len(builders), (
             f"expected one emitted hook per builder: examined={examined}, "
-            f"builders={len(self.EMIT_SITE_BUILDERS)}"
+            f"builders={len(builders)}"
         )
         assert not divergent, (
             f"examined={examined} emit site(s), divergent={len(divergent)}: {divergent}"
         )
 
-    def test_all_three_builders_emit_the_same_value(self):
-        """The three literals are identical — the stated position, not an accident.
+    def test_every_builder_emits_the_same_value(self):
+        """The emitted literals are identical — the stated position, not an accident.
 
         Each hook is one guarded executor dispatch over local JSON, so no
         per-hook-type latency difference exists to encode. Pinning the identity
-        makes any future divergence a deliberate, reviewed change.
+        makes any future divergence a deliberate, reviewed change. The population
+        size rides with the assertion so a collapse to a single builder — under
+        which set equality holds trivially — is visible on failure.
         """
         import claude_runtime as _cr
 
-        emitted = {
-            getattr(_cr, name)()["hooks"][0]["timeout"] for name in self.EMIT_SITE_BUILDERS
-        }
-        assert emitted == {_cr._HOOK_TIMEOUT_SECONDS}
+        builders = self._builders()
+        emitted = {builder()["hooks"][0]["timeout"] for builder in builders}
+        assert emitted == {_cr._HOOK_TIMEOUT_SECONDS}, (
+            f"population={len(builders)}, emitted={sorted(emitted)}"
+        )
 
     def test_build_job_wire_status_key_is_not_an_emit_site(self):
         """The fourth ``"timeout"`` in the module is a wire-status NAME, not a value.

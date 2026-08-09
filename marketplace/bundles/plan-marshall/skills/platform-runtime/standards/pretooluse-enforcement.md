@@ -179,6 +179,11 @@ without the other).
   dedicated `PreToolUse:enforcement: present` / `MISSING` label, keyed on the
   enforcement command (not the render command), so a partial or absent
   enforcement install is diagnosable independently of the terminal-title wiring.
+  The label is scoped to the **matcher-less** entry: an enforcement command
+  parked under some matcher reads `MISSING`, because such an entry does not
+  enforce on every tool. The presence probe and the timeout migration carry the
+  same scope, so a wrong-matcher entry never suppresses the install of the real
+  matcher-less one.
   The enforcement label does not gate the terminal-title `healthy` flag. The
   check inspects BOTH `.claude/settings.json` and `.claude/settings.local.json`
   (an entry in either file counts as present), matching the `hook` check and the
