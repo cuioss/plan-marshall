@@ -22,6 +22,7 @@ Verb router for epic orchestration. Sits ABOVE the plan lifecycle: it manages th
 /marshall-orchestrator close slug={slug}        # Freeze the epic into history.md
 /marshall-orchestrator archive slug={slug}      # Relocate a closed epic to archived-orchestrators/
 /marshall-orchestrator lessons                  # Lessons-handling mode (dated-slug epic)
+/marshall-orchestrator cleanup slug={slug}      # Review and reconcile the spec corpus, then ledger, archive, and restart-readiness
 ```
 
 ## Foundational Practices
@@ -66,6 +67,7 @@ Resolve the verb from the invocation (default: `status`), then load and follow t
 | `close` | `workflow/close.md` | Freeze epic.md into history.md and mark the epic closed |
 | `archive` | `workflow/archive.md` | Relocate a closed epic tree to `archived-orchestrators/` (post-close, mechanical) |
 | `lessons` | `workflow/lessons-handling.md` | Lessons-handling mode: dated-slug epic, local dedup/aggregate, cross-repo integrate-then-remove |
+| `cleanup` | `workflow/cleanup.md` | Review and reconcile the spec corpus, then call the ledger-compaction stage, the archive step, and the restart-readiness verdict |
 
 `status` and `next` share `workflow/orchestrate.md` — the two queue-facing verbs; the doc branches on the invoked verb.
 
@@ -84,7 +86,7 @@ Authoring templates for the ledger documents live in `templates/` and mirror the
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| orchestrator | `plan-marshall:marshall-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read the plan queue, transition a plan's status, or set one plan row's result field), `resume-summary` (generate the START-HERE block from status.json), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `inbox` (append/validate a plan-written OUTBOX message, list the queued messages, archive a consumed one, or detect orchestration context from a plan's `source_id`) |
+| orchestrator | `plan-marshall:marshall-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read the plan queue, transition a plan's status, or set one plan row's result field), `resume-summary` (generate the START-HERE block from status.json, with its two self-validation detectors), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `corpus` (reconcile the staged spec corpus against the queue, cross-check it against sibling epics and live plans, and read or stamp the re-grounding verdict field), `cleanup` (report the restart-readiness verdict), `inbox` (append/validate a plan-written OUTBOX message, list the queued messages, archive a consumed one, or detect orchestration context from a plan's `source_id`) |
 
 ## Canonical invocations
 
@@ -125,6 +127,51 @@ python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator
 ```
 
 Relocates a *closed* epic tree to `archived-orchestrators/{slug}/` — a post-close, mechanical move. Refuses a non-closed epic (`not_closed`), a missing epic (`not_found`), or an existing archive (`archive_conflict`); an already-archived slug returns idempotent success (`already_archived`).
+
+### corpus enumerate
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator corpus enumerate \
+  --slug SLUG
+```
+
+Reconciles `status.json`'s `plans[]` queue against the `plans/PLAN-*.md` spec files in BOTH directions, read-only. The enumeration authority is `plans[]` — never a `plans/` directory glob, which returns a different set the moment a spec is staged without a row. The two directions stay separate fields with separate causes and are never collapsed into one symmetric-difference count: `rows_without_spec` (a queue row whose spec file is absent) and `specs_without_row` (a spec file with no queue row). Every count rides with the population it was computed over (`rows_total` / `specs_total` / `rows_scanned` / `specs_scanned`), so no figure is publishable without its denominator. A row at status `running` is enumerated carrying `excluded_reason: running` rather than omitted — an omission is indistinguishable from an empty population. An unreadable spec is reported in `unreadable[]` and does not abort the enumeration. Refuses an unsafe slug (`invalid_slug`) and an epic with no `status.json` (`file_not_found`).
+
+### corpus cross-check
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator corpus cross-check \
+  --slug SLUG
+```
+
+Cross-checks this epic's specs against sibling epics and live plans for duplicate work — the arm a single ledger structurally cannot perform, since a duplicate held in another ledger is invisible to this epic's queue. Read-only: it reports candidates and applies nothing, and no spec file is ever deleted. Three candidate populations are scanned and each is NAMED in the payload, so a `count: 0` states which zero it is: `epics_scanned` (sibling epics under BOTH the orchestrator store and `archived-orchestrators/`), `plans_scanned` (the active plan set), and `specs_scanned` / `specs_total` (this epic's own corpus, for the within-corpus direction). Candidate pairs are scored on the two `manage-status sibling-collision-check` classes only — a shared source-origin pointer (`source_origin_matches[]`) and an exact normalized file-path overlap (`file_overlap_matches[]`) — and every returned pair NAMES the overlapping surface rather than carrying a bare similarity score. A spec's surface is read from its `## Expected Surface` section; a launched plan's from its `references.json` `affected_files`. Refuses an unsafe slug (`invalid_slug`) and an epic with no store tree (`not_found`).
+
+### corpus verdicts
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator corpus verdicts \
+  --slug SLUG
+```
+
+Parses every re-grounding verdict bullet across the corpus, read-only. This is the field's ONLY interpreter in the tree. One row per claim carrying a verdict bullet, with the five parsed keys plus the derived `admits` and `stale` booleans; a bullet that does not parse is returned with `verdict: indeterminate`, `admits: false`, and the offending line quoted verbatim — never dropped. `specs_total`, `specs_scanned`, and `claims_scanned` ride the payload so a `count: 0` states which zero it is, and `head_sha` rides it so a caller can tell "not stale" from "staleness was not computable". The grammar and the admission table are defined once at [`orchestration-model.md` § Re-Grounding Verdict Field](../persona-marshall-orchestrator/standards/orchestration-model.md#re-grounding-verdict-field). Refuses an unsafe slug (`invalid_slug`) and an epic with no store tree (`not_found`).
+
+### corpus set-verdict
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator corpus set-verdict \
+  --slug SLUG --plan PLAN-NN --claim-index N --verdict VERDICT --checked-at SHA --by PRODUCER --rescoped RESCOPED --evidence TEXT
+```
+
+Stamps ONE re-grounding verdict onto ONE claim — the corpus group's single write action, and the ONLY code path in the tree that formats a `verdict:` line. The bullet is written as a nested child of the addressed claim, so association is by nesting and never by ordinal position; an existing verdict on that claim is replaced in place, so a claim can never carry two. Re-stamping identical values is a byte-level no-op. The grammar (key order, value sets, and the `rescoped` rule) is defined once at [`orchestration-model.md` § Re-Grounding Verdict Field](../persona-marshall-orchestrator/standards/orchestration-model.md#re-grounding-verdict-field) and is not restated here. Every rejection path refuses WITHOUT writing: an unsafe slug (`invalid_slug`), an absent spec (`spec_not_found`, carrying `available_specs`), an out-of-range claim index (`claim_index_out_of_range`, carrying `claims_total`), an out-of-set verdict (`invalid_verdict`) or `rescoped` (`invalid_rescoped`), an illegal verdict/`rescoped` combination (`invalid_rescoped_combination`), a non-hex `--checked-at` (`invalid_checked_at`), and empty evidence (`wrong_parameters`).
+
+### cleanup restart-check
+
+```bash
+python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator cleanup restart-check \
+  --slug SLUG
+```
+
+Reports whether the session is safe to restart, read-only. Returns one `signals[]` row per observed signal — the epic `phase`, the `running` plan set, the corpus reconciliation figures, the derived inbox state, the repository HEAD plus worktree cleanliness, and `registry_parity` — each carrying its own three-valued verdict, its own evidence, and the population it was derived from, plus `sampled_at` beside the overall `verdict`. **An unreadable or unobservable signal resolves to `indeterminate` and never to `not_ready`**: an unobservable signal is not a failing one. The overall verdict is the floor over the PARTICIPATING rows (`signals_scored` of `signals_total`); the `registry_parity` row reports `not_available`, names `PLAN-TRUTH-059` as the spec that owns that surface, and is excluded from the floor, so an unowned surface cannot veto a verdict this component can reach. Refuses an unsafe slug (`invalid_slug`) and an epic with no store tree (`not_found`).
 
 ### inbox write
 
