@@ -7,8 +7,9 @@ dispatched `execution-context` leaf — produces no agent `<usage>` envelope, so
 its `phase-boundary` / `end-phase` close OMITS `--total-tokens` /
 `--duration-ms` / `--tool-uses`. This is the sanctioned inline recording mode,
 NOT an incomplete call: the closing phase's `end_time` is stamped
-unconditionally and `generate`'s partiality verdict keys a phase's *recorded*
-status solely off that `end_time` marker.
+unconditionally and `generate`'s `end_time`-presence check
+(`any_phase_missing_end_time` / `phases_missing_end_time`) reads solely that
+marker.
 
 The omission is at the boundary *write* only — it is NOT a permanent token gap.
 The finalize-phase `manage-metrics enrich` pass attributes the parent-window
@@ -24,10 +25,11 @@ lock that contract:
     windows, closed usage-free, carry a real `total_tokens` after enrich;
   - a dispatched phase's `<usage>`-sourced `total_tokens` is never overwritten
     (explicit-wins);
-  - a fully-recorded six-phase plan reports `partial: false` with every phase
-    carrying token data (`n=6/6`).
-The negative control (an unclosed phase still flips `partial`) keeps the verdict
-non-vacuous.
+  - a six-phase plan whose rows all carry `end_time` reports
+    `any_phase_missing_end_time: false` with every phase carrying token data
+    (`n=6/6`).
+The negative control (an unclosed phase still flips
+`any_phase_missing_end_time`) keeps the check non-vacuous.
 """
 
 import importlib.util
@@ -233,21 +235,21 @@ def _drive_full_six_phase_plan(plan_id: str) -> None:
 
 
 # =============================================================================
-# Inline-phase recording: fully-recorded plan is NOT partial
+# Inline-phase recording: an inline close still carries its end_time marker
 # =============================================================================
 
 
-def test_inline_init_refine_boundary_records_not_partial(plan_context):
-    """A fully-recorded six-phase plan whose init→refine boundary closed inline
-    (usage flags omitted) reports partial: false with no unrecorded phases."""
+def test_inline_init_refine_boundary_carries_end_time_marker(plan_context):
+    """A six-phase plan whose init→refine boundary closed inline (usage flags
+    omitted) reports every row as carrying its end_time marker."""
     _drive_full_six_phase_plan('inline-full')
 
     result = cmd_generate(_ns_generate('inline-full'))
 
     assert result['status'] == 'success'
-    # The inline close of 1-init must NOT make the report partial.
-    assert result['partial'] is False
-    assert result['unrecorded_phases'] == []
+    # The inline close of 1-init stamps end_time like any other close.
+    assert result['any_phase_missing_end_time'] is False
+    assert result['phases_missing_end_time'] == []
 
 
 def test_inline_init_phase_carries_total_tokens_after_enrich(plan_context, monkeypatch):
@@ -283,16 +285,19 @@ def test_inline_init_phase_carries_total_tokens_after_enrich(plan_context, monke
     assert int(total) < _INIT_CACHE_READ
 
 
-def test_inline_init_phase_absent_from_unrecorded_list(plan_context):
-    """1-init never appears under unrecorded_phases despite carrying no usage data."""
+def test_inline_init_phase_absent_from_missing_end_time_list(plan_context):
+    """1-init never appears under phases_missing_end_time despite carrying no usage data."""
     _drive_full_six_phase_plan('inline-not-unrecorded')
     result = cmd_generate(_ns_generate('inline-not-unrecorded'))
 
-    assert '1-init' not in result['unrecorded_phases']
-    # The persisted top-level marker agrees with the returned verdict.
+    assert '1-init' not in result['phases_missing_end_time']
+    # The persisted top-level keys agree with the returned values, and the
+    # retired pair is absent from the file entirely (breaking rename, no shim).
     content = (plan_context.plan_dir_for('inline-not-unrecorded') / 'work' / 'metrics.toon').read_text()
-    assert 'partial: false' in content
-    assert 'unrecorded_phases:' in content
+    assert 'any_phase_missing_end_time: false' in content
+    assert 'phases_missing_end_time:' in content
+    assert 'partial: false' not in content
+    assert 'unrecorded_phases:' not in content
 
 
 def test_recipe_inline_refine_outline_carry_total_tokens_after_enrich(plan_context, monkeypatch):
@@ -301,9 +306,9 @@ def test_recipe_inline_refine_outline_carry_total_tokens_after_enrich(plan_conte
     _run_inline_enrich('inline-recipe', monkeypatch)
     result = cmd_generate(_ns_generate('inline-recipe'))
 
-    assert result['partial'] is False
+    assert result['any_phase_missing_end_time'] is False
     for phase in ('2-refine', '3-outline'):
-        assert phase not in result['unrecorded_phases']
+        assert phase not in result['phases_missing_end_time']
 
     content = (plan_context.plan_dir_for('inline-recipe') / 'work' / 'metrics.toon').read_text()
     for phase in ('2-refine', '3-outline'):
@@ -321,7 +326,7 @@ def test_report_is_n_six_of_six_after_inline_enrich(plan_context, monkeypatch):
     _run_inline_enrich('inline-n6', monkeypatch)
     result = cmd_generate(_ns_generate('inline-n6'))
 
-    assert result['partial'] is False
+    assert result['any_phase_missing_end_time'] is False
     content = (plan_context.plan_dir_for('inline-n6') / 'work' / 'metrics.toon').read_text()
     # All six canonical phases now carry a truthy total_tokens — the tokens
     # column completeness is 6/6, so the breakdown Total is a plain sum with no
@@ -352,16 +357,17 @@ def test_enrich_does_not_overwrite_dispatched_phase_total(plan_context, monkeypa
 
 
 # =============================================================================
-# Negative control: an un-closed phase DOES flip partial (verdict is real)
+# Negative control: an un-closed phase DOES flip the check (it is not vacuous)
 # =============================================================================
 
 
-def test_unclosed_phase_still_flips_partial(plan_context):
-    """A phase with no end_time is unrecorded — proving the verdict isn't always false.
+def test_unclosed_phase_still_flips_missing_end_time(plan_context):
+    """A phase with no end_time is listed — proving the check isn't always false.
 
-    This guards against a regression that would treat every phase as recorded
-    (which would make the positive tests pass vacuously). The 6-finalize phase
-    is started but never closed, so it must surface as unrecorded / partial.
+    This guards against a regression that would treat every row as carrying the
+    marker (which would make the positive tests pass vacuously). The 6-finalize
+    phase is started but never closed, so it must surface in
+    phases_missing_end_time.
     """
     plan_id = 'inline-partial-neg'
     cmd_start_phase(_ns_start_phase(plan_id, '1-init'))
@@ -374,11 +380,12 @@ def test_unclosed_phase_still_flips_partial(plan_context):
 
     result = cmd_generate(_ns_generate(plan_id))
 
-    assert result['partial'] is True
-    assert result['unrecorded_phases'] == ['6-finalize']
-    # The inline-closed early phases are still recorded — only 6-finalize is missing.
-    assert '1-init' not in result['unrecorded_phases']
-    assert '2-refine' not in result['unrecorded_phases']
+    assert result['any_phase_missing_end_time'] is True
+    assert result['phases_missing_end_time'] == ['6-finalize']
+    # The inline-closed early phases still carry their marker — only 6-finalize
+    # is missing one.
+    assert '1-init' not in result['phases_missing_end_time']
+    assert '2-refine' not in result['phases_missing_end_time']
 
 
 # =============================================================================
@@ -391,7 +398,8 @@ def test_unclosed_phase_still_flips_partial(plan_context):
 def test_inline_main_context_surfaced_on_mixed_finalize_phase(plan_context, monkeypatch):
     """A 6-finalize phase carrying BOTH a dispatched total_tokens AND four-field usage
     surfaces inline_main_context_tokens (input+output+cache_creation, cache_read
-    EXCLUDED), keeps total_tokens byte-identical, and stays non-partial (#812).
+    EXCLUDED), keeps total_tokens byte-identical, and keeps its end_time marker
+    (#812).
     """
     _drive_full_six_phase_plan('inline-mixed-finalize')
     # 6-finalize closed with dispatched total_tokens=31000. Feed enrich a
@@ -410,8 +418,9 @@ def test_inline_main_context_surfaced_on_mixed_finalize_phase(plan_context, monk
     _run_inline_enrich('inline-mixed-finalize', monkeypatch, buckets=buckets)
     result = cmd_generate(_ns_generate('inline-mixed-finalize'))
 
-    # #812: the timestamps-closed row stays non-partial; attribution never touches it.
-    assert result['partial'] is False
+    # #812: the timestamps-closed row keeps its end_time marker — attribution
+    # never touches it.
+    assert result['any_phase_missing_end_time'] is False
 
     content = (plan_context.plan_dir_for('inline-mixed-finalize') / 'work' / 'metrics.toon').read_text()
     fin_block = _phase_block(content, '6-finalize')

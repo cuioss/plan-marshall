@@ -28,8 +28,21 @@ re-derived from the raw per-phase fields.
 | `work/metrics.toon` | per-phase `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` | the billing-formula reconstruction and its composition shares |
 | `work/metrics.toon` | per-phase `{exploration,work,execute,orchestration,unclassified}_result_bytes` | the payload-byte composition shares and the residual |
 | `work/metrics.toon` | per-phase `total_tokens`, `close_count` | the reconciliation comparand and the `unabsorbed_loop_back` under-count |
-| `work/metrics.toon` | top-level `partial`, `unrecorded_phases` | the `omitted_row` under-count and the floor label |
+| `work/metrics.toon` | top-level `any_phase_missing_end_time`, `phases_missing_end_time` | the `omitted_row` under-count and the floor label |
 | `work/metrics-dispatch-boundaries-{phase}.toon` | the `total_tokens` and four context-load columns, summed per phase | the same-population reconciliation (see below) |
+
+**The ledger's four context-load columns read three ways.** A cell is MEASURED (an
+integer, including a measured `0`), UNMEASURED (the literal `unmeasured`, or a
+column a legacy five-column row does not have), or UNRECOGNISED (any other
+shape). Only measured cells are summed, and a field NO row measured is OMITTED
+from the per-phase ledger totals rather than returned as `0` — the same
+absent-is-not-zero rule the per-phase reader already applies. An unmeasured or
+unrecognised cell therefore contributes nothing and never pulls the
+reconciliation maximum down toward a number no dispatch reported. The canonical
+column order and the token are owned by `manage-metrics/standards/data-format.md`
+§ Per-Dispatch Context-Load Attribution; `_BC_LEDGER_COLUMNS` and
+`_BC_LEDGER_UNMEASURED_TOKEN` in `scripts/audit.py` are hand-mirrors of it, in a
+tree the architecture inventory does not crawl, and MUST move with it.
 
 The per-phase fields are written by `manage-metrics enrich` from the transcript
 engine's `message.usage` four-field walk and its tool-call walk; the ledger rows
@@ -112,7 +125,7 @@ into one "incomplete" verdict.
 | Under-count | Fires when | Reading |
 |-------------|-----------|---------|
 | `unabsorbed_loop_back` | a phase row carries `close_count > 1` | `close_count` is the authoritative, inference-free re-entry marker. That row's figures are **sums across closes**, so the plan's absolute reconstruction covers more than one entry. The composition SHARES stay meaningful (both numerator and denominator accumulated together); the absolute `billing_total` does not describe a single pass. |
-| `omitted_row` | a canonical phase is absent from `metrics.toon` — a member of the persisted `unrecorded_phases`, or a phase with no section at all | That phase's billing weight and payload bytes are missing outright, so every figure the plan contributes to is a **floor**. Both sources are consulted so a plan predating the `#812` partiality markers is still caught structurally. |
+| `omitted_row` | a canonical phase is absent from `metrics.toon` — a member of the persisted `phases_missing_end_time`, or a phase with no section at all | That phase's billing weight and payload bytes are missing outright, so every figure the plan contributes to is a **floor**. Both sources are consulted so a plan whose `#812` marker record is unreadable (`old-schema` / `pre-#812`, where the marker set reads empty) is still caught structurally by the missing-section half. |
 
 ## Emitted figures
 
@@ -155,7 +168,9 @@ byte shares directly.
 | `label` | `floor` when `floor_population > 0`, else `measured`. |
 
 A plan is **floored** when the `input-integrity` check marks it `metrics_blind`,
-when its `metrics.toon` carries the `#812` `partial` verdict, or when it has an
+when its `metrics.toon` reports `any_phase_missing_end_time: true`, when its
+`#812` marker record could not be READ at all (`old-schema` / `pre-#812` — an
+unknown is a lower bound, never a clean verdict), or when it has an
 `omitted_row`. The floor verdict is CONSUMED from `input-integrity` rather than
 re-derived here — that check is the engine's no-false-healthy foundation and
 stays the single source of the blind verdict.
@@ -177,10 +192,19 @@ excluded_plan_ids: id;id;…
 unabsorbed_loop_back_plans: A
 omitted_row_plans: B
 reconciled_plans: C
+old_schema_marker_plans: O
+pre_812_marker_plans: P
 genuine_signal_count: G
 figures[F]{figure,unit,value,population,floor_population,label}
-rows[K]{plan_id,billing_total,cache_read_share,cache_creation_share,output_share,exploration_byte_share,work_byte_share,execute_byte_share,orchestration_byte_share,residual_bytes,denom_bytes,reconciled_phases,unabsorbed_loop_back,omitted_row,label,severity}
+rows[K]{plan_id,billing_total,cache_read_share,cache_creation_share,output_share,exploration_byte_share,work_byte_share,execute_byte_share,orchestration_byte_share,residual_bytes,denom_bytes,reconciled_phases,unabsorbed_loop_back,omitted_row,metrics_marker_schema,label,severity}
 ```
+
+`old_schema_marker_plans` and `pre_812_marker_plans` are counted **separately and
+never merged**. Both float their plans' figures, but they are different facts: an
+`old-schema` archive HAS markers under the retired `partial` / `unrecorded_phases`
+names this reader deliberately does not interpret, so a re-read could recover
+them; a `pre-#812` archive never had them and nothing can. Collapsing the two
+into one "unreadable" count would hide which archives are recoverable.
 
 | Row column | Meaning |
 |------------|---------|
@@ -193,6 +217,7 @@ rows[K]{plan_id,billing_total,cache_read_share,cache_creation_share,output_share
 | `reconciled_phases` | `;`-joined phases where the ledger reconciliation actually corrected an under-count. Empty is the healthy case. |
 | `unabsorbed_loop_back` | `;`-joined phases with `close_count > 1`. |
 | `omitted_row` | `;`-joined canonical phases missing from `metrics.toon`. |
+| `metrics_marker_schema` | Which of the three `#812` marker states this plan's `metrics.toon` was in (`current` / `old-schema` / `pre-#812`). Anything but `current` floors the plan's figures. |
 | `label` | `floor` when this plan's inputs are under-recorded, else `measured`. |
 | `severity` | Uniform severity column — see below. |
 
@@ -227,6 +252,13 @@ may be dismissed as informational/expected ONLY with a cited reason.
 - **`omitted_row` (genuine)** — the plan is missing a canonical phase outright.
   Every figure it contributed to is a floor. Name the missing phases; do not
   treat the plan's composition as complete.
+- **`metrics_marker_schema: old-schema` / `pre-#812`** — the plan's `#812` marker
+  record could not be read, so its figures are floors for a reason the row states
+  rather than one the reader has to guess. `old-schema` is the actionable one: the
+  markers exist under the retired `partial` / `unrecorded_phases` names, so a
+  re-read of the archive could recover them, and its `omitted_row` cell may
+  therefore UNDER-report. `pre-#812` is terminal history. Never read either as a
+  clean verdict, and never collapse them into one note.
 - **`reconciled_phases` non-empty (genuine)** — the recorded phase row
   UNDER-COUNTED and the ledger recovered it. This is a recording-path signal, not
   a plan defect: the leaf's `record-dispatch-boundary` fired while the
@@ -261,7 +293,14 @@ may be dismissed as informational/expected ONLY with a cited reason.
   is outside this check's remit and unsupported by its inputs.
 - **Absent is not zero.** A plan measuring neither family is excluded and named,
   never admitted at a zero share. A measured zero is a real observation and stays
-  in.
+  in. The same rule binds one level down, inside the ledger: an `unmeasured` or
+  unrecognised context-load cell contributes nothing and its field is omitted from
+  the per-phase totals — it is never summed as a `0`.
+- **An unknown is a floor, never a clean verdict.** A marker record this reader
+  could not interpret floors the plan. The predecessor of this reader degraded BOTH
+  unreadable states to "not partial", which would have certified every post-rename
+  archive as clean from an absent key; that path is closed and must not be
+  reintroduced.
 - **A population is per figure.** Never quote a figure without the `population`
   and `label` on its own row; never borrow another figure's population.
 - **`max()`, not a sum.** The reconciliation is non-double-counting by

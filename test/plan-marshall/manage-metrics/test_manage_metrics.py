@@ -2017,19 +2017,24 @@ class TestCacheReadAttributionRoundTrip:
 
 
 class TestGeneratePartialityFields:
-    """generate emits a first-class partiality verdict across all three surfaces.
+    """generate publishes the end_time-presence check across all three surfaces.
 
-    Deliverable 2: ``generate`` derives ``partial`` (true whenever any canonical
-    phase lacks a recorded boundary) and ``unrecorded_phases`` (the offending
-    canonical phases in phase order). The verdict surfaces in three places:
-    the ``generate`` return TOON, two top-level keys in ``metrics.toon``, and a
-    ``> Partial: …`` marker rendered under the ``## Phase Breakdown`` heading. A
-    fully-recorded six-phase plan reports ``partial: false`` with an empty list
-    and renders no marker.
+    ``generate`` derives ``any_phase_missing_end_time`` (true whenever a canonical
+    phase's row carries no ``end_time``) and ``phases_missing_end_time`` (the
+    offending canonical phases in phase order). Both surface in three places: the
+    ``generate`` return TOON, two top-level keys in ``metrics.toon``, and a
+    ``> Phases missing an end_time boundary marker — …`` line rendered under the
+    ``## Phase Breakdown`` heading. A plan whose six rows all carry ``end_time``
+    reports ``false`` with an empty list and renders no line.
+
+    The keys are named for the PREDICATE, not for a completeness verdict — the
+    check reads ``end_time`` and nothing else, and the retired ``partial`` /
+    ``unrecorded_phases`` names asserted more than that. The rename is breaking:
+    the writer emits the new keys only.
     """
 
-    def test_return_toon_reports_partial_true_with_unrecorded_phase(self, plan_context):
-        """An under-counted plan (6-finalize never closed) reports partial=True in the return."""
+    def test_return_toon_reports_missing_end_time_marker(self, plan_context):
+        """A plan whose 6-finalize never closed reports the phase in the return."""
         # Canonical under-count: the first five phases are closed but 6-finalize
         # never had its boundary recorded (interrupt / loop-back / never-reached).
         phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES[:5]}
@@ -2037,47 +2042,47 @@ class TestGeneratePartialityFields:
 
         result = cmd_generate(_ns_generate('partial-true-return'))
         assert result['status'] == 'success'
-        assert result['partial'] is True
-        assert result['unrecorded_phases'] == ['6-finalize']
+        assert result['any_phase_missing_end_time'] is True
+        assert result['phases_missing_end_time'] == ['6-finalize']
 
-    def test_return_toon_partial_field_is_bool_and_list(self, plan_context):
-        """The return carries `partial` as a bool and `unrecorded_phases` as a list."""
+    def test_return_toon_end_time_fields_are_bool_and_list(self, plan_context):
+        """The return carries the bool as a bool and the phase list as a list."""
         phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES[:3]}
         manage_metrics.write_metrics('partial-types', {'phases': phases})
 
         result = cmd_generate(_ns_generate('partial-types'))
-        assert isinstance(result['partial'], bool)
-        assert isinstance(result['unrecorded_phases'], list)
+        assert isinstance(result['any_phase_missing_end_time'], bool)
+        assert isinstance(result['phases_missing_end_time'], list)
 
-    def test_fully_recorded_plan_reports_partial_false(self, plan_context):
-        """A plan with all six canonical phases closed reports partial=False, empty list."""
+    def test_every_row_carrying_end_time_reports_false(self, plan_context):
+        """All six canonical rows carrying end_time reports False, empty list."""
         phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES}
         manage_metrics.write_metrics('partial-false-full', {'phases': phases})
 
         result = cmd_generate(_ns_generate('partial-false-full'))
         assert result['status'] == 'success'
-        assert result['partial'] is False
-        assert result['unrecorded_phases'] == []
+        assert result['any_phase_missing_end_time'] is False
+        assert result['phases_missing_end_time'] == []
 
-    def test_unrecorded_phases_listed_in_canonical_order(self, plan_context):
-        """unrecorded_phases preserves canonical phase order, not insertion order."""
-        # Record only 3-outline and 5-execute; the other four are unrecorded.
+    def test_missing_end_time_phases_listed_in_canonical_order(self, plan_context):
+        """phases_missing_end_time preserves canonical order, not insertion order."""
+        # Record only 3-outline and 5-execute; the other four carry no end_time.
         recorded = {'3-outline', '5-execute'}
         phases = {name: _recorded_phase_row() for name in recorded}
         manage_metrics.write_metrics('partial-order', {'phases': phases})
 
         result = cmd_generate(_ns_generate('partial-order'))
-        assert result['partial'] is True
+        assert result['any_phase_missing_end_time'] is True
         expected = [name for name in manage_metrics.PHASE_NAMES if name not in recorded]
-        assert result['unrecorded_phases'] == expected
-        assert result['unrecorded_phases'] == ['1-init', '2-refine', '4-plan', '6-finalize']
+        assert result['phases_missing_end_time'] == expected
+        assert result['phases_missing_end_time'] == ['1-init', '2-refine', '4-plan', '6-finalize']
 
-    def test_row_without_end_time_counts_as_unrecorded(self, plan_context):
-        """The predicate keys on end_time — a started-but-unclosed row is unrecorded.
+    def test_row_without_end_time_is_listed(self, plan_context):
+        """The predicate keys on end_time — a started-but-unclosed row is listed.
 
-        Distinguishes "phase has a row" from "phase is recorded": 4-plan carries a
-        start_time but no end_time, so it must appear in unrecorded_phases even
-        though its row exists.
+        Distinguishes "phase has a row" from "phase carries the boundary marker":
+        4-plan carries a start_time but no end_time, so it must appear in
+        phases_missing_end_time even though its row exists.
         """
         phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES}
         # Strip 4-plan's end_time: a row present but never boundary-closed.
@@ -2085,11 +2090,11 @@ class TestGeneratePartialityFields:
         manage_metrics.write_metrics('partial-unclosed-row', {'phases': phases})
 
         result = cmd_generate(_ns_generate('partial-unclosed-row'))
-        assert result['partial'] is True
-        assert result['unrecorded_phases'] == ['4-plan']
+        assert result['any_phase_missing_end_time'] is True
+        assert result['phases_missing_end_time'] == ['4-plan']
 
-    def test_partiality_fields_persisted_to_metrics_toon(self, plan_context):
-        """partial and unrecorded_phases land as top-level keys in metrics.toon."""
+    def test_end_time_fields_persisted_to_metrics_toon(self, plan_context):
+        """Both renamed keys land as top-level keys in metrics.toon."""
         phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES[:5]}
         manage_metrics.write_metrics('partial-toon', {'phases': phases})
 
@@ -2097,26 +2102,62 @@ class TestGeneratePartialityFields:
 
         # Parsed top-level keys (written before the first [phase] block).
         data = manage_metrics.read_metrics_raw('partial-toon')
-        assert data['partial'] == 'true'
-        assert data['unrecorded_phases'] == '6-finalize'
+        assert data['any_phase_missing_end_time'] == 'true'
+        assert data['phases_missing_end_time'] == '6-finalize'
 
         # The literal tokens are present in the file (round-trip target).
         toon = (plan_context.plan_dir_for('partial-toon') / 'work' / 'metrics.toon').read_text()
-        assert 'partial: true' in toon
-        assert 'unrecorded_phases: 6-finalize' in toon
+        assert 'any_phase_missing_end_time: true' in toon
+        assert 'phases_missing_end_time: 6-finalize' in toon
 
-    def test_fully_recorded_metrics_toon_reports_partial_false_empty_list(self, plan_context):
-        """A fully-recorded plan persists partial: false with an empty unrecorded list."""
+    def test_all_end_times_present_persists_false_and_empty_list(self, plan_context):
+        """A plan whose rows all carry end_time persists false with an empty list."""
         phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES}
         manage_metrics.write_metrics('partial-toon-false', {'phases': phases})
 
         cmd_generate(_ns_generate('partial-toon-false'))
 
         data = manage_metrics.read_metrics_raw('partial-toon-false')
-        assert data['partial'] == 'false'
-        assert data['unrecorded_phases'] == ''
+        assert data['any_phase_missing_end_time'] == 'false'
+        assert data['phases_missing_end_time'] == ''
         toon = (plan_context.plan_dir_for('partial-toon-false') / 'work' / 'metrics.toon').read_text()
-        assert 'partial: false' in toon
+        assert 'any_phase_missing_end_time: false' in toon
+
+    def test_writer_emits_new_keys_only_and_drops_the_retired_pair(self, plan_context):
+        """A metrics.toon carrying the RETIRED keys loses them on regenerate.
+
+        `compatibility: breaking`, no dual-key shim. `read_metrics_raw`
+        round-trips arbitrary top-level keys, so without the write-side refusal a
+        regenerate would leave the stale `partial` / `unrecorded_phases` pair
+        sitting beside the new keys and a reader could take the stale pair as
+        current. The evidence asserted is the ABSENCE of both retired literals
+        from the rewritten file, not merely the presence of the new ones.
+        """
+        phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES[:5]}
+        manage_metrics.write_metrics(
+            'partial-retired-drop',
+            {'phases': phases, 'partial': 'false', 'unrecorded_phases': ''},
+        )
+        seeded = (
+            plan_context.plan_dir_for('partial-retired-drop') / 'work' / 'metrics.toon'
+        ).read_text()
+        # Guard the fixture itself: the retired pair really is on disk pre-generate.
+        assert 'partial: false' in seeded
+        assert 'unrecorded_phases: ' in seeded
+
+        cmd_generate(_ns_generate('partial-retired-drop'))
+
+        data = manage_metrics.read_metrics_raw('partial-retired-drop')
+        assert 'partial' not in data
+        assert 'unrecorded_phases' not in data
+        assert data['any_phase_missing_end_time'] == 'true'
+        assert data['phases_missing_end_time'] == '6-finalize'
+
+        toon = (
+            plan_context.plan_dir_for('partial-retired-drop') / 'work' / 'metrics.toon'
+        ).read_text()
+        assert 'partial: false' not in toon
+        assert 'unrecorded_phases:' not in toon
 
     def test_metrics_md_marker_renders_under_phase_breakdown_heading(self, plan_context):
         """The marker line renders between the ## Phase Breakdown heading and the table."""
@@ -2126,25 +2167,143 @@ class TestGeneratePartialityFields:
         cmd_generate(_ns_generate('partial-md-marker'))
 
         md = (plan_context.plan_dir_for('partial-md-marker') / 'metrics.md').read_text()
-        marker = '> Partial: unrecorded phases — 6-finalize'
-        assert marker in md
-
         md_lines = md.splitlines()
+        marker_idx = next(
+            i
+            for i, line in enumerate(md_lines)
+            if line.startswith('> Phases missing an end_time boundary marker')
+        )
+        marker = md_lines[marker_idx]
+        # The line NAMES the offending phase and the predicate it checked, and
+        # explicitly disclaims the wider verdict the retired name asserted.
+        assert '6-finalize' in marker
+        assert 'end_time-presence check only' in marker
+        assert 'complete or internally consistent' in marker
+        # The retired marker wording is gone entirely.
+        assert '> Partial:' not in md
+
         heading_idx = md_lines.index('## Phase Breakdown')
-        marker_idx = next(i for i, line in enumerate(md_lines) if line.startswith('> Partial:'))
         header_idx = next(i for i, line in enumerate(md_lines) if line.startswith('| Phase'))
         # Marker sits after the heading and before the breakdown table header row.
         assert heading_idx < marker_idx < header_idx
 
-    def test_fully_recorded_metrics_md_renders_no_marker(self, plan_context):
-        """A fully-recorded plan renders no partiality marker in metrics.md."""
+    def test_all_end_times_present_renders_no_marker(self, plan_context):
+        """A plan whose rows all carry end_time renders no marker in metrics.md."""
         phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES}
         manage_metrics.write_metrics('partial-md-none', {'phases': phases})
 
         cmd_generate(_ns_generate('partial-md-none'))
 
         md = (plan_context.plan_dir_for('partial-md-none') / 'metrics.md').read_text()
+        assert '> Phases missing an end_time boundary marker' not in md
         assert '> Partial:' not in md
+
+
+class TestCloseValueScopeDiscriminator:
+    """A closed row DECLARES which of its values are cumulative and which are last-close.
+
+    The cumulative-vs-last-close split was previously stated only as prose in
+    ``data-format.md`` and two docstrings, so a script consumer reading a
+    ``close_count > 1`` row off disk had no field-level signal telling it which
+    of the row's values are sums. ``_close_phase_accumulating`` now stamps
+    ``value_scope`` on EVERY close, plus ``cumulative_fields`` /
+    ``last_close_fields`` from the second close onward — the
+    ``total_tokens_population`` precedent (a row-level discriminator with a
+    documented absent-reads-as default).
+    """
+
+    def test_first_close_stamps_single_close_and_omits_the_field_lists(self, plan_context):
+        """One close ⇒ `single_close`, and the two list fields are NOT written.
+
+        On a first close the split is vacuous — every value covers the one and
+        only close — so writing the lists would state a distinction the row does
+        not have.
+        """
+        cmd_start_phase(_ns_start_phase('vs-first', '5-execute'))
+        _pin_start_time_to_past('vs-first', '5-execute')
+        cmd_end_phase(_ns_end_phase('vs-first', '5-execute', total_tokens=1000, tool_uses=4))
+
+        row = manage_metrics.read_metrics_raw('vs-first')['phases']['5-execute']
+        assert row['close_count'] == 1
+        assert row['value_scope'] == manage_metrics.VALUE_SCOPE_SINGLE_CLOSE
+        assert 'cumulative_fields' not in row
+        assert 'last_close_fields' not in row
+
+    def test_second_close_declares_the_split_on_the_row(self, plan_context):
+        """A re-entered row names its cumulative and its last-close fields.
+
+        Asserts the concrete field NAMES the row published — not merely that a
+        marker appeared — and cross-checks each named cumulative field against
+        the arithmetic it claims: `total_tokens` really is the SUM of the two
+        closes' deltas, and `close_count` really is 2.
+        """
+        cmd_start_phase(_ns_start_phase('vs-reentry', '5-execute'))
+        _pin_start_time_to_past('vs-reentry', '5-execute')
+        cmd_end_phase(_ns_end_phase('vs-reentry', '5-execute', total_tokens=1000, tool_uses=4))
+        # Loop-back: the same phase is closed a second time.
+        cmd_end_phase(_ns_end_phase('vs-reentry', '5-execute', total_tokens=250, tool_uses=1))
+
+        row = manage_metrics.read_metrics_raw('vs-reentry')['phases']['5-execute']
+        assert row['close_count'] == 2
+        assert row['value_scope'] == manage_metrics.VALUE_SCOPE_MIXED
+
+        cumulative = row['cumulative_fields'].split(',')
+        last_close = row['last_close_fields'].split(',')
+        # The declaration names fields the row actually carries, in the module's
+        # canonical order.
+        assert cumulative == ['close_count', 'duration_seconds', 'total_tokens', 'tool_uses']
+        assert last_close == ['start_time', 'end_time']
+        # Every declared cumulative field is present on the row it describes.
+        for field in cumulative:
+            assert field in row, field
+        for field in last_close:
+            assert field in row, field
+        # The claim is true of the values, not only of the labels: both flag
+        # values were per-close deltas and were ADDED.
+        assert row['total_tokens'] == 1250
+        assert row['tool_uses'] == 5
+
+    def test_declaration_never_names_a_field_the_row_lacks(self, plan_context):
+        """A close that resolved no token flags declares only what it wrote.
+
+        `_stamp_value_scope` runs as the LAST write of the close and intersects
+        with the row's actual keys, so a timestamps-only close (the sanctioned
+        inline recording mode) does not claim a `total_tokens` it never wrote.
+        """
+        cmd_start_phase(_ns_start_phase('vs-timestamps', '2-refine'))
+        _pin_start_time_to_past('vs-timestamps', '2-refine')
+        cmd_end_phase(_ns_end_phase('vs-timestamps', '2-refine'))
+        cmd_end_phase(_ns_end_phase('vs-timestamps', '2-refine'))
+
+        row = manage_metrics.read_metrics_raw('vs-timestamps')['phases']['2-refine']
+        assert row['close_count'] == 2
+        assert row['value_scope'] == manage_metrics.VALUE_SCOPE_MIXED
+        declared = row['cumulative_fields'].split(',')
+        assert 'total_tokens' not in declared
+        assert 'tool_uses' not in declared
+        assert declared == ['close_count', 'duration_seconds']
+
+    def test_re_entered_phase_details_bullet_prints_the_rows_own_declaration(
+        self, plan_context
+    ):
+        """metrics.md renders the row's field lists rather than restating them.
+
+        A hand-restated list at the render site would be a second copy free to
+        drift from the writer's, so the bullet is asserted to carry the exact
+        strings the row published.
+        """
+        cmd_start_phase(_ns_start_phase('vs-md', '5-execute'))
+        _pin_start_time_to_past('vs-md', '5-execute')
+        cmd_end_phase(_ns_end_phase('vs-md', '5-execute', total_tokens=1000, tool_uses=4))
+        cmd_end_phase(_ns_end_phase('vs-md', '5-execute', total_tokens=250, tool_uses=1))
+        cmd_generate(_ns_generate('vs-md'))
+
+        row = manage_metrics.read_metrics_raw('vs-md')['phases']['5-execute']
+        md = (plan_context.plan_dir_for('vs-md') / 'metrics.md').read_text()
+        bullet = next(line for line in md.splitlines() if line.startswith('- **Closes**'))
+        assert '2' in bullet
+        assert f'Cumulative across closes: {row["cumulative_fields"]}' in bullet
+        assert f'Latest close only: {row["last_close_fields"]}' in bullet
 
 
 class TestGenerateReEntryMarker:
@@ -2308,9 +2467,10 @@ def _ns_record_dispatch_boundary(
     The four per-dispatch context-load fields (``input_tokens``,
     ``output_tokens``, ``cache_read_input_tokens``,
     ``cache_creation_input_tokens``) default to ``None`` so every existing call
-    site exercises the default-to-0 path that ``cmd_record_dispatch_boundary``
-    applies when a flag is omitted, while the legacy five columns stay
-    positionally unchanged.
+    site exercises the UNMEASURED path that ``cmd_record_dispatch_boundary``
+    applies when a flag is omitted — the column carries the ``unmeasured``
+    literal, never a ``0`` — while the legacy five columns keep their numeric
+    default and stay positionally unchanged.
     """
     return Namespace(
         plan_id=plan_id,
@@ -2587,15 +2747,19 @@ class TestRecordDispatchBoundaryLegacyCausesStillPass:
 class TestRecordDispatchBoundaryContextLoadColumns:
     """The four per-dispatch context-load columns are appended after the legacy five.
 
-    Deliverable 4: record-dispatch-boundary records four context-load columns —
+    record-dispatch-boundary records four context-load columns —
     ``input_tokens``, ``output_tokens``, ``cache_read_input_tokens``,
-    ``cache_creation_input_tokens`` — appended at the END of each row. They
-    default to 0 when their flags are omitted, mirroring the existing optional
-    ``total_tokens`` / ``tool_uses`` / ``duration_ms`` fields, and the legacy
-    five columns (``timestamp``, ``termination_cause``, ``total_tokens``,
-    ``tool_uses``, ``duration_ms``) stay positionally unchanged. The canonical
-    column order / count / defaults are owned by manage-metrics
-    ``standards/data-format.md`` (Per-Dispatch Context-Load Attribution section).
+    ``cache_creation_input_tokens`` — appended at the END of each row, and the
+    legacy five columns (``timestamp``, ``termination_cause``, ``total_tokens``,
+    ``tool_uses``, ``duration_ms``) stay positionally unchanged.
+
+    The four have **no numeric default**: an omitted flag writes the literal
+    ``unmeasured`` and omits the key from the result TOON, so "the caller passed
+    no measurement" stays distinguishable from "the dispatch loaded zero
+    context". A measured zero is still written and returned as ``0``. The
+    canonical column order / count / unmeasured representation are owned by
+    manage-metrics ``standards/data-format.md`` (Per-Dispatch Context-Load
+    Attribution section).
     """
 
     def test_context_load_columns_recorded_when_supplied(self, plan_context):
@@ -2623,14 +2787,22 @@ class TestRecordDispatchBoundaryContextLoadColumns:
         assert result['output_tokens'] == 4000
         assert result['cache_read_input_tokens'] == 210000
         assert result['cache_creation_input_tokens'] == 12000
+        # Nothing was left unmeasured on this row, and the result says so
+        # explicitly rather than by the absence of a complaint.
+        assert result['unmeasured_context_load_columns'] == ''
 
         artifact = pdir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
         content = artifact.read_text(encoding='utf-8')
         # Full nine-column data row: legacy five then the four context-load columns.
         assert ',clean_exit_queue_empty,84211,38,412390,38000,4000,210000,12000' in content
 
-    def test_context_load_columns_default_to_zero_when_omitted(self, plan_context):
-        """Omitting the four flags records 0 for each (result dict + row tail)."""
+    def test_omitted_context_load_flags_record_unmeasured_not_zero(self, plan_context):
+        """Omitting the four flags writes `unmeasured`, NOT 0, and omits the keys.
+
+        The load-bearing assertion is the DISTINCTION: this row and the
+        measured-zero row in the companion test below must not be byte-identical
+        on columns 6-9, which they were while an omitted flag defaulted to 0.
+        """
         plan_id = 'rdb-ctx-default-zero'
         pdir = plan_context.plan_dir_for(plan_id)
         (pdir / 'status.json').write_text('{}', encoding='utf-8')
@@ -2646,15 +2818,65 @@ class TestRecordDispatchBoundaryContextLoadColumns:
         )
 
         assert result['status'] == 'success', result
+        # ABSENT, not 0 — returning 0 would re-assert in the caller's own reply
+        # the measurement the row deliberately declines to claim.
+        for column in (
+            'input_tokens',
+            'output_tokens',
+            'cache_read_input_tokens',
+            'cache_creation_input_tokens',
+        ):
+            assert column not in result, column
+        assert result['unmeasured_context_load_columns'] == (
+            'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens'
+        )
+
+        artifact = pdir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
+        content = artifact.read_text(encoding='utf-8')
+        # Legacy five carry the supplied values; the four context columns carry
+        # the token. The `0,0,0,0` tail the old default produced is GONE.
+        assert (
+            ',clean_exit_queue_empty,1000,5,2000,unmeasured,unmeasured,unmeasured,unmeasured'
+            in content
+        )
+        assert ',clean_exit_queue_empty,1000,5,2000,0,0,0,0' not in content
+
+    def test_measured_zero_context_load_is_written_as_zero(self, plan_context):
+        """An explicitly-passed 0 is a MEASUREMENT and stays 0 on the row.
+
+        The other half of the distinction: the unmeasured token must not swallow
+        a real zero. Read together with the companion test above, the two rows
+        differ on exactly the four context-load cells.
+        """
+        plan_id = 'rdb-ctx-measured-zero'
+        pdir = plan_context.plan_dir_for(plan_id)
+        (pdir / 'status.json').write_text('{}', encoding='utf-8')
+        result = cmd_record_dispatch_boundary(
+            _ns_record_dispatch_boundary(
+                plan_id,
+                '5-execute',
+                termination_cause='clean_exit_queue_empty',
+                total_tokens=1000,
+                tool_uses=5,
+                duration_ms=2000,
+                input_tokens=0,
+                output_tokens=0,
+                cache_read_input_tokens=0,
+                cache_creation_input_tokens=0,
+            )
+        )
+
+        assert result['status'] == 'success', result
         assert result['input_tokens'] == 0
         assert result['output_tokens'] == 0
         assert result['cache_read_input_tokens'] == 0
         assert result['cache_creation_input_tokens'] == 0
+        assert result['unmeasured_context_load_columns'] == ''
 
         artifact = pdir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
         content = artifact.read_text(encoding='utf-8')
-        # Legacy five carry the supplied values; the four context columns are 0.
         assert ',clean_exit_queue_empty,1000,5,2000,0,0,0,0' in content
+        assert 'unmeasured' not in content
 
     def test_header_declares_nine_column_order(self, plan_context):
         """The artifact header lists the legacy five then the four context-load columns."""
@@ -2713,8 +2935,13 @@ class TestRecordDispatchBoundaryContextLoadColumns:
         # The four appended context-load columns follow in canonical order.
         assert parts[5:] == ['11', '22', '33', '44']
 
-    def test_partial_context_load_flags_default_remainder_to_zero(self, plan_context):
-        """Supplying only input_tokens defaults the other three context columns to 0."""
+    def test_per_column_measured_and_unmeasured_mix_on_one_row(self, plan_context):
+        """Supplying only input_tokens leaves the other three UNMEASURED, not 0.
+
+        The distinction is per COLUMN, not per row: one measured cell on a row
+        does not make its neighbours measured. The legacy five keep their `0`
+        default, so this row also pins that the two rules coexist.
+        """
         plan_id = 'rdb-ctx-partial'
         pdir = plan_context.plan_dir_for(plan_id)
         (pdir / 'status.json').write_text('{}', encoding='utf-8')
@@ -2728,14 +2955,20 @@ class TestRecordDispatchBoundaryContextLoadColumns:
         )
 
         assert result['input_tokens'] == 500
-        assert result['output_tokens'] == 0
-        assert result['cache_read_input_tokens'] == 0
-        assert result['cache_creation_input_tokens'] == 0
+        assert 'output_tokens' not in result
+        assert 'cache_read_input_tokens' not in result
+        assert 'cache_creation_input_tokens' not in result
+        assert result['unmeasured_context_load_columns'] == (
+            'output_tokens,cache_read_input_tokens,cache_creation_input_tokens'
+        )
 
         artifact = pdir / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
         content = artifact.read_text(encoding='utf-8')
-        # total/tool/duration omitted → 0; input=500; remaining context cols 0.
-        assert ',clean_exit_queue_empty,0,0,0,500,0,0,0' in content
+        # total/tool/duration omitted → 0 (legacy default, unchanged); input=500
+        # measured; the remaining three context columns carry the token.
+        assert (
+            ',clean_exit_queue_empty,0,0,0,500,unmeasured,unmeasured,unmeasured' in content
+        )
 
 
 # =============================================================================
@@ -3093,6 +3326,16 @@ _NON_USAGE_ROW_FIELDS = {
     # table and is what makes `total_tokens`'s `population-discriminated`
     # lattice entry readable.
     'total_tokens_population',
+    # The cumulative-vs-last-close row scope declaration, written by
+    # `_close_phase_accumulating` on every close. Same class as
+    # `total_tokens_population` and excluded for the same reason: it is
+    # bookkeeping ABOUT the row's other values (which of them the close summed
+    # and which it replaced), not a measurement of its own, and it is specified
+    # in data-format.md's Per-Phase Fields table and its Per-Field Write
+    # Semantics section.
+    'value_scope',
+    'cumulative_fields',
+    'last_close_fields',
 }
 
 # Dispatch-boundary columns that carry no usage measurement.

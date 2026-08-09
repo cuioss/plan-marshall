@@ -661,15 +661,24 @@ class TestPhase5LoggingGapExtractors:
 # Per-dispatch context-load columns in the dispatch-boundary reader
 # =============================================================================
 #
-# Deliverable 4 widened the dispatch-boundary row from five columns to nine
-# (legacy five + input_tokens, output_tokens, cache_read_input_tokens,
-# cache_creation_input_tokens appended at the END). ``_parse_dispatch_boundary_file``
-# uses a ``len(parts) >= 5`` floor so a legacy five-column row still parses with
-# the four context-load keys defaulting to 0, while a widened nine-column row
-# surfaces the four values. A malformed appended field degrades the four context
-# fields to 0 rather than dropping the whole row. The canonical column
-# order/count/defaults are owned by manage-metrics ``standards/data-format.md``
-# (Per-Dispatch Context-Load Attribution section); this reader consumes that order.
+# The dispatch-boundary row carries nine columns (legacy five + input_tokens,
+# output_tokens, cache_read_input_tokens, cache_creation_input_tokens appended at
+# the END). ``_parse_dispatch_boundary_file`` uses a ``len(parts) >= 5`` floor so
+# a legacy five-column row still parses.
+#
+# The four context-load columns read THREE ways, never two:
+#   * an integer            → MEASURED. The key carries the int, and a measured
+#                             0 stays 0.
+#   * the `unmeasured` token, or a column a short row does not have
+#                           → UNMEASURED. The key is OMITTED and the column is
+#                             named in the row's `unmeasured_columns`.
+#   * anything else         → UNRECOGNISED. The key is omitted too, and the
+#                             column is named in `unrecognised_columns` — a
+#                             different fact from unmeasured.
+#
+# The canonical column order/count/unmeasured representation are owned by
+# manage-metrics ``standards/data-format.md`` (Per-Dispatch Context-Load
+# Attribution section); this reader consumes that contract.
 
 
 class TestDispatchBoundaryContextLoadColumns:
@@ -714,15 +723,115 @@ class TestDispatchBoundaryContextLoadColumns:
         assert row['total_tokens'] == 84211
         assert row['tool_uses'] == 38
         assert row['duration_ms'] == 412390
-        # The four appended context-load columns surface.
+        # The four appended context-load columns surface, and the row declares
+        # that nothing on it was unmeasured or unrecognised.
         assert row['input_tokens'] == 38000
         assert row['output_tokens'] == 4000
         assert row['cache_read_input_tokens'] == 210000
         assert row['cache_creation_input_tokens'] == 12000
+        assert row['unmeasured_columns'] == []
+        assert row['unrecognised_columns'] == []
 
-    def test_legacy_five_column_row_defaults_context_load_to_zero(self, tmp_path):
-        """A legacy five-column row still parses; the four context-load keys
-        default to 0 and the legacy five are unchanged."""
+    def test_measured_zero_context_load_stays_zero(self, tmp_path):
+        """An explicit `0` cell is a MEASUREMENT and is carried as `0`.
+
+        The companion of the unmeasured test below: the two rows differ, so the
+        reader cannot be passing either one by collapsing both to the same shape.
+        """
+        plan_dir = tmp_path / 'plans' / 'ctx-measured-zero'
+        plan_dir.mkdir(parents=True)
+        path = self._write_boundary(
+            plan_dir,
+            '5-execute',
+            self._CTX_HEADER,
+            ['2026-05-08T14:00:00Z,clean_exit_queue_empty,100,2,1000,0,0,0,0'],
+        )
+
+        result = _analyze_logs._parse_dispatch_boundary_file(path)
+
+        row = result['rows'][0]
+        assert row['input_tokens'] == 0
+        assert row['output_tokens'] == 0
+        assert row['cache_read_input_tokens'] == 0
+        assert row['cache_creation_input_tokens'] == 0
+        # A measured zero is measured — it is not listed as unmeasured.
+        assert row['unmeasured_columns'] == []
+        assert row['unrecognised_columns'] == []
+
+    def test_unmeasured_token_reads_as_absent_not_zero(self, tmp_path):
+        """The `unmeasured` literal omits the key and names the column.
+
+        This is the distinction the token exists for: contrast with
+        ``test_measured_zero_context_load_stays_zero`` above, whose row carries
+        `0` cells and yields `input_tokens == 0`. Collapsing the two would make
+        "the caller measured nothing" indistinguishable from "the dispatch
+        loaded nothing".
+        """
+        plan_dir = tmp_path / 'plans' / 'ctx-unmeasured'
+        plan_dir.mkdir(parents=True)
+        path = self._write_boundary(
+            plan_dir,
+            '5-execute',
+            self._CTX_HEADER,
+            [
+                '2026-05-08T14:00:00Z,budget_yield,100,2,1000,'
+                'unmeasured,unmeasured,unmeasured,unmeasured'
+            ],
+        )
+
+        result = _analyze_logs._parse_dispatch_boundary_file(path)
+
+        row = result['rows'][0]
+        # Legacy five still parse.
+        assert row['total_tokens'] == 100
+        for column in (
+            'input_tokens',
+            'output_tokens',
+            'cache_read_input_tokens',
+            'cache_creation_input_tokens',
+        ):
+            assert column not in row, column
+        assert row['unmeasured_columns'] == [
+            'input_tokens',
+            'output_tokens',
+            'cache_read_input_tokens',
+            'cache_creation_input_tokens',
+        ]
+        assert row['unrecognised_columns'] == []
+
+    def test_per_column_mix_of_measured_and_unmeasured(self, tmp_path):
+        """The three-way read is per COLUMN, not per row.
+
+        One measured cell does not make its neighbours measured, and one
+        unmeasured cell does not discard the measured ones beside it.
+        """
+        plan_dir = tmp_path / 'plans' / 'ctx-column-mix'
+        plan_dir.mkdir(parents=True)
+        path = self._write_boundary(
+            plan_dir,
+            '5-execute',
+            self._CTX_HEADER,
+            ['2026-05-08T14:00:00Z,clean_exit_queue_empty,100,2,1000,50,unmeasured,0,unmeasured'],
+        )
+
+        result = _analyze_logs._parse_dispatch_boundary_file(path)
+
+        row = result['rows'][0]
+        assert row['input_tokens'] == 50
+        assert row['cache_read_input_tokens'] == 0
+        assert 'output_tokens' not in row
+        assert 'cache_creation_input_tokens' not in row
+        assert row['unmeasured_columns'] == ['output_tokens', 'cache_creation_input_tokens']
+        assert row['unrecognised_columns'] == []
+
+    def test_legacy_five_column_row_reads_context_load_as_unmeasured(self, tmp_path):
+        """A legacy five-column row still parses; its four context-load columns
+        read as UNMEASURED — absent, never a measured 0.
+
+        A row written before the columns existed recorded no context-load
+        measurement at all, so `0` would assert a measurement it never took. The
+        `len(parts) >= 5` legacy floor is preserved: the row is kept, not dropped.
+        """
         plan_dir = tmp_path / 'plans' / 'ctx-legacy'
         plan_dir.mkdir(parents=True)
         path = self._write_boundary(
@@ -742,11 +851,21 @@ class TestDispatchBoundaryContextLoadColumns:
         assert row['total_tokens'] == 100
         assert row['tool_uses'] == 2
         assert row['duration_ms'] == 1000
-        # The four context-load columns default to 0 for a legacy row.
-        assert row['input_tokens'] == 0
-        assert row['output_tokens'] == 0
-        assert row['cache_read_input_tokens'] == 0
-        assert row['cache_creation_input_tokens'] == 0
+        # The four context-load columns are ABSENT, and named as unmeasured.
+        for column in (
+            'input_tokens',
+            'output_tokens',
+            'cache_read_input_tokens',
+            'cache_creation_input_tokens',
+        ):
+            assert column not in row, column
+        assert row['unmeasured_columns'] == [
+            'input_tokens',
+            'output_tokens',
+            'cache_read_input_tokens',
+            'cache_creation_input_tokens',
+        ]
+        assert row['unrecognised_columns'] == []
 
     def test_mixed_legacy_and_widened_rows_each_parse(self, tmp_path):
         """A file mixing a legacy five-column row and a widened nine-column row
@@ -769,20 +888,26 @@ class TestDispatchBoundaryContextLoadColumns:
 
         assert len(result['rows']) == 2
         legacy_row, widened_row = result['rows']
-        # Legacy row → context columns default to 0.
+        # Legacy row → context columns absent, reported unmeasured.
         assert legacy_row['total_tokens'] == 100
-        assert legacy_row['input_tokens'] == 0
-        assert legacy_row['cache_creation_input_tokens'] == 0
+        assert 'input_tokens' not in legacy_row
+        assert 'cache_creation_input_tokens' not in legacy_row
+        assert len(legacy_row['unmeasured_columns']) == 4
         # Widened row → context columns surface.
         assert widened_row['total_tokens'] == 200
         assert widened_row['input_tokens'] == 50
         assert widened_row['output_tokens'] == 10
         assert widened_row['cache_read_input_tokens'] == 3000
         assert widened_row['cache_creation_input_tokens'] == 90
+        assert widened_row['unmeasured_columns'] == []
 
-    def test_malformed_appended_field_degrades_context_load_to_zero(self, tmp_path):
-        """A non-numeric appended field degrades the four context fields to 0
-        rather than dropping the whole row — the legacy five still parse."""
+    def test_malformed_appended_field_reads_as_unrecognised(self, tmp_path):
+        """A non-numeric, non-token appended field reads as UNRECOGNISED.
+
+        Distinct from unmeasured: the writer made a statement this reader failed
+        to parse, rather than deliberately declining to measure. The whole row is
+        still kept and the legacy five still parse.
+        """
         plan_dir = tmp_path / 'plans' / 'ctx-malformed'
         plan_dir.mkdir(parents=True)
         path = self._write_boundary(
@@ -801,15 +926,51 @@ class TestDispatchBoundaryContextLoadColumns:
         assert row['total_tokens'] == 1
         assert row['tool_uses'] == 2
         assert row['duration_ms'] == 3
-        # The malformed appended fields degrade all four to 0.
-        assert row['input_tokens'] == 0
-        assert row['output_tokens'] == 0
-        assert row['cache_read_input_tokens'] == 0
-        assert row['cache_creation_input_tokens'] == 0
+        # All four are unrecognised — and NOT folded into unmeasured.
+        for column in (
+            'input_tokens',
+            'output_tokens',
+            'cache_read_input_tokens',
+            'cache_creation_input_tokens',
+        ):
+            assert column not in row, column
+        assert row['unrecognised_columns'] == [
+            'input_tokens',
+            'output_tokens',
+            'cache_read_input_tokens',
+            'cache_creation_input_tokens',
+        ]
+        assert row['unmeasured_columns'] == []
 
-    def test_truncated_appended_fields_degrade_to_zero(self, tmp_path):
-        """A row with only some appended fields (an IndexError reach) degrades
-        all four context fields to 0 — the whole row is still kept."""
+    def test_unmeasured_and_unrecognised_are_reported_separately(self, tmp_path):
+        """One row can carry both, and they land in different lists.
+
+        The failure this rules out is a reader that lumps every non-integer cell
+        into one bucket — which would make a corrupt cell read as a deliberate
+        abstention.
+        """
+        plan_dir = tmp_path / 'plans' / 'ctx-both'
+        plan_dir.mkdir(parents=True)
+        path = self._write_boundary(
+            plan_dir,
+            '5-execute',
+            self._CTX_HEADER,
+            ['2026-05-08T14:00:00Z,error,1,2,3,unmeasured,yy,7,unmeasured'],
+        )
+
+        result = _analyze_logs._parse_dispatch_boundary_file(path)
+
+        row = result['rows'][0]
+        assert row['cache_read_input_tokens'] == 7
+        assert row['unmeasured_columns'] == ['input_tokens', 'cache_creation_input_tokens']
+        assert row['unrecognised_columns'] == ['output_tokens']
+
+    def test_truncated_appended_fields_read_as_unmeasured(self, tmp_path):
+        """A row with only some appended cells reports the missing ones unmeasured.
+
+        The present cells are still MEASURED — the old all-or-nothing except
+        block discarded them along with the missing ones.
+        """
         plan_dir = tmp_path / 'plans' / 'ctx-truncated'
         plan_dir.mkdir(parents=True)
         path = self._write_boundary(
@@ -824,12 +985,18 @@ class TestDispatchBoundaryContextLoadColumns:
 
         assert len(result['rows']) == 1
         row = result['rows'][0]
-        # Legacy five parse; the incomplete appended set degrades all four to 0.
+        # Legacy five parse, and the two cells the row DOES carry are measured.
         assert row['total_tokens'] == 100
-        assert row['input_tokens'] == 0
-        assert row['output_tokens'] == 0
-        assert row['cache_read_input_tokens'] == 0
-        assert row['cache_creation_input_tokens'] == 0
+        assert row['input_tokens'] == 7
+        assert row['output_tokens'] == 8
+        # Only the two the row lacks read as unmeasured.
+        assert 'cache_read_input_tokens' not in row
+        assert 'cache_creation_input_tokens' not in row
+        assert row['unmeasured_columns'] == [
+            'cache_read_input_tokens',
+            'cache_creation_input_tokens',
+        ]
+        assert row['unrecognised_columns'] == []
 
     def test_read_per_phase_carries_context_load_columns(self, tmp_path):
         """``read_dispatch_boundaries_per_phase`` surfaces the four context-load
@@ -851,6 +1018,9 @@ class TestDispatchBoundaryContextLoadColumns:
         assert row['output_tokens'] == 10
         assert row['cache_read_input_tokens'] == 3000
         assert row['cache_creation_input_tokens'] == 90
+        # The two disclosure lists survive the glob reader unchanged.
+        assert row['unmeasured_columns'] == []
+        assert row['unrecognised_columns'] == []
 
 
 # =============================================================================

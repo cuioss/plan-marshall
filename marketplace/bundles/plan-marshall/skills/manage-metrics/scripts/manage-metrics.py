@@ -78,6 +78,74 @@ DISPATCH_TERMINATION_CAUSES = (
 )
 
 # ---------------------------------------------------------------------------
+# Per-dispatch context-load columns, and the unmeasured token
+# ---------------------------------------------------------------------------
+#
+# The four per-dispatch context-load columns of the dispatch-boundary row, in
+# canonical order. Module-level so the writer's header line, the writer's row
+# builder, and the result TOON all read the SAME order — the canonical order /
+# count / defaults are owned by ``standards/data-format.md`` (Per-Dispatch
+# Context-Load Attribution).
+_DISPATCH_CONTEXT_LOAD_COLUMNS = (
+    'input_tokens',
+    'output_tokens',
+    'cache_read_input_tokens',
+    'cache_creation_input_tokens',
+)
+
+# The literal a context-load column carries when its flag was OMITTED.
+#
+# These four columns are optional: a caller with no ``message.usage`` figure to
+# forward passes no flag. Writing ``0`` for an omitted flag made "the caller
+# passed no measurement" and "the dispatch loaded zero context" byte-identical
+# rows — the exact conflation this module already forbids for
+# ``_PRESENCE_PERSISTED_FIELDS`` under its absent-is-not-zero rule. The row is
+# positional, so an unmeasured column cannot simply be dropped; it carries this
+# token instead.
+#
+# The token gives readers a THREE-way distinction that ``0`` alone destroyed:
+# a measured zero is ``0``, a deliberately-unmeasured column is this literal,
+# and any other unparseable cell is UNRECOGNISED — which a reader must report as
+# such rather than fold into either neighbour.
+UNMEASURED_COLUMN_TOKEN = 'unmeasured'
+
+# ---------------------------------------------------------------------------
+# Cumulative-vs-last-close row scope discriminator
+# ---------------------------------------------------------------------------
+#
+# A phase can close more than once (a finalize loop-back re-enters an earlier
+# phase under the same phase key), and ``_close_phase_accumulating`` then SUMS
+# some of the row's fields across every close while ASSIGNING others from the
+# latest close alone. That split existed only as prose in
+# ``standards/data-format.md`` and in two docstrings, so a script consumer
+# reading a ``close_count > 1`` row off disk had no field-level signal telling it
+# which of the row's values are cumulative and which are last-close.
+#
+# ``value_scope`` is that signal, and it follows the ``total_tokens_population``
+# precedent exactly: a row-level discriminator written at the WRITE site on every
+# close, with a documented absent-reads-as default. On a re-entered row it is
+# accompanied by ``cumulative_fields`` / ``last_close_fields``, which name the
+# split explicitly — so the declaration is readable off the row itself and no
+# consumer has to consult ``standards/data-format.md`` to interpret it.
+VALUE_SCOPE_SINGLE_CLOSE = 'single_close'
+VALUE_SCOPE_MIXED = 'mixed_cumulative_and_last_close'
+VALUE_SCOPES = (VALUE_SCOPE_SINGLE_CLOSE, VALUE_SCOPE_MIXED)
+
+# Fields whose value on a re-entered row is the SUM across every close.
+_CUMULATIVE_ACROSS_CLOSES_FIELDS = (
+    'close_count',
+    'duration_seconds',
+    'agent_duration_ms',
+    'agent_duration_seconds',
+    'total_tokens',
+    'tool_uses',
+    'retrospective_tokens',
+)
+
+# Fields scoped to the LATEST close alone — assigned unconditionally, never summed.
+_LAST_CLOSE_SCOPED_FIELDS = ('start_time', 'end_time')
+
+# ---------------------------------------------------------------------------
 # Token population discriminator
 # ---------------------------------------------------------------------------
 #
@@ -428,6 +496,43 @@ def _increment_close_count(phase_data: dict) -> None:
     phase_data['close_count'] = _row_int(phase_data, 'close_count') + 1
 
 
+def _stamp_value_scope(phase_data: dict) -> None:
+    """Declare on the row which of its values are cumulative and which are last-close.
+
+    Written by ``_close_phase_accumulating`` on EVERY close, after every other
+    field write, so the two field lists name only keys the row actually carries —
+    a declaration that named an absent field would assert a value the row does
+    not hold.
+
+    - ``close_count <= 1`` → ``value_scope: single_close``. The split is vacuous
+      (every value covers the one and only close), so the two list fields are
+      NOT written, and any left over from a prior state are removed.
+    - ``close_count > 1`` → ``value_scope: mixed_cumulative_and_last_close``,
+      plus ``cumulative_fields`` / ``last_close_fields`` naming the split.
+
+    **Absent reads as ``single_close``** — the best available default, NOT a
+    guarantee, and the same honest-default shape ``_token_population`` documents.
+    Two distinct rows reach the absent state: a row written before this
+    discriminator existed whose ``close_count`` is 1 (the default is exact), and
+    a pre-stamping re-entered row carrying ``close_count > 1`` (the default
+    under-reports). A consumer that has ``close_count`` on the row SHOULD prefer
+    it — ``close_count > 1`` is the authoritative re-entry marker; ``value_scope``
+    exists to say what that re-entry did to the row's individual fields.
+    """
+    if _row_int(phase_data, 'close_count') > 1:
+        phase_data['value_scope'] = VALUE_SCOPE_MIXED
+        phase_data['cumulative_fields'] = ','.join(
+            field for field in _CUMULATIVE_ACROSS_CLOSES_FIELDS if field in phase_data
+        )
+        phase_data['last_close_fields'] = ','.join(
+            field for field in _LAST_CLOSE_SCOPED_FIELDS if field in phase_data
+        )
+        return
+    phase_data['value_scope'] = VALUE_SCOPE_SINGLE_CLOSE
+    phase_data.pop('cumulative_fields', None)
+    phase_data.pop('last_close_fields', None)
+
+
 def _guard_plan_exists(plan_id: str) -> dict | None:
     """Return a ``plan_not_found`` error dict when the plan dir is uninitialised.
 
@@ -716,7 +821,11 @@ def _close_phase_accumulating(
       ``_clamp_worked_to_wall``.
 
     ``close_count`` is incremented on every close, making ``close_count > 1`` the
-    inference-free re-entry marker ``cmd_generate`` renders. Mutates
+    inference-free re-entry marker ``cmd_generate`` renders. The three rules'
+    consequence for the row — which fields the close SUMMED and which it
+    REPLACED — is stamped onto the row itself by ``_stamp_value_scope`` as the
+    last write of this function, so a consumer reading a re-entered row off disk
+    gets the split without consulting ``standards/data-format.md``. Mutates
     ``phase_data`` in place; the caller stamps its own result dict from the
     mutated row plus the returned pre-provenance values.
 
@@ -732,10 +841,10 @@ def _close_phase_accumulating(
     # earlier close with no intervening start-phase (see
     # _accumulate_duration_seconds).
     prior_end_time = phase_data.get('end_time')
-    # Stamp end_time unconditionally: it is the sole "recorded" marker
-    # cmd_generate reads. An inline phase closes here with the usage flags
-    # omitted (no agent <usage> envelope) and is still a fully recorded,
-    # timestamps-only row — never listed under unrecorded_phases.
+    # Stamp end_time unconditionally: it is the sole marker cmd_generate's
+    # end_time-presence check reads. An inline phase closes here with the usage
+    # flags omitted (no agent <usage> envelope) and still carries the marker —
+    # so it is never listed under phases_missing_end_time.
     phase_data['end_time'] = now
 
     # Rule B: add this close's active wall span onto duration_seconds. Must run
@@ -782,6 +891,11 @@ def _close_phase_accumulating(
         phase_data['retrospective_tokens'] = _apply_provenance(
             phase_data, 'retrospective_tokens', retrospective_tokens, retrospective_tokens_source
         )
+
+    # LAST write of this function, deliberately: the declaration names only the
+    # fields the row actually carries, so it must run after every field write
+    # above.
+    _stamp_value_scope(phase_data)
 
     return {
         'total_tokens': total_tokens,
@@ -963,7 +1077,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # `boundary_monotonicity` warning listing the phases plus a per-phase
     # `boundary_non_monotonic` annotation) and guards the idle residual below,
     # but NEVER mutates the recorded start_time / end_time boundary fields. It
-    # does not touch the #812 `end_time`-keyed partial verdict.
+    # does not touch the #812 end_time-presence check below.
     #
     # This detector is a timestamp-ordering signal only, and it names the LATER
     # phase rather than the re-entered one (the re-entered phase's fresh
@@ -1016,20 +1130,41 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         idle_ms = max(0, wall_ms - _worked_ms(phase))
         phase['idle_duration_ms'] = idle_ms
 
-    # First-class partiality verdict over the canonical six-phase baseline.
-    # A canonical phase is "recorded" iff its metrics.toon row carries an
-    # end_time (the boundary-close marker, consistent with cmd_boundary_status's
-    # missing-boundary definition); a phase with no row at all is unrecorded
-    # too. `partial` is true whenever any canonical phase lacks that marker —
-    # the floor-not-truth signal a consumer reads to tell an under-count (e.g. a
-    # 6-finalize whose terminal close never folded the accumulator in) from a
-    # genuinely complete report. Persist both as top-level keys in metrics.toon
-    # (round-tripped via read_metrics_raw's arbitrary-top-level-key path):
-    # `partial` as a true/false token and `unrecorded_phases` comma-joined.
-    unrecorded_phases = [name for name in PHASE_NAMES if not phases.get(name, {}).get('end_time')]
-    partial = len(unrecorded_phases) > 0
-    data['partial'] = 'true' if partial else 'false'
-    data['unrecorded_phases'] = ','.join(unrecorded_phases)
+    # end_time-presence check over the canonical six-phase baseline.
+    #
+    # THE KEYS NAME THE PREDICATE THEY COMPUTE, and nothing wider. The check
+    # asks exactly one question per canonical phase: does its metrics.toon row
+    # carry an `end_time` — the boundary-close marker `end-phase` /
+    # `phase-boundary` stamp, the same definition `cmd_boundary_status` uses for
+    # a missing boundary? A phase with no row at all is missing it too.
+    #
+    # It is NOT a completeness verdict and NOT an internal-consistency check. A
+    # row can carry `end_time` while its `tool_uses` is 0, its `total_tokens` is
+    # non-zero, and its `duration_seconds` disagrees with its own stored span —
+    # and this check will still report it as carrying the marker, because that
+    # is the only thing it looked at. The keys were previously named `partial` /
+    # `unrecorded_phases`, which asserted the wider verdict; they are renamed
+    # (breaking, no dual-key shim) so the name states the predicate at the point
+    # of use.
+    #
+    # Persisted as top-level keys in metrics.toon (round-tripped via
+    # read_metrics_raw's arbitrary-top-level-key path): the bool as a true/false
+    # token and the list comma-joined.
+    phases_missing_end_time = [
+        name for name in PHASE_NAMES if not phases.get(name, {}).get('end_time')
+    ]
+    any_phase_missing_end_time = len(phases_missing_end_time) > 0
+    data['any_phase_missing_end_time'] = 'true' if any_phase_missing_end_time else 'false'
+    data['phases_missing_end_time'] = ','.join(phases_missing_end_time)
+    # The writer emits the NEW keys only and never the old ones. read_metrics_raw
+    # round-trips arbitrary top-level keys, so a metrics.toon written before the
+    # rename would otherwise carry BOTH the stale `partial` / `unrecorded_phases`
+    # pair and the new keys after a regenerate — a dual-key emission the breaking
+    # rename explicitly forbids, and one that would let a reader take the stale
+    # pair as current. Dropping them here is a write-side refusal, not a
+    # compatibility shim: no old key is ever produced, and no old key is read.
+    data.pop('partial', None)
+    data.pop('unrecorded_phases', None)
 
     write_metrics(plan_id, data)
 
@@ -1044,11 +1179,19 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     lines.append('## Phase Breakdown')
     lines.append('')
 
-    # First-class partiality marker: when a canonical phase lacks a recorded
-    # boundary, surface the gap directly under the heading so a reader sees the
-    # report is a floor, not a complete accounting.
-    if partial:
-        lines.append(f'> Partial: unrecorded phases — {", ".join(unrecorded_phases)}')
+    # end_time-presence marker: name the phases whose row carries no
+    # boundary-close marker, and say what that does and does not mean. The
+    # marker states the predicate rather than a completeness verdict — the
+    # rendered wording is the reader's only key to what was actually checked.
+    if any_phase_missing_end_time:
+        lines.append(
+            '> Phases missing an end_time boundary marker — '
+            f'{", ".join(phases_missing_end_time)}. These rows were never closed by '
+            'end-phase / phase-boundary, so their totals are absent and every column '
+            'Total above is a floor. This is an end_time-presence check only: a phase '
+            'NOT listed here carries the marker, which says nothing about whether its '
+            'recorded figures are complete or internally consistent.'
+        )
         lines.append('')
 
     # Re-entry marker: name every phase closed more than once, so a reader knows
@@ -1358,9 +1501,21 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         # bury the rows that actually accumulated.
         close_count = _row_int(phase, 'close_count')
         if close_count > 1:
+            # Render the row's OWN declaration rather than restating the split
+            # from this render site's knowledge — the row is the source of truth
+            # (see _stamp_value_scope), and a hand-restated list here would be a
+            # second copy free to drift from the writer's.
+            cumulative = str(phase.get('cumulative_fields') or '').strip()
+            last_close = str(phase.get('last_close_fields') or '').strip()
+            split = (
+                f' Cumulative across closes: {cumulative}. Latest close only: {last_close}.'
+                if cumulative or last_close
+                else ''
+            )
             lines.append(
                 f'- **Closes**: {close_count} (phase re-entered; the totals below are '
-                'the sum across every close, and Start is the latest entry only)'
+                'the sum across every close, and Start is the latest entry only).'
+                + split
             )
 
         wall_ms = _wall_clock_ms(phase)
@@ -1511,8 +1666,8 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         'plan_id': plan_id,
         'file': METRICS_MD,
         'phases_recorded': len(phases),
-        'partial': partial,
-        'unrecorded_phases': unrecorded_phases,
+        'any_phase_missing_end_time': any_phase_missing_end_time,
+        'phases_missing_end_time': phases_missing_end_time,
         'boundary_monotonicity': non_monotonic_phases,
         're_entered_phases': re_entered_phases,
         'total_worked_seconds': round(total_worked, 1),
@@ -1699,11 +1854,11 @@ def cmd_phase_boundary(args: argparse.Namespace) -> dict:
     `--total-tokens` / `--duration-ms` / `--tool-uses` flags. Omitting them is
     the sanctioned inline recording mode — NOT an incomplete call. The
     previous phase's `end_time` is stamped unconditionally below (independent
-    of any usage flag), and `cmd_generate`'s partiality verdict keys a phase's
-    "recorded" status solely off that `end_time` marker. A timestamps-only
-    closed row is therefore treated as fully recorded: it is never listed under
-    `unrecorded_phases` and never flips `partial` to true. This is the path the
-    inline 1-init → 2-refine boundary and the recipe-inline (refine/outline)
+    of any usage flag), and `cmd_generate`'s end_time-presence check reads
+    solely that marker. A timestamps-only closed row therefore carries the
+    marker: it is never listed under `phases_missing_end_time` and never flips
+    `any_phase_missing_end_time` to true. This is the path the inline
+    1-init → 2-refine boundary and the recipe-inline (refine/outline)
     boundaries take; it preserves the #812 floor-not-truth semantics unchanged.
     """
     plan_id = require_valid_plan_id(args)
@@ -1982,13 +2137,23 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
     columns appended at the END (``input_tokens``, ``output_tokens``,
     ``cache_read_input_tokens``, ``cache_creation_input_tokens``) — the
     per-DISPATCH counterpart to the per-PHASE four-field view ``enrich`` writes.
-    Each context-load column defaults to 0 when its flag is omitted, mirroring
-    the existing optional ``--total-tokens`` / ``--tool-uses`` / ``--duration-ms``
-    fields. Appending at the END keeps the legacy five columns positionally
-    unchanged so the existing plan-retrospective reader stays valid. The file's
-    first line is a TOON-tabular header declaring the column order. The
-    canonical column order / count / defaults are owned by
-    ``standards/data-format.md`` (Per-Dispatch Context-Load Attribution section).
+
+    A context-load column whose flag was OMITTED carries the literal
+    ``UNMEASURED_COLUMN_TOKEN`` rather than ``0``, and the corresponding key is
+    ABSENT from the result TOON rather than returned as ``0``. This applies the
+    module's own absent-is-not-zero persistence rule (the one
+    ``_PRESENCE_PERSISTED_FIELDS`` already follows) to the ledger row: "the
+    caller passed no measurement" and "the dispatch loaded zero context" are
+    different facts and must not produce byte-identical rows. A *measured* zero
+    is still written as ``0`` and still returned as ``0``. The legacy five
+    columns are unchanged: they keep their ``0`` default, because nothing
+    downstream distinguishes an absent from a zero on those.
+
+    Appending at the END keeps the legacy five columns positionally unchanged so
+    the existing plan-retrospective reader stays valid. The file's first line is
+    a TOON-tabular header declaring the column order. The canonical column order
+    / count / defaults are owned by ``standards/data-format.md`` (Per-Dispatch
+    Context-Load Attribution section).
     """
     plan_id = require_valid_plan_id(args)
     phase = args.phase
@@ -2015,13 +2180,14 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
     tool_uses = args.tool_uses if args.tool_uses is not None else 0
     duration_ms = args.duration_ms if args.duration_ms is not None else 0
     # Four per-dispatch context-load columns (the four-field message.usage view at
-    # dispatch termination). Each defaults to 0 when its flag is omitted, mirroring
-    # the legacy optional fields above. Canonical column order / count / defaults
-    # live in standards/data-format.md (Per-Dispatch Context-Load Attribution).
-    input_tokens = getattr(args, 'input_tokens', 0) or 0
-    output_tokens = getattr(args, 'output_tokens', 0) or 0
-    cache_read_input_tokens = getattr(args, 'cache_read_input_tokens', 0) or 0
-    cache_creation_input_tokens = getattr(args, 'cache_creation_input_tokens', 0) or 0
+    # dispatch termination). An OMITTED flag stays None here and is written as the
+    # unmeasured token below — never coerced to 0, which would assert a
+    # measurement the caller never took. Canonical column order / count /
+    # unmeasured representation live in standards/data-format.md (Per-Dispatch
+    # Context-Load Attribution).
+    context_load: dict[str, int | None] = {
+        column: getattr(args, column, None) for column in _DISPATCH_CONTEXT_LOAD_COLUMNS
+    }
 
     # Guard at script side: refuse to record a dispatch boundary when the
     # plan directory does not exist (and was never initialised by phase-1).
@@ -2036,10 +2202,15 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
 
     timestamp = now_utc_iso()
     # Legacy five columns first, then the four context-load columns appended at
-    # the END so legacy readers stay positionally valid.
+    # the END so legacy readers stay positionally valid. An unmeasured
+    # context-load column carries the token, not a 0.
+    context_cells: list[str] = []
+    for column in _DISPATCH_CONTEXT_LOAD_COLUMNS:
+        measured = context_load[column]
+        context_cells.append(UNMEASURED_COLUMN_TOKEN if measured is None else str(int(measured)))
     row = (
         f'{timestamp},{cause},{total_tokens},{tool_uses},{duration_ms},'
-        f'{input_tokens},{output_tokens},{cache_read_input_tokens},{cache_creation_input_tokens}'
+        + ','.join(context_cells)
     )
 
     if path.exists():
@@ -2049,6 +2220,15 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
         new_content = existing + row + '\n'
     else:
         # Header documents the column contract for downstream readers.
+        #
+        # Deliberately a LITERAL, not f-string-derived from
+        # _DISPATCH_CONTEXT_LOAD_COLUMNS: the lattice-completeness contract test
+        # recovers this column set by scraping the `rows[]{...}` literal out of
+        # this source file, and an interpolated header hands that scraper the
+        # interpolation expression instead of the columns — silently defeating a
+        # population-derived guard. The literal and the tuple are held in
+        # lock-step by the two tests that pin them (the header-order test reads
+        # this string, the positional test reads the tuple-built row).
         header = (
             f'plan_id: {plan_id}\n'
             f'phase: {phase}\n'
@@ -2066,7 +2246,7 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
         if line and not line.startswith(('plan_id:', 'phase:', 'rows[]'))
     )
 
-    return {
+    result: dict[str, object] = {
         'status': 'success',
         'plan_id': plan_id,
         'phase': phase,
@@ -2074,14 +2254,23 @@ def cmd_record_dispatch_boundary(args: argparse.Namespace) -> dict:
         'total_tokens': total_tokens,
         'tool_uses': tool_uses,
         'duration_ms': duration_ms,
-        'input_tokens': input_tokens,
-        'output_tokens': output_tokens,
-        'cache_read_input_tokens': cache_read_input_tokens,
-        'cache_creation_input_tokens': cache_creation_input_tokens,
-        'timestamp': timestamp,
-        'rows_recorded': row_count,
-        'dispatch_boundary_file': str(path.relative_to(get_plan_dir(plan_id))),
     }
+    # A context-load column the caller did not measure is ABSENT from the result,
+    # mirroring what was written to the row. Returning 0 would re-assert, in the
+    # caller's own reply, the measurement the row deliberately declines to claim.
+    # A measured zero IS returned, as 0.
+    unmeasured_columns: list[str] = []
+    for column in _DISPATCH_CONTEXT_LOAD_COLUMNS:
+        measured = context_load[column]
+        if measured is None:
+            unmeasured_columns.append(column)
+        else:
+            result[column] = int(measured)
+    result['unmeasured_context_load_columns'] = ','.join(unmeasured_columns)
+    result['timestamp'] = timestamp
+    result['rows_recorded'] = row_count
+    result['dispatch_boundary_file'] = str(path.relative_to(get_plan_dir(plan_id)))
+    return result
 
 
 def _phase_window_lookup(plan_id: str) -> list[tuple[str, datetime, datetime]]:
@@ -2384,8 +2573,8 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         #
         # Explicit-wins throughout: a total_tokens already set by a dispatched
         # phase's `<usage>` / accumulator is truthy here and is NEVER
-        # overwritten. The #812 `end_time`-keyed partial verdict is untouched —
-        # a timestamps-only inline close stays non-`partial`.
+        # overwritten. The #812 end_time-presence check is untouched — a
+        # timestamps-only inline close still carries its end_time marker.
         # The branch key is the DISCRIMINATOR, not the folded total, because the
         # inline-only branch below writes into the very field a truthiness test
         # would read. Keyed on `not total_tokens` alone, a SECOND enrich run over
@@ -2643,25 +2832,38 @@ def main() -> int:
         '--input-tokens',
         type=int,
         default=None,
-        help="Dispatch context-load input_tokens at termination (message.usage; default 0).",
+        help=(
+            'Dispatch context-load input_tokens at termination (message.usage). '
+            f"Omit when unmeasured — the column is written as '{UNMEASURED_COLUMN_TOKEN}', "
+            'NOT as 0, and the key is absent from the result TOON.'
+        ),
     )
     rdb.add_argument(
         '--output-tokens',
         type=int,
         default=None,
-        help="Dispatch context-load output_tokens at termination (message.usage; default 0).",
+        help=(
+            'Dispatch context-load output_tokens at termination (message.usage). '
+            f"Omit when unmeasured — written as '{UNMEASURED_COLUMN_TOKEN}', not 0."
+        ),
     )
     rdb.add_argument(
         '--cache-read-input-tokens',
         type=int,
         default=None,
-        help="Dispatch context-load cache_read_input_tokens at termination (message.usage; default 0).",
+        help=(
+            'Dispatch context-load cache_read_input_tokens at termination (message.usage). '
+            f"Omit when unmeasured — written as '{UNMEASURED_COLUMN_TOKEN}', not 0."
+        ),
     )
     rdb.add_argument(
         '--cache-creation-input-tokens',
         type=int,
         default=None,
-        help="Dispatch context-load cache_creation_input_tokens at termination (message.usage; default 0).",
+        help=(
+            'Dispatch context-load cache_creation_input_tokens at termination (message.usage). '
+            f"Omit when unmeasured — written as '{UNMEASURED_COLUMN_TOKEN}', not 0."
+        ),
     )
     rdb.set_defaults(func=cmd_record_dispatch_boundary)
 

@@ -3757,6 +3757,8 @@ def _write_ii_plan(
     has_script_log: bool = True,
     phase_tokens: dict[str, int] | None = None,
     dispatch_marker: bool = True,
+    marker_schema: str = 'current',
+    phases_missing_end_time: str = '',
 ) -> Any:
     """Materialise a synthetic plan dir for the input-integrity meta-check.
 
@@ -3776,6 +3778,18 @@ def _write_ii_plan(
     - ``logs/work.log`` — carries a ``[DISPATCH] role=phase-N`` marker iff
       ``dispatch_marker`` is True.
 
+    ``marker_schema`` selects which of the three #812 end_time-presence marker
+    states the written ``metrics.toon`` is in, because the state is load-bearing
+    for the ``data_confidence`` bucket:
+
+    - ``'current'`` (default) — the new ``any_phase_missing_end_time`` /
+      ``phases_missing_end_time`` keys, with the list taken from
+      ``phases_missing_end_time``. This is the only state that can reach
+      ``fully-recorded``.
+    - ``'old-schema'`` — the RETIRED ``partial`` / ``unrecorded_phases`` keys, as
+      an archived record written before the rename still carries them.
+    - ``'pre-#812'`` — neither pair, the legitimate historical degrade.
+
     Returns a ``PlanInputs`` bound to the materialised ``plan_dir``;
     ``check_input_integrity`` reads only ``plan_dir`` / ``plan_id`` from disk, so
     the instance is constructed directly rather than parsed.
@@ -3792,6 +3806,17 @@ def _write_ii_plan(
     if has_metrics:
         (plan_dir / 'work').mkdir(parents=True, exist_ok=True)
         metrics_lines: list[str] = []
+        # Top-level marker keys come FIRST — `parse_toon_scalar` reads them as
+        # plan-level scalars, and `parse_metrics_toon` starts collecting only at
+        # the first `[phase]` header.
+        if marker_schema == 'current':
+            any_missing = 'true' if phases_missing_end_time else 'false'
+            metrics_lines.append(f'any_phase_missing_end_time: {any_missing}')
+            metrics_lines.append(f'phases_missing_end_time: {phases_missing_end_time}')
+        elif marker_schema == 'old-schema':
+            any_missing = 'true' if phases_missing_end_time else 'false'
+            metrics_lines.append(f'partial: {any_missing}')
+            metrics_lines.append(f'unrecorded_phases: {phases_missing_end_time}')
         for phase, tokens in phase_tokens.items():
             metrics_lines.append(f'[{phase}]')
             metrics_lines.append(f'  total_tokens: {tokens}')
@@ -3995,16 +4020,95 @@ class TestInputIntegrityFlags:
 
 class TestInputIntegrityDataConfidence:
     """The per-plan ``data_confidence`` bucket: ``blind`` iff the 5-execute phase
-    recorded zero tokens, else ``partial`` on any other gap/defect, else
-    ``fully-recorded``."""
+    recorded zero tokens, else ``partial`` on any other gap/defect — including an
+    UNREADABLE #812 marker record — else ``fully-recorded``."""
 
     def test_fully_recorded_when_no_gap_or_defect(self, tmp_path: Path):
-        # every input present, every flag clear
+        # every input present, every flag clear, marker record readable
         inputs = _write_ii_plan(tmp_path, 'fr')
 
         row = audit.check_input_integrity(inputs)
 
         assert row['data_confidence'] == 'fully-recorded'
+        assert row['metrics_marker_schema'] == audit.METRICS_SCHEMA_CURRENT
+
+    def test_old_schema_marker_record_cannot_be_fully_recorded(self, tmp_path: Path):
+        """An archived record still carrying `partial` / `unrecorded_phases`.
+
+        Every input is present and every flag is clear — the ONLY difference from
+        ``test_fully_recorded_when_no_gap_or_defect`` is the marker schema. The
+        check could not establish that the plan is fully recorded, and "could not
+        establish" must never render as `fully-recorded`.
+        """
+        inputs = _write_ii_plan(tmp_path, 'old-schema-ii', marker_schema='old-schema')
+
+        row = audit.check_input_integrity(inputs)
+
+        assert row['metrics_marker_schema'] == audit.METRICS_SCHEMA_OLD
+        assert row['data_confidence'] == 'partial'
+
+    def test_pre_812_marker_record_is_distinguishable_from_old_schema(
+        self, tmp_path: Path
+    ):
+        """A record carrying NEITHER pair reports `pre-#812`, not `old-schema`.
+
+        Both bar `fully-recorded`, but they are different facts: an `old-schema`
+        archive HAS markers a re-read could recover, a `pre-#812` one never had
+        them. Collapsing the two is what the three-state read exists to prevent.
+        """
+        inputs = _write_ii_plan(tmp_path, 'pre812-ii', marker_schema='pre-#812')
+
+        row = audit.check_input_integrity(inputs)
+
+        assert row['metrics_marker_schema'] == audit.METRICS_SCHEMA_PRE_812
+        assert row['metrics_marker_schema'] != audit.METRICS_SCHEMA_OLD
+        assert row['data_confidence'] == 'partial'
+
+    def test_old_schema_zero_token_execute_is_blind_not_marker_explained(
+        self, tmp_path: Path
+    ):
+        """An unreadable marker record explains NO zero-token phase.
+
+        The pre-rename reader degraded an absent key to `(False, set())`, so
+        after the rename every post-#812 archive would have read as "clean, and
+        nothing to explain" — silently rescuing a genuinely blind execute out of
+        the `blind` bucket. Here the retired keys DO name 5-execute, and the
+        check still refuses to treat it as explained because it did not read them.
+        """
+        inputs = _write_ii_plan(
+            tmp_path,
+            'old-schema-blind',
+            phase_tokens={'5-execute': 0, '6-finalize': 5_000},
+            marker_schema='old-schema',
+            phases_missing_end_time='5-execute',
+        )
+
+        row = audit.check_input_integrity(inputs)
+
+        assert row['metrics_marker_schema'] == audit.METRICS_SCHEMA_OLD
+        assert '5-execute' in row['metrics_blind']
+        assert row['data_confidence'] == 'blind'
+
+    def test_current_marker_explains_the_zero_token_execute(self, tmp_path: Path):
+        """The positive control: a READABLE marker does rescue it into `partial`.
+
+        Same fixture as the test above but with the CURRENT keys, so the refusal
+        there is shown to come from the unreadable schema rather than from the
+        check having stopped consulting markers at all.
+        """
+        inputs = _write_ii_plan(
+            tmp_path,
+            'current-marker-explained',
+            phase_tokens={'5-execute': 0, '6-finalize': 5_000},
+            marker_schema='current',
+            phases_missing_end_time='5-execute',
+        )
+
+        row = audit.check_input_integrity(inputs)
+
+        assert row['metrics_marker_schema'] == audit.METRICS_SCHEMA_CURRENT
+        assert row['metrics_blind'] == ''
+        assert row['data_confidence'] == 'partial'
 
     def test_zero_token_execute_is_blind(self, tmp_path: Path):
         # the load-bearing zero-token 5-execute
@@ -4050,6 +4154,7 @@ class TestInputIntegrityDataConfidence:
         # findings is not part of the any_input_missing set, so the plan
         # remains fully-recorded
         assert row['data_confidence'] == 'fully-recorded'
+        assert row['metrics_marker_schema'] == audit.METRICS_SCHEMA_CURRENT
 
 class TestInputIntegrityGenuinePredicate:
     """``_input_integrity_genuine`` is the D1 severity predicate: genuine iff a
@@ -4145,13 +4250,40 @@ class TestInputIntegrityEmitBlock:
 
         block = audit.emit_input_integrity_block(rows)
 
-        # the rows[] header carries the full column set ending in severity
+        # the rows[] header carries the full column set ending in severity, with
+        # the marker-schema column between data_confidence and severity
         assert (
             'rows[1]{plan_id,has_execution,has_metrics,has_references,'
             'has_tasks,has_findings,has_script_log,metrics_blind,'
             'incomplete_lifecycle,missing_dispatch_markers,data_confidence,'
-            'severity}:'
+            'metrics_marker_schema,severity}:'
         ) in block
+
+    def test_row_renders_the_marker_schema_cell(self, tmp_path: Path):
+        """The emitted row carries the schema, so the floor's REASON is visible.
+
+        Two plans differing only in marker schema render different cells — the
+        block does not merely declare the column in its header.
+        """
+        rows = [
+            audit.check_input_integrity(_write_ii_plan(tmp_path, 'sch-current')),
+            audit.check_input_integrity(
+                _write_ii_plan(tmp_path, 'sch-old', marker_schema='old-schema')
+            ),
+            audit.check_input_integrity(
+                _write_ii_plan(tmp_path, 'sch-pre', marker_schema='pre-#812')
+            ),
+        ]
+
+        block = audit.emit_input_integrity_block(rows)
+        cells = {
+            ln.strip().split(',')[0]: ln.strip().split(',')
+            for ln in block.splitlines()
+            if ln.strip().startswith('sch-')
+        }
+        assert cells['sch-current'][-2] == audit.METRICS_SCHEMA_CURRENT
+        assert cells['sch-old'][-2] == audit.METRICS_SCHEMA_OLD
+        assert cells['sch-pre'][-2] == audit.METRICS_SCHEMA_PRE_812
 
     def test_genuine_row_renders_genuine_severity_cell(self, tmp_path: Path):
         # a blind plan (zero-token 5-execute) is a genuine defect
@@ -5738,6 +5870,19 @@ class TestMetricsCoreFlags:
             _phase('5-execute', total_tokens=350, duration_seconds=35.0),
         ]
         monkeypatch.setattr(audit, 'parse_metrics_toon', lambda _p: phases)
+        # The fixture's plan dir carries no metrics.toon at all, which would read
+        # as `pre-#812` and append the unreadable-marker note. Isolate the anomaly
+        # logic under test by supplying a READABLE marker record with nothing to
+        # explain — the unreadable states get their own tests below.
+        monkeypatch.setattr(
+            audit,
+            'parse_metrics_end_time_presence',
+            lambda _p: audit.MetricsEndTimePresence(
+                schema=audit.METRICS_SCHEMA_CURRENT,
+                any_phase_missing_end_time=False,
+                phases_missing_end_time=frozenset(),
+            ),
+        )
         inputs = _inputs([])
 
         result = audit.check_metrics(inputs)
@@ -5748,6 +5893,86 @@ class TestMetricsCoreFlags:
         assert result['impossible_value'] == ''
         assert result['optimization_signal'] == ''
         assert result['anomalies'] == []
+
+
+class TestMetricsEndTimeMarkerStates:
+    """``check_metrics`` reads the #812 markers three-state and reports all three.
+
+    The retired reader degraded BOTH unreadable states to "nothing to explain",
+    which after the rename would have read every post-#812 archive as clean.
+    """
+
+    _ZERO_TOKEN_PHASES = (
+        ('5-execute', 500),
+        ('6-finalize', 0),
+    )
+
+    def _patch(self, monkeypatch, presence):
+        phases = [
+            _phase(name, total_tokens=tokens) for name, tokens in self._ZERO_TOKEN_PHASES
+        ]
+        monkeypatch.setattr(audit, 'parse_metrics_toon', lambda _p: phases)
+        monkeypatch.setattr(
+            audit, 'parse_metrics_end_time_presence', lambda _p: presence
+        )
+        return audit.check_metrics(_inputs([]))
+
+    def test_current_marker_explains_the_zero_token_phase(self, monkeypatch):
+        """A readable marker naming 6-finalize keeps it OUT of incomplete_recording."""
+        result = self._patch(
+            monkeypatch,
+            audit.MetricsEndTimePresence(
+                schema=audit.METRICS_SCHEMA_CURRENT,
+                any_phase_missing_end_time=True,
+                phases_missing_end_time=frozenset({'6-finalize'}),
+            ),
+        )
+
+        assert result['incomplete_recording'] == ''
+        assert any(
+            'explained by the phases_missing_end_time marker' in a
+            and '6-finalize' in a
+            for a in result['anomalies']
+        )
+
+    def test_old_schema_explains_nothing_and_says_so(self, monkeypatch):
+        """An old-schema record explains no phase AND names its own state.
+
+        Same zero-token fixture as the test above: the ONLY difference is the
+        marker schema, and the zero-token phase moves back into
+        `incomplete_recording` because nothing readable accounted for it.
+        """
+        result = self._patch(
+            monkeypatch,
+            audit.MetricsEndTimePresence(
+                schema=audit.METRICS_SCHEMA_OLD,
+                any_phase_missing_end_time=None,
+                phases_missing_end_time=None,
+            ),
+        )
+
+        assert result['incomplete_recording'] == '6-finalize'
+        note = next(a for a in result['anomalies'] if 'old-schema' in a)
+        assert 'retired partial/unrecorded_phases keys' in note
+        assert 'every derived figure is a floor' in note
+        # NOT the pre-#812 wording — the two states stay distinguishable.
+        assert 'pre-#812' not in note
+
+    def test_pre_812_note_is_distinct_from_old_schema(self, monkeypatch):
+        """A record with neither pair reports pre-#812 in its own words."""
+        result = self._patch(
+            monkeypatch,
+            audit.MetricsEndTimePresence(
+                schema=audit.METRICS_SCHEMA_PRE_812,
+                any_phase_missing_end_time=None,
+                phases_missing_end_time=None,
+            ),
+        )
+
+        assert result['incomplete_recording'] == '6-finalize'
+        note = next(a for a in result['anomalies'] if 'pre-#812' in a)
+        assert 'carries no end_time-presence markers' in note
+        assert 'old-schema' not in note
 
 class TestTokenTrendCore:
     """``cross_token_trend`` orders plans chronologically and flags a sustained
@@ -6929,12 +7154,19 @@ def _clean_metrics_body(**execute_fields: int) -> str:
 
     Every canonical phase carries a non-zero ``total_tokens`` so
     ``check_input_integrity`` reports no ``metrics_blind`` phase and every
-    canonical row is present. The fixture is deliberately NOT floored and NOT
-    omitting a row, so when a test asserts `label == 'measured'` that is a real
-    verdict rather than fixture noise — and the floor/omitted tests below each
-    introduce exactly one defect against this clean baseline.
+    canonical row is present, AND the body carries the CURRENT #812
+    ``end_time``-presence keys reporting nothing missing — an unreadable marker
+    record floors a plan on its own, so a baseline without them would be floored
+    for a reason unrelated to whatever the test is measuring. The fixture is
+    deliberately NOT floored and NOT omitting a row, so when a test asserts
+    `label == 'measured'` that is a real verdict rather than fixture noise — and
+    the floor/omitted tests below each introduce exactly one defect against this
+    clean baseline.
     """
-    blocks = []
+    blocks = [
+        'any_phase_missing_end_time: false\n',
+        'phases_missing_end_time: \n',
+    ]
     for phase in audit._TE_PHASES:
         fields: dict[str, int] = {'total_tokens': 100}
         if phase == _EXECUTE_PHASE:
@@ -7139,12 +7371,12 @@ class TestBillingCompositionReconciliation:
         assert row['billing_total'] == 31_500
         assert row['reconciled_phases'] == ''
 
-    def test_legacy_five_column_row_parses_with_context_columns_defaulted(
+    def test_legacy_five_column_row_reports_context_columns_unmeasured(
         self, tmp_path: Path
     ):
         # A ledger written before the four context-load columns existed keeps its
-        # columns 1-5 readable; the appended columns default to 0 rather than the
-        # whole row being dropped.
+        # columns 1-5 readable; the appended columns are OMITTED from the totals
+        # rather than summed as 0, and the whole row is not dropped.
         legacy = (
             'plan_id: legacy\n'
             f'phase: {_EXECUTE_PHASE}\n'
@@ -7157,8 +7389,38 @@ class TestBillingCompositionReconciliation:
         totals = audit._parse_dispatch_boundary_totals(path)
 
         assert totals['total_tokens'] == 999
+        # ABSENT, not 0 — the legacy ledger measured no context load at all.
+        assert 'input_tokens' not in totals
+        assert 'cache_read_input_tokens' not in totals
+
+    def test_unmeasured_cells_are_omitted_while_measured_zeros_are_kept(
+        self, tmp_path: Path
+    ):
+        """The three-way cell read, at the ledger reader.
+
+        One row measures zero on `input_tokens` and declines to measure
+        `cache_read_input_tokens`. The measured zero must appear in the totals as
+        `0` while the unmeasured column stays absent — collapsing the two would
+        put a number no dispatch reported into the reconciliation maximum.
+        """
+        body = (
+            'plan_id: mixed\n'
+            f'phase: {_EXECUTE_PHASE}\n'
+            f'{_LEDGER_HEADER}\n'
+            '2026-05-08T14:23:11Z,clean_exit_queue_empty,50,1,2,0,7,unmeasured,not-an-int\n'
+        )
+        path = tmp_path / 'mixed.toon'
+        path.write_text(body, encoding='utf-8')
+
+        totals = audit._parse_dispatch_boundary_totals(path)
+
+        assert totals['total_tokens'] == 50
+        # A measured zero IS a measurement and is carried.
         assert totals['input_tokens'] == 0
-        assert totals['cache_read_input_tokens'] == 0
+        assert totals['output_tokens'] == 7
+        # Unmeasured and unrecognised both contribute nothing and stay absent.
+        assert 'cache_read_input_tokens' not in totals
+        assert 'cache_creation_input_tokens' not in totals
 
     def test_row_below_the_legacy_column_floor_is_skipped(self, tmp_path: Path):
         malformed = (
@@ -7249,20 +7511,31 @@ class TestBillingCompositionUnderCounts:
         # outright, so the plan is floored.
         assert row['label'] == 'floor'
 
-    def test_persisted_unrecorded_phases_marker_is_an_omitted_row(
+    def test_persisted_missing_end_time_marker_is_an_omitted_row(
         self, tmp_path: Path
     ):
-        # A phase that HAS a section but which the recorder itself marked
-        # unrecorded is an omitted row too — the marker is consulted, not just
+        # A phase that HAS a section but which the recorder itself marked as
+        # never closed is an omitted row too — the marker is consulted, not just
         # structural absence.
         body = (
-            'partial: true\n'
-            'unrecorded_phases: 6-finalize\n'
-            + _clean_metrics_body(
-                input_tokens=1000,
-                output_tokens=500,
-                cache_read_input_tokens=200_000,
-                cache_creation_input_tokens=8_000,
+            'any_phase_missing_end_time: true\n'
+            'phases_missing_end_time: 6-finalize\n'
+            + ''.join(
+                _phase_block(
+                    phase,
+                    total_tokens=100,
+                    **(
+                        {
+                            'input_tokens': 1000,
+                            'output_tokens': 500,
+                            'cache_read_input_tokens': 200_000,
+                            'cache_creation_input_tokens': 8_000,
+                        }
+                        if phase == _EXECUTE_PHASE
+                        else {}
+                    ),
+                )
+                for phase in audit._TE_PHASES
             )
         )
         inputs = _write_billing_plan(tmp_path, 'marked', body)
@@ -7270,8 +7543,86 @@ class TestBillingCompositionUnderCounts:
         result = audit.cross_billing_composition([inputs])
         row = _billing_row(result, 'marked')
 
+        assert row['metrics_marker_schema'] == audit.METRICS_SCHEMA_CURRENT
         assert '6-finalize' in row['omitted_row']
         assert row['label'] == 'floor'
+
+    def test_old_schema_marker_floors_the_plan_without_being_read(
+        self, tmp_path: Path
+    ):
+        """A retired-key record floors the plan and is NEVER read for its value.
+
+        Same six present sections as the test above and the same phase named —
+        under the RETIRED keys. Two things must hold together: the plan is
+        floored (an unknown is a lower bound), and `omitted_row` does NOT name
+        6-finalize, because reading the retired keys is exactly what this reader
+        refuses to do. Asserting only the floor would not distinguish "refused to
+        read" from "read it and agreed".
+        """
+        body = (
+            'partial: true\n'
+            'unrecorded_phases: 6-finalize\n'
+            + ''.join(
+                _phase_block(
+                    phase,
+                    total_tokens=100,
+                    **(
+                        {
+                            'input_tokens': 1000,
+                            'output_tokens': 500,
+                            'cache_read_input_tokens': 200_000,
+                            'cache_creation_input_tokens': 8_000,
+                        }
+                        if phase == _EXECUTE_PHASE
+                        else {}
+                    ),
+                )
+                for phase in audit._TE_PHASES
+            )
+        )
+        inputs = _write_billing_plan(tmp_path, 'old-schema-billing', body)
+
+        result = audit.cross_billing_composition([inputs])
+        row = _billing_row(result, 'old-schema-billing')
+
+        assert row['metrics_marker_schema'] == audit.METRICS_SCHEMA_OLD
+        assert row['omitted_row'] == ''
+        assert row['label'] == 'floor'
+        # Counted under its own heading, separately from the pre-#812 tally.
+        assert result['old_schema_marker_plans'] == 1
+        assert result['pre_812_marker_plans'] == 0
+
+    def test_pre_812_marker_tally_is_separate_from_old_schema(self, tmp_path: Path):
+        """A record with NEITHER pair lands in the pre-#812 tally, not old-schema.
+
+        The two counts answer different questions — which archives a re-read
+        could still recover — so a single merged "unreadable" count would lose
+        that.
+        """
+        body = ''.join(
+            _phase_block(phase, total_tokens=100) for phase in audit._TE_PHASES
+        )
+        # 5-execute needs the billing fields or the plan is excluded outright.
+        body = body.replace(
+            f'[{_EXECUTE_PHASE}]\n  total_tokens: 100\n',
+            _phase_block(
+                _EXECUTE_PHASE,
+                total_tokens=100,
+                input_tokens=1000,
+                output_tokens=500,
+                cache_read_input_tokens=200_000,
+                cache_creation_input_tokens=8_000,
+            ),
+        )
+        inputs = _write_billing_plan(tmp_path, 'pre812-billing', body)
+
+        result = audit.cross_billing_composition([inputs])
+        row = _billing_row(result, 'pre812-billing')
+
+        assert row['metrics_marker_schema'] == audit.METRICS_SCHEMA_PRE_812
+        assert row['label'] == 'floor'
+        assert result['pre_812_marker_plans'] == 1
+        assert result['old_schema_marker_plans'] == 0
 
     def test_undercounted_plans_counts_a_both_ways_plan_once(self, tmp_path: Path):
         """A plan carrying BOTH under-counts is ONE under-counted plan, not two.
@@ -7698,12 +8049,17 @@ class TestBillingCompositionEmit:
             'output_share,exploration_byte_share,work_byte_share,'
             'execute_byte_share,orchestration_byte_share,residual_bytes,'
             'denom_bytes,reconciled_phases,unabsorbed_loop_back,omitted_row,'
-            'label,severity}:' in block
+            'metrics_marker_schema,label,severity}:' in block
         )
+        # The two unreadable-marker tallies ride the block header, counted apart.
+        assert 'old_schema_marker_plans: 0' in block
+        assert 'pre_812_marker_plans: 0' in block
         genuine_row = next(
             ln.strip() for ln in block.splitlines() if ln.strip().startswith('emit,')
         )
         assert genuine_row.endswith(',genuine')
+        # The schema cell renders the readable state for this clean fixture.
+        assert f',{audit.METRICS_SCHEMA_CURRENT},' in genuine_row
 
     def test_block_states_the_reconciliation_and_exclusion_rules(
         self, tmp_path: Path
