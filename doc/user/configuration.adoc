@@ -24,9 +24,9 @@ Survey of every configuration surface a project author touches when running Plan
 | ❌ ignored
 | Per-developer command-execution state: adaptive build-command timeouts, acceptable-warning patterns, the `architecture_refresh` tier knobs, and last-execution metadata. Never committed.
 
-| `CLAUDE.md`, `agents.md`
+| `CLAUDE.md`, `AGENTS.md`
 | project decision (usually ✅)
-| Agent instructions. The wizard appends three idempotent guidance blocks — see xref:getting-started.adoc#_what_the_wizard_writes_to_claude_md[Getting Started → What the wizard writes to `CLAUDE.md`].
+| Agent instructions. The wizard appends three idempotent guidance blocks — see xref:getting-started.adoc#_what_the_wizard_writes_to_claude_md[Getting Started → What the wizard writes to `CLAUDE.md`]. The agents file is uppercase `AGENTS.md`: the PR-Agent reviewer resolves it through a case-sensitive contents lookup, so a lowercase name is read by nothing.
 
 | `.claude/settings.local.json`
 | ❌ ignored (per-developer)
@@ -552,9 +552,11 @@ The `.plan/*` exclusion in `.gitignore` covers `.plan/local/worktrees/{plan-id}/
 
 == Configuration outside `.plan/`
 
-=== `CLAUDE.md` and `agents.md`
+=== `CLAUDE.md` and `AGENTS.md`
 
 The first-run wizard appends three idempotent guidance blocks — Temporary Files, Tool Usage, Build Commands. All edits are marker-gated and never duplicate. Full breakdown in xref:getting-started.adoc#_what_the_wizard_writes_to_claude_md[Getting Started → What the wizard writes to `CLAUDE.md`].
+
+The agents file is uppercase `AGENTS.md`, and `/tools-sync-agents-file` emits that name only. The case is load-bearing: the PR-Agent reviewer resolves its `repo_context_files` through GitHub's case-sensitive contents lookup, so a repository carrying a lowercase `agents.md` hands the reviewer nothing at all — with no error to notice.
 
 === `.claude/settings.local.json`
 

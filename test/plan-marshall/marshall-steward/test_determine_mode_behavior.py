@@ -160,12 +160,22 @@ def test_count_section_bullets_counts_until_next_heading():
 # =============================================================================
 
 
-def _write_docs(project_root: Path, claude: str | None = None, agents: str | None = None) -> None:
-    """Write CLAUDE.md / agents.md fixtures into ``project_root``."""
+def _write_docs(
+    project_root: Path,
+    claude: str | None = None,
+    agents: str | None = None,
+    *,
+    agents_name: str = 'AGENTS.md',
+) -> None:
+    """Write CLAUDE.md / AGENTS.md fixtures into ``project_root``.
+
+    ``agents_name`` exists so the negative control can write the legacy lowercase
+    ``agents.md`` explicitly; every positive fixture uses the uppercase default.
+    """
     if claude is not None:
         (project_root / 'CLAUDE.md').write_text(claude)
     if agents is not None:
-        (project_root / 'agents.md').write_text(agents)
+        (project_root / agents_name).write_text(agents)
 
 
 def test_check_docs_ok_when_all_patterns_present(tmp_path: Path):
@@ -191,6 +201,137 @@ def test_check_docs_flags_missing_marker(tmp_path: Path):
 
     assert status == 'needs_update'
     assert any(m['check'] == 'plan_temp' and m['reason'] == 'content_missing' for m in missing)
+
+
+# --- agents-file case-exactness: matched positive / negative control ---------
+#
+# The three cases below are read together. The positive control proves the
+# uppercase name the sync command emits is the name the steward check looks up;
+# the negative control proves a tree carrying ONLY the legacy lowercase
+# ``agents.md`` is reported as MISSING rather than clean; the discriminator
+# proves the negative control is not merely "any absent file fails", which would
+# make it pass for the wrong reason.
+
+
+def test_check_docs_ok_for_uppercase_agents_file(tmp_path: Path):
+    """POSITIVE CONTROL: an uppercase AGENTS.md carrying the marker reads clean."""
+    _write_docs(
+        tmp_path,
+        claude='Use .plan/temp here.\nAlways use Glob, Read, Grep tools.\n',
+        agents='Temp files live in .plan/temp.\n',
+        agents_name='AGENTS.md',
+    )
+
+    status, missing = dm.check_docs(tmp_path)
+
+    assert status == 'ok'
+    assert missing == []
+
+
+def test_check_docs_flags_lowercase_agents_file_as_wrong_case(tmp_path: Path):
+    """NEGATIVE CONTROL: a tree carrying ONLY a lowercase agents.md is not clean.
+
+    The lowercase file is written with the marker present, so the only thing that
+    can fail the check is the name's case — exactly the defect the rename fixes.
+    A case-insensitive filesystem would otherwise report this tree as clean.
+    """
+    _write_docs(
+        tmp_path,
+        claude='Use .plan/temp here.\nAlways use Glob, Read, Grep tools.\n',
+        agents='Temp files live in .plan/temp.\n',
+        agents_name='agents.md',
+    )
+
+    status, missing = dm.check_docs(tmp_path)
+
+    assert status == 'needs_update'
+    assert [m for m in missing if m['file'] == 'AGENTS.md' and m['reason'] == 'wrong_case']
+
+
+def test_check_docs_ok_when_agents_file_absent_entirely(tmp_path: Path):
+    """DISCRIMINATOR: a genuinely absent agents file is skipped, not flagged.
+
+    Without this the negative control above would pass for the wrong reason —
+    'file missing' rather than 'file present under the wrong case'.
+    """
+    _write_docs(tmp_path, claude='Use .plan/temp here.\nAlways use Glob, Read, Grep tools.\n')
+
+    status, missing = dm.check_docs(tmp_path)
+
+    assert status == 'ok'
+    assert missing == []
+
+
+def test_fix_docs_does_not_append_into_wrong_case_file(tmp_path: Path):
+    """fix_docs leaves a mis-cased file untouched — the remedy is a rename.
+
+    Appending would clear the finding while writing into the file the
+    case-sensitive consumer never reads.
+    """
+    _write_docs(
+        tmp_path,
+        claude='Use .plan/temp here.\nAlways use Glob, Read, Grep tools.\n',
+        agents='Temp files live in .plan/temp.\n',
+        agents_name='agents.md',
+    )
+    original = (tmp_path / 'agents.md').read_text()
+
+    status, fixes = dm.fix_docs(tmp_path)
+
+    assert status == 'ok'
+    assert fixes == []
+    assert (tmp_path / 'agents.md').read_text() == original
+
+
+def test_cmd_check_docs_surfaces_wrong_case_message(tmp_path: Path):
+    """cmd_check_docs explains that the remedy for wrong_case is a rename."""
+    _write_docs(
+        tmp_path,
+        claude='Use .plan/temp here.\nAlways use Glob, Read, Grep tools.\n',
+        agents='Temp files live in .plan/temp.\n',
+        agents_name='agents.md',
+    )
+
+    result = dm.cmd_check_docs(_ns(project_root=str(tmp_path)))
+
+    assert result['check_status'] == 'needs_update'
+    assert 'rename' in result['messages']
+    assert 'AGENTS.md' in result['messages']
+
+
+# =============================================================================
+# resolve_doc_file
+# =============================================================================
+
+
+def test_resolve_doc_file_returns_path_for_exact_name(tmp_path: Path):
+    """resolve_doc_file returns the path when the directory entry matches exactly."""
+    (tmp_path / 'AGENTS.md').write_text('x')
+
+    path, wrong_case = dm.resolve_doc_file(tmp_path, 'AGENTS.md')
+
+    assert path == tmp_path / 'AGENTS.md'
+    assert wrong_case is False
+
+
+def test_resolve_doc_file_reports_wrong_case_for_case_variant(tmp_path: Path):
+    """resolve_doc_file reports wrong_case when only a case variant is present."""
+    (tmp_path / 'agents.md').write_text('x')
+
+    path, wrong_case = dm.resolve_doc_file(tmp_path, 'AGENTS.md')
+
+    assert path is None
+    assert wrong_case is True
+
+
+def test_resolve_doc_file_reports_absent_when_nothing_matches(tmp_path: Path):
+    """resolve_doc_file reports neither a path nor wrong_case for an absent name."""
+    assert dm.resolve_doc_file(tmp_path, 'AGENTS.md') == (None, False)
+
+
+def test_resolve_doc_file_absent_when_directory_unreadable(tmp_path: Path):
+    """resolve_doc_file degrades to 'absent' when the directory cannot be listed."""
+    assert dm.resolve_doc_file(tmp_path / 'nope', 'AGENTS.md') == (None, False)
 
 
 def test_check_docs_incomplete_when_section_short(tmp_path: Path, monkeypatch):

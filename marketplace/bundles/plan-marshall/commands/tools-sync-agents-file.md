@@ -1,12 +1,12 @@
 ---
 name: tools-sync-agents-file
-description: Create or update project-specific agents.md file following OpenAI specification
+description: Create or update the project-specific AGENTS.md file following the OpenAI specification
 tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, AskUserQuestion, Task
 ---
 
-# Create/Update agents.md
+# Create/Update AGENTS.md
 
-Creates or updates project-specific `agents.md` following the OpenAI agents.md specification.
+Creates or updates the project-specific `AGENTS.md` following the OpenAI specification.
 
 ## Parameters
 
@@ -27,11 +27,11 @@ Fetch the OpenAI specification from `https://github.com/openai/agents.md` via We
 
 ### Step 2 — Inspect Existing State
 
-Use `Read` to check whether `./agents.md` exists (creation vs update mode) and whether `./CLAUDE.md` exists.
+Use `Read` to check whether `./AGENTS.md` exists (creation vs update mode) and whether `./CLAUDE.md` exists.
 
 ### Step 3 — Choose Source of Truth
 
-If `CLAUDE.md` exists, prompt the user via `AskUserQuestion` whether to use it as the primary source for `agents.md` or to use other sources (project `doc/ai-rules.md` or global standards baseline).
+If `CLAUDE.md` exists, prompt the user via `AskUserQuestion` whether to use it as the primary source for `AGENTS.md` or to use other sources (project `doc/ai-rules.md` or global standards baseline).
 
 ### Step 4 — Gather Content Sources
 
@@ -41,11 +41,11 @@ If `CLAUDE.md` exists, prompt the user via `AskUserQuestion` whether to use it a
 
 ### Step 5 — Synthesize and Write
 
-Combine CLAUDE.md (if selected), `doc/ai-rules.md` or the baseline, and the project analysis into an `agents.md` that follows the OpenAI structure. Remove duplication, keep language concise, and ensure every section is actionable. Use `Write` for creation or `Edit` for update. On failure, surface the error and abort.
+Combine CLAUDE.md (if selected), `doc/ai-rules.md` or the baseline, and the project analysis into an `AGENTS.md` that follows the OpenAI structure. Remove duplication, keep language concise, and ensure every section is actionable. Use `Write` for creation or `Edit` for update. On failure, surface the error and abort.
 
 ### Step 6 — Validate
 
-Re-read the generated `agents.md` and verify:
+Re-read the generated `AGENTS.md` and verify:
 
 - All OpenAI-required sections are present and the heading hierarchy is correct.
 - Markdown, links, and references parse cleanly.
@@ -53,23 +53,25 @@ Re-read the generated `agents.md` and verify:
 
 ### Step 7 — Cleanup Legacy References
 
-Use `Grep` for `doc/ai-rules\.md|ai-rules\.md` and update every match to point at `agents.md` with `Edit`. If `doc/ai-rules.md` still exists, remove it with `Bash` and verify deletion. Log and continue on any per-file edit failure.
+Use `Grep` for `doc/ai-rules\.md|ai-rules\.md` and update every match to point at `AGENTS.md` with `Edit`. If `doc/ai-rules.md` still exists, remove it with `Bash` and verify deletion. Log and continue on any per-file edit failure.
 
 ### Step 8 — Commit and Push (when requested)
 
-If `push` was not provided, display the summary and exit successfully. If `push` was provided, commit all changes with a message describing the generated `agents.md`, the sources used, removed `doc/ai-rules.md` (if applicable), and updated reference files; then push and display the final status.
+If `push` was not provided, display the summary and exit successfully. If `push` was provided, commit all changes with a message describing the generated `AGENTS.md`, the sources used, removed `doc/ai-rules.md` (if applicable), and updated reference files; then push and display the final status.
 
 ### Step 9 — Post-Conditions
 
-- `agents.md` exists and is readable.
+- `AGENTS.md` exists and is readable.
 - `doc/ai-rules.md` is gone if it was present at start.
 - Display a completion summary listing sources used, files modified, and the `doc/ai-rules.md` status.
 
 ## Critical Rules
 
-- **Allowed modifications**: `agents.md`, `doc/ai-rules.md` (removal only), `CLAUDE.md` and other project docs (reference updates only).
+- **The filename is `AGENTS.md`, uppercase, and the case is load-bearing.** The PR-Agent reviewer resolves its `repo_context_files` through GitHub's contents API, which is case-sensitive, so a repository carrying a lowercase `agents.md` hands the reviewer nothing — silently, with no error anywhere. This command emits the uppercase name ONLY: there is no lowercase fallback and no dual-name write. Do not "normalize" it back.
+- **The two surviving lowercase tokens are the upstream spec's own address**, not this file's name: the WebFetch URL in Step 1 and the link under "Related" both point at `https://github.com/openai/agents.md`. Leave them verbatim — rewriting either breaks the fetch.
+- **Allowed modifications**: `AGENTS.md`, `doc/ai-rules.md` (removal only), `CLAUDE.md` and other project docs (reference updates only).
 - **Never modify** `~/git/plan-marshall/standards/ai-rules.md` — read-only baseline.
-- **Never create** additional documentation files beyond `agents.md`.
+- **Never create** additional documentation files beyond `AGENTS.md`.
 - **Quality**: concise, project-specific, no duplicate boilerplate, unambiguous language.
 - **Structure**: always follow the OpenAI spec; never skip validation.
 - **Source priority**: project `doc/ai-rules.md` > user-selected `CLAUDE.md` > global standards baseline — always combined with project analysis.
@@ -79,7 +81,7 @@ If `push` was not provided, display the summary and exit successfully. If `push`
 
 - `WebFetch` — OpenAI specification
 - `Read` — existing files
-- `Write` / `Edit` — author or update `agents.md` and reference files
+- `Write` / `Edit` — author or update `AGENTS.md` and reference files
 - `Grep` — locate reference sites
 - `Bash` — git repo check and legacy file removal
 - `Task` — Explore agent for project analysis
@@ -91,4 +93,4 @@ If you discover issues or improvements during execution, activate `Skill: plan-m
 
 ## Related
 
-- OpenAI agents.md specification: https://github.com/openai/agents.md
+- OpenAI specification: https://github.com/openai/agents.md

@@ -20,7 +20,7 @@ This bundle provides **core infrastructure** organized into functional areas:
 | Command | Description |
 |---------|-------------|
 | `/tools-fix-intellij-diagnostics` | Retrieve and fix IDE diagnostics automatically |
-| `/tools-sync-agents-file` | Create or update project-specific agents.md file |
+| `/tools-sync-agents-file` | Create or update the project-specific AGENTS.md file |
 
 Configuration (`marshall-steward`) and WebFetch permission consolidation (`workflow-permission-web`) are skills, not commands.
 

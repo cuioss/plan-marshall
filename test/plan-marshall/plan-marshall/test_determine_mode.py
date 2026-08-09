@@ -142,32 +142,32 @@ class TestCheckDocsSubcommand:
         assert 'CLAUDE.md' in result.get('file_ops', '')
 
     def test_needs_update_when_agents_md_missing_plan_temp(self, tmp_path):
-        """Should detect missing plan_temp in agents.md."""
-        agents_md = tmp_path / 'agents.md'
+        """Should detect missing plan_temp in AGENTS.md."""
+        agents_md = tmp_path / 'AGENTS.md'
         agents_md.write_text('# Agents\n\nSome other content.\n')
 
         result = cmd_check_docs(Namespace(project_root=str(tmp_path)))
         assert result['status'] == 'success'
         assert result['check_status'] == 'needs_update'
-        assert 'agents.md' in result.get('plan_temp', '')
+        assert 'AGENTS.md' in result.get('plan_temp', '')
 
     def test_needs_update_when_both_missing_all(self, tmp_path):
         """Should list all missing checks across both files."""
         (tmp_path / 'CLAUDE.md').write_text('# Project\n')
-        (tmp_path / 'agents.md').write_text('# Agents\n')
+        (tmp_path / 'AGENTS.md').write_text('# Agents\n')
 
         result = cmd_check_docs(Namespace(project_root=str(tmp_path)))
         assert result['status'] == 'success'
         assert result['check_status'] == 'needs_update'
         # plan_temp missing from both files
         assert 'CLAUDE.md' in result.get('plan_temp', '')
-        assert 'agents.md' in result.get('plan_temp', '')
+        assert 'AGENTS.md' in result.get('plan_temp', '')
         # file_ops missing from CLAUDE.md
         assert 'CLAUDE.md' in result.get('file_ops', '')
 
     def test_file_ops_not_checked_for_agents_md(self, tmp_path):
-        """file_ops should only be checked for CLAUDE.md, not agents.md."""
-        (tmp_path / 'agents.md').write_text('Use .plan/temp for files.\n')
+        """file_ops should only be checked for CLAUDE.md, not AGENTS.md."""
+        (tmp_path / 'AGENTS.md').write_text('Use .plan/temp for files.\n')
 
         result = cmd_check_docs(Namespace(project_root=str(tmp_path)))
         assert result['status'] == 'success'
@@ -179,19 +179,19 @@ class TestCheckDocsSubcommand:
             'Use .plan/temp for temp files\n'
             'For file operations use Glob, Read, Grep tools\n'
         )
-        (tmp_path / 'agents.md').write_text('# Agents\n')
+        (tmp_path / 'AGENTS.md').write_text('# Agents\n')
 
         result = cmd_check_docs(Namespace(project_root=str(tmp_path)))
         assert result['status'] == 'success'
         assert result['check_status'] == 'needs_update'
         assert result['missing_count'] == 1
-        assert 'agents.md' in result.get('plan_temp', '')
+        assert 'AGENTS.md' in result.get('plan_temp', '')
 
     def test_missing_count_reflects_total_entries(self, tmp_path):
         """missing_count should reflect total number of missing check entries."""
-        # CLAUDE.md missing both checks (plan_temp, file_ops), agents.md missing plan_temp = 3 entries
+        # CLAUDE.md missing both checks (plan_temp, file_ops), AGENTS.md missing plan_temp = 3 entries
         (tmp_path / 'CLAUDE.md').write_text('# Project\n')
-        (tmp_path / 'agents.md').write_text('# Agents\n')
+        (tmp_path / 'AGENTS.md').write_text('# Agents\n')
 
         result = cmd_check_docs(Namespace(project_root=str(tmp_path)))
         assert result['status'] == 'success'
@@ -261,12 +261,12 @@ class TestFixDocsSubcommand:
         assert 'use Glob, Read, Grep' in content
 
     def test_fixes_agents_md_plan_temp(self, tmp_path):
-        """Should append plan_temp to agents.md when missing."""
-        agents_md = tmp_path / 'agents.md'
+        """Should append plan_temp to AGENTS.md when missing."""
+        agents_md = tmp_path / 'AGENTS.md'
         agents_md.write_text('# Agents\n')
         result = cmd_fix_docs(Namespace(project_root=str(tmp_path)))
         assert result['fix_status'] == 'fixed'
-        assert 'plan_temp:agents.md' in result['fixes']
+        assert 'plan_temp:AGENTS.md' in result['fixes']
 
         content = agents_md.read_text()
         assert '.plan/temp/' in content
