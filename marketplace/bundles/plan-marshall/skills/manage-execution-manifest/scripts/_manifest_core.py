@@ -22,8 +22,9 @@ The infrastructure-config table names an owner-less **family**, not a suffix.
 Membership is deliberately NOT "any ``.yml``": it is anchored either on a
 location (a CI/automation definition tree, a container service-config tree) or
 on a basename (a descriptor an external tool resolves by a fixed, tool-defined
-name — container orchestration, container lint/scan, review bots), so an
-arbitrary YAML file elsewhere in a tree is not swept in. The basename family is
+name, spanning tool groups that include CI definitions, container orchestration
+and build context, container lint/scan, and review bots), so an arbitrary YAML
+file elsewhere in a tree is not swept in. The basename family is
 OPEN and grows as tools are adopted; it is described by that rule rather than by
 an enumeration, so a widening does not falsify this paragraph. The predicate is
 consumed **only as a fallback over the paths no build extension claimed** — it
@@ -142,8 +143,11 @@ _INFRA_CONFIG_PARENT_DIR_SUFFIXES: tuple[str, ...] = ('.yml', '.yaml')
 # grows as tools are adopted — which is why no size or closure claim about it is
 # stated here or anywhere else.
 #
-# Entries are grouped by the tool that resolves them: container orchestration,
-# container lint/scan, and review bots.
+# Entries are grouped by the tool that resolves them. The groups present below
+# include CI definitions, container orchestration and build context, container
+# lint/scan, and review bots — stated with open language, because the family
+# grows as tools are adopted and a new entry may open a group of its own rather
+# than join one of these.
 _INFRA_CONFIG_BASENAME_GLOBS: tuple[str, ...] = (
     'docker-compose*.yml',
     'docker-compose*.yaml',

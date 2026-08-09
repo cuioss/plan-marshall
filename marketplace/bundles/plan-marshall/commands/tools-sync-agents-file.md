@@ -25,9 +25,21 @@ Fail fast (with a clear error and exit) if any of the following are not met:
 
 Fetch the OpenAI specification from `https://github.com/openai/agents.md` via WebFetch and cache the required structure for validation. If WebFetch fails, fall back to the minimum baseline (title, description, instructions).
 
-### Step 2 — Inspect Existing State
+### Step 2 — Inspect Existing State (case-EXACT)
 
-Use `Read` to check whether `./AGENTS.md` exists (creation vs update mode) and whether `./CLAUDE.md` exists.
+Determine creation vs update mode by **listing the project root and comparing entry names exactly** — never by asking the filesystem whether a path exists. `Read`/`Glob` resolve a name through the filesystem, and macOS and Windows answer that question case-insensitively while Linux answers it case-sensitively, so a legacy lowercase `agents.md` reads as a present `AGENTS.md` on a developer Mac and as an absent one in Linux CI. The same reasoning is implemented as `resolve_doc_file` in `marshall-steward/scripts/determine_mode.py`; this step is its markdown counterpart.
+
+Use `Glob` with pattern `*.md` against the project root to obtain the actual directory-entry names, then compare each returned basename to `AGENTS.md` byte-for-byte:
+
+| Listing contains | Mode |
+|------------------|------|
+| An entry named exactly `AGENTS.md` | **Update** — proceed with that file. |
+| No exact match, but an entry differing only in case (the legacy lowercase `agents.md`) | **Rename first**, then update — see below. |
+| No entry matching in any case | **Creation** |
+
+On the middle row, rename the mis-cased file before any other step touches it: run `git mv` through a two-step rename (`git mv agents.md AGENTS.md.tmp`, then `git mv AGENTS.md.tmp AGENTS.md`) so the rename lands on a case-insensitive filesystem too, and verify with a fresh `Glob` listing that the exact name is now present. Editing the mis-cased file in place instead would leave the repository in exactly the state `determine_mode.check_docs` reports as `wrong_case`, whose only remedy is this rename.
+
+Apply the same exact-name comparison to `./CLAUDE.md` when recording whether it exists.
 
 ### Step 3 — Choose Source of Truth
 
@@ -61,14 +73,15 @@ If `push` was not provided, display the summary and exit successfully. If `push`
 
 ### Step 9 — Post-Conditions
 
-- `AGENTS.md` exists and is readable.
+- A project-root directory entry named **exactly** `AGENTS.md` exists and is readable — re-verify with a `Glob` listing and an exact-name comparison, not with an existence check.
+- No project-root entry differing from `AGENTS.md` only in case remains.
 - `doc/ai-rules.md` is gone if it was present at start.
 - Display a completion summary listing sources used, files modified, and the `doc/ai-rules.md` status.
 
 ## Critical Rules
 
 - **The filename is `AGENTS.md`, uppercase, and the case is load-bearing.** The PR-Agent reviewer resolves its `repo_context_files` through GitHub's contents API, which is case-sensitive, so a repository carrying a lowercase `agents.md` hands the reviewer nothing — silently, with no error anywhere. This command emits the uppercase name ONLY: there is no lowercase fallback and no dual-name write. Do not "normalize" it back.
-- **The two surviving lowercase tokens are the upstream spec's own address**, not this file's name: the WebFetch URL in Step 1 and the link under "Related" both point at `https://github.com/openai/agents.md`. Leave them verbatim — rewriting either breaks the fetch.
+- **Every surviving lowercase `agents.md` token in this file is protected**, and none of them names the file this command emits. Each is either (a) the upstream spec's own address — `https://github.com/openai/agents.md`, in the Step 1 WebFetch URL and in the "Related" link — or (b) a deliberate reference to the *legacy* lowercase filename, which Step 2 detects and renames. Leave both kinds verbatim: rewriting an address token breaks the fetch, and rewriting a legacy-name token destroys the explanation of what the rename fixes. Stated as a rule rather than a count precisely so a later edit that adds or removes an occurrence cannot falsify it.
 - **Allowed modifications**: `AGENTS.md`, `doc/ai-rules.md` (removal only), `CLAUDE.md` and other project docs (reference updates only).
 - **Never modify** `~/git/plan-marshall/standards/ai-rules.md` — read-only baseline.
 - **Never create** additional documentation files beyond `AGENTS.md`.
@@ -81,9 +94,10 @@ If `push` was not provided, display the summary and exit successfully. If `push`
 
 - `WebFetch` — OpenAI specification
 - `Read` — existing files
+- `Glob` — project-root directory listing for the Step 2 case-exact name comparison
 - `Write` / `Edit` — author or update `AGENTS.md` and reference files
 - `Grep` — locate reference sites
-- `Bash` — git repo check and legacy file removal
+- `Bash` — git repo check, legacy lowercase `agents.md` rename (`git mv`), and legacy file removal
 - `Task` — Explore agent for project analysis
 - `AskUserQuestion` — CLAUDE.md source choice
 

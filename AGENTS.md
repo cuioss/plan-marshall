@@ -4,7 +4,7 @@ Guidelines for AI assistants working in the plan-marshall repository.
 
 ## What This Repository Is
 
-A **Claude Code Marketplace** with 10 bundles of skills, agents, and commands for CUI (Common User Interface) Open Source projects. Source format IS Claude Code native. Multi-target distribution (Claude Code native, OpenCode export) is implemented via `marketplace/targets/`; design history lives in `doc/refactor/`.
+A **Claude Code Marketplace** with 10 bundles of skills, agents, and commands for CUI (Common User Interface) Open Source projects. Source format IS Claude Code native; every other target is an export derived from it. Multi-target distribution is implemented via `marketplace/targets/`, and the set of targets is whatever is registered in `TARGET_REGISTRY` (`marketplace/targets/__init__.py`) — the registry is the source of truth and is deliberately not restated here. Design history lives in `doc/refactor/`.
 
 ## Quick Commands
 
@@ -71,7 +71,7 @@ This copies to `~/.claude/plugins/cache/plan-marshall/` via rsync `--delete`.
 
 ## Multi-Target Distribution
 
-`marketplace/targets/` is the authoritative multi-target generator framework. Run `python3 marketplace/targets/generate.py --target {claude,opencode,all} --output {dir}` to emit per-target output trees. The original refactor plan that produced this framework is retired; `doc/refactor/README.md` records the landed baseline and any open workstreams.
+`marketplace/targets/` is the authoritative multi-target generator framework. Run `python3 marketplace/targets/generate.py --target {name} --output {dir}` to emit per-target output trees. Valid `{name}` values are **every target registered in `TARGET_REGISTRY`** (`marketplace/targets/__init__.py`), plus `all`, which runs every registered target sequentially. The generator derives its `--target` choices from that registry, so `generate.py --help` always prints the live set — read it there rather than trusting an enumeration copied into prose. The original refactor plan that produced this framework is retired; `doc/refactor/README.md` records the landed baseline and any open workstreams.
 
 ## Key Files for Context
 
