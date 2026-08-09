@@ -479,8 +479,10 @@ The entry is a dict built by `_build_entry`, which omits every optional key that
 | `head_at_completion` | **replace**, omitted when absent. Refused (nothing written) on a `done` outcome for a `head_dependent: true` step | **current** |
 | `loop_back_target` | **replace**, omitted when absent. REQUIRED on `loop_back`, FORBIDDEN otherwise | **current** |
 | `facts` | **replace** (the whole dict), omitted when absent. Participates in the idempotency comparison | **current** |
+| `firing_count` | **derive** — incremented by `_extend_firing_history` on each changed firing | **current** |
+| `prior_firings` | **append** — the superseded firing is folded into the new entry before the write | **current** |
 
-**Known gap, owned elsewhere:** the whole entry is **replace** — `phase_entry[step] = new_entry` — so a step that fires more than once (the ordinary `loop_back` → `loop_back` → `done` shape) retains only its LAST firing. The superseded firings are echoed to the caller in the `previous_*` return fields and then discarded. That is a genuine loss of history, not a documentation gap, and it is fixed on the `manage-status` side; see [`manage-status/SKILL.md`](../../manage-status/SKILL.md) § `mark-step-done` for the firing-history contract. It is recorded here because this inventory's job is to state what each write actually does, including where the answer is "it forgets".
+**The entry is replaced, but the history is not lost:** the write is `phase_entry[step] = new_entry`, so every field above is entry-scoped **replace** — yet a step that fires more than once (the ordinary `loop_back` → `loop_back` → `done` shape) does NOT retain only its last firing. `_extend_firing_history` folds the superseded firing into `new_entry` as `prior_firings` and increments `firing_count` before the assignment, so an eventful gate and a first-pass-clean one are distinguishable in structured state. The `previous_*` return fields still echo the immediately-superseded firing to the caller; they are no longer the only surviving record of it. See [`manage-status/SKILL.md`](../../manage-status/SKILL.md) § `mark-step-done` for the firing-history contract this row pair implements.
 
 ## Denominators and Their Sampling Point
 
