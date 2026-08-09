@@ -52,10 +52,9 @@ every required surface on its own line; scan for the dedicated
 
 - `PreToolUse:enforcement: present` — the enforcement entry is installed.
   **Presence is not correctness**: the `display` check keys on the hook command
-  string alone and never inspects the entry's `timeout`, so an entry
-  provisioned by an earlier version can be present and still carry a stale
-  value. A re-run of the install converges such an entry, so offer it rather
-  than returning silently:
+  string alone and never inspects the entry's `timeout`, so a present entry can
+  still carry a stale one. A re-run of the install converges such an entry, so
+  offer it rather than returning silently:
 
   ```text
   The PreToolUse enforcement hook is already configured.
@@ -63,10 +62,9 @@ every required surface on its own line; scan for the dedicated
   The enforcement entry is present in ./.claude/settings.local.json. A fresh
   Claude Code session arms the hook automatically.
 
-  The presence check does not inspect the hook timeout, so an entry installed
-  by an earlier version may still carry a stale one. Re-running the install
-  rewrites only such a stale value; an entry already correct is left untouched
-  and the file is not written at all.
+  The presence check does not inspect the hook timeout, so a present entry may
+  still carry a stale one. Re-running the install rewrites only a stale value.
+  An entry already correct is left untouched and the file is not written at all.
   ```
 
   ```text

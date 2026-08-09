@@ -135,10 +135,9 @@ carrying `all_healthy: false`. Branch on the status, not on the text.
 
 When `display` reports `status: success` (no line contains `MISSING`), every
 entry is present. **Presence is not correctness**: the `display` check keys on
-the hook command string alone and never inspects an entry's `timeout`, so an
-entry provisioned by an earlier version can be present and still carry a stale
-value. A re-run of the install converges any such entry, so this branch offers
-the re-run rather than returning silently:
+the hook command string alone and never inspects an entry's `timeout`, so a
+present entry can still carry a stale one. A re-run of the install converges any
+such entry, so this branch offers the re-run rather than returning silently:
 
 ```text
 Terminal title is already configured.
@@ -147,9 +146,9 @@ All nine render-trigger hook entries, the statusLine command, and the
 CLAUDE_CODE_DISABLE_TERMINAL_TITLE env entry are present in
 ./.claude/settings.local.json.
 
-The presence check does not inspect hook timeouts, so an entry installed by an
-earlier version may still carry a stale one. Re-running the install rewrites
-only such stale values and leaves everything else untouched.
+The presence check does not inspect hook timeouts, so a present entry may still
+carry a stale one. Re-running the install rewrites only stale values and leaves
+everything else untouched.
 ```
 
 ```text
