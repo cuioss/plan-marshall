@@ -739,7 +739,18 @@ class RestClient:
 
                 if resp.status == 429 or resp.status >= 500:
                     retry_after = resp.getheader('Retry-After')
-                    delay = int(retry_after) if retry_after else (2**attempt)
+                    # Retry-After is legally either delta-seconds OR an HTTP-date
+                    # (RFC 7231 §7.1.3), and the header is remote-controlled, so a
+                    # non-integer value is reachable in normal operation. int()
+                    # would raise ValueError here and abort the retry outright.
+                    # The guard is scoped to THIS conversion rather than added to
+                    # the outer except tuple: ValueError there would also swallow
+                    # the json.loads failure on the success path below, because
+                    # json.JSONDecodeError subclasses ValueError.
+                    try:
+                        delay = int(retry_after) if retry_after else (2**attempt)
+                    except (TypeError, ValueError):
+                        delay = 2**attempt
                     if attempt < self.MAX_RETRIES - 1:
                         time.sleep(delay)
                         self._close_connection()
@@ -833,6 +844,8 @@ def get_authenticated_client(skill_name: str, project_name: str | None = None) -
             password = credential.get('password', '')
             if not username:
                 raise ValueError(f'Username missing in credentials for {skill_name}')
+            if not password:
+                raise ValueError(f'Password missing in credentials for {skill_name}')
             if username in placeholder_values:
                 path = resolve_credential_path(skill_name, 'auto', project_name)
                 raise ValueError(

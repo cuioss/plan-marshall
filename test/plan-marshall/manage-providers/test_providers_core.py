@@ -243,6 +243,136 @@ class TestRestClient:
 
 
 # =============================================================================
+# RestClient retry-delay tests — Retry-After parsing
+# =============================================================================
+#
+# `Retry-After` is remote-controlled and legally either delta-seconds OR an
+# HTTP-date (RFC 7231 §7.1.3). The retry branch called `int(retry_after)`
+# unguarded, so the HTTP-date form raised ValueError — which none of the
+# `request()` except clauses catch (`RestClientError`, then
+# `(ConnectionError, TimeoutError, OSError)`). The retry therefore aborted with
+# an unrelated exception instead of backing off.
+#
+# The guard is deliberately scoped to that one conversion rather than added to
+# the outer except tuple, because `json.JSONDecodeError` subclasses `ValueError`
+# — widening the tuple would silently swallow a malformed SUCCESS body too. The
+# last test in this class is the control that pins that distinction.
+
+
+class _FakeResponse:
+    """Minimal stand-in for ``http.client.HTTPResponse``."""
+
+    def __init__(self, status: int, body: bytes = b'', headers: dict | None = None) -> None:
+        self.status = status
+        self._body = body
+        self._headers = headers or {}
+
+    def read(self) -> bytes:
+        return self._body
+
+    def getheader(self, name: str, default: str | None = None) -> str | None:
+        return self._headers.get(name, default)
+
+
+class _FakeConnection:
+    """Replays a queued list of responses and records the requests made."""
+
+    def __init__(self, responses: list) -> None:
+        self._responses = list(responses)
+        self.requests: list = []
+
+    def request(self, method, url, body=None, headers=None) -> None:
+        self.requests.append((method, url))
+
+    def getresponse(self):
+        return self._responses.pop(0)
+
+    def close(self) -> None:
+        pass
+
+
+class TestRestClientRetryAfter:
+    """Tests for the retry-delay computation in ``RestClient.request``."""
+
+    @staticmethod
+    def _wire(monkeypatch, responses):
+        """Build a client bound to a fake connection, with sleep captured."""
+        client = RestClient('https://example.com', {})
+        conn = _FakeConnection(responses)
+        monkeypatch.setattr(client, '_get_connection', lambda: conn)
+        slept: list = []
+        monkeypatch.setattr(_providers_core.time, 'sleep', slept.append)
+        return client, conn, slept
+
+    def test_http_date_retry_after_retries_instead_of_raising(self, monkeypatch):
+        """A 429 carrying an HTTP-date Retry-After retries on the 2**attempt backoff.
+
+        Regression guard: pre-fix this raised ValueError out of ``request``.
+        """
+        client, conn, slept = self._wire(
+            monkeypatch,
+            [
+                _FakeResponse(429, b'', {'Retry-After': 'Wed, 21 Oct 2015 07:28:00 GMT'}),
+                _FakeResponse(200, b'{"ok": true}'),
+            ],
+        )
+
+        result = client.request('GET', '/thing')
+
+        assert result == {'ok': True}
+        # Fell back to the existing exponential backoff: 2 ** 0 == 1.
+        assert slept == [1]
+        # The retry actually happened — two requests reached the connection.
+        assert len(conn.requests) == 2
+
+    def test_integer_retry_after_is_still_honoured(self, monkeypatch):
+        """Negative control: a well-formed delta-seconds value is used verbatim.
+
+        Without this, a fix that ignored Retry-After entirely and always backed
+        off would satisfy the case above while discarding the server's explicit
+        pacing instruction.
+        """
+        client, _conn, slept = self._wire(
+            monkeypatch,
+            [
+                _FakeResponse(429, b'', {'Retry-After': '7'}),
+                _FakeResponse(200, b'{"ok": true}'),
+            ],
+        )
+
+        result = client.request('GET', '/thing')
+
+        assert result == {'ok': True}
+        assert slept == [7]
+
+    def test_absent_retry_after_uses_backoff(self, monkeypatch):
+        """A 5xx with no Retry-After header keeps the plain 2**attempt backoff."""
+        client, _conn, slept = self._wire(
+            monkeypatch,
+            [
+                _FakeResponse(503, b''),
+                _FakeResponse(200, b'{"ok": true}'),
+            ],
+        )
+
+        assert client.request('GET', '/thing') == {'ok': True}
+        assert slept == [1]
+
+    def test_malformed_success_body_still_raises(self, monkeypatch):
+        """Control: the success-path ``json.loads`` failure is NOT swallowed.
+
+        ``json.JSONDecodeError`` subclasses ``ValueError``, so a retry-delay fix
+        implemented by widening ``request``'s outer except tuple to catch
+        ValueError would also swallow this — turning a corrupt response body
+        into a silent empty result. Pinning it here makes that shortcut fail.
+        """
+        client, _conn, _slept = self._wire(monkeypatch, [_FakeResponse(200, b'{not json')])
+
+        with pytest.raises(json.JSONDecodeError):
+            client.request('GET', '/thing')
+
+
+# =============================================================================
 # Provider Discovery Tests
 # =============================================================================
 
@@ -536,6 +666,92 @@ class TestGetAuthenticatedClientSystem:
         assert 'token' not in loaded
         assert 'username' not in loaded
         assert 'password' not in loaded
+
+
+# =============================================================================
+# get_authenticated_client with auth_type=basic — credential completeness
+# =============================================================================
+
+
+class TestGetAuthenticatedClientBasic:
+    """Tests for the basic-auth branch's missing-credential guards.
+
+    The branch validated ``username`` but not ``password``, so an empty password
+    was silently base64-encoded into an ``Authorization: Basic dXNlcjo=`` header
+    and sent. The request then failed remotely as a 401, attributing a local
+    configuration error to the provider — the token branch has always rejected
+    its empty secret up front, and this restores the parity.
+    """
+
+    @staticmethod
+    def _stage(tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / '.plan').mkdir()
+        monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', tmp_path / 'creds')
+
+    def test_empty_password_raises_naming_the_password(self, tmp_path, monkeypatch):
+        """An empty password raises ValueError naming the password field."""
+        self._stage(tmp_path, monkeypatch)
+        skill = 'test-basic-empty-password'
+        save_credential(
+            skill,
+            {'skill': skill, 'auth_type': 'basic', 'username': 'alice', 'password': ''},
+            'global',
+        )
+
+        with pytest.raises(ValueError, match='Password missing in credentials'):
+            get_authenticated_client(skill)
+
+    def test_absent_password_key_raises_naming_the_password(self, tmp_path, monkeypatch):
+        """A credential with no ``password`` key at all takes the same path.
+
+        Distinct from the empty-string case: the value arrives from
+        ``credential.get('password', '')``, so an absent key and an empty value
+        reach the guard by different routes.
+        """
+        self._stage(tmp_path, monkeypatch)
+        skill = 'test-basic-no-password-key'
+        save_credential(
+            skill,
+            {'skill': skill, 'auth_type': 'basic', 'username': 'alice'},
+            'global',
+        )
+
+        with pytest.raises(ValueError, match='Password missing in credentials'):
+            get_authenticated_client(skill)
+
+    def test_missing_username_still_names_the_username(self, tmp_path, monkeypatch):
+        """The pre-existing username guard is unchanged and still fires first."""
+        self._stage(tmp_path, monkeypatch)
+        skill = 'test-basic-no-username'
+        save_credential(
+            skill,
+            {'skill': skill, 'auth_type': 'basic', 'username': '', 'password': 's3cret'},
+            'global',
+        )
+
+        with pytest.raises(ValueError, match='Username missing in credentials'):
+            get_authenticated_client(skill)
+
+    def test_complete_basic_credential_builds_authorization_header(self, tmp_path, monkeypatch):
+        """Negative control: a complete basic credential still yields a client.
+
+        Without this, a guard that rejected every basic credential would satisfy
+        all three rejection cases above.
+        """
+        self._stage(tmp_path, monkeypatch)
+        skill = 'test-basic-complete'
+        save_credential(
+            skill,
+            {'skill': skill, 'auth_type': 'basic', 'username': 'alice', 'password': 's3cret'},
+            'global',
+        )
+        write_provider_config(skill, {'url': 'https://api.example.com'})
+
+        client = get_authenticated_client(skill)
+
+        assert client._headers['Authorization'].startswith('Basic ')
+        client.close()
 
 
 # =============================================================================
