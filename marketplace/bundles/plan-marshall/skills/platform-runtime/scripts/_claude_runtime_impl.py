@@ -180,8 +180,7 @@ class ClaudeRuntime(Runtime):
             enforcement_status = enforcement_result["enforcement_status"]
             # ``migrated`` is a DISTINCT status member, never a flavour of
             # ``already_present``, so this equality still means "nothing
-            # changed": a converged entry reports ``migrated`` and therefore
-            # already_present: False.
+            # changed".
             return toon_success(
                 "project install-hook",
                 {
@@ -213,11 +212,9 @@ class ClaudeRuntime(Runtime):
         # nothing was converged, AND no overwrite-other signal needs the
         # caller's attention. A run that rewrote a stale timeout DID change the
         # file, so ``migrated_events`` clears this flag exactly as
-        # ``installed_events`` does. ``capture_status`` is folded in on the same
-        # ground: the capture entry owns none of the nine render labels, so it
-        # reaches this computation only through its own field, and omitting it
-        # would let a run that inserted or converged ONLY the capture entry
-        # report a no-op over a file it rewrote.
+        # ``installed_events`` does — and ``capture_status`` is folded in on the
+        # same ground, since the capture entry reaches this computation only
+        # through its own field.
         all_already_present = (
             not installed_events
             and not migrated_events

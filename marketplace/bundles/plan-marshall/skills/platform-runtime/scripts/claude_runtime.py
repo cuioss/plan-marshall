@@ -902,14 +902,8 @@ def _install_terminal_title_hooks(
     ``migrated_events`` instead of ``already_present_events``. Re-invocation is
     therefore convergent rather than a guaranteed no-op.
 
-    The SessionStart capture entry is installed-or-converged on the same rule,
-    and its outcome IS reported — on its own ``capture_status`` field rather
-    than in the three event lists, which partition the nine RENDER labels and
-    have never carried one for the capture entry. A separate field is what keeps
-    that partition intact while still making the capture entry's outcome
-    visible: this function writes the settings file unconditionally, so a run
-    that inserted or converged only the capture entry DID change the file, and
-    reporting it as a no-op would be a false "nothing changed" signal.
+    The SessionStart capture entry is installed-or-converged on the same rule;
+    its outcome is reported on its own ``capture_status`` field (see Returns).
 
     Installs:
 
@@ -964,16 +958,19 @@ def _install_terminal_title_hooks(
           ``installed`` when freshly inserted, ``migrated`` when an
           already-present entry's stale ``timeout`` was rewritten,
           ``already_present`` when it was already there and already correct.
-          Carried separately from the three event lists precisely so it can be
-          reported without joining the nine-label partition.
+          Carried on its own field, outside the three event lists, because the
+          capture entry owns none of the nine render labels those lists
+          partition. Reporting it is load-bearing rather than cosmetic: this
+          function writes the settings file unconditionally, so a run that
+          inserted or converged ONLY the capture entry did change the file, and
+          dropping the outcome would let that run report a no-op.
         - ``statusLine_status`` (str): one of ``installed``, ``already_present``,
           ``already_present_other``, ``overwritten``.
         - ``env_status`` (str): same enum for the env entry.
 
         The three event lists PARTITION the nine render labels: every label
         appears in exactly one of them, so a migrated event is never also
-        reported as already-present. ``capture_status`` sits outside that
-        partition and is the only report of the capture entry's outcome.
+        reported as already-present.
 
         Returns ``io_ok: False`` (with the per-event lists empty and the
         statuses set to ``error``) on any I/O failure.
@@ -1026,13 +1023,9 @@ def _install_terminal_title_hooks(
 
         # Capture entry: insert when absent, converge when present. This is the
         # existing claude_hook session-id-capture entry; it must coexist with the
-        # render entries. It carries no event label — it is not one of the nine
-        # render labels the three lists partition — so its outcome is reported on
-        # its own ``capture_status`` field instead. Reporting it is load-bearing,
-        # not cosmetic: the write below is unconditional, so a run whose nine
-        # render entries were all already correct and whose capture entry was
-        # inserted or converged still rewrote the file, and dropping this outcome
-        # would let that run report ``already_present: true``.
+        # render entries. It carries no event label, so its outcome goes to
+        # ``capture_status`` rather than to one of the three lists — see the
+        # Returns section for why that report is load-bearing.
         if not _has_capture_entry(session_start):
             session_start.append(_capture_entry())
             capture_status = "installed"

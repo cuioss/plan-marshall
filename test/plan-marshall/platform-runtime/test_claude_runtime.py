@@ -382,6 +382,23 @@ def _capture_timeouts(settings: dict[str, Any]) -> set:
     return _timeouts_for(settings.get("hooks", {}).get("SessionStart", []), _HOOK_COMMAND)
 
 
+def _assert_nine_label_partition(result: dict[str, Any]) -> None:
+    """Assert the three event lists PARTITION the nine render labels.
+
+    Partition, not union: a label reported in two lists at once is the false
+    "nothing changed" signal the three-list contract exists to remove, and a
+    union check alone would not catch it. Single definition so every site
+    asserting this property asserts the same strength of it.
+    """
+    combined = (
+        list(result["installed_events"])
+        + list(result["migrated_events"])
+        + list(result["already_present_events"])
+    )
+    assert sorted(combined) == sorted(_NINE_RENDER_LABELS)
+    assert len(combined) == len(set(combined)), f"double-membership in {combined}"
+
+
 # =============================================================================
 # 1c. Missing-executor fail-soft guard (FIX 2)
 # =============================================================================
@@ -1042,9 +1059,7 @@ class TestInstallTerminalTitleHooks:
         # partition of the nine render labels.
         assert result["capture_status"] == "migrated"
         assert "SessionStart:capture" not in set(result["migrated_events"])
-        assert set(result["installed_events"]) | set(result["migrated_events"]) | set(
-            result["already_present_events"]
-        ) == _NINE_RENDER_LABELS
+        _assert_nine_label_partition(result)
 
     def test_preserves_unrelated_existing_hooks_block(self, rt, tmp_path):
         """Existing unrelated hooks (e.g. UserPromptSubmit with a foreign command) are preserved
@@ -1526,12 +1541,7 @@ class TestHookTimeoutMigration:
 
         result = _parsed(rt.project_install_hook(str(target)))
 
-        installed = list(result["installed_events"])
-        migrated = list(result["migrated_events"])
-        already = list(result["already_present_events"])
-        combined = installed + migrated + already
-        assert sorted(combined) == sorted(_NINE_RENDER_LABELS)
-        assert len(combined) == len(set(combined)), f"double-membership in {combined}"
+        _assert_nine_label_partition(result)
 
     # ------------------------------------------------------------------
     # Migrate arm — enforcement installer.
@@ -1700,13 +1710,7 @@ class TestCaptureEntryOutcomeIsReported:
 
         result = _parsed(rt.project_install_hook(str(target)))
 
-        combined = (
-            list(result["installed_events"])
-            + list(result["migrated_events"])
-            + list(result["already_present_events"])
-        )
-        assert sorted(combined) == sorted(_NINE_RENDER_LABELS)
-        assert len(combined) == len(set(combined)), f"double-membership in {combined}"
+        _assert_nine_label_partition(result)
 
     def test_deliberate_in_range_capture_value_is_preserved(self, rt, tmp_path):
         """An operator's in-range capture ``timeout`` stays on the untouched arm.
