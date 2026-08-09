@@ -1177,18 +1177,90 @@ def test_display_detail_subdoc_em_dash_surfaces_in_subdoc_analysis():
 
 
 def _write_fake_executor(plan_dir: Path, notations: list[str]) -> Path:
-    """Write a minimal ``execute-script.py`` stub containing a SCRIPTS dict.
+    """Write a working ``execute-script.py`` that both REGISTERS and DISPATCHES.
 
-    The dict literal mirrors the shape parsed by ``load_registered_notations``:
-    one quoted notation per line followed by ``: <anything>,``. Path values
-    are intentionally placeholder strings — the analyzer reads keys only.
+    Two jobs, because the cluster reads the executor two ways:
+
+    - ``load_registered_notations`` regex-parses the ``SCRIPTS = { ... }``
+      literal, so the dict keeps its one-quoted-notation-per-line shape;
+    - ``build_script_index`` now derives each script's accept-set by running
+      that script's own ``--help`` THROUGH this executor, so it must actually
+      dispatch rather than stand in as a lookup stub.
+
+    Resolution mirrors the real executor: ``bundle:skill:script`` maps to
+    ``{root}/marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py``,
+    computed at dispatch time. That ordering matters — several tests write the
+    executor BEFORE the script it will dispatch to, so a path baked in here
+    would point at a file that does not exist yet.
+
+    Dispatch is in-process via ``runpy.run_path`` under redirected streams: the
+    derivation already spawns this executor as a subprocess, and an inner spawn
+    would double the interpreter cold-start of every probe.
     """
     plan_dir.mkdir(parents=True, exist_ok=True)
     executor = plan_dir / 'execute-script.py'
-    lines = ['#!/usr/bin/env python3', 'SCRIPTS = {']
+    lines = [
+        '#!/usr/bin/env python3',
+        'import contextlib',
+        'import io',
+        'import runpy',
+        'import sys',
+        'from pathlib import Path',
+        '',
+        'SCRIPTS = {',
+    ]
     for notation in notations:
-        lines.append(f'    "{notation}": "fake/path",')
-    lines.append('}')
+        lines.append(f'    "{notation}": "resolved-at-dispatch",')
+    lines.extend(
+        [
+            '}',
+            '',
+            '',
+            'def _resolve(notation):',
+            '    parts = notation.split(":", 2)',
+            '    if len(parts) != 3:',
+            '        return None',
+            '    bundle, skill, script = parts',
+            '    root = Path(__file__).parent.parent',
+            '    candidate = (',
+            '        root / "marketplace" / "bundles" / bundle / "skills" / skill',
+            '        / "scripts" / (script + ".py")',
+            '    )',
+            '    return candidate if candidate.is_file() else None',
+            '',
+            '',
+            'def main():',
+            '    if len(sys.argv) < 2:',
+            '        sys.exit(2)',
+            '    notation = sys.argv[1]',
+            '    target = _resolve(notation)',
+            '    if target is None:',
+            '        sys.stderr.write("Unknown notation: " + notation + "\\n")',
+            '        sys.exit(2)',
+            '    out_buf = io.StringIO()',
+            '    err_buf = io.StringIO()',
+            '    rc = 0',
+            '    saved_argv = sys.argv',
+            '    sys.argv = [str(target), *sys.argv[2:]]',
+            '    try:',
+            '        with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):',
+            '            runpy.run_path(str(target), run_name="__main__")',
+            '    except SystemExit as exc:',
+            '        code = exc.code',
+            '        rc = 0 if code is None else (code if isinstance(code, int) else 1)',
+            '    finally:',
+            '        sys.argv = saved_argv',
+            '    sys.stdout.write(out_buf.getvalue())',
+            '    sys.stderr.write(err_buf.getvalue())',
+            '    sys.stdout.flush()',
+            '    sys.stderr.flush()',
+            '    sys.exit(rc)',
+            '',
+            '',
+            'if __name__ == "__main__":',
+            '    main()',
+        ]
+    )
     executor.write_text('\n'.join(lines) + '\n', encoding='utf-8')
     return executor
 
@@ -1593,6 +1665,248 @@ def test_argument_naming_canonical_forms_match_no_finding(tmp_path):
     findings = analyze_argument_naming(marketplace_root)
     drift_findings = _findings_by_rule(findings, 'ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT')
     assert drift_findings == [], f'Aligned canonical row should yield no findings, got {drift_findings!r}'
+
+
+# -----------------------------------------------------------------------------
+# Alias coverage — the false positive the help-derived accept-set removes
+# -----------------------------------------------------------------------------
+
+
+def _write_alias_script(
+    marketplace_root: Path,
+    notation: str,
+    *,
+    canonical: str,
+    alias: str,
+    flags: list[str],
+) -> Path:
+    """Write a synthetic script whose subparser declares ``aliases=``.
+
+    The replaced AST walk read only ``add_parser``'s first string argument and
+    never looked at ``aliases=``, so it reported a documented alias invocation
+    as an unknown subcommand. ``--help`` renders the alias flat in the choice
+    list, which is why the derived accept-set contains it.
+    """
+    bundle, skill, script_name = notation.split(':', 2)
+    scripts_dir = marketplace_root / 'bundles' / bundle / 'skills' / skill / 'scripts'
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    script_path = scripts_dir / f'{script_name}.py'
+    parts = [
+        '#!/usr/bin/env python3',
+        '"""Synthetic alias-declaring fixture script."""',
+        'import argparse',
+        '',
+        'parser = argparse.ArgumentParser()',
+        'subparsers = parser.add_subparsers(dest="command")',
+        f'p = subparsers.add_parser("{canonical}", aliases=["{alias}"], help="canonical verb")',
+    ]
+    parts.extend(f'p.add_argument("--{flag}")' for flag in flags)
+    parts.extend(['', 'if __name__ == "__main__":', '    parser.parse_args()'])
+    script_path.write_text('\n'.join(parts) + '\n', encoding='utf-8')
+    return script_path
+
+
+def test_argument_naming_documented_alias_is_not_reported_unknown(tmp_path):
+    """A documented alias invocation must NOT emit SUBCOMMAND_UNKNOWN.
+
+    This is the concrete false positive the promotion to the shared
+    help-derived accept-set removes. The three real scripts declaring
+    ``aliases=`` are exactly the accepted read-verb aliases
+    (``manage-status get``, ``manage-tasks get``, ``manage-lessons read``), so
+    a cluster that flagged them contradicted the project's own documented
+    canonical forms.
+    """
+    marketplace_root = _build_fixture_root(tmp_path)
+    notation = 'plan-marshall:manage-tasks:manage-tasks'
+    _write_fake_executor(tmp_path / '.plan', [notation])
+    _write_alias_script(
+        marketplace_root, notation, canonical='read', alias='get', flags=['plan-id']
+    )
+    _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'manage-tasks',
+        '# Manage tasks\n\n'
+        '```bash\n'
+        f'python3 .plan/execute-script.py {notation} get --plan-id foo\n'
+        '```\n',
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    subcmd_findings = _findings_by_rule(findings, 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN')
+    assert subcmd_findings == [], (
+        f'documented alias invocation reported as unknown subcommand: {subcmd_findings!r}'
+    )
+
+
+def test_argument_naming_canonical_spelling_still_accepted_alongside_alias(tmp_path):
+    """Adding alias awareness must not cost the canonical spelling its acceptance."""
+    marketplace_root = _build_fixture_root(tmp_path)
+    notation = 'plan-marshall:manage-tasks:manage-tasks'
+    _write_fake_executor(tmp_path / '.plan', [notation])
+    _write_alias_script(
+        marketplace_root, notation, canonical='read', alias='get', flags=['plan-id']
+    )
+    _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'manage-tasks',
+        '# Manage tasks\n\n'
+        '```bash\n'
+        f'python3 .plan/execute-script.py {notation} read --plan-id foo\n'
+        '```\n',
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    assert _findings_by_rule(findings, 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN') == []
+
+
+def test_argument_naming_undeclared_verb_still_reported_with_aliases_present(tmp_path):
+    """Negative control: alias awareness widens the set, it does not disable the rule.
+
+    Paired with the two positives above. Without this, "no finding for `get`"
+    would be satisfied just as well by a cluster that stopped reporting
+    anything at all.
+    """
+    marketplace_root = _build_fixture_root(tmp_path)
+    notation = 'plan-marshall:manage-tasks:manage-tasks'
+    _write_fake_executor(tmp_path / '.plan', [notation])
+    _write_alias_script(
+        marketplace_root, notation, canonical='read', alias='get', flags=['plan-id']
+    )
+    _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'manage-tasks',
+        '# Manage tasks\n\n'
+        '```bash\n'
+        f'python3 .plan/execute-script.py {notation} fetch --plan-id foo\n'
+        '```\n',
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    subcmd_findings = _findings_by_rule(findings, 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN')
+    assert len(subcmd_findings) == 1, subcmd_findings
+    assert subcmd_findings[0]['details']['subcommand'] == 'fetch'
+    assert sorted(subcmd_findings[0]['details']['known_subcommands']) == ['get', 'read']
+
+
+# -----------------------------------------------------------------------------
+# The four canonical argparse-rejection recurrence signatures — positive controls
+# -----------------------------------------------------------------------------
+#
+# The shared derivation over-approximates a node's flag set (every
+# ``--long-token`` anywhere in the help) and this cluster's adapter widens
+# further (root flags ∪ the subcommand's whole subtree). That is the safe
+# direction, but it IS a real sensitivity reduction against the exact AST set
+# it replaced. These four controls pin the catch rate on the recurrence
+# signatures the project documents in
+# ``persona-plan-marshall-agent/standards/agent-behavior-rules.md``, so the
+# widening cannot silently blunt the cluster.
+
+
+def test_recurrence_signature_verb_paraphrase_is_caught(tmp_path):
+    """Signature 1 — a verb that names the goal but is not the declared one."""
+    marketplace_root = _build_fixture_root(tmp_path)
+    notation = 'plan-marshall:manage-findings:manage-findings'
+    _write_fake_executor(tmp_path / '.plan', [notation])
+    _write_fake_script(
+        marketplace_root, notation, subcommands={'list': ['plan-id'], 'add': ['plan-id']}
+    )
+    _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'manage-findings',
+        '# Findings\n\n'
+        '```bash\n'
+        f'python3 .plan/execute-script.py {notation} query --plan-id foo\n'
+        '```\n',
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    subcmd = _findings_by_rule(findings, 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN')
+    assert len(subcmd) == 1, subcmd
+    assert subcmd[0]['details']['subcommand'] == 'query'
+
+
+def test_recurrence_signature_doubled_bundle_prefix_is_caught(tmp_path):
+    """Signature 3 — the trailing notation segment repeated as first positional."""
+    marketplace_root = _build_fixture_root(tmp_path)
+    notation = 'plan-marshall:tools-integration-ci:ci'
+    _write_fake_executor(tmp_path / '.plan', [notation])
+    _write_fake_script(
+        marketplace_root, notation, subcommands={'pr': ['plan-id'], 'checks': ['pr-number']}
+    )
+    _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'tools-integration-ci',
+        '# CI\n\n'
+        '```bash\n'
+        f'python3 .plan/execute-script.py {notation} ci pr create --plan-id foo\n'
+        '```\n',
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    subcmd = _findings_by_rule(findings, 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN')
+    assert len(subcmd) == 1, subcmd
+    assert subcmd[0]['details']['subcommand'] == 'ci'
+
+
+def test_recurrence_signature_verb_scoped_flag_at_top_level_is_caught(tmp_path):
+    """Signature 2 — a flag the script does not declare anywhere.
+
+    The verb-scoped-vs-top-level confusion surfaces to this cluster as an
+    undeclared flag: ``--audit-plan-id`` is consumed by the executor wrapper
+    before the script's argparse runs, so it is in NO node's help surface.
+    """
+    marketplace_root = _build_fixture_root(tmp_path)
+    notation = 'plan-marshall:manage-architecture:architecture'
+    _write_fake_executor(tmp_path / '.plan', [notation])
+    _write_fake_script(
+        marketplace_root, notation, subcommands={'resolve': ['command', 'module']}
+    )
+    _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'manage-architecture',
+        '# Architecture\n\n'
+        '```bash\n'
+        f'python3 .plan/execute-script.py {notation} resolve --command compile --audit-plan-id X\n'
+        '```\n',
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    flag = _findings_by_rule(findings, 'ARGUMENT_NAMING_FLAG_UNKNOWN')
+    assert len(flag) == 1, flag
+    assert flag[0]['details']['flag'] == 'audit-plan-id'
+
+
+def test_recurrence_signature_status_instead_of_resolution_is_caught(tmp_path):
+    """Signature 4 — a plausible-but-wrong flag name substituted for the real one."""
+    marketplace_root = _build_fixture_root(tmp_path)
+    notation = 'plan-marshall:manage-findings:manage-findings'
+    _write_fake_executor(tmp_path / '.plan', [notation])
+    _write_fake_script(
+        marketplace_root,
+        notation,
+        subcommands={'list': ['plan-id', 'phase', 'resolution']},
+    )
+    _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'manage-findings',
+        '# Findings\n\n'
+        '```bash\n'
+        f'python3 .plan/execute-script.py {notation} list --plan-id X --phase 5-execute --status resolved\n'
+        '```\n',
+    )
+
+    findings = analyze_argument_naming(marketplace_root)
+    flag = _findings_by_rule(findings, 'ARGUMENT_NAMING_FLAG_UNKNOWN')
+    assert len(flag) == 1, flag
+    assert flag[0]['details']['flag'] == 'status'
+    assert 'resolution' in flag[0]['details']['known_flags']
 
 
 # =============================================================================

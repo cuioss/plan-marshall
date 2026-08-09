@@ -24,46 +24,27 @@ This module implements two rules:
    source-of-truth contract; missing it leaves authors with no in-skill
    reference when writing prose that invokes the script.
 
-Surface derivation — live ``--help`` ground truth
--------------------------------------------------
-The canonical surface for each script is derived from the script's **live
-``--help`` interface**, NOT from an AST walk. AST extraction was abandoned
-because it could not see subcommands or flags registered through anything
-other than literal ``subparsers.add_parser('name')`` /
-``parser.add_argument('--flag')`` calls. Real scripts register their surface
-through ``for`` loops (``manage-logging`` registers ``work`` / ``decision``
-by iterating a list), helper functions (``manage-status`` registers ~20
-subcommands via a ``_register`` helper), and shared-flag helpers
-(``--plan-id`` / ``--task-number`` added to every subcommand via a common
-helper). All of these are INVISIBLE to literal-``add_parser`` AST
-extraction, which produced 1323 false positives in plan-marshall alone.
+Surface derivation — the shared help-derived accept-set
+-------------------------------------------------------
+This analyzer no longer owns a surface derivation. The recursive ``--help``
+walk, the four parse anchors, the in-process memo, and the content-hash-keyed
+on-disk cache under ``.plan/temp/plugin-doctor-help-cache/`` were all lifted
+into ``plan-marshall:script-shared``'s ``argparse_surface`` module — the single
+derivation of "what does this script accept?" in the tree, shared with the
+executor generator so the edit-time rule and the dispatch-time rejection cannot
+disagree. See that module's docstring for the mechanism, the asymmetric-error
+rule, the fail-closed-on-uncertainty invariant, and the cache design.
 
-``--help`` renders the real, fully-registered argparse surface regardless of
-how the parsers were built, so it is the ground truth.
+Everything below the derivation is unchanged and stays here, because it is
+rule-specific rather than surface-specific: the markdown invocation extraction,
+the router-verb model, the universal executor-injected flag allowlist, the
+ancestor flag union, and the finding shapes.
 
-Cached surface (performance)
-----------------------------
-Probing ``--help`` requires spawning a subprocess per parser node. A naive
-"spawn ``--help`` for every notation on every scan" design caused the test
-harness to time out (30s ``subprocess.TimeoutExpired`` against the real
-marketplace). The analyzer therefore CACHES each derived surface to disk,
-keyed by the script file's content hash:
-
-- ``derive_script_tree(notation, executor)`` first consults an in-process
-  memo, then an on-disk cache entry keyed by ``sha256(script_source)``.
-- A cache entry is regenerated only when the script's content hash changes
-  (i.e. the surface could actually have drifted). Otherwise the cached
-  surface is returned with no subprocess at all.
-- The cache filename also folds in a ``_CACHE_VERSION`` token, bumped whenever
-  the derivation logic changes in a way that invalidates prior entries. This
-  busts pre-fix poisoned entries (empty surfaces derived from ANSI-colored
-  ``--help`` output) by making them cache misses, forcing clean re-derivation.
-- The on-disk cache lives under ``.plan/temp/plugin-doctor-help-cache/`` so
-  it is covered by the standard temp-write permission and never pollutes
-  the source tree.
-
-This keeps ``--help`` as ground truth while keeping repeated scans (and the
-test harness) fast — no per-scan subprocess storms, no 30s timeouts.
+Two capabilities the consolidation adds to this rule for free: alias awareness
+(a documented alias spelling is in the accepted set because argparse renders it
+flat in the choice list) and coverage of parsers assembled in an imported
+module (the ``tools-integration-ci:ci`` shape, whose parser is built in
+``ci_base.py``).
 
 Public API
 ----------
@@ -88,20 +69,29 @@ Public API
 
 from __future__ import annotations
 
-import hashlib
-import json
-import os
 import re
-import subprocess
-import sys
-import threading
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 from _doctor_shared import Finding
 from _rule_registry import RuleDescriptor
+from argparse_surface import (
+    ParserNode,
+    ScriptSurface,
+    build_surface_index,
+    content_hash,
+    derive_surface,
+    parse_choice_list,
+    parse_help_node,
+    parse_required_flags,
+    resolve_executor,
+    run_help,
+    script_path_for_notation,
+    split_help_sections,
+    strip_ansi,
+    strip_grouping_constructs,
+)
 
 # =============================================================================
 # Rule IDs
@@ -323,626 +313,61 @@ def discover_in_scope_scripts(
 # =============================================================================
 
 
-@dataclass
-class _LeafParser:
-    """One argparse parser node — flags plus any nested subparser children.
-
-    A node is the surface of a single parser at some depth in the argparse
-    tree. ``flags`` / ``required_flags`` are its long-flag surface. ``children``
-    maps each registered sub-verb name to its own ``_LeafParser`` node; an
-    empty ``children`` marks a true leaf (no further subparser dispatch).
-
-    The tree is N-level recursive: argparse permits arbitrarily deep subparser
-    chains (e.g. ``manage-config plan phase-5-execute set --field X --value Y``
-    is three positional levels deep), and a model that stops at two levels
-    mis-resolves the leaf and flags every flag on the third level as unknown —
-    the 138-false-positive failure this recursion fixes.
-    """
-
-    flags: set[str] = field(default_factory=set)
-    required_flags: set[str] = field(default_factory=set)
-    children: dict[str, _LeafParser] = field(default_factory=dict)
-
-    def has_children(self) -> bool:
-        return bool(self.children)
-
-
-@dataclass
-class _ScriptTree:
-    """The full canonical argparse surface for one script.
-
-    ``root`` is the parser node for the root (flags declared on the top-level
-    parser before subparser dispatch, plus the top-level subcommands as
-    ``root.children``).
-
-    ``subcommands`` is a convenience view over ``root.children`` preserving the
-    two-level API used by callers and tests: each top-level subcommand maps to
-    either a ``_LeafParser`` (flat) or a ``dict[sub_verb, leaf]`` (nested).
-    Deeper levels are reachable via ``root.children[...].children[...]`` and the
-    N-level ``resolve_path`` walk.
-    """
-
-    root: _LeafParser = field(default_factory=_LeafParser)
-
-    @property
-    def subcommands(self) -> dict[str, _LeafParser | dict[str, _LeafParser]]:
-        view: dict[str, _LeafParser | dict[str, _LeafParser]] = {}
-        for name, child in self.root.children.items():
-            if child.has_children():
-                view[name] = dict(child.children)
-            else:
-                view[name] = child
-        return view
-
-    def known_subcommands(self) -> set[str]:
-        return set(self.root.children.keys())
-
-    def get_leaf(
-        self, subcommand: str | None, sub_verb: str | None
-    ) -> _LeafParser | None:
-        """Resolve a parser node by (subcommand, sub_verb) — two-level API.
-
-        Returns ``None`` when the pair does not resolve. ``subcommand=None``
-        targets the root parser. A second positional under a *flat* subcommand
-        is treated as a positional argument (the flat node is returned so flag
-        validation can still run). Nested subcommands require a registered
-        sub_verb. Use ``resolve_path`` for N-level (3+) resolution.
-        """
-        if subcommand is None:
-            return self.root
-        node = self.root.children.get(subcommand)
-        if node is None:
-            return None
-        if not node.has_children():
-            return node
-        if sub_verb is None:
-            return None
-        return node.children.get(sub_verb)
-
-    def resolve_path(
-        self, positionals: list[str]
-    ) -> tuple[_LeafParser | None, str | None, list[str]]:
-        """Walk the tree along ``positionals`` as far as registered children go.
-
-        Returns ``(node, unknown_token, chain)``:
-
-        - ``node`` — the deepest resolved parser node whose flags should be
-          validated, or ``None`` when a positional names an unregistered child;
-        - ``unknown_token`` — the first positional that failed to resolve
-          (``None`` on full resolution);
-        - ``chain`` — the positional tokens consumed as the subcommand path.
-
-        Per level: if the current node has children, the next positional MUST
-        name one (else ``unknown_token`` is set and ``node`` is ``None``); if
-        the current node is a flat leaf, remaining positionals are positional
-        args and the walk stops there (flag validation still runs).
-        """
-        node = self.root
-        chain: list[str] = []
-        for token in positionals:
-            if not node.has_children():
-                break
-            child = node.children.get(token)
-            if child is None:
-                return None, token, chain
-            chain.append(token)
-            node = child
-        return node, None, chain
-
-    # -- serialization (for the on-disk cache) ------------------------------
-
-    def to_dict(self) -> dict:
-        return {'root': _leaf_to_dict(self.root)}
-
-    @classmethod
-    def from_dict(cls, data: dict) -> _ScriptTree:
-        return cls(root=_leaf_from_dict(data.get('root', {})))
-
-
-def _leaf_to_dict(leaf: _LeafParser) -> dict:
-    return {
-        'flags': sorted(leaf.flags),
-        'required_flags': sorted(leaf.required_flags),
-        'children': {
-            name: _leaf_to_dict(child) for name, child in leaf.children.items()
-        },
-    }
-
-
-def _leaf_from_dict(data: dict) -> _LeafParser:
-    return _LeafParser(
-        flags=set(data.get('flags', [])),
-        required_flags=set(data.get('required_flags', [])),
-        children={
-            name: _leaf_from_dict(child)
-            for name, child in data.get('children', {}).items()
-        },
-    )
+# The surface model is the shared one. These aliases keep this module's
+# historical private names working for its own body and its tests; they are
+# the SAME classes, not parallel definitions.
+_LeafParser = ParserNode
+_ScriptTree = ScriptSurface
 
 
 # =============================================================================
-# ``--help`` parsing
+# ``--help`` parsing — re-exported from the shared derivation
 # =============================================================================
 
-# The choices set rendered in an argparse usage line / positional block,
-# e.g. ``{create,read,transition}``. Captures the comma-separated names.
-_CHOICES_RE = re.compile(r'\{([^{}]+)\}')
-
-# A long flag as it appears in the ``options:`` block, anchored to the
-# leading two-space indent argparse uses for option entries.
-_OPTION_FLAG_RE = re.compile(r'^\s{2,}(--[A-Za-z][A-Za-z0-9_\-]*)')
-
-# A long flag anywhere (used when scanning the usage line for required-ness).
-_USAGE_FLAG_RE = re.compile(r'(?<![A-Za-z0-9])--([A-Za-z][A-Za-z0-9_\-]*)')
-
-
-def _split_help_sections(help_text: str) -> tuple[str, list[str]]:
-    """Split ``--help`` output into (usage_block, body_lines).
-
-    The usage block is everything from the ``usage:`` line up to (but not
-    including) the first blank line. The body is the remaining lines.
-    """
-    lines = help_text.splitlines()
-    usage_lines: list[str] = []
-    body_start = 0
-    in_usage = False
-    for i, line in enumerate(lines):
-        if not in_usage and line.startswith('usage:'):
-            in_usage = True
-        if in_usage:
-            if line.strip() == '':
-                body_start = i
-                break
-            usage_lines.append(line)
-        else:
-            body_start = i + 1
-    else:
-        body_start = len(lines)
-    return ' '.join(usage_lines), lines[body_start:]
-
-
-def _parse_subcommand_choices(help_text: str) -> list[str]:
-    """Return the top-level subcommand names from ``--help`` output.
-
-    A script publishes subcommands iff its usage line contains a
-    ``{a,b,c} ...`` choices group whose trailing ``...`` marks a subparser
-    dispatch. The choices set is the literal, fully-registered set of
-    subcommands regardless of how they were registered (loop / helper /
-    literal).
-    """
-    usage_block, _ = _split_help_sections(help_text)
-    # The subparser choices group is the one immediately followed by ``...``
-    # in the usage line. Find each ``{...}`` and check whether ``...`` trails.
-    for match in _CHOICES_RE.finditer(usage_block):
-        tail = usage_block[match.end():].lstrip()
-        if tail.startswith('...'):
-            names = [n.strip() for n in match.group(1).split(',')]
-            return [n for n in names if n]
-    return []
-
-
-def _parse_leaf_flags(help_text: str) -> _LeafParser:
-    """Parse the flag surface of a single leaf parser from its ``--help``.
-
-    - ``flags``: every long flag rendered in the ``options:`` block, minus
-      the always-present ``--help``.
-    - ``required_flags``: the subset that appears un-bracketed in the usage
-      line (argparse wraps optional flags in ``[...]``).
-    """
-    usage_block, body = _split_help_sections(help_text)
-
-    flags: set[str] = set()
-    for line in body:
-        m = _OPTION_FLAG_RE.match(line)
-        if m:
-            name = m.group(1)[2:]
-            if name != 'help':
-                flags.add(name)
-
-    required = _parse_required_flags(usage_block)
-    # Only flags that are actually declared count as required.
-    required &= flags
-    return _LeafParser(flags=flags, required_flags=required)
-
-
-def _parse_required_flags(usage_block: str) -> set[str]:
-    """Return long flags that argparse renders as individually required.
-
-    A flag is individually required iff it appears in the usage line OUTSIDE
-    any grouping construct. argparse uses two grouping constructs:
-
-    - ``[...]`` — optional flags / optional groups;
-    - ``(...)`` — a *required mutually-exclusive group* (e.g.
-      ``(--set KEY=VALUE | --get FIELD | --list)``). Exactly one member is
-      required, but NO individual member is — so flagging any of them as a
-      missing required flag is a false positive (the canonical
-      ``metadata --set k=v`` shape tripped exactly this).
-
-    Stripping every balanced ``[...]`` AND ``(...)`` group leaves only the
-    bare, individually-required tokens; any ``--flag`` remaining there is
-    required.
-    """
-    stripped = _strip_grouping_constructs(usage_block)
-    required = {m.group(1) for m in _USAGE_FLAG_RE.finditer(stripped)}
-    required.discard('help')
-    return required
-
-
-def _strip_grouping_constructs(text: str) -> str:
-    """Remove balanced ``[...]`` and ``(...)`` groups (nesting-aware).
-
-    Characters inside any grouping construct are dropped; everything else is
-    kept. The two bracket families are tracked with a single depth counter
-    because argparse never interleaves them in a way that would require
-    independent tracking — a ``(...)`` group only ever nests ``[...]`` and
-    vice versa, never a mismatched close. Unbalanced trailing openers consume
-    to end-of-string.
-    """
-    out: list[str] = []
-    depth = 0
-    for ch in text:
-        if ch in '[(':
-            depth += 1
-        elif ch in '])':
-            if depth > 0:
-                depth -= 1
-        elif depth == 0:
-            out.append(ch)
-    return ''.join(out)
+# The pure parsers live in ``argparse_surface`` and are re-bound here under the
+# names this module's tests already use. Same functions, one implementation.
+_split_help_sections = split_help_sections
+_parse_subcommand_choices = parse_choice_list
+_parse_leaf_flags = parse_help_node
+_parse_required_flags = parse_required_flags
+_strip_grouping_constructs = strip_grouping_constructs
 
 
 # =============================================================================
 # Live ``--help`` probing with caching
 # =============================================================================
 
-_HELP_TIMEOUT_SECONDS = 15
-
-# Concurrency cap for surface derivation. The work is subprocess-bound (each
-# worker blocks on a ``--help`` child), so the cap may exceed the CPU count
-# without starving compute; the ceiling keeps the number of simultaneously
-# spawned child processes well within OS limits. The same cap bounds both the
-# script-level fan-out (``build_script_index``) and the per-level subcommand
-# fan-out (``_derive_node``).
-_MAX_DERIVE_WORKERS = min(16, (os.cpu_count() or 4) * 2)
-
-# Global ceiling on concurrently-running ``--help`` subprocesses. Derivation
-# parallelizes on two independent axes — across scripts and across a node's
-# subcommands — using separate short-lived pools (never one shared bounded
-# pool), which is deadlock-free because no worker ever blocks waiting for a
-# task in its own pool. This semaphore is acquired only around the actual
-# subprocess in ``_run_help`` (a leaf operation that always completes and
-# releases), so it caps real process concurrency without reintroducing the
-# nested-pool wait-on-self hazard.
-_HELP_SEMAPHORE = threading.BoundedSemaphore(_MAX_DERIVE_WORKERS)
-
-# In-process memo: keyed by (notation, content_hash) -> _ScriptTree.
-# Survives for the lifetime of the process so repeated scans within one
-# analyze pass never re-probe the same surface.
-_TREE_MEMO: dict[tuple[str, str], _ScriptTree] = {}
-
-
-def _content_hash(script_path: Path) -> str | None:
-    try:
-        data = script_path.read_bytes()
-    except OSError:
-        return None
-    return hashlib.sha256(data).hexdigest()
-
-
-def _resolve_executor(marketplace_root: Path) -> Path | None:
-    """Locate a ``.plan/execute-script.py`` executor relative to the root.
-
-    Candidates, in order:
-      - ``{marketplace_root}/.plan/execute-script.py``
-      - ``{marketplace_root.parent}/.plan/execute-script.py``
-
-    The second candidate covers callers that pass the inner ``marketplace``
-    directory (which directly contains ``bundles/``) as the root.
-    """
-    for base in (marketplace_root, marketplace_root.parent):
-        candidate = base / '.plan' / 'execute-script.py'
-        if candidate.is_file():
-            return candidate
-    return None
-
-
-def _cache_dir(executor: Path) -> Path:
-    """The on-disk cache directory, anchored next to the executor.
-
-    The executor always lives at ``{root}/.plan/execute-script.py``; the
-    cache lives at ``{root}/.plan/temp/plugin-doctor-help-cache/`` so it is
-    covered by the standard ``.plan/**`` temp-write permission.
-    """
-    plan_dir = executor.parent
-    return plan_dir / 'temp' / 'plugin-doctor-help-cache'
-
-
-# Bumped whenever the surface-derivation logic changes in a way that
-# invalidates previously cached entries. Folded into the cache filename so
-# pre-fix poisoned entries (empty surfaces derived from ANSI-colored
-# ``--help`` output) become cache misses and are re-derived from clean text.
-_CACHE_VERSION = 2
-
-
-def _cache_path(executor: Path, notation: str, content_hash: str) -> Path:
-    safe = notation.replace(':', '__')
-    return _cache_dir(executor) / f'{safe}.v{_CACHE_VERSION}.{content_hash}.json'
-
-
-def _read_cache(cache_path: Path) -> _ScriptTree | None:
-    try:
-        data = json.loads(cache_path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return None
-    try:
-        return _ScriptTree.from_dict(data)
-    except (KeyError, TypeError):
-        return None
-
-
-def _write_cache(cache_path: Path, tree: _ScriptTree) -> None:
-    import tempfile
-
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            'w', dir=str(cache_path.parent), delete=False, encoding='utf-8'
-        ) as tf:
-            json.dump(tree.to_dict(), tf, sort_keys=True)
-            tmp = Path(tf.name)
-        os.replace(str(tmp), str(cache_path))
-        tmp = None
-    except OSError:
-        # The cache is a pure optimization — a write failure must never break
-        # the analysis. Skip silently.
-        pass
-    finally:
-        if tmp is not None:
-            tmp.unlink(missing_ok=True)
-
-
-# Matches ANSI CSI escape sequences — the SGR color codes Python 3.14 wraps
-# around ``usage:``, subcommand choices, and ``--flag`` tokens in colorized
-# ``argparse --help`` output, plus the broader CSI set. Stripping them before
-# parsing keeps surface derivation robust even against a subprocess that
-# ignores the color-suppression env pins below.
-_ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
-
-
-def _strip_ansi(text: str) -> str:
-    """Remove ANSI CSI escape sequences from ``text``."""
-    return _ANSI_ESCAPE_RE.sub('', text)
-
-
-def _color_suppressed_env() -> dict[str, str]:
-    """A copy of the current environment with color output suppressed.
-
-    Mirrors the executor front-door pins so the ``--help`` probe emits plain
-    text even when invoked directly. Python 3.14's ``can_colorize()`` consults
-    ``PYTHON_COLORS``, then ``NO_COLOR``, then ``FORCE_COLOR``; ``NO_COLOR``
-    overrides ``FORCE_COLOR`` and ``PYTHON_COLORS=0`` is the explicit override.
-    ``CLICOLOR``/``CLICOLOR_FORCE``/``PY_COLORS`` pin the broader CLI surface
-    (git/mvn/gradle/npm/pytest) for defense-in-depth, matching the executor.
-    """
-    env = os.environ.copy()
-    env['PYTHON_COLORS'] = '0'
-    env['NO_COLOR'] = '1'
-    env.pop('FORCE_COLOR', None)
-    env['CLICOLOR'] = '0'
-    env['CLICOLOR_FORCE'] = '0'
-    env['PY_COLORS'] = '0'
-    return env
-
-
-def _run_help(executor: Path, notation: str, *positionals: str) -> str | None:
-    """Run ``{executor} {notation} {positionals...} --help`` and return stdout.
-
-    Returns ``None`` when the probe fails (non-zero exit, timeout, missing
-    interpreter). The synthetic test executor and the real executor both
-    forward the target's ``--help`` output verbatim on stdout. The probe runs
-    with a color-suppressed environment and the captured stdout is
-    ANSI-stripped before the ``usage:`` check and downstream flag parsing, so
-    colorized ``--help`` output never defeats the plain-text surface regexes.
-    """
-    cmd = [sys.executable, str(executor), notation, *positionals, '--help']
-    try:
-        with _HELP_SEMAPHORE:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=_HELP_TIMEOUT_SECONDS,
-                env=_color_suppressed_env(),
-            )
-    except (subprocess.TimeoutExpired, OSError):
-        return None
-    if result.returncode != 0:
-        return None
-    stdout = _strip_ansi(result.stdout) if result.stdout else result.stdout
-    if not stdout or 'usage:' not in stdout:
-        return None
-    return stdout
-
-
-# Hard ceiling on recursion depth — argparse subparser chains never approach
-# this in practice; the bound only guards against a pathological/self-referential
-# --help that would otherwise spawn subprocesses without end.
-_MAX_TREE_DEPTH = 6
-
-
-def _derive_tree_uncached(executor: Path, notation: str) -> _ScriptTree | None:
-    """Probe ``--help`` recursively and build the full N-level surface.
-
-    One subprocess for the top-level surface, then one per subcommand at every
-    depth — recursing as long as a node's ``--help`` renders a ``{...} ...``
-    subparser choices group. This is the cache-miss path; cache hits never
-    reach it. The whole derived tree is cached as a unit, so the recursion cost
-    is paid once per script-content-hash.
-    """
-    top_help = _run_help(executor, notation)
-    if top_help is None:
-        return None
-    root = _derive_node(executor, notation, [], top_help, depth=0)
-    return _ScriptTree(root=root)
-
-
-def _derive_node(
-    executor: Path,
-    notation: str,
-    path: list[str],
-    help_text: str,
-    *,
-    depth: int,
-) -> _LeafParser:
-    """Build one parser node from its ``--help``, recursing into children.
-
-    ``path`` is the positional chain from the root to this node (empty for the
-    root). ``help_text`` is this node's already-probed ``--help`` output. Each
-    registered child is probed with ``{notation} {path...} {child} --help`` and
-    recursively expanded.
-    """
-    node = _parse_leaf_flags(help_text)
-    if depth >= _MAX_TREE_DEPTH:
-        return node
-
-    child_names = _parse_subcommand_choices(help_text)
-    if not child_names:
-        return node
-
-    def _derive_child(child_name: str) -> tuple[str, _LeafParser]:
-        child_help = _run_help(executor, notation, *path, child_name)
-        if child_help is None:
-            # Could not probe the child — register it as a flat leaf with no
-            # flag surface so the child name itself is not falsely flagged as
-            # unknown, but its flags cannot be validated.
-            return child_name, _LeafParser()
-        return child_name, _derive_node(
-            executor,
-            notation,
-            [*path, child_name],
-            child_help,
-            depth=depth + 1,
-        )
-
-    # Probe a node's subcommands concurrently. Without this, a deeply-nested
-    # script (e.g. ``manage-config plan phase-{phase} {get|set}``) serializes
-    # dozens of ``--help`` subprocesses and alone overruns the build gate's
-    # budget — it then never completes, never caches, and re-derives on every
-    # scan. Each node gets its own short-lived pool; recursion nests pools
-    # along the tree depth, but the global ``_HELP_SEMAPHORE`` (acquired only
-    # around the leaf subprocess) caps real process concurrency, and no worker
-    # blocks on a task in its own pool, so the fan-out is deadlock-free.
-    workers = min(len(child_names), _MAX_DERIVE_WORKERS)
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        for child_name, child_node in pool.map(_derive_child, child_names):
-            node.children[child_name] = child_node
-    return node
+# The probe, the recursion, the in-process memo, and the content-hash-keyed
+# on-disk cache all live in ``argparse_surface`` now. These bindings keep the
+# names this module's own body, its tests, and ``doctor-marketplace.py`` import.
+_resolve_executor = resolve_executor
+_script_path_for_notation = script_path_for_notation
+_content_hash = content_hash
+_run_help = run_help
+_strip_ansi = strip_ansi
 
 
 def derive_script_tree(notation: str, executor: Path) -> _ScriptTree | None:
     """Cached ``--help`` derivation of one script's canonical surface.
 
-    Resolution order:
-      1. in-process memo keyed by ``(notation, content_hash)``;
-      2. on-disk cache keyed by the same hash;
-      3. live ``--help`` probe (cache miss), then populate both caches.
-
-    The content hash is computed from the script file resolved relative to
-    the executor's repository root. When the script file cannot be located,
-    derivation falls back to probing without a hash key (memoized by
-    notation alone for the process lifetime) — the surface is still derived
-    from live ``--help``, only the on-disk cache is skipped.
-
-    Returns ``None`` when the surface cannot be probed (unreachable notation,
-    non-zero exit, timeout). Callers treat ``None`` as "no surface" and skip
-    validation for that notation — never as a false positive.
+    Thin adapter over :func:`argparse_surface.derive_surface`. The shared
+    function returns an explicit ``NotDerivable`` marker naming WHY it could not
+    derive a confident surface; this rule needs only the binary answer, so the
+    marker is mapped to ``None``. Callers treat ``None`` as "no surface" and
+    skip validation for that notation — never as a false positive.
     """
-    script_path = _script_path_for_notation(notation, executor)
-    content_hash = _content_hash(script_path) if script_path is not None else None
-
-    if content_hash is not None:
-        memo_key = (notation, content_hash)
-        cached = _TREE_MEMO.get(memo_key)
-        if cached is not None:
-            return cached
-
-        cache_path = _cache_path(executor, notation, content_hash)
-        on_disk = _read_cache(cache_path)
-        if on_disk is not None:
-            _TREE_MEMO[memo_key] = on_disk
-            return on_disk
-
-        tree = _derive_tree_uncached(executor, notation)
-        if tree is None:
-            return None
-        _TREE_MEMO[memo_key] = tree
-        _write_cache(cache_path, tree)
-        return tree
-
-    # No locatable script file — derive live, skip the on-disk cache. The memo
-    # key MUST incorporate the executor path, NOT the notation alone: a single
-    # process may probe several DISTINCT scripts that all resolve through the
-    # SAME notation but different executors (the test suite maps one synthetic
-    # ``_SYN_NOTATION`` to a different script per ``tmp_path`` executor). Keying
-    # by ``(notation, '')`` made the first-derived tree poison every later
-    # probe of the same notation — the cross-fixture memo collision that turned
-    # ``qgate``/``other`` and the loop-registered surfaces into the first
-    # fixture's ``foo``/``bar``. Folding the executor path into the key
-    # disambiguates them; production callers always have a content hash and
-    # never reach this branch.
-    memo_key = (notation, f'executor::{executor}')
-    cached = _TREE_MEMO.get(memo_key)
-    if cached is not None:
-        return cached
-    tree = _derive_tree_uncached(executor, notation)
-    if tree is None:
-        return None
-    _TREE_MEMO[memo_key] = tree
-    return tree
-
-
-def _script_path_for_notation(notation: str, executor: Path) -> Path | None:
-    """Resolve the on-disk script file for a notation, for content hashing.
-
-    Searches both supported layouts relative to the executor's repository
-    root (``{root}`` is the executor's ``.plan`` parent). Returns ``None``
-    when the file cannot be found — derivation then skips the on-disk cache.
-    """
-    try:
-        bundle, skill, script = notation.split(':', 2)
-    except ValueError:
-        return None
-    root = executor.parent.parent  # {root}/.plan/execute-script.py -> {root}
-    candidates = (
-        root / 'marketplace' / 'bundles' / bundle / 'skills' / skill / 'scripts' / f'{script}.py',
-        root / 'bundles' / bundle / 'skills' / skill / 'scripts' / f'{script}.py',
-    )
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    return None
+    surface = derive_surface(notation, executor)
+    return surface if isinstance(surface, ScriptSurface) else None
 
 
 def build_script_index(marketplace_root: Path) -> dict[str, _ScriptTree]:
     """Build a notation -> canonical-surface index for every in-scope script.
 
-    The surface is derived via the cached ``--help`` probe against the
-    executor discovered relative to ``marketplace_root``. When no executor is
-    reachable the index is empty — the surface cannot be probed, so no
-    findings are emitted (no false positives). Notations whose ``--help`` is
-    unreachable are silently dropped.
-
-    Derivation runs concurrently across scripts: each ``derive_script_tree``
-    call is independent (distinct notation -> distinct memo key, on-disk cache
-    file, and probe subprocesses), and the per-script ``--help`` probes are
-    subprocess-bound (the worker blocks on I/O, releasing the GIL). A cold-cache
-    marketplace-wide scan otherwise serializes hundreds of ``--help``
-    subprocesses and overruns the build gate's budget; fanning the scripts out
-    keeps the wall-clock bounded by the slowest single script, not their sum.
-    Parallelism is applied only at the script level — subcommand recursion
-    inside a single tree stays serial, so the bounded pool never waits on
-    itself (no nested-pool deadlock).
+    Thin adapter over :func:`argparse_surface.build_surface_index`. When no
+    executor is reachable the index is empty — the surface cannot be probed, so
+    no findings are emitted (no false positives). Notations whose surface is not
+    derivable are dropped for the same reason: a missing entry means "no ground
+    truth here", which every consumer below already treats as "emit nothing".
     """
     executor = _resolve_executor(marketplace_root)
     if executor is None:
@@ -950,17 +375,12 @@ def build_script_index(marketplace_root: Path) -> dict[str, _ScriptTree]:
     descriptors = discover_in_scope_scripts(marketplace_root)
     if not descriptors:
         return {}
-
-    def _derive(desc: _ScriptDescriptor) -> tuple[str, _ScriptTree | None]:
-        return desc.notation, derive_script_tree(desc.notation, executor)
-
-    workers = min(len(descriptors), _MAX_DERIVE_WORKERS)
-    index: dict[str, _ScriptTree] = {}
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        for notation, tree in pool.map(_derive, descriptors):
-            if tree is not None:
-                index[notation] = tree
-    return index
+    surfaces = build_surface_index([d.notation for d in descriptors], executor)
+    return {
+        notation: surface
+        for notation, surface in surfaces.items()
+        if isinstance(surface, ScriptSurface)
+    }
 
 
 # =============================================================================

@@ -43,13 +43,81 @@ analyze_argument_naming = _aan.analyze_argument_naming
 
 
 def _write_fake_executor(plan_dir: Path, notations: list[str]) -> Path:
-    """Write a minimal ``execute-script.py`` stub containing a SCRIPTS dict."""
+    """Write a working ``execute-script.py`` that both REGISTERS and DISPATCHES.
+
+    The cluster reads the executor two ways: ``load_registered_notations``
+    regex-parses the ``SCRIPTS = { ... }`` literal, and ``build_script_index``
+    derives each script's accept-set by running that script's ``--help``
+    THROUGH this executor. A lookup-only stub satisfies the first and silently
+    empties the second, which turns every finding-expecting test in this file
+    into a vacuous pass.
+
+    Resolution is computed at dispatch time from the notation, because callers
+    write the executor before the script it will dispatch to.
+    """
     plan_dir.mkdir(parents=True, exist_ok=True)
     executor = plan_dir / 'execute-script.py'
-    lines = ['#!/usr/bin/env python3', 'SCRIPTS = {']
+    lines = [
+        '#!/usr/bin/env python3',
+        'import contextlib',
+        'import io',
+        'import runpy',
+        'import sys',
+        'from pathlib import Path',
+        '',
+        'SCRIPTS = {',
+    ]
     for notation in notations:
-        lines.append(f'    "{notation}": "fake/path",')
-    lines.append('}')
+        lines.append(f'    "{notation}": "resolved-at-dispatch",')
+    lines.extend(
+        [
+            '}',
+            '',
+            '',
+            'def _resolve(notation):',
+            '    parts = notation.split(":", 2)',
+            '    if len(parts) != 3:',
+            '        return None',
+            '    bundle, skill, script = parts',
+            '    root = Path(__file__).parent.parent',
+            '    candidate = (',
+            '        root / "marketplace" / "bundles" / bundle / "skills" / skill',
+            '        / "scripts" / (script + ".py")',
+            '    )',
+            '    return candidate if candidate.is_file() else None',
+            '',
+            '',
+            'def main():',
+            '    if len(sys.argv) < 2:',
+            '        sys.exit(2)',
+            '    target = _resolve(sys.argv[1])',
+            '    if target is None:',
+            '        sys.stderr.write("Unknown notation: " + sys.argv[1] + "\\n")',
+            '        sys.exit(2)',
+            '    out_buf = io.StringIO()',
+            '    err_buf = io.StringIO()',
+            '    rc = 0',
+            '    saved_argv = sys.argv',
+            '    sys.argv = [str(target), *sys.argv[2:]]',
+            '    try:',
+            '        with contextlib.redirect_stdout(out_buf), contextlib.redirect_stderr(err_buf):',
+            '            runpy.run_path(str(target), run_name="__main__")',
+            '    except SystemExit as exc:',
+            '        code = exc.code',
+            '        rc = 0 if code is None else (code if isinstance(code, int) else 1)',
+            '    finally:',
+            '        sys.argv = saved_argv',
+            '    sys.stdout.write(out_buf.getvalue())',
+            '    sys.stderr.write(err_buf.getvalue())',
+            '    sys.stdout.flush()',
+            '    sys.stderr.flush()',
+            '    sys.exit(rc)',
+            '',
+            '',
+            'if __name__ == "__main__":',
+            '    main()',
+        ]
+    )
     executor.write_text('\n'.join(lines) + '\n', encoding='utf-8')
     return executor
 

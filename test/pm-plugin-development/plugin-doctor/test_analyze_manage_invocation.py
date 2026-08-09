@@ -20,7 +20,14 @@ from the bundle tree by ``discover_in_scope_scripts``):
     ``## Canonical invocations`` section.
 
 Surface derivation is from the script's live ``--help`` interface, NOT from
-an AST walk. The tests therefore build a *synthetic executor*: a small
+an AST walk — and it no longer lives in this analyzer. The recursive walk, the
+parse anchors, and the content-hash-keyed cache were lifted into the shared
+``plan-marshall:script-shared`` ``argparse_surface`` module; the analyzer's
+``derive_script_tree`` / ``build_script_index`` are thin adapters over it.
+``TestSharedDerivationConsolidation`` below pins that there is exactly ONE
+derivation rather than two that agree today and drift tomorrow.
+
+The tests build a *synthetic executor*: a small
 ``.plan/execute-script.py`` shim that maps ``{notation}`` to a synthetic
 argparse script under ``tmp_path`` and dispatches the trailing args
 (including ``--help``) to it, exactly as the real executor does. This lets
@@ -51,6 +58,8 @@ from pathlib import Path
 import pytest
 
 from conftest import load_script_module
+
+import argparse_surface as surf
 
 from _fixtures import assert_analyzer_findings
 
@@ -411,6 +420,73 @@ def _make_executor(tmp_path: Path, mapping: dict[str, Path]) -> Path:
         json.dumps({k: str(v) for k, v in mapping.items()}), encoding='utf-8'
     )
     return executor
+
+
+class TestSharedDerivationConsolidation:
+    """One derivation, two consumers — pinned by identity, not by agreement.
+
+    Before the consolidation the tree held TWO accept-set derivations: this
+    analyzer's help-derived one and ``_analyze_argument_naming``'s static AST
+    one. They disagreed by construction (the AST walk was alias-blind and blind
+    to imported-module parsers), so "what does this script accept?" had two
+    answers depending on which rule asked.
+
+    Asserting the two modules produce the same ANSWER for a sample would not
+    close that: two copies can agree on a sample and drift on the next edit.
+    These tests assert IDENTITY with the shared module instead — the analyzer's
+    surface types and probe entry points ARE the shared ones.
+    """
+
+    def test_surface_types_are_the_shared_ones(self):
+        assert _ami._ScriptTree is surf.ScriptSurface
+        assert _ami._LeafParser is surf.ParserNode
+
+    def test_probe_helpers_are_the_shared_ones(self):
+        assert _ami._run_help is surf.run_help
+        assert _ami._resolve_executor is surf.resolve_executor
+        assert _ami._script_path_for_notation is surf.script_path_for_notation
+        assert _ami._content_hash is surf.content_hash
+
+    def test_pure_parsers_are_the_shared_ones(self):
+        assert _ami._parse_subcommand_choices is surf.parse_choice_list
+        assert _ami._parse_leaf_flags is surf.parse_help_node
+        assert _ami._parse_required_flags is surf.parse_required_flags
+        assert _ami._split_help_sections is surf.split_help_sections
+        assert _ami._strip_grouping_constructs is surf.strip_grouping_constructs
+
+    def test_no_ast_walk_remains_on_the_accept_set_path(self):
+        """The static ``add_parser`` walk is deleted, not kept as a fallback.
+
+        A fallback would reinstate the alias-blind, imported-parser-blind
+        accept-set — and a too-small accept-set rejects valid calls, which is
+        strictly worse than deriving no surface at all.
+        """
+        naming = _load_module('_analyze_argument_naming', '_analyze_argument_naming.py')
+        assert not hasattr(naming, '_build_entry_from_script')
+        # The structural signal is the absent ``ast`` import, not the absent
+        # word: the module's prose legitimately NAMES the retired mechanism to
+        # explain why it was deleted, and a substring check over the source
+        # would trip on that documentation.
+        assert not hasattr(naming, 'ast'), (
+            'the accept-set module imports ast again — an AST walk reappeared '
+            'on the derivation path'
+        )
+        source = Path(naming.__file__).read_text(encoding='utf-8')
+        assert 'import ast' not in source, (
+            'an add_parser AST walk reappeared on the accept-set derivation path'
+        )
+
+    def test_not_derivable_maps_to_none_for_this_rule(self, tmp_path: Path):
+        """The adapter narrows the shared marker to this rule's binary contract."""
+        script = tmp_path / 'syn_broken.py'
+        script.write_text('import sys\nsys.exit(3)\n', encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        surf.clear_memo()
+        shared = surf.derive_surface(
+            _SYN_NOTATION, executor, config=surf.DerivationConfig(use_disk_cache=False)
+        )
+        assert isinstance(shared, surf.NotDerivable)
+        assert derive_script_tree(_SYN_NOTATION, executor) is None
 
 
 @pytest.fixture
