@@ -17,7 +17,11 @@ operation groups against the main-anchored orchestrator store
   critical section, so no unsynchronised whole-array rewrite remains.
 - ``resume-summary --slug S`` — generate the "START HERE" block from
   ``status.json`` (the machine authority) for the LLM to paste into
-  ``epic.md`` between the generated-block markers.
+  ``epic.md`` between the generated-block markers. Two detectors run on the
+  RENDERED block and ride the same payload: ``count_divergences[]`` (a claimed
+  count that does not match its derivation) and ``contradictions[]`` (two
+  mutually-exclusive claims inside one rendering). Both report and neither
+  rewrites.
 - ``archive --slug S`` — relocate a *closed* epic tree to
   ``.plan/local/archived-orchestrators/{slug}/`` (a mechanical, post-close
   directory move that requires no judgement; refuses a non-closed epic).
@@ -144,6 +148,37 @@ INDETERMINATE = 'indeterminate'
 BLOCKING_RESCOPED = 'no'
 CONTRADICTED = 'contradicted'
 NOT_APPLICABLE = 'n/a'
+
+# --- resume-summary self-validation ----------------------------------------
+
+#: The count claims a rendered START-HERE block can assert about the plan queue,
+#: each paired with the derivation it is checked against. ``row``/``plan`` are
+#: the whole population; the rest are per-status tallies read from ``plans[]``.
+COUNT_CLAIM_NOUNS = ('rows', 'plans', 'staged', 'shipped', 'running', 'parked', 'landed')
+
+#: One count claim plus the short tail that follows it. The tail is captured in a
+#: LOOKAHEAD so a SCOPED claim can be recognised (see :data:`_SCOPED_CLAIM_RE`)
+#: without the scan consuming it: a consuming tail would advance the cursor past
+#: the next claim, so a sentence asserting two counts would only ever have its
+#: first one checked.
+_COUNT_CLAIM_RE = re.compile(
+    r'(?<![\w.])(?P<value>\d+)\s+(?P<noun>rows?|plans?|staged|shipped|running|parked|landed)\b'
+    r'(?=(?P<tail>.{0,12}))',
+    re.IGNORECASE,
+)
+
+#: A qualifier immediately after a count claim scopes it to a SUB-population, so
+#: the claim is not comparable to the whole-epic derivation. This is the
+#: denominator trap: "12 rows in WS-01" is correctly different from the epic's
+#: 30 rows, and reporting that as a divergence is the false positive that would
+#: teach every reader to ignore the detector.
+_SCOPED_CLAIM_RE = re.compile(r'^\s*(in|of|for|under|within|across|from)\b', re.IGNORECASE)
+
+#: A capacity claim of the recorded ``R = N of M`` shape. Two such claims over
+#: the SAME denominator that disagree on the numerator cannot both hold in one
+#: rendering, and each half is individually plausible — which is why the
+#: contradiction is only visible by reading the rendering as a whole.
+_RATIO_CLAIM_RE = re.compile(r'R\s*=\s*(?P<numerator>\d+)\s+of\s+(?P<denominator>\d+)', re.IGNORECASE)
 
 # --- cleanup group ---------------------------------------------------------
 
@@ -511,6 +546,86 @@ def _build_summary(status_doc: dict[str, Any], counts: InboxCounts) -> str:
     return '\n'.join(lines)
 
 
+def _derive_counts(status_doc: dict[str, Any]) -> dict[str, int]:
+    """Re-derive, from ``status.json``, every count a rendered block can claim."""
+    plans = [plan for plan in status_doc.get('plans', []) if isinstance(plan, dict)]
+    tally = Counter(str(plan.get('status', '')) for plan in plans)
+    derived = {'rows': len(plans), 'plans': len(plans)}
+    for noun in COUNT_CLAIM_NOUNS:
+        if noun not in derived:
+            derived[noun] = tally.get(noun, 0)
+    return derived
+
+
+def _claim_key(noun: str) -> str:
+    """Normalize a claim noun to its derivation key (``row``/``rows`` collapse)."""
+    lowered = noun.lower()
+    if lowered in ('row', 'rows'):
+        return 'rows'
+    if lowered in ('plan', 'plans'):
+        return 'plans'
+    return lowered
+
+
+def _count_divergences(summary: str, status_doc: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
+    """Compare every count the RENDERED block claims against its derivation.
+
+    Runs on the rendering rather than on the inputs, because in every recorded
+    divergence the inputs were individually fine and the rendering combined them
+    wrongly — a narrated anchor sentence and the generator's own enumeration
+    disagreeing inside one emission.
+
+    Returns ``(divergences, claims_scanned)`` so a zero divergence count always
+    rides with the population it was computed over.
+    """
+    derived = _derive_counts(status_doc)
+    divergences: list[dict[str, Any]] = []
+    scanned = 0
+    for match in _COUNT_CLAIM_RE.finditer(summary):
+        if _SCOPED_CLAIM_RE.match(match.group('tail')):
+            continue
+        scanned += 1
+        key = _claim_key(match.group('noun'))
+        narrated = int(match.group('value'))
+        if narrated != derived[key]:
+            divergences.append(
+                {
+                    'claim': f'{match.group("value")} {match.group("noun")}',
+                    'narrated': narrated,
+                    'derived': derived[key],
+                }
+            )
+    return divergences, scanned
+
+
+def _rendering_contradictions(summary: str) -> tuple[list[dict[str, Any]], int]:
+    """Detect mutually-exclusive claims INSIDE one rendering.
+
+    Two ``R = N of M`` claims sharing a denominator but disagreeing on the
+    numerator cannot both hold, yet each is individually plausible — so the
+    contradiction exists only in the rendering as a whole. Both claim sites are
+    named, in the order they appear.
+
+    Returns ``(contradictions, claims_scanned)``.
+    """
+    claims: list[tuple[int, int, str]] = [
+        (int(match.group('denominator')), int(match.group('numerator')), match.group(0).strip())
+        for match in _RATIO_CLAIM_RE.finditer(summary)
+    ]
+    contradictions: list[dict[str, Any]] = []
+    for index, (denominator, numerator, text) in enumerate(claims):
+        for other_denominator, other_numerator, other_text in claims[index + 1 :]:
+            if denominator == other_denominator and numerator != other_numerator:
+                contradictions.append(
+                    {
+                        'denominator': denominator,
+                        'left': text,
+                        'right': other_text,
+                    }
+                )
+    return contradictions, len(claims)
+
+
 def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
     """Generate the START-HERE block from status.json.
 
@@ -525,6 +640,14 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
     ``resume_anchor``. ``inbox_queued`` / ``inbox_archived`` / ``inbox_state``
     ride the payload as top-level fields so a caller can reconcile them against
     ``inbox list`` without parsing the markdown block.
+
+    Two detectors run on the RENDERED block and ride the same payload beside
+    ``summary``: ``count_divergences[]`` (a count the block claims that does not
+    match its derivation from ``status.json``) and ``contradictions[]`` (two
+    mutually-exclusive claims inside one rendering). Both REPORT and neither
+    mutates — the block is never silently rewritten, which preserves the
+    existing derivation-beside-the-prose rule. Each list rides with the
+    population it was computed over, so a zero states which zero it is.
     """
     invalid = _validate_slug(args.slug)
     if invalid:
@@ -535,6 +658,9 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
             args.slug, 'file_not_found', 'status.json not found in orchestrator store'
         )
     counts = inbox_counts(_epic_root(args.slug, allow_archived=True) / INBOX_SUBDIR)
+    summary = _build_summary(status_doc, counts)
+    divergences, count_claims_scanned = _count_divergences(summary, status_doc)
+    contradictions, ratio_claims_scanned = _rendering_contradictions(summary)
     return {
         'status': 'success',
         'operation': 'resume-summary',
@@ -543,7 +669,13 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
         'inbox_queued': counts.queued,
         'inbox_archived': counts.archived,
         'inbox_state': 'present' if counts.present else 'missing',
-        'summary': _build_summary(status_doc, counts),
+        'count_claims_scanned': count_claims_scanned,
+        'count_divergences_count': len(divergences),
+        'count_divergences': divergences,
+        'ratio_claims_scanned': ratio_claims_scanned,
+        'contradictions_count': len(contradictions),
+        'contradictions': contradictions,
+        'summary': summary,
     }
 
 

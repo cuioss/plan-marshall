@@ -17,11 +17,24 @@ and what "done" looks like at the epic level.}
 <!-- GENERATED BLOCK — never hand-write or hand-edit this section.
      Regenerate after every queue-touching state change via:
      python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator resume-summary --slug {slug}
-     Paste the returned block verbatim between the markers. -->
+     Paste the returned block verbatim between the markers.
+     Anything a reader wants to add BY HAND goes in the annotation zone below,
+     outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: resume-summary -->
 {generated resume summary — queue, running/parked plans, resume anchor}
 <!-- END GENERATED: resume-summary -->
+
+### Annotations
+
+<!-- ANNOTATION ZONE — hand-written, and deliberately OUTSIDE the generated markers.
+     A regeneration replaces only what sits BETWEEN the markers, so everything written
+     here survives it. This is what makes the block above genuinely regenerable: the
+     per-row notes the generator cannot produce (why a row is parked, what a running
+     plan is waiting on, an operator caveat on a queue entry) have a home that a
+     verbatim paste does not destroy. -->
+
+- {PLAN-NN} — {annotation the generator does not produce}
 
 ## Ordered Queue
 
