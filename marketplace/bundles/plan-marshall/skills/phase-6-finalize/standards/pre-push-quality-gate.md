@@ -27,6 +27,24 @@ The three-guard order — quality-gate (per-bundle, then whole-tree) → test-co
 
 The per-bundle loop remains the precise, footprint-proportional pass that attributes a failure to its bundle; the whole-tree arm exists solely to make those three dimensions reachable.
 
+**Recorded: the build.map-consult intent is already satisfied — and the premise that it is not is REFUTED.** A standing claim held that the per-bundle `quality-gate` arm "does not consult the footprint" and therefore "selects nothing", implying a build.map consult still had to be built. Both halves are false against the shipped document, and the evidence is in this file's own § Execution:
+
+- The arm reads the **live footprint** (§ "Read the live footprint", `manage-references compute-footprint`), so it is footprint-driven by construction.
+- It reads the **registered `build.map` globs** (§ "Read the build_map globs", `manage-config build-map read`).
+- It intersects the two through the deterministic **`derive_gate_bundles`** seam (§ "Derive unique bundle set"), which returns the sorted, de-duplicated bundle set the loop then iterates.
+
+So the derivation is exactly *live footprint ∩ registered build.map globs*, and it selects the bundles that intersection yields — not nothing. The "selects nothing" reading mistakes the seam's `unresolved` list (footprint paths that matched a glob but resolve to no real bundle, e.g. `test/marketplace/**`) for the whole result; that list is the diagnosable-WARNING branch, not the selection. No further build.map-consult work is owed here. This is recorded rather than acted on because the intent is already met, and re-implementing a satisfied intent is how a second, drifting derivation gets introduced.
+
+### Documentation-only loop-back — the whole-tree arms still run
+
+An open question sat behind the two unconditional whole-tree arms: after a loop-back whose diff is documentation-only, may they be skipped? Settled **per dimension**, with the evidence, rather than as one blanket answer:
+
+**The whole-tree `quality-gate` arm MUST still run.** Its first whole-tree-only dimension — the marketplace-wide plugin-doctor static-analysis pass — **lints markdown skill bodies**, which is precisely what a documentation-only diff changes. Skipping the arm on a docs-only loop-back would therefore skip the one gate most likely to have something to say about that exact diff. The dimension that makes the arm expensive and the dimension that makes it necessary here are the same dimension, so there is no cost/benefit trade to make: a docs-only loop-back is arguably the strongest case for running it, not the weakest. (The `.claude/` ruff and `marketplace/targets` SPDX dimensions are the ones a docs-only diff may genuinely not exercise, but they ride the same single invocation — separating them would buy nothing and would split one guard into two admissible behaviours, which § "Whole-tree quality-gate arm" already forbids.)
+
+**The whole-tree `test-compile` arm is likewise retained** — but for a different, weaker reason, stated honestly rather than borrowed from the arm above. It is a single mypy pass over the test tree, and scoping it to a docs-only diff would require a delta predicate that decides when a documentation change cannot affect test-tree typing. That predicate's safety depends on cross-module import coupling in the test tree, which this deliverable does not establish and does not attempt to. Retaining the arm is therefore the fail-closed choice under an unestablished premise, not a positive finding that the arm is load-bearing for docs-only diffs. Whoever later establishes that coupling may revisit it on evidence.
+
+Both settlements are scoping decisions only. The existing **honest-degradation branch** (the whole-tree invocation cannot run at all in this project) and its mandatory **three-dimension WARNING** are unchanged by this section — they remain the only sanctioned path on which the whole-tree `quality-gate` arm does not run.
+
 The module-tests gate consults the callable scope-resolution seam (`pyproject_build resolve-test-scope`, backed by the pure `_test_scope_divergence.resolve_test_scope`) and runs a real whole-tree `module-tests` only when divergence is possible — mirroring the escalate-only-on-trigger discipline of the `finalize-step-plugin-doctor` reference behavior (PLAN-02), so whole-tree cost is paid only where a scoped run could miss a cross-module regression.
 
 ## Exit-code convention for `manage-*` script calls
