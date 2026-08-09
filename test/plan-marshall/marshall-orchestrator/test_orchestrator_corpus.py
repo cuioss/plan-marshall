@@ -2,12 +2,15 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``corpus`` verb group of the marshall-orchestrator script.
 
-Covers the three sub-verbs against a SCAFFOLDED FIXTURE EPIC under
+Covers the four sub-verbs against a SCAFFOLDED FIXTURE EPIC under
 ``PLAN_BASE_DIR`` isolation — never the live ``truthful-signals`` tree:
 
 - ``corpus enumerate``: the bidirectional reconciliation of ``status.json``'s
   ``plans[]`` queue against the ``plans/PLAN-*.md`` spec files, with every count
   riding beside the population it was computed over.
+- ``corpus cross-check``: the cross-ledger duplication arm — this epic's specs
+  scored against sibling epics (active and archived), the live plan set, and
+  this epic's own corpus, on the two ``sibling-collision-check`` classes.
 - ``corpus verdicts``: the sole interpreter of the re-grounding verdict field —
   one control per row of the admission table in
   ``persona-marshall-orchestrator/standards/orchestration-model.md``
@@ -46,6 +49,7 @@ _orch = load_script_module(
 )
 
 cmd_corpus_enumerate = _orch.cmd_corpus_enumerate
+cmd_corpus_cross_check = _orch.cmd_corpus_cross_check
 cmd_corpus_verdicts = _orch.cmd_corpus_verdicts
 cmd_corpus_set_verdict = _orch.cmd_corpus_set_verdict
 format_verdict_line = _orch._format_verdict_line
@@ -60,6 +64,23 @@ FIXED_TIMESTAMP = '2020-01-01T00:00:00Z'
 SHA = '9f3a1c2'
 OTHER_SHA = 'abc1234'
 PRODUCER = 'fixture-corpus-epic/cleanup'
+
+# --- cross-check fixtures --------------------------------------------------
+
+SIBLING_SLUG = 'fixture-sibling-epic'
+ARCHIVED_SLUG = 'fixture-archived-epic'
+LIVE_PLAN_ID = 'fixture-live-plan'
+
+#: A concrete repo-relative path a spec declares in its ``## Expected Surface``
+#: and a candidate carries on its own surface — the file-overlap class's input.
+SHARED_PATH = 'marketplace/bundles/plan-marshall/skills/marshall-orchestrator/scripts/orchestrator.py'
+#: A DIFFERENT concrete path, so every file-overlap negative control is a real
+#: non-empty surface that simply does not intersect — never an empty one.
+OTHER_PATH = 'marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_sibling_collision.py'
+#: A lesson two documents both cite. A real file path and a real shared
+#: reference, but NOT an orchestrator spec pointer — the near-miss the
+#: deliberately narrow ``SPEC_POINTER_RE`` exists to keep silent.
+SHARED_LESSON = '.plan/local/lessons-learned/LESSON-001-shared-origin.md'
 
 
 # =============================================================================
@@ -102,14 +123,32 @@ def _write_status(plan_context, rows: list, slug: str = SLUG) -> Path:
     return path
 
 
-def _spec_text(claim_lines: list) -> str:
-    """Render a minimal spec carrying a ``## Claim Labels`` section."""
+#: The default ``## Expected Surface`` body. ``a.py`` carries no ``/`` segment,
+#: so the path extractor never sees a path here — a spec written without an
+#: explicit surface contributes NOTHING to the file-overlap class.
+_DEFAULT_SURFACE = ['- OBSERVED: `a.py` — `f`']
+
+_DEFAULT_CLAIM = '- OBSERVED: a claim — read at `a.py` § `f`'
+
+
+def _spec_text(
+    claim_lines: list,
+    surface_lines: list | None = None,
+    objective: str = 'Fixture objective.',
+) -> str:
+    """Render a minimal spec carrying ``## Claim Labels`` and ``## Expected Surface``.
+
+    ``objective`` and ``surface_lines`` are separately addressable because the
+    two sections mean different things to ``corpus cross-check``: the surface is
+    the declared file set the overlap class compares, while the objective is
+    ordinary prose whose paths must NOT be read as a surface.
+    """
     lines = [
         '# PLAN-NN: Fixture',
         '',
         '## Objective',
         '',
-        'Fixture objective.',
+        objective,
         '',
         '## Claim Labels',
         '',
@@ -117,16 +156,85 @@ def _spec_text(claim_lines: list) -> str:
         '',
         '## Expected Surface',
         '',
-        '- OBSERVED: `a.py` — `f`',
+        *(_DEFAULT_SURFACE if surface_lines is None else surface_lines),
     ]
     return '\n'.join(lines) + '\n'
 
 
-def _write_spec(plan_context, name: str, claim_lines: list | None = None) -> Path:
-    path = _epic_dir(plan_context) / 'plans' / name
+def _write_spec(
+    plan_context,
+    name: str,
+    claim_lines: list | None = None,
+    *,
+    epic_dir: Path | None = None,
+    surface_lines: list | None = None,
+    objective: str = 'Fixture objective.',
+) -> Path:
+    """Write one spec file, defaulting to this fixture epic's ``plans/`` dir.
+
+    ``epic_dir`` retargets the write at a sibling epic (active or archived) so
+    the cross-check's candidate populations can be materialized with the same
+    builder the own-corpus tests use.
+    """
+    root = _epic_dir(plan_context) if epic_dir is None else epic_dir
+    path = root / 'plans' / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_spec_text(claim_lines or ['- OBSERVED: a claim — read at `a.py` § `f`']), encoding='utf-8')
+    path.write_text(
+        _spec_text(claim_lines or [_DEFAULT_CLAIM], surface_lines, objective), encoding='utf-8'
+    )
     return path
+
+
+def _archived_epic_dir(plan_context, slug: str) -> Path:
+    """The ARCHIVED home of one epic — the second store root the scan walks."""
+    return Path(plan_context.fixture_dir) / 'archived-orchestrators' / slug
+
+
+def _pointer(spec_name: str, slug: str = SLUG, store: str = 'orchestrator') -> str:
+    """Render the on-disk spec-pointer text a ``source_id`` or a spec carries."""
+    return f'.plan/local/{store}/{slug}/plans/{spec_name}'
+
+
+def _surface(*paths: str) -> list:
+    """Render an ``## Expected Surface`` body declaring ``paths``."""
+    return [f'- OBSERVED: `{path}` — `f`' for path in paths]
+
+
+def _write_live_plan(
+    plan_context,
+    plan_id: str,
+    source_id: str = '',
+    affected_files: list | None = None,
+) -> Path:
+    """Materialize one ACTIVE plan — the OTHER ledger the cross-check reaches into.
+
+    A plan directory counts as active only when it carries the ``status.json``
+    sentinel, so the sentinel is written even though the cross-check reads only
+    ``request.md`` (for the origin) and ``references.json`` (for the surface).
+    """
+    plan_dir: Path = plan_context.plan_dir_for(plan_id)
+    (plan_dir / 'status.json').write_text(json.dumps({'plan_id': plan_id}), encoding='utf-8')
+    (plan_dir / 'request.md').write_text(
+        '\n'.join(
+            [
+                f'# Request: {plan_id}',
+                '',
+                f'plan_id: {plan_id}',
+                'source: orchestrator',
+                f'source_id: {source_id}',
+                '',
+                '## Clarified Request',
+                '',
+                'Fixture live plan.',
+            ]
+        )
+        + '\n',
+        encoding='utf-8',
+    )
+    (plan_dir / 'references.json').write_text(
+        json.dumps({'affected_files': list(affected_files or [])}), encoding='utf-8'
+    )
+    return plan_dir
 
 
 def _verdict_bullet(verdict: str, rescoped: str, evidence: str = 'checked', checked_at: str = SHA) -> str:
@@ -719,6 +827,375 @@ class TestCorpusSetVerdictRejections:
 
 
 # =============================================================================
+# corpus cross-check — the cross-ledger duplication arm
+# =============================================================================
+#
+# The arm a single ledger structurally CANNOT perform: a duplicate held in
+# another epic's ledger, or in a launched plan's own ledger, is invisible to
+# this epic's ``plans[]`` queue. Three candidate populations are therefore
+# scanned — sibling epics (active AND archived), the live plan set, and this
+# epic's own corpus — and each is named in the payload so a zero states which
+# zero it is.
+#
+# Both collision classes carry a matched pair. The positives are seeded
+# duplicates (a live plan launched from one of these specs, a sibling spec
+# citing one, a shared declared surface); the negatives are legitimate
+# near-misses that must stay silent — two documents citing the same LESSON
+# (a shared reference that is not an origin pointer), a description-sourced
+# plan with no traceable origin, two real-but-disjoint surfaces, and the same
+# path cited as background prose rather than declared as a surface.
+
+
+class TestCorpusCrossCheckPopulation:
+    def test_should_name_all_three_scanned_populations(self, plan_context):
+        """Non-empty-population guard: each candidate source must materialize."""
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+        _write_spec(plan_context, 'PLAN-02-beta.md')
+        _write_spec(plan_context, 'PLAN-77-sibling.md', epic_dir=_epic_dir(plan_context, SIBLING_SLUG))
+        _write_live_plan(plan_context, LIVE_PLAN_ID)
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['status'] == 'success'
+        assert result['operation'] == 'corpus-cross-check'
+        assert result['specs_total'] == 2, 'the own corpus did not materialize'
+        assert result['specs_scanned'] == 2
+        assert result['epics_scanned'] == 1, 'the sibling epic did not materialize'
+        assert result['plans_scanned'] == 1, 'the live plan did not materialize'
+        assert result['candidates_scanned'] == 2
+
+    def test_should_ride_every_count_beside_its_population(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        for count_field, population_field in (
+            ('source_origin_match_count', 'candidates_scanned'),
+            ('file_overlap_match_count', 'candidates_scanned'),
+            ('unreadable_count', 'specs_total'),
+        ):
+            assert count_field in result
+            assert population_field in result
+        for population_field in ('epics_scanned', 'plans_scanned', 'specs_scanned'):
+            assert population_field in result
+
+    def test_a_zero_count_states_which_zero_it_is(self, plan_context):
+        # Every population is REAL and non-empty — an empty corpus, an epic with
+        # no siblings, or no live plans would report the same zeros vacuously.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec(
+            plan_context,
+            'PLAN-77-sibling.md',
+            epic_dir=_epic_dir(plan_context, SIBLING_SLUG),
+            surface_lines=_surface(OTHER_PATH),
+        )
+        _write_live_plan(
+            plan_context,
+            LIVE_PLAN_ID,
+            source_id=_pointer('PLAN-99-elsewhere.md', slug='some-other-epic'),
+            affected_files=[OTHER_PATH],
+        )
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['source_origin_match_count'] == 0
+        assert result['file_overlap_match_count'] == 0
+        assert result['unreadable_count'] == 0
+        assert result['collision_detected'] is False
+        assert result['specs_scanned'] == 1
+        assert result['epics_scanned'] == 1
+        assert result['plans_scanned'] == 1
+        assert result['candidates_scanned'] == 2
+
+    def test_should_error_when_the_epic_has_no_store_tree(self, plan_context):
+        result = cmd_corpus_cross_check(Namespace(slug='absent-corpus-epic'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'not_found'
+
+    def test_should_reject_invalid_slug(self, plan_context):
+        result = cmd_corpus_cross_check(Namespace(slug='../evil'))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'invalid_slug'
+
+
+class TestCrossCheckSourceOriginClass:
+    """Collision class one — a shared spec-pointer origin. Matched pair."""
+
+    def test_should_match_a_live_plan_launched_from_this_epics_spec(self, plan_context):
+        # Positive control, CROSS-LEDGER: the duplicate this epic's own queue
+        # structurally cannot see, because it is recorded in the plan's ledger.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+        _write_live_plan(plan_context, LIVE_PLAN_ID, source_id=_pointer('PLAN-01-alpha.md'))
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['source_origin_matches'] == [
+            {
+                'spec': 'PLAN-01-alpha.md',
+                'candidate_kind': 'live_plan',
+                'candidate': LIVE_PLAN_ID,
+                'shared_origin': f'{SLUG}/plans/PLAN-01-alpha.md',
+            }
+        ]
+        assert result['source_origin_match_count'] == 1
+        assert result['collision_detected'] is True
+        assert result['plans_scanned'] == 1
+
+    def test_should_match_a_sibling_epic_spec_that_cites_this_epics_spec(self, plan_context):
+        # Positive control, cross-EPIC.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+        _write_spec(
+            plan_context,
+            'PLAN-77-sibling.md',
+            epic_dir=_epic_dir(plan_context, SIBLING_SLUG),
+            objective=f'Supersedes {_pointer("PLAN-01-alpha.md")} in full.',
+        )
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['source_origin_match_count'] == 1
+        row = result['source_origin_matches'][0]
+        assert row['spec'] == 'PLAN-01-alpha.md'
+        assert row['candidate_kind'] == 'sibling_epic_spec'
+        assert row['candidate'] == f'{SIBLING_SLUG}/PLAN-77-sibling.md'
+        assert row['shared_origin'] == f'{SLUG}/plans/PLAN-01-alpha.md'
+
+    def test_should_see_an_archived_sibling_epic(self, plan_context):
+        # An archived epic still holds work; closing it does not make its specs
+        # invisible to the duplication check.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+        _write_spec(
+            plan_context,
+            'PLAN-88-archived.md',
+            epic_dir=_archived_epic_dir(plan_context, ARCHIVED_SLUG),
+            objective=f'Already delivered by {_pointer("PLAN-01-alpha.md")}.',
+        )
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['epics_scanned'] == 1
+        assert result['source_origin_match_count'] == 1
+        assert result['source_origin_matches'][0]['candidate'] == f'{ARCHIVED_SLUG}/PLAN-88-archived.md'
+
+    def test_should_stay_silent_when_two_documents_merely_cite_the_same_lesson(self, plan_context):
+        # Negative control: a REAL shared reference that is not an origin
+        # pointer. The narrow pointer shape is the whole reason this stays a
+        # near-miss instead of a match.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', objective=f'Grounded in {SHARED_LESSON}.')
+        _write_spec(
+            plan_context,
+            'PLAN-77-sibling.md',
+            epic_dir=_epic_dir(plan_context, SIBLING_SLUG),
+            objective=f'Grounded in {SHARED_LESSON}.',
+        )
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['source_origin_match_count'] == 0
+        assert result['collision_detected'] is False
+        assert result['candidates_scanned'] == 1, 'the candidate population must be non-empty'
+
+    def test_should_stay_silent_for_a_live_plan_with_no_traceable_origin(self, plan_context):
+        # Negative control on the cross-ledger arm: a description-sourced plan
+        # carries no source_id, so it can never match on origin.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+        _write_live_plan(plan_context, LIVE_PLAN_ID, source_id='')
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['source_origin_match_count'] == 0
+        assert result['plans_scanned'] == 1, 'the plan population must be non-empty'
+
+    def test_should_not_match_a_spec_against_itself(self, plan_context):
+        # Every spec carries its OWN pointer in its pointer set — deliberately,
+        # so a candidate citing it matches. The self-exclusion is therefore the
+        # only thing keeping a lone spec silent.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['source_origin_match_count'] == 0
+        assert result['specs_scanned'] == 1
+
+
+class TestCrossCheckFileOverlapClass:
+    """Collision class two — an exact declared-surface overlap. Matched pair."""
+
+    def test_should_match_a_live_plans_affected_files(self, plan_context):
+        # Positive control, CROSS-LEDGER: the spec's declared surface against
+        # the launched plan's references.json.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[SHARED_PATH, OTHER_PATH])
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['file_overlap_matches'] == [
+            {
+                'spec': 'PLAN-01-alpha.md',
+                'candidate_kind': 'live_plan',
+                'candidate': LIVE_PLAN_ID,
+                'overlap_count': 1,
+                'overlapping_files': SHARED_PATH,
+            }
+        ]
+        assert result['file_overlap_match_count'] == 1
+        assert result['collision_detected'] is True
+
+    def test_should_match_a_sibling_epic_specs_expected_surface(self, plan_context):
+        # Positive control, cross-EPIC: spec surface against spec surface.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec(
+            plan_context,
+            'PLAN-77-sibling.md',
+            epic_dir=_epic_dir(plan_context, SIBLING_SLUG),
+            surface_lines=_surface(SHARED_PATH, OTHER_PATH),
+        )
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['file_overlap_match_count'] == 1
+        row = result['file_overlap_matches'][0]
+        assert row['candidate_kind'] == 'sibling_epic_spec'
+        assert row['candidate'] == f'{SIBLING_SLUG}/PLAN-77-sibling.md'
+        assert row['overlap_count'] == 1
+        assert row['overlapping_files'] == SHARED_PATH
+
+    def test_should_name_every_overlapping_file_never_a_bare_score(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH, OTHER_PATH))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH, SHARED_PATH])
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        row = result['file_overlap_matches'][0]
+        assert row['overlap_count'] == 2
+        assert sorted(row['overlapping_files'].split(';')) == sorted([SHARED_PATH, OTHER_PATH])
+
+    def test_should_match_within_this_epics_own_corpus(self, plan_context):
+        # The within-corpus direction. Rows are emitted per (spec, candidate)
+        # pair, so a surface shared by two of this epic's own specs is reported
+        # from BOTH sides — the symmetry is the report shape, not a duplicate.
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec(plan_context, 'PLAN-02-beta.md', surface_lines=_surface(SHARED_PATH))
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['file_overlap_match_count'] == 2
+        assert {row['candidate_kind'] for row in result['file_overlap_matches']} == {'corpus_spec'}
+        assert sorted((row['spec'], row['candidate']) for row in result['file_overlap_matches']) == [
+            ('PLAN-01-alpha.md', 'PLAN-02-beta.md'),
+            ('PLAN-02-beta.md', 'PLAN-01-alpha.md'),
+        ]
+
+    def test_should_stay_silent_for_disjoint_surfaces(self, plan_context):
+        # Negative control: two REAL non-empty surfaces that do not intersect.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH])
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['file_overlap_match_count'] == 0
+        assert result['collision_detected'] is False
+        assert result['candidates_scanned'] == 1
+
+    def test_should_ignore_a_path_cited_outside_the_expected_surface_section(self, plan_context):
+        # Negative control on the SECTION boundary: the very same path, cited as
+        # background prose in the objective rather than DECLARED as the surface.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(
+            plan_context,
+            'PLAN-01-alpha.md',
+            objective=f'Background reading: {SHARED_PATH} explains the seam.',
+            surface_lines=_surface(OTHER_PATH),
+        )
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[SHARED_PATH])
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['file_overlap_match_count'] == 0
+        assert result['candidates_scanned'] == 1
+
+
+class TestCrossCheckUnreadable:
+    """Report-never-skip, on BOTH sides of the comparison."""
+
+    def test_should_report_an_unreadable_own_spec_without_aborting(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01'), _row('PLAN-02')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+        broken = _epic_dir(plan_context) / 'plans' / 'PLAN-02-broken.md'
+        broken.write_bytes(b'\xff\xfe not valid utf-8 \xff')
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['status'] == 'success'
+        assert result['unreadable'] == [{'spec': 'PLAN-02-broken.md', 'error': 'unreadable'}]
+        assert result['unreadable_count'] == 1
+        assert result['specs_total'] == 2
+        assert result['specs_scanned'] == 1, 'the unreadable spec must not count as scanned'
+
+    def test_should_report_an_unreadable_candidate_under_its_own_epic(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+        broken = _epic_dir(plan_context, SIBLING_SLUG) / 'plans' / 'PLAN-77-broken.md'
+        broken.parent.mkdir(parents=True, exist_ok=True)
+        broken.write_bytes(b'\xff\xfe \xff')
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['unreadable'] == [
+            {'spec': f'{SIBLING_SLUG}/PLAN-77-broken.md', 'error': 'unreadable'}
+        ]
+        assert result['unreadable_count'] == 1
+        assert result['epics_scanned'] == 1, 'the epic itself was still scanned'
+        assert result['candidates_scanned'] == 0, 'an unreadable candidate must not count as scanned'
+
+
+class TestCrossCheckReadOnlyBoundary:
+    def test_cross_check_leaves_every_scanned_tree_byte_identical(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_spec(
+            plan_context,
+            'PLAN-77-sibling.md',
+            epic_dir=_epic_dir(plan_context, SIBLING_SLUG),
+            surface_lines=_surface(SHARED_PATH),
+        )
+        _write_live_plan(
+            plan_context,
+            LIVE_PLAN_ID,
+            source_id=_pointer('PLAN-01-alpha.md'),
+            affected_files=[SHARED_PATH],
+        )
+        root = Path(plan_context.fixture_dir)
+        before = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert before, 'fixture tree did not materialize'
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        after = {path: path.read_bytes() for path in sorted(root.rglob('*')) if path.is_file()}
+        assert after == before
+        assert result['collision_detected'] is True, (
+            'the read-only claim must be proven on a scan that actually HIT — '
+            'a scan finding nothing would leave the tree untouched vacuously'
+        )
+
+
+# =============================================================================
 # Read-only boundary
 # =============================================================================
 
@@ -798,6 +1275,20 @@ class TestCorpusCli:
         assert 'status: success' in result.stdout
         assert 'rows_total: 2' in result.stdout
         assert 'rows_without_spec_count: 1' in result.stdout
+
+    def test_should_cross_check_through_cli(self, plan_context):
+        env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', surface_lines=_surface(SHARED_PATH))
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[SHARED_PATH])
+
+        result = run_script(SCRIPT_PATH, 'corpus', 'cross-check', '--slug', SLUG, env_overrides=env)
+
+        assert result.returncode == 0
+        assert 'status: success' in result.stdout
+        assert 'plans_scanned: 1' in result.stdout
+        assert 'file_overlap_match_count: 1' in result.stdout
+        assert 'collision_detected: true' in result.stdout
 
     def test_should_set_and_read_a_verdict_through_cli(self, plan_context):
         env = {'PLAN_BASE_DIR': str(plan_context.fixture_dir)}

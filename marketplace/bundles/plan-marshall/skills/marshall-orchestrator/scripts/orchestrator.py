@@ -21,10 +21,14 @@ operation groups against the main-anchored orchestrator store
 - ``archive --slug S`` — relocate a *closed* epic tree to
   ``.plan/local/archived-orchestrators/{slug}/`` (a mechanical, post-close
   directory move that requires no judgement; refuses a non-closed epic).
-- ``corpus {enumerate,verdicts,set-verdict}`` — the epic's staged spec corpus:
-  reconcile the ``status.json`` ``plans[]`` queue against the ``plans/PLAN-*.md``
-  spec files in BOTH directions, and read/write the re-grounding verdict field
-  defined once in ``persona-marshall-orchestrator/standards/orchestration-model.md``
+- ``corpus {enumerate,cross-check,verdicts,set-verdict}`` — the epic's staged
+  spec corpus: reconcile the ``status.json`` ``plans[]`` queue against the
+  ``plans/PLAN-*.md`` spec files in BOTH directions, cross-check those specs
+  against sibling epics and live plans for duplicate work (the arm a single
+  ledger structurally cannot perform, scored on ``manage-status
+  sibling-collision-check``'s two classes), and read/write the re-grounding
+  verdict field defined once in
+  ``persona-marshall-orchestrator/standards/orchestration-model.md``
   § Re-Grounding Verdict Field. ``set-verdict`` is the group's single write
   action and the ONLY code path that formats a ``verdict:`` line; ``verdicts``
   is the only one that interprets one.
@@ -52,6 +56,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from _cmd_sibling_collision import (
+    _OVERLAP_JOIN,
+    _extract_paths,
+    _iter_active_plan_dirs,
+    _read_affected_files,
+    _read_request_source,
+)
 from _locks_core import rmw_json
 from _orchestrator_inbox import (
     INBOX_SUBDIR,
@@ -130,6 +141,17 @@ CONTRADICTED = 'contradicted'
 NOT_APPLICABLE = 'n/a'
 
 CLAIM_LABELS_HEADING_RE = re.compile(r'^##\s+Claim Labels\s*$')
+EXPECTED_SURFACE_HEADING_RE = re.compile(r'^##\s+Expected Surface\s*$')
+# The orchestrator spec pointer a launched plan's ``source_id`` carries, and the
+# shape a spec uses to name a sibling spec. Normalized to the root-agnostic key
+# ``{epic_slug}/plans/{spec_name}`` so the active and archived homes of the same
+# epic yield the same origin id. Deliberately NARROW: a lesson path or an
+# arbitrary repo file cited as background is NOT an origin pointer, which is what
+# keeps "two specs citing the same lesson" a silent near-miss rather than a match.
+SPEC_POINTER_RE = re.compile(
+    r'\.plan/local/(?:orchestrator|archived-orchestrators)/'
+    r'(?P<slug>[A-Za-z0-9_.\-]+)/plans/(?P<spec>PLAN-[A-Za-z0-9_.\-]+\.md)'
+)
 _HEADING_RE = re.compile(r'^#{1,6}\s')
 _BULLET_RE = re.compile(r'^(?P<indent>[ \t]*)-\s+(?P<text>.*)$')
 _CHECKED_AT_RE = re.compile(r'^[0-9a-f]{7,40}$')
@@ -609,14 +631,15 @@ def _current_head_sha() -> str:
     return completed.stdout.strip()
 
 
-def _claim_labels_span(lines: list[str]) -> tuple[int, int]:
-    """Return the ``[start, end)`` line span of the ``## Claim Labels`` body.
+def _section_span(lines: list[str], heading_re: re.Pattern[str]) -> tuple[int, int]:
+    """Return the ``[start, end)`` line span of one section's body.
 
-    ``(-1, -1)`` when the spec carries no such section.
+    ``(-1, -1)`` when the document carries no matching heading. The body ends at
+    the next heading of any level, so a subsection never leaks into the parent.
     """
     start = -1
     for index, line in enumerate(lines):
-        if CLAIM_LABELS_HEADING_RE.match(line):
+        if heading_re.match(line):
             start = index + 1
             break
     if start < 0:
@@ -625,6 +648,39 @@ def _claim_labels_span(lines: list[str]) -> tuple[int, int]:
         if _HEADING_RE.match(lines[index]):
             return (start, index)
     return (start, len(lines))
+
+
+def _claim_labels_span(lines: list[str]) -> tuple[int, int]:
+    """Return the ``[start, end)`` line span of the ``## Claim Labels`` body."""
+    return _section_span(lines, CLAIM_LABELS_HEADING_RE)
+
+
+def _expected_surface_paths(text: str) -> set[str]:
+    """Extract the file paths a spec names in its ``## Expected Surface`` section.
+
+    This is the spec-side entry point for the file-overlap collision class: a
+    staged spec carries its surface here, where a launched plan carries it in
+    ``references.json`` ``affected_files``. The extraction itself is
+    ``_cmd_sibling_collision``'s, unchanged — only the entry point differs.
+    """
+    lines = text.splitlines()
+    start, end = _section_span(lines, EXPECTED_SURFACE_HEADING_RE)
+    if start < 0:
+        return set()
+    return _extract_paths('\n'.join(lines[start:end]))
+
+
+def _spec_pointers(text: str) -> set[str]:
+    """Extract the normalized orchestrator spec pointers named in ``text``."""
+    return {
+        f'{match.group("slug")}/plans/{match.group("spec")}'
+        for match in SPEC_POINTER_RE.finditer(text)
+    }
+
+
+def _own_pointer(slug: str, spec_name: str) -> str:
+    """The root-agnostic origin id of one spec in one epic."""
+    return f'{slug}/plans/{spec_name}'
 
 
 def _parse_claims(lines: list[str]) -> list[dict[str, Any]]:
@@ -883,6 +939,162 @@ def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _sibling_epic_roots(slug: str) -> list[Path]:
+    """Enumerate the OTHER epics' store roots — active and archived alike.
+
+    Mirrors the on-query store scan the read verbs document: both
+    ``.plan/local/orchestrator/`` and ``.plan/local/archived-orchestrators/`` are
+    walked, so an archived sibling stays visible to the duplication check. An
+    epic present in both homes is yielded once.
+    """
+    roots: dict[str, Path] = {}
+    bases = (_epic_root(slug).parent, get_archived_orchestrator_dir(slug).parent)
+    for base in bases:
+        if not base.is_dir():
+            continue
+        for child in sorted(base.iterdir()):
+            if child.is_dir() and child.name != slug and child.name not in roots:
+                roots[child.name] = child
+    return [roots[name] for name in sorted(roots)]
+
+
+def _spec_record(epic_slug: str, path: Path) -> dict[str, Any] | None:
+    """Build one comparable record for a spec file, or ``None`` when unreadable."""
+    text, _ = _read_spec(path)
+    if text is None:
+        return None
+    return {
+        'name': path.name,
+        'pointers': _spec_pointers(text) | {_own_pointer(epic_slug, path.name)},
+        'paths': _expected_surface_paths(text),
+    }
+
+
+def _live_plan_records() -> list[dict[str, Any]]:
+    """Build one comparable record per ACTIVE plan — the cross-ledger direction.
+
+    A single ledger structurally cannot see a duplicate held in another ledger,
+    so the live plan set is enumerated through ``_cmd_sibling_collision``'s own
+    active-plan walk and each plan contributes its ``source_id`` origin and its
+    ``references.json`` ``affected_files`` surface.
+    """
+    records: list[dict[str, Any]] = []
+    for plan_id, plan_dir in sorted(_iter_active_plan_dirs().items()):
+        _, source_id = _read_request_source(plan_dir)
+        pointers = _spec_pointers(source_id) if source_id else set()
+        records.append(
+            {
+                'name': plan_id,
+                'pointers': pointers,
+                'paths': _read_affected_files(plan_dir),
+            }
+        )
+    return records
+
+
+def _collision_rows(
+    spec: dict[str, Any], candidate: dict[str, Any], kind: str
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Score one spec/candidate pair on the two collision classes.
+
+    The classes are ``_cmd_sibling_collision``'s, unchanged — a shared
+    source-origin id (primary) and an exact normalized file-path overlap
+    (secondary). No third similarity notion is introduced, and neither row is
+    ever a bare score: each names the overlapping surface.
+    """
+    shared_origin = sorted(spec['pointers'] & candidate['pointers'])
+    overlap = sorted(spec['paths'] & candidate['paths'])
+    origin_row = (
+        {
+            'spec': spec['name'],
+            'candidate_kind': kind,
+            'candidate': candidate['name'],
+            'shared_origin': _OVERLAP_JOIN.join(shared_origin),
+        }
+        if shared_origin
+        else None
+    )
+    overlap_row = (
+        {
+            'spec': spec['name'],
+            'candidate_kind': kind,
+            'candidate': candidate['name'],
+            'overlap_count': len(overlap),
+            'overlapping_files': _OVERLAP_JOIN.join(overlap),
+        }
+        if overlap
+        else None
+    )
+    return origin_row, overlap_row
+
+
+def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
+    """Cross-check this epic's specs against sibling epics and live plans.
+
+    The arm a single ledger structurally cannot perform. Three populations are
+    enumerated and each is NAMED in the payload — sibling epics (active and
+    archived), the live plan set, and this epic's own corpus for the
+    within-corpus direction — so a ``count: 0`` states which zero it is.
+
+    Reports candidates and applies nothing: superseding is the workflow doc's
+    inline, ledger-writing act, and no spec file is ever deleted.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+    own_paths = _spec_paths(root)
+    own: list[dict[str, Any]] = []
+    unreadable: list[dict[str, str]] = []
+    for path in own_paths:
+        record = _spec_record(args.slug, path)
+        if record is None:
+            unreadable.append({'spec': path.name, 'error': 'unreadable'})
+        else:
+            own.append(record)
+    sibling_roots = _sibling_epic_roots(args.slug)
+    candidates: list[tuple[str, dict[str, Any]]] = []
+    for sibling_root in sibling_roots:
+        for path in _spec_paths(sibling_root):
+            record = _spec_record(sibling_root.name, path)
+            if record is None:
+                unreadable.append({'spec': f'{sibling_root.name}/{path.name}', 'error': 'unreadable'})
+            else:
+                candidates.append(('sibling_epic_spec', {**record, 'name': f'{sibling_root.name}/{path.name}'}))
+    live = _live_plan_records()
+    candidates.extend(('live_plan', record) for record in live)
+    origin_matches: list[dict[str, Any]] = []
+    overlap_matches: list[dict[str, Any]] = []
+    for spec in own:
+        pairs = [*candidates, *(('corpus_spec', other) for other in own if other['name'] != spec['name'])]
+        for kind, candidate in pairs:
+            origin_row, overlap_row = _collision_rows(spec, candidate, kind)
+            if origin_row is not None:
+                origin_matches.append(origin_row)
+            if overlap_row is not None:
+                overlap_matches.append(overlap_row)
+    return {
+        'status': 'success',
+        'operation': 'corpus-cross-check',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'epics_scanned': len(sibling_roots),
+        'plans_scanned': len(live),
+        'specs_total': len(own_paths),
+        'specs_scanned': len(own),
+        'candidates_scanned': len(candidates),
+        'source_origin_match_count': len(origin_matches),
+        'source_origin_matches': origin_matches,
+        'file_overlap_match_count': len(overlap_matches),
+        'file_overlap_matches': overlap_matches,
+        'collision_detected': bool(origin_matches or overlap_matches),
+        'unreadable_count': len(unreadable),
+        'unreadable': unreadable,
+    }
+
+
 def _validate_set_verdict_args(args: argparse.Namespace) -> dict[str, Any] | None:
     """Return the rejection envelope for an invalid ``set-verdict`` call, else ``None``.
 
@@ -1117,6 +1329,17 @@ def _add_corpus_group(subparsers: Any) -> None:
     )
     _add_slug_arg(enumerate_specs)
     enumerate_specs.set_defaults(handler=cmd_corpus_enumerate)
+
+    cross_check = actions.add_parser(
+        'cross-check',
+        help=(
+            "Cross-check this epic's specs against sibling epics and live plans "
+            'for duplicate work, on the two sibling-collision-check classes (read-only).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(cross_check)
+    cross_check.set_defaults(handler=cmd_corpus_cross_check)
 
     verdicts = actions.add_parser(
         'verdicts',
