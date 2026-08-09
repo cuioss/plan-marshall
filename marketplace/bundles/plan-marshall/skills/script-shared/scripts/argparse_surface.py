@@ -1021,12 +1021,16 @@ def run_help(
 class _Deadline:
     """A wall-clock cutoff that many independent :class:`_Budget` instances can share.
 
-    Holds nothing but the cutoff time and the lock guarding it — no node count
-    — which is exactly what lets :func:`build_surface_index` share ONE instance
-    across every notation's OWN ``_Budget`` while each keeps its own node cap
-    (see :class:`_Budget`). ``total_budget_seconds=None`` produces a deadline
-    that never expires, matching :class:`_Budget`'s previous no-deadline
-    behaviour exactly.
+    Holds nothing but the cutoff time — no node count — which is exactly what
+    lets :func:`build_surface_index` share ONE instance across every notation's
+    OWN ``_Budget`` while each keeps its own node cap (see :class:`_Budget`).
+    ``total_budget_seconds=None`` produces a deadline that never expires,
+    matching :class:`_Budget`'s previous no-deadline behaviour exactly.
+
+    Deliberately lock-free: ``_at`` is computed once in ``__init__`` and never
+    mutated afterwards, so the concurrent workers in :func:`build_surface_index`
+    only ever read an immutable value. :class:`_Budget` still locks, because its
+    node counter really is mutable shared state.
     """
 
     def __init__(self, total_budget_seconds: float | None) -> None:
@@ -1035,14 +1039,10 @@ class _Deadline:
             if total_budget_seconds is not None
             else None
         )
-        self._lock = threading.Lock()
 
     def expired(self) -> bool:
         """True once wall-clock has passed the cutoff. Always False when unset."""
-        if self._at is None:
-            return False
-        with self._lock:
-            return time.monotonic() >= self._at
+        return self._at is not None and time.monotonic() >= self._at
 
 
 class _Budget:
@@ -1319,9 +1319,9 @@ def build_surface_index(
         return {}
 
     # ONE deadline for the whole batch — see the ``config.total_budget_seconds``
-    # paragraph above. Every worker's own ``_Budget`` consults the same
-    # ``_Deadline``, which is why it guards its cutoff with a lock: several
-    # threads race to read "has wall-clock passed the cutoff" concurrently.
+    # paragraph above. Every worker's own ``_Budget`` consults this same
+    # ``_Deadline``; it needs no lock of its own because its cutoff is immutable
+    # once constructed here (see :class:`_Deadline`).
     deadline = _Deadline(config.total_budget_seconds)
 
     def _derive(notation: str) -> tuple[str, ScriptSurface | NotDerivable]:

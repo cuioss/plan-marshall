@@ -1151,7 +1151,7 @@ def _toon_single_line(value: str) -> str:
     two-character ``\\n`` in argv onto a real newline's rendering.
     """
     return (
-        str(value)
+        value
         .replace('\\', '\\\\')
         .replace('\r', '\\r')
         .replace('\n', '\\n')
@@ -1177,7 +1177,7 @@ def _render_rejection_toon(notation: str, rejection: dict) -> str:
     ``_surface_for`` resolved it against the embedded surface map. Neither does
     ``accepted``, whose members are registered names in every branch.
     """
-    accepted = ', '.join(str(item) for item in rejection.get('accepted') or [])
+    accepted = ', '.join(rejection.get('accepted') or [])
     return '\n'.join([
         'status: error',
         'error: invalid_invocation',
