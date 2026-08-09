@@ -306,7 +306,9 @@ def test_r1_quote_masked_views_preserve_length() -> None:
     check into a permanent pass.
     """
     command = 'echo "a; b" \'c && d\' e'
-    operator_view, substitution_view = hook._quote_masked_views(command)
+    views = hook._quote_masked_views(command)
+    assert views is not None, "well-formed quoting must yield masked views, not the malformed-quoting None"
+    operator_view, substitution_view = views
     assert len(operator_view) == len(command)
     assert len(substitution_view) == len(command)
 
