@@ -269,7 +269,7 @@ def _seed_denominator_sources(plan_dir: Path) -> None:
     Each is a MOVING quantity in production, which is why the record has to name
     the moment it read them; here they are pinned so the counts are checkable.
     """
-    outline = ['# Solution: composed representability fixture', '']
+    outline = ['# Solution: composed representability fixture', '', '## Deliverables', '']
     for index in range(1, _DELIVERABLE_COUNT + 1):
         outline.append(f'### {index}. Deliverable {index}')
         outline.append('')

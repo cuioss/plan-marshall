@@ -494,8 +494,8 @@ Each denominator is persisted as a **pair**, written together or not at all:
 
 | Field | Type | Source |
 |-------|------|--------|
-| `deliverable_count` | int | Derived by `generate` — the number of `### N.` headings in the plan's `solution_outline.md` |
-| `files_modified` | int | Derived by `generate` — the length of `references.json`'s `affected_files` list |
+| `deliverable_count` | int | Derived by `generate` — the number of `### N. Title` deliverable headings in the **Deliverables section** of the plan's `solution_outline.md`. `generate` does not own that grammar: it calls `_plan_parsing.extract_deliverable_headings`, the same section-scoped extractor `manage-solution-outline list-deliverables` uses, so one plan cannot carry two disagreeing deliverable counts |
+| `files_modified` | int | Derived by `generate` — the length of `references.json`'s `affected_files` list. A present-but-empty list is a measured `0` |
 | `tasks_completed` | int | Derived by `generate` — the number of `tasks/TASK-*.json` files recording `status: done` |
 | `{denominator}_sampling_point` | `generate_time` | Written by `generate` beside each count above. Names WHICH moment the count was taken at |
 | `denominators_sampled_at` | ISO 8601 timestamp | Written by `generate` whenever at least one denominator was persisted — the single instant every denominator in that call was counted at |
@@ -514,7 +514,9 @@ Each denominator is persisted as a **pair**, written together or not at all:
 
 ### A denominator with no determinable sampling point is not persisted
 
-When a source cannot be read — no `solution_outline.md`, no `references.json`, no `tasks/` directory, or a malformed one — the count is **absent from the record entirely**, never written as `0` and never guessed. This is the module's own absent-is-not-zero rule (§ Exploration-share counters) applied to the reference class rather than to a measurement: a `0` denominator would read as "this plan had no deliverables", which is a claim, while absence reads as "this record does not carry that count", which is the truth.
+When a source cannot be read — no `solution_outline.md`, no `references.json` (or one that is unparseable, or that carries no `affected_files` list at all), no `tasks/` directory, or one holding no readable `TASK-*.json` — the count is **absent from the record entirely**, never written as `0` and never guessed. This is the module's own absent-is-not-zero rule (§ Exploration-share counters) applied to the reference class rather than to a measurement: a `0` denominator would read as "this plan had no deliverables", which is a claim, while absence reads as "this record does not carry that count", which is the truth.
+
+**Could-not-be-read is the ONLY trigger, and a readable-but-empty source is a measured `0`.** The inverse is the same rule read the other way, and it binds just as hard: an outline whose Deliverables section carries no `### N. Title` heading, and a `references.json` whose `affected_files` list is present but empty, were both COUNTED — the answer was zero, and `0` is what the record carries. Those are legitimate plan states, not failures to read: `solution-outline-standard.md` defines `scope_estimate: none` as pure analysis with no affected files. Collapsing such a plan into absence would tell a reader that the source could not be read when it was read fine — the same conflation of "measured zero" with "unmeasured" that the dispatch-boundary row's `unmeasured` token exists to prevent (§ Per-Dispatch Context-Load Attribution), and the split `tasks_completed` already keeps for an all-pending task population.
 
 `generate` also REMOVES any pair whose source has become unreadable since it was last written, so the record never presents a count beside a `denominators_sampled_at` naming a moment at which that count was not what the plan held.
 
@@ -774,7 +776,7 @@ The three data rows above are the three distinguishable cases, in order: a dispa
 
 ### Per-Dispatch Context-Load Attribution
 
-This section is the **single source of truth** for the dispatch-boundary row's column order, count, and defaults. Consumers (the `manage-metrics` script writer, the `plan-retrospective` `analyze-logs.py` reader, and `SKILL.md`) reference this section rather than restating the schema.
+This section is the **single source of truth** for the dispatch-boundary row's column order, count, and unmeasured representation. Every consumer cites it as authority — and each one nonetheless RESTATES part of the schema in its own file, because they run in separate processes (and one lives outside this repository's crawled inventory) and cannot import a shared constant. Those restating surfaces are enumerated, with the obligation they carry, in **Restating surfaces (lock-step obligation)** at the end of this section; that list is the thing to keep in sync, and it is not empty.
 
 Each row carries **nine columns**: the **legacy five** followed by the **four context-load columns appended at the END** for positional backward compatibility. The four context-load columns are the per-DISPATCH counterpart to the per-PHASE four-field `message.usage` view that `enrich` writes (see Per-Phase Fields above); they capture the dispatched agent's context-load totals at dispatch termination so per-dispatch context cost (dispatch count, collapsed triage contexts, per-dispatch context size) becomes measurable.
 

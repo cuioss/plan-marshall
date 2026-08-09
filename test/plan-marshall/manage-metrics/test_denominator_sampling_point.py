@@ -18,8 +18,12 @@ cannot be read is absent from the record, never a guessed ``0``.
 
 import importlib.util
 import json
+import re
 from argparse import Namespace
 from pathlib import Path
+
+import pytest
+from _plan_parsing import extract_deliverable_headings, parse_document_sections
 
 from conftest import get_script_path
 
@@ -66,15 +70,23 @@ def _seed_phases(plan_id: str) -> Path:
 
 
 def _write_outline(plan_dir: Path, deliverables: int) -> None:
-    """Write a solution_outline.md carrying *deliverables* `### N.` headings."""
-    lines = ['# Solution: fixture', '']
+    """Write a solution_outline.md carrying *deliverables* countable headings.
+
+    The headings live under a ``## Deliverables`` H2, which is where the
+    solution-outline standard puts them and the only place the authoritative
+    extractor looks. Two decoys are written into every fixture so the count is
+    never satisfied by a laxer grammar: a bare ``### Notes`` (level-3 but not
+    numbered) inside the section, and a fully well-formed ``### 99. Decoy``
+    under a DIFFERENT H2 — the out-of-section case that a whole-file scan
+    counts and the authoritative extractor does not.
+    """
+    lines = ['# Solution: fixture', '', '## Deliverables', '']
     for index in range(1, deliverables + 1):
         lines.append(f'### {index}. Deliverable {index}')
         lines.append('')
-        # A non-matching `###` heading must NOT be counted — the grammar is
-        # `### N.`, not any level-3 heading.
         lines.append('### Notes')
         lines.append('')
+    lines += ['## Approach', '', '### 99. Decoy heading outside Deliverables', '']
     (plan_dir / 'solution_outline.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
@@ -114,9 +126,10 @@ def test_each_denominator_is_persisted_with_its_sampling_point(plan_context):
     assert result['status'] == 'success', result
 
     data = manage_metrics.read_metrics_raw(plan_id)
-    # The counts are the real ones, not placeholders: 4 `### N.` headings (the
-    # interleaved `### Notes` headings do NOT count), 3 affected files, 2 of 3
-    # tasks done.
+    # The counts are the real ones, not placeholders: 4 `### N. Title` headings
+    # inside the Deliverables section (the interleaved `### Notes` headings and
+    # the `### 99.` decoy under `## Approach` do NOT count), 3 affected files,
+    # 2 of 3 tasks done.
     #
     # They read back as STRINGS: `read_metrics_raw` numeric-coerces per-phase
     # block values only, so every plan-level key round-trips as text — the same
@@ -309,6 +322,157 @@ def test_zero_completed_tasks_over_a_real_population_is_counted_as_zero(plan_con
     # asserted above, where the key is not present at all.
     assert data['tasks_completed'] == '0'
     assert data['tasks_completed_sampling_point'] == 'generate_time'
+
+
+def test_empty_affected_files_list_is_counted_as_zero(plan_context):
+    """A readable references.json with an EMPTY list is a measured `0`.
+
+    `scope_estimate: none` is a documented plan state — pure analysis, no
+    affected files — so an empty `affected_files` list is a legitimate answer
+    to a question that WAS asked. Returning absence for it would tell a reader
+    that `references.json` could not be read when it was read fine, which is
+    the "unmeasured means could-not-be-read" contract stated in
+    `data-format.md`, `plan-efficiency.md`, and the counter's own docstring.
+    """
+    plan_id = 'denom-empty-files'
+    plan_dir = _seed_phases(plan_id)
+    _write_references(plan_dir, [])
+
+    cmd_generate(_ns_generate(plan_id))
+
+    data = manage_metrics.read_metrics_raw(plan_id)
+    assert data['files_modified'] == '0'
+    assert data['files_modified_sampling_point'] == 'generate_time'
+
+
+def test_references_json_without_an_affected_files_list_is_absent(plan_context):
+    """The matched negative control for the measured zero above.
+
+    An empty list and a MISSING list are different facts: the first was
+    counted, the second never existed. Without this case the measured-zero
+    assertion would be satisfied by a counter that returns `0` for both — which
+    is the same conflation in the opposite direction.
+    """
+    plan_id = 'denom-no-files-key'
+    plan_dir = _seed_phases(plan_id)
+    (plan_dir / 'references.json').write_text(
+        json.dumps({'base_branch': 'main'}), encoding='utf-8'
+    )
+
+    cmd_generate(_ns_generate(plan_id))
+
+    data = manage_metrics.read_metrics_raw(plan_id)
+    assert 'files_modified' not in data
+    assert 'files_modified_sampling_point' not in data
+
+
+@pytest.mark.parametrize(
+    ('label', 'outline'),
+    [
+        (
+            'section-present-but-empty',
+            '# Solution: fixture\n\n## Deliverables\n\nNone — pure analysis.\n',
+        ),
+        (
+            'no-deliverables-section-at-all',
+            '# Solution: fixture\n\n## Approach\n\nProse only.\n',
+        ),
+    ],
+)
+def test_readable_outline_with_no_deliverable_heading_is_counted_as_zero(
+    plan_context, label, outline
+):
+    """A readable outline yielding no heading is a measured `0`, not absence.
+
+    The count was taken and the answer was zero. Only an outline that could not
+    be READ — absent, or an OSError — is absent from the record.
+    """
+    plan_id = f'denom-zero-deliverables-{label}'
+    plan_dir = _seed_phases(plan_id)
+    (plan_dir / 'solution_outline.md').write_text(outline, encoding='utf-8')
+
+    cmd_generate(_ns_generate(plan_id))
+
+    data = manage_metrics.read_metrics_raw(plan_id)
+    assert data['deliverable_count'] == '0'
+    assert data['deliverable_count_sampling_point'] == 'generate_time'
+
+
+# =============================================================================
+# One deliverable grammar, not two producers of one number
+# =============================================================================
+
+# The grammar `_count_deliverables` used to carry privately: unscoped to any
+# section, and satisfied by a numbered heading with no title at all.
+_RETIRED_WHOLE_FILE_RE = re.compile(r'^###\s+\d+\.\s')
+
+# Outlines chosen so that retired grammar and the authoritative section-scoped
+# extractor give DIFFERENT answers. If `_count_deliverables` ever reverts to a
+# private grammar, the agreement assertion below fails on these — which is what
+# makes it non-vacuous.
+_DIVERGENT_OUTLINES = {
+    'numbered-heading-under-approach': (
+        '# Solution: fixture\n\n'
+        '## Deliverables\n\n'
+        '### 1. Real deliverable\n\n'
+        '## Approach\n\n'
+        '### 2. Not a deliverable\n'
+    ),
+    'numbered-heading-inside-a-fenced-example': (
+        '# Solution: fixture\n\n'
+        '## Deliverables\n\n'
+        '### 1. Real deliverable\n\n'
+        '## Notes\n\n'
+        'Deliverable headings look like this:\n\n'
+        '```markdown\n'
+        '### 7. Example heading in a fenced block\n'
+        '```\n'
+    ),
+    'degenerate-heading-with-no-title': (
+        '# Solution: fixture\n\n'
+        '## Deliverables\n\n'
+        '### 1. Real deliverable\n\n'
+        '### 2. \n'
+    ),
+    'headings-only-outside-the-section': (
+        '# Solution: fixture\n\n## Approach\n\n### 1. Not a deliverable\n'
+    ),
+}
+
+
+@pytest.mark.parametrize('label', sorted(_DIVERGENT_OUTLINES))
+def test_deliverable_count_agrees_with_the_authoritative_extractor(plan_context, label):
+    """The metrics counter and `manage-solution-outline` return ONE number.
+
+    Two producers of one denominator is the defect this module exists to
+    close: `metrics.toon`'s `deliverable_count` and
+    `manage-solution-outline list-deliverables` are read by different
+    consumers, and a reader handed two different figures has no way to tell
+    which is right. The counter therefore delegates to the authoritative
+    extractor rather than keeping a third copy of the heading grammar, and
+    this pins the agreement against outlines where a whole-file scan and the
+    section-scoped extractor genuinely disagree.
+    """
+    outline = _DIVERGENT_OUTLINES[label]
+    plan_id = f'denom-agreement-{label}'
+    plan_dir = _seed_phases(plan_id)
+    (plan_dir / 'solution_outline.md').write_text(outline, encoding='utf-8')
+
+    result = cmd_generate(_ns_generate(plan_id))
+
+    authoritative = len(
+        extract_deliverable_headings(parse_document_sections(outline).get('deliverables', ''))
+    )
+    assert result['deliverable_count'] == authoritative
+
+    # Non-vacuity: the RETIRED grammar — a whole-file scan for `^###\s+\d+\.\s`,
+    # unscoped and not requiring a title — gives a DIFFERENT answer on this
+    # outline. So the agreement above is a real constraint, not two
+    # implementations that happen to coincide on the input chosen.
+    retired = len([line for line in outline.splitlines() if _RETIRED_WHOLE_FILE_RE.match(line)])
+    assert retired != authoritative, (
+        f'{label} no longer distinguishes the two grammars — pick a divergent outline'
+    )
 
 
 # =============================================================================

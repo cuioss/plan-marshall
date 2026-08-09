@@ -16,6 +16,8 @@ The reason is not convenience. Each denominator is a MOVING quantity — `affect
 
 Each persisted count arrives as a **pair** with its `{denominator}_sampling_point` companion (currently always `generate_time`, meaning the count was taken from live plan state when `generate` ran, at the instant `denominators_sampled_at` names). The contract is owned by [`manage-metrics/standards/data-format.md`](../../manage-metrics/standards/data-format.md) § "Denominators and Their Sampling Point".
 
+**A `0` in the record is a MEASURED zero, not a missing denominator.** Could-not-be-read is the only reason `generate` omits a denominator, so a persisted `0` — an outline whose Deliverables section holds no `### N. Title` heading, an empty `affected_files` list, an all-pending task population — was counted, and the answer was zero. Read it as the count it is; do not re-derive it and do not treat it as absent.
+
 **When a denominator is ABSENT from the record** (its source could not be read, so `generate` deliberately wrote nothing rather than a `0`), the aspect MAY still compute the ratio from a value it derives itself — but it MUST then state, in the emitted fragment, both that denominator's provenance and that its sampling point is **unstated**. Presenting such a ratio as though it were anchored is prohibited; a bare count carrying no `_sampling_point` companion is not anchored either and takes the same disclosure.
 
 ### What population `totals.tokens` measures

@@ -35,6 +35,7 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
+from _plan_parsing import extract_deliverable_headings, parse_document_sections
 from constants import FILE_STATUS, FILE_WORK_METRICS, PHASES
 from file_ops import (
     PlanNotFoundError,
@@ -1862,20 +1863,31 @@ def cmd_print_phase_breakdown(args: argparse.Namespace) -> dict:
     }
 
 
-_DELIVERABLE_HEADING_RE = re.compile(r'^###\s+\d+\.\s')
-
-
 def _count_deliverables(plan_id: str) -> int | None:
-    """Count the plan's deliverables from ``solution_outline.md``'s headings.
+    """Count the plan's deliverables from ``solution_outline.md``.
 
-    A deliverable is a ``### N.`` heading — the same grammar the retrospective's
-    plan-efficiency aspect used to be told to count by hand at render time.
-    Persisting the count here is what stops that derivation being redone (and
-    silently redated) on every read.
+    The grammar is NOT restated here. The count DELEGATES to
+    ``_plan_parsing.extract_deliverable_headings`` applied to the outline's
+    ``Deliverables`` section — the same extractor, over the same scope, that
+    ``manage-solution-outline list-deliverables`` and the retrospective's
+    artifact-consistency check already read. A private copy of the heading
+    regex would make this module a SECOND producer of one number: a ``### N.``
+    heading under *Approach*, under *Risks*, or inside a fenced block showing
+    deliverable syntax would be counted here and not there, and a reader of the
+    two figures would have no way to tell which was right. Two disagreeing
+    definitions of one denominator is the defect this module exists to close,
+    so there is exactly one definition and this is a caller of it.
 
-    Returns ``None`` when the outline is absent or carries no such heading. The
-    caller writes NOTHING in that case: a denominator that could not be counted
-    is absent, never a guessed or defaulted ``0``.
+    Persisting the count is what stops the plan-efficiency aspect re-deriving
+    it (and silently re-dating it) at render time.
+
+    Returns ``None`` for exactly one reason — the outline could not be READ
+    (absent, or an ``OSError`` on read). A readable outline is a MEASURED
+    count, including a measured ``0``: an outline with no ``Deliverables``
+    section, or one whose Deliverables section carries no ``### N. Title``
+    heading, was counted and the answer was zero. Absence is reserved for
+    "the source could not be read" — see ``standards/data-format.md``
+    § "A denominator with no determinable sampling point is not persisted".
     """
     path = get_plan_dir(plan_id) / 'solution_outline.md'
     if not path.exists():
@@ -1884,8 +1896,8 @@ def _count_deliverables(plan_id: str) -> int | None:
         text = path.read_text(encoding='utf-8')
     except OSError:
         return None
-    count = sum(1 for line in text.splitlines() if _DELIVERABLE_HEADING_RE.match(line))
-    return count or None
+    sections = parse_document_sections(text)
+    return len(extract_deliverable_headings(sections.get('deliverables', '')))
 
 
 def _count_affected_files(plan_id: str) -> int | None:
@@ -1894,9 +1906,19 @@ def _count_affected_files(plan_id: str) -> int | None:
     This is a MOVING quantity — the list grows during execute — which is exactly
     why the count is worthless without the sampling point written beside it.
 
-    Returns ``None`` when the file is absent, unreadable, or carries no
-    ``affected_files`` list, so the caller writes nothing rather than a ``0``
-    that would read as "this plan modified no files".
+    Returns ``None`` for exactly one reason — the list could not be READ: the
+    file is absent, unreadable, unparseable, or carries no ``affected_files``
+    list at all. In every one of those the count was never taken, so the caller
+    writes nothing.
+
+    A PRESENT-but-empty ``affected_files`` list is a MEASURED ``0``, not an
+    absence. That is a documented, legitimate plan state — a
+    ``scope_estimate: none`` plan is pure analysis with no affected files — and
+    collapsing it into absence would tell a reader that ``references.json``
+    could not be read when it was read fine. The zero-vs-absent split is the
+    same one ``_count_completed_tasks`` keeps, and the same one the
+    dispatch-boundary row's ``unmeasured`` token keeps: a measured zero is a
+    measurement.
     """
     path = get_plan_dir(plan_id) / 'references.json'
     if not path.exists():
@@ -1908,7 +1930,7 @@ def _count_affected_files(plan_id: str) -> int | None:
     files = data.get('affected_files') if isinstance(data, dict) else None
     if not isinstance(files, list):
         return None
-    return len(files) or None
+    return len(files)
 
 
 def _count_completed_tasks(plan_id: str) -> int | None:

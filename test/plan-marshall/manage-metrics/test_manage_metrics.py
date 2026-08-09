@@ -2213,8 +2213,11 @@ class TestGenerateDenominatorFields:
         phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES}
         manage_metrics.write_metrics('gen-denominator', {'phases': phases})
         plan_dir = plan_context.plan_dir_for('gen-denominator')
+        # The headings live under `## Deliverables` because that is where the
+        # solution-outline standard puts them, and the only scope the
+        # authoritative extractor `generate` delegates to looks at.
         (plan_dir / 'solution_outline.md').write_text(
-            '### 1. First\n\n### 2. Second\n', encoding='utf-8'
+            '## Deliverables\n\n### 1. First\n\n### 2. Second\n', encoding='utf-8'
         )
 
         result = cmd_generate(_ns_generate('gen-denominator'))
