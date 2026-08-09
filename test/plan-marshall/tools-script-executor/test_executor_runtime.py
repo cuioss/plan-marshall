@@ -101,7 +101,7 @@ def _render_executor(target_path: Path, embedded_script_path: Path) -> Path:
     mappings_code = f'    "{TEST_NOTATION}": "{embedded_script_path}",'
 
     rendered = template_content.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
-    rendered = rendered.replace('{{SUBCOMMAND_MAPPINGS}}', '')
+    rendered = rendered.replace('{{SCRIPT_SURFACES}}', '').replace('{{SUBCOMMAND_MAPPINGS}}', '')
     rendered = rendered.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
     rendered = rendered.replace(
         '{{SHARED_MODULE_DIRS}}',
@@ -305,6 +305,7 @@ def _render_executor_for_post_removal(
     mappings_code = f'    "{POST_REMOVAL_NOTATION}": "{embedded_script_path}",'
 
     rendered = template_content.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
+    rendered = rendered.replace('{{SCRIPT_SURFACES}}', '')
     rendered = rendered.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
     rendered = rendered.replace(
         '{{SHARED_MODULE_DIRS}}',
@@ -446,6 +447,7 @@ def _render_executor_with_cwd_walk(target_path: Path, embedded_script_path: Path
     mappings_code = f'    "{SELF_HEAL_NOTATION}": "{embedded_script_path}",'
 
     rendered = template_content.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
+    rendered = rendered.replace('{{SCRIPT_SURFACES}}', '')
     rendered = rendered.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
     rendered = rendered.replace(
         '{{SHARED_MODULE_DIRS}}',
@@ -647,6 +649,7 @@ def _render_build_executor(target_path: Path, embedded_script_path: Path) -> Pat
     mappings_code = f'    "{BUILD_CLASS_NOTATION}": "{embedded_script_path}",'
 
     rendered = template_content.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
+    rendered = rendered.replace('{{SCRIPT_SURFACES}}', '')
     rendered = rendered.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
     rendered = rendered.replace(
         '{{SHARED_MODULE_DIRS}}',

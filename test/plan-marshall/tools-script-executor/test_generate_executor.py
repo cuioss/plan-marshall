@@ -3,6 +3,7 @@
 """Unit tests for generate_executor.py script."""
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -631,6 +632,11 @@ def _read_generated_scripts(generated_executor: Path) -> dict[str, str]:
     return mappings
 
 
+def _gen_module_budget_env() -> str:
+    """The generator's own budget env-var name — read, never re-typed here."""
+    return str(load_module()._SURFACE_DERIVATION_BUDGET_ENV)
+
+
 def _generate_with_anchor(
     tmp_path: Path,
     fake_ws: Path,
@@ -670,6 +676,12 @@ def _generate_with_anchor(
         pythonpath = pythonpath + os.pathsep + env['PYTHONPATH']
     env['PYTHONPATH'] = pythonpath
     env['PLAN_BASE_DIR'] = str(plan_dir)
+    # These tests assert DISCOVERY ANCHORING, not accept-set derivation, and the
+    # fake workspace is a full copy of the real bundles — so a cold derivation
+    # here would probe ~145 scripts' --help to prove a path. Zero the budget: the
+    # generator then emits no surfaces, which is the documented safe degrade, and
+    # the SCRIPTS dict these tests read is unaffected.
+    env[_gen_module_budget_env()] = '0'
 
     if use_flag:
         cmd.extend(['--marketplace-root', str(fake_ws)])
@@ -809,6 +821,7 @@ def _load_template_module():
         / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts'
     )
     source = source.replace('{{SCRIPT_MAPPINGS}}', '')
+    source = source.replace('{{SCRIPT_SURFACES}}', '')
     source = source.replace('{{SUBCOMMAND_MAPPINGS}}', '')
     source = source.replace('{{LOGGING_DIR}}', logging_dir)
     source = source.replace('{{SHARED_MODULE_DIRS}}', '# (none)')
@@ -2122,7 +2135,13 @@ def test_generate_executor_format_skew_refuses_write_and_preserves_existing(tmp_
 
     template = _fake_template_path(bundles_root)
     body = template.read_text(encoding='utf-8')
-    skewed = body.replace('# TEMPLATE_FORMAT_VERSION: 1', '# TEMPLATE_FORMAT_VERSION: 999')
+    # Rewrite whatever version the fixture declares, rather than pinning the
+    # literal current one: hard-coding ``: 1`` here made the fixture a silent
+    # no-op the moment the real format version was bumped, and a skew test that
+    # writes an UNSKEWED template passes for the wrong reason.
+    skewed = re.sub(
+        r'#\s*TEMPLATE_FORMAT_VERSION:\s*\d+', '# TEMPLATE_FORMAT_VERSION: 999', body
+    )
     assert skewed != body, 'fixture must actually alter the format marker'
     template.write_text(skewed, encoding='utf-8')
 
@@ -2642,3 +2661,440 @@ def test_get_shared_module_dirs_stays_base_path_newest_version(tmp_path):
     assert all('0.1.500' in d for d in dir_strs), (
         f'shared dirs must resolve through the versioned cache tree; got {dir_strs}'
     )
+
+
+# ============================================================================
+# SCRIPT_SURFACES: embedded per-notation argparse accept-sets
+# ============================================================================
+# The generator derives each registered script's accept-set through the shared
+# ``argparse_surface`` module and embeds it beside SCRIPTS, so the executor can
+# reject an invalid invocation BEFORE spawning. Three properties are pinned
+# here, each for a different failure the embedding could have:
+#
+#   - what lands in the map (populated, alias-aware, imported-module-aware, and
+#     fail-closed — a non-derivable notation is ABSENT, never present-and-empty);
+#   - what the digest cache does (reuse on an unchanged script set with a
+#     byte-identical executor; invalidation on a sibling-module edit; and a
+#     FAILED re-derivation drops the entry rather than resurrecting the stale one);
+#   - the format-version lockstep that makes a mixed generator/template pair a
+#     loud refusal rather than a broken executor.
+#
+# The synthetic scripts are laid out at the real marketplace path shape
+# (``{root}/marketplace/bundles/{bundle}/skills/{skill}/scripts/{script}.py``)
+# because the derivation resolves a script file — and therefore its content
+# hash and disk cache key — relative to the probe executor's repo root. A
+# flat-layout fixture would silently fall through to the no-content-hash branch
+# and exercise a code path production never takes.
+
+_SURF_BUNDLE = 'synthetic-bundle'
+_SURF_SKILL = 'synthetic-skill'
+
+
+def _surface_notation(script: str) -> str:
+    return f'{_SURF_BUNDLE}:{_SURF_SKILL}:{script}'
+
+
+def _surface_scripts_dir(root: Path) -> Path:
+    return (
+        root / 'marketplace' / 'bundles' / _SURF_BUNDLE / 'skills' / _SURF_SKILL / 'scripts'
+    )
+
+
+def _write_surface_script(root: Path, name: str, body: str) -> str:
+    """Write ``{name}.py`` at the real marketplace path shape; return its path."""
+    scripts_dir = _surface_scripts_dir(root)
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    path = scripts_dir / f'{name}.py'
+    path.write_text(body, encoding='utf-8')
+    return str(path)
+
+
+_ALIAS_SCRIPT = """\
+import argparse
+
+parser = argparse.ArgumentParser(prog='aliased')
+subparsers = parser.add_subparsers(dest='command')
+read_p = subparsers.add_parser('read', aliases=['get'], help='Read a record')
+read_p.add_argument('--plan-id')
+
+if __name__ == '__main__':
+    parser.parse_args()
+"""
+
+# The ``ci.py`` / ``ci_base.py`` relationship: this entry point declares no
+# parser of its own. A static add_parser walk of this file derives nothing.
+_IMPORTED_PARSER_SCRIPT = """\
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+from _surface_parser_lib import build_parser
+
+if __name__ == '__main__':
+    build_parser().parse_args()
+"""
+
+_IMPORTED_PARSER_LIB = """\
+import argparse
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(prog='imported')
+    subparsers = parser.add_subparsers(dest='command')
+    for name in ('pr', 'checks'):
+        subparsers.add_parser(name)
+    return parser
+"""
+
+_IMPORTED_PARSER_LIB_EXTENDED = """\
+import argparse
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(prog='imported')
+    subparsers = parser.add_subparsers(dest='command')
+    for name in ('pr', 'checks', 'issue'):
+        subparsers.add_parser(name)
+    return parser
+"""
+
+_BROKEN_SCRIPT = """\
+import sys
+
+sys.stderr.write('cannot start\\n')
+sys.exit(3)
+"""
+
+
+def _generate_with_surfaces(module, tmp_path: Path, mappings: dict[str, str]) -> dict:
+    """Run a real generation into ``tmp_path/.plan``; return the flattened result.
+
+    ``generate_executor`` nests the four counts under ``surface_stats``; the
+    ``generate`` command flattens them into its TOON. Flattening here keeps
+    every assertion below written against the shape a CALLER sees.
+    """
+    result = module.generate_executor(mappings, MARKETPLACE_ROOT, dry_run=False, target='claude')
+    return {**result, **(result.get('surface_stats') or {})}
+
+
+def _surface_fixture(tmp_path: Path, monkeypatch, module) -> Path:
+    """Point PLAN_BASE_DIR at ``tmp_path/.plan`` and return the executor path."""
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir(exist_ok=True)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+    return plan_dir / 'execute-script.py'
+
+
+def test_generated_executor_carries_populated_script_surfaces(tmp_path, monkeypatch):
+    """A derivable script lands a SCRIPT_SURFACES entry beside its SCRIPTS entry."""
+    module = load_module()
+    executor = _surface_fixture(tmp_path, monkeypatch, module)
+
+    notation = _surface_notation('aliased')
+    mappings = {notation: _write_surface_script(tmp_path, 'aliased', _ALIAS_SCRIPT)}
+
+    result = _generate_with_surfaces(module, tmp_path, mappings)
+    assert result['status'] == 'success', result
+
+    text = executor.read_text(encoding='utf-8')
+    assert 'SCRIPT_SURFACES = {' in text, 'the executor must declare SCRIPT_SURFACES'
+    assert notation in text
+    surfaces = module.read_previous_surfaces(executor)
+    assert notation in surfaces, f'expected a surface entry for {notation}: {surfaces!r}'
+    assert surfaces[notation]['digest'], 'each entry must carry its source digest'
+
+
+def test_surface_entry_accepts_both_alias_and_canonical_spelling(tmp_path, monkeypatch):
+    """Alias awareness survives the round-trip into the generated executor."""
+    module = load_module()
+    executor = _surface_fixture(tmp_path, monkeypatch, module)
+
+    notation = _surface_notation('aliased')
+    mappings = {notation: _write_surface_script(tmp_path, 'aliased', _ALIAS_SCRIPT)}
+    assert _generate_with_surfaces(module, tmp_path, mappings)['status'] == 'success'
+
+    children = module.read_previous_surfaces(executor)[notation]['surface']['root']['children']
+    assert 'read' in children
+    assert 'get' in children, (
+        'the alias spelling must be an accepted child — argparse renders it flat '
+        'in the choice list, and rejecting it would be a false rejection of a '
+        'documented call'
+    )
+
+
+def test_surface_entry_present_for_parser_built_in_an_imported_module(tmp_path, monkeypatch):
+    """The mechanism's whole purpose: an entry point that declares no parser."""
+    module = load_module()
+    executor = _surface_fixture(tmp_path, monkeypatch, module)
+
+    _write_surface_script(tmp_path, '_surface_parser_lib', _IMPORTED_PARSER_LIB)
+    notation = _surface_notation('imported')
+    mappings = {notation: _write_surface_script(tmp_path, 'imported', _IMPORTED_PARSER_SCRIPT)}
+    assert _generate_with_surfaces(module, tmp_path, mappings)['status'] == 'success'
+
+    surfaces = module.read_previous_surfaces(executor)
+    assert notation in surfaces, (
+        'a parser assembled in an imported module must still yield a surface — '
+        'this is the coverage a static AST walk cannot provide'
+    )
+    children = surfaces[notation]['surface']['root']['children']
+    assert set(children) == {'pr', 'checks'}
+
+
+def test_non_derivable_notation_is_absent_not_present_and_empty(tmp_path, monkeypatch):
+    """Fail-closed: no entry at all, never an entry that accepts nothing.
+
+    An empty-but-present surface would read as "this script declares no
+    subcommands and no flags", which is the shape that rejects every call. The
+    counts must say so too — the notation lands in ``surfaces_not_derivable``.
+    """
+    module = load_module()
+    executor = _surface_fixture(tmp_path, monkeypatch, module)
+
+    notation = _surface_notation('broken')
+    mappings = {notation: _write_surface_script(tmp_path, 'broken', _BROKEN_SCRIPT)}
+
+    result = _generate_with_surfaces(module, tmp_path, mappings)
+    assert result['status'] == 'success', result
+    assert result['scripts_registered'] == 1
+    assert result['surfaces_derived'] == 0
+    assert result['surfaces_not_derivable'] == 1
+
+    assert notation not in module.read_previous_surfaces(executor)
+
+
+def test_counts_partition_the_registered_population(tmp_path, monkeypatch):
+    """The three buckets sum to ``scripts_registered`` — no notation unaccounted.
+
+    Published counts are only trustworthy if they cover the whole population; a
+    partition check is what stops a silently-dropped notation from vanishing
+    between the buckets.
+    """
+    module = load_module()
+    _surface_fixture(tmp_path, monkeypatch, module)
+
+    _write_surface_script(tmp_path, '_surface_parser_lib', _IMPORTED_PARSER_LIB)
+    mappings = {
+        _surface_notation('aliased'): _write_surface_script(tmp_path, 'aliased', _ALIAS_SCRIPT),
+        _surface_notation('imported'): _write_surface_script(
+            tmp_path, 'imported', _IMPORTED_PARSER_SCRIPT
+        ),
+        _surface_notation('broken'): _write_surface_script(tmp_path, 'broken', _BROKEN_SCRIPT),
+    }
+
+    result = _generate_with_surfaces(module, tmp_path, mappings)
+    assert result['scripts_registered'] == 3
+    total = (
+        result['surfaces_derived']
+        + result['surfaces_reused']
+        + result['surfaces_not_derivable']
+    )
+    assert total == result['scripts_registered'], result
+    assert result['surfaces_derived'] == 2
+    assert result['surfaces_not_derivable'] == 1
+
+
+def test_regeneration_with_unchanged_scripts_reuses_and_is_byte_identical(tmp_path, monkeypatch):
+    """The steady-state claim: zero help invocations, byte-identical executor.
+
+    ``surfaces_derived == 0`` is the observable proof that no ``--help`` child
+    was spawned, and byte-identity is what makes an executor diff a real signal
+    rather than per-run churn.
+    """
+    module = load_module()
+    executor = _surface_fixture(tmp_path, monkeypatch, module)
+
+    notation = _surface_notation('aliased')
+    mappings = {notation: _write_surface_script(tmp_path, 'aliased', _ALIAS_SCRIPT)}
+
+    first = _generate_with_surfaces(module, tmp_path, mappings)
+    assert first['surfaces_derived'] == 1
+    assert first['surfaces_reused'] == 0
+    first_bytes = executor.read_bytes()
+
+    second = _generate_with_surfaces(module, tmp_path, mappings)
+    assert second['surfaces_derived'] == 0, (
+        'an unchanged script set must perform ZERO derivations on regeneration'
+    )
+    assert second['surfaces_reused'] == 1
+    assert executor.read_bytes() == first_bytes, (
+        'regeneration over an unchanged script set must be byte-stable'
+    )
+
+
+def test_editing_an_imported_sibling_module_invalidates_the_cached_surface(tmp_path, monkeypatch):
+    """A change in an IMPORTED module must re-derive the dependent surface.
+
+    The entry-point file is byte-identical across both generations; only its
+    sibling changed. A digest that covered the script file alone would reuse a
+    surface that no longer describes the parser.
+    """
+    module = load_module()
+    executor = _surface_fixture(tmp_path, monkeypatch, module)
+
+    _write_surface_script(tmp_path, '_surface_parser_lib', _IMPORTED_PARSER_LIB)
+    notation = _surface_notation('imported')
+    mappings = {notation: _write_surface_script(tmp_path, 'imported', _IMPORTED_PARSER_SCRIPT)}
+
+    first = _generate_with_surfaces(module, tmp_path, mappings)
+    assert first['surfaces_derived'] == 1
+    before = module.read_previous_surfaces(executor)[notation]
+    assert set(before['surface']['root']['children']) == {'pr', 'checks'}
+
+    # Only the sibling module changes — the entry point is untouched.
+    _write_surface_script(tmp_path, '_surface_parser_lib', _IMPORTED_PARSER_LIB_EXTENDED)
+
+    second = _generate_with_surfaces(module, tmp_path, mappings)
+    assert second['surfaces_derived'] == 1, (
+        'a sibling-module edit must invalidate the dependent surface, not reuse it'
+    )
+    assert second['surfaces_reused'] == 0
+    after = module.read_previous_surfaces(executor)[notation]
+    assert after['digest'] != before['digest']
+    assert set(after['surface']['root']['children']) == {'pr', 'checks', 'issue'}
+
+
+def test_failed_rederivation_drops_the_entry_rather_than_reusing_the_cached_one(
+    tmp_path, monkeypatch
+):
+    """A stale surface is never resurrected by a derivation that failed.
+
+    The very edit that broke the help may be the edit that changed the surface,
+    so carrying the old entry forward would assert an accept-set the script no
+    longer has — and reject a call that is now valid.
+    """
+    module = load_module()
+    executor = _surface_fixture(tmp_path, monkeypatch, module)
+
+    notation = _surface_notation('aliased')
+    mappings = {notation: _write_surface_script(tmp_path, 'aliased', _ALIAS_SCRIPT)}
+
+    assert _generate_with_surfaces(module, tmp_path, mappings)['surfaces_derived'] == 1
+    assert notation in module.read_previous_surfaces(executor)
+
+    # Same notation and path, now a script whose --help exits non-zero.
+    mappings = {notation: _write_surface_script(tmp_path, 'aliased', _BROKEN_SCRIPT)}
+
+    result = _generate_with_surfaces(module, tmp_path, mappings)
+    assert result['surfaces_derived'] == 0
+    assert result['surfaces_reused'] == 0
+    assert result['surfaces_not_derivable'] == 1
+    assert notation not in module.read_previous_surfaces(executor), (
+        'a failed re-derivation must DROP the entry, not fall back to the cached one'
+    )
+
+
+def test_generator_and_shipped_template_declare_the_same_format_version():
+    """The lockstep the handshake guard depends on.
+
+    The guard compares the template's marker against the generator's constant,
+    so it can only protect a MIXED pair. If the shipped pair itself drifts,
+    every generation fails — this test catches that at edit time instead.
+    """
+    module = load_module()
+    template = (module.SCRIPT_DIR.parent / 'templates' / 'execute-script.py.template').read_text(
+        encoding='utf-8'
+    )
+    declared = module.parse_template_format_version(template)
+    assert declared == module._SUPPORTED_TEMPLATE_FORMAT_VERSION, (
+        f'shipped template declares TEMPLATE_FORMAT_VERSION={declared!r} but the '
+        f'generator supports {module._SUPPORTED_TEMPLATE_FORMAT_VERSION} — the new '
+        f'SCRIPT_SURFACES placeholder must bump BOTH in lockstep'
+    )
+
+
+def test_template_declares_the_script_surfaces_placeholder():
+    """The placeholder the generator fills must exist in the template.
+
+    Paired with the residue guard: the generator substituting a placeholder the
+    template lacks is silent, while the template carrying one the generator does
+    not fill is caught at generation. This pins the first direction.
+    """
+    module = load_module()
+    template = (module.SCRIPT_DIR.parent / 'templates' / 'execute-script.py.template').read_text(
+        encoding='utf-8'
+    )
+    assert 'SCRIPT_SURFACES = {' in template
+    assert '{{' + 'SCRIPT_SURFACES' + '}}' in template
+
+
+def test_zero_budget_disables_derivation_without_failing_generation(tmp_path, monkeypatch):
+    """``PM_SURFACE_BUDGET_SECONDS=0`` emits no surfaces and still succeeds.
+
+    The knob's whole point is that a surface-less executor is a SAFE
+    configuration — it dispatches exactly as it did before the map existed — so
+    zeroing the budget must degrade, never fail. The notation lands in
+    ``surfaces_not_derivable`` so the absence is still counted rather than
+    silently indistinguishable from a healthy derivation.
+    """
+    module = load_module()
+    executor = _surface_fixture(tmp_path, monkeypatch, module)
+    monkeypatch.setenv(module._SURFACE_DERIVATION_BUDGET_ENV, '0')
+
+    notation = _surface_notation('aliased')
+    mappings = {notation: _write_surface_script(tmp_path, 'aliased', _ALIAS_SCRIPT)}
+
+    # Drop the process-lifetime memo. It is keyed on the derivation INPUTS, not
+    # on paths, so a sibling test that derived a byte-identical script would
+    # otherwise serve this one from memory — a legitimate hit that spends no
+    # budget and therefore says nothing about the knob. Production always starts
+    # a generation in a fresh process; clearing here reproduces that boundary.
+    module.surface_api.clear_memo()
+
+    result = _generate_with_surfaces(module, tmp_path, mappings)
+    assert result['status'] == 'success', result
+    assert result['surfaces_derived'] == 0
+    assert result['surfaces_not_derivable'] == 1
+    assert notation not in module.read_previous_surfaces(executor)
+    assert executor.is_file(), 'a zeroed budget must still write the executor'
+
+
+def test_unparseable_budget_falls_back_to_the_default(monkeypatch):
+    """A malformed budget must not fail generation — it falls back."""
+    module = load_module()
+    monkeypatch.setenv(module._SURFACE_DERIVATION_BUDGET_ENV, 'not-a-number')
+    assert (
+        module._surface_derivation_config().total_budget_seconds
+        == module._DEFAULT_SURFACE_BUDGET_SECONDS
+    )
+    monkeypatch.setenv(module._SURFACE_DERIVATION_BUDGET_ENV, '-5')
+    assert (
+        module._surface_derivation_config().total_budget_seconds
+        == module._DEFAULT_SURFACE_BUDGET_SECONDS
+    )
+    monkeypatch.setenv(module._SURFACE_DERIVATION_BUDGET_ENV, '12.5')
+    assert module._surface_derivation_config().total_budget_seconds == 12.5
+
+
+def test_read_previous_surfaces_is_empty_for_an_executor_without_the_block(tmp_path):
+    """A pre-SCRIPT_SURFACES executor yields "nothing to reuse", never an error."""
+    module = load_module()
+    legacy = tmp_path / 'execute-script.py'
+    legacy.write_text('#!/usr/bin/env python3\nSCRIPTS = {\n}\n', encoding='utf-8')
+    assert module.read_previous_surfaces(legacy) == {}
+
+
+def test_read_previous_surfaces_is_empty_for_a_missing_executor(tmp_path):
+    module = load_module()
+    assert module.read_previous_surfaces(tmp_path / 'absent.py') == {}
+
+
+def test_surfaces_code_emission_is_sorted_and_deterministic():
+    """Mirrors generate_mappings_code's sorted emission, so output is stable."""
+    module = load_module()
+    surfaces = {
+        'z:z:z': {'digest': 'd1', 'surface': {'root': {'flags': ['b', 'a']}}},
+        'a:a:a': {'digest': 'd2', 'surface': {'root': {'flags': []}}},
+    }
+    code = module.generate_surfaces_code(surfaces)
+    lines = code.strip().split('\n')
+    assert lines[0].strip().startswith('"a:a:a"')
+    assert lines[-1].strip().startswith('"z:z:z"')
+    assert module.generate_surfaces_code(surfaces) == code
+
+    # And the emitted literal is valid Python that round-trips.
+    import ast as _ast
+
+    parsed = _ast.literal_eval('{\n' + code + '\n}')
+    assert set(parsed) == {'a:a:a', 'z:z:z'}

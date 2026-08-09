@@ -97,6 +97,7 @@ Executor-guard backstop decision (ADR-002):
 """
 
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -147,6 +148,11 @@ from marketplace_bundles import (  # noqa: E402, I001
 from marketplace_paths import get_base_path as _shared_get_base_path  # noqa: E402, I001
 from file_ops import get_base_dir as _get_plan_base_dir  # noqa: E402, I001
 from file_ops import get_tracked_config_dir as _get_tracked_config_dir  # noqa: E402, I001
+
+# The SINGLE argparse accept-set derivation, shared with plugin-doctor's
+# edit-time rules. The generator embeds what it derives; the doctor reads the
+# same module at edit time. One derivation, two consumers, nothing to drift.
+import argparse_surface as surface_api  # noqa: E402, I001
 
 
 # Runtime-resolved locations. The executor lives at <root>/.plan/execute-script.py
@@ -697,12 +703,14 @@ def generate_mappings_code(mappings: dict[str, str]) -> str:
 # The template format version this generator knows how to fill. The template
 # carries a matching ``# TEMPLATE_FORMAT_VERSION: N`` marker; the two are the
 # explicit decoupling contract for every placeholder shape (SCRIPT_MAPPINGS,
-# SHARED_MODULE_DIRS, TARGET_AWARE_RESOLVER, …). Any change to a placeholder's
-# emitted structure MUST bump BOTH this constant and the template marker in
-# lockstep. A version skew is refused loudly (no write) rather than emitting a
-# structurally-mismatched executor — the SyntaxError-executor-on-format-skew
-# defect class.
-_SUPPORTED_TEMPLATE_FORMAT_VERSION = 1
+# SCRIPT_SURFACES, SHARED_MODULE_DIRS, TARGET_AWARE_RESOLVER, …). Any change to
+# a placeholder's emitted structure MUST bump BOTH this constant and the
+# template marker in lockstep. A version skew is refused loudly (no write)
+# rather than emitting a structurally-mismatched executor — the
+# SyntaxError-executor-on-format-skew defect class.
+#
+# v2: adds the SCRIPT_SURFACES placeholder (per-notation argparse accept-sets).
+_SUPPORTED_TEMPLATE_FORMAT_VERSION = 2
 
 # Matches the template's ``# TEMPLATE_FORMAT_VERSION: N`` marker comment.
 _TEMPLATE_FORMAT_VERSION_RE = re.compile(r'^#\s*TEMPLATE_FORMAT_VERSION:\s*(\d+)\s*$', re.MULTILINE)
@@ -793,6 +801,267 @@ def _check_emitted_path_provenance(emitted_paths: list[str], base_path: Path) ->
                 ),
             }
     return None
+
+
+# ============================================================================
+# ARGPARSE ACCEPT-SET DERIVATION (SCRIPT_SURFACES)
+# ============================================================================
+
+# Bounds for generation-time derivation. Deliberately tighter than the module
+# defaults on the two axes that matter here: a per-invocation timeout small
+# enough that one hanging import cannot stall a regeneration, and a total
+# wall-clock budget after which the remaining scripts simply contribute no
+# entry. Exhausting the budget degrades to today's behaviour (no surface, no
+# rejection) rather than failing the generation — the fail-closed-on-
+# uncertainty invariant applied to the generator's own cost.
+_SURFACE_DERIVATION_BUDGET_ENV = 'PM_SURFACE_BUDGET_SECONDS'
+_DEFAULT_SURFACE_BUDGET_SECONDS = 180.0
+
+
+def _surface_derivation_config() -> surface_api.DerivationConfig:
+    """Bounds for generation-time derivation, with an operator budget override.
+
+    Deliberately tighter than the module defaults on the two axes that matter
+    here: a per-invocation timeout small enough that one hanging import cannot
+    stall a regeneration, and a total wall-clock budget after which the
+    remaining scripts simply contribute no entry.
+
+    ``PM_SURFACE_BUDGET_SECONDS`` overrides that budget. It exists because the
+    budget is the one bound whose right value is environment-dependent: a cold
+    first build wants the full allowance, while a caller that needs only the
+    notation mappings refreshed (a CI path, an anchoring check) should not pay
+    for a full accept-set derivation. Setting it to ``0`` disables derivation
+    outright, which is a SAFE configuration rather than a broken one — a
+    surface-less executor dispatches exactly as it did before the map existed
+    (see the fail-closed-on-uncertainty invariant). An unparseable or negative
+    value falls back to the default rather than failing the generation.
+    """
+    budget = _DEFAULT_SURFACE_BUDGET_SECONDS
+    raw = os.environ.get(_SURFACE_DERIVATION_BUDGET_ENV)
+    if raw is not None:
+        try:
+            parsed = float(raw)
+        except ValueError:
+            parsed = budget
+        if parsed >= 0:
+            budget = parsed
+    return surface_api.DerivationConfig(
+        timeout_seconds=10.0,
+        max_depth=6,
+        max_nodes=256,
+        total_budget_seconds=budget,
+    )
+
+# The four counts every ``generate`` result carries, zeroed. Published even on
+# the paths that derive nothing (a dry run, a probe-write failure) so the shape
+# of the result never depends on which branch produced it — a caller reading
+# ``surfaces_derived`` always finds it.
+_EMPTY_SURFACE_STATS: dict[str, int] = {
+    'scripts_registered': 0,
+    'surfaces_derived': 0,
+    'surfaces_reused': 0,
+    'surfaces_not_derivable': 0,
+}
+
+# Locates the ``SCRIPT_SURFACES = {`` … ``}`` literal in a previously generated
+# executor so its entries can be reused by digest. Text-scanned rather than
+# imported: reading the previous artifact must not execute it.
+_SURFACES_BLOCK_START = 'SCRIPT_SURFACES = {'
+
+
+def _dir_digest(directory: Path) -> str:
+    """Digest every ``*.py`` in ``directory`` (non-recursive), by name and bytes.
+
+    Non-recursive on purpose: the executor's PYTHONPATH exposes a scripts dir
+    and its immediate subdirectories, and the aggregate is combined with the
+    other injected dirs by :func:`_shared_dirs_digest`, so a nested package's
+    contents reach the digest through its own entry rather than through a deep
+    walk of every sibling.
+    """
+    hasher = hashlib.sha256()
+    if not directory.is_dir():
+        return hasher.hexdigest()
+    for path in sorted(directory.glob('*.py')):
+        hasher.update(path.name.encode('utf-8'))
+        try:
+            hasher.update(path.read_bytes())
+        except OSError:
+            hasher.update(b'<unreadable>')
+    return hasher.hexdigest()
+
+
+def _shared_dirs_digest(shared_dirs: list[Path]) -> str:
+    """One digest over every injected shared-module directory.
+
+    Computed ONCE per generation and folded into every script's digest, so an
+    edit to an imported shared module invalidates every dependent surface. This
+    over-invalidates — a change to one shared module re-derives all scripts —
+    which costs time only. Under-invalidating would cost correctness, so the
+    digest is deliberately coarse.
+    """
+    hasher = hashlib.sha256()
+    for directory in sorted(shared_dirs):
+        hasher.update(directory.as_posix().encode('utf-8'))
+        hasher.update(_dir_digest(directory).encode('utf-8'))
+    return hasher.hexdigest()
+
+
+def compute_surface_digest(script_path: str, shared_digest: str) -> str:
+    """Digest the inputs that can change one script's argparse surface.
+
+    Three contributors: the script's own bytes, every ``*.py`` beside it (its
+    skill's other modules — the ``ci.py`` / ``ci_base.py`` relationship, where
+    the parser is assembled in a sibling), and the shared-module aggregate. A
+    surface whose digest still matches is reused verbatim on the next
+    regeneration, which is what keeps a routine ``preflight`` at its current
+    cost: an unchanged script set performs ZERO help invocations.
+    """
+    path = Path(script_path)
+    hasher = hashlib.sha256()
+    try:
+        hasher.update(path.read_bytes())
+    except OSError:
+        hasher.update(b'<unreadable>')
+    hasher.update(_dir_digest(path.parent).encode('utf-8'))
+    hasher.update(shared_digest.encode('utf-8'))
+    return hasher.hexdigest()
+
+
+def read_previous_surfaces(executor: Path) -> dict[str, dict]:
+    """Read the ``SCRIPT_SURFACES`` map out of a previously generated executor.
+
+    Text-scanned and ``ast.literal_eval``-ed rather than imported: the previous
+    executor is an artifact to be read, not code to be run, and importing it
+    would execute its bootstrap. Any failure — absent file, absent block,
+    malformed literal, an executor generated before this map existed — returns
+    an empty dict, which simply means "nothing to reuse" and costs a full
+    re-derivation.
+    """
+    if not executor.is_file():
+        return {}
+    try:
+        text = executor.read_text(encoding='utf-8')
+    except OSError:
+        return {}
+    start = text.find(_SURFACES_BLOCK_START)
+    if start < 0:
+        return {}
+    open_brace = start + len(_SURFACES_BLOCK_START) - 1
+    end = text.find('\n}', open_brace)
+    if end < 0:
+        return {}
+    literal = text[open_brace:end + 2]
+    try:
+        parsed = ast.literal_eval(literal)
+    except (ValueError, SyntaxError):
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    return {
+        notation: entry
+        for notation, entry in parsed.items()
+        if isinstance(notation, str) and isinstance(entry, dict)
+    }
+
+
+def derive_script_surfaces(
+    mappings: dict[str, str],
+    probe_executor: Path,
+    previous: dict[str, dict],
+    shared_dirs: list[Path],
+) -> tuple[dict[str, dict], dict[str, int]]:
+    """Derive (or reuse) an argparse accept-set for every registered notation.
+
+    Reuse first: an entry in ``previous`` whose recorded ``digest`` still
+    matches the freshly computed one is carried over untouched and never
+    re-probed. Everything else is derived through ``probe_executor`` by the
+    shared module.
+
+    A notation with no confident surface contributes NO entry. That is the
+    fail-closed-on-uncertainty invariant at the generation boundary: the
+    dispatch-time check treats an absent notation as "assert nothing, spawn as
+    before", so omitting is always safe while emitting a partial surface would
+    let a real verb be rejected.
+
+    Returns ``(surfaces, stats)`` where ``stats`` carries the four counts the
+    command publishes. They are reported rather than merely computed because a
+    regeneration that quietly derived nothing is otherwise indistinguishable
+    from one that derived everything — both exit ``status: success``.
+    """
+    shared_digest = _shared_dirs_digest(shared_dirs)
+    digests = {
+        notation: compute_surface_digest(script_path, shared_digest)
+        for notation, script_path in sorted(mappings.items())
+    }
+
+    surfaces: dict[str, dict] = {}
+    to_derive: list[str] = []
+    for notation, digest in digests.items():
+        carried = previous.get(notation)
+        if isinstance(carried, dict) and carried.get('digest') == digest:
+            surfaces[notation] = carried
+            continue
+        to_derive.append(notation)
+
+    reused = len(surfaces)
+    derived = 0
+    if to_derive:
+        # Thread OUR digest through as the shared module's cache key. Its own
+        # default key is narrower (the script plus its siblings, not the shared
+        # module dirs), so leaving it to key itself would let a shared-module
+        # edit invalidate the entry here while its cache still served the
+        # surface derived before that edit — a re-derivation that quietly
+        # returns the stale answer. One invalidation model, both layers.
+        index = surface_api.build_surface_index(
+            to_derive,
+            probe_executor,
+            config=_surface_derivation_config(),
+            cache_keys=digests,
+        )
+        for notation, result in index.items():
+            if not surface_api.is_derivable(result):
+                continue
+            surfaces[notation] = {
+                'digest': digests[notation],
+                'surface': result.to_dict(),
+            }
+            derived += 1
+
+    stats = {
+        'scripts_registered': len(mappings),
+        'surfaces_derived': derived,
+        'surfaces_reused': reused,
+        'surfaces_not_derivable': len(mappings) - len(surfaces),
+    }
+    return surfaces, stats
+
+
+def _canonical(value: object) -> object:
+    """Return ``value`` with every nested dict key-sorted, for stable ``repr``.
+
+    Python dicts preserve insertion order and ``repr`` follows it, so sorting on
+    the way in is what makes the emitted literal byte-stable across runs with
+    identical inputs.
+    """
+    if isinstance(value, dict):
+        return {key: _canonical(value[key]) for key in sorted(value)}
+    if isinstance(value, list):
+        return [_canonical(item) for item in value]
+    return value
+
+
+def generate_surfaces_code(surfaces: dict[str, dict]) -> str:
+    """Generate the ``SCRIPT_SURFACES`` dict body, one notation per line.
+
+    Mirrors :func:`generate_mappings_code`'s deterministic sorted-key emission
+    so a regeneration over an unchanged script set produces a byte-identical
+    executor — which is what makes an executor diff a real signal rather than
+    per-run churn.
+    """
+    lines = []
+    for notation in sorted(surfaces):
+        lines.append(f'    "{notation}": {_canonical(surfaces[notation])!r},')
+    return '\n'.join(lines)
 
 
 def parse_template_format_version(template: str) -> int | None:
@@ -900,23 +1169,63 @@ def generate_executor(
     generated_version = str(manifest.get('version', '') or '')
     mappings_fingerprint = str(manifest.get('executor_scripts_fingerprint', '') or '')
 
-    content = template.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
-    content = content.replace('{{LOGGING_DIR}}', logging_dir)
-    content = content.replace('{{SHARED_MODULE_DIRS}}', shared_module_lines)
-    content = content.replace('{{EXTRA_SCRIPT_DIRS}}', extra_dirs_code)
-    content = content.replace('{{PLAN_DIR_NAME}}', PLAN_DIR_NAME)
-    content = content.replace('{{TARGET_AWARE_RESOLVER}}', resolver_code)
-    content = content.replace('{{EXECUTOR_TARGET}}', resolved_target)
-    content = content.replace('{{GENERATED_VERSION}}', generated_version)
-    content = content.replace('{{MAPPINGS_FINGERPRINT}}', mappings_fingerprint)
+    def _substitute(surfaces_code: str) -> str:
+        content = template.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
+        content = content.replace('{{SCRIPT_SURFACES}}', surfaces_code)
+        content = content.replace('{{LOGGING_DIR}}', logging_dir)
+        content = content.replace('{{SHARED_MODULE_DIRS}}', shared_module_lines)
+        content = content.replace('{{EXTRA_SCRIPT_DIRS}}', extra_dirs_code)
+        content = content.replace('{{PLAN_DIR_NAME}}', PLAN_DIR_NAME)
+        content = content.replace('{{TARGET_AWARE_RESOLVER}}', resolver_code)
+        content = content.replace('{{EXECUTOR_TARGET}}', resolved_target)
+        content = content.replace('{{GENERATED_VERSION}}', generated_version)
+        content = content.replace('{{MAPPINGS_FINGERPRINT}}', mappings_fingerprint)
+        return content
 
     if dry_run:
+        # No derivation on a preview run: deriving surfaces spawns a ``--help``
+        # child per parser node, which is real work a dry run must not do. The
+        # preview shows the executor's shape, not its accept-sets.
         print('=== execute-script.py ===')
-        print(content[:2000])
+        print(_substitute('')[:2000])
         print('... (truncated)')
-        return {'status': 'success', 'dry_run': True}
+        return {'status': 'success', 'dry_run': True, 'surface_stats': _EMPTY_SURFACE_STATS}
 
     real_executor = executor_path()
+
+    # Derive the argparse accept-sets against a PROBE executor — the very
+    # content about to be written, minus its surfaces. The alternative,
+    # probing through the previous executor, would derive surfaces for the OLD
+    # script set (a notation added in this same generation would resolve
+    # through no mapping at all). Writing the probe first and the real executor
+    # last keeps the single atomic commit intact: the probe is a throwaway
+    # sibling temp file, deleted on every exit path.
+    real_executor.parent.mkdir(parents=True, exist_ok=True)
+    probe_executor = real_executor.with_name(real_executor.name + '.probe.tmp')
+    try:
+        probe_executor.write_text(_substitute(''), encoding='utf-8')
+        surfaces, surface_stats = derive_script_surfaces(
+            mappings,
+            probe_executor,
+            read_previous_surfaces(real_executor),
+            shared_dirs,
+        )
+    except OSError as exc:
+        # Derivation is an enhancement, never a precondition: an executor with
+        # no surfaces dispatches exactly as it did before this map existed. A
+        # probe-write failure therefore degrades to no surfaces rather than
+        # failing the generation and leaving the caller with a stale executor.
+        print(f'Warning: surface derivation skipped ({exc})', file=sys.stderr)
+        surfaces, surface_stats = {}, dict(_EMPTY_SURFACE_STATS)
+        surface_stats['scripts_registered'] = len(mappings)
+        surface_stats['surfaces_not_derivable'] = len(mappings)
+    finally:
+        try:
+            probe_executor.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    content = _substitute(generate_surfaces_code(surfaces))
 
     # Guard 1 — format handshake: refuse a template whose declared format
     # version the generator does not support (never write a file).
@@ -992,7 +1301,7 @@ def generate_executor(
             tmp_executor.unlink(missing_ok=True)
         except OSError:
             pass
-    return {'status': 'success'}
+    return {'status': 'success', 'surface_stats': surface_stats}
 
 
 def compute_checksum(mappings: dict[str, str]) -> str:
@@ -1486,6 +1795,15 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     if gen_result.get('status') != 'success':
         return gen_result
 
+    # The four accept-set counts, published rather than merely computed. A
+    # regeneration that quietly derived NOTHING — a broken probe, an exhausted
+    # budget, a shared-module edit that invalidated everything and then failed —
+    # exits ``status: success`` exactly like a healthy one, so the only way to
+    # tell them apart is to read the numbers. ``surfaces_not_derivable`` is the
+    # residual (registered minus emitted), so the three buckets always sum to
+    # ``scripts_registered``.
+    surface_stats = gen_result.get('surface_stats') or dict(_EMPTY_SURFACE_STATS)
+
     if args.dry_run:
         print('\nDry run complete. No files written.')
         return {
@@ -1493,6 +1811,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             'scripts_discovered': len(mappings),
             'executor_target': resolved_target,
             'dry_run': True,
+            **surface_stats,
         }
 
     # Cleanup old logs
@@ -1510,6 +1829,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         'executor_generated': str(executor_path()),
         'executor_target': resolved_target,
         'logs_cleaned': logs_cleaned,
+        **surface_stats,
     }
 
     return result

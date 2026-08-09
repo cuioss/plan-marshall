@@ -658,12 +658,39 @@ def script_path_for_notation(notation: str, executor: Path) -> Path | None:
 
 
 def content_hash(script_path: Path) -> str | None:
-    """SHA-256 of ``script_path``'s bytes, or ``None`` when unreadable."""
+    """Cache key covering ``script_path`` AND every ``*.py`` beside it.
+
+    Deliberately NOT the script file alone. A script's argparse surface is
+    frequently assembled in a SIBLING module — ``ci.py`` delegates its whole
+    parser to ``ci_base.py`` — so a key over the entry point only goes stale
+    exactly where the derivation is most valuable: edit the sibling, and a
+    script-only key hands back a cached surface describing the parser that used
+    to exist.
+
+    Over-invalidating (an unrelated edit in the same directory re-derives)
+    costs time. Under-invalidating costs correctness — a stale accept-set
+    rejects a call that is now valid — so the key is deliberately coarse.
+
+    Returns ``None`` only when the script file itself is unreadable, which is
+    the signal to skip the on-disk cache entirely.
+    """
     try:
         data = script_path.read_bytes()
     except OSError:
         return None
-    return hashlib.sha256(data).hexdigest()
+    hasher = hashlib.sha256()
+    hasher.update(data)
+    try:
+        siblings = sorted(script_path.parent.glob('*.py'))
+    except OSError:
+        siblings = []
+    for sibling in siblings:
+        hasher.update(sibling.name.encode('utf-8'))
+        try:
+            hasher.update(sibling.read_bytes())
+        except OSError:
+            hasher.update(b'<unreadable>')
+    return hasher.hexdigest()
 
 
 # =============================================================================
@@ -927,13 +954,14 @@ def derive_surface(
     executor: Path,
     *,
     config: DerivationConfig = DEFAULT_CONFIG,
+    cache_key: str | None = None,
 ) -> ScriptSurface | NotDerivable:
     """Cached ``--help`` derivation of one script's canonical surface.
 
     Resolution order:
 
-    1. in-process memo keyed by ``(notation, content_hash)``;
-    2. on-disk cache keyed by the same hash (skipped when
+    1. in-process memo keyed by ``(notation, cache_key)``;
+    2. on-disk cache keyed by the same key (skipped when
        ``config.use_disk_cache`` is false);
     3. live ``--help`` probe, then populate both caches.
 
@@ -942,16 +970,27 @@ def derive_surface(
     because the very edit that broke the help may be the edit that changed the
     surface.
 
-    When the script file cannot be located, derivation still runs live but
-    skips the on-disk cache. The memo key then folds in the EXECUTOR path
-    rather than the notation alone: one process may probe several distinct
-    scripts that all resolve through the same notation under different
-    executors (the test suite maps one synthetic notation to a different script
-    per ``tmp_path``), and keying by notation alone would let the first-derived
-    surface poison every later probe.
+    ``cache_key`` lets a caller whose own invalidation model is WIDER than this
+    module's supply it, so the two cannot disagree about when a surface went
+    stale. The executor generator does exactly that: its digest also covers the
+    injected shared-module directories, and without threading that key through,
+    a shared-module edit would invalidate the generator's entry while this
+    module's cache kept handing back the surface derived before it. Omitting it
+    falls back to :func:`content_hash` (the script plus its sibling modules).
+
+    When the script file cannot be located and no ``cache_key`` was supplied,
+    derivation still runs live but skips the on-disk cache. The memo key then
+    folds in the EXECUTOR path rather than the notation alone: one process may
+    probe several distinct scripts that all resolve through the same notation
+    under different executors (the test suite maps one synthetic notation to a
+    different script per ``tmp_path``), and keying by notation alone would let
+    the first-derived surface poison every later probe.
     """
-    script_file = script_path_for_notation(notation, executor)
-    digest = content_hash(script_file) if script_file is not None else None
+    if cache_key is not None:
+        digest: str | None = cache_key
+    else:
+        script_file = script_path_for_notation(notation, executor)
+        digest = content_hash(script_file) if script_file is not None else None
 
     if digest is not None:
         memo_key = (notation, digest)
@@ -990,8 +1029,14 @@ def build_surface_index(
     executor: Path,
     *,
     config: DerivationConfig = DEFAULT_CONFIG,
+    cache_keys: dict[str, str] | None = None,
 ) -> dict[str, ScriptSurface | NotDerivable]:
     """Derive surfaces for ``notations`` in parallel.
+
+    ``cache_keys`` optionally supplies a per-notation cache key, forwarded to
+    :func:`derive_surface` — see its docstring for why a caller with a wider
+    invalidation model must thread its own key through rather than let the two
+    caches disagree.
 
     Every notation gets an entry — a :class:`ScriptSurface` or an explicit
     :class:`NotDerivable`. Callers that want only usable surfaces filter with
@@ -1010,7 +1055,8 @@ def build_surface_index(
         return {}
 
     def _derive(notation: str) -> tuple[str, ScriptSurface | NotDerivable]:
-        return notation, derive_surface(notation, executor, config=config)
+        key = cache_keys.get(notation) if cache_keys else None
+        return notation, derive_surface(notation, executor, config=config, cache_key=key)
 
     workers = max(1, min(len(notations), config.max_workers))
     index: dict[str, ScriptSurface | NotDerivable] = {}

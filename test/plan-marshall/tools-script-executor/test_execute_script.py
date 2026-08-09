@@ -56,6 +56,7 @@ def load_executor_module():
     "test:skill": "{_MAP_TEST_SKILL}",
 """,
     )
+    code = code.replace('{{SCRIPT_SURFACES}}', '')
     code = code.replace('{{SUBCOMMAND_MAPPINGS}}', '')
     code = code.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
     code = code.replace('{{SHARED_MODULE_DIRS}}', '# (none in test)')
@@ -485,6 +486,7 @@ def _materialize_executor(target_path: Path, stub_notation: str, stub_script_pat
         '{{SCRIPT_MAPPINGS}}',
         f'    "{stub_notation}": "{stub_script_path}",\n',
     )
+    code = code.replace('{{SCRIPT_SURFACES}}', '')
     code = code.replace('{{SUBCOMMAND_MAPPINGS}}', '')
     code = code.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
     code = code.replace('{{SHARED_MODULE_DIRS}}', '# (none in test)')

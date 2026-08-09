@@ -52,7 +52,7 @@ def _load_template_module() -> types.ModuleType:
         / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts'
     )
     source = source.replace('{{SCRIPT_MAPPINGS}}', '')
-    source = source.replace('{{SUBCOMMAND_MAPPINGS}}', '')
+    source = source.replace('{{SCRIPT_SURFACES}}', '').replace('{{SUBCOMMAND_MAPPINGS}}', '')
     source = source.replace('{{LOGGING_DIR}}', logging_dir)
     source = source.replace('{{SHARED_MODULE_DIRS}}', '# (none)')
     source = source.replace('{{EXTRA_SCRIPT_DIRS}}', '')
@@ -205,10 +205,17 @@ def test_discover_local_scripts_skips_hidden_skill_dirs(tmp_path):
 # generate_executor — template substitution (dry-run, write, missing template)
 # =============================================================================
 
+# The format marker is read from the generator's own constant rather than
+# written as a literal: a hard-coded version turns this fixture into a
+# permanent format skew the moment the real version is bumped, and the failure
+# then reads as "generation broke" instead of "the fixture is stale".
 _TEMPLATE_BODY = (
-    '# TEMPLATE_FORMAT_VERSION: 1\n'
+    f'# TEMPLATE_FORMAT_VERSION: {_gen._SUPPORTED_TEMPLATE_FORMAT_VERSION}\n'
     'SCRIPTS = {\n'
     '{{SCRIPT_MAPPINGS}}\n'
+    '}\n'
+    'SCRIPT_SURFACES = {\n'
+    '{{SCRIPT_SURFACES}}\n'
     '}\n'
     'LOGGING_DIR = "{{LOGGING_DIR}}"\n'
     '{{SHARED_MODULE_DIRS}}\n'

@@ -87,7 +87,7 @@ class ExecutorTestEnvironment:
         executor_content = template_content.replace('{{SCRIPT_MAPPINGS}}', mappings_code)
         # Pre-flight validator placeholder — tests render with empty subcommand
         # surface; the validator is exercised in dedicated tests.
-        executor_content = executor_content.replace('{{SUBCOMMAND_MAPPINGS}}', '')
+        executor_content = executor_content.replace('{{SCRIPT_SURFACES}}', '').replace('{{SUBCOMMAND_MAPPINGS}}', '')
         # Point to real plan_logging.py location (isolation via PLAN_BASE_DIR env var)
         executor_content = executor_content.replace(
             '{{LOGGING_DIR}}',

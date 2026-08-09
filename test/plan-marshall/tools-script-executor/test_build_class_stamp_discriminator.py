@@ -103,6 +103,7 @@ def _render_code(mappings: dict[str, Path]) -> str:
     code: str = _TEMPLATE_PATH.read_text(encoding='utf-8')
     rendered = ''.join(f'    "{notation}": "{path}",\n' for notation, path in mappings.items())
     code = code.replace('{{SCRIPT_MAPPINGS}}', rendered)
+    code = code.replace('{{SCRIPT_SURFACES}}', '')
     code = code.replace('{{SUBCOMMAND_MAPPINGS}}', '')
     code = code.replace('{{LOGGING_DIR}}', str(_LOGGING_DIR))
     code = code.replace('{{SHARED_MODULE_DIRS}}', '# (none in test)')
