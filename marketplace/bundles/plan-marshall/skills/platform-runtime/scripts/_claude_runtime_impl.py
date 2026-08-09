@@ -107,10 +107,12 @@ class ClaudeRuntime(Runtime):
         already-present entry on the current shape rather than always making no
         change: an entry carrying a stale hook ``timeout`` is rewritten, and that
         outcome is reported distinguishably — in ``migrated_events`` on the
-        terminal-title path and as ``enforcement_status: migrated`` on the
-        enforcement path. ``already_present`` is False whenever anything was
-        installed OR migrated, so it never reads as "nothing changed" over a run
-        that rewrote a stale value.
+        terminal-title path, on ``capture_status`` for the SessionStart capture
+        entry (which owns none of the nine render labels), and as
+        ``enforcement_status: migrated`` on the enforcement path.
+        ``already_present`` is False whenever anything was installed OR
+        migrated — the capture entry included — so it never reads as "nothing
+        changed" over a run that rewrote a stale value.
 
         When ``enforcement`` is True, installs ONLY the orthogonal PreToolUse
         enforcement entry (the ``claude_pretooluse_hook`` matcher-less entry) and
@@ -206,14 +208,20 @@ class ClaudeRuntime(Runtime):
         installed_events = install_result["installed_events"]
         already_present_events = install_result["already_present_events"]
         migrated_events = install_result["migrated_events"]
+        capture_status = install_result["capture_status"]
         # Top-level convenience signal: True iff nothing fresh was installed,
         # nothing was converged, AND no overwrite-other signal needs the
         # caller's attention. A run that rewrote a stale timeout DID change the
         # file, so ``migrated_events`` clears this flag exactly as
-        # ``installed_events`` does.
+        # ``installed_events`` does. ``capture_status`` is folded in on the same
+        # ground: the capture entry owns none of the nine render labels, so it
+        # reaches this computation only through its own field, and omitting it
+        # would let a run that inserted or converged ONLY the capture entry
+        # report a no-op over a file it rewrote.
         all_already_present = (
             not installed_events
             and not migrated_events
+            and capture_status == "already_present"
             and install_result["statusLine_status"]
             in ("already_present", "already_present_other")
             and install_result["env_status"]
@@ -230,6 +238,7 @@ class ClaudeRuntime(Runtime):
                 "installed_events": installed_events,
                 "already_present_events": already_present_events,
                 "migrated_events": migrated_events,
+                "capture_status": capture_status,
                 "statusLine_status": install_result["statusLine_status"],
                 "env_status": install_result["env_status"],
             },

@@ -129,7 +129,9 @@ hook_installed: true
 already_present: false
 ```
 
-`already_present: true` is reported only for a genuine no-op. A run that converged anything reports `false` and names the converged entries — `migrated_events` on the terminal-title path, `enforcement_status: migrated` on the `--enforcement` path.
+`already_present: true` is reported only for a genuine no-op. A run that installed or converged anything reports `false` and names what changed — `migrated_events` on the terminal-title path, `capture_status` for the SessionStart capture entry, `enforcement_status: migrated` on the `--enforcement` path.
+
+The capture entry needs its own field because it carries none of the nine render labels the three event lists partition, and the terminal-title path writes the settings file unconditionally. A run whose nine render entries were all already correct and whose capture entry was inserted or converged therefore did change the file; `capture_status` (`installed` / `migrated` / `already_present`) is what makes that visible and what keeps `already_present` honest for it.
 
 **Error (Claude — write failure)**:
 ```toon

@@ -336,6 +336,52 @@ def _stale_every_timeout(target: Path, stale_value: int = 5000) -> None:
     target.write_text(json.dumps(settings), encoding="utf-8")
 
 
+def _stale_capture_timeout_only(target: Path, stale_value: int = 5000) -> None:
+    """Rewrite ONLY the SessionStart capture entry's ``timeout`` in *target*.
+
+    The counterpart of :func:`_stale_every_timeout`, and deliberately narrow:
+    it plants the one state where every render entry is already correct and the
+    capture entry alone is stale. That state is what separates a report keyed on
+    the nine render labels from a report of what the call actually rewrote.
+    """
+    settings = json.loads(target.read_text())
+    for entry in settings.get("hooks", {}).get("SessionStart", []):
+        if not isinstance(entry, dict):
+            continue
+        for hook in entry.get("hooks", []):
+            if isinstance(hook, dict) and hook.get("command") == _HOOK_COMMAND:
+                hook["timeout"] = stale_value
+    target.write_text(json.dumps(settings), encoding="utf-8")
+
+
+def _drop_capture_entry(target: Path) -> None:
+    """Remove the SessionStart capture entry from *target*, leaving render ones.
+
+    The insertion-side mirror of :func:`_stale_capture_timeout_only`: every
+    render entry stays correct while the capture entry is absent, so the next
+    install appends it and writes the file with no render label changing.
+    """
+    settings = json.loads(target.read_text())
+    hooks = settings.get("hooks", {})
+    hooks["SessionStart"] = [
+        entry
+        for entry in hooks.get("SessionStart", [])
+        if not (
+            isinstance(entry, dict)
+            and any(
+                isinstance(h, dict) and h.get("command") == _HOOK_COMMAND
+                for h in entry.get("hooks", [])
+            )
+        )
+    ]
+    target.write_text(json.dumps(settings), encoding="utf-8")
+
+
+def _capture_timeouts(settings: dict[str, Any]) -> set:
+    """Return the ``timeout`` values on the SessionStart capture entries."""
+    return _timeouts_for(settings.get("hooks", {}).get("SessionStart", []), _HOOK_COMMAND)
+
+
 # =============================================================================
 # 1c. Missing-executor fail-soft guard (FIX 2)
 # =============================================================================
@@ -950,11 +996,11 @@ class TestInstallTerminalTitleHooks:
         The seeded capture entry carries a stale ``timeout``, placing it on the
         MIGRATE arm: the capture entry is one of ours (keyed on
         ``_HOOK_COMMAND``), so a re-install converges it. That convergence is
-        deliberately UNREPORTED — the capture entry carries no event label, so
-        it appears in none of the three lists, exactly as its fresh insertion
-        appears in none of them. Preserved-and-converged are different claims,
-        so both are asserted here rather than the value being left as incidental
-        fixture input.
+        reported on ``capture_status`` — NOT in any of the three event lists,
+        which stay a partition of the nine render labels the capture entry does
+        not own. Preserved-and-converged are different claims, so both are
+        asserted here rather than the value being left as incidental fixture
+        input.
         """
         target = tmp_path / ".claude" / "settings.local.json"
         target.parent.mkdir(parents=True)
@@ -991,9 +1037,10 @@ class TestInstallTerminalTitleHooks:
         assert matchers_with_render == {"", "clear"}
         # The pre-existing capture entry's stale timeout was converged...
         assert _timeouts_for(session_start, _HOOK_COMMAND) == {_cr._HOOK_TIMEOUT_SECONDS}
-        # ...and that convergence is reported under NO event label, because the
-        # capture entry owns none. The three lists stay a partition of the nine
-        # render labels.
+        # ...and that convergence is reported on its OWN field, under no event
+        # label, because the capture entry owns none. The three lists stay a
+        # partition of the nine render labels.
+        assert result["capture_status"] == "migrated"
         assert "SessionStart:capture" not in set(result["migrated_events"])
         assert set(result["installed_events"]) | set(result["migrated_events"]) | set(
             result["already_present_events"]
@@ -1561,6 +1608,121 @@ class TestHookTimeoutMigration:
         # stale value because the enforcement install never touches them.
         assert _timeouts_for(pre, _ENFORCEMENT_HOOK_COMMAND) == {_cr._HOOK_TIMEOUT_SECONDS}
         assert _all_render_timeouts(settings) == {5000}
+
+
+class TestCaptureEntryOutcomeIsReported:
+    """The SessionStart capture entry's outcome reaches the caller.
+
+    The capture entry carries none of the nine render labels, so the three event
+    lists cannot report it, and ``_install_terminal_title_hooks`` writes the
+    settings file UNCONDITIONALLY. That combination is what made the pre-fix code
+    dishonest: a run whose nine render entries were all already correct and whose
+    capture entry was stale rewrote the file and still answered
+    ``already_present: true``. These tests plant exactly that state — the state
+    ``_stale_every_timeout`` cannot reach, because it moves the render entries
+    onto the migrate arm too and lets ``migrated_events`` carry the signal.
+    """
+
+    def test_stale_capture_entry_alone_is_converged_and_reported(self, rt, tmp_path):
+        """Nine correct render entries + one stale capture entry is NOT a no-op."""
+        import claude_runtime as _cr
+
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        _stale_capture_timeout_only(target)
+        seeded = json.loads(target.read_text())
+        # Precondition: the render entries are untouched and only the capture
+        # entry is stale — otherwise the assertions below would pass on the
+        # render entries' behaviour rather than the capture entry's.
+        assert _all_render_timeouts(seeded) == {_cr._HOOK_TIMEOUT_SECONDS}
+        assert _capture_timeouts(seeded) == {5000}
+
+        result = _parsed(rt.project_install_hook(str(target)))
+
+        assert result["status"] == "success"
+        # The value was actually rewritten...
+        assert _capture_timeouts(json.loads(target.read_text())) == {
+            _cr._HOOK_TIMEOUT_SECONDS
+        }
+        # ...and the run does not claim nothing changed.
+        assert result["capture_status"] == "migrated"
+        assert result["already_present"] is False
+        # No render label moved: the three lists cannot be carrying this signal.
+        assert result["migrated_events"] == []
+        assert result["installed_events"] == []
+        assert set(result["already_present_events"]) == _NINE_RENDER_LABELS
+
+    def test_missing_capture_entry_alone_is_installed_and_reported(self, rt, tmp_path):
+        """Nine correct render entries + an absent capture entry is NOT a no-op.
+
+        The insertion mirror of the convergence case: the file is rewritten with
+        a freshly appended capture entry while no render label changes.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        _drop_capture_entry(target)
+        assert _capture_timeouts(json.loads(target.read_text())) == set()
+
+        result = _parsed(rt.project_install_hook(str(target)))
+
+        session_start = json.loads(target.read_text())["hooks"]["SessionStart"]
+        assert _count_command(session_start, _HOOK_COMMAND) == 1
+        assert result["capture_status"] == "installed"
+        assert result["already_present"] is False
+        assert result["installed_events"] == []
+        assert set(result["already_present_events"]) == _NINE_RENDER_LABELS
+
+    def test_correct_capture_entry_keeps_the_genuine_no_op(self, rt, tmp_path):
+        """A wholly-correct file still reports the honest no-op.
+
+        The negative control for the two tests above: folding ``capture_status``
+        into ``already_present`` must not make every re-install look like a
+        change.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+
+        result = _parsed(rt.project_install_hook(str(target)))
+
+        assert result["capture_status"] == "already_present"
+        assert result["already_present"] is True
+
+    def test_capture_entry_never_joins_the_nine_label_partition(self, rt, tmp_path):
+        """``capture_status`` is a separate field, never a tenth label.
+
+        Guards the constraint the separate field exists to satisfy: the three
+        event lists must keep partitioning exactly the nine render labels, so
+        the capture entry's outcome must not be stuffed into any of them.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        _stale_capture_timeout_only(target)
+
+        result = _parsed(rt.project_install_hook(str(target)))
+
+        combined = (
+            list(result["installed_events"])
+            + list(result["migrated_events"])
+            + list(result["already_present_events"])
+        )
+        assert sorted(combined) == sorted(_NINE_RENDER_LABELS)
+        assert len(combined) == len(set(combined)), f"double-membership in {combined}"
+
+    def test_deliberate_in_range_capture_value_is_preserved(self, rt, tmp_path):
+        """An operator's in-range capture ``timeout`` stays on the untouched arm.
+
+        The capture entry is converged by the same range-based predicate as the
+        render entries, so a deliberate in-range value must survive here too.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        _stale_capture_timeout_only(target, stale_value=30)
+
+        result = _parsed(rt.project_install_hook(str(target)))
+
+        assert _capture_timeouts(json.loads(target.read_text())) == {30}
+        assert result["capture_status"] == "already_present"
+        assert result["already_present"] is True
 
 
 class TestDisplayEnforcementLabel:

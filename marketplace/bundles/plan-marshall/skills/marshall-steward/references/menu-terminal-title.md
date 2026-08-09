@@ -85,7 +85,8 @@ Probe the current `.claude/settings.local.json` to discover what is already
 wired up. Because the install operation never duplicates an entry and reports a
 precise per-event summary, the same call drives both detect and install — the
 `installed_events` / `already_present_events` / `migrated_events` /
-`statusLine_status` / `env_status` fields in the response distinguish the cases.
+`capture_status` / `statusLine_status` / `env_status` fields in the response
+distinguish the cases.
 
 For a non-mutating probe before any user prompt, use the platform-runtime
 health-check:
@@ -169,8 +170,11 @@ exactly as found.
 
 On **Re-run install**: proceed to Step 3 (Install), skipping the Step 2 enable
 prompt — the user has already consented to this write. Report the outcome from
-the per-event summary below; `migrated_events` names each entry that was
-converged, and an empty `migrated_events` means every entry was already correct.
+the per-event summary below; `migrated_events` names each render entry that was
+converged, and `capture_status` reports the SessionStart capture entry, which
+carries no render label. Every entry was already correct only when
+`migrated_events` is empty AND `capture_status` is `already_present` — which is
+exactly what `already_present: true` means.
 
 When any line DOES contain `MISSING`, proceed to Step 2.
 
@@ -228,14 +232,24 @@ The union of the three lists is always `["SessionStart:matcher-less",
 "PostToolUse:Bash"]` — the same nine labels the `display` check reports, so the
 installer's output and the health check's expectation can be compared directly.
 The three lists PARTITION those labels: each label appears in exactly one of
-them, so a converged event is never also reported as already-present. Report the
-breakdown so the user can see exactly which entries were added and which were
-rewritten:
+them, so a converged event is never also reported as already-present.
+
+The SessionStart **capture** entry (the `claude_hook` session-id capture) is
+outside that partition — it carries none of the nine render labels — so its
+outcome is reported on its own field:
+
+- `capture_status` — `installed` when the capture entry was freshly inserted,
+  `migrated` when an already-present one carried a stale `timeout` that this
+  call rewrote, `already_present` when it was already there and already correct.
+
+Report the breakdown so the user can see exactly which entries were added and
+which were rewritten:
 
 ```text
 Installed render entries: <installed_events>
 Converged (stale timeout): <migrated_events>
 Already present:          <already_present_events>
+SessionStart capture:     <capture_status>
 ```
 
 #### statusLine conflict resolution
@@ -317,9 +331,10 @@ Once all conflicts (if any) are resolved, report the outcome:
 ```text
 Terminal title enabled.
 
-Render hooks: <installed_events ∪ migrated_events ∪ already_present_events>
-statusLine:   <statusLine_status>
-env entry:    <env_status>
+Render hooks:        <installed_events ∪ migrated_events ∪ already_present_events>
+SessionStart capture: <capture_status>
+statusLine:          <statusLine_status>
+env entry:           <env_status>
 
 Start a fresh Claude Code session to see the live tab title and statusline
 (plan, phase, status icon).
