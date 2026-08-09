@@ -225,9 +225,13 @@ def test_mark_step_detail_only_update_rewrites_entry(plan_context):
     assert second['previous_display_detail'] == 'a'
 
     persisted = read_status(plan_id)
+    # A detail-only refresh IS a re-fire, so the entry carries the firing trail
+    # alongside the refreshed fields. `outcome` still means the LATEST firing.
     assert persisted['metadata']['phase_steps']['1-init']['step-a'] == {
         'outcome': 'done',
         'display_detail': 'b',
+        'firing_count': 2,
+        'prior_firings': [{'outcome': 'done'}],
     }
 
 
@@ -275,9 +279,13 @@ def test_mark_step_force_overwrites(plan_context):
     assert result['display_detail'] == 'new'
 
     persisted = read_status(plan_id)
+    # The forced overwrite is a re-fire too — the superseded `done` is retained
+    # rather than discarded, which is the whole point of the trail.
     assert persisted['metadata']['phase_steps']['1-init']['step-a'] == {
         'outcome': 'skipped',
         'display_detail': 'new',
+        'firing_count': 2,
+        'prior_firings': [{'outcome': 'done'}],
     }
 
 
@@ -429,10 +437,13 @@ def test_mark_step_failed_then_done_with_force(plan_context):
     assert retry['previous_outcome'] == 'failed'
 
     persisted = read_status(plan_id)
+    # The superseded `failed` firing survives the forced retry.
     assert persisted['metadata']['phase_steps']['6-finalize']['automatic-review'] == {
         'outcome': 'done',
         'display_detail': 'retry green',
         'head_at_completion': sha,
+        'firing_count': 2,
+        'prior_firings': [{'outcome': 'failed'}],
     }
 
 
@@ -580,10 +591,14 @@ def test_mark_step_head_at_completion_change_overwrites_without_force(plan_conte
     assert second['previous_head_at_completion'] == sha_old
 
     persisted = read_status(plan_id)
+    # A HEAD-only refresh is a re-fire of the same outcome, so the trail records
+    # the superseded `done` — the outcome repeats, the firing does not.
     assert persisted['metadata']['phase_steps']['6-finalize']['pre-push-quality-gate'] == {
         'outcome': 'done',
         'display_detail': 'gate green',
         'head_at_completion': sha_new,
+        'firing_count': 2,
+        'prior_firings': [{'outcome': 'done'}],
     }
 
 
@@ -732,8 +747,16 @@ def test_mark_step_migrates_stale_legacy_key_on_detail_refresh(plan_context):
 
     persisted = read_status(plan_id)
     phase_steps = persisted['metadata']['phase_steps']['6-finalize']
-    # Exactly one entry under the bare key — the stale legacy key was popped.
-    assert phase_steps == {'push': {'outcome': 'done', 'display_detail': 'new'}}
+    # Exactly one entry under the bare key — the stale legacy key was popped —
+    # and the migrated entry retains the firing it superseded.
+    assert phase_steps == {
+        'push': {
+            'outcome': 'done',
+            'display_detail': 'new',
+            'firing_count': 2,
+            'prior_firings': [{'outcome': 'done'}],
+        }
+    }
     assert 'default:push' not in phase_steps
 
 
@@ -790,8 +813,216 @@ def test_mark_step_force_overwrites_stale_legacy_key_without_duplicate(plan_cont
 
     persisted = read_status(plan_id)
     phase_steps = persisted['metadata']['phase_steps']['6-finalize']
-    assert phase_steps == {'push': {'outcome': 'skipped', 'display_detail': 'new'}}
+    assert phase_steps == {
+        'push': {
+            'outcome': 'skipped',
+            'display_detail': 'new',
+            'firing_count': 2,
+            'prior_firings': [{'outcome': 'done'}],
+        }
+    }
     assert 'default:push' not in phase_steps
+
+
+# =============================================================================
+# Firing history (firing_count / prior_firings)
+#
+# A finalize step can fire more than once — the ordinary shape is `loop_back`,
+# re-fire, `done`. The write is `phase_entry[step] = new_entry`, so before this
+# the earlier firings were echoed in the `previous_*` return fields and then
+# discarded: a reader of `status.metadata.phase_steps` could not tell a step
+# that succeeded first time from one that looped back twice before succeeding.
+#
+# The keys are ADDITIVE siblings — `outcome` still means the LATEST firing, the
+# entry stays a dict, nothing is nested under a history key — which is what
+# leaves the `phase_steps_complete` handshake hash unperturbed.
+# =============================================================================
+
+
+def test_mark_step_thrice_fired_step_retains_every_firing(plan_context):
+    """`loop_back` → `loop_back` → `done` keeps all three firings.
+
+    RED against pre-fix code, where the entry carried only the final `done` and
+    both loop-backs (with their targets) were lost on the write.
+    """
+    plan_id = 'mark-step-firings-three'
+    _make_plan(plan_id)
+
+    cmd_mark_step_done(
+        _args(
+            plan_id, '6-finalize', 'automatic-review', 'loop_back',
+            display_detail='findings round 1', loop_back_target='5-execute',
+        )
+    )
+    cmd_mark_step_done(
+        _args(
+            plan_id, '6-finalize', 'automatic-review', 'loop_back', force=True,
+            display_detail='findings round 2', loop_back_target='6-finalize',
+        )
+    )
+    # `automatic-review` declares `head_dependent: true`, so its terminal `done`
+    # must carry the SHA — a `done` with no anchor is refused and nothing is
+    # written, which would leave this test asserting against the SECOND firing.
+    third = cmd_mark_step_done(
+        _args(
+            plan_id, '6-finalize', 'automatic-review', 'done', force=True,
+            display_detail='clean', head_at_completion='c' * 40,
+        )
+    )
+    assert third['status'] == 'success', third
+
+    entry = read_status(plan_id)['metadata']['phase_steps']['6-finalize']['automatic-review']
+
+    # `outcome` still means the LATEST firing, and keeps its historical meaning.
+    assert entry['outcome'] == 'done'
+    assert entry['display_detail'] == 'clean'
+    assert entry['head_at_completion'] == 'c' * 40
+    # A `done` outcome carries no loop_back_target — the key is absent, not stale.
+    assert 'loop_back_target' not in entry
+
+    # Both superseded firings survive, oldest first, each naming its own target.
+    assert entry['firing_count'] == 3
+    assert entry['prior_firings'] == [
+        {'outcome': 'loop_back', 'loop_back_target': '5-execute'},
+        {'outcome': 'loop_back', 'loop_back_target': '6-finalize'},
+    ]
+
+
+def test_mark_step_single_firing_writes_the_historical_record_shape(plan_context):
+    """One firing produces a byte-identical historical entry — no new keys.
+
+    The matched negative control for the test above: without it, an
+    unconditional history stamp would satisfy the positive assertions while
+    changing every record in the corpus.
+    """
+    plan_id = 'mark-step-firings-one'
+    _make_plan(plan_id)
+
+    cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'push', 'done', display_detail='pushed')
+    )
+
+    entry = read_status(plan_id)['metadata']['phase_steps']['6-finalize']['push']
+    assert entry == {'outcome': 'done', 'display_detail': 'pushed'}
+    assert 'firing_count' not in entry
+    assert 'prior_firings' not in entry
+
+
+def test_mark_step_unchanged_recall_appends_no_firing(plan_context):
+    """An idempotent re-call reports `changed: false` and grows no trail.
+
+    Guards the append against firing on a no-op write, which would inflate
+    `firing_count` on every retry of an already-recorded step.
+    """
+    plan_id = 'mark-step-firings-idempotent'
+    _make_plan(plan_id)
+
+    cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'push', 'done', display_detail='pushed')
+    )
+    second = cmd_mark_step_done(
+        _args(plan_id, '6-finalize', 'push', 'done', display_detail='pushed')
+    )
+
+    assert second['changed'] is False
+    entry = read_status(plan_id)['metadata']['phase_steps']['6-finalize']['push']
+    assert entry == {'outcome': 'done', 'display_detail': 'pushed'}
+    assert 'prior_firings' not in entry
+
+
+def test_mark_step_trail_is_append_only_across_a_fourth_firing(plan_context):
+    """A later firing EXTENDS the trail rather than rewriting it.
+
+    Pins the append-only property directly: the trail observed after firing 3 is
+    a strict prefix of the one observed after firing 4.
+    """
+    plan_id = 'mark-step-firings-append'
+    _make_plan(plan_id)
+
+    # Every call's status is asserted: a refused write (e.g. the head-anchor
+    # refusal on a `done`) writes NOTHING, which would silently leave the
+    # assertions below reading an earlier firing.
+    for call in (
+        _args(
+            plan_id, '6-finalize', 'ci-verify', 'loop_back',
+            display_detail='r1', loop_back_target='5-execute',
+        ),
+        _args(plan_id, '6-finalize', 'ci-verify', 'failed', force=True, display_detail='r2'),
+        _args(plan_id, '6-finalize', 'ci-verify', 'skipped', force=True, display_detail='r3'),
+    ):
+        assert cmd_mark_step_done(call)['status'] == 'success'
+    after_three = list(
+        read_status(plan_id)['metadata']['phase_steps']['6-finalize']['ci-verify'][
+            'prior_firings'
+        ]
+    )
+
+    fourth = cmd_mark_step_done(
+        _args(
+            plan_id, '6-finalize', 'ci-verify', 'done', force=True,
+            display_detail='r4', head_at_completion='d' * 40,
+        )
+    )
+    assert fourth['status'] == 'success', fourth
+    entry = read_status(plan_id)['metadata']['phase_steps']['6-finalize']['ci-verify']
+
+    assert after_three == [
+        {'outcome': 'loop_back', 'loop_back_target': '5-execute'},
+        {'outcome': 'failed'},
+    ]
+    assert entry['prior_firings'][: len(after_three)] == after_three
+    assert entry['prior_firings'][-1] == {'outcome': 'skipped'}
+    assert entry['firing_count'] == 4
+
+
+def test_phase_steps_complete_capture_is_unaffected_by_the_firing_keys(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The `phase_steps_complete` invariant hash is identical with and without the trail.
+
+    The load-bearing constraint on the shape: the capture rejects a bare-string
+    entry, requires `outcome == 'done'`, and hashes only the sorted required step
+    NAMES. Two entries that differ ONLY by the added sibling keys must therefore
+    produce the SAME hash — asserted here against the REAL capture, not asserted
+    of the design.
+    """
+    invariants = load_script_module(
+        'plan-marshall', 'plan-marshall', '_invariants.py', '_mark_step_invariants'
+    )
+    # Pin a one-step required set so the capture reaches its hash rather than
+    # short-circuiting on an unrelated phase roster.
+    monkeypatch.setattr(invariants, '_resolve_required_steps_path', lambda _phase: 'stub')
+    monkeypatch.setattr(invariants, '_parse_required_steps', lambda _path: ['step-a'])
+    monkeypatch.setattr(invariants, '_read_manifest_steps', lambda _pid, _phase: {'step-a'})
+
+    plain = {
+        'phase_steps': {
+            '6-finalize': {'step-a': {'outcome': 'done', 'display_detail': 'x'}}
+        }
+    }
+    with_history = {
+        'phase_steps': {
+            '6-finalize': {
+                'step-a': {
+                    'outcome': 'done',
+                    'display_detail': 'x',
+                    'firing_count': 3,
+                    'prior_firings': [
+                        {'outcome': 'loop_back', 'loop_back_target': '5-execute'},
+                        {'outcome': 'loop_back', 'loop_back_target': '6-finalize'},
+                    ],
+                }
+            }
+        }
+    }
+
+    plain_hash = invariants._capture_phase_steps_complete('pid', plain, '6-finalize')
+    history_hash = invariants._capture_phase_steps_complete('pid', with_history, '6-finalize')
+
+    # Guard the guard: a capture that returned None for both would make the
+    # equality below vacuously true.
+    assert isinstance(plain_hash, str) and plain_hash
+    assert history_hash == plain_hash
 
 
 # =============================================================================

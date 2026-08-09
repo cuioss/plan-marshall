@@ -58,6 +58,16 @@ token (no ``=``, or an empty key) with ``error: invalid_fact`` naming the
 offending token. ``facts`` participates in the idempotency comparison and in
 the ``previous_*`` echo fields, so a re-call that changes only the facts is
 reported as ``changed: true`` rather than silently swallowed.
+
+Every write that CHANGES the entry also folds the superseded firing into two
+additive sibling keys — ``firing_count`` and the append-only ``prior_firings``
+trail — so a step fired ``loop_back`` → ``loop_back`` → ``done`` retains all
+three firings instead of only the last. ``outcome`` continues to mean the
+LATEST firing, the entry stays a dict, and the keys follow the same
+omit-when-absent convention as ``head_at_completion`` / ``loop_back_target``:
+they appear only from the second firing onward, so a step fired once writes the
+byte-identical historical record. An unchanged re-call still reports
+``changed: false`` and appends nothing. See ``_extend_firing_history``.
 """
 
 import argparse
@@ -352,6 +362,11 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
         ):
             if existing_key is not None and existing_key != step:
                 phase_entry.pop(existing_key, None)
+            # This IS a re-fire (same outcome, changed detail/head/target/facts),
+            # so the superseded firing joins the trail. The idempotent branch
+            # ABOVE returned without reaching here, which is what keeps an
+            # unchanged re-call from appending a duplicate firing.
+            _extend_firing_history(existing, new_entry)
             phase_entry[step] = new_entry
             write_status(args.plan_id, status)
             return _with_warning(
@@ -403,6 +418,10 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
 
     if existing_key is not None and existing_key != step:
         phase_entry.pop(existing_key, None)
+    # The outcome-changing re-fire path (loop_back → done, and the --force
+    # overwrite). A first firing reaches here with `existing` absent, so nothing
+    # is written and the record keeps its historical shape.
+    _extend_firing_history(existing, new_entry)
     phase_entry[step] = new_entry
     write_status(args.plan_id, status)
 
@@ -454,3 +473,47 @@ def _build_entry(
     if facts:
         entry['facts'] = facts
     return entry
+
+
+def _extend_firing_history(existing: Any, new_entry: dict[str, Any]) -> None:
+    """Fold the SUPERSEDED firing into the new entry's append-only trail.
+
+    A finalize step can fire more than once — the ordinary shape is a step that
+    emits ``loop_back``, is re-fired, and eventually returns ``done``. The write
+    is ``phase_entry[step] = new_entry``, so without this the earlier firings
+    were echoed to the caller in the ``previous_*`` return fields and then lost:
+    a reader of ``status.metadata.phase_steps`` could not tell a step that
+    succeeded first time from one that looped back twice before succeeding.
+
+    Two ADDITIVE sibling keys carry the history, and the shape constraints are
+    load-bearing:
+
+    * ``firing_count`` — how many times the step has now fired.
+    * ``prior_firings`` — the superseded firings in order, oldest first, each a
+      dict carrying its ``outcome`` plus its ``loop_back_target`` when one was
+      set. Append-only: an existing trail is never rewritten, only extended.
+
+    ``outcome`` continues to mean the LATEST firing and keeps its position and
+    meaning, the entry stays a dict, and nothing is nested under a history key.
+    That is what leaves ``_invariants.py::_capture_phase_steps_complete``
+    unperturbed — it rejects a bare-string entry, requires
+    ``raw.get('outcome') == 'done'``, and hashes only the sorted required step
+    NAMES, never the entry contents.
+
+    Both keys follow the module's existing omit-when-absent convention: a FIRST
+    firing has no superseded firing to record, so ``existing`` is absent and this
+    writes nothing — the persisted record is byte-identical to the historical
+    shape. The keys appear only from the second firing onward.
+
+    A legacy bare-string ``existing`` (reachable only under ``--force``) carries
+    no readable firing to fold in, so it is skipped rather than guessed at.
+    """
+    if not isinstance(existing, dict):
+        return
+    superseded: dict[str, Any] = {'outcome': existing.get('outcome')}
+    prior_target = existing.get('loop_back_target')
+    if prior_target is not None:
+        superseded['loop_back_target'] = prior_target
+    trail = [*(existing.get('prior_firings') or []), superseded]
+    new_entry['prior_firings'] = trail
+    new_entry['firing_count'] = len(trail) + 1
