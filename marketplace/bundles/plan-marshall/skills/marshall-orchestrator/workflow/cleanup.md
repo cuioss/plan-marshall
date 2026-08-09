@@ -41,15 +41,9 @@ The returned payload is the population every later count in the report is comput
 
 For every enumerated spec whose row is NOT `running`, corroborate its verify-first clauses against the implementing source at the current HEAD. The corroboration is [`analyze.md` Step 2](analyze.md)'s, reused verbatim: the same vehicle, the same effort surface, and the same `corroborations[N]{claim,verdict,evidence}` return with the closed `corroborated` / `contradicted` / `unverifiable` vocabulary. No second verdict vocabulary is introduced anywhere in this verb.
 
-**Persist every returned verdict**, one call per claim:
+**Persist every returned verdict**, one `corpus set-verdict` call per claim, with the producer recorded as `{slug}/cleanup` — see [`marshall-orchestrator/SKILL.md`](../SKILL.md) § Canonical invocations → `corpus set-verdict` for the argument surface.
 
-```bash
-python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator corpus set-verdict \
-  --slug {slug} --plan PLAN-NN --claim-index {index} --verdict {verdict} \
-  --checked-at {head_sha} --by "{slug}/cleanup" --rescoped {rescoped} --evidence "{evidence}"
-```
-
-The field's grammar — its key order, its value sets, the `rescoped` rule, and the parse rule both sides use — is defined once at [§ Re-Grounding Verdict Field](../../persona-marshall-orchestrator/standards/orchestration-model.md#re-grounding-verdict-field) and is restated nowhere here. **This doc never hand-writes the field**: `corpus set-verdict` is the only sanctioned emitter, so the single-emitter property holds at the producer as well as inside the script.
+The field's grammar is defined once at [§ Re-Grounding Verdict Field](../../persona-marshall-orchestrator/standards/orchestration-model.md#re-grounding-verdict-field) and is restated nowhere here — not its keys, not its value sets, not the parse rule both sides use. **This doc never hand-writes the field**: `corpus set-verdict` is the only sanctioned emitter, so the single-emitter property holds at the producer as well as inside the script.
 
 This split is the Dispatch Decision Rule made operational: the dispatched leaf returns verdicts (write-free, so it passes the write-freedom test) and the inline orchestrator performs the write through the seam.
 

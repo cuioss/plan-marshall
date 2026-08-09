@@ -152,7 +152,7 @@ shortfall[S]{plan,reason}:
   PLAN-MM,"overlaps {surface} with PLAN-KK"
   PLAN-PP,"claim 2: contradicted, not re-scoped"
   PLAN-QQ,"claim 0: indeterminate — {offending line}"
-stale_verdicts[T]{plan,claim_index,checked_at}:
+stale_verdicts[T]{plan,claim_index,sha}:
   PLAN-NN,1,9f3a1c2
 ```
 

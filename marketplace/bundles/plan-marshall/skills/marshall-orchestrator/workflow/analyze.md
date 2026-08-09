@@ -41,13 +41,7 @@ Corroboration is this verb's one dispatchable sub-step, gated by the [Dispatch D
 
 #### Step 2b: Persist each corroboration onto its spec
 
-`analyze` is the **second producer** of the re-grounding verdict field; [`cleanup.md`](cleanup.md) Step 3 is the first. After the corroboration returns `corroborations[N]{claim,verdict,evidence}`, persist each verdict whose corroborated claim belongs to a staged spec in this epic's corpus — one call per claim, `by: {slug}/analyze`:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator corpus set-verdict \
-  --slug {slug} --plan PLAN-NN --claim-index {index} --verdict {verdict} \
-  --checked-at {head_sha} --by "{slug}/analyze" --rescoped {rescoped} --evidence "{evidence}"
-```
+`analyze` is the **second producer** of the re-grounding verdict field; [`cleanup.md`](cleanup.md) Step 3 is the first. After the corroboration returns `corroborations[N]{claim,verdict,evidence}`, persist each verdict whose corroborated claim belongs to a staged spec in this epic's corpus — one `corpus set-verdict` call per claim, with the producer recorded as `{slug}/analyze`. See [`marshall-orchestrator/SKILL.md`](../SKILL.md) § Canonical invocations → `corpus set-verdict` for the argument surface.
 
 The field's grammar is defined once at [orchestration-model.md § Re-Grounding Verdict Field](../../persona-marshall-orchestrator/standards/orchestration-model.md#re-grounding-verdict-field) and is restated nowhere here; `corpus set-verdict` is its only sanctioned emitter, so this step never hand-writes the line. Without this persistence, `analyze`'s contradictions stay prose-only and the consumer — [`orchestrate.md`](orchestrate.md) Step 4's prep-ready admission test — parses a half-populated field, which is the partial-coverage failure both producers exist to close. A corroboration whose claim belongs to no staged spec in this epic (a landing narrative's own assertion, a cross-repo claim) is recorded in the landing report as before and persists no verdict.
 
