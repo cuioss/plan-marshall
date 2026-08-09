@@ -206,10 +206,27 @@ def test_first_invocation_creates_file_with_one_row(plan_context):
     assert expected_header in content
 
     # Exactly one data row — legacy five columns positionally unchanged, the
-    # four appended context-load columns each defaulting to 0 when not supplied.
+    # four appended context-load columns each carrying the `unmeasured` literal
+    # because no flag supplied them. They are NOT `0`: the caller forwarded no
+    # `message.usage` figures, and a `0` would assert a measurement never taken.
     rows = _data_rows(content)
     assert len(rows) == 1
-    assert ',voluntary_checkpoint,12345,10,60000,0,0,0,0' in rows[0]
+    assert (
+        ',voluntary_checkpoint,12345,10,60000,unmeasured,unmeasured,unmeasured,unmeasured'
+        in rows[0]
+    )
+    assert ',voluntary_checkpoint,12345,10,60000,0,0,0,0' not in rows[0]
+    # The unmeasured columns are ABSENT from the result, and named as such.
+    for column in (
+        'input_tokens',
+        'output_tokens',
+        'cache_read_input_tokens',
+        'cache_creation_input_tokens',
+    ):
+        assert column not in result, column
+    assert result['unmeasured_context_load_columns'] == (
+        'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens'
+    )
 
 
 # =============================================================================

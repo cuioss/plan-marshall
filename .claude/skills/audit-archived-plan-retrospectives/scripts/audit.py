@@ -164,9 +164,11 @@ suite of deterministic checks:
   applies, and the two named under-counts are reported SEPARATELY —
   `unabsorbed_loop_back` (a `close_count > 1` row whose figures are sums across
   closes) and `omitted_row` (a canonical phase absent from `metrics.toon`, i.e. a
-  member of the persisted `unrecorded_phases`). Every emitted figure carries its
-  own `population` (and `floor_population`), and a figure any `metrics_blind` or
-  `partial` plan contributed to is labelled `floor` rather than truth.
+  member of the persisted `phases_missing_end_time`). Every emitted figure carries
+  its own `population` (and `floor_population`), and a figure is labelled `floor`
+  rather than truth when any contributing plan is `metrics_blind`, carries a
+  missing `end_time` marker, or has an UNREADABLE marker record (`old-schema` /
+  `pre-#812`, tallied separately in the block).
 - `cross-check-synthesis` (cross-plan, runs LAST) — the facet-completeness
   critic. It consumes the OTHER checks' retained structured results (not their
   emitted strings) and reports the cross-check couplings that single-check rows
@@ -997,24 +999,150 @@ def plan_pr_number(plan_dir: Path) -> str:
     return pr_number
 
 
-def parse_metrics_partiality(metrics_path: Path) -> tuple[bool, set[str]]:
-    """Read #812's recorded-partiality markers from `metrics.toon`.
+# The three states an archived `metrics.toon` can be in with respect to #812's
+# end_time-presence markers. They are DISTINCT and must never collapse to two:
+# `old-schema` is a record whose markers exist but under retired names this
+# reader will not interpret, while `pre-#812` is a record that never carried
+# markers at all. Reading the first as the second manufactures a clean verdict
+# out of an absent key.
+METRICS_SCHEMA_CURRENT = "current"
+METRICS_SCHEMA_OLD = "old-schema"
+METRICS_SCHEMA_PRE_812 = "pre-#812"
 
-    Returns `(partial, unrecorded_phases)` from the top-level `partial` /
-    `unrecorded_phases` scalars manage-metrics stamps: a canonical phase lacking a
-    recorded boundary (`end_time`) is listed in `unrecorded_phases`, and `partial`
-    is true whenever that set is non-empty. A phase the recorder KNOWS is
-    unrecorded is recorded-partial BY DESIGN — not an accidental zero-token
-    blindness — so the metrics and input-integrity checks consume this signal
-    rather than inferring blindness from zero-token phases alone. Absent markers
-    (a plan predating #812) degrade to `(False, set())`, preserving the old
-    zero-token inference for those plans.
+# The retired key names. Present ONLY so an archived record carrying them can be
+# RECOGNISED as old-schema and refused — never to read a value from.
+_RETIRED_PARTIALITY_KEYS = ("partial", "unrecorded_phases")
+
+
+@dataclass(frozen=True)
+class MetricsEndTimePresence:
+    """The `end_time`-presence markers as read from one archived `metrics.toon`.
+
+    `manage-metrics generate` stamps two top-level scalars — the bool
+    `any_phase_missing_end_time` and the comma-joined `phases_missing_end_time` —
+    naming exactly one predicate: which canonical phases' rows carry no `end_time`
+    boundary marker. A phase the recorder KNOWS was never closed is explained BY
+    DESIGN, not an accidental zero-token blindness, so the metrics,
+    input-integrity and billing-composition checks consume this signal instead of
+    inferring blindness from zero tokens alone.
+
+    Archived records are immutable history, so three states reach this reader and
+    all three are reported distinctly:
+
+    * `current` — the new keys are present. `any_phase_missing_end_time` and
+      `phases_missing_end_time` carry the read values.
+    * `old-schema` — the new keys are absent AND a retired `partial` /
+      `unrecorded_phases` key is present. The record HAS markers, under names
+      this reader deliberately does not interpret. Both value fields are `None`;
+      no caller may substitute a verdict for them.
+    * `pre-#812` — neither the new nor the retired keys are present. The
+      legitimate historical degrade, and the value fields are `None` here too.
+
+    The two value fields are `None` on every non-`current` state ON PURPOSE. The
+    predecessor of this reader returned `(False, set())` for BOTH degrades, which
+    after the rename would have certified every post-#812 archive as clean from
+    an absent key — the exact defect the rename exists to remove. `None` makes
+    that substitution impossible to write by accident: a caller must consult
+    `explained_phases` (conservative — never explains anything it could not read)
+    or `forces_floor` (unknown is a floor, never a clean verdict).
     """
-    partial_raw = parse_toon_scalar(metrics_path, "partial")
-    partial = str(partial_raw or "").strip().lower() == "true"
-    unrecorded_raw = parse_toon_scalar(metrics_path, "unrecorded_phases")
-    unrecorded = {seg.strip() for seg in (unrecorded_raw or "").split(",") if seg.strip()}
-    return partial, unrecorded
+
+    schema: str
+    any_phase_missing_end_time: bool | None
+    phases_missing_end_time: frozenset[str] | None
+
+    @property
+    def readable(self) -> bool:
+        """Did this record state the predicate in a form this reader interprets?"""
+        return self.schema == METRICS_SCHEMA_CURRENT
+
+    @property
+    def explained_phases(self) -> frozenset[str]:
+        """Phases whose missing close the record EXPLAINS.
+
+        Empty on every unreadable state — a phase cannot be explained by a marker
+        that was not read. The direction is deliberately conservative: fewer
+        explained phases means MORE zero-token phases surface as unexplained,
+        which fails loud rather than clean.
+        """
+        return self.phases_missing_end_time or frozenset()
+
+    @property
+    def forces_floor(self) -> bool:
+        """Must a figure derived from this record be labelled a floor?
+
+        True when the record says a phase was never closed, AND true whenever the
+        markers could not be read at all: an unknown is a lower bound, never a
+        clean verdict.
+        """
+        if not self.readable:
+            return True
+        return bool(self.any_phase_missing_end_time)
+
+    @property
+    def unreadable_note(self) -> str:
+        """A one-line report of the unreadable state, or `""` when readable.
+
+        Every consuming check emits this verbatim, so old-schema and pre-#812 are
+        distinguishable in the audit output rather than only in this dataclass.
+        """
+        if self.schema == METRICS_SCHEMA_OLD:
+            return (
+                "metrics.toon carries the retired partial/unrecorded_phases keys "
+                "(old-schema): the end_time-presence markers were NOT read, so no "
+                "phase is marker-explained and every derived figure is a floor"
+            )
+        if self.schema == METRICS_SCHEMA_PRE_812:
+            return (
+                "metrics.toon carries no end_time-presence markers (pre-#812): the "
+                "record predates them, so no phase is marker-explained and every "
+                "derived figure is a floor"
+            )
+        return ""
+
+
+def parse_metrics_end_time_presence(metrics_path: Path) -> MetricsEndTimePresence:
+    """Read #812's `end_time`-presence markers from `metrics.toon`, three-state.
+
+    See :class:`MetricsEndTimePresence` for the three states and why the two
+    value fields are `None` on both unreadable ones.
+    """
+    missing_raw = parse_toon_scalar(metrics_path, "phases_missing_end_time")
+    any_missing_raw = parse_toon_scalar(metrics_path, "any_phase_missing_end_time")
+    # Presence of EITHER new key is what makes the record current. The list key
+    # is legitimately the empty string when no phase is missing its marker, so
+    # `is not None` — not truthiness — is the presence test.
+    if missing_raw is not None or any_missing_raw is not None:
+        phases = frozenset(
+            seg.strip() for seg in (missing_raw or "").split(",") if seg.strip()
+        )
+        # The writer emits the two keys as a pair, but an archived `metrics.toon`
+        # is immutable history: a truncated or hand-edited file can reach here
+        # carrying the list alone. When the bool key is ABSENT the surviving list
+        # is the authority — defaulting to False would certify a record that NAMES
+        # an unclosed phase as clean, and `forces_floor` would return False for it,
+        # which is exactly the manufactured-clean-verdict defect this reader exists
+        # to remove. An explicit value still wins whenever the key IS present.
+        if any_missing_raw is None:
+            any_missing = bool(phases)
+        else:
+            any_missing = str(any_missing_raw).strip().lower() == "true"
+        return MetricsEndTimePresence(
+            schema=METRICS_SCHEMA_CURRENT,
+            any_phase_missing_end_time=any_missing,
+            phases_missing_end_time=phases,
+        )
+    if any(parse_toon_scalar(metrics_path, key) is not None for key in _RETIRED_PARTIALITY_KEYS):
+        return MetricsEndTimePresence(
+            schema=METRICS_SCHEMA_OLD,
+            any_phase_missing_end_time=None,
+            phases_missing_end_time=None,
+        )
+    return MetricsEndTimePresence(
+        schema=METRICS_SCHEMA_PRE_812,
+        any_phase_missing_end_time=None,
+        phases_missing_end_time=None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1506,10 +1634,14 @@ def check_quality_verification(inputs: PlanInputs, corpus_sigs: list[str]) -> di
 def check_metrics(inputs: PlanInputs) -> dict[str, Any]:
     metrics_path = inputs.plan_dir / "work" / "metrics.toon"
     phases = parse_metrics_toon(metrics_path)
-    # #812 recorded-partiality markers: a phase the recorder KNOWS is unrecorded
-    # is recorded-partial by design, not an accidental zero-token anomaly.
-    _partial, unrecorded_phases = parse_metrics_partiality(metrics_path)
+    # #812 end_time-presence markers: a phase the recorder KNOWS was never closed
+    # is explained by design, not an accidental zero-token anomaly. Read
+    # three-state — an unreadable record explains NOTHING and says so.
+    end_time_presence = parse_metrics_end_time_presence(metrics_path)
+    explained_phases = end_time_presence.explained_phases
     anomalies: list[str] = []
+    if not end_time_presence.readable:
+        anomalies.append(end_time_presence.unreadable_note)
 
     if not phases:
         return {
@@ -1540,21 +1672,23 @@ def check_metrics(inputs: PlanInputs) -> dict[str, Any]:
                 break
 
     # (b) Incomplete recordings: zero-token phase that should carry data — but a
-    # phase listed in #812's `unrecorded_phases` is recorded-partial BY DESIGN,
-    # so it is surfaced as informational partiality, NOT an incomplete-recording
+    # phase listed in #812's `phases_missing_end_time` was never closed BY
+    # DESIGN, so it is surfaced as an explained gap, NOT an incomplete-recording
     # anomaly. Only an UNEXPLAINED zero-token phase (not in the marker set) fills
-    # the `incomplete_recording` column.
+    # the `incomplete_recording` column. On an unreadable record `explained_phases`
+    # is empty, so every zero-token phase surfaces as unexplained — the loud
+    # direction, alongside the unreadable_note already appended above.
     incomplete = ""
     zero_phases = [p.phase for p in phases if p.total_tokens == 0]
-    unexplained_zero = [p for p in zero_phases if p not in unrecorded_phases]
-    recorded_partial_zero = [p for p in zero_phases if p in unrecorded_phases]
+    unexplained_zero = [p for p in zero_phases if p not in explained_phases]
+    marker_explained_zero = [p for p in zero_phases if p in explained_phases]
     if unexplained_zero:
         incomplete = ",".join(unexplained_zero)
         anomalies.append(f"zero-token phases: {incomplete}")
-    if recorded_partial_zero:
+    if marker_explained_zero:
         anomalies.append(
-            f"recorded-partial phases (unrecorded_phases marker): "
-            f"{','.join(recorded_partial_zero)}"
+            f"zero-token phases explained by the phases_missing_end_time marker: "
+            f"{','.join(marker_explained_zero)}"
         )
 
     # (c) Impossible values: worked > wall-clock, or negative idle.
@@ -3741,28 +3875,32 @@ def check_input_integrity(inputs: PlanInputs) -> dict[str, Any]:
     phases = parse_metrics_toon(metrics_path)
     phase_tokens = {p.phase: p.total_tokens for p in phases}
     recorded_phases = set(phase_tokens)
-    # #812 recorded-partiality markers: a phase the recorder KNOWS is unrecorded
-    # is recorded-partial by design, NOT an accidental zero-token blindness. The
-    # check consumes this signal instead of inferring blindness from zero tokens
-    # alone — a marker-explained zero-token phase is `partial`, not `blind`.
-    _partial, unrecorded_phases = parse_metrics_partiality(metrics_path)
+    # #812 end_time-presence markers: a phase the recorder KNOWS was never closed
+    # is explained by design, NOT an accidental zero-token blindness. The check
+    # consumes this signal instead of inferring blindness from zero tokens alone —
+    # a marker-explained zero-token phase is `partial`, not `blind`. Read
+    # three-state: an unreadable record explains nothing, so it can never buy a
+    # zero-token phase its way out of the blind set.
+    end_time_presence = parse_metrics_end_time_presence(metrics_path)
+    explained_phases = end_time_presence.explained_phases
 
     # metrics_blind — any data-bearing phase recorded zero tokens that the #812
-    # markers do NOT explain. A zero-token phase listed in `unrecorded_phases` is
-    # recorded-partial by design and is excluded from the blind set.
+    # markers do NOT explain. A zero-token phase listed in
+    # `phases_missing_end_time` was never closed by design and is excluded from
+    # the blind set.
     blind_phases = [
         ph
         for ph in _II_DATA_BEARING_PHASES
         if ph in recorded_phases
         and phase_tokens.get(ph, 0) == 0
-        and ph not in unrecorded_phases
+        and ph not in explained_phases
     ]
     # execute_blind is a GENUINE (accidental) blind: 5-execute recorded zero
-    # tokens with no recorded-partiality marker to explain it. A marker-explained
-    # zero-token execute is recorded-partial (bucket `partial`), not `blind`.
-    execute_recorded_partial = _II_EXECUTE_PHASE in unrecorded_phases
+    # tokens with no end_time-presence marker to explain it. A marker-explained
+    # zero-token execute is an explained gap (bucket `partial`), not `blind`.
+    execute_marker_explained = _II_EXECUTE_PHASE in explained_phases
     execute_blind = (
-        phase_tokens.get(_II_EXECUTE_PHASE, None) == 0 and not execute_recorded_partial
+        phase_tokens.get(_II_EXECUTE_PHASE, None) == 0 and not execute_marker_explained
     )
     metrics_blind = ";".join(blind_phases)
 
@@ -3794,9 +3932,19 @@ def check_input_integrity(inputs: PlanInputs) -> dict[str, Any]:
     )
     if execute_blind:
         data_confidence = "blind"
-    elif any_input_missing or any_defect or execute_recorded_partial:
-        # A #812-marker-explained zero-token execute is recorded-partial: it is
-        # the `partial` bucket, never the false-healthy `fully-recorded`.
+    elif (
+        any_input_missing
+        or any_defect
+        or execute_marker_explained
+        or not end_time_presence.readable
+    ):
+        # A marker-explained zero-token execute is an explained gap: the `partial`
+        # bucket, never the false-healthy `fully-recorded`. An UNREADABLE marker
+        # record lands here too — the check could not establish that the plan is
+        # fully recorded, and "could not establish" must never render as
+        # `fully-recorded`. The `metrics_marker_schema` column below names which
+        # unreadable state it was, so `old-schema` stays distinguishable from
+        # `pre-#812`.
         data_confidence = "partial"
     else:
         data_confidence = "fully-recorded"
@@ -3813,6 +3961,7 @@ def check_input_integrity(inputs: PlanInputs) -> dict[str, Any]:
         "incomplete_lifecycle": incomplete_lifecycle,
         "missing_dispatch_markers": missing_dispatch_markers,
         "data_confidence": data_confidence,
+        "metrics_marker_schema": end_time_presence.schema,
     }
 
 
@@ -3867,7 +4016,7 @@ def emit_input_integrity_block(rows: list[dict[str, Any]]) -> str:
             f"rows[{len(rows)}]{{plan_id,has_execution,has_metrics,has_references,"
             "has_tasks,has_findings,has_script_log,metrics_blind,"
             "incomplete_lifecycle,missing_dispatch_markers,data_confidence,"
-            "severity}:"
+            "metrics_marker_schema,severity}:"
         ),
     ]
     for r in rows:
@@ -3887,6 +4036,7 @@ def emit_input_integrity_block(rows: list[dict[str, Any]]) -> str:
                     r["incomplete_lifecycle"],
                     r["missing_dispatch_markers"],
                     r["data_confidence"],
+                    r["metrics_marker_schema"],
                     r["severity"],
                 ]
             )
@@ -5952,9 +6102,11 @@ def emit_exploration_share_block(result: dict[str, Any]) -> str:
 #                          such a row's figures are SUMS ACROSS CLOSES: the
 #                          composition shares stay meaningful, but the absolute
 #                          reconstruction covers more than one entry, so a
-#                          per-close reading of that row is wrong.
+#                          per-close reading of that row is wrong. The row states
+#                          the split itself in `value_scope` / `cumulative_fields`
+#                          / `last_close_fields`.
 #   omitted_row          — a canonical phase absent from `metrics.toon` (a member
-#                          of the persisted `unrecorded_phases`). Its billing
+#                          of the persisted `phases_missing_end_time`). Its billing
 #                          weight and its bytes are missing outright, so every
 #                          figure the plan contributes to is a FLOOR.
 #
@@ -6022,9 +6174,19 @@ _BC_LEDGER_COLUMNS: tuple[str, ...] = (
 
 # The legacy five-column floor: a row carrying fewer fields than this is malformed
 # and skipped; a row carrying only the legacy five keeps its columns 1-5 readable
-# and defaults the four appended context-load columns to 0 (the same floor the
-# `plan-retrospective` reader applies).
+# and reports the four appended context-load columns as UNMEASURED — absent, never
+# a measured 0 (the same floor the `plan-retrospective` reader applies).
 _BC_LEDGER_MIN_COLUMNS = 5
+
+# The literal an omitted context-load flag writes into its column. `data-format.md`
+# § Per-Dispatch Context-Load Attribution is the single source of truth; this is
+# the same hand-mirror obligation `_BC_LEDGER_COLUMNS` above carries, in a tree the
+# architecture inventory does not crawl.
+_BC_LEDGER_UNMEASURED_TOKEN = "unmeasured"
+
+# The ledger columns that can carry the unmeasured token. The legacy five keep a
+# numeric default, so a non-int there stays the old degrade-to-0 case.
+_BC_LEDGER_UNMEASURABLE_FIELDS: frozenset[str] = frozenset(_BC_LEDGER_COLUMNS[5:])
 
 _BC_LEDGER_HEADER_RE = re.compile(r"^rows\[\d*\]\{(?P<columns>[^}]*)\}:")
 
@@ -6070,15 +6232,28 @@ def _parse_billing_phase_fields(path: Path) -> dict[str, dict[str, int]]:
 def _parse_dispatch_boundary_totals(path: Path) -> dict[str, int]:
     """Sum one phase's dispatch-boundary ledger into its reconcilable columns.
 
-    Returns `{field: summed_value}` over `_BC_LEDGER_FIELDS` for every data row in
-    `work/metrics-dispatch-boundaries-{phase}.toon`, or `{}` when the file is
-    absent — the clean no-op the reconciliation degrades to (`max(row, 0) == row`).
+    Returns `{field: summed_value}` over `_BC_LEDGER_FIELDS`, carrying ONLY the
+    fields at least one row actually MEASURED. A field every row left unmeasured
+    is OMITTED rather than returned as `0` — the absent-is-not-zero rule
+    `_parse_billing_phase_fields` already applies to the per-phase view, followed
+    here rather than paralleled. `{}` when the file is absent: the clean no-op the
+    reconciliation degrades to (`max(row, 0) == row`).
 
     Column indices come from the `rows[...]{...}:` header when it declares them and
     from the canonical `_BC_LEDGER_COLUMNS` order otherwise. A row carrying fewer
-    than the legacy five columns is skipped and a malformed cell degrades to 0
-    rather than dropping the whole row — the same floor the `plan-retrospective`
-    reader applies (`data-format.md` § Per-Dispatch Context-Load Attribution).
+    than the legacy five columns is skipped. Within a row, each context-load cell
+    reads three ways per `data-format.md` § Per-Dispatch Context-Load Attribution:
+
+    * an integer — MEASURED, and summed (a measured `0` counts as measured).
+    * the `unmeasured` literal, or a column the row is too short to have —
+      UNMEASURED. Contributes nothing and does not mark the field measured, so a
+      ledger of only-unmeasured rows omits the field entirely.
+    * anything else — UNRECOGNISED. Contributes nothing either; it is a shape this
+      reader failed to parse, and defaulting it to `0` would silently pull the
+      reconciliation maximum down toward a number no dispatch reported.
+
+    The legacy five columns are unaffected: they carry a numeric default, so a
+    non-int there stays the historical degrade-to-`0`.
     """
     if not path.is_file():
         return {}
@@ -6088,6 +6263,7 @@ def _parse_dispatch_boundary_totals(path: Path) -> dict[str, int]:
         return {}
     columns: tuple[str, ...] = _BC_LEDGER_COLUMNS
     totals: dict[str, int] = dict.fromkeys(_BC_LEDGER_FIELDS, 0)
+    measured: set[str] = set()
     in_rows = False
     for raw in text.splitlines():
         stripped = raw.strip()
@@ -6111,9 +6287,21 @@ def _parse_dispatch_boundary_totals(path: Path) -> dict[str, int]:
             if ledger_field not in columns:
                 continue
             index = columns.index(ledger_field)
-            if index < len(parts):
-                totals[ledger_field] += _to_int(parts[index])
-    return totals
+            if index >= len(parts):
+                continue
+            cell = parts[index]
+            if ledger_field in _BC_LEDGER_UNMEASURABLE_FIELDS:
+                if cell == _BC_LEDGER_UNMEASURED_TOKEN:
+                    continue
+                try:
+                    totals[ledger_field] += int(cell)
+                except ValueError:
+                    continue
+                measured.add(ledger_field)
+                continue
+            totals[ledger_field] += _to_int(cell)
+            measured.add(ledger_field)
+    return {field: value for field, value in totals.items() if field in measured}
 
 
 @dataclass
@@ -6136,6 +6324,12 @@ class _BillingCompositionRow:
     unabsorbed_loop_back: list[str]
     omitted_row: list[str]
     floor: bool
+    # Which of the three `end_time`-presence marker states this plan's archived
+    # `metrics.toon` was in. Carried per plan (not just folded into `floor`) so an
+    # `old-schema` record stays distinguishable from a `pre-#812` one in the
+    # emitted audit trail — the two are different facts and a reader must be able
+    # to tell which one floored the figure.
+    marker_schema: str
 
     @property
     def weighted(self) -> dict[str, int]:
@@ -6189,7 +6383,7 @@ def _collect_billing_composition_rows(
     for inputs in all_inputs:
         metrics_path = inputs.plan_dir / "work" / "metrics.toon"
         phase_fields = _parse_billing_phase_fields(metrics_path)
-        partial, unrecorded_phases = parse_metrics_partiality(metrics_path)
+        end_time_presence = parse_metrics_end_time_presence(metrics_path)
 
         # Accumulate over CANONICAL phases only. The parser admits every
         # `[...]` section, so a non-phase section carrying the same billing or
@@ -6239,23 +6433,32 @@ def _collect_billing_composition_rows(
             excluded.append(inputs.plan_id)
             continue
 
-        # A canonical phase the recorder itself marked unrecorded, or one with no
-        # section at all, is an omitted row: its weight and bytes are missing
-        # outright. Both sources are consulted so a plan predating the #812
-        # partiality markers is still caught structurally.
+        # A canonical phase the recorder itself marked as never closed, or one
+        # with no section at all, is an omitted row: its weight and bytes are
+        # missing outright. Both sources are consulted so a plan whose marker
+        # record is unreadable (old-schema or pre-#812, where `explained_phases`
+        # is empty) is still caught structurally by the missing-section half.
         recorded_phases = set(phase_fields)
+        marker_phases = end_time_presence.explained_phases
         omitted = [
             phase
             for phase in _TE_PHASES
-            if phase in unrecorded_phases or phase not in recorded_phases
+            if phase in marker_phases or phase not in recorded_phases
         ]
 
         # Floor label: the input-integrity verdict is the no-false-healthy floor
         # this engine already computes, so it is CONSUMED here rather than
-        # re-derived. A `metrics_blind` plan, a recorded-partial plan, and a plan
-        # missing a canonical row all contribute under-counted figures.
+        # re-derived. A `metrics_blind` plan, a plan the record itself says was
+        # never fully closed, a plan whose marker record could not be READ at all
+        # (`forces_floor` covers both unreadable states — an unknown is a lower
+        # bound, never a clean verdict), and a plan missing a canonical row all
+        # contribute under-counted figures.
         integrity = check_input_integrity(inputs)
-        floor = bool(integrity["metrics_blind"]) or partial or bool(omitted)
+        floor = (
+            bool(integrity["metrics_blind"])
+            or end_time_presence.forces_floor
+            or bool(omitted)
+        )
 
         rows.append(
             _BillingCompositionRow(
@@ -6268,6 +6471,7 @@ def _collect_billing_composition_rows(
                 unabsorbed_loop_back=loop_back,
                 omitted_row=omitted,
                 floor=floor,
+                marker_schema=end_time_presence.schema,
             )
         )
     return rows, excluded
@@ -6373,6 +6577,7 @@ def cross_billing_composition(all_inputs: list[PlanInputs]) -> dict[str, Any]:
                 "reconciled_phases": ";".join(row.reconciled_phases),
                 "unabsorbed_loop_back": ";".join(row.unabsorbed_loop_back),
                 "omitted_row": ";".join(row.omitted_row),
+                "metrics_marker_schema": row.marker_schema,
                 "label": "floor" if row.floor else "measured",
             }
         )
@@ -6391,6 +6596,18 @@ def cross_billing_composition(all_inputs: list[PlanInputs]) -> dict[str, Any]:
             1 for r in rows if r.unabsorbed_loop_back or r.omitted_row
         ),
         "reconciled_plans": sum(1 for r in rows if r.reconciled_phases),
+        # Marker-schema tally, counted SEPARATELY per unreadable state. Both
+        # states floor their plan's figures, but they are different facts —
+        # `old-schema` is a record whose markers exist under retired names this
+        # reader refuses to interpret, `pre-#812` a record that never had them —
+        # and collapsing them into one "unreadable" count would hide which
+        # archives a re-read could still recover.
+        "old_schema_marker_plans": sum(
+            1 for r in rows if r.marker_schema == METRICS_SCHEMA_OLD
+        ),
+        "pre_812_marker_plans": sum(
+            1 for r in rows if r.marker_schema == METRICS_SCHEMA_PRE_812
+        ),
         "figures": figures,
         "rows": plan_rows,
     }
@@ -6442,6 +6659,7 @@ def emit_billing_composition_block(result: dict[str, Any]) -> str:
         "reconciled_phases",
         "unabsorbed_loop_back",
         "omitted_row",
+        "metrics_marker_schema",
         "label",
         "severity",
     ]
@@ -6464,6 +6682,11 @@ def emit_billing_composition_block(result: dict[str, Any]) -> str:
         f"unabsorbed_loop_back_plans: {result['unabsorbed_loop_back_plans']}",
         f"omitted_row_plans: {result['omitted_row_plans']}",
         f"reconciled_plans: {result['reconciled_plans']}",
+        # The two unreadable marker states, counted separately. A non-zero
+        # old_schema count means those plans' figures are floors for a reason a
+        # re-read of the archive could still resolve; pre-#812 never can be.
+        f"old_schema_marker_plans: {result['old_schema_marker_plans']}",
+        f"pre_812_marker_plans: {result['pre_812_marker_plans']}",
         f"genuine_signal_count: {genuine_signal_count}",
         f"figures[{len(figures)}]{{figure,unit,value,population,floor_population,label}}:",
     ]

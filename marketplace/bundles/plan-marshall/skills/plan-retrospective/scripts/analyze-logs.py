@@ -494,6 +494,35 @@ def detect_outcome_for_diffed_tasks(
     return {'tasks_with_diff_no_outcome': missing}
 
 
+# Dispatch-boundary row schema, consumed from the producer's declared contract.
+#
+# SOURCE OF TRUTH is `manage-metrics` `standards/data-format.md` § Per-Dispatch
+# Context-Load Attribution — the legacy five columns, then these four appended
+# at the END, and the literal an omitted context-load flag writes. This module
+# runs in a different process from the writer and cannot import its constants,
+# so these three are a hand-mirror of that section and MUST move with it.
+#
+# LOCK-STEP OBLIGATION. That section's "Restating surfaces (lock-step
+# obligation)" paragraph names FOUR surfaces that restate this schema and must
+# move together; this reader is one of them. The other three are the writer in
+# `manage-metrics.py` (`cmd_record_dispatch_boundary` +
+# `_DISPATCH_CONTEXT_LOAD_COLUMNS`), the `record-dispatch-boundary` operation
+# block in `manage-metrics/SKILL.md`, and the hand-copied `_BC_LEDGER_COLUMNS` /
+# `_BC_LEDGER_UNMEASURED_TOKEN` pair in
+# `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`. That last
+# one lives in a tree the architecture inventory does not crawl, so a content
+# sweep will NOT find it — changing the schema here means editing all four by
+# reading the list, never by searching.
+_LEGACY_COLUMN_COUNT = 5
+_CONTEXT_LOAD_COLUMNS = (
+    'input_tokens',
+    'output_tokens',
+    'cache_read_input_tokens',
+    'cache_creation_input_tokens',
+)
+_UNMEASURED_COLUMN_TOKEN = 'unmeasured'
+
+
 def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
     """Parse a single ``metrics-dispatch-boundaries-{phase}.toon`` artifact.
 
@@ -501,16 +530,38 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
     that ``manage-metrics record-dispatch-boundary`` writes once the four
     per-dispatch context-load columns are appended. The length guard is a floor
     (``len(parts) < 5``) rather than a strict equality so a widened row is no
-    longer silently dropped. The canonical column order / count / defaults are
-    owned by ``manage-metrics`` ``standards/data-format.md`` (Per-Dispatch
-    Context-Load Attribution section); this reader consumes that order.
+    longer silently dropped. The canonical column order / count / unmeasured
+    representation are owned by ``manage-metrics``
+    ``standards/data-format.md`` (Per-Dispatch Context-Load Attribution
+    section); this reader consumes that contract.
+
+    **The four context-load columns read three ways, never two.** The writer
+    distinguishes a measured value from a deliberately-unmeasured column, so
+    this reader must preserve that distinction rather than folding either into a
+    ``0``:
+
+    * an integer cell — MEASURED. Carried as an int, and a measured ``0`` stays
+      ``0``.
+    * the literal ``unmeasured`` — recognised, and deliberately not measured.
+      The key is OMITTED from the row dict; the column name is listed in the
+      row's ``unmeasured_columns``.
+    * anything else, and a column a short row does not have — UNRECOGNISED. The
+      key is omitted too, but the column name is listed in the row's
+      ``unrecognised_columns``, which is a different fact: the writer made a
+      statement this reader failed to parse, rather than declining to measure.
+
+    A LEGACY five-column row (written before the columns existed) reports all
+    four as **unmeasured** — it recorded no context-load measurement at all — and
+    still parses, preserving the ``len(parts) < 5`` floor. A malformed appended
+    cell reports as **unrecognised** and does not drop the whole row.
 
     Returned dict shape:
       - present: bool
       - rows: list of {timestamp, termination_cause, total_tokens, tool_uses,
-            duration_ms, input_tokens, output_tokens, cache_read_input_tokens,
-            cache_creation_input_tokens}. The four context-load keys default to
-            ``0`` when a legacy five-column row carries only the legacy columns.
+            duration_ms, unmeasured_columns, unrecognised_columns} plus one key
+            per MEASURED context-load column. A consumer testing for a
+            context-load value MUST test for the key's presence — an absent key
+            is never a zero.
       - unknown_count: number of rows with ``termination_cause == "unknown"``
       - clean_exit_queue_empty_count: number of rows with
             ``termination_cause == "clean_exit_queue_empty"``
@@ -555,19 +606,33 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
             }
         except (ValueError, IndexError):
             continue
-        # Read the four appended context-load columns when present, defaulting
-        # to 0 for legacy five-column rows. A malformed appended field degrades
-        # the four context fields to 0 rather than dropping the whole row.
-        try:
-            row['input_tokens'] = int(parts[5])
-            row['output_tokens'] = int(parts[6])
-            row['cache_read_input_tokens'] = int(parts[7])
-            row['cache_creation_input_tokens'] = int(parts[8])
-        except (ValueError, IndexError):
-            row['input_tokens'] = 0
-            row['output_tokens'] = 0
-            row['cache_read_input_tokens'] = 0
-            row['cache_creation_input_tokens'] = 0
+        # Read the four appended context-load columns three ways — measured /
+        # unmeasured / unrecognised — per column, independently. Per-column
+        # rather than per-row: a row whose third appended cell is corrupt still
+        # carries two perfectly good measurements, and the old all-or-nothing
+        # except-block discarded them along with the corrupt one.
+        unmeasured_columns: list[str] = []
+        unrecognised_columns: list[str] = []
+        for offset, column in enumerate(_CONTEXT_LOAD_COLUMNS):
+            index = _LEGACY_COLUMN_COUNT + offset
+            if index >= len(parts):
+                # A legacy five-column row carries no context-load measurement
+                # at all. That is UNMEASURED, not a measured zero.
+                unmeasured_columns.append(column)
+                continue
+            cell = parts[index].strip()
+            if cell == _UNMEASURED_COLUMN_TOKEN:
+                unmeasured_columns.append(column)
+                continue
+            try:
+                row[column] = int(cell)
+            except ValueError:
+                # A shape this reader does not recognise. Reported as such —
+                # never defaulted, and never folded into `unmeasured`, which is
+                # a statement the writer made on purpose.
+                unrecognised_columns.append(column)
+        row['unmeasured_columns'] = unmeasured_columns
+        row['unrecognised_columns'] = unrecognised_columns
         rows.append(row)
 
     unknown_count = sum(1 for row in rows if row['termination_cause'] == 'unknown')

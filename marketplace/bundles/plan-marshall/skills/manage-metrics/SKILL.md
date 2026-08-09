@@ -53,9 +53,9 @@ Record phase end timestamp with optional token data from Task agent notification
 - **The wall span accumulates too**: `duration_seconds` adds this close's **active span**, measured from whichever of `start_time` / the prior `end_time` is later. A first close is therefore identical to a plain `end_time − start_time`; a bare second close with no intervening `start-phase` adds only the genuinely-new span instead of double-counting the first entry.
 - **`agent_duration_ms` accumulates first and the sum is then clamped** to the accumulated wall span, so the `Worked <= Reported (wall)` invariant holds on a re-entered row with no special case in the clamp itself.
 
-Because the wall span accumulates while `start_time` stays scoped to the latest entry, a `close_count > 1` row deliberately does not satisfy `duration_seconds == end_time − start_time`. See [data-format.md](standards/data-format.md) for that divergence and the full per-field contract.
+Because the wall span accumulates while `start_time` stays scoped to the latest entry, a `close_count > 1` row deliberately does not satisfy `duration_seconds == end_time − start_time`. The close therefore also stamps the row with its own account of that split — `value_scope`, plus `cumulative_fields` / `last_close_fields` on a re-entered row — so a script consumer reads which values are sums and which are last-close off the row itself. See [data-format.md](standards/data-format.md) § Per-Field Write Semantics for the per-field contract and the currency verdict on each rule.
 
-**Accumulator fallback**: When any of `--total-tokens`, `--tool-uses`, `--duration-ms`, or `--retrospective-tokens` is omitted, `end-phase` reads `work/metrics-accumulator-{phase}.toon` (written by `accumulate-agent-usage`) and uses its running totals for the missing fields. Explicitly passed flags always win over accumulator values. Phases that ran without any agent dispatch (no accumulator file, no flags) are recorded with timestamps only — same behaviour as before; this is the inline-phase recording mode documented under `phase-boundary` (a timestamps-only closed row is fully recorded, never `unrecorded`). The `retrospective_tokens` field is carried alongside the others: the finalize retrospective step seeds it via `accumulate-agent-usage --retrospective-tokens`, and `end-phase` reads it back here so `[6-finalize].retrospective_tokens` is recorded without an explicit flag at the `end-phase` call site.
+**Accumulator fallback**: When any of `--total-tokens`, `--tool-uses`, `--duration-ms`, or `--retrospective-tokens` is omitted, `end-phase` reads `work/metrics-accumulator-{phase}.toon` (written by `accumulate-agent-usage`) and uses its running totals for the missing fields. Explicitly passed flags always win over accumulator values. Phases that ran without any agent dispatch (no accumulator file, no flags) are recorded with timestamps only — same behaviour as before; this is the inline-phase recording mode documented under `phase-boundary` (a timestamps-only closed row still carries its `end_time` marker, so it never appears in `phases_missing_end_time`). The `retrospective_tokens` field is carried alongside the others: the finalize retrospective step seeds it via `accumulate-agent-usage --retrospective-tokens`, and `end-phase` reads it back here so `[6-finalize].retrospective_tokens` is recorded without an explicit flag at the `end-phase` call site.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics end-phase \
@@ -82,6 +82,11 @@ duration_seconds: 180.0
 total_tokens: 25514
 ```
 
+The persisted row additionally carries `value_scope: single_close` after this
+call (and `mixed_cumulative_and_last_close` plus the two field lists after any
+later close); the return TOON reports the close itself, the row reports what the
+close did to it.
+
 `close_count` is the number of times this phase has now been closed, and
 `duration_seconds` / `total_tokens` report the **persisted row values** (the
 accumulated figures) rather than the per-close delta that was passed in — on a
@@ -102,8 +107,15 @@ status: success
 plan_id: EXAMPLE-PLAN
 file: metrics.md
 phases_recorded: 6
-partial: true
-unrecorded_phases[1]:
+deliverable_count: 4
+deliverable_count_sampling_point: generate_time
+files_modified: 34
+files_modified_sampling_point: generate_time
+tasks_completed: 7
+tasks_completed_sampling_point: generate_time
+denominators_sampled_at: 2026-03-27T10:25:00+00:00
+any_phase_missing_end_time: true
+phases_missing_end_time[1]:
   - 6-finalize
 boundary_monotonicity[0]:
 re_entered_phases[1]:
@@ -124,13 +136,21 @@ figures — a **derived-cost** measure over the main-context window, aggregated 
 its own `Billing (cost)` column. It answers a different question from
 `total_tokens` (what the work cost to buy, versus how much dispatched work was
 done) and is never added into it. Like every other column it inherits the
-symmetric `(n=k/6)` partiality marker when some phases carry no figure.
+symmetric `(n=k/6)` floor marker when some phases carry no figure.
 
 The `total_worked_formatted` / `total_wall_formatted` / `total_idle_formatted` fields are produced by `format_duration` (shared with the metrics.md Phase Breakdown table) and `total_tokens_formatted` is produced by `format_tokens_short` from `tools-file-ops` (abbreviated decimal-suffix form, e.g. `599K`, `1.2M`). The raw `total_worked_seconds` / `total_wall_seconds` / `total_idle_seconds` / `total_tokens` seconds-and-count figures are kept alongside them — consumers that want the human-readable form for an `[OK]` row should read the `_formatted` fields instead of re-formatting.
 
-**Partiality (floor-not-truth)**: `partial` and `unrecorded_phases` make the report's completeness first-class. A canonical phase is *recorded* iff its `metrics.toon` row carries an `end_time` (the boundary-close marker); a phase with no row at all is unrecorded too. `unrecorded_phases` lists every canonical phase (from the six-phase model) that lacks that marker, and `partial` is `true` whenever the list is non-empty. A `partial: true` total is a **floor, not a truth** — at least the listed phases' tokens/durations are under-counted (the canonical case is a `6-finalize` whose terminal close never folded its accumulator in). A fully-recorded six-phase plan reports `partial: false` with an empty `unrecorded_phases`. The same verdict is persisted as top-level keys in `metrics.toon` and rendered as a `> Partial: unrecorded phases — …` marker under the `## Phase Breakdown` heading in `metrics.md`; the Phase Breakdown Total uses the canonical-six baseline as its completeness denominator, so an entirely-absent phase renders the Total as partial (`n=k/6`) instead of looking complete.
+**Denominators (each with its sampling point)**: `generate` persists the denominators a ratio needs — `deliverable_count`, `files_modified`, `tasks_completed` — as top-level fields at the same tier as `re_entered_phases` and `session_message_count`, so a consumer READS them instead of re-deriving them at render time. Each count is written as a **pair** with its `{denominator}_sampling_point` companion, plus one shared `denominators_sampled_at` timestamp naming the instant the call counted them.
 
-**Re-entered phases**: `re_entered_phases` lists every phase whose row carries `close_count > 1` — a phase closed more than once, which is what a finalize loop-back into a phase that precedes it in the six-phase sequence produces. Its totals are the sum across every close (see the `end-phase` "Re-entry" paragraph). The same list is persisted as a top-level `re_entered_phases` key in `metrics.toon` and rendered as a `> Re-entered phases: …` marker under the `## Phase Breakdown` heading, with a per-phase **Closes** bullet under Phase Details. Because `close_count` is written at the write site, this is the **authoritative** re-entry signal; the neighbouring `boundary_monotonicity` list is a weaker timestamp-ordering inference that names the *later* phase rather than the re-entered one.
+The pair is what makes the count usable: every denominator here is a MOVING quantity (`affected_files` grows during execute, the task count grows as triage appends fix-tasks, the deliverable count can change on a Q-Gate re-entry), so the same numerator divides differently depending on when the denominator was read. `{denominator}_sampling_point` is the same discriminator convention as `total_tokens_population` and `value_scope` — a closed vocabulary, currently the single value `generate_time` — not a second one.
+
+**A denominator whose source cannot be read is ABSENT**, never written as `0` and never guessed — and could-not-be-read is the ONLY trigger. A readable-but-empty source is a MEASURED `0` and is written as `0`: an outline whose Deliverables section carries no `### N. Title` heading, a present-but-empty `affected_files` list, and an all-pending task population were each counted, and the answer was zero. `deliverable_count` does not own its own heading grammar either — `generate` calls `_plan_parsing.extract_deliverable_headings` while `manage-solution-outline list-deliverables` counts through the sibling `extract_deliverables` → `split_deliverable_blocks`, and both match through the one shared `_plan_parsing.DELIVERABLE_HEADING_PATTERN`, so the two producers cannot disagree on the count. `generate` also drops any pair whose source has become unreadable since it was last written, so a count never sits beside a `denominators_sampled_at` naming a moment at which it was not what the plan held. There is no absent-reads-as default here: a bare count with no `_sampling_point` companion is not anchored and MUST NOT be read as though it were. See [data-format.md](standards/data-format.md) § "Denominators and Their Sampling Point".
+
+**`end_time` presence (floor-not-truth)**: `any_phase_missing_end_time` and `phases_missing_end_time` report ONE predicate — does each canonical phase's `metrics.toon` row carry an `end_time` (the boundary-close marker)? A phase with no row at all is missing it too. `phases_missing_end_time` lists every canonical phase (from the six-phase model) failing that test, and `any_phase_missing_end_time` is `true` whenever the list is non-empty. **The keys name the predicate deliberately**: this is not a completeness verdict and not an internal-consistency check — a row is never examined beyond its `end_time`, so a phase absent from the list may still carry a `tool_uses` of `0` next to a non-zero token total. A `true` verdict does make the aggregate a **floor, not a truth**: at least the listed phases' tokens/durations are under-counted (the canonical case is a `6-finalize` whose terminal close never folded its accumulator in — usually a finalize step-ordering cause, not a lost write). A six-phase plan whose rows all carry `end_time` reports `any_phase_missing_end_time: false` with an empty `phases_missing_end_time`. The same pair is persisted as top-level keys in `metrics.toon` and rendered as a `> Phases missing an end_time boundary marker — …` line under the `## Phase Breakdown` heading in `metrics.md`; the Phase Breakdown Total uses the canonical-six baseline as its denominator, so an entirely-absent phase renders the Total as a floor (`n=k/6`) instead of looking complete.
+
+These keys replace the former `partial` / `unrecorded_phases` pair, which asserted the wider verdict the check never computed. The rename is **breaking**: the writer emits the new keys only, never the old ones, and drops either old key it finds on an existing `metrics.toon`. A consumer reading **archived** records (which are immutable history and still carry the old keys) MUST implement the three-state read — current / old-schema / pre-`#812` — specified in [data-format.md](standards/data-format.md) § "No Dual-Key Emission, and the Reader's Three-State Obligation". Silently defaulting an old-schema record would manufacture a clean verdict from an absent key.
+
+**Re-entered phases**: `re_entered_phases` lists every phase whose row carries `close_count > 1` — a phase closed more than once, which is what a finalize loop-back into a phase that precedes it in the six-phase sequence produces. Its totals are the sum across every close (see the `end-phase` "Re-entry" paragraph). Each such row also carries its OWN declaration of the split — `value_scope: mixed_cumulative_and_last_close` plus `cumulative_fields` / `last_close_fields` naming which of its values are sums and which are scoped to the latest close — written at the write site, so a script consumer reads the split off the row rather than out of `data-format.md`. The `re_entered_phases` list is persisted as a top-level key in `metrics.toon` and rendered as a `> Re-entered phases: …` marker under the `## Phase Breakdown` heading, with a per-phase **Closes** bullet under Phase Details that prints the row's two field lists. Because `close_count` is written at the write site, this is the **authoritative** re-entry signal; the neighbouring `boundary_monotonicity` list is a weaker timestamp-ordering inference that names the *later* phase rather than the re-entered one.
 
 Returns `status: error, error: no_data` if no metrics have been collected yet (no start-phase/end-phase calls made).
 
@@ -253,10 +273,10 @@ span. See the `end-phase` "Re-entry" paragraph for the three rules in full.
 OMITS `--total-tokens` / `--duration-ms` / `--tool-uses` (and has no accumulator
 file to fall back on). Omitting them is the sanctioned recording mode for an
 inline phase, NOT an incomplete call: the closing phase's `end_time` is stamped
-unconditionally, and `generate`'s partiality verdict keys a phase's *recorded*
-status solely off that `end_time` marker (see the `generate` "Partiality"
-paragraph). A timestamps-only closed row is therefore treated as fully recorded
-— it is never listed under `unrecorded_phases` and never flips `partial` to
+unconditionally, and `generate`'s `end_time`-presence check reads solely that
+marker (see the `generate` "`end_time` presence" paragraph). A timestamps-only
+closed row therefore carries the marker — it is never listed under
+`phases_missing_end_time` and never flips `any_phase_missing_end_time` to
 `true`, preserving the #812 floor-not-truth semantics. This is the path the
 inline **1-init → 2-refine** boundary takes (phase-1-init runs inline in the
 orchestrator, so its close carries no `<usage>` data), and equally the
@@ -409,15 +429,15 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
 
   That test reads **this document only**, so those three sites are the whole *guarded* population — not the whole population. Any enumeration of the same set living in another file is unguarded, and this guard cannot tell you how many such files exist. Two are known and currently in sync: the `termination_cause` enum line in [standards/data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution, and the `record-dispatch-boundary` argparse `description=` string in `scripts/manage-metrics.py` (its `choices=` is derived from the tuple and so is not a mirror). Update those in the same change — and search for other full-set enumerations rather than assuming these are all, because nothing fails if you miss one.
 - `--total-tokens`, `--tool-uses`, `--duration-ms` — Subagent `<usage>` totals at termination (each optional, default 0).
-- `--input-tokens`, `--output-tokens`, `--cache-read-input-tokens`, `--cache-creation-input-tokens` — Per-dispatch context-load totals from the dispatched agent's four-field `message.usage` view at termination (each optional, default 0). These are the per-DISPATCH counterpart to the per-PHASE four-field view `enrich` writes; they are recorded as four columns appended at the END of each row so the legacy five columns stay positionally unchanged. See [data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution for the canonical column order, count, and defaults.
+- `--input-tokens`, `--output-tokens`, `--cache-read-input-tokens`, `--cache-creation-input-tokens` — Per-dispatch context-load totals from the dispatched agent's four-field `message.usage` view at termination (each optional). These are the per-DISPATCH counterpart to the per-PHASE four-field view `enrich` writes; they are recorded as four columns appended at the END of each row so the legacy five columns stay positionally unchanged. **They have no numeric default**: an omitted flag writes the literal `unmeasured` into its column and omits the key from the result TOON, so "the caller passed no measurement" stays distinguishable from "the dispatch loaded zero context". A *measured* zero is still written and returned as `0`. See [data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution for the canonical column order, count, and the three-way (measured / unmeasured / unrecognised) reader contract.
 
 **Behaviour:**
 - Appends one row to `.plan/plans/{plan_id}/work/metrics-dispatch-boundaries-{phase}.toon`.
-- The file's first three lines are a TOON-tabular header followed by CSV-style data rows; the canonical row-header schema (column order, count, defaults) is owned by [data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution.
+- The file's first three lines are a TOON-tabular header followed by CSV-style data rows; the canonical row-header schema (column order, count, unmeasured representation) is owned by [data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution.
 - Atomic write — partial files are not visible to readers.
 - The same shared file-write helpers as `accumulate-agent-usage` are used.
 
-**Output:**
+**Output (all four context-load flags supplied):**
 ```toon
 status: success
 plan_id: EXAMPLE-PLAN
@@ -430,8 +450,24 @@ input_tokens: 38000
 output_tokens: 4000
 cache_read_input_tokens: 210000
 cache_creation_input_tokens: 12000
+unmeasured_context_load_columns:
 timestamp: 2026-05-08T14:23:11Z
 rows_recorded: 4
+dispatch_boundary_file: work/metrics-dispatch-boundaries-5-execute.toon
+```
+
+**Output (no context-load flags supplied):** the four keys are ABSENT rather than returned as `0`, and `unmeasured_context_load_columns` names them so the caller can see what the row declined to claim:
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+phase: 5-execute
+termination_cause: budget_yield
+total_tokens: 51044
+tool_uses: 17
+duration_ms: 238110
+unmeasured_context_load_columns: input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens
+timestamp: 2026-05-08T14:41:02Z
+rows_recorded: 5
 dispatch_boundary_file: work/metrics-dispatch-boundaries-5-execute.toon
 ```
 
@@ -548,6 +584,7 @@ phases:
     duration_ms: 23332
     tool_uses: 12
     close_count: 1
+    value_scope: single_close
   2-refine:
     start_time: 2026-03-27T10:03:30+00:00
     end_time: 2026-03-27T10:05:00+00:00
@@ -557,7 +594,17 @@ phases:
 `close_count` counts the closes of that phase row; `1-init` shows `1` because it
 can never be looped back into. A row with `close_count > 1` was re-entered, so
 its `duration_seconds` and token/tool figures are sums across every close while
-`start_time` reflects only the latest entry — see [data-format.md](standards/data-format.md).
+`start_time` reflects only the latest entry.
+
+**That split is stated on the row, not only in prose.** Every close writes
+`value_scope` — `single_close` on a first close, `mixed_cumulative_and_last_close`
+from the second onward — and a re-entered row additionally carries
+`cumulative_fields` / `last_close_fields` naming exactly which of its own values
+fall on each side. **`value_scope` absent reads as `single_close`**, the same
+honest-default shape `total_tokens_population` documents; a consumer holding
+`close_count` should prefer it, since `close_count > 1` is the authoritative
+re-entry marker and `value_scope` describes what that re-entry did to the fields.
+See [data-format.md](standards/data-format.md) § Per-Field Write Semantics.
 
 ### Generated metrics.md
 
@@ -598,8 +645,11 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics gene
 Returns the per-column totals — `total_worked_seconds`, `total_wall_seconds`,
 `total_idle_seconds`, `total_tokens` (dispatched work), and
 `total_billing_weighted` (derived cost, aggregated separately and never summed
-into `total_tokens`) — plus their formatted variants and the completeness
-verdict (`partial` / `unrecorded_phases`).
+into `total_tokens`) — plus their formatted variants, the `end_time`-presence
+check (`any_phase_missing_end_time` / `phases_missing_end_time`), and each
+persisted denominator with its `_sampling_point` companion. A denominator that
+could not be counted is omitted from the return, exactly as it is from the
+record.
 
 ### print-phase-breakdown
 

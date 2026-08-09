@@ -32,7 +32,7 @@ Finalize steps ({N_done}/{N_total} done)
   [OK]  sonar-roundtrip                   quality gate passed
   [OK]  lessons-capture                   {N} lesson(s) recorded ({lesson_ids})
   [OK]  branch-cleanup                    main pulled, branch deleted (local+remote), worktree removed
-  [OK]  record-metrics                    {total_duration_formatted} / {total_tokens_formatted} tokens
+  [OK]  record-metrics                    {total_wall_formatted} / {total_tokens_formatted} tokens
   [OK]  archive-plan                      -> {archive_path}
 
 Repository: main up-to-date | worktree removed | working tree clean
@@ -58,7 +58,7 @@ Finalize steps ({N_done}/{N_total} done)
   [OK]  sonar-roundtrip                   quality gate passed
   [OK]  lessons-capture                   {N} lesson(s) recorded ({lesson_ids})
   [OK]  branch-cleanup                    main pulled, branch deleted (local+remote), worktree removed
-  [OK]  record-metrics                    {total_duration_formatted} / {total_tokens_formatted} tokens
+  [OK]  record-metrics                    {total_wall_formatted} / {total_tokens_formatted} tokens
   [OK]  archive-plan                      -> {archive_path}
 
 Phase Breakdown
@@ -377,7 +377,7 @@ The dispatcher owns the commit; the step authors only the message. The same sing
 | `branch-cleanup` | PR mode full cleanup | `main pulled, branch deleted (local+remote), worktree removed` |
 | `branch-cleanup` | Local-only mode | `local-only: switched to main` |
 | `branch-cleanup` | Declined by user | `declined by user` |
-| `record-metrics` | Metrics recorded | `{total_duration_formatted} / {total_tokens_formatted} tokens` (e.g. `1h46m / 599K tokens`) |
+| `record-metrics` | Metrics recorded | `{total_wall_formatted} / {total_tokens_formatted} tokens` (e.g. `1h46m / 599K tokens`) |
 | `archive-plan` | Archived successfully | `-> .plan/archived-plans/2026-04-17-jwt-auth/` |
 | `validation` | All required steps done | `all required steps done` |
 | `validation` | N checks passed | `{N} validation check(s) passed` |

@@ -336,19 +336,32 @@ status.metadata.phase_steps[{phase}][{step}] = {
   "display_detail": <string> | null,
   "head_at_completion": <sha> | absent,
   "loop_back_target": "5-execute" | "6-finalize" | absent,
-  "facts": {"<key>": "<value>", ...} | absent
+  "facts": {"<key>": "<value>", ...} | absent,
+  "firing_count": <int> | absent,
+  "prior_firings": [{"outcome": ..., "loop_back_target": ... | absent}, ...] | absent
 }
 ```
 
-Both the `metadata` and `phase_steps` containers are created on demand. A non-dict (bare-string) entry is rejected with `error: legacy_string_entry` — see conflict semantics below. The `head_at_completion`, `loop_back_target`, and `facts` keys are only present when the corresponding flag was supplied (per the `_build_entry` helper); `loop_back_target` is structurally guaranteed to be present iff `outcome == "loop_back"`.
+Both the `metadata` and `phase_steps` containers are created on demand. Without `--force`, a non-dict (bare-string) entry is rejected with `error: legacy_string_entry`; `--force` migrates it to the dict shape above and preserves its prior outcome — see conflict semantics below. The `head_at_completion`, `loop_back_target`, and `facts` keys are only present when the corresponding flag was supplied (per the `_build_entry` helper); `loop_back_target` is structurally guaranteed to be present iff `outcome == "loop_back"`.
 
 The `warning` field described under "Head-anchor refusal" is a **response** field only — it reports that head-dependence could not be derived for this call and is never persisted into the stored record.
 
+**Firing history (`firing_count` / `prior_firings`)**:
+
+A step can fire more than once — the ordinary shape for a phase-6-finalize step is `loop_back` → re-fire → `done`. These two keys retain every superseded firing, so a reader can tell a step that succeeded first time from one that looped back twice before succeeding.
+
+- `firing_count` — how many times the step has now fired.
+- `prior_firings` — the SUPERSEDED firings in order, oldest first. Each carries its `outcome`, plus its `loop_back_target` when one was set. The trail is **append-only**: an existing entry is never rewritten, only extended.
+- `outcome` continues to mean the **LATEST** firing, and keeps its position and meaning exactly. Nothing is nested under a history key and the entry stays a dict — which is what leaves the `phase_steps_complete` handshake hash unperturbed (its capture rejects a bare-string entry, requires `outcome == 'done'`, and hashes only the sorted required step NAMES, never the entry contents).
+- Both keys follow the same omit-when-absent convention as `head_at_completion` / `loop_back_target`: they appear only from the **second** firing onward, so a step fired once writes the byte-identical historical record shape.
+- An unchanged re-call is idempotent and appends nothing (see the semantics below) — only a write that CHANGES the entry folds the superseded firing into the trail.
+
 **Semantics**:
-- **Idempotent on identical outcome AND display_detail AND head_at_completion AND loop_back_target AND facts**: If the step already has the requested outcome and all five fields match, no file write occurs and `changed: false` is returned.
-- **Detail / head / loop_back_target / facts update**: If the outcome matches but any of `display_detail`, `head_at_completion`, `loop_back_target`, or `facts` differ, the command updates the entry in place and returns `changed: true`. A re-call that changes ONLY the facts is therefore reported as a change, never silently swallowed.
-- **Conflict on differing outcome**: If the step already has a different outcome and `--force` is not supplied, the command returns `error: conflict` with the existing outcome surfaced in the response. Supplying `--force` overwrites the existing value (and detail / head / loop_back_target / facts).
-- **Bare-string entry rejection**: If the existing entry is a bare string rather than a dict, the command returns `error: legacy_string_entry` and refuses to write. Only the dict shape above is accepted.
+- **Idempotent on identical outcome AND display_detail AND head_at_completion AND loop_back_target AND facts**: If the step already has the requested outcome and all five fields match, no file write occurs, `changed: false` is returned, and NO firing is appended to the trail.
+- **Detail / head / loop_back_target / facts update**: If the outcome matches but any of `display_detail`, `head_at_completion`, `loop_back_target`, or `facts` differ, the command updates the entry in place, appends the superseded firing to `prior_firings`, and returns `changed: true`. A re-call that changes ONLY the facts is therefore reported as a change, never silently swallowed.
+- **Conflict on differing outcome**: If the step already has a different outcome and `--force` is not supplied, the command returns `error: conflict` with the existing outcome surfaced in the response. Supplying `--force` overwrites the existing value (and detail / head / loop_back_target / facts) and appends the superseded firing to the trail.
+- **Bare-string entry rejection (without `--force`)**: If the existing entry is a bare string rather than a dict and `--force` is NOT supplied, the command returns `error: legacy_string_entry` and refuses to write; the response surfaces the bare string as `existing_outcome`. Only the dict shape above is written.
+- **Bare-string migration (with `--force`)**: `--force` migrates the legacy entry to the dict shape and PRESERVES its prior outcome — the bare string becomes the first `prior_firings` item (`{"outcome": "<the bare string>"}`) and `firing_count` is `2`. The bare string is a readable firing (it is the very value the rejection above reports back), so the migration folds it into the trail instead of dropping it; otherwise a migrated record would be indistinguishable from a genuine first firing.
 
 > **Forward reference — `phase_steps_complete` invariant**: Downstream phase skills and verification helpers treat `status.metadata.phase_steps[{phase}]` as the authoritative record of which intra-phase steps have been marked `done` or `skipped`. A phase is considered `phase_steps_complete` when every step in the phase's declared step list has a dict entry with `outcome == 'done'`. The invariant reader rejects bare-string entries. Consumers must not fabricate entries by other means — always go through `mark-step-done`.
 

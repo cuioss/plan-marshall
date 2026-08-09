@@ -4,9 +4,21 @@ How much time and how many tokens did the plan consume relative to its scope? LL
 
 ## Inputs
 
-- `metrics.md` — total_duration_seconds, total_tokens, per-phase breakdown.
+- `metrics.md` — total_wall_seconds, total_tokens, per-phase breakdown.
 - `log_analysis` fragment (already computed) — entry counts, script durations.
-- `references.json` `affected_files` — scope size.
+- `work/metrics.toon` — the **persisted denominators** and their sampling points: `deliverable_count`, `files_modified`, `tasks_completed`, each with its `{denominator}_sampling_point` companion, plus the shared `denominators_sampled_at` timestamp.
+
+### Denominators are READ, never re-derived
+
+Every denominator this aspect divides by is written into `work/metrics.toon` by `manage-metrics generate`. **Read it from the record. Do NOT count it here.**
+
+The reason is not convenience. Each denominator is a MOVING quantity — `affected_files` grows during execute, the task count grows as triage appends fix-tasks, the deliverable count can change on a Q-Gate re-entry — so a count taken at render time is taken at a moment nothing records, and the same numerator over the same plan then yields different ratios on different reads. Deriving it here is exactly the defect this aspect exists to report on, committed by the reporter.
+
+Each persisted count arrives as a **pair** with its `{denominator}_sampling_point` companion (currently always `generate_time`, meaning the count was taken from live plan state when `generate` ran, at the instant `denominators_sampled_at` names). The contract is owned by [`manage-metrics/standards/data-format.md`](../../manage-metrics/standards/data-format.md) § "Denominators and Their Sampling Point".
+
+**A `0` in the record is a MEASURED zero, not a missing denominator.** Could-not-be-read is the only reason `generate` omits a denominator, so a persisted `0` — an outline whose Deliverables section holds no `### N. Title` heading, an empty `affected_files` list, an all-pending task population — was counted, and the answer was zero. Read it as the count it is; do not re-derive it and do not treat it as absent.
+
+**When a denominator is ABSENT from the record** (its source could not be read, so `generate` deliberately wrote nothing rather than a `0`), the aspect MAY still compute the ratio from a value it derives itself — but it MUST then state, in the emitted fragment, both that denominator's provenance and that its sampling point is **unstated**. Presenting such a ratio as though it were anchored is prohibited; a bare count carrying no `_sampling_point` companion is not anchored either and takes the same disclosure.
 
 ### What population `totals.tokens` measures
 
@@ -31,6 +43,15 @@ totals:
   tokens: N
   files_modified: N
   tasks_completed: N
+  deliverable_count: N
+denominator_provenance:
+  # One row per denominator the ratios below divide by. `sampling_point` is the
+  # value read from the record; `unstated` marks a denominator the record did
+  # not carry, whose count this aspect derived itself.
+  files_modified: generate_time | unstated
+  tasks_completed: generate_time | unstated
+  deliverable_count: generate_time | unstated
+  sampled_at: {denominators_sampled_at} | absent
 ratios:
   tokens_per_file_modified: N
   seconds_per_task: N
@@ -50,10 +71,16 @@ This section is the authoritative interpretation contract. The four sub-sections
 
 For every plan, compute and embed the following four ratios explicitly under the `ratios:` block of the TOON fragment. All four are MUST-emit — omitting a field is a structural failure mode regardless of whether any threshold trips.
 
-1. `tokens_per_file_modified` = `totals.tokens / max(totals.files_modified, 1)`
-2. `seconds_per_task` = `totals.duration_seconds / max(totals.tasks_completed, 1)`
-3. `max_phase_token_share` = `max(phase_breakdown[*].tokens) / max(totals.tokens, 1)` (as a fraction 0.0–1.0; emit two decimals)
-4. `total_tokens_per_deliverable` = `totals.tokens / max(deliverable_count, 1)` where `deliverable_count` is the number of deliverables in the originating `solution_outline.md` (read this from the plan's `solution_outline.md` headings of the form `### N.` — count them).
+**Read each denominator from `work/metrics.toon` first** (see § "Denominators are READ, never re-derived"), and record its `_sampling_point` under `denominator_provenance:` before computing anything.
+
+**Coerce each count to an integer before computing.** `read_metrics_raw` numeric-coerces per-phase block values only, so every PLAN-level key round-trips as text — `deliverable_count` reads back as `'3'`, not `3` — and applying `max(denominator, 1)` or division directly to the read value operates on a string.
+
+1. `tokens_per_file_modified` = `totals.tokens / max(files_modified, 1)` — `files_modified` READ from the persisted `files_modified` field.
+2. `seconds_per_task` = `totals.duration_seconds / max(tasks_completed, 1)` — `tasks_completed` READ from the persisted `tasks_completed` field.
+3. `max_phase_token_share` = `max(phase_breakdown[*].tokens) / max(totals.tokens, 1)` (as a fraction 0.0–1.0; emit two decimals). This one needs no external denominator: it divides the numerator population by itself.
+4. `total_tokens_per_deliverable` = `totals.tokens / max(deliverable_count, 1)` — `deliverable_count` READ from the persisted `deliverable_count` field.
+
+For any of 1, 2 or 4 whose denominator the record does NOT carry: derive the count, emit the ratio, and set that denominator's `denominator_provenance` row to `unstated` — the ratio is then reported as unanchored, never as measured.
 
 The four computed values MUST appear under `ratios:` in the fragment alongside the `dominant_phase` derived from the `phase_breakdown[*]` row that contributed the most tokens. Do NOT round or truncate; emit the integer or two-decimal value verbatim.
 

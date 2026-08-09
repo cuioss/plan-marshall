@@ -123,13 +123,21 @@ class TestParseDispatchBoundaryFile:
         assert result['present'] is False
 
     def test_malformed_rows_skipped(self, tmp_path):
+        """A LEGACY five-column fixture: short/non-int rows drop, the valid one stays.
+
+        This is the file's coverage of BOTH the ``len(parts) < 5`` legacy floor
+        and the appended-cell branch, so it also pins what the surviving legacy
+        row says about its four appended columns: they are UNMEASURED (absent),
+        not a measured ``0``. Asserting only ``len(rows) == 1`` would stay green
+        across that representation change while proving nothing about it.
+        """
         artifact = tmp_path / 'b.toon'
         artifact.write_text(
             'plan_id: demo\n'
             'phase: 5-execute\n'
             'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms}:\n'
             'too,few,fields\n'  # wrong field count → skipped
-            'ts,unknown,not-an-int,2,1000\n'  # non-int → skipped
+            'ts,unknown,not-an-int,2,1000\n'  # non-int LEGACY column → row skipped
             'ts2,clean_exit_queue_empty,100,2,1000\n',  # valid
             encoding='utf-8',
         )
@@ -138,7 +146,63 @@ class TestParseDispatchBoundaryFile:
         assert len(result['rows']) == 1
         assert result['clean_exit_queue_empty_count'] == 1
 
+        # The legacy floor survives AND the surviving row's context-load columns
+        # read as unmeasured rather than as measured zeros.
+        row = result['rows'][0]
+        assert row['total_tokens'] == 100
+        for column in (
+            'input_tokens',
+            'output_tokens',
+            'cache_read_input_tokens',
+            'cache_creation_input_tokens',
+        ):
+            assert column not in row, column
+        assert row['unmeasured_columns'] == [
+            'input_tokens',
+            'output_tokens',
+            'cache_read_input_tokens',
+            'cache_creation_input_tokens',
+        ]
+        # Nothing was UNRECOGNISED: a legacy row is a recognised shape whose
+        # appended columns simply do not exist.
+        assert row['unrecognised_columns'] == []
+
+    def test_malformed_appended_cell_is_unrecognised_not_unmeasured(self, tmp_path):
+        """A corrupt appended cell reads as unrecognised, keeping the row.
+
+        The three-way distinction at its sharpest: a legacy row (nothing there),
+        an ``unmeasured`` token (deliberately not measured) and a corrupt cell
+        (a shape the reader failed to parse) must not collapse into one bucket.
+        """
+        artifact = tmp_path / 'b.toon'
+        artifact.write_text(
+            'plan_id: demo\n'
+            'phase: 5-execute\n'
+            'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
+            'input_tokens,output_tokens,cache_read_input_tokens,'
+            'cache_creation_input_tokens}:\n'
+            'ts,clean_exit_queue_empty,100,2,1000,0,not-an-int,unmeasured,90\n',
+            encoding='utf-8',
+        )
+        result = _al._parse_dispatch_boundary_file(artifact)
+
+        assert len(result['rows']) == 1
+        row = result['rows'][0]
+        # A MEASURED zero survives as 0 alongside a corrupt neighbour.
+        assert row['input_tokens'] == 0
+        assert row['cache_creation_input_tokens'] == 90
+        assert 'output_tokens' not in row
+        assert 'cache_read_input_tokens' not in row
+        assert row['unrecognised_columns'] == ['output_tokens']
+        assert row['unmeasured_columns'] == ['cache_read_input_tokens']
+
     def test_counts_unknown_termination(self, tmp_path):
+        """Legacy five-column rows count by cause AND report unmeasured columns.
+
+        Same fixture shape as ``test_malformed_rows_skipped``; the count
+        assertion alone would not notice the representation change, so both rows'
+        context-load reads are pinned here too.
+        """
         artifact = tmp_path / 'b.toon'
         artifact.write_text(
             'plan_id: demo\n'
@@ -150,6 +214,12 @@ class TestParseDispatchBoundaryFile:
         )
         result = _al._parse_dispatch_boundary_file(artifact)
         assert result['unknown_count'] == 2
+
+        assert [row['total_tokens'] for row in result['rows']] == [100, 200]
+        for row in result['rows']:
+            assert 'input_tokens' not in row
+            assert len(row['unmeasured_columns']) == 4
+            assert row['unrecognised_columns'] == []
 
 
 class TestReadDispatchBoundariesPerPhase:

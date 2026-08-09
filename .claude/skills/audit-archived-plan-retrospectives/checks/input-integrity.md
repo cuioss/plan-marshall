@@ -51,7 +51,7 @@ These are the input-health defects that silently FLOOR every downstream check:
 
 | Flag | Fires when | Why it floors downstream checks |
 |------|------------|---------------------------------|
-| `metrics_blind` | Any data-bearing phase (`4-plan`, `5-execute`, `6-finalize`) recorded **zero** tokens **that #812's `unrecorded_phases` markers do NOT explain**. The cell lists the genuinely-blind phase names (`;`-joined). | A zero-token phase means every token-economics and token-trend number for that phase is under-counted. The **5-execute** case is load-bearing — a genuinely-blind execute escalates the plan to the `blind` data_confidence bucket. A phase listed in `unrecorded_phases` is recorded-partial by design (see the #812 note below) and is EXCLUDED from this flag. A phase that ran entirely inline is not blind either — see the inline-phase carve-out below for why that holds without a branch in this check. |
+| `metrics_blind` | Any data-bearing phase (`4-plan`, `5-execute`, `6-finalize`) recorded **zero** tokens **that #812's `phases_missing_end_time` markers do NOT explain**. The cell lists the genuinely-blind phase names (`;`-joined). | A zero-token phase means every token-economics and token-trend number for that phase is under-counted. The **5-execute** case is load-bearing — a genuinely-blind execute escalates the plan to the `blind` data_confidence bucket. A phase listed in `phases_missing_end_time` was never closed by design (see the #812 note below) and is EXCLUDED from this flag. On an `old-schema` or `pre-#812` record no phase is explained, so a zero-token phase there DOES fire this flag — read it alongside `metrics_marker_schema`. A phase that ran entirely inline is not blind either — see the inline-phase carve-out below for why that holds without a branch in this check. |
 | `incomplete_lifecycle` | The plan never recorded a `5-execute` OR a `6-finalize` section in `metrics.toon`. The cell lists the missing phase names. | The plan did not run to completion through the recorded lifecycle, so completeness-dependent checks (pr-merge-velocity, quality-chain resolution) read a truncated history. |
 | `missing_dispatch_markers` | `logs/work.log` carries no `[DISPATCH] role=phase-N` line. | The sequence-and-build-minimality phase attribution cannot bucket calls into phases — it folds everything into `1-init` (the finalize-fold conflation caveat in that check's sub-doc). |
 
@@ -62,14 +62,19 @@ per-plan rows:
 
 | Bucket | A plan lands here when |
 |--------|-----------------------|
-| `fully-recorded` | No flag fired: every canonical input present, no blind phase, a complete lifecycle, and dispatch markers present. |
-| `partial` | At least one input absent, or a non-execute zero-token phase / incomplete lifecycle / missing dispatch markers — **but the 5-execute phase DID record tokens** (not blind); OR the 5-execute phase recorded zero tokens that #812's `unrecorded_phases` markers explain (recorded-partial by design). |
+| `fully-recorded` | No flag fired: every canonical input present, no blind phase, a complete lifecycle, dispatch markers present, **and** the #812 marker record readable (`metrics_marker_schema: current`). |
+| `partial` | At least one input absent, or a non-execute zero-token phase / incomplete lifecycle / missing dispatch markers — **but the 5-execute phase DID record tokens** (not blind); OR the 5-execute phase recorded zero tokens that #812's `phases_missing_end_time` markers explain; OR the marker record is UNREADABLE (`old-schema` / `pre-#812`). |
 | `blind` | The **5-execute** phase recorded zero tokens **that the #812 markers do NOT explain** (`metrics_blind` on the load-bearing phase). Every downstream number for these plans is a FLOOR. |
 
 The bucket precedence is `blind` > `partial` > `fully-recorded`: a genuinely-blind
 execute wins regardless of other inputs. A #812-marker-explained zero-token
-execute is `partial` (recorded-partial), NEVER `blind` and NEVER the
-false-healthy `fully-recorded`.
+execute is `partial`, NEVER `blind` and NEVER the false-healthy `fully-recorded`.
+
+**An unreadable marker record can never be `fully-recorded`.** When
+`metrics_marker_schema` is `old-schema` or `pre-#812`, the check could not
+establish that the plan is fully recorded — and "could not establish" is not
+"established clean". Such a plan is bucketed `partial` with its schema named in
+its own column, so the reason is visible rather than inferred.
 
 ### The inline-phase carve-out (why a zero-dispatch phase is not blind)
 
@@ -103,17 +108,38 @@ plans that recorded their cost correctly. The predicate would then need to read
 as written: this note records the dependency so the coupling is visible from the
 consumer side, where the breakage would surface.
 
-### #812 recorded-partiality markers
+### #812 `end_time`-presence markers, and the three schema states
 
-`manage-metrics` (#812) stamps top-level `partial` / `unrecorded_phases` scalars
-on `metrics.toon`: a canonical phase the recorder KNOWS has no recorded boundary
-is listed in `unrecorded_phases`. This check reads them via
-`parse_metrics_partiality` and consumes the signal instead of inferring blindness
-from zero tokens alone. The distinction is load-bearing for no-false-healthy: a
-zero-token execute the recorder deliberately declared unrecorded is
-**recorded-partial** (bucket `partial`), whereas an UNEXPLAINED zero-token execute
-is genuine **blindness** (bucket `blind`). Plans predating #812 carry no markers,
-so every zero-token phase degrades to the old blindness inference unchanged.
+`manage-metrics` (#812) stamps top-level `any_phase_missing_end_time` /
+`phases_missing_end_time` scalars on `metrics.toon`: a canonical phase whose row
+carries no `end_time` boundary marker is listed in `phases_missing_end_time`.
+This check reads them via `parse_metrics_end_time_presence` and consumes the
+signal instead of inferring blindness from zero tokens alone. The distinction is
+load-bearing for no-false-healthy: a zero-token execute the recorder deliberately
+declared never-closed is an **explained gap** (bucket `partial`), whereas an
+UNEXPLAINED zero-token execute is genuine **blindness** (bucket `blind`).
+
+The markers report one predicate — `end_time` presence — and nothing wider. A
+phase absent from `phases_missing_end_time` carries its boundary marker; that is
+not a statement that its figures are complete or internally consistent.
+
+The reader is **three-state**, and this check reports the state in its own
+`metrics_marker_schema` column:
+
+| `metrics_marker_schema` | Meaning | Effect here |
+|--------------------------|---------|-------------|
+| `current` | the new keys are present | markers read normally |
+| `old-schema` | the new keys are absent AND a retired `partial` / `unrecorded_phases` key is present | NO phase is explained, and the plan cannot be `fully-recorded`. The record HAS markers, under retired names this reader deliberately does not interpret — a re-read of the archive could still recover them |
+| `pre-#812` | neither the new nor the retired keys are present | NO phase is explained, and the plan cannot be `fully-recorded`. Nothing to recover — the record predates the markers |
+
+The two unreadable states are reported **separately and never collapsed**.
+Reading an `old-schema` record as the `pre-#812` degrade — or either as a clean
+verdict — would manufacture a verdict from an absent key.
+
+**Name collision — do NOT rename the bucket.** The `data_confidence` bucket value
+`partial` in this check is an audit-local bucket name with no relation to the
+retired `metrics.toon` key of the same spelling. It is unchanged by the #812
+rename and must stay `partial`; renaming it would corrupt this taxonomy.
 
 ## Emitted columns
 
@@ -124,7 +150,7 @@ data_confidence_partial: P
 data_confidence_blind: B
 blind_plan_ids: "id1;id2"
 genuine_signal_count: G
-rows[N]{plan_id,has_execution,has_metrics,has_references,has_tasks,has_findings,has_script_log,metrics_blind,incomplete_lifecycle,missing_dispatch_markers,data_confidence,severity}
+rows[N]{plan_id,has_execution,has_metrics,has_references,has_tasks,has_findings,has_script_log,metrics_blind,incomplete_lifecycle,missing_dispatch_markers,data_confidence,metrics_marker_schema,severity}
 ```
 
 | Column | Meaning |
@@ -134,6 +160,7 @@ rows[N]{plan_id,has_execution,has_metrics,has_references,has_tasks,has_findings,
 | `incomplete_lifecycle` | `;`-joined missing lifecycle phase names (`5-execute` / `6-finalize`), or empty. |
 | `missing_dispatch_markers` | `true` when no dispatch marker exists, else empty. |
 | `data_confidence` | The per-plan bucket (`fully-recorded` / `partial` / `blind`). |
+| `metrics_marker_schema` | Which of the three #812 marker states the plan's `metrics.toon` was in (`current` / `old-schema` / `pre-#812`). Anything but `current` bars the `fully-recorded` bucket. |
 | `severity` | Uniform D1 severity column: `genuine` when any of the three flags fired, `informational` otherwise. |
 
 `genuine_signal_count` counts the rows with a real input-health defect. A
@@ -171,8 +198,15 @@ while any plan is `blind` here.
   peer-check rows as healthy. If the blind recording recurs across plans created
   after a metrics-recording fix shipped, that recurrence is the file-worthy signal
   (the recording defect itself), routed through the three-gate policy. A
-  marker-explained zero-token execute is NOT here — it is `partial`, and its
-  partiality is a recorded design fact, not a defect to file.
+  marker-explained zero-token execute is NOT here — it is `partial`, and the gap
+  is a recorded design fact, not a defect to file.
+- **`metrics_marker_schema: old-schema` / `pre-#812`** — the plan's marker record
+  could not be read, so nothing about it was established. Read the plan as
+  `partial` and every figure derived from it as a floor. `old-schema` is the
+  actionable one: the record HAS markers under retired names, so a re-read of the
+  archive could recover them. `pre-#812` is terminal history. Do NOT treat either
+  as a clean verdict, and do NOT collapse them into one "unreadable" note — the
+  distinction is what tells you which archives are recoverable.
 - **`metrics_blind` (non-execute phase)** — a `4-plan` or `6-finalize` zero-token
   recording. Flags the specific phase as under-counted; the plan stays `partial`
   (not `blind`) because the load-bearing execute phase still recorded data.
@@ -201,9 +235,10 @@ with a cited reason (the `severity: informational` cell, or the
 - The data-bearing phase set, the load-bearing execute phase, and the
   dispatch-marker grammar are module constants
   (`_II_DATA_BEARING_PHASES`, `_II_EXECUTE_PHASE`, `_II_DISPATCH_RE`). The #812
-  recorded-partiality markers are read by `parse_metrics_partiality` (shared with
-  the `metrics` check). If the recorded lifecycle or the partiality-marker schema
-  changes, edit `scripts/audit.py` rather than substituting a different reading.
+  `end_time`-presence markers are read by `parse_metrics_end_time_presence`
+  (shared with the `metrics` and `billing-composition` checks). If the recorded
+  lifecycle or the marker schema changes, edit `scripts/audit.py` rather than
+  substituting a different reading.
 - `total_tokens` is a population-discriminated field, not a dispatched-only one.
   A consumer that needs to know which population a phase's figure measures reads
   the row's `total_tokens_population` (`dispatched` / `inline` / `mixed`) — never
