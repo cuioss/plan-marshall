@@ -1487,6 +1487,9 @@ def get_metadata_content_split(content: str) -> tuple[str, str]:
         # This is a metadata line
         if '=' in stripped:
             metadata_lines.append(line)
+    else:
+        # No blank line found, all content is metadata
+        body_start = len(lines)
 
     metadata_block = '\n'.join(metadata_lines)
     body = '\n'.join(lines[body_start:])

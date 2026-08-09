@@ -399,6 +399,60 @@ Just content"""
     assert '# Title' in body
 
 
+def test_get_metadata_content_split_metadata_only_yields_empty_body():
+    """Metadata-only content (no blank line, no heading) yields an EMPTY body.
+
+    Regression guard. The scan loop only assigns ``body_start`` when it BREAKS
+    on a blank line or a heading. Content that is entirely metadata never
+    breaks, so ``body_start`` kept its initial ``0`` and the body was sliced
+    from the very first line — silently returning the whole metadata block a
+    SECOND time as the body, rather than the empty body the input implies. The
+    ``for/else`` clause now sets ``body_start = len(lines)`` when the loop runs
+    to completion, matching how ``update_markdown_metadata`` has always handled
+    the identical case.
+
+    The failure is silent rather than loud: both return values are well-formed
+    strings, so a caller that concatenates or re-parses them just sees the
+    metadata twice.
+    """
+    content = 'id=2025-11-28-001\napplied=false'
+
+    metadata, body = get_metadata_content_split(content)
+
+    assert body == ''
+    # The metadata block is still complete — the fix must not cost a line.
+    assert metadata == 'id=2025-11-28-001\napplied=false'
+
+
+def test_get_metadata_content_split_metadata_only_single_line_yields_empty_body():
+    """The one-line degenerate case takes the same non-breaking path.
+
+    A single metadata line with no trailing newline is the smallest input that
+    runs the loop to exhaustion, so it isolates the ``for/else`` clause from any
+    multi-line bookkeeping.
+    """
+    metadata, body = get_metadata_content_split('id=solo')
+
+    assert body == ''
+    assert metadata == 'id=solo'
+
+
+def test_get_metadata_content_split_body_still_split_when_blank_line_present():
+    """Negative control: the breaking path is unchanged by the for/else clause.
+
+    Pairs with the two metadata-only cases above. Without this control, an
+    implementation that unconditionally forced ``body_start = len(lines)`` would
+    satisfy both of them while silently discarding every real body.
+    """
+    content = 'id=2025-11-28-001\n\n# Title\n\nBody text'
+
+    metadata, body = get_metadata_content_split(content)
+
+    assert metadata == 'id=2025-11-28-001'
+    assert '# Title' in body
+    assert 'Body text' in body
+
+
 # =============================================================================
 # Integration tests
 # =============================================================================

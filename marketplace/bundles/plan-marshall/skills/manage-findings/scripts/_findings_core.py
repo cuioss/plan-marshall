@@ -496,7 +496,9 @@ def resolve_findings_by_type(
         if r.get('type') in type_set and r.get('resolution') == from_resolution
     ]
 
-    updates: dict[str, Any] = {'resolution': to_resolution, 'resolution_detail': detail}
+    updates: dict[str, Any] = {'resolution': to_resolution}
+    if detail:
+        updates['resolution_detail'] = detail
     resolved_hash_ids: list[str] = []
     for record in matched:
         hash_id = record['hash_id']

@@ -545,6 +545,65 @@ def test_resolve_findings_by_type_custom_from_resolution(plan_context):
     assert result['hash_ids'] == [r1['hash_id']]
 
 
+def test_resolve_findings_by_type_without_detail_preserves_existing_resolution_detail(plan_context):
+    """A bulk resolve with ``detail=None`` must not erase a recorded detail.
+
+    Regression guard. The bulk path built its update dict as
+    ``{'resolution': ..., 'resolution_detail': detail}`` unconditionally, so
+    omitting ``detail`` wrote a literal ``None`` over whatever the earlier
+    single-finding resolve had recorded — silently destroying the audit trail
+    that explained WHY the finding had been resolved. ``resolve_finding`` has
+    always guarded the field behind ``if detail:``; the bulk counterpart now
+    matches it.
+
+    The data loss is invisible at the call site: ``resolved_count`` is
+    identical either way, so nothing in the return value reveals that a
+    populated field was overwritten with nothing.
+    """
+    r1 = add_finding('store-bulk-keepdetail', 'bug', 'Bug 1', 'Detail')
+    resolve_finding(
+        'store-bulk-keepdetail', r1['hash_id'], 'accepted', detail='Accepted: known trade-off'
+    )
+
+    # Bulk-resolve WITHOUT a detail argument.
+    result = resolve_findings_by_type(
+        'store-bulk-keepdetail', ('bug',), 'fixed', from_resolution='accepted'
+    )
+    assert result['status'] == 'success'
+    assert result['resolved_count'] == 1
+
+    resolved = query_findings('store-bulk-keepdetail', finding_type='bug', resolution='fixed')
+    assert resolved['filtered_count'] == 1
+    record = resolved['findings'][0]
+    # The resolution advanced ...
+    assert record['resolution'] == 'fixed'
+    # ... but the pre-existing detail survived it.
+    assert record['resolution_detail'] == 'Accepted: known trade-off'
+
+
+def test_resolve_findings_by_type_with_detail_still_overwrites(plan_context):
+    """Positive control: an explicitly supplied detail is still written.
+
+    Pairs with the preservation guard above. Without this case, an
+    implementation that dropped ``resolution_detail`` from the update dict
+    altogether would satisfy the preservation test while silently discarding
+    every detail a caller DID pass.
+    """
+    r1 = add_finding('store-bulk-setdetail', 'bug', 'Bug 1', 'Detail')
+    resolve_finding('store-bulk-setdetail', r1['hash_id'], 'accepted', detail='Original reason')
+
+    result = resolve_findings_by_type(
+        'store-bulk-setdetail', ('bug',), 'fixed', detail='Superseded by bulk fix',
+        from_resolution='accepted',
+    )
+    assert result['status'] == 'success'
+    assert result['resolved_count'] == 1
+
+    resolved = query_findings('store-bulk-setdetail', finding_type='bug', resolution='fixed')
+    record = resolved['findings'][0]
+    assert record['resolution_detail'] == 'Superseded by bulk fix'
+
+
 # =============================================================================
 # Test: promote_finding
 # =============================================================================
