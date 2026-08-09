@@ -458,13 +458,11 @@ def main(argv: list[str] | None = None) -> int:
         # and --target all reaches this path for every registered target.
         if per_target_output is not None and manifest is not None:
             try:
-                overridden = (
-                    _override_bundle_plugin_versions(per_target_output, version)
-                    if target.emits_bundle_tree
-                    else None
-                )
                 if target.emits_bundle_tree:
+                    overridden = _override_bundle_plugin_versions(per_target_output, version)
                     _emit_dist_manifest(per_target_output, manifest)
+                else:
+                    overridden = None
                 target.finalize(per_target_output, marketplace_dir)
             except Exception as exc:  # noqa: BLE001
                 print(f'error: target {target_name!r} post-generation stamping failed: {exc}', file=sys.stderr)

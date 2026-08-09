@@ -24,9 +24,7 @@ location (a CI/automation definition tree, a container service-config tree) or
 on a basename (a descriptor an external tool resolves by a fixed, tool-defined
 name, spanning tool groups that include CI definitions, container orchestration
 and build context, container lint/scan, and review bots), so an arbitrary YAML
-file elsewhere in a tree is not swept in. The basename family is
-OPEN and grows as tools are adopted; it is described by that rule rather than by
-an enumeration, so a widening does not falsify this paragraph. The predicate is
+file elsewhere in a tree is not swept in. The predicate is
 consumed **only as a fallback over the paths no build extension claimed** — it
 never runs ahead of the build extensions, so it can never take a path a build
 system legitimately owns (``src/main/resources/application.yml`` stays
@@ -138,16 +136,12 @@ _INFRA_CONFIG_PARENT_DIR_SUFFIXES: tuple[str, ...] = ('.yml', '.yaml')
 # Tool descriptors a repository carries at a FIXED, tool-defined basename,
 # recognized regardless of where in the tree they sit. The RULE is the membership
 # test, not the list: a file belongs when an external tool resolves it by that
-# exact name, so the name is not the author's to choose and the file is
-# configuration for that tool wherever it sits. The list is therefore OPEN — it
-# grows as tools are adopted — which is why no size or closure claim about it is
-# stated here or anywhere else.
-#
-# Entries are grouped by the tool that resolves them. The groups present below
-# include CI definitions, container orchestration and build context, container
-# lint/scan, and review bots — stated with open language, because the family
-# grows as tools are adopted and a new entry may open a group of its own rather
-# than join one of these.
+# exact name, so the name is not the author's to choose and the file is that
+# tool's configuration wherever it sits. Entries are grouped by the resolving
+# tool — CI definitions, container orchestration and build context, container
+# lint/scan, and review bots today. The family is OPEN: it grows as tools are
+# adopted and a new entry may open a group of its own, so no size or closure
+# claim about it is stated here or anywhere else.
 _INFRA_CONFIG_BASENAME_GLOBS: tuple[str, ...] = (
     'docker-compose*.yml',
     'docker-compose*.yaml',
