@@ -505,9 +505,17 @@ def _extend_firing_history(existing: Any, new_entry: dict[str, Any]) -> None:
     writes nothing — the persisted record is byte-identical to the historical
     shape. The keys appear only from the second firing onward.
 
-    A legacy bare-string ``existing`` (reachable only under ``--force``) carries
-    no readable firing to fold in, so it is skipped rather than guessed at.
+    A legacy bare-string ``existing`` (reachable only under ``--force``, since
+    the unforced path returns ``legacy_string_entry`` and writes nothing) IS a
+    readable firing: the rejection payload reports that very string back to the
+    caller as ``existing_outcome``. The forced migration therefore folds it in as
+    the first superseded firing rather than dropping it — without that, a
+    migrated record would be indistinguishable from a genuine first firing.
     """
+    if isinstance(existing, str):
+        new_entry['prior_firings'] = [{'outcome': existing}]
+        new_entry['firing_count'] = 2
+        return
     if not isinstance(existing, dict):
         return
     superseded: dict[str, Any] = {'outcome': existing.get('outcome')}

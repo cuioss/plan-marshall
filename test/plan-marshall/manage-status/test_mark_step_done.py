@@ -290,8 +290,45 @@ def test_mark_step_force_overwrites(plan_context):
 
 
 # =============================================================================
-# Legacy bare-string rejection
+# Legacy bare-string rejection (unforced) and migration (forced)
 # =============================================================================
+
+
+def test_mark_step_force_migrates_legacy_bare_string_preserving_prior_outcome(plan_context):
+    """A forced migration retains the bare string as the FIRST prior firing.
+
+    PR #1129 review finding 0d4b5c. The bare string IS a readable firing — the
+    unforced rejection below reports that very value back as ``existing_outcome``
+    — so dropping it on the forced path made the migrated record
+    indistinguishable from a genuine first firing.
+
+    ``test_mark_step_rejects_legacy_bare_string_entry`` is the matching negative
+    control: the SAME seeded entry without ``--force`` still errors and writes
+    nothing, so this test cannot pass by the migration branch firing everywhere.
+    """
+    # Arrange: seed the legacy bare-string shape.
+    plan_id = 'mark-step-legacy-force'
+    _make_plan(plan_id)
+    status = read_status(plan_id)
+    status.setdefault('metadata', {})['phase_steps'] = {'1-init': {'step-a': 'done'}}
+    write_status(plan_id, status)
+
+    # Act: force the migration to the dict shape.
+    result = cmd_mark_step_done(
+        _args(plan_id, '1-init', 'step-a', 'skipped', force=True, display_detail='migrated')
+    )
+
+    # Assert: the migration succeeds and the superseded bare string is retained.
+    assert result['status'] == 'success'
+    assert result['changed'] is True
+
+    persisted = read_status(plan_id)
+    assert persisted['metadata']['phase_steps']['1-init']['step-a'] == {
+        'outcome': 'skipped',
+        'display_detail': 'migrated',
+        'firing_count': 2,
+        'prior_firings': [{'outcome': 'done'}],
+    }
 
 
 def test_mark_step_rejects_legacy_bare_string_entry(plan_context):
