@@ -30,7 +30,7 @@ implements:
 
 **Frontmatter is the sole source of truth for finalize-step discovery.** The `find_implementors()` scanner reads the `implements:` declaration from each candidate step doc and selects every doc whose declaration includes the canonical value above. The scanner does **not** read the markdown body for a discovery signal, and it does **not** identify a step by a directory-name or filename heuristic. A step doc whose frontmatter omits the declaration is not discovered.
 
-Beyond the `implements:` declaration, each finalize-step doc carries the following frontmatter contract — five required fields plus four conditionally-required fields. These fields replace the removed `BUILT_IN_FINALIZE_STEPS` / `OPTIONAL_BUNDLE_FINALIZE_STEPS` lists and the `*_DESCRIPTIONS` maps as the per-step source of truth:
+Beyond the `implements:` declaration, each finalize-step doc carries the frontmatter contract in the table below, whose `Required` column is the authoritative statement of which fields are required and which are conditional. These fields replace the removed `BUILT_IN_FINALIZE_STEPS` / `OPTIONAL_BUNDLE_FINALIZE_STEPS` lists and the `*_DESCRIPTIONS` maps as the per-step source of truth:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -166,10 +166,10 @@ def find_implementors(ext_point: str) -> list[dict]:
 
     The record is deliberately NOT the whole frontmatter — it carries the
     fields the seeding/preset consumers need, not every declared key. The
-    conditional obligation fields (records_facts, mutates_source,
-    head_dependent, advances_main_via_rebase) are NOT on this record; a
-    consumer that needs one reads it from the step doc's frontmatter
-    directly (see extension_discovery._read_frontmatter_fields).
+    conditional obligation fields — every field the table above marks
+    Conditional — are NOT on this record; a consumer that needs one reads
+    it from the step doc's frontmatter directly (see
+    extension_discovery._read_frontmatter_fields).
 
     Resolves both the source structure
     (marketplace/bundles/{bundle}/skills/...) and the versioned cache
