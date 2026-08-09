@@ -36,10 +36,29 @@ three-backtick example, with the shorter, equal and longer closes around it —
 because a mask that compares only the delimiter CHARACTER passes every
 same-length case while leaving a nested block's body unmasked.
 
-Two population guards keep the module non-vacuous: the fixture-materialization
-guard below fails loudly when the fixture epic did not land on disk, and the
-single-implementation guard enumerates the marketplace Python surface at test
-time rather than asserting against a hard-coded file list.
+The last group pins the INDENTATION boundary of the same scanners. CommonMark
+bounds a fence delimiter and an ATX heading to three spaces of leading
+indentation and counts a tab as four columns, so a four-space- or tab-indented
+delimiter inside a block is body text rather than a close. The controls
+deliberately STRADDLE that boundary — one, two and three spaces on the
+permitted side, four spaces and four tab-bearing forms on the rejected side,
+each parametrized over a published population — because the preceding rounds
+each wrote controls that sat entirely on one side of the clause they moved,
+which is how a scanner passed three reviews while still disagreeing with the
+rendered document. Both directions across the boundary are pinned, since an
+over-indented delimiter must fail to OPEN a block as well as fail to close one,
+and the consumer-level and WRITE-path consequences are pinned beside the mask:
+an Expected Surface list that still yields every declared path, and a
+``--claim-index`` that still addresses the intended bullet rather than a line
+inside a fenced example.
+
+Non-vacuity is guarded on three fronts rather than assumed: the
+fixture-materialization guard below fails loudly when the fixture epic did not
+land on disk; the single-implementation guard enumerates the marketplace Python
+surface at test time rather than asserting against a hard-coded file list; and
+the indentation group closes with pre-fix negative fixtures carrying the
+superseded scanners verbatim, so the bound is proven to have CHANGED the match
+set rather than merely to be present.
 
 Note on the rejection contract: these scripts follow the canonical output
 contract, so a rejected call returns a ``status: error`` TOON envelope rather
@@ -49,8 +68,11 @@ instead of writing" obligation is about the disk, not about the exception type.
 """
 
 import json
+import re
 from argparse import Namespace
 from pathlib import Path
+
+import pytest
 
 from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module, run_script
 
@@ -69,7 +91,10 @@ parse_verdict_text = _orch._parse_verdict_text
 fenced_mask = _orch._fenced_mask
 section_span = _orch._section_span
 expected_surface_paths = _orch._expected_surface_paths
+parse_claims = _orch._parse_claims
+CLAIM_LABELS_HEADING_RE = _orch.CLAIM_LABELS_HEADING_RE
 EXPECTED_SURFACE_HEADING_RE = _orch.EXPECTED_SURFACE_HEADING_RE
+HEADING_RE = _orch._HEADING_RE
 VERDICT_KEYS = _orch.VERDICT_KEYS
 VERDICT_SEPARATOR = _orch.VERDICT_SEPARATOR
 VERDICT_VALUES = _orch.VERDICT_VALUES
@@ -1556,6 +1581,487 @@ class TestFencedClaimParsing:
         assert result['count'] == 1
         assert result['claims'][0]['claim_index'] == 0
         assert result['claims'][0]['evidence'] == 'first only'
+
+
+# =============================================================================
+# Indentation boundary — the 0-3 space bound on fences and ATX headings
+# =============================================================================
+#
+# CommonMark bounds block-level leading indentation to three spaces and counts a
+# tab as four columns, so a four-space- or tab-indented delimiter inside a block
+# is body text rather than a close, and one at top level opens nothing. Every
+# control below is parametrized over a PUBLISHED indent population and pinned on
+# BOTH sides of the boundary, because each earlier round's controls sat entirely
+# on the permitted side of the clause it had just moved — a shape that passes
+# while the scanner still disagrees with the rendered document.
+
+#: The leading indentation CommonMark PERMITS on a fence delimiter or an ATX
+#: heading. Enumerated rather than sampled: the boundary is at four columns, so
+#: every value below it is a distinct case the scanner must admit.
+_PERMITTED_INDENTS = ('', ' ', '  ', '   ')
+
+#: The leading indentation CommonMark REJECTS. Four spaces is the first rejected
+#: width; the tab-bearing forms are rejected because a tab advances to the next
+#: four-column tab stop, so each of them reaches column four or beyond. All four
+#: tab forms are kept because a bound written over ``\s`` admits every one of
+#: them while a bound written over the literal space admits none.
+_REJECTED_INDENTS = ('    ', '     ', '\t', ' \t', '   \t')
+
+#: An Expected Surface fenced path list carrying a FOUR-SPACE-INDENTED
+#: triple-backtick delimiter. That line is body text, so the outer block runs to
+#: the column-0 close. Reading it as a close ends the block early, after which
+#: the column-0 ``#`` comment on the next line reads as a heading and truncates
+#: the section — and because BOTH declared paths sit after the indented
+#: delimiter, the extracted surface is EMPTIED rather than merely shortened,
+#: which is a confident no-overlap over a spec that declared two files.
+_INDENTED_DELIMITER_SURFACE = [
+    '```text',
+    '# the files this spec expects to touch',
+    '    ```',
+    '# an indented delimiter is body text, not the close of this block',
+    SHARED_PATH,
+    OTHER_PATH,
+    '```',
+]
+
+#: The same shape with a TAB-indented delimiter. Kept as its own fixture rather
+#: than folded into the parametrization above because the consumer-level proof
+#: has to run end to end through ``_expected_surface_paths``, and a tab reaches
+#: the four-column boundary by a different mechanism than four spaces do.
+_TAB_DELIMITER_SURFACE = [
+    '```text',
+    '# the files this spec expects to touch',
+    '\t```',
+    '# a tab is four columns, so this is body text too',
+    SHARED_PATH,
+    OTHER_PATH,
+    '```',
+]
+
+#: Two real claims with a fenced example between them whose body carries a
+#: FOUR-SPACE-INDENTED triple-backtick line followed by a ``- `` line that is
+#: still inside the block. Reading the indented delimiter as a close makes that
+#: in-fence bullet the claim at index 1 — the index ``corpus set-verdict`` uses
+#: to pick the bullet it WRITES — so the stamp lands inside the fenced example
+#: instead of under the second real claim. Note that the pre-fix parse reports
+#: the SAME claim count of two, because the column-0 ``` line then opens a fresh
+#: block that swallows the real second claim: the count is not the
+#: discriminator here, the membership is.
+_INDENTED_DELIMITER_CLAIMS = [
+    '- OBSERVED: first claim — read at `a.py` § `f`',
+    '',
+    '```text',
+    '# an illustrative fragment, not a heading',
+    '    ```',
+    '- an illustrative bullet, not a claim',
+    '```',
+    '',
+    '- OBSERVED: second claim — read at `b.py` § `g`',
+]
+
+
+class TestIndentPopulations:
+    def test_the_swept_indent_populations_are_published_and_disjoint(self):
+        """Publishes the population every parametrized control below sweeps."""
+        assert len(_PERMITTED_INDENTS) == 4, (
+            f'{len(_PERMITTED_INDENTS)} permitted indent(s) swept, expected the '
+            'four widths below the four-column boundary'
+        )
+        assert len(_REJECTED_INDENTS) == 5, (
+            f'{len(_REJECTED_INDENTS)} rejected indent(s) swept, expected two '
+            'space widths at or past the boundary plus three tab-bearing forms'
+        )
+        assert not set(_PERMITTED_INDENTS) & set(_REJECTED_INDENTS)
+        assert sum('\t' in indent for indent in _REJECTED_INDENTS) == 3, (
+            'the tab arm of the rejected population shrank'
+        )
+
+
+class TestFenceDelimiterIndentationBound:
+    """The bound applies independently to the OPEN and the CLOSE decision."""
+
+    @pytest.mark.parametrize('indent', _PERMITTED_INDENTS)
+    def test_a_permitted_indent_both_opens_and_closes_a_block(self, indent):
+        # Positive control: the bound must not disable the indentation
+        # CommonMark allows. Opener and closer carry the same indent here; the
+        # independence of the two is pinned separately below.
+        lines = [f'{indent}```text', '# not a heading', f'{indent}```', '# a real heading']
+
+        mask = fenced_mask(lines)
+
+        assert len(mask) == len(lines), 'the mask must carry one entry per scanned line'
+        assert mask == [True, True, True, False]
+
+    def test_the_opening_and_closing_indents_need_not_match(self):
+        # CommonMark bounds each delimiter independently rather than requiring
+        # the close to reproduce the opener's indentation.
+        lines = ['   ```text', '# not a heading', ' ```', '# a real heading']
+
+        mask = fenced_mask(lines)
+
+        assert mask == [True, True, True, False]
+
+    @pytest.mark.parametrize('indent', _REJECTED_INDENTS)
+    def test_a_rejected_indent_does_not_close_an_open_block(self, indent):
+        # The finding's direction: a delimiter past the bound is body text, so
+        # the block runs on and the heading look-alike after it stays masked.
+        lines = [
+            '```text',
+            '# not a heading',
+            f'{indent}```',
+            '# still not a heading',
+            '```',
+            '# a real heading',
+        ]
+
+        mask = fenced_mask(lines)
+
+        assert len(mask) == len(lines)
+        assert mask == [True, True, True, True, True, False]
+
+    @pytest.mark.parametrize('indent', _REJECTED_INDENTS)
+    def test_a_rejected_indent_does_not_open_a_block(self, indent):
+        # The OTHER direction across the same boundary, and the reason the
+        # docstring no longer claims a uniform bias: an over-indented delimiter
+        # opens nothing, so the real heading after it must still be seen.
+        lines = [f'{indent}```text', '# a real heading', 'trailing prose']
+
+        mask = fenced_mask(lines)
+
+        assert len(mask) == len(lines)
+        assert not any(mask)
+
+    def test_a_backtick_fence_whose_info_string_carries_a_backtick_opens_nothing(self):
+        # A backtick fence's info string may not itself contain a backtick, so
+        # this is a paragraph — the shape a sentence takes when it opens with
+        # the fence marker and then quotes inline code. Reading it as an opener
+        # masks the remainder of the document behind one prose line.
+        lines = ['``` see `x` for the marker', '# a real heading', 'trailing prose']
+
+        mask = fenced_mask(lines)
+
+        assert len(mask) == len(lines)
+        assert not any(mask)
+
+    def test_a_tilde_fence_may_carry_a_backtick_in_its_info_string(self):
+        # Matched pair: the info-string restriction is backtick-fence-scoped,
+        # not a blanket ban on backticks in an info string.
+        lines = ['~~~ see `x` for the marker', '# not a heading', '~~~', '# a real heading']
+
+        mask = fenced_mask(lines)
+
+        assert len(mask) == len(lines)
+        assert mask == [True, True, True, False]
+
+
+class TestHeadingIndentationBound:
+    """The same clause, opposite direction: 1-3 space ATX headings ARE headings."""
+
+    @pytest.mark.parametrize('indent', _PERMITTED_INDENTS)
+    def test_a_permitted_indent_still_opens_a_section(self, indent):
+        lines = [
+            f'{indent}## Expected Surface',
+            '',
+            SHARED_PATH,
+            '',
+            '## Objective',
+            '',
+            OTHER_PATH,
+        ]
+
+        start, end = section_span(lines, EXPECTED_SURFACE_HEADING_RE)
+
+        body = '\n'.join(lines[start:end])
+        assert (start, end) == (1, 4)
+        assert SHARED_PATH in body
+        assert OTHER_PATH not in body
+
+    @pytest.mark.parametrize('indent', _PERMITTED_INDENTS)
+    def test_a_permitted_indent_still_terminates_a_section(self, indent):
+        lines = ['## Expected Surface', '', SHARED_PATH, f'{indent}## Objective', '', OUTSIDE_PATH]
+
+        start, end = section_span(lines, EXPECTED_SURFACE_HEADING_RE)
+
+        body = '\n'.join(lines[start:end])
+        assert (start, end) == (1, 3)
+        assert SHARED_PATH in body
+        assert OUTSIDE_PATH not in body
+
+    @pytest.mark.parametrize('indent', _REJECTED_INDENTS)
+    def test_a_rejected_indent_is_not_a_heading(self, indent):
+        lines = [f'{indent}## Expected Surface', SHARED_PATH]
+
+        assert HEADING_RE.match(lines[0]) is None
+        assert EXPECTED_SURFACE_HEADING_RE.match(lines[0]) is None
+        assert section_span(lines, EXPECTED_SURFACE_HEADING_RE) == (-1, -1)
+
+
+class TestAtxHeadingShape:
+    """The rest of the ATX clause the section scanners depend on."""
+
+    def test_a_hashtag_word_is_not_a_heading(self):
+        assert HEADING_RE.match('#hashtag') is None
+
+    def test_a_seven_hash_run_is_not_a_heading(self):
+        assert HEADING_RE.match('####### too many hashes') is None
+
+    def test_a_bare_hash_line_is_a_heading(self):
+        # An empty ATX heading is still a heading, so it still terminates the
+        # section above it rather than reading as body text.
+        assert HEADING_RE.match('##') is not None
+
+    def test_a_tab_separated_heading_is_recognised(self):
+        assert EXPECTED_SURFACE_HEADING_RE.match('##\tExpected Surface') is not None
+
+    def test_an_optional_closing_hash_sequence_is_accepted(self):
+        assert EXPECTED_SURFACE_HEADING_RE.match('## Expected Surface ##') is not None
+        assert CLAIM_LABELS_HEADING_RE.match('  ## Claim Labels ###') is not None
+
+    def test_a_trailing_hash_run_without_a_separator_is_not_a_closing_sequence(self):
+        # The closing sequence must be preceded by whitespace, so this is a
+        # heading whose TEXT differs and therefore not the addressed section.
+        assert EXPECTED_SURFACE_HEADING_RE.match('## Expected Surface##') is None
+
+
+class TestIndentedDelimiterExpectedSurface:
+    """Consumer-level proof: the declared path set survives the indented line."""
+
+    @pytest.mark.parametrize(
+        ('label', 'surface'),
+        (('four-space', _INDENTED_DELIMITER_SURFACE), ('tab', _TAB_DELIMITER_SURFACE)),
+    )
+    def test_a_fenced_list_containing_an_over_indented_delimiter_yields_every_path(
+        self, label, surface
+    ):
+        declared = (SHARED_PATH, OTHER_PATH)
+        text = _spec_text([_DEFAULT_CLAIM], list(surface))
+
+        paths = expected_surface_paths(text)
+
+        assert len(paths) == len(declared), (
+            f'{len(declared)} path(s) declared after the {label}-indented '
+            f'delimiter, {len(paths)} extracted'
+        )
+        assert paths == set(declared)
+
+    def test_a_path_outside_the_section_is_still_excluded(self):
+        # Negative control: widening the body past an over-indented delimiter
+        # must not stop the section being bounded at all.
+        text = _spec_text(
+            [_DEFAULT_CLAIM],
+            list(_INDENTED_DELIMITER_SURFACE),
+            objective=f'Background reading: {OUTSIDE_PATH} explains the seam.',
+        )
+
+        paths = expected_surface_paths(text)
+
+        assert OUTSIDE_PATH not in paths
+        assert paths == {SHARED_PATH, OTHER_PATH}
+
+    def test_cross_check_reports_the_overlap_an_indented_delimiter_used_to_hide(self, plan_context):
+        # End to end through the verb: with the section emptied, the spec is
+        # still counted in ``specs_scanned`` and the zero reads as clean.
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(
+            plan_context, 'PLAN-01-alpha.md', surface_lines=list(_INDENTED_DELIMITER_SURFACE)
+        )
+        _write_live_plan(plan_context, LIVE_PLAN_ID, affected_files=[OTHER_PATH])
+
+        result = cmd_corpus_cross_check(Namespace(slug=SLUG))
+
+        assert result['specs_scanned'] == 1, 'the own corpus did not materialize'
+        assert result['candidates_scanned'] == 1, 'the candidate population did not materialize'
+        assert result['file_overlap_match_count'] == 1
+        assert result['file_overlap_matches'][0]['overlapping_files'] == OTHER_PATH
+        assert result['collision_detected'] is True
+
+
+class TestIndentedDelimiterClaimAddressing:
+    """Write-path proof: ``--claim-index`` still addresses the intended bullet."""
+
+    def test_the_parsed_claims_exclude_the_in_fence_bullet(self):
+        lines = _spec_text(list(_INDENTED_DELIMITER_CLAIMS)).splitlines()
+
+        claims = parse_claims(lines)
+
+        assert len(claims) == 2, (
+            f'{len(claims)} claim(s) parsed from a section declaring 2 — note the '
+            'count alone does not discriminate here, so the membership is asserted next'
+        )
+        assert [claim['text'] for claim in claims] == [
+            'OBSERVED: first claim — read at `a.py` § `f`',
+            'OBSERVED: second claim — read at `b.py` § `g`',
+        ]
+
+    def test_claim_index_one_writes_under_the_second_claim_not_the_fenced_bullet(
+        self, plan_context
+    ):
+        _write_status(plan_context, [_row('PLAN-01')])
+        spec = _write_spec(plan_context, 'PLAN-01-alpha.md', list(_INDENTED_DELIMITER_CLAIMS))
+
+        stamped = cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 1, evidence='second only'))
+
+        assert stamped['status'] == 'success'
+        assert stamped['claims_total'] == 2, 'the claim population did not materialize'
+        text = spec.read_text(encoding='utf-8')
+        assert text.count('- verdict:') == 1, 'a claim must never carry two verdicts'
+        assert text.index('- verdict:') > text.index('- an illustrative bullet'), (
+            'the verdict was written inside the fenced example — --claim-index 1 '
+            'addressed the in-fence bullet'
+        )
+        assert text.index('- verdict:') > text.index('- OBSERVED: second claim'), (
+            'the verdict was written above the second claim rather than beneath it'
+        )
+
+    def test_the_stamped_verdict_reads_back_bound_to_the_second_claim(self, plan_context):
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md', list(_INDENTED_DELIMITER_CLAIMS))
+
+        cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 1, evidence='second only'))
+        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+
+        assert result['specs_scanned'] == 1
+        assert result['claims_scanned'] == 2, 'the stamp changed the claim population'
+        assert result['count'] == 1
+        assert result['claims'][0]['claim_index'] == 1
+        assert result['claims'][0]['evidence'] == 'second only'
+
+    def test_an_index_past_the_real_claims_is_rejected_without_writing(self, plan_context):
+        # Negative control on the same addressing: the in-fence bullet is not
+        # reachable by index at all, so index 2 is out of range over a
+        # population of 2.
+        _write_status(plan_context, [_row('PLAN-01')])
+        spec = _write_spec(plan_context, 'PLAN-01-alpha.md', list(_INDENTED_DELIMITER_CLAIMS))
+        before = spec.read_bytes()
+
+        result = cmd_corpus_set_verdict(_set_verdict_args('PLAN-01', 2))
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'claim_index_out_of_range'
+        assert result['claims_total'] == 2
+        assert spec.read_bytes() == before
+
+
+# =============================================================================
+# Non-vacuity guard for the indentation bound (pre-fix negative fixtures)
+# =============================================================================
+#
+# The controls above are green by construction once the bound is in place, which
+# is exactly the shape that let the preceding two rounds pass while the scanner
+# still disagreed with the rendered document. These fixtures carry the pre-fix
+# scanners VERBATIM — this module's accepted substitute for a red-first run,
+# matching the negative-fixture pattern in
+# ``test_orchestrator_read_boundary_contract.py`` — so the bound is proven to
+# have CHANGED the match set rather than merely to be present.
+
+#: The pre-fix delimiter regex, verbatim: an unbounded leading-whitespace
+#: anchor, which admits any indentation and any tab.
+_PRE_FIX_FENCE_DELIMITER_RE = re.compile(r'^\s*(?P<fence>`{3,}|~{3,})(?P<info>.*)$')
+
+#: The pre-fix generic ATX heading regex, verbatim: column-0 only.
+_PRE_FIX_HEADING_RE = re.compile(r'^#{1,6}\s')
+
+
+def _pre_fix_fenced_mask(lines: list[str]) -> list[bool]:
+    """The pre-fix mask, reproduced verbatim as frozen evidence.
+
+    Not a second implementation to keep in step with the live one: it exists
+    only to show that the fix changed behaviour on the recorded input. It
+    differs from the live mask in exactly the two clauses this round closed —
+    the unbounded indent anchor it matches with, and the absent info-string
+    clause on an OPENING backtick fence.
+    """
+    mask = [False] * len(lines)
+    open_char = ''
+    open_length = 0
+    for index, line in enumerate(lines):
+        match = _PRE_FIX_FENCE_DELIMITER_RE.match(line)
+        if match is None:
+            mask[index] = bool(open_char)
+            continue
+        mask[index] = True
+        run = match.group('fence')
+        if not open_char:
+            open_char, open_length = run[0], len(run)
+        elif (
+            run[0] == open_char
+            and len(run) >= open_length
+            and not match.group('info').strip()
+        ):
+            open_char, open_length = '', 0
+    return mask
+
+
+def test_the_bound_changed_the_delimiter_match_set():
+    admitted_before = [
+        indent for indent in _REJECTED_INDENTS if _PRE_FIX_FENCE_DELIMITER_RE.match(f'{indent}```')
+    ]
+    admitted_now = [
+        indent for indent in _REJECTED_INDENTS if _orch._FENCE_DELIMITER_RE.match(f'{indent}```')
+    ]
+
+    assert len(admitted_before) == len(_REJECTED_INDENTS), (
+        f'{len(admitted_before)} of {len(_REJECTED_INDENTS)} rejected indents were admitted '
+        'by the pre-fix regex — the negative fixture no longer reproduces it, so every '
+        'control above is vacuous'
+    )
+    assert admitted_now == [], (
+        f'{len(admitted_now)} of {len(_REJECTED_INDENTS)} rejected indents are still '
+        'admitted by the live regex'
+    )
+
+
+def test_the_bound_changed_the_heading_match_set():
+    indented = [indent for indent in _PERMITTED_INDENTS if indent]
+    rejected_before = [
+        indent for indent in indented if _PRE_FIX_HEADING_RE.match(f'{indent}## Objective') is None
+    ]
+    accepted_now = [
+        indent for indent in _PERMITTED_INDENTS if HEADING_RE.match(f'{indent}## Objective')
+    ]
+
+    assert len(rejected_before) == len(indented) == 3, (
+        f'{len(rejected_before)} of {len(indented)} indented headings were rejected by the '
+        'pre-fix regex — the negative fixture no longer reproduces it'
+    )
+    assert len(accepted_now) == len(_PERMITTED_INDENTS), (
+        f'{len(accepted_now)} of {len(_PERMITTED_INDENTS)} permitted indents are accepted now'
+    )
+
+
+def test_the_pre_fix_mask_reproduces_the_recorded_disagreement():
+    """The recorded finding, line for line, against the fixed mask beside it."""
+    lines = list(_INDENTED_DELIMITER_SURFACE)
+
+    pre_fix = _pre_fix_fenced_mask(lines)
+    fixed = fenced_mask(lines)
+
+    assert len(pre_fix) == len(fixed) == len(lines) == 7
+    assert pre_fix == [True, True, True, False, False, False, True], (
+        'the negative fixture no longer reproduces the pre-fix mask'
+    )
+    assert fixed == [True] * len(lines)
+    assert sum(pre_fix) == 4, (
+        f'{sum(pre_fix)} of {len(lines)} lines masked before the fix, {sum(fixed)} after — '
+        'the three unmasked lines carry both declared paths, which is why the extracted '
+        'surface was emptied rather than shortened'
+    )
+
+
+def test_the_pre_fix_regex_opened_a_fence_on_a_prose_line_quoting_inline_code():
+    lines = ['``` see `x` for the marker', '# a real heading', 'trailing prose']
+
+    pre_fix = _pre_fix_fenced_mask(lines)
+    fixed = fenced_mask(lines)
+
+    assert pre_fix == [True, True, True], (
+        'the negative fixture no longer reproduces the pre-fix reading of an '
+        'inadmissible backtick info string'
+    )
+    assert not any(fixed), (
+        f'{sum(fixed)} of {len(lines)} lines masked — a backtick fence whose info string '
+        'carries a backtick is a paragraph, not an opener'
+    )
 
 
 # =============================================================================

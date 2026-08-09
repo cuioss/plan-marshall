@@ -175,6 +175,10 @@ _COUNT_CLAIM_RE = re.compile(
 #: denominator trap: "12 rows in WS-01" is correctly different from the epic's
 #: 30 rows, and reporting that as a divergence is the false positive that would
 #: teach every reader to ignore the detector.
+#: The leading ``^\s*`` anchors at the start of the twelve-character tail
+#: :data:`_COUNT_CLAIM_RE` captured mid-line, NOT at the start of a document
+#: line, so it is a token separator and not an indentation rule — see the
+#: markdown-line-scanner block below for the regexes that do carry one.
 _SCOPED_CLAIM_RE = re.compile(r'^\s*(in|of|for|under|within|across|from)\b', re.IGNORECASE)
 
 #: A capacity claim of the recorded ``R = N of M`` shape. Two such claims over
@@ -211,8 +215,110 @@ NOT_AVAILABLE = 'not_available'
 #: than leaving a silent gap. This component observes that surface not at all.
 REGISTRY_PARITY_OWNER = 'PLAN-TRUTH-059'
 
-CLAIM_LABELS_HEADING_RE = re.compile(r'^##\s+Claim Labels\s*$')
-EXPECTED_SURFACE_HEADING_RE = re.compile(r'^##\s+Expected Surface\s*$')
+# --- markdown line scanners -------------------------------------------------
+#
+# The five regexes in this block are the module's COMPLETE set of markdown
+# construct models, and every line-wise scan in the file runs through one of
+# them against the mask :func:`_fenced_mask` builds. They are grouped here, each
+# stating which CommonMark clauses it honours and which it deliberately does
+# not, because three successive review rounds found the same defect class in a
+# different clause of the same scanners: a line matcher that reads correctly in
+# isolation while parsing a document the spec author does not see rendered.
+# The module's five OTHER regexes — :data:`SPEC_POINTER_RE`,
+# :data:`_CHECKED_AT_RE`, :data:`_COUNT_CLAIM_RE`, :data:`_SCOPED_CLAIM_RE` and
+# :data:`_RATIO_CLAIM_RE` — match tokens WITHIN a line and model no markdown
+# construct, so no block-indentation clause applies to any of them. (The
+# ``^\s*`` on :data:`_SCOPED_CLAIM_RE` anchors at the start of a twelve-character
+# tail captured mid-line, not at the start of a document line, so it is not an
+# indentation rule either.)
+#
+# Honoured by EVERY scanner in this block: CommonMark bounds block-level leading
+# indentation to 0-3 SPACES (spec sections 2.2, 4.2 and 4.5); a fourth column of
+# indentation starts an indented code block instead, so the construct is body
+# text. A tab counts as four columns under the tab-stop rule, so a tab-indented
+# delimiter or heading is never one. That is why the bound below is written over
+# the literal space character as ``{0,3}`` and never over ``\s``: ``\s`` would
+# readmit both the fourth space and the tab.
+#
+# NOT honoured by ANY scanner in this block, deliberately: container context.
+# The scan is line-wise and tracks no block structure, so a construct nested
+# inside a block quote or carried as list-item content is not recognised at its
+# container-relative column, and a setext heading (a ``===`` or ``---``
+# underline beneath a paragraph) does not terminate a section. Recognising
+# either requires a block parser, which this module does not carry; the
+# spec-authoring convention is column-0 ATX headings and top-level fences. The
+# failure direction is stated at each scanner it affects.
+
+#: The two section headings the corpus verbs ADDRESS, and the generic ATX
+#: heading that TERMINATES a section body.
+#:
+#: Honoured: the 0-3 space indent bound; the 1-6 character ``#`` run; the rule
+#: that the run must be followed by a space, a tab, or the end of the line — so
+#: ``#hashtag`` is not a heading, a seven-``#`` run is not one, and a bare
+#: ``##`` line IS one; and the optional trailing closing ``#`` sequence on the
+#: two addressed headings.
+#: NOT honoured: setext headings, per the block note above. A setext underline
+#: therefore fails to terminate a section, which OVER-extends the body rather
+#: than truncating it — the direction that admits extra paths and extra claims
+#: rather than silently dropping declared ones.
+CLAIM_LABELS_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Claim Labels(?:[ \t]+#+)?[ \t]*$')
+EXPECTED_SURFACE_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Expected Surface(?:[ \t]+#+)?[ \t]*$')
+_HEADING_RE = re.compile(r'^ {0,3}#{1,6}(?:[ \t]|$)')
+
+#: A ``- `` list bullet, with its leading whitespace captured as ``indent``.
+#:
+#: NOT honoured, and this is the one DELIBERATE indentation deviation in the
+#: block: CommonMark's 0-3 space allowance for a top-level list item is not
+#: applied, because ``indent`` here is a NESTING PROXY rather than a block
+#: position. :func:`_parse_claims` reads an empty ``indent`` as "top-level
+#: claim" and any non-empty one as "child of the preceding claim", under the
+#: spec-authoring convention that a claim starts at column 0 and its
+#: ``verdict:`` bullet is indented beneath it. Admitting a 1-3 space indent as
+#: top-level would reclassify that two-space-indented ``verdict:`` child as a
+#: SECOND claim, shifting every later ``--claim-index`` — strictly worse than
+#: the deviation it would remove.
+#: ALSO not honoured: the ``*`` and ``+`` bullet markers and ordered list items
+#: (the convention is ``-``), empty list items (a ``-`` with no content carries
+#: no claim), and CommonMark's content-column rule for nesting depth. The
+#: marker must be followed by a space or a tab specifically, never by ``\s`` at
+#: large, so a ``---`` thematic break is not read as a bullet.
+_BULLET_RE = re.compile(r'^(?P<indent>[ \t]*)-[ \t]+(?P<text>.*)$')
+
+#: A fenced-code-block delimiter line: three-or-more backticks or tildes, with
+#: any info string. Group ``fence`` carries the WHOLE RUN — both the character
+#: and its length — because CommonMark closes a block only on a run of the same
+#: character that is AT LEAST AS LONG as the opener: a ``~~~`` line inside a
+#: backtick fence is body text, and so is a three-backtick line inside a
+#: four-backtick block. Group ``info`` carries whatever follows the run, because
+#: only the OPENING fence may carry an info string; a delimiter with one is body
+#: text, never a close.
+#:
+#: Honoured: the 0-3 space indent bound on BOTH the opening and the closing
+#: delimiter, independently of each other (a four-space-indented delimiter
+#: inside a block is body text, not a close — spec example 99); the tab
+#: exclusion that follows from the same clause; the same-character rule; the
+#: at-least-as-long rule; the no-info-string-on-a-close rule; the
+#: trailing-whitespace-only allowance on a close; and — enforced in
+#: :func:`_fenced_mask` rather than here, because it governs only an OPENING
+#: backtick fence — the rule that a backtick fence's info string may not itself
+#: contain a backtick.
+#: NOT honoured: container context, per the block note above. The opening
+#: fence's indentation is also not stripped from the body, because the mask is
+#: per-line and never reproduces block content.
+#:
+#: Every line-wise markdown scan below runs against the mask this builds,
+#: because a ``# comment`` inside a fence is not a heading and a ``- item``
+#: inside one is not a bullet. This mirrors the fence suppression the sibling
+#: detector in ``pm-plugin-development:ext-self-review-plan-marshall`` already
+#: applies for the same reason.
+_FENCE_DELIMITER_RE = re.compile(r'^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$')
+
+#: The backtick fence character, bound once so :func:`_fenced_mask` can name the
+#: info-string clause it enforces instead of repeating a bare literal twice.
+_BACKTICK = '`'
+
+# --- token matchers (no markdown construct modelled) ------------------------
+
 # The orchestrator spec pointer a launched plan's ``source_id`` carries, and the
 # shape a spec uses to name a sibling spec. Normalized to the root-agnostic key
 # ``{epic_slug}/plans/{spec_name}`` so the active and archived homes of the same
@@ -223,22 +329,7 @@ SPEC_POINTER_RE = re.compile(
     r'\.plan/local/(?:orchestrator|archived-orchestrators)/'
     r'(?P<slug>[A-Za-z0-9_.\-]+)/plans/(?P<spec>PLAN-[A-Za-z0-9_.\-]+\.md)'
 )
-_HEADING_RE = re.compile(r'^#{1,6}\s')
-_BULLET_RE = re.compile(r'^(?P<indent>[ \t]*)-\s+(?P<text>.*)$')
 _CHECKED_AT_RE = re.compile(r'^[0-9a-f]{7,40}$')
-# A fenced-code-block delimiter line: three-or-more backticks or tildes, with any
-# info string. Group ``fence`` carries the WHOLE RUN — both the character and its
-# length — because CommonMark closes a block only on a run of the same character
-# that is AT LEAST AS LONG as the opener: a ``~~~`` line inside a backtick fence
-# is body text, and so is a ``` line inside a ```` block. Group ``info`` carries
-# whatever follows the run, because only the OPENING fence may carry an info
-# string; a delimiter with one is body text, never a close. Every line-wise
-# markdown scan below runs against the mask this builds, because a ``# comment``
-# inside a fence is not a heading and a ``- item`` inside one is not a bullet.
-# This mirrors the fence suppression the sibling detector in
-# ``pm-plugin-development:ext-self-review-plan-marshall`` already applies for the
-# same reason.
-_FENCE_DELIMITER_RE = re.compile(r'^\s*(?P<fence>`{3,}|~{3,})(?P<info>.*)$')
 
 
 def _error(slug: str, error: str, message: str, **extra: Any) -> dict[str, Any]:
@@ -828,15 +919,27 @@ def _fenced_mask(lines: list[str]) -> list[bool]:
     """Return a per-line mask marking every line that belongs to a fenced block.
 
     Delimiter lines are masked along with the body, so a caller can test one
-    index without also testing its neighbours. Closing follows the CommonMark
-    rule exactly, so the mask agrees with what the spec author sees rendered: a
-    block closes only on a delimiter run built from the SAME character as the
-    opener, AT LEAST AS LONG as the opener, and carrying no info string. The
-    opening run's LENGTH is therefore retained, not just its character — a
-    four-backtick block that contains a three-backtick example stays open across
-    that example instead of ending at it. An unterminated fence runs to the end
-    of the document. Every branch reads the same way: text that may be code is
-    treated as code, never the reverse.
+    index without also testing its neighbours. BOTH decisions — whether a line
+    OPENS a block and whether it CLOSES one — are taken against the CommonMark
+    clauses enumerated at :data:`_FENCE_DELIMITER_RE`, so the mask agrees with
+    what the spec author sees rendered. A block opens only on a delimiter
+    indented at most three spaces whose info string is admissible for its fence
+    character, and closes only on a delimiter indented at most three spaces,
+    built from the SAME character as the opener, AT LEAST AS LONG as the opener,
+    and carrying no info string. The opening run's LENGTH is therefore retained,
+    not just its character — a four-backtick block that contains a
+    three-backtick example stays open across that example instead of ending at
+    it. An unterminated fence runs to the end of the document.
+
+    The property held here is FIDELITY to the rendered document, not a uniform
+    bias toward one reading. The two are not the same, and an earlier revision
+    of this docstring claimed the latter: that every branch treats text which
+    may be code as code, never the reverse. That claim was false in the opening
+    direction and is withdrawn — declining to CLOSE on a four-space-indented
+    delimiter widens the masked run, while declining to OPEN on one narrows it,
+    and both are the CommonMark reading. Both error directions are real damage:
+    an over-wide mask hides a genuine heading, and an over-narrow one admits a
+    fenced look-alike as one.
 
     Every line-wise scan in this module consumes this mask. Without it a
     ``# comment`` inside a fenced example matches :data:`_HEADING_RE` and
@@ -851,16 +954,21 @@ def _fenced_mask(lines: list[str]) -> list[bool]:
         if match is None:
             mask[index] = bool(open_char)
             continue
-        mask[index] = True
         run = match.group('fence')
-        if not open_char:
-            open_char, open_length = run[0], len(run)
-        elif (
-            run[0] == open_char
-            and len(run) >= open_length
-            and not match.group('info').strip()
-        ):
-            open_char, open_length = '', 0
+        info = match.group('info')
+        if open_char:
+            mask[index] = True
+            if run[0] == open_char and len(run) >= open_length and not info.strip():
+                open_char, open_length = '', 0
+            continue
+        if run[0] == _BACKTICK and _BACKTICK in info:
+            # Not an opening fence: a backtick fence's info string may not carry
+            # a backtick, so this is an ordinary paragraph line — the shape a
+            # sentence takes when it opens with the fence marker and then quotes
+            # inline code. Masking it would swallow the rest of the document.
+            continue
+        mask[index] = True
+        open_char, open_length = run[0], len(run)
     return mask
 
 
