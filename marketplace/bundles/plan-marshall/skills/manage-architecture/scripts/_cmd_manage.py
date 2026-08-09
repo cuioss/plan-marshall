@@ -188,7 +188,7 @@ def _is_ignored_by_rules(
     return ignored
 
 
-def _is_marketplace_bundle_module(module_data: dict[str, Any], project_path: Path) -> bool:
+def _is_marketplace_bundle_module(module_data: dict[str, Any]) -> bool:
     """Decide whether a module's paths.module sits under ``marketplace/bundles/``.
 
     Marketplace-specific categories (``skill``/``agent``/``command``/...) only
@@ -433,7 +433,7 @@ def build_module_files_inventory(
     if not module_rel:
         return {}
 
-    is_marketplace = _is_marketplace_bundle_module(module_data, project_path)
+    is_marketplace = _is_marketplace_bundle_module(module_data)
 
     # Resolve the module root and (if outside the root) any extra test dirs.
     module_root = (project_path / module_rel).resolve()

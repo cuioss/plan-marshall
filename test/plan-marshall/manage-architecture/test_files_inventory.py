@@ -575,16 +575,13 @@ def test_module_with_no_paths_module_gets_empty_files_block():
 # The fix removes an exact ``./`` prefix and refuses any ``..`` segment.
 
 
-_PROJECT_PATH = Path('/project')
-
-
 def _is_bundle(module_rel: str) -> bool:
     """Call the classifier with a module dict carrying ``paths.module``.
 
     ``bool(...)`` because the module under test is loaded dynamically, so mypy
     sees an untyped ``Any`` return here.
     """
-    return bool(_is_marketplace_bundle_module({'paths': {'module': module_rel}}, _PROJECT_PATH))
+    return bool(_is_marketplace_bundle_module({'paths': {'module': module_rel}}))
 
 
 def test_is_marketplace_bundle_module_refuses_parent_traversal():
