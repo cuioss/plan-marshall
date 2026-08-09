@@ -231,6 +231,33 @@ def load_plugin_json(plugin_path: Path) -> dict | None:
 # =============================================================================
 
 
+def _bundle_relative_ref(ref: str) -> str | None:
+    """Return ``ref`` with an exact leading ``./`` removed, or ``None`` to skip it.
+
+    ``removeprefix`` rather than a character-set strip: the latter takes a SET
+    OF CHARACTERS, not a prefix, so it strips EVERY leading ``.`` and ``/``.
+    That turned ``.claude/x`` into ``claude/x`` and ``../other/x`` into ``other/x`` —
+    silently rewriting one in-tree path into a DIFFERENT in-tree path instead of
+    failing, so the component that got discovered was not the one the descriptor
+    named.
+
+    A reference containing a ``..`` segment is REFUSED (``None``) rather than
+    flattened, so a traversal reference cannot resolve to a component outside
+    the bundle directory. Returning ``None`` — rather than a sanitized string —
+    keeps the caller's decision explicit: skip the entry.
+
+    Args:
+        ref: A ``plugin.json`` component reference, e.g. ``./skills/foo``.
+
+    Returns:
+        The bundle-relative path, or ``None`` when the reference is unsafe.
+    """
+    rel = ref.removeprefix('./')
+    if '..' in rel.split('/'):
+        return None
+    return rel
+
+
 def discover_skills(bundle_dir: Path, plugin_data: dict) -> dict:
     """Discover skill packages in a bundle.
 
@@ -248,13 +275,14 @@ def discover_skills(bundle_dir: Path, plugin_data: dict) -> dict:
 
     for skill_ref in skills_list:
         # skill_ref is like "./skills/plugin-doctor"
-        skill_path = bundle_dir / skill_ref.lstrip('./')
+        pkg_path = _bundle_relative_ref(skill_ref)
+        if pkg_path is None:
+            continue
+        skill_path = bundle_dir / pkg_path
         if skill_path.is_dir():
             skill_name = skill_path.name
             skill_md = skill_path / SKILL_MD
             description = get_component_description(skill_md)
-
-            pkg_path = skill_ref.lstrip('./')
 
             packages[f'skill:{skill_name}'] = {
                 'path': pkg_path,
@@ -283,12 +311,13 @@ def discover_agents(bundle_dir: Path, plugin_data: dict) -> dict:
 
     for agent_ref in agents_list:
         # agent_ref is like "./agents/execution-context.md"
-        agent_path = bundle_dir / agent_ref.lstrip('./')
+        pkg_path = _bundle_relative_ref(agent_ref)
+        if pkg_path is None:
+            continue
+        agent_path = bundle_dir / pkg_path
         if agent_path.is_file() and agent_path.suffix == '.md':
             agent_name = agent_path.stem  # Remove .md extension
             description = get_component_description(agent_path)
-
-            pkg_path = agent_ref.lstrip('./')
 
             packages[f'agent:{agent_name}'] = {
                 'path': pkg_path,
@@ -317,12 +346,13 @@ def discover_commands(bundle_dir: Path, plugin_data: dict) -> dict:
 
     for cmd_ref in commands_list:
         # cmd_ref is like "./commands/plugin-doctor.md"
-        cmd_path = bundle_dir / cmd_ref.lstrip('./')
+        pkg_path = _bundle_relative_ref(cmd_ref)
+        if pkg_path is None:
+            continue
+        cmd_path = bundle_dir / pkg_path
         if cmd_path.is_file() and cmd_path.suffix == '.md':
             cmd_name = cmd_path.stem  # Remove .md extension
             description = get_component_description(cmd_path)
-
-            pkg_path = cmd_ref.lstrip('./')
 
             packages[f'command:{cmd_name}'] = {
                 'path': pkg_path,

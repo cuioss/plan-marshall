@@ -11,6 +11,8 @@ import pytest
 from marketplace.targets.opencode.emitter import (
     EXCLUDED_DIR_NAMES,
     VERBATIM_SKILL_SUBDIRS,
+    _resolve_md_components,
+    _resolve_skill_dirs,
     emit_bundles,
     iter_bundle_dirs,
 )
@@ -162,3 +164,63 @@ def test_unknown_agent_tool_raises_unmapped_tool(tmp_path: Path, opencode_config
 def test_verbatim_skill_subdirs_constant_exposed():
     """The constant must enumerate the four canonical skill subdirs."""
     assert set(VERBATIM_SKILL_SUBDIRS) == {'standards', 'references', 'templates', 'scripts'}
+
+
+# =============================================================================
+# Component-reference traversal containment
+# =============================================================================
+#
+# The two resolvers normalised references with a CHARACTER-SET strip, which
+# removes every leading ``.`` and ``/`` rather than one exact ``./`` prefix. A
+# reference of ``../decoy/x`` was flattened to ``decoy/x`` — resolving to a
+# DIFFERENT file that exists inside the bundle, which the emitter would then
+# copy into the generated output under the intended component's identity.
+# ``iter_bundle_dirs`` already refused ``..`` in bundle names; these resolvers
+# now apply the same containment.
+#
+# The decoy is seeded INSIDE the bundle at exactly the path the strip would
+# flatten onto — otherwise the traversal reference would fail the existence test
+# anyway and the assertion would hold against the pre-fix source for the wrong
+# reason.
+
+
+def _traversal_bundle(tmp_path: Path) -> Path:
+    bundle = tmp_path / 'bundle'
+    _write(bundle / 'skills' / 'real-skill' / 'SKILL.md', '---\nname: real\n---\nbody\n')
+    _write(bundle / 'decoy' / 'other-skill' / 'SKILL.md', '---\nname: decoy\n---\nbody\n')
+    _write(bundle / 'agents' / 'real-agent.md', '---\ndescription: real\n---\nbody\n')
+    _write(bundle / 'decoy' / 'other-agent.md', '---\ndescription: decoy\n---\nbody\n')
+    return bundle
+
+
+def test_resolve_skill_dirs_refuses_traversal_reference(tmp_path: Path):
+    """A ``..`` skill reference is skipped, not flattened onto the decoy."""
+    bundle = _traversal_bundle(tmp_path)
+
+    resolved = _resolve_skill_dirs(bundle, {'skills': ['./skills/real-skill', '../decoy/other-skill']})
+
+    assert resolved == [bundle / 'skills' / 'real-skill']
+
+
+def test_resolve_md_components_refuses_traversal_reference(tmp_path: Path):
+    """A ``..`` agent reference is skipped, not flattened onto the decoy."""
+    bundle = _traversal_bundle(tmp_path)
+
+    resolved = _resolve_md_components(
+        bundle, {'agents': ['./agents/real-agent.md', '../decoy/other-agent.md']}, 'agents', 'agents'
+    )
+
+    assert resolved == [bundle / 'agents' / 'real-agent.md']
+
+
+def test_resolvers_preserve_a_leading_dot_directory_reference(tmp_path: Path):
+    """Negative control: only an exact ``./`` is removed, not every leading dot."""
+    bundle = tmp_path / 'bundle'
+    _write(bundle / '.hidden' / 'dot-skill' / 'SKILL.md', '---\nname: dot\n---\nbody\n')
+    _write(bundle / '.hidden' / 'dot-agent.md', '---\ndescription: dot\n---\nbody\n')
+
+    skills = _resolve_skill_dirs(bundle, {'skills': ['.hidden/dot-skill']})
+    agents = _resolve_md_components(bundle, {'agents': ['.hidden/dot-agent.md']}, 'agents', 'agents')
+
+    assert skills == [bundle / '.hidden' / 'dot-skill']
+    assert agents == [bundle / '.hidden' / 'dot-agent.md']

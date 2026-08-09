@@ -32,6 +32,7 @@ _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_c
 _post_process_files = _cmd_manage._post_process_files
 _classify_marketplace = _cmd_manage._classify_marketplace
 _classify_generic = _cmd_manage._classify_generic
+_is_marketplace_bundle_module = _cmd_manage._is_marketplace_bundle_module
 FILE_CATEGORIES = _architecture_core.FILE_CATEGORIES
 cmd_which_module = _cmd_client.cmd_which_module
 resolve_module_for_path = _architecture_core.resolve_module_for_path
@@ -560,6 +561,62 @@ def test_module_with_no_paths_module_gets_empty_files_block():
         modules = {'broken': {'name': 'broken', 'paths': {}}}
         _post_process_files(modules, str(project))
         assert modules['broken']['files'] == {}
+
+
+# =============================================================================
+# _is_marketplace_bundle_module — traversal containment
+# =============================================================================
+#
+# The path was normalised with a CHARACTER-SET strip, which removes every
+# leading ``.`` and ``/`` rather than one exact ``./`` prefix. A module path of
+# ``../marketplace/bundles/x`` was therefore flattened into
+# ``marketplace/bundles/x`` and classified as a bundle module — so a module
+# sitting OUTSIDE the marketplace received marketplace-only file classification.
+# The fix removes an exact ``./`` prefix and refuses any ``..`` segment.
+
+
+def _is_bundle(module_rel: str) -> bool:
+    """Call the classifier with a module dict carrying ``paths.module``.
+
+    ``bool(...)`` because the module under test is loaded dynamically, so mypy
+    sees an untyped ``Any`` return here.
+    """
+    return bool(_is_marketplace_bundle_module({'paths': {'module': module_rel}}))
+
+
+def test_is_marketplace_bundle_module_refuses_parent_traversal():
+    """``../marketplace/bundles/x`` must NOT be classified as a bundle module.
+
+    Pre-fix this returned True: the character-set strip ate the leading ``..``
+    and ``/`` outright, turning an out-of-tree path into a matching one.
+    """
+    assert _is_bundle('../marketplace/bundles/foo') is False
+
+
+def test_is_marketplace_bundle_module_refuses_embedded_traversal():
+    """A ``..`` segment AFTER the prefix is refused too.
+
+    Distinct route from the leading-``..`` case: the strip never touched a
+    mid-path segment, so this one slipped through on the prefix test alone
+    while actually addressing a directory outside ``marketplace/bundles/``.
+    """
+    assert _is_bundle('marketplace/bundles/../../etc/foo') is False
+
+
+def test_is_marketplace_bundle_module_accepts_plain_and_dot_slash_forms():
+    """Negative control: legitimate bundle paths still classify as bundles.
+
+    Without this, a guard that simply returned False would satisfy both
+    refusal cases above while disabling marketplace classification entirely.
+    """
+    assert _is_bundle('marketplace/bundles/plan-marshall') is True
+    assert _is_bundle('./marketplace/bundles/plan-marshall') is True
+
+
+def test_is_marketplace_bundle_module_rejects_non_bundle_path():
+    """A path outside the bundles tree is still False (unchanged behaviour)."""
+    assert _is_bundle('doc') is False
+    assert _is_bundle('') is False
 
 
 # =============================================================================
