@@ -579,8 +579,12 @@ _PROJECT_PATH = Path('/project')
 
 
 def _is_bundle(module_rel: str) -> bool:
-    """Call the classifier with a module dict carrying ``paths.module``."""
-    return _is_marketplace_bundle_module({'paths': {'module': module_rel}}, _PROJECT_PATH)
+    """Call the classifier with a module dict carrying ``paths.module``.
+
+    ``bool(...)`` because the module under test is loaded dynamically, so mypy
+    sees an untyped ``Any`` return here.
+    """
+    return bool(_is_marketplace_bundle_module({'paths': {'module': module_rel}}, _PROJECT_PATH))
 
 
 def test_is_marketplace_bundle_module_refuses_parent_traversal():
