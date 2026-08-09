@@ -753,6 +753,359 @@ def test_build_class_dispatch_records_the_wrapper_command_not_the_executor_argv(
     assert entry['outcome']['log_file'] == '/tmp/python-build.log'
 
 
+# =============================================================================
+# Pre-spawn invocation validation — the rejection happens BEFORE any child runs
+# =============================================================================
+#
+# Every rejection test below asserts BOTH halves: the stdout TOON correction AND
+# that no subprocess was started. Asserting only the payload would pass just as
+# happily on an implementation that spawns the script, lets argparse reject it,
+# and then prints a correction — which is a different feature (a nicer error)
+# than the one being built (no spawn at all). The stub script therefore writes a
+# sentinel file when it runs; the file's ABSENCE is the no-spawn proof.
+
+_SPAWN_NOTATION = 'test:surface:validated'
+
+
+def _spawn_marker_script(tmp_path: Path) -> tuple[Path, Path]:
+    """A stub that records that it ran. Returns ``(script_path, marker_path)``."""
+    marker = tmp_path / 'SPAWNED'
+    script = tmp_path / 'validated_stub.py'
+    script.write_text(
+        '#!/usr/bin/env python3\n'
+        'from pathlib import Path\n'
+        f'Path({str(marker)!r}).write_text("ran")\n'
+        'print("status: success")\n',
+        encoding='utf-8',
+    )
+    return script, marker
+
+
+def _surface_entry(children: dict, *, root_flags=(), confident=True) -> dict:
+    """Build one SCRIPT_SURFACES entry in the shape the generator emits."""
+    return {
+        'digest': 'test-digest',
+        'surface': {
+            'root': {
+                'flags': list(root_flags),
+                'required_flags': [],
+                'alias_of': {},
+                'flags_confident': confident,
+                'children_confident': confident,
+                'children': children,
+            }
+        },
+    }
+
+
+def _node(flags=(), required=(), children=None, alias_of=None, confident=True) -> dict:
+    return {
+        'flags': list(flags),
+        'required_flags': list(required),
+        'alias_of': dict(alias_of or {}),
+        'flags_confident': confident,
+        'children_confident': confident,
+        'children': dict(children or {}),
+    }
+
+
+def _render_validating_executor(target_path: Path, script_path: Path, surfaces: dict) -> None:
+    """Render the template with a SCRIPTS mapping AND a SCRIPT_SURFACES map."""
+    template_path = TEMPLATE_DIR / 'execute-script.py.template'
+    code = template_path.read_text(encoding='utf-8')
+    code = code.replace(
+        '{{SCRIPT_MAPPINGS}}', f'    "{_SPAWN_NOTATION}": "{script_path}",\n'
+    )
+    surfaces_code = '\n'.join(
+        f'    "{notation}": {entry!r},' for notation, entry in sorted(surfaces.items())
+    )
+    code = code.replace('{{SCRIPT_SURFACES}}', surfaces_code)
+    code = code.replace('{{SUBCOMMAND_MAPPINGS}}', '')
+    code = code.replace('{{LOGGING_DIR}}', str(LOGGING_DIR))
+    code = code.replace('{{SHARED_MODULE_DIRS}}', '# (none in test)')
+    code = code.replace('{{EXTRA_SCRIPT_DIRS}}', '')
+    code = code.replace('{{PLAN_DIR_NAME}}', '.plan')
+    code = code.replace('{{EXECUTOR_TARGET}}', 'claude')
+    code = code.replace('{{GENERATED_VERSION}}', '0.0.0-test')
+    code = code.replace('{{MAPPINGS_FINGERPRINT}}', 'test-fingerprint')
+    code = code.replace(
+        '{{TARGET_AWARE_RESOLVER}}',
+        'def _resolve_notation_by_target(notation):\n    return None\n',
+    )
+    target_path.write_text(code, encoding='utf-8')
+
+
+def _dispatch(tmp: Path, surfaces: dict, argv: list) -> tuple[subprocess.CompletedProcess, Path]:
+    """Render a validating executor, dispatch ``argv``, return (result, marker)."""
+    script, marker = _spawn_marker_script(tmp)
+    executor = tmp / 'execute-script.py'
+    _render_validating_executor(executor, script, surfaces)
+    result = subprocess.run(
+        [sys.executable, str(executor), _SPAWN_NOTATION, *argv],
+        capture_output=True,
+        text=True,
+        env=_subprocess_env(),
+        timeout=60,
+    )
+    return result, marker
+
+
+def test_invented_subcommand_is_rejected_before_any_spawn():
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node(), 'list': _node()})}
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), surfaces, ['nuke'])
+
+        assert not marker.exists(), 'the script was spawned — the rejection must precede the spawn'
+
+    assert result.returncode == 2, result.stderr
+    assert 'status: error' in result.stdout
+    assert 'error: invalid_invocation' in result.stdout
+    assert 'reason: unknown_verb' in result.stdout
+    assert 'rejected: nuke' in result.stdout
+
+
+def test_invented_flag_is_rejected_before_any_spawn():
+    surfaces = {
+        _SPAWN_NOTATION: _surface_entry({'read': _node(flags=['plan-id'])})
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), surfaces, ['read', '--made-up-flag', 'x'])
+
+        assert not marker.exists(), 'the script was spawned despite an unaccepted flag'
+
+    assert result.returncode == 2
+    assert 'reason: unknown_flag' in result.stdout
+    assert 'rejected: --made-up-flag' in result.stdout
+
+
+def test_rejection_names_the_closest_accepted_spelling():
+    """The correction must be actionable, not just a refusal."""
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node(), 'list': _node()})}
+    with tempfile.TemporaryDirectory() as tmp:
+        result, _marker = _dispatch(Path(tmp), surfaces, ['reed'])
+
+    assert 'read' in result.stdout, f'no corrective naming the canonical form: {result.stdout!r}'
+
+
+def test_alias_spelling_spawns_normally():
+    """A documented alias is an accepted spelling, not a rejection."""
+    surfaces = {
+        _SPAWN_NOTATION: _surface_entry(
+            {'read': _node(flags=['plan-id']), 'get': _node(flags=['plan-id'])}
+        )
+    }
+    surfaces[_SPAWN_NOTATION]['surface']['root']['alias_of'] = {'get': 'read'}
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), surfaces, ['get', '--plan-id', 'p'])
+
+        assert marker.exists(), f'alias invocation was refused: {result.stdout!r}'
+
+    assert result.returncode == 0
+
+
+def test_nested_verb_path_spawns_normally():
+    surfaces = {
+        _SPAWN_NOTATION: _surface_entry(
+            {'plan': _node(children={'phase-5-execute': _node(children={'get': _node(flags=['field'])})})}
+        )
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(
+            Path(tmp), surfaces, ['plan', 'phase-5-execute', 'get', '--field', 'x']
+        )
+
+        assert marker.exists(), f'valid nested path was refused: {result.stdout!r}'
+
+    assert result.returncode == 0
+
+
+def test_notation_absent_from_surfaces_spawns_unchanged():
+    """No entry means no knowledge — and no knowledge must never reject."""
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), {}, ['literally-anything', '--any-flag', 'v'])
+
+        assert marker.exists(), f'a notation with no surface was refused: {result.stdout!r}'
+
+    assert result.returncode == 0
+
+
+def test_unconfident_node_stops_validation_instead_of_rejecting():
+    """Fail-open as a POSITIVE control, not merely an assertion in prose.
+
+    The node declares children, so an unknown token WOULD be rejected if the
+    listing were trusted. Marking it unconfident must flip that to a spawn —
+    which is the only way to distinguish "validation degraded" from "validation
+    happened to find nothing to complain about".
+    """
+    surfaces = {
+        _SPAWN_NOTATION: _surface_entry({'read': _node()}, confident=False)
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), surfaces, ['some-unlisted-verb'])
+
+        assert marker.exists(), (
+            f'an unconfident child listing rejected a token it had no basis to '
+            f'call wrong: {result.stdout!r}'
+        )
+
+    assert result.returncode == 0
+
+
+def test_unknown_flag_set_skips_flag_validation():
+    """A node whose flag surface is unknown must not reject any flag."""
+    surfaces = {
+        _SPAWN_NOTATION: _surface_entry({'read': _node(flags=[], confident=False)})
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), surfaces, ['read', '--anything-at-all', 'v'])
+
+        assert marker.exists(), f'a flag was rejected from an unknown flag set: {result.stdout!r}'
+
+    assert result.returncode == 0
+
+
+def test_missing_required_flag_is_rejected_before_any_spawn():
+    surfaces = {
+        _SPAWN_NOTATION: _surface_entry(
+            {'read': _node(flags=['plan-id'], required=['plan-id'])}
+        )
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), surfaces, ['read'])
+
+        assert not marker.exists(), 'spawned despite a missing required flag'
+
+    assert result.returncode == 2
+    assert 'reason: missing_required_flag' in result.stdout
+    assert '--plan-id' in result.stdout
+
+
+def test_root_declared_flag_is_accepted_on_a_subcommand():
+    """argparse honours a root flag on every subcommand; so must the check.
+
+    Without the ancestor union this is the classic false rejection: the flag is
+    rendered only in the ROOT help, so a leaf-only flag set calls it unknown.
+    """
+    surfaces = {
+        _SPAWN_NOTATION: _surface_entry({'read': _node()}, root_flags=['project-dir'])
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), surfaces, ['read', '--project-dir', '/x'])
+
+        assert marker.exists(), f'a root-declared flag was rejected: {result.stdout!r}'
+
+    assert result.returncode == 0
+
+
+def test_audit_plan_id_never_reaches_the_flag_check():
+    """The executor's own flag is stripped before validation, so it cannot be rejected.
+
+    ``--audit-plan-id`` is consumed by the executor and appears in NO script's
+    help, so a check that saw it would reject every audited call in the tree.
+    """
+    surfaces = {
+        _SPAWN_NOTATION: _surface_entry({'read': _node(flags=['plan-id'])})
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(
+            Path(tmp), surfaces, ['read', '--plan-id', 'p', '--audit-plan-id', 'audited']
+        )
+
+        assert marker.exists(), f'--audit-plan-id reached the flag check: {result.stdout!r}'
+
+    assert result.returncode == 0
+
+
+def test_help_flag_always_dispatches_even_on_a_flagless_surface():
+    """``--help`` must never be refused — the regression the live run caught.
+
+    The derivation deliberately strips ``help`` from every flag set (it says
+    nothing about the script's own surface), so a validator that checked the
+    derived set alone rejected ``--help`` on every script. That broke the most
+    common diagnostic call in the tree AND the derivation's own probe: the
+    surface is derived by running ``--help`` THROUGH this executor, so the
+    guard would have starved the mechanism that feeds it.
+
+    The fixture makes the flag set empty AND confident, which is the exact
+    shape that produced the false rejection.
+    """
+    surfaces = {_SPAWN_NOTATION: _surface_entry({}, root_flags=[])}
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), surfaces, ['--help'])
+
+        assert marker.exists(), f'--help was refused: {result.stdout!r}'
+
+    assert result.returncode == 0
+
+
+def test_help_flag_dispatches_alongside_an_unregistered_verb():
+    """``--help`` short-circuits the verb walk too.
+
+    argparse prints usage instead of running the verb, so an incomplete or
+    misspelled path alongside ``--help`` is a request for help, not an error to
+    report. This is how the derivation probes a node it has not yet mapped.
+    """
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node()})}
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), surfaces, ['not-a-verb', '--help'])
+
+        assert marker.exists(), f'--help alongside an unknown verb was refused: {result.stdout!r}'
+
+    assert result.returncode == 0
+
+
+def test_executor_injected_flags_are_never_rejected():
+    """``--plan-id`` / ``--project-dir`` are accepted even on an empty flag set.
+
+    Both are honoured through argparse's parent-flag propagation or injected by
+    the executor, and either way can be absent from the node's rendered help.
+    Rejecting them would refuse the worktree-binding convention the whole
+    codebase dispatches with.
+    """
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node(flags=[])})}
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(
+            Path(tmp), surfaces, ['read', '--plan-id', 'p', '--project-dir', '/x']
+        )
+
+        assert marker.exists(), f'an executor-injected flag was refused: {result.stdout!r}'
+
+    assert result.returncode == 0
+
+
+def test_unknown_flag_is_still_rejected_on_a_flagless_surface():
+    """Negative control for the allowlist: it widens, it does not disable.
+
+    Without this, every "the allowlist lets X through" test above would pass
+    just as well on a validator that stopped checking flags altogether.
+    """
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node(flags=[])})}
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), surfaces, ['read', '--definitely-not-declared'])
+
+        assert not marker.exists(), 'an unknown flag slipped through the allowlist'
+
+    assert result.returncode == 2
+    assert 'reason: unknown_flag' in result.stdout
+
+
+def test_flag_value_is_not_mistaken_for_a_verb():
+    """A flag's VALUE must never be walked as part of the verb path.
+
+    ``--plan-id nuke`` carries a value that happens to look like an unregistered
+    verb. Treating it as a positional would reject a perfectly valid call.
+    """
+    surfaces = {
+        _SPAWN_NOTATION: _surface_entry({'read': _node(flags=['plan-id'])})
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), surfaces, ['read', '--plan-id', 'nuke'])
+
+        assert marker.exists(), f'a flag value was walked as a verb: {result.stdout!r}'
+
+    assert result.returncode == 0
+
+
 def test_build_class_dispatch_with_unparseable_stdout_still_writes_a_row():
     """A payload the boundary cannot parse degrades — it never drops the row.
 

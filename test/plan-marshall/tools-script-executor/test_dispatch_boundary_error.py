@@ -325,3 +325,133 @@ def test_emit_truncates_long_detail_to_configured_limit(executor_with_mock_log_e
     assert ('A' * (limit + 1)) not in message, (
         f'detail appears longer than the configured limit of {limit} characters: {message!r}'
     )
+
+
+# =============================================================================
+# Pre-spawn rejection — the payload, the exit code, and the work.log detail
+# =============================================================================
+#
+# The refusal deliberately reuses the boundary this file already tests rather
+# than adding a parallel reporting path. These tests pin the three properties
+# that reuse depends on:
+#
+#   1. the payload is a parseable ``status: error`` TOON carrying a NON-EMPTY
+#      corrective — an unparseable or empty payload would leave the caller with
+#      the same nothing it had before the feature;
+#   2. the exit code is 2, which the EXISTING classifier already maps to
+#      ``argparse_rejection`` — a rejection is an argparse rejection, decided
+#      one layer earlier;
+#   3. the work.log line carries the corrective as its ``detail=``, which the
+#      boundary's stdout-TOON-message precedence yields with NO second code
+#      path. That precedence is the reason no new reporting code was written,
+#      so it is asserted rather than assumed.
+
+_REJECTION_NOTATION = 'plan-marshall:manage-tasks:manage-tasks'
+
+
+def _rejection_payload(executor) -> str:
+    """Render a representative refusal through the production renderer."""
+    return str(
+        executor._render_rejection_toon(
+            _REJECTION_NOTATION,
+            {
+                'reason': 'unknown_verb',
+                'token': 'nuke',
+                'corrective': (
+                    'Use `plan-marshall:manage-tasks:manage-tasks read` — registered: [read, list]'
+                ),
+                'accepted': ['list', 'read'],
+            },
+        )
+    )
+
+
+def test_rejection_payload_parses_as_toon_with_status_error(executor_with_mock_log_entry):
+    """The payload must be machine-readable by the project's own TOON parser."""
+    executor, _mock = executor_with_mock_log_entry
+    from toon_parser import parse_toon
+
+    parsed = parse_toon(_rejection_payload(executor))
+
+    assert parsed['status'] == 'error'
+    assert parsed['error'] == 'invalid_invocation'
+    assert parsed['notation'] == _REJECTION_NOTATION
+    assert parsed['reason'] == 'unknown_verb'
+    assert parsed['rejected'] == 'nuke'
+
+
+def test_rejection_payload_carries_a_non_empty_corrective(executor_with_mock_log_entry):
+    """A refusal without a correction is the empty stdout this feature replaces."""
+    executor, _mock = executor_with_mock_log_entry
+    from toon_parser import parse_toon
+
+    message = parse_toon(_rejection_payload(executor))['message']
+
+    assert isinstance(message, str)
+    assert message.strip(), 'the corrective must not be blank'
+    assert 'read' in message, f'the corrective must name the canonical form: {message!r}'
+
+
+def test_exit_code_two_classifies_as_argparse_rejection(executor_with_mock_log_entry):
+    """Exit 2 routes the refusal through the EXISTING classifier, unchanged."""
+    executor, _mock = executor_with_mock_log_entry
+
+    assert executor._classify_dispatch_failure(2) == 'argparse_rejection'
+
+
+def test_work_log_detail_carries_the_corrective_via_stdout_precedence(
+    executor_with_mock_log_entry,
+):
+    """The corrective reaches work.log through the boundary's option-A precedence.
+
+    No second reporting path: the refusal writes its TOON to stdout, and the
+    boundary's existing "prefer a ``status: error`` stdout ``message``" rule
+    lifts the corrective into ``detail=``. Asserting it here is what lets the
+    rejection path own no reporting code of its own.
+    """
+    executor, mock_log_entry = executor_with_mock_log_entry
+    payload = _rejection_payload(executor)
+
+    executor.emit_dispatch_failure_work_log(
+        notation=_REJECTION_NOTATION,
+        exit_code=2,
+        stdout=payload,
+        stderr='',
+        script_args=['nuke', '--plan-id', DEFAULT_PLAN_ID],
+        audit_plan_id=None,
+    )
+
+    assert mock_log_entry.call_count == 1
+    message = mock_log_entry.call_args.args[3]
+    assert 'failure_kind=argparse_rejection' in message
+    assert 'detail=Use `plan-marshall:manage-tasks:manage-tasks read`' in message, (
+        f'the corrective did not reach detail= via stdout precedence: {message!r}'
+    )
+    assert 'detail=' in message and not message.rstrip().endswith('detail='), (
+        f'detail= must not be blank on a rejection: {message!r}'
+    )
+
+
+def test_validator_returns_none_when_the_notation_has_no_surface(executor_with_mock_log_entry):
+    """Absent knowledge is not a rejection — the unit-level fail-open guard."""
+    executor, _mock = executor_with_mock_log_entry
+
+    assert executor._validate_invocation('bundle:skill:unmapped', ['anything']) is None
+
+
+def test_split_invocation_args_stops_positionals_at_the_first_flag(
+    executor_with_mock_log_entry,
+):
+    """A flag's value must never be collected as a verb-path token."""
+    executor, _mock = executor_with_mock_log_entry
+
+    positionals, flags = executor._split_invocation_args(
+        ['plan', 'get', '--field', 'compatibility', '--audit-plan-id=X', '-q']
+    )
+
+    assert positionals == ['plan', 'get'], (
+        f'positional run must stop at the first flag; got {positionals!r}'
+    )
+    assert flags == ['field', 'audit-plan-id'], (
+        f'long flags only, ``=``-split, short flags ignored; got {flags!r}'
+    )

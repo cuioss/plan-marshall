@@ -717,6 +717,264 @@ def emit_dispatch_failure_work_log(
         pass
 
 
+# ============================================================================
+# PRE-SPAWN INVOCATION VALIDATION
+# ============================================================================
+# Refuses a dispatch whose verb path or flags the target script cannot accept,
+# BEFORE any subprocess starts. Without it, an invented subcommand surfaces only
+# as a raw argparse ``exit_code: 2`` with usage text on stderr and NOTHING on
+# stdout — a shape a caller that parses stdout reads as empty rather than as a
+# correction.
+#
+# FAIL-OPEN BY CONSTRUCTION. Every branch that lacks confident knowledge spawns
+# exactly as it did before this check existed:
+#
+#   - the notation has no SCRIPT_SURFACES entry          -> spawn
+#   - a node's child listing is not confident            -> stop walking, spawn
+#   - the resolved node's flag set is not known          -> skip flag checks
+#
+# The asymmetry is the whole safety argument: rejecting is only ever done from
+# POSITIVE knowledge that a token is not accepted. Absent knowledge is never
+# converted into a rejection, so the worst case of a derivation gap is today's
+# behaviour, never a valid call refused.
+
+
+# Long flags accepted on EVERY node regardless of what the derived surface says.
+# Each is invisible to the derivation for a structural reason, so validating
+# against the surface alone rejects calls that are unambiguously valid:
+#
+#   - ``help``           — every argparse parser declares it, and the derivation
+#                          strips it deliberately (it carries no information
+#                          about the script's own surface). Rejecting ``--help``
+#                          would break the very probe the derivation itself uses.
+#   - ``audit-plan-id``  — consumed by THIS executor before the target script's
+#                          argparse ever runs, so it appears in no node's help.
+#   - ``plan-id`` /
+#     ``project-dir``    — declared on many ROOT parsers and honoured on every
+#                          subcommand by argparse's parent-flag propagation, but
+#                          rendered only in the root's help. The ancestor union
+#                          already covers the root-declared case; the allowlist
+#                          is the guarantee for the executor-injected one.
+#
+# Deliberately mirrors ``_UNIVERSAL_FLAG_ALLOWLIST`` in plugin-doctor's
+# manage-invocation analyzer, which carries the same members for the same
+# reasons — the two guards read one accept-set, so they must also agree on what
+# that accept-set structurally cannot contain.
+_ALWAYS_ACCEPTED_FLAGS = frozenset({'help', 'audit-plan-id', 'plan-id', 'project-dir'})
+
+
+def _surface_for(notation: str) -> dict | None:
+    """Return the embedded root node for ``notation``, or ``None`` when absent."""
+    entry = SCRIPT_SURFACES.get(notation)
+    if not isinstance(entry, dict):
+        return None
+    surface = entry.get('surface')
+    if not isinstance(surface, dict):
+        return None
+    root = surface.get('root')
+    return root if isinstance(root, dict) else None
+
+
+def _split_invocation_args(script_args: list) -> tuple:
+    """Split argv into ``(positional_tokens, long_flags)``.
+
+    Positionals are the LEADING run of non-flag tokens — the verb path argparse
+    resolves before any optional. The run stops at the first ``-``-prefixed
+    token, because everything after that is either a flag or a flag's value, and
+    a value must never be mistaken for a verb.
+
+    Long flags are collected from anywhere in argv. ``--flag=value`` is split on
+    the first ``=``. Short flags are ignored: they are not part of the accept-set
+    this module derives, so asserting on them would reject from ignorance.
+    """
+    positionals = []
+    flags = []
+    seen_flag = False
+    for arg in script_args:
+        if arg.startswith('--'):
+            seen_flag = True
+            name = arg[2:].split('=', 1)[0]
+            if name:
+                flags.append(name)
+            continue
+        if arg.startswith('-'):
+            seen_flag = True
+            continue
+        if not seen_flag:
+            positionals.append(arg)
+    return positionals, flags
+
+
+def _closest_spelling(token: str, candidates) -> str | None:
+    """Return the accepted spelling closest to ``token``, or ``None``.
+
+    A cheap edit-distance pick so the corrective can say "did you mean X?"
+    rather than dumping the whole accepted set. Returns ``None`` when nothing is
+    within a plausible typo distance, because a wrong guess is worse than no
+    guess — it sends the caller to a verb they did not want.
+    """
+    def _distance(a: str, b: str) -> int:
+        previous = list(range(len(b) + 1))
+        for i, ch_a in enumerate(a, 1):
+            current = [i]
+            for j, ch_b in enumerate(b, 1):
+                current.append(min(
+                    previous[j] + 1,
+                    current[j - 1] + 1,
+                    previous[j - 1] + (ch_a != ch_b),
+                ))
+            previous = current
+        return previous[-1]
+
+    best = None
+    best_distance = None
+    for candidate in sorted(candidates):
+        distance = _distance(token, candidate)
+        if best_distance is None or distance < best_distance:
+            best, best_distance = candidate, distance
+    if best is None or best_distance is None:
+        return None
+    # Accept a suggestion only when it is closer than "rewrite the whole token".
+    return best if best_distance <= max(2, len(token) // 2) else None
+
+
+def _corrective_for_verb(notation: str, chain: list, token: str, node: dict) -> str:
+    """Phrase the corrective for an unaccepted verb token.
+
+    When the closest accepted spelling is itself an ALIAS, the message says so —
+    the grouping anchor recovered that relation, and "``get`` is an alias of
+    ``read``" is a more useful correction than a bare nearest-match.
+    """
+    children = sorted(node.get('children') or {})
+    prefix = ' '.join([notation, *chain]).strip()
+    suggestion = _closest_spelling(token, children)
+    if suggestion is None:
+        return f'Use a registered verb for `{prefix}`: {children}'
+    alias_of = node.get('alias_of') or {}
+    canonical = alias_of.get(suggestion)
+    if canonical:
+        return (
+            f'Use `{prefix} {suggestion}` (an alias of `{canonical}`) — '
+            f'registered: {children}'
+        )
+    return f'Use `{prefix} {suggestion}` — registered: {children}'
+
+
+def _validate_invocation(notation: str, script_args: list) -> dict | None:
+    """Return a rejection dict when the dispatch is provably invalid, else ``None``.
+
+    ``None`` means "spawn" and covers BOTH "this call is valid" and "I do not
+    know enough to judge" — the two are deliberately indistinguishable to the
+    caller, because both must dispatch.
+    """
+    node = _surface_for(notation)
+    if node is None:
+        return None
+
+    positionals, flags = _split_invocation_args(script_args)
+
+    # ``--help`` short-circuits the whole check. argparse handles it at whatever
+    # depth it appears and prints usage instead of running the verb, so a
+    # partial or misspelled verb path alongside it is not an error to report —
+    # and refusing it would break the derivation's own probe.
+    if 'help' in flags:
+        return None
+
+    # Walk the verb path. Each level is checked only while the node's child
+    # listing is confident; an unconfident listing has no basis to call a token
+    # wrong, so the walk stops there and flag validation runs against what was
+    # resolved so far.
+    chain = []
+    inherited_flags = set(node.get('flags') or []) | _ALWAYS_ACCEPTED_FLAGS
+    flags_known = bool(node.get('flags_confident', True))
+    for token in positionals:
+        children = node.get('children') or {}
+        if not children:
+            break
+        if not node.get('children_confident', True):
+            return None
+        child = children.get(token)
+        if child is None:
+            return {
+                'reason': 'unknown_verb',
+                'token': token,
+                'corrective': _corrective_for_verb(notation, chain, token, node),
+                'accepted': sorted(children),
+            }
+        chain.append(token)
+        node = child
+        inherited_flags |= set(node.get('flags') or [])
+        flags_known = flags_known and bool(node.get('flags_confident', True))
+
+    if not flags_known:
+        return None
+
+    for flag in flags:
+        if flag in inherited_flags:
+            continue
+        prefix = ' '.join([notation, *chain]).strip()
+        # Report the script's OWN declared flags. The universally-accepted ones
+        # are structural (see _ALWAYS_ACCEPTED_FLAGS) and listing them as
+        # "declared here" would misdescribe the script's surface.
+        declared = sorted(inherited_flags - _ALWAYS_ACCEPTED_FLAGS)
+        suggestion = _closest_spelling(flag, declared)
+        if suggestion:
+            corrective = f'Use `--{suggestion}` for `{prefix}` — declared: {declared}'
+        else:
+            corrective = f'Use a declared flag for `{prefix}`: {declared}'
+        return {
+            'reason': 'unknown_flag',
+            'token': f'--{flag}',
+            'corrective': corrective,
+            'accepted': declared,
+        }
+
+    missing = sorted(set(node.get('required_flags') or []) - set(flags))
+    if missing:
+        prefix = ' '.join([notation, *chain]).strip()
+        return {
+            'reason': 'missing_required_flag',
+            'token': ', '.join(f'--{name}' for name in missing),
+            'corrective': f'Add the required flag(s) to `{prefix}`: {missing}',
+            'accepted': sorted(node.get('required_flags') or []),
+        }
+
+    return None
+
+
+def _render_rejection_toon(notation: str, rejection: dict) -> str:
+    """Render the refusal as a ``status: error`` TOON payload for STDOUT.
+
+    STDOUT, not stderr, and structured rather than argparse's usage text: the
+    whole point of rejecting here is that a caller which parses stdout receives
+    a CORRECTION where it previously received nothing at all.
+    """
+    accepted = ', '.join(str(item) for item in rejection.get('accepted') or [])
+    return '\n'.join([
+        'status: error',
+        'error: invalid_invocation',
+        f'notation: {notation}',
+        f'reason: {rejection["reason"]}',
+        f'rejected: {rejection["token"]}',
+        f'accepted: {accepted}',
+        f'message: {rejection["corrective"]}',
+    ])
+
+
+def _args_for_logging(script_args: list, audit_plan_id: str | None) -> list:
+    """Args as the script log should record them, with `--plan-id` re-injected.
+
+    `--audit-plan-id` is stripped before dispatch, so a log entry built from the
+    raw `script_args` would carry no plan id at all and `log_script_execution`
+    would route it to the global log instead of the plan's. Re-injecting the
+    resolved id restores the routing. Shared by the pre-spawn rejection path and
+    the post-dispatch path so the two record identically.
+    """
+    if audit_plan_id:
+        return ['--plan-id', audit_plan_id] + list(script_args)
+    return list(script_args)
+
+
 def should_skip_logging(notation: str, exit_code: int) -> bool:
     """
     Determine if logging should be skipped for this execution.
@@ -961,6 +1219,45 @@ def main():
         print(f"SCRIPT_ERROR\t{notation}\t1\tScript not found: {script_path}", file=sys.stderr)
         sys.exit(1)
 
+    # Pre-spawn invocation validation. Runs AFTER notation resolution (so the
+    # notation is known good) and BEFORE subprocess.run, so a provably invalid
+    # call costs no process at all. `--audit-plan-id` was stripped from
+    # `script_args` above and therefore never reaches the flag check — it is an
+    # executor flag the target script has no reason to declare.
+    #
+    # Fail-open: `_validate_invocation` returns None both when the call is valid
+    # and when the embedded surface cannot judge it, and both must dispatch.
+    _rejection = _validate_invocation(notation, script_args)
+    if _rejection is not None:
+        _payload = _render_rejection_toon(notation, _rejection)
+        # STDOUT, matching the canonical output contract: the caller reads the
+        # correction from the same stream it reads every other result from.
+        print(_payload)
+        # Route the refusal through the SAME observability seams a real failure
+        # takes, so a rejected dispatch is as visible in the logs as a crashed
+        # one — an invisible rejection would be indistinguishable from a script
+        # that simply produced no output.
+        log_script_execution(
+            notation=notation,
+            subcommand=subcommand,
+            args=_args_for_logging(script_args, audit_plan_id),
+            exit_code=2,
+            duration=0.0,
+            stdout=_payload,
+            stderr='',
+        )
+        emit_dispatch_failure_work_log(
+            notation=notation,
+            exit_code=2,
+            stdout=_payload,
+            stderr='',
+            script_args=script_args,
+            audit_plan_id=audit_plan_id,
+        )
+        # Exit 2 — the same code argparse itself uses for a rejected invocation,
+        # so a caller branching on the exit code needs no new case.
+        sys.exit(2)
+
     # Execute the script (with cleaned args, no --audit-plan-id)
     start = time.time()
     stdout_capture = ''
@@ -1016,9 +1313,7 @@ def main():
 
     # Build args for logging: inject --plan-id if audit_plan_id was provided
     # This allows log_script_execution to route to plan-specific log
-    args_for_logging = script_args.copy()
-    if audit_plan_id:
-        args_for_logging = ['--plan-id', audit_plan_id] + args_for_logging
+    args_for_logging = _args_for_logging(script_args, audit_plan_id)
 
     # Log execution (skip for logging scripts on success to avoid meta-logging noise)
     if not should_skip_logging(notation, exit_code):
