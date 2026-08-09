@@ -4,7 +4,7 @@ How much time and how many tokens did the plan consume relative to its scope? LL
 
 ## Inputs
 
-- `metrics.md` — total_duration_seconds, total_tokens, per-phase breakdown.
+- `metrics.md` — total_wall_seconds, total_tokens, per-phase breakdown.
 - `log_analysis` fragment (already computed) — entry counts, script durations.
 - `work/metrics.toon` — the **persisted denominators** and their sampling points: `deliverable_count`, `files_modified`, `tasks_completed`, each with its `{denominator}_sampling_point` companion, plus the shared `denominators_sampled_at` timestamp.
 
@@ -72,6 +72,8 @@ This section is the authoritative interpretation contract. The four sub-sections
 For every plan, compute and embed the following four ratios explicitly under the `ratios:` block of the TOON fragment. All four are MUST-emit — omitting a field is a structural failure mode regardless of whether any threshold trips.
 
 **Read each denominator from `work/metrics.toon` first** (see § "Denominators are READ, never re-derived"), and record its `_sampling_point` under `denominator_provenance:` before computing anything.
+
+**Coerce each count to an integer before computing.** `read_metrics_raw` numeric-coerces per-phase block values only, so every PLAN-level key round-trips as text — `deliverable_count` reads back as `'3'`, not `3` — and applying `max(denominator, 1)` or division directly to the read value operates on a string.
 
 1. `tokens_per_file_modified` = `totals.tokens / max(files_modified, 1)` — `files_modified` READ from the persisted `files_modified` field.
 2. `seconds_per_task` = `totals.duration_seconds / max(tasks_completed, 1)` — `tasks_completed` READ from the persisted `tasks_completed` field.

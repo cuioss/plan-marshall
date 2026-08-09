@@ -28,7 +28,7 @@ Every `manage-*` script call in this document carries the following exit-code co
 
 This document carries NO step-activation logic. Activation is controlled by the dispatcher in `phase-6-finalize/SKILL.md` Step 3 and is driven solely by presence of `record-metrics` in `manifest.phase_6.steps`. When the dispatcher runs this step, the document executes top to bottom — there is no skip-conditional branching at this layer.
 
- This step performs three sequenced `manage-metrics` invocations — `end-phase`, `enrich`, `generate` — and emits the `mark-step-done` handshake. The `generate` invocation reconciles all six canonical phases explicitly and returns an `end_time`-presence check over them; when a phase is missing that marker, the step also surfaces the gap as a `[WARN]` work-log line (see `## Surface Missing end_time Boundary Markers`). All three writes MUST land on the live plan directory; the consolidated finalize output (step outcomes, end-state verification, and plan-complete summary) is rendered by the dedicated template in `standards/output-template.md`.
+This step performs three sequenced `manage-metrics` invocations — `end-phase`, `enrich`, `generate` — and emits the `mark-step-done` handshake. The `generate` invocation reconciles all six canonical phases explicitly and returns an `end_time`-presence check over them; when a phase is missing that marker, the step also surfaces the gap as a `[WARN]` work-log line (see `## Surface Missing end_time Boundary Markers`). All three writes MUST land on the live plan directory; the consolidated finalize output (step outcomes, end-state verification, and plan-complete summary) is rendered by the dedicated template in `standards/output-template.md`.
 
 **CRITICAL**: `default:record-metrics` MUST be the LAST token-accounting step in the pipeline — it runs AFTER all token-consuming finalize steps (`plan-marshall:plan-retrospective`, `project:finalize-step-lessons-housekeeping`) and BEFORE the read-only `default:finalize-step-print-phase-breakdown` / `default:archive-plan` tail. This ordering is what lets `end-phase` fold the token spend of every dispatched finalize step — including retrospective and lessons-housekeeping — into the closed `6-finalize` phase row: those steps persist their `<usage>` totals to `work/metrics-accumulator-6-finalize.toon` before this step runs, so `end-phase`'s accumulator read captures the full phase total. All three metrics commands (`end-phase`, `enrich`, `generate`) write inside `.plan/plans/{plan_id}/` — `end-phase` updates `work/metrics.toon`, `enrich` supplements the same TOON with JSONL session tokens, and `generate` renders `metrics.md`. All three writes MUST land on the live (pre-archive) plan directory: `default:archive-plan` then moves that directory to `.plan/archived-plans/{date}-{plan_id}/`, so if archive ran first the live directory would no longer exist and any of the three commands would recreate it as a post-archive orphan.
 
@@ -67,9 +67,9 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics gene
 
 Capture the following fields from the returned TOON for the parent skill's output contract:
 
-- `total_duration_seconds` — raw integer/float seconds, kept for the output contract's machine-readable column.
+- `total_wall_seconds` — raw integer/float wall-clock seconds, kept for the output contract's machine-readable column.
 - `total_tokens` — raw integer count, kept for the output contract's machine-readable column.
-- `total_duration_formatted` — human-readable string produced by `format_duration` (e.g. `1h46m`, `9m32s`).
+- `total_wall_formatted` — human-readable wall-clock string produced by `format_duration` (e.g. `1h46m`, `9m32s`).
 - `total_tokens_formatted` — abbreviated string produced by `format_tokens_short` (e.g. `599K`, `1.2M`).
 - `any_phase_missing_end_time` — bool; `true` when at least one canonical phase's row carries no `end_time` boundary marker. Drives the gap-surfacing `[WARN]` step below and the matching field in the output contract.
 - `phases_missing_end_time` — list of canonical phases whose row carries no `end_time` (empty when `any_phase_missing_end_time` is `false`). Named in the `[WARN]` log line and surfaced in the output contract.
@@ -92,7 +92,7 @@ Emit this line ONLY when the captured `any_phase_missing_end_time` is `true`. Wh
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-6-finalize:record-metrics) metrics.md generated — {total_tokens} tokens, {total_duration_seconds}s"
+  work --plan-id {plan_id} --level INFO --message "[ARTIFACT] (plan-marshall:phase-6-finalize:record-metrics) metrics.md generated — {total_tokens} tokens, {total_wall_seconds}s"
 ```
 
 ## Error Handling
@@ -112,9 +112,9 @@ This step populates the following fields in the parent skill's `metrics` output 
 
 | Field | Source |
 |-------|--------|
-| `metrics.total_duration_seconds` | `total_duration_seconds` from generate output (raw seconds) |
+| `metrics.total_wall_seconds` | `total_wall_seconds` from generate output (raw wall-clock seconds) |
 | `metrics.total_tokens` | `total_tokens` from generate output (raw count) |
-| `metrics.total_duration_formatted` | `total_duration_formatted` from generate output (e.g. `1h46m`) |
+| `metrics.total_wall_formatted` | `total_wall_formatted` from generate output (e.g. `1h46m`) |
 | `metrics.total_tokens_formatted` | `total_tokens_formatted` from generate output (e.g. `599K`) |
 | `metrics.any_phase_missing_end_time` | `any_phase_missing_end_time` from generate output (bool; `true` when a canonical phase's row carries no `end_time` boundary marker) |
 | `metrics.phases_missing_end_time` | `phases_missing_end_time` from generate output (canonical phases whose row carries no `end_time`; empty when the bool is `false`) |
@@ -131,9 +131,9 @@ Pass a `--display-detail` value alongside `--outcome done` so the output-templat
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step record-metrics --outcome done \
-  --display-detail "{total_duration_formatted} / {total_tokens_formatted} tokens"
+  --display-detail "{total_wall_formatted} / {total_tokens_formatted} tokens"
 ```
 
-The `{total_duration_formatted}` and `{total_tokens_formatted}` placeholders are populated from the fields captured in `## Generate Final Metrics Report` above. Use the formatted variants — never the raw `{total_duration_seconds}s / {total_tokens} tokens` template, which produces the unformatted `6381s / 599089 tokens` row that the central formatter exists to replace.
+The `{total_wall_formatted}` and `{total_tokens_formatted}` placeholders are populated from the fields captured in `## Generate Final Metrics Report` above. Use the formatted variants — never the raw `{total_wall_seconds}s / {total_tokens} tokens` template, which produces the unformatted `6381s / 599089 tokens` row that the central formatter exists to replace.
 
 When the captured `any_phase_missing_end_time` is `true`, append a ` (no end_time: {phases_missing_end_time})` suffix to the `--display-detail` value so the dropped-boundary gap is visible in the finalize output (e.g. `"9m32s / 86.8K tokens (no end_time: 6-finalize)"`). When it is `false`, use the unsuffixed form.
