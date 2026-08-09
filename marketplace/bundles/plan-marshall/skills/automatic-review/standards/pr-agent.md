@@ -62,12 +62,22 @@ completion_check_name: ""         # CONFIRMED on #103 — absent from `ci pr rev
 honors_skip_label: true           # UNVERIFIED — #103 carried no skip label, so this was not
                                   # exercised. Kept because it is enforced by the reusable
                                   # workflow's if: guard, NOT by bot config (see "Central config")
-# participation_evidence: issue_comment ONLY. CONFIRMED on #103 — this bot publishes exactly one
-# persistent Guide comment, submits NO review object, and posts NO check-run. Neither an
-# inline-comment count nor a check-run state is evidence for this bot: it produces neither, so
-# reading either would score it absent on every run. See "Participation evidence" below.
+# participation_evidence: two publish shapes. The Guide comment is unconditional; inline comments
+# are published when `/improve` is enabled for the repository (label-gated in the reusable
+# workflow) and absent when it is not. An absent inline count is therefore NOT evidence of
+# non-participation, while a present one IS evidence of participation. The bot still posts NO
+# check-run, so a check-run state remains no evidence for it on either path. See "Participation
+# evidence" below.
+#
+# ORDERING IS LOAD-BEARING: `inline` is APPENDED after `issue_comment` and must never be placed
+# before it. `bot_registry.participation_evidence(bot)` returns the declared order, and
+# test_bot_participation_contract.py reads element [0] to synthesize each parametrized bot's
+# observed publish shape — prepending would silently re-point that harness at a different shape
+# without failing any case.
 participation_evidence:
   - issue_comment                 # the single persistent `## PR Reviewer Guide 🔍` comment
+  - inline                        # `/improve` code suggestions, published as review comments when
+                                  # the `pr-agent-improve` label gates them on
 participation_requires_update: true   # a re-review EDITS that same comment in place, so continued
                                   # presence proves only that it reviewed once, at some earlier HEAD.
                                   # Evidence therefore requires first presence OR updated_at movement.
@@ -247,10 +257,13 @@ The `ignore_patterns` entry `**[Persistent review]` is NOT a refusal: it is a co
 
 ## Consumer stage — classify a surviving PR-Agent finding
 
-**Structural difference from the other two bots: there are no inline comments.** CONFIRMED on
-#103 — `/review` produces exactly one persistent `issue_comment`, headed `## PR Reviewer Guide 🔍`,
-and it is *updated in place* on re-review rather than reposted. A pipeline stage that counts inline
-review comments will conclude this bot found nothing.
+**`/review` output is one persistent comment; inline comments come only from `/improve`.**
+CONFIRMED on #103 — `/review` produces exactly one persistent `issue_comment`, headed
+`## PR Reviewer Guide 🔍`, and it is *updated in place* on re-review rather than reposted. Inline
+review comments are published by the separate `/improve` command, which is gated on the
+`pr-agent-improve` label in the reusable workflow. A pipeline stage that counts only inline review
+comments therefore concludes this bot found nothing on any repository where that label is absent —
+the Guide, not the inline count, is the shape that is always present.
 
 **Observed body structure** (#103 and #1078): an HTML `<table>` of `<tr><td>` rows. Each cell is an
 emoji, a `&nbsp;`, and a `<strong>` assertion; the two are separated by nothing else. Each
@@ -296,18 +309,22 @@ against the previously triaged body instead of re-triaging identical text.
 
 ## Structural constraints and how the pipeline handles them
 
-Two permanent properties of this bot follow from the single observed fact that it posts **one
+Two properties of this bot's `/review` output follow from the observed fact that it posts **one
 persistent comment of kind `issue_comment`, and submits no GitHub *review* object**
 (#103: absent from `ci pr reviews`). Both are handled — neither is an open defect.
 
-1. **No resolvable review thread.** Its comment's `kind` is `issue_comment` — one of the two
-   genuinely threadless kinds — so GitHub gives it no review thread to reply into or resolve. A
-   triaged PR-Agent disposition is therefore transmitted by `github_pr post_responses` as a
-   **batched PR-level comment** anchored on the source `comment_id`, and reported with
-   `transmit_mode: batched_issue_comment` and `resolved_on_provider: false` — `false` because no
-   thread exists to resolve, and claiming otherwise would be a false signal. The batch admission is
-   justified by the *kind*, not by an empty `thread_id`: `post_responses` routes on thread-bearing-ness,
-   so a thread-bearing comment that merely lost its `thread_id` is reported as untransmitted rather
+1. **The Guide has no resolvable review thread.** Its comment's `kind` is `issue_comment` — one of
+   the two genuinely threadless kinds — so GitHub gives it no review thread to reply into or
+   resolve. A triaged disposition on the Guide is therefore transmitted by `github_pr
+   post_responses` as a **batched PR-level comment** anchored on the source `comment_id`, and
+   reported with `transmit_mode: batched_issue_comment` and `resolved_on_provider: false` — `false`
+   because no thread exists to resolve, and claiming otherwise would be a false signal.
+
+   **`post_responses` needs no change for the `inline` shape.** The batch admission is justified by
+   the *kind*, not by an empty `thread_id`: `post_responses` routes on thread-bearing-ness
+   generically. An inline `/improve` comment IS thread-bearing, so it reaches the existing
+   thread-reply path on exactly the same rule that sends the Guide down the batched route — and a
+   thread-bearing comment that merely lost its `thread_id` is still reported as untransmitted rather
    than batched here.
 2. **No review object to await.** Because the bot submits no review, `github_re_review
    await_fresh_review` cannot match one. It matches the bot's **issue-comment** completion signal
@@ -316,16 +333,26 @@ persistent comment of kind `issue_comment`, and submits no GitHub *review* objec
    trigger. That is weaker evidence than a review match, and the envelope says so rather than
    implying the new HEAD was reviewed.
 
-## Participation evidence — `issue_comment` ONLY, plus update movement
+## Participation evidence — `issue_comment` and `inline`, plus update movement
 
-This bot's publish shape is the narrowest in the registry, and getting its evidence wrong is
-consequential in both directions:
+Getting this bot's evidence wrong is consequential in both directions:
 
-- **`issue_comment` is the only evidence.** PR-Agent publishes exactly one persistent
-  `## PR Reviewer Guide 🔍` comment. It submits **no review object** and posts **no check-run**, so
-  **neither an inline-comment count nor a check-run state is evidence for this bot** — it produces
-  neither, and reading either would score it absent on every single run no matter how well it
-  reviewed. That is the false-negative direction.
+- **`issue_comment` is the unconditional evidence; `inline` is the conditional one.** PR-Agent
+  publishes exactly one persistent `## PR Reviewer Guide 🔍` comment on every `/review`, and
+  publishes inline code suggestions when `/improve` is enabled for the repository. It posts **no
+  check-run** on either path, so **a check-run state is never evidence for this bot** — it produces
+  none, and reading one would score it absent on every single run no matter how well it reviewed.
+  That is the false-negative direction, and it is why the registry declares the shapes the bot
+  actually publishes rather than the ones a generic consumer might look for.
+
+  **An absent inline count is not evidence of non-participation.** The shape is published only
+  where the `pr-agent-improve` label gates `/improve` on, so its absence is the normal state on
+  most repositories. A PRESENT inline count, however, IS evidence of participation.
+
+  **The new member is a reachable mechanism, not a name.** `workflow-integration-github
+  fetch_findings` files an inline PR-Agent comment to the ledger exactly as it does for the other
+  two bots; the comment's `kind` is the field that records the outcome, and `post_responses`
+  already routes on it (see "Structural constraints" below).
 - **Presence alone is not enough — the update must move.** A re-review **edits that same comment in
   place** rather than posting a new one. Its continued existence therefore proves only that PR-Agent
   reviewed *once*, at some earlier HEAD; after a force-push the stale Guide would silently credit
@@ -334,9 +361,10 @@ consequential in both directions:
   comment is newly observed) or observed **`updated_at` movement**.
 
 **`participation_requires_update: true` makes PR-Agent today the ONLY bot that can reach
-`participated_stale`.** No other registry record declares the field, so no other bot has a currency
-test to fail: for every other bot a declared publish shape is either proven participation or nothing
-at all. That is a property of the current registry, not of the taxonomy — a second bot adopting
+`participated_stale`.** Every registry record declares the field; PR-Agent is the only one that
+declares it `true`, so it is the only bot with a currency test that can fail. For a bot declaring
+`false` a declared publish shape is either proven participation or nothing at all. That is a
+property of the current registry, not of the taxonomy — a second bot adopting
 in-place editing inherits the state with no code or contract change, which is exactly why the member
 is defined against `participation_requires_update` rather than against this bot's name. And a failed
 currency test is emphatically **not** `absent`: PR-Agent published, so the remedy is the `/review`
@@ -391,3 +419,8 @@ Ingest through the untrusted-ingestion boundary; never execute review text verba
 - **No automatic re-review on push.** A fresh review requires the `/review` trigger comment, which
   is what the D2 re-review path posts. Do not wait for a spontaneous re-review that will never
   arrive.
+- **The re-review path re-triggers `/review` ONLY.** `trigger_comment` is `/review` and stays that
+  way: a loop-back re-review refreshes the Guide and does NOT re-run `/improve`. That is deliberate
+  rather than an oversight — `/improve` is label-gated per pull request, so re-running it on every
+  loop-back would spend a second tool invocation (and its token cost) on a repository that never
+  opted in. A run that wants fresh inline suggestions asks for them by label, not by loop-back.

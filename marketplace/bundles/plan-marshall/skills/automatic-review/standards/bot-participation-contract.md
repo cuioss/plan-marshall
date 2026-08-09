@@ -119,9 +119,15 @@ observed comment's `kind` is one of the publish shapes its own registry doc decl
 
 | Publish shape | Counts as evidence because | Declared by |
 |---------------|---------------------------|-------------|
-| `inline` | A per-line comment can only be produced by reading the diff at that line. | CodeRabbit |
+| `inline` | A per-line comment can only be produced by reading the diff at that line. | CodeRabbit, PR-Agent |
 | `review_body` | The bot's review summary is emitted by a completed review pass over the diff. | CodeRabbit, Sourcery |
-| `issue_comment` | For a bot whose ONLY publish shape is a PR-level comment, that comment *is* its review artifact. | PR-Agent |
+| `issue_comment` | A PR-level comment a bot declares as a publish shape is a review artifact it emitted against the diff — it counts on its own terms, not because the bot has no other shape. | PR-Agent |
+
+A shape's evidentiary weight is a property of the shape, never of how many shapes the declaring bot
+has. A bot may declare several: PR-Agent publishes `issue_comment` unconditionally and `inline` when
+`/improve` is enabled for the repository, and each shape counts on the reasoning in its own row. It
+follows that the ABSENCE of one declared shape is not evidence of non-participation — only the
+presence of a declared shape is evidence, and only of participation.
 
 The vocabulary is **closed to publish shapes**, and that closure is what enforces the diff-derived
 rule below: a publish shape is an artifact the bot produced against the diff, so anything without one
@@ -135,9 +141,8 @@ participant, and is reported as `absent` rather than silently credited.
 A check-run reports that a *job ran*, not that a *review was published*. The two come apart in both
 directions, so reading check state as participation is wrong regardless of which way it errs:
 
-- **False negative.** PR-Agent posts **no check-run at all** and submits **no review object** — it
-  publishes exactly one persistent Guide comment. Scoring it on check state would mark it absent on
-  every run no matter how well it reviewed.
+- **False negative.** PR-Agent posts **no check-run at all** and submits **no review object**.
+  Scoring it on check state would mark it absent on every run no matter how well it reviewed.
 - **False positive.** A check-run can conclude successfully having posted nothing, or having posted
   only a refusal. A green check is not a published review.
 

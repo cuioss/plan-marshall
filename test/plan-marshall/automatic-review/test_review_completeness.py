@@ -150,8 +150,23 @@ class TestEvidenceTyping:
         assert rc.parse_participation('mystery-bot:inline') == {}
 
     def test_admissible_and_inadmissible_pairs_are_separated(self, plan_context):
-        """A mixed list admits only the pairs that match their own bot's shapes."""
-        assert rc.parse_participation('coderabbit:inline,pr-agent:inline') == CODERABBIT_EVIDENCE
+        """A mixed list admits only the pairs that match their own bot's shapes.
+
+        Sourcery declares ``review_body`` and no inline shape, so its inline pair
+        is dropped while CodeRabbit's is kept.
+        """
+        assert rc.parse_participation('coderabbit:inline,sourcery:inline') == CODERABBIT_EVIDENCE
+
+    def test_a_shape_two_bots_both_declare_is_admitted_for_both(self, plan_context):
+        """Admissibility is per-bot membership, not per-bot exclusivity.
+
+        CodeRabbit and PR-Agent both declare ``inline``, so a mixed list admits it
+        for each of them — a shape is not owned by the first bot to declare it.
+        """
+        assert rc.parse_participation('coderabbit:inline,pr-agent:inline') == {
+            'coderabbit': 'inline',
+            'pr-agent': 'inline',
+        }
 
     def test_bot_with_empty_participation_evidence_is_never_proven(self, plan_context, monkeypatch):
         """FAIL-CLOSED: a bot declaring NO evidence shape can never be a participant.
@@ -177,12 +192,12 @@ class TestEvidenceTyping:
 
 
 # =============================================================================
-# PR-Agent — the narrowest publish shape in the registry
+# PR-Agent — an unconditional Guide comment plus a label-gated inline shape
 # =============================================================================
 
 
 class TestPRAgentParticipation:
-    """PR-Agent is proven by its Guide comment plus movement — never by count or check state."""
+    """PR-Agent is proven by a declared publish shape plus movement — never by check state."""
 
     def test_guide_comment_is_its_evidence(self, plan_context):
         """Its single persistent `issue_comment` IS its review artifact."""
@@ -196,20 +211,55 @@ class TestPRAgentParticipation:
         assert result['participation_complete'] is True
         assert _state_of(result, 'pr-agent') == rc.STATE_PARTICIPATED_BUT_EMPTY
 
-    def test_inline_comment_count_is_not_its_evidence(self, plan_context):
-        """It publishes NO inline comments, so an inline count cannot prove it.
+    def test_inline_comment_is_also_its_evidence(self, plan_context):
+        """`/improve` publishes inline suggestions, so an inline pair proves it too.
 
-        Reading inline count as participation is the false-negative direction: it
-        would score PR-Agent absent on every run no matter how well it reviewed.
-        The predicate refuses the inline pair outright rather than encoding a count.
+        The registry declares ``inline`` alongside ``issue_comment``, so an
+        observation of the label-gated shape is admissible on its own.
         """
         plan_id = 'rc-pr-agent-inline'
         plan_context.plan_dir_for(plan_id)
-        # Findings exist in the store for this bot — a "count" would look healthy.
         _seed(plan_id, 'pr-agent', resolution='fixed')
 
         result = rc.check_completeness(
             plan_id, ['pr-agent'], participated_bots=rc.parse_participation('pr-agent:inline')
+        )
+
+        assert result['participation_complete'] is True
+        assert _state_of(result, 'pr-agent') != rc.STATE_ABSENT
+
+    def test_absent_inline_shape_does_not_make_it_unproven(self, plan_context):
+        """An absent inline count is NOT evidence of non-participation.
+
+        ``/improve`` is label-gated per pull request, so on most repositories the
+        inline shape is simply never published. The Guide comment alone therefore
+        still proves participation — reading the missing inline shape as a failure
+        would score the bot unproven on every repository that did not opt in.
+        """
+        plan_id = 'rc-pr-agent-guide-only'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(
+            plan_id, ['pr-agent'], participated_bots=rc.parse_participation('pr-agent:issue_comment')
+        )
+
+        assert result['participation_complete'] is True
+        assert _state_of(result, 'pr-agent') != rc.STATE_ABSENT
+
+    def test_a_shape_it_does_not_declare_is_still_not_its_evidence(self, plan_context):
+        """The widening is an enumeration, not a blanket admission.
+
+        ``review_body`` is a real publish shape for other bots and is NOT declared
+        by PR-Agent, so it proves nothing here — without this control the widened
+        record would be indistinguishable from "any shape counts".
+        """
+        plan_id = 'rc-pr-agent-review-body'
+        plan_context.plan_dir_for(plan_id)
+
+        assert rc.parse_participation('pr-agent:review_body') == {}
+
+        result = rc.check_completeness(
+            plan_id, ['pr-agent'], participated_bots=rc.parse_participation('pr-agent:review_body')
         )
 
         assert result['participation_complete'] is False
