@@ -265,7 +265,7 @@ Confirmed by pass 2 (full-read):
 
 **Rejected by pass 2 (NOT target-specific — they normalize):**
 
-- `tools-sync-agents-file` — **CORRECTION** (was listed here): it is the cross-assistant *bridge* that emits the OpenAI-spec `agents.md`; `CLAUDE.md` is merely an optional input source, not its reason to exist. It applies regardless of host target → `stays-agnostic`. Scoping it to claude would be normalization-dodging.
+- `tools-sync-agents-file` — **CORRECTION** (was listed here): it is the cross-assistant *bridge* that emits the OpenAI-spec `AGENTS.md`; `CLAUDE.md` is merely an optional input source, not its reason to exist. It applies regardless of host target → `stays-agnostic`. Scoping it to claude would be normalization-dodging.
 - `plugin-doctor` — make **target-aware**, not Claude-only: an OpenCode author would lint OpenCode output. A target-agnostic linting engine + a swappable Claude rule-pack (the Claude tool/permission/model-DSL rules are build-target; `rule-provenance.md` is the natural fork point).
 - the plugin-**authoring** toolset (`plugin-create`/`plugin-maintain`/`plugin-architecture`) — the *capability* is target-aware-make; only the emitted/validated *vocabulary* is Claude-specific → build-target (`frontmatter-standards.md` densest).
 

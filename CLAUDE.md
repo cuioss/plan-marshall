@@ -111,7 +111,7 @@ After editing files in `marketplace/bundles/`, changes don't take effect until t
 
 ## Multi-Assistant Support
 
-Source of truth is `marketplace/bundles/*` (Claude Code native format). The multi-target generator (`python3 marketplace/targets/generate.py --target {claude,opencode,all} --output {dir}`) exports bundles to other assistant formats while keeping Claude Code primary; **only Claude Code is tested as a runtime.** See `doc/developer/marketplace-build.adoc` for the adapter system, OpenCode usage, adding new targets, and how the format relates to the SKILL.md open standard at [agentskills.io](https://agentskills.io).
+Source of truth is `marketplace/bundles/*` (Claude Code native format). The multi-target generator (`python3 marketplace/targets/generate.py --target {name} --output {dir}`) exports bundles to other assistant formats while keeping Claude Code primary; **only Claude Code is tested as a runtime.** Valid `{name}` values are every target registered in `TARGET_REGISTRY` (`marketplace/targets/__init__.py`), plus `all` for every registered target sequentially — the registry is the source of truth, and `generate.py --help` prints the live set, so no enumeration of it is restated here. See `doc/developer/marketplace-build.adoc` for the adapter system, OpenCode usage, adding new targets, and how the format relates to the SKILL.md open standard at [agentskills.io](https://agentskills.io).
 
 ## Integration Points
 

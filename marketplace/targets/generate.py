@@ -6,6 +6,7 @@ Usage:
     python3 marketplace/targets/generate.py --target claude
     python3 marketplace/targets/generate.py --target claude --output target/claude
     python3 marketplace/targets/generate.py --target opencode --output target/opencode
+    python3 marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
     python3 marketplace/targets/generate.py --target all --output target
 
 Exits 0 on success, 2 on any failure (unknown target, missing required
@@ -42,7 +43,10 @@ def _build_parser() -> argparse.ArgumentParser:
     target_choices = sorted(TARGET_REGISTRY.keys()) + ['all']
     parser = argparse.ArgumentParser(
         prog='marketplace-targets-generate',
-        description='Generate marketplace target output (claude verbatim mirror, opencode emitter).',
+        description=(
+            'Generate marketplace target output (claude verbatim mirror, opencode emitter, '
+            'pr-agent reviewer instruction pack).'
+        ),
         allow_abbrev=False,
     )
     parser.add_argument(
@@ -56,8 +60,8 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help=(
-            'Output directory. Required for opencode (and for claude when emitting); '
-            'optional for claude when running equality-check only.'
+            'Output directory. Required for opencode and pr-agent (and for claude when '
+            'emitting); optional for claude when running equality-check only.'
         ),
     )
     parser.add_argument(
@@ -65,6 +69,16 @@ def _build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help='Comma-separated list of bundles to process. Default: all bundles.',
+    )
+    parser.add_argument(
+        '--packs',
+        type=str,
+        default=None,
+        help=(
+            'pr-agent target only: comma-separated derived domains to compose into the one '
+            'emitted pack (e.g. "python,plugin" for a repository that is both). Ignored by '
+            'every other target. Default: the target\'s own DEFAULT_PACK.'
+        ),
     )
     parser.add_argument(
         '--marketplace-dir',
@@ -111,6 +125,25 @@ def _resolve_targets(name: str) -> list[str]:
     if name == 'all':
         return sorted(TARGET_REGISTRY.keys())
     return [name]
+
+
+#: The one target that takes a construction argument. Kept as an explicit,
+#: named constant rather than as an inline string test so the special case is
+#: greppable: every other target is constructed with no arguments, and a second
+#: parametrised target would extend this seam rather than add another branch.
+_PACK_SELECTING_TARGET = 'pr-agent'
+
+
+def _instantiate(target_name: str, target_cls: type, packs: str | None):
+    """Construct a target, forwarding the pack selection to the one that takes it.
+
+    ``--packs`` is meaningful only for the pr-agent target; forwarding it to a
+    target that does not accept it would be a TypeError, and silently accepting
+    it everywhere would imply the flag does something it does not.
+    """
+    if target_name == _PACK_SELECTING_TARGET and packs:
+        return target_cls(packs)
+    return target_cls()
 
 
 # ---------------------------------------------------------------------------
@@ -390,7 +423,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f'error: unknown target {target_name!r}', file=sys.stderr)
             return EXIT_ERROR
 
-        target = target_cls()
+        try:
+            target = _instantiate(target_name, target_cls, args.packs)
+        except ValueError as exc:
+            print(f'error: target {target_name!r} rejected --packs: {exc}', file=sys.stderr)
+            return EXIT_ERROR
         per_target_output = output_dir / target_name if (output_dir is not None and args.target == 'all') else output_dir
 
         try:
@@ -412,19 +449,32 @@ def main(argv: list[str] | None = None) -> int:
         # final published tree (including the version-overridden plugin.json
         # files and the just-emitted dist-manifest.json) rather than a stale
         # pre-mutation snapshot.
+        #
+        # Both stamping steps are bundle-tree semantics — the version override
+        # globs */.claude-plugin/plugin.json and the dist-manifest describes a
+        # published bundle tree — so they are gated on target.emits_bundle_tree.
+        # A target whose output is not a bundle tree (a reviewer configuration,
+        # say) would otherwise receive a wrong artifact in its output directory,
+        # and --target all reaches this path for every registered target.
         if per_target_output is not None and manifest is not None:
             try:
-                overridden = _override_bundle_plugin_versions(per_target_output, version)
-                _emit_dist_manifest(per_target_output, manifest)
+                if target.emits_bundle_tree:
+                    overridden = _override_bundle_plugin_versions(per_target_output, version)
+                    _emit_dist_manifest(per_target_output, manifest)
+                else:
+                    overridden = None
                 target.finalize(per_target_output, marketplace_dir)
             except Exception as exc:  # noqa: BLE001
                 print(f'error: target {target_name!r} post-generation stamping failed: {exc}', file=sys.stderr)
                 overall_ok = False
                 continue
-            print(
-                f'{target_name}: stamped version {version} into {overridden} bundle plugin.json; '
-                f'emitted {_DIST_MANIFEST_FILENAME}'
-            )
+            if overridden is None:
+                print(f'{target_name}: not a bundle tree; skipped version stamping and {_DIST_MANIFEST_FILENAME}')
+            else:
+                print(
+                    f'{target_name}: stamped version {version} into {overridden} bundle plugin.json; '
+                    f'emitted {_DIST_MANIFEST_FILENAME}'
+                )
 
     return EXIT_OK if overall_ok else EXIT_ERROR
 

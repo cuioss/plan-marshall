@@ -45,7 +45,7 @@ Output (TOON format):
 
         status	needs_update
         missing_count	2
-        plan_temp	CLAUDE.md,agents.md
+        plan_temp	CLAUDE.md,AGENTS.md
         file_ops	CLAUDE.md
 
     fix-docs subcommand:
@@ -143,10 +143,19 @@ for _lib in ('ref-toon-format',):
 # Content checks applied to project documentation files.
 # Each check has a key, the files it applies to, and a substring marker
 # to search for (plain string match, not regex).
+#
+# The agents file is `AGENTS.md`, uppercase, and the case is load-bearing rather
+# than cosmetic. `check_docs` SKIPS a genuinely absent file with a bare
+# `continue`, so a name that does not match what `/tools-sync-agents-file` emits
+# would find nothing and report clean — a permanent no-op. Only the uppercase
+# name is listed: naming both cases would re-introduce the ambiguity the rename
+# removes. A tree still carrying the legacy lowercase `agents.md` is caught by
+# `resolve_doc_file`'s case-exact lookup, which reports `wrong_case` instead of
+# clean on every filesystem, case-sensitive or not.
 CONTENT_CHECKS: list[dict[str, str | int | list[str]]] = [
     {
         'key': 'plan_temp',
-        'files': ['CLAUDE.md', 'agents.md'],
+        'files': ['CLAUDE.md', 'AGENTS.md'],
         'pattern': '.plan/temp',
     },
     {
@@ -365,6 +374,37 @@ def count_section_bullets(content: str, section_heading: str) -> int:
     return bullet_count
 
 
+def resolve_doc_file(project_root: Path, file_name: str) -> tuple[Path | None, bool]:
+    """Resolve ``file_name`` under ``project_root`` with case-EXACT semantics.
+
+    ``Path.exists()`` is a filesystem-level question, and macOS/Windows answer it
+    case-insensitively while Linux answers it case-sensitively. The agents file's
+    case is load-bearing — the PR-Agent reviewer resolves ``repo_context_files``
+    through GitHub's case-sensitive contents API — so a check built on
+    ``Path.exists()`` would report a lowercase ``agents.md`` as a present
+    ``AGENTS.md`` on a developer Mac and as an absent one in Linux CI. Listing the
+    directory and comparing names makes the answer identical everywhere.
+
+    Returns:
+        Tuple of (path, wrong_case):
+
+        - ``(path, False)`` — a directory entry whose name equals ``file_name``.
+        - ``(None, True)`` — no case-exact entry, but one differing only in case
+          exists (the legacy lowercase ``agents.md``).
+        - ``(None, False)`` — no entry by that name in any case.
+    """
+    try:
+        names = {entry.name for entry in project_root.iterdir()}
+    except OSError:
+        return None, False
+
+    if file_name in names:
+        return project_root / file_name, False
+
+    folded = file_name.casefold()
+    return None, any(name.casefold() == folded for name in names)
+
+
 def check_docs(project_root: Path) -> tuple[str, list[dict[str, str]]]:
     """
     Check if project documentation files contain all required content.
@@ -397,9 +437,18 @@ def check_docs(project_root: Path) -> tuple[str, list[dict[str, str]]]:
         min_bullets_raw = check.get('min_bullets')
         section_heading_raw = check.get('section_heading')
         for file_name in files:
-            file_path = project_root / str(file_name)
-            if not file_path.exists():
-                continue  # Skip non-existent files — only check content in existing files
+            file_path, wrong_case = resolve_doc_file(project_root, str(file_name))
+            if file_path is None:
+                if wrong_case:
+                    # The file exists under a different case. That is NOT clean:
+                    # the consumer resolving the name case-sensitively finds
+                    # nothing, so the guidance is unreachable. Report it as its
+                    # own reason — the remedy is a rename, not an append, so
+                    # fix_docs must not treat it as fixable content drift.
+                    missing.append(
+                        {'file': str(file_name), 'check': str(check['key']), 'reason': 'wrong_case'}
+                    )
+                continue  # Genuinely absent file — only check content in existing files
             content = file_path.read_text()
             if pattern not in content:
                 missing.append({'file': str(file_name), 'check': str(check['key']), 'reason': 'content_missing'})
@@ -450,7 +499,12 @@ def fix_docs(project_root: Path) -> tuple[str, list[str]]:
         # appending — that would create a duplicate section. Leave the file
         # untouched and let the operator reconcile manually; the doctor
         # message surfaced by cmd_check_docs guides the edit.
-        if entry.get('reason') == 'incomplete':
+        #
+        # wrong_case entries cannot be fixed by appending either: the content
+        # would land in the mis-cased file the consumer never reads, so the
+        # append would clear the finding without fixing anything. The remedy is
+        # a rename, which is the operator's call.
+        if entry.get('reason') in ('incomplete', 'wrong_case'):
             continue
 
         check_key = entry['check']
@@ -459,8 +513,8 @@ def fix_docs(project_root: Path) -> tuple[str, list[str]]:
         if content_block is None:
             continue
 
-        file_path = project_root / file_name
-        if not file_path.exists():
+        file_path, _wrong_case = resolve_doc_file(project_root, file_name)
+        if file_path is None:
             continue
 
         existing = file_path.read_text()
@@ -509,18 +563,24 @@ def cmd_check_docs(args: argparse.Namespace) -> dict:
         for key, files in checks_by_key.items():
             result[key] = ','.join(files)
 
-        # Surface human-readable doctor messages for 'incomplete' (drift)
-        # entries so callers can distinguish absent sections from
-        # present-but-short ones without re-parsing the structured payload.
+        # Surface human-readable doctor messages for the two reasons a caller
+        # cannot act on from the structured payload alone: 'incomplete' (the
+        # section is present but short) and 'wrong_case' (the file exists under
+        # a different case, so the remedy is a rename rather than an append).
         messages: list[str] = []
         for entry in missing:
-            if entry.get('reason') != 'incomplete':
-                continue
+            reason = entry.get('reason')
             label = entry['check'].replace('_', ' ').title()
-            messages.append(
-                f'{label} section present but incomplete '
-                f'(found {entry.get("found", "?")} bullets, expected {entry.get("expected", "?")})'
-            )
+            if reason == 'incomplete':
+                messages.append(
+                    f'{label} section present but incomplete '
+                    f'(found {entry.get("found", "?")} bullets, expected {entry.get("expected", "?")})'
+                )
+            elif reason == 'wrong_case':
+                messages.append(
+                    f'{entry["file"]} exists under a different case — rename it to '
+                    f'{entry["file"]} so case-sensitive consumers can resolve it'
+                )
         if messages:
             result['messages'] = ' | '.join(messages)
     return result

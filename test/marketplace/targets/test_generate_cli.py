@@ -32,6 +32,7 @@ class TestGenerateCli:
         assert '--target' in result.stdout
         assert 'claude' in result.stdout
         assert 'opencode' in result.stdout
+        assert 'pr-agent' in result.stdout
 
     def test_unknown_target_exits_two(self):
         result = _run_cli('--target', 'nope', '--output', '/tmp/does-not-matter')
@@ -55,10 +56,80 @@ class TestGenerateCli:
         assert result.returncode == 0, result.stderr
         assert 'opencode' in result.stdout
 
+    def test_pr_agent_target_known_choice(self, tmp_path):
+        out = tmp_path / 'pr-agent-out'
+        result = _run_cli('--target', 'pr-agent', '--output', str(out))
+        assert result.returncode == 0, result.stderr
+        assert (out / '.pr_agent.toml').is_file()
+
+    def test_packs_flag_selects_the_composed_domains(self, tmp_path):
+        out = tmp_path / 'pr-agent-packs-out'
+
+        result = _run_cli('--target', 'pr-agent', '--output', str(out), '--packs', 'python,plugin')
+
+        assert result.returncode == 0, result.stderr
+        emitted = (out / '.pr_agent.toml').read_text(encoding='utf-8')
+        assert '# Pack: python,plugin.' in emitted
+        assert 'scoped to the python and plugin domains' in emitted
+
+    def test_packs_flag_narrows_to_a_single_domain(self, tmp_path):
+        """Negative control for the flag: a one-domain selection is not composed.
+
+        Without this, the composed assertion above could not distinguish "the
+        flag selected two domains" from "the pack always names both".
+        """
+        out = tmp_path / 'pr-agent-single-out'
+
+        result = _run_cli('--target', 'pr-agent', '--output', str(out), '--packs', 'python')
+
+        assert result.returncode == 0, result.stderr
+        emitted = (out / '.pr_agent.toml').read_text(encoding='utf-8')
+        assert '# Pack: python.' in emitted
+        assert 'scoped to the python domain' in emitted
+        assert 'plugin' not in emitted.split('[pr_reviewer]')[0]
+
+    def test_unknown_pack_in_the_selection_exits_two(self, tmp_path):
+        out = tmp_path / 'pr-agent-bad-out'
+
+        result = _run_cli('--target', 'pr-agent', '--output', str(out), '--packs', 'python,cobol')
+
+        assert result.returncode == 2
+        assert 'unknown pack' in (result.stderr + result.stdout)
+
+    def test_packs_flag_is_ignored_by_a_non_pack_target(self, tmp_path):
+        """`--packs` is meaningful only for pr-agent; another target must not break."""
+        out = tmp_path / 'opencode-packs-out'
+
+        result = _run_cli('--target', 'opencode', '--output', str(out), '--packs', 'python,plugin')
+
+        assert result.returncode == 0, result.stderr
+
     def test_all_target_known_choice(self, tmp_path):
         out = tmp_path / 'all-out'
         result = _run_cli('--target', 'all', '--output', str(out))
         assert result.returncode == 0, result.stderr
+        # --target all fans out one sub-directory per registered target, and it
+        # reaches the gated post-emit path for every one of them.
+        assert (out / 'pr-agent' / '.pr_agent.toml').is_file()
+
+    def test_all_target_skips_bundle_tree_post_emit_for_pr_agent(self, tmp_path):
+        """The generic post-emit steps are gated on ``emits_bundle_tree``.
+
+        Version stamping and the dist-manifest are bundle-tree semantics. The
+        pr-agent output is a reviewer configuration, so neither artifact may
+        appear there — while the bundle-tree targets keep both.
+        """
+        out = tmp_path / 'all-out'
+
+        result = _run_cli('--target', 'all', '--output', str(out))
+
+        assert result.returncode == 0, result.stderr
+        pr_agent_out = out / 'pr-agent'
+        assert not (pr_agent_out / 'dist-manifest.json').exists()
+        assert list(pr_agent_out.glob('**/plugin.json')) == []
+        # positive control: the bundle-tree target still gets both artifacts
+        assert (out / 'claude' / 'dist-manifest.json').is_file()
+        assert list((out / 'claude').glob('*/.claude-plugin/plugin.json'))
 
     def test_malformed_bundles_only_whitespace(self, tmp_path):
         # Empty/whitespace bundles parses to None — runs all bundles successfully.

@@ -34,6 +34,23 @@ class TargetBase(ABC):
     def name(self) -> str:
         """Return the short target identifier (e.g. ``"claude"``)."""
 
+    @property
+    def emits_bundle_tree(self) -> bool:
+        """Whether this target's output directory is a published bundle tree.
+
+        The CLI (``generate.py``) applies two generic post-emit steps that are
+        bundle-tree semantics: the deterministic version stamp over every
+        ``*/.claude-plugin/plugin.json`` and the ``dist-manifest.json`` describing
+        the published tree. A target whose output is something else — a reviewer
+        configuration, a lint ruleset — overrides this to ``False`` so those steps
+        are skipped rather than writing a wrong artifact into its output
+        directory. ``--target all`` reaches that path for every registered target,
+        so the gate is not optional.
+
+        Default: ``True`` (the target emits a bundle tree).
+        """
+        return True
+
     @abstractmethod
     def generate(
         self,

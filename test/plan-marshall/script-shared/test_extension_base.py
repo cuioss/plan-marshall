@@ -1238,9 +1238,10 @@ def test_resolve_plan_footprint_returns_sorted_paths_when_resolvable(
 # infra-based Axis-B route, guarding the ADR-004 single-owner model.
 # =============================================================================
 
-# One representative of each infrastructure-config family the aggregator
-# recognizes generically. No build extension may declare a route matching any of
-# them.
+# One representative of each infrastructure-config anchoring group the aggregator
+# recognizes generically — location-anchored trees plus the basename-anchored tool
+# descriptors (container orchestration, container lint/scan, review bots). No
+# build extension may declare a route matching any of them.
 _INFRA_CONFIG_PATHS = (
     '.github/workflows/python-verify.yml',
     '.github/dependabot.yml',
@@ -1252,6 +1253,9 @@ _INFRA_CONFIG_PATHS = (
     '.hadolint.yaml',
     '.trivyignore',
     '.dockerignore',
+    '.pr_agent.toml',
+    '.coderabbit.yaml',
+    '.coderabbit.yml',
 )
 
 
