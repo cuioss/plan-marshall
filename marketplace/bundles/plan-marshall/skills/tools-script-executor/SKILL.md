@@ -247,8 +247,11 @@ old one.
 `--help` per parser node across every registered script and takes minutes; a
 regeneration over an unchanged script set performs **zero** `--help` invocations
 and is effectively free. Cold cost is therefore paid on a first build, a
-`TEMPLATE_FORMAT_VERSION` bump, or a broad script edit — not on routine
-regeneration. `generate` publishes `scripts_registered`, `surfaces_derived`,
+`CACHE_VERSION` bump, or a broad script edit — not on routine regeneration.
+`TEMPLATE_FORMAT_VERSION` is deliberately not a trigger: it is not one of the
+four digest inputs, so bumping it alone reuses every cached entry. A change to
+the derived node shape belongs to `CACHE_VERSION`, which is a digest input
+precisely so it invalidates the entries whose schema it changed. `generate` publishes `scripts_registered`, `surfaces_derived`,
 `surfaces_reused`, and `surfaces_not_derivable` (the three buckets partition the
 population) so a regeneration that quietly derived nothing is visible as a
 number rather than inferred from a green status. `PM_SURFACE_BUDGET_SECONDS`
