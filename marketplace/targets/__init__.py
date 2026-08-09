@@ -40,5 +40,6 @@ def register_target(name: str, target_cls: type[TargetBase]) -> None:
 # Sub-package imports trigger their own register_target() calls.
 from marketplace.targets import claude  # noqa: E402,F401
 from marketplace.targets import opencode  # noqa: E402,F401
+from marketplace.targets import pr_agent  # noqa: E402,F401
 
 __all__ = ['TargetBase', 'TARGET_REGISTRY', 'register_target']

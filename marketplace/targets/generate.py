@@ -6,6 +6,7 @@ Usage:
     python3 marketplace/targets/generate.py --target claude
     python3 marketplace/targets/generate.py --target claude --output target/claude
     python3 marketplace/targets/generate.py --target opencode --output target/opencode
+    python3 marketplace/targets/generate.py --target pr-agent --output .
     python3 marketplace/targets/generate.py --target all --output target
 
 Exits 0 on success, 2 on any failure (unknown target, missing required
@@ -42,7 +43,10 @@ def _build_parser() -> argparse.ArgumentParser:
     target_choices = sorted(TARGET_REGISTRY.keys()) + ['all']
     parser = argparse.ArgumentParser(
         prog='marketplace-targets-generate',
-        description='Generate marketplace target output (claude verbatim mirror, opencode emitter).',
+        description=(
+            'Generate marketplace target output (claude verbatim mirror, opencode emitter, '
+            'pr-agent reviewer instruction pack).'
+        ),
         allow_abbrev=False,
     )
     parser.add_argument(
@@ -56,8 +60,8 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help=(
-            'Output directory. Required for opencode (and for claude when emitting); '
-            'optional for claude when running equality-check only.'
+            'Output directory. Required for opencode and pr-agent (and for claude when '
+            'emitting); optional for claude when running equality-check only.'
         ),
     )
     parser.add_argument(
@@ -412,19 +416,34 @@ def main(argv: list[str] | None = None) -> int:
         # final published tree (including the version-overridden plugin.json
         # files and the just-emitted dist-manifest.json) rather than a stale
         # pre-mutation snapshot.
+        #
+        # Both stamping steps are bundle-tree semantics — the version override
+        # globs */.claude-plugin/plugin.json and the dist-manifest describes a
+        # published bundle tree — so they are gated on target.emits_bundle_tree.
+        # A target whose output is not a bundle tree (a reviewer configuration,
+        # say) would otherwise receive a wrong artifact in its output directory,
+        # and --target all reaches this path for every registered target.
         if per_target_output is not None and manifest is not None:
             try:
-                overridden = _override_bundle_plugin_versions(per_target_output, version)
-                _emit_dist_manifest(per_target_output, manifest)
+                overridden = (
+                    _override_bundle_plugin_versions(per_target_output, version)
+                    if target.emits_bundle_tree
+                    else None
+                )
+                if target.emits_bundle_tree:
+                    _emit_dist_manifest(per_target_output, manifest)
                 target.finalize(per_target_output, marketplace_dir)
             except Exception as exc:  # noqa: BLE001
                 print(f'error: target {target_name!r} post-generation stamping failed: {exc}', file=sys.stderr)
                 overall_ok = False
                 continue
-            print(
-                f'{target_name}: stamped version {version} into {overridden} bundle plugin.json; '
-                f'emitted {_DIST_MANIFEST_FILENAME}'
-            )
+            if overridden is None:
+                print(f'{target_name}: not a bundle tree; skipped version stamping and {_DIST_MANIFEST_FILENAME}')
+            else:
+                print(
+                    f'{target_name}: stamped version {version} into {overridden} bundle plugin.json; '
+                    f'emitted {_DIST_MANIFEST_FILENAME}'
+                )
 
     return EXIT_OK if overall_ok else EXIT_ERROR
 
