@@ -476,6 +476,66 @@ class TestSharedDerivationConsolidation:
             'an add_parser AST walk reappeared on the accept-set derivation path'
         )
 
+    def test_universal_accept_set_is_the_shared_definition(self):
+        """The flag allowlist is IMPORTED, not redeclared.
+
+        This rule and the executor's pre-spawn validator both admit a small set
+        of flags that no derived surface can contain, and they have to admit the
+        SAME set: a flag one accepts and the other does not turns a working call
+        into a reported documentation defect. They diverged exactly that way —
+        the executor's copy carried ``help``, this one did not, so every
+        documented ``--help`` invocation was ``flag_unknown`` at edit time and
+        accepted at dispatch time.
+
+        Identity, not equality: two literals that are equal today drift on the
+        next edit, which is the failure this replaces.
+        """
+        assert _ami._UNIVERSAL_FLAG_ARITY is surf.UNIVERSAL_FLAG_ARITY
+        assert _ami._UNIVERSAL_FLAG_ALLOWLIST is surf.UNIVERSAL_FLAGS
+
+    def test_documented_help_invocation_is_not_reported_unknown(
+        self, flat_index: dict
+    ) -> None:
+        """The behavioural half of the divergence, at this rule's own boundary.
+
+        ``parse_help_node`` strips ``help`` from every derived flag set, so the
+        accept-set is the ONLY thing that can admit it here. A green identity
+        assertion above would still leave this passing on a set that happened
+        not to be consulted.
+        """
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --alpha x --help\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
+        invalid = [
+            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+        ]
+        assert invalid == [], (
+            f'a documented --help invocation was reported as invalid: {invalid}'
+        )
+
+    def test_unknown_flag_is_still_reported_alongside_help(
+        self, flat_index: dict
+    ) -> None:
+        """Negative control: the accept-set widens, it does not switch the rule off.
+
+        Without this, the previous test would pass just as well on an analyzer
+        that stopped validating flags on any line mentioning ``--help``.
+        """
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo '
+            f'--alpha x --not-a-real-flag y --help\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
+        unknown = [
+            f
+            for f in findings
+            if f['details'].get('reason') == 'flag_unknown'
+        ]
+        assert [f['details']['flag'] for f in unknown] == ['not-a-real-flag'], (
+            f'expected exactly the invented flag to be reported: {findings}'
+        )
+
     def test_not_derivable_maps_to_none_for_this_rule(self, tmp_path: Path):
         """The adapter narrows the shared marker to this rule's binary contract."""
         script = tmp_path / 'syn_broken.py'

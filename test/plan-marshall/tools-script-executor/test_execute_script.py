@@ -1067,6 +1067,140 @@ def test_help_flag_dispatches_alongside_an_unregistered_verb():
     assert result.returncode == 0
 
 
+# -----------------------------------------------------------------------------
+# The SHORT help spelling — argparse fires on -h too, so the guard must as well
+# -----------------------------------------------------------------------------
+#
+# The reported defect: the help short-circuit matched only ``--help``, so ``-h``
+# fell through into the walk and a leaf carrying required flags refused it.
+# ``manage-tasks read -h`` returned reason=missing_required_flag / exit 2 with no
+# usage text, while ``manage-tasks read --help`` printed usage — a valid call
+# refused, from a spelling difference argparse does not make. Second instance of
+# that class in this feature, after the top-level-flag walk desync.
+#
+# The surface below is the reproducer's own shape: a ``read`` leaf whose two
+# required flags are exactly what produced the refusal.
+_REQUIRED_FLAG_SURFACE = {
+    _SPAWN_NOTATION: _surface_entry(
+        {
+            'read': _node(
+                flags=['plan-id', 'task-number'],
+                required=['plan-id', 'task-number'],
+                arity={'plan-id': 1, 'task-number': 1},
+            )
+        }
+    )
+}
+
+
+def test_short_help_flag_dispatches_on_a_leaf_with_required_flags():
+    """Named positive control — the exact reported invocation shape.
+
+    Live form (against the regenerated worktree executor):
+      ``plan-marshall:manage-tasks:manage-tasks read -h`` — refused pre-fix with
+      ``reason: missing_required_flag / rejected: --plan-id, --task-number``,
+      exit 2, and no usage text on either stream. The required flags are not
+      missing from this call: argparse fires its help action before the leaf
+      ever parses, so there is nothing for them to be missing from.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), _REQUIRED_FLAG_SURFACE, ['read', '-h'])
+
+        assert marker.exists(), (
+            f'-h was refused where --help dispatches — argparse declares both '
+            f'spellings on every parser: {result.stdout!r}'
+        )
+
+    assert result.returncode == 0
+    assert 'invalid_invocation' not in result.stdout
+
+
+def test_short_help_flag_dispatches_inside_a_cluster():
+    """argparse splits ``-vh`` into its constituent options, so the guard must too."""
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), _REQUIRED_FLAG_SURFACE, ['read', '-vh'])
+
+        assert marker.exists(), (
+            f'a clustered short help flag was refused: {result.stdout!r}'
+        )
+
+    assert result.returncode == 0
+
+
+def test_short_help_flag_dispatches_alongside_an_unregistered_verb():
+    """``-h`` short-circuits the verb walk, exactly as ``--help`` does.
+
+    This is how the derivation probes a node it has not mapped yet, and it is
+    the same behaviour ``test_help_flag_dispatches_alongside_an_unregistered_verb``
+    pins for the long form — the two spellings must not diverge.
+    """
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node()})}
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), surfaces, ['not-a-verb', '-h'])
+
+        assert marker.exists(), (
+            f'-h alongside an unknown verb was refused: {result.stdout!r}'
+        )
+
+    assert result.returncode == 0
+
+
+def test_short_flag_without_help_still_permits_rejection():
+    """Negative control: recognising ``-h`` must not mute short flags generally.
+
+    Without this, the three tests above would pass just as happily on an
+    implementation that short-circuited on ANY ``-``-prefixed short token — a
+    change that would silently retire validation for every call carrying one.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), _REQUIRED_FLAG_SURFACE, ['read', '-v'])
+
+        assert not marker.exists(), (
+            'a short flag with no help spelling in it disabled validation'
+        )
+
+    assert result.returncode == 2
+    assert 'reason: missing_required_flag' in result.stdout
+
+
+def test_help_lookalike_long_flag_still_permits_rejection():
+    """Negative control: ``--helpful`` is an ordinary flag, not a help spelling.
+
+    The long form is matched EXACTLY (plus the ``--help=`` inline-value form),
+    never by prefix, so a declared flag whose name merely begins with the word
+    keeps its full validation.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(
+            Path(tmp), _REQUIRED_FLAG_SURFACE, ['read', '--helpful']
+        )
+
+        assert not marker.exists(), (
+            'a flag that merely starts with "--help" disabled validation'
+        )
+
+    assert result.returncode == 2
+    assert 'reason: unknown_flag' in result.stdout
+    assert 'rejected: --helpful' in result.stdout
+
+
+def test_unregistered_verb_is_still_rejected_without_a_help_token():
+    """Negative control at the verb level, matched to the ``-h`` positives above.
+
+    Same surface and same verb as the short-help cases, minus the help token:
+    the refusal must still fire, so a green ``-h`` test cannot be read as the
+    walk having been switched off for this fixture.
+    """
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node()})}
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), surfaces, ['not-a-verb'])
+
+        assert not marker.exists(), 'an unregistered verb slipped through'
+
+    assert result.returncode == 2
+    assert 'reason: unknown_verb' in result.stdout
+
+
 def test_executor_injected_flags_are_never_rejected():
     """``--plan-id`` / ``--project-dir`` are accepted even on an empty flag set.
 

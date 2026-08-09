@@ -125,7 +125,18 @@ this check existed:
 | A node's child listing is not marked confident | Stop the walk, spawn |
 | The resolved node's flag set is not marked known | Skip flag checks, spawn |
 | A flag's value arity is unknown while a verb is still expected | Spawn |
-| `--help` appears anywhere in the invocation | Spawn (argparse prints usage) |
+| A help flag appears anywhere in the invocation | Spawn (argparse prints usage) |
+
+"A help flag" means every spelling argparse fires its help action on, not just
+the long one: `--help`, `--help=...`, the short `-h`, and `-h` inside a
+short-flag cluster (`-vh`). Anchoring on `--help` alone refused `manage-tasks
+read -h` for its missing required flags while `manage-tasks read --help`
+printed usage — a valid call refused, from a spelling difference argparse does
+not make. Cluster detection is deliberately wider than argparse's own reading
+(`-fh`, where argparse binds `h` as `-f`'s value, matches too), because the
+surplus direction is a spawn and the deficit direction is a false refusal. A
+long flag that merely begins with the word — `--helpful`, `--help-me` — is an
+ordinary flag and stays fully validated.
 
 The asymmetry is the safety argument, and it is a claim about **knowledge**, not
 about the check as a whole: a derivation gap degrades to today's behaviour, so a
@@ -143,6 +154,15 @@ because each is invisible to the derivation for a structural reason: `help`
 set), `audit-plan-id` (consumed by the executor before the target's argparse
 runs), and `plan-id` / `project-dir` (honoured on every subcommand through
 parent-flag propagation but often rendered only in the root's help).
+
+That accept-set is defined once, as `UNIVERSAL_FLAG_ARITY` in the shared
+[`argparse_surface` module](../script-shared/scripts/argparse_surface.py), and
+plugin-doctor's edit-time rule imports it from there. The generated executor
+cannot import it — it must dispatch before any shared module is on the path —
+so it carries a literal mirror, pinned to the definition by a test that fails
+on divergence. The pin is behavioural: a flag accepted at dispatch time but
+missing from the edit-time set is reported as a documentation defect against a
+call that in fact works.
 
 #### Resolving argv to a parser node
 

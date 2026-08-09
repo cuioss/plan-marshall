@@ -802,6 +802,121 @@ class TestLiveTreeCharacterization:
         )
 
 
+# ---------------------------------------------------------------------------
+# The universal accept-set is ONE definition, and its one mirror is pinned
+# ---------------------------------------------------------------------------
+
+
+_TEMPLATE_PATH = (
+    PROJECT_ROOT
+    / 'marketplace/bundles/plan-marshall/skills/tools-script-executor'
+    / 'templates/execute-script.py.template'
+)
+
+
+def _template_literal(name: str) -> dict:
+    """Return the value of a module-level dict literal in the executor template.
+
+    Parsed with :mod:`ast` rather than imported or regex-matched: the template
+    is not importable (it carries unsubstituted ``{{...}}`` placeholders that
+    are not valid Python in every position), and a regex over a brace-delimited
+    literal would silently match a different assignment.
+    """
+    import ast
+
+    source = _TEMPLATE_PATH.read_text(encoding='utf-8')
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == name:
+                value = ast.literal_eval(node.value)
+                assert isinstance(value, dict), (
+                    f'{name} is no longer a dict literal in {_TEMPLATE_PATH} '
+                    f'(parsed a {type(value).__name__}) — the mirror this test '
+                    f'pins changed shape'
+                )
+                return value
+    raise AssertionError(
+        f'{name} is not assigned a module-level literal in {_TEMPLATE_PATH} — '
+        f'the mirror this test pins has been renamed or made non-literal, so '
+        f'nothing is checking that the two accept-sets still agree'
+    )
+
+
+class TestUniversalAcceptSet:
+    """One definition, one checked mirror, and no third copy.
+
+    The accept-set names the flags every script honours but NO derived surface
+    can contain, so both guards that validate a call against a surface have to
+    know it. Divergence is behavioural rather than cosmetic: a flag one guard
+    accepts and the other does not is reported as a documentation defect
+    against a call that dispatches perfectly well — which is exactly what
+    happened while the executor's copy carried ``help`` and plugin-doctor's did
+    not.
+    """
+
+    def test_arity_keys_are_the_accept_set(self):
+        """Acceptance and arity cannot name different flags."""
+        assert surf.UNIVERSAL_FLAGS == frozenset(surf.UNIVERSAL_FLAG_ARITY)
+
+    def test_help_is_a_member_with_zero_arity(self):
+        """``--help`` binds no value, and no derived surface can carry it.
+
+        ``parse_help_node`` discards ``help`` from every flag set it builds, so
+        a guard that consults only the derived surface refuses the most common
+        diagnostic call in the tree. Membership here is what prevents that, and
+        the arity is what stops a leading ``--help`` from swallowing the verb
+        behind it.
+        """
+        assert surf.UNIVERSAL_FLAG_ARITY['help'] == 0
+
+        derived = surf.parse_help_node(
+            'usage: prog [--help]\n\noptions:\n  --help  show this help\n'
+        )
+        assert 'help' not in derived.flags, (
+            'the derivation now keeps ``help``, so this membership may be '
+            'redundant — re-derive the accept-set rather than assuming'
+        )
+
+    def test_template_accept_set_mirrors_the_shared_definition(self):
+        """The executor template's literal copy must equal the definition.
+
+        The generated executor cannot import this module — it dispatches before
+        any shared directory is on the path — so it carries a literal. That
+        makes it the one place a divergence can reappear, and this is the check
+        that fails when it does. Comparing the MAPS (not just the key sets)
+        catches an arity that drifts without the membership changing, which is
+        the quieter half: a wrong arity re-tokenizes argv and moves the parser
+        node the validator resolves.
+        """
+        mirrored = _template_literal('_ALWAYS_ACCEPTED_FLAG_ARITY')
+
+        assert mirrored == surf.UNIVERSAL_FLAG_ARITY, (
+            f'the executor template and argparse_surface disagree about the '
+            f'universal accept-set: template={mirrored} '
+            f'shared={surf.UNIVERSAL_FLAG_ARITY}. Update the template literal — '
+            f'argparse_surface.UNIVERSAL_FLAG_ARITY is the definition'
+        )
+
+    def test_divergence_detector_is_not_vacuous(self):
+        """Negative control: the mirror check must be able to FAIL.
+
+        Without this, a helper that quietly returned ``{}`` on a parse miss (or
+        an assertion comparing a value to itself) would keep the parity test
+        green through any divergence at all.
+        """
+        mirrored = _template_literal('_ALWAYS_ACCEPTED_FLAG_ARITY')
+        assert mirrored, 'the parsed mirror is empty — the check compares nothing'
+
+        diverged = dict(mirrored)
+        diverged.pop(next(iter(diverged)))
+        assert diverged != surf.UNIVERSAL_FLAG_ARITY
+
+        with pytest.raises(AssertionError):
+            _template_literal('_NO_SUCH_LITERAL_IN_THE_TEMPLATE')
+
+
 def _registered_notations(executor: Path) -> set[str]:
     """Read the notation keys out of the live executor's ``SCRIPTS`` literal.
 

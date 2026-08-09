@@ -1102,9 +1102,23 @@ def generate_executor(
     """
     Generate execute-script.py with embedded mappings.
 
-    After the template is read and all placeholders are substituted, four
-    deterministic guards run BEFORE any write, so a malformed generation can
-    never overwrite a working executor:
+    Four deterministic guards protect the executor, and their ORDER is load
+    bearing in two different ways.
+
+    Guard 1 runs ahead of the accept-set derivation, which costs one ``--help``
+    subprocess per parser node under a wall-clock budget. A version skew refuses
+    without writing anything, so spending the derivation first would burn that
+    whole budget to reach a conclusion available from a string comparison. (A
+    dry run returns earlier still: it derives nothing and writes nothing, so
+    there is nothing for the handshake to protect.)
+
+    Guards 2-4 then run before THE EXECUTOR is written, so a malformed
+    generation can never overwrite a working executor. One write does precede
+    them, and it is not the executor: derivation dispatches its ``--help``
+    probes through a throwaway PROBE executor — a sibling temp file carrying the
+    content about to be written minus its surfaces, unlinked on every exit path
+    — so the probes see the script set being generated rather than the previous
+    one. The real executor is untouched until every guard has passed.
 
     1. **Format handshake** — the template's ``TEMPLATE_FORMAT_VERSION`` marker
        must equal :data:`_SUPPORTED_TEMPLATE_FORMAT_VERSION`; a skew returns a
@@ -1204,6 +1218,27 @@ def generate_executor(
         print('... (truncated)')
         return {'status': 'success', 'dry_run': True, 'surface_stats': _EMPTY_SURFACE_STATS}
 
+    # Guard 1 — format handshake: refuse a template whose declared format
+    # version the generator does not support (never write a file).
+    #
+    # FIRST, ahead of the derivation below. The guard is a string comparison
+    # against a marker already in hand and it writes nothing when it trips,
+    # while derivation spawns a ``--help`` child per parser node under a
+    # multi-minute budget. Running the cheap refusal after the expensive work
+    # would spend the whole budget to reach a conclusion available up front.
+    template_version = parse_template_format_version(template)
+    if template_version != _SUPPORTED_TEMPLATE_FORMAT_VERSION:
+        return {
+            'status': 'error',
+            'error': (
+                f'Template format skew: {executor_template} declares '
+                f'TEMPLATE_FORMAT_VERSION={template_version!r} but this generator supports '
+                f'{_SUPPORTED_TEMPLATE_FORMAT_VERSION}. Re-sync so the template and generator '
+                f'are the same version (run /sync-plugin-cache, then regenerate) before '
+                f'regenerating the executor. Existing executor left untouched.'
+            ),
+        }
+
     real_executor = executor_path()
 
     # Derive the argparse accept-sets against a PROBE executor — the very
@@ -1239,21 +1274,6 @@ def generate_executor(
             pass
 
     content = _substitute(generate_surfaces_code(surfaces))
-
-    # Guard 1 — format handshake: refuse a template whose declared format
-    # version the generator does not support (never write a file).
-    template_version = parse_template_format_version(template)
-    if template_version != _SUPPORTED_TEMPLATE_FORMAT_VERSION:
-        return {
-            'status': 'error',
-            'error': (
-                f'Template format skew: {executor_template} declares '
-                f'TEMPLATE_FORMAT_VERSION={template_version!r} but this generator supports '
-                f'{_SUPPORTED_TEMPLATE_FORMAT_VERSION}. Re-sync so the template and generator '
-                f'are the same version (run /sync-plugin-cache, then regenerate) before '
-                f'regenerating the executor. Existing executor left untouched.'
-            ),
-        }
 
     # Guard 2 — residue guard: refuse any surviving {{...}} placeholder token
     # (a placeholder the generator did not fill, or one a newer template

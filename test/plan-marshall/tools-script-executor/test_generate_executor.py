@@ -3098,3 +3098,66 @@ def test_surfaces_code_emission_is_sorted_and_deterministic():
 
     parsed = _ast.literal_eval('{\n' + code + '\n}')
     assert set(parsed) == {'a:a:a', 'z:z:z'}
+
+
+def test_format_skew_refuses_before_spending_the_accept_set_derivation(
+    tmp_path, monkeypatch
+):
+    """The cheap refusal runs FIRST — ahead of the expensive derivation.
+
+    The format handshake is a comparison against a marker already in hand and it
+    writes nothing when it trips, while derivation spawns one ``--help`` child
+    per parser node under a multi-minute budget. Running them the other way
+    round spends the whole budget to reach a conclusion that was available up
+    front — and on a real script set that is minutes per refused generation.
+
+    The order is asserted through an observable (the derivation never ran), not
+    through source inspection, and the positive control below is what makes the
+    zero mean something: it proves the spy is wired to a call site that DOES
+    fire at the supported version, so ``calls == []`` reports ordering rather
+    than a probe that could never have observed anything.
+    """
+    module = load_module()
+    executor = _surface_fixture(tmp_path, monkeypatch, module)
+
+    calls: list[tuple] = []
+
+    def _spy(*args, **kwargs):
+        calls.append(args)
+        return {}, dict(module._EMPTY_SURFACE_STATS)
+
+    monkeypatch.setattr(module, 'derive_script_surfaces', _spy)
+
+    notation = _surface_notation('aliased')
+    mappings = {notation: _write_surface_script(tmp_path, 'aliased', _ALIAS_SCRIPT)}
+
+    # Positive control — supported version, derivation reached.
+    ok = module.generate_executor(
+        mappings, MARKETPLACE_ROOT, dry_run=False, target='claude'
+    )
+    assert ok['status'] == 'success', ok
+    assert len(calls) == 1, 'the spy never observed the derivation call site'
+    unchanged = executor.read_bytes()
+
+    # Now skew the handshake by moving the generator's supported version.
+    calls.clear()
+    monkeypatch.setattr(module, '_SUPPORTED_TEMPLATE_FORMAT_VERSION', 999)
+
+    result = module.generate_executor(
+        mappings, MARKETPLACE_ROOT, dry_run=False, target='claude'
+    )
+
+    assert result['status'] == 'error'
+    assert 'Template format skew' in result['error']
+    assert calls == [], (
+        'the accept-set derivation ran before a refusal that writes nothing — '
+        'the whole derivation budget is spent to reach a conclusion available '
+        'from a string comparison'
+    )
+    assert executor.read_bytes() == unchanged, (
+        'a refused generation must leave the existing executor byte-identical'
+    )
+    assert list(executor.parent.glob('*.probe.tmp')) == [], (
+        'the throwaway probe executor leaked — it is written only for the '
+        'derivation and unlinked on every exit path'
+    )

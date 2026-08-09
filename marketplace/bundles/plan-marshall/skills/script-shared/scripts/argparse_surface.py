@@ -115,6 +115,9 @@ implementation.
 
 Public API
 ----------
+- :data:`UNIVERSAL_FLAG_ARITY` / :data:`UNIVERSAL_FLAGS` — the accept-set of
+  long flags every node of every script honours, which no derived surface can
+  contain (see the constant's own docstring for why, and for the one mirror).
 - :class:`ParserNode` — one argparse parser node (flags, required flags,
   children, alias grouping, per-node confidence).
 - :class:`ScriptSurface` — the full surface for one script, with the N-level
@@ -190,6 +193,62 @@ class DerivationConfig:
 
 
 DEFAULT_CONFIG = DerivationConfig()
+
+
+# =============================================================================
+# Universal accept-set — the flags no derived surface can contain
+# =============================================================================
+
+#: Long flags accepted on EVERY node of EVERY script, mapped to the number of
+#: argv tokens each binds as its value.
+#:
+#: Each member is invisible to the derivation above for a STRUCTURAL reason, so
+#: a consumer that validates a call against a derived surface ALONE refuses
+#: invocations that are unambiguously valid:
+#:
+#: - ``help`` — every argparse parser declares it, and :func:`parse_help_node`
+#:   strips it from every derived flag set deliberately (it describes argparse,
+#:   not the script). Refusing it would break the very ``--help`` probe this
+#:   module's derivation runs.
+#: - ``audit-plan-id`` — injected and consumed by the executor wrapper BEFORE
+#:   the target script's argparse runs, so it appears in no node's ``--help``
+#:   even though every plan-audited dispatch passes it.
+#: - ``plan-id`` / ``project-dir`` — declared on many ROOT parsers (or injected
+#:   by the executor for worktree binding) and honoured on every subcommand
+#:   through argparse's parent-flag propagation, yet frequently rendered only in
+#:   the root's help. The ancestor union covers the root-declared case; this set
+#:   is the guarantee for the executor-injected one.
+#:
+#: The arity values are a LAST-RESORT fallback, consulted only for a flag the
+#: derived surface has no arity for: the same structural invisibility that puts
+#: a flag here is what can keep it out of every node's rendered help, and these
+#: four have a fixed, known shape. A DERIVED arity always wins, so a script that
+#: declares one of these names differently is described by its own help.
+#:
+#: **This is the one definition.** Both guards that must agree about what a
+#: script accepts read it from here rather than carrying a copy:
+#:
+#: - ``pm-plugin-development:plugin-doctor``'s ``manage-invocation-invalid``
+#:   rule imports it directly (edit time);
+#: - ``plan-marshall:tools-script-executor``'s pre-spawn validator carries a
+#:   LITERAL mirror, because the generated ``.plan/execute-script.py`` is a
+#:   self-contained artifact that must dispatch before any shared module is
+#:   importable. That mirror is not trusted to stay in step by convention: it is
+#:   pinned by ``test_template_accept_set_mirrors_the_shared_definition``, which
+#:   parses the literal out of the template and fails the moment the two
+#:   diverge. A divergence is behavioural, not cosmetic — a flag accepted at
+#:   dispatch time but unknown at edit time is reported as a documentation
+#:   defect against a call that in fact works.
+UNIVERSAL_FLAG_ARITY: dict[str, int] = {
+    'help': 0,
+    'audit-plan-id': 1,
+    'plan-id': 1,
+    'project-dir': 1,
+}
+
+#: The key set of :data:`UNIVERSAL_FLAG_ARITY`, DERIVED from it so acceptance
+#: and arity can never name different flags.
+UNIVERSAL_FLAGS: frozenset[str] = frozenset(UNIVERSAL_FLAG_ARITY)
 
 
 # =============================================================================

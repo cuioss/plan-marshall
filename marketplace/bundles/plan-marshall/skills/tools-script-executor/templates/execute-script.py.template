@@ -767,10 +767,18 @@ def emit_dispatch_failure_work_log(
 # these four have a fixed, known shape. A derived arity always wins, so a script
 # that declares one of these names differently is described by its own help.
 #
-# Deliberately mirrors ``_UNIVERSAL_FLAG_ALLOWLIST`` in plugin-doctor's
-# manage-invocation analyzer, which carries the same members for the same
-# reasons — the two guards read one accept-set, so they must also agree on what
-# that accept-set structurally cannot contain.
+# A LITERAL MIRROR of ``UNIVERSAL_FLAG_ARITY`` in
+# ``plan-marshall:script-shared``'s ``argparse_surface`` module — the single
+# definition of this accept-set, which plugin-doctor's manage-invocation rule
+# imports directly. This executor cannot import it: it is a self-contained
+# generated artifact that must dispatch before any shared module is on the path,
+# and the surfaces it validates against were derived by the very module it would
+# be importing. So the copy is unavoidable, and it is NOT trusted to stay in step
+# by convention — ``test_template_accept_set_mirrors_the_shared_definition``
+# parses this literal out of the template and fails the moment the two diverge.
+# The reason a divergence matters is behavioural, not cosmetic: a flag accepted
+# here but absent there is reported as an unregistered-flag documentation defect
+# at edit time against a call that dispatches perfectly well.
 _ALWAYS_ACCEPTED_FLAG_ARITY = {
     'help': 0,
     'audit-plan-id': 1,
@@ -793,8 +801,48 @@ def _surface_for(notation: str) -> dict | None:
 
 
 def _mentions_help(script_args: list) -> bool:
-    """True when argv carries ``--help`` in either spelling."""
-    return any(arg == '--help' or arg.startswith('--help=') for arg in script_args)
+    """True when argv carries argparse's help flag in ANY spelling it fires on.
+
+    The question this answers is not "did the caller type ``--help``" but "will
+    argparse print usage instead of running the verb". Every parser argparse
+    builds declares the help action under BOTH ``-h`` and ``--help``, and fires
+    it at whatever depth the token appears, so anchoring on one spelling refuses
+    calls the other spelling makes valid — ``manage-tasks read -h`` was rejected
+    for its missing required flags while ``manage-tasks read --help`` printed
+    usage.
+
+    Four token shapes match:
+
+    - ``--help`` — the long form;
+    - ``--help=...`` — the long form with an inline value argparse ignores;
+    - ``-h`` — the short form;
+    - ``-vh`` / ``-hv`` — the short form inside a cluster, which argparse splits
+      into its constituent single-character options.
+
+    A cluster is matched on CONTAINING ``h`` at all, which is deliberately wider
+    than argparse's own reading: in ``-fh``, argparse binds ``h`` as ``-f``'s
+    value rather than firing help, and this returns True anyway. That is the
+    safe direction and the only one available without modelling every script's
+    short-flag surface (the derivation models long flags only). A false True
+    short-circuits to spawn — precisely what this executor did before any
+    validation existed, and what every other fail-open branch does. A false
+    False refuses a call argparse would have answered, which is the one outcome
+    the design rules out.
+
+    Long flags that merely BEGIN with the word are not help: ``--helpful`` and
+    ``--help-me`` are ordinary flags and stay fully validated, which is why the
+    long form is matched exactly rather than by prefix.
+    """
+    for arg in script_args:
+        if arg == '--help' or arg.startswith('--help='):
+            return True
+        if arg.startswith('--') or not arg.startswith('-'):
+            # A long flag that is not ``--help``, a bare ``-``/``--``, or a
+            # positional. None of them can carry the short form.
+            continue
+        if 'h' in arg[1:]:
+            return True
+    return False
 
 
 def _closest_spelling(token: str, candidates) -> str | None:
@@ -998,10 +1046,12 @@ def _validate_invocation(notation: str, script_args: list) -> dict | None:
     if root is None:
         return None
 
-    # ``--help`` short-circuits the whole check. argparse handles it at whatever
-    # depth it appears and prints usage instead of running the verb, so a
-    # partial or misspelled verb path alongside it is not an error to report —
-    # and refusing it would break the derivation's own probe.
+    # A help flag in EITHER spelling (``--help`` or ``-h``) short-circuits the
+    # whole check. argparse handles it at whatever depth it appears and prints
+    # usage instead of running the verb, so a partial or misspelled verb path
+    # alongside it is not an error to report, and a leaf's required flags are
+    # not missing from a call that will never reach the leaf — and refusing it
+    # would break the derivation's own probe.
     if _mentions_help(script_args):
         return None
 

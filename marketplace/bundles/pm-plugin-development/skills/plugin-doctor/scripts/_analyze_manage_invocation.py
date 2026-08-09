@@ -37,8 +37,10 @@ rule, the fail-closed-on-uncertainty invariant, and the cache design.
 
 Everything below the derivation is unchanged and stays here, because it is
 rule-specific rather than surface-specific: the markdown invocation extraction,
-the router-verb model, the universal executor-injected flag allowlist, the
-ancestor flag union, and the finding shapes.
+the router-verb model, the ancestor flag union, and the finding shapes. The
+universal accept-set (the flags no derived surface can contain) is NOT among
+them — it is imported from ``argparse_surface`` alongside the derivation, so
+this rule and the executor's pre-spawn validator cannot disagree about it.
 
 Two capabilities the consolidation adds to this rule for free: alias awareness
 (a documented alias spelling is in the accepted set because argparse renders it
@@ -77,6 +79,8 @@ from typing import Protocol
 from _doctor_shared import Finding
 from _rule_registry import RuleDescriptor
 from argparse_surface import (
+    UNIVERSAL_FLAG_ARITY,
+    UNIVERSAL_FLAGS,
     ParserNode,
     ScriptSurface,
     build_surface_index,
@@ -116,33 +120,22 @@ RULE_DESCRIPTORS = [
 ]
 
 # Long flags that are ALWAYS accepted on any leaf, regardless of where (or
-# whether) they appear in the probed ``--help`` surface. Two distinct origins:
+# whether) they appear in the probed ``--help`` surface, mapped to the number of
+# argv tokens each binds as its value.
 #
-#   - ``audit-plan-id`` is injected and consumed by the executor wrapper
-#     (``.plan/execute-script.py``) BEFORE the target script's argparse runs, so
-#     it never appears in any node's ``--help`` even though every doc call that
-#     audits a plan passes it. Flagging it is always a false positive.
-#   - ``project-dir`` / ``plan-id`` are declared on the ROOT parser of many
-#     scripts (or injected by the executor for worktree binding) and are valid on
-#     every subcommand by argparse's parent-flag propagation, but a script may
-#     render them only in the root ``--help`` (not in a subcommand's options
-#     block). The ancestor-union below already accepts root-declared flags; the
-#     allowlist is the belt-and-suspenders guarantee for the executor-injected
-#     case where the flag is in NO node's surface.
+# NOT redeclared here. This rule and the executor's pre-spawn validator must
+# agree about what a script accepts, so the members and their arities come from
+# the SINGLE definition in ``argparse_surface`` — the same module that owns the
+# derivation both guards read. See :data:`argparse_surface.UNIVERSAL_FLAG_ARITY`
+# for why each member is structurally invisible to the derivation, and for how
+# the executor's literal mirror is pinned to this definition.
 #
-# This allowlist is read-side only — it never mutates the cached surface tree.
-#
-# Each member is mapped to the number of argv tokens it binds as its value. The
-# arity is what lets the leading-routing-flag skip step over exactly the right
-# number of tokens (see ``_skip_leading_routing_flags``); the KEY SET is the
-# allowlist itself, derived below so acceptance and arity cannot name different
-# flags. A DERIVED arity from the probed surface always wins over these.
-_UNIVERSAL_FLAG_ARITY: dict[str, int] = {
-    'audit-plan-id': 1,
-    'project-dir': 1,
-    'plan-id': 1,
-}
-_UNIVERSAL_FLAG_ALLOWLIST: frozenset[str] = frozenset(_UNIVERSAL_FLAG_ARITY)
+# Read-side only: the allowlist never mutates the cached surface tree. The arity
+# is what lets the leading-routing-flag skip step over exactly the right number
+# of tokens (see ``_skip_leading_routing_flags``); a DERIVED arity from the
+# probed surface always wins over it.
+_UNIVERSAL_FLAG_ARITY: dict[str, int] = UNIVERSAL_FLAG_ARITY
+_UNIVERSAL_FLAG_ALLOWLIST: frozenset[str] = UNIVERSAL_FLAGS
 
 # Router-level verbs handled by a script's ``main()`` BEFORE argparse subparser
 # dispatch, so they never appear in the script's ``--help`` choices group and
