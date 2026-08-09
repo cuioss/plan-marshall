@@ -491,6 +491,18 @@ def _resolve_notation_by_target(notation: str) -> str | None:
     MUST be mirrored here, and a test pins the two to the same verdict in every
     marker state.
 
+    EXISTENCE-ONLY MARKER INVARIANT — binding at this site, not merely inherited.
+    The ``.orphaned_at`` predicate below consults only whether the marker is
+    PRESENT; its content is never read, parsed, or compared here.  The field has a
+    foreign co-producer — Claude Code's own plugin GC writes the same filename with
+    a raw epoch-ms payload, while ``_mark_superseded_version_dirs`` writes ISO-8601
+    UTC — so a content-dependent rule would bind the resolver to a format this
+    repository does not own and cannot version.  This site declares the invariant
+    itself rather than pointing at the selector, because this is the location the
+    mirroring mandate above makes a policy change land on: a mirrored change that
+    arrived without the invariant restated here would have nothing local to check
+    it against.
+
     Args:
         notation: Three-part notation ``{bundle}:{skill}:{script}``.
 
@@ -1698,11 +1710,23 @@ def _live_version_dirs(bundle_dir: Path) -> list[Path]:
 def _retention_pinned_versions(base_path: Path | None, bundle_dir: Path) -> set[str]:
     """Return the version names the retention policy pins for ``bundle_dir``.
 
-    A pinned version MUST NEVER be marked ``.orphaned_at``. The pins mirror the
-    non-count arms of the ``marshall-steward`` ``cache_retention sweep``
-    keep-union: the newest dir on disk (what the resolver selects), the version
-    named by ``marshal.json``'s ``system.provisioned_version``, and the version
-    named by the installed ``dist-manifest.json``.
+    A pinned version MUST NEVER be marked ``.orphaned_at``. The pins mirror THREE
+    OF THE FOUR *dir-naming* arms of the ``marshall-steward``
+    ``cache_retention sweep`` keep-union — the arms that name one specific
+    directory rather than applying a threshold to all of them: the newest dir on
+    disk (what the resolver selects), the version named by ``marshal.json``'s
+    ``system.provisioned_version``, and the version named by the installed
+    ``dist-manifest.json``. The fourth dir-naming arm — the version dir the sweep
+    is itself executing from — is deliberately NOT mirrored: self-deletion is the
+    sweep's own hazard, not the marker-writer's. The union's remaining two arms
+    (newest-``N``, younger-than-``D``-days) are thresholds and pin nothing.
+
+    The label is ``dir-naming``, not ``non-count``: the ``younger-than-D-days``
+    arm is an age threshold rather than a count, so "non-count" would admit it
+    and yield a third arity for the same phrase. The canonical statement of the
+    keep-union and of this pin-vs-keep-set distinction lives in
+    ``manage-config/standards/data-model.md`` § "Plugin-cache retention
+    semantics"; this docstring must agree with it member-for-member.
 
     Pinning these is what makes marker saturation structurally impossible: the dir
     the resolver selects is pinned unconditionally, so at least one live version
@@ -1806,6 +1830,26 @@ def _mark_superseded_version_dirs(base_path: Path | None, polluted_bundles: list
     by construction — an already-marked dir is not live (the shared liveness view
     excludes marked dirs) unless it is pinned, and a pinned dir is never marked,
     so the clock is never reset on a dir that was already marked.
+
+    **``.orphaned_at`` has a second, foreign producer — this repository does not
+    own the field exclusively.** Claude Code's own plugin GC writes the same
+    filename into the same version dirs with a raw epoch-ms payload, so TWO
+    producers write ONE field in TWO encodings and either encoding may be found on
+    any dir. Three consequences follow, and this writer changes none of them:
+
+    1. Our encoding stays ISO-8601 UTC. It is deliberately not converted to
+       epoch-ms to match the co-producer.
+    2. No file under ``~/.claude/plugins/cache/`` is normalised or rewritten by us.
+       A foreign-written epoch-ms marker is left exactly as found.
+    3. The split is inert because BOTH sanctioned readers consult the marker's
+       EXISTENCE only, never its content. There are two, and each states the
+       invariant at its own site rather than deferring to the other:
+       ``marketplace_bundles._partition_version_dirs`` (the selector) and the
+       ``.orphaned_at`` predicate inside :data:`_CLAUDE_RESOLVER_TEMPLATE`, which is
+       substituted verbatim into the generated ``.plan/execute-script.py``. The
+       template is a deliberate policy duplicate of the selector — its docstring
+       mandates mirroring — so the invariant has to hold at both, and a change to
+       either must be carried to the other by hand.
     """
     if base_path is None:
         return
