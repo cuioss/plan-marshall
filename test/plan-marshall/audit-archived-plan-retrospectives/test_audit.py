@@ -491,6 +491,54 @@ def test_parse_metrics_end_time_presence_current_and_clean(tmp_path):
     assert presence.forces_floor is False
 
 
+def test_parse_metrics_end_time_presence_derives_bool_from_list_only_record(tmp_path):
+    """A record NAMING an unclosed phase with no bool key must not read as clean.
+
+    The writer emits the two keys as a pair, but an archived ``metrics.toon`` is
+    immutable history: a truncated or hand-edited file can carry
+    ``phases_missing_end_time`` alone. Defaulting the absent bool to False would
+    return a ``current``, non-floor verdict for a record that explicitly names
+    5-execute as never closed — the manufactured-clean-verdict defect this reader
+    exists to remove. The surviving list is the authority.
+    """
+    # Arrange: the list names a phase; the bool key is absent entirely.
+    path = tmp_path / "metrics.toon"
+    path.write_text("phases_missing_end_time: 5-execute\n" + _PHASE_BODY, encoding="utf-8")
+
+    # Act
+    presence = audit.parse_metrics_end_time_presence(path)
+
+    # Assert: the bool is derived from the list, and the record floors.
+    assert presence.schema == audit.METRICS_SCHEMA_CURRENT
+    assert presence.phases_missing_end_time == frozenset({"5-execute"})
+    assert presence.any_phase_missing_end_time is True
+    assert presence.forces_floor is True
+
+
+def test_parse_metrics_end_time_presence_list_only_empty_list_stays_clean(tmp_path):
+    """The negative control for the derivation above: an EMPTY list stays clean.
+
+    Same absent-bool branch, opposite list contents. Without this pair the
+    positive could pass vacuously against a blanket "bool key absent → True"
+    rule, which would floor every bool-less record regardless of what its list
+    actually says. The complementary control for the OTHER branch — an explicit
+    ``any_phase_missing_end_time: false`` beside an empty list — is pinned by
+    ``test_parse_metrics_end_time_presence_current_and_clean`` above.
+    """
+    # Arrange: the bool key is absent and the list is present but empty.
+    path = tmp_path / "metrics.toon"
+    path.write_text("phases_missing_end_time: \n" + _PHASE_BODY, encoding="utf-8")
+
+    # Act
+    presence = audit.parse_metrics_end_time_presence(path)
+
+    # Assert: nothing is named, so the derived bool is False and nothing floors.
+    assert presence.schema == audit.METRICS_SCHEMA_CURRENT
+    assert presence.phases_missing_end_time == frozenset()
+    assert presence.any_phase_missing_end_time is False
+    assert presence.forces_floor is False
+
+
 def test_parse_metrics_end_time_presence_reports_old_schema(tmp_path):
     """A record carrying only the RETIRED keys is old-schema, values withheld."""
     path = tmp_path / "metrics.toon"

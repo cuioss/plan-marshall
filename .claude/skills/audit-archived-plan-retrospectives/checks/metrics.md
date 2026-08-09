@@ -38,8 +38,8 @@ immutable history, so a record can be in any of them:
 | State | Condition | What the check does |
 |-------|-----------|---------------------|
 | `current` | the new keys are present | reads the values normally |
-| `old-schema` | the new keys are absent AND a retired `partial` / `unrecorded_phases` key is present | reports the record as old-schema, explains NO phase, and floors every derived figure. The markers exist under names this reader deliberately does not interpret |
-| `pre-#812` | neither the new nor the retired keys are present | reports the record as pre-#812, explains NO phase, and floors every derived figure |
+| `old-schema` | the new keys are absent AND a retired `partial` / `unrecorded_phases` key is present | reports the record as old-schema and explains NO phase. The markers exist under names this reader deliberately does not interpret |
+| `pre-#812` | neither the new nor the retired keys are present | reports the record as pre-#812 and explains NO phase |
 
 The two unreadable states are **never collapsed**. Reading an `old-schema` record
 as the `pre-#812` degrade — or either as a clean verdict — would manufacture a
@@ -47,6 +47,17 @@ verdict out of an absent key, which is the defect the rename exists to remove.
 On both unreadable states the explained-phase set is EMPTY, so every zero-token
 phase surfaces as unexplained: the loud direction, never the quiet one. The
 check appends a distinct anomaly line naming which unreadable state applied.
+
+**Where the flooring happens — not here.** This check floors nothing: it emits no
+floor column (see § Emitted columns), and the only thing an unreadable state adds
+to its output is that anomaly line. The three-state verdict's `forces_floor` flag
+is instead consumed downstream by the **billing-composition** collector, which ORs
+it with the `input-integrity` check's `metrics_blind` verdict and an
+omitted-canonical-row test to set the `floor` field on each billing-composition
+row; any figure a floored row contributed to is then labelled `floor` rather than
+`measured`. So `input-integrity` and this check each contribute an INPUT to that
+decision, and `billing-composition` is where the flooring is applied. Attributing
+the floor to the `metrics` check misreads which surface carries the label.
 
 ## Anomaly classes
 

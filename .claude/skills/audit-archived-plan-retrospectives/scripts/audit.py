@@ -1116,7 +1116,17 @@ def parse_metrics_end_time_presence(metrics_path: Path) -> MetricsEndTimePresenc
         phases = frozenset(
             seg.strip() for seg in (missing_raw or "").split(",") if seg.strip()
         )
-        any_missing = str(any_missing_raw or "").strip().lower() == "true"
+        # The writer emits the two keys as a pair, but an archived `metrics.toon`
+        # is immutable history: a truncated or hand-edited file can reach here
+        # carrying the list alone. When the bool key is ABSENT the surviving list
+        # is the authority — defaulting to False would certify a record that NAMES
+        # an unclosed phase as clean, and `forces_floor` would return False for it,
+        # which is exactly the manufactured-clean-verdict defect this reader exists
+        # to remove. An explicit value still wins whenever the key IS present.
+        if any_missing_raw is None:
+            any_missing = bool(phases)
+        else:
+            any_missing = str(any_missing_raw).strip().lower() == "true"
         return MetricsEndTimePresence(
             schema=METRICS_SCHEMA_CURRENT,
             any_phase_missing_end_time=any_missing,
