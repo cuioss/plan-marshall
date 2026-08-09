@@ -430,6 +430,8 @@ reuses the existing `generate` read → annotate → write loop.
 |-------|------|--------|
 | `session_message_count` | int | Plan-level count of transcript messages that carried usage data (input/output/total) |
 
+The denominator family (`deliverable_count`, `files_modified`, `tasks_completed`, their `_sampling_point` companions, and `denominators_sampled_at`) lives at the same plan-level tier and is written by `generate` — see § Denominators and Their Sampling Point.
+
 The four-field usage view is no longer stored as plan-level `enriched.{field}` keys — it is attributed per phase by the transcript walks. See the Per-Phase Fields table for `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, and `billing_weighted_total`.
 
 ## Per-Field Write Semantics
@@ -479,6 +481,44 @@ The entry is a dict built by `_build_entry`, which omits every optional key that
 | `facts` | **replace** (the whole dict), omitted when absent. Participates in the idempotency comparison | **current** |
 
 **Known gap, owned elsewhere:** the whole entry is **replace** — `phase_entry[step] = new_entry` — so a step that fires more than once (the ordinary `loop_back` → `loop_back` → `done` shape) retains only its LAST firing. The superseded firings are echoed to the caller in the `previous_*` return fields and then discarded. That is a genuine loss of history, not a documentation gap, and it is fixed on the `manage-status` side; see [`manage-status/SKILL.md`](../../manage-status/SKILL.md) § `mark-step-done` for the firing-history contract. It is recorded here because this inventory's job is to state what each write actually does, including where the answer is "it forgets".
+
+## Denominators and Their Sampling Point
+
+`metrics.toon` otherwise persists **numerators only** — `total_tokens`, `tool_uses`, `duration_seconds`, `billing_weighted_total` — so a script reading it supports exactly one verdict: *"this got more expensive."* Every denominator a ratio needs lived outside the record and was re-derived at render time, which is a figure nobody can check.
+
+**The sampling point is what makes a denominator dangerous rather than merely absent.** Each one is a MOVING quantity: `affected_files` grows during execute, the task count grows as triage appends fix-tasks, and the deliverable count can change on a Q-Gate re-entry. The same numerator over the same plan therefore yields a different ratio depending on WHEN the denominator was read — so a count with no stated reference moment is not a fixed reference class at all.
+
+### The two-field pair, and the third discriminator
+
+Each denominator is persisted as a **pair**, written together or not at all:
+
+| Field | Type | Source |
+|-------|------|--------|
+| `deliverable_count` | int | Derived by `generate` — the number of `### N.` headings in the plan's `solution_outline.md` |
+| `files_modified` | int | Derived by `generate` — the length of `references.json`'s `affected_files` list |
+| `tasks_completed` | int | Derived by `generate` — the number of `tasks/TASK-*.json` files recording `status: done` |
+| `{denominator}_sampling_point` | `generate_time` | Written by `generate` beside each count above. Names WHICH moment the count was taken at |
+| `denominators_sampled_at` | ISO 8601 timestamp | Written by `generate` whenever at least one denominator was persisted — the single instant every denominator in that call was counted at |
+
+**On-disk type note**: every plan-level key round-trips as TEXT. `read_metrics_raw` numeric-coerces per-phase block values only, so a consumer reading `deliverable_count` off `metrics.toon` receives `'4'`, not `4`, and must coerce — the same shape `session_message_count` and the `end_time`-presence keys already have. The `generate` RETURN carries the real ints.
+
+`{denominator}_sampling_point` is the **third** use of this module's row-level discriminator convention, and deliberately not a new vocabulary — it has the same shape as `total_tokens_population` (§ Per-Phase Fields) and `value_scope` (§ Per-Field Write Semantics): a closed value set, a companion field per measurement, and a documented absent-reads-as default.
+
+**Sampling-point vocabulary** (closed):
+
+| Value | Meaning |
+|-------|---------|
+| `generate_time` | The count was taken from live plan state at the instant `generate` ran, stamped as `denominators_sampled_at`. It reflects the plan's state at that moment only, and it WILL move if `generate` runs again later in the plan. |
+
+**Absent reads as: nothing.** There is no default. A denominator whose `_sampling_point` companion is absent is a denominator this record does not carry, and a consumer MUST NOT treat the bare count as anchored — the two fields are written as a pair precisely so that state is unreachable going forward.
+
+### A denominator with no determinable sampling point is not persisted
+
+When a source cannot be read — no `solution_outline.md`, no `references.json`, no `tasks/` directory, or a malformed one — the count is **absent from the record entirely**, never written as `0` and never guessed. This is the module's own absent-is-not-zero rule (§ Exploration-share counters) applied to the reference class rather than to a measurement: a `0` denominator would read as "this plan had no deliverables", which is a claim, while absence reads as "this record does not carry that count", which is the truth.
+
+`generate` also REMOVES any pair whose source has become unreadable since it was last written, so the record never presents a count beside a `denominators_sampled_at` naming a moment at which that count was not what the plan held.
+
+A consumer that needs a ratio the record does not supply a denominator for MUST state that denominator's provenance and its unstated sampling point wherever it presents the ratio, rather than presenting the ratio as though it were anchored.
 
 ## `end_time` Presence Across the Canonical Phases
 

@@ -2199,6 +2199,51 @@ class TestGeneratePartialityFields:
         assert '> Partial:' not in md
 
 
+class TestGenerateDenominatorFields:
+    """`generate` returns each persisted denominator with its sampling point.
+
+    The dedicated behaviour suite lives in `test_denominator_sampling_point.py`;
+    these two cases pin the `generate` OUTPUT surface itself — that the pair
+    reaches the return, and that an undeterminable denominator is omitted from
+    it rather than defaulted, exactly as it is from the record.
+    """
+
+    def test_return_carries_the_denominator_pair(self, plan_context):
+        """A plan with a readable outline returns the count AND its sampling point."""
+        phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES}
+        manage_metrics.write_metrics('gen-denominator', {'phases': phases})
+        plan_dir = plan_context.plan_dir_for('gen-denominator')
+        (plan_dir / 'solution_outline.md').write_text(
+            '### 1. First\n\n### 2. Second\n', encoding='utf-8'
+        )
+
+        result = cmd_generate(_ns_generate('gen-denominator'))
+
+        assert result['deliverable_count'] == 2
+        assert result['deliverable_count_sampling_point'] == (
+            manage_metrics.SAMPLING_POINT_GENERATE_TIME
+        )
+        assert result['denominators_sampled_at']
+
+    def test_return_omits_a_denominator_that_could_not_be_counted(self, plan_context):
+        """No source ⇒ the key is ABSENT from the return, never a 0.
+
+        The matched negative control for the test above: without it, an
+        unconditional zero-fill would satisfy the positive assertions while
+        asserting a count the plan never had.
+        """
+        phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES}
+        manage_metrics.write_metrics('gen-denominator-absent', {'phases': phases})
+
+        result = cmd_generate(_ns_generate('gen-denominator-absent'))
+
+        assert result['status'] == 'success', result
+        for name in ('deliverable_count', 'files_modified', 'tasks_completed'):
+            assert name not in result, name
+            assert f'{name}_sampling_point' not in result, name
+        assert 'denominators_sampled_at' not in result
+
+
 class TestCloseValueScopeDiscriminator:
     """A closed row DECLARES which of its values are cumulative and which are last-close.
 

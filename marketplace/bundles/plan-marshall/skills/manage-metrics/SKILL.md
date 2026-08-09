@@ -107,6 +107,13 @@ status: success
 plan_id: EXAMPLE-PLAN
 file: metrics.md
 phases_recorded: 6
+deliverable_count: 4
+deliverable_count_sampling_point: generate_time
+files_modified: 34
+files_modified_sampling_point: generate_time
+tasks_completed: 7
+tasks_completed_sampling_point: generate_time
+denominators_sampled_at: 2026-03-27T10:25:00+00:00
 any_phase_missing_end_time: true
 phases_missing_end_time[1]:
   - 6-finalize
@@ -132,6 +139,12 @@ done) and is never added into it. Like every other column it inherits the
 symmetric `(n=k/6)` floor marker when some phases carry no figure.
 
 The `total_worked_formatted` / `total_wall_formatted` / `total_idle_formatted` fields are produced by `format_duration` (shared with the metrics.md Phase Breakdown table) and `total_tokens_formatted` is produced by `format_tokens_short` from `tools-file-ops` (abbreviated decimal-suffix form, e.g. `599K`, `1.2M`). The raw `total_worked_seconds` / `total_wall_seconds` / `total_idle_seconds` / `total_tokens` seconds-and-count figures are kept alongside them — consumers that want the human-readable form for an `[OK]` row should read the `_formatted` fields instead of re-formatting.
+
+**Denominators (each with its sampling point)**: `generate` persists the denominators a ratio needs — `deliverable_count`, `files_modified`, `tasks_completed` — as top-level fields at the same tier as `re_entered_phases` and `session_message_count`, so a consumer READS them instead of re-deriving them at render time. Each count is written as a **pair** with its `{denominator}_sampling_point` companion, plus one shared `denominators_sampled_at` timestamp naming the instant the call counted them.
+
+The pair is what makes the count usable: every denominator here is a MOVING quantity (`affected_files` grows during execute, the task count grows as triage appends fix-tasks, the deliverable count can change on a Q-Gate re-entry), so the same numerator divides differently depending on when the denominator was read. `{denominator}_sampling_point` is the same discriminator convention as `total_tokens_population` and `value_scope` — a closed vocabulary, currently the single value `generate_time` — not a second one.
+
+**A denominator whose source cannot be read is ABSENT**, never written as `0` and never guessed. `generate` also drops any pair whose source has become unreadable since it was last written, so a count never sits beside a `denominators_sampled_at` naming a moment at which it was not what the plan held. There is no absent-reads-as default here: a bare count with no `_sampling_point` companion is not anchored and MUST NOT be read as though it were. See [data-format.md](standards/data-format.md) § "Denominators and Their Sampling Point".
 
 **`end_time` presence (floor-not-truth)**: `any_phase_missing_end_time` and `phases_missing_end_time` report ONE predicate — does each canonical phase's `metrics.toon` row carry an `end_time` (the boundary-close marker)? A phase with no row at all is missing it too. `phases_missing_end_time` lists every canonical phase (from the six-phase model) failing that test, and `any_phase_missing_end_time` is `true` whenever the list is non-empty. **The keys name the predicate deliberately**: this is not a completeness verdict and not an internal-consistency check — a row is never examined beyond its `end_time`, so a phase absent from the list may still carry a `tool_uses` of `0` next to a non-zero token total. A `true` verdict does make the aggregate a **floor, not a truth**: at least the listed phases' tokens/durations are under-counted (the canonical case is a `6-finalize` whose terminal close never folded its accumulator in — usually a finalize step-ordering cause, not a lost write). A six-phase plan whose rows all carry `end_time` reports `any_phase_missing_end_time: false` with an empty `phases_missing_end_time`. The same pair is persisted as top-level keys in `metrics.toon` and rendered as a `> Phases missing an end_time boundary marker — …` line under the `## Phase Breakdown` heading in `metrics.md`; the Phase Breakdown Total uses the canonical-six baseline as its denominator, so an entirely-absent phase renders the Total as a floor (`n=k/6`) instead of looking complete.
 
@@ -632,8 +645,11 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics gene
 Returns the per-column totals — `total_worked_seconds`, `total_wall_seconds`,
 `total_idle_seconds`, `total_tokens` (dispatched work), and
 `total_billing_weighted` (derived cost, aggregated separately and never summed
-into `total_tokens`) — plus their formatted variants and the `end_time`-presence
-check (`any_phase_missing_end_time` / `phases_missing_end_time`).
+into `total_tokens`) — plus their formatted variants, the `end_time`-presence
+check (`any_phase_missing_end_time` / `phases_missing_end_time`), and each
+persisted denominator with its `_sampling_point` companion. A denominator that
+could not be counted is omitted from the return, exactly as it is from the
+record.
 
 ### print-phase-breakdown
 

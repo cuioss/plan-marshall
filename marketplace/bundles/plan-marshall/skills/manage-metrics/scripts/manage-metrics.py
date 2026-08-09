@@ -146,6 +146,46 @@ _CUMULATIVE_ACROSS_CLOSES_FIELDS = (
 _LAST_CLOSE_SCOPED_FIELDS = ('start_time', 'end_time')
 
 # ---------------------------------------------------------------------------
+# Denominators, and the sampling-point discriminator
+# ---------------------------------------------------------------------------
+#
+# ``metrics.toon`` persisted NUMERATORS only — ``total_tokens``, ``tool_uses``,
+# ``duration_seconds``, ``billing_weighted_total`` — so a script reading it
+# supported exactly one verdict: "this got more expensive". Every denominator
+# lived outside the record and was re-derived at render time by an LLM, which is
+# a figure nobody can check.
+#
+# Worse than absent, each denominator is a MOVING quantity: ``affected_files``
+# grows during execute, the task count grows as fix-tasks are appended, and the
+# deliverable count can change on a Q-Gate re-entry. The same numerator over the
+# same plan therefore yields different ratios depending on WHEN the denominator
+# was read — so a denominator without a stated sampling point is not a fixed
+# reference class at all.
+#
+# The sampling point is therefore a FIELD, not a sentence, and it reuses the
+# discriminator convention this module already uses twice
+# (``total_tokens_population``, ``value_scope``): a closed value vocabulary, a
+# documented absent-reads-as default, and a companion field per measurement. No
+# second vocabulary is introduced.
+#
+# ``generate_time`` is currently the only member: every denominator here is
+# counted from live plan state at the instant ``generate`` runs, which the
+# record already dates through its own top-level ``updated`` key. A denominator
+# whose sampling point cannot be determined is NOT WRITTEN — absent, never
+# defaulted and never guessed, per this module's own absent-is-not-zero rule.
+SAMPLING_POINT_GENERATE_TIME = 'generate_time'
+SAMPLING_POINTS = (SAMPLING_POINT_GENERATE_TIME,)
+
+# The suffix that turns a denominator's name into its sampling-point field.
+_SAMPLING_POINT_SUFFIX = '_sampling_point'
+
+# The denominator field names ``cmd_generate`` derives, in write order. Each is
+# persisted ONLY together with its ``{name}_sampling_point`` companion — the two
+# are written as a pair or not at all, so no reader can find a count whose
+# reference moment is unstated.
+_DENOMINATOR_FIELDS = ('deliverable_count', 'files_modified', 'tasks_completed')
+
+# ---------------------------------------------------------------------------
 # Token population discriminator
 # ---------------------------------------------------------------------------
 #
@@ -1166,6 +1206,11 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     data.pop('partial', None)
     data.pop('unrecorded_phases', None)
 
+    # Denominators + their sampling point. Written last among the derived
+    # top-level keys so the pair's timestamp is the closest available stamp to
+    # the write itself.
+    _persist_denominators(plan_id, data)
+
     write_metrics(plan_id, data)
 
     # Build metrics.md content
@@ -1661,11 +1706,26 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # total_tokens, which measures dispatched work rather than cost.
     total_billing_weighted = sum(billing_values)
 
+    # Echo each persisted denominator with its sampling point, and OMIT the pair
+    # for a denominator that could not be counted — the same absent-is-not-zero
+    # rule the persisted record follows, so a caller reading the return cannot
+    # find a count without its reference moment either.
+    denominators: dict[str, object] = {}
+    for name in _DENOMINATOR_FIELDS:
+        if name in data:
+            denominators[name] = data[name]
+            denominators[f'{name}{_SAMPLING_POINT_SUFFIX}'] = data[
+                f'{name}{_SAMPLING_POINT_SUFFIX}'
+            ]
+    if 'denominators_sampled_at' in data:
+        denominators['denominators_sampled_at'] = data['denominators_sampled_at']
+
     return {
         'status': 'success',
         'plan_id': plan_id,
         'file': METRICS_MD,
         'phases_recorded': len(phases),
+        **denominators,
         'any_phase_missing_end_time': any_phase_missing_end_time,
         'phases_missing_end_time': phases_missing_end_time,
         'boundary_monotonicity': non_monotonic_phases,
@@ -1800,6 +1860,128 @@ def cmd_print_phase_breakdown(args: argparse.Namespace) -> dict:
         'file': relative_path,
         'bytes_written': len(section_bytes),
     }
+
+
+_DELIVERABLE_HEADING_RE = re.compile(r'^###\s+\d+\.\s')
+
+
+def _count_deliverables(plan_id: str) -> int | None:
+    """Count the plan's deliverables from ``solution_outline.md``'s headings.
+
+    A deliverable is a ``### N.`` heading — the same grammar the retrospective's
+    plan-efficiency aspect used to be told to count by hand at render time.
+    Persisting the count here is what stops that derivation being redone (and
+    silently redated) on every read.
+
+    Returns ``None`` when the outline is absent or carries no such heading. The
+    caller writes NOTHING in that case: a denominator that could not be counted
+    is absent, never a guessed or defaulted ``0``.
+    """
+    path = get_plan_dir(plan_id) / 'solution_outline.md'
+    if not path.exists():
+        return None
+    try:
+        text = path.read_text(encoding='utf-8')
+    except OSError:
+        return None
+    count = sum(1 for line in text.splitlines() if _DELIVERABLE_HEADING_RE.match(line))
+    return count or None
+
+
+def _count_affected_files(plan_id: str) -> int | None:
+    """Count the plan's declared ``affected_files`` from ``references.json``.
+
+    This is a MOVING quantity — the list grows during execute — which is exactly
+    why the count is worthless without the sampling point written beside it.
+
+    Returns ``None`` when the file is absent, unreadable, or carries no
+    ``affected_files`` list, so the caller writes nothing rather than a ``0``
+    that would read as "this plan modified no files".
+    """
+    path = get_plan_dir(plan_id) / 'references.json'
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    files = data.get('affected_files') if isinstance(data, dict) else None
+    if not isinstance(files, list):
+        return None
+    return len(files) or None
+
+
+def _count_completed_tasks(plan_id: str) -> int | None:
+    """Count the plan's tasks recorded ``status: done``.
+
+    Also a moving quantity: the task store grows as triage appends fix-tasks, so
+    the same numerator over the same plan divides differently depending on when
+    this ran.
+
+    Returns ``None`` when the plan has no ``tasks/`` directory or no readable
+    ``TASK-*.json`` at all — distinct from a plan whose tasks are all still
+    pending, which legitimately counts ``0`` completed against a real
+    population. The zero-vs-absent split is the point: an absent task store
+    means the count was never taken.
+    """
+    tasks_dir = get_plan_dir(plan_id) / 'tasks'
+    if not tasks_dir.is_dir():
+        return None
+    done = 0
+    seen = 0
+    for task_path in sorted(tasks_dir.glob('TASK-*.json')):
+        try:
+            task = json.loads(task_path.read_text(encoding='utf-8'))
+        except (OSError, json.JSONDecodeError, ValueError):
+            continue
+        seen += 1
+        if isinstance(task, dict) and task.get('status') == 'done':
+            done += 1
+    return done if seen else None
+
+
+def _persist_denominators(plan_id: str, data: dict) -> None:
+    """Write each determinable denominator together with its sampling point.
+
+    The pair is atomic per denominator: a count is written ONLY alongside its
+    ``{name}_sampling_point`` companion, so the record can never carry a figure
+    whose reference moment is unstated. A denominator whose source could not be
+    read is absent from the record entirely — the module's absent-is-not-zero
+    rule, applied to the reference class rather than to a measurement.
+
+    Every denominator here is counted from live plan state at the instant this
+    ``generate`` ran, so all of them carry ``generate_time``. That value names
+    the moment CLASS; the instant itself is stamped once as the plan-level
+    ``denominators_sampled_at`` timestamp, written whenever at least one
+    denominator was persisted. One shared timestamp is exact rather than
+    approximate — every denominator in a single call is counted in that call —
+    and it keeps the per-denominator surface to the two-field pair.
+
+    A stale pair left by an earlier ``generate`` whose source has since become
+    unreadable is REMOVED rather than kept, so the record never presents an old
+    count beside a fresh sampling timestamp.
+
+    Returns nothing; mutates ``data`` in place.
+    """
+    counters = {
+        'deliverable_count': _count_deliverables,
+        'files_modified': _count_affected_files,
+        'tasks_completed': _count_completed_tasks,
+    }
+    persisted_any = False
+    for name in _DENOMINATOR_FIELDS:
+        value = counters[name](plan_id)
+        if value is None:
+            data.pop(name, None)
+            data.pop(f'{name}{_SAMPLING_POINT_SUFFIX}', None)
+            continue
+        data[name] = value
+        data[f'{name}{_SAMPLING_POINT_SUFFIX}'] = SAMPLING_POINT_GENERATE_TIME
+        persisted_any = True
+    if persisted_any:
+        data['denominators_sampled_at'] = now_utc_iso()
+    else:
+        data.pop('denominators_sampled_at', None)
 
 
 def _read_status_created(plan_id: str) -> str | None:
