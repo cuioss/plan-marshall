@@ -4,7 +4,7 @@
 
 ## Overview
 
-Self-review surfacing extensions provide the deterministic candidate-surface phase of the `default:pre-submission-self-review` finalize step. Each implementor inspects the worktree's staged diff in a domain-appropriate way (regex literals in `.py`/`.md`, Java imports + JavaDoc strings, JSX template literals, AsciiDoc include directives, etc.) and emits a TOON envelope carrying twenty candidate sub-lists for the LLM cognitive review pass to consume.
+Self-review surfacing extensions provide the deterministic candidate-surface phase of the `default:pre-submission-self-review` finalize step. Each implementor inspects the worktree's staged diff in a domain-appropriate way (regex literals in `.py`/`.md`, Java imports + JavaDoc strings, JSX template literals, AsciiDoc include directives, etc.) and emits a TOON envelope carrying one candidate sub-list per registry entry for the LLM cognitive review pass to consume.
 
 The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Consumer projects (Java, frontend, application code) MAY contribute their own implementor by following the contract below.
 
@@ -33,7 +33,7 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 
 | Subcommand | Required | Description |
 |------------|:--------:|-------------|
-| `surface` | Yes | Emit the twenty candidate sub-lists from the worktree diff as TOON. |
+| `surface` | Yes | Emit one candidate sub-list per registry entry from the worktree diff as TOON. |
 | `scan-worked-examples` | No | Run the `worked_example_pairs` adjudication over a supplied file population (`--paths-glob`) instead of the diff, reporting the population size the verdict was drawn against. Implemented by the plan-marshall-domain implementor; a consumer-domain implementor MAY omit it, and no consumer of this ext-point dispatches it. |
 
 ## Runtime Invocation Contract
@@ -45,17 +45,25 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 | `--plan-id` | string | Yes | Plan identifier (kebab-case). Drives both the on-demand footprint derivation (`{base}...HEAD` ∪ porcelain, computed live from the worktree) and worktree resolution via `manage-status get-worktree-path`. |
 | `--project-dir` | path | No | Absolute path to the active git worktree (escape hatch). When omitted, the path is auto-resolved from `--plan-id`. |
 | `--base-branch` | string | No | Base branch for diff computation (default: `main`). |
+| `--since-ref` | string | No | The previous review round's recorded `head_at_completion` SHA. When supplied, the surfaced FILE SET is the footprint intersected with the paths changed since that ref, so a follow-up round re-examines only what the preceding loop-back actually changed. Omitted on round 1 and on the closing full-surface confirmation pass. |
+
+**`--since-ref` narrows the file set, never the examination of a file.** Hunks stay anchored on `--base-branch`, so every file that survives the intersection is still reviewed against its FULL plan diff rather than against only its incremental hunks. An implementor that narrowed the hunk basis instead would be cutting review depth, which this argument does not authorize.
+
+**A delta-scoped round cannot close the step.** The narrowed round is a cheap filter whose clean verdict covers only the files it looked at. The consumer re-runs the surface call once WITHOUT `--since-ref` before recording a terminal `done`, so the step can still only close on a full-surface clean pass — see [`../../phase-6-finalize/workflow/pre-submission-self-review.md`](../../phase-6-finalize/workflow/pre-submission-self-review.md) Step 1 and Step 4 Branch A. An implementor supplies the narrowing; it does not decide termination.
 
 ### Pre-Conditions
 
 - `--plan-id` resolves to an active plan whose `references.json` carries `base_branch` (used as the footprint diff anchor).
 - The resolved worktree is a valid git working tree.
 - The base branch ref resolves inside the worktree.
+- When `--since-ref` is supplied, it resolves to a commit inside the worktree. An unresolvable value is a diagnosable error — an implementor MUST NOT fall through to the full sweep, because a silent widening would report a full-surface verdict a caller would read as delta-scoped, and vice versa.
 
 ### Post-Conditions
 
-- TOON to stdout carrying the twenty candidate sub-lists below (some MAY be empty).
-- Non-zero exit on git-unavailable, base-branch-missing, or worktree-resolution failure.
+- TOON to stdout carrying one candidate sub-list per registry entry, as enumerated below (some MAY be empty).
+- The echo fields `since_ref`, `surface_scope`, and `files_in_scope` state which round variant produced the payload, so a consumer never has to reconstruct it.
+- An empty intersection surfaces NOTHING. A delta round whose intersection is empty genuinely has no files to review, so the implementor MUST emit empty candidate lists rather than falling back to the unfiltered diff.
+- Non-zero exit on git-unavailable, base-branch-missing, worktree-resolution, or since-ref-resolution failure.
 
 ### Output Schema
 
@@ -64,7 +72,13 @@ status: success
 plan_id: {plan_id}
 project_dir: {project_dir}
 base_branch: {base_branch}
+since_ref: {sha or empty when the round was not delta-scoped}
+surface_scope: delta | full
+files_in_scope: N
 counts:
+  by_family:
+    structural: {sum of the in_total structural lists}
+    prose_contract: {sum of the in_total prose_contract lists}
   regexes: N1
   user_facing_strings: N2
   markdown_sections: N3
@@ -85,7 +99,9 @@ counts:
   ordinal_references: N18
   scan_derived_keys: N19
   worked_example_pairs: N20
-  total: N1+N2+N3+N4+N5+N8+N10+N11+N12+N13+N14+N16+N18+N19+N20
+  duplicate_claimable_keys: N21
+  discard_without_report: N22
+  total: the sum of every registry entry whose in_total flag is set
 
 regexes[N1]{file,line,pattern}:
   ...
@@ -147,13 +163,36 @@ scan_derived_keys[N19]{file,line,name,sequence,key_consumed}:
 
 worked_example_pairs[N20]{file,line,clause,required_predicate,example_predicate,agrees}:
   ...
+
+duplicate_claimable_keys[N21]{file,line,collection,key,form}:
+  ...
+
+discard_without_report[N22]{file,line,channel,discard}:
+  ...
 ```
 
-The `total` count covers the fifteen line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`, `ordinal_references`, `scan_derived_keys`, `worked_example_pairs`) only. `contract_sources`, `schema_bearing_files`, `count_prose`, and `advertised_form_help_strings` are review-anchor categories not summed into `total`; `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` and likewise does not contribute.
+The `total` count covers the line-level heuristic lists only. `contract_sources`, `schema_bearing_files`, `count_prose`, and `advertised_form_help_strings` are review-anchor categories not summed into `total`; `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` and likewise does not contribute. The authoritative membership is the implementor's `CANDIDATE_LISTS` registry `in_total` field, from which both the emitted key set and the `total` formula are derived — a consumer reads the emitted `counts` block rather than re-deriving the sum from a hand-maintained name list.
+
+### `counts.by_family` — the per-round detector mix
+
+`counts.by_family` partitions the SAME `in_total` population that `total` sums, by each registry entry's `family`, over a closed two-member vocabulary:
+
+| Family | Reads |
+|--------|-------|
+| `structural` | Code SHAPE — a pattern, a pair of names, a guard, a call site |
+| `prose_contract` | PROSE or contract consistency — a heading, a description, a count claim, a documented schema |
+
+Contract obligations on an implementor:
+
+- **The two family counts MUST sum exactly to `counts.total`.** Both are derived from one traversal of the same `in_total` population, so the mix cannot drift from the total it decomposes.
+- **BOTH families are always reported, including a zero.** A round that surfaced only prose candidates is a detector-mix signal about the change under review; an omitted key would read as "not measured" rather than "none found", which is the distinction the block exists to preserve.
+- **Every registry entry carries exactly one family.** The field is required with no default, so the partition is total by construction rather than by convention.
+
+The mix is reported HERE, in the return TOON, rather than in `display_detail`: this block is the authoritative contract surface and is unbudgeted, while `display_detail` is capped at 80 characters and its no-check-matched verdict (`"self-review clean: {N} candidates examined, no check matched"`) already renders to 61 characters at `{N}=9999` — 19 characters of headroom, too narrow to carry a two-family mix in any readable form. Consumers read `counts.by_family` for the mix.
 
 ### Required Candidate Sub-Lists
 
-All twenty keys MUST appear in the output (possibly with empty payloads) — a consumer-domain implementor whose language or format carries no equivalent signal for a given key MUST still emit that key with an empty payload rather than omitting it. This applies to `scan_derived_keys` exactly as it does to every other key: a domain with no scan-versus-anchor derivation shape emits `scan_derived_keys` empty, and the consumer's `total` formula stays well-defined. It applies equally to `worked_example_pairs`: a domain whose documentation carries no BAD/GOOD worked-example convention emits that key empty. The fifteen LLM cognitive checks consume:
+Every registry key MUST appear in the output (possibly with empty payloads) — a consumer-domain implementor whose language or format carries no equivalent signal for a given key MUST still emit that key with an empty payload rather than omitting it. This applies to `scan_derived_keys` exactly as it does to every other key: a domain with no scan-versus-anchor derivation shape emits `scan_derived_keys` empty, and the consumer's `total` formula stays well-defined. It applies equally to `worked_example_pairs`: a domain whose documentation carries no BAD/GOOD worked-example convention emits that key empty. Every registry key is listed below with the check that consumes it, or with an explicit statement that none does:
 
 | Sub-list | Purpose | Consumed By |
 |----------|---------|-------------|
@@ -176,12 +215,17 @@ All twenty keys MUST appear in the output (possibly with empty payloads) — a c
 | `ordinal_references` | Added same-document ordinal references (`item N` / `step N` / bare `(N)`) pointing into an ordered-list block the same diff touched, surfaced so the reviewer confirms each ordinal still resolves to its intended item after the renumber | Check 13 (same-document ordinal-reference re-check) |
 | `scan_derived_keys` | A key derived by first-match of a compiled pattern over a decomposed sequence rather than by indexing that decomposition at a position anchored on a known root — the scan-versus-anchor shape that collapses distinct inputs to one key and leaves a downstream guard unreachable | Check 14 (unreachable guard behind a scan-derived key) |
 | `worked_example_pairs` | A clause section's GOOD worked example whose branch predicate disagrees with the predicate the clause's own normative prose requires — the contrast silently demonstrates the shape its clause forbids, one field over. Only the disagreeing case is surfaced and no denominator is published (agreeing and unadjudicable pairs are both dropped, uncounted), so an empty list states only that no adjudicable disagreement was surfaced in the diff scope — not that every pair agrees, and not a population-level clean verdict; the implementor's `scan-worked-examples` verb publishes the denominator that claim requires | Check 15 (worked-example clause mismatch) |
+| `protected_identifiers` | Derived index over `keep_markers` entries with `kind: keep_protected` — the flat identifier set the duplication check refuses to drop | Check 4 (duplication), as the refusal set |
+| `duplicate_claimable_keys` | An insertion site that appends a key to a new collection under an identity token another collection already claims | **No consuming check** — see the coverage gap below |
+| `discard_without_report` | A discard branch (`continue`/`break`) that drops a candidate without emitting it on the step's report channel | **No consuming check** — see the coverage gap below |
 
-Each entry MUST carry `file` (repo-relative path) AND `line` (1-based line number in the post-diff file content) — these are the primary navigation fields the LLM cognitive review consumes. Two entry shapes extend or replace this pair: the `source_of_truth` entry carries `name`/`files`/`values` rather than a single `file`/`line`, and the `advertised_form_help_strings` entry carries a second navigational coordinate `raw_pass_line` (the line of the raw `args.<dest>` pass-through) alongside its `file`/`line`, which Check 5's advertised-form sub-check consumes to navigate to the unnormalized-use site. The `count_prose`, `unguarded_boundaries`, and `touched_claims` entries all carry `file`+`line`. Additional per-domain sub-lists beyond the twenty canonical keys are allowed and ignored by the fifteen canonical checks.
+**Recorded coverage gap — two summed keys have no consuming check.** `duplicate_claimable_keys` and `discard_without_report` both carry `in_total: true`, so they raise `counts.total`, the Step 1b dispatch gate, and the `"{N} candidates examined"` verdict — while the cognitive check list stops at check 15, so nothing adjudicates them. A candidate that inflates the examined-count without being examined is the volume-read-as-coverage shape this ext-point exists to detect, reproduced inside its own contract. It is recorded here rather than silently corrected because both remedies are real changes with different consequences: authoring the two missing checks widens the review, while clearing their `in_total` flags shrinks the published count. Neither is chosen here.
+
+A line-level entry carries `file` (repo-relative path) AND `line` (1-based line number in the post-diff file content) — the primary navigation fields the LLM cognitive review consumes. Not every key uses that pair: a payload that is a file-level reference, a derived index, or a different coordinate tuple deviates from it. **The per-key field tuples in the Output Schema above are the authoritative statement of which keys deviate and how — read them there.** This paragraph names no key and counts no deviation. Additional per-domain sub-lists beyond the canonical registry keys are allowed and ignored by the fifteen canonical checks.
 
 ### Detection Rules (Plan-Marshall Domain Reference)
 
-The `ext-self-review-plan-marshall` implementor's detection heuristics are documented in [`../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md`](../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md) (nineteen numbered detection rules covering regex literals, user-facing strings, markdown headings, symmetric-pair function names, flag-guard pairs, contract-source skills, schema-bearing markdown files, `self-review: keep <id>` HTML-comment markers (the literal `keep`-marker syntax is specified verbatim in the implementor's § Keep-Identifier Markers), producer-consumer pairs, source-of-truth duplicates, same-document normative directives, description-vs-body frontmatter, lone unguarded boundaries, stale count-prose, near-identical-hunk touched claims, advertised-form help strings, same-document ordinal references, scan-derived keys, and worked-example clause pairs). Consumer-domain implementors MAY adapt these rules for their language/format but MUST keep the output schema identical so the LLM cognitive review remains domain-agnostic.
+The `ext-self-review-plan-marshall` implementor's detection heuristics are documented in [`../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md`](../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md) § Detection Rules, which is the authoritative enumeration. No count, range, endpoint, or per-key correspondence is stated here — read the rule set at its source. Consumer-domain implementors MAY adapt these rules for their language/format but MUST keep the output schema identical so the LLM cognitive review remains domain-agnostic.
 
 ## Failure Mode Contract
 
@@ -189,8 +233,10 @@ The `ext-self-review-plan-marshall` implementor's detection heuristics are docum
 |-----------|--------|
 | No domain implementor resolved (consumer dispatch, no surfacer in the executor) | Zero-candidate clean run — the consumer step succeeds without dispatching the LLM cognitive phase (`outcome=done`, empty candidate envelope) |
 | Live footprint empty (no `{base}...HEAD` ∪ porcelain changes) | `status: success` with empty candidate lists (no diff scope) |
+| `--since-ref` supplied and the intersection is empty | `status: success` with empty candidate lists (`surface_scope: delta`) — nothing changed since the previous round, which is a real answer, NOT a signal to widen |
 | Git unavailable or wrong cwd | `status: error\nerror: git_unavailable\nmessage: ...` (exit 1) |
 | Base branch not found | `status: error\nerror: base_branch_not_found\nbase_branch: {base}` (exit 1) |
+| `--since-ref` does not resolve to a commit | `status: error\nerror: since_ref_unresolvable\nmessage: ...` (exit 1) — the round is refused, never silently widened to a full sweep |
 | `--plan-id` worktree resolution fails | `status: error\nerror: worktree_resolution_failed\nmessage: ...` (exit 2) |
 
 The consumer dispatcher (`phase-6-finalize/workflow/pre-submission-self-review.md` Step 1) translates non-zero exits into `outcome=failed` on the manifest step without dispatching the LLM cognitive phase.

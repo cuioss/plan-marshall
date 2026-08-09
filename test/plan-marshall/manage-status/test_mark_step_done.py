@@ -379,16 +379,32 @@ def test_mark_step_failed_idempotent(plan_context):
 
 
 def test_mark_step_failed_then_done_with_force(plan_context):
-    """After a 'failed' marker, dispatcher can re-fire and overwrite with 'done' under --force."""
+    """After a 'failed' marker, dispatcher can re-fire and overwrite with 'done' under --force.
+
+    ``automatic-review`` declares ``head_dependent: true``, so every ``done``
+    call here supplies ``--head-at-completion`` — the real dispatcher does too.
+    The anchor is incidental to what this test pins (conflict detection, then
+    the ``--force`` overwrite), but it must be present for the call to reach
+    those branches at all: the head-anchor guard is request validation and fires
+    before any state is read.
+    """
     plan_id = 'mark-step-failed-then-done'
     _make_plan(plan_id)
+    sha = 'b' * 40
     cmd_mark_step_done(
         _args(plan_id, '6-finalize', 'automatic-review', 'failed', display_detail='timeout')
     )
 
     # Without --force, a different outcome on an existing step is a conflict.
     conflict = cmd_mark_step_done(
-        _args(plan_id, '6-finalize', 'automatic-review', 'done', display_detail='retry green')
+        _args(
+            plan_id,
+            '6-finalize',
+            'automatic-review',
+            'done',
+            display_detail='retry green',
+            head_at_completion=sha,
+        )
     )
     assert conflict['status'] == 'error'
     assert conflict['error'] == 'conflict'
@@ -404,6 +420,7 @@ def test_mark_step_failed_then_done_with_force(plan_context):
             'done',
             force=True,
             display_detail='retry green',
+            head_at_completion=sha,
         )
     )
     assert retry['status'] == 'success'
@@ -415,6 +432,7 @@ def test_mark_step_failed_then_done_with_force(plan_context):
     assert persisted['metadata']['phase_steps']['6-finalize']['automatic-review'] == {
         'outcome': 'done',
         'display_detail': 'retry green',
+        'head_at_completion': sha,
     }
 
 
@@ -649,8 +667,19 @@ def test_mark_step_project_prefixed_records_under_verbatim_key(plan_context):
     """
     plan_id = 'mark-step-canon-project'
     _make_plan(plan_id)
+    # ``project:finalize-step-plugin-doctor`` declares ``head_dependent: true``,
+    # so a ``done`` record must carry the anchor. What this test pins is the KEY
+    # the record lands under, not the anchor — supplying it is what lets the call
+    # reach the write at all.
+    sha = 'c' * 40
     result = cmd_mark_step_done(
-        _args(plan_id, '6-finalize', 'project:finalize-step-plugin-doctor', 'done')
+        _args(
+            plan_id,
+            '6-finalize',
+            'project:finalize-step-plugin-doctor',
+            'done',
+            head_at_completion=sha,
+        )
     )
 
     assert result['status'] == 'success'
@@ -659,7 +688,11 @@ def test_mark_step_project_prefixed_records_under_verbatim_key(plan_context):
     persisted = read_status(plan_id)
     phase_steps = persisted['metadata']['phase_steps']['6-finalize']
     assert phase_steps == {
-        'project:finalize-step-plugin-doctor': {'outcome': 'done', 'display_detail': None}
+        'project:finalize-step-plugin-doctor': {
+            'outcome': 'done',
+            'display_detail': None,
+            'head_at_completion': sha,
+        }
     }
 
 

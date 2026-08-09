@@ -622,10 +622,17 @@ The 5-field prompt-body contract (`name`, `plan_id`, `skills[]`, `workflow`, `WO
 
 Per-step agent `<usage>` totals are persisted on disk by `manage-metrics accumulate-agent-usage` (called from step 5b below). The on-disk file `.plan/plans/{plan_id}/work/metrics-accumulator-6-finalize.toon` survives context compaction and is read by `default:record-metrics` at `end-phase` time. Do NOT maintain a parallel tally in model context — the on-disk file is authoritative.
 
-**Initialise the `loop_back_iteration` counter to 0 BEFORE entering the FOR loop** (i.e., here, at the start of Step 3 — outside the loop body). The counter persists across FOR-loop re-entries triggered by the loop-back continuation hook (step 7b below), so that the `max_iterations` ceiling is enforced across the entire dispatch. Initialising the counter inside the FOR loop body (e.g., on each entry into the loop) would reset it on every loop-back BREAK + RE-ENTER, defeating the ceiling. The counter is held in model context for the duration of the dispatch — it is NOT persisted to status.json; a fresh phase-6-finalize entry (e.g., after a session restart) starts the counter back at 0.
+**Read the persisted `loop_back_iteration` count BEFORE entering the FOR loop** (i.e., here, at the start of Step 3 — outside the loop body). The count lives in `status.metadata.loop_back_iteration`, so it survives FOR-loop re-entries from the loop-back continuation hook (step 7b below), phase re-entries, session restarts, AND the halt-and-prompt cycle of the default `loop_back_without_asking: false` configuration. That durability is what makes the `max_iterations` ceiling enforceable across the plan's whole review chain rather than across one uninterrupted dispatch:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --get --field loop_back_iteration
+```
+
+An absent field reads as `0`. Item 7b re-reads the persisted value at its admission gate and writes the incremented value back on every admitted iteration, so this read is the loop's starting view, never the authority — do NOT carry a model-context counter forward as a substitute for the re-read.
 
 ```text
-loop_back_iteration = 0   # initialised once, before the FOR loop; persists across FOR-loop re-entries from the loop-back hook (step 7b)
+loop_back_iteration = <status.metadata.loop_back_iteration, or 0 when absent>   # re-read and re-written at the item-7b admission gate
 
 FOR each step_id in manifest.phase_6.steps:
   # Resolve full step reference. Manifest entries may be:
@@ -1287,7 +1294,45 @@ FOR each step_id in manifest.phase_6.steps:
   7b. Loop-back continuation hook (consult the just-recorded outcome):
       Read the step's recorded outcome from `status.metadata.phase_steps["6-finalize"][step_id]` (the dispatched agent's `mark-step-done` call wrote it). When `outcome == "loop_back"`, also read the persisted `loop_back_target` field from the same record — it is structurally guaranteed to be present on every `loop_back` outcome (the manage-status `--loop-back-target` validation contract enforces this; absence is a dispatcher contract bug, not a routing case to handle). The two legal values are `5-execute` (full-phase rollback) and `6-finalize` (inline replay).
 
-      **Symmetric-knob and ceiling check (BEFORE the granularity branch)** — the `loop_back_without_asking` knob and the `max_iterations` ceiling apply uniformly to BOTH granularity tiers. They gate whether the chosen dispatch shape executes inline or halts and prompts. The `loop_back_target` value selects the dispatch shape AFTER these gates pass.
+      **(i) Ceiling admission gate — the FIRST thing item 7b evaluates, on BOTH knob branches.**
+
+      The ceiling is evaluated BEFORE the `loop_back_without_asking` knob is even read, so it bounds the default configuration on the same terms as the auto-continue one. Placing it inside the `value == true` branch — as it was — left `loop_back_without_asking: false` (the DEFAULT) with a declared ceiling that could never be reached: each halt-and-prompt returned control, the operator re-ran finalize, and the count started again from zero, so `max_iterations` bounded only the configuration almost nobody runs. The knob decides HOW a loop-back continues; the ceiling decides WHETHER one is admitted at all, and the second question comes first.
+
+      Read the persisted iteration count. It lives in `status.metadata.loop_back_iteration`, NOT in model context — an in-memory counter is reset by every session restart, every phase re-entry, and every halt-and-prompt cycle, which is exactly what made the declared ceiling unenforceable:
+
+         python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+           --plan-id {plan_id} --get --field loop_back_iteration
+
+      An absent field reads as `0` (no loop-back has been admitted for this plan yet). Capture the value as `{loop_back_iteration}`.
+
+      **The comparison is an ADMISSION test over the iteration about to be spent, not a report on one already spent.** Admitting this loop-back would spend iteration `{loop_back_iteration} + 1`. Refuse to admit it when doing so would exceed the ceiling:
+
+         WHEN `{loop_back_iteration} + 1 > max_iterations` (`phase-6-finalize.max_iterations`, default 3, read in Step 2):
+
+             python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+               work --plan-id {plan_id} --level WARNING \
+               --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back ceiling breached — {step_ref} requested iteration {loop_back_iteration + 1} against a ceiling of {max_iterations}; refusing to admit it. The findings this round raised have no remaining iteration in which their fixes could be reviewed."
+
+             Display: "Loop-back ceiling reached: {loop_back_iteration} of {max_iterations} iterations already spent, and {step_ref} asked for another. The run is halting WITHOUT admitting it, so the findings this round raised are recorded but their fixes have NOT been reviewed — no iteration remains in which they could be. Inspect them via 'manage-findings qgate list --plan-id {plan_id} --phase 6-finalize --resolution pending' and the pending fix tasks via 'manage-tasks list --status pending --plan-id {plan_id}', then re-run when ready."
+
+             STOP.
+
+      **This refusal is a distinct terminal outcome**, not the ordinary halt-and-prompt of the `loop_back_without_asking: false` branch below. The two are reported separately on purpose: the knob halt means *"a loop-back is available and awaits your go-ahead"*, whereas this one means *"a loop-back was requested and REFUSED, and the work it would have reviewed is unreviewed"*. Collapsing them into one message would tell an operator the run merely paused where in fact the review chain ended one round short.
+
+      Otherwise the iteration IS admitted. Persist the incremented count BEFORE continuing, so a session lost mid-iteration cannot silently return the plan a free round:
+
+         python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+           --plan-id {plan_id} --set --field loop_back_iteration --value {loop_back_iteration + 1}
+
+      Then emit the canonical iteration log line:
+
+         python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+           work --plan-id {plan_id} --level INFO \
+           --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back iteration {loop_back_iteration + 1}/{max_iterations}"
+
+      `max_iterations` keeps its declared default — this gate makes the existing value load-bearing and does not change it.
+
+      **(ii) Symmetric-knob check (AFTER the ceiling gate, BEFORE the granularity branch)** — the `loop_back_without_asking` knob applies uniformly to BOTH granularity tiers and gates whether the admitted loop-back executes inline or halts and prompts. The `loop_back_target` value selects the dispatch shape AFTER this gate passes.
 
       Consult the symmetric auto-continuation knob to decide whether to halt or re-enter inline:
 
@@ -1296,29 +1341,17 @@ FOR each step_id in manifest.phase_6.steps:
 
       Read the returned `value`:
 
-      - IF `value == false` (default): halt the FOR loop, mark the finalize phase as needing a re-entry, and emit the user-facing prompt (named for the persisted `loop_back_target`):
+      - IF `value == false` (default): halt the FOR loop, mark the finalize phase as needing a re-entry, and emit the user-facing prompt (named for the persisted `loop_back_target`). The iteration has already been admitted and persisted, so the operator's re-run resumes against the incremented count rather than a fresh zero:
           python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
             work --plan-id {plan_id} --level INFO \
-            --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back signalled by {step_ref} (target={loop_back_target}): returning control to user (loop_back_without_asking=false)"
+            --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back signalled by {step_ref} (target={loop_back_target}), iteration {loop_back_iteration + 1}/{max_iterations} admitted: returning control to user (loop_back_without_asking=false)"
         IF `loop_back_target == "5-execute"`:
           Display: "Loop-back signalled. Run '/plan-marshall action=execute plan={plan_id}' when ready to dispatch the fix tasks."
         IF `loop_back_target == "6-finalize"`:
           Display: "Loop-back signalled (inline replay). Run '/plan-marshall action=finalize plan={plan_id}' to replay the finalize step."
         STOP.
 
-      - IF `value == true`: increment the in-memory `loop_back_iteration` counter (initialised to 0 at the start of Step 3, BEFORE the FOR loop — see the `loop_back_iteration = 0` line above the `FOR each step_id` header. The counter persists across FOR-loop re-entries triggered by step 7b, so the `max_iterations` ceiling is enforced across the entire dispatch rather than reset per re-entry — counted across BOTH granularity tiers) and consult the ceiling:
-
-         (a) Compare against `phase-6-finalize.max_iterations` (default 3, read in Step 2). When `loop_back_iteration > max_iterations`, halt with a user-facing prompt — even with the flag set, the ceiling is the structural safety valve. This applies to BOTH granularity tiers:
-             python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-               work --plan-id {plan_id} --level WARNING \
-               --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back ceiling reached ({loop_back_iteration}/{max_iterations}) — halting and returning control to user"
-             Display: "Loop-back iteration ceiling reached. Inspect pending fix tasks via 'manage-tasks list --status pending --plan-id {plan_id}' and re-run when ready."
-             STOP.
-
-         (b) Otherwise, emit the canonical iteration log line:
-             python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-               work --plan-id {plan_id} --level INFO \
-               --message "[STATUS] (plan-marshall:phase-6-finalize) Loop-back iteration {loop_back_iteration}/{max_iterations}"
+      - IF `value == true`: proceed directly to the granularity branch below. The ceiling has already been evaluated and the iteration already persisted at (i), so this branch performs no counting of its own.
 
       **Granularity branch (AFTER the symmetric-knob and ceiling gates have passed)** — the `loop_back_target` value selects only the dispatch shape. Both branches share the same iteration counter and ceiling.
 
@@ -1340,7 +1373,7 @@ FOR each step_id in manifest.phase_6.steps:
 
              Note: the BREAK + RE-ENTER above is a control-flow construct, not a per-step skip. The FOR loop re-iteration uses the same manifest list and the same per-step resumable check; the only state that changes is the `phase_steps["6-finalize"][step_id]` records (the dispatched agent will record a fresh outcome on its next run).
 
-      The `loop_back_iteration` counter is held in model context for the duration of the dispatch — it is NOT persisted to status.json. A fresh phase-6-finalize entry (e.g., after a session restart) starts the counter back at 0; the manifest's resumable re-entry check still skips already-`done` steps, so re-entering after a restart re-runs only the steps that recorded `loop_back` or `failed` on the previous invocation.
+      The `loop_back_iteration` counter is PERSISTED to `status.metadata.loop_back_iteration` and read back at (i) on every evaluation. It is deliberately NOT held in model context: a counter that lives only for the duration of one dispatch is reset by a session restart, by a phase re-entry, and — most importantly — by every halt-and-prompt cycle of the default `loop_back_without_asking: false` configuration, which is precisely the path that loops most. A fresh phase-6-finalize entry therefore resumes against the count the previous entry left behind rather than starting over at 0, so the ceiling bounds the plan's whole review chain instead of one uninterrupted dispatch. The manifest's resumable re-entry check is unchanged: it still skips already-`done` steps, so re-entering after a restart re-runs only the steps that recorded `loop_back` or `failed` on the previous invocation.
 
   7c. Wait-region unified triage hook (fires after the LATER wait-region producer completes):
 
@@ -1399,9 +1432,11 @@ END FOR
 | `finalize_without_asking` | `loop_back_without_asking` | Behaviour |
 |---------------------------|----------------------------|-----------|
 | `false` | any | The forward `5-execute → 6-finalize` transition halts and prompts the user. Loop-back never fires inline because finalize is not entered in the same orchestration cycle. |
-| `true` (default) | `false` (default) | Forward auto-continuation; loop-back halts at the inline execute re-entry point and prompts the user. (This is the conservative shape: forward is automated, reverse is interactive.) |
-| `true` | `true` | Full unattended cycle. A loop_back outcome re-dispatches execute inline up to `max_iterations` times, then halts even with the flag set. |
+| `true` (default) | `false` (default) | Forward auto-continuation; loop-back halts at the inline execute re-entry point and prompts the user. (This is the conservative shape: forward is automated, reverse is interactive.) Bounded by `max_iterations` exactly as the row below — the ceiling is evaluated before this knob is read, and the count is persisted, so the operator's re-run resumes against it instead of restarting at zero. |
+| `true` | `true` | Full unattended cycle. A loop_back outcome re-dispatches execute inline up to `max_iterations` times, then refuses to admit a further one even with the flag set. |
 | `false` | `true` | Effectively `false`/`false` from the user's perspective: forward halts and prompts before phase-6-finalize ever runs, so the loop-back hook is unreachable in the same orchestration cycle. |
+
+**The ceiling binds both rows.** It is evaluated at the item-7b admission gate BEFORE `loop_back_without_asking` is consulted, and its count is persisted to `status.metadata.loop_back_iteration`. A ceiling evaluated inside the `value == true` branch, counting in model context, would leave the DEFAULT configuration unbounded in practice: every halt-and-prompt returns control, and a re-entry that restarted the count at zero would let a plan loop indefinitely one operator re-run at a time while `max_iterations` was nominally in force.
 
 The conservative default (`loop_back_without_asking=false`) ships an interactive shape so existing plans behave the same as before this knob was added. Projects that want full unattended execution must opt into both knobs. Note the mechanics differ from the same-suffixed merge knob: `loop_back_without_asking=false` halts the dispatcher and *instructs* the operator via a Display + STOP prompt (no `AskUserQuestion` is fired — see § "Loop-back continuation hook" item 7b), whereas `final_merge_without_asking=false` fires a genuine inline pre-merge `AskUserQuestion` gate (see [standards/branch-cleanup.md](standards/branch-cleanup.md) § "Pre-Merge Confirmation Gate") — same suffix, opposite mechanics.
 

@@ -295,7 +295,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 - `--step` (required): Step identifier within the phase (free-form string chosen by the phase skill)
 - `--outcome` (required): `done`, `skipped`, `loop_back`, or `failed`
 - `--display-detail` (optional at CLI level, required-by-convention for phase-6-finalize steps per the phase-6-finalize interface contract): One-line user-facing detail string. Persisted as `null` when omitted.
-- `--head-at-completion` (optional): Git SHA captured at step completion. Persisted alongside outcome and consulted by resumable phase dispatchers (e.g., phase-6-finalize `pre-push-quality-gate`) to detect HEAD advancement.
+- `--head-at-completion` (REQUIRED when `--outcome=done` on a step declaring `head_dependent: true`, optional otherwise): Git SHA captured at step completion. Persisted alongside outcome and consulted by resumable phase dispatchers (e.g., phase-6-finalize `pre-push-quality-gate`) to detect HEAD advancement. Omitting it on a head-dependent `done` is refused with `missing_head_at_completion` and nothing is written.
 - `--loop-back-target` (REQUIRED when `--outcome=loop_back`, FORBIDDEN otherwise): Loop-back target phase. Must be one of `5-execute` (full phase rollback for fix-task-required dispositions) or `6-finalize` (inline replay for inline-fixable dispositions). See "Loop-back target classification" below.
 - `--fact` (optional, repeatable): Record one structured `KEY=VALUE` per-step fact. See "Structured step facts" below.
 - `--force` (optional): Overwrite an existing differing outcome
@@ -318,6 +318,16 @@ The `--loop-back-target` flag encodes the granularity invariant from the phase-6
 
 The flag is REQUIRED on every `loop_back` outcome (returns `error: missing_loop_back_target` when absent) and FORBIDDEN on every other outcome (returns `error: unexpected_loop_back_target`). The `argparse` `choices` enforce the two-value enumeration at parse time. There is no backwards-compat fallback — every loop-back-emitting call site MUST classify the disposition before persisting the outcome.
 
+**Head-anchor refusal on a `done` outcome**:
+
+A step whose authoritative doc declares `head_dependent: true` MUST supply `--head-at-completion` when recording `--outcome done`. When it does not, the command returns `status: error`, `error: missing_head_at_completion` and **writes nothing**. There is no `--force` override for this branch: `--force` governs outcome conflicts, not the record's own well-formedness.
+
+The refusal exists because the recorded SHA carries two independent loads, and a missing anchor breaks both silently — the dispatcher's re-entry check has no SHA to compare the live HEAD against, and a step that re-fires across loop-back rounds has no anchor to scope its next round's delta against (`default:pre-submission-self-review` passes it to its surfacer as `--since-ref`). The obligation is declared by [ext-point-finalize-step.md](../extension-api/standards/ext-point-finalize-step.md) § "The fail-closed anchor obligation"; this command is its enforcement point.
+
+**How head-dependence is derived**: through the finalize-step registry's OWN discovery path — `find_implementors()` for the population and `extension_discovery._read_frontmatter_fields` for the fact — so no second frontmatter parser exists to drift from the one the dispatcher and the derivation guard already read. Both the discovered step name and the supplied `--step` are canonicalized before comparison, because discovery names a built-in step `default:{bare}` while callers write the bare canonical key.
+
+**Derivation scope and the warning branch**: the check runs only on `--outcome done`, so no other outcome pays the discovery cost. A step that is simply ABSENT from the finalize-step population resolves to *not head-dependent* and raises nothing — this command records steps for every phase, and a phase-5 step legitimately matches no finalize-step implementor. When the derivation machinery cannot run AT ALL (discovery unavailable, or it discovers no implementors), the record IS written and carries a `warning` field naming the unresolved derivation: an unresolvable derivation must not manufacture an unsubstantiated refusal, but must not pass silently either. The `warning` key is omitted entirely when no warning applies, so the ordinary record keeps its historical shape.
+
 **Storage shape**:
 
 ```json
@@ -331,6 +341,8 @@ status.metadata.phase_steps[{phase}][{step}] = {
 ```
 
 Both the `metadata` and `phase_steps` containers are created on demand. A non-dict (bare-string) entry is rejected with `error: legacy_string_entry` — see conflict semantics below. The `head_at_completion`, `loop_back_target`, and `facts` keys are only present when the corresponding flag was supplied (per the `_build_entry` helper); `loop_back_target` is structurally guaranteed to be present iff `outcome == "loop_back"`.
+
+The `warning` field described under "Head-anchor refusal" is a **response** field only — it reports that head-dependence could not be derived for this call and is never persisted into the stored record.
 
 **Semantics**:
 - **Idempotent on identical outcome AND display_detail AND head_at_completion AND loop_back_target AND facts**: If the step already has the requested outcome and all five fields match, no file write occurs and `changed: false` is returned.
@@ -392,6 +404,30 @@ step: discovery
 existing_outcome: skipped
 requested_outcome: done
 message: Step 'discovery' in phase '5-execute' already marked as 'skipped'; use --force to overwrite with 'done'
+```
+
+**Output — missing head anchor on a head-dependent `done`** (TOON, nothing written):
+```toon
+status: error
+plan_id: my-feature
+error: missing_head_at_completion
+phase: 6-finalize
+step: pre-submission-self-review
+message: Step 'pre-submission-self-review' declares head_dependent: true, so --head-at-completion is required when --outcome=done. Nothing was written.
+```
+
+**Output — unresolved head-dependence derivation** (TOON, record written with a warning):
+```toon
+status: success
+plan_id: my-feature
+phase: 6-finalize
+step: push
+outcome: done
+display_detail: pushed 3 commits
+changed: true
+previous_outcome: null
+previous_display_detail: null
+warning: find_implementors('plan-marshall:extension-api/standards/ext-point-finalize-step') discovered no finalize-step implementors, so head-dependence could not be derived for any step
 ```
 
 **Output — malformed fact** (TOON):
@@ -1311,6 +1347,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status self-t
 | `invalid_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` value not in `5-execute`/`6-finalize`. (Argparse `choices` normally catches this at parse time; this error fires only when the validation is bypassed at the API layer.) |
 | `unexpected_loop_back_target` | 1 | `mark-step-done`: `--loop-back-target` supplied alongside an outcome other than `loop_back`. The flag is FORBIDDEN on `done`/`skipped`/`failed` outcomes. |
 | `invalid_fact` | 1 | `mark-step-done`: a `--fact` token has no `=` separator, or an empty key. The offending token is echoed as `offending_token`; the call is rejected before any write. |
+| `missing_head_at_completion` | 1 | `mark-step-done`: `--outcome=done` on a step whose authoritative doc declares `head_dependent: true`, with no `--head-at-completion`. A `done` carrying no SHA records a verdict nobody can anchor to a tree, so the absence is refused rather than tolerated — nothing is written. Resolve the worktree HEAD immediately before the call and pass it. |
 | `step_record_missing` | 0 | `assert-step-recorded --require-terminal`: no terminal record exists under any key for the named phase (the dispatched step returned without recording a `mark-step-done` outcome). Exit code is 0 — the post-dispatch guard branches on the TOON `error` field, not the process exit code. |
 | `step_record_mismatched_key` | 0 | `assert-step-recorded --require-terminal`: the queried step has no terminal record, but a near-miss orphan terminal record exists under a different key in the same phase (the dispatched step recorded under the wrong key — e.g. a bare skill name instead of its fully-qualified manifest `step_id`). Carries `orphan_key` and `orphan_outcome`. Exit code is 0 — the guard branches on the TOON `error` field. |
 | `worktree_unresolved` | 1 | `phase_handshake verify`: `metadata.use_worktree==true` and `metadata.worktree_path` is non-empty but does not resolve on the filesystem. `get-worktree-path` does not emit this error — it returns `worktree_state: pending` for the pre-materialization state. |

@@ -349,7 +349,10 @@ class TestPreFixScanningFormIsSurfaced:
         # registry — the emitter's own source of truth — closes that.
         data = _surface(_fixture_repo(tmp_path, _PRE_FIX_SOURCE))
 
-        emitted = set(data['counts']) - {'total'}
+        # ``total`` and ``by_family`` are DERIVED entries in the counts block —
+        # a sum and its per-family decomposition — not per-list cardinalities,
+        # so neither names a candidate list the sweep could cover.
+        emitted = set(data['counts']) - {'total', 'by_family'}
         swept = set(_SIBLING_LISTS) | {_NEW_LIST}
         registered = {spec.key for spec in CANDIDATE_LISTS}
 

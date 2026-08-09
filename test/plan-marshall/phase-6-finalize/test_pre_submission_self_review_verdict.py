@@ -79,6 +79,30 @@ _FINDINGS_VERDICT_MARKER = 'found'
 #: display_detail budget, per the agent-return-shape contract.
 _DISPLAY_DETAIL_MAX = 80
 
+#: Every count placeholder that may appear inside a verdict literal, widened to
+#: its plausible maximum before the budget is measured.
+#:
+#: This list is load-bearing rather than incidental: the budget assertion
+#: measures ``len(rendered)``, so a placeholder MISSING from it is measured at
+#: its template width (``{C}`` is 3 characters) instead of its rendered width
+#: (``9999`` is 4). A verdict that only just fits would then pass here and
+#: overflow in production — the assertion would be measuring the template, which
+#: is the vacuity this module exists to prevent elsewhere. Any new placeholder
+#: introduced into a verdict literal MUST be added here in the SAME change.
+#:
+#: ``{N}`` — surfaced candidate count (no-check-matched verdict).
+#: ``{K}`` — finding count (findings verdict).
+#: ``{C}`` — distinct defect_class count across those findings (findings verdict).
+_COUNT_PLACEHOLDERS = ('{N}', '{K}', '{C}')
+
+
+def _render(literal: str) -> str:
+    """Substitute every count placeholder with its plausible maximum."""
+    rendered = literal
+    for placeholder in _COUNT_PLACEHOLDERS:
+        rendered = rendered.replace(placeholder, '9999')
+    return rendered
+
 
 def _doc_text() -> str:
     text: str = _WORKFLOW_DOC.read_text(encoding='utf-8')
@@ -193,10 +217,10 @@ def test_no_check_matched_verdict_carries_the_candidate_count():
 
 
 def test_every_verdict_fits_the_display_detail_budget():
-    # The count placeholder is widened to its plausible maximum so the budget
+    # Every count placeholder is widened to its plausible maximum so the budget
     # is asserted against the rendered string, not the template.
     for literal in _verdict_literals(_section(_OUTPUT_HEADING)):
-        rendered = literal.replace('{N}', '9999').replace('{K}', '9999')
+        rendered = _render(literal)
 
         assert len(rendered) <= _DISPLAY_DETAIL_MAX, (
             f'Verdict {literal!r} renders to {len(rendered)} chars, over the '
@@ -207,6 +231,38 @@ def test_every_verdict_fits_the_display_detail_budget():
             f'Verdict {literal!r} carries a trailing period, which the '
             f'agent-return-shape contract forbids'
         )
+
+
+def test_every_verdict_placeholder_is_covered_by_the_widening_list():
+    """No verdict placeholder escapes the budget test's substitution.
+
+    This is what keeps the budget assertion above from going vacuous. A
+    placeholder absent from ``_COUNT_PLACEHOLDERS`` is measured at its TEMPLATE
+    width rather than its rendered width, so a verdict that only just fits would
+    pass the budget check and still overflow in production. Deriving the
+    offenders from the live verdict set — rather than trusting the list to have
+    been maintained — is what makes the coverage claim checkable instead of
+    assumed.
+    """
+    placeholder_re = re.compile(r'\{[A-Za-z_][A-Za-z0-9_]*\}')
+
+    literals = _verdict_literals(_section(_OUTPUT_HEADING))
+    assert literals, 'No verdicts parsed — the assertion would be vacuous'
+
+    uncovered = sorted(
+        {
+            found
+            for literal in literals
+            for found in placeholder_re.findall(literal)
+            if found not in _COUNT_PLACEHOLDERS
+        }
+    )
+
+    assert not uncovered, (
+        f'These verdict placeholders are not widened before the budget is '
+        f'measured, so the budget assertion measures the template instead of '
+        f'the rendered string: {uncovered}. Add each to _COUNT_PLACEHOLDERS.'
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -400,7 +456,7 @@ def test_budget_detector_fires_on_an_over_long_verdict():
     literals = _verdict_literals(over_long)
 
     assert len(literals) == 1, 'Verdict parser failed on the synthetic over-long form'
-    rendered = literals[0].replace('{N}', '9999')
+    rendered = _render(literals[0])
     assert len(rendered) > _DISPLAY_DETAIL_MAX, (
         'Budget detector would not fire on an over-long verdict — the budget '
         'assertion would be vacuous'

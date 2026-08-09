@@ -66,7 +66,29 @@ Surfaces twenty-two candidate lists from the worktree's staged diff against the 
 | `--plan-id PLAN_ID` | Yes | Plan identifier (kebab-case). Used to derive the plan footprint on demand from the worktree (`{base}...HEAD` ∪ porcelain) and (when `--project-dir` is omitted) to auto-resolve the worktree path via `manage-status get-worktree-path`. |
 | `--project-dir PROJECT_DIR` | No | Absolute path to the active git worktree (escape hatch). When omitted, the path is auto-resolved from `--plan-id`. All `git` calls run as `git -C {project_dir} ...`. |
 | `--base-branch BRANCH` | No | Base branch for diff computation. Defaults to `main`. |
+| `--since-ref SHA` | No | The previous review round's recorded `head_at_completion`. When supplied, the surfaced FILE SET is the footprint intersected with the paths changed since that ref (that diff ∪ the porcelain working-tree state), so a follow-up round re-examines only what the preceding loop-back actually changed. Omitted on round 1 and on the closing full-surface confirmation pass. |
 | `--contract-radius N` | No | Directory levels to walk up when collecting schema-bearing markdown files (default: 3). |
+
+**`--since-ref` narrows the file set, never the examination of a file.** `_diff_hunks` keeps computing against `--base-branch`, so every file surviving the intersection is still reviewed against its FULL plan diff rather than only its incremental hunks. Narrowing which files are reviewed is a scoping change; narrowing how deeply one is reviewed would be an examination cut, and this argument does not make one.
+
+**Empty intersection surfaces nothing.** The allow-set is tri-state: absent (an unresolvable footprint — do not filter), or a set that MAY be empty (filter to it). A delta round whose intersection is empty genuinely has no files to review, so it emits empty candidate lists — it does NOT fall back to the unfiltered diff, which would invert the scoping precisely when the round had least to do.
+
+**An unresolvable `--since-ref` is refused.** A ref that does not resolve to a commit inside the worktree returns `status: error, error: since_ref_unresolvable` (exit 1) rather than silently widening to a full sweep — a silent widening would report a full-surface verdict the caller would read as delta-scoped.
+
+Because `--since-ref` is always a previously recorded `HEAD` of the same branch, it is necessarily an ancestor of the current `HEAD`; the intersection therefore reuses the shared `compute_plan_branch_diff` footprint primitive rather than re-implementing the diff ∪ porcelain union, whose three-dot diff leg anchors on a merge-base that IS `--since-ref` in exactly that case.
+
+### Detector families
+
+Every entry in the `CANDIDATE_LISTS` registry carries a required `family` over a closed two-member vocabulary, so the partition is total by construction — a registry entry added without one fails at import rather than going silently unreported:
+
+| Family | Reads | Member detection rules |
+|--------|-------|------------------------|
+| `structural` | Code SHAPE — a pattern, a pair of names, a guard, a call site, a claim into a collection | regexes, symmetric pairs, flag-guard pairs, keep markers (and the derived protected-identifiers index), producer-consumer pairs, source-of-truth duplicates, lone unguarded boundaries, scan-derived keys, duplicate-claimable keys, discard paths without a report path |
+| `prose_contract` | PROSE or contract consistency — a heading, a description, a count claim, a documented schema | user-facing strings, markdown sections, contract sources, schema-bearing files, same-document normative directives, description-vs-body frontmatter, stale count-prose, near-identical-hunk touched claims, advertised-form help strings, same-document ordinal references, worked-example clause pairs |
+
+`counts.by_family` reports the per-round mix over the SAME `in_total` population `counts.total` sums, so the two family figures add up to `total` exactly. Both families are always reported, including a zero: a round that surfaced only prose candidates is a detector-mix signal about the change under review, and an omitted key would read as "not measured" rather than "none found".
+
+The vocabulary is deliberately closed at two members. Its job is to make a lopsided round legible, not to publish a detector taxonomy — a finer partition would report the latter and bury the former.
 
 ### Output
 
@@ -77,7 +99,13 @@ status: success
 plan_id: {plan_id}
 project_dir: {project_dir}
 base_branch: {base_branch}
+since_ref: {sha, or empty when the round was not delta-scoped}
+surface_scope: delta | full
+files_in_scope: N
 counts:
+  by_family:
+    structural: {sum of the in_total structural lists}
+    prose_contract: {sum of the in_total prose_contract lists}
   regexes: N1
   user_facing_strings: N2
   markdown_sections: N3
@@ -264,8 +292,10 @@ discard_without_report[N22]{file,line,channel,discard}:
 | Condition | Output |
 |-----------|--------|
 | Live footprint empty (no `{base}...HEAD` ∪ porcelain changes) | `status: success` with empty candidate lists (no diff scope) |
+| `--since-ref` supplied and the intersection is empty | `status: success` with empty candidate lists and `surface_scope: delta` — nothing changed since the previous round, which is the answer, NOT a reason to widen |
 | `git -C {project_dir}` fails | `status: error\nerror: git_unavailable\nmessage: ...` (exit 1) |
 | Base branch not found | `status: error\nerror: base_branch_not_found\nbase_branch: {base}` (exit 1) |
+| `--since-ref` does not resolve to a commit | `status: error\nerror: since_ref_unresolvable\nmessage: ...` (exit 1) |
 | `--plan-id` worktree resolution fails | `status: error\nerror: worktree_resolution_failed\nmessage: ...` (exit 2) |
 
 ## Subcommand: `scan-worked-examples`
@@ -361,10 +391,10 @@ The canonical argparse surface for `self_review.py`. The plugin-doctor analyzer 
 
 ```bash
 python3 .plan/execute-script.py pm-plugin-development:ext-self-review-plan-marshall:self_review surface \
-  --plan-id PLAN_ID [--project-dir PROJECT_DIR] [--base-branch BASE_BRANCH] [--contract-radius CONTRACT_RADIUS]
+  --plan-id PLAN_ID [--project-dir PROJECT_DIR] [--base-branch BASE_BRANCH] [--since-ref SINCE_REF] [--contract-radius CONTRACT_RADIUS]
 ```
 
-`--project-dir` is optional: when omitted, the worktree path is auto-resolved from `--plan-id`. Supplying both is allowed because `--plan-id` also drives modified-files lookup.
+`--project-dir` is optional: when omitted, the worktree path is auto-resolved from `--plan-id`. Supplying both is allowed because `--plan-id` also drives modified-files lookup. `--since-ref` is optional and delta-scopes the surfaced file set to the paths changed since a previous round's recorded `head_at_completion`; omit it for round 1 and for the closing full-surface confirmation pass.
 
 ### scan-worked-examples
 

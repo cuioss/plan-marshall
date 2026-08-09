@@ -1159,7 +1159,12 @@ class TestLoopBackWithoutAskingContract:
         self, phase_6_skill_md_text: str
     ):
         """The canonical ``[STATUS] Loop-back iteration {N}/{max}`` work-log
-        line MUST be documented so retrospective analysis can grep for it."""
+        line MUST be documented so retrospective analysis can grep for it.
+
+        The counter placeholder is the iteration ABOUT to be spent
+        (``{loop_back_iteration + 1}``), because the ceiling is an admission
+        test rather than a report on an iteration already consumed.
+        """
         text = phase_6_skill_md_text
         # The literal line shape — substring match (the runtime substitutes
         # the placeholders).
@@ -1168,12 +1173,146 @@ class TestLoopBackWithoutAskingContract:
             'SKILL.md must document the "Loop-back iteration" log-line text'
         )
         # The {N}/{max} shape must be visible (placeholders or actual count
-        # syntax).
+        # syntax), in either the admission form or the plain-counter form.
         assert (
-            '{loop_back_iteration}/{max_iterations}' in text
+            '{loop_back_iteration + 1}/{max_iterations}' in text
+            or '{loop_back_iteration}/{max_iterations}' in text
             or '{N}/{max}' in text
         ), (
             'SKILL.md must show the iteration counter shape ({N}/{max} or named placeholders)'
+        )
+
+    # ---- Ceiling enforceability (persisted counter + admission boundary) ---
+    #
+    # The declared ceiling used to be unenforceable in the DEFAULT
+    # configuration for two compounding reasons: the consult sat INSIDE the
+    # ``loop_back_without_asking == true`` branch, and the counter lived in
+    # model context. With ``loop_back_without_asking: false`` every loop-back
+    # halted and prompted, the operator re-ran finalize, and the count started
+    # again at zero — so a plan could loop indefinitely, one re-run at a time,
+    # while ``max_iterations`` was nominally in force. These three cases pin
+    # the fix: the counter is PERSISTED, the ceiling gates BOTH knob branches,
+    # and a refusal is reported distinctly from an ordinary halt.
+
+    @staticmethod
+    def _loop_back_hook_section(text: str) -> str:
+        """The item-7b hook body, bounded so positional claims are real.
+
+        A document-wide substring search cannot distinguish "the ceiling is
+        consulted before the knob" from "both strings appear somewhere in a
+        1400-line file", so the ordering assertion below is made inside this
+        bounded section rather than over the whole text.
+        """
+        start = text.index('7b. Loop-back continuation hook')
+        end = text.index('7c.', start)
+        section = text[start:end]
+        assert section.strip(), 'Loop-back hook section resolved empty'
+        return section
+
+    def test_loop_back_iteration_counter_is_persisted_not_in_model_context(
+        self, phase_6_skill_md_text: str
+    ):
+        """The counter MUST live in status metadata, not in model context.
+
+        An in-memory counter is reset by every session restart, every phase
+        re-entry, and every halt-and-prompt cycle — which is precisely the
+        path the default configuration takes on every loop-back.
+        """
+        text = phase_6_skill_md_text
+
+        assert 'status.metadata.loop_back_iteration' in text, (
+            'SKILL.md must name status.metadata.loop_back_iteration as the '
+            'counter home — the ceiling is unenforceable without a durable count'
+        )
+        assert '--set --field loop_back_iteration' in text, (
+            'SKILL.md must document persisting the incremented count via '
+            'manage-status metadata --set --field loop_back_iteration'
+        )
+        assert '--get --field loop_back_iteration' in text, (
+            'SKILL.md must document reading the count back via '
+            'manage-status metadata --get --field loop_back_iteration'
+        )
+        # The retired model-context claims must NOT survive anywhere in the doc.
+        for retired in (
+            'it is NOT persisted to status.json',
+            'starts the counter back at 0',
+        ):
+            assert retired not in text, (
+                f'SKILL.md still carries the retired in-model-context claim '
+                f'{retired!r}; a counter described as non-persisted contradicts '
+                'the durable-count contract the ceiling depends on'
+            )
+
+    def test_ceiling_is_consulted_before_the_knob_on_both_branches(
+        self, phase_6_skill_md_text: str
+    ):
+        """The ceiling gate MUST precede the ``loop_back_without_asking`` read.
+
+        Position IS the contract here: a ceiling evaluated after the knob read,
+        or nested inside one of its branches, bounds only that branch. Asserting
+        the order inside the bounded hook section is what makes this a real
+        claim rather than a co-occurrence check.
+        """
+        section = self._loop_back_hook_section(phase_6_skill_md_text)
+
+        # Anchor on the two ACTIONS, not on the two nouns: the nouns appear in
+        # surrounding rationale prose in either order, so a bare name search
+        # would assert nothing about where the gate actually runs. The gate is
+        # the admission comparison; the knob consult is its config read.
+        ceiling_at = section.find('Ceiling admission gate')
+        knob_at = section.find(
+            'plan phase-6-finalize get --field loop_back_without_asking'
+        )
+
+        assert ceiling_at != -1, (
+            'The loop-back hook declares no "Ceiling admission gate" — the '
+            'ceiling must be an admission test with its own named gate'
+        )
+        assert knob_at != -1, (
+            'The loop-back hook does not read loop_back_without_asking through '
+            'the documented plan phase-6-finalize get surface'
+        )
+        assert ceiling_at < knob_at, (
+            'The max_iterations ceiling is consulted AFTER the '
+            'loop_back_without_asking knob inside the loop-back hook. Nested '
+            'that way it bounds only one knob branch, leaving the DEFAULT '
+            'configuration (loop_back_without_asking: false) unbounded — the '
+            'exact defect this gate was moved to fix.'
+        )
+        assert 'BOTH knob branches' in section, (
+            'The hook must state that the ceiling applies to BOTH knob '
+            'branches, so a later edit cannot re-nest it under one'
+        )
+
+    def test_ceiling_breach_message_is_distinct_from_the_ordinary_halt(
+        self, phase_6_skill_md_text: str
+    ):
+        """A refused loop-back MUST NOT read as an ordinary halt-and-prompt.
+
+        The two outcomes mean different things — "a loop-back awaits your
+        go-ahead" versus "a loop-back was REFUSED and the work it would have
+        reviewed is unreviewed" — so they carry different operator messages.
+        """
+        section = self._loop_back_hook_section(phase_6_skill_md_text)
+
+        assert 'Loop-back ceiling breached' in section, (
+            'The breach path must carry its own distinct message marker'
+        )
+        assert 'refusing to admit' in section, (
+            'The breach message must state that the iteration was REFUSED, not '
+            'merely that the run paused'
+        )
+        # The consequence the breach message must additionally state.
+        section_lower = section.lower()
+        assert 'no remaining iteration' in section_lower, (
+            'The breach message must state that findings raised in the halting '
+            'round have no remaining iteration in which their fixes could be '
+            'reviewed — otherwise an operator reads the halt as a clean stop'
+        )
+        # And it must be a DIFFERENT string from the ordinary knob halt.
+        assert 'returning control to user (loop_back_without_asking=false)' in section, (
+            'The ordinary knob halt message must still exist, so the two '
+            'outcomes are genuinely distinguishable rather than collapsed'
         )
 
     def test_phase_6_skill_md_documents_truth_table(

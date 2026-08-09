@@ -33,7 +33,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 ## Domain-Aware Candidate Surfacing
 
-The deterministic surfacer is pluggable via the `plan-marshall:extension-api/standards/ext-point-self-review-surfacing` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract; `ext-self-review-{domain}` is the implementor skill naming pattern, not the extension point itself. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the twenty candidate sub-lists below as TOON — fifteen of which are the line-level heuristic lists that sum into the `counts.total` gate contract Step 1b consumes; the remaining five (`contract_sources`, `schema_bearing_files`, `count_prose`, `advertised_form_help_strings`, and the derived `protected_identifiers` index) are review-anchor/index lists excluded from that count (see Step 1b below for the full exclusion list). The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Because this step now ships `default_on: true` to consumer projects that may not carry a domain surfacer, Step 1 discovers the surfacing implementors via `find_implementors(ext-point-self-review-surfacing)` and invokes the resolvable domain implementor (in the meta-project, `pm-plugin-development:ext-self-review-plan-marshall:self_review`, preserving current behavior bit-for-bit). When NO implementor resolves in the current executor, Step 1 takes the **zero-generator fallback** — an empty candidate set, no LLM dispatch, and a clean `done` outcome.
+The deterministic surfacer is pluggable via the `plan-marshall:extension-api/standards/ext-point-self-review-surfacing` extension point — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) for the contract; `ext-self-review-{domain}` is the implementor skill naming pattern, not the extension point itself. Each implementor exposes a `surface --plan-id {plan_id}` script that emits the candidate sub-lists as TOON. Some are line-level heuristic lists summed into the `counts.total` gate contract Step 1b consumes; the rest are review-anchor/index lists excluded from that count. Which is which is declared by the ext-point's Output Schema and derived from the implementor's registry — this document reads the emitted `counts` block rather than carrying its own copy of the membership. The plan-marshall-domain implementor is the `ext-self-review-plan-marshall` skill, homed in the `pm-plugin-development` bundle; its script notation is `pm-plugin-development:ext-self-review-plan-marshall:self_review`. Because this step now ships `default_on: true` to consumer projects that may not carry a domain surfacer, Step 1 discovers the surfacing implementors via `find_implementors(ext-point-self-review-surfacing)` and invokes the resolvable domain implementor (in the meta-project, `pm-plugin-development:ext-self-review-plan-marshall:self_review`, preserving current behavior bit-for-bit). When NO implementor resolves in the current executor, Step 1 takes the **zero-generator fallback** — an empty candidate set, no LLM dispatch, and a clean `done` outcome.
 
 ## Inputs (inline step — Step 1)
 
@@ -46,35 +46,19 @@ The deterministic surfacer is pluggable via the `plan-marshall:extension-api/sta
 |-------------------|:--------:|-------------|
 | `plan_id` | Yes | Plan identifier. |
 | `WORKTREE` | Yes | Repo-relative working-directory path. |
-| `candidates` | Yes | TOON envelope from the resolved `ext-self-review-{domain}` surface helper — carries the twenty candidate sub-lists below. The orchestrator runs the surface helper in Step 1 and forwards its output verbatim; the workflow body does NOT re-invoke the surface helper. |
+| `candidates` | Yes | TOON envelope from the resolved `ext-self-review-{domain}` surface helper — carries the candidate sub-lists and the emitted `counts` block. The orchestrator runs the surface helper in Step 1 and forwards its output verbatim; the workflow body does NOT re-invoke the surface helper. |
 
-| `candidates` sub-list | Schema | Purpose |
-|-----------------------|--------|---------|
-| `regexes[N]{file,line,pattern}` | Added regex literals and fnmatch globs in `.py`/`.md` hunks | Boundary check for regex over-fit |
-| `user_facing_strings[N]{file,line,context,text}` | Added strings in skill prose, error messages, CLI help | Wording disambiguation |
-| `markdown_sections[N]{file,line,heading,siblings}` | Added/edited markdown sections per file with sibling-section list | Duplication scanning |
-| `symmetric_pairs[N]{file,line,name,partner}` | Functions whose names match save/load, init/restore, push/pop, acquire/release, open/close, start/stop pairings | Symmetric pair test-coverage check |
-| `flag_guard_pairs[N]{file,line,flag,forms_covered}` | Argument-presence guards over a `--flag` token, with the flag forms each guard covers (`space` / `equals` / `both`) | Flag-form-coverage comparison (part of check #1) |
-| `contract_sources[N]{file,sources}` | Per modified file: nearby `SKILL.md` and `standards/*.md` paths | Contract cross-reference anchor |
-| `schema_bearing_files[N]{file,format}` | Markdown files within the contract radius whose content contains a fenced JSON or TOON block | Contract drift detection |
-| `advertised_form_help_strings[N]{file,line,arg,help_text,raw_pass_line}` | argparse `help=` strings advertising more than one accepted input form paired with a raw `args.<dest>` pass-through that does no normalization | Advertised-form drift (sub-check of check #5) |
-| `keep_markers[N]{file,line,identifier,kind}` + `protected_identifiers[M]` | `<!-- self-review: keep <id> -->` markers in the post-image; the top-level `protected_identifiers` set mirrors the identifier values for fast membership checks | Duplication scan refuses to drop any protected identifier |
-| `producer_consumer[N]{file,line,key,consumed}` | Produced output-dict keys (`output['key'] = ...`) with no consumer (`foo['key']` / `.get('key')`) anywhere in the diff | Dangling-producer check (check #6) |
-| `source_of_truth[N]{name,files,values}` | UPPER_SNAKE_CASE constants assigned divergent literals across two diff files | Source-of-truth drift check (check #7) |
-| `same_document_consistency[N]{file,line,keyword,text}` | Added `.md` normative directives (MUST/NEVER/etc.) for sibling-contradiction review | Same-document consistency check (check #8) |
-| `description_vs_body[N]{file,line,key,description}` | Modified `.md` files carrying a frontmatter `description`/`summary` whose body the diff also changed | Description-vs-body consistency check (check #9) |
-| `unguarded_boundaries[N]{file,line,boundary,guarded}` | Added `subprocess.*` / file-I/O calls with no `check=True` and no enclosing `try/except` in the same function | Lone-unguarded-boundary check (check #10) |
-| `count_prose[N]{file,line,text}` | Count-prose (a digit or number word adjacent to a cardinality noun) in every `SKILL.md` of a modified file's skill directory | Stale-count-prose re-check (check #11) |
-| `touched_claims[N]{file,line,text}` | The `+` line of a `-`/`+` hunk pair differing by exactly one token | Touched-claim whole-line re-check (check #12) |
-| `ordinal_references[N]{file,line,text,list_line}` | Added same-document ordinal references (`item N` / `step N` / bare `(N)`) pointing into an ordered-list block the same diff touched; `list_line` is the post-image line of the referenced item | Same-document ordinal-reference re-check (check #13) |
-| `scan_derived_keys[N]{file,line,name,sequence,key_consumed}` | A function that decomposes a value into `sequence` and selects a key by first-match of a compiled pattern over it, rather than by indexing that decomposition at a position anchored on a known root; `key_consumed` flags whether some other block in the diff consumes the derived key as an identity | Unreachable-guard check (check #14) |
-| `worked_example_pairs[N]{file,line,clause,required_predicate,example_predicate,agrees}` | A clause section whose GOOD worked example branches on `example_predicate` while the clause's own normative prose requires `required_predicate`; only the disagreeing case is surfaced, so `agrees` is always `false` on a surfaced entry | Worked-example clause-mismatch check (check #15) |
+**The candidate sub-list vocabulary is NOT restated here.** Each sub-list's key, entry schema, and the check that consumes it are declared once, authoritatively, in [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) § Output Schema and § Required Candidate Sub-Lists — derived in turn from the implementor's `CANDIDATE_LISTS` registry, which is the single code-side source of the emitted key set. Read the emitted `counts` block for what this round actually surfaced, and that document for what each key means.
+
+A hand-maintained copy of the row set used to live here. It is removed rather than corrected: a second enumeration of a registry-derived vocabulary has to be re-edited on every registry change, states a cardinality that goes stale the moment one is added, and gives a reader two lists to reconcile with no way to tell which is authoritative. Removing it deletes that drift class instead of re-fixing one instance of it.
 
 Skills the caller MUST forward in `skills[]`: none (the workflow reads files with the `Read` tool and emits no script calls).
 
 ## HEAD-dependency
 
-`pre-submission-self-review` declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). Its verdict is a **structural review of the plan's diff**, so the verdict is a function of that diff: a loop-back fix task that advances HEAD past the recorded `head_at_completion` produces a diff this step never examined, and a `done` record carried across that advance would stand as green for a diff no check ever ran against. The dispatcher MUST therefore re-fire this step against the newer HEAD. Capture `git rev-parse HEAD` immediately before the terminal `mark-step-done` call and forward it via `--head-at-completion {sha}`.
+`pre-submission-self-review` declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). Its verdict is a **structural review of the plan's diff**, so the verdict is a function of that diff: a loop-back fix task that advances HEAD past the recorded `head_at_completion` produces a diff this step never examined, and a `done` record carried across that advance would stand as green for a diff no check ever ran against. The dispatcher MUST therefore re-fire this step against the newer HEAD. Capture `git rev-parse HEAD` immediately before EVERY terminal `mark-step-done` call — Branch A and Branch B alike — and forward it via `--head-at-completion {sha}`.
+
+The recorded SHA carries a **second, independent** load: it is the **delta anchor** the next round scopes itself against (Step 1 reads it back and passes it as `--since-ref`). That is why it is written on the `failed` branch too, where the dispatcher's retry decision does not need it, and why its absence on a `done` record is now REFUSED rather than tolerated — `manage-status mark-step-done` returns `error: missing_head_at_completion` and writes nothing when a `head_dependent: true` step records `done` without it. An unanchored record would leave the following round unable to define its delta, silently degrading it to a full re-sweep.
 
 ## Execution
 
@@ -105,14 +89,39 @@ python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery 
 
 Parse the discovered implementors' `self_review` script notations from the returned TOON. Select the first implementor whose notation **resolves in the current executor** (in the meta-project this is `pm-plugin-development:ext-self-review-plan-marshall:self_review`, preserving current behavior bit-for-bit).
 
-**Resolvable implementor path**: invoke the resolved implementor's `surface` subcommand exactly as today. The implementor derives the plan footprint live from the worktree (`{base}...HEAD` ∪ porcelain), computes the staged diff against the worktree's base branch, and emits the twenty candidate sub-lists in a single TOON document on stdout. Forward `--contract-radius {N}` derived from `{cov_scope}` (`change-set` → `1`; `artifact`/`inherit` → `3`; `component`/`module`/`overall` → `5`):
+**Resolve the delta anchor first.** This step re-fires on every loop-back, and without an anchor each round re-surfaces the entire plan diff — including every file the preceding round already examined and no fix has touched since. Read this step's OWN prior record and take its `head_at_completion` as the anchor:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
+  --plan-id {plan_id}
+```
+
+Locate `metadata.phase_steps.6-finalize.pre-submission-self-review.head_at_completion` and capture it as `{since_ref}`. Exactly one of two cases holds:
+
+- **A prior record carries a non-empty SHA** → this is a **delta round**. Pass `--since-ref {since_ref}` on the surface call below. The surfacer narrows the file set to the footprint intersected with the paths changed since that SHA.
+- **No prior record, or its `head_at_completion` is absent/empty** → this is a **full round** (round 1, or a first run after a record that carried no anchor). Do NOT pass `--since-ref` at all. Never substitute the base branch, `HEAD`, or any other ref for a missing anchor — a fabricated anchor would silently scope the round against a boundary no round ever completed at.
+
+Passing `--since-ref` narrows WHICH FILES are surfaced, never how deeply a surfaced file is reviewed: hunks are still computed against the base branch, so every surviving file is still reviewed against its full plan diff.
+
+**Resolvable implementor path**: invoke the resolved implementor's `surface` subcommand. The implementor derives the plan footprint live from the worktree (`{base}...HEAD` ∪ porcelain), computes the staged diff against the worktree's base branch, and emits the candidate sub-lists in a single TOON document on stdout. Forward `--contract-radius {N}` derived from `{cov_scope}` (`change-set` → `1`; `artifact`/`inherit` → `3`; `component`/`module`/`overall` → `5`):
 
 ```bash
 python3 .plan/execute-script.py {resolved_implementor_notation} \
   surface --plan-id {plan_id} --contract-radius {N}
 ```
 
+On a delta round, append `--since-ref {since_ref}`:
+
+```bash
+python3 .plan/execute-script.py {resolved_implementor_notation} \
+  surface --plan-id {plan_id} --contract-radius {N} --since-ref {since_ref}
+```
+
 `{resolved_implementor_notation}` is the notation selected above — in the meta-project this resolves to `pm-plugin-development:ext-self-review-plan-marshall:self_review`, preserving current behavior bit-for-bit; a consumer project resolving a different domain implementor invokes that implementor's notation instead. Auto-resolves the worktree from `--plan-id`. Add `--project-dir {worktree_path}` only when the explicit override is required. The `inherit`/default radius of `3` reproduces today's surfacer breadth.
+
+The surfacer echoes `surface_scope` (`delta` or `full`), `since_ref`, and `files_in_scope`, so the round variant that produced a verdict is legible from the returned TOON without reconstructing it. A `--since-ref` that does not resolve is refused by the surfacer with `since_ref_unresolvable` — that is a helper non-zero exit and takes the halt path below; it is never silently widened into a full sweep.
+
+**A delta round cannot close the step on its own evidence.** A delta-scoped round examined only the files that changed since the previous round, so a clean result from it is a *filter* result, not a closing verdict: it says nothing about the files it did not look at. When a delta round returns zero findings, re-run this step ONCE at full scope — repeat the surface call WITHOUT `--since-ref` and carry that full candidate set through Steps 1b–3 — and record the outcome from that full-surface pass. Only a full-surface clean pass may record `done` (see Step 4 Branch A). A delta round that DOES return findings needs no confirmation sweep: it has already found the work that sends the step round the loop again.
 
 If the resolved implementor exits non-zero, halt and proceed to **Step 4 — Mark Step Complete (Failure)**, surfacing the helper error in the `display_detail` payload. Do NOT dispatch the LLM cognitive phase below.
 
@@ -122,7 +131,11 @@ Capture the helper's TOON output as `{candidates_toon}` for forwarding to the co
 
 ### Step 1b: Candidate-count gate (inline vs dispatch) — B5
 
-Parse the candidate sub-lists from `{candidates_toon}` and read `total_candidates` from the surfacer's `counts.total` field, which sums the fifteen line-level heuristic lists (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`, `ordinal_references`, `scan_derived_keys`, `worked_example_pairs`). The review-anchor lists (`contract_sources`, `schema_bearing_files`, `count_prose`, `advertised_form_help_strings`) and the derived `protected_identifiers` index are excluded from `total_candidates` for the same reason they are excluded from `counts.total` (see the surfacing skill's § Output note).
+Parse the candidate sub-lists from `{candidates_toon}` and read `total_candidates` from the surfacer's emitted `counts.total` field. Which lists feed that sum is the surfacer's contract, not this document's: read the emitted `counts` block and take `total` from it. The authoritative membership — which lists are summed, which are review-anchor categories excluded from the sum, and why — lives in [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) § Output Schema.
+
+This document deliberately does NOT restate that enumeration. A hand-maintained copy of the summed-list names here would have to be re-edited every time the registry gained or lost a list, and a copy that fell behind would state a `total` formula the surfacer does not compute — the drift class this replacement removes rather than re-fixes.
+
+**Read the per-round detector mix too.** The surfacer emits `counts.by_family` alongside `counts.total`: `structural` (detectors reading code shape) and `prose_contract` (detectors reading prose or contract consistency), summing exactly to `total` over the same population. Report both figures with the candidate count, including a zero — a round whose candidates are entirely `prose_contract` says something specific about the change under review, and reading its total alone would present a lopsided round as ordinary thoroughness.
 
 Evaluate the gate, with the threshold `{gate}` indexed by `{cov_scope}` (`inherit`/`change-set` → `5`; `artifact` → `8`; `component`/`module`/`overall` → `12`). The `inherit` path preserves the `<= 5` threshold verbatim:
 
@@ -146,7 +159,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:phase-6-finalize:pre-submission-self-review) Candidate-count gate DISPATCH — total_candidates={N} (>{gate} threshold, cov_scope={cov_scope})"
 ```
 
-**Return-TOON shape invariant**: BOTH branches MUST produce the IDENTICAL return-TOON shape documented in `## Dispatched-envelope output` below (`status`, `display_detail`, `findings[N]{file,line,defect_class,rationale}`). The inline branch produces the same TOON-shaped result in dispatcher context — `display_detail` follows the same three-verdict rule bit-for-bit (`"self-review: nothing to check - no candidates surfaced"` / `"self-review clean: {N} candidates examined, no check matched"` / `"self-review found {K} issues"`), and `findings[]` carries the same entry shape. In particular the inline branch MUST pick between the two clean verdicts on the same `total_candidates == 0` predicate the dispatch branch uses; a branch that collapses them back to one undifferentiated clean string violates this invariant. Downstream consumers (Step 4 bookkeeping, output-template rendering) MUST NOT need to differentiate which branch produced the result. The gate is a pure dispatch-cost optimization — semantics are preserved bit-for-bit.
+**Return-TOON shape invariant**: BOTH branches MUST produce the IDENTICAL return-TOON shape documented in `## Dispatched-envelope output` below (`status`, `display_detail`, `findings[N]{file,line,defect_class,rationale,cohort_size}`). The inline branch produces the same TOON-shaped result in dispatcher context — `display_detail` follows the same three-verdict rule bit-for-bit (`"self-review: nothing to check - no candidates surfaced"` / `"self-review clean: {N} candidates examined, no check matched"` / `"self-review found {K} issues in {C} classes"`), and `findings[]` carries the same entry shape, `cohort_size` included. In particular the inline branch MUST pick between the two clean verdicts on the same `total_candidates == 0` predicate the dispatch branch uses; a branch that collapses them back to one undifferentiated clean string violates this invariant. Downstream consumers (Step 4 bookkeeping, output-template rendering) MUST NOT need to differentiate which branch produced the result. The gate is a pure dispatch-cost optimization — semantics are preserved bit-for-bit.
 
 ### Step 2: LLM cognitive phase (dispatch)
 
@@ -196,6 +209,20 @@ Before scanning the line-level candidate lists, load the contract sources surfac
 ### Step 3: Apply fifteen checks (in-context)
 
 For each non-empty candidate list, apply the corresponding cognitive check to the surfaced items only — never expand the review to candidates the helper did not surface.
+
+#### Class-closure obligation (fix the class, not the instance)
+
+A defect that appears once in a change almost never appears only once: the same misreading applied to one site was usually applied to its siblings in the same edit. Filing one member per round makes the step loop back once per member, and each loop-back round pays a full step dispatch to find the next instance of a defect already understood.
+
+**The obligation**: when a check fires on a surfaced candidate and you record a finding whose `defect_class` is D, you MUST — before composing the findings list — re-scan every OTHER surfaced candidate **of the same candidate list** for D, and file every member you find in the SAME round.
+
+`defect_class` is the machine-readable discriminator this sweep groups on. It is the same token Step 4 Branch B files as the finding `--title`, so no new taxonomy is introduced.
+
+**The bound**: the sweep is bounded by the surface-only rule stated immediately above — it re-examines candidates the surfacer already surfaced and NEVER widens past them. It is a re-scan of the existing candidate set for one more discriminator, not a licence to read files the surfacer did not surface.
+
+**Consequence of the bound, stated so it cannot be misread as a coverage claim**: because the surfaced set is round-dependent (a delta round surfaces only the files changed since the previous round — see Step 1), a delta round's class sweep reaches only the delta surface. A member of class D sitting in a file unchanged since the previous round is NOT swept during a delta round. The class is still closed as a class, because the closing **full-surface confirmation pass** (Step 1, Step 4 Branch A) runs this same sweep over the whole plan diff before the step may record `done`. That confirmation pass — not any intermediate round, and not round 1 — is what closes the class. Round 1's clean result is deliberately not treated as standing evidence for a class first discovered in a later round: the discriminator was never applied to round 1's surface.
+
+**Every finding carries its cohort size.** Each entry in the returned `findings[]` gains a `cohort_size` field: the number of findings sharing that entry's `defect_class` in this round. A cohort of one is then distinguishable from a cohort whose remaining members were never looked for — without the field, both render as a single finding and the difference is invisible.
 
 > **Coverage contract**: the per-candidate lens depth is governed by the coverage instruction resolved in Step 0 (`{cov_instruction}`). The surface-only rule above caps the scope to what the surfacer surfaced at every rung — never widen the candidate set past it. The thoroughness rung sets the depth: `inherit`/`T1`/`T2` → run the fifteen checks below as today (face-value per candidate); `T3`+ → additionally trace each surfaced candidate's siblings and cross-references before adjudicating it (the contract cross-references in Step 2a already supply the anchors). `inherit/inherit` reproduces today's behavior bit-for-bit. See the two-dial scope × thoroughness contract in [`../../persona-plan-marshall-agent/standards/thoroughness.md`](../../persona-plan-marshall-agent/standards/thoroughness.md) and the gather/expand/consume obligation in [`../../persona-plan-marshall-agent/standards/coverage-gathering-contract.md`](../../persona-plan-marshall-agent/standards/coverage-gathering-contract.md).
 
@@ -258,17 +285,19 @@ The "absence-class" checks — contract drift (check 5) and its variant labels n
 ```toon
 status: success | error
 display_detail: "<≤80 char ASCII summary>"
-findings[N]{file,line,defect_class,rationale}:
+findings[N]{file,line,defect_class,rationale,cohort_size}:
   - ...
 ```
 
+`cohort_size` is the number of findings in this round sharing that entry's `defect_class` (see § Class-closure obligation). Every entry carries it, including a genuine cohort of one — an omitted field would be indistinguishable from a cohort whose other members were never looked for.
+
 `status: success` regardless of findings count — the workflow itself succeeds at producing the structural-review verdict; the caller's manifest-step orchestration translates a non-empty `findings` list into the manifest step's `--outcome failed` per the gating-step convention. Empty `findings` → caller marks `--outcome done`.
 
-`display_detail` shape. A clean run has TWO disjoint verdicts — an undifferentiated single clean string is prohibited, because "nothing was there to check" and "everything checked passed" are different pieces of information and an operator reading one as the other draws the wrong conclusion about review coverage. Let `{N}` be the surfacer's `counts.total` (the fifteen line-level heuristic lists: `regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`, `ordinal_references`, `scan_derived_keys`, `worked_example_pairs`):
+`display_detail` shape. A clean run has TWO disjoint verdicts — an undifferentiated single clean string is prohibited, because "nothing was there to check" and "everything checked passed" are different pieces of information and an operator reading one as the other draws the wrong conclusion about review coverage. Let `{N}` be the surfacer's emitted `counts.total`. Which lists that sum covers is the surfacer's contract — see [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) § Output Schema — and is deliberately not restated here:
 
 - Empty `findings` AND `{N} == 0` (**nothing-to-check** verdict) → `"self-review: nothing to check - no candidates surfaced"`. No candidate was surfaced at all, so no check ever ran. The zero-generator fallback path (Step 1) reports this verdict.
 - Empty `findings` AND `{N} > 0` (**no-check-matched** verdict) → `"self-review clean: {N} candidates examined, no check matched"`. Candidates were surfaced and every check was applied to them without firing.
-- Non-empty `findings` → `"self-review found {K} issues"`.
+- Non-empty `findings` → `"self-review found {K} issues in {C} classes"`, where `{C}` is the number of DISTINCT `defect_class` values across those `{K}` findings. The class count rides this verdict rather than a clean one because it is the widest of the three: it renders to 45 characters at `{K}={C}=9999`, leaving 35 characters of headroom against the 80-character budget, whereas the no-check-matched verdict already spends 61 of its 80. Reporting both figures is what makes a round of nine findings in one class legible as one swept cohort rather than as nine unrelated defects.
 
 All three are ≤80-char ASCII with no trailing period, and no verdict is a prefix of another — so a consumer matching a whole verdict string can never mistake one verdict for another, and the two clean verdicts in particular diverge at their second word (`nothing` vs `clean`).
 
@@ -277,6 +306,8 @@ All three are ≤80-char ASCII with no trailing period, and no verdict is a pref
 Record the outcome on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time.
 
 **Branch A — findings list is empty**: read the `display_detail` returned by the workflow verbatim (the workflow computes the candidate count for the human-readable message).
+
+**Precondition — the clean result MUST come from a full-surface pass.** Before recording `done`, confirm the returned verdict was produced by a run that carried NO `--since-ref` (the surfacer echoes `surface_scope: full`). A `done` recorded off a delta-scoped clean result would close the step on evidence covering only the files that changed since the previous round. When the clean result came from a delta round, do NOT record `done` here — go back to Step 1, re-run the surface call at full scope, and record the outcome from that pass instead.
 
 Immediately before invoking `mark-step-done`, resolve the worktree HEAD SHA so the dispatcher can detect a stale completion record after a downstream loop-back commit advances HEAD (see § HEAD-dependency above):
 
@@ -295,24 +326,32 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 **Branch B — findings list is non-empty**: first persist every finding to the plan's `qgate-6-finalize.jsonl` finding store, then surface the findings in the finalize TOON output (consumed by `output-template.md`) so the operator sees `file:line` and `defect_class` per finding.
 
-For every entry in the returned `findings[N]{file,line,defect_class,rationale}` list, emit one `manage-findings qgate add` call. This loop runs in the inline dispatcher context (the same context as the `mark-step-done` call below). `--phase 6-finalize` and `--source qgate` are mandatory; `--type bug` is the canonical finding type for a structural self-review defect:
+For every entry in the returned `findings[N]{file,line,defect_class,rationale,cohort_size}` list, emit one `manage-findings qgate add` call. This loop runs in the inline dispatcher context (the same context as the `mark-step-done` call below). `--phase 6-finalize` and `--source qgate` are mandatory; `--type bug` is the canonical finding type for a structural self-review defect. The `--detail` body carries the entry's `cohort_size` so the loop-back fix task addresses the CLASS rather than the instance — a fix task that reads "1 of 4 in this class" is told, at the point of work, that three siblings are waiting.
+
+The title carries the class AND the site, `{file}:{line}`, both of which the returned entry already declares — no field beyond the returned schema is interpolated. The bare `{defect_class}` form is forbidden by the finding-authoring contract owned by [`ext-self-review-plan-marshall/SKILL.md`](../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md) § Finding-authoring contract; read the reasons there rather than here, so one statement of them cannot drift from the other:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add \
   --plan-id {plan_id} --phase 6-finalize --source qgate --type bug \
-  --title "{defect_class}" --detail "{rationale}" --file-path "{file}" \
+  --title "{defect_class} at {file}:{line}" --detail "{rationale} [defect_class {defect_class}: {cohort_size} finding(s) in this class this round]" \
+  --file-path "{file}" \
   --component pm-plugin-development:ext-self-review-plan-marshall --severity warning
 ```
 
-Then record the failed outcome:
+Then resolve the worktree HEAD SHA — the same call and the same `{worktree_path}` as Branch A — and record the failed outcome carrying it:
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step default:pre-submission-self-review --outcome failed \
-  --display-detail "{display_detail_from_workflow}"
+  --display-detail "{display_detail_from_workflow}" \
+  --head-at-completion {sha}
 ```
 
-Branch A (empty findings) persists nothing — there are no findings to write. Branch B does not need `--head-at-completion`: the dispatcher unconditionally retries `failed` records on re-entry regardless of HEAD, so the SHA carries no decision value here.
+Branch A (empty findings) persists nothing — there are no findings to write. Branch B forwards `--head-at-completion` even though the dispatcher retries `failed` records unconditionally: the SHA carries no *retry* decision value, but it IS the delta anchor the NEXT round reads in Step 1. A `failed` record written without it leaves the following round with no anchor, which silently degrades that round to a full sweep — the exact re-sweep this scoping exists to remove. The anchor is written on both terminal branches for that reason, not for the dispatcher's benefit.
 
 The dispatcher's existing failure handling halts the phase on `outcome=failed`, matching the gating-step contract used by `pre-push-quality-gate`. The operator must address every finding (amend the diff: rename, tighten regex, rewrite wording, delete duplicate section, fix contract drift), re-run the step, and only then advance to `push`.
 

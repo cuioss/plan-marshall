@@ -41,7 +41,13 @@ def _make_plan(plan_id: str) -> None:
     )
 
 
-def _mark_args(plan_id: str, phase: str, step: str, outcome: str) -> Namespace:
+def _mark_args(
+    plan_id: str,
+    phase: str,
+    step: str,
+    outcome: str,
+    head_at_completion: str | None = None,
+) -> Namespace:
     return Namespace(
         plan_id=plan_id,
         phase=phase,
@@ -49,7 +55,7 @@ def _mark_args(plan_id: str, phase: str, step: str, outcome: str) -> Namespace:
         outcome=outcome,
         force=False,
         display_detail=None,
-        head_at_completion=None,
+        head_at_completion=head_at_completion,
         loop_back_target=None,
     )
 
@@ -63,9 +69,23 @@ def _assert_args(plan_id: str, phase: str, step: str, require_terminal: bool = F
     )
 
 
-def _seed_step(plan_id: str, phase: str, step: str, outcome: str) -> None:
-    """Mark a step done via the production verb (clean-worktree stubbed for may-mutate steps)."""
-    cmd_mark_step_done(_mark_args(plan_id, phase, step, outcome))
+def _seed_step(
+    plan_id: str,
+    phase: str,
+    step: str,
+    outcome: str,
+    head_at_completion: str | None = None,
+) -> None:
+    """Mark a step done via the production verb (clean-worktree stubbed for may-mutate steps).
+
+    ``head_at_completion`` is required when seeding a ``done`` record for a step
+    whose doc declares ``head_dependent: true`` — the production verb refuses an
+    unanchored head-dependent ``done``, so a seed without it would never write
+    the record the assertion under test reads back.
+    """
+    cmd_mark_step_done(
+        _mark_args(plan_id, phase, step, outcome, head_at_completion=head_at_completion)
+    )
 
 
 # =============================================================================
@@ -570,7 +590,17 @@ def test_promoted_alias_record_matches_bare_query(plan_context):
     ``automatic-review`` → recorded (the promoted-alias map reconciles both)."""
     plan_id = 'assert-canon-promoted-alias'
     _make_plan(plan_id)
-    _seed_step(plan_id, '6-finalize', 'plan-marshall:automatic-review', 'done')
+    # ``automatic-review`` declares head_dependent: true, so the seed carries an
+    # anchor. What this case pins is the promoted-alias key reconciliation, not
+    # the anchor — but without it the production verb refuses the seed and there
+    # would be no record to query.
+    _seed_step(
+        plan_id,
+        '6-finalize',
+        'plan-marshall:automatic-review',
+        'done',
+        head_at_completion='d' * 40,
+    )
 
     result = cmd_assert_step_recorded(
         _assert_args(plan_id, '6-finalize', 'automatic-review', require_terminal=True)
