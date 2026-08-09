@@ -866,19 +866,34 @@ _SURFACES_BLOCK_START = 'SCRIPT_SURFACES = {'
 
 
 def _dir_digest(directory: Path) -> str:
-    """Digest every ``*.py`` in ``directory`` (non-recursive), by name and bytes.
+    """Digest every ``*.py`` under ``directory`` RECURSIVELY, by path and bytes.
 
-    Non-recursive on purpose: the executor's PYTHONPATH exposes a scripts dir
-    and its immediate subdirectories, and the aggregate is combined with the
-    other injected dirs by :func:`_shared_dirs_digest`, so a nested package's
-    contents reach the digest through its own entry rather than through a deep
-    walk of every sibling.
+    Recursive because the two sets involved are not the same set. The executor's
+    PYTHONPATH exposes each scripts dir AND its immediate subdirectories
+    (``collect_script_dirs``), so a nested module is importable; but the list
+    handed to :func:`_shared_dirs_digest` is ``get_shared_module_dirs`` — five
+    fixed TOP-LEVEL ``.../scripts`` dirs with no nested entry at all. A
+    non-recursive walk therefore leaves every nested shared module importable
+    yet INVISIBLE to the digest: editing ``script-shared/scripts/build/``'s CLI
+    module changes the argparse surface of the five registered build scripts
+    that import it while every digest stays put, so the generator reuses a stale
+    ``SCRIPT_SURFACES`` entry and the executor can pre-spawn-reject an
+    invocation that is now valid. There is no "own entry" for a nested package
+    to reach the digest through.
+
+    Each file contributes its path RELATIVE to ``directory`` (POSIX-normalised)
+    rather than its bare name, so the digest is stable across checkouts that
+    place the same tree at a different absolute prefix while still
+    distinguishing ``build/cli.py`` from ``query/cli.py``. ``__pycache__`` is
+    skipped: it is build residue, not source.
     """
     hasher = hashlib.sha256()
     if not directory.is_dir():
         return hasher.hexdigest()
-    for path in sorted(directory.glob('*.py')):
-        hasher.update(path.name.encode('utf-8'))
+    for path in sorted(directory.rglob('*.py')):
+        if '__pycache__' in path.parts:
+            continue
+        hasher.update(path.relative_to(directory).as_posix().encode('utf-8'))
         try:
             hasher.update(path.read_bytes())
         except OSError:
@@ -887,12 +902,18 @@ def _dir_digest(directory: Path) -> str:
 
 
 def _shared_dirs_digest(shared_dirs: list[Path]) -> str:
-    """One digest over every injected shared-module directory.
+    """One digest over every injected shared-module directory, nested files included.
 
     Computed ONCE per generation and folded into every script's digest, so an
-    edit to an imported shared module invalidates every dependent surface. This
-    over-invalidates — a change to one shared module re-derives all scripts —
-    which costs time only. Under-invalidating would cost correctness, so the
+    edit to an imported shared module invalidates every dependent surface. The
+    list handed in is ``get_shared_module_dirs`` — the five top-level shared
+    ``scripts`` dirs, carrying NO nested entry — so nested coverage rests
+    entirely on :func:`_dir_digest` walking recursively. The two functions are
+    one mechanism, not two independent ones; narrowing either re-opens the
+    stale-surface-on-nested-edit hole.
+
+    This over-invalidates — a change to one shared module re-derives all scripts
+    — which costs time only. Under-invalidating would cost correctness, so the
     digest is deliberately coarse.
     """
     hasher = hashlib.sha256()
@@ -905,9 +926,10 @@ def _shared_dirs_digest(shared_dirs: list[Path]) -> str:
 def compute_surface_digest(script_path: str, shared_digest: str) -> str:
     """Digest the inputs that can change one script's argparse surface.
 
-    Four contributors: the script's own bytes, every ``*.py`` beside it (its
-    skill's other modules — the ``ci.py`` / ``ci_base.py`` relationship, where
-    the parser is assembled in a sibling), the shared-module aggregate, and the
+    Four contributors: the script's own bytes, every ``*.py`` under its own
+    directory (its skill's other modules — the ``ci.py`` / ``ci_base.py``
+    relationship, where the parser is assembled in a sibling — nested packages
+    included, per :func:`_dir_digest`), the shared-module aggregate, and the
     derivation's own ``CACHE_VERSION``. A surface whose digest still matches is
     reused verbatim on the next regeneration, which is what keeps a routine
     ``preflight`` at its current cost: an unchanged script set performs ZERO

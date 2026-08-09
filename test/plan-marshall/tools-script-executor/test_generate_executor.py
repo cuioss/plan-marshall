@@ -2781,18 +2781,22 @@ sys.exit(3)
 """
 
 
-def _generate_with_surfaces(module, tmp_path: Path, mappings: dict[str, str]) -> dict:
-    """Run a real generation into ``tmp_path/.plan``; return the flattened result.
+def _generate_with_surfaces(module, mappings: dict[str, str]) -> dict:
+    """Run a real generation; return the flattened result.
 
     ``generate_executor`` nests the four counts under ``surface_stats``; the
     ``generate`` command flattens them into its TOON. Flattening here keeps
     every assertion below written against the shape a CALLER sees.
+
+    Takes no ``tmp_path``: the write destination is not a parameter of this call
+    at all — ``_surface_fixture``'s ``PLAN_BASE_DIR`` env var is the only thing
+    redirecting the write, and MARKETPLACE_ROOT is what this passes.
     """
     result = module.generate_executor(mappings, MARKETPLACE_ROOT, dry_run=False, target='claude')
     return {**result, **(result.get('surface_stats') or {})}
 
 
-def _surface_fixture(tmp_path: Path, monkeypatch, module) -> Path:
+def _surface_fixture(tmp_path: Path, monkeypatch) -> Path:
     """Point PLAN_BASE_DIR at ``tmp_path/.plan`` and return the executor path."""
     monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
     plan_dir = tmp_path / '.plan'
@@ -2804,12 +2808,12 @@ def _surface_fixture(tmp_path: Path, monkeypatch, module) -> Path:
 def test_generated_executor_carries_populated_script_surfaces(tmp_path, monkeypatch):
     """A derivable script lands a SCRIPT_SURFACES entry beside its SCRIPTS entry."""
     module = load_module()
-    executor = _surface_fixture(tmp_path, monkeypatch, module)
+    executor = _surface_fixture(tmp_path, monkeypatch)
 
     notation = _surface_notation('aliased')
     mappings = {notation: _write_surface_script(tmp_path, 'aliased', _ALIAS_SCRIPT)}
 
-    result = _generate_with_surfaces(module, tmp_path, mappings)
+    result = _generate_with_surfaces(module, mappings)
     assert result['status'] == 'success', result
 
     text = executor.read_text(encoding='utf-8')
@@ -2823,11 +2827,11 @@ def test_generated_executor_carries_populated_script_surfaces(tmp_path, monkeypa
 def test_surface_entry_accepts_both_alias_and_canonical_spelling(tmp_path, monkeypatch):
     """Alias awareness survives the round-trip into the generated executor."""
     module = load_module()
-    executor = _surface_fixture(tmp_path, monkeypatch, module)
+    executor = _surface_fixture(tmp_path, monkeypatch)
 
     notation = _surface_notation('aliased')
     mappings = {notation: _write_surface_script(tmp_path, 'aliased', _ALIAS_SCRIPT)}
-    assert _generate_with_surfaces(module, tmp_path, mappings)['status'] == 'success'
+    assert _generate_with_surfaces(module, mappings)['status'] == 'success'
 
     children = module.read_previous_surfaces(executor)[notation]['surface']['root']['children']
     assert 'read' in children
@@ -2841,12 +2845,12 @@ def test_surface_entry_accepts_both_alias_and_canonical_spelling(tmp_path, monke
 def test_surface_entry_present_for_parser_built_in_an_imported_module(tmp_path, monkeypatch):
     """The mechanism's whole purpose: an entry point that declares no parser."""
     module = load_module()
-    executor = _surface_fixture(tmp_path, monkeypatch, module)
+    executor = _surface_fixture(tmp_path, monkeypatch)
 
     _write_surface_script(tmp_path, '_surface_parser_lib', _IMPORTED_PARSER_LIB)
     notation = _surface_notation('imported')
     mappings = {notation: _write_surface_script(tmp_path, 'imported', _IMPORTED_PARSER_SCRIPT)}
-    assert _generate_with_surfaces(module, tmp_path, mappings)['status'] == 'success'
+    assert _generate_with_surfaces(module, mappings)['status'] == 'success'
 
     surfaces = module.read_previous_surfaces(executor)
     assert notation in surfaces, (
@@ -2865,12 +2869,12 @@ def test_non_derivable_notation_is_absent_not_present_and_empty(tmp_path, monkey
     counts must say so too — the notation lands in ``surfaces_not_derivable``.
     """
     module = load_module()
-    executor = _surface_fixture(tmp_path, monkeypatch, module)
+    executor = _surface_fixture(tmp_path, monkeypatch)
 
     notation = _surface_notation('broken')
     mappings = {notation: _write_surface_script(tmp_path, 'broken', _BROKEN_SCRIPT)}
 
-    result = _generate_with_surfaces(module, tmp_path, mappings)
+    result = _generate_with_surfaces(module, mappings)
     assert result['status'] == 'success', result
     assert result['scripts_registered'] == 1
     assert result['surfaces_derived'] == 0
@@ -2887,7 +2891,7 @@ def test_counts_partition_the_registered_population(tmp_path, monkeypatch):
     between the buckets.
     """
     module = load_module()
-    _surface_fixture(tmp_path, monkeypatch, module)
+    _surface_fixture(tmp_path, monkeypatch)
 
     _write_surface_script(tmp_path, '_surface_parser_lib', _IMPORTED_PARSER_LIB)
     mappings = {
@@ -2898,7 +2902,7 @@ def test_counts_partition_the_registered_population(tmp_path, monkeypatch):
         _surface_notation('broken'): _write_surface_script(tmp_path, 'broken', _BROKEN_SCRIPT),
     }
 
-    result = _generate_with_surfaces(module, tmp_path, mappings)
+    result = _generate_with_surfaces(module, mappings)
     assert result['scripts_registered'] == 3
     total = (
         result['surfaces_derived']
@@ -2918,17 +2922,17 @@ def test_regeneration_with_unchanged_scripts_reuses_and_is_byte_identical(tmp_pa
     rather than per-run churn.
     """
     module = load_module()
-    executor = _surface_fixture(tmp_path, monkeypatch, module)
+    executor = _surface_fixture(tmp_path, monkeypatch)
 
     notation = _surface_notation('aliased')
     mappings = {notation: _write_surface_script(tmp_path, 'aliased', _ALIAS_SCRIPT)}
 
-    first = _generate_with_surfaces(module, tmp_path, mappings)
+    first = _generate_with_surfaces(module, mappings)
     assert first['surfaces_derived'] == 1
     assert first['surfaces_reused'] == 0
     first_bytes = executor.read_bytes()
 
-    second = _generate_with_surfaces(module, tmp_path, mappings)
+    second = _generate_with_surfaces(module, mappings)
     assert second['surfaces_derived'] == 0, (
         'an unchanged script set must perform ZERO derivations on regeneration'
     )
@@ -2946,13 +2950,13 @@ def test_editing_an_imported_sibling_module_invalidates_the_cached_surface(tmp_p
     surface that no longer describes the parser.
     """
     module = load_module()
-    executor = _surface_fixture(tmp_path, monkeypatch, module)
+    executor = _surface_fixture(tmp_path, monkeypatch)
 
     _write_surface_script(tmp_path, '_surface_parser_lib', _IMPORTED_PARSER_LIB)
     notation = _surface_notation('imported')
     mappings = {notation: _write_surface_script(tmp_path, 'imported', _IMPORTED_PARSER_SCRIPT)}
 
-    first = _generate_with_surfaces(module, tmp_path, mappings)
+    first = _generate_with_surfaces(module, mappings)
     assert first['surfaces_derived'] == 1
     before = module.read_previous_surfaces(executor)[notation]
     assert set(before['surface']['root']['children']) == {'pr', 'checks'}
@@ -2960,7 +2964,7 @@ def test_editing_an_imported_sibling_module_invalidates_the_cached_surface(tmp_p
     # Only the sibling module changes — the entry point is untouched.
     _write_surface_script(tmp_path, '_surface_parser_lib', _IMPORTED_PARSER_LIB_EXTENDED)
 
-    second = _generate_with_surfaces(module, tmp_path, mappings)
+    second = _generate_with_surfaces(module, mappings)
     assert second['surfaces_derived'] == 1, (
         'a sibling-module edit must invalidate the dependent surface, not reuse it'
     )
@@ -2968,6 +2972,123 @@ def test_editing_an_imported_sibling_module_invalidates_the_cached_surface(tmp_p
     after = module.read_previous_surfaces(executor)[notation]
     assert after['digest'] != before['digest']
     assert set(after['surface']['root']['children']) == {'pr', 'checks', 'issue'}
+
+
+def _nested_shared_dir(root: Path) -> Path:
+    """A shared ``scripts`` dir shaped like the real one: top-level files + a nested package.
+
+    Mirrors ``script-shared/scripts``, which carries both flat modules and
+    nested packages (``build/``, ``extension/``, ``query/``, ``workflow/``). The
+    nested file stands in for ``build/_build_cli.py``: importable through the
+    executor's PYTHONPATH, imported by registered scripts, and named by NO entry
+    in the five-element ``get_shared_module_dirs`` list.
+    """
+    shared = root / 'script-shared' / 'scripts'
+    (shared / 'build').mkdir(parents=True, exist_ok=True)
+    (shared / 'toon_format.py').write_text('VALUE = 1\n', encoding='utf-8')
+    (shared / 'build' / '_build_cli.py').write_text("FLAGS = ('--module',)\n", encoding='utf-8')
+    return shared
+
+
+def test_nested_shared_module_edit_changes_the_shared_dirs_digest(tmp_path):
+    """The NESTED axis of stale-surface invalidation, pinned at the aggregate.
+
+    ``_shared_dirs_digest`` is handed ``get_shared_module_dirs`` — five fixed
+    TOP-LEVEL ``.../scripts`` dirs with no nested entry — so a nested package can
+    only reach the digest through a recursive walk. It is not theoretical:
+    ``script-shared/scripts/build/`` holds the CLI module five registered build
+    scripts import, so editing its parser changes their argparse surface. If the
+    aggregate does not move, ``compute_surface_digest`` does not move,
+    ``read_previous_surfaces`` reuses a stale ``SCRIPT_SURFACES`` entry, and the
+    generated executor pre-spawn-rejects an invocation that is now valid.
+
+    Asserted at ``_shared_dirs_digest`` rather than at ``_dir_digest`` because
+    the list-with-no-nested-entry is exactly what makes the hole reachable.
+    """
+    module = load_module()
+    shared = _nested_shared_dir(tmp_path)
+
+    before = module._shared_dirs_digest([shared])
+    (shared / 'build' / '_build_cli.py').write_text(
+        "FLAGS = ('--module', '--fail-fast')\n", encoding='utf-8'
+    )
+    after = module._shared_dirs_digest([shared])
+
+    assert after != before, (
+        'a nested shared module changed its flag set and the aggregate digest '
+        'did not move — every dependent surface would be reused stale'
+    )
+
+
+def test_dir_digest_still_moves_for_a_top_level_shared_module_edit(tmp_path):
+    """Positive control for the test above: the flat axis was never broken.
+
+    Without this, a recursive walk that somehow digested only nested files would
+    pass the nested assertion while silently dropping the top-level coverage the
+    sibling-edit fix already relies on.
+    """
+    module = load_module()
+    shared = _nested_shared_dir(tmp_path)
+
+    before = module._dir_digest(shared)
+    (shared / 'toon_format.py').write_text('VALUE = 2\n', encoding='utf-8')
+
+    assert module._dir_digest(shared) != before
+
+
+def test_dir_digest_distinguishes_same_named_files_in_different_subpackages(tmp_path):
+    """The path contribution is the RELATIVE path, not the bare name.
+
+    Two nested packages each holding ``cli.py`` is the real shape
+    (``build/`` and ``query/`` both carry modules). Hashing bare names would
+    make an identical-content file in a different package indistinguishable, so
+    relocating a module between packages would invalidate nothing.
+    """
+    module = load_module()
+    scripts = tmp_path / 'scripts'
+    (scripts / 'build').mkdir(parents=True)
+    (scripts / 'build' / 'cli.py').write_text('X = 1\n', encoding='utf-8')
+    build_placement = module._dir_digest(scripts)
+
+    (scripts / 'build' / 'cli.py').unlink()
+    (scripts / 'query').mkdir()
+    (scripts / 'query' / 'cli.py').write_text('X = 1\n', encoding='utf-8')
+
+    assert module._dir_digest(scripts) != build_placement
+
+
+def test_dir_digest_is_stable_across_an_absolute_relocation(tmp_path):
+    """The same tree at a different absolute prefix digests identically.
+
+    The digest is folded into every ``SCRIPT_SURFACES`` entry and the executor
+    is committed, so a digest carrying an absolute prefix would differ between
+    two developers' checkouts and force a full re-derivation on every machine
+    that did not generate it — turning the reuse property off in practice.
+    """
+    module = load_module()
+    first = _nested_shared_dir(tmp_path / 'checkout-a')
+    second = _nested_shared_dir(tmp_path / 'somewhere' / 'else' / 'checkout-b')
+
+    assert module._dir_digest(first) == module._dir_digest(second)
+
+
+def test_dir_digest_ignores_pycache_residue(tmp_path):
+    """Bytecode residue is not source and must not move the digest.
+
+    The derivation runs each script's ``--help`` in a child process, which
+    writes ``__pycache__`` beside the very modules being digested. Counting that
+    residue would make a digest depend on whether a previous run had executed —
+    reuse would then depend on run history rather than on content.
+    """
+    module = load_module()
+    shared = _nested_shared_dir(tmp_path)
+    before = module._dir_digest(shared)
+
+    cache = shared / 'build' / '__pycache__'
+    cache.mkdir()
+    (cache / '_build_cli.py').write_text('# residue\n', encoding='utf-8')
+
+    assert module._dir_digest(shared) == before
 
 
 def test_failed_rederivation_drops_the_entry_rather_than_reusing_the_cached_one(
@@ -2980,18 +3101,18 @@ def test_failed_rederivation_drops_the_entry_rather_than_reusing_the_cached_one(
     longer has — and reject a call that is now valid.
     """
     module = load_module()
-    executor = _surface_fixture(tmp_path, monkeypatch, module)
+    executor = _surface_fixture(tmp_path, monkeypatch)
 
     notation = _surface_notation('aliased')
     mappings = {notation: _write_surface_script(tmp_path, 'aliased', _ALIAS_SCRIPT)}
 
-    assert _generate_with_surfaces(module, tmp_path, mappings)['surfaces_derived'] == 1
+    assert _generate_with_surfaces(module, mappings)['surfaces_derived'] == 1
     assert notation in module.read_previous_surfaces(executor)
 
     # Same notation and path, now a script whose --help exits non-zero.
     mappings = {notation: _write_surface_script(tmp_path, 'aliased', _BROKEN_SCRIPT)}
 
-    result = _generate_with_surfaces(module, tmp_path, mappings)
+    result = _generate_with_surfaces(module, mappings)
     assert result['surfaces_derived'] == 0
     assert result['surfaces_reused'] == 0
     assert result['surfaces_not_derivable'] == 1
@@ -3044,7 +3165,7 @@ def test_zero_budget_disables_derivation_without_failing_generation(tmp_path, mo
     silently indistinguishable from a healthy derivation.
     """
     module = load_module()
-    executor = _surface_fixture(tmp_path, monkeypatch, module)
+    executor = _surface_fixture(tmp_path, monkeypatch)
     monkeypatch.setenv(module._SURFACE_DERIVATION_BUDGET_ENV, '0')
 
     notation = _surface_notation('aliased')
@@ -3057,7 +3178,7 @@ def test_zero_budget_disables_derivation_without_failing_generation(tmp_path, mo
     # a generation in a fresh process; clearing here reproduces that boundary.
     module.surface_api.clear_memo()
 
-    result = _generate_with_surfaces(module, tmp_path, mappings)
+    result = _generate_with_surfaces(module, mappings)
     assert result['status'] == 'success', result
     assert result['surfaces_derived'] == 0
     assert result['surfaces_not_derivable'] == 1
@@ -3133,7 +3254,7 @@ def test_format_skew_refuses_before_spending_the_accept_set_derivation(
     than a probe that could never have observed anything.
     """
     module = load_module()
-    executor = _surface_fixture(tmp_path, monkeypatch, module)
+    executor = _surface_fixture(tmp_path, monkeypatch)
 
     calls: list[tuple] = []
 
