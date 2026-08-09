@@ -253,6 +253,63 @@ def test_compute_total_elapsed_parse_failures_skipped():
 
 
 # =============================================================================
+# compute_total_elapsed — naive/aware timezone mismatch
+# =============================================================================
+#
+# The per-entry `datetime.fromisoformat` parse was guarded by a try that caught
+# (ValueError, TypeError), but the FINAL `now - earliest` subtraction sat
+# OUTSIDE it. Python raises TypeError ("can't subtract offset-naive and
+# offset-aware datetimes") when the two operands disagree on tz-awareness, so a
+# successfully-parsed-but-naive timestamp against an aware `now` (or the mirror)
+# escaped the guard and crashed the caller outright — a hard failure, not a
+# wrong number. `compute_elapsed` has always kept the same arithmetic inside its
+# try; these cases pin the parity.
+#
+# Both directions are asserted because they are NOT the same code path in
+# CPython: the operand that carries the tzinfo differs, and a guard placed on
+# only one side would leave the other reachable.
+
+
+@pytest.mark.parametrize(
+    'started_at,now',
+    [
+        # Aware timestamp, naive now.
+        ('2025-01-15T11:55:00+00:00', datetime(2025, 1, 15, 12, 0, 0)),
+        # Naive timestamp, aware now (the mirrored pairing).
+        ('2025-01-15T11:55:00', datetime(2025, 1, 15, 12, 0, 0, tzinfo=UTC)),
+    ],
+    ids=['aware_start_naive_now', 'naive_start_aware_now'],
+)
+def test_compute_total_elapsed_timezone_mismatch_returns_zero(started_at, now):
+    """A naive/aware mismatch returns the documented 0 instead of raising."""
+    result = compute_total_elapsed([started_at], now)
+
+    assert result == 0
+
+
+@pytest.mark.parametrize(
+    'started_at,now',
+    [
+        # Both aware.
+        ('2025-01-15T11:55:00+00:00', datetime(2025, 1, 15, 12, 0, 0, tzinfo=UTC)),
+        # Both naive.
+        ('2025-01-15T11:55:00', datetime(2025, 1, 15, 12, 0, 0)),
+    ],
+    ids=['both_aware', 'both_naive'],
+)
+def test_compute_total_elapsed_matching_awareness_still_computes(started_at, now):
+    """Negative control: a consistent pairing still returns the real delta.
+
+    Without this, an implementation that simply returned 0 unconditionally —
+    or that swallowed every exception around the subtraction — would satisfy
+    the mismatch cases above while silently zeroing every legitimate aggregate.
+    """
+    result = compute_total_elapsed([started_at], now)
+
+    assert result == 300
+
+
+# =============================================================================
 # truncate_log_content tests
 # =============================================================================
 

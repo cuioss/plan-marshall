@@ -1556,7 +1556,13 @@ def compute_total_elapsed(started_at_values: list[str | None], now: datetime) ->
     Skips entries for which :func:`_is_zero_time` returns ``True`` so that
     Go zero-value sentinels (e.g. ``0001-01-01T00:00:00Z`` from never-started
     checks) do not poison the aggregate. Returns ``0`` when no usable
-    timestamp is present.
+    timestamp is present, and likewise ``0`` when the final subtraction itself
+    fails — most notably when ``now`` and the parsed ``earliest`` disagree on
+    timezone awareness, which makes ``now - earliest`` raise ``TypeError``
+    ("can't subtract offset-naive and offset-aware datetimes"). The provider
+    timestamps are caller-supplied, so that mismatch is reachable in normal
+    operation; guarding the subtraction mirrors the shape
+    :func:`compute_elapsed` already uses for the same arithmetic.
     """
     earliest = None
     for val in started_at_values:
@@ -1568,7 +1574,12 @@ def compute_total_elapsed(started_at_values: list[str | None], now: datetime) ->
                 earliest = dt
         except (ValueError, TypeError):
             continue
-    return int((now - earliest).total_seconds()) if earliest else 0
+    if not earliest:
+        return 0
+    try:
+        return int((now - earliest).total_seconds())
+    except (ValueError, TypeError):
+        return 0
 
 
 def determine_overall_ci_status(
