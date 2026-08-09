@@ -605,10 +605,12 @@ def _run_build_class_dispatch(
     the executor must propagate unchanged.
 
     Every caller's ``plan_id_argv`` MUST lead with the build-executing subcommand
-    (``run``): the dispatch boundary is a CONJUNCTION of the build-class notation
-    prefix and that subcommand, so a dispatch without it stamps no ledger row at
-    all and the row assertions below would fail for an unrelated reason. The
-    narrowing itself is covered in test_build_class_stamp_discriminator.py.
+    (``run``) and carry no help flag: the dispatch boundary is a CONJUNCTION of
+    the build-class notation prefix, that subcommand, and the ABSENCE of a help
+    flag anywhere in argv, so a dispatch violating any of the three stamps no
+    ledger row at all and the row assertions below would fail for an unrelated
+    reason. The narrowing itself is covered in
+    test_build_class_stamp_discriminator.py.
     """
     import json
 
@@ -1595,6 +1597,169 @@ def test_end_of_options_after_a_leaf_keeps_the_checks_bound_to_that_node():
     assert result.returncode == 2
     assert 'reason: missing_required_flag' in result.stdout
     assert 'rejected: --plan-id' in result.stdout
+
+
+# -----------------------------------------------------------------------------
+# The unknown_flag corrective must name what the leaf REALLY accepts
+# -----------------------------------------------------------------------------
+#
+# The reported defect: the corrective computed its advertised set by subtracting
+# the universal allowlist from the resolved accept-set. The subtraction is
+# unconditional, so it erased any flag the script GENUINELY declares whose name
+# collides with an allowlist member — in practice ``plan-id`` and
+# ``project-dir``, the two most common flags in the tree.
+#
+# Live form (against the regenerated worktree executor):
+#   ``plan-marshall:manage-tasks:manage-tasks read --plan-id foo --bogus-flag x``
+#   returned ``accepted: task-number`` and ``Use a declared flag for
+#   `... read`: ['task-number']`` — while ``... read --task-number 1`` returned
+#   ``missing_required_flag`` naming ``plan-id``. Two correctives on ONE node
+#   contradicting each other: an operator who follows the first drops the flag
+#   the second demands.
+#
+# The intent the subtraction was reaching for is preserved and pinned below: a
+# universal flag the script never declares is still ACCEPTED and still NOT
+# advertised as declared.
+
+#: A leaf declaring BOTH an allowlist-colliding flag (``plan-id``) and an
+#: ordinary one (``task-number``), with the collider also REQUIRED — the shape
+#: that made the two correctives contradict. ``project-dir`` is deliberately
+#: absent: it is the allowlist member this surface does NOT declare, and it is
+#: what the control below measures.
+_ALLOWLIST_COLLISION_SURFACE = {
+    _SPAWN_NOTATION: _surface_entry(
+        {
+            'read': _node(
+                flags=['plan-id', 'task-number'],
+                required=['plan-id'],
+                arity={'plan-id': 1, 'task-number': 1},
+            )
+        }
+    )
+}
+
+
+def _toon_field(stdout: str, key: str) -> str:
+    """Return the value of top-level TOON field ``key`` from ``stdout``."""
+    for line in stdout.splitlines():
+        if line == f'{key}:':
+            return ''
+        if line.startswith(f'{key}: '):
+            return line[len(key) + 2:]
+    raise AssertionError(f'no top-level `{key}:` field in payload: {stdout!r}')
+
+
+def _accepted_flags(stdout: str) -> set:
+    """The ``accepted:`` field parsed back into the set of names it advertises."""
+    raw = _toon_field(stdout, 'accepted')
+    return {item.strip() for item in raw.split(',') if item.strip()}
+
+
+def test_unknown_flag_corrective_names_a_declared_allowlist_colliding_flag():
+    """A genuinely declared flag survives the report even when the allowlist shares its name.
+
+    ``plan-id`` is declared by this leaf AND sits on the universal allowlist.
+    The corrective describes the SCRIPT's surface, so the collision must not
+    decide whether the script's own declaration is reportable.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(
+            Path(tmp),
+            _ALLOWLIST_COLLISION_SURFACE,
+            ['read', '--plan-id', 'p', '--bogus-flag', 'x'],
+        )
+
+        assert not marker.exists(), 'spawned despite an unaccepted flag'
+
+    assert result.returncode == 2
+    assert 'reason: unknown_flag' in result.stdout
+    assert 'rejected: --bogus-flag' in result.stdout
+
+    accepted = _accepted_flags(result.stdout)
+    assert 'plan-id' in accepted, (
+        f'the corrective advertised {sorted(accepted)!r}, omitting the declared '
+        f'`plan-id` because its name collides with the universal allowlist. An '
+        f'operator following it drops a flag this same node reports as required.'
+    )
+    assert 'task-number' in accepted, (
+        f'the corrective advertised {sorted(accepted)!r}; the non-colliding declared '
+        f'flag must be reported too, or the report is narrowed for a second reason.'
+    )
+    assert 'plan-id' in _toon_field(result.stdout, 'message'), (
+        f'the `accepted` field and the human-readable corrective disagree about the '
+        f'declared set: {result.stdout!r}'
+    )
+
+
+def test_unknown_flag_corrective_omits_a_universal_flag_the_script_never_declares():
+    """Control on the preserved intent: the allowlist widens ACCEPTANCE, not the REPORT.
+
+    ``project-dir`` is on the universal allowlist and is absent from this
+    surface. Both halves are asserted together because either alone is
+    satisfiable by the wrong implementation: reporting the raw accept-set passes
+    the acceptance half, and reverting to the subtraction passes the omission
+    half while re-breaking the test above.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        accepted_result, marker = _dispatch(
+            Path(tmp),
+            _ALLOWLIST_COLLISION_SURFACE,
+            ['read', '--plan-id', 'p', '--project-dir', '/x'],
+        )
+
+        assert marker.exists(), (
+            f'an undeclared universal flag was refused — the allowlist must still '
+            f'widen acceptance: {accepted_result.stdout!r}'
+        )
+
+    assert accepted_result.returncode == 0
+
+    with tempfile.TemporaryDirectory() as tmp:
+        rejected_result, _marker = _dispatch(
+            Path(tmp),
+            _ALLOWLIST_COLLISION_SURFACE,
+            ['read', '--plan-id', 'p', '--bogus-flag', 'x'],
+        )
+
+    advertised = _accepted_flags(rejected_result.stdout)
+    assert not advertised & {'project-dir', 'audit-plan-id', 'help'}, (
+        f'the corrective advertised {sorted(advertised)!r} as declared by the script, '
+        f'but those universal flags appear in no node of its surface — listing them '
+        f'misdescribes what the script accepts on its own.'
+    )
+
+
+def test_the_two_correctives_on_one_node_cannot_contradict_each_other():
+    """Every flag ``missing_required_flag`` demands is one ``unknown_flag`` advertises.
+
+    The defect was not a cosmetic omission but a contradiction between two
+    messages the same node emits: follow the first and the second refuses you.
+    Pinning the containment direction catches any future narrowing of the
+    advertised set, whatever its cause.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        unknown_flag_result, _marker = _dispatch(
+            Path(tmp), _ALLOWLIST_COLLISION_SURFACE, ['read', '--bogus-flag', 'x']
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        missing_result, _marker = _dispatch(
+            Path(tmp), _ALLOWLIST_COLLISION_SURFACE, ['read']
+        )
+
+    assert 'reason: unknown_flag' in unknown_flag_result.stdout
+    assert 'reason: missing_required_flag' in missing_result.stdout
+
+    advertised = _accepted_flags(unknown_flag_result.stdout)
+    required = _accepted_flags(missing_result.stdout)
+
+    assert required, 'the missing-required corrective advertised no required flags'
+    assert required <= advertised, (
+        f'the node reports {sorted(required)!r} as required but advertises only '
+        f'{sorted(advertised)!r} as declared. A caller obeying the unknown_flag '
+        f'corrective drops {sorted(required - advertised)!r} and is refused by the '
+        f'missing_required_flag corrective on the next attempt.'
+    )
 
 
 def test_end_of_options_after_a_satisfied_leaf_still_spawns():

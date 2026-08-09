@@ -19,12 +19,13 @@ Runtime side-effects:
     build-maven / build-gradle / build-npm, dispatched with the `run` subcommand), the
     dispatch boundary appends one kind=build entry to the unified change-ledger
     (.plan/work/change-ledger.jsonl, resolved via the tracked-config dir so plan-less
-    orchestrator builds are covered too). Build-class-ness is the CONJUNCTION of both
+    orchestrator builds are covered too). Build-class-ness is the CONJUNCTION of THREE
     conditions: a query subcommand under a build-* skill (parse, discover, coverage-report,
-    check-warnings, run-config-key, rewrite-log, find-project, resolve-test-scope, analyze)
-    and a bare --help dispatch carrying no subcommand at all write NO row, because no build
-    ran. Stamping a row for a pure query would let pre-commit-verify-freshness read that
-    query's exit 0 as proof the current working tree was built.
+    check-warnings, run-config-key, rewrite-log, find-project, resolve-test-scope, analyze),
+    a bare --help dispatch carrying no subcommand at all, and a help flag at ANY depth
+    (`run --help`, `run -h`) each write NO row, because no build ran. Stamping a row for a
+    pure query — or for a usage probe — would let pre-commit-verify-freshness read that
+    dispatch's exit 0 as proof the current working tree was built.
     The entry stamps notation, plan_id (never null — a build invoked outside any plan
     is recorded under the NO_PLAN sentinel), args (the executor argv), command (the
     command the wrapper resolved that argv into and actually ran — a different layer
@@ -331,9 +332,10 @@ _BUILD_EXECUTING_SUBCOMMANDS = frozenset([
 
 
 def _is_build_class_notation(notation: str, subcommand: str) -> bool:
-    """Return True when this dispatch actually executes a build.
+    """Return True when this ``(notation, subcommand)`` pair is the build-executing one.
 
-    Build-class-ness is the CONJUNCTION of two conditions, BOTH required:
+    The pair-level half of the ledger-stamp discriminator - the CONJUNCTION of
+    the two conditions decidable from these two arguments, BOTH required:
 
     1. ``notation`` starts with one of :data:`_BUILD_CLASS_PREFIXES` - the
        dispatch targets a script registered under a ``build-*`` skill.
@@ -346,6 +348,14 @@ def _is_build_class_notation(notation: str, subcommand: str) -> bool:
     status=success`` would let ``pre-commit-verify-freshness`` accept a query as
     proof that the current working tree was built.
 
+    NOT THE WHOLE QUESTION. A True here means "this verb runs a build when it
+    runs at all" - it does NOT mean a build ran. A help flag at any depth makes
+    argparse print usage instead, and ``run --help`` satisfies both conditions
+    above while building nothing. That third conjunct needs the whole argv,
+    which this function is not given, so the dispatch boundary in :func:`main`
+    ANDs this result with ``not _mentions_help(script_args)`` before stamping.
+    A new call site must apply the same conjunct.
+
     Args:
         notation: Script notation (``bundle:skill:script``).
         subcommand: The dispatched subcommand - the first argument after the
@@ -354,7 +364,7 @@ def _is_build_class_notation(notation: str, subcommand: str) -> bool:
 
     Returns:
         True only when BOTH the notation prefix matches AND the subcommand is
-        build-executing.
+        build-executing. Never a claim that the dispatch ran a build.
     """
     if subcommand not in _BUILD_EXECUTING_SUBCOMMANDS:
         return False
@@ -956,12 +966,33 @@ def _resolve_invocation(notation: str, root: dict, script_args: list) -> tuple:
     - ``(None, rejection)``  — a positional named an unregistered child.
     - ``(resolution, None)`` — argv resolved; the mapping carries the verb
       ``chain``, the deepest ``node``, the long ``flags`` used, the ancestor-
-      union ``inherited`` accept-set, and whether that set is ``flags_known``.
+      union ``inherited`` accept-set, the allowlist-free ``declared`` union the
+      corrective reports, and whether the accept-set is ``flags_known``.
     """
     node = root
     chain = []
     flags = []
-    inherited = set(root.get('flags') or []) | _ALWAYS_ACCEPTED_FLAGS
+    # TWO accumulators, deliberately not one derived from the other.
+    #
+    #   ``declared``  — the surface-derived union ALONE: what the script's own
+    #                   ``--help`` says this node accepts. It is what a
+    #                   corrective may advertise, because every member of it is
+    #                   a flag the script really declares.
+    #   ``inherited`` — that union WIDENED by the universal allowlist. It is the
+    #                   ACCEPTANCE test, because the allowlist's four flags are
+    #                   honoured whether or not they were rendered into help.
+    #
+    # Recovering the first by subtracting the allowlist from the second is
+    # LOSSY, and the loss is not hypothetical: ``plan-id`` and ``project-dir``
+    # are BOTH allowlist members AND flags most scripts genuinely declare, so a
+    # post-hoc subtraction erases them from the corrective. The caller is then
+    # told the declared set excludes ``plan-id``, drops it, and is rejected on
+    # the next attempt by ``missing_required_flag`` naming that same flag — two
+    # correctives on one node contradicting each other. Accumulating the two
+    # sets in parallel keeps the allowlist's contribution isolated to the
+    # widening it was added for.
+    declared = set(root.get('flags') or [])
+    inherited = declared | _ALWAYS_ACCEPTED_FLAGS
     arity = dict(_ALWAYS_ACCEPTED_FLAG_ARITY)
     arity.update(root.get('flag_arity') or {})
     flags_known = bool(root.get('flags_confident', True))
@@ -1021,7 +1052,9 @@ def _resolve_invocation(notation: str, root: dict, script_args: list) -> tuple:
             }
         chain.append(token)
         node = child
-        inherited |= set(node.get('flags') or [])
+        node_flags = set(node.get('flags') or [])
+        declared |= node_flags
+        inherited |= node_flags
         arity.update(node.get('flag_arity') or {})
         flags_known = flags_known and bool(node.get('flags_confident', True))
 
@@ -1030,6 +1063,7 @@ def _resolve_invocation(notation: str, root: dict, script_args: list) -> tuple:
         'node': node,
         'flags': flags,
         'inherited': inherited,
+        'declared': declared,
         'flags_known': flags_known,
     }
     return resolution, None
@@ -1064,16 +1098,23 @@ def _validate_invocation(notation: str, script_args: list) -> dict | None:
     node = resolution['node']
     chain = resolution['chain']
     inherited_flags = resolution['inherited']
+    declared_flags = resolution['declared']
     flags = resolution['flags']
 
     for flag in flags:
         if flag in inherited_flags:
             continue
         prefix = ' '.join([notation, *chain]).strip()
-        # Report the script's OWN declared flags. The universally-accepted ones
-        # are structural (see _ALWAYS_ACCEPTED_FLAGS) and listing them as
-        # "declared here" would misdescribe the script's surface.
-        declared = sorted(inherited_flags - _ALWAYS_ACCEPTED_FLAGS)
+        # Report the script's OWN declared flags — the allowlist-free union
+        # `_resolve_invocation` accumulated in parallel, NOT the accept-set with
+        # the allowlist subtracted back off. The intent is unchanged: a
+        # universal flag the script never declares (see _ALWAYS_ACCEPTED_FLAGS)
+        # is still not advertised here, because listing it as "declared" would
+        # misdescribe the script's surface. What changes is that a flag the
+        # script DOES declare survives the report even when its name collides
+        # with an allowlist member — which `plan-id` and `project-dir` routinely
+        # do, and which a subtraction silently erased.
+        declared = sorted(declared_flags)
         suggestion = _closest_spelling(flag, declared)
         if suggestion:
             corrective = f'Use `--{suggestion}` for `{prefix}` — declared: {declared}'
@@ -1532,10 +1573,28 @@ def main():
     # Build-class dispatch boundary: after every build-EXECUTING invocation,
     # append a kind=build entry to the unified change-ledger so the freshness
     # gate can ask "was this exact working-tree state built?". The predicate is
-    # a CONJUNCTION - a build-* notation AND a build-executing subcommand - so a
-    # query verb (or a bare --help, which carries no subcommand) writes no row:
-    # it ran no build, and a row stamped for it would satisfy the freshness gate
-    # without anything having been built. Records are appended unconditionally
+    # a CONJUNCTION of THREE conditions - a build-* notation, a build-executing
+    # subcommand, and no help flag anywhere in argv - so a query verb, a bare
+    # --help (which carries no subcommand), AND a `run --help` probe all write
+    # no row: none of them ran a build, and a row stamped for one would satisfy
+    # the freshness gate without anything having been built.
+    #
+    # The third conjunct lives HERE rather than inside
+    # _is_build_class_notation because help-ness is a property of the whole
+    # argv, not of the (notation, subcommand) pair that predicate is given: the
+    # help flag can sit at any depth, so `run --help` satisfies BOTH of that
+    # predicate's conditions while argparse prints usage and dispatches no
+    # build. That is not a theoretical shape — the surface derivation probes
+    # every build wrapper with `{notation} run --help` through this very
+    # executor, so each regeneration stamped one phantom row per wrapper, each
+    # carrying argparse usage text mis-parsed into `outcome`. `_mentions_help`
+    # is the same widened matcher the pre-spawn validator short-circuits on, so
+    # the two boundaries agree on what "this call prints usage" means.
+    # Its over-matching direction is safe here for the same reason it is safe
+    # there: a false positive withholds a ledger row, and a missing row makes
+    # the freshness gate report not-fresh — fail-closed, never false-fresh.
+    #
+    # Records are appended unconditionally
     # on completion regardless of outcome; the stamped status
     # carries the truthful result (success/error/timeout/killed/unknown),
     # derived from the returncode and the wrapper's stdout TOON — the gate
@@ -1548,7 +1607,7 @@ def main():
     # build and therefore resolves to the GLOBAL script log rather than a
     # NO_PLAN-scoped one. The writer is fire-and-forget — see
     # _append_build_ledger_record.
-    if _is_build_class_notation(notation, subcommand):
+    if _is_build_class_notation(notation, subcommand) and not _mentions_help(script_args):
         # get_log_path raises from two sources: it rejects a malformed plan_id
         # with ValueError, and its global-fallback branch (the one a plan-less
         # build reaches, because `_active_plan_id` stays None there) mkdirs the

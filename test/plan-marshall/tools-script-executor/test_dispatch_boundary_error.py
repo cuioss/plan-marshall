@@ -352,7 +352,7 @@ _REJECTION_NOTATION = 'plan-marshall:manage-tasks:manage-tasks'
 # the shape ``_resolve_invocation`` builds from a real derived surface:
 # ``children`` maps verb name to its own node, ``alias_of`` maps an alias
 # child name to the canonical verb it groups under.
-_VERB_NODE = {
+_VERB_NODE: dict[str, dict] = {
     'children': {'get': {}, 'list': {}, 'read': {}},
     'alias_of': {'get': 'read'},
 }

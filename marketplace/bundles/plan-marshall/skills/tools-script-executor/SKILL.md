@@ -119,6 +119,17 @@ no single verb: `` Use a registered verb for `{notation}`: [...] ``. For
 (`` Add the required flag(s) to `{notation} {verb}`: [...] ``). A refusal
 without a corrective would be the empty stdout this contract exists to replace.
 
+The set `unknown_flag` advertises is the **surface-derived** union — every flag
+the script's own `--help` declares on the resolved node or any ancestor of it —
+and never the universal allowlist below, which the script does not declare and
+which listing here would misdescribe. Membership of that allowlist is not a
+reason to *withhold* a flag either: `plan-id` and `project-dir` are declared by
+most scripts *and* sit on the allowlist, so the two sets are accumulated
+independently rather than one subtracted from the other. Otherwise the node's
+two correctives contradict each other — `unknown_flag` reports a declared set
+without `--plan-id` while `missing_required_flag` on the same node demands it,
+and a caller obeying the first is refused by the second.
+
 The refusal introduces no new reporting path: it routes through the same
 `log_script_execution` and dispatch-failure work-log emission a real failure
 takes, and the boundary's stdout-TOON-message precedence lifts the corrective

@@ -591,13 +591,15 @@ def test_build_class_dispatch_records_non_zero_exit_code(tmp_path, monkeypatch):
 
 
 def test_build_class_notation_gate_scopes_the_ledger_boundary():
-    """The ``_is_build_class_notation`` gate fires the ledger boundary for every
-    build-* skill dispatched with the build-executing subcommand, and for nothing
-    else — the boundary is scoped by the CONJUNCTION of notation and subcommand.
+    """The ``_is_build_class_notation`` gate admits every build-* skill dispatched
+    with the build-executing subcommand, and nothing else — the predicate is
+    scoped by the CONJUNCTION of notation and subcommand.
 
     The notation half is pinned here. The subcommand half, swept over the
     argparse-derived subcommand population of every build wrapper, lives in
-    test_build_class_stamp_discriminator.py.
+    test_build_class_stamp_discriminator.py — as does the boundary's THIRD
+    conjunct (no help flag anywhere in argv), which this predicate does not and
+    cannot decide: it is never given the argv a help flag can hide in.
     """
     module = _load_template_module()
 

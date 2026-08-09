@@ -950,16 +950,27 @@ def test_no_worktree_write_refusal_guard_symbol_present():
 # The executor template appends one kind=build change-ledger entry after every
 # build-EXECUTING dispatch — a notation under plan-marshall:build-pyproject /
 # build-maven / build-gradle / build-npm, dispatched with the build-executing
-# subcommand. Build-class-ness is the conjunction of both conditions, so a query
-# verb under a build wrapper writes no row. The freshness gate reads these
+# subcommand and carrying no help flag. Build-class-ness is the conjunction of
+# all three conditions, so a query verb under a build wrapper writes no row and
+# neither does a `run --help` usage probe. The freshness gate reads these
 # entries to answer "was this exact working-tree state built?". The append is
 # fire-and-forget and — critically — fires AFTER the subprocess returns, never
 # before dispatch, so only completed builds (regardless of exit_code) are
 # recorded. These tests pin the source-level presence, the structural import of
 # the ledger primitives, and the after-return ordering.
+
+#: The guard as it must appear in main(). Bound once because two tests below
+#: locate the SAME line — one asserting its presence, one anchoring a positional
+#: ordering check on it — and a guard edit that updated only one of them would
+#: leave the other silently searching for a string the template no longer has.
+_BUILD_LEDGER_GUARD = (
+    'if _is_build_class_notation(notation, subcommand) and not _mentions_help(script_args):'
+)
+
+
 def test_template_contains_build_ledger_append_at_dispatch_boundary():
     """The executor template must invoke the build-class ledger append at the
-    dispatch boundary, guarded by the build-class notation predicate."""
+    dispatch boundary, guarded by all three build-class conjuncts."""
     source = TEMPLATE_PATH.read_text(encoding='utf-8')
 
     assert 'def _append_build_ledger_record(' in source, (
@@ -968,13 +979,17 @@ def test_template_contains_build_ledger_append_at_dispatch_boundary():
     assert 'def _is_build_class_notation(' in source, (
         '_is_build_class_notation predicate missing from template'
     )
-    # main() must guard the append behind the build-class predicate and call
-    # the appender with the resolved plan_id and exit_code. The guard passes BOTH
-    # conjuncts — the notation and the already-computed subcommand — so a query
-    # verb under a build wrapper cannot reach the append.
-    assert 'if _is_build_class_notation(notation, subcommand):' in source, (
+    # main() must guard the append behind all three conjuncts and call the
+    # appender with the resolved plan_id and exit_code. The predicate covers the
+    # notation and the already-computed subcommand; the third conjunct needs the
+    # whole argv, because a help flag can sit at any depth and `run --help`
+    # satisfies the predicate while argparse prints usage and runs no build.
+    # Without it the surface derivation's own `{notation} run --help` probe
+    # stamps one phantom kind=build row per build wrapper per regeneration.
+    assert _BUILD_LEDGER_GUARD in source, (
         'main() must guard the ledger append behind '
-        '_is_build_class_notation(notation, subcommand)'
+        '_is_build_class_notation(notation, subcommand) AND '
+        'not _mentions_help(script_args)'
     )
     assert '_append_build_ledger_record(' in source, (
         'main() must invoke _append_build_ledger_record at the dispatch boundary'
@@ -1052,7 +1067,7 @@ def test_template_build_ledger_append_fires_after_dispatch_not_before():
 
     # The call site inside main() is guarded by the predicate; locate the guard
     # and the call that follows it.
-    guard_idx = source.find('if _is_build_class_notation(notation, subcommand):')
+    guard_idx = source.find(_BUILD_LEDGER_GUARD)
     assert guard_idx != -1, 'build-class guard not found in main()'
 
     call_site_idx = source.find('_append_build_ledger_record(', guard_idx)

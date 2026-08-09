@@ -3,16 +3,23 @@
 """Population-derived regression tests for the build-class ledger-stamp discriminator.
 
 The executor dispatch boundary stamps a ``kind=build`` change-ledger row only for
-a dispatch that ACTUALLY runs a build. Build-class-ness is the CONJUNCTION of two
-conditions -- a notation under a ``build-*`` skill AND a build-executing
-subcommand -- and this module pins both halves plus their interaction.
+a dispatch that ACTUALLY runs a build. Build-class-ness is the CONJUNCTION of
+three conditions -- a notation under a ``build-*`` skill, a build-executing
+subcommand, AND no help flag anywhere in argv -- and this module pins all three
+plus their interactions.
+
+The first two are decidable from ``(notation, subcommand)`` and live in
+``_is_build_class_notation``; the third needs the whole argv and is applied at
+the boundary in ``main()``, because a help flag can sit at any depth and
+``run --help`` satisfies the predicate while argparse prints usage.
 
 Why the conjunction is load-bearing: ``pre-commit-verify-freshness`` accepts a
 ``kind=build`` row carrying ``status: success`` at the current ``worktree_sha``
 as proof that the working tree was built. A pure query verb under a build wrapper
--- and a bare ``--help``, which carries no subcommand at all -- exits 0 without
-building anything, so a row stamped for it satisfies that gate with no build
-having run. That is a confident green derived from an undetermined signal.
+-- a bare ``--help``, which carries no subcommand at all -- and a ``run --help``
+usage probe all exit 0 without building anything, so a row stamped for any of
+them satisfies that gate with no build having run. That is a confident green
+derived from an undetermined signal.
 
 The same gate is reachable by a second route this module also pins: a dispatch
 that IS build-executing, exits 0, and reports a payload the boundary cannot read
@@ -473,6 +480,133 @@ def test_run_dispatch_still_appends_the_build_row(tmp_path):
     assert build_rows[0]['status'] == 'success', (
         f'the build-executing row carries status={build_rows[0]["status"]!r}; the truthful '
         'derivation is unchanged by the narrowing.'
+    )
+
+
+# =============================================================================
+# The THIRD conjunct: a help flag beside the build verb still runs no build
+# =============================================================================
+#
+# ``_is_build_class_notation`` is a conjunction of the notation prefix and the
+# subcommand, and a help flag is invisible to both: ``run --help`` satisfies
+# BOTH conditions while argparse prints usage and dispatches no build. The
+# boundary therefore ANDs the predicate with ``not _mentions_help(script_args)``.
+#
+# This is a producer that exists, not a hypothetical one. The surface derivation
+# probes every build wrapper with ``{notation} run --help`` THROUGH this
+# executor, so before the third conjunct each regeneration stamped one phantom
+# ``kind=build`` row per build wrapper -- carrying argparse usage text
+# mis-parsed into ``outcome`` and ``status: unknown``. ``unknown`` keeps the
+# freshness gate failing closed rather than false-green, but a phantom row can
+# still displace a genuine ``status: success`` row as the latest entry for that
+# notation, and it corrupts ledger build accounting with junk payloads.
+#
+# Every case below is matched: the suppressed dispatch and its control differ in
+# exactly ONE argv token, so a stamp that stopped firing altogether cannot read
+# as a pass.
+
+
+def test_help_probe_writes_no_build_row_while_the_bare_verb_still_does(tmp_path):
+    """The single variable is the ``--help`` token; only the probe is suppressed.
+
+    Both halves run the same notation, the same build-executing subcommand and
+    the same stub. Pairing them in ONE test is what makes the negative half
+    meaningful: asserted alone it would pass just as happily on a boundary that
+    had stopped stamping any row at all.
+    """
+    notation, subcommand = _a_build_executing_subcommand()
+    probe_dir = tmp_path / 'probe'
+    probe_dir.mkdir()
+    real_dir = tmp_path / 'real'
+    real_dir.mkdir()
+
+    probe_entries = _dispatch(probe_dir, notation, [subcommand, '--help'])
+    real_entries = _dispatch(real_dir, notation, [subcommand])
+
+    probe_rows = [entry for entry in probe_entries if entry.get('kind') == 'build']
+    real_rows = [entry for entry in real_entries if entry.get('kind') == 'build']
+
+    assert not probe_rows, (
+        f'{notation} {subcommand} --help wrote {len(probe_rows)} kind=build row(s) for a '
+        f'dispatch that printed usage and ran no build: {probe_rows!r}. The surface '
+        f'derivation fires this exact probe once per build wrapper per regeneration.'
+    )
+    assert len(real_rows) == 1, (
+        f'{notation} {subcommand} wrote {len(real_rows)} kind=build row(s); the suppression '
+        f'must be scoped to the help probe, not disable the stamp.'
+    )
+
+
+@pytest.mark.parametrize(
+    'help_token',
+    ['--help', '--help=anything', '-h', '-vh'],
+    ids=['long', 'long-with-inline-value', 'short', 'short-in-cluster'],
+)
+def test_every_help_spelling_beside_the_build_verb_suppresses_the_row(tmp_path, help_token):
+    """argparse fires its help action on all four shapes, so all four stamp nothing.
+
+    Anchoring the suppression on ``--help`` alone would leave ``run -h`` -- the
+    same usage probe, one spelling away -- still writing a phantom row. The
+    matcher is the pre-spawn validator's own ``_mentions_help``, so the two
+    boundaries cannot drift apart on what "this call prints usage" means.
+    """
+    notation, subcommand = _a_build_executing_subcommand()
+
+    entries = _dispatch(tmp_path, notation, [subcommand, help_token])
+
+    build_rows = [entry for entry in entries if entry.get('kind') == 'build']
+    assert not build_rows, (
+        f'{notation} {subcommand} {help_token} wrote {len(build_rows)} kind=build row(s); '
+        f'argparse prints usage for this spelling and runs no build.'
+    )
+
+
+def test_a_short_flag_without_a_help_spelling_still_appends_its_row(tmp_path):
+    """Negative control: the suppression keys on help, not on ``-``-prefixed tokens.
+
+    ``-v`` and ``-vh`` differ by one character and must land on opposite sides.
+    Without this, a boundary that suppressed the stamp for ANY short flag -- or
+    for any dispatch carrying a flag at all -- would satisfy every assertion
+    above while silently retiring the ledger row for real builds invoked with
+    short options.
+    """
+    notation, subcommand = _a_build_executing_subcommand()
+
+    entries = _dispatch(tmp_path, notation, [subcommand, '-v'])
+
+    build_rows = [entry for entry in entries if entry.get('kind') == 'build']
+    assert len(build_rows) == 1, (
+        f'{notation} {subcommand} -v wrote {len(build_rows)} kind=build row(s); a short flag '
+        f'carrying no help spelling must not suppress the stamp.'
+    )
+
+
+def test_help_probe_leaves_the_freshness_gate_unable_to_report_fresh(tmp_path, monkeypatch):
+    """End of the chain: the probe contributes nothing the gate can read as a build.
+
+    Its matched positive control is
+    :func:`test_freshness_gate_reports_fresh_after_a_build_executing_dispatch`,
+    which drives the identical path without the help token and DOES pass the
+    gate -- so this assertion cannot hold merely because the fixture never wired
+    the dispatch, the ledger and the gate together.
+    """
+    notation, subcommand = _a_build_executing_subcommand()
+    ledger_root = tmp_path / 'gate-base'
+    ledger_root.mkdir()
+    monkeypatch.setenv('PLAN_BASE_DIR', str(ledger_root))
+
+    import file_ops
+
+    monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', ledger_root, raising=False)
+    monkeypatch.chdir(PROJECT_ROOT)
+
+    _dispatch(tmp_path, notation, [subcommand, '--help'], ledger_root=ledger_root)
+
+    verdict = _freshness_verdict(monkeypatch, 'discriminator-regression-plan')
+
+    assert verdict['status'] != 'fresh', (
+        f'the freshness gate reported {verdict["status"]!r} on the strength of a '
+        f'{notation} {subcommand} --help usage probe that ran no build.'
     )
 
 
