@@ -10,13 +10,35 @@ of the scripts those documents reference. The cluster also cross-checks the
 ``marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/argument-naming.md``
 against the same argparse declarations.
 
-Pattern alignment
------------------
-The analyzer mirrors ``_analyze_verb_chains.py`` and ``scan_argparse_safety``:
+Surface derivation — the shared help-derived accept-set
+-------------------------------------------------------
+The cluster does NOT derive its own accept-set. ``build_script_index`` is a
+thin adapter over ``plan-marshall:script-shared``'s ``argparse_surface``
+module, the single derivation of "what does this script accept?" in the tree
+(see that module's docstring for the mechanism, the four parse anchors, the
+asymmetric-error rule, and the fail-closed-on-uncertainty invariant).
 
-- pure static analysis (no subprocess execution, no module imports of target scripts);
-- AST-walk of script source to enumerate registered subparsers and flags;
-- regex-driven extraction of executor invocations from markdown sources.
+The module-private ``add_parser`` AST walk this cluster used to carry was
+deleted rather than kept as a fallback. It was blind to ``aliases=`` — so it
+reported a documented alias invocation (``manage-tasks get``,
+``manage-status get``, ``manage-lessons read``) as an unknown subcommand — and
+blind to any parser assembled in an imported module, which is exactly the
+``tools-integration-ci:ci`` shape. A fallback would reinstate that too-small
+accept-set, and a too-small accept-set is strictly more dangerous than no
+accept-set because it rejects valid calls.
+
+Consequences of the promotion, both intended:
+
+- **Alias awareness.** The choice list argparse renders carries alias
+  spellings flat alongside canonical names, so an alias invocation is simply
+  in the accepted set.
+- **Flag sensitivity is deliberately lower.** The shared derivation
+  over-approximates a node's flag set (every ``--long-token`` anywhere in the
+  output) and this adapter widens further, unioning each subcommand's whole
+  subtree with the root parser's flags. That is the safe direction — fewer
+  findings, no false findings — but it IS a real sensitivity change from the
+  exact AST set, so the four canonical argparse-rejection recurrence
+  signatures are pinned as positive controls in this cluster's tests.
 
 Findings have severity=error and fixable=False, matching the
 ``DISPLAY_DETAIL_*`` finding shape used elsewhere in the plugin-doctor
@@ -43,10 +65,12 @@ Public API
   ``ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT``.
 - ``load_registered_notations(executor_path)``: regex-parses the executor's
   ``SCRIPTS = { ... }`` literal and returns the set of registered notations.
-- ``build_script_index(registered_notations, marketplace_root)``: AST-walks
-  every registered script and returns a dict keyed by notation with
-  ``{subcommand: {flags: set[str]}}`` plus a top-level ``flags`` set for
-  flags declared on the root parser.
+- ``build_script_index(registered_notations, marketplace_root)``: thin adapter
+  over the shared ``argparse_surface`` derivation, flattening each script's
+  verb tree to ``{subcommand: set[flags] | None}`` plus a ``root_flags`` set
+  and a ``subcommands_confident`` marker. ``None`` in either flag position
+  propagates the derivation's own ``flags_confident`` / ``children_confident``
+  markers as "unknown surface, skip validation here" — see ``_ScriptEntry``.
 
 Rule IDs registered
 -------------------
@@ -58,13 +82,18 @@ Rule IDs registered
 
 from __future__ import annotations
 
-import ast
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from _doctor_shared import Finding
 from _rule_registry import RuleDescriptor
+from argparse_surface import (
+    ParserNode,
+    ScriptSurface,
+    build_surface_index,
+    resolve_executor,
+)
 
 # =============================================================================
 # Rule IDs
@@ -152,10 +181,28 @@ class _ScriptEntry:
     ``subcommands`` maps each registered subcommand name to the set of
     declared ``--flag`` names on that subparser. ``root_flags`` holds
     flags declared directly on the root ``ArgumentParser``.
+
+    ``None`` is the explicit "unknown surface" value in BOTH flag positions,
+    carried through from the shared derivation's ``flags_confident`` /
+    ``children_confident`` markers. It is not the same as an empty set: an
+    empty set says "this scope declares no flags, so every ``--flag`` is
+    drift", while ``None`` says "this scope's flag surface was never derived,
+    so no flag can be judged". Consumers MUST skip flag validation on ``None``
+    rather than treating it as an empty accept-set — a too-small accept-set
+    rejects valid calls, which the module docstring names as strictly more
+    dangerous than no accept-set at all.
+
+    ``subcommands_confident`` is the separate verb-listing marker. ``False``
+    means the child listing is incomplete, so a name absent from
+    ``subcommands`` may still be accepted and verb validation must be skipped.
+    The two markers stay independent for the reason the shared ``ParserNode``
+    docstring gives: collapsing them would let an unknown flag set suppress
+    verb validation that WAS confidently derived, and vice versa.
     """
 
-    subcommands: dict[str, set[str]]
-    root_flags: set[str]
+    subcommands: dict[str, set[str] | None]
+    root_flags: set[str] | None
+    subcommands_confident: bool = True
 
 
 # =============================================================================
@@ -191,190 +238,97 @@ def load_registered_notations(executor_path: Path) -> set[str]:
     return notations
 
 
-def _resolve_script_path(notation: str, marketplace_root: Path) -> Path | None:
-    """Map ``bundle:skill:script`` to an absolute script path under marketplace.
-
-    Returns ``None`` when the file does not exist. Source-of-truth lookup
-    targets the marketplace tree directly; the executor's cached path is
-    intentionally ignored so the analyzer remains independent of cache state.
-    """
-    bundle, skill, script = notation.split(':', 2)
-    candidate = marketplace_root / 'bundles' / bundle / 'skills' / skill / 'scripts' / f'{script}.py'
-    if candidate.is_file():
-        return candidate
-    # Some scripts live in nested script directories (e.g. shared/extension).
-    # Fall back to a recursive glob within the skill's scripts dir.
-    scripts_dir = marketplace_root / 'bundles' / bundle / 'skills' / skill / 'scripts'
-    if scripts_dir.is_dir():
-        for nested in scripts_dir.rglob(f'{script}.py'):
-            if nested.is_file():
-                return nested
-    return None
-
-
 # =============================================================================
-# Argparse tree extraction (root parser + subparsers + flags)
+# Accept-set index — thin adapter over the shared help-derived derivation
 # =============================================================================
 
 
-def _call_func_name(node: ast.Call) -> str | None:
-    func = node.func
-    if isinstance(func, ast.Attribute):
-        return func.attr
-    if isinstance(func, ast.Name):
-        return func.id
-    return None
+def _subtree_flags(node: ParserNode) -> set[str] | None:
+    """Union the flag surfaces of ``node`` and every descendant, or ``None``.
 
+    Widening, per the asymmetric-error rule. This index is flat — it keys only
+    on the FIRST positional — while argparse chains can be three levels deep
+    (``manage-config plan phase-5-execute set --field X``). Attributing only the
+    first-level node's own flags would report ``--field`` as unknown on a
+    perfectly valid call. Unioning the subtree accepts a flag that is really
+    declared two levels down, which over-accepts and never over-rejects.
 
-def _attr_receiver_name(call: ast.Call) -> str | None:
-    func = call.func
-    if not isinstance(func, ast.Attribute):
-        return None
-    if isinstance(func.value, ast.Name):
-        return func.value.id
-    return None
-
-
-def _first_string_arg(node: ast.Call) -> str | None:
-    if not node.args:
-        return None
-    arg0 = node.args[0]
-    if isinstance(arg0, ast.Constant) and isinstance(arg0.value, str):
-        return arg0.value
-    return None
-
-
-def _extract_flag_names_from_add_argument(call: ast.Call) -> list[str]:
-    """Extract long-flag names (``--foo``) from an ``add_argument(...)`` call.
-
-    Both positional flag args (``add_argument('--foo', '-f', ...)``) are
-    inspected; only long flags are kept (short flags like ``-f`` are
-    intentionally excluded — they are not subject to the canonical-forms
-    convention).
+    Returns ``None`` — "this subtree's flag surface is unknown" — as soon as any
+    reachable node disclaims either marker. ``flags_confident=False`` means that
+    node's own flags were never derived, and ``children_confident=False`` means
+    there may be unlisted descendants whose flags the union therefore misses.
+    Both make the union an UNDER-approximation, and an under-approximated
+    accept-set rejects valid calls, so the union is withdrawn rather than
+    returned smaller. The live producer is
+    ``argparse_surface._derive_node``'s unprobeable-child path, which registers
+    a child whose own ``--help`` probe failed as a node with both markers false.
     """
-    flags: list[str] = []
-    for arg in call.args:
-        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-            value = arg.value
-            if value.startswith('--'):
-                flags.append(value[2:])
+    if not node.flags_confident or not node.children_confident:
+        return None
+    flags = set(node.flags)
+    for child in node.children.values():
+        child_flags = _subtree_flags(child)
+        if child_flags is None:
+            return None
+        flags |= child_flags
     return flags
+
+
+def _entry_from_surface(surface: ScriptSurface) -> _ScriptEntry:
+    """Flatten a derived surface into this cluster's two-level index shape.
+
+    ``subcommands`` keys are every accepted top-level spelling — canonical
+    names AND alias spellings, exactly as the choice list renders them — which
+    is what makes a documented alias invocation resolve instead of reporting an
+    unknown subcommand. Each value is the subcommand's subtree flag union
+    widened with the root parser's own flags, because argparse honours a
+    root-declared flag (``--plan-id``, ``--project-dir``) on every subcommand
+    while rendering it only in the root's help.
+
+    A key is retained even when its flag surface is unknown, with ``None`` as
+    the value. Dropping the key instead would make the subcommand rule report
+    the name as undeclared — a false finding manufactured out of the very
+    uncertainty the marker exists to signal — because the choice list that
+    named the child IS the confident acceptance oracle; only the child's own
+    surface is missing. An unconfident root flag surface poisons every
+    subcommand's value too, since each is widened with the root's flags.
+    """
+    root_flags = set(surface.root.flags) if surface.root.flags_confident else None
+    subcommands: dict[str, set[str] | None] = {}
+    for name, child in surface.root.children.items():
+        child_flags = _subtree_flags(child)
+        if root_flags is None or child_flags is None:
+            subcommands[name] = None
+        else:
+            subcommands[name] = root_flags | child_flags
+    return _ScriptEntry(
+        subcommands=subcommands,
+        root_flags=root_flags,
+        subcommands_confident=surface.root.children_confident,
+    )
 
 
 def build_script_index(
     registered_notations: set[str],
     marketplace_root: Path,
 ) -> dict[str, _ScriptEntry]:
-    """AST-walk every registered script and build the (subcommand, flag) index.
+    """Build the ``notation -> _ScriptEntry`` index from the shared derivation.
 
-    Returns a dict keyed by notation. Missing scripts (notation registered
-    but file missing) are silently skipped — they will surface via the
-    notation-validity rule when prose references them.
+    A notation whose surface is not derivable is OMITTED from the index. Every
+    consumer below already treats a missing entry as "no ground truth, emit
+    nothing", so omission is the fail-closed path: an unparseable ``--help``
+    can never manufacture a finding. The same holds when no executor is
+    reachable — the index is empty and the cluster is a no-op.
     """
+    executor = resolve_executor(marketplace_root)
+    if executor is None or not registered_notations:
+        return {}
     index: dict[str, _ScriptEntry] = {}
-    for notation in registered_notations:
-        script_path = _resolve_script_path(notation, marketplace_root)
-        if script_path is None:
-            continue
-        entry = _build_entry_from_script(script_path)
-        if entry is not None:
-            index[notation] = entry
+    surfaces = build_surface_index(sorted(registered_notations), executor)
+    for notation, surface in surfaces.items():
+        if isinstance(surface, ScriptSurface):
+            index[notation] = _entry_from_surface(surface)
     return index
-
-
-def _build_entry_from_script(script_path: Path) -> _ScriptEntry | None:
-    """AST-walk a single script and return its argparse summary, or ``None``."""
-    try:
-        source = script_path.read_text(encoding='utf-8')
-    except (OSError, UnicodeDecodeError):
-        return None
-    try:
-        tree = ast.parse(source, filename=str(script_path))
-    except SyntaxError:
-        return None
-
-    # Track every parser variable. The first ``ArgumentParser`` assignment
-    # is treated as the root; subsequent ``add_parser`` assignments are
-    # tracked individually so flag extraction can attribute each
-    # ``add_argument`` call to the right subparser.
-    parsers: dict[str, str | None] = {}  # var_name -> subcommand_name (None for root)
-    subparsers_handles: dict[str, str] = {}  # handle_var -> owning_parser_var
-    root_var: str | None = None
-
-    # First pass: discover root parser, subparser handles, and add_parser
-    # assignments. Sort by lineno to keep traversal deterministic.
-    assigns = sorted(
-        (n for n in ast.walk(tree) if isinstance(n, ast.Assign)),
-        key=lambda a: (a.lineno, a.col_offset),
-    )
-
-    for assign in assigns:
-        if not isinstance(assign.value, ast.Call):
-            continue
-        call = assign.value
-        name = _call_func_name(call)
-        if name is None:
-            continue
-
-        targets = [t.id for t in assign.targets if isinstance(t, ast.Name)]
-        if not targets:
-            continue
-
-        if name == 'ArgumentParser':
-            for var in targets:
-                parsers[var] = None  # root parser
-                if root_var is None:
-                    root_var = var
-            continue
-
-        if name == 'add_subparsers':
-            owner = _attr_receiver_name(call)
-            if owner is None or owner not in parsers:
-                continue
-            for var in targets:
-                subparsers_handles[var] = owner
-            continue
-
-        if name == 'add_parser':
-            handle = _attr_receiver_name(call)
-            if handle is None or handle not in subparsers_handles:
-                continue
-            sub_name = _first_string_arg(call)
-            if not sub_name:
-                continue
-            for var in targets:
-                parsers[var] = sub_name
-            continue
-
-    # Second pass: bucket every ``add_argument`` call by the parser variable
-    # it was invoked on. Walk the AST again and look at attribute receivers.
-    subcommands: dict[str, set[str]] = {}
-    root_flags: set[str] = set()
-
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        if _call_func_name(node) != 'add_argument':
-            continue
-        receiver = _attr_receiver_name(node)
-        if receiver is None or receiver not in parsers:
-            continue
-        flags = _extract_flag_names_from_add_argument(node)
-        if not flags:
-            continue
-        sub_name = parsers[receiver]
-        if sub_name is None:
-            root_flags.update(flags)
-        else:
-            subcommands.setdefault(sub_name, set()).update(flags)
-
-    # Ensure every subcommand has at least an empty flag set — the
-    # subcommand exists even if it declares no flags.
-    for sub_name in parsers.values():
-        if sub_name is not None:
-            subcommands.setdefault(sub_name, set())
-
-    return _ScriptEntry(subcommands=subcommands, root_flags=root_flags)
 
 
 # =============================================================================
@@ -534,6 +488,10 @@ def scan_subcommand(
                 # Script declares no subparsers — any "subcommand" token
                 # is actually a positional argument. Skip silently.
                 continue
+            if not entry.subcommands_confident:
+                # The child listing is incomplete, so absence from the index
+                # is not evidence of an invented verb. Skip.
+                continue
             if inv.subcommand in entry.subcommands:
                 continue
 
@@ -577,12 +535,17 @@ def scan_flag(
                 continue
             allowed: set[str]
             if inv.subcommand is None:
+                # ``None`` root flags means the root's own flag surface was
+                # never derived — no flag can be judged against it.
+                if entry.root_flags is None:
+                    continue
                 allowed = entry.root_flags
                 scope_label = '<root>'
             else:
-                # Subcommand may be unknown; in that case, the subcommand
-                # rule reports — we still avoid false flag findings by
-                # falling back to root flags.
+                # ``None`` covers both "subcommand not in the index" (the
+                # subcommand rule reports that) and "this subcommand's flag
+                # surface is unknown". Either way there is no accept-set to
+                # judge against, so emit nothing.
                 sub_allowed = entry.subcommands.get(inv.subcommand)
                 if sub_allowed is None:
                     continue
@@ -731,7 +694,7 @@ def scan_canonical_forms(
             continue
 
         entry = script_index[notation]
-        if sub not in entry.subcommands:
+        if sub not in entry.subcommands and entry.subcommands_confident:
             findings.append(
                 Finding(
                     type=RULE_CANONICAL_FORMS_DRIFT,
@@ -757,7 +720,12 @@ def scan_canonical_forms(
             )
             continue
 
-        allowed = entry.subcommands[sub]
+        allowed = entry.subcommands.get(sub)
+        if allowed is None:
+            # Either the verb is absent from an unconfident child listing, or
+            # its own flag surface was never derived. No accept-set, no
+            # flag-drift verdict.
+            continue
         for token in rest:
             if not token.startswith('--'):
                 continue

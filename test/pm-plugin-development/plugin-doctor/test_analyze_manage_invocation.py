@@ -20,7 +20,14 @@ from the bundle tree by ``discover_in_scope_scripts``):
     ``## Canonical invocations`` section.
 
 Surface derivation is from the script's live ``--help`` interface, NOT from
-an AST walk. The tests therefore build a *synthetic executor*: a small
+an AST walk — and it no longer lives in this analyzer. The recursive walk, the
+parse anchors, and the content-hash-keyed cache were lifted into the shared
+``plan-marshall:script-shared`` ``argparse_surface`` module; the analyzer's
+``derive_script_tree`` / ``build_script_index`` are thin adapters over it.
+``TestSharedDerivationConsolidation`` below pins that there is exactly ONE
+derivation rather than two that agree today and drift tomorrow.
+
+The tests build a *synthetic executor*: a small
 ``.plan/execute-script.py`` shim that maps ``{notation}`` to a synthetic
 argparse script under ``tmp_path`` and dispatches the trailing args
 (including ``--help``) to it, exactly as the real executor does. This lets
@@ -51,6 +58,8 @@ from pathlib import Path
 import pytest
 
 from conftest import load_script_module
+
+import argparse_surface as surf
 
 from _fixtures import assert_analyzer_findings
 
@@ -411,6 +420,124 @@ def _make_executor(tmp_path: Path, mapping: dict[str, Path]) -> Path:
         json.dumps({k: str(v) for k, v in mapping.items()}), encoding='utf-8'
     )
     return executor
+
+
+class TestSharedDerivationConsolidation:
+    """One derivation, two consumers — pinned by identity, not by agreement.
+
+    Before the consolidation the tree held TWO accept-set derivations: this
+    analyzer's help-derived one and ``_analyze_argument_naming``'s static AST
+    one. They disagreed by construction (the AST walk was alias-blind and blind
+    to imported-module parsers), so "what does this script accept?" had two
+    answers depending on which rule asked.
+
+    Asserting the two modules produce the same ANSWER for a sample would not
+    close that: two copies can agree on a sample and drift on the next edit.
+    These tests assert IDENTITY with the shared module instead — every name the
+    analyzer still binds locally IS the shared one. The pure parsers and the
+    remaining probe helpers need no assertion: the analyzer holds no binding for
+    them, so every consumer reaches the shared module directly and there is no
+    second name that could come to mean something else.
+    """
+
+    def test_locally_bound_names_are_the_shared_ones(self):
+        assert _ami._ScriptTree is surf.ScriptSurface
+        assert _ami._LeafParser is surf.ParserNode
+        assert _ami._resolve_executor is surf.resolve_executor
+
+    def test_no_ast_walk_remains_on_the_accept_set_path(self):
+        """The static ``add_parser`` walk is deleted, not kept as a fallback.
+
+        A fallback would reinstate the alias-blind, imported-parser-blind
+        accept-set — and a too-small accept-set rejects valid calls, which is
+        strictly worse than deriving no surface at all.
+        """
+        naming = _load_module('_analyze_argument_naming', '_analyze_argument_naming.py')
+        assert not hasattr(naming, '_build_entry_from_script')
+        # The structural signal is the absent ``ast`` import, not the absent
+        # word: the module's prose legitimately NAMES the retired mechanism to
+        # explain why it was deleted, and a substring check over the source
+        # would trip on that documentation.
+        assert not hasattr(naming, 'ast'), (
+            'the accept-set module imports ast again — an AST walk reappeared '
+            'on the derivation path'
+        )
+        source = Path(naming.__file__).read_text(encoding='utf-8')
+        assert 'import ast' not in source, (
+            'an add_parser AST walk reappeared on the accept-set derivation path'
+        )
+
+    def test_universal_accept_set_is_the_shared_definition(self):
+        """The flag allowlist is IMPORTED, not redeclared.
+
+        This rule and the executor's pre-spawn validator both admit a small set
+        of flags that no derived surface can contain, and they have to admit the
+        SAME set: a flag one accepts and the other does not turns a working call
+        into a reported documentation defect. They diverged exactly that way —
+        the executor's copy carried ``help``, this one did not, so every
+        documented ``--help`` invocation was ``flag_unknown`` at edit time and
+        accepted at dispatch time.
+
+        Identity, not equality: two literals that are equal today drift on the
+        next edit, which is the failure this replaces.
+        """
+        assert _ami._UNIVERSAL_FLAG_ARITY is surf.UNIVERSAL_FLAG_ARITY
+        assert _ami._UNIVERSAL_FLAG_ALLOWLIST is surf.UNIVERSAL_FLAGS
+
+    def test_documented_help_invocation_is_not_reported_unknown(
+        self, flat_index: dict
+    ) -> None:
+        """The behavioural half of the divergence, at this rule's own boundary.
+
+        ``parse_help_node`` strips ``help`` from every derived flag set, so the
+        accept-set is the ONLY thing that can admit it here. A green identity
+        assertion above would still leave this passing on a set that happened
+        not to be consulted.
+        """
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo --alpha x --help\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
+        invalid = [
+            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+        ]
+        assert invalid == [], (
+            f'a documented --help invocation was reported as invalid: {invalid}'
+        )
+
+    def test_unknown_flag_is_still_reported_alongside_help(
+        self, flat_index: dict
+    ) -> None:
+        """Negative control: the accept-set widens, it does not switch the rule off.
+
+        Without this, the previous test would pass just as well on an analyzer
+        that stopped validating flags on any line mentioning ``--help``.
+        """
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} foo '
+            f'--alpha x --not-a-real-flag y --help\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', flat_index)
+        unknown = [
+            f
+            for f in findings
+            if f['details'].get('reason') == 'flag_unknown'
+        ]
+        assert [f['details']['flag'] for f in unknown] == ['not-a-real-flag'], (
+            f'expected exactly the invented flag to be reported: {findings}'
+        )
+
+    def test_not_derivable_maps_to_none_for_this_rule(self, tmp_path: Path):
+        """The adapter narrows the shared marker to this rule's binary contract."""
+        script = tmp_path / 'syn_broken.py'
+        script.write_text('import sys\nsys.exit(3)\n', encoding='utf-8')
+        executor = _make_executor(tmp_path, {_SYN_NOTATION: script})
+        surf.clear_memo()
+        shared = surf.derive_surface(
+            _SYN_NOTATION, executor, config=surf.DerivationConfig(use_disk_cache=False)
+        )
+        assert isinstance(shared, surf.NotDerivable)
+        assert derive_script_tree(_SYN_NOTATION, executor) is None
 
 
 @pytest.fixture
@@ -1981,6 +2108,11 @@ def _routing_flag_nested_source() -> str:
     invocation places ``--project-dir X`` BEFORE ``pr prepare-comment`` — the
     parser must skip the routing flag and resolve the ``pr prepare-comment``
     chain, never mis-read it as a missing/unknown subcommand.
+
+    ``--verbose`` is a BARE top-level switch alongside it, and the two differ in
+    arity on purpose: an extractor that assumes every leading flag carries a
+    value skips ``--verbose pr`` together and loses the subcommand, which is the
+    same walk-desynchronisation defect in the other direction.
     """
     return textwrap.dedent('''
         import argparse
@@ -1988,6 +2120,7 @@ def _routing_flag_nested_source() -> str:
         def main():
             parser = argparse.ArgumentParser()
             parser.add_argument('--project-dir')
+            parser.add_argument('--verbose', action='store_true')
             subparsers = parser.add_subparsers(dest='cmd')
 
             pr = subparsers.add_parser('pr')
@@ -2077,6 +2210,49 @@ class TestLeadingRoutingFlagBeforeSubcommand:
         assert invalid == [], (
             f'concrete routing-flag value produced false positives: {invalid}'
         )
+
+    def test_bare_routing_switch_before_subcommand_validates_clean(
+        self, tmp_path: Path
+    ) -> None:
+        """A ZERO-arity top-level switch must not swallow the subcommand.
+
+        The skip consumed one value token per leading flag unconditionally, so
+        ``--verbose pr`` dropped ``pr`` and the invocation was then reported as
+        missing its sub-verb. Consulting the flag's derived arity is what makes
+        the two shapes distinguishable — the same anchor the executor's
+        pre-spawn walk resolves the identical ambiguity from.
+        """
+        index = self._index(tmp_path)
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} '
+            f'--verbose pr prepare-comment --plan-id p --pr-number 7\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+        invalid = [
+            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+        ]
+        assert invalid == [], (
+            f'a bare leading switch swallowed the subcommand: {invalid}'
+        )
+
+    def test_wrong_sub_verb_after_bare_routing_switch_still_flagged(
+        self, tmp_path: Path
+    ) -> None:
+        """Negative control for the arity-aware skip — it must not blind the rule."""
+        index = self._index(tmp_path)
+        content = (
+            f'python3 .plan/execute-script.py {_SYN_NOTATION} '
+            f'--verbose pr bogus-verb --plan-id p\n'
+        )
+        findings = analyze_manage_invocation_markdown(content, '/fake/SKILL.md', index)
+        invalid = [
+            f for f in findings if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+        ]
+        assert len(invalid) == 1, (
+            f'wrong sub-verb after a bare switch should still be flagged: {invalid}'
+        )
+        assert invalid[0]['details']['reason'] == 'sub_verb_unknown'
+        assert invalid[0]['details']['sub_verb'] == 'bogus-verb'
 
     def test_wrong_sub_verb_after_routing_flag_still_flagged(
         self, tmp_path: Path

@@ -12,9 +12,15 @@ per-finding-type coverage lives in the sibling in-process unit suite
 (``test_analyze_manage_invocation.py``) against synthetic argparse scripts
 behind an in-process shim.
 
-Two smokes are retained — both assert ZERO ``manage-invocation-invalid``
-false positives against the real shipped bundle for the loop-registered,
-shared-flag, and many-subcommand shapes that broke the old AST extractor.
+Three smokes — each asserts ZERO ``manage-invocation-invalid`` false positives
+against the real shipped bundle for a shape that broke the old AST extractor:
+loop-registered subcommands with shared flags, a many-subcommand script, and
+(added with the consolidation) a documented ``aliases=`` invocation.
+
+``derive_script_tree`` is imported from the analyzer, which is now a thin
+adapter over the shared ``plan-marshall:script-shared`` ``argparse_surface``
+derivation — so these smokes exercise the CONSOLIDATED entry point, the same
+one the executor generator reads.
 """
 
 from __future__ import annotations
@@ -99,6 +105,39 @@ class TestRealMarketplaceZeroFalsePositives:
                 if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
             ]
             assert invalid == [], f'false positive(s) for canonical call: {call}\n{invalid}'
+
+    def test_documented_alias_calls_not_flagged_in_real_bundle(self) -> None:
+        """The three accepted read-verb aliases resolve against the real surface.
+
+        The coverage the consolidation adds. The replaced AST walk never read
+        ``aliases=``, so every one of these documented calls was an unknown
+        subcommand to it — a false rejection of the project's own canonical
+        forms.
+        """
+        executor = _real_executor()
+        if executor is None:
+            pytest.skip('real executor not present in this checkout')
+        alias_calls = {
+            'plan-marshall:manage-tasks:manage-tasks': 'get --plan-id p --task-number 1',
+            'plan-marshall:manage-status:manage-status': 'get --plan-id p',
+            'plan-marshall:manage-lessons:manage-lessons': 'read --lesson-id L-1',
+        }
+        for notation, tail in alias_calls.items():
+            tree = derive_script_tree(notation, executor)
+            assert tree is not None, f'{notation} --help must be reachable'
+            call = f'python3 .plan/execute-script.py {notation} {tail}'
+            findings = analyze_manage_invocation_markdown(
+                call + '\n', '/fake/SKILL.md', {notation: tree}
+            )
+            invalid = [
+                f for f in findings
+                if f['rule_id'] == RULE_MANAGE_INVOCATION_INVALID
+                and f['details'].get('reason') == 'subcommand_unknown'
+            ]
+            assert invalid == [], (
+                f'documented alias invocation flagged as unknown subcommand: '
+                f'{call}\n{invalid}'
+            )
 
     def test_many_subcommand_calls_not_flagged_in_real_bundle(self) -> None:
         executor = _real_executor()

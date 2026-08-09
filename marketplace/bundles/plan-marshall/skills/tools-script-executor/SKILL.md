@@ -79,6 +79,202 @@ The executor standardizes error output:
 SCRIPT_ERROR    {notation}    {exit_code}    {summary}
 ```
 
+### Pre-spawn invocation rejection
+
+A dispatch whose verb path or flags the target script cannot accept is refused
+**before any subprocess starts**. Without this, an invented subcommand surfaced
+only as a raw argparse `exit_code: 2` with usage text on stderr and **nothing on
+stdout** — a shape a caller that parses stdout reads as empty rather than as a
+correction.
+
+The refusal is a `status: error` TOON on **stdout** (the same stream every other
+result arrives on), with exit code `2` — the code argparse itself uses, so a
+caller branching on the exit code needs no new case, and the dispatch boundary's
+existing classifier already reports it as `argparse_rejection`:
+
+```toon
+status: error
+error: invalid_invocation
+notation: plan-marshall:manage-tasks:manage-tasks
+reason: unknown_verb
+rejected: reed
+accepted: add-step, ..., get, list, read, ...
+message: Use `plan-marshall:manage-tasks:manage-tasks read` — registered: [...]
+```
+
+`reason` is one of `unknown_verb`, `unknown_flag`, or `missing_required_flag`.
+The `message` field is the **corrective**. For `unknown_verb`, the corrective
+picks the accepted verb closest to the rejected token by edit distance, within a
+threshold of `max(2, len(rejected) // 2)` — a wrong guess is worse than no guess,
+so a match outside that threshold is not offered. A match within threshold takes
+one of two forms: a bare nearest spelling as in the example above (`reed` →
+`read`), or an alias-of relation when the grouping anchor recovered one (`gett` →
+"Use `... get` (an alias of `read`) — registered: [...]"). When NO accepted verb
+is within threshold — an invented verb resembling nothing registered, the normal
+shape for a token like `nuke` — the corrective falls back to a third form naming
+no single verb: `` Use a registered verb for `{notation}`: [...] ``. For
+`unknown_flag` the corrective runs the SAME nearest-match pick over the
+resolved node's declared flag set, and takes one of two forms by the same
+threshold rule: within threshold it names the closest declared flag
+(`` Use `--plan-id` for `{notation} {verb}` — declared: [...] ``, the form a
+typo'd flag actually hits — the common case the feature exists for); outside
+threshold it falls back to naming the whole declared set
+(`` Use a declared flag for `{notation} {verb}`: [...] ``). For
+`missing_required_flag` it lists the flags still owed
+(`` Add the required flag(s) to `{notation} {verb}`: [...] ``). A refusal
+without a corrective would be the empty stdout this contract exists to replace.
+
+The set `unknown_flag` advertises is the **surface-derived** union — every flag
+the script's own `--help` declares on the resolved node or any ancestor of it —
+and never the universal allowlist below, which the script does not declare and
+which listing here would misdescribe. Membership of that allowlist is not a
+reason to *withhold* a flag either: `plan-id` and `project-dir` are declared by
+most scripts *and* sit on the allowlist, so the two sets are accumulated
+independently rather than one subtracted from the other. Otherwise the node's
+two correctives contradict each other — `unknown_flag` reports a declared set
+without `--plan-id` while `missing_required_flag` on the same node demands it,
+and a caller obeying the first is refused by the second.
+
+The refusal introduces no new reporting path: it routes through the same
+`log_script_execution` and dispatch-failure work-log emission a real failure
+takes, and the boundary's stdout-TOON-message precedence lifts the corrective
+into the work-log `detail=` field unchanged.
+
+#### Fail-closed rule: absent knowledge is never a rejection
+
+Rejecting is only ever done from **positive** knowledge that a token is not
+accepted. Every path lacking that knowledge dispatches exactly as it did before
+this check existed:
+
+| Condition | Behaviour |
+|-----------|-----------|
+| The notation has no `SCRIPT_SURFACES` entry | Spawn unvalidated |
+| A node's child listing is not marked confident | Stop the walk, spawn |
+| The resolved node's flag set is not marked known | Skip flag checks, spawn |
+| A flag's value arity is unknown while a verb is still expected | Spawn |
+| A help flag appears anywhere in the invocation | Spawn (argparse prints usage) |
+
+"A help flag" means every spelling argparse fires its help action on, not just
+the long one: `--help`, `--help=...`, the short `-h`, and `-h` inside a
+short-flag cluster (`-vh`). Anchoring on `--help` alone refused `manage-tasks
+read -h` for its missing required flags while `manage-tasks read --help`
+printed usage — a valid call refused, from a spelling difference argparse does
+not make. Cluster detection is deliberately wider than argparse's own reading
+(`-fh`, where argparse binds `h` as `-f`'s value, matches too), because the
+surplus direction is a spawn and the deficit direction is a false refusal. A
+long flag that merely begins with the word — `--helpful`, `--help-me` — is an
+ordinary flag and stays fully validated.
+
+The asymmetry is the safety argument, and it is a claim about **knowledge**, not
+about the check as a whole: a derivation gap degrades to today's behaviour, so a
+missing accept-set cannot manufacture a refusal and an executor generated with
+no surfaces at all is a **safe** configuration rather than a broken one. What
+the asymmetry does *not* buy on its own is correctness of the walk that decides
+*which* node's accept-set applies — a walk that resolves the wrong node rejects
+from knowledge that is real but attached to the wrong parser, and that is a
+false rejection with none of the fail-open branches above involved. The
+[argv walk](#resolving-argv-to-a-parser-node) is what carries that half.
+
+Four long flags are accepted on every node regardless of the derived surface,
+because each is invisible to the derivation for a structural reason: `help`
+(declared by every argparse parser and deliberately stripped from each derived
+set), `audit-plan-id` (consumed by the executor before the target's argparse
+runs), and `plan-id` / `project-dir` (honoured on every subcommand through
+parent-flag propagation but often rendered only in the root's help).
+
+That accept-set is defined once, as `UNIVERSAL_FLAG_ARITY` in the shared
+[`argparse_surface` module](../script-shared/scripts/argparse_surface.py), and
+plugin-doctor's edit-time rule imports it from there. The generated executor
+cannot import it — it must dispatch before any shared module is on the path —
+so it carries a literal mirror, pinned to the definition by a test that fails
+on divergence. The pin is behavioural: a flag accepted at dispatch time but
+missing from the edit-time set is reported as a documentation defect against a
+call that in fact works.
+
+#### Resolving argv to a parser node
+
+Deciding which node's accept-set applies means walking argv, and that walk has
+to know **which flags bind a following token as their value**. A top-level
+routing flag such as `--project-dir` must PRECEDE the subcommand (argparse
+rejects it afterwards), so `architecture --project-dir . find --pattern P` is
+the only correct spelling — and a walk that does not know `--project-dir` takes
+a value reads `find` as that value, stays on the root node, and then refuses
+`--pattern` against the root's flags. Nothing in the fail-open table above fires:
+every input was confident, and the refusal was still wrong.
+
+The `flag_arity` map each surface node carries is the anchor that resolves it.
+It is derived narrowly — only from the option-invocation region of an option
+line, never from help prose — and is a strict subset of the node's `flags` set,
+which is deliberately over-collected. An **absent** key means the arity is
+unknown, never that it is zero, and the walk resolves the three states
+differently:
+
+| Flag's value arity | Behaviour |
+|--------------------|-----------|
+| Known (`0`, `1`, `N`) | Step over exactly that many tokens; stop early at a `-`-prefixed token or end of argv |
+| Unknown, and the current node still expects a verb | Abandon the walk and spawn — the next token is either the value or the verb, and both readings resolve different nodes |
+| Unknown, verb path already resolved | Step over the token; it is not a verb under either reading, so nothing is lost |
+
+The over/under asymmetry is why arity is the one anchor derived narrowly: an
+over-collected FLAG only widens an accept-set, but an over-confident ARITY
+re-tokenizes argv and moves the resolved node. Abbreviated spellings are **not**
+accepted, because the marketplace-wide `argparse_safety` rule requires every
+parser and subparser to pass `allow_abbrev=False` — no script in the tree binds
+an abbreviation, so honouring one here would model a behaviour that does not
+exist.
+
+#### Where the accept-set comes from
+
+The embedded `SCRIPT_SURFACES` map is derived at **generation time** by running
+each registered script's own `--help` — never by an AST walk, which is blind to
+`aliases=` and to any parser assembled in an imported module. The derivation is
+owned by [`plan-marshall:script-shared`'s `argparse_surface` module](../script-shared/scripts/argparse_surface.py),
+the **single source of truth** for the accept-set: plugin-doctor's edit-time
+`ARGUMENT_NAMING_*` and `manage-invocation-invalid` rules read the same module,
+so the edit-time and dispatch-time guards cannot disagree about what a script
+accepts.
+
+Each embedded entry carries a source digest covering the script, every `.py`
+beside it, the injected shared-module directories, and the derivation's own
+schema version, so a change in an **imported** module — or in the shape of the
+surface itself — invalidates the dependent entry. A regeneration reuses any
+entry whose digest still matches, so the generated executor is its own cache
+with no additional state file; folding the schema version in is what stops a
+widened node shape from being served indefinitely from entries derived under the
+old one.
+
+**Cost, and which path a slow generation is on.** A cold derivation runs one
+`--help` per parser node across every registered script and takes minutes; a
+regeneration over an unchanged script set performs **zero** `--help` invocations
+and is effectively free. Cold cost is therefore paid on a first build, a
+`CACHE_VERSION` bump, or a broad script edit — not on routine regeneration.
+`TEMPLATE_FORMAT_VERSION` is deliberately not a trigger: it is not one of the
+four digest inputs, so bumping it alone reuses every cached entry. A change to
+the derived node shape belongs to `CACHE_VERSION`, which is a digest input
+precisely so it invalidates the entries whose schema it changed. `generate` publishes `scripts_registered`, `surfaces_derived`,
+`surfaces_reused`, and `surfaces_not_derivable` (the three buckets partition the
+population) so a regeneration that quietly derived nothing is visible as a
+number rather than inferred from a green status. `PM_SURFACE_BUDGET_SECONDS`
+bounds the total derivation wall-clock; `0` disables derivation entirely.
+
+#### Observation point: when this guard becomes live
+
+The validation lives in the **generated** executor, so editing the template
+changes nothing until an executor is regenerated from it. Concretely:
+
+- the **main checkout's** executor and the **plugin cache** pick the change up
+  only after the change lands and the cache is synced plus the executor
+  regenerated, so neither is exercised by the branch that authors the change;
+- a **worktree-bound** executor is regenerated at phase-5 move-in, so a run that
+  regenerates its own worktree executor after editing the template *does*
+  exercise the guard against the live notation set.
+
+The consequence for a reader auditing a change to this surface: a green run is
+evidence only where a regeneration actually happened. Verify against a
+regenerated executor and say which one, rather than treating a passing suite as
+proof the guard behaves — the synthetic suite for this feature passed while the
+first live executor refused `--help` on every script.
+
 ## Execution Logging
 
 The executor provides two-tier logging:
@@ -195,6 +391,16 @@ stale embedded path is never returned blindly:
 Because of this, `PM_MARKETPLACE_ROOT` is **not required** to recover from a
 stale/relocated embedded path — it remains only as an intentional explicit
 override for pinning discovery to a specific marketplace tree (see below).
+
+**A refusal is not a resolution failure.** Resolution runs first and to
+completion; only a resolved notation reaches the
+[pre-spawn invocation rejection](#pre-spawn-invocation-rejection). So a
+`status: error` / `error: invalid_invocation` payload means the script WAS
+found and its declared surface rejected the call — nothing above went wrong. The
+two are distinguishable on sight: an unresolved notation emits the
+`SCRIPT_ERROR` line on stderr and exits `1`, while a refusal emits a TOON on
+stdout and exits `2`. Chasing a marketplace anchor for a refusal is a wasted
+detour; read the `message` corrective instead.
 
 ## Setup
 

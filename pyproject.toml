@@ -120,26 +120,40 @@ addopts = ["-v", "--tb=short", "--strict-markers", "--strict-config", "--duratio
 # ``ignore::SomeWarning``.
 filterwarnings = ["error"]
 # Fail (with a traceback at the hang point) instead of wedging a worker forever.
-# The whole suite runs in ~2.5 min (measured 151.69s, warm cache) under ``-n
-# auto`` — 10 xdist workers on the measuring host — and the slowest single test
-# in the ``--durations=25`` table is ~13s. The rationale still holds, and by a
-# wider margin than when it was written: 300s is more than an order of magnitude
-# past the slowest observed test and more than the whole suite's wall-clock, so
-# any single test that runs longer than that is hung, not slow — surface it as
-# an attributable failure with a stack rather than an opaque job timeout. The
-# threshold is deliberately NOT retightened toward the measured maximum: it is a
-# hang detector, not a performance budget, and slack absorbs a slower CI host
-# without turning a slow-but-healthy test into a false failure. The default signal
-# method (SIGALRM on each worker's main thread, where xdist runs its tests) is
-# used deliberately: the thread method's watchdog leaves the worker in an
-# unclean state on teardown under xdist.
+#
+# The threshold is set against the suite's DECLARED ceiling, not against its
+# observed maximum, because the two no longer coincide. The ordinary suite is
+# fast — it runs in ~2.5 min (measured 151.69s, warm cache) under ``-n auto``,
+# 10 xdist workers on the measuring host, and the slowest ordinary test in the
+# ``--durations=25`` table is ~13s. But one test is not an ordinary unit: the
+# ``slow_live`` live-tree characterization in
+# ``test/plan-marshall/script-shared/test_argparse_surface.py`` runs a real
+# argparse derivation over EVERY registered notation, and it declares its own
+# ``DerivationConfig(total_budget_seconds=240.0)`` — a true total wall-clock
+# deadline for the whole batch. Its warm-cache duration (~2.6s) is not its cost:
+# a fresh checkout pays a cold derivation, which is what that 240s budget is
+# sized for.
+#
+# 300 therefore sits deliberately ABOVE that 240s declared ceiling with enough
+# margin for per-test overhead, rather than an order of magnitude above the
+# ordinary maximum. A test that exceeds 300s has blown past the only declared
+# budget in the suite and is hung, not slow — surface it as an attributable
+# failure with a stack rather than an opaque job timeout. Neither number moves
+# alone: the coupling is restated at the budget literal in that test.
+#
+# The threshold is otherwise NOT retightened toward the measured maximum: it is
+# a hang detector, not a performance budget, and slack absorbs a slower CI host
+# without turning a slow-but-healthy test into a false failure. The default
+# signal method (SIGALRM on each worker's main thread, where xdist runs its
+# tests) is used deliberately: the thread method's watchdog leaves the worker in
+# an unclean state on teardown under xdist.
 timeout = 300
 # Custom-marker registry — the SINGLE source of truth for every non-built-in
 # ``@pytest.mark.<name>`` in the suite. Declared here rather than through
 # ``config.addinivalue_line`` in ``test/conftest.py::pytest_configure`` so the
 # registry is data, not code, and so enabling ``--strict-markers`` later needs
 # no relocation. A whole-tree sweep of ``@pytest.mark.<name>`` confirms these
-# four are the complete set of custom markers in use.
+# five are the complete set of custom markers in use.
 markers = [
     # ``allow_pollution`` is a DELIBERATE ESCAPE HATCH, retained by design: it
     # is the single opt-out a test uses when it must exercise the real
@@ -171,6 +185,14 @@ markers = [
     # where a real-root write under ``/`` is genuinely its subject. No test
     # needs it today; it exists so the guard has a documented escape hatch.
     "allow_root_filesystem_pollution: test may legitimately materialize a path under the filesystem root (opts out of the autouse _root_fs_pollution_guard). Only meaningful on a root host.",
+    # ``slow_live`` is a SELECTION label, not an escape hatch: no fixture reads
+    # it and nothing is deselected by default, so a full run — local or CI —
+    # still executes every marked test. It exists so a fast local loop can say
+    # ``-m 'not slow_live'``, and so the ``timeout = 300`` rationale above can
+    # name which test is allowed to approach the detector instead of claiming an
+    # order-of-magnitude margin the suite no longer has. Marked tests carry their
+    # own declared wall-clock budget; that budget and ``timeout`` move together.
+    "slow_live: test drives a real derivation over the live tree under its own declared wall-clock budget, so it is the one test whose runtime approaches the pytest-timeout hang detector (deselect a slow local loop with -m 'not slow_live').",
 ]
 
 [tool.coverage.run]

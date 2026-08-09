@@ -52,7 +52,7 @@ def _load_template_module() -> types.ModuleType:
         / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts'
     )
     source = source.replace('{{SCRIPT_MAPPINGS}}', '')
-    source = source.replace('{{SUBCOMMAND_MAPPINGS}}', '')
+    source = source.replace('{{SCRIPT_SURFACES}}', '').replace('{{SUBCOMMAND_MAPPINGS}}', '')
     source = source.replace('{{LOGGING_DIR}}', logging_dir)
     source = source.replace('{{SHARED_MODULE_DIRS}}', '# (none)')
     source = source.replace('{{EXTRA_SCRIPT_DIRS}}', '')
@@ -205,10 +205,17 @@ def test_discover_local_scripts_skips_hidden_skill_dirs(tmp_path):
 # generate_executor — template substitution (dry-run, write, missing template)
 # =============================================================================
 
+# The format marker is read from the generator's own constant rather than
+# written as a literal: a hard-coded version turns this fixture into a
+# permanent format skew the moment the real version is bumped, and the failure
+# then reads as "generation broke" instead of "the fixture is stale".
 _TEMPLATE_BODY = (
-    '# TEMPLATE_FORMAT_VERSION: 1\n'
+    f'# TEMPLATE_FORMAT_VERSION: {_gen._SUPPORTED_TEMPLATE_FORMAT_VERSION}\n'
     'SCRIPTS = {\n'
     '{{SCRIPT_MAPPINGS}}\n'
+    '}\n'
+    'SCRIPT_SURFACES = {\n'
+    '{{SCRIPT_SURFACES}}\n'
     '}\n'
     'LOGGING_DIR = "{{LOGGING_DIR}}"\n'
     '{{SHARED_MODULE_DIRS}}\n'
@@ -584,13 +591,15 @@ def test_build_class_dispatch_records_non_zero_exit_code(tmp_path, monkeypatch):
 
 
 def test_build_class_notation_gate_scopes_the_ledger_boundary():
-    """The ``_is_build_class_notation`` gate fires the ledger boundary for every
-    build-* skill dispatched with the build-executing subcommand, and for nothing
-    else — the boundary is scoped by the CONJUNCTION of notation and subcommand.
+    """The ``_is_build_class_notation`` gate admits every build-* skill dispatched
+    with the build-executing subcommand, and nothing else — the predicate is
+    scoped by the CONJUNCTION of notation and subcommand.
 
     The notation half is pinned here. The subcommand half, swept over the
     argparse-derived subcommand population of every build wrapper, lives in
-    test_build_class_stamp_discriminator.py.
+    test_build_class_stamp_discriminator.py — as does the boundary's THIRD
+    conjunct (no help flag anywhere in argv), which this predicate does not and
+    cannot decide: it is never given the argv a help flag can hide in.
     """
     module = _load_template_module()
 

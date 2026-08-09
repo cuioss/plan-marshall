@@ -153,6 +153,7 @@ def _render_executor(pruned_base: Path) -> str:
     shared_pairs = '\n'.join(f'    ({skill!r}, {pinned(skill)!r}),' for skill in _BOOTSTRAP_SHARED_SKILLS)
 
     content = template.replace('{{SCRIPT_MAPPINGS}}', '')
+    content = content.replace('{{SCRIPT_SURFACES}}', '')
     content = content.replace('{{LOGGING_DIR}}', pinned(_BOOTSTRAP_LOGGING_SKILL))
     content = content.replace('{{SHARED_MODULE_DIRS}}', shared_pairs)
     content = content.replace('{{EXTRA_SCRIPT_DIRS}}', '')

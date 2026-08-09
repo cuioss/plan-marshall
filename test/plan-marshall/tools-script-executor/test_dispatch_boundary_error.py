@@ -325,3 +325,507 @@ def test_emit_truncates_long_detail_to_configured_limit(executor_with_mock_log_e
     assert ('A' * (limit + 1)) not in message, (
         f'detail appears longer than the configured limit of {limit} characters: {message!r}'
     )
+
+
+# =============================================================================
+# Pre-spawn rejection — the payload, the exit code, and the work.log detail
+# =============================================================================
+#
+# The refusal deliberately reuses the boundary this file already tests rather
+# than adding a parallel reporting path. These tests pin the three properties
+# that reuse depends on:
+#
+#   1. the payload is a parseable ``status: error`` TOON carrying a NON-EMPTY
+#      corrective — an unparseable or empty payload would leave the caller with
+#      the same nothing it had before the feature;
+#   2. the exit code is 2, which the EXISTING classifier already maps to
+#      ``argparse_rejection`` — a rejection is an argparse rejection, decided
+#      one layer earlier;
+#   3. the work.log line carries the corrective as its ``detail=``, which the
+#      boundary's stdout-TOON-message precedence yields with NO second code
+#      path. That precedence is the reason no new reporting code was written,
+#      so it is asserted rather than assumed.
+
+_REJECTION_NOTATION = 'plan-marshall:manage-tasks:manage-tasks'
+
+# Synthetic argparse-surface node shared by the pinning tests below. Mirrors
+# the shape ``_resolve_invocation`` builds from a real derived surface:
+# ``children`` maps verb name to its own node, ``alias_of`` maps an alias
+# child name to the canonical verb it groups under.
+_VERB_NODE: dict[str, dict] = {
+    'children': {'get': {}, 'list': {}, 'read': {}},
+    'alias_of': {'get': 'read'},
+}
+
+
+def _rejection_payload(executor, token: str = 'reed') -> str:
+    """Render a representative refusal through the production renderer.
+
+    The corrective is derived by calling ``_corrective_for_verb`` — the same
+    function a real pre-spawn rejection calls — rather than a hand-built
+    literal. A hand-built literal can drift from what the function actually
+    produces for the paired token (see the ``script-call-drift`` finding this
+    fixture replaced: a ``nuke``/``read`` pairing that ``_corrective_for_verb``
+    never emits, because ``nuke`` falls outside the edit-distance threshold and
+    takes the no-suggestion branch instead).
+    """
+    corrective = executor._corrective_for_verb(_REJECTION_NOTATION, [], token, _VERB_NODE)
+    return str(
+        executor._render_rejection_toon(
+            _REJECTION_NOTATION,
+            {
+                'reason': 'unknown_verb',
+                'token': token,
+                'corrective': corrective,
+                'accepted': sorted(_VERB_NODE['children']),
+            },
+        )
+    )
+
+
+def test_rejection_payload_parses_as_toon_with_status_error(executor_with_mock_log_entry):
+    """The payload must be machine-readable by the project's own TOON parser."""
+    executor, _mock = executor_with_mock_log_entry
+    from toon_parser import parse_toon
+
+    parsed = parse_toon(_rejection_payload(executor))
+
+    assert parsed['status'] == 'error'
+    assert parsed['error'] == 'invalid_invocation'
+    assert parsed['notation'] == _REJECTION_NOTATION
+    assert parsed['reason'] == 'unknown_verb'
+    assert parsed['rejected'] == 'reed'
+
+
+def test_rejection_payload_carries_a_non_empty_corrective(executor_with_mock_log_entry):
+    """A refusal without a correction is the empty stdout this feature replaces."""
+    executor, _mock = executor_with_mock_log_entry
+    from toon_parser import parse_toon
+
+    message = parse_toon(_rejection_payload(executor))['message']
+
+    assert isinstance(message, str)
+    assert message.strip(), 'the corrective must not be blank'
+    assert 'read' in message, f'the corrective must name the canonical form: {message!r}'
+
+
+def test_exit_code_two_classifies_as_argparse_rejection(executor_with_mock_log_entry):
+    """Exit 2 routes the refusal through the EXISTING classifier, unchanged."""
+    executor, _mock = executor_with_mock_log_entry
+
+    assert executor._classify_dispatch_failure(2) == 'argparse_rejection'
+
+
+def test_work_log_detail_carries_the_corrective_via_stdout_precedence(
+    executor_with_mock_log_entry,
+):
+    """The corrective reaches work.log through the boundary's option-A precedence.
+
+    No second reporting path: the refusal writes its TOON to stdout, and the
+    boundary's existing "prefer a ``status: error`` stdout ``message``" rule
+    lifts the corrective into ``detail=``. Asserting it here is what lets the
+    rejection path own no reporting code of its own.
+    """
+    executor, mock_log_entry = executor_with_mock_log_entry
+    payload = _rejection_payload(executor)
+
+    executor.emit_dispatch_failure_work_log(
+        notation=_REJECTION_NOTATION,
+        exit_code=2,
+        stdout=payload,
+        stderr='',
+        script_args=['reed', '--plan-id', DEFAULT_PLAN_ID],
+        audit_plan_id=None,
+    )
+
+    assert mock_log_entry.call_count == 1
+    message = mock_log_entry.call_args.args[3]
+    assert 'failure_kind=argparse_rejection' in message
+    assert 'detail=Use `plan-marshall:manage-tasks:manage-tasks read`' in message, (
+        f'the corrective did not reach detail= via stdout precedence: {message!r}'
+    )
+    assert 'detail=' in message and not message.rstrip().endswith('detail='), (
+        f'detail= must not be blank on a rejection: {message!r}'
+    )
+
+
+# =============================================================================
+# ``_corrective_for_verb`` — the three documented message forms, pinned to the
+# function's real output rather than transcribed by hand (SKILL.md § "Pre-spawn
+# invocation rejection"). Each positive case is paired with a control so the
+# pin cannot pass vacuously — the control proves the assertion actually
+# discriminates between the three shapes instead of matching by coincidence.
+# =============================================================================
+
+
+def test_corrective_for_verb_nearest_spelling_form(executor_with_mock_log_entry):
+    """A token within the edit-distance threshold, matching a NON-alias verb.
+
+    ``reed`` is 1 edit away from ``read``, well inside
+    ``max(2, len(token) // 2)`` — the documented "bare nearest spelling" form.
+    """
+    executor, _mock = executor_with_mock_log_entry
+
+    corrective = executor._corrective_for_verb(_REJECTION_NOTATION, [], 'reed', _VERB_NODE)
+
+    assert corrective == (
+        "Use `plan-marshall:manage-tasks:manage-tasks read` — "
+        "registered: ['get', 'list', 'read']"
+    )
+    # Control: this form never mentions an alias relation.
+    assert 'alias of' not in corrective, f'nearest-spelling form must not phrase an alias: {corrective!r}'
+
+
+def test_corrective_for_verb_alias_of_form(executor_with_mock_log_entry):
+    """A token within threshold whose closest match IS a registered alias.
+
+    ``gett`` is 1 edit away from ``get``, which ``_VERB_NODE['alias_of']``
+    maps to the canonical verb ``read`` — the documented alias-of relation.
+    """
+    executor, _mock = executor_with_mock_log_entry
+
+    corrective = executor._corrective_for_verb(_REJECTION_NOTATION, [], 'gett', _VERB_NODE)
+
+    assert corrective == (
+        "Use `plan-marshall:manage-tasks:manage-tasks get` (an alias of `read`) — "
+        "registered: ['get', 'list', 'read']"
+    )
+
+
+def test_corrective_for_verb_no_suggestion_form(executor_with_mock_log_entry):
+    """A token outside the edit-distance threshold for every registered verb.
+
+    ``nuke`` is >= 4 edits from every child of ``_VERB_NODE`` (``get``,
+    ``list``, ``read``), past ``max(2, len('nuke') // 2) == 2`` — the
+    documented no-suggestion fallback. This is the NORMAL shape for an
+    invented verb, not an omission, so it is pinned as a first-class case.
+    """
+    executor, _mock = executor_with_mock_log_entry
+
+    corrective = executor._corrective_for_verb(_REJECTION_NOTATION, [], 'nuke', _VERB_NODE)
+
+    assert corrective == (
+        "Use a registered verb for `plan-marshall:manage-tasks:manage-tasks`: "
+        "['get', 'list', 'read']"
+    )
+    # Control: unlike the other two forms, this one names no single suggested
+    # verb in backticks immediately after the notation — proving the pin
+    # actually distinguishes the no-suggestion branch rather than matching
+    # any string that happens to list the registered verbs.
+    assert '` (an alias of' not in corrective
+    assert not corrective.startswith('Use `plan-marshall:manage-tasks:manage-tasks get`')
+    assert not corrective.startswith('Use `plan-marshall:manage-tasks:manage-tasks read`')
+
+
+def test_closest_spelling_threshold_separates_the_three_tokens(executor_with_mock_log_entry):
+    """Matched control: pins the edit-distance threshold driving all three forms.
+
+    Directly exercises ``_closest_spelling`` (the function ``_corrective_for_verb``
+    delegates to) so the three correctives above are shown to diverge for the
+    documented reason — a threshold crossing — and not for an unrelated one.
+    """
+    executor, _mock = executor_with_mock_log_entry
+    children = sorted(_VERB_NODE['children'])
+
+    assert executor._closest_spelling('reed', children) == 'read'
+    assert executor._closest_spelling('gett', children) == 'get'
+    assert executor._closest_spelling('nuke', children) is None
+
+
+def test_validator_returns_none_when_the_notation_has_no_surface(executor_with_mock_log_entry):
+    """Absent knowledge is not a rejection — the unit-level fail-open guard."""
+    executor, _mock = executor_with_mock_log_entry
+
+    assert executor._validate_invocation('bundle:skill:unmapped', ['anything']) is None
+
+
+# =============================================================================
+# ``unknown_flag`` — the two documented message forms (SKILL.md § "Pre-spawn
+# invocation rejection"), pinned to ``_validate_invocation``'s real output the
+# same way the verb correctives above are pinned. SKILL.md named only the
+# fallback form before this fix; the nearest-spelling form below is the one a
+# typo'd flag actually hits — the common case the feature exists for — so it
+# is pinned as a first-class case, not an afterthought.
+# =============================================================================
+
+_FLAG_REJECTION_NOTATION = 'plan-marshall:manage-tasks:manage-tasks'
+
+# Mirrors the shape a real derived surface has: a root with no flags of its
+# own and one leaf (``read``) declaring the two flags the correctives below
+# are computed against.
+_FLAG_SURFACE_ROOT: dict = {
+    'flags': [],
+    'required_flags': [],
+    'flag_arity': {},
+    'alias_of': {},
+    'flags_confident': True,
+    'children_confident': True,
+    'children': {
+        'read': {
+            'flags': ['plan-id', 'task-number'],
+            'required_flags': [],
+            'flag_arity': {'plan-id': 1, 'task-number': 1},
+            'alias_of': {},
+            'flags_confident': True,
+            'children_confident': True,
+            'children': {},
+        },
+    },
+}
+
+
+def _install_flag_surface(executor) -> None:
+    """Point the loaded module's ``SCRIPT_SURFACES`` global at the fixture above."""
+    executor.SCRIPT_SURFACES = {
+        _FLAG_REJECTION_NOTATION: {
+            'digest': 'test',
+            'surface': {'root': _FLAG_SURFACE_ROOT},
+        }
+    }
+
+
+def test_unknown_flag_corrective_nearest_spelling_form(executor_with_mock_log_entry):
+    """A flag token within the edit-distance threshold names the nearest declared flag.
+
+    ``--plna-id`` is 2 edits from ``plan-id``, well inside
+    ``max(2, len(token) // 2) == 3`` — the undocumented form the live executor
+    actually emits for a typo'd flag.
+    """
+    executor, _mock = executor_with_mock_log_entry
+    _install_flag_surface(executor)
+
+    rejection = executor._validate_invocation(
+        _FLAG_REJECTION_NOTATION, ['read', '--plna-id', 'x']
+    )
+
+    assert rejection is not None
+    assert rejection['reason'] == 'unknown_flag'
+    assert rejection['corrective'] == (
+        "Use `--plan-id` for `plan-marshall:manage-tasks:manage-tasks read` — "
+        "declared: ['plan-id', 'task-number']"
+    )
+    # Control: the nearest-spelling form never falls back to the whole set.
+    assert 'Use a declared flag for' not in rejection['corrective']
+
+
+def test_unknown_flag_corrective_no_suggestion_form(executor_with_mock_log_entry):
+    """A flag token outside the edit-distance threshold falls back to the whole declared set.
+
+    This is the ONLY form SKILL.md documented before this fix — but it is the
+    RARER branch: the nearest-spelling form above is what a real typo hits.
+    """
+    executor, _mock = executor_with_mock_log_entry
+    _install_flag_surface(executor)
+
+    rejection = executor._validate_invocation(
+        _FLAG_REJECTION_NOTATION, ['read', '--zzzzzzzzzzzz', 'x']
+    )
+
+    assert rejection is not None
+    assert rejection['reason'] == 'unknown_flag'
+    assert rejection['corrective'] == (
+        "Use a declared flag for `plan-marshall:manage-tasks:manage-tasks read`: "
+        "['plan-id', 'task-number']"
+    )
+    # Control: the fallback form never names a single suggested flag.
+    assert not rejection['corrective'].startswith('Use `--')
+
+
+def test_unknown_flag_closest_spelling_threshold_separates_the_two_forms(
+    executor_with_mock_log_entry,
+):
+    """Matched control: pins the edit-distance threshold driving both forms.
+
+    Directly exercises ``_closest_spelling`` — the SAME function the verb-level
+    correctives delegate to — so the two flag correctives above are shown to
+    diverge for the documented reason (a threshold crossing) and not for an
+    unrelated one.
+    """
+    executor, _mock = executor_with_mock_log_entry
+    declared = ['plan-id', 'task-number']
+
+    assert executor._closest_spelling('plna-id', declared) == 'plan-id'
+    assert executor._closest_spelling('zzzzzzzzzzzz', declared) is None
+
+
+# =============================================================================
+# The argv walk — one pass that tokenizes and resolves together
+# =============================================================================
+#
+# These drive ``_resolve_invocation`` directly, one property per test, because
+# the subprocess-level tests in test_execute_script.py can only observe the
+# walk's VERDICT (spawn / refuse). Which node the walk landed on, and how many
+# tokens each flag consumed getting there, are the things that actually broke —
+# and both are invisible from the verdict when a wrong node happens to accept.
+
+_ROOT_WITH_ROUTING_FLAGS = {
+    'flags': ['project-dir', 'verbose'],
+    'required_flags': [],
+    'flag_arity': {'project-dir': 1, 'verbose': 0},
+    'alias_of': {},
+    'flags_confident': True,
+    'children_confident': True,
+    'children': {
+        'plan': {
+            'flags': [],
+            'required_flags': [],
+            'flag_arity': {},
+            'alias_of': {},
+            'flags_confident': True,
+            'children_confident': True,
+            'children': {
+                'get': {
+                    'flags': ['field'],
+                    'required_flags': [],
+                    'flag_arity': {'field': 1},
+                    'alias_of': {},
+                    'flags_confident': True,
+                    'children_confident': True,
+                    'children': {},
+                }
+            },
+        }
+    },
+}
+
+
+def test_walk_steps_over_a_routing_flag_value_and_reaches_the_leaf(
+    executor_with_mock_log_entry,
+):
+    """The headline regression, asserted on the RESOLVED NODE rather than the verdict."""
+    executor, _mock = executor_with_mock_log_entry
+
+    resolution, rejection = executor._resolve_invocation(
+        'test:skill:script',
+        _ROOT_WITH_ROUTING_FLAGS,
+        ['--project-dir', '/x', 'plan', 'get', '--field', 'compatibility'],
+    )
+
+    assert rejection is None, rejection
+    assert resolution is not None
+    assert resolution['chain'] == ['plan', 'get'], (
+        f"the routing flag's value swallowed the verb path; got "
+        f'{resolution["chain"]!r}'
+    )
+    assert resolution['flags'] == ['project-dir', 'field']
+    assert 'field' in resolution['inherited'], (
+        'the leaf-declared flag is missing from the accept-set, so the walk '
+        'resolved a shallower node than it reached'
+    )
+
+
+def test_walk_does_not_step_over_a_bare_switch(executor_with_mock_log_entry):
+    """A zero-arity flag consumes nothing, so the next token IS the verb."""
+    executor, _mock = executor_with_mock_log_entry
+
+    resolution, rejection = executor._resolve_invocation(
+        'test:skill:script', _ROOT_WITH_ROUTING_FLAGS, ['--verbose', 'plan', 'get']
+    )
+
+    assert rejection is None
+    assert resolution['chain'] == ['plan', 'get'], (
+        f'a bare switch consumed the verb behind it; got {resolution["chain"]!r}'
+    )
+
+
+def test_walk_treats_an_equals_joined_flag_as_binding_no_token(
+    executor_with_mock_log_entry,
+):
+    executor, _mock = executor_with_mock_log_entry
+
+    resolution, _rejection = executor._resolve_invocation(
+        'test:skill:script', _ROOT_WITH_ROUTING_FLAGS, ['--project-dir=/x', 'plan', 'get']
+    )
+
+    assert resolution['chain'] == ['plan', 'get']
+    assert resolution['flags'] == ['project-dir']
+
+
+def test_walk_never_binds_a_following_flag_token_as_a_value(
+    executor_with_mock_log_entry,
+):
+    """Declared arity does not override argparse's own "a flag ends a value" rule."""
+    executor, _mock = executor_with_mock_log_entry
+
+    resolution, _rejection = executor._resolve_invocation(
+        'test:skill:script',
+        _ROOT_WITH_ROUTING_FLAGS,
+        ['--project-dir', '--verbose', 'plan', 'get'],
+    )
+
+    assert resolution['chain'] == ['plan', 'get'], (
+        f'an arity-1 flag consumed the FLAG that followed it and then lost the '
+        f'verb path; got {resolution["chain"]!r}'
+    )
+    assert resolution['flags'] == ['project-dir', 'verbose']
+
+
+def test_walk_abandons_when_an_unknown_arity_flag_precedes_a_verb(
+    executor_with_mock_log_entry,
+):
+    """Both readings resolve different nodes, so neither may be assumed.
+
+    ``--mystery`` is on neither the derived arity map nor the structural
+    allowlist, which is what makes its arity genuinely unknowable here.
+    """
+    executor, _mock = executor_with_mock_log_entry
+    root = dict(_ROOT_WITH_ROUTING_FLAGS, flags=['mystery'], flag_arity={})
+
+    resolution, rejection = executor._resolve_invocation(
+        'test:skill:script', root, ['--mystery', 'plan', 'get']
+    )
+
+    assert (resolution, rejection) == (None, None), (
+        'an unknowable arity in front of a verb must abandon the walk, not '
+        f'guess: got {resolution!r} / {rejection!r}'
+    )
+
+
+def test_walk_resolves_an_allowlisted_flag_arity_the_surface_does_not_declare(
+    executor_with_mock_log_entry,
+):
+    """The structural allowlist is the fallback that keeps the common shape precise.
+
+    ``--project-dir`` is honoured on every subcommand but is frequently rendered
+    in no node's help, so the derived map has no arity for it. Without the
+    allowlist fallback the single most common dispatch shape in the tree would
+    degrade to an unvalidated spawn — the pair with the test above is what shows
+    the fallback WIDENS knowledge rather than replacing the derivation.
+    """
+    executor, _mock = executor_with_mock_log_entry
+    root = dict(_ROOT_WITH_ROUTING_FLAGS, flag_arity={})
+
+    resolution, rejection = executor._resolve_invocation(
+        'test:skill:script', root, ['--project-dir', '/x', 'plan', 'get']
+    )
+
+    assert rejection is None
+    assert resolution['chain'] == ['plan', 'get']
+
+
+def test_walk_reports_an_unregistered_verb_with_the_parent_accept_set(
+    executor_with_mock_log_entry,
+):
+    executor, _mock = executor_with_mock_log_entry
+
+    resolution, rejection = executor._resolve_invocation(
+        'test:skill:script', _ROOT_WITH_ROUTING_FLAGS, ['--project-dir', '/x', 'nuke']
+    )
+
+    assert resolution is None
+    assert rejection['reason'] == 'unknown_verb'
+    assert rejection['token'] == 'nuke'
+    assert rejection['accepted'] == ['plan']
+
+
+def test_always_accepted_flags_and_their_arity_share_one_definition(
+    executor_with_mock_log_entry,
+):
+    """The allowlist and its arity map cannot drift apart — they are one object."""
+    executor, _mock = executor_with_mock_log_entry
+
+    assert set(executor._ALWAYS_ACCEPTED_FLAGS) == set(
+        executor._ALWAYS_ACCEPTED_FLAG_ARITY
+    )
+    assert executor._ALWAYS_ACCEPTED_FLAG_ARITY['project-dir'] == 1
+    assert executor._ALWAYS_ACCEPTED_FLAG_ARITY['help'] == 0
