@@ -79,6 +79,111 @@ The executor standardizes error output:
 SCRIPT_ERROR    {notation}    {exit_code}    {summary}
 ```
 
+### Pre-spawn invocation rejection
+
+A dispatch whose verb path or flags the target script cannot accept is refused
+**before any subprocess starts**. Without this, an invented subcommand surfaced
+only as a raw argparse `exit_code: 2` with usage text on stderr and **nothing on
+stdout** — a shape a caller that parses stdout reads as empty rather than as a
+correction.
+
+The refusal is a `status: error` TOON on **stdout** (the same stream every other
+result arrives on), with exit code `2` — the code argparse itself uses, so a
+caller branching on the exit code needs no new case, and the dispatch boundary's
+existing classifier already reports it as `argparse_rejection`:
+
+```toon
+status: error
+error: invalid_invocation
+notation: plan-marshall:manage-tasks:manage-tasks
+reason: unknown_verb
+rejected: nuke
+accepted: add-step, ..., get, list, read, ...
+message: Use `plan-marshall:manage-tasks:manage-tasks read` — registered: [...]
+```
+
+`reason` is one of `unknown_verb`, `unknown_flag`, or `missing_required_flag`.
+The `message` field is the **corrective**: the closest accepted spelling by edit
+distance — phrased as an alias-of relation when the grouping anchor recovered one
+(`get` is an alias of `read`) — or the required flag that is missing. A refusal
+without a corrective would be the empty stdout this contract exists to replace.
+
+The refusal introduces no new reporting path: it routes through the same
+`log_script_execution` and dispatch-failure work-log emission a real failure
+takes, and the boundary's stdout-TOON-message precedence lifts the corrective
+into the work-log `detail=` field unchanged.
+
+#### Fail-closed rule: absent knowledge is never a rejection
+
+Rejecting is only ever done from **positive** knowledge that a token is not
+accepted. Every path lacking that knowledge dispatches exactly as it did before
+this check existed:
+
+| Condition | Behaviour |
+|-----------|-----------|
+| The notation has no `SCRIPT_SURFACES` entry | Spawn unvalidated |
+| A node's child listing is not marked confident | Stop the walk, spawn |
+| The resolved node's flag set is not marked known | Skip flag checks, spawn |
+| `--help` appears anywhere in the invocation | Spawn (argparse prints usage) |
+
+The asymmetry is the whole safety argument: the worst case of a derivation gap
+is today's behaviour, never a valid call refused. A missing accept-set therefore
+cannot manufacture a refusal, and an executor generated with no surfaces at all
+is a **safe** configuration rather than a broken one.
+
+Four long flags are accepted on every node regardless of the derived surface,
+because each is invisible to the derivation for a structural reason: `help`
+(declared by every argparse parser and deliberately stripped from each derived
+set), `audit-plan-id` (consumed by the executor before the target's argparse
+runs), and `plan-id` / `project-dir` (honoured on every subcommand through
+parent-flag propagation but often rendered only in the root's help).
+
+#### Where the accept-set comes from
+
+The embedded `SCRIPT_SURFACES` map is derived at **generation time** by running
+each registered script's own `--help` — never by an AST walk, which is blind to
+`aliases=` and to any parser assembled in an imported module. The derivation is
+owned by [`plan-marshall:script-shared`'s `argparse_surface` module](../script-shared/scripts/argparse_surface.py),
+the **single source of truth** for the accept-set: plugin-doctor's edit-time
+`ARGUMENT_NAMING_*` and `manage-invocation-invalid` rules read the same module,
+so the edit-time and dispatch-time guards cannot disagree about what a script
+accepts.
+
+Each embedded entry carries a source digest covering the script, every `.py`
+beside it, and the injected shared-module directories, so a change in an
+**imported** module invalidates the dependent surface. A regeneration reuses any
+entry whose digest still matches — the generated executor is its own cache, with
+no additional state file.
+
+**Cost, and which path a slow generation is on.** A cold derivation runs one
+`--help` per parser node across every registered script and takes minutes; a
+regeneration over an unchanged script set performs **zero** `--help` invocations
+and is effectively free. Cold cost is therefore paid on a first build, a
+`TEMPLATE_FORMAT_VERSION` bump, or a broad script edit — not on routine
+regeneration. `generate` publishes `scripts_registered`, `surfaces_derived`,
+`surfaces_reused`, and `surfaces_not_derivable` (the three buckets partition the
+population) so a regeneration that quietly derived nothing is visible as a
+number rather than inferred from a green status. `PM_SURFACE_BUDGET_SECONDS`
+bounds the total derivation wall-clock; `0` disables derivation entirely.
+
+#### Observation point: when this guard becomes live
+
+The validation lives in the **generated** executor, so editing the template
+changes nothing until an executor is regenerated from it. Concretely:
+
+- the **main checkout's** executor and the **plugin cache** pick the change up
+  only after the change lands and the cache is synced plus the executor
+  regenerated, so neither is exercised by the branch that authors the change;
+- a **worktree-bound** executor is regenerated at phase-5 move-in, so a run that
+  regenerates its own worktree executor after editing the template *does*
+  exercise the guard against the live notation set.
+
+The consequence for a reader auditing a change to this surface: a green run is
+evidence only where a regeneration actually happened. Verify against a
+regenerated executor and say which one, rather than treating a passing suite as
+proof the guard behaves — the synthetic suite for this feature passed while the
+first live executor refused `--help` on every script.
+
 ## Execution Logging
 
 The executor provides two-tier logging:
@@ -195,6 +300,16 @@ stale embedded path is never returned blindly:
 Because of this, `PM_MARKETPLACE_ROOT` is **not required** to recover from a
 stale/relocated embedded path — it remains only as an intentional explicit
 override for pinning discovery to a specific marketplace tree (see below).
+
+**A refusal is not a resolution failure.** Resolution runs first and to
+completion; only a resolved notation reaches the
+[pre-spawn invocation rejection](#pre-spawn-invocation-rejection). So a
+`status: error` / `error: invalid_invocation` payload means the script WAS
+found and its declared surface rejected the call — nothing above went wrong. The
+two are distinguishable on sight: an unresolved notation emits the
+`SCRIPT_ERROR` line on stderr and exits `1`, while a refusal emits a TOON on
+stdout and exits `2`. Chasing a marketplace anchor for a refusal is a wasted
+detour; read the `message` corrective instead.
 
 ## Setup
 
