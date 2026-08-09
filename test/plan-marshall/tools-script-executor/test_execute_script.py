@@ -1473,6 +1473,149 @@ def test_required_flag_supplied_after_a_top_level_flag_is_not_reported_missing()
     assert result.returncode == 0
 
 
+# -----------------------------------------------------------------------------
+# Rejection-payload integrity: argv can reach the TOON, so it must not break it
+# -----------------------------------------------------------------------------
+
+
+def _toon_keys(stdout: str) -> list[str]:
+    """Every top-level ``key:`` a TOON parser would read out of ``stdout``."""
+    return [
+        line.split(':', 1)[0]
+        for line in stdout.splitlines()
+        if line and not line.startswith((' ', '\t')) and ':' in line
+    ]
+
+
+def test_newline_in_an_unregistered_verb_cannot_forge_a_toon_line():
+    """An argv token carrying a newline must not emit a key the executor never wrote.
+
+    ``_resolve_invocation`` copies the unregistered positional VERBATIM from
+    argv into ``rejection['token']``, and the renderer interpolates it into a
+    single-line field. Unescaped, the token below would close the ``rejected:``
+    line and open a forged ``status: success`` line — a caller parsing stdout as
+    TOON would then read the executor as reporting success while it refused to
+    dispatch, which is the precise failure this path writes structured TOON to
+    avoid.
+    """
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node(), 'list': _node()})}
+    forged = 'nuke\nstatus: success'
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), surfaces, [forged])
+
+        assert not marker.exists(), 'the script was spawned despite the rejection'
+
+    assert result.returncode == 2
+    assert _toon_keys(result.stdout).count('status') == 1, (
+        f'argv forged an extra top-level key: {result.stdout!r}'
+    )
+    assert 'status: error' in result.stdout
+    assert 'rejected: nuke\\nstatus: success' in result.stdout, (
+        f'the newline was not flattened into the field: {result.stdout!r}'
+    )
+
+
+def test_carriage_return_in_an_unregistered_flag_is_flattened():
+    """``\\r`` is flattened too — a lone CR is a line terminator to many readers."""
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node(flags=['plan-id'])})}
+    with tempfile.TemporaryDirectory() as tmp:
+        result, _marker = _dispatch(
+            Path(tmp), surfaces, ['read', '--bogus\rerror: forged', 'x']
+        )
+
+    assert result.returncode == 2
+    assert 'reason: unknown_flag' in result.stdout
+    assert 'rejected: --bogus\\rerror: forged' in result.stdout
+    assert _toon_keys(result.stdout).count('error') == 1, (
+        f'a carriage return forged a second error key: {result.stdout!r}'
+    )
+
+
+def test_backslash_in_a_token_is_escaped_so_the_flattening_is_unambiguous():
+    """A literal two-character ``\\n`` in argv stays distinguishable from a newline.
+
+    Without escaping the backslash first, a token containing the two characters
+    ``\\`` and ``n`` would render identically to one containing a real newline,
+    and the corrective a human reads would misreport what they typed.
+    """
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node(), 'list': _node()})}
+    with tempfile.TemporaryDirectory() as tmp:
+        result, _marker = _dispatch(Path(tmp), surfaces, ['nuke\\nnot-a-newline'])
+
+    assert result.returncode == 2
+    assert 'rejected: nuke\\\\nnot-a-newline' in result.stdout, (
+        f'a literal backslash rendered as an escaped newline: {result.stdout!r}'
+    )
+
+
+# -----------------------------------------------------------------------------
+# ``--`` end-of-options: the walk cannot get a verb from argv any more
+# -----------------------------------------------------------------------------
+
+
+def test_end_of_options_before_a_verb_abandons_the_walk_and_spawns():
+    """A node still expecting a verb can no longer get one — abandon, do not reject.
+
+    Every token after ``--`` is a positional VALUE by argparse's own rule, so
+    ``nuke`` here is not a verb the walk may judge. Rejecting it would refuse a
+    dispatch the executor cannot prove invalid, which is the one direction this
+    guard must never fail in.
+    """
+    surfaces = {_SPAWN_NOTATION: _surface_entry({'read': _node(), 'list': _node()})}
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), surfaces, ['--', 'nuke'])
+
+        assert marker.exists(), (
+            f'a post-`--` positional was judged as a verb: {result.stdout!r}'
+        )
+
+    assert result.returncode == 0
+
+
+def test_end_of_options_after_a_leaf_keeps_the_checks_bound_to_that_node():
+    """A resolved leaf stays resolved across ``--`` — the walk breaks, it does not reset.
+
+    ``read`` declares a required flag and the root declares none, so the
+    rejection below can only come from a check still bound to the ``read`` node.
+    Had the ``--`` branch dropped the resolution back to the root, this argv
+    would have spawned silently.
+    """
+    surfaces = {
+        _SPAWN_NOTATION: _surface_entry(
+            {'read': _node(flags=['plan-id'], required=['plan-id'])}
+        )
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(Path(tmp), surfaces, ['read', '--', 'value'])
+
+        assert not marker.exists(), (
+            f'the required-flag check lost its node across `--`: {result.stdout!r}'
+        )
+
+    assert result.returncode == 2
+    assert 'reason: missing_required_flag' in result.stdout
+    assert 'rejected: --plan-id' in result.stdout
+
+
+def test_end_of_options_after_a_satisfied_leaf_still_spawns():
+    """Negative control: the ``--`` branch is not a blanket refusal."""
+    surfaces = {
+        _SPAWN_NOTATION: _surface_entry(
+            {'read': _node(flags=['plan-id'], required=['plan-id'], arity={'plan-id': 1})}
+        )
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        result, marker = _dispatch(
+            Path(tmp), surfaces, ['read', '--plan-id', 'p', '--', 'value']
+        )
+
+        assert marker.exists(), (
+            f'a satisfied leaf was refused across `--`: {result.stdout!r}'
+        )
+
+    assert result.returncode == 0
+
+
 def test_build_class_dispatch_with_unparseable_stdout_still_writes_a_row():
     """A payload the boundary cannot parse degrades — it never drops the row.
 

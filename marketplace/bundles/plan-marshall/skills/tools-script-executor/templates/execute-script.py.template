@@ -1099,12 +1099,42 @@ def _validate_invocation(notation: str, script_args: list) -> dict | None:
     return None
 
 
+def _toon_single_line(value: str) -> str:
+    """Flatten ``value`` so it cannot break out of one TOON field.
+
+    A line break inside a field value would emit extra TOP-LEVEL lines, and a
+    caller parsing stdout as TOON would then read keys the executor never
+    emitted — defeating the whole reason this path writes structured TOON
+    instead of letting argparse print usage to stderr. Backslash is escaped
+    first so the escaping is unambiguous rather than collapsing a literal
+    two-character ``\\n`` in argv onto a real newline's rendering.
+    """
+    return (
+        str(value)
+        .replace('\\', '\\\\')
+        .replace('\r', '\\r')
+        .replace('\n', '\\n')
+    )
+
+
 def _render_rejection_toon(notation: str, rejection: dict) -> str:
     """Render the refusal as a ``status: error`` TOON payload for STDOUT.
 
     STDOUT, not stderr, and structured rather than argparse's usage text: the
     whole point of rejecting here is that a caller which parses stdout receives
     a CORRECTION where it previously received nothing at all.
+
+    ``rejected`` is the live ARGV vector and is flattened here rather than at
+    each call site, so every rejection reason is covered by construction:
+    ``_resolve_invocation`` copies an unregistered positional verbatim from
+    ``script_args``, and ``_validate_invocation`` builds the ``unknown_flag``
+    token from a raw argv flag spelling. ``message`` is flattened as defence in
+    depth — today every corrective is COMPOSED from registered child names and
+    declared flag names, so none carries a raw token, but a corrective that
+    quoted what the caller typed would otherwise reopen the hole silently.
+    ``notation`` needs no flattening: it is reachable here only after
+    ``_surface_for`` resolved it against the embedded surface map. Neither does
+    ``accepted``, whose members are registered names in every branch.
     """
     accepted = ', '.join(str(item) for item in rejection.get('accepted') or [])
     return '\n'.join([
@@ -1112,9 +1142,9 @@ def _render_rejection_toon(notation: str, rejection: dict) -> str:
         'error: invalid_invocation',
         f'notation: {notation}',
         f'reason: {rejection["reason"]}',
-        f'rejected: {rejection["token"]}',
+        f'rejected: {_toon_single_line(rejection["token"])}',
         f'accepted: {accepted}',
-        f'message: {rejection["corrective"]}',
+        f'message: {_toon_single_line(rejection["corrective"])}',
     ])
 
 
