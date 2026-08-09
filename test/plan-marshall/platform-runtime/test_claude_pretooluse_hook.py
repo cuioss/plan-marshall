@@ -194,6 +194,128 @@ def test_r1_not_fired_on_plain_command() -> None:
     assert hook.evaluate(_signal2_payload("Bash", _bash("python3 script.py"))) is None
 
 
+# -----------------------------------------------------------------------------
+# R1 — quoting awareness
+#
+# A shell metacharacter that OPERATES and one that is DATA are the same
+# character; only the quoting separates them. The controls below are MATCHED
+# PAIRS, one per metacharacter family: the denied member proves the fix opened
+# no bypass, and the allowed member proves the false positive is gone. Pairing
+# them per family is what makes the no-bypass claim enumerated rather than
+# sampled — a suite carrying only the allowed halves would pass equally against
+# a matcher that had been gutted into always returning None.
+# -----------------------------------------------------------------------------
+
+#: ``(family, still_denied_unquoted, now_allowed_quoted)`` — one row per R1
+#: metacharacter family. The row count is asserted against the families the
+#: matcher actually recognises, so a family added to the rule without a control
+#: pair here fails loudly instead of going untested.
+_R1_QUOTING_CONTROLS = (
+    ("and_chain", "a && b", 'git commit -m "fix && polish"'),
+    ("semicolon", "a; b", 'git commit -m "fix: a; then b"'),
+    ("background", "server &", 'echo "tom & jerry"'),
+    ("newline", "a\nb", 'printf "line one\nline two"'),
+    ("substitution", "echo $(date)", "echo 'cost is $(x)'"),
+    ("backtick", "echo `date`", "echo 'a `literal` word'"),
+    ("loop_keyword", "for f in *; do echo $f; done", 'echo "for each item"'),
+    ("leading_assignment", "FOO=bar python3 x.py", 'echo "FOO=bar python3 x.py"'),
+)
+
+
+def test_r1_quoting_control_population_covers_every_family() -> None:
+    """The control table enumerates every family, and its size is published.
+
+    Guards the sampled-instead-of-enumerated shape: a table that silently lost a
+    row would still pass every assertion below while testing less.
+    """
+    families = [family for family, _denied, _allowed in _R1_QUOTING_CONTROLS]
+    expected = {
+        "and_chain",
+        "semicolon",
+        "background",
+        "newline",
+        "substitution",
+        "backtick",
+        "loop_keyword",
+        "leading_assignment",
+    }
+    assert len(families) == len(expected), (
+        f"control table has {len(families)} rows for {len(expected)} families"
+    )
+    assert set(families) == expected
+    assert len(families) == len(set(families)), f"duplicate family in {families}"
+
+
+def test_r1_still_denies_every_unquoted_family() -> None:
+    """No bypass was opened: every unquoted compound still denies, per family."""
+    for family, denied, _allowed in _R1_QUOTING_CONTROLS:
+        payload = _signal2_payload("Bash", _bash(denied))
+        assert hook.evaluate(payload) == hook._R1_REASON, f"{family}: {denied!r}"
+
+
+def test_r1_allows_every_quoted_family() -> None:
+    """The false positive is gone: a metacharacter that is DATA no longer denies.
+
+    Fails against the pre-fix matcher, which scanned the raw command string and
+    denied every one of these legitimate single commands.
+    """
+    for family, _denied, allowed in _R1_QUOTING_CONTROLS:
+        payload = _signal2_payload("Bash", _bash(allowed))
+        assert hook.evaluate(payload) is None, f"{family}: {allowed!r}"
+
+
+def test_r1_denies_substitution_inside_double_quotes() -> None:
+    """Command substitution is LIVE inside double quotes, so it must still deny.
+
+    This is the asymmetry that stops the quoting fix from becoming a bypass:
+    single quotes make ``$(...)`` literal, double quotes do NOT — the shell
+    still executes it — so only the single-quoted form is allowed.
+    """
+    for command in ('echo "$(rm -rf /)"', 'echo "a `date` b"'):
+        payload = _signal2_payload("Bash", _bash(command))
+        assert hook.evaluate(payload) == hook._R1_REASON, command
+
+
+def test_r1_malformed_quoting_falls_back_to_detection() -> None:
+    """An unterminated quote degrades to the pre-existing scan, never to a bypass."""
+    payload = _signal2_payload("Bash", _bash('echo "unterminated ; still denied'))
+    assert hook.evaluate(payload) == hook._R1_REASON
+
+
+def test_r1_malformed_quoting_without_a_metacharacter_still_passes() -> None:
+    """The fallback is a re-scan, not a blanket denial of malformed quoting."""
+    payload = _signal2_payload("Bash", _bash('python3 x.py "unterminated'))
+    assert hook.evaluate(payload) is None
+
+
+def test_r1_allows_the_real_world_commit_message_shape() -> None:
+    """The reported field failure: a conventional commit body carrying a colon-list.
+
+    This exact shape — a single ``git commit`` whose message contains ``;`` —
+    was denied before the fix while being a legitimate one-command call.
+    """
+    command = 'git commit -m "fix(x): correct a thing; refs #1"'
+    assert hook.evaluate(_signal2_payload("Bash", _bash(command))) is None
+
+
+def test_r1_quote_masked_views_preserve_length() -> None:
+    """Both views stay character-aligned with the command.
+
+    Length preservation is what keeps the newline check meaningful — a
+    token-level view would drop an unquoted newline as whitespace and turn that
+    check into a permanent pass.
+    """
+    command = 'echo "a; b" \'c && d\' e'
+    operator_view, substitution_view = hook._quote_masked_views(command)
+    assert len(operator_view) == len(command)
+    assert len(substitution_view) == len(command)
+
+
+def test_r1_quote_masked_views_report_malformed_quoting() -> None:
+    """An unterminated span is reported as None rather than guessed at."""
+    assert hook._quote_masked_views('echo "unterminated') is None
+
+
 # =============================================================================
 # R2 — Bash file-ops
 # =============================================================================
