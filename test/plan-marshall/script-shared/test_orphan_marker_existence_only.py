@@ -33,22 +33,39 @@ the template lives inside a file the population already contains — but the cov
 read-site set is not, so ``_population_summary`` names every template it descended
 into alongside the file count.
 
+**``.exists()`` is the ONLY sanctioned shape.** A ``stat``, ``lstat``, ``is_file``
+or ``is_dir`` call on the marker path is a violation in every scope, sanctioned
+ones included, because those calls hand back ``st_mtime``, ``st_size`` and the node
+type — the raw material of a marker-driven retention oracle. Naming them is what
+stops the invariant being evaded by spelling; classifying them as violations rather
+than as a recorded existence shape is what stops a scope already inside the closure
+from using them, which the closure alone cannot prevent since it asks only WHO
+reads and never WHAT the read returns.
+
 **The sanctioned set is CLOSED, and the closure is asserted rather than declared.**
-An existence read is not merely "not a violation" — it is RECORDED, with the scope
-that performs it, and the set of those scopes must equal the two names above. An
-unrecorded read would be invisible to every assertion here: a new ``.orphaned_at``
-existence probe added to a file that is currently a docstring-only non-consumer
-satisfies every content-oriented check in this module while quietly turning that
-file into a marker-driven oracle — the liveness hazard being a retention pass that
-deletes a live version dir. Recording the read is what turns the "TWO sites"
-sentence above into an enforced closure instead of a claim the tests never check.
+An existence read is not merely "not a violation" — it is RECORDED, with the SITE
+that performs it, and the set of those sites must equal the two above. A site is
+the ``(source label, scope name)`` pair, never the bare scope name: a name-only
+closure is satisfied by any function that merely spells itself the same, so a rogue
+source could add a third consumer and change nothing the assertion looks at, and a
+same-named decoy could stand in for a real site after it was deleted. An unrecorded
+read would be invisible to every assertion here: a new ``.orphaned_at`` existence
+probe added to a file that is currently a docstring-only non-consumer satisfies
+every content-oriented check in this module while quietly turning that file into a
+marker-driven oracle — the liveness hazard being a retention pass that deletes a
+live version dir. Recording the read is what turns the "TWO sites" sentence above
+into an enforced closure instead of a claim the tests never check.
 
 Matched controls run in both directions at BOTH shapes: a source that parses the
 marker's content MUST be detected and an existence-only source MUST NOT be, in
 plain module code and again inside a template-shaped string constant. The
-sanctioned-set arm carries its own matched pair — an existence read from an
-unsanctioned scope MUST be flagged and one from a sanctioned scope MUST NOT be —
-so the closure guard is observed to fire rather than assumed to.
+reclassified probes carry their own pair — each of the four MUST be flagged even
+inside the sanctioned selector, while ``.exists()`` there MUST stay silent — and so
+does the sanctioned-set arm: an existence read from an unsanctioned SITE MUST be
+flagged (including one whose function name collides with a sanctioned name) and the
+two authoritative sites MUST NOT be, with the missing arm exercised against a
+deleted site whose same-named decoy survives. Every control asserts on the CONTENT
+of the flagged set, so none of them can pass for the wrong reason.
 """
 
 from __future__ import annotations
@@ -56,6 +73,8 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _BUNDLES_ROOT = _REPO_ROOT / 'marketplace' / 'bundles'
@@ -73,12 +92,26 @@ _CONTENT_READ_ATTRS = frozenset({'read_text', 'read_bytes', 'open'})
 #: Attribute accesses on a marker path that WRITE its content.
 _CONTENT_WRITE_ATTRS = frozenset({'write_text', 'write_bytes'})
 
-#: Attribute accesses that probe a marker path's EXISTENCE without touching its
-#: content. These are the sanctioned shape — but only from a sanctioned scope, so
-#: they are RECORDED rather than ignored. ``stat``/``lstat`` are included because a
-#: stat call answers the same "is it there?" question ``exists`` does; leaving them
-#: out would let the closure below be evaded by spelling.
-_EXISTENCE_READ_ATTRS = frozenset({'exists', 'is_file', 'is_dir', 'stat', 'lstat'})
+#: The ONE sanctioned existence shape. ``.exists()`` answers the boolean question
+#: the marker is allowed to be asked and returns nothing else, so it is RECORDED
+#: (with the site that performs it) rather than ignored, and the closure below
+#: decides whether that site may ask it.
+_EXISTENCE_READ_ATTRS = frozenset({'exists'})
+
+#: Attribute accesses that reach the marker through the filesystem while returning
+#: MORE than a boolean. These are VIOLATIONS unconditionally — in any scope,
+#: sanctioned or not — which is what closes the evasion-by-spelling hole rather
+#: than merely renaming it. Recording them as a sanctioned existence shape (their
+#: former classification) let a scope already inside the closure derive a retention
+#: decision from ``st_mtime`` or from the marker's node type and trip nothing: the
+#: closure guard only ever asks WHO reads, never WHAT the read returns, so a
+#: sanctioned site was free to consult metadata the invariant forbids. Classifying
+#: them as violations strictly dominates that scope-gated recording — a spelling
+#: evasion now fails :meth:`TestNoConsumerParsesMarkerContent
+#: .test_no_content_consuming_use_exists` no matter where it is written, so the
+#: anti-evasion rationale for naming these attrs is stronger than when they were
+#: merely recorded, not discarded.
+_METADATA_PROBE_ATTRS = frozenset({'stat', 'lstat', 'is_file', 'is_dir'})
 
 #: Callables that turn a marker path into a parsed value.
 _CONTENT_PARSE_CALLS = frozenset(
@@ -100,20 +133,39 @@ _CONTENT_PARSE_CALLS = frozenset(
 #: function is still a violation.
 _SANCTIONED_WRITE_FUNCTION = '_mark_superseded_version_dirs'
 
+#: The first sanctioned existence-read site: the selector every liveness rule in
+#: ``marketplace_bundles`` funnels through.
+_SELECTOR_SOURCE = 'marketplace/bundles/plan-marshall/skills/script-shared/scripts/marketplace_bundles.py'
+_SELECTOR_SCOPE = '_partition_version_dirs'
+
 #: The second sanctioned existence-read site: the policy mirror the selector's
 #: docstring mandates keeping in step. It lives inside an emitted-code template
 #: constant, so it is reachable only through the template descent above — which is
 #: precisely why its coverage is asserted by name rather than assumed.
 _MIRROR_SOURCE = 'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py'
 _MIRROR_TEMPLATE = '_CLAUDE_RESOLVER_TEMPLATE'
+_MIRROR_SCOPE = '_resolve_notation_by_target'
 
-#: The CLOSED set of scopes allowed to probe the marker's existence, allow-listed
-#: BY NAME exactly as ``_SANCTIONED_WRITE_FUNCTION`` is. ``_partition_version_dirs``
-#: is the selector in ``marketplace_bundles``; ``_resolve_notation_by_target`` is the
-#: mirrored predicate inside ``_CLAUDE_RESOLVER_TEMPLATE``, reachable only through the
-#: emitted-code descent. The set was derived by surveying the population, not by
-#: widening an allow-list until the suite went green.
-_SANCTIONED_EXISTENCE_READ_SCOPES = frozenset({'_partition_version_dirs', '_resolve_notation_by_target'})
+#: The label the template descent gives the mirrored read: the emitting source,
+#: qualified by the template constant the read was found inside.
+_MIRROR_LABEL = f'{_MIRROR_SOURCE}[{_MIRROR_TEMPLATE}]'
+
+#: The CLOSED set of SITES allowed to probe the marker's existence, allow-listed by
+#: ``(label, scope_name)`` exactly as ``_SANCTIONED_WRITE_FUNCTION`` is allow-listed
+#: by name. The identity is the PAIR, not the function name: a name-only allow-list
+#: is satisfied by any function that merely spells itself ``_partition_version_dirs``
+#: anywhere under ``marketplace/bundles``, so a rogue source could add a third
+#: consumer of a foreign-co-produced field and leave the observed set — and both arms
+#: of the closure assertion — completely unchanged. Carrying the label makes the
+#: closure name WHERE the read lives, which is the thing the invariant is actually
+#: about. The set was derived by surveying the population, not by widening an
+#: allow-list until the suite went green.
+_SANCTIONED_EXISTENCE_READ_SITES = frozenset(
+    {
+        (_SELECTOR_SOURCE, _SELECTOR_SCOPE),
+        (_MIRROR_LABEL, _MIRROR_SCOPE),
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -250,9 +302,22 @@ def _record_attribute_use(attr: str, label: str, lineno: int, scope_name: str, r
     it would make the read invisible to every ledger — neither a violation nor
     anything else — which is precisely how a new marker consumer could appear while
     the whole module stayed green.
+
+    A metadata/type probe is a VIOLATION in every scope, so it is never recorded as
+    an existence read and never reaches the closure at all.
     """
     if attr in _EXISTENCE_READ_ATTRS:
         report.existence_reads.append(ExistenceRead(label=label, lineno=lineno, scope_name=scope_name, attr=attr))
+        return
+    if attr in _METADATA_PROBE_ATTRS:
+        report.violations.append(
+            f'{label}:{lineno}: marker path .{attr}() in {scope_name}() — the marker is a '
+            f'boolean flag and .exists() is the only shape allowed to consult it. A '
+            f'metadata or node-type probe hands back st_mtime, st_size and the node '
+            f'type, which is exactly the material a retention pass turns into a '
+            f'marker-driven oracle that deletes a live version dir. This is a violation '
+            f'in every scope, including the sanctioned ones.'
+        )
         return
     if attr in _CONTENT_READ_ATTRS:
         report.violations.append(
@@ -404,19 +469,41 @@ def _all_existence_reads(reports: list[MarkerReport]) -> list[ExistenceRead]:
     return [read for report in reports for read in report.existence_reads]
 
 
-def _existence_read_scopes(reports: list[MarkerReport]) -> set[str]:
-    """Return the distinct scope names that probe the marker's existence."""
-    return {read.scope_name for read in _all_existence_reads(reports)}
+def _existence_read_sites(reports: list[MarkerReport]) -> set[tuple[str, str]]:
+    """Return the distinct ``(label, scope_name)`` sites that probe the marker.
+
+    The projection keeps the label ``ExistenceRead`` already carries. Dropping it —
+    comparing bare scope NAMES — would make the closure a statement about spelling
+    rather than about sites: a rogue source defining a same-named function is
+    invisible to the unsanctioned arm, and a same-named decoy elsewhere keeps the
+    missing arm empty even after the real site is deleted.
+    """
+    return {(read.label, read.scope_name) for read in _all_existence_reads(reports)}
 
 
-def _unsanctioned_existence_read_scopes(reports: list[MarkerReport]) -> set[str]:
-    """Return the existence-read scopes the sanctioned set does not name.
+def _unsanctioned_existence_read_sites(reports: list[MarkerReport]) -> set[tuple[str, str]]:
+    """Return the existence-read sites the sanctioned set does not name.
 
     Extracted as a named predicate so the matched controls below can drive it over
     synthetic sources and observe it both firing and staying silent — a closure
     guard that is only ever exercised against the real tree is an unobserved guard.
     """
-    return _existence_read_scopes(reports) - _SANCTIONED_EXISTENCE_READ_SCOPES
+    return _existence_read_sites(reports) - _SANCTIONED_EXISTENCE_READ_SITES
+
+
+def _missing_existence_read_sites(reports: list[MarkerReport]) -> set[tuple[str, str]]:
+    """Return the sanctioned sites the scan could not find.
+
+    The other arm of the closure, and the one a name-only projection silently
+    disarms: with the label dropped, deleting the real selector while any same-named
+    function survives anywhere in the population leaves this set empty.
+    """
+    return set(_SANCTIONED_EXISTENCE_READ_SITES) - _existence_read_sites(reports)
+
+
+def _render_sites(sites: set[tuple[str, str]]) -> list[str]:
+    """Render ``(label, scope_name)`` pairs as ``label -> scope()``, sorted."""
+    return [f'{label} -> {scope}()' for label, scope in sorted(sites)]
 
 
 def _render_existence_reads(reports: list[MarkerReport]) -> list[str]:
@@ -481,20 +568,25 @@ class TestNoConsumerParsesMarkerContent:
 
 
 class TestExistenceReadsAreConfinedToTheSanctionedSet:
-    """The set of scopes that probe the marker's existence is CLOSED at two."""
+    """The set of SITES that probe the marker's existence is CLOSED at two."""
 
-    def test_existence_read_scopes_are_exactly_the_sanctioned_two(self):
+    def test_existence_read_sites_are_exactly_the_sanctioned_two(self):
         reports = _reports()
 
-        observed = _existence_read_scopes(reports)
-        unsanctioned = sorted(observed - _SANCTIONED_EXISTENCE_READ_SCOPES)
-        missing = sorted(_SANCTIONED_EXISTENCE_READ_SCOPES - observed)
+        observed = _existence_read_sites(reports)
+        unsanctioned = _render_sites(_unsanctioned_existence_read_sites(reports))
+        missing = _render_sites(_missing_existence_read_sites(reports))
 
-        assert observed == set(_SANCTIONED_EXISTENCE_READ_SCOPES), (
+        assert observed == set(_SANCTIONED_EXISTENCE_READ_SITES), (
             'The .orphaned_at existence-read sanction set is CLOSED at exactly '
-            f'{sorted(_SANCTIONED_EXISTENCE_READ_SCOPES)}, and the scan disagrees. '
-            f'Unsanctioned scope(s) now reading the marker: {unsanctioned}. '
-            f'Sanctioned scope(s) the scan could not find: {missing}. '
+            f'{_render_sites(set(_SANCTIONED_EXISTENCE_READ_SITES))}, and the scan '
+            'disagrees. Sites are compared as (source label, scope name) pairs, never '
+            'as bare scope names: a name-only comparison is satisfied by any function '
+            'that merely spells itself the same, which lets a rogue source join the '
+            'population unnoticed and lets a same-named decoy stand in for a deleted '
+            'site. '
+            f'Unsanctioned site(s) now reading the marker: {unsanctioned}. '
+            f'Sanctioned site(s) the scan could not find: {missing}. '
             'An UNSANCTIONED entry means a new site consults the marker: the field has '
             'a foreign co-producer, and a third consumer is how a marker-driven '
             'retention oracle removes a live version dir. Either justify the site and '
@@ -584,6 +676,81 @@ def _partition_version_dirs(bundle_dir: Path) -> list[Path]:
     return [d for d in bundle_dir.iterdir() if not (d / '.orphaned_at').exists()]
 '''
 
+# The site-identity half of the closure's matched pair. This source is byte-identical
+# in the only thing a name-only projection can see — it defines a function called
+# _partition_version_dirs that probes the marker — and differs only in WHERE it lives.
+# Analysed under a rogue label it must be flagged; the sanctioned control above,
+# analysed under the selector's own label, must not be. The pair is what distinguishes
+# a closure over sites from a closure over spellings.
+_NEGATIVE_CONTROL_NAME_COLLIDING_ROGUE_LABEL = 'marketplace/bundles/rogue/skills/x/scripts/rogue.py'
+
+# The mirrored site, reproduced in the shape the template descent actually sees: the
+# read lives inside a _CLAUDE_RESOLVER_TEMPLATE constant, so the recorded label is the
+# emitting source qualified by the template name. Analysing it under _MIRROR_SOURCE
+# reconstructs the second authoritative pair exactly.
+_POSITIVE_CONTROL_MIRROR_SITE = '''
+_CLAUDE_RESOLVER_TEMPLATE = """
+def _resolve_notation_by_target(version_dir):
+    return not (version_dir / '.orphaned_at').exists()
+"""
+'''
+
+# A population in which the real selector site is GONE and only a same-named decoy in
+# another source survives. Under a name-only projection the missing arm reads empty and
+# the deletion ships unnoticed; under site identity the selector pair is missing.
+_NEGATIVE_CONTROL_SELECTOR_DELETED_DECOY_REMAINS = '''
+"""A same-named decoy standing in for a deleted selector — MUST NOT satisfy the arm."""
+
+from pathlib import Path
+
+
+def _partition_version_dirs(bundle_dir: Path) -> list[Path]:
+    return [d for d in bundle_dir.iterdir() if not (d / '.orphaned_at').exists()]
+'''
+
+# The metadata/type-probe controls for the reclassified attrs. Each is the SANCTIONED
+# selector scope — the hardest case, because the former classification recorded these
+# as a sanctioned existence shape and the closure guard then had nothing to say about
+# them. The .stat().st_mtime member reproduces the retention-oracle shape verbatim.
+_NEGATIVE_CONTROL_METADATA_PROBE = '''
+"""A metadata probe of the marker from the SANCTIONED selector — MUST be caught."""
+
+from pathlib import Path
+
+
+def _partition_version_dirs(bundle_dir: Path) -> list[Path]:
+    return [d for d in bundle_dir.iterdir() if (d / '.orphaned_at').{attr}()]
+'''
+
+_NEGATIVE_CONTROL_MTIME_RETENTION_ORACLE = '''
+"""The mtime-driven retention oracle, inside the SANCTIONED selector — MUST be caught."""
+
+from pathlib import Path
+
+
+def _partition_version_dirs(bundle_dir: Path) -> list[Path]:
+    keep = []
+    for d in bundle_dir.iterdir():
+        if (d / '.orphaned_at').stat().st_mtime > 1_800_000_000:
+            keep.append(d)
+    return keep
+'''
+
+_NEGATIVE_CONTROL_ALIASED_METADATA_PROBE = '''
+"""The same probe reached through an alias binding — MUST be caught."""
+
+from pathlib import Path
+
+
+def _partition_version_dirs(bundle_dir: Path) -> list[Path]:
+    keep = []
+    for d in bundle_dir.iterdir():
+        marker = d / '.orphaned_at'
+        if marker.is_file():
+            keep.append(d)
+    return keep
+'''
+
 # The template-shaped half of the matched pair. Both members carry the marker read
 # inside a string constant that is substituted into emitted code — the shape of
 # _CLAUDE_RESOLVER_TEMPLATE — so together they prove the template descent both fires
@@ -642,6 +809,88 @@ class TestDetectorControls:
         )
 
 
+class TestMetadataProbeControls:
+    """Matched controls proving a non-``.exists()`` probe is caught in EVERY scope.
+
+    Every negative member here sits inside ``_partition_version_dirs`` — a scope the
+    closure names as sanctioned — because that is the case the former classification
+    got wrong: the probe was recorded as a sanctioned existence shape, so neither the
+    violation ledger nor the closure guard had anything to say about it, and a
+    marker-mtime retention oracle shipped green.
+    """
+
+    @pytest.mark.parametrize('attr', sorted(_METADATA_PROBE_ATTRS))
+    def test_negative_control_metadata_probe_in_sanctioned_scope_is_a_violation(self, attr):
+        source = _NEGATIVE_CONTROL_METADATA_PROBE.format(attr=attr)
+
+        report = analyse_source(source, _SELECTOR_SOURCE)
+
+        assert len(report.violations) == 1, (
+            f'Expected exactly one violation for a .{attr}() probe of the marker, got '
+            f'{report.violations}.'
+        )
+        assert f'.{attr}()' in report.violations[0], (
+            f'The violation does not name the offending probe .{attr}(): '
+            f'{report.violations[0]!r}'
+        )
+        assert f'{_SELECTOR_SCOPE}()' in report.violations[0], (
+            f'The violation does not name the scope it was found in: {report.violations[0]!r}'
+        )
+        assert not report.existence_reads, (
+            f'A .{attr}() probe was ALSO recorded as a sanctioned existence read: '
+            f'{_render_existence_reads([report])}. Recording it is what let a '
+            'sanctioned scope consult filesystem metadata and trip nothing — the '
+            'reclassification is only complete if the read leaves the existence ledger.'
+        )
+        assert not _unsanctioned_existence_read_sites([report]), (
+            'A metadata probe must be a violation, not a closure finding — routing it '
+            'through the closure would make it suppressible by allow-listing the site.'
+        )
+
+    def test_negative_control_mtime_retention_oracle_is_a_violation(self):
+        report = analyse_source(_NEGATIVE_CONTROL_MTIME_RETENTION_ORACLE, _SELECTOR_SOURCE)
+
+        assert len(report.violations) == 1, (
+            'The mtime-driven retention oracle — the exact liveness hazard the selector '
+            'docstring names — was not flagged as a single violation: '
+            f'{report.violations}. Recorded existence read(s): '
+            f'{_render_existence_reads([report])}.'
+        )
+        assert '.stat()' in report.violations[0]
+        assert 'retention' in report.violations[0], (
+            'The violation message must name the retention-oracle hazard rather than '
+            f'reusing the content-read wording: {report.violations[0]!r}'
+        )
+
+    def test_negative_control_aliased_metadata_probe_is_a_violation(self):
+        report = analyse_source(_NEGATIVE_CONTROL_ALIASED_METADATA_PROBE, _SELECTOR_SOURCE)
+
+        assert report.violations, (
+            'A metadata probe reached through an alias binding escaped the '
+            'reclassification, so the guard is evadable by one intermediate variable.'
+        )
+        assert all('.is_file()' in violation for violation in report.violations), (
+            f'The alias path produced an unexpected violation set: {report.violations}'
+        )
+        assert not report.existence_reads, (
+            f'The aliased probe was still recorded as an existence read: '
+            f'{_render_existence_reads([report])}'
+        )
+
+    def test_positive_control_exists_in_sanctioned_scope_stays_silent(self):
+        report = analyse_source(_POSITIVE_CONTROL_SANCTIONED_EXISTENCE_READ, _SELECTOR_SOURCE)
+
+        assert not report.violations, (
+            f'The detector flagged the one sanctioned existence shape: {report.violations}. '
+            'Reclassifying the metadata probes must not sweep .exists() up with them, or '
+            'the two sites the invariant depends on become unshippable.'
+        )
+        assert [read.attr for read in report.existence_reads] == ['exists'], (
+            'The sanctioned .exists() read must still be RECORDED so the closure has '
+            f'something to constrain. Recorded: {_render_existence_reads([report])}'
+        )
+
+
 class TestExistenceReadSanctionControls:
     """Matched controls proving the closure guard fires — and only when it should."""
 
@@ -659,23 +908,67 @@ class TestExistenceReadSanctionControls:
     def test_negative_control_unsanctioned_existence_read_is_caught(self):
         report = analyse_source(_NEGATIVE_CONTROL_UNSANCTIONED_EXISTENCE_READ, 'negative_control_existence.py')
 
-        assert _unsanctioned_existence_read_scopes([report]) == {'_keep_reason'}, (
+        assert _unsanctioned_existence_read_sites([report]) == {('negative_control_existence.py', '_keep_reason')}, (
             'The closure guard did not flag an existence read from an unsanctioned '
-            f'scope. Recorded: {_render_existence_reads([report])}. A guard that cannot '
+            f'site. Recorded: {_render_existence_reads([report])}. A guard that cannot '
             'fire on the very shape it was written for is not enforcement.'
         )
 
-    def test_positive_control_sanctioned_existence_read_is_not_caught(self):
-        report = analyse_source(_POSITIVE_CONTROL_SANCTIONED_EXISTENCE_READ, 'positive_control_existence.py')
-
-        assert report.existence_reads, (
-            'The sanctioned-scope control recorded no existence read at all, so the '
-            'silent verdict below would be silence from not looking.'
+    def test_negative_control_name_colliding_rogue_source_is_caught(self):
+        report = analyse_source(
+            _POSITIVE_CONTROL_SANCTIONED_EXISTENCE_READ,
+            _NEGATIVE_CONTROL_NAME_COLLIDING_ROGUE_LABEL,
         )
-        assert not _unsanctioned_existence_read_scopes([report]), (
-            'The closure guard flagged an existence read from a scope it names as '
-            f'sanctioned: {_render_existence_reads([report])}. A false positive here '
-            'would make the invariant unenforceable at the two sites that must have it.'
+
+        assert _unsanctioned_existence_read_sites([report]) == {
+            (_NEGATIVE_CONTROL_NAME_COLLIDING_ROGUE_LABEL, _SELECTOR_SCOPE)
+        }, (
+            'A rogue source whose function merely SHARES the sanctioned name '
+            f'{_SELECTOR_SCOPE}() was not flagged. Recorded: '
+            f'{_render_existence_reads([report])}. This source and the sanctioned '
+            'control are the same bytes under two labels, so a guard that stays silent '
+            'here is comparing spellings, not sites — and a third consumer of a '
+            'foreign-co-produced field would join the population unnoticed.'
+        )
+
+    def test_positive_control_authoritative_sites_are_not_caught(self):
+        selector = analyse_source(_POSITIVE_CONTROL_SANCTIONED_EXISTENCE_READ, _SELECTOR_SOURCE)
+        mirror = analyse_source(_POSITIVE_CONTROL_MIRROR_SITE, _MIRROR_SOURCE)
+        reports = [selector, mirror]
+
+        assert _existence_read_sites(reports) == set(_SANCTIONED_EXISTENCE_READ_SITES), (
+            'The two authoritative controls did not reproduce the sanctioned site set. '
+            f'Observed: {_render_sites(_existence_read_sites(reports))}. Expected: '
+            f'{_render_sites(set(_SANCTIONED_EXISTENCE_READ_SITES))}. Recorded: '
+            f'{_render_existence_reads(reports)}. If this fails, the allow-listed pairs '
+            'no longer describe the shape the detector actually records — most likely '
+            'the template label format drifted.'
+        )
+        assert not _unsanctioned_existence_read_sites(reports), (
+            'The closure guard flagged a site it names as sanctioned: '
+            f'{_render_sites(_unsanctioned_existence_read_sites(reports))}. A false '
+            'positive here would make the invariant unenforceable at the two sites that '
+            'must have it.'
+        )
+        assert not _missing_existence_read_sites(reports), (
+            'The closure reported a sanctioned site as missing while both controls were '
+            f'present: {_render_sites(_missing_existence_read_sites(reports))}'
+        )
+
+    def test_negative_control_same_named_decoy_does_not_satisfy_the_missing_arm(self):
+        decoy = analyse_source(
+            _NEGATIVE_CONTROL_SELECTOR_DELETED_DECOY_REMAINS,
+            _NEGATIVE_CONTROL_NAME_COLLIDING_ROGUE_LABEL,
+        )
+        mirror = analyse_source(_POSITIVE_CONTROL_MIRROR_SITE, _MIRROR_SOURCE)
+        reports = [decoy, mirror]
+
+        assert _missing_existence_read_sites(reports) == {(_SELECTOR_SOURCE, _SELECTOR_SCOPE)}, (
+            'The selector site was deleted and only a same-named decoy in another source '
+            'remains, yet the missing arm did not name the deleted site. Observed sites: '
+            f'{_render_sites(_existence_read_sites(reports))}. A name-only projection '
+            'reports nothing missing here, which is how the allow-list would end up '
+            'guarding a site that no longer exists.'
         )
 
     def test_template_embedded_existence_read_is_recorded(self):
