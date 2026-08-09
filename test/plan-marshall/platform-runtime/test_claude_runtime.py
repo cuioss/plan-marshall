@@ -271,6 +271,134 @@ def _count_command(entries: list[dict[str, Any]], command: str) -> int:
     return sum(1 for c in _collect_commands(entries) if c == command)
 
 
+# The nine render labels the installer's three event lists partition. Kept here
+# as the single test-side copy so the partition assertions and the per-event
+# assertions cannot drift apart.
+_NINE_RENDER_LABELS = {
+    "SessionStart:matcher-less",
+    "SessionStart:clear",
+    "UserPromptSubmit",
+    "Notification",
+    "Stop",
+    "PreToolUse:AskUserQuestion",
+    "PreToolUse:Bash",
+    "PostToolUse:AskUserQuestion",
+    "PostToolUse:Bash",
+}
+
+
+def _timeouts_for(entries: list[dict[str, Any]], command: str) -> set:
+    """Return the set of ``timeout`` values carried by *command*'s hook entries.
+
+    A set rather than a list so an assertion reads as "every matching entry
+    carries exactly this value" without depending on entry ordering.
+    """
+    return {
+        h.get("timeout")
+        for entry in entries
+        if isinstance(entry, dict)
+        for h in entry.get("hooks", [])
+        if isinstance(h, dict) and h.get("command") == command
+    }
+
+
+def _render_timeouts(entries: list[dict[str, Any]]) -> set:
+    """Return the set of ``timeout`` values on the render-hook entries."""
+    return _timeouts_for(entries, _RENDER_HOOK_COMMAND)
+
+
+def _all_render_timeouts(settings: dict[str, Any]) -> set:
+    """Return every render-entry ``timeout`` across every hooks block."""
+    values: set = set()
+    for block in settings.get("hooks", {}).values():
+        if isinstance(block, list):
+            values |= _render_timeouts(block)
+    return values
+
+
+def _stale_every_timeout(target: Path, stale_value: int = 5000) -> None:
+    """Rewrite EVERY hook ``timeout`` in *target* to *stale_value*.
+
+    Reproduces a settings file provisioned by the pre-fix emit sites, which is
+    the only way to exercise the migrate arm over the whole label population
+    rather than over a hand-picked sample.
+    """
+    settings = json.loads(target.read_text())
+    for block in settings.get("hooks", {}).values():
+        if not isinstance(block, list):
+            continue
+        for entry in block:
+            if not isinstance(entry, dict):
+                continue
+            for hook in entry.get("hooks", []):
+                if isinstance(hook, dict) and "timeout" in hook:
+                    hook["timeout"] = stale_value
+    target.write_text(json.dumps(settings), encoding="utf-8")
+
+
+def _stale_capture_timeout_only(target: Path, stale_value: int = 5000) -> None:
+    """Rewrite ONLY the SessionStart capture entry's ``timeout`` in *target*.
+
+    The counterpart of :func:`_stale_every_timeout`, and deliberately narrow:
+    it plants the one state where every render entry is already correct and the
+    capture entry alone is stale. That state is what separates a report keyed on
+    the nine render labels from a report of what the call actually rewrote.
+    """
+    settings = json.loads(target.read_text())
+    for entry in settings.get("hooks", {}).get("SessionStart", []):
+        if not isinstance(entry, dict):
+            continue
+        for hook in entry.get("hooks", []):
+            if isinstance(hook, dict) and hook.get("command") == _HOOK_COMMAND:
+                hook["timeout"] = stale_value
+    target.write_text(json.dumps(settings), encoding="utf-8")
+
+
+def _drop_capture_entry(target: Path) -> None:
+    """Remove the SessionStart capture entry from *target*, leaving render ones.
+
+    The insertion-side mirror of :func:`_stale_capture_timeout_only`: every
+    render entry stays correct while the capture entry is absent, so the next
+    install appends it and writes the file with no render label changing.
+    """
+    settings = json.loads(target.read_text())
+    hooks = settings.get("hooks", {})
+    hooks["SessionStart"] = [
+        entry
+        for entry in hooks.get("SessionStart", [])
+        if not (
+            isinstance(entry, dict)
+            and any(
+                isinstance(h, dict) and h.get("command") == _HOOK_COMMAND
+                for h in entry.get("hooks", [])
+            )
+        )
+    ]
+    target.write_text(json.dumps(settings), encoding="utf-8")
+
+
+def _capture_timeouts(settings: dict[str, Any]) -> set:
+    """Return the ``timeout`` values on the SessionStart capture entries."""
+    return _timeouts_for(settings.get("hooks", {}).get("SessionStart", []), _HOOK_COMMAND)
+
+
+def _assert_nine_label_partition(result: dict[str, Any]) -> None:
+    """Assert the three event lists PARTITION the nine render labels.
+
+    Partition, not union: a label reported in two lists at once is the false
+    "nothing changed" signal the three-list contract exists to remove, and a
+    union check alone would not catch it. Single definition so every site
+    asserting this property asserts the same strength of it.
+    """
+    combined = (
+        list(result["installed_events"])
+        + list(result["migrated_events"])
+        + list(result["already_present_events"])
+    )
+    assert sorted(combined) == sorted(_NINE_RENDER_LABELS)
+    assert len(combined) == len(set(combined)), f"double-membership in {combined}"
+
+
 # =============================================================================
 # 1c. Missing-executor fail-soft guard (FIX 2)
 # =============================================================================
@@ -353,7 +481,7 @@ class TestExecutorGuardFailSoft:
 class TestInstallTerminalTitleHooks:
     """Tests for ClaudeRuntime.project_install_hook covering the full terminal-title wiring.
 
-    Covers (a) fresh install creates all seven render-trigger hook entries plus
+    Covers (a) fresh install creates all nine render-trigger hook entries plus
     statusLine plus env entry; (b) re-running is idempotent; (c) existing
     statusLine with a different command yields already_present_other; (d)
     existing env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE with a different value
@@ -493,7 +621,14 @@ class TestInstallTerminalTitleHooks:
     # ------------------------------------------------------------------
 
     def test_idempotent_second_run_adds_nothing(self, rt, tmp_path):
-        """Re-invoking after a fresh install reports already_present and adds no new entries."""
+        """Re-invoking after a fresh install reports already_present and adds no new entries.
+
+        This is the terminal-title UNTOUCHED arm: the fresh install already
+        wrote current-shape entries, so the second run converges nothing.
+        ``migrated_events`` is asserted EMPTY — a convergent installer that
+        rewrote a correct value would still leave the file byte-identical only
+        by luck, and reporting a migration here would be a false change signal.
+        """
         target = tmp_path / ".claude" / "settings.local.json"
         rt.project_install_hook(str(target))
         first_settings = json.loads(target.read_text())
@@ -501,6 +636,8 @@ class TestInstallTerminalTitleHooks:
         result = _parsed(rt.project_install_hook(str(target)))
         assert result["already_present"] is True
         assert result["installed_events"] == []
+        assert result["migrated_events"] == []
+        assert set(result["already_present_events"]) == _NINE_RENDER_LABELS
         assert result["statusLine_status"] == "already_present"
         assert result["env_status"] == "already_present"
 
@@ -600,7 +737,14 @@ class TestInstallTerminalTitleHooks:
     # absence of pruning rather than its behaviour.
 
     def _seed_scoped_post_tool_use(self, target: Path) -> None:
-        """Write a settings file already carrying both matcher-scoped entries."""
+        """Write a settings file already carrying both matcher-scoped entries.
+
+        The seeded ``timeout`` is deliberately the milliseconds-shaped 5000 an
+        earlier version emitted, so this fixture plants the MIGRATE arm: the
+        entries are present under the correct command string but carry a stale
+        value the re-install must converge. Its consumer asserts that
+        classification rather than treating the value as incidental input.
+        """
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
             json.dumps(
@@ -637,19 +781,36 @@ class TestInstallTerminalTitleHooks:
         assert not hasattr(_cr, "_prune_matcher_scoped_render_entries")
 
     def test_install_over_existing_scoped_entries_preserves_both(self, rt, tmp_path):
-        """Installing over both matcher-scoped entries keeps BOTH, prunes neither."""
+        """Installing over both matcher-scoped entries keeps BOTH, prunes neither.
+
+        The seed carries a stale ``timeout``, so both events belong to the
+        MIGRATE arm: they are reported in ``migrated_events`` and NOT in
+        ``already_present_events``. Reporting a converged entry as
+        already-present would be the false "nothing changed" signal, so the
+        absence from ``already_present_events`` is asserted, not merely implied.
+        """
+        import claude_runtime as _cr
+
         target = tmp_path / ".claude" / "settings.local.json"
         self._seed_scoped_post_tool_use(target)
 
         result = _parsed(rt.project_install_hook(str(target)))
         assert result["status"] == "success"
+        migrated = set(result["migrated_events"])
         already = set(result["already_present_events"])
-        assert "PostToolUse:AskUserQuestion" in already
-        assert "PostToolUse:Bash" in already
+        assert "PostToolUse:AskUserQuestion" in migrated
+        assert "PostToolUse:Bash" in migrated
+        assert "PostToolUse:AskUserQuestion" not in already
+        assert "PostToolUse:Bash" not in already
+        # A converged run changed the file, so the top-level no-op flag is False.
+        assert result["already_present"] is False
 
         settings = json.loads(target.read_text())
         post = settings["hooks"]["PostToolUse"]
         assert _count_command(post, _RENDER_HOOK_COMMAND) == 2
+        # The stale value was actually rewritten — the outcome label alone is
+        # not evidence that the settings file changed.
+        assert _render_timeouts(post) == {_cr._HOOK_TIMEOUT_SECONDS}
         post_matchers = {
             entry.get("matcher", "")
             for entry in post
@@ -710,6 +871,13 @@ class TestInstallTerminalTitleHooks:
         entry either — it simply adds the two scoped entries alongside. The
         distinction matters: "we no longer want this shape" is not a licence to
         remove a hook the operator may have added deliberately.
+
+        The seeded entry carries a stale ``timeout``, which places it on the
+        UNTOUCHED arm rather than the migrate arm: convergence is scoped to the
+        nine labels the installer owns, and a matcher-less PostToolUse entry is
+        not one of them. Leaving its value alone is the same restraint as not
+        deleting it, so the preserved value is asserted rather than left as
+        incidental fixture input.
         """
         target = tmp_path / ".claude" / "settings.local.json"
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -735,6 +903,8 @@ class TestInstallTerminalTitleHooks:
             encoding="utf-8",
         )
 
+        import claude_runtime as _cr
+
         rt.project_install_hook(str(target))
 
         post = json.loads(target.read_text())["hooks"]["PostToolUse"]
@@ -745,6 +915,16 @@ class TestInstallTerminalTitleHooks:
             and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
         }
         assert matchers == {"", "AskUserQuestion", "Bash"}
+        # The foreign matcher-less entry keeps its stale value untouched, while
+        # the two freshly-added scoped entries carry the current one.
+        matcher_less = [
+            entry for entry in post if isinstance(entry, dict) and entry.get("matcher", "") == ""
+        ]
+        assert _render_timeouts(matcher_less) == {5000}
+        scoped = [
+            entry for entry in post if isinstance(entry, dict) and entry.get("matcher", "") != ""
+        ]
+        assert _render_timeouts(scoped) == {_cr._HOOK_TIMEOUT_SECONDS}
 
     # ------------------------------------------------------------------
     # (c) Existing foreign statusLine yields already_present_other (preserved).
@@ -829,6 +1009,15 @@ class TestInstallTerminalTitleHooks:
         ``matcher: "clear"`` one (D6) — the pre-existing foreign capture entry
         must survive alongside both, and each render entry must appear exactly
         once (never duplicated by the insert).
+
+        The seeded capture entry carries a stale ``timeout``, placing it on the
+        MIGRATE arm: the capture entry is one of ours (keyed on
+        ``_HOOK_COMMAND``), so a re-install converges it. That convergence is
+        reported on ``capture_status`` — NOT in any of the three event lists,
+        which stay a partition of the nine render labels the capture entry does
+        not own. Preserved-and-converged are different claims, so both are
+        asserted here rather than the value being left as incidental fixture
+        input.
         """
         target = tmp_path / ".claude" / "settings.local.json"
         target.parent.mkdir(parents=True)
@@ -847,6 +1036,8 @@ class TestInstallTerminalTitleHooks:
         result = _parsed(rt.project_install_hook(str(target)))
         assert result["status"] == "success"
 
+        import claude_runtime as _cr
+
         settings = json.loads(target.read_text())
         session_start = settings["hooks"]["SessionStart"]
         # Foreign capture entry still present, undisturbed.
@@ -861,6 +1052,14 @@ class TestInstallTerminalTitleHooks:
             and any(h.get("command") == _RENDER_HOOK_COMMAND for h in entry.get("hooks", []))
         }
         assert matchers_with_render == {"", "clear"}
+        # The pre-existing capture entry's stale timeout was converged...
+        assert _timeouts_for(session_start, _HOOK_COMMAND) == {_cr._HOOK_TIMEOUT_SECONDS}
+        # ...and that convergence is reported on its OWN field, under no event
+        # label, because the capture entry owns none. The three lists stay a
+        # partition of the nine render labels.
+        assert result["capture_status"] == "migrated"
+        assert "SessionStart:capture" not in set(result["migrated_events"])
+        _assert_nine_label_partition(result)
 
     def test_preserves_unrelated_existing_hooks_block(self, rt, tmp_path):
         """Existing unrelated hooks (e.g. UserPromptSubmit with a foreign command) are preserved
@@ -987,8 +1186,14 @@ class TestInstallEnforcementHook:
     def test_already_present_does_not_rewrite_file(self, rt, tmp_path):
         """A second --enforcement run on an already-present entry must not rewrite the file.
 
-        Validates the no-write-on-already_present fix: the file's mtime and content
-        must be byte-identical after the idempotent second call.
+        This is the enforcement UNTOUCHED arm, and it asserts more than its
+        terminal-title counterpart can. ``_install_terminal_title_hooks``
+        rewrites the whole settings file on every call, so "untouched" there can
+        only mean the resulting DATA is unchanged. ``_install_enforcement_hook``
+        returns early instead, so "untouched" additionally means NO WRITE
+        OCCURRED — asserted directly via mtime and bytes rather than inferred
+        from the returned status, because a status can report a no-op while the
+        file was rewritten identically.
         """
         import os
         target = tmp_path / ".claude" / "settings.local.json"
@@ -1000,6 +1205,7 @@ class TestInstallEnforcementHook:
         result = _parsed(rt.project_install_hook(str(target), enforcement=True))
 
         assert result["enforcement_status"] == "already_present"
+        assert result["already_present"] is True
         # File must not have been touched (byte-identical, same mtime).
         assert target.read_bytes() == content_before
         assert os.stat(target).st_mtime_ns == mtime_before
@@ -1096,6 +1302,608 @@ class TestInstallEnforcementHook:
         assert settings_json.read_text() == shared_before
         shared = json.loads(shared_before)
         assert "hooks" not in shared
+
+
+class TestEnforcementEntryMustBeMatcherLess:
+    """The enforcement probe and its timeout migration are scoped to ``matcher: ""``.
+
+    Being MATCHER-LESS is precisely what makes the enforcement hook run for every
+    tool rather than for one matcher, so an unscoped presence probe is a false
+    green on a guard: it accepts an entry parked under some matcher, the
+    installer takes the already-present branch, and ``install-hook --enforcement``
+    reports success while the matcher-less entry that actually enforces was never
+    appended. Each control below pairs the wrong-matcher case with the
+    matcher-less one, so a probe that simply answered False for everything could
+    not satisfy them.
+    """
+
+    @staticmethod
+    def _scoped_entries(matcher: str, timeout: int = 5) -> list[dict[str, Any]]:
+        """A PreToolUse entry carrying the enforcement command under *matcher*."""
+        return [
+            {
+                "matcher": matcher,
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": _ENFORCEMENT_HOOK_COMMAND,
+                        "timeout": timeout,
+                    }
+                ],
+            }
+        ]
+
+    def _write_pre_tool_use(self, target: Path, entries: list[dict[str, Any]]) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps({"hooks": {"PreToolUse": entries}}), encoding="utf-8"
+        )
+
+    def test_probe_is_scoped_like_its_render_sibling(self):
+        """``_has_enforcement_entry`` takes and applies the same matcher scope."""
+        import claude_runtime as _cr
+
+        scoped = self._scoped_entries("Bash")
+        matcher_less = self._scoped_entries("")
+
+        assert _cr._has_enforcement_entry(scoped, matcher="") is False
+        assert _cr._has_enforcement_entry(matcher_less, matcher="") is True
+        # matcher=None keeps the sibling's "any entry with this command" meaning,
+        # so the scoping is a caller decision rather than a hard-wired one.
+        assert _cr._has_enforcement_entry(scoped) is True
+
+    def test_wrong_matcher_entry_does_not_suppress_the_install(self, rt, tmp_path):
+        """A scoped entry must not be mistaken for the matcher-less one.
+
+        The regression: with an unscoped probe the installer reported
+        ``already_present`` here and returned without appending anything, so
+        enforcement ran for ``Bash`` alone while the operator was told it was
+        armed.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        self._write_pre_tool_use(target, self._scoped_entries("Bash"))
+
+        result = _parsed(rt.project_install_hook(str(target), enforcement=True))
+
+        assert result["enforcement_status"] == "installed"
+        assert result["enforcement_installed"] is True
+
+        pre = json.loads(target.read_text())["hooks"]["PreToolUse"]
+        # The foreign scoped entry is preserved and the matcher-less one added.
+        assert _count_command(pre, _ENFORCEMENT_HOOK_COMMAND) == 2
+        matchers = {
+            entry.get("matcher", "")
+            for entry in pre
+            if isinstance(entry, dict)
+            and any(
+                h.get("command") == _ENFORCEMENT_HOOK_COMMAND
+                for h in entry.get("hooks", [])
+            )
+        }
+        assert matchers == {"", "Bash"}
+
+    def test_matcher_less_entry_still_suppresses_the_install(self, rt, tmp_path):
+        """The matched negative: a correct entry is still recognised as present.
+
+        Without this, a probe hard-wired to return False would pass the
+        wrong-matcher control above while re-appending a duplicate entry on
+        every run.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        self._write_pre_tool_use(target, self._scoped_entries(""))
+
+        result = _parsed(rt.project_install_hook(str(target), enforcement=True))
+
+        assert result["enforcement_status"] == "already_present"
+        pre = json.loads(target.read_text())["hooks"]["PreToolUse"]
+        assert _count_command(pre, _ENFORCEMENT_HOOK_COMMAND) == 1
+
+    def test_migration_leaves_a_wrong_matcher_entry_alone(self, rt, tmp_path):
+        """A stale timeout on a scoped entry is not ours to converge.
+
+        Both halves are asserted because either alone is satisfiable by a wrong
+        implementation: the preserved 5000 alone would also hold if nothing
+        migrated at all, and the converged value alone would also hold if the
+        migration were still unscoped.
+        """
+        import claude_runtime as _cr
+
+        target = tmp_path / ".claude" / "settings.local.json"
+        self._write_pre_tool_use(target, self._scoped_entries("Bash", timeout=5000))
+
+        rt.project_install_hook(str(target), enforcement=True)
+
+        pre = json.loads(target.read_text())["hooks"]["PreToolUse"]
+        scoped = [e for e in pre if e.get("matcher", "") == "Bash"]
+        matcher_less = [e for e in pre if e.get("matcher", "") == ""]
+        assert _timeouts_for(scoped, _ENFORCEMENT_HOOK_COMMAND) == {5000}
+        assert _timeouts_for(matcher_less, _ENFORCEMENT_HOOK_COMMAND) == {
+            _cr._HOOK_TIMEOUT_SECONDS
+        }
+
+    def test_migration_still_converges_the_matcher_less_entry(self, rt, tmp_path):
+        """The matched positive: a stale matcher-less entry IS converged."""
+        import claude_runtime as _cr
+
+        target = tmp_path / ".claude" / "settings.local.json"
+        self._write_pre_tool_use(target, self._scoped_entries("", timeout=5000))
+
+        result = _parsed(rt.project_install_hook(str(target), enforcement=True))
+
+        assert result["enforcement_status"] == "migrated"
+        pre = json.loads(target.read_text())["hooks"]["PreToolUse"]
+        assert _timeouts_for(pre, _ENFORCEMENT_HOOK_COMMAND) == {
+            _cr._HOOK_TIMEOUT_SECONDS
+        }
+
+    def test_display_label_reads_missing_for_a_wrong_matcher_entry(self):
+        """The health-check label is truthful once the probe is scoped.
+
+        A wrong-matcher entry is enforcement that does not run for every tool, so
+        reporting it as present would be the same false green one layer up — in
+        the diagnostic the menu doc tells the operator to read.
+        """
+        import claude_runtime as _cr
+
+        scoped_lines, _ = _cr._diagnose_display_entries(
+            {"hooks": {"PreToolUse": self._scoped_entries("Bash")}}
+        )
+        assert "PreToolUse:enforcement: MISSING" in scoped_lines
+
+        matcher_less_lines, _ = _cr._diagnose_display_entries(
+            {"hooks": {"PreToolUse": self._scoped_entries("")}}
+        )
+        assert "PreToolUse:enforcement: present" in matcher_less_lines
+
+
+class TestHookEntryTimeoutEmitSites:
+    """Every hook-entry builder emits a SECONDS-range ``timeout``.
+
+    Fails against the pre-fix code, where every builder emitted the
+    milliseconds-shaped ``5000`` into a field Claude Code reads as seconds.
+
+    "Every" is meant literally: the population is read from
+    ``claude_runtime._HOOK_ENTRY_BUILDERS`` rather than restated here, so the
+    class covers whatever the module declares — including a builder added after
+    this class was written.
+    """
+
+    #: The emit-site population, taken from ``claude_runtime._HOOK_ENTRY_BUILDERS``
+    #: — the registry that sits next to the builders themselves. It is NOT a
+    #: test-local list of builder names: a hand-maintained copy cannot detect an
+    #: ADDITION to the real population, so a future timeout-emitting builder
+    #: omitted from it would leave every test in this class green.
+    #:
+    #: The population is enumerated BY SYMBOL, never by a ``"timeout":`` text scan
+    #: over ``claude_runtime.py``. That scan returns FOUR hits: the fourth is the
+    #: ``"timeout"`` KEY of ``_BUILD_JOB_STATUS_TO_OUTCOME``, a marshalld
+    #: wire-status NAME that is not an emit site at all. Anchoring on the builders
+    #: is what keeps this population from absorbing it — see
+    #: ``test_build_job_wire_status_key_is_not_an_emit_site``.
+    @staticmethod
+    def _builders() -> tuple:
+        import claude_runtime as _cr
+
+        return _cr._HOOK_ENTRY_BUILDERS
+
+    def test_emit_site_population_is_non_empty_and_module_anchored(self):
+        """The population is non-empty, callable throughout, and its size published.
+
+        Guards the vacuous-pass shape head-on: a loop over an EMPTY population
+        passes while examining nothing. The module-anchor check is what makes the
+        registry's membership mean something — every entry must be the very
+        attribute of ``claude_runtime`` that its own ``__name__`` names, so a
+        lambda or an unrelated callable slipped into the tuple fails here rather
+        than quietly widening the population with something that is not a
+        module-level builder.
+        """
+        import claude_runtime as _cr
+
+        builders = self._builders()
+        assert builders, "emit-site population is empty — nothing would be examined"
+
+        unanchored = [
+            getattr(builder, "__name__", repr(builder))
+            for builder in builders
+            if not callable(builder)
+            or getattr(_cr, getattr(builder, "__name__", ""), None) is not builder
+        ]
+        assert not unanchored, (
+            f"population={len(builders)} builder(s), unanchored={len(unanchored)}: "
+            f"{unanchored}"
+        )
+
+    def test_every_emit_site_emits_a_plausible_seconds_timeout(self):
+        """No builder emits a timeout outside the plausible seconds range.
+
+        Sites examined and sites found divergent are reported SEPARATELY, so a
+        pass that examined nothing cannot be mistaken for a pass that examined
+        everything and found nothing wrong.
+        """
+        import claude_runtime as _cr
+
+        builders = self._builders()
+        examined = 0
+        divergent: list[tuple[str, object]] = []
+        for builder in builders:
+            entry = builder()
+            for hook in entry["hooks"]:
+                examined += 1
+                timeout = hook.get("timeout")
+                if _cr._hook_timeout_is_stale(timeout):
+                    divergent.append((builder.__name__, timeout))
+
+        assert examined == len(builders), (
+            f"expected one emitted hook per builder: examined={examined}, "
+            f"builders={len(builders)}"
+        )
+        assert not divergent, (
+            f"examined={examined} emit site(s), divergent={len(divergent)}: {divergent}"
+        )
+
+    def test_every_builder_emits_the_same_value(self):
+        """The emitted literals are identical — the stated position, not an accident.
+
+        Each hook is one guarded executor dispatch over local JSON, so no
+        per-hook-type latency difference exists to encode. Pinning the identity
+        makes any future divergence a deliberate, reviewed change. The population
+        size rides with the assertion so a collapse to a single builder — under
+        which set equality holds trivially — is visible on failure.
+        """
+        import claude_runtime as _cr
+
+        builders = self._builders()
+        emitted = {builder()["hooks"][0]["timeout"] for builder in builders}
+        assert emitted == {_cr._HOOK_TIMEOUT_SECONDS}, (
+            f"population={len(builders)}, emitted={sorted(emitted)}"
+        )
+
+    def test_build_job_wire_status_key_is_not_an_emit_site(self):
+        """The fourth ``"timeout"`` in the module is a wire-status NAME, not a value.
+
+        Pins the resolved 4-vs-3 discrepancy so a later reader does not re-open
+        it: ``_BUILD_JOB_STATUS_TO_OUTCOME``'s ``"timeout"`` is a marshalld
+        daemon status name mapping to an outcome, and is unrelated to the hook
+        timeout.
+        """
+        import claude_runtime as _cr
+
+        assert _cr._BUILD_JOB_STATUS_TO_OUTCOME["timeout"] == _cr.OUTCOME_TIMED_OUT
+
+
+class TestHookTimeoutStalenessPredicate:
+    """``_hook_timeout_is_stale`` is RANGE-based, not an equality test on 5000."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [5000, 30000, 0, -1, None, "5", True, 1.5],
+        ids=["ms_5000", "ms_30000", "zero", "negative", "absent", "string", "bool", "float"],
+    )
+    def test_implausible_values_are_stale(self, value):
+        """Every value outside the plausible seconds range reads as stale."""
+        import claude_runtime as _cr
+
+        assert _cr._hook_timeout_is_stale(value) is True
+
+    @pytest.mark.parametrize("value", [1, 5, 30, 120], ids=["min", "current", "operator", "max"])
+    def test_plausible_values_are_not_stale(self, value):
+        """A credible operator value inside the range is preserved, not normalised.
+
+        The 30 case is the one that distinguishes a range predicate from an
+        ``== 5000`` test: a deliberate operator choice must survive a re-install.
+        """
+        import claude_runtime as _cr
+
+        assert _cr._hook_timeout_is_stale(value) is False
+
+    def test_the_current_emitted_value_is_itself_plausible(self):
+        """The value the builders emit must satisfy the predicate that guards it.
+
+        Without this, the constant and the bound could drift apart into a state
+        where every fresh install immediately reports itself stale.
+        """
+        import claude_runtime as _cr
+
+        assert _cr._hook_timeout_is_stale(_cr._HOOK_TIMEOUT_SECONDS) is False
+
+
+class TestHookTimeoutMigration:
+    """The already-present path CONVERGES a stale ``timeout`` on both installers.
+
+    The migrate-arm tests fail against the pre-fix code, where both installers
+    dedup on the command string alone and never inspect ``timeout`` — so a
+    settings file provisioned before the fix kept ``5000`` through every
+    re-install while the suite stayed green.
+    """
+
+    # ------------------------------------------------------------------
+    # Migrate arm — terminal-title installer.
+    # ------------------------------------------------------------------
+
+    def test_terminal_title_migrates_every_stale_render_timeout(self, rt, tmp_path):
+        """A fully-provisioned pre-fix file converges on re-install, across all nine labels."""
+        import claude_runtime as _cr
+
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        _stale_every_timeout(target)
+        assert _all_render_timeouts(json.loads(target.read_text())) == {5000}
+
+        result = _parsed(rt.project_install_hook(str(target)))
+
+        assert result["status"] == "success"
+        # Every label is on the migrate arm — nothing installed, nothing a no-op.
+        assert set(result["migrated_events"]) == _NINE_RENDER_LABELS
+        assert result["installed_events"] == []
+        assert result["already_present_events"] == []
+        assert result["already_present"] is False
+        # The values were actually rewritten, not merely relabelled.
+        assert _all_render_timeouts(json.loads(target.read_text())) == {
+            _cr._HOOK_TIMEOUT_SECONDS
+        }
+
+    def test_terminal_title_migration_does_not_duplicate_entries(self, rt, tmp_path):
+        """Convergence rewrites in place — it never appends a second entry."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        _stale_every_timeout(target)
+
+        rt.project_install_hook(str(target))
+
+        hooks_block = json.loads(target.read_text())["hooks"]
+        assert _count_command(hooks_block["SessionStart"], _RENDER_HOOK_COMMAND) == 2
+        assert _count_command(hooks_block["SessionStart"], _HOOK_COMMAND) == 1
+        assert _count_command(hooks_block["PreToolUse"], _RENDER_HOOK_COMMAND) == 2
+        assert _count_command(hooks_block["PostToolUse"], _RENDER_HOOK_COMMAND) == 2
+
+    def test_terminal_title_preserves_a_deliberate_in_range_value(self, rt, tmp_path):
+        """An operator value inside the plausible range is NOT rewritten.
+
+        The predicate is range-based precisely so this case survives: a
+        migration that normalised every entry to the emitted literal would
+        silently discard a deliberate operator choice.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        _stale_every_timeout(target, stale_value=30)
+
+        result = _parsed(rt.project_install_hook(str(target)))
+
+        assert result["migrated_events"] == []
+        assert set(result["already_present_events"]) == _NINE_RENDER_LABELS
+        assert result["already_present"] is True
+        assert _all_render_timeouts(json.loads(target.read_text())) == {30}
+
+    # ------------------------------------------------------------------
+    # Untouched arm — terminal-title installer.
+    # ------------------------------------------------------------------
+
+    def test_terminal_title_untouched_arm_leaves_settings_data_unchanged(self, rt, tmp_path):
+        """Re-installing over correct entries leaves the resulting DATA unchanged.
+
+        ``_install_terminal_title_hooks`` rewrites the whole settings file on
+        every call, so "untouched" here is a claim about the data, not about
+        whether a write happened — the no-write claim belongs to the
+        enforcement installer, which returns early (see
+        ``TestInstallEnforcementHook.test_already_present_does_not_rewrite_file``).
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        before = json.loads(target.read_text())
+
+        result = _parsed(rt.project_install_hook(str(target)))
+
+        assert json.loads(target.read_text()) == before
+        assert result["migrated_events"] == []
+        assert set(result["already_present_events"]) == _NINE_RENDER_LABELS
+
+    # ------------------------------------------------------------------
+    # The three lists partition the nine labels.
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize(
+        "stale", [True, False], ids=["migrate_arm", "untouched_arm"]
+    )
+    def test_the_three_event_lists_partition_the_nine_labels(self, rt, tmp_path, stale):
+        """Every label appears in exactly one list, on both arms.
+
+        Asserted as a partition rather than as a union: a label reported in two
+        lists at once is the false "nothing changed" signal this contract exists
+        to remove, and a union test alone would not catch it.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        if stale:
+            _stale_every_timeout(target)
+
+        result = _parsed(rt.project_install_hook(str(target)))
+
+        _assert_nine_label_partition(result)
+
+    # ------------------------------------------------------------------
+    # Migrate arm — enforcement installer.
+    # ------------------------------------------------------------------
+
+    def test_enforcement_migrates_a_stale_timeout(self, rt, tmp_path):
+        """A pre-fix enforcement entry converges and reports enforcement_status: migrated."""
+        import claude_runtime as _cr
+
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target), enforcement=True)
+        _stale_every_timeout(target)
+
+        result = _parsed(rt.project_install_hook(str(target), enforcement=True))
+
+        assert result["status"] == "success"
+        assert result["enforcement_status"] == "migrated"
+        # ``migrated`` is a DISTINCT member, never a flavour of already_present.
+        assert result["already_present"] is False
+
+        pre = json.loads(target.read_text())["hooks"]["PreToolUse"]
+        assert _timeouts_for(pre, _ENFORCEMENT_HOOK_COMMAND) == {_cr._HOOK_TIMEOUT_SECONDS}
+        # Converged in place — still exactly one enforcement entry.
+        assert _count_command(pre, _ENFORCEMENT_HOOK_COMMAND) == 1
+
+    def test_enforcement_migration_writes_the_file(self, rt, tmp_path):
+        """The migrate arm DOES write — the mirror of the untouched arm's no-write claim."""
+        import os
+
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target), enforcement=True)
+        _stale_every_timeout(target)
+        content_before = target.read_bytes()
+
+        result = _parsed(rt.project_install_hook(str(target), enforcement=True))
+
+        assert result["enforcement_status"] == "migrated"
+        assert target.read_bytes() != content_before
+        assert os.stat(target).st_size > 0
+
+    def test_enforcement_preserves_a_deliberate_in_range_value(self, rt, tmp_path):
+        """An in-range operator value leaves the enforcement entry on the untouched arm."""
+        import os
+
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target), enforcement=True)
+        _stale_every_timeout(target, stale_value=30)
+        content_before = target.read_bytes()
+        mtime_before = os.stat(target).st_mtime_ns
+
+        result = _parsed(rt.project_install_hook(str(target), enforcement=True))
+
+        assert result["enforcement_status"] == "already_present"
+        assert result["already_present"] is True
+        # No write at all — the deliberate value is preserved untouched.
+        assert target.read_bytes() == content_before
+        assert os.stat(target).st_mtime_ns == mtime_before
+
+    def test_enforcement_migration_leaves_render_entries_alone(self, rt, tmp_path):
+        """The enforcement converge is keyed on its OWN command, not the render one."""
+        import claude_runtime as _cr
+
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        rt.project_install_hook(str(target), enforcement=True)
+        _stale_every_timeout(target)
+
+        result = _parsed(rt.project_install_hook(str(target), enforcement=True))
+
+        assert result["enforcement_status"] == "migrated"
+        settings = json.loads(target.read_text())
+        pre = settings["hooks"]["PreToolUse"]
+        # Only the enforcement entry converged; the render entries kept the
+        # stale value because the enforcement install never touches them.
+        assert _timeouts_for(pre, _ENFORCEMENT_HOOK_COMMAND) == {_cr._HOOK_TIMEOUT_SECONDS}
+        assert _all_render_timeouts(settings) == {5000}
+
+
+class TestCaptureEntryOutcomeIsReported:
+    """The SessionStart capture entry's outcome reaches the caller.
+
+    The capture entry carries none of the nine render labels, so the three event
+    lists cannot report it, and ``_install_terminal_title_hooks`` writes the
+    settings file UNCONDITIONALLY. That combination is what made the pre-fix code
+    dishonest: a run whose nine render entries were all already correct and whose
+    capture entry was stale rewrote the file and still answered
+    ``already_present: true``. These tests plant exactly that state — the state
+    ``_stale_every_timeout`` cannot reach, because it moves the render entries
+    onto the migrate arm too and lets ``migrated_events`` carry the signal.
+    """
+
+    def test_stale_capture_entry_alone_is_converged_and_reported(self, rt, tmp_path):
+        """Nine correct render entries + one stale capture entry is NOT a no-op."""
+        import claude_runtime as _cr
+
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        _stale_capture_timeout_only(target)
+        seeded = json.loads(target.read_text())
+        # Precondition: the render entries are untouched and only the capture
+        # entry is stale — otherwise the assertions below would pass on the
+        # render entries' behaviour rather than the capture entry's.
+        assert _all_render_timeouts(seeded) == {_cr._HOOK_TIMEOUT_SECONDS}
+        assert _capture_timeouts(seeded) == {5000}
+
+        result = _parsed(rt.project_install_hook(str(target)))
+
+        assert result["status"] == "success"
+        # The value was actually rewritten...
+        assert _capture_timeouts(json.loads(target.read_text())) == {
+            _cr._HOOK_TIMEOUT_SECONDS
+        }
+        # ...and the run does not claim nothing changed.
+        assert result["capture_status"] == "migrated"
+        assert result["already_present"] is False
+        # No render label moved: the three lists cannot be carrying this signal.
+        assert result["migrated_events"] == []
+        assert result["installed_events"] == []
+        assert set(result["already_present_events"]) == _NINE_RENDER_LABELS
+
+    def test_missing_capture_entry_alone_is_installed_and_reported(self, rt, tmp_path):
+        """Nine correct render entries + an absent capture entry is NOT a no-op.
+
+        The insertion mirror of the convergence case: the file is rewritten with
+        a freshly appended capture entry while no render label changes.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        _drop_capture_entry(target)
+        assert _capture_timeouts(json.loads(target.read_text())) == set()
+
+        result = _parsed(rt.project_install_hook(str(target)))
+
+        session_start = json.loads(target.read_text())["hooks"]["SessionStart"]
+        assert _count_command(session_start, _HOOK_COMMAND) == 1
+        assert result["capture_status"] == "installed"
+        assert result["already_present"] is False
+        assert result["installed_events"] == []
+        assert set(result["already_present_events"]) == _NINE_RENDER_LABELS
+
+    def test_correct_capture_entry_keeps_the_genuine_no_op(self, rt, tmp_path):
+        """A wholly-correct file still reports the honest no-op.
+
+        The negative control for the two tests above: folding ``capture_status``
+        into ``already_present`` must not make every re-install look like a
+        change.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+
+        result = _parsed(rt.project_install_hook(str(target)))
+
+        assert result["capture_status"] == "already_present"
+        assert result["already_present"] is True
+
+    def test_capture_entry_never_joins_the_nine_label_partition(self, rt, tmp_path):
+        """``capture_status`` is a separate field, never a tenth label.
+
+        Guards the constraint the separate field exists to satisfy: the three
+        event lists must keep partitioning exactly the nine render labels, so
+        the capture entry's outcome must not be stuffed into any of them.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        _stale_capture_timeout_only(target)
+
+        result = _parsed(rt.project_install_hook(str(target)))
+
+        _assert_nine_label_partition(result)
+
+    def test_deliberate_in_range_capture_value_is_preserved(self, rt, tmp_path):
+        """An operator's in-range capture ``timeout`` stays on the untouched arm.
+
+        The capture entry is converged by the same range-based predicate as the
+        render entries, so a deliberate in-range value must survive here too.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        rt.project_install_hook(str(target))
+        _stale_capture_timeout_only(target, stale_value=30)
+
+        result = _parsed(rt.project_install_hook(str(target)))
+
+        assert _capture_timeouts(json.loads(target.read_text())) == {30}
+        assert result["capture_status"] == "already_present"
+        assert result["already_present"] is True
 
 
 class TestDisplayEnforcementLabel:

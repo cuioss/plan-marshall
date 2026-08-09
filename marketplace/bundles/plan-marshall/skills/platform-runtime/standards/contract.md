@@ -98,34 +98,82 @@ message: Target 'foobar' is not in the registry; valid targets are: claude, open
 
 ### `project install-hook`
 
-Install only the SessionStart hook into a caller-specified settings file. Unlike `project initial-setup`, this does not create `.plan/` or seed `marshal.json` — it is the targeted hook-installation primitive. Idempotent: re-invocation when the hook is already present makes no change.
+Install hook wiring into a caller-specified settings file. Unlike `project initial-setup`, this does not create `.plan/` or seed `marshal.json` — it is the targeted hook-installation primitive. Convergent: re-invocation never duplicates an entry, and it brings an already-present entry onto the current shape rather than making no change — an entry carrying a stale hook `timeout` is rewritten and reported as migrated. An entry that is already correct is left untouched.
 
-**Arguments**: `--target <settings-file-path>` (required)
+Two independent install modes, neither of which disturbs the other's entries:
+
+- **Default — the terminal-title bundle.** Installs the SessionStart capture entry, the nine render-trigger entries, the `statusLine` command, and `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`.
+- **`--enforcement` — ONLY the PreToolUse enforcement entry.** Installs the single matcher-less enforcement entry and no render wiring, no `statusLine`, and no env entry.
+
+**Arguments**:
+
+- `--target <value>` (required) — either the literal `claude` or an absolute path ending in `.json`. Any other value (a relative path, an unknown identifier) is rejected with `unknown_target` rather than silently creating a stray file. `claude` resolves through `_claude_project_settings_path()` for the terminal-title mode (`.claude/settings.json` when present, else `.claude/settings.local.json`) and pins `.claude/settings.local.json` for the `--enforcement` mode.
+- `--enforcement` (optional) — select the enforcement-only mode described above.
+- `--overwrite-statusline` / `--overwrite-env-disable` (optional) — overwrite a foreign `statusLine` command or env value instead of preserving it and reporting `already_present_other`.
+
+Callers read the resolved file from the response's `settings_path` rather than assuming which of the two settings files was written.
+
+`target` echoes the argument as passed; `settings_path` is the file the call actually resolved and wrote.
 
 **Success (Claude — hook installed)**:
 ```toon
 status: success
 operation: project install-hook
-target: .claude/settings.local.json
+target: claude
+settings_path: /repo/.claude/settings.local.json
 hook_installed: true
 already_present: false
 ```
 
-**Success (Claude — hook already present)**:
+**Success (Claude — hook already present and already correct)**:
 ```toon
 status: success
 operation: project install-hook
-target: .claude/settings.local.json
+target: claude
+settings_path: /repo/.claude/settings.local.json
 hook_installed: true
 already_present: true
 ```
 
-**Error (Claude — write failure)**:
+**Success (Claude — hook already present, stale `timeout` converged)**:
+```toon
+status: success
+operation: project install-hook
+target: claude
+settings_path: /repo/.claude/settings.local.json
+hook_installed: true
+already_present: false
+```
+
+**Success (Claude — `--enforcement`, entry installed)**:
+```toon
+status: success
+operation: project install-hook
+target: claude
+settings_path: /repo/.claude/settings.local.json
+enforcement_installed: true
+enforcement_status: installed
+already_present: false
+```
+
+`already_present: true` is reported only for a genuine no-op. A run that installed or converged anything reports `false` and names what changed — `migrated_events` on the terminal-title path, `capture_status` for the SessionStart capture entry, `enforcement_status: migrated` on the `--enforcement` path.
+
+The capture entry needs its own field because it carries none of the nine render labels the three event lists partition, and the terminal-title path writes the settings file unconditionally. A run whose nine render entries were all already correct and whose capture entry was inserted or converged therefore did change the file; `capture_status` (`installed` / `migrated` / `already_present`) is what makes that visible and what keeps `already_present` honest for it.
+
+**Error (Claude — write failure, terminal-title path)**:
 ```toon
 status: error
 operation: project install-hook
 error: io_error
-message: Failed to install SessionStart hook into .claude/settings.local.json
+message: Failed to install terminal-title hooks into .claude/settings.local.json
+```
+
+**Error (Claude — write failure, `--enforcement` path)**:
+```toon
+status: error
+operation: project install-hook
+error: io_error
+message: Failed to install enforcement hook into .claude/settings.local.json
 ```
 
 **No-op (OpenCode)**:

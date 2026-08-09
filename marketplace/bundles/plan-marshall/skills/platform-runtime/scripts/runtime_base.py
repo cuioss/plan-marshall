@@ -133,12 +133,22 @@ class Runtime(ABC):
     ) -> str:
         """Install the full terminal-title hook wiring into a named settings file.
 
-        Reads (or creates) *target* and idempotently installs the SessionStart
-        capture entry, render entries across all seven render-trigger hook
-        events (SessionStart, UserPromptSubmit, Notification, Stop,
-        PreToolUse:AskUserQuestion, PreToolUse:Bash, PostToolUse), the
-        ``statusLine`` command, and
-        ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE = "1"``.
+        Reads (or creates) *target* and installs the SessionStart capture entry,
+        nine render entries across six render-trigger hook events
+        (SessionStart:matcher-less, SessionStart:clear, UserPromptSubmit,
+        Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash,
+        PostToolUse:AskUserQuestion, PostToolUse:Bash), the ``statusLine``
+        command, and ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE = "1"``.
+
+        Re-invocation CONVERGES an existing entry on the current shape rather
+        than making no change: an already-present entry whose hook ``timeout``
+        is stale is rewritten to the current value, and that outcome is reported
+        separately from a genuine no-op (``migrated_events`` on the
+        terminal-title path, ``capture_status`` for the SessionStart capture
+        entry, ``enforcement_status: migrated`` on the enforcement path).
+        Nothing is ever duplicated, and an entry that is already correct is left
+        untouched. ``already_present`` is False whenever ANY of those three
+        reported anything other than a no-op.
 
         Unlike ``project_initial_setup``, this operation does not create
         ``.plan/`` or seed ``marshal.json`` — it only mutates the named file.
@@ -162,10 +172,12 @@ class Runtime(ABC):
             Serialized TOON string (success, error, or no-op). The
             terminal-title path carries ``target``, ``hook_installed``,
             ``already_present``, ``installed_events``,
-            ``already_present_events``, ``statusLine_status``, and
-            ``env_status``; the ``enforcement`` path carries ``target``,
-            ``enforcement_installed``, ``enforcement_status``, and
-            ``already_present``.
+            ``already_present_events``, ``migrated_events``, ``capture_status``
+            (``installed`` / ``migrated`` / ``already_present``),
+            ``statusLine_status``, and ``env_status``; the ``enforcement`` path
+            carries ``target``, ``enforcement_installed``,
+            ``enforcement_status`` (``installed`` / ``already_present`` /
+            ``migrated``), and ``already_present``.
         """
 
     # ------------------------------------------------------------------

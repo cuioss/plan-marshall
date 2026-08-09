@@ -194,6 +194,254 @@ def test_r1_not_fired_on_plain_command() -> None:
     assert hook.evaluate(_signal2_payload("Bash", _bash("python3 script.py"))) is None
 
 
+# -----------------------------------------------------------------------------
+# R1 — quoting awareness
+#
+# A shell metacharacter that OPERATES and one that is DATA are the same
+# character; only the quoting separates them. The controls below are MATCHED
+# PAIRS, one per metacharacter family: the denied member proves the fix opened
+# no bypass, and the allowed member proves the false positive is gone. Pairing
+# them per family is what makes the no-bypass claim enumerated rather than
+# sampled — a suite carrying only the allowed halves would pass equally against
+# a matcher that had been gutted into always returning None.
+# -----------------------------------------------------------------------------
+
+#: ``(family, still_denied_unquoted, now_allowed_quoted)`` — one row per R1
+#: metacharacter family. The family names are asserted against ``_R1_FAMILIES``,
+#: the registry the matcher itself iterates, so a family added to the rule
+#: without a control pair here fails loudly instead of going untested. The
+#: command PAIRS remain hand-written — only a human can say what the quoted and
+#: unquoted forms of a family look like — but the POPULATION they must cover is
+#: derived, which is the half that used to drift.
+_R1_QUOTING_CONTROLS = (
+    ("and_chain", "a && b", 'git commit -m "fix && polish"'),
+    ("semicolon", "a; b", 'git commit -m "fix: a; then b"'),
+    ("background", "server &", 'echo "tom & jerry"'),
+    ("newline", "a\nb", 'printf "line one\nline two"'),
+    ("substitution", "echo $(date)", "echo 'cost is $(x)'"),
+    ("backtick", "echo `date`", "echo 'a `literal` word'"),
+    ("loop_keyword", "for f in *; do echo $f; done", 'echo "for each item"'),
+    ("leading_assignment", "FOO=bar python3 x.py", 'echo "FOO=bar python3 x.py"'),
+)
+
+
+def test_r1_quoting_control_population_is_derived_from_the_matcher_registry() -> None:
+    """The control population is the matcher's OWN family registry, not a copy.
+
+    This previously compared the control table against a hand-written ``expected``
+    set literal in this same test. Both sides were hand-maintained, so the check
+    could not detect the one thing it existed to detect — an ADDITION to the real
+    population. A new R1 family could ship with no control pair and this stayed
+    green. Deriving the expected side from ``hook._R1_FAMILIES``, the tuple
+    ``_match_r1_shell_construct`` actually iterates, closes that: a family the
+    matcher recognises but this table does not cover now fails here.
+
+    Both populations are published in the failure message, and the registry is
+    asserted non-empty first — a set-equality check over two empty populations
+    passes while proving nothing.
+    """
+    registry = [family for family, _view, _predicate in hook._R1_FAMILIES]
+    controls = [family for family, _denied, _allowed in _R1_QUOTING_CONTROLS]
+
+    assert registry, "R1 family registry is empty — the comparison below is vacuous"
+    assert len(registry) == len(set(registry)), f"duplicate family in registry {registry}"
+    assert len(controls) == len(set(controls)), f"duplicate family in controls {controls}"
+    assert set(controls) == set(registry), (
+        f"{len(controls)} control rows for {len(registry)} matcher families; "
+        f"uncovered={sorted(set(registry) - set(controls))}, "
+        f"unknown={sorted(set(controls) - set(registry))}"
+    )
+
+
+def test_r1_every_registry_family_predicate_fires_on_its_own_denied_control() -> None:
+    """Each registry entry is LIVE — its predicate fires on its own control.
+
+    Set equality alone would still pass if an entry had been gutted: a family
+    whose predicate never matches, or one wired to the wrong view, keeps its name
+    in the registry and satisfies the population check while enforcing nothing.
+    Driving each predicate against its own denied control, through the same view
+    the entry names, is what makes the registry's membership mean something.
+    """
+    denied_by_family = {family: denied for family, denied, _allowed in _R1_QUOTING_CONTROLS}
+    for family, view_name, predicate in hook._R1_FAMILIES:
+        command = denied_by_family[family]
+        views = hook._quote_masked_views(command)
+        assert views is not None, f"{family}: {command!r} yielded no masked views"
+        operator_view, substitution_view = views
+        view = (
+            operator_view
+            if view_name == hook._R1_OPERATOR_VIEW
+            else substitution_view
+        )
+        assert predicate(view), f"{family}: predicate did not fire on {command!r}"
+
+
+def test_r1_still_denies_every_unquoted_family() -> None:
+    """No bypass was opened: every unquoted compound still denies, per family."""
+    for family, denied, _allowed in _R1_QUOTING_CONTROLS:
+        payload = _signal2_payload("Bash", _bash(denied))
+        assert hook.evaluate(payload) == hook._R1_REASON, f"{family}: {denied!r}"
+
+
+def test_r1_allows_every_quoted_family() -> None:
+    """The false positive is gone: a metacharacter that is DATA no longer denies.
+
+    Fails against the pre-fix matcher, which scanned the raw command string and
+    denied every one of these legitimate single commands.
+    """
+    for family, _denied, allowed in _R1_QUOTING_CONTROLS:
+        payload = _signal2_payload("Bash", _bash(allowed))
+        assert hook.evaluate(payload) is None, f"{family}: {allowed!r}"
+
+
+def test_r1_denies_substitution_inside_double_quotes() -> None:
+    """Command substitution is LIVE inside double quotes, so it must still deny.
+
+    This is the asymmetry that stops the quoting fix from becoming a bypass:
+    single quotes make ``$(...)`` literal, double quotes do NOT — the shell
+    still executes it — so only the single-quoted form is allowed.
+    """
+    for command in ('echo "$(rm -rf /)"', 'echo "a `date` b"'):
+        payload = _signal2_payload("Bash", _bash(command))
+        assert hook.evaluate(payload) == hook._R1_REASON, command
+
+
+def test_r1_malformed_quoting_falls_back_to_detection() -> None:
+    """An unterminated quote degrades to the pre-existing scan, never to a bypass."""
+    payload = _signal2_payload("Bash", _bash('echo "unterminated ; still denied'))
+    assert hook.evaluate(payload) == hook._R1_REASON
+
+
+def test_r1_malformed_quoting_without_a_metacharacter_still_passes() -> None:
+    """The fallback is a re-scan, not a blanket denial of malformed quoting."""
+    payload = _signal2_payload("Bash", _bash('python3 x.py "unterminated'))
+    assert hook.evaluate(payload) is None
+
+
+def test_r1_allows_the_real_world_commit_message_shape() -> None:
+    """The reported field failure: a conventional commit body carrying a colon-list.
+
+    This exact shape — a single ``git commit`` whose message contains ``;`` —
+    was denied before the fix while being a legitimate one-command call.
+    """
+    command = 'git commit -m "fix(x): correct a thing; refs #1"'
+    assert hook.evaluate(_signal2_payload("Bash", _bash(command))) is None
+
+
+def test_r1_quote_masked_views_preserve_length() -> None:
+    """Both views stay character-aligned with the command.
+
+    Length preservation is what keeps the newline check meaningful — a
+    token-level view would drop an unquoted newline as whitespace and turn that
+    check into a permanent pass.
+    """
+    command = 'echo "a; b" \'c && d\' e'
+    views = hook._quote_masked_views(command)
+    assert views is not None, "well-formed quoting must yield masked views, not the malformed-quoting None"
+    operator_view, substitution_view = views
+    assert len(operator_view) == len(command)
+    assert len(substitution_view) == len(command)
+
+
+def test_r1_quote_masked_views_report_malformed_quoting() -> None:
+    """An unterminated span is reported as None rather than guessed at."""
+    assert hook._quote_masked_views('echo "unterminated') is None
+
+
+# -----------------------------------------------------------------------------
+# R1 — backslash escapes
+#
+# A backslash resolves BEFORE any quote-state transition, in unquoted context
+# and inside a double-quoted span alike; inside a single-quoted span bash reads
+# it as an ordinary literal. Resolving it only inside double quotes was wrong in
+# BOTH directions at once — a bypass unquoted and a false positive quoted — so
+# the controls below come in matched pairs. A suite carrying only one half of
+# each pair would pass against a matcher gutted in the other direction.
+# -----------------------------------------------------------------------------
+
+
+def test_r1_denies_escaped_quote_that_must_not_open_a_span() -> None:
+    """The bypass: an escaped quote is DATA, so the separator behind it is LIVE.
+
+    ``echo \\'a; b\\'`` is TWO commands to bash (``echo \\'a`` and ``b\\'``) —
+    the escaped quotes are literal characters, so nothing quotes the ``;``.
+    Before the fix a backslash in unquoted context was appended verbatim and the
+    quote that FOLLOWED it opened a span; for the single-quoted form the span
+    then closed cleanly at the trailing ``\\'``, the scan terminated, and the
+    live ``;`` was masked out of the operator view — R1 allowed a compound
+    command. Both quote characters are covered because the span-opening defect
+    belongs to the escape handling, not to one quote style: the double-quoted
+    form reached the same verdict only by accident, via the unterminated-span
+    fallback to the raw command.
+    """
+    for command in ("echo \\'a; b\\'", 'echo \\"a; b\\"'):
+        payload = _signal2_payload("Bash", _bash(command))
+        assert hook.evaluate(payload) == hook._R1_REASON, command
+
+
+def test_r1_allows_escaped_substitution_marker_inside_double_quotes() -> None:
+    """The false positive: an escaped marker is literal data, not a substitution.
+
+    Inside a double-quoted span bash reads a backslash-escaped backtick as a
+    literal backtick and ``\\$`` as a literal dollar, so neither command below
+    substitutes anything. The pre-fix escape branch copied the RAW two
+    characters into ``substitution_view``, leaving the marker intact there, so
+    both denied on the ``substitution`` / ``backtick`` families. The matched
+    positive is
+    ``test_r1_denies_substitution_inside_double_quotes``: an UNescaped
+    substitution in the same position still executes, and still denies.
+    """
+    for command in ('echo "\\`date\\`"', 'echo "\\$(date)"'):
+        payload = _signal2_payload("Bash", _bash(command))
+        assert hook.evaluate(payload) is None, command
+
+
+def test_r1_single_quoted_span_treats_backslash_as_a_literal() -> None:
+    """Inside single quotes a backslash escapes NOTHING — the span still closes.
+
+    ``echo 'a\\'`` is one complete command whose single argument is ``a\\``: the
+    backslash is an ordinary character and the quote after it CLOSES the span.
+    Applying the escape there would swallow that closing quote, leave the span
+    unterminated, and force the command onto the raw-command fallback — so the
+    guard excluding the single-quoted state is load-bearing. Asserting the views
+    EXIST is what pins it; asserting only that the call is allowed would pass
+    even on the fallback, since this command carries no metacharacter either way.
+    """
+    command = "echo 'a\\'"
+    assert hook._quote_masked_views(command) is not None
+    assert hook.evaluate(_signal2_payload("Bash", _bash(command))) is None
+
+
+def test_r1_allows_escaped_newline_line_continuation() -> None:
+    """An escaped newline JOINS the lines into one command, so it is no separator.
+
+    A direct consequence of resolving the escape in unquoted context: bash reads
+    a backslash before a newline as a line continuation, so the two source lines
+    are a single command and the newline check must not fire. The matched
+    negative is ``test_r1_denies_newline`` — a BARE unquoted newline is a real
+    command separator and still denies.
+    """
+    command = "python3 x.py \\\n  --flag value"
+    assert hook.evaluate(_signal2_payload("Bash", _bash(command))) is None
+
+
+def test_r1_quote_masked_views_preserve_length_across_escapes() -> None:
+    """The escape branch consumes two characters and emits two, in BOTH views.
+
+    Character-for-character alignment is the invariant the newline and
+    leading-assignment checks rely on; an escape branch emitting one character
+    for two would shift every later column and silently weaken them. The
+    command below exercises an escape in unquoted context and inside a
+    double-quoted span, so a regression in either arm changes a length.
+    """
+    command = 'echo \\;a "b\\`c" \\$d'
+    views = hook._quote_masked_views(command)
+    assert views is not None, "well-formed quoting must yield masked views"
+    operator_view, substitution_view = views
+    assert len(operator_view) == len(command)
+    assert len(substitution_view) == len(command)
+
+
 # =============================================================================
 # R2 — Bash file-ops
 # =============================================================================

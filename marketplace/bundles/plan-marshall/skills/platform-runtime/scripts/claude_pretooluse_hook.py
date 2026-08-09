@@ -13,9 +13,13 @@ to the shared ``pretooluse_gate`` module — this leaf adds NO field-name knowle
 of its own. The only logic it owns is the R1-R4 rule matchers and the
 ``permissionDecision: deny`` envelope layered on top:
 
-- **R1 shell-construct compound** — a Bash command containing ``&&``, ``;``,
-  ``&``, a newline, a ``for``/``while`` loop, ``$(...)`` command substitution, or
-  a leading ``VAR=val cmd`` inline env-var assignment.
+- **R1 shell-construct compound** — a Bash command containing an UNQUOTED and
+  UNESCAPED ``&&``, ``;``, ``&``, newline, ``for``/``while`` loop, ``$(...)``
+  command substitution, or a leading ``VAR=val cmd`` inline env-var assignment.
+  The recognised families are enumerated by ``_R1_FAMILIES``. An operator
+  confined to a quoted argument is data, not an operator, and does not trip the
+  rule; a command substitution still trips it inside DOUBLE quotes, where the
+  shell still executes it.
 - **R2 Bash file-ops** — a Bash command whose program is ``cat`` / ``grep`` /
   ``head`` / ``tail`` / ``find`` / ``ls``, or ``git`` whose subcommand (after any
   global options) is ``grep``.
@@ -69,9 +73,24 @@ _FILE_EDIT_TOOLS = ("Edit", "Write")
 #: absolute or worktree-relative path both trip the rule.
 _GENERATED_EXECUTOR_TAIL = ".plan/execute-script.py"
 
-#: R1 — literal shell-construct substrings that mark a compound/marshalled
-#: command. A newline is matched separately (see ``_match_r1_shell_construct``).
-_R1_SHELL_SUBSTRINGS = ("&&", ";", "&", "$(", "`")
+#: R1 — the view an individual family's marker is tested against, named because
+#: the two marker classes are neutralized by DIFFERENT quoting. A shell OPERATOR
+#: is inert inside single AND double quotes, so it is tested against the fully
+#: masked ``operator_view``. A command SUBSTITUTION is literal inside single
+#: quotes but still LIVE inside double quotes (``echo "$(rm -rf /)"`` really does
+#: substitute), so it is tested against ``substitution_view``, which masks
+#: single-quoted spans only. See :func:`_quote_masked_views`.
+_R1_OPERATOR_VIEW = "operator"
+_R1_SUBSTITUTION_VIEW = "substitution"
+
+#: R1 — the two shell quote characters whose spans mask their contents.
+_R1_QUOTE_CHARS = ("'", '"')
+
+#: R1 — the inert character every masked character is rewritten to. It must
+#: carry no meaning for any R1 check: it is not a shell metacharacter, not a
+#: newline, not whitespace (so it cannot manufacture the word boundary the loop
+#: or leading-assignment patterns look for), and not ``=``.
+_R1_QUOTED_PLACEHOLDER = "Q"
 
 #: R1 — loop-keyword pattern (``for`` / ``while`` as a leading shell keyword).
 _R1_LOOP_RE = re.compile(r"(?:^|[;&|]|\bdo\b)\s*(?:for|while)\b")
@@ -79,6 +98,39 @@ _R1_LOOP_RE = re.compile(r"(?:^|[;&|]|\bdo\b)\s*(?:for|while)\b")
 #: R1 — leading ``VAR=val cmd`` inline env-var assignment (an assignment token
 #: followed by whitespace and a command word).
 _R1_LEADING_ASSIGNMENT_RE = re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+\S")
+
+
+def _r1_contains(marker: str) -> Callable[[str], bool]:
+    """Return a predicate testing whether *marker* appears in a masked view."""
+    return lambda view: marker in view
+
+
+def _r1_matches(pattern: re.Pattern[str]) -> Callable[[str], bool]:
+    """Return a predicate testing whether *pattern* is found in a masked view."""
+    return lambda view: pattern.search(view) is not None
+
+
+#: R1 — THE authoritative family registry: one ``(name, view, predicate)`` entry
+#: per marker family the rule recognises. :func:`_match_r1_shell_construct`
+#: ITERATES this tuple and does nothing else, so the registry is the rule's
+#: single population rather than a parallel description of it. That is what lets
+#: the test suite derive its control-pair population from here and fail loudly on
+#: a family that has no control pair — a registry the matcher merely sat beside
+#: would be one more hand-maintained mirror, which is exactly the drift this
+#: shape exists to prevent.
+#:
+#: Order is irrelevant to behaviour: every family yields the same ``_R1_REASON``,
+#: so the first match short-circuits with a verdict no ordering can change.
+_R1_FAMILIES: tuple[tuple[str, str, Callable[[str], bool]], ...] = (
+    ("and_chain", _R1_OPERATOR_VIEW, _r1_contains("&&")),
+    ("semicolon", _R1_OPERATOR_VIEW, _r1_contains(";")),
+    ("background", _R1_OPERATOR_VIEW, _r1_contains("&")),
+    ("newline", _R1_OPERATOR_VIEW, _r1_contains("\n")),
+    ("substitution", _R1_SUBSTITUTION_VIEW, _r1_contains("$(")),
+    ("backtick", _R1_SUBSTITUTION_VIEW, _r1_contains("`")),
+    ("loop_keyword", _R1_OPERATOR_VIEW, _r1_matches(_R1_LOOP_RE)),
+    ("leading_assignment", _R1_OPERATOR_VIEW, _r1_matches(_R1_LEADING_ASSIGNMENT_RE)),
+)
 
 #: R2 — Bash file-operation programs that have dedicated Read/Glob/Grep tools.
 _R2_FILE_OPS = ("cat", "grep", "head", "tail", "find", "ls")
@@ -107,9 +159,9 @@ _R4_BUILD_PROGRAMS = ("mvn", "npm", "gradle")
 
 #: Per-rule one-line redirect reasons surfaced as ``permissionDecisionReason``.
 _R1_REASON = (
-    "plan-marshall: one command per Bash call — no '&&', ';', '&', newline, "
-    "for/while, $(...), or leading VAR=val; use separate Bash calls or "
-    "dedicated tools."
+    "plan-marshall: one command per Bash call — no UNQUOTED '&&', ';', '&', "
+    "newline, for/while, $(...), or leading VAR=val; use separate Bash calls or "
+    "dedicated tools. A metacharacter inside a quoted argument is fine."
 )
 _R2_REASON = (
     "plan-marshall: use the Read/Glob/Grep tools, not Bash, for file "
@@ -165,21 +217,129 @@ def _bash_command(tool_name: str | None, tool_input: dict[str, Any]) -> str | No
     return None
 
 
+def _quote_masked_views(command: str) -> tuple[str, str] | None:
+    """Return ``(operator_view, substitution_view)`` for *command*, or ``None``.
+
+    A shell metacharacter that OPERATES and one that is DATA are the same
+    character — only the quoting tells them apart. ``git commit -m "fix: a; b"``
+    is one command while ``a ; b`` is two, and a raw substring scan cannot
+    distinguish them. Masking the quoted spans first leaves exactly the operative
+    characters visible.
+
+    TWO views, because the two R1 marker classes are neutralized by DIFFERENT
+    quoting — collapsing them into one view would be wrong in one direction or
+    the other:
+
+    * ``operator_view`` masks single- AND double-quoted spans. A shell operator
+      (``&&``, ``;``, ``&``, a newline, a loop keyword, a leading assignment)
+      is inert inside either quote kind.
+    * ``substitution_view`` masks single-quoted spans ONLY. Command substitution
+      stays LIVE inside double quotes — ``echo "$(rm -rf /)"`` really does
+      substitute — so masking double quotes for ``$(`` and a backtick would open
+      exactly the bypass this rule exists to prevent.
+
+    A BACKSLASH ESCAPE is resolved before any quote-state transition, in
+    unquoted context and inside a double-quoted span alike (inside a
+    single-quoted span bash treats a backslash as an ordinary literal, so the
+    escape is not applied there). Handling the escape only inside double quotes
+    would be wrong in BOTH directions:
+
+    * A bypass, the load-bearing half. In unquoted context an unresolved
+      backslash lets the FOLLOWING quote character change the span state, so
+      ``echo \\'a; b\\'`` opens a single-quoted span, masks the ``;`` and closes
+      cleanly — yet bash reads the escaped quotes as literal data and the ``;``
+      as a live separator, making that TWO commands. Resolving the escape first
+      keeps the span state untouched and leaves the ``;`` visible.
+    * A false positive. Writing the raw escaped pair into ``substitution_view``
+      leaves an escaped marker intact there, so ``echo "\\`date\\`"`` — literal
+      data to bash — matched the substitution families and denied. Both
+      characters are therefore masked in BOTH views: an escaped character is
+      never an operator and never a substitution opener.
+
+    Length and layout are PRESERVED character-for-character, because two R1
+    checks depend on structure a token-level view destroys: an unquoted newline
+    is a command separator, and ``shlex`` consumes it as ordinary whitespace,
+    which would turn the newline check into a permanent pass. That is why the
+    span mask is computed here instead of by reusing ``shlex.split`` the way
+    :func:`_git_subcommand` does. The escape branch honours the same invariant —
+    it consumes two characters and emits two.
+
+    Malformed quoting (a span that never closes) returns ``None``, and the caller
+    then scans the RAW command — the same degradation :func:`_git_subcommand`
+    applies on ``shlex``'s ``ValueError``. Falling back to the pre-existing
+    detection keeps a lexing ambiguity a false positive at worst, never a silent
+    bypass.
+
+    Pure and single-pass: one scan of the command, no regex compilation, no
+    filesystem access, no subprocess. This runs on every tool call.
+    """
+    operator_view: list[str] = []
+    substitution_view: list[str] = []
+    quote: str | None = None
+    index = 0
+    length = len(command)
+    while index < length:
+        char = command[index]
+        if quote != "'" and char == "\\" and index + 1 < length:
+            # A backslash escapes the next character in UNQUOTED context and
+            # inside a double-quoted span alike; only within a single-quoted
+            # span is it an ordinary literal, which is what the guard excludes.
+            # Resolving the escape BEFORE any quote-state transition is what
+            # keeps an escaped quote from opening or closing a span, and both
+            # characters are masked in BOTH views because an escaped character
+            # is never an operator and never a substitution opener.
+            operator_view.append(_R1_QUOTED_PLACEHOLDER * 2)
+            substitution_view.append(_R1_QUOTED_PLACEHOLDER * 2)
+            index += 2
+            continue
+        if quote is None:
+            span = char if char in _R1_QUOTE_CHARS else None
+            quote = span
+        else:
+            span = quote
+            if char == quote:
+                quote = None
+        operator_view.append(_R1_QUOTED_PLACEHOLDER if span else char)
+        substitution_view.append(_R1_QUOTED_PLACEHOLDER if span == "'" else char)
+        index += 1
+    if quote is not None:
+        return None
+    return "".join(operator_view), "".join(substitution_view)
+
+
 def _match_r1_shell_construct(
     tool_name: str | None, tool_input: dict[str, Any]
 ) -> str | None:
-    """R1 — Bash command containing a shell-construct compound marker."""
+    """R1 — Bash command containing an UNQUOTED shell-construct compound marker.
+
+    The family population is ``_R1_FAMILIES`` and this function does nothing but
+    iterate it, so that registry is the rule rather than a description of it —
+    a family cannot be added to the matcher without appearing in the population
+    the tests derive their control pairs from.
+
+    Each family names the view from :func:`_quote_masked_views` in which its own
+    marker class is inert when quoted, so a metacharacter confined to a quoted
+    argument — a ``;`` in a commit body, an ``&&`` in a log message — is data and
+    does not deny the call. Every unquoted compound still denies, and command
+    substitution inside DOUBLE quotes still denies too, because it still executes
+    there.
+
+    On malformed quoting no mask is available and every family runs against the
+    RAW command, preserving the pre-existing detection rather than degrading into
+    a bypass.
+    """
     command = _bash_command(tool_name, tool_input)
     if command is None:
         return None
-    if "\n" in command:
-        return _R1_REASON
-    if any(token in command for token in _R1_SHELL_SUBSTRINGS):
-        return _R1_REASON
-    if _R1_LOOP_RE.search(command):
-        return _R1_REASON
-    if _R1_LEADING_ASSIGNMENT_RE.search(command):
-        return _R1_REASON
+    views = _quote_masked_views(command)
+    operator_view, substitution_view = (command, command) if views is None else views
+    view_by_name = {
+        _R1_OPERATOR_VIEW: operator_view,
+        _R1_SUBSTITUTION_VIEW: substitution_view,
+    }
+    for _family, view_name, predicate in _R1_FAMILIES:
+        if predicate(view_by_name[view_name]):
+            return _R1_REASON
     return None
 
 
