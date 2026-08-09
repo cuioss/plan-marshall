@@ -97,15 +97,26 @@ status: error
 error: invalid_invocation
 notation: plan-marshall:manage-tasks:manage-tasks
 reason: unknown_verb
-rejected: nuke
+rejected: reed
 accepted: add-step, ..., get, list, read, ...
 message: Use `plan-marshall:manage-tasks:manage-tasks read` — registered: [...]
 ```
 
 `reason` is one of `unknown_verb`, `unknown_flag`, or `missing_required_flag`.
-The `message` field is the **corrective**: the closest accepted spelling by edit
-distance — phrased as an alias-of relation when the grouping anchor recovered one
-(`get` is an alias of `read`) — or the required flag that is missing. A refusal
+The `message` field is the **corrective**. For `unknown_verb`, the corrective
+picks the accepted verb closest to the rejected token by edit distance, within a
+threshold of `max(2, len(rejected) // 2)` — a wrong guess is worse than no guess,
+so a match outside that threshold is not offered. A match within threshold takes
+one of two forms: a bare nearest spelling as in the example above (`reed` →
+`read`), or an alias-of relation when the grouping anchor recovered one (`gett` →
+"Use `... get` (an alias of `read`) — registered: [...]"). When NO accepted verb
+is within threshold — an invented verb resembling nothing registered, the normal
+shape for a token like `nuke` — the corrective falls back to a third form naming
+no single verb: `` Use a registered verb for `{notation}`: [...] ``. For
+`unknown_flag` the corrective names the declared flag set for the resolved leaf
+(`` Use a declared flag for `{notation} {verb}`: [...] ``); for
+`missing_required_flag` it lists the flags still owed
+(`` Add the required flag(s) to `{notation} {verb}`: [...] ``). A refusal
 without a corrective would be the empty stdout this contract exists to replace.
 
 The refusal introduces no new reporting path: it routes through the same

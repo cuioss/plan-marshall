@@ -348,19 +348,36 @@ def test_emit_truncates_long_detail_to_configured_limit(executor_with_mock_log_e
 
 _REJECTION_NOTATION = 'plan-marshall:manage-tasks:manage-tasks'
 
+# Synthetic argparse-surface node shared by the pinning tests below. Mirrors
+# the shape ``_resolve_invocation`` builds from a real derived surface:
+# ``children`` maps verb name to its own node, ``alias_of`` maps an alias
+# child name to the canonical verb it groups under.
+_VERB_NODE = {
+    'children': {'get': {}, 'list': {}, 'read': {}},
+    'alias_of': {'get': 'read'},
+}
 
-def _rejection_payload(executor) -> str:
-    """Render a representative refusal through the production renderer."""
+
+def _rejection_payload(executor, token: str = 'reed') -> str:
+    """Render a representative refusal through the production renderer.
+
+    The corrective is derived by calling ``_corrective_for_verb`` — the same
+    function a real pre-spawn rejection calls — rather than a hand-built
+    literal. A hand-built literal can drift from what the function actually
+    produces for the paired token (see the ``script-call-drift`` finding this
+    fixture replaced: a ``nuke``/``read`` pairing that ``_corrective_for_verb``
+    never emits, because ``nuke`` falls outside the edit-distance threshold and
+    takes the no-suggestion branch instead).
+    """
+    corrective = executor._corrective_for_verb(_REJECTION_NOTATION, [], token, _VERB_NODE)
     return str(
         executor._render_rejection_toon(
             _REJECTION_NOTATION,
             {
                 'reason': 'unknown_verb',
-                'token': 'nuke',
-                'corrective': (
-                    'Use `plan-marshall:manage-tasks:manage-tasks read` — registered: [read, list]'
-                ),
-                'accepted': ['list', 'read'],
+                'token': token,
+                'corrective': corrective,
+                'accepted': sorted(_VERB_NODE['children']),
             },
         )
     )
@@ -377,7 +394,7 @@ def test_rejection_payload_parses_as_toon_with_status_error(executor_with_mock_l
     assert parsed['error'] == 'invalid_invocation'
     assert parsed['notation'] == _REJECTION_NOTATION
     assert parsed['reason'] == 'unknown_verb'
-    assert parsed['rejected'] == 'nuke'
+    assert parsed['rejected'] == 'reed'
 
 
 def test_rejection_payload_carries_a_non_empty_corrective(executor_with_mock_log_entry):
@@ -417,7 +434,7 @@ def test_work_log_detail_carries_the_corrective_via_stdout_precedence(
         exit_code=2,
         stdout=payload,
         stderr='',
-        script_args=['nuke', '--plan-id', DEFAULT_PLAN_ID],
+        script_args=['reed', '--plan-id', DEFAULT_PLAN_ID],
         audit_plan_id=None,
     )
 
@@ -430,6 +447,89 @@ def test_work_log_detail_carries_the_corrective_via_stdout_precedence(
     assert 'detail=' in message and not message.rstrip().endswith('detail='), (
         f'detail= must not be blank on a rejection: {message!r}'
     )
+
+
+# =============================================================================
+# ``_corrective_for_verb`` — the three documented message forms, pinned to the
+# function's real output rather than transcribed by hand (SKILL.md § "Pre-spawn
+# invocation rejection"). Each positive case is paired with a control so the
+# pin cannot pass vacuously — the control proves the assertion actually
+# discriminates between the three shapes instead of matching by coincidence.
+# =============================================================================
+
+
+def test_corrective_for_verb_nearest_spelling_form(executor_with_mock_log_entry):
+    """A token within the edit-distance threshold, matching a NON-alias verb.
+
+    ``reed`` is 1 edit away from ``read``, well inside
+    ``max(2, len(token) // 2)`` — the documented "bare nearest spelling" form.
+    """
+    executor, _mock = executor_with_mock_log_entry
+
+    corrective = executor._corrective_for_verb(_REJECTION_NOTATION, [], 'reed', _VERB_NODE)
+
+    assert corrective == (
+        "Use `plan-marshall:manage-tasks:manage-tasks read` — "
+        "registered: ['get', 'list', 'read']"
+    )
+    # Control: this form never mentions an alias relation.
+    assert 'alias of' not in corrective, f'nearest-spelling form must not phrase an alias: {corrective!r}'
+
+
+def test_corrective_for_verb_alias_of_form(executor_with_mock_log_entry):
+    """A token within threshold whose closest match IS a registered alias.
+
+    ``gett`` is 1 edit away from ``get``, which ``_VERB_NODE['alias_of']``
+    maps to the canonical verb ``read`` — the documented alias-of relation.
+    """
+    executor, _mock = executor_with_mock_log_entry
+
+    corrective = executor._corrective_for_verb(_REJECTION_NOTATION, [], 'gett', _VERB_NODE)
+
+    assert corrective == (
+        "Use `plan-marshall:manage-tasks:manage-tasks get` (an alias of `read`) — "
+        "registered: ['get', 'list', 'read']"
+    )
+
+
+def test_corrective_for_verb_no_suggestion_form(executor_with_mock_log_entry):
+    """A token outside the edit-distance threshold for every registered verb.
+
+    ``nuke`` is >= 4 edits from every child of ``_VERB_NODE`` (``get``,
+    ``list``, ``read``), past ``max(2, len('nuke') // 2) == 2`` — the
+    documented no-suggestion fallback. This is the NORMAL shape for an
+    invented verb, not an omission, so it is pinned as a first-class case.
+    """
+    executor, _mock = executor_with_mock_log_entry
+
+    corrective = executor._corrective_for_verb(_REJECTION_NOTATION, [], 'nuke', _VERB_NODE)
+
+    assert corrective == (
+        "Use a registered verb for `plan-marshall:manage-tasks:manage-tasks`: "
+        "['get', 'list', 'read']"
+    )
+    # Control: unlike the other two forms, this one names no single suggested
+    # verb in backticks immediately after the notation — proving the pin
+    # actually distinguishes the no-suggestion branch rather than matching
+    # any string that happens to list the registered verbs.
+    assert '` (an alias of' not in corrective
+    assert not corrective.startswith('Use `plan-marshall:manage-tasks:manage-tasks get`')
+    assert not corrective.startswith('Use `plan-marshall:manage-tasks:manage-tasks read`')
+
+
+def test_closest_spelling_threshold_separates_the_three_tokens(executor_with_mock_log_entry):
+    """Matched control: pins the edit-distance threshold driving all three forms.
+
+    Directly exercises ``_closest_spelling`` (the function ``_corrective_for_verb``
+    delegates to) so the three correctives above are shown to diverge for the
+    documented reason — a threshold crossing — and not for an unrelated one.
+    """
+    executor, _mock = executor_with_mock_log_entry
+    children = sorted(_VERB_NODE['children'])
+
+    assert executor._closest_spelling('reed', children) == 'read'
+    assert executor._closest_spelling('gett', children) == 'get'
+    assert executor._closest_spelling('nuke', children) is None
 
 
 def test_validator_returns_none_when_the_notation_has_no_surface(executor_with_mock_log_entry):
