@@ -1000,11 +1000,6 @@ def _section_span(
     return (start, len(lines))
 
 
-def _claim_labels_span(lines: list[str], fenced: list[bool] | None = None) -> tuple[int, int]:
-    """Return the ``[start, end)`` line span of the ``## Claim Labels`` body."""
-    return _section_span(lines, CLAIM_LABELS_HEADING_RE, fenced)
-
-
 def _expected_surface_paths(text: str) -> set[str]:
     """Extract the file paths a spec names in its ``## Expected Surface`` section.
 
@@ -1056,7 +1051,7 @@ def _parse_claims(lines: list[str]) -> list[dict[str, Any]]:
     ``claims_total``.
     """
     fenced = _fenced_mask(lines)
-    start, end = _claim_labels_span(lines, fenced)
+    start, end = _section_span(lines, CLAIM_LABELS_HEADING_RE, fenced)
     if start < 0:
         return []
     claims: list[dict[str, Any]] = []
