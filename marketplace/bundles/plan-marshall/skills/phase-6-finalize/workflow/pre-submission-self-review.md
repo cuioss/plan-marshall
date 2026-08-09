@@ -328,12 +328,12 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 For every entry in the returned `findings[N]{file,line,defect_class,rationale,cohort_size}` list, emit one `manage-findings qgate add` call. This loop runs in the inline dispatcher context (the same context as the `mark-step-done` call below). `--phase 6-finalize` and `--source qgate` are mandatory; `--type bug` is the canonical finding type for a structural self-review defect. The `--detail` body carries the entry's `cohort_size` so the loop-back fix task addresses the CLASS rather than the instance — a fix task that reads "1 of 4 in this class" is told, at the point of work, that three siblings are waiting.
 
-`{subject}` is what distinguishes the finding from its class siblings — the specific site or claim at fault, not a restatement of the class. The title MUST NOT be the bare `{defect_class}`: a round that finds several members of one class is the normal case (that is precisely what `cohort_size` counts), and identical titles collapse the cohort into a single deduped finding, destroying the class sweep the `cohort_size` field exists to drive. This restates, at the point of use, the finding-authoring contract owned by [`ext-self-review-plan-marshall/SKILL.md`](../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md) § Finding-authoring contract:
+The title carries the class AND the site, `{file}:{line}`, both of which the returned entry already declares — no field beyond the returned schema is interpolated. The bare `{defect_class}` form is forbidden by the finding-authoring contract owned by [`ext-self-review-plan-marshall/SKILL.md`](../../../../pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md) § Finding-authoring contract; read the reasons there rather than here, so one statement of them cannot drift from the other:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add \
   --plan-id {plan_id} --phase 6-finalize --source qgate --type bug \
-  --title "{defect_class}: {subject}" --detail "{rationale} [defect_class {defect_class}: {cohort_size} finding(s) in this class this round]" \
+  --title "{defect_class} at {file}:{line}" --detail "{rationale} [defect_class {defect_class}: {cohort_size} finding(s) in this class this round]" \
   --file-path "{file}" \
   --component pm-plugin-development:ext-self-review-plan-marshall --severity warning
 ```
