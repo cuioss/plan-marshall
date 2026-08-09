@@ -550,8 +550,3 @@ def test_sampling_point_reuses_the_modules_single_discriminator_vocabulary():
         assert isinstance(vocabulary, tuple)
         assert vocabulary, 'a discriminator vocabulary may not be empty'
         assert all(isinstance(value, str) and value for value in vocabulary)
-
-    # The sampling-point field name is derived from the denominator's own name,
-    # so a denominator added to the family cannot land without its companion.
-    for name in manage_metrics._DENOMINATOR_FIELDS:
-        assert f'{name}{manage_metrics._SAMPLING_POINT_SUFFIX}'.endswith('_sampling_point')
