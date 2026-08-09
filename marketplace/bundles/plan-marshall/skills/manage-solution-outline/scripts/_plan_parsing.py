@@ -27,6 +27,21 @@ _HEADER_FIELD_PATTERN = re.compile(
 
 _SLUG_NON_ALNUM_PATTERN = re.compile(r'[^a-z0-9_-]+')
 
+#: The single producer of "what counts as a deliverable heading".
+#:
+#: Every extractor in this module that enumerates deliverables — ``extract_deliverable_headings``
+#: (id/title only) and ``split_deliverable_blocks`` (the per-block splitter that
+#: ``extract_deliverables`` builds on) — matches through this one compiled pattern. That shared
+#: reference is what makes the deliverable *count* identical across those extractors by
+#: construction rather than by convention: a change to what a heading looks like changes one
+#: object, so no caller can be left behind on a stale copy.
+#:
+#: Downstream consumers depend on that guarantee. ``manage-solution-outline list-deliverables``
+#: counts through ``extract_deliverables`` → ``split_deliverable_blocks``; the metrics
+#: ``deliverable_count`` denominator and the retrospective consistency check count through
+#: ``extract_deliverable_headings``. Do NOT inline a copy of this regex — add the caller here.
+DELIVERABLE_HEADING_PATTERN = re.compile(r'^###\s+(\d+)\.\s+(.+)$', re.MULTILINE)
+
 
 def _slugify_section_name(name: str) -> str:
     """Normalize a section heading into a stable lookup slug.
@@ -112,6 +127,10 @@ def extract_deliverable_headings(content: str) -> list[dict[str, str]]:
     Simple extraction that only returns id and title - use for
     basic structural verification.
 
+    Matches through the module-level :data:`DELIVERABLE_HEADING_PATTERN`, the same object
+    ``split_deliverable_blocks`` uses, so this function and ``extract_deliverables`` enumerate
+    the same set of headings by construction.
+
     Args:
         content: The Deliverables section content
 
@@ -119,9 +138,8 @@ def extract_deliverable_headings(content: str) -> list[dict[str, str]]:
         List of dicts with 'id' and 'title' keys
     """
     deliverables: list[dict[str, str]] = []
-    pattern = re.compile(r'^###\s+(\d+)\.\s+(.+)$', re.MULTILINE)
 
-    for match in pattern.finditer(content):
+    for match in DELIVERABLE_HEADING_PATTERN.finditer(content):
         deliverables.append({'id': match.group(1), 'title': match.group(2).strip()})
 
     return deliverables
@@ -137,6 +155,10 @@ def split_deliverable_blocks(deliverables_section: str) -> list[dict[str, Any]]:
     number, so callers that need per-deliverable attribution see the document as
     written.
 
+    Splits on the module-level :data:`DELIVERABLE_HEADING_PATTERN`, the same object
+    ``extract_deliverable_headings`` matches with, so ``len()`` of this function's result and of
+    that one's are equal by construction for any input.
+
     Args:
         deliverables_section: The Deliverables section content
 
@@ -144,9 +166,8 @@ def split_deliverable_blocks(deliverables_section: str) -> list[dict[str, Any]]:
         List of dicts with 'number' (int), 'title' (str), and 'content' (str) keys
     """
     blocks: list[dict[str, Any]] = []
-    pattern = re.compile(r'^###\s+(\d+)\.\s+(.+)$', re.MULTILINE)
 
-    matches = list(pattern.finditer(deliverables_section))
+    matches = list(DELIVERABLE_HEADING_PATTERN.finditer(deliverables_section))
 
     for i, match in enumerate(matches):
         start_pos = match.end()

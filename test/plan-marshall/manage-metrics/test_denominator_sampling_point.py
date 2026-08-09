@@ -22,8 +22,8 @@ import re
 from argparse import Namespace
 from pathlib import Path
 
+import _plan_parsing
 import pytest
-from _plan_parsing import extract_deliverable_headings, parse_document_sections
 
 from conftest import get_script_path
 
@@ -38,9 +38,25 @@ _spec.loader.exec_module(manage_metrics)
 
 cmd_generate = manage_metrics.cmd_generate
 
+# The SIBLING producer of the same count. Loaded as the real command function so
+# the agreement test below exercises `manage-solution-outline list-deliverables`
+# end-to-end (`extract_deliverables` → `split_deliverable_blocks`) rather than
+# re-evaluating the metrics side's own expression.
+_OUTLINE_SCRIPT_PATH = get_script_path('plan-marshall', 'manage-solution-outline', 'manage-solution-outline.py')
+_outline_spec = importlib.util.spec_from_file_location('manage_solution_outline_denominators', _OUTLINE_SCRIPT_PATH)
+assert _outline_spec is not None and _outline_spec.loader is not None
+manage_solution_outline = importlib.util.module_from_spec(_outline_spec)
+_outline_spec.loader.exec_module(manage_solution_outline)
+
+cmd_list_deliverables = manage_solution_outline.cmd_list_deliverables
+
 
 def _ns_generate(plan_id: str) -> Namespace:
     return Namespace(plan_id=plan_id, command='generate', func=cmd_generate)
+
+
+def _ns_list_deliverables(plan_id: str) -> Namespace:
+    return Namespace(plan_id=plan_id, command='list-deliverables', func=cmd_list_deliverables)
 
 
 def _recorded_row() -> dict:
@@ -441,17 +457,24 @@ _DIVERGENT_OUTLINES = {
 
 
 @pytest.mark.parametrize('label', sorted(_DIVERGENT_OUTLINES))
-def test_deliverable_count_agrees_with_the_authoritative_extractor(plan_context, label):
+def test_deliverable_count_agrees_with_the_sibling_producer(plan_context, label):
     """The metrics counter and `manage-solution-outline` return ONE number.
 
     Two producers of one denominator is the defect this module exists to
     close: `metrics.toon`'s `deliverable_count` and
     `manage-solution-outline list-deliverables` are read by different
     consumers, and a reader handed two different figures has no way to tell
-    which is right. The counter therefore delegates to the authoritative
-    extractor rather than keeping a third copy of the heading grammar, and
-    this pins the agreement against outlines where a whole-file scan and the
-    section-scoped extractor genuinely disagree.
+    which is right.
+
+    The two reach the count by DIFFERENT functions — `generate` calls
+    `extract_deliverable_headings`, `list-deliverables` calls the sibling
+    `extract_deliverables` → `split_deliverable_blocks` — and agree only
+    because both match through the one shared
+    `_plan_parsing.DELIVERABLE_HEADING_PATTERN`. So this test invokes the real
+    `cmd_list_deliverables` rather than re-evaluating `generate`'s own
+    expression: re-deriving the production side would leave a divergence
+    introduced in `split_deliverable_blocks` — the exact way the two can drift
+    apart — passing green.
     """
     outline = _DIVERGENT_OUTLINES[label]
     plan_id = f'denom-agreement-{label}'
@@ -459,20 +482,52 @@ def test_deliverable_count_agrees_with_the_authoritative_extractor(plan_context,
     (plan_dir / 'solution_outline.md').write_text(outline, encoding='utf-8')
 
     result = cmd_generate(_ns_generate(plan_id))
+    sibling = cmd_list_deliverables(_ns_list_deliverables(plan_id))
 
-    authoritative = len(
-        extract_deliverable_headings(parse_document_sections(outline).get('deliverables', ''))
-    )
-    assert result['deliverable_count'] == authoritative
+    if sibling['status'] == 'success':
+        assert result['deliverable_count'] == sibling['deliverable_count']
+        counted = sibling['deliverable_count']
+    else:
+        # The one shape the two producers legitimately express differently: with
+        # no `## Deliverables` H2 at all, `list-deliverables` reports
+        # `section_not_found` while the metrics counter records a MEASURED 0
+        # (§ "could-not-be-read is the ONLY trigger"). Pin both halves — an
+        # unexpected error code here is a real disagreement, not a carve-out.
+        assert sibling['error'] == 'section_not_found'
+        assert result['deliverable_count'] == 0
+        counted = 0
 
     # Non-vacuity: the RETIRED grammar — a whole-file scan for `^###\s+\d+\.\s`,
     # unscoped and not requiring a title — gives a DIFFERENT answer on this
     # outline. So the agreement above is a real constraint, not two
     # implementations that happen to coincide on the input chosen.
     retired = len([line for line in outline.splitlines() if _RETIRED_WHOLE_FILE_RE.match(line)])
-    assert retired != authoritative, (
+    assert retired != counted, (
         f'{label} no longer distinguishes the two grammars — pick a divergent outline'
     )
+
+
+def test_the_two_deliverable_extractors_share_one_heading_pattern():
+    """The agreement above is by construction, not by two matching literals.
+
+    `extract_deliverable_headings` (what `generate` counts with) and
+    `split_deliverable_blocks` (what `list-deliverables` counts through) used to
+    each compile a private copy of the heading regex. Byte-identical copies
+    agree until someone edits one, so the "cannot disagree" claim in
+    `data-format.md` and in `_count_deliverables`' docstring rested on a
+    coincidence. This pins the collapse: exactly one compiled pattern object,
+    referenced by both.
+    """
+    pattern = _plan_parsing.DELIVERABLE_HEADING_PATTERN
+
+    source = Path(_plan_parsing.__file__).read_text(encoding='utf-8')
+    inline_copies = source.count("re.compile(r'^###")
+
+    assert inline_copies == 1, (
+        'the deliverable heading regex is compiled more than once — the two '
+        'extractors are back to private copies that agree only by convention'
+    )
+    assert pattern.pattern == r'^###\s+(\d+)\.\s+(.+)$'
 
 
 # =============================================================================

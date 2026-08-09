@@ -494,7 +494,7 @@ Each denominator is persisted as a **pair**, written together or not at all:
 
 | Field | Type | Source |
 |-------|------|--------|
-| `deliverable_count` | int | Derived by `generate` — the number of `### N. Title` deliverable headings in the **Deliverables section** of the plan's `solution_outline.md`. `generate` does not own that grammar: it calls `_plan_parsing.extract_deliverable_headings`, the same section-scoped extractor `manage-solution-outline list-deliverables` uses, so one plan cannot carry two disagreeing deliverable counts |
+| `deliverable_count` | int | Derived by `generate` — the number of `### N. Title` deliverable headings in the **Deliverables section** of the plan's `solution_outline.md`. `generate` does not own that grammar: it calls `_plan_parsing.extract_deliverable_headings`. `manage-solution-outline list-deliverables` counts through a sibling extractor in that same module (`extract_deliverables` → `split_deliverable_blocks`), and both match through the one shared `_plan_parsing.DELIVERABLE_HEADING_PATTERN` — so the two counts agree by construction, and one plan cannot carry two disagreeing deliverable counts |
 | `files_modified` | int | Derived by `generate` — the length of `references.json`'s `affected_files` list. A present-but-empty list is a measured `0` |
 | `tasks_completed` | int | Derived by `generate` — the number of `tasks/TASK-*.json` files recording `status: done` |
 | `{denominator}_sampling_point` | `generate_time` | Written by `generate` beside each count above. Names WHICH moment the count was taken at |
@@ -502,7 +502,7 @@ Each denominator is persisted as a **pair**, written together or not at all:
 
 **On-disk type note**: every plan-level key round-trips as TEXT. `read_metrics_raw` numeric-coerces per-phase block values only, so a consumer reading `deliverable_count` off `metrics.toon` receives `'4'`, not `4`, and must coerce — the same shape `session_message_count` and the `end_time`-presence keys already have. The `generate` RETURN carries the real ints.
 
-`{denominator}_sampling_point` is the **third** use of this module's row-level discriminator convention, and deliberately not a new vocabulary — it has the same shape as `total_tokens_population` (§ Per-Phase Fields) and `value_scope` (§ Per-Field Write Semantics): a closed value set, a companion field per measurement, and a documented absent-reads-as default.
+`{denominator}_sampling_point` is the **third** use of this module's row-level discriminator convention, and deliberately not a new vocabulary — it has the same shape as `total_tokens_population` (§ Per-Phase Fields) and `value_scope` (§ Per-Field Write Semantics): a closed value set and a companion field per measurement. What does NOT carry over is an absent-reads-as default — this discriminator has none, per the next-but-one paragraph.
 
 **Sampling-point vocabulary** (closed):
 

@@ -1868,15 +1868,21 @@ def _count_deliverables(plan_id: str) -> int | None:
 
     The grammar is NOT restated here. The count DELEGATES to
     ``_plan_parsing.extract_deliverable_headings`` applied to the outline's
-    ``Deliverables`` section — the same extractor, over the same scope, that
-    ``manage-solution-outline list-deliverables`` and the retrospective's
-    artifact-consistency check already read. A private copy of the heading
-    regex would make this module a SECOND producer of one number: a ``### N.``
-    heading under *Approach*, under *Risks*, or inside a fenced block showing
-    deliverable syntax would be counted here and not there, and a reader of the
-    two figures would have no way to tell which was right. Two disagreeing
-    definitions of one denominator is the defect this module exists to close,
-    so there is exactly one definition and this is a caller of it.
+    ``Deliverables`` section — the same extractor, over the same scope, that the
+    retrospective's artifact-consistency check reads.
+    ``manage-solution-outline list-deliverables`` counts through a SIBLING
+    extractor in that same module (``extract_deliverables`` →
+    ``split_deliverable_blocks``), and the two agree by construction rather than
+    by coincidence: both match through the one module-level
+    ``_plan_parsing.DELIVERABLE_HEADING_PATTERN``, so no edit can move one
+    definition of a heading without moving the other. A private copy of the
+    heading regex here would break that and make this module a SECOND producer
+    of one number: a ``### N.`` heading under *Approach*, under *Risks*, or
+    inside a fenced block showing deliverable syntax would be counted here and
+    not there, and a reader of the two figures would have no way to tell which
+    was right. Two disagreeing definitions of one denominator is the defect this
+    module exists to close, so there is exactly one definition of the grammar
+    and this is a caller of it.
 
     Persisting the count is what stops the plan-efficiency aspect re-deriving
     it (and silently re-dating it) at render time.
