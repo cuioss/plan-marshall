@@ -5974,6 +5974,55 @@ class TestMetricsEndTimeMarkerStates:
         assert 'carries no end_time-presence markers' in note
         assert 'old-schema' not in note
 
+    def test_every_declared_marker_schema_is_exercised(self, monkeypatch):
+        """The three per-state tests above are TOTAL over the module's state set.
+
+        The states are three loose ``METRICS_SCHEMA_*`` module constants, not a
+        closed tuple, so a FOURTH state added to ``audit.py`` would be driven by
+        no test here while every test above kept passing — the non-total-guard
+        archetype. The population is therefore DERIVED from the module and every
+        member is driven through ``check_metrics``, so a new state fails HERE
+        until the reader handles it.
+
+        It bites because an unhandled state yields an empty ``unreadable_note``:
+        the state would be unreadable (so its zero-token phase falls back into
+        ``incomplete_recording``) while naming itself nowhere in ``anomalies``,
+        which is exactly the "manufactured a verdict out of a state I could not
+        read" failure the three-state read exists to prevent.
+        """
+        declared = {
+            value
+            for name, value in vars(audit).items()
+            if name.startswith('METRICS_SCHEMA_') and isinstance(value, str)
+        }
+
+        # Non-vacuity: the derivation found the constants at all.
+        assert declared, 'no METRICS_SCHEMA_* constant was discovered on audit'
+
+        for schema in sorted(declared):
+            readable = schema == audit.METRICS_SCHEMA_CURRENT
+            result = self._patch(
+                monkeypatch,
+                audit.MetricsEndTimePresence(
+                    schema=schema,
+                    any_phase_missing_end_time=True if readable else None,
+                    phases_missing_end_time=(
+                        frozenset({'6-finalize'}) if readable else None
+                    ),
+                ),
+            )
+            if readable:
+                # A readable marker accounts for the zero-token phase.
+                assert result['incomplete_recording'] == '', schema
+            else:
+                # An unreadable state explains NOTHING and must NAME itself.
+                assert result['incomplete_recording'] == '6-finalize', schema
+                assert any(schema in a for a in result['anomalies']), (
+                    f'marker state {schema!r} is unreadable but names itself in '
+                    f'no anomaly line: {result["anomalies"]}'
+                )
+
+
 class TestTokenTrendCore:
     """``cross_token_trend`` orders plans chronologically and flags a sustained
     upward trend in tokens-per-phase across the corpus."""

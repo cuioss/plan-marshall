@@ -501,6 +501,18 @@ def detect_outcome_for_diffed_tasks(
 # at the END, and the literal an omitted context-load flag writes. This module
 # runs in a different process from the writer and cannot import its constants,
 # so these three are a hand-mirror of that section and MUST move with it.
+#
+# LOCK-STEP OBLIGATION. That section's "Restating surfaces (lock-step
+# obligation)" paragraph names FOUR surfaces that restate this schema and must
+# move together; this reader is one of them. The other three are the writer in
+# `manage-metrics.py` (`cmd_record_dispatch_boundary` +
+# `_DISPATCH_CONTEXT_LOAD_COLUMNS`), the `record-dispatch-boundary` operation
+# block in `manage-metrics/SKILL.md`, and the hand-copied `_BC_LEDGER_COLUMNS` /
+# `_BC_LEDGER_UNMEASURED_TOKEN` pair in
+# `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`. That last
+# one lives in a tree the architecture inventory does not crawl, so a content
+# sweep will NOT find it — changing the schema here means editing all four by
+# reading the list, never by searching.
 _LEGACY_COLUMN_COUNT = 5
 _CONTEXT_LOAD_COLUMNS = (
     'input_tokens',

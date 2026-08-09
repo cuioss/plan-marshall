@@ -445,6 +445,7 @@ A field's value is only interpretable once you know what the WRITE did to it —
 | **add** | The incoming value is a per-close **delta** and is ADDED to the row's existing value (absent read as `0`) |
 | **assign-cumulative** | The incoming value is **already cumulative** and is ASSIGNED unchanged. Adding it would double-count every re-close |
 | **replace** | Assigned unconditionally on every write (last-write-wins). Earlier values are not retained on the row |
+| **append** | The superseded value is folded into an ordered trail on the field rather than overwritten. The trail is append-only — extended, never rewritten — so every earlier value stays readable |
 | **derive** | Computed at write time from other fields already on the row |
 | **leave-untouched** | The source resolved to nothing, so the field is not written at all — never a `0` |
 

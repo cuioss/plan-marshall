@@ -536,17 +536,38 @@ def test_the_two_deliverable_extractors_share_one_heading_pattern():
 
 
 def test_sampling_point_reuses_the_modules_single_discriminator_vocabulary():
-    """The discriminator is a closed set, like the module's other two.
+    """Every value vocabulary the module publishes is a closed tuple of strings.
 
     Deliverable 3 is forbidden from introducing a second, parallel discriminator
-    vocabulary. This pins the shape those three share — a closed value tuple —
-    so a future value added to one cannot silently bypass the others' contract.
+    vocabulary. The guard that enforces that MUST be population-derived: a
+    hand-listed trio stops covering a FOURTH vocabulary the moment one is added,
+    which is precisely the drift it exists to catch — the check would keep
+    passing while the new vocabulary bypassed the shape contract entirely.
+
+    The population is therefore read off the module — every public module-level
+    tuple whose members are all strings — and the three known discriminators are
+    asserted to be IN it, so the derivation cannot silently shrink past them
+    either.
     """
-    for vocabulary in (
-        manage_metrics.SAMPLING_POINTS,
-        manage_metrics.TOKEN_POPULATIONS,
-        manage_metrics.VALUE_SCOPES,
-    ):
-        assert isinstance(vocabulary, tuple)
-        assert vocabulary, 'a discriminator vocabulary may not be empty'
-        assert all(isinstance(value, str) and value for value in vocabulary)
+    vocabularies = {
+        name: value
+        for name, value in vars(manage_metrics).items()
+        if not name.startswith('_')
+        and isinstance(value, tuple)
+        and value
+        and all(isinstance(item, str) for item in value)
+    }
+
+    # Non-vacuity: the derived population is non-empty AND covers the three named
+    # discriminators. Without this the per-member loop below would pass trivially
+    # against an empty dict.
+    assert vocabularies, 'no module-level value vocabulary was discovered'
+    for required in ('SAMPLING_POINTS', 'TOKEN_POPULATIONS', 'VALUE_SCOPES'):
+        assert required in vocabularies, (
+            f'{required} is no longer a public closed value tuple '
+            f'(population size {len(vocabularies)}: {sorted(vocabularies)})'
+        )
+
+    # Total over the derived population, not over a hand-listed subset of it.
+    for name, vocabulary in vocabularies.items():
+        assert all(value for value in vocabulary), f'{name} carries an empty value'
