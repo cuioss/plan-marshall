@@ -26,9 +26,10 @@ rolled back). An edit nobody read is at minimum an edit the parser re-checked.
 round-trip (unresolved imports, syntax, type errors); it is a pre-build signal,
 never a substitute for ``./pw verify``.
 
-Opt-in: an unconfigured project never reaches this script, so its behaviour is
-byte-identical to today's ``Read`` / ``Edit`` path. See the ``language_servers``
-section in ``manage-run-config`` for the machine-local configuration surface.
+Opt-in: for an unconfigured project the client returns a ``degraded`` no-op (no
+mutation, no server contact) and the leaf takes today's ``Read`` / ``Edit`` path,
+so the outcome is byte-identical to today. See the ``language_servers`` section in
+``manage-run-config`` for the machine-local configuration surface.
 
 Output: TOON to stdout. Stdlib only.
 """
@@ -53,7 +54,8 @@ from run_config import get_run_config_path, read_run_config
 # Client outcome states — the coverage-contract discriminator.
 STATE_NOT_CONFIGURED = 'not_configured'  # no server configured/enabled for the language
 STATE_UNREACHABLE = 'unreachable'  # configured, but the server did not start/initialise
-STATE_OK = 'ok'  # a server ran (an empty result is then a real answer)
+STATE_OK = 'ok'  # a run verb's server ran (an empty result is then a real answer)
+STATE_READY = 'ready'  # preflight only: configured AND reachable (the precondition for STATE_OK)
 
 # The D3 boundary, carried in every diagnose payload so a consumer cannot read
 # the signal as a gate replacement even when it reads only the machine output.
@@ -338,7 +340,7 @@ def cmd_preflight(args: argparse.Namespace) -> dict[str, Any]:
         }
     return {
         'status': 'success',
-        'state': STATE_OK,
+        'state': STATE_READY,
         'language': args.language,
         'configured': True,
         'reachable': True,

@@ -63,6 +63,11 @@ nothing* — the same fail-closed discipline the module graph applies one tier u
 `not_configured` and `unreachable` are separately representable, so an operator
 can tell "install/configure a server" from "the configured server is broken".
 
+`preflight` reports the same three situations but names the healthy one `ready`
+(configured **and** reachable) rather than `ok` — `ready` is a *precondition*
+check, `ok` is the outcome of a run verb that actually executed. A consumer that
+gates before calling a run verb checks `preflight` for `state: ready`.
+
 ## The write side (`edit`) — an edit nobody read, re-checked by the parser
 
 The real risk of a `WorkspaceEdit` touching many files is that it is a mutation

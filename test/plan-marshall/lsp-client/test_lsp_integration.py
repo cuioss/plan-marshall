@@ -59,6 +59,15 @@ def _sample_project(tmp_path: Path) -> Path:
     return project
 
 
+def test_real_preflight_ready(plan_context, tmp_path):
+    project = _sample_project(tmp_path)
+    _configure(project)
+    result = client.cmd_preflight(argparse.Namespace(language='python', project_path=str(project)))
+    assert result['state'] == client.STATE_READY  # the reachable sentinel the consumer wiring gates on
+    assert result['configured'] is True
+    assert result['reachable'] is True
+
+
 def test_real_document_symbol_and_references(plan_context, tmp_path):
     project = _sample_project(tmp_path)
     _configure(project)
