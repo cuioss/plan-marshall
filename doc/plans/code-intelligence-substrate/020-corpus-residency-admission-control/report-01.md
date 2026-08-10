@@ -160,24 +160,26 @@ Expected population derived from the automatic-review registry `author_login` fi
 (`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{coderabbit,pr-agent,sourcery}.md`;
 cross-named in `.github/workflows/pr-agent.yml`). This is a genuine **no-reviewable-footprint** diff —
 `doc/plans/**` only, no `*.py`, no `.claude/skills/**`, no `marketplace/bundles/**` — so `skip-bot-review`
-was applied at PR creation and each reviewer is suppressed by design. Verdicts from the stored bodies:
+was applied at PR creation. Verdicts read from the stored comment **bodies** (not from the label, a
+check state, or an assumption):
 
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
-| `coderabbitai` | `silent` (by design) | Posted a skip-acknowledgement notice, not a review: *"Review skipped — only excluded labels are configured … skip-bot-review."* `honors_skip_label: true` in its registry block. No review of the diff. |
+| `cuioss-review-bot` | `reviewed` | Posted a "PR Reviewer Guide" over the diff: *"No relevant tests · No security concerns identified · No major issues detected."* A clean, no-findings review. Its Guide comment is **unconditional** — the pr-agent registry records that `skip-bot-review` gates only its inline `/improve` comments, not the Guide — so it reviewed despite the label. Nothing to disposition (clean). |
+| `coderabbitai` | `silent` (by design) | Posted only a skip-acknowledgement notice, not a review: *"Review skipped — only excluded labels are configured … skip-bot-review."* `honors_skip_label: true`. No review of the diff. |
 | `sourcery-ai` | `silent` (by design) | Posted nothing; its `Sourcery review` check concluded **skipped**. No review of the diff. |
-| `cuioss-review-bot` | `silent` (by design) | Posted nothing; the pr-agent reusable workflow's `if:` guard (`honors_skip_label: true`) skips a `skip-bot-review` PR. No review of the diff. |
 
-**Coverage: 0 of 3 reviewed.** The § Step 8 shortfall disclosure fired and is stated to the operator as:
-*"Review coverage 0 of 3 — all automated reviewers were intentionally suppressed by the `skip-bot-review`
-label, which is correct for a diff with no reviewable footprint (no code, no skill, no bundle — only
-`doc/plans/**` prose)."* Per the contract this is a **disclosure, not a block**: the suppression is by
-design for this diff class, not a rate-limit or an outage, so the merge is not held on it.
+**Coverage: 1 of 3 reviewed.** `cuioss-review-bot` reviewed and found no issues; `coderabbitai` and
+`sourcery-ai` were intentionally suppressed by `skip-bot-review` (correct for a diff with no reviewable
+footprint). The § Step 8 shortfall disclosure fired and is stated to the operator as: *"Review coverage
+1 of 3 — `cuioss-review-bot` reviewed (clean: no relevant tests, no security concerns, no major issues);
+`coderabbitai` and `sourcery-ai` suppressed by the `skip-bot-review` label, which is by design for a
+doc-only diff."* Per the contract this is a **disclosure, not a block**: the suppression is by design for
+this diff class, not a rate-limit or an outage, so the merge is not held on it.
 
 (The `cla-assistant` bot separately reported CLA status `not_signed` for the human account — an
-operator/account concern, not a code-review finding, and not among the repo's required merge checks
-[`mergeable_state: unstable` confirms no required check is unsatisfied]. Disclosed, non-blocking; the
-CLA is signed/managed on the operator's side.)
+operator/account concern, not a code-review finding, and not among the repo's required merge checks.
+Disclosed, non-blocking; the CLA is managed on the operator's side.)
 
 ## Cost
 
@@ -202,7 +204,7 @@ CLA is signed/managed on the operator's side.)
 | 5 Build gate | Done — git-derived verdict: **no `*.py` in `origin/main...HEAD`** → "no buildable footprint, build skipped." The merge queue's `merge_group` run verifies the docs-only change. |
 | 6 Verification sub-agent | Done — dispatched adversarially (read-only, `general-purpose`); **HALT-CONFIRMED**; two findings, both reinforcing the halt; dispositions recorded (§ Findings). |
 | 7 PR cycle | Done — PR #1149; `skip-bot-review` applied at creation (no reviewable footprint); **both** comment surfaces read (inline threads: empty; conversation: CodeRabbit skip-notice + CLA status); every comment dispositioned (§ Reviewer participation). |
-| 8 Merge gate | Conditions 1–3 met: required `verify / conclusion` green on the head; every comment handled; this report finalized as the last pre-merge commit **before** arming. Condition-4 shortfall (0-of-3) disclosed (§ Reviewer participation). Auto-merge armed (squash). **`MERGED` not self-confirmable in-session** (no self-wake: `send_later`/`subscribe_pr_activity` approval-gated, Bash cannot poll) → landing **delegated to the orchestrator collect** — a completed arm-and-hand-off, not a partial run. |
+| 8 Merge gate | Conditions 1–3 met: required `verify / conclusion` green on the head; every comment handled; this report finalized as the last pre-merge commit **before** arming. Condition-4 shortfall (1-of-3) disclosed (§ Reviewer participation). Auto-merge armed (squash). **`MERGED` not self-confirmable in-session** (no self-wake: `send_later`/`subscribe_pr_activity` approval-gated, Bash cannot poll) → landing **delegated to the orchestrator collect** — a completed arm-and-hand-off, not a partial run. |
 | 8 Bridge | No write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan touched. The report carries the PR number and per-deliverable outcome the orchestrator collects from. No `/sync-plugin-cache` owed (cloud run; no `marketplace/bundles/**` edit). |
 | 9 This check | Appended here. |
 | 9 What have we learned | Recorded below. |
