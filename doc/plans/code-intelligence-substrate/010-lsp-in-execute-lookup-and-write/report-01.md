@@ -128,7 +128,13 @@ Expected population derived from the automatic-review registry `author_login` fi
 
 ## What have we learned (Step 9)
 
-**Proposed contract change (evidence from this run):** the lane's Step 7/8 assume the run can wait for CI and reviewers and re-check across the review cycle. In this Claude Code cloud session the self-wake mechanisms — `send_later` and `subscribe_pr_activity` — were **approval-gated** (returned "requires approval"), so the run could not autonomously block-until-green then confirm `state: MERGED`. The run adapted by arming auto-merge (the merge queue enforces the green gate) and disclosing that the final landing is confirmed by the orchestrator at collect, not within the session. **Proposal:** the contract should state explicitly how to complete Step 8 when the self-wake tools are unavailable — arming auto-merge and handing the MERGED confirmation to the collect step is a legitimate completion, not a partial run. This is presented to the operator; it is **not** self-approved, and if accepted it ships as a separate `chore/` PR touching only the skill.
+**GAP (operator-confirmed): the `cloud-plan-lane` skill should ALLOW this completion path.**
+
+Evidence from this run: Step 8's merge gate is written as a synchronous drive — "verify all checks green, then merge, then confirm `state: MERGED`." That assumes the run can *wait* for CI and reviewers and *re-check* across the review cycle. In this Claude Code cloud session the self-wake mechanisms the wait depends on — the `send_later` and `subscribe_pr_activity` MCP tools — were **approval-gated** (both returned "requires approval"), and Bash cannot poll GitHub (no `gh`, no API auth; the GitHub MCP server is the only path). The run therefore could **not** autonomously block-until-green and confirm the terminal `MERGED` state within the session.
+
+The run adapted by arming auto-merge (the merge queue enforces the green gate structurally — it will not land a red head) and disclosing that the final landing is confirmed by the orchestrator at collect, from the PR merge event, rather than within the session.
+
+**The gap:** the contract does not currently sanction this. It should. Arming auto-merge and handing the `MERGED` confirmation to the collect step is a **legitimate completion, not a partial run**, whenever the self-wake tools are unavailable — and the skill should say so explicitly at Step 8, so a future run in the same environment does not read its own inability to self-confirm as a failure. Per Step 9 this is **not** self-approved and does **not** ship inside this plan's PR; the operator has confirmed the gap, and the amendment ships as a separate `chore/` PR touching only the `cloud-plan-lane` skill (and `doc/plans/README.md` if it restates the gate).
 
 ## Residue
 
