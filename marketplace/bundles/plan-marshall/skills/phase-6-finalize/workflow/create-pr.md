@@ -198,10 +198,10 @@ empty heading. Fix the draft and re-invoke; do not proceed with a body carrying 
 > discharged review obligation, and why its verdict must be identical-or-stricter on an
 > Intent-bearing PR.
 >
-> `participated_but_empty` is one member of a **closed seven-member** non-participation taxonomy —
+> `participated_but_empty` is one member of a **closed eight-member** non-participation taxonomy —
 > `absent`, `not_triggered`, `in_progress`, `refused_awaitable`, `refused_hard`,
-> `participated_but_empty`, `participated_stale` — whose complement is `participated`. It is the ONLY
-> member that is accounted-for rather than blocking, which is exactly why an intent-echo lands there
+> `participated_but_empty`, `participated_stale`, `declined` — whose complement is `participated`. It
+> is the ONLY member that is accounted-for rather than blocking, which is exactly why an intent-echo lands there
 > rather than on a blocking member: the bot did run and did say something. The enumeration is recorded
 > here so the parity requirement above reads against the real member set rather than an implied
 > smaller one. See

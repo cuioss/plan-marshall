@@ -95,8 +95,15 @@ _COMMENTS = [
 ]
 
 
-def _patch_provider(monkeypatch, comments):
-    """Monkeypatch the GitHub provider surface ``github_pr`` reaches through ``_github``."""
+def _patch_provider(monkeypatch, comments, head_sha='deadbeef'):
+    """Monkeypatch the GitHub provider surface ``github_pr`` reaches through ``_github``.
+
+    ``head_sha`` is the PR HEAD the producer stamps as ``reviewed_commit_sha`` and,
+    since the currency fix, compares each comment's recorded SHA against. It defaults
+    to ``deadbeef`` so tests that do not care about HEAD movement are unaffected; a
+    test simulates a loop-back / force-push by re-patching with a DIFFERENT value
+    between fetches.
+    """
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
     monkeypatch.setattr(
         github_pr._github,
@@ -109,7 +116,7 @@ def _patch_provider(monkeypatch, comments):
             'unresolved': len(comments),
         },
     )
-    monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: 'deadbeef')
+    monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: head_sha)
 
 
 def _run_fetch(pr_number, plan_id):
@@ -2112,6 +2119,66 @@ def test_at_least_one_registered_bot_requires_update_movement():
     )
 
 
+def test_currency_anchor_is_recorded_in_the_ledger_on_credit(plan_context, monkeypatch):
+    """The currency anchor is DERIVED from the production ledger, not hand-listed — D4(d).
+
+    D0 named the currency ledger as the single source the currency test compares
+    against. A hand-maintained list of currency sites is the same defect class this
+    plan closes, so the population of currency-subject bots is registry-derived and
+    guarded non-empty (``_UPDATE_REQUIRING_BOTS``, in the ``_dispatch_roster`` "guard
+    against vacuity" spirit), and the anchor is the ledger the producer itself writes
+    on credit. This drives a real fetch and reads the ledger back through the SUT's own
+    reader: a credited comment records its ``(merge_candidate_sha, updated_at)``, so the
+    derivation is re-run against production code rather than a copy.
+    """
+    assert _UPDATE_REQUIRING_BOTS, 'currency-subject bot population is vacuous'
+    bot = _UPDATE_REQUIRING_BOTS[0]
+    plan_id = f'gh-pr-ledger-{bot}'
+    comment = _publish_comment(bot, 'c-ledger', created_at=_at(1))
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A)
+    result = _run_fetch(140, plan_id)
+    assert result['participated_bots'] == [{'bot_kind': bot, 'evidence_kind': comment['kind']}]
+
+    ledger = github_pr._recorded_currency_records(plan_id)
+    assert ledger.get((bot, 'c-ledger')) == (_HEAD_A, comment['updated_at'])
+
+
+@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+def test_edit_at_one_commit_does_not_credit_a_later_commit(
+    bot_kind, plan_context, monkeypatch
+):
+    """An in-place edit credits the commit it was made against, NOT every later HEAD.
+
+    The defect PR-Agent flagged on #1141: with the edit arm keyed on
+    ``updated_at != created_at`` (a permanent "was ever edited" flag), a comment edited
+    at commit N was credited at N+1, N+2, ... even without re-review, defeating the
+    currency check for the edit case. The ledger fix measures a fresh edit against the
+    recorded ``updated_at`` instead, so the edit at N credits N (and its re-fetches),
+    the re-review edit at N+1 credits N+1, but a further HEAD advance with NO new edit is
+    stale.
+    """
+    plan_id = f'gh-pr-edit-once-{bot_kind}'
+    # HEAD_A: first observation, credited.
+    base = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+    _patch_provider(monkeypatch, [base], head_sha=_HEAD_A)
+    _run_fetch(135, plan_id)
+
+    # HEAD_B: the bot edits its comment in place — a genuine re-review, credited.
+    edited = _publish_comment(bot_kind, 'guide-1', created_at=_at(1), updated_at=_at(9))
+    _patch_provider(monkeypatch, [edited], head_sha=_HEAD_B)
+    at_b = _run_fetch(135, plan_id)
+    assert at_b['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': edited['kind']}]
+
+    # HEAD_C: the SAME edited comment (no NEW edit since B) must NOT credit the later
+    # commit — the false positive PR-Agent found, now closed.
+    _patch_provider(monkeypatch, [edited], head_sha=_HEAD_C)
+    at_c = _run_fetch(135, plan_id)
+    assert at_c['participated_bots'] == []
+    assert at_c['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': edited['kind']}
+    ]
+
+
 def _publish_comment(bot_kind, comment_id, *, created_at, updated_at=None, body=None):
     """A comment in ``bot_kind``'s FIRST declared publish shape.
 
@@ -2133,58 +2200,136 @@ def _publish_comment(bot_kind, comment_id, *, created_at, updated_at=None, body=
     }
 
 
+# --- D4: the currency credit is anchored to the merge candidate SHA, and idempotent.
+#
+# ``_HEAD_A`` / ``_HEAD_B`` model a loop-back / force-push: the same unchanged comment
+# reviewed at ``_HEAD_A`` is fresh while the merge candidate IS ``_HEAD_A`` and stale
+# once HEAD advances to ``_HEAD_B``. The two members below are a MATCHED PAIR that
+# differs only in whether the merge candidate still equals the reviewed commit — which
+# is the discrimination the pre-fix currency test (which read observation history, no
+# SHA) could not make: pre-fix, both members returned the same second-fetch answer
+# (``participated_stale``), so the same-HEAD member fails against the pre-fix code.
+_HEAD_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+_HEAD_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+_HEAD_C = 'cccccccccccccccccccccccccccccccccccccccc'
+
+
 @pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
-def test_unchanged_comment_reports_stale_participation_on_a_later_fetch(
+def test_second_fetch_at_the_same_head_stays_participated(
     bot_kind, plan_context, monkeypatch
 ):
-    """First presence credits participation; the same unchanged comment later is STALE.
+    """Re-evaluating at an UNCHANGED HEAD returns the same verdict — the observer-effect regression.
 
-    The two fetches are the whole point. On the fetch that first observes the
-    comment the bot is a proven participant. On a later fetch the comment is
-    already observed and its ``updated_at`` has not moved, so it proves only a
-    review of some EARLIER HEAD — and that observation now lands in
-    ``stale_participation_bots`` instead of being dropped into silence.
+    D4(b)/(c) and the core defect this plan closes. The currency credit is an SHA
+    comparison against the merge candidate, so evaluating participation a second time
+    at the same HEAD — with the observation ledger written by the first fetch in
+    between — returns the SAME answer. This FAILS against the pre-fix code, which
+    *consumed* the first-presence arm on the first fetch and flipped the identical
+    unchanged comment ``participated`` -> ``participated_stale`` on the second look at
+    the same tree.
     """
-    plan_id = f'gh-pr-stale-{bot_kind}'
+    plan_id = f'gh-pr-idem-{bot_kind}'
     comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
-    _patch_provider(monkeypatch, [comment])
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A)
 
     first = _run_fetch(130, plan_id)
-    assert first['status'] == 'success'
-    assert first['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
-    # The field is on the returned dict unconditionally, not only when non-empty.
-    assert 'stale_participation_bots' in first
-    assert first['stale_participation_bots'] == []
-
+    # The ledger is written between the two evaluations (this is the whole point).
     second = _run_fetch(130, plan_id)
-    assert second['status'] == 'success'
-    # No longer a proven participant...
+
+    assert first['status'] == 'success' and second['status'] == 'success'
+    expected = [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
+    assert first['participated_bots'] == expected
+    assert first['stale_participation_bots'] == []
+    # Idempotent: the second evaluation matches the first, byte for byte.
+    assert second['participated_bots'] == first['participated_bots']
+    assert second['stale_participation_bots'] == first['stale_participation_bots']
+
+
+@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+def test_unresolvable_head_sha_fails_closed_and_stays_idempotent(
+    bot_kind, plan_context, monkeypatch
+):
+    """An unreadable merge-candidate SHA withholds the credit AND returns the same answer twice.
+
+    ``fetch_pr_head_sha`` returns an empty string on any provider-failure path. The
+    credit cannot then be anchored to a commit, so the currency test withholds it —
+    the fail-closed direction, since crediting an unverified review is the expensive
+    error. The property the plan insists on is that the verdict does not depend on how
+    many times it is evaluated: two fetches at an unreadable HEAD return the SAME
+    (blocking) answer, never a flip. Without the fail-closed guard on the
+    first-observation arm the first fetch would credit and the second — reading the
+    recorded empty SHA — would go stale, re-introducing an observer effect on the one
+    path where the SHA is absent.
+    """
+    plan_id = f'gh-pr-empty-sha-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+    _patch_provider(monkeypatch, [comment], head_sha='')
+
+    first = _run_fetch(134, plan_id)
+    second = _run_fetch(134, plan_id)
+
+    assert first['status'] == 'success' and second['status'] == 'success'
+    # Fail-closed: an un-anchorable comment is not credited as a proven participant.
+    assert first['participated_bots'] == []
+    assert first['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
+    ]
+    # Idempotent: the second evaluation matches the first exactly.
+    assert second['participated_bots'] == first['participated_bots']
+    assert second['stale_participation_bots'] == first['stale_participation_bots']
+
+
+@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+def test_review_predating_the_merge_candidate_is_stale(
+    bot_kind, plan_context, monkeypatch
+):
+    """After HEAD advances past the reviewed commit, the unchanged comment is STALE — D4(a).
+
+    The matched control for the idempotence case above: identical observation history
+    (the comment is observed once, unchanged, ``updated_at == created_at``), differing
+    ONLY in whether the merge candidate is still the commit the comment was recorded
+    against. A genuine loop-back / force-push advances HEAD, and the same comment now
+    proves only a review of the earlier commit — so it resolves to
+    ``participated_stale``, not ``participated``. This proves the credit is anchored
+    to the commit rather than being "always participated"; together with the
+    same-HEAD case above it is the pair the pre-fix code could not tell apart.
+    """
+    plan_id = f'gh-pr-advanced-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A)
+    first = _run_fetch(131, plan_id)
+    assert first['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': comment['kind']}]
+
+    # Loop-back / force-push: HEAD advances, the comment does not move.
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_B)
+    second = _run_fetch(131, plan_id)
     assert second['participated_bots'] == []
-    # ...and the reason is REPORTED rather than collapsed into absence.
     assert second['stale_participation_bots'] == [
         {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
     ]
 
 
 @pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
-def test_updated_at_movement_credits_participation_and_reports_no_stale(
+def test_in_place_edit_credits_participation_after_a_head_advance(
     bot_kind, plan_context, monkeypatch
 ):
-    """An EDITED comment is a fresh review — participation, never stale.
+    """An in-place EDIT re-credits the bot even after HEAD advances past the recorded commit.
 
-    The complement of the case above, and the reason the stale state cannot be
-    inferred from "already observed" alone: a bot that re-reviews by editing its
-    one persistent comment shows its new pass as ``updated_at`` movement, so the
-    movement arm must still credit it on a later fetch.
+    The edit-movement arm of the currency test, exercised where it actually matters:
+    HEAD has advanced, so the SHA arm misses, and only the edit (``updated_at`` moved
+    since the comment was posted) can credit the bot. This is PR-Agent's real
+    re-review shape — it edits its one persistent comment rather than posting a new
+    one — so without this arm every genuine re-review after a loop-back would resolve
+    stale forever.
     """
     plan_id = f'gh-pr-moved-{bot_kind}'
     comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
-    _patch_provider(monkeypatch, [comment])
-    _run_fetch(131, plan_id)
+    _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A)
+    _run_fetch(132, plan_id)
 
     edited = _publish_comment(bot_kind, 'guide-1', created_at=_at(1), updated_at=_at(9))
-    _patch_provider(monkeypatch, [edited])
-    second = _run_fetch(131, plan_id)
+    _patch_provider(monkeypatch, [edited], head_sha=_HEAD_B)
+    second = _run_fetch(132, plan_id)
 
     assert second['status'] == 'success'
     assert second['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': edited['kind']}]
@@ -2201,12 +2346,14 @@ def test_a_fresh_comment_outranks_a_stale_one_through_the_subtraction(
     subtraction is load-bearing: the stale observation is recorded before the fresh
     comment is reached, so without subtracting the proven set the bot would be
     reported in BOTH sets and the classifier's branch order would be settling a
-    question the producer should have settled.
+    question the producer should have settled. HEAD is advanced between the two
+    fetches so ``guide-1`` is GENUINELY stale (reviewed the earlier commit) while
+    ``guide-2`` is a fresh review of the merge candidate.
     """
     plan_id = f'gh-pr-stale-subtract-{bot_kind}'
     stale = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
-    _patch_provider(monkeypatch, [stale])
-    _run_fetch(132, plan_id)
+    _patch_provider(monkeypatch, [stale], head_sha=_HEAD_A)
+    _run_fetch(133, plan_id)
 
     fresh = _publish_comment(
         bot_kind,
@@ -2214,8 +2361,8 @@ def test_a_fresh_comment_outranks_a_stale_one_through_the_subtraction(
         created_at=_at(5),
         body='A second pass: this comparison uses == on floats, use math.isclose instead.',
     )
-    _patch_provider(monkeypatch, [stale, fresh])
-    second = _run_fetch(132, plan_id)
+    _patch_provider(monkeypatch, [stale, fresh], head_sha=_HEAD_B)
+    second = _run_fetch(133, plan_id)
 
     assert second['status'] == 'success'
     assert second['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': fresh['kind']}]

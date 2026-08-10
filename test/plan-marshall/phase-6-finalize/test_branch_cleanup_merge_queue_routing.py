@@ -128,6 +128,7 @@ _BUNDLE_ROOT: Path = Path(MARKETPLACE_ROOT)
 _SKILLS: Path = _BUNDLE_ROOT / 'plan-marshall' / 'skills'
 _STANDARDS_DIR: Path = _SKILLS / 'phase-6-finalize' / 'standards'
 _BRANCH_CLEANUP: Path = _STANDARDS_DIR / 'branch-cleanup.md'
+_REREVIEW: Path = _STANDARDS_DIR / 'branch-cleanup-rereview.md'
 
 #: The two provider handler modules. The registry population is read from these.
 _PROVIDER_MODULES: dict[str, Path] = {
@@ -338,6 +339,36 @@ def test_derived_document_set_is_non_empty_and_reaches_the_sub_standard():
         'execute branch-cleanup-rereview.md, so a derivation yielding a single member has '
         'lost the transitive follow and every dispatch assertion below covers only part of '
         'the body.'
+    )
+
+
+def test_rereview_consumer_honors_head_sha_verified_as_a_decline():
+    """The trigger-A consumer reads ``head_sha_verified`` and treats false as a decline — D3.
+
+    The recorded-but-ignored bit: ``github_re_review await_fresh_review`` computes
+    ``head_sha_verified`` — true only when a REVIEW named the merge candidate's SHA,
+    false when the bot answered with a bare comment — and the pre-fix consumer read
+    ``matched`` alone, crediting a review that never named the commit it matched. The
+    fixed consumer MUST consult the bit and route a ``matched: true`` /
+    ``head_sha_verified: false`` outcome to the ``declined`` accounting, carried to the
+    pre-merge barrier as ``--declined-bots``, rather than treating it as a completed
+    re-review.
+    """
+    doc = _read(_REREVIEW)
+    # The bit is read, not ignored.
+    assert 'head_sha_verified' in doc, (
+        'branch-cleanup-rereview.md must consult head_sha_verified — reading matched '
+        'alone credits an incremental-review decline as a completed review'
+    )
+    # The false polarity is named as a decline and carried to the barrier.
+    assert 'head_sha_verified: false' in doc
+    assert 'declined' in doc
+    assert '{declined_bots}' in doc
+    # The barrier's Predicate-2 call forwards the decline observation.
+    barrier = _read(_BRANCH_CLEANUP)
+    assert '--declined-bots "{declined_bots}"' in barrier, (
+        "the pre-merge barrier's review_completeness check must forward --declined-bots "
+        'so a decline resolves to the blocking declined state at the merge gate'
     )
 
 

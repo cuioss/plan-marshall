@@ -676,6 +676,11 @@ def _barrier_projection(verdict, pending):
             {'not_triggered': True},
             id='not_triggered',
         ),
+        pytest.param(
+            review_completeness.STATE_DECLINED,
+            {'declined_bots': ['pr-agent']},
+            id='declined',
+        ),
     ],
 )
 def test_widened_member_gates_byte_identically_to_absent(

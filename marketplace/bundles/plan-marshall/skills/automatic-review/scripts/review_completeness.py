@@ -57,14 +57,14 @@ and had nothing to say — ``participated_but_empty``, an accounted-for outcome,
 an incompleteness. This stops the guard manufacturing an infinite loop-back for a
 bot whose review landed as pure noise.
 
-Every required bot is classified into exactly one **state**. Seven of the eight are
+Every required bot is classified into exactly one **state**. Eight of the nine are
 the closed non-participation taxonomy owned by
 ``standards/bot-participation-contract.md`` (``absent``, ``in_progress``,
 ``refused_awaitable``, ``refused_hard``, ``participated_but_empty``,
-``participated_stale``, ``not_triggered``); the eighth, ``participated``, is its
-complement — the bot delivered a usable review — and is not a non-participation. The
-refusal states are split by the refusing bot's registry ``rate_limit_class``, so no
-bot-name literal appears here.
+``participated_stale``, ``declined``, ``not_triggered``); the ninth, ``participated``,
+is its complement — the bot delivered a usable review — and is not a
+non-participation. The refusal states are split by the refusing bot's registry
+``rate_limit_class``, so no bot-name literal appears here.
 
 ``participation_complete`` is TRIAGE-STATE AWARE (``triage_ran``):
 
@@ -89,7 +89,7 @@ state — the quorum is vacuously satisfied and ``participation_complete`` is
 ``true``.
 
 Usage:
-    review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--not-triggered] [--triage-ran]
+    review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--not-triggered] [--triage-ran]
     review_completeness.py --help
 
 Every list flag above takes an OPTIONAL value: it may be supplied bare (the flag
@@ -122,10 +122,10 @@ import sys
 import bot_registry
 from _findings_core import query_findings
 
-# The state every classified bot resolves to. Seven members are the closed
+# The state every classified bot resolves to. Eight members are the closed
 # NON-participation taxonomy owned by
 # ``standards/bot-participation-contract.md``; ``participated`` is its complement
-# (the bot delivered a usable review) and is deliberately NOT an eighth member of
+# (the bot delivered a usable review) and is deliberately NOT a ninth member of
 # that taxonomy — it is the success case the taxonomy exists to distinguish from.
 STATE_ABSENT = 'absent'
 STATE_IN_PROGRESS = 'in_progress'
@@ -135,6 +135,14 @@ STATE_PARTICIPATED_BUT_EMPTY = 'participated_but_empty'
 # Never the bare ``stale``: the state is a PARTICIPATION that went stale, and the
 # short name loses the distinction from a bot that never published at all.
 STATE_PARTICIPATED_STALE = 'participated_stale'
+# The bot was asked to review the merge candidate (a re-review was triggered) and
+# answered WITHOUT producing a review of it — an incremental-review DECLINE: a
+# comment carrying no reviewed-commit SHA (``head_sha_verified: false``) rather than
+# a review of this HEAD. Distinct from ``participated_stale`` (a review that exists
+# but predates the merge candidate) and from the refusal members (an explicit
+# rate-limit / quota / size notice): the bot engaged but declined this commit, so
+# re-triggering it produces another decline rather than a review.
+STATE_DECLINED = 'declined'
 # A REFINEMENT of ``absent``, not a sibling of it: the bot published nothing AND
 # nothing could have been published, because no pull_request-event run exists for
 # the PR at all. It is PR-wide rather than per-bot — the same condition holds for
@@ -156,6 +164,7 @@ _UNPROVEN_STATES = frozenset(
         STATE_REFUSED_AWAITABLE,
         STATE_REFUSED_HARD,
         STATE_PARTICIPATED_STALE,
+        STATE_DECLINED,
         STATE_NOT_TRIGGERED,
     }
 )
@@ -197,6 +206,7 @@ def classify_bot(
     refused: set[str],
     stale_participants: set[str] | None = None,
     not_triggered: bool = False,
+    declined: set[str] | None = None,
 ) -> str:
     """Return the single state ``bot`` resolves to.
 
@@ -216,11 +226,20 @@ def classify_bot(
     - **``refused_awaitable`` / ``refused_hard``** — the bot published a refusal.
       Which member is decided by its registry ``rate_limit_class``: a window that
       reopens on its own is awaitable, anything else is not. No bot-name literal.
+    - **``declined``** — the bot was asked to review the merge candidate and answered
+      without producing a review of it (an incremental-review decline: a comment
+      carrying no reviewed-commit SHA). Checked after the refusal branches — a refusal
+      is the more specific "will not review now" signal — and before ``participated_stale``,
+      because a decline says the bot answered *this* re-review request without
+      reviewing, which is a fresher and more actionable signal than a review that
+      merely predates this HEAD. Unproven and blocking, but the remedy is to accept the
+      decline, not to re-trigger a bot that already declined this commit.
     - **``participated_stale``** — the bot published in a declared evidence shape,
-      but the currency test failed: the comment was already observed and its
-      ``updated_at`` has not moved, so the review it proves predates this HEAD.
-      Unproven and therefore blocking, but the remedy is to re-trigger a re-review
-      — the opposite of ``absent``, where there is no review to refresh.
+      but the currency test failed: the comment was reviewed against a commit that is
+      not the merge candidate and was not edited in place since, so the review it
+      proves predates this HEAD. Unproven and therefore blocking, but the remedy is to
+      re-trigger a re-review — the opposite of ``absent``, where there is no review to
+      refresh.
     - **``in_progress``** — the bot's review is still running.
     - **``not_triggered``** — PR-wide: no ``pull_request``-event workflow run exists
       for this PR at all, so NO bot could have published and this bot's silence
@@ -236,6 +255,8 @@ def classify_bot(
     if bot in refused:
         awaitable = bot_registry.rate_limit_class(bot) == 'awaitable_window'
         return STATE_REFUSED_AWAITABLE if awaitable else STATE_REFUSED_HARD
+    if bot in (declined or set()):
+        return STATE_DECLINED
     if bot in (stale_participants or set()):
         return STATE_PARTICIPATED_STALE
     if bot in in_progress:
@@ -258,6 +279,7 @@ def check_completeness(
     in_progress_bots: list[str] | None = None,
     refused_bots: list[str] | None = None,
     stale_participation_bots: list[str] | None = None,
+    declined_bots: list[str] | None = None,
     not_triggered: bool = False,
 ) -> dict:
     """Classify each bot's PARTICIPATION against the plan's ``pr-comment`` findings store.
@@ -304,6 +326,17 @@ def check_completeness(
                            non-participation escalation ``absent`` calls for. The
                            producer already subtracted the proven set, so a bot with
                            one stale and one fresh comment never arrives here.
+        declined_bots:     Bots that were asked to review the merge candidate (a
+                           re-review was triggered) and answered WITHOUT producing a
+                           review of it — an incremental-review decline, observed as a
+                           re-review ``matched: true`` with ``head_sha_verified:
+                           false``. They resolve to ``declined`` — unproven and
+                           blocking exactly as ``participated_stale`` is, but whose
+                           remedy is to accept the decline, since re-triggering a bot
+                           that already declined this commit produces another decline.
+                           Distinct from ``refused_bots`` (an explicit rate-limit /
+                           quota / size notice) and from ``stale_participation_bots``
+                           (a review that exists but predates the merge candidate).
         not_triggered:     PR-WIDE observable: ``True`` when no
                            ``pull_request``-event workflow run exists for this PR,
                            as reported by ``github_pr pull_request_runs`` /
@@ -322,7 +355,7 @@ def check_completeness(
         bot. ``unproven_bots`` is the subset whose state leaves participation
         unproven — the members of ``_UNPROVEN_STATES`` (``absent`` /
         ``in_progress`` / either refusal member / ``participated_stale`` /
-        ``not_triggered``);
+        ``declined`` / ``not_triggered``);
         ``pending_bots`` is the subset carrying an untriaged finding. Both span
         required ∪ optional for visibility, but only the REQUIRED subset gates
         ``participation_complete``, and only ``pending``'s contribution
@@ -346,6 +379,7 @@ def check_completeness(
     in_progress = set(in_progress_bots or [])
     refused = set(refused_bots or [])
     stale = set(stale_participation_bots or [])
+    declined = set(declined_bots or [])
     required_set = set(required_bots)
     # Required first, then the optional bots not already listed as required, so
     # the reported lists read in a stable, caller-meaningful order.
@@ -357,7 +391,7 @@ def check_completeness(
     for bot in classified:
         bot_findings = [f for f in findings if f.get('bot_kind') == bot]
         state = classify_bot(
-            bot, proven, bool(bot_findings), in_progress, refused, stale, not_triggered
+            bot, proven, bool(bot_findings), in_progress, refused, stale, not_triggered, declined
         )
         bot_states.append({'bot_kind': bot, 'state': state})
         if state in _UNPROVEN_STATES:
@@ -441,6 +475,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         in_progress_bots=_split_bots(args.in_progress_bots),
         refused_bots=_split_bots(args.refused_bots),
         stale_participation_bots=_split_bots(args.stale_participation_bots),
+        declined_bots=_split_bots(args.declined_bots),
         not_triggered=args.not_triggered,
     )
     _emit_toon(payload)
@@ -546,6 +581,24 @@ def main(argv: list[str] | None = None) -> int:
             'is a re-review trigger, not the non-participation escalation absent '
             'calls for. May be supplied bare (no value), which reads as the empty '
             'list.'
+        ),
+    )
+    check_parser.add_argument(
+        '--declined-bots',
+        nargs='?',
+        const='',
+        default='',
+        help=(
+            'Comma-separated review-bot kinds that were asked to review the merge '
+            'candidate (a re-review was triggered) and answered WITHOUT producing a '
+            'review of it — an incremental-review decline (re-review matched: true '
+            'with head_sha_verified: false). A required bot here is classified '
+            'declined and blocks — it engaged but did not review this commit — but '
+            'the remedy is to accept the decline, not to re-trigger a bot that '
+            'already declined. Distinct from --refused-bots (an explicit rate-limit / '
+            'quota / size notice) and --stale-participation-bots (a review that '
+            'exists but predates the merge candidate). May be supplied bare (no '
+            'value), which reads as the empty list.'
         ),
     )
     check_parser.add_argument(

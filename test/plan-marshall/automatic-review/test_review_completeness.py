@@ -11,8 +11,13 @@ reports whether every REQUIRED bot's participation is proven:
     refused_awaitable       — published a refusal whose window reopens on its own
     refused_hard            — published a refusal that does not usefully reopen
     participated_stale      — published in a declared shape, but the currency test
-                              failed, so the review predates this HEAD (blocking,
-                              yet remedied by a re-trigger rather than by awaiting)
+                              failed, so the review predates the merge candidate
+                              (blocking, yet remedied by a re-trigger rather than by
+                              awaiting)
+    declined                — answered a re-review of the merge candidate without
+                              producing a review of it (an incremental-review decline;
+                              blocking, yet remedied by accepting the decline rather
+                              than re-triggering a bot that already declined)
     in_progress             — review still running at the poll bound
     absent                  — no evidence of any kind (the fail-closed default)
 
@@ -543,6 +548,107 @@ class TestStateTaxonomy:
         assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED_STALE
         assert result['unproven_bots'] == ['coderabbit']
         assert result['participation_complete'] is True
+
+    def test_declined_bot_is_declined_and_blocks_like_absent(self, plan_context):
+        """A required bot that answered a re-review without reviewing this commit blocks — D3.
+
+        The incremental-review decline (``head_sha_verified: false``): the bot engaged
+        but did not review the merge candidate, so it is not a proven participant and
+        the quorum EXCLUDES it. The gate outcome is asserted identical to the ``absent``
+        control, so nothing about the member relaxes the quorum; only the reported state
+        and its remedy (accept the decline rather than re-trigger) differ.
+        """
+        plan_id = 'rc-state-declined'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(plan_id, ['pr-agent'], declined_bots=['pr-agent'])
+
+        assert _state_of(result, 'pr-agent') == rc.STATE_DECLINED
+        assert result['unproven_bots'] == ['pr-agent']
+        assert result['participation_complete'] is False
+
+        control_id = 'rc-state-declined-absent-control'
+        plan_context.plan_dir_for(control_id)
+        control = rc.check_completeness(control_id, ['pr-agent'])
+
+        assert control['participation_complete'] == result['participation_complete']
+        assert control['unproven_bots'] == result['unproven_bots']
+        assert _state_of(control, 'pr-agent') == rc.STATE_ABSENT
+
+    def test_declined_is_an_unproven_state_distinct_from_refused_and_stale(self, plan_context):
+        """``declined`` blocks like the others but is a DISTINCT member with its own remedy.
+
+        Pins the two halves the plan insists on keeping disjoint: an explicit refusal
+        (``refused_*``) and an incremental-review decline (``declined``) both leave the
+        bot out of the quorum, but they are different observations with different
+        remedies, so neither collapses into the other or into ``participated_stale``.
+        """
+        assert rc.STATE_DECLINED in rc._UNPROVEN_STATES
+        assert rc.STATE_DECLINED != rc.STATE_PARTICIPATED_STALE
+        assert rc.STATE_DECLINED != rc.STATE_REFUSED_AWAITABLE
+        assert rc.STATE_DECLINED != rc.STATE_REFUSED_HARD
+
+    def test_refusal_and_incremental_decline_are_both_excluded_from_quorum(self, plan_context):
+        """The two refusal shapes each keep the bot out of the quorum — D3, one test per shape.
+
+        Shape A — an EXPLICIT refusal notice — resolves to a refusal member and does not
+        satisfy the quorum. Shape B — an incremental-review DECLINE — resolves to
+        ``declined`` and does not satisfy the quorum either. Both are asserted against the
+        same required set so the exclusion is the property under test, not the state name.
+        """
+        # Shape A: explicit refusal.
+        refusal_id = 'rc-two-shapes-refusal'
+        plan_context.plan_dir_for(refusal_id)
+        refusal = rc.check_completeness(refusal_id, ['coderabbit'], refused_bots=['coderabbit'])
+        assert refusal['participation_complete'] is False
+        assert 'coderabbit' in refusal['unproven_bots']
+        assert _state_of(refusal, 'coderabbit') in (rc.STATE_REFUSED_AWAITABLE, rc.STATE_REFUSED_HARD)
+
+        # Shape B: incremental-review decline.
+        decline_id = 'rc-two-shapes-decline'
+        plan_context.plan_dir_for(decline_id)
+        decline = rc.check_completeness(decline_id, ['pr-agent'], declined_bots=['pr-agent'])
+        assert decline['participation_complete'] is False
+        assert 'pr-agent' in decline['unproven_bots']
+        assert _state_of(decline, 'pr-agent') == rc.STATE_DECLINED
+
+    def test_a_refusal_outranks_a_decline(self, plan_context):
+        """A bot with BOTH an explicit refusal and a decline is classified refused.
+
+        The branch order: an explicit rate-limit / quota / size notice is the more
+        specific "will not review now" signal, so it outranks the quieter incremental
+        decline — mirroring the refusal-outranks-stale precedence.
+        """
+        plan_id = 'rc-refusal-outranks-decline'
+        plan_context.plan_dir_for(plan_id)
+
+        result = rc.check_completeness(
+            plan_id, ['coderabbit'], refused_bots=['coderabbit'], declined_bots=['coderabbit']
+        )
+
+        assert _state_of(result, 'coderabbit') in (rc.STATE_REFUSED_AWAITABLE, rc.STATE_REFUSED_HARD)
+        assert _state_of(result, 'coderabbit') != rc.STATE_DECLINED
+
+    def test_proven_participation_outranks_a_decline(self, plan_context):
+        """A bot that both declined an earlier attempt and later reviewed is ``participated``.
+
+        Proven, diff-derived participation is positive evidence and outranks every
+        absence-or-refusal signal, ``declined`` included. A finding is seeded so the
+        proven bot resolves to ``participated`` rather than ``participated_but_empty`` —
+        either way it is NOT ``declined``, which is the property under test.
+        """
+        plan_id = 'rc-participation-outranks-decline'
+        plan_context.plan_dir_for(plan_id)
+        _seed(plan_id, 'coderabbit')
+
+        result = rc.check_completeness(
+            plan_id,
+            ['coderabbit'],
+            participated_bots=CODERABBIT_EVIDENCE,
+            declined_bots=['coderabbit'],
+        )
+
+        assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED
 
     def test_proven_participation_outranks_stale_participation(self, plan_context):
         """Precedence edge (a): proven evidence beats a stale observation.

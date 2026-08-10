@@ -21,7 +21,7 @@ implements:
 configurable:
   - key: required_bots
     default: ""
-    description: Comma-separated list of review-bot kinds whose participation is REQUIRED. A required bot's silence is a failure — it gates the step-done participation quorum. Each entry MUST have a machine-readable registry doc at standards/{bot_kind}.md (bot_kind, author_login, trigger_comment, completion_check_name, honors_skip_label, participation_evidence, participation_requires_update, ignore_patterns, refusal_patterns, contentless_review_markers, actionable_content_markers, severity_map). The default is EMPTY so a never-asked key stays distinguishable from an answered-empty value — see standards/bot-participation-contract.md for the required-vs-optional semantics, the ask posture, the evidence taxonomy, and the seven-member failure taxonomy.
+    description: Comma-separated list of review-bot kinds whose participation is REQUIRED. A required bot's silence is a failure — it gates the step-done participation quorum. Each entry MUST have a machine-readable registry doc at standards/{bot_kind}.md (bot_kind, author_login, trigger_comment, completion_check_name, honors_skip_label, participation_evidence, participation_requires_update, ignore_patterns, refusal_patterns, contentless_review_markers, actionable_content_markers, severity_map). The default is EMPTY so a never-asked key stays distinguishable from an answered-empty value — see standards/bot-participation-contract.md for the required-vs-optional semantics, the ask posture, the evidence taxonomy, and the eight-member failure taxonomy.
   - key: optional_bots
     default: ""
     description: Comma-separated list of review-bot kinds whose participation is OPTIONAL. An optional bot's silence is not a failure and never gates mark-done. Same registry-doc requirement as required_bots. The default is EMPTY so a never-asked key stays distinguishable from an answered-empty value. A bot in NEITHER list is warned about but STILL ingested — see standards/bot-participation-contract.md.
@@ -658,10 +658,10 @@ The placeholders are still double-quoted above, and should stay quoted — quoti
 (non-executor) invocation. Just do not read it as the empty-value defence: **never rely on quoting
 alone to make an empty list safe.**
 
-Read `participation_complete`, `pending_bots`, `unproven_bots`, and `bot_states` from the returned TOON. `bot_states` carries one `{bot_kind, state}` row per classified bot, each resolving to exactly one state: the seven closed non-participation members (`absent`, `not_triggered`, `in_progress`, `refused_awaitable`, `refused_hard`, `participated_but_empty`, `participated_stale`) or `participated`. `pending_bots` is reported for visibility but does NOT gate the mark-done at this FIND step (the `--triage-ran` flag is omitted). The predicate is fail-closed over the required set — a plan with no observations reports every required bot as `absent` (or `not_triggered`, when no `pull_request` run exists at all) and `participation_complete: false`, and a bot whose registry record declares no `participation_evidence` can never be proven a participant.
+Read `participation_complete`, `pending_bots`, `unproven_bots`, and `bot_states` from the returned TOON. `bot_states` carries one `{bot_kind, state}` row per classified bot, each resolving to exactly one state: the eight closed non-participation members (`absent`, `not_triggered`, `in_progress`, `refused_awaitable`, `refused_hard`, `participated_but_empty`, `participated_stale`, `declined`) or `participated`. `pending_bots` is reported for visibility but does NOT gate the mark-done at this FIND step (the `--triage-ran` flag is omitted). The predicate is fail-closed over the required set — a plan with no observations reports every required bot as `absent` (or `not_triggered`, when no `pull_request` run exists at all) and `participation_complete: false`, and a bot whose registry record declares no `participation_evidence` can never be proven a participant.
 
 - **`participation_complete: true`** — every REQUIRED bot resolved to `participated` or `participated_but_empty`. An unproven OPTIONAL bot never blocks. Pending-but-fetched findings do NOT block here; they await the downstream dispatcher-owned unified triage. Proceed to Branch A and mark the step `done` — recording participation, never a quality claim.
-- **`participation_complete: false`** — at least one REQUIRED bot is in `unproven_bots` (`absent`, `not_triggered`, `in_progress`, either refusal member, or `participated_stale`). A pending-but-fetched bot, an optional bot, or a bot that participated-but-empty does NOT cause `false` at this FIND step. The step is **NOT markable done** on this pass. Take exactly one of two paths:
+- **`participation_complete: false`** — at least one REQUIRED bot is in `unproven_bots` (`absent`, `not_triggered`, `in_progress`, either refusal member, `participated_stale`, or `declined`). A pending-but-fetched bot, an optional bot, or a bot that participated-but-empty does NOT cause `false` at this FIND step. The step is **NOT markable done** on this pass. Take exactly one of two paths:
   1. **Loop back into FIND** (default): treat the unproven participation as an un-surfaced review — re-enter the FIND pipeline (await the bot) and record Branch C (`--outcome loop_back --loop-back-target 6-finalize`) for this iteration instead of Branch A. The terminal Branch A mark waits for a later pass that returns `participation_complete: true`. (This is a FIND-participation loop-back — awaiting an unproven bot review — NOT a triage loop-back; triage loop-back, including any real still-pending incompleteness after triage runs, is owned by the unified triage.)
 
      Read `bot_states` before re-entering, because two of the blocking members enumerated above name a **different** remedy than awaiting: a required bot on `participated_stale` has a review that only predates this HEAD, so the productive action is the re-review trigger (the `re_review_on_loopback` path above) rather than a longer wait for a bot that already published; and a PR-wide `not_triggered` means no reviewer was ever asked, so the productive action is to generate the trigger event at all. Awaiting either one is waiting for something that will not arrive on its own.
@@ -882,16 +882,17 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   --plan-id PLAN_ID [--required-bots [REQUIRED_BOTS]] [--optional-bots [OPTIONAL_BOTS]] \
   [--participated-bots [PARTICIPATED_BOTS]] [--in-progress-bots [IN_PROGRESS_BOTS]] \
   [--refused-bots [REFUSED_BOTS]] [--stale-participation-bots [STALE_PARTICIPATION_BOTS]] \
-  [--not-triggered] [--triage-ran]
+  [--declined-bots [DECLINED_BOTS]] [--not-triggered] [--triage-ran]
 ```
 
-All six list flags take an OPTIONAL value: each may be supplied bare (the flag with no value at
+All seven list flags take an OPTIONAL value: each may be supplied bare (the flag with no value at
 all), which reads as the empty list — identical to omitting it. Callers interpolating a possibly-empty
 variable MUST still double-quote the placeholder; the bare form is the parser-side backstop, not a
 licence to leave the interpolation unquoted. An empty `--required-bots` is the vacuously-satisfied
 quorum; an empty `--participated-bots` is zero proven participants and can never produce a pass for a
 non-empty required set. An empty `--stale-participation-bots` means no bot's publish failed the
-currency test, so nothing resolves to `participated_stale`.
+currency test, so nothing resolves to `participated_stale`. An empty `--declined-bots` means no bot
+answered a re-review of the merge candidate without reviewing it, so nothing resolves to `declined`.
 
 `--not-triggered` is **not** a list flag and takes no value at all: it is a `store_true` bool, passed
 bare when `ci checks pull-request-runs` reports `has_pull_request_run: false` and omitted otherwise.
