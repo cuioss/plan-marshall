@@ -149,6 +149,12 @@ Five static detectors that are the mechanical enforcement layer for the "minimum
 | `SIMPLICITY_THIN_WRAPPER` | content | `_analyze_simplicity.py` | `plan-marshall:ref-code-quality` `standards/code-organization.md` § `#minimum-viable-code` and § Over-Abstraction — a function whose body is a single argument-forwarding `return`; inline it at the call site. |
 | `SIMPLICITY_SIGNATURE_DOCSTRING` | content | `_analyze_simplicity.py` | `plan-marshall:ref-code-quality` `standards/code-organization.md` § `#minimum-viable-code` — "Signature-restating docstrings/comments". The one safe auto-apply fix (delete the restating docstring); fix handler `_cmd_apply.py::apply_signature_docstring_fix`. |
 
+### Migration / back-compat shim-marker rule
+
+| Rule ID | Class | Emitter | Source |
+|---------|-------|---------|--------|
+| `shim-marker-missing` | content | `_analyze_shim_marker.py` | Plan `truthful-signals/050-migration-shims-have-no-expiry` — a migration / back-compat *version shim* (a read path accommodating a data shape an earlier version of this tooling wrote and the current version no longer writes) must declare an owner, a version floor, and a removal trigger via a `# SHIM(A\|B):` marker at its definition site. The convention lives at `pm-plugin-development:plugin-script-architecture` `standards/shim-marker-convention.md`. The rule flags a malformed marker (missing a required field) and a high-precision unmarked-shim indicator; the population is DERIVED from `bundles/*/skills/*/scripts/**/*.py` (never a hardcoded path list) and every finding publishes the `population_size` examined. Precision-first (favours a false negative over a false positive), the complement of `SIMPLICITY_BACKWARD_COMPAT_REEXPORT`, which governs re-export shims. |
+
 ### Lesson-2026-05-05-18-001 rule pack
 
 Seven forward-looking lint rules added by the lesson-2026-05-05-18-001 remediation plan.

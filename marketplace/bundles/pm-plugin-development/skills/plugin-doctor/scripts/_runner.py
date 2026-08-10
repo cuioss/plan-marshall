@@ -65,6 +65,7 @@ from _analyze_role_field import analyze_role_field
 from _analyze_script_call_drift import analyze_script_call_drift
 from _analyze_self_declared_rule_compliance import analyze_self_declared_rule_compliance
 from _analyze_shell_substitution_in_skills import analyze_shell_substitution_in_skills
+from _analyze_shim_marker import analyze_shim_marker
 from _analyze_simplicity import scan_simplicity
 from _analyze_skill_mode import analyze_skill_mode
 from _analyze_skill_notation import analyze_skill_notation
@@ -195,6 +196,7 @@ class RuleRunner:
             'analyze_thinking_directive_in_workflow_docs',
             scoped(analyze_thinking_directive_in_workflow_docs(root)),
         )
+        emit('analyze_shim_marker', scoped(analyze_shim_marker(root)))
         emit('scan_finalize_step_token', scoped(scan_finalize_step_token(root)))
         emit(
             'analyze_mutates_source_order',

@@ -148,6 +148,7 @@ _avsc = _load('_analyze_verify_step_contract.py', '_avsc_fixtures')
 _atdw = _load(
     '_analyze_thinking_directive_in_workflow_docs.py', '_atdw_fixtures'
 )
+_ashm = _load('_analyze_shim_marker.py', '_ashm_fixtures')
 
 # ---------------------------------------------------------------------------
 # Registered-rule-ID extraction (relocated verbatim from the deleted
@@ -455,6 +456,19 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
                 '---\n\n'
                 '# F\n\n'
                 'Use ultrathink mode for deep analysis of the findings.\n'
+            )
+        },
+    )
+    # shim-marker-missing: a script under skills/*/scripts/ whose comment reads as
+    # a migration shim (``pre-migration``) with no ``# SHIM(A|B):`` marker in the
+    # enclosing function — the "next shim landed unmarked" case.
+    corpus['shim-marker-missing'] = FixtureSpec(
+        analyzer=_ashm.analyze_shim_marker,
+        files={
+            'plan-marshall/skills/fixture-skill/scripts/shim_mod.py': (
+                'def read_state(data):\n'
+                '    # tolerate a pre-migration key shape written by an older writer\n'
+                "    return data.get('old_key')\n"
             )
         },
     )

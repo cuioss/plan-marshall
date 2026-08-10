@@ -1,7 +1,7 @@
 # Migration / Back-Compat Shim Marker Convention
 
 A **migration or back-compat shim** is a code path that reads persisted state, config, or data and
-accommodates a shape an **earlier version of this tooling once wrote and the current version no
+accommodates a shape an **older version of this tooling once wrote and the current version no
 longer writes**. Left unmarked, a shim carries no owner, no record of *what* it tolerates, and no
 record of *since when* — so nobody can prove it is safe to delete, and shims accumulate. This
 convention gives every shim an owner, a version floor, and a removal trigger **at its definition
@@ -13,7 +13,7 @@ The convention is enforced at edit time by the `shim-marker-missing` plugin-doct
 
 ## What counts as a shim (and what does not)
 
-A site is a shim when it reads persisted data and accommodates a shape **our own earlier writer
+A site is a shim when it reads persisted data and accommodates a shape **our own prior writer
 produced and the current writer no longer produces** — the tell is a reference to a superseded
 shape: "written before X existed", "legacy key", "pre-migration", "older format", "retired key".
 Two shapes:

@@ -117,6 +117,7 @@ _DESCRIPTOR_MODULES: tuple[str, ...] = (
     '_analyze_self_declared_rule_compliance',
     '_analyze_shell_active_tokens',
     '_analyze_shell_substitution_in_skills',
+    '_analyze_shim_marker',
     '_analyze_simplicity',
     '_analyze_skill_mode',
     '_analyze_skill_notation',
