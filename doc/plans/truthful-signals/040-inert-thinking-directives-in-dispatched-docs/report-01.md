@@ -27,7 +27,7 @@ All loaded by `Read`-ing the bundle `SKILL.md` path (the plugin was not assumed 
 
 ⛔ **STOP CONDITION fired.** `test/_shared/_dispatch_roster.py` does **not** expose the execution-context workflow roster. It is a generic Markdown-section parser (`section_lines` / `parse_roster`) whose sole consumers are the phase-6-finalize tests, and whose own docstring scopes it to `dispatch-inline-split.md`'s `## Dispatched steps` / `## Inline steps` sections — the finalize dispatched-vs-inline **step** roster, an unrelated concept. No existing enumerator (`find_implementors` included — it scans SKILL.md + phase-6/phase-5 docs, not the `workflow/*.md` surface this ext-point lives at) covers the true population.
 
-Per the contract (§ "Rules that outrank convenience" — a claim is not an outcome) and the plan's own "may re-scope the plan" clause, the divergence was escalated to the operator via `AskUserQuestion`. The operator chose to **re-scope to a frontmatter-derived population** rather than halt D2/D3. This is a legitimate *derived* population, not a hand-rolled roster or a grep: the roster is derived from each doc's own `implements: …ext-point-execution-context-workflow` frontmatter (the same declaration the dispatcher resolves against — see `ext-point-execution-context-workflow.md` § Addressing), read via the analyzer's frontmatter parser. Nothing is hand-listed.
+Per the contract (§ "Rules that outrank convenience" — a claim is not an outcome) and the plan's own "may re-scope the plan" clause, the divergence was escalated to the operator via `AskUserQuestion`. **This run executed in an interactive Claude Code cloud session with the operator reachable** — the escalation was a real main-context `AskUserQuestion` (the main session is not a dispatched leaf, so the leaf "cannot reach the operator" caveat does not apply). The escalation and its answer are a conversation event, not a committed artifact, so they are not independently verifiable from the diff; they are recorded here. The operator chose to **re-scope to a frontmatter-derived population** rather than halt D2/D3 (the autonomous fallback the plan's STOP CONDITION names, which a headless run with no reachable operator would have taken). This is a legitimate *derived* population, not a hand-rolled roster or a grep: the roster is derived from each doc's own `implements: …ext-point-execution-context-workflow` frontmatter (the same declaration the dispatcher resolves against — see `ext-point-execution-context-workflow.md` § Addressing), read via the analyzer's frontmatter parser. Nothing is hand-listed.
 
 - **Roster size: 33** docs (derived population — reported separately).
 - **Hit count: 5** pre-fix (3 in `research-best-practices.md`, 2 in `content-review.md`), **0** post-fix.
@@ -53,7 +53,16 @@ Per the contract (§ "Rules that outrank convenience" — a claim is not an outc
 
 ## Findings
 
-_Verification sub-agent (Step 6) findings and dispositions — pending finalization at the merge gate._
+**Verification sub-agent (Step 6)** — independent `general-purpose` reviewer, read-only. Verdicts: D1 PASS, D2 PASS (STOP CONDITION correctly handled), D3 PASS. Cold read: **8/8 agreement** between the agent's independent classification and the detector — no false positive on any of the three procedural-prose samples (samples 1 "step-by-step implementation guide", 3 "careful analysis decision framework", 5 "Read phrase in isolation"), all five directives flagged. The false-positive boundary is confirmed correct. Findings raised, each with disposition:
+
+1. **content-review.md:177 rewrite is non-verbatim** (real, low severity, judgment call) — *disposition: accepted, no change.* The plan's "preserve every **surrounding** criteria sentence verbatim" governs sentences around the directive; line 177 had none (heading → single directive sentence → next heading). That sentence fused the reasoning-level directive with a purpose clause; the rewrite ("This framework distinguishes factual descriptions from promotional language.") salvages the criterion while removing the directive. A pure deletion would strand an empty "Decision Framework" subsection, and removing the heading+criterion would drop guidance the plan asks to preserve. The reviewer concluded the rewrite "honors the plan's spirit." No re-dispatch: no fix was applied.
+2. **D2 operator-approval unverifiable from committed artifacts** (cannot-verify) — *disposition: accepted, clarified in the D2 section above.* Correct observation from a sub-agent that cannot see the conversation. The re-scope approval was a real interactive `AskUserQuestion` in this main cloud session (operator reachable; main session ≠ dispatched leaf). Recorded as a conversation event.
+3. **Run report incomplete** (expected) — *disposition: by design.* Findings / Reviewer participation / Contract check / What-have-we-learned are finalized at the merge gate (Step 8 condition 3), the last pre-merge commit.
+
+No undeclared collateral changes: the reviewer confirmed all 12 changed files are within the plan's expected surface, and `test/_shared/_dispatch_roster.py` was correctly left unmodified.
+
+**CI findings:** _pending — filled after CI runs on the PR._
+**PR review findings:** _pending — filled after the review cycle._
 
 ## Reviewer participation
 
