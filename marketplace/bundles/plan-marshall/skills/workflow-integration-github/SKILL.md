@@ -274,6 +274,20 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github
   [--head BRANCH] [--state {open|closed|all}]
 ```
 
+### github_ops pr landing-state
+
+```bash
+python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_ops pr landing-state \
+  [--branch BRANCH]
+```
+
+Classifies a branch's done-ness **at the PR, not the commit** — returns exactly
+one of `merged` / `pr_open` / `pushed_no_pr` / `unpushed`. `--branch` defaults to
+the checked-out branch of the routed working tree; the router-level
+`--project-dir PATH` (consumed before dispatch) points every git/gh subprocess at
+a foreign checkout, which is how a foreign repository's change is polled. Backs
+the phase-6 pre-archive foreign-PR landing gate.
+
 ### github_ops pr create
 
 ```bash

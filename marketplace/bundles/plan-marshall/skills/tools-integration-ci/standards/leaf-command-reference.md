@@ -31,6 +31,7 @@ Source: [pr-operations.md](pr-operations.md)
 |------------|----------------|----------------|---------|
 | `pr view` | _(none — uses current cwd HEAD)_ | _at most one of_ `--pr-number` _or_ `--head {branch}` | Get PR/MR details by number, by branch, or for the current branch. A landing poll MUST use `--pr-number` — the merge queue deletes the head branch as it merges |
 | `pr list` | _(none)_ | `--head {branch}`, `--state {open\|closed\|all}` | List PRs with optional branch and state filters |
+| `pr landing-state` | _(none)_ | `--branch {name}` (default: the routed working tree's checked-out branch); router-level `--project-dir {path}` to target a foreign checkout | Classify a branch's done-ness at the PR, not the commit — returns exactly one of `merged` / `pr_open` / `pushed_no_pr` / `unpushed`. Backs the pre-archive foreign-PR landing gate. **GitHub provider only.** |
 | `pr prepare-body` | `--plan-id` | `--for {create\|edit}`, `--slot {name}` | Allocate a script-owned scratch path for a PR description (path-allocate pattern). |
 | `pr prepare-comment` | `--plan-id` | `--for {reply\|thread-reply}`, `--slot {name}` | Allocate a script-owned scratch path for a PR comment consumed by `pr reply` / `pr thread-reply`. |
 | `pr create` | `--title`, `--plan-id` | `--base`, `--head {branch}`, `--slot {name}`, `--draft`, `--label {name}` (repeatable) | Create a PR. Body is consumed from the scratch file allocated by `pr prepare-body`. Pass `--head` from main checkout against worktree branch. |

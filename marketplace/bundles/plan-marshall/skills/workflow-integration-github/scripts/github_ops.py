@@ -6,6 +6,7 @@ Subcommands:
     pr create       Create a pull request
     pr view         View PR for current branch (number, URL, state)
     pr list         List pull requests with optional filters
+    pr landing-state  Classify a branch as merged/pr_open/pushed_no_pr/unpushed
     pr reviews      Get PR reviews
     pr comments     Get PR review comments (inline code comments)
     pr reply        Reply to a PR with a comment
@@ -41,6 +42,7 @@ a second plan-less convention of its own:
     python3 github.py pr create --title "Title" --plan-id EXAMPLE-PLAN [--base main] [--draft]
     python3 github.py pr view
     python3 github.py pr list [--head feature/branch] [--state open|closed|all]
+    python3 github.py pr landing-state [--branch feature/branch]
     python3 github.py pr reviews --pr-number 123
     python3 github.py pr comments --pr-number 123 [--unresolved-only]
     python3 github.py pr reply --pr-number 123 --plan-id EXAMPLE-PLAN
