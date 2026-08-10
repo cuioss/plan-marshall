@@ -59,15 +59,33 @@ scheduler count, never inferred from anything else.
 
 ## Deliverables
 
-_(updated as implemented)_
+| # | What was done | Commit | Verification |
+|---|---|---|---|
+| **D1** | GATE settled (see contract above). In-flight/queued counts exposed read-only via the daemon `ping` handshake (`marshalld.py::Daemon._ping`) and surfaced by `status`. STOP CONDITION did not fire — the count was trivially exposable. | `fe6eb7d` | `test_daemon_ping_counts.py` (2), `test_status_reports_in_flight_and_queued_counts` |
+| **D4** | `manage-build-server status` sources the RUNNING binary from the live process (`_read_process_argv` → `/proc/{pid}/cmdline`, `ps` fallback; `_running_binary_path`); reports `running_binary_path` + `resolved_binary_path` + `binary_diverges` + a `note`; fail-closed to `unknown`, never the resolved path. | `fe6eb7d` | `test_status_stale_daemon_shows_divergence`, `test_status_unknown_provenance_never_falls_back_to_resolved`, `test_status_unknown_when_argv_has_no_marshalld_token`, `test_read_process_argv_reads_this_process_from_proc` |
+| **D5** | Preflight line (`phase-1-init/SKILL.md`) rephrased as a point-in-time observation, not a whole-run guarantee. Consecutive daemon-unreachable fallbacks escalate once (`_build_execute_factory._update_fallback_streak`): after N per-plan the routing seam emits one ERROR naming the transition, suppressing the repeated WARNING until a routed build resets the streak. | `fe6eb7d` | `test_fallback_escalation.py` (10) |
+| **D2** | `reconcile_daemon.py` (project-local) queries `status` after a successful sync and applies the D1 contract; wired into `/sync-plugin-cache` and `finalize-step-sync-plugin-cache`. Silent no-op when the build server is absent/disabled or the executor is missing (fail-open adapters). No shared-daemon behaviour changed. | `8ed2a46` | `test_reconcile_daemon.py` decide/orchestration cases |
+| **D3** | A deferred reconcile writes a readable `reconcile-owed` marker (machine-global, beside daemon state) with a `defer_count` that accumulates across busy syncs; cleared on reconcile/current, preserved on indeterminate status. | `8ed2a46` | `test_busy_defer_never_runs_a_reconcile_verb_and_writes_marker`, `test_defer_count_increments_across_busy_syncs`, `test_current_daemon_clears_a_stale_owed_marker`, `test_status_unavailable_preserves_an_owed_marker` |
+| **D6** | All D6 cases covered — including the two mandatory ones: **BUSY → NOT drained** (asserts the reconcile issues *zero* mutating verbs, so the in-flight job cannot be drained) and **provenance undeterminable → `unknown`/defer** (never the resolved path). | `fe6eb7d`, `8ed2a46` | 67 tests across the five files |
+
+Split-guard: Group A did NOT halt (D1's in-flight count was trivially exposable), so both groups shipped in one PR — no file split (the plan is named for one orchestrator spec).
 
 ## Build gate
 
-_(pending)_
+`git diff --name-only origin/main...HEAD -- '*.py'` is non-empty (Python changed), so the gate takes
+its full path.
+
+- `./pw quality-gate` → **clean** (mypy: "no issues found in 387 source files"; ruff clean after two
+  UP017 `datetime.UTC` fixes; all plugin-doctor analyzers `0`, `issues[0]` empty).
+- Affected suites (`build-server`, `build-pyproject`, `build-operations`, `script-shared`,
+  `sync-plugin-cache`) → **1851 passed, 13 skipped**.
+- New/changed tests → **67 passed**.
+- Full `./pw verify` suite → _running (belt-and-suspenders for far-flung breakage); result recorded
+  below when it completes._
 
 ## Findings
 
-_(pending)_
+_(verification sub-agent findings recorded below)_
 
 ## Reviewer participation
 
