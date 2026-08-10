@@ -314,10 +314,13 @@ def test_list_deliverables(plan_context):
     assert first['number'] == 1
     assert first['title'] == 'Create JwtValidationService class'
     assert first['reference'] == '1. Create JwtValidationService class'
-    # affected_files surfaces the {path, intent} shape for phase-4-plan
+    # affected_files surfaces the {path, intent, foreign} shape for phase-4-plan
+    # and the pre-archive landing gate. The path is repo-relative, so it is host
+    # (foreign: False); the deliverable's roll-up foreign flag is False too.
     assert first['affected_files'] == [
-        {'path': 'src/main/java/de/cuioss/jwt/JwtValidationService.java', 'intent': 'write-new'}
+        {'path': 'src/main/java/de/cuioss/jwt/JwtValidationService.java', 'intent': 'write-new', 'foreign': False}
     ]
+    assert first['foreign'] is False
 
 
 def test_validate_rejects_missing_intent_marker(plan_context):

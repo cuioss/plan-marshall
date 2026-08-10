@@ -6,6 +6,7 @@ Subcommands:
     pr create       Create a pull request
     pr view         View PR for current branch (number, URL, state)
     pr list         List pull requests with optional filters
+    pr landing-state  Classify a branch as merged/pr_open/pushed_no_pr/unpushed
     pr reviews      Get PR reviews
     pr comments     Get PR review comments (inline code comments)
     pr reply        Reply to a PR with a comment
@@ -41,6 +42,7 @@ a second plan-less convention of its own:
     python3 github.py pr create --title "Title" --plan-id EXAMPLE-PLAN [--base main] [--draft]
     python3 github.py pr view
     python3 github.py pr list [--head feature/branch] [--state open|closed|all]
+    python3 github.py pr landing-state [--branch feature/branch]
     python3 github.py pr reviews --pr-number 123
     python3 github.py pr comments --pr-number 123 [--unresolved-only]
     python3 github.py pr reply --pr-number 123 --plan-id EXAMPLE-PLAN
@@ -141,6 +143,25 @@ def run_gh(args: list[str], capture_json: bool = False, timeout: int = 60) -> tu
         capture_json=capture_json,
         timeout=timeout,
         not_found_msg='gh CLI not found. Install from https://cli.github.com/',
+    )
+
+
+def run_git(args: list[str], timeout: int = 60) -> tuple[int, str, str]:
+    """Run a git command in the routed working tree and return (rc, stdout, stderr).
+
+    Routed through the shared ``run_cli`` so it honours the process-global
+    default cwd the router installs from ``--project-dir`` (``set_default_cwd``).
+    That routing is what makes ``ci pr landing-state --project-dir P`` inspect
+    P's git state — a foreign repository's checkout — rather than the caller's.
+    ``capture_json`` is never passed, so ``--json`` is never appended to a git
+    invocation. Reached by handlers via ``github_ops.run_git`` attribute access
+    so a test's ``monkeypatch.setattr(github_ops, 'run_git', ...)`` is honoured.
+    """
+    return run_cli(
+        'git',
+        args,
+        timeout=timeout,
+        not_found_msg='git not found on PATH',
     )
 
 
@@ -1757,6 +1778,7 @@ from _github_pr import (  # noqa: E402 — bottom import: primitives must be def
     cmd_pr_comments,
     cmd_pr_create,
     cmd_pr_edit,
+    cmd_pr_landing_state,
     cmd_pr_list,
     cmd_pr_merge,
     cmd_pr_merge_queue,
@@ -1809,6 +1831,22 @@ def main() -> int:
     # GitHub-specific parser additions
     add_pr_create_args(pr_sub)
 
+    # GitHub: pr landing-state — classify a branch as merged / pr_open /
+    # pushed_no_pr / unpushed. Registered provider-specifically (like the
+    # add_pr_create_args additions above) rather than in the shared build_parser,
+    # so the gitlab surface is untouched until it implements the handler. The
+    # --branch selector is optional; omitted, the routed working tree's checked-out
+    # branch is used. --project-dir is a router-level flag consumed before dispatch.
+    landing_parser = pr_sub.add_parser(
+        'landing-state',
+        help='Classify a branch as merged / pr_open / pushed_no_pr / unpushed',
+        allow_abbrev=False,
+    )
+    landing_parser.add_argument(
+        '--branch',
+        help='Branch to classify (default: the checked-out branch in the routed working tree)',
+    )
+
     # GitHub: --pr-number on resolve-thread is optional (accepted for API uniformity)
     resolve_parser = pr_sub.choices.get('resolve-thread')
     if resolve_parser:
@@ -1827,6 +1865,7 @@ def main() -> int:
         ('pr', 'create'): cmd_pr_create,
         ('pr', 'view'): cmd_pr_view,
         ('pr', 'list'): cmd_pr_list,
+        ('pr', 'landing-state'): cmd_pr_landing_state,
         ('pr', 'reply'): cmd_pr_reply,
         ('pr', 'resolve-thread'): cmd_pr_resolve_thread,
         ('pr', 'thread-reply'): cmd_pr_thread_reply,

@@ -16,6 +16,7 @@ Usage:
     )
 """
 
+import os
 import re
 from typing import Any
 
@@ -41,6 +42,48 @@ _SLUG_NON_ALNUM_PATTERN = re.compile(r'[^a-z0-9_-]+')
 #: ``deliverable_count`` denominator and the retrospective consistency check count through
 #: ``extract_deliverable_headings``. Do NOT inline a copy of this regex — add the caller here.
 DELIVERABLE_HEADING_PATTERN = re.compile(r'^###\s+(\d+)\.\s+(.+)$', re.MULTILINE)
+
+
+def is_foreign_path(path: str, project_root: str) -> bool:
+    """Return True when ``path`` resolves OUTSIDE ``project_root`` — the single
+    foreign-vs-host discriminator.
+
+    A deliverable's change is *foreign* when it lands in a repository other than
+    the one being planned. There is no repository-target field on the record;
+    the discriminator is derived purely from the declared path relative to the
+    project root (the git toplevel), which is the axis the ``--project-dir``
+    routing already instruments. This is the one place that rule is spelled out
+    so ``manage-solution-outline list-deliverables`` (the ``foreign:`` column)
+    and the phase-6 pre-archive landing gate agree by construction.
+
+    The comparison is **lexical** (``os.path.normpath``/``commonpath``), never a
+    filesystem ``resolve()``: the foreign repository's tree may not exist in the
+    session doing the derivation, and a path that cannot be stat-ed must still be
+    classified. An absolute path is normalised as-is; a relative path is joined
+    onto ``project_root`` first, so a bare ``src/Foo.java`` is host while a
+    ``../other-repo/src/Foo.java`` escape and an absolute ``/elsewhere/...`` path
+    are both foreign.
+
+    Args:
+        path: The declared ``affected_files`` / ``steps[].target`` path.
+        project_root: Absolute path of the project root (git toplevel).
+
+    Returns:
+        True when ``path`` lies outside ``project_root``; False when it is the
+        root itself or under it.
+    """
+    if not path or not path.strip():
+        return False
+    root = os.path.normpath(os.path.abspath(project_root))
+    candidate = path.strip()
+    target = os.path.normpath(candidate if os.path.isabs(candidate) else os.path.join(root, candidate))
+    try:
+        return os.path.commonpath([root, target]) != root
+    except ValueError:
+        # Different drives / mixed absolute-relative that cannot share a root
+        # (Windows edge). Un-shareable roots mean the target is not under the
+        # project root — treat it as foreign rather than silently host.
+        return True
 
 
 def _slugify_section_name(name: str) -> str:
