@@ -301,7 +301,20 @@ class Daemon:
         return response
 
     def _ping(self) -> dict[str, Any]:
-        return {'status': 'ok', 'pid': os.getpid(), 'version': VERSION}
+        # The identity handshake also carries the scheduler's read-only in-flight
+        # and queued counts. They let an operator (and the meta-project's
+        # post-sync reconcile) read daemon idleness from the daemon's OWN count
+        # rather than inferring it — draining a busy daemon on a guessed-idle
+        # signal is the one outcome the reconcile gate exists to prevent. Adding
+        # them here is backward-compatible: the client handshake reads only
+        # `status` and `version`.
+        return {
+            'status': 'ok',
+            'pid': os.getpid(),
+            'version': VERSION,
+            'in_flight': self._scheduler.running_count,
+            'queued': self._scheduler.queued_count,
+        }
 
     # -- interaction audit -------------------------------------------------
 

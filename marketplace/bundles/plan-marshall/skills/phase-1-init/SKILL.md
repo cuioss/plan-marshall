@@ -959,7 +959,7 @@ Parse `preflight` from the returned TOON — exactly one of `disabled` (project 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO \
-  --message "(plan-marshall:phase-1-init:build-server) Preflight {disabled|ready} (marshalld v{version} when ready) — no action required; {builds run in-process|builds route to the daemon}"
+  --message "(plan-marshall:phase-1-init:build-server) Preflight {disabled|ready} (marshalld v{version} when ready) — observed at this init-time probe; {builds run in-process|builds will route to the daemon while it stays up}. Point-in-time only: the routing seam re-checks daemon liveness on every build, so this line is NOT a whole-run guarantee."
 ```
 
 **`down` — surface the named reason and ask.** The project is registered but the daemon did not answer (`reason` ∈ {`socket_absent`, `unreachable`, `version_mismatch`, `impostor_socket`, `handshake_failed`}). Fire a native `AskUserQuestion` phrased from the reason, and apply the choice in-context — never auto-start:

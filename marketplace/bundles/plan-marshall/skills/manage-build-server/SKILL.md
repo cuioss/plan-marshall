@@ -144,9 +144,15 @@ to the journal's bounded-retention model.
   daemon to exit on its own, never escalating to `SIGKILL`. A job still in flight is
   recorded in the journal and replayed as `killed` on the next start — never
   silently lost, never blind-resumed. Prefer `drain` for planned restarts.
-- **status** — ping the daemon over its socket and report the running version +
-  binary path (S5), or `down` with a named reason. Also reports whether the caller's
-  project is registered.
+- **status** — ping the daemon over its socket and report the running version, the
+  daemon's in-flight / queued job counts, and the binary the **running process** is
+  actually executing (`running_binary_path`, read from the live process) alongside
+  the resolve-now path a fresh start would launch (`resolved_binary_path`).
+  `binary_diverges` flags a stale daemon — one still executing an older pinned copy
+  after a plugin-cache bump — and an undeterminable running provenance is reported
+  as `unknown`, **never** the resolved-now path (S5, D4). Reports `down` with a
+  named reason when unreachable. Also reports whether the caller's project is
+  registered.
 - **install** — idempotent version-pinned start (a no-op when already running).
 - **upgrade** — drain the running daemon, then start the verified version (S7).
 
@@ -168,7 +174,7 @@ survive, and any job that was in flight when the daemon died is marked `killed`
 | `start` | Start the daemon detached, version-pinned |
 | `stop` | Force-stop the daemon (`SIGTERM` then `SIGKILL`) |
 | `drain` | Gracefully stop the daemon (no `SIGKILL`) |
-| `status` | Report running version + binary path |
+| `status` | Report running version, in-flight/queued counts, running vs resolved binary provenance (divergence flagged; `unknown` never the resolved path) |
 | `install` | Idempotent version-pinned start |
 | `upgrade` | Drain then start the verified version |
 | `logs` | Read-only, project-scoped view of the daemon's interaction-audit log |

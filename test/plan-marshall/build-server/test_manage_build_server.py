@@ -14,6 +14,7 @@ sent, and no real socket is opened.
 from __future__ import annotations
 
 import json
+import os
 import signal
 import sys
 from argparse import Namespace
@@ -276,22 +277,122 @@ def test_upgrade_drains_then_starts(home, monkeypatch):
 # =============================================================================
 
 
-def test_status_running_reports_version_and_binary(home, monkeypatch):
-    monkeypatch.setattr(
-        mbs, '_ping', lambda timeout=mbs._PING_TIMEOUT_SECONDS: {
-            'status': 'ok',
-            'pid': 4242,
-            'version': mbs.marshalld.VERSION,
-        }
-    )
+def _resolved_binary() -> str:
+    """The resolve-now marshalld path status compares the running one against."""
+    return str(Path(mbs.marshalld.__file__).resolve())
+
+
+def _fake_ping(*, in_flight: int = 0, queued: int = 0, pid: int = 4242):
+    """A verified-ping stand-in carrying the daemon's version + scheduler counts."""
+    return lambda timeout=mbs._PING_TIMEOUT_SECONDS: {
+        'status': 'ok',
+        'pid': pid,
+        'version': mbs.marshalld.VERSION,
+        'in_flight': in_flight,
+        'queued': queued,
+    }
+
+
+def _argv_for(binary_path: str) -> list[str]:
+    """A daemon launch argv whose marshalld token is ``binary_path``."""
+    return ['/usr/bin/python3', binary_path, 'run']
+
+
+def test_status_running_reports_running_provenance_when_current(home, monkeypatch):
+    # A daemon executing the resolve-now binary is NOT stale: running provenance
+    # equals the resolved path, and the divergence flag is false.
+    monkeypatch.setattr(mbs, '_ping', _fake_ping())
+    monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: _argv_for(_resolved_binary()))
 
     result = mbs.run_status(Namespace())
 
     assert result['running'] is True
     assert result['version'] == mbs.marshalld.VERSION
     assert result['pid'] == 4242
-    assert result['binary_path'] == str(Path(mbs.marshalld.__file__).resolve())
+    # D4: the provenance is the binary the LIVE process runs, reported as such.
+    assert result['running_binary_path'] == _resolved_binary()
+    assert result['resolved_binary_path'] == _resolved_binary()
+    assert result['binary_diverges'] is False
+    assert 'note' not in result
     assert result['socket_path'] == str(mbs.marshalld.socket_path())
+
+
+def test_status_reports_in_flight_and_queued_counts(home, monkeypatch):
+    # D1: the scheduler's in-flight / queued counts ride the status output so an
+    # operator (and the reconcile) reads idleness from the daemon's own count.
+    monkeypatch.setattr(mbs, '_ping', _fake_ping(in_flight=2, queued=3))
+    monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: _argv_for(_resolved_binary()))
+
+    result = mbs.run_status(Namespace())
+
+    assert result['in_flight'] == 2
+    assert result['queued'] == 3
+
+
+def test_status_stale_daemon_shows_divergence(home, monkeypatch):
+    # D4 done-when: a deliberately-stale daemon (running an OLD pinned copy) makes
+    # status show BOTH paths and flag the divergence — never one masquerading as
+    # the other. The exact version numbers are leads; the divergence is the claim.
+    stale_binary = '/cache/plan-marshall/0.1.1212/skills/manage-build-server/scripts/marshalld.py'
+    monkeypatch.setattr(mbs, '_ping', _fake_ping())
+    monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: _argv_for(stale_binary))
+
+    result = mbs.run_status(Namespace())
+
+    assert result['running'] is True
+    # The RUNNING provenance is the old binary — the actually-executing one.
+    assert result['running_binary_path'] == stale_binary
+    # The resolve-now path is the current pin, distinct from what is running.
+    assert result['resolved_binary_path'] == _resolved_binary()
+    assert result['resolved_binary_path'] != stale_binary
+    assert result['binary_diverges'] is True
+    # The divergence is spelled out for a cold reader.
+    assert 'STALE' in result['note']
+    assert stale_binary in result['note']
+
+
+def test_status_unknown_provenance_never_falls_back_to_resolved(home, monkeypatch):
+    # D4 fail-closed (the mandatory `unknown` case): when the running binary cannot
+    # be determined, status reports `unknown` and NEVER the resolved-now path —
+    # that substitution is the exact defect this deliverable closes.
+    monkeypatch.setattr(mbs, '_ping', _fake_ping())
+    monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: None)
+
+    result = mbs.run_status(Namespace())
+
+    assert result['running'] is True
+    assert result['running_binary_path'] == 'unknown'
+    assert result['running_binary_path'] != result['resolved_binary_path']
+    assert result['binary_diverges'] is False
+    assert 'unknown' in result['note']
+
+
+def test_status_unknown_when_argv_has_no_marshalld_token(home, monkeypatch):
+    # An argv that carries no unambiguous marshalld entry is undeterminable — the
+    # provenance fails closed to `unknown`, not the resolved path.
+    monkeypatch.setattr(mbs, '_ping', _fake_ping())
+    monkeypatch.setattr(mbs, '_read_process_argv', lambda pid: ['/usr/bin/python3', '-c', 'pass'])
+
+    result = mbs.run_status(Namespace())
+
+    assert result['running_binary_path'] == 'unknown'
+    assert result['binary_diverges'] is False
+
+
+def test_read_process_argv_reads_this_process_from_proc(home):
+    # Exercise the real /proc fast path against this very process (Linux). On a
+    # platform with no /proc the branch falls to `ps`; skip rather than assert a
+    # platform-specific shape.
+    if not Path('/proc/self/cmdline').exists():
+        pytest.skip('no /proc on this platform')
+
+    argv = mbs._read_process_argv(os.getpid())
+
+    assert argv is not None
+    assert len(argv) >= 1
+    # The interpreter (or the pytest launcher) is the first token — enough to
+    # prove the NUL-split parse produced real argv tokens, not one glued string.
+    assert '\x00' not in argv[0]
 
 
 def test_status_down_reports_reason(home, monkeypatch):
@@ -302,6 +403,10 @@ def test_status_down_reports_reason(home, monkeypatch):
 
     assert result['running'] is False
     assert result['reason'] == 'no_pidfile'
+    # A down daemon reports only the resolve-now path, named as such — there is no
+    # running process to read provenance from.
+    assert result['resolved_binary_path'] == _resolved_binary()
+    assert 'running_binary_path' not in result
 
 
 def test_status_down_unreachable_when_pid_present(home, monkeypatch):

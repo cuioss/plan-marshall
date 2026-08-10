@@ -38,6 +38,7 @@ import json  # noqa: E402
 import os  # noqa: E402
 import sys  # noqa: E402
 from argparse import Namespace  # noqa: E402
+from datetime import UTC, datetime  # noqa: E402
 from pathlib import Path  # noqa: E402
 from typing import Any  # noqa: E402
 
@@ -63,7 +64,7 @@ from _build_server_protocol import (  # noqa: E402
     read_log_verdict,
 )
 from _build_shared import cmd_run_common  # noqa: E402
-from marketplace_paths import NO_PLAN_SENTINEL, names_real_plan  # noqa: E402
+from marketplace_paths import NO_PLAN_SENTINEL, home_root, names_real_plan  # noqa: E402
 from plan_logging import log_entry  # noqa: E402
 from toon_parser import serialize_toon  # noqa: E402
 
@@ -167,6 +168,141 @@ def _resolve_notation(config: ExecuteConfig) -> str:
     return config.notation or _TOOL_NOTATIONS.get(config.tool_name, '')
 
 
+# ---------------------------------------------------------------------------
+# Consecutive-fallback escalation (D5)
+# ---------------------------------------------------------------------------
+# A one-off in-process fallback and a daemon that has been gone all run are
+# indistinguishable when the N+1st fallback is logged exactly like the first. The
+# streak tracker below counts CONSECUTIVE daemon-unreachable fallbacks per plan
+# and, once the count crosses _FALLBACK_WARN_STREAK, emits ONE ERROR naming the
+# transition (last-reachable → unreachable-since → N degraded) in place of the
+# repeated WARNING. A routed build resets the plan's streak (daemon reachable
+# again). Every step is best-effort and fail-open: no state I/O failure ever
+# aborts a build.
+
+_FALLBACK_STATE_FILENAME = 'fallback-streak.json'
+"""Machine-global per-plan fallback-streak state, beside the daemon's own state."""
+
+_FALLBACK_WARN_STREAK = 3
+"""Consecutive daemon-unreachable fallbacks logged per-build as WARNING before one
+ERROR transition replaces the repeats."""
+
+# The daemon-unreachable degradation reasons that count toward the streak. A
+# by-design in-process routing (``disabled`` / ``not_registered`` / ``no_notation``
+# / ``in_daemon_job``) is NOT a degradation — it neither increments nor resets the
+# streak. Mirrors build_server's REASON_* degraded set (the daemon was expected to
+# serve but did not answer).
+_DEGRADED_ROUTING_REASONS = frozenset(
+    {'socket_absent', 'unreachable', 'impostor_socket', 'handshake_failed', 'version_mismatch'}
+)
+
+
+def _utc_now_iso() -> str:
+    """Return the current UTC time as an ISO-8601 ``...Z`` string."""
+    return datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def _fallback_state_path() -> Path:
+    """Return the machine-global fallback-streak state file path."""
+    return home_root() / 'marshalld' / _FALLBACK_STATE_FILENAME
+
+
+def _read_fallback_state() -> dict[str, Any]:
+    """Read the per-plan fallback-streak state, or ``{}`` when absent/unreadable."""
+    try:
+        data = json.loads(_fallback_state_path().read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_fallback_state(state: dict[str, Any]) -> None:
+    """Persist the per-plan fallback-streak state (best-effort, fail-open)."""
+    path = _fallback_state_path()
+    try:
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        path.write_text(json.dumps(state), encoding='utf-8')
+    except OSError:
+        pass
+
+
+def _update_fallback_streak(
+    resolved: str, reason: str | None, plan_id: str | None
+) -> tuple[str | None, bool]:
+    """Track the plan's consecutive daemon-unreachable fallbacks.
+
+    Returns ``(escalation_message, suppress_repeat)``:
+
+    * A **routed** build (or a clean resolution) resets the plan's streak — the
+      daemon is reachable again — and records the reachable timestamp.
+    * A **by-design in-process** build (``disabled`` / ``no_notation`` / …, any
+      reason not in :data:`_DEGRADED_ROUTING_REASONS`) is neither a degradation
+      nor a recovery: the streak is untouched and the per-build line emits as
+      normal.
+    * A **daemon-unreachable** fallback increments the streak. While the count is
+      at or below :data:`_FALLBACK_WARN_STREAK` the per-build WARNING stands
+      (``(None, False)``). The first fallback that crosses the threshold returns a
+      one-time transition ``escalation_message`` AND ``suppress_repeat=True`` so
+      the ERROR replaces that build's WARNING; every further consecutive fallback
+      returns ``(None, True)`` — the repeat is suppressed, the single transition
+      already stands for the ongoing outage.
+
+    Best-effort and fail-open: any failure resolves to ``(None, False)`` so the
+    build's normal logging is unchanged and the build never aborts on state I/O.
+
+    Args:
+        resolved: The routing outcome (``routed`` / ``in_process`` / ``fail-loud``).
+        reason: The degradation reason, or ``None``.
+        plan_id: Submitting plan id (the streak is per-plan; a plan-less build
+            shares the ``NO_PLAN`` key).
+
+    Returns:
+        The ``(escalation_message, suppress_repeat)`` pair.
+    """
+    try:
+        key = plan_id or NO_PLAN_SENTINEL
+        now = _utc_now_iso()
+        all_state = _read_fallback_state()
+        state = dict(all_state.get(key) or {})
+
+        if resolved == 'routed':
+            all_state[key] = {'last_reachable': now}
+            _write_fallback_state(all_state)
+            return None, False
+
+        if resolved != 'in_process' or reason not in _DEGRADED_ROUTING_REASONS:
+            return None, False
+
+        count = int(state.get('count', 0) or 0) + 1
+        state['count'] = count
+        state.setdefault('first_unreachable', now)
+
+        if state.get('escalated'):
+            # Outage already escalated once — keep counting, suppress the repeat.
+            all_state[key] = state
+            _write_fallback_state(all_state)
+            return None, True
+
+        if count > _FALLBACK_WARN_STREAK:
+            state['escalated'] = True
+            all_state[key] = state
+            _write_fallback_state(all_state)
+            message = (
+                f'[BUILD-SERVER] marshalld unreachable: last reachable at '
+                f'{state.get("last_reachable", "unknown")}, unreachable since '
+                f'{state.get("first_unreachable", now)}, {count} builds degraded to in-process '
+                f'(reason={reason}). Further identical fallbacks are suppressed until the daemon '
+                f'is reachable again.'
+            )
+            return message, True
+
+        all_state[key] = state
+        _write_fallback_state(all_state)
+        return None, False
+    except Exception:  # noqa: BLE001 — escalation is best-effort, never abort a build
+        return None, False
+
+
 def _record_resolution(
     requested: str,
     resolved: str,
@@ -185,6 +321,13 @@ def _record_resolution(
     plan-less build has), and to the plan's captured work log when ``plan_id``
     names a REAL plan (mirroring ``build_server._audit_log``, which likewise
     no-ops for a plan-less build).
+
+    D5: consecutive daemon-unreachable fallbacks are folded by
+    :func:`_update_fallback_streak` — once a plan's streak crosses
+    :data:`_FALLBACK_WARN_STREAK`, one ERROR naming the reachable→unreachable
+    transition replaces the identical work-log WARNING, and further repeats are
+    suppressed until a routed build resets the streak. The stderr parity line is
+    unaffected; only the persistent work-log record is de-duplicated.
 
     Args:
         requested: The caller's ``execution_mode`` (``auto`` / ``in_process`` /
@@ -216,12 +359,27 @@ def _record_resolution(
         f'[BUILD-SERVER] resolved build (requested={requested}, resolved={resolved}, '
         f'reason={reason}, notation={notation}, plan={plan_id}, mechanism={mechanism})'
     )
+    # D5: fold a sustained run of daemon-unreachable fallbacks into ONE transition
+    # ERROR instead of the N+1st identical WARNING (see _update_fallback_streak).
+    escalation_message, suppress_repeat = _update_fallback_streak(resolved, reason, plan_id)
+    # The per-build stderr line is [EXEC] parity and the only sink a plan-less
+    # build has, so it is emitted unconditionally; the escalation governs the
+    # PERSISTENT work-log WARNING, which is the record a "was the daemon up?" scan
+    # reads and where the identical repeats accumulate.
     print(message, file=sys.stderr)
+    if escalation_message is not None:
+        print(escalation_message, file=sys.stderr)
     if names_real_plan(plan_id):
-        # Every fallback and refusal logs at WARNING — matching the client's
-        # existing level convention; a clean resolution stays INFO.
-        level = 'WARNING' if resolved == 'fail-loud' or reason is not None else 'INFO'
-        log_entry('work', plan_id, level, message)
+        if escalation_message is not None:
+            # One-time transition ERROR replaces this build's work-log WARNING.
+            log_entry('work', plan_id, 'ERROR', escalation_message)
+        elif not suppress_repeat:
+            # Every fallback and refusal logs at WARNING — matching the client's
+            # existing level convention; a clean resolution stays INFO.
+            level = 'WARNING' if resolved == 'fail-loud' or reason is not None else 'INFO'
+            log_entry('work', plan_id, level, message)
+        # else: an already-escalated ongoing outage — the identical work-log
+        # WARNING is suppressed; the single transition ERROR stands for it.
 
 
 def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> DirectCommandResult:

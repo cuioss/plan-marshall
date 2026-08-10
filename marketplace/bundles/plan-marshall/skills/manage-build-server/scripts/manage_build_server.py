@@ -30,7 +30,12 @@ Verbs:
   (never silently lost), so a drained-then-restarted daemon reports them
   truthfully rather than resuming them.
 * ``status`` — ping the daemon over its ``0600`` socket and report the running
-  version + binary path (S5), or ``down`` with a named reason.
+  version, the daemon's in-flight / queued job counts, and the binary the RUNNING
+  process is executing (``running_binary_path``, read from the live process)
+  alongside the resolve-now path (``resolved_binary_path``); ``binary_diverges``
+  flags a stale daemon and an undeterminable running provenance is ``unknown``,
+  never the resolved path (S5, D4). Reports ``down`` with a named reason when the
+  daemon is unreachable.
 * ``install`` — idempotent version-pinned start (a no-op when already running).
 * ``upgrade`` — drain the running daemon then start the verified version (S7).
 * ``logs`` — read-only, project-scoped inspection of the daemon's central
@@ -93,6 +98,13 @@ _DRAIN_GRACE_SECONDS = 30.0
 _POLL_INTERVAL_SECONDS = 0.2
 _PING_TIMEOUT_SECONDS = 5.0
 _SPAWN_REAP_TIMEOUT_SECONDS = 10.0
+_PS_TIMEOUT_SECONDS = 5.0
+"""Bounded timeout for the ``ps`` provenance fallback on non-``/proc`` platforms."""
+
+_UNKNOWN_PROVENANCE = 'unknown'
+"""Sentinel ``status`` reports when the RUNNING daemon's binary cannot be
+determined from the live process. It is NEVER the resolved-now path — substituting
+that path for an undeterminable running provenance IS the drift-hiding defect."""
 
 _DEFAULT_LOGS_LIMIT = 50
 """Default bounded tail size for the read-only ``logs`` audit-inspection verb."""
@@ -283,6 +295,77 @@ def _cleanup_stale_state() -> None:
     """Remove the socket and pidfile after the daemon has exited."""
     marshalld.socket_path().unlink(missing_ok=True)
     marshalld.pidfile_path().unlink(missing_ok=True)
+
+
+def _read_process_argv(pid: int) -> list[str] | None:
+    """Return a live process's argv, or ``None`` when it cannot be read.
+
+    The RUNNING daemon's provenance is read from the process itself — its own
+    launch ``argv`` — never re-resolved at call time. The Linux fast path reads
+    the exact NUL-separated ``argv`` from ``/proc/{pid}/cmdline``; on a platform
+    without ``/proc`` (macOS) it falls back to ``ps -ww -p {pid} -o args=`` and
+    whitespace-splits the reported command line.
+
+    Args:
+        pid: The live daemon pid (read back from the verified ``ping``).
+
+    Returns:
+        The process argv as a list of tokens, or ``None`` when neither source
+        yields one (an empty read, a missing process, a ``ps`` failure) — which
+        the caller renders as :data:`_UNKNOWN_PROVENANCE`.
+    """
+    proc_cmdline = Path('/proc') / str(pid) / 'cmdline'
+    try:
+        raw = proc_cmdline.read_bytes()
+    except OSError:
+        raw = b''
+    if raw:
+        parts = [chunk.decode('utf-8', 'replace') for chunk in raw.split(b'\x00') if chunk]
+        if parts:
+            return parts
+
+    try:
+        completed = subprocess.run(
+            ['ps', '-ww', '-p', str(pid), '-o', 'args='],
+            capture_output=True,
+            text=True,
+            timeout=_PS_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    line = completed.stdout.strip()
+    if completed.returncode != 0 or not line:
+        return None
+    return line.split()
+
+
+def _running_binary_path(pid: int) -> str | None:
+    """Return the ``marshalld`` binary the live process ``pid`` is executing.
+
+    Reads the RUNNING process's own argv (:func:`_read_process_argv`) and returns
+    the single entry whose basename matches the daemon binary's filename — the
+    binary the daemon is ACTUALLY executing, which after a plugin-cache bump is
+    the older pinned copy, not the version a fresh import would resolve today.
+
+    Fail closed: returns ``None`` (→ the caller renders
+    :data:`_UNKNOWN_PROVENANCE`) when the argv cannot be read, or does not carry
+    exactly one unambiguous ``marshalld`` entry, so an undeterminable provenance
+    is NEVER silently replaced by the resolved-now path.
+
+    Args:
+        pid: The live daemon pid.
+
+    Returns:
+        The running daemon binary path, or ``None`` when it cannot be determined.
+    """
+    argv = _read_process_argv(pid)
+    if not argv:
+        return None
+    target_name = Path(marshalld.__file__).name
+    matches = [token for token in argv if token and Path(token).name == target_name]
+    if len(matches) != 1:
+        return None
+    return matches[0]
 
 
 # ---------------------------------------------------------------------------
@@ -536,17 +619,26 @@ def run_upgrade(_args: Namespace) -> dict[str, Any]:
 
 
 def run_status(_args: Namespace) -> dict[str, Any]:
-    """Report the daemon's running state, version, and binary path (S5).
+    """Report the daemon's running state, RUNNING provenance, and idleness (S5, D4).
 
     Pings the daemon over its ``0600`` socket. On a successful handshake reports
-    ``running: true`` with the daemon-reported version + pid and the pinned
-    binary path. When the daemon is unreachable reports ``running: false`` with a
-    named reason (``no_pidfile`` when nothing claims to run, ``unreachable`` when
-    a pid is recorded but the socket does not answer). Also reports whether the
-    caller's project is registered, so the operator sees enrolment and liveness
-    in one call.
+    ``running: true`` with the daemon-reported version + pid, the daemon's
+    in-flight / queued job counts, and — this is the D4 truthfulness fix — the
+    binary the RUNNING process is actually executing (``running_binary_path``,
+    sourced from the live process, not a call-time re-resolution) ALONGSIDE the
+    resolved-now path a fresh start would use (``resolved_binary_path``). When the
+    two differ the daemon is stale; ``binary_diverges`` says so explicitly and a
+    ``note`` spells the divergence out, rather than showing one path as if it were
+    the other. When the running provenance cannot be determined it is reported as
+    ``unknown`` — NEVER the resolved-now path, which is the exact substitution that
+    once rendered nineteen versions of drift as a clean status line.
+
+    When the daemon is unreachable reports ``running: false`` with a named reason
+    (``no_pidfile`` when nothing claims to run, ``unreachable`` when a pid is
+    recorded but the socket does not answer). Also reports whether the caller's
+    project is registered, so the operator sees enrolment and liveness in one call.
     """
-    _, _, binary_path = _resolve_daemon_command()
+    _, _, resolved_binary_path = _resolve_daemon_command()
     registry = read_registry()
     try:
         caller_root = canonicalize_root(main_checkout_root())
@@ -557,17 +649,40 @@ def run_status(_args: Namespace) -> dict[str, Any]:
 
     response = _ping()
     if response is not None and response.get('status') == 'ok':
-        return {
+        pid = response.get('pid')
+        running_binary_path = _running_binary_path(pid) if isinstance(pid, int) else None
+        diverges = running_binary_path is not None and running_binary_path != resolved_binary_path
+        result: dict[str, Any] = {
             'status': 'success',
             'action': 'status',
             'running': True,
             'version': response.get('version', ''),
-            'pid': response.get('pid'),
-            'binary_path': binary_path,
+            'pid': pid,
+            # The RUNNING daemon's provenance, from the live process. `unknown`
+            # (never the resolved path) when it cannot be read — fail-closed.
+            'running_binary_path': running_binary_path
+            if running_binary_path is not None
+            else _UNKNOWN_PROVENANCE,
+            # The resolve-now path: which binary a fresh start would launch today.
+            'resolved_binary_path': resolved_binary_path,
+            'binary_diverges': diverges,
+            'in_flight': int(response.get('in_flight', 0) or 0),
+            'queued': int(response.get('queued', 0) or 0),
             'socket_path': str(marshalld.socket_path()),
             'caller_root': caller_root,
             'registered': registered,
         }
+        if diverges:
+            result['note'] = (
+                f'running daemon is STALE: it is executing {running_binary_path}, but a fresh '
+                f'start would resolve {resolved_binary_path}'
+            )
+        elif running_binary_path is None:
+            result['note'] = (
+                'running daemon provenance is unknown (could not read the live process argv); '
+                'the resolved-now path is NOT substituted for it'
+            )
+        return result
 
     reason = 'no_pidfile' if _running_pid() is None else 'unreachable'
     return {
@@ -575,7 +690,9 @@ def run_status(_args: Namespace) -> dict[str, Any]:
         'action': 'status',
         'running': False,
         'reason': reason,
-        'binary_path': binary_path,
+        # No running process to read provenance from — report only the resolve-now
+        # path, explicitly named so it is never misread as the running binary.
+        'resolved_binary_path': resolved_binary_path,
         'socket_path': str(marshalld.socket_path()),
         'caller_root': caller_root,
         'registered': registered,
