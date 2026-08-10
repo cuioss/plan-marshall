@@ -221,20 +221,33 @@ Each is **text whose whole value is what a later RUN does with it**, so each car
      *Done when:* Step 5's table has two rows (`*.py` → `./pw verify`; else → skip), no rationale claims a
      markdown-only change fails the local build, and both gate sites read `status` **and** `errors[]`.
    - **(b) `/sync-plugin-cache` is machine-local; a cloud run neither performs nor owes it.** Reword the
-     § "Scope and precedence" carve-out row (and its `CLAUDE.md` mirror) and the report template's
-     Contract-check line so a cloud run stops reporting a "sync owed" debt — the merged bundle source is
-     authoritative; a local cache refresh is a local-developer concern, not a debt this run tracks.
-     *Done when:* the carve-out row and the report template no longer frame a cloud run as *owing* a sync,
-     and a cold reader given a bundle-editing cloud run reports **no sync debt**, not "sync owed: yes".
+     skill's § "Scope and precedence" carve-out row and the report template's Contract-check line so a
+     cloud run stops reporting a "sync owed" debt — the merged bundle source is authoritative; a local
+     cache refresh is a local-developer concern, not a debt this cloud run tracks. ⛔ **Skill only** — the
+     `CLAUDE.md` § "Standalone Plan Lane" summary carries the same stale framing, but it lives in the root
+     instructions that also govern *local* work, not the cloud lane's contract; aligning it is left to the
+     operator and is out of scope here (§ Out of scope).
+     *Done when:* the skill's carve-out row and the report template no longer frame a cloud run as *owing*
+     a sync, and a cold reader given a bundle-editing cloud run reports **no sync debt**, not "sync owed: yes".
    ⛔ **(a) supersedes the premise of staged plan `400`** (§ Out of scope / § Notes) — do not also apply
    plan 400's three-outcome report vocabulary, which a two-outcome gate makes unnecessary.
 
-**Six deliverables (a GATE plus five), one component (the contract file, plus its `CLAUDE.md` carve-out
-mirror), one theme.** ⛔ **Resist widening into a general lane audit** — six findings were routed here
-from four run reports and two operator rulings, not an open-ended review.
+**Six deliverables (a GATE plus five), one component (the `cloud-plan-lane` skill — the cloud lane's
+contract, and nothing that governs local plan execution), one theme.** ⛔ **Resist widening into a
+general lane audit** — six findings were routed here from four run reports and two operator rulings, not
+an open-ended review.
 
 ## Out of scope
 
+- ⛔⛔ **Local plan execution and the general build / plugin-cache machinery — this is a CLOUD-ONLY
+  change.** Every finding here governs the standalone **cloud** lane: the `*.py`-only build gate, the
+  arm-and-hand-off merge, the escalation duality, the no-sync rule. Local plans run the plan-marshall
+  lifecycle instead (`.plan/execute-script.py`, `architecture resolve`, and the **general** `CLAUDE.md`
+  Build-Commands and Plugin-Cache-Sync sections) — a **different, machine-local runtime this plan does
+  not touch.** ⛔ **Every edit lands in `.claude/skills/cloud-plan-lane/SKILL.md` and nowhere else** — not
+  the plan-marshall build machinery, and not the `CLAUDE.md` § "Standalone Plan Lane" summary (a root-
+  instruction mirror the operator aligns separately if wanted). The skill *is* the cloud lane's contract;
+  it is the whole surface.
 - ⛔ **The merge gate's required-vs-decorative check distinction itself.** ✅ Already **landed** by plan
   `030` (PR #1137). D3 adds only the cloud *increment* on top; it does not redo the distinction.
 - **Cloud-run commit authorship (`Claude <noreply@anthropic.com>`) leaving author-email checks
@@ -269,8 +282,9 @@ from four run reports and two operator rulings, not an open-ended review.
   - § "Rules that outrank convenience" — the escalation duality (D4);
   - the **Report** template — the Cost/Contract-check lines for sync-debt (D5b) and the build-gate
     section wording (D5a).
-- `CLAUDE.md` — § "Standalone Plan Lane" carve-out table, the Plugin Cache Sync row that **mirrors** the
-  skill's (D5b). ⛔ **Keep the two in lock-step;** do not let the mirror drift.
+
+  ⛔ **This one file is the entire write surface.** No `CLAUDE.md` edit, no plan-marshall build machinery,
+  nothing under `marketplace/bundles/**` — the cloud lane's contract lives wholly in this skill (§ Out of scope).
 - **Read-only evidence corpus** (the grounding for D0, git-reachable in the clone): the four `report-01.md`
   files named in § Problem.
 - **Read-only** — `.github/workflows/python-verify.yml` (the `skip-on-docs-only` opt-in and the
@@ -278,8 +292,8 @@ from four run reports and two operator rulings, not an open-ended review.
 
 ⚠ **No `/sync-plugin-cache` is owed by this plan — and after D5b, that is the contract's plain statement,
 not a caveat.** It edits only `.claude/skills/cloud-plan-lane/SKILL.md` (project-local, loaded from the
-clone) and `CLAUDE.md` — no `marketplace/bundles/**` source, no `~/.claude/` cache. ⭐ **This plan is its
-own first instance of the D5b rule:** its run reports **no sync debt.**
+clone) — no `marketplace/bundles/**` source, no `~/.claude/` cache. ⭐ **This plan is its own first
+instance of the D5b rule:** its run reports **no sync debt.**
 
 ## Claim labels
 
@@ -325,7 +339,7 @@ count and set above is a **lead** — re-derive it at the moment of the claim.
   source per fact** — a set stated without per-fact provenance is an assertion, not a derivation.
 - ⚠ **This run is its own live fixture.** It uses the MCP GitHub path, likely finds the self-wake tools
   gated, edits the very Step 8 that governs its own merge, and — because it changes only `.claude/skills/`
-  and `CLAUDE.md` — its own build gate takes the **skip** path and its own report carries **no sync debt**,
+  (no `*.py`) — its own build gate takes the **skip** path and its own report carries **no sync debt**,
   a live instance of D5. Report all of this first-hand.
 
 ## Notes
