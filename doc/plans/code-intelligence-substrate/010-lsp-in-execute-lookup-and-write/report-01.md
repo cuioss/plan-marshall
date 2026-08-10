@@ -50,11 +50,21 @@ Rationale: the in-envelope host decision collapses D1 (read) and D2 (write) onto
 
 ## Deliverables
 
-_(filled in as implemented)_
+Commits: `6a96ab0` (mechanics + config + tests), `f5ae40f` (docs + consumer wiring). Plan-dir + D0 record in `e4154aa`.
+
+- **D0 — GATE (CONFIRMED).** Measured against a live `pyright-langserver` (see the D0 section above). Hosting decision recorded: in-envelope per-call subprocess. Verification: a real measurement exists; the premise is not refuted. Split decision recorded (unsplit).
+- **D1 — read side.** `lsp_client.py` `lookup` verb (`definition` / `references` / `document-symbol` / `workspace-symbol`) returns coordinates without reading file bodies (`_run_lookup`). Coverage contract: `state` + `provider_count` keep `not_configured` / `unreachable` / `ok`-found-nothing separately representable. Verified: `test_lsp_client.py::test_three_states_are_distinguishable` (negative control) + real-server `test_lsp_integration.py::test_real_document_symbol_and_references` / `test_real_workspace_symbol_after_indexing`.
+- **D2 — write side.** `edit` verb: `rename` → `WorkspaceEdit` → footprint captured from the edit (`_lsp_workspace_edit.capture_footprint`) → applied (`apply_workspace_edit`) → diagnostics re-run → worsened set fails and rolls back (`edit_verdict` + `restore_files`). Verified adversarially: `test_lsp_client.py::test_edit_worsened_fails_and_rolls_back` and real-server `test_lsp_integration.py::test_real_adversarial_defect_fails_and_rolls_back` (a deliberate defect through the WorkspaceEdit path makes the parser's re-diagnose fail the step). Footprint-matches-edit asserted by `test_capture_footprint_from_edit` / `test_apply_and_restore_round_trip`.
+- **D3 — diagnostics pre-build signal.** `diagnose` verb + `DIAGNOSTICS_BOUNDARY_NOTE` in every payload; boundary prose in `lsp-client/SKILL.md` and the user page. Cold read dispatched to the Step-6 sub-agent.
+- **D4 — opt-in config + no-op degradation + docs.** Machine-local `language_servers` section (new `manage-run-config` `language-server` get/set/list/remove verbs); `lsp_client` reads it and degrades to `read_edit` when `not_configured`/`unreachable`; unconfigured is byte-identical (the leaf never invokes the server). Distinguishability asserted by `test_preflight_not_configured` vs `test_preflight_unreachable`. Docs: `doc/user/lsp-code-intelligence.adoc`, `run-config-standard.md` § Language-Servers, execute-task consumer seams.
+
+⚠ **Bundle edits owe a local `/sync-plugin-cache`** (this lane cannot run it — `target/`/`~/.claude/` are absent/off-limits). Recorded so whoever picks the work up locally syncs the cache.
 
 ## Build gate
 
-_(filled in at Step 5)_
+`git diff --name-only origin/main...HEAD` includes `*.py` (lsp-client scripts, run_config.py, tests) → full `./pw verify` required and run.
+
+**Result: SUCCESS.** `./pw verify` (whole tree): quality-gate (mypy: no issues in 385 files; ruff: all checks passed; SPDX: passed; plugin-doctor: `status: pass`, `total_issues: 0` across all 31 rules incl. `scan_manage_invocation`, `analyze_skill_mode`, `analyze_sys_path_bootstrap`, `broken-relative-link`), test-compile (mypy over tests: clean), module-tests: **18714 passed, 14 skipped** (the 14 are pre-existing environment guards; the 4 lsp-client real-pyright integration tests RAN and passed here because pyright is installed).
 
 ## Findings
 
