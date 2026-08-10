@@ -136,7 +136,33 @@ one historical-prose finding were fixed before the commit).
 - **plugin-doctor `analyze_historical_prose_in_skills` (1)** — "an earlier commit" in
   `bot-participation-contract.md` tripped the earlier-proposal family → rephrased to "a commit that is
   not the merge candidate". Disposition: fixed.
-- Verification sub-agent findings: _pending (Step 6)._
+### Verification sub-agent (Step 6)
+
+An independent `general-purpose` sub-agent verified the diff against the plan (read-only). It confirmed
+D2/D3/D4 implemented as specified, out-of-scope compliance clean, and the same-HEAD idempotence test as
+genuine mutation discrimination. Three findings, all dispositioned:
+
+1. **[Medium] Stale "seven-member" taxonomy text.** `automatic-review/SKILL.md` (×2) still said
+   "seven-member" / enumerated seven members omitting `declined`. The grep sweep surfaced two more the
+   agent didn't reach: `review_completeness.py:125` comment and `phase-6-finalize/workflow/create-pr.md:201`.
+   **Disposition: fixed** (commit d194d60) — all four now say eight and enumerate `declined`; the
+   "ninth member" complement wording corrected.
+2. **[Low] Empty merge-candidate-SHA path was non-idempotent.** A failed `fetch_pr_head_sha` (empty
+   string) let the first fetch credit and the second go stale — a flip on the one path the SHA is
+   absent (toward *more* blocking, the safe direction, but contradicting the unqualified idempotence
+   claim). **Disposition: fixed** (commit d194d60) — the first-observation arm is now guarded on a
+   non-empty merge-candidate SHA, so the empty-SHA case fails closed on both fetches; pinned by
+   `test_unresolvable_head_sha_fails_closed_and_stays_idempotent`.
+3. **[Low, already disclosed] `declined` wired end-to-end only on the trigger-A path.** The FIND-step
+   trigger-B loop-back does not populate `--declined-bots`. **Disposition: accepted as residue** (see
+   Residue) — the plan's D3 concrete defect is the trigger-A `head_sha_verified` bit, which is closed.
+   The agent also noted the `head_sha_verified` consumer is a markdown workflow step, so its test
+   verifies instruction text rather than an executed code path — inherent to the architecture, not a
+   defect.
+
+The agent could not run the build (per instruction) and could not independently observe the mutation
+harness; both were verified by this run (build: `./pw verify` SUCCESS; mutation: the harness output is
+recorded above).
 
 ## Reviewer participation
 _pending_
