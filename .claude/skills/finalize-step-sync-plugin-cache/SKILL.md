@@ -141,6 +141,34 @@ When the sync `status` is `partial` or `error`, SKIP regeneration — the cache
 is incomplete, so regenerating against it would be wrong; the step records the
 sync failure (Step 4) and an operator recovers.
 
+### 3b. Reconcile the build daemon (after a successful sync)
+
+The cache bump this step just performed is exactly what makes a running
+`marshalld` stale: the daemon is version-pinned to the OLD bundle copy while the
+fresh cache now carries a newer one. After a `success` sync (and the executor
+regen above), run the meta-project-only reconcile so an **idle** stale daemon is
+upgraded to the verified pin and a **busy** one is left running with the deferral
+recorded:
+
+```bash
+python3 .claude/skills/sync-plugin-cache/scripts/reconcile_daemon.py
+```
+
+The script queries `manage-build-server status` and applies the idle-conditional
+contract: idle-and-stale → `upgrade` (drain-then-start-verified); busy-and-stale
+(anything in flight or queued) or an undeterminable running provenance →
+**defer** (never drain a live build), leaving a readable `reconcile-owed` marker;
+down-but-enrolled → plain `start`; already-current → no-op. An absent/disabled
+build server (or a session without the executor) is a **silent no-op** via the
+script's fail-open adapters, so this changes no shared-daemon behaviour and a
+repository not using marshalld is unaffected.
+
+Like the executor regen, the reconcile is **non-fatal**: it never blocks finalize.
+Read its `action` / `display_detail` from the TOON and surface a one-line detail;
+a `defer` is reported (the `reconcile-owed` marker persists it), never swallowed.
+When the sync `status` is `partial` or `error`, SKIP the reconcile — the cache is
+incomplete.
+
 ### 4. Mark step complete
 
 ```bash
@@ -154,7 +182,10 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage_status \
 On `status: success`, `{display_detail}` is
 `"{synced_count} bundles synced; on-main executor regenerated"` (append
 `" (regen failed — run /marshall-steward)"` instead when the Step 3 regen
-exited non-zero — the sync outcome is still `done`).
+exited non-zero — the sync outcome is still `done`). Append the reconcile's
+`display_detail` from Step 3b when it did anything other than a plain no-op (e.g.
+`"; daemon upgraded"` or `"; daemon reconcile deferred (owed x2)"`), so a
+deferral is visible at the step level and not only in the marker.
 On `status: partial` or `status: error`, surface the engine's
 `summary_message` field verbatim in `--display-detail` so the renderer
 shows the underlying failure for triage.
