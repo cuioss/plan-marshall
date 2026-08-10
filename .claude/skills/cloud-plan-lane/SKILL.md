@@ -812,4 +812,13 @@ A finding is recorded **per instance**, not bundled: three occurrences of one de
   moment of the claim.
 - **A skipped step is reported as skipped.** Silent omission is the failure mode this lane exists to
   prevent.
+- **A reachable operator may be consulted; a headless run decides for itself.** When a plan defers a
+  choice to the run — a STOP CONDITION that offers a re-scope, an ambiguous gate, an option the plan
+  does not settle — a run executing in a main session with a reachable operator MAY put the choice to
+  them via `AskUserQuestion` and act on the answer, recording both the question and the answer in the
+  report (a conversation event is not a committed artifact, so the report is its only durable trace).
+  A run with no reachable operator — a headless or scheduled run — takes the plan's stated autonomous
+  fallback instead. The same plan can therefore land differently depending on operator reachability,
+  and that is intended: escalation is an option the main session has and a headless run does not,
+  never an obligation that stalls an autonomous run.
 - **Never write outside the repository** — this lane has no business in `.plan/` or `~/.claude/`.
