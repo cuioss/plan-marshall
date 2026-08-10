@@ -873,8 +873,9 @@ A finding is recorded **per instance**, not bundled: three occurrences of one de
 - **A reachable operator may be asked; a headless run may not wait for one.** This lane is written for
   autonomous execution, but a run sometimes executes in an interactive main session with the operator
   reachable. When that is so **and** a plan offers a re-scope, or names a STOP CONDITION with an
-  autonomous fallback, the run **MAY** escalate the decision via `AskUserQuestion`. A **headless** run,
-  or a **dispatched leaf** that cannot reach the operator at all, takes the plan's stated autonomous
-  fallback. Escalation is a permitted option for the reachable case, **never** a requirement — so the
+  autonomous fallback, the run **MAY** escalate the decision via `AskUserQuestion`, recording both the
+  question and its answer in the report — a conversation event is not a committed artifact, so the report
+  is its only durable trace. A **headless** run, or a **dispatched leaf** that cannot reach the operator
+  at all, takes the plan's stated autonomous fallback. Escalation is a permitted option for the reachable case, **never** a requirement — so the
   headless path always remains a complete, unblocked outcome.
 - **Never write outside the repository** — this lane has no business in `.plan/` or `~/.claude/`.
