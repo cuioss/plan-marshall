@@ -17,10 +17,35 @@
 >
 > This block is part of the plan, not part of the template. It survives into every copy.
 
-# The audit machinery returns values that are not measurements
+# The dispatch record is emitted once per role, from a hand-written step, so re-fires vanish
 
 **Epic:** truthful-signals
 **Branch prefix:** fix
+
+> ⛔⛔ **OWNERSHIP CORRECTION — READ BEFORE SCOPING. THIS PLAN OWNS THE *EMITTER*, NOT THE *DETECTOR*.**
+>
+> An earlier scoping of this plan straddled a boundary the `code-intelligence-substrate` epic had
+> already drawn. That epic's `170-finalize-dispatch-evidence-is-missing.md` states the split in its own
+> Out of scope, naming this plan's half explicitly:
+>
+> > *"Changing the dispatch-line EMISSION. Excluded, and this is a settled ownership boundary: a sibling
+> > plan owns the emission fix (emitting from the single shared dispatch seam so re-fires cannot bypass
+> > it). This plan owns the detector and the task-artifact emitter. Shipping both against the emission
+> > would produce **two writers for one emitter**."*
+>
+> ⇒ **This plan is the sibling that boundary names.** It is narrowed accordingly:
+>
+> | Concern | Owner |
+> |---|---|
+> | **Emitting** the dispatch record — from the seam, per firing, surviving re-fires | ⭐ **THIS PLAN** |
+> | Making the audit able to fail; publishing evaluated-population size; distinguishing an instrumentation gap from a discipline violation | `code-intelligence-substrate/170-finalize-dispatch-evidence-is-missing.md` |
+> | Audit detectors structurally incapable of reporting what they claim (five failure modes) | `code-intelligence-substrate/290-auditor-detector-integrity.md` |
+> | A footprint read outside the window in which the footprint exists | `code-intelligence-substrate/250-footprint-read-outside-its-window.md` |
+> | A finalize step running and leaving no trace | `code-intelligence-substrate/180-finalize-dispatch-manifest-observability.md` |
+>
+> ⛔ **Do not implement any row but the first.** ⭐ **The detector half is not merely duplicated there —
+> it is better scoped there**, because it separates a *fabricated discipline violation against the step*
+> from an *instrumentation gap in the dispatcher*, a distinction this plan's earlier framing collapsed.
 
 ## Problem
 
@@ -108,58 +133,40 @@ their agreement as evidence.
    role**.
    ⭐ **Load-bearing — this is the only deliverable that closes the retry blindness by construction**
    rather than by adding more emission sites to forget.
-3. **D2 — Every check publishes the population it examined, and can say "could not look."**
-   *Done when:* no aspect can return a verdict without a denominator, and an unexaminable input yields
-   `indeterminate` rather than a zero.
-   ⛔ **A control assertion is REQUIRED**: the check must be **shown to report indeterminate on an
-   empty-population fixture**. Without it this is a vacuous guard in a new place — a counter this project
-   has already run to n≥5, **with one prior instance introduced by a fix for it**.
-   ⚠ **Distinguish an honest not-applicable from a silent skip.** One aspect legitimately skips steps on
-   a zero-input and *says so* — **keep it as the matched control**, or D2 will flag honest skips as
-   defects.
-   ⛔ **Both failure directions are live in one component:** one check emits a **false failure**, another
-   emits a **skip indistinguishable from a legitimate one**. A fix that only addresses *"the checks are
-   too quiet"* leaves the false-positive arm running.
-4. **D3 — Fix the post-merge footprint resolution ONCE.** Multiple aspects report `inconclusive` or scan
-   an **empty diff** because the retrospective runs **after** the merge and worktree removal — so the
-   commits are already in the main branch and the working diff is empty.
-   ⛔ **This is the NORMAL finalize order, not a race**, which means every post-merge retrospective has
-   reported a clean scan over an empty diff.
-   *Done when:* one shared resolver recovers the footprint from the merge or squash commit when the
-   worktree is gone, **and every affected aspect uses it**.
-   ⭐⭐ **At least four separate findings are one missing capability. Fix the resolver once; do not patch
-   the aspects individually.** The answer was one commit-listing call away in every case.
-   ⚠ **Also fix the collapse underneath it**: a diff helper that returns an empty list on a missing
-   binary, on a timeout, **and** on a non-zero exit means **a git failure and a genuinely empty diff are
-   the same value** — and the consumer reports a leak count with **no denominator at all**.
-5. **D4 — Reconcile the documented rule with the method that actually worked, and state the
-   corroboration limit.**
-   *Done when:* the working method is either promoted to the documented rule or D1's surface carries the
-   same information — ⛔ **never leave a documented rule that has never fired standing next to an
-   undocumented one that does** — **and** the audit explicitly records that its two ledgers share an
-   emitter, so their agreement is a consistency check and not a completeness one.
-6. **D5 — Tests, each verified to FAIL pre-fix.**
+3. **D2 — State the corroboration limit where the audit's consumers will meet it.**
+   *Done when:* the audit explicitly records that its two ledgers **share an emitter**, so their
+   agreement is a **consistency check and never a completeness one**.
+   ⭐ **This is the one detector-adjacent item this plan keeps, and deliberately**: it is a direct
+   consequence of the emission topology this plan owns, and no detector-side plan can state it without
+   knowing that topology. It is a **sentence about what the emitter guarantees**, not a change to any
+   check's logic.
+4. **D3 — Tests, each verified to FAIL pre-fix.**
    - (a) A re-fired step emits a dispatch record — **use the observed five-fire shape**.
    - (b) A step that emitted nothing at all now emits.
-   - (c) An empty-population corpus yields `indeterminate`, **not** `0`.
+   - (c) A role fired N times produces **N records, not one** — the per-firing assertion.
    - (d) D0's population is asserted non-empty and **the emission set equals the envelope set**.
    - (e) The token-mismatch rule fires on a footprint it should catch — **a counterfactual with a named
      result already exists**: a re-run against a true nine-file footprint still skipped, and the culprit
      set would have been two production files. That rules out "the footprint was genuinely tests-only."
    *Done when:* all five pass, each seen red first.
 
-⭐ **Split-guard verdict, recorded before hand-over:** six deliverables. The source spec, after absorbing
-a sibling and several drains, stood at **eleven against a raised cap of twelve** — with its own
-instruction that **overlapping deliverables COLLAPSE rather than concatenate**. That collapse is applied
-here: the absorbed read-order defect (the retrospective reading a metrics file written *after* it runs)
-is **not a separate deliverable but the explanation for why several checks had nothing to examine**, and
-it is folded into D2 and D3. ⭐⭐ **That merge is the point: a check whose population is empty because
-its source is not yet written is NOT the same bug as one empty by construction — and neither plan alone
-could tell them apart. Fixing the checks without fixing the read order would have "fixed" checks that
-were never broken.**
+⭐ **Split-guard verdict, recorded before hand-over:** **four deliverables, narrowed from six** by the
+ownership correction at the top of this plan. The source spec, after absorbing a sibling and several
+drains, stood at **eleven against a raised cap of twelve** — with its own instruction that **overlapping
+deliverables COLLAPSE rather than concatenate.** ⛔ **That instruction was under-applied: the collapse
+removed redundancy WITHIN this plan but never checked ACROSS epics**, which is how it came to straddle a
+boundary another epic had already declared. **The cross-epic check is what this narrowing applies.**
+⭐⭐ **The general lesson, worth more than the fix: a de-duplication pass scoped to one epic's corpus
+cannot see a duplicate in another epic's corpus.** Both halves looked internally clean.
 
 ## Out of scope
 
+- ⛔⛔ **EVERY DETECTOR-SIDE CHANGE.** Making the audit able to fail, publishing the evaluated-population
+  size, emitting `indeterminate` on an empty population, distinguishing an instrumentation gap from a
+  discipline violation, the five auditor failure modes, the post-merge footprint resolver, and the
+  finalize-step-leaves-no-trace defect. **All owned by the four `code-intelligence-substrate` plans named
+  in the ownership block above.** ⛔ **Shipping any of them here would produce two writers for one
+  emitter — the exact outcome that boundary was drawn to prevent.**
 - ⛔ **Reconciling the two ledgers as the primary remedy.** See the methodological finding. It proves only
   that the emitter is self-consistent.
 - **Widening the session identifier without fixing the leaf overwrite.** A single-valued field cannot

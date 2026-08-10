@@ -17,10 +17,28 @@
 >
 > This block is part of the plan, not part of the template. It survives into every copy.
 
-# `main_sha` records the worktree HEAD, and `config_hash` fires at every boundary
+# `config_hash` fires at every boundary and cannot fail usefully
 
 **Epic:** truthful-signals
 **Branch prefix:** fix
+
+> ⛔⛔ **OWNERSHIP CORRECTION — READ BEFORE SCOPING. THE `main_sha` HALF IS NOT THIS PLAN'S.**
+>
+> A plan in the `code-intelligence-substrate` epic —
+> `doc/plans/code-intelligence-substrate/310-main-sha-records-the-pinned-cwd.md` — **owns the
+> main-scoped-field defect in full**: the same field, the same resolver, the same fail-closed capture
+> assertion, the same population sweep. **It is the same defect, not an adjacent one.**
+>
+> ⛔ **And it is further along than this plan was.** It has **verified first-party at HEAD** that the
+> capture **already passes an explicit tree argument**, so the obvious remedy — *"resolve it against an
+> explicit main-checkout handle"* — **is ALREADY IMPLEMENTED and would be a NO-OP with a green test.**
+> The real defect sits one layer down, in the repository-root resolution helper.
+>
+> ⇒ **This plan is narrowed to the `config_hash` half, which that plan does not cover.** ⛔ **Do not
+> implement the sha half here.** Read that plan first; if it has landed, re-ground against it.
+>
+> ⭐ The sha half is retained below **as context only**, because it is what makes the `config_hash`
+> finding legible — both were captured in one snapshot.
 
 ## Problem
 
@@ -77,57 +95,49 @@ and would make the invariant's name a claim rather than a fact.
 
 ## Goal
 
-Every invariant that names a tree records that tree's sha or records `unknown`; no drift warning can be
-emitted from a value the capture could not establish; and a hash that fires every time is either fixed
-or renamed to what it actually measures.
+A drift signal that fires at every boundary is either fixed so it can discriminate, or renamed to what
+it actually measures — and in neither case is it silenced.
 
 ## Deliverables
 
-1. **D0 — GATE: confirm the capture mechanism by symbol, for both invariants, and derive the
-   population.** Mutates nothing.
-   *Done when:* the capture path for each invariant is read and reported, and **every invariant captured
-   in the handshake is classified by whether it resolves against an explicit handle or against the
-   current working directory.**
-   ⛔ **The proposed root cause — that the execute phase pins the working directory to the worktree, so a
-   capture resolving "main" via a cwd-relative HEAD resolves to the worktree branch head — was labelled a
-   HYPOTHESIS by the person who reported it.** ⚠ It fits the evidence (earlier phases run unpinned and
-   are correct; only the execute phase is wrong) but **fitting is not proving.**
-   ⭐ **The main-sha invariant is unlikely to be the only one.** ⭐ **And the cheapest first check is to
-   re-run the containing-ref query on the recorded commit** — it is still available and settles the
-   observation in one command.
-2. **D1 — Resolve the main sha against an explicit main-checkout handle**, never a cwd-relative HEAD.
-   *Done when:* the capture is handle-based and demonstrably correct from inside a worktree.
-   ⭐ **Load-bearing.** This is the same class as the standing rule *never judge a merge lock stale from a
-   worktree-scoped store* — **cite that precedent rather than re-deriving it.**
-3. **D2 — A capture-time assertion that fails closed.** The main sha **must** be an ancestor of the
-   remote main branch. A captured value that is not is a **capture bug**.
-   *Done when:* such a value is recorded as **`unknown`**, never as a confident wrong sha.
-   ⭐ This is clause-for-clause the fail-closed discipline this project already shipped into its code
-   standards — **apply the standard to the machinery that shipped it.**
-4. **D3 — Settle the config-hash stability before its warning is trusted OR suppressed.** Determine
-   whether the four drifts were real.
+1. **D0 — GATE: confirm the config-hash capture by symbol, and derive its inputs.** Mutates nothing.
+   *Done when:* the hash's computation is read and reported, and **every input it consumes is named**,
+   so a context-dependent input is identifiable rather than inferred.
+   ⚠ **Classify the capture by whether it resolves against an explicit handle or against the current
+   working directory** — the sibling sha defect (owned elsewhere, see the ownership block) turned on
+   exactly that distinction, and the same resolver may be in this path too.
+   ⛔ **If D0 finds the config hash shares the mis-resolving root helper that the sibling plan owns,
+   STOP and hand this to that plan** rather than fixing the resolver twice.
+2. **D1 — Settle the stability question before the warning is trusted OR suppressed.** Determine whether
+   the four observed drifts were real.
    *Done when:* **a determination is recorded.** If the hash is context-dependent, either make it
    context-independent **or rename the field to what it actually measures.**
-   ⛔ **A determination IS the deliverable. Do not suppress an unexplained signal.**
-5. **D4 — Reconcile the two sha fields.** If they can hold the same value, one is redundant or misnamed.
-   *Done when:* the decision is made **and the rejected option is recorded.**
-6. **D5 — Tests, each verified to FAIL pre-fix.**
-   - (a) A capture performed with the working directory pinned to a worktree records the **main
-     checkout's** sha.
-   - (b) A non-ancestor value yields **`unknown`**, not a warning.
-   - (c) The summarizer does **not** emit a drift warning for the observed boundary pair.
-   - (d) D0's population is asserted non-empty.
-   *Done when:* all four pass, each seen red first.
+   ⛔ **A determination IS the deliverable. Do not suppress an unexplained signal** — suppression and
+   absence are indistinguishable downstream, which is the defect this epic exists to remove.
+3. **D2 — Tests, each verified to FAIL pre-fix.**
+   - (a) The same configuration hashed from two different contexts produces the **same** value — or, if
+     D1 concludes the field is inherently context-scoped, the renamed field is asserted to mean that.
+   - (b) A genuine configuration change **still** produces a drift signal. ⛔ **The control that stops
+     this fix from silencing the invariant altogether.**
+   *Done when:* both pass, each seen red first.
 
-⭐ **Split-guard verdict, recorded before hand-over:** six deliverables, **at the threshold**. Split
-evaluated: **D3/D4 are the split point** — the config hash is a separate invariant sharing only the
-snapshot. **Kept together because D0's population sweep serves both** and would otherwise run twice.
-⛔ **If D0 shows the two invariants have different capture paths, SPLIT before implementation** — this
-rationale is recorded so the decision is not silently re-made.
+Three deliverables — **narrowed from six** by the ownership correction above.
+
+⭐ **Split-guard verdict, recorded before hand-over:** the original scoping carried six deliverables and
+recorded that **D3/D4 were the split point, because the config hash is a separate invariant sharing only
+the snapshot with the sha work.** ⛔ **That split has now been forced by the duplication finding rather
+than chosen** — the sha half is owned by another epic's plan, so what remains here is exactly the half
+the split guard already identified as separable. The earlier rationale is preserved so nobody re-merges
+them.
 
 ## Out of scope
 
-- ⛔ **Suppressing the config-hash warning.** See D3. Suppression and absence are indistinguishable
+- ⛔⛔ **THE ENTIRE `main_sha` HALF — resolver fix, capture-time ancestor assertion, the two-sha-field
+  reconciliation, and the population sweep of main-scoped captures.** Owned in full by
+  `doc/plans/code-intelligence-substrate/310-main-sha-records-the-pinned-cwd.md`. ⛔ **Implementing it
+  here would duplicate a plan that has already refuted the obvious remedy** — and would most likely ship
+  that refuted no-op, with a green test over an unfixed defect.
+- ⛔ **Suppressing the config-hash warning.** See D1. Suppression and absence are indistinguishable
   downstream, which is the defect this epic exists to remove.
 - **A second `.plan/` path-exemption defect found at the same site.** The dirty-path filter drops every
   path beginning with `.plan/` on the rationale that such writes are normal bookkeeping — **the identical
@@ -168,22 +178,21 @@ Every count above is a **lead** — re-derive it at the moment of the claim.
 
 ## Verification
 
-- ⛔ **D5(a) is the test that matters.** A capture taken from inside a worktree must record the main
-  checkout's sha. Every other test here can pass on a capture that is simply never exercised from a
-  worktree — which is how this shipped.
-- ⛔ **D2's fail-closed path must be exercised deliberately.** Feed a non-ancestor value and assert
-  `unknown`. A fail-closed branch never seen to fire is indistinguishable from one that cannot.
-- **D3's determination belongs in the report either way.** "The hash is context-dependent and here is
+- ⛔ **D2(b) is the control and the most important test here.** A genuine configuration change must
+  still produce a signal. Without it, "the hash no longer fires at every boundary" is satisfied by a
+  hash that never fires at all — which is the same defect with the sign flipped.
+- **D1's determination belongs in the report either way.** "The hash is context-dependent and here is
   why" and "the drifts were real and here is what changed" are both successful outcomes. **Silence is
   not.**
-- **D0 must report the classified population, not just the two known invariants.** The whole reason for
-  the sweep is that the named instance is unlikely to be alone.
+- ⛔ **D0's hand-off condition must be checked explicitly.** If the config hash resolves through the
+  same root helper the sibling plan is fixing, **say so and stop** — two plans fixing one resolver in
+  parallel is exactly the collision this review exists to remove.
 - Python and test changes are expected, so the build gate takes its full path.
 
 ## Notes
 
-- ⛔ **Sequencing: serialize against anything else reading or writing the plan status document.** At
-  least two sibling plans in this epic do.
+- ⛔ **Sequencing: serialize against anything else reading or writing the plan status document**, and
+  ⛔ **against the sibling epic's main-scoped-field plan**, which may touch the same capture site.
 - ⛔ **Do not go looking for the orchestrator spec, the phase-handshake snapshot, the work log, or any
   landing record.** They live under `.plan/`, which is git-ignored and absent from this clone. The one
   piece of evidence that **is** reachable — the containing-ref query on the recorded commit — is named

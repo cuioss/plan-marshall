@@ -135,6 +135,13 @@ in practice, say so and ship the CI half first.
 - **Redesigning the self-review detector set.** D3 fixes the phase; D4 scopes the step. **Making the
   detectors smarter is deferred until a clean verdict means something** — otherwise the improvement
   cannot be measured.
+- ⛔ **The self-review SURFACING layer.** Owned by
+  `doc/plans/code-intelligence-substrate/100-self-review-surfacing-integrity.md`: a detector reading a
+  narrower file set than its own sibling, registry entries counted as examined by nothing, and a scoped
+  round making whole-surface claims. ⭐ **Adjacent but genuinely disjoint** — that plan owns *which files
+  and detectors get surfaced*; this one owns *when the findings query runs and what the step costs*.
+  ⛔ **Do not run them concurrently** (same step, same bundle), and ⭐ **prefer this plan FIRST**: while
+  the query runs against the wrong phase, that plan's coverage improvements cannot be measured.
 - **Consumer-facing changes from D1.** The era-stamp step is meta-project-only. Do not generalise its
   fix into shared surface on the strength of a meta-project measurement.
 
