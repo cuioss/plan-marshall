@@ -188,6 +188,29 @@ def test_well_marked_shim_is_suppressed(tmp_path):
     assert_analyzer_findings(analyze, tmp_path, [])
 
 
+def test_marker_directly_above_long_def_covers_full_body(tmp_path):
+    """A marker block sitting directly above a def covers the WHOLE function.
+
+    Regression for the cover-window gap: a conforming marker block is 4 lines, so
+    the def lands 4 lines below the anchor. If the gap were < 4 the def would be
+    missed, coverage would fall back to a fixed +N window, and an indicator deep
+    in a long function body (past that window) would be a FALSE shim_unmarked.
+    """
+    filler = '\n'.join(f'    v{i} = {i}' for i in range(70))
+    body = (
+        '# SHIM(A): migrate the retired shape and delete it\n'
+        '# shim-owner: fixture-skill\n'
+        '# shim-floor: the change that added the new shape\n'
+        '# shim-remove-when: no old-shape data remains\n'
+        'def migrate(data):\n'
+        f'{filler}\n'
+        '    # one-shot and self-disarming once the old key is gone\n'
+        '    return data\n'
+    )
+    _write_script(tmp_path, body)
+    assert_analyzer_findings(analyze, tmp_path, [])
+
+
 def test_marker_above_module_constant_suppresses_leading_comment(tmp_path):
     """A module-level marker covers the comment block that describes the shim."""
     body = (

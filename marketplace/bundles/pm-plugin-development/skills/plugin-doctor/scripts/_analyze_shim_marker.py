@@ -160,8 +160,13 @@ _INDICATORS: tuple[re.Pattern, ...] = (
 _MODULE_COVER_DOWN = 60
 _MODULE_COVER_UP = 20
 # Gap within which a marker anchor is treated as sitting "immediately above" a
-# ``def``, so it covers that whole function span.
-_ABOVE_DEF_GAP = 3
+# ``def``, so it covers that whole function span. A conforming marker block is
+# 4 lines (the anchor plus three field lines), so a marker placed directly above
+# a ``def`` puts that ``def`` 4 lines below the anchor; the gap must therefore be
+# at least 4 (5 allows one blank line between the block and the ``def``).
+# Otherwise the ``def`` is missed and coverage falls back to a fixed window,
+# which can leave an indicator deep in a long function body uncovered.
+_ABOVE_DEF_GAP = 5
 
 
 # ---------------------------------------------------------------------------
