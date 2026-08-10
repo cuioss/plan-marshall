@@ -627,7 +627,9 @@ the orchestrator collects the landing from the PR itself, not from a SHA embedde
 
 **Record nothing outside your own plan directory.** There is no status file, no ledger, no shared
 table — the tree itself is the state, and the orchestrator records the landing at collect by reading
-your report. Write to `doc/plans/{epic}/{plan-name}/` and nowhere else under `doc/plans/`.
+your report. Write your status and records to `doc/plans/{epic}/{plan-name}/` and nowhere else under
+`doc/plans/`; a **declared-deliverable** edit to a shared lane doc is permitted — that is a
+deliverable, not a record (§ Step 9 Bridge row).
 
 **Your report is the channel back.** It must state the PR number and the outcome per deliverable —
 including a run that ended **blocked or partial**, and why. (The merge commit is read from the PR
