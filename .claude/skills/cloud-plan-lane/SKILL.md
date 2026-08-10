@@ -35,12 +35,41 @@ records the carve-out. Specifically, within this lane:
 | Temp files under `.plan/temp/` | **Superseded** — scratch goes in the system temp dir (`$TMPDIR`), never in the repository and never in `.plan/` |
 | Structured queries before Glob/Grep | **Not applicable** — `architecture` needs the executor; use Glob/Grep/Read |
 | Findings via `manage-findings` + `ext-triage-*` | **Superseded** — findings go in the run report (§ Report) |
-| Plugin Cache Sync after editing `marketplace/bundles/` | **Not applicable** — `/sync-plugin-cache` reads the git-ignored `target/` and writes `~/.claude/`, neither of which this lane has or may touch. Record in the report that the plan's bundle edits are unsynced, so whoever picks the work up locally knows a sync is owed |
+| Plugin Cache Sync after editing `marketplace/bundles/` | **Not applicable — and not owed.** `/sync-plugin-cache` is a machine-local build step: it reads the git-ignored `target/` and writes `~/.claude/`, neither of which this lane has or may touch. A cloud run **neither performs nor owes** a sync — the merged bundle source is authoritative, and refreshing a local cache is a local-developer concern, not a debt this run tracks or records |
 | No shell file operations | **Binds, with one clarification** — `git mv` and `mkdir -p` are permitted for Step 2's directory work; the rule's target is reading and searching file content, which still goes through Read/Glob/Grep |
 
 Every other rule in `CLAUDE.md` still binds — in particular the documentation standards and the
 one-command-per-Bash-call discipline. The closed branch-prefix set binds for branches this run
 creates; a cloud session's pre-assigned `claude/*` branch is kept as-is (§ Step 2).
+
+## Cloud session affordances
+
+The cloud session this lane runs in is **not** the local machine the plan-marshall lifecycle assumes:
+it clones fresh and reaches GitHub only through the MCP server. These facts are stated **once, here**,
+so the steps below rely on them instead of each run re-deriving them.
+
+| Affordance | In a cloud session |
+|---|---|
+| **GitHub access** | The **GitHub MCP server** only. There is **no `gh` CLI**, and Bash cannot reach `api.github.com` (egress-blocked — direct calls return `403`). Every `gh` spelling in this contract has an MCP equivalent (mapping below). |
+| **Self-wake / polling** | `send_later` and `subscribe_pr_activity` may be **approval-gated** ("requires approval"), and Bash cannot poll GitHub. A run therefore **cannot** reliably block-until-green and re-check inside the session — Step 8's arm-and-hand-off completion exists for exactly this. |
+| **Ruleset-config API** | **Not reachable** — the MCP server exposes no branch-protection / ruleset tool, and direct API access is `403`. Read required-ness from `mergeStateStatus` (GitHub applying the ruleset for you), never from a ruleset-config call — § Step 8 condition 1. |
+| **Auto-merge arming** | On this merge-queue repo, arming auto-merge while the required checks are green **queues the PR at once** and locks the branch — § Step 8's one-way-door rule. |
+| **Local build** | The build gate triggers on `*.py` only; the merge queue's `merge_group` run verifies docs-only changes before they land — § Step 5. |
+| **Plugin cache** | `/sync-plugin-cache` is a machine-local step a cloud run never performs or owes — § Scope and precedence. |
+
+**`gh` ↔ GitHub MCP mapping.** This contract writes commands in `gh` form for a precise, quotable
+spelling; in a cloud session use the MCP equivalent. Match by **function**, not by a transcribed name —
+the exact MCP tool names vary by server build, so resolve the current names by listing the server's
+pull-request tools and matching what they do:
+
+| `gh` form | GitHub MCP equivalent (observed name — verify against the live tool list) |
+|---|---|
+| `gh pr create --fill` / `--label L` | `create_pull_request`; apply the label with the issue-label call *after* create |
+| `gh pr merge {N} --squash --auto` | `enable_pr_auto_merge` with `mergeMethod: SQUASH` (`disable_pr_auto_merge` disarms but does **not** dequeue — § Step 8) |
+| `gh pr checks {N}` | `pull_request_read` with `method: get_status` and `get_check_runs` |
+| `gh pr view {N} --json mergeStateStatus,mergeable,state,mergedAt,mergeCommit` | `pull_request_read` with `method: get` |
+| `gh pr view {N} --comments` | `pull_request_read` for the conversation / issue-comment surface |
+| `gh api repos/{owner}/{repo}/pulls/{N}/comments --paginate` | `pull_request_read` for the **inline review-thread** surface (the one the conversation view omits — § Step 7) |
 
 ## Step 1 — Load the core skills
 
@@ -261,8 +290,8 @@ unverified work to the remote.
 
 ### Gate before committing
 
-When a commit touches any `*.py`, `.claude/skills/**`, or `marketplace/bundles/**` — the **same**
-predicate Step 5 uses to decide whether to build — run the quality gate first:
+When a commit touches any `*.py` — the **same** predicate Step 5 uses to decide whether to build —
+run the quality gate first:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "quality-gate"
@@ -275,8 +304,11 @@ runs the same gate directly:
 ./pw quality-gate
 ```
 
-**Open the `log_file` it names and confirm `total_issues: 0`.** The wrapper exits 0 on failure, so
-the exit code proves nothing; only the log does. Commit when the log is clean, then push.
+**Open the `log_file` it names and confirm `total_issues: 0` and an empty `errors[]`.** The wrapper
+exits 0 on failure, so the exit code proves nothing; only the log does — and `status` with
+`total_issues` alone is one field short of the repository-wide rule, which names `errors[]` too (a
+build can report a green status and zero issues while `errors[]` is non-empty). Commit when the log is
+clean on all three, then push.
 
 Two points in the run need **no** gate, because neither changes source: Step 2's initial push of an
 empty branch, and Step 3's plan-directory move (a `git mv`, no content change).
@@ -355,15 +387,15 @@ Two gates, because the quality gate and the test suite have **different** trigge
 | Changed | Run |
 |---|---|
 | Any `*.py` | `./pw verify` (quality gate **and** tests) |
-| No `*.py`, but any `.claude/skills/**` or `marketplace/bundles/**` | `./pw quality-gate` |
-| Neither | Nothing — record "no buildable footprint, build skipped" |
+| No `*.py` | Nothing locally — record "no buildable footprint, build skipped" |
 
-> **Why the second row exists.** `quality-gate` runs plugin-doctor across the whole tree, and
-> plugin-doctor lints **markdown** — `SKILL.md` frontmatter, workflow docs, relative links — under
-> both `marketplace/bundles/*/skills/` and `.claude/skills/`. A markdown-only change therefore can
-> and does fail the build. A gate keyed on `*.py` alone would skip the build and open a red PR. This
-> is not hypothetical: it is how this contract's own first PR went red, on a missing `mode:` field
-> in this very file.
+> **Why the gate is `*.py`-only.** For this project the local build gate builds on buildable source —
+> `*.py` — and nothing else. A docs-, skill-, or bundle-only change is **not** built locally, and not
+> because it cannot be linted (plugin-doctor does lint `SKILL.md` frontmatter, workflow docs, and
+> relative links) but because **the merge queue is the net.** `.github/workflows/python-verify.yml`
+> opts into `skip-on-docs-only`, and its own comment records that *a `merge_group` run … still
+> verif[ies]* — so a docs-only change is built by the queue before it lands, and the local gate does
+> not duplicate that. Keep the gate keyed on `*.py`; the queue covers the rest.
 
 Both commands run from the repository root:
 
@@ -381,9 +413,9 @@ name to scope to one module, e.g. `./pw verify plan-marshall`.
 Give every `./pw` call a Bash timeout of at least **600000 ms (10 minutes)**.
 
 **Read the output, not the exit code.** The build wrapper can exit 0 on failure. Confirm the reported
-`status`, and open the `log_file` it names to confirm `total_issues: 0` — a green summary line is not
-the same as a clean log. Fix and re-run until it is genuinely clean; a build that is not clean blocks
-the PR.
+`status`, and open the `log_file` it names to confirm `total_issues: 0` **and an empty `errors[]`** —
+the repository-wide rule names all three, and a green summary line is not the same as a clean log. Fix
+and re-run until it is genuinely clean; a build that is not clean blocks the PR.
 
 **This build can leave lockfile churn.** Under a session interpreter below the project's floor, `./pw`
 rewrites `uv.lock` as a side effect. Do not let it reach a commit: stage the deliverable paths
@@ -433,9 +465,10 @@ this reason: the lane's whole purpose is to run in an environment where the plan
 abstraction that rule protects does not exist. Everywhere else in the repository the rule stands.
 
 Commands below are written in `gh` form because it is the precise, quotable spelling; when running
-on MCP, use the equivalent call. Never assume a tool is present — check, and if neither path is
-available, stop at Step 7 and report the run **blocked**. Do not attempt to install tooling into the
-session, and do not treat an unreachable review surface as an empty one.
+on MCP, use the equivalent call — the `gh`↔MCP mapping is in § Cloud session affordances. Never assume
+a tool is present — check, and if neither path is available, stop at Step 7 and report the run
+**blocked**. Do not attempt to install tooling into the session, and do not treat an unreachable
+review surface as an empty one.
 
 ## Step 7 — Branch, PR, review-comment cycle
 
@@ -558,9 +591,11 @@ arming auto-merge — it is not a gate on the merge. Merge only when conditions 
    merely "all checks green." A repository's check set mixes two kinds of context: those the branch
    **ruleset requires** before a merge, and those that merely report — advisory bots, informational
    statuses, third-party badges. **Required-ness is the ruleset's to define, never this document's**:
-   read it from the ruleset, never from the shape of whatever check set came back, and **name no
-   individual check here** — a check named ignorable in this contract would be wrong the moment the
-   ruleset changed.
+   read it from GitHub's own computation over the ruleset (`mergeStateStatus`, below), never from the
+   shape of whatever check set came back, and **name no individual check here** — a check named
+   ignorable in this contract would be wrong the moment the ruleset changed. **The ruleset-config API
+   itself is not reachable on the cloud MCP path** (§ Cloud session affordances), so "read it from the
+   ruleset" means read `mergeStateStatus` — never a ruleset-config API call, which returns `403` here.
 
    Read required-ness from GitHub's own computation over the ruleset — the actual state now, not an
    assumption that time has passed — through whichever surface this run's GitHub access path exposes:
@@ -584,6 +619,15 @@ arming auto-merge — it is not a gate on the merge. Merge only when conditions 
    - A **non-required** context that is pending, failed, or absent **does not block** the merge but
      **is disclosed** to the operator — the same disclose-not-block treatment condition 4 gives a
      review-coverage shortfall. State it in words before arming auto-merge; never hold the merge for it.
+
+   When `mergeStateStatus` is `BLOCKED`, derive **which** context blocks from (required contexts ∩
+   non-green contexts) — never from whichever pending status is loudest. A visible, non-required
+   pending status (a prominent bot comment, an informational badge) is not the blocker just because it
+   is salient; the blocker is the unsatisfied **required** context, which may be quietly `in_progress`
+   or absent from the head. A run once disclosed a non-required pending check as "the blocker" while
+   the actually-required check was still running — the operator disclosure named the wrong cause.
+   Derive the blocker from the intersection, and never promote a non-required pending status to "the
+   blocker" in an operator disclosure.
 
 2. **Every PR comment is handled** — fixed or answered on the thread. No open, unaddressed comment.
 
@@ -647,6 +691,18 @@ gh pr view {N} --json state,mergedAt,mergeCommit
 
 Only `state: MERGED` with a real `mergedAt` is a landing.
 
+**When the session cannot self-confirm the landing, arm-and-hand-off is a completed run — not a partial
+one.** Confirming `state: MERGED` assumes the run can wait for the queue to land the PR and re-check. A
+cloud session often cannot: the self-wake tools (`send_later`, `subscribe_pr_activity`) may be
+approval-gated and Bash cannot poll GitHub (§ Cloud session affordances), so there is no way to
+block-until-landed inside the session. When that is the case, the run has finished once it has (a) met
+conditions 1–3, (b) armed auto-merge, and (c) handed the `MERGED` confirmation to the orchestrator's
+collect step, which reads it from the PR merge event. Record the outcome as **completed with the
+landing delegated** — not `partial`, and not a failure. A run that armed a green PR into the queue and
+merely could not self-wake to watch it has done everything the lane asks; reading its own inability to
+watch the queue as a failed run is the mistake this paragraph prevents. (A run that *can* self-confirm
+still does — this is not licence to assert a merge that was never read back.)
+
 **Record the merge commit outside the in-PR report.** The squash merge SHA does not exist until the
 merge completes, so it cannot appear in a report that was committed before the merge (condition 3
 above). Read it from the PR merge event (`state,mergedAt,mergeCommit`) and report it to the operator;
@@ -686,7 +742,7 @@ that its artifact exists on disk:
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
 | 6 Verification sub-agent | Findings and dispositions in the report |
 | 7 PR cycle | PR exists; every comment dispositioned in the report |
-| 8 Merge gate | `state: MERGED` confirmed after arming; the merge commit recorded to the operator, not in the pre-merge report (§ Step 8) |
+| 8 Merge gate | Conditions 1–3 met and auto-merge armed. Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
 | 8 Bridge | No **status or bookkeeping** write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory was touched; a **declared-deliverable** edit to a shared lane doc (e.g. `cloud-bridge.md`, `README.md`, the plan template) is permitted — and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
 | 9 This check | Its result appended to the report |
 | 9 What have we learned | A contract-change proposal presented to the operator, or a recorded "none, because …" |
@@ -791,8 +847,9 @@ comparable is worse than none:
 
 ## Contract check (Step 9)
 Per-step verdict, and any step reported as not done. Which GitHub access path was used, and which
-branch form was used (harness-assigned or run-created).
-Whether the plan edited `marketplace/bundles/` and therefore owes a local `/sync-plugin-cache`.
+branch form was used (harness-assigned or run-created). A cloud run **never owes** a
+`/sync-plugin-cache` — it is a machine-local build step, not a debt a cloud run records (§ Scope and
+precedence).
 
 ## What have we learned (Step 9)
 The proposed contract change and its evidence from this run, and whether the operator accepted it —
@@ -812,4 +869,11 @@ A finding is recorded **per instance**, not bundled: three occurrences of one de
   moment of the claim.
 - **A skipped step is reported as skipped.** Silent omission is the failure mode this lane exists to
   prevent.
+- **A reachable operator may be asked; a headless run may not wait for one.** This lane is written for
+  autonomous execution, but a run sometimes executes in an interactive main session with the operator
+  reachable. When that is so **and** a plan offers a re-scope, or names a STOP CONDITION with an
+  autonomous fallback, the run **MAY** escalate the decision via `AskUserQuestion`. A **headless** run,
+  or a **dispatched leaf** that cannot reach the operator at all, takes the plan's stated autonomous
+  fallback. Escalation is a permitted option for the reachable case, **never** a requirement — so the
+  headless path always remains a complete, unblocked outcome.
 - **Never write outside the repository** — this lane has no business in `.plan/` or `~/.claude/`.
