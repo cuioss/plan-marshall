@@ -16,10 +16,109 @@ notation route was not relied on):
 
 ## Deliverables
 
-- **D0 — GATE: re-derive the inventory** — _in progress_
-- **D1 — shim-marker convention** — _pending D0_
-- **D2 — plugin-doctor rule flagging an unmarked shim** — _pending D0_
-- **D3 — retirement sweep over surviving category-B sites** — _pending D0_
+- **D0 — GATE: re-derive the inventory** — **DONE.** See "D0 inventory" below. STOP CONDITION fired.
+- **D1 — shim-marker convention** — _pending scope decision_
+- **D2 — plugin-doctor rule flagging an unmarked shim** — _pending scope decision_
+- **D3 — retirement sweep over surviving category-B sites** — _pending scope decision_
+
+## D0 inventory (GATE deliverable)
+
+### Derivation method (population-derived, first-party)
+
+Population = every Python script under `marketplace/bundles/*/skills/*/scripts/**/*.py` (the
+executable-tooling source tree — the enumerable inventory analog). Candidate sites were surfaced by
+content sweeps for version-boundary vocabulary (`legacy`, `back-?compat`, `backward(s)`, `migrat`,
+`pre-migration`, `old (format|shape|style|key|column|schema|on-disk)`, `older (version|orchestrator|
+plan|format)`, `written before`, `pre-dates`, `tolerate`), then **each candidate was read by symbol
+and classified against a precise discriminator** by four independent read-only sub-agents plus
+first-party reads of the two anchor files.
+
+**Discriminator.** A site is a **version shim** iff it reads persisted state/config/data and
+accommodates a shape an *earlier version of this tooling* once wrote and the current version no
+longer writes (tell: "written before X existed", "legacy key", "pre-migration", "older format",
+"retired key"). **Category A** migrates the old shape and deletes/pops it (self-disarming; a second
+run is a no-op). **Category B** tolerates the old shape on the read path permanently (never disarms).
+Explicitly **NOT** a shim: ordinary defensive handling of missing/malformed/absent data any version
+can produce (the `_read_status_created` negative), CLI-flag/env-var/API-signature call-site
+compatibility, module re-export aliases (governed by the existing `SIMPLICITY_BACKWARD_COMPAT_REEXPORT`
+rule), and tolerance of an *external* system's shape variance (GitHub login casing, LSP protocol
+variants).
+
+**Volume vs coverage (kept separate, per the plan's warning).** Files examined (population): 400+
+scripts swept for vocabulary; ~30 candidate sites read by symbol; **24 classified as version
+shims**, ~18 classified as NOT-a-shim. The 24 is the hit count, not the volume.
+
+### Result — 24 version-shim sites (5 category-A, 19 category-B)
+
+**Category A — one-shot, self-disarming (5):**
+
+| # | Site | Old shape retired |
+|---|------|-------------------|
+| A1 | `manage-config/scripts/_cmd_sync_defaults.py :: _migrate_retired_step_keys` (`RETIRED_STEP_KEY_RENAMES`) | renamed step ids a prior release emitted |
+| A2 | `manage-config/scripts/_cmd_sync_defaults.py :: _migrate_run_at_all_to_lane` | retired `run_at_all` gate value → `lane` |
+| A3 | `marshall-steward/scripts/upgrade.py :: migrate_bot_lists` | retired `enabled_bots` → `required_bots`/`optional_bots` (the sibling auto-map; per plan Notes, not a defect) |
+| A4 | `marshall-steward/scripts/gitignore_setup.py :: consolidate_managed_blocks` | pre-PR#666 multi-block `.gitignore` → single block |
+| A5 | `manage-providers/scripts/_providers_core.py :: _migrate_credentials_home_if_needed` | pre-home-root `~/.plan-marshall-credentials` dir → home-root path |
+
+**Category B — permanent tolerate/detect read path (19):**
+
+| # | Site | Old shape tolerated |
+|---|------|---------------------|
+| B1 | `manage-status/scripts/_cmd_mark_step.py :: cmd_mark_step_done` (`legacy_string_entry`) | pre-dict bare-string step storage (`--force` migrates) |
+| B2 | `manage-status/scripts/_cmd_assert_step_recorded.py :: cmd_assert_step_recorded` | pre-migration `default:`-prefixed step key |
+| B3 | `manage-config/scripts/_cmd_sync_defaults.py :: _deep_merge_missing` | legacy `{}` vs new `None` ownerless-step value ⚠ borderline |
+| B4 | `marshall-steward/scripts/determine_mode.py :: _extract_step_ids` | legacy list-of-id-strings `steps` shape |
+| B5 | `marshall-steward/scripts/gitignore_setup.py :: _MANAGED_RULE_LINES` | retained legacy managed-rule recognition |
+| B6 | `marshall-steward/scripts/gitignore_setup.py :: check_gitignore_status_from_content` | older `.plan/` / `.plan` rule format |
+| B7 | `plan-retrospective/scripts/analyze-logs.py :: resolve_footprint` | legacy `references.modified_files` (pre-ledger-removal) |
+| B8 | `plan-retrospective/scripts/analyze-logs.py :: _parse_dispatch_boundary_file` | legacy 5-column dispatch rows (pre-context-load widening) |
+| B9 | `plan-retrospective/scripts/check-artifact-consistency.py :: _resolve_footprint` | legacy `references.modified_files` (pre-ledger-removal) |
+| B10 | `plan-retrospective/scripts/check-manifest-consistency.py :: run` | pre-manifest archived plans (no `execution.toon`) |
+| B11 | `manage-run-config/scripts/_cmd_cleanup.py :: get_retention_settings` | marshal.json written before a retention key existed (in-memory backfill) |
+| B12 | `plan-marshall/scripts/_invariants.py :: _capture_references_valid` | `references.json` predating the retired key ⚠ soft |
+| B13 | `plan-marshall/scripts/_invariants.py :: phase_steps_complete` | bare-string step entry (detect-and-reject variant) |
+| B14 | `manage-locks/scripts/build_queue.py :: _prune_dead_active` | queue entry lacking `project_root` |
+| B15 | `manage-locks/scripts/build_queue.py :: validate_lock_queue` | queue entry lacking `active_since` |
+| B16 | `script-shared/scripts/argparse_surface.py :: _node_from_dict` | pre-v4 surface cache lacking `flag_arity` |
+| B17 | `workflow-permission-web/scripts/permission_web.py :: _extract_domain_names` | plain-string domain config (pre-enriched) ⚠ borderline |
+| B18 | `manage-providers/scripts/_cred_configure.py` (URL fallback) | `url` in credential file (pre-marshal.json relocation) |
+| B19 | `manage-providers/scripts/_providers_core.py` (URL fallback, 2nd read site) | `url` in credential file (same boundary as B18) |
+
+None of the 24 carries a structured owner + version-floor + removal-trigger marker today; the
+strongest existing anchors are prose-only ("pre-PR#666", "v4:", "written before this change shipped",
+"predates the change").
+
+### Survived / dropped / new vs the plan's 11-row lead table
+
+- **Survived (confirmed shims from the plan's leads):** `_cmd_mark_step.py` (B1), `_cmd_sync_defaults.py`
+  (A1/A2/B3), `_cmd_assert_step_recorded.py` (B2), `determine_mode.py` (B4), `gitignore_setup.py`
+  (A4/B5/B6), `upgrade.py` auto-map (A3). The `manage-providers` lead resolved to `_cred_configure.py`
+  + `_providers_core.py` (B18/B19 + A5) rather than only `_providers_core.py`.
+- **Dropped (lead was wrong / not a shim):** `manage-metrics.py :: _read_status_created` — **confirmed
+  defensive None-handling, not a shim** (both OBSERVED claims verified: the quoted "older orchestrator
+  versions" phrase is absent; the real docstring names "missing status.json, malformed JSON, missing
+  'created' key, non-string value → None"). Becomes D2's negative test case. `tools-permission-fix/
+  permission_fix.py` surfaced no version-shim site.
+- **New (not in the plan's leads):** B7–B10 (retrospective footprint/manifest readers), B11
+  (`_cmd_cleanup` retention backfill), B12–B13 (`_invariants`), B14–B15 (`build_queue`), B16
+  (`argparse_surface`), B17 (`permission_web`), A5 (`_providers_core` credentials-dir migration).
+
+### High-value NOT-A-SHIM negatives (for D2's false-positive boundary)
+
+`_read_status_created` (defensive None — the canonical negative); `manage-metrics cmd_generate`
+pop-of-computed-keys (self-disclaimed "not a compatibility shim"); `_stamp_value_scope` (version-
+flavoured honest default); WARN→WARNING and record-dispatch `unknown` (breaking *refusals* of the old
+shape); `determine_mode resolve_doc_file` agents.md (external case variance); `file_ops PLAN_BASE_DIR`
+(env-var knob); `_handshake_commands _coerce_path_list` (hand-edited comma string); `_config_core
+order_config_keys` (defensive preserve-unknown); `retro_sections`/manifest `warn→info` (feature toggle
+by artifact presence).
+
+### STOP CONDITION assessment
+
+Count 24 vs 11 (**> 2×**) and B-split 19 vs 6 (**~3×**) — **both STOP-CONDITION triggers fire.** Per
+the plan ("this deliverable may re-scope the plan … halt and report") the scope of D1/D3 is escalated
+to the operator rather than proceeding silently against the plan's framing. The finding *strengthens*
+the plan's thesis rather than refuting it.
 
 ## Build gate
 
