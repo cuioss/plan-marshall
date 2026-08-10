@@ -628,7 +628,7 @@ class TestVerdictStaleness:
         self, plan_context, monkeypatch
     ):
         # Staleness is REPORTED, never promoted to blocking.
-        monkeypatch.setattr(_orch, '_git_read', lambda argv: (self.STUB_HEAD, ''))
+        monkeypatch.setattr(_orch, '_git_read', lambda operation: (self.STUB_HEAD, ''))
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(
             plan_context,
@@ -649,7 +649,7 @@ class TestVerdictStaleness:
     def test_a_verdict_whose_sha_prefixes_head_is_not_stale(self, plan_context, monkeypatch):
         # The matched control: same code path, opposite verdict. Without it, a
         # ``stale`` that was hard-wired True would satisfy the test above.
-        monkeypatch.setattr(_orch, '_git_read', lambda argv: (self.STUB_HEAD, ''))
+        monkeypatch.setattr(_orch, '_git_read', lambda operation: (self.STUB_HEAD, ''))
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(
             plan_context,

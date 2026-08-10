@@ -123,7 +123,10 @@ _BACKTICKED_RE = re.compile(r'`([a-z][a-z-]*)`')
 #: `, `, ` and `). Matching the run rather than a surrounding phrase is what
 #: makes the concepts-document check population-derived: an enumeration written
 #: in ANY prose shape is found, so rewording the sentence around the list cannot
-#: silently retire the guard the way a phrase-pinned pattern would.
+#: silently retire the guard the way a phrase-pinned pattern would. The `\s*`
+#: around each separator admits a NEWLINE, which is load-bearing: the scan in
+#: `_verb_enumerations` runs over the joined document precisely so a list long
+#: enough to wrap is still read as one run.
 _VERB_RUN_RE = re.compile(r'`[a-z][a-z-]*`(?:\s*(?:/|,?\s*and|,)\s*`[a-z][a-z-]*`)+')
 
 #: How many routed verbs a run must carry before it counts as an ENUMERATION of
@@ -171,19 +174,43 @@ def _on_disk_workflow_docs() -> set[str]:
 
 
 def _verb_enumerations(lines: list[str], routed: set[str]) -> list[tuple[int, set[str]]]:
-    """Every line that ENUMERATES the verb set, paired with the verbs it lists.
+    """Every ENUMERATION of the verb set in the document, paired with its verbs.
 
     Derived from the routed population at call time rather than pinned to a
     phrase, and returning the run's FULL token set rather than its intersection
     with `routed`, so a bogus extra verb fails as loudly as a missing one.
+
+    ⚠ The scan is over the JOINED document, never line by line. A ten-verb list
+    is long enough to WRAP, and a per-line scan reads each fragment as its own
+    short run: both fall below `_ENUMERATION_MIN_VERBS`, the document reports as
+    carrying NO enumeration, and a stale wrapped list passes the agreement
+    assertion unseen. That is the exact failure the "any prose shape" claim at
+    `_VERB_RUN_RE` promises against, so the scan must be able to cross a line
+    break to keep the claim and the code saying the same thing. The reported
+    number is the line the run STARTS on.
     """
+    text = '\n'.join(lines)
     found: list[tuple[int, set[str]]] = []
-    for number, line in enumerate(lines, start=1):
-        for run in _VERB_RUN_RE.findall(line):
-            listed: set[str] = set(_BACKTICKED_RE.findall(run))
-            if len(listed & routed) >= _ENUMERATION_MIN_VERBS:
-                found.append((number, listed))
+    for match in _VERB_RUN_RE.finditer(text):
+        listed: set[str] = set(_BACKTICKED_RE.findall(match.group()))
+        if len(listed & routed) >= _ENUMERATION_MIN_VERBS:
+            found.append((text.count('\n', 0, match.start()) + 1, listed))
     return found
+
+
+def _wrap_enumeration(verbs: list[str], per_line: int) -> list[str]:
+    """Render `verbs` as ONE ` / `-joined enumeration wrapped every `per_line` tokens.
+
+    Each line but the last carries the trailing separator, which is what makes
+    the wrapped list a single run to `_VERB_RUN_RE` rather than several short
+    ones — the shape a real document produces when a long list reflows.
+    """
+    chunks = [verbs[start : start + per_line] for start in range(0, len(verbs), per_line)]
+    rendered = [' / '.join(f'`{verb}`' for verb in chunk) for chunk in chunks]
+    return [
+        f'  {text} /' if index < len(rendered) - 1 else f'  {text}'
+        for index, text in enumerate(rendered)
+    ]
 
 
 def _subparser_action(parser: argparse.ArgumentParser) -> Any:
@@ -375,6 +402,30 @@ class TestVerbEnumerationAgreement:
         # The negative half: the detector must ACCEPT a complete list, so the
         # positive half above cannot pass by the detector rejecting everything.
         assert [listed for _, listed in intact] == [routed]
+
+    def test_the_concepts_detector_catches_a_wrapped_omission(self):
+        # The multiline half of the control above, and the one a per-line scan
+        # fails. The seeded list is the same live nine-of-ten omission, but
+        # WRAPPED at two verbs per line — so every individual line sits below
+        # `_ENUMERATION_MIN_VERBS` and a line-at-a-time detector reports the
+        # document as carrying no enumeration at all, silently accepting the
+        # stale list. The per-line-insufficiency assertion below is what makes
+        # this a control rather than a restatement of the flat case: it proves
+        # the detection can only have come from crossing the line breaks.
+        routed = {verb for verb, _ in _routing_rows()}
+        dropped = sorted(routed)[0]
+        wrapped = _wrap_enumeration(sorted(routed - {dropped}), per_line=2)
+
+        found = _verb_enumerations(wrapped, routed)
+
+        assert len(wrapped) > 1, 'the control did not actually wrap'
+        assert all(
+            len(set(_BACKTICKED_RE.findall(line)) & routed) < _ENUMERATION_MIN_VERBS
+            for line in wrapped
+        ), f'a seeded line is detectable on its own, so the wrap proves nothing: {wrapped}'
+        assert len(found) == 1, f'a wrapped enumeration was not read as ONE enumeration: {found}'
+        assert found[0][1] == routed - {dropped}
+        assert found[0][1] != routed, f'a wrapped list omitting {dropped!r} was read as agreeing'
 
     def test_the_concepts_detector_does_not_flag_ordinary_prose(self):
         # Near-miss control: prose naming a verb or two is not an enumeration

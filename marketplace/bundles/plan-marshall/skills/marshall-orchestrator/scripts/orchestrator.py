@@ -901,14 +901,38 @@ def _read_spec(path: Path) -> tuple[str | None, str]:
 #: readiness report to ``indeterminate`` rather than stalling the verb outright.
 _GIT_READ_TIMEOUT_SECONDS = 30
 
+#: The CLOSED set of read-only git operations this script may run, each mapped to
+#: the exact argv it expands to. This table is the single authority: a caller
+#: names an OPERATION and never supplies git arguments, so the argv reaching
+#: :func:`subprocess.run` is always a constant selected from here rather than
+#: anything a caller composed. That is what keeps ``cleanup restart-check`` a
+#: pure readiness PROBE — an unrestricted argv seam would let a later caller
+#: route a mutating command through a verb whose entire contract is that it
+#: observes without writing, and no amount of care at the call sites would make
+#: that unreachable. Adding a read is a one-line addition here; adding a WRITE
+#: is a visible change to a table that says it holds only reads.
+_GIT_READ_OPERATIONS: dict[str, tuple[str, ...]] = {
+    'head-sha': ('rev-parse', 'HEAD'),
+    'worktree-status': ('status', '--porcelain'),
+}
 
-def _git_read(argv: list[str]) -> tuple[str | None, str]:
-    """Run one read-only git command, returning ``(stdout, error)``.
 
-    The single git seam in this script. ``(None, reason)`` is returned whenever
-    the command could not be observed — git unreachable, a timeout, or a non-zero
-    exit — and the reason names which. Callers translate that into an
-    *unobservable* outcome, never into a failing one.
+def _git_read(operation: str) -> tuple[str | None, str]:
+    """Run one read-only git operation BY NAME, returning ``(stdout, error)``.
+
+    The single git seam in this script. ``operation`` selects an entry of
+    :data:`_GIT_READ_OPERATIONS`; the argv is never caller-composed.
+    ``(None, reason)`` is returned whenever the command could not be observed —
+    git unreachable, a timeout, or a non-zero exit — and the reason names which.
+    Callers translate that into an *unobservable* outcome, never into a failing
+    one.
+
+    An operation absent from the table raises :class:`KeyError` rather than
+    degrading to unobservable. That is deliberate: an unknown operation is a
+    defect in THIS module, and reporting it as "git is not readable" would dress
+    a coding error up as an environmental one — the confident-signal-hides-a-
+    caveat shape this verb exists to remove. The table is closed and its only
+    callers are in this file, so no input can reach that branch.
 
     The timeout is what keeps "unobservable" reachable at all. Without it a hung
     git — a stale index lock, or a very large worktree — blocks forever, and
@@ -917,6 +941,7 @@ def _git_read(argv: list[str]) -> tuple[str | None, str]:
     ``indeterminate``. A hang is therefore mapped onto the existing unobservable
     path instead of being allowed to consume the caller.
     """
+    argv = _GIT_READ_OPERATIONS[operation]
     try:
         completed = subprocess.run(
             ['git', *argv], capture_output=True, text=True, check=False, timeout=_GIT_READ_TIMEOUT_SECONDS
@@ -938,7 +963,7 @@ def _current_head_sha() -> str:
     empty ``head_sha``, so a caller can tell "not stale" from "staleness was not
     computable" instead of reading an unqualified boolean.
     """
-    output, _ = _git_read(['rev-parse', 'HEAD'])
+    output, _ = _git_read('head-sha')
     return output or ''
 
 
@@ -1540,11 +1565,20 @@ def _validate_set_verdict_args(args: argparse.Namespace) -> dict[str, Any] | Non
     # and a re-stamp replacing only ``verdict_line`` would leave that fragment
     # behind — so the idempotent replace stops being idempotent. ``checked_at``
     # needs no check: ``_CHECKED_AT_RE`` already admits hex only.
-    if any('\n' in value or '\r' in value for value in (args.by, args.evidence)):
+    #
+    # The guard is phrased as ``value.splitlines() != [value]`` so it asks the
+    # SAME question the reader asks. ``cmd_corpus_verdicts`` splits the spec with
+    # ``str.splitlines``, which breaks on considerably more than CR/LF — ``\v``,
+    # ``\f``, ``\x1c``-``\x1e``, ``\x85``, ``\u2028``, ``\u2029``. Enumerating a
+    # subset of those here would admit the rest past a guard whose whole purpose
+    # is to keep the value on ONE of the reader's lines, so the guard defers to
+    # the same splitter rather than maintaining a second, narrower list of what
+    # counts as a break.
+    if any(value.splitlines() != [value] for value in (args.by, args.evidence)):
         return _error(
             args.slug,
             'wrong_parameters',
-            '--by and --evidence must not contain a line break: the verdict is one line',
+            '--by and --evidence must not contain a line separator: the verdict is one line',
         )
     return None
 
@@ -1747,10 +1781,10 @@ def _inbox_signal(slug: str) -> dict[str, Any]:
 def _worktree_signal() -> dict[str, Any]:
     """Repository HEAD plus worktree cleanliness — one signal, since the sha
     without the cleanliness is not an observation a restart decision can use."""
-    head, head_error = _git_read(['rev-parse', 'HEAD'])
+    head, head_error = _git_read('head-sha')
     if head is None:
         return _signal('worktree', READINESS_INDETERMINATE, head_error, 'git: not readable')
-    porcelain, porcelain_error = _git_read(['status', '--porcelain'])
+    porcelain, porcelain_error = _git_read('worktree-status')
     if porcelain is None:
         return _signal(
             'worktree', READINESS_INDETERMINATE, porcelain_error, 'git: not readable'
