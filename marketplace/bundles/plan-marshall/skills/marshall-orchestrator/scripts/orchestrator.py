@@ -3,8 +3,8 @@
 """Thin scaffolding script for the marshall-orchestrator skill.
 
 Deliberately lean, per the orchestrator's lean posture: everything that
-requires judgement stays LLM-workflow; this script owns five deterministic
-operations against the main-anchored orchestrator store
+requires judgement stays LLM-workflow; this script owns seven deterministic
+operation groups against the main-anchored orchestrator store
 (``.plan/local/orchestrator/{slug}/``, resolved via
 ``file_ops.get_store_dir('orchestrator', slug)``):
 
@@ -17,10 +17,30 @@ operations against the main-anchored orchestrator store
   critical section, so no unsynchronised whole-array rewrite remains.
 - ``resume-summary --slug S`` — generate the "START HERE" block from
   ``status.json`` (the machine authority) for the LLM to paste into
-  ``epic.md`` between the generated-block markers.
+  ``epic.md`` between the generated-block markers. Two detectors run on the
+  RENDERED block and ride the same payload: ``count_divergences[]`` (a claimed
+  count that does not match its derivation) and ``contradictions[]`` (two
+  mutually-exclusive claims inside one rendering). Both report and neither
+  rewrites.
 - ``archive --slug S`` — relocate a *closed* epic tree to
   ``.plan/local/archived-orchestrators/{slug}/`` (a mechanical, post-close
   directory move that requires no judgement; refuses a non-closed epic).
+- ``corpus {enumerate,cross-check,verdicts,set-verdict}`` — the epic's staged
+  spec corpus: reconcile the ``status.json`` ``plans[]`` queue against the
+  ``plans/PLAN-*.md`` spec files in BOTH directions, cross-check those specs
+  against sibling epics and live plans for duplicate work (the arm a single
+  ledger structurally cannot perform, scored on ``manage-status
+  sibling-collision-check``'s two classes), and read/write the re-grounding
+  verdict field defined once in
+  ``persona-marshall-orchestrator/standards/orchestration-model.md``
+  § Re-Grounding Verdict Field. ``set-verdict`` is the group's single write
+  action and the ONLY code path that formats a ``verdict:`` line; ``verdicts``
+  is the only one that interprets one.
+- ``cleanup restart-check --slug S`` — the restart-readiness verdict: one row
+  per observed signal, each carrying its own three-valued verdict, its own
+  evidence, and the population it was derived from, plus the floor over the
+  participating rows and the sample instant. An unreadable or disagreeing
+  observation resolves to ``indeterminate`` and never to ``not_ready``.
 - ``inbox {write,validate,list,archive,detect}`` — the epic's plan-writable
   OUTBOX and its orchestrator-side drain: append one
   ``inbox/{sender_id}-{NNN}.md`` message, validate an existing message against
@@ -37,11 +57,21 @@ No implementation-side capability (no build/CI/source verbs) exists here.
 """
 
 import argparse
+import re
 import shutil
+import subprocess
+from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from _cmd_sibling_collision import (
+    _OVERLAP_JOIN,
+    _extract_paths,
+    _iter_active_plan_dirs,
+    _read_affected_files,
+    _read_request_source,
+)
 from _locks_core import rmw_json
 from _orchestrator_inbox import (
     INBOX_SUBDIR,
@@ -88,6 +118,231 @@ TERMINAL_PLAN_STATUSES = ('shipped', 'landed')
 # The result links a terminal row must carry, in the fixed order the gap marker
 # names them.
 TERMINAL_REQUIRED_FIELDS = ('pr', 'landing')
+
+# --- corpus group ----------------------------------------------------------
+
+# The epic subdirectory holding the staged plan specs, and the filename shape
+# the layout contract gives them (``plans/PLAN-NN-{plan_slug}.md``).
+PLANS_SUBDIR = 'plans'
+SPEC_GLOB = 'PLAN-*.md'
+
+# A row at this status is enumerated but carries ``excluded_reason`` so a caller
+# cannot re-scope it: re-scoping a spec mid-execution changes the brief under a
+# running plan (orchestration-model.md § Cleanup Contract, running-row exclusion).
+RUNNING_STATUS = 'running'
+
+# The re-grounding verdict field. The grammar is defined ONCE, in
+# ``persona-marshall-orchestrator/standards/orchestration-model.md``
+# § Re-Grounding Verdict Field; these constants are its only implementation.
+VERDICT_KEYS = ('verdict', 'checked_at', 'by', 'rescoped', 'evidence')
+VERDICT_VALUES = ('corroborated', 'contradicted', 'unverifiable')
+RESCOPED_VALUES = ('yes', 'no', 'n/a')
+VERDICT_SEPARATOR = ' | '
+# At most four splits, so ``evidence`` is the whole remainder of the line and a
+# ``' | '`` inside the evidence text survives intact.
+VERDICT_MAX_SPLITS = len(VERDICT_KEYS) - 1
+VERDICT_PREFIX = f'{VERDICT_KEYS[0]}:'
+# The verdict reported for a bullet that does not parse. Never a fourth member of
+# VERDICT_VALUES: it is a parse outcome, not a settlement. Named apart from the
+# readiness vocabulary's :data:`READINESS_INDETERMINATE` even though the two share
+# a spelling — they are independent vocabularies, and one binding for both would
+# let a change to either silently move the other.
+VERDICT_INDETERMINATE = 'indeterminate'
+BLOCKING_RESCOPED = 'no'
+CONTRADICTED = 'contradicted'
+NOT_APPLICABLE = 'n/a'
+
+# --- resume-summary self-validation ----------------------------------------
+
+#: The count claims a rendered START-HERE block can assert about the plan queue,
+#: each paired with the derivation it is checked against. ``row``/``plan`` are
+#: the whole population; the rest are per-status tallies read from ``plans[]``.
+COUNT_CLAIM_NOUNS = ('rows', 'plans', 'staged', 'shipped', 'running', 'parked', 'landed')
+
+#: The noun alternation, DERIVED from :data:`COUNT_CLAIM_NOUNS` so that tuple is the
+#: single source defining the population. A noun that is already plural (ends in
+#: ``s``) contributes an optional-``s`` form matching both numbers; every other noun
+#: is a status name that does not pluralise and contributes itself literally. The
+#: derivation rule reads the noun's own spelling, so it introduces no second list to
+#: keep in step. Deriving matters because :func:`_derive_counts` builds its keys from
+#: ``COUNT_CLAIM_NOUNS`` alone: a noun present in a hand-written alternation but absent
+#: from the tuple would make :func:`_count_divergences` raise ``KeyError`` at
+#: ``derived[key]``.
+_COUNT_CLAIM_ALTERNATION = '|'.join(
+    f'{noun[:-1]}s?' if noun.endswith('s') else noun for noun in COUNT_CLAIM_NOUNS
+)
+
+#: One count claim plus the short tail that follows it. The tail is captured in a
+#: LOOKAHEAD so a SCOPED claim can be recognised (see :data:`_SCOPED_CLAIM_RE`)
+#: without the scan consuming it: a consuming tail would advance the cursor past
+#: the next claim, so a sentence asserting two counts would only ever have its
+#: first one checked.
+_COUNT_CLAIM_RE = re.compile(
+    r'(?<![\w.])(?P<value>\d+)\s+(?P<noun>' + _COUNT_CLAIM_ALTERNATION + r')\b'
+    r'(?=(?P<tail>.{0,12}))',
+    re.IGNORECASE,
+)
+
+#: A qualifier immediately after a count claim scopes it to a SUB-population, so
+#: the claim is not comparable to the whole-epic derivation. This is the
+#: denominator trap: "12 rows in WS-01" is correctly different from the epic's
+#: 30 rows, and reporting that as a divergence is the false positive that would
+#: teach every reader to ignore the detector.
+#: The leading ``^\s*`` anchors at the start of the twelve-character tail
+#: :data:`_COUNT_CLAIM_RE` captured mid-line, NOT at the start of a document
+#: line, so it is a token separator and not an indentation rule — see the
+#: markdown-line-scanner block below for the regexes that do carry one.
+_SCOPED_CLAIM_RE = re.compile(r'^\s*(in|of|for|under|within|across|from)\b', re.IGNORECASE)
+
+#: A capacity claim of the recorded ``R = N of M`` shape. Two such claims over
+#: the SAME denominator that disagree on the numerator cannot both hold in one
+#: rendering, and each half is individually plausible — which is why the
+#: contradiction is only visible by reading the rendering as a whole.
+_RATIO_CLAIM_RE = re.compile(r'R\s*=\s*(?P<numerator>\d+)\s+of\s+(?P<denominator>\d+)', re.IGNORECASE)
+
+# --- cleanup group ---------------------------------------------------------
+
+#: The readiness vocabulary, ordered WORST-FIRST. The order IS the floor: the
+#: overall verdict is ``min`` over the participating signals under this order,
+#: so a single unobservable signal degrades the report to ``indeterminate`` and
+#: only a definite hazard reaches ``not_ready``. Keeping the two apart is the
+#: point — collapsing an unobservable signal into a failing one is the
+#: confident-signal defect this verb exists to remove.
+READINESS_ORDER = ('not_ready', 'indeterminate', 'ready')
+READY = 'ready'
+NOT_READY = 'not_ready'
+#: The readiness verdict for an arm whose surface could not be observed. Distinct
+#: from :data:`VERDICT_INDETERMINATE`, which is a re-grounding PARSE outcome — the
+#: two vocabularies coincide in spelling only, so each carries its own binding.
+READINESS_INDETERMINATE = 'indeterminate'
+
+#: The verdict an arm reports when the surface it would observe is owned by
+#: another component. It is deliberately NOT a member of
+#: :data:`READINESS_ORDER`: such an arm is neither ready nor not-ready, so it is
+#: excluded from the floor — a floor over an unowned surface would let another
+#: component's gap veto this one's verdict.
+NOT_AVAILABLE = 'not_available'
+
+#: The spec that owns the registry/executor parity surface. Named in the
+#: ``registry_parity`` arm's evidence so the report points at the owner rather
+#: than leaving a silent gap. This component observes that surface not at all.
+REGISTRY_PARITY_OWNER = 'PLAN-TRUTH-059'
+
+# --- markdown line scanners -------------------------------------------------
+#
+# The five regexes in this block are the module's COMPLETE set of markdown
+# construct models, and every line-wise scan in the file runs through one of
+# them against the mask :func:`_fenced_mask` builds. They are grouped here, each
+# stating which CommonMark clauses it honours and which it deliberately does
+# not, because three successive review rounds found the same defect class in a
+# different clause of the same scanners: a line matcher that reads correctly in
+# isolation while parsing a document the spec author does not see rendered.
+# The module's five OTHER regexes — :data:`SPEC_POINTER_RE`,
+# :data:`_CHECKED_AT_RE`, :data:`_COUNT_CLAIM_RE`, :data:`_SCOPED_CLAIM_RE` and
+# :data:`_RATIO_CLAIM_RE` — match tokens WITHIN a line and model no markdown
+# construct, so no block-indentation clause applies to any of them. (The
+# ``^\s*`` on :data:`_SCOPED_CLAIM_RE` anchors at the start of a twelve-character
+# tail captured mid-line, not at the start of a document line, so it is not an
+# indentation rule either.)
+#
+# Honoured by EVERY scanner in this block: CommonMark bounds block-level leading
+# indentation to 0-3 SPACES (spec sections 2.2, 4.2 and 4.5); a fourth column of
+# indentation starts an indented code block instead, so the construct is body
+# text. A tab counts as four columns under the tab-stop rule, so a tab-indented
+# delimiter or heading is never one. That is why the bound below is written over
+# the literal space character as ``{0,3}`` and never over ``\s``: ``\s`` would
+# readmit both the fourth space and the tab.
+#
+# NOT honoured by ANY scanner in this block, deliberately: container context.
+# The scan is line-wise and tracks no block structure, so a construct nested
+# inside a block quote or carried as list-item content is not recognised at its
+# container-relative column, and a setext heading (a ``===`` or ``---``
+# underline beneath a paragraph) does not terminate a section. Recognising
+# either requires a block parser, which this module does not carry; the
+# spec-authoring convention is column-0 ATX headings and top-level fences. The
+# failure direction is stated at each scanner it affects.
+
+#: The two section headings the corpus verbs ADDRESS, and the generic ATX
+#: heading that TERMINATES a section body.
+#:
+#: Honoured: the 0-3 space indent bound; the 1-6 character ``#`` run; the rule
+#: that the run must be followed by a space, a tab, or the end of the line — so
+#: ``#hashtag`` is not a heading, a seven-``#`` run is not one, and a bare
+#: ``##`` line IS one; and the optional trailing closing ``#`` sequence on the
+#: two addressed headings.
+#: NOT honoured: setext headings, per the block note above. A setext underline
+#: therefore fails to terminate a section, which OVER-extends the body rather
+#: than truncating it — the direction that admits extra paths and extra claims
+#: rather than silently dropping declared ones.
+CLAIM_LABELS_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Claim Labels(?:[ \t]+#+)?[ \t]*$')
+EXPECTED_SURFACE_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+Expected Surface(?:[ \t]+#+)?[ \t]*$')
+_HEADING_RE = re.compile(r'^ {0,3}#{1,6}(?:[ \t]|$)')
+
+#: A ``- `` list bullet, with its leading whitespace captured as ``indent``.
+#:
+#: NOT honoured, and this is the one DELIBERATE indentation deviation in the
+#: block: CommonMark's 0-3 space allowance for a top-level list item is not
+#: applied, because ``indent`` here is a NESTING PROXY rather than a block
+#: position. :func:`_parse_claims` reads an empty ``indent`` as "top-level
+#: claim" and any non-empty one as "child of the preceding claim", under the
+#: spec-authoring convention that a claim starts at column 0 and its
+#: ``verdict:`` bullet is indented beneath it. Admitting a 1-3 space indent as
+#: top-level would reclassify that two-space-indented ``verdict:`` child as a
+#: SECOND claim, shifting every later ``--claim-index`` — strictly worse than
+#: the deviation it would remove.
+#: ALSO not honoured: the ``*`` and ``+`` bullet markers and ordered list items
+#: (the convention is ``-``), empty list items (a ``-`` with no content carries
+#: no claim), and CommonMark's content-column rule for nesting depth. The
+#: marker must be followed by a space or a tab specifically, never by ``\s`` at
+#: large, so a ``---`` thematic break is not read as a bullet.
+_BULLET_RE = re.compile(r'^(?P<indent>[ \t]*)-[ \t]+(?P<text>.*)$')
+
+#: A fenced-code-block delimiter line: three-or-more backticks or tildes, with
+#: any info string. Group ``fence`` carries the WHOLE RUN — both the character
+#: and its length — because CommonMark closes a block only on a run of the same
+#: character that is AT LEAST AS LONG as the opener: a ``~~~`` line inside a
+#: backtick fence is body text, and so is a three-backtick line inside a
+#: four-backtick block. Group ``info`` carries whatever follows the run, because
+#: only the OPENING fence may carry an info string; a delimiter with one is body
+#: text, never a close.
+#:
+#: Honoured: the 0-3 space indent bound on BOTH the opening and the closing
+#: delimiter, independently of each other (a four-space-indented delimiter
+#: inside a block is body text, not a close — spec example 99); the tab
+#: exclusion that follows from the same clause; the same-character rule; the
+#: at-least-as-long rule; the no-info-string-on-a-close rule; the
+#: trailing-whitespace-only allowance on a close; and — enforced in
+#: :func:`_fenced_mask` rather than here, because it governs only an OPENING
+#: backtick fence — the rule that a backtick fence's info string may not itself
+#: contain a backtick.
+#: NOT honoured: container context, per the block note above. The opening
+#: fence's indentation is also not stripped from the body, because the mask is
+#: per-line and never reproduces block content.
+#:
+#: Every line-wise markdown scan below runs against the mask this builds,
+#: because a ``# comment`` inside a fence is not a heading and a ``- item``
+#: inside one is not a bullet. This mirrors the fence suppression the sibling
+#: detector in ``pm-plugin-development:ext-self-review-plan-marshall`` already
+#: applies for the same reason.
+_FENCE_DELIMITER_RE = re.compile(r'^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$')
+
+#: The backtick fence character, bound once so :func:`_fenced_mask` can name the
+#: info-string clause it enforces instead of repeating a bare literal twice.
+_BACKTICK = '`'
+
+# --- token matchers (no markdown construct modelled) ------------------------
+
+# The orchestrator spec pointer a launched plan's ``source_id`` carries, and the
+# shape a spec uses to name a sibling spec. Normalized to the root-agnostic key
+# ``{epic_slug}/plans/{spec_name}`` so the active and archived homes of the same
+# epic yield the same origin id. Deliberately NARROW: a lesson path or an
+# arbitrary repo file cited as background is NOT an origin pointer, which is what
+# keeps "two specs citing the same lesson" a silent near-miss rather than a match.
+SPEC_POINTER_RE = re.compile(
+    r'\.plan/local/(?:orchestrator|archived-orchestrators)/'
+    r'(?P<slug>[A-Za-z0-9_.\-]+)/plans/(?P<spec>PLAN-[A-Za-z0-9_.\-]+\.md)'
+)
+_CHECKED_AT_RE = re.compile(r'^[0-9a-f]{7,40}$')
 
 
 def _error(slug: str, error: str, message: str, **extra: Any) -> dict[str, Any]:
@@ -414,6 +669,86 @@ def _build_summary(status_doc: dict[str, Any], counts: InboxCounts) -> str:
     return '\n'.join(lines)
 
 
+def _derive_counts(status_doc: dict[str, Any]) -> dict[str, int]:
+    """Re-derive, from ``status.json``, every count a rendered block can claim."""
+    plans = [plan for plan in status_doc.get('plans', []) if isinstance(plan, dict)]
+    tally = Counter(str(plan.get('status', '')) for plan in plans)
+    derived = {'rows': len(plans), 'plans': len(plans)}
+    for noun in COUNT_CLAIM_NOUNS:
+        if noun not in derived:
+            derived[noun] = tally.get(noun, 0)
+    return derived
+
+
+def _claim_key(noun: str) -> str:
+    """Normalize a claim noun to its derivation key (``row``/``rows`` collapse)."""
+    lowered = noun.lower()
+    if lowered in ('row', 'rows'):
+        return 'rows'
+    if lowered in ('plan', 'plans'):
+        return 'plans'
+    return lowered
+
+
+def _count_divergences(summary: str, status_doc: dict[str, Any]) -> tuple[list[dict[str, Any]], int]:
+    """Compare every count the RENDERED block claims against its derivation.
+
+    Runs on the rendering rather than on the inputs, because in every recorded
+    divergence the inputs were individually fine and the rendering combined them
+    wrongly — a narrated anchor sentence and the generator's own enumeration
+    disagreeing inside one emission.
+
+    Returns ``(divergences, claims_scanned)`` so a zero divergence count always
+    rides with the population it was computed over.
+    """
+    derived = _derive_counts(status_doc)
+    divergences: list[dict[str, Any]] = []
+    scanned = 0
+    for match in _COUNT_CLAIM_RE.finditer(summary):
+        if _SCOPED_CLAIM_RE.match(match.group('tail')):
+            continue
+        scanned += 1
+        key = _claim_key(match.group('noun'))
+        narrated = int(match.group('value'))
+        if narrated != derived[key]:
+            divergences.append(
+                {
+                    'claim': f'{match.group("value")} {match.group("noun")}',
+                    'narrated': narrated,
+                    'derived': derived[key],
+                }
+            )
+    return divergences, scanned
+
+
+def _rendering_contradictions(summary: str) -> tuple[list[dict[str, Any]], int]:
+    """Detect mutually-exclusive claims INSIDE one rendering.
+
+    Two ``R = N of M`` claims sharing a denominator but disagreeing on the
+    numerator cannot both hold, yet each is individually plausible — so the
+    contradiction exists only in the rendering as a whole. Both claim sites are
+    named, in the order they appear.
+
+    Returns ``(contradictions, claims_scanned)``.
+    """
+    claims: list[tuple[int, int, str]] = [
+        (int(match.group('denominator')), int(match.group('numerator')), match.group(0).strip())
+        for match in _RATIO_CLAIM_RE.finditer(summary)
+    ]
+    contradictions: list[dict[str, Any]] = []
+    for index, (denominator, numerator, text) in enumerate(claims):
+        for other_denominator, other_numerator, other_text in claims[index + 1 :]:
+            if denominator == other_denominator and numerator != other_numerator:
+                contradictions.append(
+                    {
+                        'denominator': denominator,
+                        'left': text,
+                        'right': other_text,
+                    }
+                )
+    return contradictions, len(claims)
+
+
 def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
     """Generate the START-HERE block from status.json.
 
@@ -428,6 +763,14 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
     ``resume_anchor``. ``inbox_queued`` / ``inbox_archived`` / ``inbox_state``
     ride the payload as top-level fields so a caller can reconcile them against
     ``inbox list`` without parsing the markdown block.
+
+    Two detectors run on the RENDERED block and ride the same payload beside
+    ``summary``: ``count_divergences[]`` (a count the block claims that does not
+    match its derivation from ``status.json``) and ``contradictions[]`` (two
+    mutually-exclusive claims inside one rendering). Both REPORT and neither
+    mutates — the block is never silently rewritten, which preserves the
+    existing derivation-beside-the-prose rule. Each list rides with the
+    population it was computed over, so a zero states which zero it is.
     """
     invalid = _validate_slug(args.slug)
     if invalid:
@@ -438,6 +781,9 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
             args.slug, 'file_not_found', 'status.json not found in orchestrator store'
         )
     counts = inbox_counts(_epic_root(args.slug, allow_archived=True) / INBOX_SUBDIR)
+    summary = _build_summary(status_doc, counts)
+    divergences, count_claims_scanned = _count_divergences(summary, status_doc)
+    contradictions, ratio_claims_scanned = _rendering_contradictions(summary)
     return {
         'status': 'success',
         'operation': 'resume-summary',
@@ -446,7 +792,13 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
         'inbox_queued': counts.queued,
         'inbox_archived': counts.archived,
         'inbox_state': 'present' if counts.present else 'missing',
-        'summary': _build_summary(status_doc, counts),
+        'count_claims_scanned': count_claims_scanned,
+        'count_divergences_count': len(divergences),
+        'count_divergences': divergences,
+        'ratio_claims_scanned': ratio_claims_scanned,
+        'contradictions_count': len(contradictions),
+        'contradictions': contradictions,
+        'summary': summary,
     }
 
 
@@ -513,6 +865,995 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _spec_paths(root: Path) -> list[Path]:
+    """Enumerate the epic's staged spec files, sorted for determinism."""
+    plans_dir = root / PLANS_SUBDIR
+    if not plans_dir.is_dir():
+        return []
+    return sorted(path for path in plans_dir.glob(SPEC_GLOB) if path.is_file())
+
+
+def _spec_matches_row(path: Path, plan_id: str) -> bool:
+    """True when ``path`` is the spec file of the queue row ``plan_id``.
+
+    The layout contract names specs ``plans/PLAN-NN-{plan_slug}.md`` while the
+    row id is the bare ``PLAN-NN`` prefix, so the match is exact-or-prefix on the
+    stem WITH the separating hyphen. The hyphen is load-bearing: without it
+    ``PLAN-1`` would claim ``PLAN-10-foo.md``.
+    """
+    return path.stem == plan_id or path.stem.startswith(f'{plan_id}-')
+
+
+def _read_spec(path: Path) -> tuple[str | None, str]:
+    """Read one spec file, returning ``(text, error_code)``.
+
+    A file that cannot be read is REPORTED, never silently dropped — the same
+    report-never-skip rule ``inbox list`` applies. ``error_code`` is the empty
+    string on success.
+    """
+    try:
+        return path.read_text(encoding='utf-8'), ''
+    except (OSError, UnicodeDecodeError):
+        return None, 'unreadable'
+
+
+#: Wall-clock budget for a single read-only git call. A hung git degrades the
+#: readiness report to ``indeterminate`` rather than stalling the verb outright.
+_GIT_READ_TIMEOUT_SECONDS = 30
+
+#: The CLOSED set of read-only git operations this script may run, each mapped to
+#: the exact argv it expands to. This table is the single authority: a caller
+#: names an OPERATION and never supplies git arguments, so the argv reaching
+#: :func:`subprocess.run` is always a constant selected from here rather than
+#: anything a caller composed. That is what keeps ``cleanup restart-check`` a
+#: pure readiness PROBE — an unrestricted argv seam would let a later caller
+#: route a mutating command through a verb whose entire contract is that it
+#: observes without writing, and no amount of care at the call sites would make
+#: that unreachable. Adding a read is a one-line addition here; adding a WRITE
+#: is a visible change to a table that says it holds only reads.
+_GIT_READ_OPERATIONS: dict[str, tuple[str, ...]] = {
+    'head-sha': ('rev-parse', 'HEAD'),
+    'worktree-status': ('status', '--porcelain'),
+}
+
+
+def _git_read(operation: str) -> tuple[str | None, str]:
+    """Run one read-only git operation BY NAME, returning ``(stdout, error)``.
+
+    The single git seam in this script. ``operation`` selects an entry of
+    :data:`_GIT_READ_OPERATIONS`; the argv is never caller-composed.
+    ``(None, reason)`` is returned whenever the command could not be observed —
+    git unreachable, a timeout, or a non-zero exit — and the reason names which.
+    Callers translate that into an *unobservable* outcome, never into a failing
+    one.
+
+    An operation absent from the table raises :class:`KeyError` rather than
+    degrading to unobservable. That is deliberate: an unknown operation is a
+    defect in THIS module, and reporting it as "git is not readable" would dress
+    a coding error up as an environmental one — the confident-signal-hides-a-
+    caveat shape this verb exists to remove. The table is closed and its only
+    callers are in this file, so no input can reach that branch.
+
+    The timeout is what keeps "unobservable" reachable at all. Without it a hung
+    git — a stale index lock, or a very large worktree — blocks forever, and
+    because :func:`_worktree_signal` calls this seam twice, ``cleanup
+    restart-check`` would stall with no verdict rather than degrading to
+    ``indeterminate``. A hang is therefore mapped onto the existing unobservable
+    path instead of being allowed to consume the caller.
+    """
+    argv = _GIT_READ_OPERATIONS[operation]
+    try:
+        completed = subprocess.run(
+            ['git', *argv], capture_output=True, text=True, check=False, timeout=_GIT_READ_TIMEOUT_SECONDS
+        )
+    except subprocess.TimeoutExpired:
+        return None, f'git {" ".join(argv)} timed out after {_GIT_READ_TIMEOUT_SECONDS}s'
+    except OSError as exc:
+        return None, f'git could not be run ({exc.__class__.__name__})'
+    if completed.returncode != 0:
+        return None, f'git {" ".join(argv)} exited {completed.returncode}'
+    return completed.stdout.strip(), ''
+
+
+def _current_head_sha() -> str:
+    """Return the current HEAD sha, or the empty string when it cannot be read.
+
+    Used only to derive the ``stale`` flag on a parsed verdict. An unresolvable
+    HEAD yields ``stale: false`` for every row and rides in the payload as an
+    empty ``head_sha``, so a caller can tell "not stale" from "staleness was not
+    computable" instead of reading an unqualified boolean.
+    """
+    output, _ = _git_read('head-sha')
+    return output or ''
+
+
+def _fenced_mask(lines: list[str]) -> list[bool]:
+    """Return a per-line mask marking every line that belongs to a fenced block.
+
+    Delimiter lines are masked along with the body, so a caller can test one
+    index without also testing its neighbours. BOTH decisions — whether a line
+    OPENS a block and whether it CLOSES one — are taken against the CommonMark
+    clauses enumerated at :data:`_FENCE_DELIMITER_RE`, so the mask agrees with
+    what the spec author sees rendered. A block opens only on a delimiter
+    indented at most three spaces whose info string is admissible for its fence
+    character, and closes only on a delimiter indented at most three spaces,
+    built from the SAME character as the opener, AT LEAST AS LONG as the opener,
+    and carrying no info string. The opening run's LENGTH is therefore retained,
+    not just its character — a four-backtick block that contains a
+    three-backtick example stays open across that example instead of ending at
+    it. An unterminated fence runs to the end of the document.
+
+    The property held here is FIDELITY to the rendered document, not a uniform
+    bias toward one reading. The two are not the same, and an earlier revision
+    of this docstring claimed the latter: that every branch treats text which
+    may be code as code, never the reverse. That claim was false in the opening
+    direction and is withdrawn — declining to CLOSE on a four-space-indented
+    delimiter widens the masked run, while declining to OPEN on one narrows it,
+    and both are the CommonMark reading. Both error directions are real damage:
+    an over-wide mask hides a genuine heading, and an over-narrow one admits a
+    fenced look-alike as one.
+
+    Every line-wise scan in this module consumes this mask. Without it a
+    ``# comment`` inside a fenced example matches :data:`_HEADING_RE` and
+    truncates the enclosing section, which silently narrows a population while
+    the count that rides beside it still reports the full denominator.
+    """
+    mask = [False] * len(lines)
+    open_char = ''
+    open_length = 0
+    for index, line in enumerate(lines):
+        match = _FENCE_DELIMITER_RE.match(line)
+        if match is None:
+            mask[index] = bool(open_char)
+            continue
+        run = match.group('fence')
+        info = match.group('info')
+        if open_char:
+            mask[index] = True
+            if run[0] == open_char and len(run) >= open_length and not info.strip():
+                open_char, open_length = '', 0
+            continue
+        if run[0] == _BACKTICK and _BACKTICK in info:
+            # Not an opening fence: a backtick fence's info string may not carry
+            # a backtick, so this is an ordinary paragraph line — the shape a
+            # sentence takes when it opens with the fence marker and then quotes
+            # inline code. Masking it would swallow the rest of the document.
+            continue
+        mask[index] = True
+        open_char, open_length = run[0], len(run)
+    return mask
+
+
+def _section_span(
+    lines: list[str], heading_re: re.Pattern[str], fenced: list[bool] | None = None
+) -> tuple[int, int]:
+    """Return the ``[start, end)`` line span of one section's body.
+
+    ``(-1, -1)`` when the document carries no matching heading. The body ends at
+    the next heading of any level, so a subsection never leaks into the parent.
+
+    Both heading scans — the one that OPENS the section and the one that closes
+    it — skip fenced lines, per :func:`_fenced_mask`. ``fenced`` is computed from
+    ``lines`` when not supplied, so a caller that already holds the mask passes
+    it rather than rebuilding it.
+    """
+    if fenced is None:
+        fenced = _fenced_mask(lines)
+    start = -1
+    for index, line in enumerate(lines):
+        if not fenced[index] and heading_re.match(line):
+            start = index + 1
+            break
+    if start < 0:
+        return (-1, -1)
+    for index in range(start, len(lines)):
+        if not fenced[index] and _HEADING_RE.match(lines[index]):
+            return (start, index)
+    return (start, len(lines))
+
+
+def _expected_surface_paths(text: str) -> set[str]:
+    """Extract the file paths a spec names in its ``## Expected Surface`` section.
+
+    This is the spec-side entry point for the file-overlap collision class: a
+    staged spec carries its surface here, where a launched plan carries it in
+    ``references.json`` ``affected_files``. The extraction itself is
+    ``_cmd_sibling_collision``'s, unchanged — only the entry point differs.
+
+    The section body is delimited against the fence mask, so a fenced path list
+    whose first line is a ``#`` comment does not truncate the section and drop
+    every path after it. Paths INSIDE the fence still count: a fenced list is the
+    ordinary way a spec declares its surface.
+    """
+    lines = text.splitlines()
+    start, end = _section_span(lines, EXPECTED_SURFACE_HEADING_RE)
+    if start < 0:
+        return set()
+    return _extract_paths('\n'.join(lines[start:end]))
+
+
+def _spec_pointers(text: str) -> set[str]:
+    """Extract the normalized orchestrator spec pointers named in ``text``."""
+    return {
+        f'{match.group("slug")}/plans/{match.group("spec")}'
+        for match in SPEC_POINTER_RE.finditer(text)
+    }
+
+
+def _own_pointer(slug: str, spec_name: str) -> str:
+    """The root-agnostic origin id of one spec in one epic."""
+    return f'{slug}/plans/{spec_name}'
+
+
+def _parse_claims(lines: list[str]) -> list[dict[str, Any]]:
+    """Parse the claim bullets of the ``## Claim Labels`` section.
+
+    A claim is a TOP-LEVEL ``- `` bullet inside the section. Its verdict is the
+    nested child bullet whose text begins with the literal ``verdict:`` token —
+    association is by NESTING, never by ordinal position, so inserting or
+    reordering a claim never re-binds an existing verdict to a different claim.
+
+    Each returned record carries ``block_end``: the insertion point for a new
+    verdict bullet, being one past the claim's own wrapped text lines and before
+    any further bullet, with trailing blank lines excluded.
+
+    Fenced lines are skipped on both scans: a ``- item`` inside a fenced example
+    is not a claim, and a ``#`` comment inside one does not end the section.
+    Admitting either would shift every later ``--claim-index`` and understate
+    ``claims_total``.
+    """
+    fenced = _fenced_mask(lines)
+    start, end = _section_span(lines, CLAIM_LABELS_HEADING_RE, fenced)
+    if start < 0:
+        return []
+    claims: list[dict[str, Any]] = []
+    for index in range(start, end):
+        if fenced[index]:
+            continue
+        match = _BULLET_RE.match(lines[index])
+        if match is None:
+            continue
+        indent = match.group('indent')
+        text = match.group('text').strip()
+        if not indent:
+            claims.append(
+                {
+                    'index': len(claims),
+                    'line': index,
+                    'indent': indent,
+                    'text': text,
+                    'block_end': _claim_block_end(lines, index, end, fenced),
+                    'verdict_line': -1,
+                    'verdict_text': '',
+                }
+            )
+        elif claims and text.startswith(VERDICT_PREFIX) and claims[-1]['verdict_line'] < 0:
+            claims[-1]['verdict_line'] = index
+            claims[-1]['verdict_text'] = text
+    return claims
+
+
+def _claim_block_end(
+    lines: list[str], claim_line: int, section_end: int, fenced: list[bool] | None = None
+) -> int:
+    """One past the claim bullet's own text block — the verdict insertion point.
+
+    The bullet/heading terminators are tested against the fence mask, so a fenced
+    example nested under a claim does not end the claim's block early and place
+    the verdict bullet inside the fence.
+    """
+    if fenced is None:
+        fenced = _fenced_mask(lines)
+    end = claim_line + 1
+    while end < section_end:
+        if not fenced[end] and (_BULLET_RE.match(lines[end]) or _HEADING_RE.match(lines[end])):
+            break
+        end += 1
+    while end > claim_line + 1 and not lines[end - 1].strip():
+        end -= 1
+    return end
+
+
+def _parse_verdict_text(text: str) -> dict[str, str] | None:
+    """Parse one ``verdict:`` bullet body, or ``None`` when it does not conform.
+
+    The parse rule both sides use: split on ``' | '`` with at most four splits,
+    yielding five parts, so ``evidence`` is the fifth part and therefore the
+    whole remainder of the line. Returning ``None`` is what makes a malformed
+    bullet ``indeterminate`` at the caller instead of silently admitting it.
+    """
+    parts = text.split(VERDICT_SEPARATOR, VERDICT_MAX_SPLITS)
+    if len(parts) != len(VERDICT_KEYS):
+        return None
+    parsed: dict[str, str] = {}
+    for key, part in zip(VERDICT_KEYS, parts, strict=True):
+        prefix = f'{key}:'
+        if not part.startswith(prefix):
+            return None
+        parsed[key] = part[len(prefix) :].strip()
+    if _invalid_verdict_values(parsed):
+        return None
+    return parsed
+
+
+def _invalid_verdict_values(parsed: dict[str, str]) -> bool:
+    """True when a parsed verdict violates the grammar's value rules."""
+    return (
+        parsed['verdict'] not in VERDICT_VALUES
+        or parsed['rescoped'] not in RESCOPED_VALUES
+        or (parsed['verdict'] != CONTRADICTED and parsed['rescoped'] != NOT_APPLICABLE)
+        or not _CHECKED_AT_RE.match(parsed['checked_at'])
+        or not parsed['by']
+        or not parsed['evidence']
+    )
+
+
+def _format_verdict_line(values: dict[str, str]) -> str:
+    """Format the verdict body. The ONLY formatter of this line in the tree."""
+    return VERDICT_SEPARATOR.join(f'{key}: {values[key]}' for key in VERDICT_KEYS)
+
+
+def _admits(verdict: str, rescoped: str) -> bool:
+    """The admission predicate: block iff ``contradicted`` AND ``rescoped: no``.
+
+    Every other settled state admits — an absent field is an open clause, and an
+    ``unverifiable`` verdict is an unreached population, not a refutation.
+    """
+    return not (verdict == CONTRADICTED and rescoped == BLOCKING_RESCOPED)
+
+
+def _verdict_row(spec_name: str, claim: dict[str, Any], line: str, head: str) -> dict[str, Any]:
+    """Build one ``verdicts`` payload row for a claim carrying a verdict bullet."""
+    parsed = _parse_verdict_text(str(claim['verdict_text']))
+    if parsed is None:
+        return {
+            'spec': spec_name,
+            'claim_index': claim['index'],
+            'verdict': VERDICT_INDETERMINATE,
+            'checked_at': '',
+            'by': '',
+            'rescoped': '',
+            'evidence': '',
+            'admits': False,
+            'stale': False,
+            'line': line,
+        }
+    return {
+        'spec': spec_name,
+        'claim_index': claim['index'],
+        'verdict': parsed['verdict'],
+        'checked_at': parsed['checked_at'],
+        'by': parsed['by'],
+        'rescoped': parsed['rescoped'],
+        'evidence': parsed['evidence'],
+        'admits': _admits(parsed['verdict'], parsed['rescoped']),
+        'stale': bool(head) and not head.startswith(parsed['checked_at']),
+        'line': line,
+    }
+
+
+def cmd_corpus_enumerate(args: argparse.Namespace) -> dict[str, Any]:
+    """Reconcile the ``plans[]`` queue against the spec files, in BOTH directions.
+
+    The enumeration authority is ``status.json``'s ``plans[]`` — never a
+    ``plans/`` directory glob, which would return a different set the moment a
+    spec is staged without a row (or a row recorded without a spec). The two
+    directions are separate fields with separate causes: ``rows_without_spec``
+    (a queue row whose spec file is absent) and ``specs_without_row`` (a spec
+    file with no queue row) are never collapsed into one symmetric-difference
+    count.
+
+    Every count rides with the population it was computed over, so no figure is
+    publishable without its denominator. Read-only: resolves through the
+    archived read-fallback and writes nothing.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    status_doc = _read_status(args.slug, allow_archived=True)
+    if not status_doc:
+        return _error(
+            args.slug, 'file_not_found', 'status.json not found in orchestrator store'
+        )
+    root = _epic_root(args.slug, allow_archived=True)
+    rows = [row for row in status_doc.get('plans', []) if isinstance(row, dict)]
+    specs = _spec_paths(root)
+    matched: set[Path] = set()
+    row_records: list[dict[str, Any]] = []
+    rows_without_spec: list[dict[str, str]] = []
+    for row in rows:
+        plan_id = str(row.get('id', ''))
+        row_status = str(row.get('status', ''))
+        spec = next((path for path in specs if _spec_matches_row(path, plan_id)), None) if plan_id else None
+        if spec is not None:
+            matched.add(spec)
+        else:
+            rows_without_spec.append({'id': plan_id, 'status': row_status})
+        row_records.append(
+            {
+                'id': plan_id,
+                'status': row_status,
+                'spec': spec.name if spec is not None else '',
+                'excluded_reason': RUNNING_STATUS if row_status == RUNNING_STATUS else '',
+            }
+        )
+    unreadable = [
+        {'spec': spec.name, 'error': error}
+        for spec, error in ((spec, _read_spec(spec)[1]) for spec in specs)
+        if error
+    ]
+    tally = Counter(record['status'] for record in row_records)
+    return {
+        'status': 'success',
+        'operation': 'corpus-enumerate',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'rows_total': len(rows),
+        'rows_scanned': sum(1 for record in row_records if record['id']),
+        'specs_total': len(specs),
+        'specs_scanned': len(specs) - len(unreadable),
+        'status_tally': [
+            {'status': name, 'count': count} for name, count in sorted(tally.items())
+        ],
+        'rows': row_records,
+        'rows_without_spec_count': len(rows_without_spec),
+        'rows_without_spec': rows_without_spec,
+        'specs_without_row_count': sum(1 for spec in specs if spec not in matched),
+        'specs_without_row': [spec.name for spec in specs if spec not in matched],
+        'unreadable_count': len(unreadable),
+        'unreadable': unreadable,
+    }
+
+
+def cmd_corpus_verdicts(args: argparse.Namespace) -> dict[str, Any]:
+    """Parse every re-grounding verdict bullet across the corpus. Read-only.
+
+    The ONLY interpreter of the verdict line in the tree. One row per claim that
+    carries a verdict bullet, with the five parsed keys plus the derived
+    ``admits`` and ``stale`` booleans. A bullet that does not parse is returned
+    with ``verdict: indeterminate``, ``admits: false`` and the offending line
+    quoted verbatim — never dropped. ``specs_scanned`` and ``claims_scanned``
+    ride the payload so a ``count: 0`` states which zero it is.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+    specs = _spec_paths(root)
+    head = _current_head_sha()
+    rows: list[dict[str, Any]] = []
+    unreadable: list[dict[str, str]] = []
+    specs_scanned = 0
+    claims_scanned = 0
+    for spec in specs:
+        text, error = _read_spec(spec)
+        if text is None:
+            unreadable.append({'spec': spec.name, 'error': error})
+            continue
+        specs_scanned += 1
+        lines = text.splitlines()
+        claims = _parse_claims(lines)
+        claims_scanned += len(claims)
+        rows.extend(
+            _verdict_row(spec.name, claim, lines[claim['verdict_line']].strip(), head)
+            for claim in claims
+            if claim['verdict_line'] >= 0
+        )
+    return {
+        'status': 'success',
+        'operation': 'corpus-verdicts',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'head_sha': head,
+        'specs_total': len(specs),
+        'specs_scanned': specs_scanned,
+        'claims_scanned': claims_scanned,
+        'count': len(rows),
+        'blocking_count': sum(1 for row in rows if not row['admits']),
+        'claims': rows,
+        'unreadable_count': len(unreadable),
+        'unreadable': unreadable,
+    }
+
+
+def _sibling_epic_roots(slug: str) -> list[Path]:
+    """Enumerate the OTHER epics' store roots — active and archived alike.
+
+    Mirrors the on-query store scan the read verbs document: both
+    ``.plan/local/orchestrator/`` and ``.plan/local/archived-orchestrators/`` are
+    walked, so an archived sibling stays visible to the duplication check. An
+    epic present in both homes is yielded once.
+    """
+    roots: dict[str, Path] = {}
+    bases = (_epic_root(slug).parent, get_archived_orchestrator_dir(slug).parent)
+    for base in bases:
+        if not base.is_dir():
+            continue
+        for child in sorted(base.iterdir()):
+            if child.is_dir() and child.name != slug and child.name not in roots:
+                roots[child.name] = child
+    return [roots[name] for name in sorted(roots)]
+
+
+def _spec_record(epic_slug: str, path: Path) -> dict[str, Any] | None:
+    """Build one comparable record for a spec file, or ``None`` when unreadable."""
+    text, _ = _read_spec(path)
+    if text is None:
+        return None
+    return {
+        'name': path.name,
+        'pointers': _spec_pointers(text) | {_own_pointer(epic_slug, path.name)},
+        'paths': _expected_surface_paths(text),
+    }
+
+
+def _live_plan_records() -> list[dict[str, Any]]:
+    """Build one comparable record per ACTIVE plan — the cross-ledger direction.
+
+    A single ledger structurally cannot see a duplicate held in another ledger,
+    so the live plan set is enumerated through ``_cmd_sibling_collision``'s own
+    active-plan walk and each plan contributes its ``source_id`` origin and its
+    ``references.json`` ``affected_files`` surface.
+    """
+    records: list[dict[str, Any]] = []
+    for plan_id, plan_dir in sorted(_iter_active_plan_dirs().items()):
+        _, source_id = _read_request_source(plan_dir)
+        pointers = _spec_pointers(source_id) if source_id else set()
+        records.append(
+            {
+                'name': plan_id,
+                'pointers': pointers,
+                'paths': _read_affected_files(plan_dir),
+            }
+        )
+    return records
+
+
+def _collision_rows(
+    spec: dict[str, Any], candidate: dict[str, Any], kind: str
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Score one spec/candidate pair on the two collision classes.
+
+    The classes are ``_cmd_sibling_collision``'s, unchanged — a shared
+    source-origin id (primary) and an exact normalized file-path overlap
+    (secondary). No third similarity notion is introduced, and neither row is
+    ever a bare score: each names the overlapping surface.
+    """
+    shared_origin = sorted(spec['pointers'] & candidate['pointers'])
+    overlap = sorted(spec['paths'] & candidate['paths'])
+    origin_row = (
+        {
+            'spec': spec['name'],
+            'candidate_kind': kind,
+            'candidate': candidate['name'],
+            'shared_origin': _OVERLAP_JOIN.join(shared_origin),
+        }
+        if shared_origin
+        else None
+    )
+    overlap_row = (
+        {
+            'spec': spec['name'],
+            'candidate_kind': kind,
+            'candidate': candidate['name'],
+            'overlap_count': len(overlap),
+            'overlapping_files': _OVERLAP_JOIN.join(overlap),
+        }
+        if overlap
+        else None
+    )
+    return origin_row, overlap_row
+
+
+def cmd_corpus_cross_check(args: argparse.Namespace) -> dict[str, Any]:
+    """Cross-check this epic's specs against sibling epics and live plans.
+
+    The arm a single ledger structurally cannot perform. Three populations are
+    enumerated and each is NAMED in the payload — sibling epics (active and
+    archived), the live plan set, and this epic's own corpus for the
+    within-corpus direction — so a ``count: 0`` states which zero it is.
+
+    Reports candidates and applies nothing: superseding is the workflow doc's
+    inline, ledger-writing act, and no spec file is ever deleted.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+    own_paths = _spec_paths(root)
+    own: list[dict[str, Any]] = []
+    unreadable: list[dict[str, str]] = []
+    for path in own_paths:
+        record = _spec_record(args.slug, path)
+        if record is None:
+            unreadable.append({'spec': path.name, 'error': 'unreadable'})
+        else:
+            own.append(record)
+    sibling_roots = _sibling_epic_roots(args.slug)
+    candidates: list[tuple[str, dict[str, Any]]] = []
+    for sibling_root in sibling_roots:
+        for path in _spec_paths(sibling_root):
+            record = _spec_record(sibling_root.name, path)
+            if record is None:
+                unreadable.append({'spec': f'{sibling_root.name}/{path.name}', 'error': 'unreadable'})
+            else:
+                candidates.append(('sibling_epic_spec', {**record, 'name': f'{sibling_root.name}/{path.name}'}))
+    live = _live_plan_records()
+    candidates.extend(('live_plan', record) for record in live)
+    origin_matches: list[dict[str, Any]] = []
+    overlap_matches: list[dict[str, Any]] = []
+    for spec in own:
+        pairs = [*candidates, *(('corpus_spec', other) for other in own if other['name'] != spec['name'])]
+        for kind, candidate in pairs:
+            origin_row, overlap_row = _collision_rows(spec, candidate, kind)
+            if origin_row is not None:
+                origin_matches.append(origin_row)
+            if overlap_row is not None:
+                overlap_matches.append(overlap_row)
+    return {
+        'status': 'success',
+        'operation': 'corpus-cross-check',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'epics_scanned': len(sibling_roots),
+        'plans_scanned': len(live),
+        'specs_total': len(own_paths),
+        'specs_scanned': len(own),
+        'candidates_scanned': len(candidates),
+        'source_origin_match_count': len(origin_matches),
+        'source_origin_matches': origin_matches,
+        'file_overlap_match_count': len(overlap_matches),
+        'file_overlap_matches': overlap_matches,
+        'collision_detected': bool(origin_matches or overlap_matches),
+        'unreadable_count': len(unreadable),
+        'unreadable': unreadable,
+    }
+
+
+def _validate_set_verdict_args(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Return the rejection envelope for an invalid ``set-verdict`` call, else ``None``.
+
+    Every grammar rule is enforced HERE, at the sole emitter, so an invalid
+    combination cannot reach disk. In particular ``rescoped`` must be ``n/a``
+    whenever the verdict is not ``contradicted``: allowing ``no`` there would
+    manufacture a blocking state out of a corroboration.
+    """
+    if args.verdict not in VERDICT_VALUES:
+        return _error(
+            args.slug,
+            'invalid_verdict',
+            f'--verdict must be one of {sorted(VERDICT_VALUES)}, got: {args.verdict}',
+        )
+    if args.rescoped not in RESCOPED_VALUES:
+        return _error(
+            args.slug,
+            'invalid_rescoped',
+            f'--rescoped must be one of {sorted(RESCOPED_VALUES)}, got: {args.rescoped}',
+        )
+    if args.verdict != CONTRADICTED and args.rescoped != NOT_APPLICABLE:
+        return _error(
+            args.slug,
+            'invalid_rescoped_combination',
+            f'--rescoped must be {NOT_APPLICABLE!r} when --verdict is not {CONTRADICTED!r}, '
+            f'got: {args.rescoped}',
+        )
+    if not _CHECKED_AT_RE.match(args.checked_at):
+        return _error(
+            args.slug,
+            'invalid_checked_at',
+            f'--checked-at must be 7-40 lowercase hex characters, got: {args.checked_at}',
+        )
+    if not args.by.strip() or not args.evidence.strip():
+        return _error(
+            args.slug, 'wrong_parameters', '--by and --evidence must both be non-empty'
+        )
+    if VERDICT_SEPARATOR in args.by or VERDICT_SEPARATOR in args.checked_at:
+        return _error(
+            args.slug,
+            'wrong_parameters',
+            f'--by and --checked-at must not contain the {VERDICT_SEPARATOR!r} separator',
+        )
+    # The verdict is formatted as ONE line by ``_format_verdict_line`` and read
+    # back from a single ``lines[claim['verdict_line']]`` — the grammar states
+    # ``evidence`` runs "to end of line". An embedded break silently violates all
+    # three: ``corpus verdicts`` would return a TRUNCATED ``evidence``, the
+    # trailing fragment would become stray body text under ``## Claim Labels``,
+    # and a re-stamp replacing only ``verdict_line`` would leave that fragment
+    # behind — so the idempotent replace stops being idempotent. ``checked_at``
+    # needs no check: ``_CHECKED_AT_RE`` already admits hex only.
+    #
+    # The guard is phrased as ``value.splitlines() != [value]`` so it asks the
+    # SAME question the reader asks. ``cmd_corpus_verdicts`` splits the spec with
+    # ``str.splitlines``, which breaks on considerably more than CR/LF — ``\v``,
+    # ``\f``, ``\x1c``-``\x1e``, ``\x85``, ``\u2028``, ``\u2029``. Enumerating a
+    # subset of those here would admit the rest past a guard whose whole purpose
+    # is to keep the value on ONE of the reader's lines, so the guard defers to
+    # the same splitter rather than maintaining a second, narrower list of what
+    # counts as a break.
+    if any(value.splitlines() != [value] for value in (args.by, args.evidence)):
+        return _error(
+            args.slug,
+            'wrong_parameters',
+            '--by and --evidence must not contain a line separator: the verdict is one line',
+        )
+    return None
+
+
+def cmd_corpus_set_verdict(args: argparse.Namespace) -> dict[str, Any]:
+    """Stamp one re-grounding verdict onto one claim. The group's single write.
+
+    The ONLY formatter of the verdict line in the tree. Writes exactly one
+    nested bullet under the addressed claim, REPLACING an existing one in place
+    rather than appending a second — so re-stamping is idempotent by
+    construction and a claim can never carry two verdicts.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    rejection = _validate_set_verdict_args(args)
+    if rejection is not None:
+        return rejection
+    specs = _spec_paths(_epic_root(args.slug))
+    spec = next((path for path in specs if _spec_matches_row(path, args.plan)), None)
+    if spec is None:
+        return _error(
+            args.slug,
+            'spec_not_found',
+            f'no spec file for plan {args.plan!r} in {PLANS_SUBDIR}/',
+            available_specs=[path.name for path in specs],
+        )
+    text, error = _read_spec(spec)
+    if text is None:
+        return _error(args.slug, error, f'spec {spec.name!r} could not be read', spec=spec.name)
+    lines = text.splitlines()
+    claims = _parse_claims(lines)
+    if not 0 <= args.claim_index < len(claims):
+        return _error(
+            args.slug,
+            'claim_index_out_of_range',
+            f'--claim-index {args.claim_index} is outside the parsed claim list',
+            spec=spec.name,
+            claims_total=len(claims),
+        )
+    claim = claims[args.claim_index]
+    body = _format_verdict_line(
+        {
+            'verdict': args.verdict,
+            'checked_at': args.checked_at,
+            'by': args.by,
+            'rescoped': args.rescoped,
+            'evidence': args.evidence,
+        }
+    )
+    bullet = f'{claim["indent"]}  - {body}'
+    replaced = claim['verdict_line'] >= 0
+    previous_line = lines[claim['verdict_line']].strip() if replaced else ''
+    if replaced:
+        lines[claim['verdict_line']] = bullet
+    else:
+        lines.insert(int(claim['block_end']), bullet)
+    spec.write_text('\n'.join(lines) + ('\n' if text.endswith('\n') else ''), encoding='utf-8')
+    return {
+        'status': 'success',
+        'operation': 'corpus-set-verdict',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'plan': args.plan,
+        'spec': spec.name,
+        'claim_index': args.claim_index,
+        'claims_total': len(claims),
+        'replaced': replaced,
+        'previous_line': previous_line,
+        'line': bullet.strip(),
+    }
+
+
+def _signal(name: str, verdict: str, evidence: str, population: str) -> dict[str, Any]:
+    """Build one restart-readiness signal row.
+
+    The four-field shape is uniform across every arm on purpose: a verdict a
+    reader cannot trace back to what was observed, and to how large the observed
+    set was, is exactly the confident-signal shape this verb refuses to emit.
+    Field values carry no commas, so each row stays one well-formed TOON record.
+    """
+    return {
+        'signal': name,
+        'verdict': verdict,
+        'evidence': evidence,
+        'population': population,
+    }
+
+
+def _readiness_floor(verdicts: list[str]) -> str:
+    """The floor over the PARTICIPATING verdicts, under :data:`READINESS_ORDER`.
+
+    An empty participating set yields ``indeterminate`` rather than ``ready``:
+    nothing was observed, which is not the same as everything being fine.
+    """
+    if not verdicts:
+        return READINESS_INDETERMINATE
+    return min(verdicts, key=READINESS_ORDER.index)
+
+
+def _phase_signal(status_doc: dict[str, Any]) -> dict[str, Any]:
+    """The epic's own phase. Never ``not_ready`` — a phase is a fact, not a hazard."""
+    phase = str(status_doc.get('phase', '')).strip()
+    if not phase:
+        return _signal(
+            'phase',
+            READINESS_INDETERMINATE,
+            'status.json carries no readable phase',
+            'status.json: 0 phase field read',
+        )
+    return _signal('phase', READY, f'phase={phase}', 'status.json: 1 phase field read')
+
+
+def _running_plans_signal(status_doc: dict[str, Any]) -> dict[str, Any]:
+    """In-flight plans. A restart mid-run loses the run's context, so it blocks."""
+    raw = status_doc.get('plans')
+    if not status_doc or not isinstance(raw, list):
+        return _signal(
+            'running_plans',
+            READINESS_INDETERMINATE,
+            'the plan queue could not be read',
+            'plans[]: not readable',
+        )
+    rows = [row for row in raw if isinstance(row, dict)]
+    population = f'plans[]: {len(rows)} row(s) scanned'
+    running = sorted(
+        str(row.get('id', '')) for row in rows if str(row.get('status', '')) == RUNNING_STATUS
+    )
+    if running:
+        return _signal(
+            'running_plans',
+            NOT_READY,
+            f'{len(running)} plan row(s) still running: {_OVERLAP_JOIN.join(running)}',
+            population,
+        )
+    return _signal('running_plans', READY, 'no plan row is running', population)
+
+
+def _corpus_signal(slug: str) -> dict[str, Any]:
+    """Corpus reconciliation, consuming ``corpus enumerate`` rather than re-deriving it.
+
+    An unreadable spec outranks an orphan: a corpus that could not be fully read
+    is unobservable, so it yields ``indeterminate`` even when the readable part
+    also reconciles badly.
+    """
+    result = cmd_corpus_enumerate(argparse.Namespace(slug=slug))
+    if result.get('status') != 'success':
+        return _signal(
+            'corpus_reconciliation',
+            READINESS_INDETERMINATE,
+            f'corpus enumerate could not run: {result.get("error", "unknown")}',
+            'queue rows and spec files: not enumerable',
+        )
+    population = (
+        f'{result["rows_total"]} queue row(s) and {result["specs_total"]} spec file(s)'
+    )
+    if result['unreadable_count']:
+        return _signal(
+            'corpus_reconciliation',
+            READINESS_INDETERMINATE,
+            f'{result["unreadable_count"]} spec file(s) could not be read',
+            population,
+        )
+    orphan_rows = result['rows_without_spec_count']
+    orphan_specs = result['specs_without_row_count']
+    if orphan_rows or orphan_specs:
+        return _signal(
+            'corpus_reconciliation',
+            NOT_READY,
+            f'{orphan_rows} row(s) without a spec and {orphan_specs} spec(s) without a row',
+            population,
+        )
+    return _signal(
+        'corpus_reconciliation', READY, 'queue and specs reconcile both ways', population
+    )
+
+
+def _inbox_signal(slug: str) -> dict[str, Any]:
+    """Inbox drain state, reusing :func:`inbox_counts`'s two-kinds-of-zero discriminator.
+
+    An absent ``inbox/`` is *could not look*, not *nothing queued* — it renders
+    as ``missing`` and yields ``indeterminate``, never a confident ``ready``.
+    """
+    counts = inbox_counts(_epic_root(slug, allow_archived=True) / INBOX_SUBDIR)
+    if not counts.present:
+        return _signal(
+            'inbox',
+            READINESS_INDETERMINATE,
+            'inbox/ is absent so the queue could not be looked at',
+            'inbox/: missing',
+        )
+    population = f'inbox/: {counts.queued} queued and {counts.archived} archived'
+    if counts.queued:
+        return _signal(
+            'inbox', NOT_READY, f'{counts.queued} message(s) still queued', population
+        )
+    return _signal('inbox', READY, 'no queued message', population)
+
+
+def _worktree_signal() -> dict[str, Any]:
+    """Repository HEAD plus worktree cleanliness — one signal, since the sha
+    without the cleanliness is not an observation a restart decision can use."""
+    head, head_error = _git_read('head-sha')
+    if head is None:
+        return _signal('worktree', READINESS_INDETERMINATE, head_error, 'git: not readable')
+    porcelain, porcelain_error = _git_read('worktree-status')
+    if porcelain is None:
+        return _signal(
+            'worktree', READINESS_INDETERMINATE, porcelain_error, 'git: not readable'
+        )
+    changed = [line for line in porcelain.splitlines() if line.strip()]
+    population = f'git status --porcelain: {len(changed)} changed path(s) at {head}'
+    if changed:
+        return _signal(
+            'worktree', NOT_READY, f'{len(changed)} uncommitted path(s) at {head}', population
+        )
+    return _signal('worktree', READY, f'clean worktree at {head}', population)
+
+
+def _registry_parity_signal() -> dict[str, Any]:
+    """The one arm whose surface this component does not own.
+
+    Reported in the same three-part shape the ledger-compaction stage uses for
+    an unowned surface — the field is present, its value is ``not_available``,
+    and it names the spec that owns the surface — so the report carries ONE
+    convention for "a real signal this component does not own" rather than two.
+    Being outside :data:`READINESS_ORDER`, it never reaches the floor.
+    """
+    return _signal(
+        'registry_parity',
+        NOT_AVAILABLE,
+        f'this component observes no parity surface; it is owned by {REGISTRY_PARITY_OWNER}',
+        'not_applicable — the surface belongs to another component',
+    )
+
+
+def cmd_cleanup_restart_check(args: argparse.Namespace) -> dict[str, Any]:
+    """Report whether the session is safe to restart. Read-only.
+
+    One row per signal, each carrying its own verdict, its own evidence, and the
+    population it was derived from, plus the sample instant. The overall verdict
+    is the floor over the rows whose verdict is a member of
+    :data:`READINESS_ORDER`; a ``not_available`` arm is excluded, so an unowned
+    surface cannot veto a verdict this component CAN reach. Every unreadable or
+    unobservable arm resolves to ``indeterminate`` and never to ``not_ready``.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug, allow_archived=True)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no store tree')
+    status_doc = _read_status(args.slug, allow_archived=True)
+    signals = [
+        _phase_signal(status_doc),
+        _running_plans_signal(status_doc),
+        _corpus_signal(args.slug),
+        _inbox_signal(args.slug),
+        _worktree_signal(),
+        _registry_parity_signal(),
+    ]
+    scored = [row['verdict'] for row in signals if row['verdict'] in READINESS_ORDER]
+    return {
+        'status': 'success',
+        'operation': 'cleanup-restart-check',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'sampled_at': now_utc_iso(),
+        'verdict': _readiness_floor(scored),
+        'signals_total': len(signals),
+        'signals_scored': len(scored),
+        'signals': signals,
+    }
+
+
 def _add_slug_arg(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('--slug', required=True, help='Epic slug (kebab-case)')
 
@@ -523,8 +1864,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         description=(
             'Thin scaffolding for marshall-orchestrator epics: scaffold the '
             'epic tree, read/transition/stamp the plan queue, generate the '
-            'START-HERE resume summary, archive a closed epic, and drive the '
-            'plan-writable inbox OUTBOX and its drain.'
+            'START-HERE resume summary, archive a closed epic, reconcile the '
+            'staged spec corpus and its re-grounding verdicts, report the '
+            'restart-readiness verdict, and drive the plan-writable inbox '
+            'OUTBOX and its drain.'
         ),
         allow_abbrev=False,
     )
@@ -598,9 +1941,120 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     _add_slug_arg(archive)
     archive.set_defaults(handler=cmd_archive)
 
+    _add_corpus_group(subparsers)
+    _add_cleanup_group(subparsers)
     _add_inbox_group(subparsers)
 
     return parser
+
+
+def _add_corpus_group(subparsers: Any) -> None:
+    """Register the ``corpus`` verb group.
+
+    Sub-verbs: ``enumerate``, ``cross-check``, ``verdicts``, ``set-verdict``.
+    The first three are read-only; ``set-verdict`` is the group's single write
+    action, and the only surface in the tree that formats a ``verdict:`` line.
+    """
+    corpus = subparsers.add_parser(
+        'corpus',
+        help=(
+            "Epic spec corpus: reconcile the queue against the plans/ specs in both "
+            'directions, and read or stamp the re-grounding verdict field.'
+        ),
+        allow_abbrev=False,
+    )
+    actions = corpus.add_subparsers(dest='corpus_action', required=True)
+
+    enumerate_specs = actions.add_parser(
+        'enumerate',
+        help=(
+            'Reconcile status.json plans[] against plans/PLAN-*.md in both '
+            'directions, every count carrying its population (read-only).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(enumerate_specs)
+    enumerate_specs.set_defaults(handler=cmd_corpus_enumerate)
+
+    cross_check = actions.add_parser(
+        'cross-check',
+        help=(
+            "Cross-check this epic's specs against sibling epics and live plans "
+            'for duplicate work, on the two sibling-collision-check classes (read-only).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(cross_check)
+    cross_check.set_defaults(handler=cmd_corpus_cross_check)
+
+    verdicts = actions.add_parser(
+        'verdicts',
+        help='Parse every re-grounding verdict bullet across the corpus (read-only).',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(verdicts)
+    verdicts.set_defaults(handler=cmd_corpus_verdicts)
+
+    set_verdict = actions.add_parser(
+        'set-verdict',
+        help='Stamp one re-grounding verdict onto one claim (replaces in place).',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(set_verdict)
+    set_verdict.add_argument(
+        '--plan', required=True, metavar='PLAN-NN', help='Plan id whose spec carries the claim.'
+    )
+    set_verdict.add_argument(
+        '--claim-index',
+        required=True,
+        type=int,
+        metavar='N',
+        help='Zero-based index of the claim bullet within the spec\'s ## Claim Labels section.',
+    )
+    set_verdict.add_argument(
+        '--verdict', required=True, help=f'One of {sorted(VERDICT_VALUES)}.'
+    )
+    set_verdict.add_argument(
+        '--checked-at', required=True, metavar='SHA', help='The 7-40 hex HEAD sha the check ran against.'
+    )
+    set_verdict.add_argument(
+        '--by', required=True, metavar='PRODUCER', help='Producer that wrote it, as {slug}/{verb}.'
+    )
+    set_verdict.add_argument(
+        '--rescoped',
+        required=True,
+        help=f'One of {sorted(RESCOPED_VALUES)}; must be {NOT_APPLICABLE!r} unless the verdict is {CONTRADICTED!r}.',
+    )
+    set_verdict.add_argument(
+        '--evidence', required=True, metavar='TEXT', help='Non-empty evidence text (may contain the separator).'
+    )
+    set_verdict.set_defaults(handler=cmd_corpus_set_verdict)
+
+
+def _add_cleanup_group(subparsers: Any) -> None:
+    """Register the ``cleanup`` verb group.
+
+    Sub-verb: ``restart-check``, read-only. The cleanup verb's judgement half
+    lives in ``workflow/cleanup.md``; this group carries only the deterministic
+    readiness enumeration that doc calls.
+    """
+    cleanup = subparsers.add_parser(
+        'cleanup',
+        help='Cleanup-stage deterministic seams: report whether the session is safe to restart.',
+        allow_abbrev=False,
+    )
+    actions = cleanup.add_subparsers(dest='cleanup_action', required=True)
+
+    restart_check = actions.add_parser(
+        'restart-check',
+        help=(
+            'Report one readiness verdict per signal — each with its evidence and '
+            'its population — plus the floor over them (read-only).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(restart_check)
+    restart_check.set_defaults(handler=cmd_cleanup_restart_check)
 
 
 def _add_inbox_group(subparsers: Any) -> None:

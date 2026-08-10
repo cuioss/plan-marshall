@@ -7,7 +7,7 @@ project-architecture layout (top-level ``_project.json`` plus per-module
 ``derived.json`` / ``enriched.json``) and returns a structured context for
 solution-outline placement decisions.
 
-Covers two branches:
+Covers three branches:
 
 * **happy path** — at least two modules with mixed enrichment fields, asserting
   the returned ``modules`` list pins the documented shape (``name``, ``path``,
@@ -15,6 +15,11 @@ Covers two branches:
   ``tips``, ``insights``, ``best_practices``, ``skills_by_profile`` fields).
 * **not_found** — ``_project.json`` is absent, so the command returns the
   documented ``not_found`` status with a remediation suggestion.
+* **worktree-resolution fallback** — a matched pair (worktree absent vs
+  worktree materialized) plus a scope control, driven end-to-end through
+  ``main()``, pinning that the reader degrades to the checkout root only when
+  the plan's worktree cannot be resolved and always names the checkout it read
+  from.
 """
 
 import importlib.util
@@ -22,7 +27,9 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
+import file_ops
 import pytest
+from toon_parser import parse_toon
 
 from conftest import get_script_path
 
@@ -401,3 +408,176 @@ def test_get_module_context_not_found_message_references_data_dir(tmp_path, proj
     assert result['status'] == 'not_found'
     # The reader returns the parent of _project.json (i.e., the data dir).
     assert 'project-architecture' in result['file']
+
+
+# =============================================================================
+# Worktree-resolution fallback — matched pair plus scope control
+# =============================================================================
+#
+# ``get-module-context`` is a read-only reader consumed by phase-3-outline,
+# which runs BEFORE phase-5-execute materializes a plan's worktree (ADR-002).
+# A plan declaring ``use_worktree=true`` therefore has an empty
+# ``worktree_path`` at outline time, and the shared two-state resolver raises
+# ``WorktreeResolutionError`` for exactly that state. The reader degrades to
+# the cwd-relative checkout root and REPORTS the degradation on its payload.
+#
+# The three arms below are deliberately matched:
+#
+# * positive — worktree absent  → fallback fires, reads the checkout root
+# * negative — worktree present → fallback does NOT fire, reads the worktree
+# * scope    — a non-``WorktreeResolutionError`` failure is still fatal
+#
+# Without the negative arm the fallback could pass by ALWAYS reading the
+# checkout root — a different defect wearing the same green. Without the scope
+# arm the catch could widen into a blanket suppression of every routing error.
+
+
+def _run_main(monkeypatch, capsys, argv):
+    """Drive ``main()`` with a patched argv and return ``(exit_code, stdout)``."""
+    monkeypatch.setattr(sys, 'argv', ['manage-solution-outline', *argv])
+    with pytest.raises(SystemExit) as exc:
+        _mod.main()
+    code = exc.value.code if exc.value.code is not None else 0
+    return code, capsys.readouterr().out
+
+
+def _seed_named_modules(project_dir: Path, module_names: list[str]) -> list[str]:
+    """Seed a minimal per-module layout and return the seeded population.
+
+    Each module carries only the four required fields so the emitted
+    ``modules[]`` table stays uniform. The return value is the population every
+    count-bearing assertion below publishes alongside its expected count.
+    """
+    save_project_meta(
+        {
+            'name': project_dir.name,
+            'description': '',
+            'description_reasoning': '',
+            'extensions_used': [],
+            'modules': dict.fromkeys(module_names, {}),
+        },
+        str(project_dir),
+    )
+    for name in module_names:
+        save_module_derived(name, {'name': name, 'paths': {'module': name}}, str(project_dir))
+        save_module_enriched(
+            name,
+            {'purpose': f'{name} purpose', 'responsibility': f'{name} responsibility'},
+            str(project_dir),
+        )
+    return module_names
+
+
+def _stub_get_worktree_path(monkeypatch, *, use_worktree: bool, worktree_path: str) -> None:
+    """Stub the single ``get-worktree-path`` shell-out with a TOON payload.
+
+    Stubbing at the subprocess boundary keeps the real resolution logic in
+    play: ``_parse_get_worktree_path_output`` and ``PlanContext`` both execute
+    for real, so the ``use_worktree=true`` + empty-path state raises the
+    genuine ``WorktreeResolutionError`` rather than a hand-made stand-in.
+    """
+    payload = (
+        'status: success\n'
+        f'use_worktree: {"true" if use_worktree else "false"}\n'
+        f'worktree_path: "{worktree_path}"\n'
+    )
+    monkeypatch.setattr(file_ops, '_run_get_worktree_path', lambda plan_id: payload)
+
+
+def test_get_module_context_falls_back_to_checkout_when_worktree_unmaterialized(
+    plan_context, monkeypatch, capsys, tmp_path
+):
+    """Positive arm: an unmaterialized worktree degrades to the checkout root.
+
+    This is the phase-3-outline state — ``use_worktree`` is true but the
+    worktree does not exist yet. The command must succeed, return the REAL
+    seeded context (an empty payload would make the fallback pass vacuously),
+    and name the checkout it read from.
+    """
+    checkout = tmp_path / 'checkout'
+    checkout.mkdir()
+    population = _seed_named_modules(checkout, ['core', 'web'])
+    _stub_get_worktree_path(monkeypatch, use_worktree=True, worktree_path='')
+    # pytest's basetemp lives INSIDE this repository, so the real
+    # cwd-relative resolver would walk up past the fixture and land on the
+    # repository root. Pin the checkout root the reader degrades to, so the
+    # arm asserts the degradation target rather than the harness layout.
+    monkeypatch.setattr(_mod, 'cwd_checkout_root', lambda: str(checkout))
+    monkeypatch.chdir(checkout)
+
+    code, out = _run_main(monkeypatch, capsys, ['get-module-context', '--plan-id', 'so-wt-absent'])
+
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'success'
+    assert data['worktree_fallback'] is True
+    assert 'worktree_path is empty' in data['worktree_fallback_reason']
+    assert Path(data['project_dir']).resolve() == checkout.resolve()
+    # Count-bearing assertions publish their population: a zero module_count
+    # against an empty seed would otherwise read as a pass.
+    assert len(population) == 2, f'seeded population must be non-empty: {population}'
+    assert data['module_count'] == len(population), (
+        f'expected {len(population)} modules from population {population}, got {data["module_count"]}'
+    )
+    assert sorted(m['name'] for m in data['modules']) == sorted(population)
+
+
+def test_get_module_context_reads_the_worktree_when_it_is_materialized(
+    plan_context, monkeypatch, capsys, tmp_path
+):
+    """Negative arm: a materialized worktree is read, and no fallback is reported.
+
+    The worktree and the checkout are seeded with DISJOINT module sets, so the
+    returned population identifies which tree was actually read — the fallback
+    cannot pass here by reading the checkout root.
+    """
+    checkout = tmp_path / 'checkout'
+    checkout.mkdir()
+    checkout_population = _seed_named_modules(checkout, ['core', 'web'])
+    worktree = tmp_path / 'worktree'
+    worktree.mkdir()
+    population = _seed_named_modules(worktree, ['isolated'])
+    _stub_get_worktree_path(monkeypatch, use_worktree=True, worktree_path=str(worktree))
+    monkeypatch.chdir(checkout)
+
+    code, out = _run_main(monkeypatch, capsys, ['get-module-context', '--plan-id', 'so-wt-present'])
+
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'success'
+    assert data['worktree_fallback'] is False
+    assert 'worktree_fallback_reason' not in data
+    assert Path(data['project_dir']).resolve() == worktree.resolve()
+    # Both populations are published so the disjointness that makes this arm
+    # discriminating is visible in the failure message.
+    assert set(population).isdisjoint(checkout_population), (
+        f'arms must be disjoint: worktree={population}, checkout={checkout_population}'
+    )
+    assert data['module_count'] == len(population), (
+        f'expected {len(population)} modules from worktree population {population} '
+        f'(checkout population {checkout_population}), got {data["module_count"]}'
+    )
+    assert sorted(m['name'] for m in data['modules']) == sorted(population)
+
+
+def test_get_module_context_non_resolution_failure_stays_fatal(
+    plan_context, monkeypatch, capsys, tmp_path
+):
+    """Scope arm: the fallback catches ONLY worktree-resolution failures.
+
+    With the fallback armed (the stubbed plan has no materialized worktree),
+    supplying both routing flags must still exit 2 — the degradation must not
+    widen into a blanket suppression of every routing error.
+    """
+    _stub_get_worktree_path(monkeypatch, use_worktree=True, worktree_path='')
+
+    code, out = _run_main(
+        monkeypatch,
+        capsys,
+        ['get-module-context', '--plan-id', 'so-wt-scope', '--project-dir', str(tmp_path)],
+    )
+
+    assert code == 2
+    data = parse_toon(out)
+    assert data['status'] == 'error'
+    assert data['error'] == 'mutually_exclusive_args'

@@ -41,7 +41,7 @@ from _plan_parsing import (
     parse_document_sections,
 )
 from constants import VALID_STEP_INTENTS
-from file_ops import base_path, output_toon, safe_main
+from file_ops import base_path, cwd_checkout_root, output_toon, safe_main
 from input_validation import (
     add_plan_id_arg,
     parse_args_with_toon_errors,
@@ -702,19 +702,17 @@ def cmd_update(args: argparse.Namespace) -> dict[str, Any]:
     return result
 
 
-def cmd_get_module_context(args: argparse.Namespace) -> dict[str, Any]:
-    """Get project architecture context for placement decisions.
+def _read_module_context(project_dir: str) -> dict[str, Any]:
+    """Read the per-module project-architecture layout under ``project_dir``.
 
-    Reads the per-module project-architecture layout (top-level
-    ``_project.json`` plus per-module ``{derived,enriched}.json`` files) and
-    returns module information to help with file placement decisions during
-    solution outline creation.
+    Reads the top-level ``_project.json`` plus the per-module
+    ``{derived,enriched}.json`` files and returns module information to help
+    with file placement decisions during solution outline creation.
 
     The ``not_found`` status keys off ``_project.json`` existence — that file
     is the single source of truth for "which modules exist", matching the
     contract codified in ``_architecture_core``.
     """
-    project_dir = getattr(args, 'project_dir', '.')
     meta_path = get_project_meta_path(project_dir)
 
     if not meta_path.exists():
@@ -779,6 +777,50 @@ def cmd_get_module_context(args: argparse.Namespace) -> dict[str, Any]:
         modules_list.append(module_info)
 
     return context
+
+
+def _stamp_read_provenance(args: argparse.Namespace, payload: dict[str, Any]) -> dict[str, Any]:
+    """Name the checkout the architecture context was actually read from.
+
+    ``get-module-context`` degrades to the cwd-relative checkout root when the
+    plan declares ``use_worktree=true`` but its worktree is not materialized
+    yet (see the ``WorktreeResolutionError`` branch in :func:`main`). That
+    degradation must never be silent, so every payload stamped by this helper
+    carries:
+
+    * ``project_dir`` — the directory the context was actually read from.
+    * ``worktree_fallback`` — ``True`` only when the read degraded to the
+      checkout root because the plan's worktree could not be resolved.
+    * ``worktree_fallback_reason`` — present only when ``worktree_fallback``
+      is ``True``, naming the resolution failure verbatim.
+
+    A caller can therefore tell "read from the plan's worktree" from "read
+    from the checkout root because no worktree exists yet" without inferring
+    it from the path.
+    """
+    reason = getattr(args, 'worktree_fallback_reason', None)
+    stamped: dict[str, Any] = {
+        'status': payload['status'],
+        'project_dir': str(getattr(args, 'project_dir', '.')),
+        'worktree_fallback': reason is not None,
+    }
+    if reason is not None:
+        stamped['worktree_fallback_reason'] = reason
+    for key, value in payload.items():
+        if key != 'status':
+            stamped[key] = value
+    return stamped
+
+
+def cmd_get_module_context(args: argparse.Namespace) -> dict[str, Any]:
+    """Get project architecture context for placement decisions.
+
+    Thin wrapper over :func:`_read_module_context` that stamps the read
+    provenance (:func:`_stamp_read_provenance`) onto the payload, so the
+    reported context always names the checkout it came from.
+    """
+    payload = _read_module_context(getattr(args, 'project_dir', '.'))
+    return _stamp_read_provenance(args, payload)
 
 
 # =============================================================================
@@ -902,8 +944,18 @@ def main() -> int:
             output_toon(_routing.emit_mutually_exclusive_error(getattr(args, 'plan_id', None), args.project_dir))
             return 2
         except _routing.WorktreeResolutionError as exc:
-            output_toon(_routing.emit_worktree_error(args.plan_id, exc))
-            return 2
+            # This routing block runs only for ``get-module-context`` — the
+            # sole subcommand declaring ``--project-dir`` — and that verb is a
+            # read-only architecture reader. A plan with ``use_worktree=true``
+            # has no materialized worktree until phase-5-execute (ADR-002), so
+            # phase-3-outline, the one phase that consumes this verb, always
+            # meets that window and would otherwise be rejected outright.
+            # Degrade to the cwd-relative checkout root and record why, so the
+            # payload names the checkout it read from instead of failing. The
+            # shared resolver keeps its fatal contract for every write-side
+            # caller; only this reader degrades.
+            args.project_dir = cwd_checkout_root()
+            args.worktree_fallback_reason = str(exc)
 
     result = args.func(args)
     output_toon(result)

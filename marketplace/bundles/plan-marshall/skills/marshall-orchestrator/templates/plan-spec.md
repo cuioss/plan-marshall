@@ -32,7 +32,11 @@ rationale as an epic decision.}
 Inferred Claims. Label all three classes: the inferred mechanism, the Expected Surface below,
 and every derived count or sharpened finding. A HYPOTHESIS names the file plus symbol that
 confirms or refutes it and is marked verify-at-outline. An asserted absence is labelled and
-verified exactly like an asserted presence.}
+verified exactly like an asserted presence. A claim whose verify-first clause has since been
+settled carries at most one nested child bullet recording that settlement — stamped through the
+`corpus set-verdict` seam, never hand-typed — whose shape is defined once at
+`persona-marshall-orchestrator/standards/orchestration-model.md` § Re-Grounding Verdict Field
+and is not restated here.}
 
 - OBSERVED: {claim} — read at `{file}` § `{symbol}`
 - HYPOTHESIS: {claim} — confirm/refute at `{file}` § `{symbol}` (verify-at-outline)

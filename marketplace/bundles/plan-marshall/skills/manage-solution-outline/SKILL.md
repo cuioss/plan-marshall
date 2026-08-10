@@ -224,6 +224,8 @@ python3 .plan/execute-script.py plan-marshall:manage-solution-outline:manage-sol
 
 ```toon
 status: success
+project_dir: /path/to/checkout
+worktree_fallback: false
 module_count: 2
 modules[2]{name,path,purpose,responsibility}:
   default,.,Root project module,Project-wide responsibilities
@@ -231,6 +233,16 @@ modules[2]{name,path,purpose,responsibility}:
 ```
 
 Each `modules[]` entry additionally carries `key_packages`, `tips`, `insights`, `best_practices`, and `skills_by_profile` when the module's enriched architecture store populates them. The hint fields (`tips`, `insights`, `best_practices`) are **presence-gated** — each is emitted only when the corresponding `enriched.json` array is non-empty, and omitted entirely otherwise. Consumers (e.g. `phase-3-outline` rendering the `## Architecture Hints` section) read these fields directly off each module entry.
+
+**Read provenance** — `project_dir` and `worktree_fallback` ride on every payload returned after project-directory routing has resolved (`success`, `not_found`, and handler-level `error` alike), so the reported context always names the checkout it came from. The one payload that carries neither is the `mutually_exclusive_args` routing error: it is emitted *before* a project directory has been resolved, so there is no checkout for it to name.
+
+| Field | Meaning |
+|-------|---------|
+| `project_dir` | The directory the architecture data was actually read from. |
+| `worktree_fallback` | `true` only when `--plan-id` named a plan whose worktree could not be resolved and the read degraded to the cwd-relative checkout root. |
+| `worktree_fallback_reason` | Emitted only when `worktree_fallback` is `true`; names the resolution failure verbatim. |
+
+The fallback exists because a plan declaring `use_worktree=true` has no materialized worktree until phase-5-execute, while `phase-3-outline` — the phase that consumes this verb — runs before that. `get-module-context` is a read-only reader, so it degrades to the checkout root and reports the degradation rather than failing; the shared `--plan-id` resolver keeps its fatal contract for every write-side caller.
 
 ---
 

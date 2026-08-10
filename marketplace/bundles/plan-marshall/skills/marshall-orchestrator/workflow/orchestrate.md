@@ -57,11 +57,22 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 Count `R`, the plans currently in `launched` status, and select up to `N − R` candidates — a block sized by the scope knob rather than a hardcoded single (at the default `N = 1` that block is exactly one). Walk `staged` plans in queue order whose dependencies (sequencing notes in their `plans/PLAN-NN-{plan_slug}.md` spec) are satisfied, and admit a candidate ONLY when both admission tests pass:
 
 - **Disjoint** — its expected surface overlaps neither any currently-launched plan nor any candidate already selected this round.
-- **Prep-ready** — its spec owes no re-grounding, and carries no verify-first clause that a prior orchestrator corroboration has REFUTED without the spec being re-scoped to reflect the refutation (see the spec template's `## Claim Labels`).
+- **Prep-ready** — decided from the PARSER, not from a reader's judgement over the spec prose. Read the corpus's verdicts once:
 
-An OPEN verify-first clause — one authored by `decompose.md` Step 4 and not yet checked by anyone — does NOT fail the Prep-ready test. Per [orchestration-model.md § Verify-First Contract for Inferred Claims](../../persona-marshall-orchestrator/standards/orchestration-model.md#verify-first-contract-for-inferred-claims), settling such a clause is the LAUNCHED plan's own job (refine owns the verification; outline owns it when refine did not run), so blocking emission on an unchecked clause would make the verifying phase unreachable and the spec permanently unemittable. Only a clause a fresh orchestrator check has already contradicted — typically the [`analyze.md` Step 2](analyze.md) dispatchable ground-truth corroboration returning `verdict: contradicted` — blocks emission, and only until the spec is re-scoped against that refutation.
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator corpus verdicts \
+    --slug {slug}
+  ```
 
-A candidate failing either test is sequenced, not emitted. **Never emit a colliding or unprepared plan merely to fill a slot** — when fewer than `N − R` candidates qualify, report the shortfall with the blocking reason per candidate (the overlapping surface, or the refuted-and-unaddressed claim) instead.
+  **Joining a candidate to its rows.** `corpus verdicts` keys each row by `spec` — the spec FILE NAME, e.g. `PLAN-01-alpha.md` — and `claim_index`; it carries no plan id. Candidate selection here works over plan ids (`PLAN-NN`). A candidate's rows are therefore the rows whose `spec` begins with that candidate's `PLAN-NN-` prefix, and that prefix join is the ONE rule relating the two. It applies wherever this payload meets a plan id, including the `stale_verdicts[T]{plan,...}` rows of the report shape below.
+
+  A candidate is prep-ready **iff** no row of its spec carries `admits: false`. `corpus verdicts` is the field's only interpreter, so the admission outcome is a property of one parse rather than of two readers agreeing. The admission table — which of the six states admits and which blocks, and why — is defined once at [orchestration-model.md § Re-Grounding Verdict Field](../../persona-marshall-orchestrator/standards/orchestration-model.md#re-grounding-verdict-field) and is not restated here.
+
+Four rules govern the outcome, every one of them decided by the parser rather than by a reader: an **OPEN (absent) clause does NOT fail the test** — settling it is the LAUNCHED plan's own job per [orchestration-model.md § Verify-First Contract for Inferred Claims](../../persona-marshall-orchestrator/standards/orchestration-model.md#verify-first-contract-for-inferred-claims), so blocking on an unchecked clause would make the verifying phase unreachable and the spec permanently unemittable; **only a refutation the spec has not absorbed blocks**; an **`unverifiable` verdict never blocks**, because an unreachable population is not a refutation; and a **malformed field blocks**, reported as `indeterminate` with the offending line quoted, so a typo can never hide a refutation.
+
+**Staleness is reported, never promoted.** A row whose `stale` flag is set rides into the report alongside the admission outcome and does not change it — neither silently promoted to blocking as HEAD advances, nor silently dropped.
+
+A candidate failing either test is sequenced, not emitted. **Never emit a colliding or unprepared plan merely to fill a slot** — when fewer than `N − R` candidates qualify, report the shortfall with the blocking reason per candidate instead. A prep-ready shortfall reason is **derived from the blocking row**, naming the claim and its verdict (`claim {claim_index}: contradicted, not re-scoped`, `claim {claim_index}: indeterminate — {quoted line}`) rather than being a hand-typed sentence.
 
 ### Step 5 (verb = `next`): Emit the commands
 
@@ -141,7 +152,10 @@ emitted[E]{plan,command}:
   PLAN-NN,/plan-marshall task="implement .plan/local/orchestrator/{slug}/plans/PLAN-NN-{plan_slug}.md"
 shortfall[S]{plan,reason}:
   PLAN-MM,"overlaps {surface} with PLAN-KK"
-  PLAN-PP,"refuted verify-first clause not yet re-scoped"
+  PLAN-PP,"claim 2: contradicted, not re-scoped"
+  PLAN-QQ,"claim 0: indeterminate — {offending line}"
+stale_verdicts[T]{plan,claim_index,sha}:
+  PLAN-NN,1,9f3a1c2
 ```
 
-`display_detail` is ≤80 chars, ASCII, no trailing period. `emitted[]` is empty when no candidate qualifies; `shortfall[]` is empty when the block fills every slot, and otherwise names one blocking reason per unemittable candidate.
+`display_detail` is ≤80 chars, ASCII, no trailing period. `emitted[]` is empty when no candidate qualifies; `shortfall[]` is empty when the block fills every slot, and otherwise names one blocking reason per unemittable candidate — a prep-ready reason is derived from the blocking `corpus verdicts` row (its claim index and verdict), never hand-typed. `stale_verdicts[]` reports every row the parser flagged stale and carries no admission consequence: a candidate with stale verdicts and no blocking row is emitted normally.

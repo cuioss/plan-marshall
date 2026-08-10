@@ -52,7 +52,7 @@ The orchestrator inherits the exhaustive-record posture of the xref:audit-trail.
 == Related
 
 * link:../../marketplace/bundles/plan-marshall/skills/persona-marshall-orchestrator/standards/orchestration-model.md[`orchestration-model.md`] — the canonical orchestration standard: tiers, layout, persist/resume contract, carve-outs, lessons-handling mode
-* link:../../marketplace/bundles/plan-marshall/skills/marshall-orchestrator/SKILL.md[`marshall-orchestrator/SKILL.md`] — the verb router (`init` / `decompose` / `status` / `next` / `analyze` / `resume` / `close` / `lessons`)
+* link:../../marketplace/bundles/plan-marshall/skills/marshall-orchestrator/SKILL.md[`marshall-orchestrator/SKILL.md`] — the verb router, which carries the authoritative verb set
 * link:../../marketplace/bundles/plan-marshall/skills/persona-marshall-orchestrator/SKILL.md[`persona-marshall-orchestrator/SKILL.md`] — the orchestrator work identity
 * link:../../marketplace/bundles/plan-marshall/skills/manage-status/standards/status-lifecycle.md[`status-lifecycle.md`] — the `kind=orchestrator` status schema and three-phase lifecycle
 * xref:planning-workflow.adoc[Concepts › Planning Workflow] — the six-phase plan lifecycle the orchestrator sits above
