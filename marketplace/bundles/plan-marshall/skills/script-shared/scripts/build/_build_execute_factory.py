@@ -217,11 +217,21 @@ def _read_fallback_state() -> dict[str, Any]:
 
 
 def _write_fallback_state(state: dict[str, Any]) -> None:
-    """Persist the per-plan fallback-streak state (best-effort, fail-open)."""
+    """Persist the per-plan fallback-streak state (best-effort, fail-open).
+
+    Writes ATOMICALLY (a per-pid temp file + ``os.replace``) so a concurrent
+    reader on the build hot path never observes a torn/partial JSON document when
+    several in-process builds fall back at once. The surrounding read-modify-write
+    is unlocked and best-effort by design — a lost increment merely delays the
+    escalation by one build — but a half-written file, which would read back as
+    ``{}`` and silently reset the streak, is prevented outright.
+    """
     path = _fallback_state_path()
     try:
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        path.write_text(json.dumps(state), encoding='utf-8')
+        tmp = path.with_name(f'{path.name}.{os.getpid()}.tmp')
+        tmp.write_text(json.dumps(state), encoding='utf-8')
+        os.replace(tmp, path)
     except OSError:
         pass
 

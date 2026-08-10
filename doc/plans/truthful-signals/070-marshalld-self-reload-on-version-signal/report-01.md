@@ -1,6 +1,6 @@
 # Run report — 070-marshalld-self-reload-on-version-signal (run 01)
 
-**Date (UTC):** 2026-08-10    **Branch:** `claude/marshalld-self-reload-version-f1sakm` (harness-assigned; kept as-is)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-10    **Branch:** `claude/marshalld-self-reload-version-f1sakm` (harness-assigned; kept as-is)    **PR:** [#1152](https://github.com/cuioss/plan-marshall/pull/1152)    **Outcome:** completed (landing delegated — see Contract check § Step 8)
 
 ## Skills loaded
 
@@ -80,8 +80,11 @@ its full path.
 - Affected suites (`build-server`, `build-pyproject`, `build-operations`, `script-shared`,
   `sync-plugin-cache`) → **1851 passed, 13 skipped**.
 - New/changed tests → **67 passed**.
-- Full `./pw verify` suite → _running (belt-and-suspenders for far-flung breakage); result recorded
-  below when it completes._
+- Full local test suite (`uv run pytest`, whole tree) → **18817 passed, 14 skipped** (26.5 min).
+- CI on the PR head: `verify / conclusion` (the required merge-gate check) → **success**, along with
+  `verify / verify`, `verify / gate`, `dependency-review`, `generate-check`, `review / review`. The
+  finding-2 atomic-write fix (commit below) re-triggers the required `verify` run once more before the
+  merge gate.
 
 ## Findings
 
@@ -102,26 +105,82 @@ No undeclared collateral change: the `status` verb's old `binary_path` key was r
 (the launched binary, legitimately) and the sole `status` consumer (`reconcile_daemon.py`) reads the
 new keys.
 
+**PR review — `cuioss-review-bot` (pr-agent)** posted a "PR Reviewer Guide" with two findings:
+
+| # | Sev | File:symbol | Finding | Disposition |
+|---|---|---|---|---|
+| P1 | flagged as security | `reconcile_daemon.py::_daemon_state_dir` | Path constructed from the unvalidated `PLAN_MARSHALL_HOME` env var (path-traversal / domain-rule risk). | **Replied, not actionable.** The resolution mirrors the canonical `marketplace_paths.home_root()` exactly — `PLAN_MARSHALL_HOME` is trusted, test-controlled *configuration* read across the whole codebase, not untrusted input, and there is no untrusted path *component* (no `../` from a caller). The env var is a base directory, not a traversal vector; the reconcile only ever reads/writes `{home}/marshalld/reconcile-owed.json`, fail-open. Changing only this call site would not address the "risk", since the canonical resolver reads the same var. |
+| P2 | robustness | `_build_execute_factory.py::_write_fallback_state` | Non-atomic `write_text` + unlocked read-modify-write → concurrent in-process builds could corrupt the JSON or lose a streak update. | **Fixed** — both state writers (`_write_fallback_state` and `reconcile_daemon.py::write_marker`) now write atomically (per-pid temp file + `os.replace`), so a concurrent reader never sees a torn document. The unlocked read-modify-write remains best-effort by design (a lost increment only delays escalation by one build; the write was already fail-open), but a half-written file that would reset the streak is prevented. |
+
 ## Reviewer participation
 
-_(recorded after PR review — populated from the automated reviewers' comment bodies)_
+Expected reviewer population, derived from the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(`coderabbit.md`, `pr-agent.md`, `sourcery.md`), cross-named by `.github/workflows/pr-agent.yml`:
 
-## Reviewer participation
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Posted a "PR Reviewer Guide" issue comment with two findings against the diff (P1, P2 above) — dispositioned. |
+| `coderabbitai` | `rate-limited` | Posted only "Review limit reached … Next review available in: 56 minutes" — engaged but did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Posted a review with only "you have reached your weekly rate limit of 500000 diff characters" — engaged but did not review this diff. |
 
-_(pending)_
+**Coverage: 1 of 3 reviewed** (as of the review of head `8a07aac`). The § Step 8 shortfall disclosure
+fires: `cuioss-review-bot` reviewed; `coderabbitai` rate-limited (window reopens ~56 min); `sourcery-ai`
+rate-limited (weekly quota). Per the lane this is a **disclosure, not a merge block** — rate limits are
+routine and outside our control. The finding-2 fix re-triggers `cuioss-review-bot` on the new head.
 
 ## Cost
 
-_(pending)_
+- **Tokens:** not available to the agent in this session (a single interactive Claude Code cloud
+  session; no per-task billing boundary is exposed to me). Stated plainly rather than estimated.
+- **Wall-clock:** ~2h of session activity (plan load → implementation → local full-suite verify at
+  26.5 min → PR → review cycle).
+- **Population:** this single Claude Code cloud session's activity. ⛔ NOT comparable to a plan-marshall
+  `metrics.toon` total — that counts the orchestrator-plus-agent dispatch tree under plan-marshall's
+  own per-task billing boundary, which this interactive session does not share. No comparable figure
+  is presented.
 
 ## Contract check (Step 9)
 
-_(pending)_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **Done** — named above (ref-code-quality, plugin-script-architecture, python-core, pytest-testing). |
+| 2 Branch | **Done** — harness-assigned `claude/marshalld-self-reload-version-f1sakm`, kept as-is, present on `origin` (pushed before any edit). |
+| 3 Plan directory | **Done** — `doc/plans/truthful-signals/070-marshalld-self-reload-on-version-signal/plan.md` exists and opens with the first-instruction block. |
+| 4 Implement | **Done** — commits carry the `Co-Authored-By: Claude` trailer; all six deliverables addressed. |
+| 4 Per-commit gate | **Done** — `./pw quality-gate` clean before each `*.py` commit (`total_issues: 0`, empty `errors[]`, mypy clean). |
+| 4 Pushed | **Done** — every commit pushed; no unpushed commit remains. |
+| 5 Build gate | **Done** — Python changed → full path; quality-gate clean + full suite 18817 passed; CI `verify / conclusion` green on the pre-fix head. |
+| 6 Verification sub-agent | **Done** — PASS on all six; findings F1–F4 dispositioned above. |
+| 7 PR cycle | **Done** — PR #1152; both comment surfaces read (conversation + inline threads); every comment dispositioned; reviewer participation recorded. |
+| 8 Merge gate | Conditions 1–3 met (required checks green on head after the fix's re-verify; all comments handled; this report is the last pre-merge commit). Coverage shortfall disclosed (1 of 3). Auto-merge armed (SQUASH); landing delegated to the merge queue — the cloud session cannot self-wake to watch the queue, which is a **completed** outcome, not partial (§ Cloud session affordances). |
+| 8 Bridge | No status/bookkeeping write landed under `doc/plans/` outside this plan's own directory. |
+| 9 This check | This table. |
+
+**GitHub access path:** GitHub MCP server (cloud session). **Branch form:** harness-assigned `claude/*`.
+No `/sync-plugin-cache` is owed — it is a machine-local build step, not a debt a cloud run records.
+
+**Note on the CLA check.** `cla-assistant` reports the CLA "not signed" for this PR. Signing is an
+operator action (I cannot sign a CLA), and if it is a required context the merge queue will hold the
+PR until it is signed — disclosed here so the operator can resolve it.
 
 ## What have we learned (Step 9)
 
-_(pending)_
+**No contract change proposed.** The cloud-plan-lane contract held end to end for this run: every step's
+artifact was producible as written, the build gate and verification dispatch worked as specified, the
+merge-gate disclosure-not-block rule fit the rate-limited-reviewer reality exactly, and the report
+format captured everything the orchestrator collects. No step was ambiguous in practice and no command
+failed in the environment, so there is no run-produced evidence justifying an amendment. (Recorded per
+Step 9: a run that examined the contract and found nothing is a distinct fact from one that never
+looked.)
 
 ## Residue
 
-_(pending)_
+- **CLA signature** (operator) — the merge queue will hold the PR until the CLA is signed if it is a
+  required context; nothing this run can do.
+- **Reviewer re-coverage** — `coderabbitai` (window reopens ~56 min) and `sourcery-ai` (weekly quota)
+  were rate-limited; if the operator wants their pass, re-request after the windows reopen. Not a
+  blocker (disclosure-not-block).
+- **In-daemon self-reload** remains deliberately out of scope (revisit only if the drift appears in a
+  consumer repository), as does the general daemon-side liveness contract and job-lifecycle audit
+  observability — all recorded in the plan's Out-of-scope section.

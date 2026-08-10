@@ -149,10 +149,17 @@ def read_marker(path: Path) -> dict | None:
 
 
 def write_marker(path: Path, marker: dict) -> None:
-    """Persist the reconcile-owed marker (best-effort, fail-open)."""
+    """Persist the reconcile-owed marker atomically (best-effort, fail-open).
+
+    A per-pid temp file + ``os.replace`` so a reader never sees a torn document.
+    The reconcile runs serially (once per sync), so there is no self-concurrency
+    here — this is defence-in-depth hygiene consistent with the D5 streak writer.
+    """
     try:
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        path.write_text(json.dumps(marker, indent=2), encoding='utf-8')
+        tmp = path.with_name(f'{path.name}.{os.getpid()}.tmp')
+        tmp.write_text(json.dumps(marker, indent=2), encoding='utf-8')
+        os.replace(tmp, path)
     except OSError:
         pass
 
