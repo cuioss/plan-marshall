@@ -699,6 +699,100 @@ def cmd_ci_duration_p50(args: argparse.Namespace) -> dict:
 
 
 # =============================================================================
+# Language-Servers Subcommands
+# =============================================================================
+
+# The machine-local binding of a language to its locally-installed language
+# server, read by the ``lsp-client`` skill. Machine-local because server
+# availability is per-machine tooling; this is the shared configuration surface
+# the resolver-configuration work extends, not a parallel store.
+
+
+def _read_language_servers_section() -> dict[str, Any]:
+    """Read the ``language_servers`` section, or an empty mapping when absent."""
+    config = read_run_config(get_run_config_path())
+    section = config.get('language_servers')
+    return section if isinstance(section, dict) else {}
+
+
+def cmd_language_server_get(args: argparse.Namespace) -> dict:
+    """Get the language-server binding for a language (``configured: false`` when absent)."""
+    try:
+        entry = _read_language_servers_section().get(args.language)
+        if not isinstance(entry, dict):
+            return {'status': 'success', 'language': args.language, 'configured': False}
+        return {
+            'status': 'success',
+            'language': args.language,
+            'configured': True,
+            'enabled': bool(entry.get('enabled', True)),
+            'command': entry.get('command', []),
+            'language_id': entry.get('language_id', args.language),
+        }
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_language_server_set(args: argparse.Namespace) -> dict:
+    """Set the language-server binding for a language (``--command`` is a JSON array)."""
+    try:
+        try:
+            command = json.loads(args.command)
+        except json.JSONDecodeError as e:
+            return _output_error(f'--command must be a JSON array of strings: {e}')
+        if not isinstance(command, list) or not command or not all(isinstance(part, str) for part in command):
+            return _output_error('--command must be a non-empty JSON array of strings')
+
+        config_path = get_run_config_path()
+        config = read_run_config(config_path)
+        section = config.get('language_servers')
+        if not isinstance(section, dict):
+            section = {}
+            config['language_servers'] = section
+        language_id = args.language_id or args.language
+        section[args.language] = {
+            'enabled': not args.disabled,
+            'command': command,
+            'language_id': language_id,
+        }
+        _write_json_file(config_path, config)
+        return _output_success(
+            'set',
+            language=args.language,
+            enabled=not args.disabled,
+            command=command,
+            language_id=language_id,
+        )
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_language_server_list(args: argparse.Namespace) -> dict:
+    """List configured language keys."""
+    del args  # unused — fixed-shape verb
+    try:
+        languages = sorted(_read_language_servers_section().keys())
+        return {'status': 'success', 'languages': languages, 'count': len(languages)}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_language_server_remove(args: argparse.Namespace) -> dict:
+    """Remove the language-server binding for a language."""
+    try:
+        config_path = get_run_config_path()
+        config = read_run_config(config_path)
+        section = config.get('language_servers')
+        if not isinstance(section, dict) or args.language not in section:
+            return _output_success('skipped', language=args.language, reason='Not configured')
+        del section[args.language]
+        _write_json_file(config_path, config)
+        return _output_success('removed', language=args.language)
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
 # Cleanup Subcommands (delegates to cleanup.py functions)
 # =============================================================================
 
@@ -976,6 +1070,32 @@ Examples:
     p_cid_p50.add_argument('--command', required=True, help='Command identifier (e.g., "ci:wait")')
     p_cid_p50.set_defaults(func=cmd_ci_duration_p50)
 
+    # language-server command with subcommands
+    p_ls = subparsers.add_parser(
+        'language-server',
+        help='Manage the machine-local language_servers binding (read by lsp-client)',
+        allow_abbrev=False,
+    )
+    ls_subparsers = p_ls.add_subparsers(dest='language_server_command', required=True, help='Language-server operation')
+
+    p_ls_get = ls_subparsers.add_parser('get', help='Get the binding for a language', allow_abbrev=False)
+    p_ls_get.add_argument('--language', required=True, help='Language key (e.g. python)')
+    p_ls_get.set_defaults(func=cmd_language_server_get)
+
+    p_ls_set = ls_subparsers.add_parser('set', help='Set the binding for a language', allow_abbrev=False)
+    p_ls_set.add_argument('--language', required=True, help='Language key (e.g. python)')
+    p_ls_set.add_argument('--command', required=True, help='Server command as a JSON array of strings')
+    p_ls_set.add_argument('--language-id', help='LSP languageId (defaults to --language)')
+    p_ls_set.add_argument('--disabled', action='store_true', help='Store the binding but leave it disabled')
+    p_ls_set.set_defaults(func=cmd_language_server_set)
+
+    p_ls_list = ls_subparsers.add_parser('list', help='List configured language keys', allow_abbrev=False)
+    p_ls_list.set_defaults(func=cmd_language_server_list)
+
+    p_ls_remove = ls_subparsers.add_parser('remove', help='Remove the binding for a language', allow_abbrev=False)
+    p_ls_remove.add_argument('--language', required=True, help='Language key (e.g. python)')
+    p_ls_remove.set_defaults(func=cmd_language_server_remove)
+
     # cleanup command
     p_cleanup = subparsers.add_parser(
         'cleanup', help='Clean .plan directories based on retention settings', allow_abbrev=False
@@ -1029,6 +1149,12 @@ Examples:
     if args.command == 'ci-duration':
         if not args.ci_duration_command:
             p_cid.print_help()
+            return 1
+
+    # Handle language-server subcommand
+    if args.command == 'language-server':
+        if not args.language_server_command:
+            p_ls.print_help()
             return 1
 
     result = args.func(args)

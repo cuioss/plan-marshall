@@ -228,6 +228,22 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ci-du
 
 For an odd-sized window `p50_seconds` is the middle observed duration; for an even-sized window it is the mean of the two middle values.
 
+### language-server get / set / list / remove
+
+Manage the machine-local `language_servers` binding read by the [`lsp-client`](../lsp-client/SKILL.md) skill — the language-to-server map a `phase-5-execute` leaf uses for opt-in symbol lookup and verified edits. The binding is machine-local (server availability is per-machine tooling) and lives under the top-level `language_servers` map in the main-anchored `run-configuration.json`. An absent or `enabled: false` language is *not configured*, and `lsp-client` degrades to the `Read` / `Edit` path. See [run-config-standard.md](standards/run-config-standard.md) § "Language-Servers Section" for the schema.
+
+```bash
+# Bind a language server (--command is a JSON array of strings)
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config language-server set \
+  --language python --command '["pyright-langserver", "--stdio"]' --language-id python
+
+# Read the binding for a language (configured: false when absent)
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config language-server get \
+  --language python
+```
+
+`--disabled` on `set` stores the binding but leaves it inactive; `list` reports the configured language keys; `remove` deletes a binding.
+
 ### cleanup / cleanup-status
 
 Directory cleanup using retention settings from marshal.json.
@@ -388,6 +404,23 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ci-du
 
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config ci-duration p50 \
   --command COMMAND
+```
+
+### language-server
+
+`language-server` carries the nested sub-verbs `get`, `set`, `list`, and `remove`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config language-server get \
+  --language LANGUAGE
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config language-server set \
+  --language LANGUAGE --command COMMAND [--language-id LANGUAGE_ID] [--disabled]
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config language-server list
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config language-server remove \
+  --language LANGUAGE
 ```
 
 ### cleanup
