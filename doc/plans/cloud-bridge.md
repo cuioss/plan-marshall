@@ -163,9 +163,11 @@ orchestrator.
 
 Steps 4–7 are one unit: if the transition fails, nothing is removed.
 
-**That commit is documentation-only, so it carries `--label skip-bot-review` at creation.** Bot review
-capacity is contended across this repository, and a bookkeeping diff has nothing to offer a reviewer.
-The general rule: **a PR that changes no source gets no bot review.**
+**That commit is a pure bookkeeping diff — no `*.py`, no skill, no bundle change — so it carries
+`--label skip-bot-review` at creation.** Bot-review capacity is contended across this repository, and a
+ledger diff has nothing a reviewer can act on. The general rule (`cloud-plan-lane` § Step 7):
+`skip-bot-review` is for a diff with **no reviewable footprint** — documentation or bookkeeping only,
+never a skill, which is code and is reviewed.
 
 ## What this bridge deliberately does not do
 
