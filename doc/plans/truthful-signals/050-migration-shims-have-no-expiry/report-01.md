@@ -1,6 +1,6 @@
 # Run report — 050-migration-shims-have-no-expiry (run 01)
 
-**Date (UTC):** 2026-08-10    **Branch:** `claude/migration-shims-expiry-3nidnh` (harness-assigned, kept as-is)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-10    **Branch:** `claude/migration-shims-expiry-3nidnh` (harness-assigned, kept as-is)    **PR:** [#1153](https://github.com/cuioss/plan-marshall/pull/1153)    **Outcome:** completed — armed for auto-merge, landing delegated to the merge queue
 
 ## Skills loaded
 
@@ -202,24 +202,80 @@ _pending_
 
 ## Reviewer participation
 
-_pending PR_
+Expected population derived from the automatic-review registry (`author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`, cross-named by
+`.github/workflows/pr-agent.yml`): `coderabbitai`, `cuioss-review-bot`, `sourcery-ai`.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Posted a "PR Reviewer Guide" review with one real finding — "Flawed Cover Window" (`_ABOVE_DEF_GAP` too small for a 4-line marker block above a `def`, latent false `shim_unmarked`). Addressed in commit `7a5763f` + reply. |
+| `coderabbitai` | `rate-limited` | Published only a quota notice: "Review limit reached … you've reached your PR review limit". Engaged, did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Published only a quota notice: review body "reached your weekly rate limit of 500000 diff characters". |
+
+**Coverage: 1 of 3 reviewed.** § Step 8 shortfall disclosure fired: `cuioss-review-bot` reviewed (its
+one finding fixed); `coderabbitai` and `sourcery-ai` rate-limited (routine quota, outside our control,
+not a merge blocker). The one substantive review finding was fixed, not merely acknowledged.
 
 ## Cost
 
-- **Tokens:** not available to the agent in this session (the Claude Code cloud harness does not
-  surface a token counter to the running agent).
-- **Wall-clock:** run start ~2026-08-10; end at finalize.
-- **Population:** this single Claude Code cloud session's usage. NOT comparable to a plan-marshall
-  `metrics.toon` total (different billing boundary — no orchestrator dispatch tree here).
+- **Tokens:** not available to the agent in this session — the Claude Code cloud harness does not
+  surface a token counter to the running agent. Stated plainly rather than estimated.
+- **Wall-clock:** run start ~2026-08-10 (session start); PR opened 22:18 UTC, review cycle + finalize
+  through ~22:35 UTC. Source: PR `created_at`/`updated_at`.
+- **Population:** this single Claude Code cloud session's usage as the harness counts it. ⛔ NOT
+  comparable to a plan-marshall `metrics.toon` total — that counts the orchestrator-plus-agent dispatch
+  tree under plan-marshall's per-task billing boundary, which a single interactive cloud session does
+  not share. No comparable figure is available, so none is presented.
 
 ## Contract check (Step 9)
 
-_pending finalize_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **Done** — named in § Skills loaded (loaded by bundle path). |
+| 2 Branch on `origin` | **Done** — harness-assigned `claude/migration-shims-expiry-3nidnh`, pushed at Step 2 and after every commit. |
+| 3 Plan directory | **Done** — `doc/plans/truthful-signals/050-migration-shims-have-no-expiry/plan.md` exists and opens with the first-instruction block (re-verified at finalize). |
+| 4 Implement | **Done** — every commit carries the `Co-Authored-By: Claude` trailer; all four deliverables addressed. |
+| 4 Per-commit gate | **Done** — every `*.py`-touching commit was preceded by a `total_issues: 0` quality-gate log. |
+| 4 Pushed | **Done** — no unpushed commit remains at each stage; final report commit is the last pre-merge push. |
+| 5 Build gate | **Done** — Python changed → full path: `./pw quality-gate` pass + `./pw module-tests` 18808 passed / 14 skipped (re-run after the review fix: 2175 in the pm-plugin-development scope). |
+| 6 Verification sub-agent | **Done** — full verification CLEAN + D1 cold-read PASSED; dispositions in § Findings. |
+| 7 PR cycle | **Done** — PR #1153; every comment dispositioned (§ Reviewer participation); the one real finding fixed. |
+| 8 Merge gate | **Done (armed)** — conditions 1–3 met; review-coverage shortfall (1-of-3) disclosed; auto-merge armed (SQUASH). The session cannot self-wake to watch the queue, so the `MERGED` confirmation is delegated to the orchestrator's collect (§ cloud-plan-lane Step 8: completed, not partial). |
+| 8 Bridge | **Done** — no status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; the report carries the PR number + per-deliverable outcome. |
+| 9 This check | **Done** — this table. |
+| 9 What have we learned | Below. |
+
+GitHub access path used: **GitHub MCP server** (the expected cloud path). Branch form: **harness-assigned**
+(`claude/*`, kept as-is). No `/sync-plugin-cache` is owed — a cloud run neither performs nor owes it.
 
 ## What have we learned (Step 9)
 
-_pending finalize_
+**Cloud-lane contract change proposed: none.** The contract executed end to end without an ambiguous
+step, an unproducible artifact, or a command that failed in this environment. Every gate did its job
+(the build gate caught a ruff + two historical-prose issues; the pre-PR verification and the review bot
+each caught real defects). No evidence from this run supports a contract edit, so none is proposed.
+
+**Two observations routed elsewhere (not cloud-lane-contract changes):**
+
+1. **Plan-authoring finding — the D2 instruction is defective.** Plan 050 (and its sibling 040) instruct
+   "copy the pattern from `test/_shared/_dispatch_roster.py`", but that file is a Markdown-section parser,
+   not a tree enumerator; 040 already filed a STOP CONDITION on the identical instruction. This run
+   mirrored 040's `_analyze_thinking_directive_in_workflow_docs.py` instead. This belongs to whoever
+   authors these plans (the `author-cloud-plan` skill), not to the cloud-lane contract.
+2. **Shallow-clone floor derivation.** The cloud clone is shallow (rooted at the graft boundary), so
+   `git log -S` floor pins are unreliable; floors were recorded as concrete in-code-anchored
+   descriptions. This is a plan-specific consequence (this plan needed version floors), not a lane
+   defect — the lane does not mandate git-archaeology.
 
 ## Residue
 
-_pending_
+- **CLA status `not_signed`** on PR #1153 — the `cla-assistant` bot flags the `Co-Authored-By: Claude
+  <noreply@anthropic.com>` co-author (a harness-mandated trailer) as an unsigned contributor. Disclosed,
+  not blocked: the trailer is mandatory and prior cloud-lane PRs merged with it, so the merge queue is
+  the enforcer. If it turns out to gate the merge, it needs the repository owner's action (sign/recheck)
+  — an agent must not sign a legal agreement autonomously.
+- **Sibling-040 detector overlap** — noted per the plan's out-of-scope guidance. This run reused 040's
+  population-derived pattern rather than shipping a second framework; no further action.
+- **Local `/sync-plugin-cache`** — `marketplace/bundles/` changed, so a *developer-machine* cache sync
+  is owed locally before the edits take effect at runtime there. Not owed by this cloud run (the lane
+  neither performs nor owes it); recorded so a local developer knows.
