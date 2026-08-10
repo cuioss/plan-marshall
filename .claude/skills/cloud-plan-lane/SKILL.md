@@ -292,6 +292,13 @@ Every commit message ends with exactly this trailer, and **no** "Generated with 
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
+**Stage the deliverable paths explicitly — never `git add -A`.** A `./pw` build (§ Step 5) run under a
+session interpreter older than the project's floor rewrites `uv.lock` as a side effect; `git add -A`
+then sweeps that churn into a deliverable commit. It was observed in two consecutive cloud runs, each
+caught only because it looked. So name the paths you actually changed when you stage, and check
+`git status` for stray generated-file churn — a lone `uv.lock`, a regenerated lockfile — **before**
+committing; back it out rather than shipping it.
+
 **Push after every commit** — not once at Step 7:
 
 ```bash
@@ -377,6 +384,10 @@ Give every `./pw` call a Bash timeout of at least **600000 ms (10 minutes)**.
 `status`, and open the `log_file` it names to confirm `total_issues: 0` — a green summary line is not
 the same as a clean log. Fix and re-run until it is genuinely clean; a build that is not clean blocks
 the PR.
+
+**This build can leave lockfile churn.** Under a session interpreter below the project's floor, `./pw`
+rewrites `uv.lock` as a side effect. Do not let it reach a commit: stage the deliverable paths
+explicitly and never `git add -A` (§ Step 4, "Commit and push").
 
 ## Step 6 — Pre-PR verification sub-agent
 
@@ -534,12 +545,36 @@ review-side effects, and each has a defined handling so neither is misread:
 **The merge is gated on conditions 1–3 below. Condition 4 is a disclosure the run performs before
 arming auto-merge — it is not a gate on the merge. Merge only when conditions 1–3 hold:**
 
-1. **All checks are green** — verify against actual check state, not against an assumption that time
-   has passed:
+1. **Every required context is present on the exact head SHA and concluded successfully** — not
+   merely "all checks green." A repository's check set mixes two kinds of context: those the branch
+   **ruleset requires** before a merge, and those that merely report — advisory bots, informational
+   statuses, third-party badges. **Required-ness is the ruleset's to define, never this document's**:
+   read it from the ruleset, never from the shape of whatever check set came back, and **name no
+   individual check here** — a check named ignorable in this contract would be wrong the moment the
+   ruleset changed.
+
+   Read required-ness from GitHub's own computation over the ruleset — the actual state now, not an
+   assumption that time has passed — through whichever surface this run's GitHub access path exposes:
 
    ```bash
-   gh pr checks {N}
+   gh pr checks {N}                              # per-context state on the head
+   gh pr view {N} --json mergeStateStatus,mergeable
    ```
+
+   `mergeStateStatus` is GitHub applying the ruleset for you: **`BLOCKED`** means a **required**
+   context is unsatisfied — failing, pending, **or absent** — so the merge must wait; **`UNSTABLE`**
+   means every required context has passed and only **non-required** contexts are still pending or
+   failed. On this merge-queue repository the queue is the final enforcer — it admits a PR only when
+   the ruleset's required contexts pass — so arming auto-merge (below) defers required-ness to the
+   queue rather than to a greenness check performed here.
+
+   - A **required** context that is failing, pending, or **absent from the head** is **not** satisfied:
+     this condition is not met. Absence never reads as success — a required context that has not
+     reported is treated as unmet, never waved through, because a required context missing from the
+     head is exactly the failure mode that nearly cost a merge.
+   - A **non-required** context that is pending, failed, or absent **does not block** the merge but
+     **is disclosed** to the operator — the same disclose-not-block treatment condition 4 gives a
+     review-coverage shortfall. State it in words before arming auto-merge; never hold the merge for it.
 
 2. **Every PR comment is handled** — fixed or answered on the thread. No open, unaddressed comment.
 
@@ -592,7 +627,9 @@ the orchestrator collects the landing from the PR itself, not from a SHA embedde
 
 **Record nothing outside your own plan directory.** There is no status file, no ledger, no shared
 table — the tree itself is the state, and the orchestrator records the landing at collect by reading
-your report. Write to `doc/plans/{epic}/{plan-name}/` and nowhere else under `doc/plans/`.
+your report. Write your status and records to `doc/plans/{epic}/{plan-name}/` and nowhere else under
+`doc/plans/`; a **declared-deliverable** edit to a shared lane doc is permitted — that is a
+deliverable, not a record (§ Step 9 Bridge row).
 
 **Your report is the channel back.** It must state the PR number and the outcome per deliverable —
 including a run that ended **blocked or partial**, and why. (The merge commit is read from the PR
@@ -623,7 +660,7 @@ that its artifact exists on disk:
 | 6 Verification sub-agent | Findings and dispositions in the report |
 | 7 PR cycle | PR exists; every comment dispositioned in the report |
 | 8 Merge gate | `state: MERGED` confirmed after arming; the merge commit recorded to the operator, not in the pre-merge report (§ Step 8) |
-| 8 Bridge | Nothing under `doc/plans/` outside this plan's own directory was changed, and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
+| 8 Bridge | No **status or bookkeeping** write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory was touched; a **declared-deliverable** edit to a shared lane doc (e.g. `cloud-bridge.md`, `README.md`, the plan template) is permitted — and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
 | 9 This check | Its result appended to the report |
 | 9 What have we learned | A contract-change proposal presented to the operator, or a recorded "none, because …" |
 
