@@ -620,6 +620,24 @@ Then merge (the repository uses a merge queue, so enable auto-merge and let the 
 gh pr merge {N} --squash --auto
 ```
 
+**Arming auto-merge is a one-way door — the branch locks the instant you arm.** On this merge-queue
+repository, the moment the required contexts are green, arming adds the PR to the merge queue and a
+protected-branch hook then rejects every further push ("Branches that are queued for merging cannot be
+updated"). **Disabling auto-merge does not release the lock, and converting the PR to draft does not
+release it** — both were tried on one run, both left the branch queued. Two rules follow:
+
+- **Push everything that must land in this PR _before_ you arm** — the report above all (condition 3).
+  After arming, nothing more can reach the PR.
+- **Invoking the auto-merge command _is_ arming — there is no dry run.** Do not run it to probe a merge
+  flag or "see what happens": against a PR whose required checks are already green, it queues that PR
+  for real, and you cannot take it back except by the recovery below.
+
+**If you are already queue-locked with an unpushed commit** — a finished report that will not push —
+the only reachable dequeue is to **close the PR**. Close it → push to the now-unqueued branch → reopen
+→ mark it ready → re-arm as the gate's final step (above). Closing is the dequeue; disabling
+auto-merge and drafting are not. This costs a second CI pass, but it lands the report *in this PR*
+rather than stranding it in a follow-up.
+
 **Confirm the merge actually happened.** A merge command reporting success is a claim, not the
 outcome — this repository has seen a merge call report success, delete the branch, and not merge:
 
