@@ -173,7 +173,7 @@ A verify-first clause is **settled** when someone checks it against the implemen
 | Key | Grammar |
 |-----|---------|
 | `verdict` | `corroborated` \| `contradicted` \| `unverifiable` — the [`marshall-orchestrator/workflow/analyze.md`](../../marshall-orchestrator/workflow/analyze.md) Step 2 vocabulary verbatim, a closed set. No fourth value is introduced. |
-| `checked_at` | The 7–40-hex-character HEAD sha the check ran against, which makes a verdict's staleness observable instead of assumed. |
+| `checked_at` | The 7–40-character **lowercase-hex** HEAD sha the check ran against, which makes a verdict's staleness observable instead of assumed. An uppercase sha is refused. |
 | `by` | `{slug}/{verb}` — the producer that wrote it (`{slug}/cleanup` or `{slug}/analyze`), so a verdict names its author. |
 | `rescoped` | `yes` \| `no` \| `n/a`. **`n/a` is REQUIRED when `verdict` is not `contradicted`** — a non-refutation has nothing to re-scope, and allowing `no` there would manufacture a blocking state out of a corroboration. |
 | `evidence` | Non-empty free text to end of line. |

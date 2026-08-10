@@ -234,7 +234,7 @@ modules[2]{name,path,purpose,responsibility}:
 
 Each `modules[]` entry additionally carries `key_packages`, `tips`, `insights`, `best_practices`, and `skills_by_profile` when the module's enriched architecture store populates them. The hint fields (`tips`, `insights`, `best_practices`) are **presence-gated** — each is emitted only when the corresponding `enriched.json` array is non-empty, and omitted entirely otherwise. Consumers (e.g. `phase-3-outline` rendering the `## Architecture Hints` section) read these fields directly off each module entry.
 
-**Read provenance** — `project_dir` and `worktree_fallback` ride on every payload (`success`, `not_found`, and `error` alike), so the reported context always names the checkout it came from:
+**Read provenance** — `project_dir` and `worktree_fallback` ride on every payload returned after project-directory routing has resolved (`success`, `not_found`, and handler-level `error` alike), so the reported context always names the checkout it came from. The one payload that carries neither is the `mutually_exclusive_args` routing error: it is emitted *before* a project directory has been resolved, so there is no checkout for it to name.
 
 | Field | Meaning |
 |-------|---------|

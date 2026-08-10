@@ -616,8 +616,19 @@ class TestCorpusVerdictsAdmissionTable:
 
 
 class TestVerdictStaleness:
-    def test_a_verdict_at_another_sha_is_reported_stale_yet_still_admits(self, plan_context):
+    # The git seam is stubbed in both tests below rather than read live. ``stale``
+    # is derived from ``_current_head_sha()``, which yields ``''`` whenever git
+    # cannot be read — and an empty head makes ``stale`` False for every row. A
+    # staleness assertion guarded on a live head therefore silently does not run
+    # in any environment without git, and the test still passes green having
+    # asserted nothing. Stubbing makes both assertions unconditional.
+    STUB_HEAD = '1234567890abcdef1234567890abcdef12345678'
+
+    def test_a_verdict_at_another_sha_is_reported_stale_yet_still_admits(
+        self, plan_context, monkeypatch
+    ):
         # Staleness is REPORTED, never promoted to blocking.
+        monkeypatch.setattr(_orch, '_git_read', lambda argv: (self.STUB_HEAD, ''))
         _write_status(plan_context, [_row('PLAN-01')])
         _write_spec(
             plan_context,
@@ -631,8 +642,31 @@ class TestVerdictStaleness:
         result = cmd_corpus_verdicts(Namespace(slug=SLUG))
         row = result['claims'][0]
 
-        if result['head_sha']:
-            assert row['stale'] is True
+        assert result['head_sha'] == self.STUB_HEAD
+        assert row['stale'] is True
+        assert row['admits'] is True
+
+    def test_a_verdict_whose_sha_prefixes_head_is_not_stale(self, plan_context, monkeypatch):
+        # The matched control: same code path, opposite verdict. Without it, a
+        # ``stale`` that was hard-wired True would satisfy the test above.
+        monkeypatch.setattr(_orch, '_git_read', lambda argv: (self.STUB_HEAD, ''))
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(
+            plan_context,
+            'PLAN-01-alpha.md',
+            [
+                '- HYPOTHESIS: a clause — confirm/refute at `a.py` § `f` (verify-at-outline)',
+                _verdict_bullet(
+                    'corroborated', 'n/a', 'held', checked_at=self.STUB_HEAD[:7]
+                ),
+            ],
+        )
+
+        result = cmd_corpus_verdicts(Namespace(slug=SLUG))
+        row = result['claims'][0]
+
+        assert result['head_sha'] == self.STUB_HEAD
+        assert row['stale'] is False
         assert row['admits'] is True
 
 

@@ -785,7 +785,8 @@ def _stamp_read_provenance(args: argparse.Namespace, payload: dict[str, Any]) ->
     ``get-module-context`` degrades to the cwd-relative checkout root when the
     plan declares ``use_worktree=true`` but its worktree is not materialized
     yet (see the ``WorktreeResolutionError`` branch in :func:`main`). That
-    degradation must never be silent, so every payload carries:
+    degradation must never be silent, so every payload stamped by this helper
+    carries:
 
     * ``project_dir`` — the directory the context was actually read from.
     * ``worktree_fallback`` — ``True`` only when the read degraded to the

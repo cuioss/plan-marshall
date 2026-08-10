@@ -22,7 +22,16 @@ Five groups:
   table against every other enumerating surface: the `## Usage` block, the
   standard's Terminal-Title enumeration (its stated COUNT and its list), and
   `doc/concepts/orchestration.adoc`. This is the check that would have caught
-  the pre-existing `archive` omission.
+  the pre-existing `archive` omission. ⚠ **The concepts document is held to
+  AGREEMENT, not to existence.** A narrative document that defers to the router
+  instead of restating its registry carries no verb set to go stale, which is
+  the stronger form and the one the project's no-duplication standard prefers;
+  mandating an enumeration there would mandate the duplication. So the check
+  governs whatever enumeration the document carries and requires none: a
+  re-introduced nine-of-ten list fails, and the deferring link passes. The
+  enumeration is found by detecting a RUN of backticked verbs in any prose
+  shape rather than by matching a fixed phrase, so the guard survives rewording,
+  and its scan population is published by a companion assertion.
 - **(c) Canonical-invocation coverage** — the sub-verb set derived from
   `orchestrator.py`'s own argparse declaration, each required to carry a
   `## Canonical invocations` subsection. Resolved from the tool's live
@@ -108,8 +117,22 @@ _USAGE_VERB_RE = re.compile(r'^/marshall-orchestrator\s+(?P<verb>[a-z][a-z-]*)',
 _TITLE_ENUMERATION_RE = re.compile(
     r'All (?P<count_word>[a-z]+) verbs — (?P<list>.+?) — carry the obligation'
 )
-_ADOC_ROUTER_RE = re.compile(r'the verb router \((?P<list>[^)]+)\)')
 _BACKTICKED_RE = re.compile(r'`([a-z][a-z-]*)`')
+
+#: A RUN of backticked lowercase tokens joined only by list separators (` / `,
+#: `, `, ` and `). Matching the run rather than a surrounding phrase is what
+#: makes the concepts-document check population-derived: an enumeration written
+#: in ANY prose shape is found, so rewording the sentence around the list cannot
+#: silently retire the guard the way a phrase-pinned pattern would.
+_VERB_RUN_RE = re.compile(r'`[a-z][a-z-]*`(?:\s*(?:/|,?\s*and|,)\s*`[a-z][a-z-]*`)+')
+
+#: How many routed verbs a run must carry before it counts as an ENUMERATION of
+#: the verb set rather than prose that happens to name a verb or two (``the
+#: `close` and `archive` verbs``, which must not be forced to list all ten).
+#: ⚠ Stated boundary: an enumeration decayed to fewer than this many verbs falls
+#: below the threshold and is not caught. The shape this guard exists for — all
+#: but one, the pre-existing `archive` omission — is well above it.
+_ENUMERATION_MIN_VERBS = 3
 _CANONICAL_HEADING_RE = re.compile(r'^### (?P<name>.+)$', re.MULTILINE)
 
 #: Number words the enumerating prose may use for its stated count. Kept small
@@ -145,6 +168,22 @@ def _routing_rows() -> list[tuple[str, str]]:
 
 def _on_disk_workflow_docs() -> set[str]:
     return {f'workflow/{path.name}' for path in WORKFLOW_DIR.glob('*.md')}
+
+
+def _verb_enumerations(lines: list[str], routed: set[str]) -> list[tuple[int, set[str]]]:
+    """Every line that ENUMERATES the verb set, paired with the verbs it lists.
+
+    Derived from the routed population at call time rather than pinned to a
+    phrase, and returning the run's FULL token set rather than its intersection
+    with `routed`, so a bogus extra verb fails as loudly as a missing one.
+    """
+    found: list[tuple[int, set[str]]] = []
+    for number, line in enumerate(lines, start=1):
+        for run in _VERB_RUN_RE.findall(line):
+            listed: set[str] = set(_BACKTICKED_RE.findall(run))
+            if len(listed & routed) >= _ENUMERATION_MIN_VERBS:
+                found.append((number, listed))
+    return found
 
 
 def _subparser_action(parser: argparse.ArgumentParser) -> Any:
@@ -281,15 +320,77 @@ class TestVerbEnumerationAgreement:
 
     def test_the_concepts_document_agrees(self):
         # The surface that carried the pre-existing `archive` omission.
-        match = _ADOC_ROUTER_RE.search(CONCEPTS_ADOC.read_text(encoding='utf-8'))
+        #
+        # ⚠ The contract is AGREEMENT, not existence. The document is not
+        # required to enumerate: a link that defers to the router carries no
+        # verb set to go stale, which is the stronger form and the one the
+        # project's no-duplication standard prefers. What is required is that
+        # any enumeration the document DOES carry agrees with the router — so
+        # re-introducing a nine-of-ten list fails here, while deferring to the
+        # router passes.
+        routed = {verb for verb, _ in _routing_rows()}
+        lines = CONCEPTS_ADOC.read_text(encoding='utf-8').splitlines()
+
+        enumerations = _verb_enumerations(lines, routed)
+
+        for number, listed in enumerations:
+            assert listed == routed, (
+                f'{CONCEPTS_ADOC.name}:{number} enumerates a different verb set — only there: '
+                f'{sorted(listed - routed)}, only routed: {sorted(routed - listed)}'
+            )
+
+    def test_the_concepts_scan_publishes_its_population(self):
+        # The companion to the agreement assertion above: that one iterates a
+        # set that may legitimately be empty, so the scan's own population is
+        # published here. A zero-enumeration result is then a READ RESULT
+        # ("the document defers to the router") rather than an unnoticed empty
+        # scan of an unreadable or relocated file.
+        routed = {verb for verb, _ in _routing_rows()}
+        lines = CONCEPTS_ADOC.read_text(encoding='utf-8').splitlines()
+
+        enumerations = _verb_enumerations(lines, routed)
+
+        assert lines, f'{CONCEPTS_ADOC} yielded no lines — the scan population is zero'
+        assert len(enumerations) <= 1, (
+            f'{CONCEPTS_ADOC.name} carries {len(enumerations)} verb enumerations, at lines '
+            f'{[number for number, _ in enumerations]} — a second one is a duplicate registry '
+            f'({len(lines)} lines scanned)'
+        )
+
+    def test_the_concepts_detector_catches_a_seeded_omission(self):
+        # Matched control proving the agreement assertion is not vacuous: the
+        # same detector the real check uses, run over a seeded nine-of-ten list
+        # built from the LIVE routed set so the control cannot itself go stale.
+        routed = {verb for verb, _ in _routing_rows()}
+        dropped = sorted(routed)[0]
+        seeded = ' / '.join(f'`{verb}`' for verb in sorted(routed - {dropped}))
+        complete = ' / '.join(f'`{verb}`' for verb in sorted(routed))
+
+        omitted = _verb_enumerations([f'* the verb router ({seeded})'], routed)
+        intact = _verb_enumerations([f'* the verb router ({complete})'], routed)
+
+        assert len(omitted) == 1, 'the detector did not see a verb enumeration in the live shape'
+        assert omitted[0][1] == routed - {dropped}
+        assert omitted[0][1] != routed, f'a list omitting {dropped!r} was read as agreeing'
+        # The negative half: the detector must ACCEPT a complete list, so the
+        # positive half above cannot pass by the detector rejecting everything.
+        assert [listed for _, listed in intact] == [routed]
+
+    def test_the_concepts_detector_does_not_flag_ordinary_prose(self):
+        # Near-miss control: prose naming a verb or two is not an enumeration
+        # and must not be forced to list all ten, or the guard would push the
+        # duplicated registry back into the document it just left.
         routed = {verb for verb, _ in _routing_rows()}
 
-        assert match is not None, f'the verb-router enumeration was not found in {CONCEPTS_ADOC}'
-        listed = set(_BACKTICKED_RE.findall(match.group('list')))
-        assert listed == routed, (
-            f'{CONCEPTS_ADOC.name} enumerates a different verb set — only there: '
-            f'{sorted(listed - routed)}, only routed: {sorted(routed - listed)}'
+        prose = _verb_enumerations(
+            [
+                'the `close` and `archive` verbs both retire an epic',
+                'the verb router, which carries the authoritative verb set',
+            ],
+            routed,
         )
+
+        assert prose == [], f'ordinary prose was mistaken for an enumeration: {prose}'
 
 
 # =============================================================================

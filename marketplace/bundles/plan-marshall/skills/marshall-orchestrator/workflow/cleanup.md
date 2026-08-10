@@ -77,7 +77,7 @@ A5 is inline-only in full: it is the judgement-heaviest class and the only one t
 
 ### Step 8 (Phase B): Call the ledger-compaction stage
 
-Call the compaction stage; do **not** re-implement it. When the stage has not landed, report `ledger_compaction: not_available` naming the component that owns the surface, and continue — the corpus phases already ran and their result is not withheld because a later stage is absent. Two implementations of ledger compaction is a worse outcome than no verb at all (see the subject boundary in [§ Cleanup Contract](../../persona-marshall-orchestrator/standards/orchestration-model.md#cleanup-contract)).
+Call the compaction stage; do **not** re-implement it. When the stage has not landed, report `ledger_compaction: not_available` and state in the same field's reason that no spec yet owns the compaction surface — do **not** invent an owning id, and do not name one until a successor spec claims the surface the way `PLAN-TRUTH-059` claims `registry_parity`. Then continue — the corpus phases already ran and their result is not withheld because a later stage is absent. Two implementations of ledger compaction is a worse outcome than no verb at all (see the subject boundary in [§ Cleanup Contract](../../persona-marshall-orchestrator/standards/orchestration-model.md#cleanup-contract)).
 
 ### Step 9 (Phase C): Archive — retire consumed messages, relocate settled narrative
 

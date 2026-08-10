@@ -159,13 +159,26 @@ NOT_APPLICABLE = 'n/a'
 #: the whole population; the rest are per-status tallies read from ``plans[]``.
 COUNT_CLAIM_NOUNS = ('rows', 'plans', 'staged', 'shipped', 'running', 'parked', 'landed')
 
+#: The noun alternation, DERIVED from :data:`COUNT_CLAIM_NOUNS` so that tuple is the
+#: single source defining the population. A noun that is already plural (ends in
+#: ``s``) contributes an optional-``s`` form matching both numbers; every other noun
+#: is a status name that does not pluralise and contributes itself literally. The
+#: derivation rule reads the noun's own spelling, so it introduces no second list to
+#: keep in step. Deriving matters because :func:`_derive_counts` builds its keys from
+#: ``COUNT_CLAIM_NOUNS`` alone: a noun present in a hand-written alternation but absent
+#: from the tuple would make :func:`_count_divergences` raise ``KeyError`` at
+#: ``derived[key]``.
+_COUNT_CLAIM_ALTERNATION = '|'.join(
+    f'{noun[:-1]}s?' if noun.endswith('s') else noun for noun in COUNT_CLAIM_NOUNS
+)
+
 #: One count claim plus the short tail that follows it. The tail is captured in a
 #: LOOKAHEAD so a SCOPED claim can be recognised (see :data:`_SCOPED_CLAIM_RE`)
 #: without the scan consuming it: a consuming tail would advance the cursor past
 #: the next claim, so a sentence asserting two counts would only ever have its
 #: first one checked.
 _COUNT_CLAIM_RE = re.compile(
-    r'(?<![\w.])(?P<value>\d+)\s+(?P<noun>rows?|plans?|staged|shipped|running|parked|landed)\b'
+    r'(?<![\w.])(?P<value>\d+)\s+(?P<noun>' + _COUNT_CLAIM_ALTERNATION + r')\b'
     r'(?=(?P<tail>.{0,12}))',
     re.IGNORECASE,
 )
@@ -884,18 +897,32 @@ def _read_spec(path: Path) -> tuple[str | None, str]:
         return None, 'unreadable'
 
 
+#: Wall-clock budget for a single read-only git call. A hung git degrades the
+#: readiness report to ``indeterminate`` rather than stalling the verb outright.
+_GIT_READ_TIMEOUT_SECONDS = 30
+
+
 def _git_read(argv: list[str]) -> tuple[str | None, str]:
     """Run one read-only git command, returning ``(stdout, error)``.
 
     The single git seam in this script. ``(None, reason)`` is returned whenever
-    the command could not be observed — git unreachable, or a non-zero exit —
-    and the reason names which. Callers translate that into an *unobservable*
-    outcome, never into a failing one.
+    the command could not be observed — git unreachable, a timeout, or a non-zero
+    exit — and the reason names which. Callers translate that into an
+    *unobservable* outcome, never into a failing one.
+
+    The timeout is what keeps "unobservable" reachable at all. Without it a hung
+    git — a stale index lock, or a very large worktree — blocks forever, and
+    because :func:`_worktree_signal` calls this seam twice, ``cleanup
+    restart-check`` would stall with no verdict rather than degrading to
+    ``indeterminate``. A hang is therefore mapped onto the existing unobservable
+    path instead of being allowed to consume the caller.
     """
     try:
         completed = subprocess.run(
-            ['git', *argv], capture_output=True, text=True, check=False
+            ['git', *argv], capture_output=True, text=True, check=False, timeout=_GIT_READ_TIMEOUT_SECONDS
         )
+    except subprocess.TimeoutExpired:
+        return None, f'git {" ".join(argv)} timed out after {_GIT_READ_TIMEOUT_SECONDS}s'
     except OSError as exc:
         return None, f'git could not be run ({exc.__class__.__name__})'
     if completed.returncode != 0:
@@ -1504,6 +1531,20 @@ def _validate_set_verdict_args(args: argparse.Namespace) -> dict[str, Any] | Non
             args.slug,
             'wrong_parameters',
             f'--by and --checked-at must not contain the {VERDICT_SEPARATOR!r} separator',
+        )
+    # The verdict is formatted as ONE line by ``_format_verdict_line`` and read
+    # back from a single ``lines[claim['verdict_line']]`` — the grammar states
+    # ``evidence`` runs "to end of line". An embedded break silently violates all
+    # three: ``corpus verdicts`` would return a TRUNCATED ``evidence``, the
+    # trailing fragment would become stray body text under ``## Claim Labels``,
+    # and a re-stamp replacing only ``verdict_line`` would leave that fragment
+    # behind — so the idempotent replace stops being idempotent. ``checked_at``
+    # needs no check: ``_CHECKED_AT_RE`` already admits hex only.
+    if any('\n' in value or '\r' in value for value in (args.by, args.evidence)):
+        return _error(
+            args.slug,
+            'wrong_parameters',
+            '--by and --evidence must not contain a line break: the verdict is one line',
         )
     return None
 
