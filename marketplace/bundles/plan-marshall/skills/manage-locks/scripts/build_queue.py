@@ -280,6 +280,10 @@ def _prune_dead_active(active: list[dict[str, Any]]) -> list[dict[str, Any]]:
     clean-start. Reclaiming dead active slots before the capacity check frees
     slots wedged by a crashed build session without ever evicting a LIVE holder.
     """
+    # SHIM(B): machine-global queue entry lacking project_root, written before acquire stamped it.
+    # shim-owner: manage-locks
+    # shim-floor: the machine-global-queue change that had acquire stamp each entry's originating project_root (in-code anchor: the "breaking clean-start" this docstring names)
+    # shim-remove-when: no live queue entry lacks project_root
     return [
         e
         for e in active
@@ -325,6 +329,10 @@ def validate_lock_queue(
     reaped: list[dict[str, Any]] = []
     survivors: list[dict[str, Any]] = []
     for entry in active:
+        # SHIM(B): queue entry lacking active_since, written before that field shipped.
+        # shim-owner: manage-locks
+        # shim-floor: the change that added this time-based over-age reaper, which began stamping active_since when an entry enters active and measures age from it (not the enqueue ts)
+        # shim-remove-when: no live queue entry lacks active_since
         active_since = entry.get('active_since', now)
         held = now - active_since
         if held > threshold:

@@ -162,6 +162,10 @@ def run_configure(args: argparse.Namespace) -> int:
         existing_auth = existing.get('auth_type', 'none') if existing else 'none'
         # URL is in marshal.json (preferred) or credential file (legacy fallback)
         existing_provider_config = read_provider_config(skill_name)
+        # SHIM(B): provider url stored in the credential file, before it moved to marshal.json.
+        # shim-owner: manage-providers
+        # shim-floor: the change that relocated provider url to marshal.json's provider config, now read via read_provider_config() (in-code anchor: the "URL is in marshal.json (preferred) or credential file (legacy fallback)" comment above)
+        # shim-remove-when: no credential file still carries a url field
         existing_url = existing_provider_config.get('url', '') or (existing.get('url', '') if existing else '')
 
         if existing_auth == auth_type and existing_url == url:

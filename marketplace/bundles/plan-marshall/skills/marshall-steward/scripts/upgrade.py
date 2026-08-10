@@ -236,6 +236,10 @@ def build_plan(integrate: bool, project_kind: str) -> dict:
 # success, so re-running the upgrade verb is always safe.
 
 _AUTOMATIC_REVIEW_STEP_ID = 'plan-marshall:automatic-review'
+# SHIM(A): the retired enabled_bots knob (seeded into required_bots/optional_bots and deleted).
+# shim-owner: marshall-steward
+# shim-floor: the two-list participation model (required_bots/optional_bots) that replaced the enabled_bots knob
+# shim-remove-when: no live marshal.json carries the enabled_bots knob (idempotent)
 _LEGACY_BOT_LIST_KEY = 'enabled_bots'
 _REQUIRED_BOTS_KEY = 'required_bots'
 _OPTIONAL_BOTS_KEY = 'optional_bots'

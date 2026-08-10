@@ -668,6 +668,10 @@ def _extract_step_ids(steps: object) -> list[str] | None:
     """
     if isinstance(steps, dict):
         return list(steps.keys())
+    # SHIM(B): a legacy list-of-id-strings steps shape (canonical serial form is a keyed map of step id -> config object).
+    # shim-owner: marshall-steward
+    # shim-floor: the change that made phase-6-finalize.steps a keyed-map (step id -> config object) instead of a list of id strings
+    # shim-remove-when: no serialized finalize steps remain in the list-of-id-strings shape
     if isinstance(steps, list):
         return steps
     return None

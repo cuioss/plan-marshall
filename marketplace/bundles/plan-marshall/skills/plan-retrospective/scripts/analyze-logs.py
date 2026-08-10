@@ -179,6 +179,10 @@ def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> list[str]:
         except subprocess.CalledProcessError:
             pass  # fall through to the legacy-key read
 
+    # SHIM(B): archived plans' references.modified_files key, written before the change-ledger was removed.
+    # shim-owner: plan-retrospective
+    # shim-floor: the change-ledger removal that stopped persisting references.modified_files; the current writer no longer emits the key (predates this shallow clone's history root dcd3c00 / #1105, so not PR-pinnable here).
+    # shim-remove-when: no archived plan predating the ledger removal is retained (i.e. such archives are purged/aged out).
     raw = refs.get('modified_files', [])
     if isinstance(raw, str):
         raw = [raw]
@@ -594,6 +598,10 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
         # Widened nine-column rows (legacy five + four appended context-load
         # columns) parse too rather than being silently dropped by the old
         # strict ``!= 5`` guard.
+        # SHIM(B): legacy five-column dispatch-boundary rows, written before the four context-load columns were appended.
+        # shim-owner: plan-retrospective
+        # shim-floor: the record-dispatch-boundary column widening that appended the four per-dispatch context-load columns (input/output/cache_read/cache_creation) after the original five columns; the widening predates this shallow clone's root (dcd3c00 / #1105), and #1129 later refined those columns to distinguish unmeasured from a measured zero.
+        # shim-remove-when: no dispatch-boundary log with five-column rows remains.
         if len(parts) < 5:
             continue
         try:

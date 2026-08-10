@@ -122,6 +122,10 @@ def cmd_assert_step_recorded(args: argparse.Namespace) -> dict | None:
     # which reconciles a ``default:``-prefixed stored key with a bare query (and
     # vice versa) as a canonical MATCH rather than a tolerated near-miss.
     matched_entry: Any = phase_entry.get(step)
+    # SHIM(B): a pre-migration default:-prefixed phase_steps key (canonical form is the bare step key).
+    # shim-owner: manage-status
+    # shim-floor: the step-key canonicalization change (canonicalize_step_key) that made the bare step key canonical, superseding the default:-prefixed form
+    # shim-remove-when: no status.json can still carry a default:-prefixed phase_steps key
     if matched_entry is None:
         for stored_key, stored_entry in phase_entry.items():
             if canonicalize_step_key(stored_key) == step:

@@ -360,6 +360,10 @@ def resolve_credential_path(skill: str, scope: str = 'global', project_name: str
     return path
 
 
+# SHIM(A): pre-home-root ~/.plan-marshall-credentials directory (renamed to the home-root path).
+# shim-owner: manage-providers
+# shim-floor: the home-root relocation that moved credentials from resolve_home()/.plan-marshall-credentials to home_root()/credentials (in-code anchor: _OLD_CREDENTIALS_DIR "Pre-home-root credentials location, retained ONLY as the lazy-migration source" ~line 48)
+# shim-remove-when: no pre-home-root ~/.plan-marshall-credentials directory can still exist (idempotent: second run finds the new dir and no-ops)
 def _migrate_credentials_home_if_needed() -> str:
     """Lazily migrate the pre-home-root credentials dir to the home-root path.
 
@@ -820,6 +824,10 @@ def get_authenticated_client(skill_name: str, project_name: str | None = None) -
 
         # Read URL from marshal.json provider config (preferred) or credential file (fallback)
         provider_config = read_provider_config(skill_name)
+        # SHIM(B): provider url stored in the credential file, before it moved to marshal.json.
+        # shim-owner: manage-providers
+        # shim-floor: the same relocation as B18 — provider url moved to marshal.json's provider config, now read via read_provider_config() (in-code anchor: the "Read URL from marshal.json provider config (preferred) or credential file (fallback)" comment above)
+        # shim-remove-when: no credential file still carries a url field
         url = provider_config.get('url', '') or credential.get('url', '')
         auth_type = credential.get('auth_type', 'none')
         headers: dict[str, str] = {}

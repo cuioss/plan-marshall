@@ -308,6 +308,10 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
                 existing_key = stored_key
                 break
 
+    # SHIM(B): status.metadata.phase_steps entries stored as bare strings before step storage became {"outcome": ...} dicts.
+    # shim-owner: manage-status
+    # shim-floor: the mark-step-done change that switched phase_steps step storage from bare strings to {"outcome": ..., "display_detail": ...} dicts
+    # shim-remove-when: no in-flight plan's status.json can still carry a bare-string phase_steps entry
     if isinstance(existing, str) and not args.force:
         return {
             'status': 'error',
