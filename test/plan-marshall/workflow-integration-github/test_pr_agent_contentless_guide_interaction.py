@@ -34,15 +34,15 @@ Seven arms:
    ``aggregate()``: a suppressed Guide yields no ``reviewers[]`` row at all, and a
    SURVIVING PR-Agent record resolved ``accepted`` scores in neither quality
    bucket with ``pct_resolved_as_fixed is None`` — never ``0.0``.
-6. **Update-movement arm** — arm 1's surviving participation must not become
-   UNCONDITIONAL. Across two fetches an unchanged Guide is credited on the first
-   and NOT on the second, while a Guide edited in place between fetches is
-   credited again. Both directions are asserted because the drop removes the
-   comment from the findings store, which is where ``_has_update_movement``'s
-   first-presence arm used to read its evidence from. The uncredited second fetch
-   additionally REPORTS the bot in ``stale_participation_bots``, so its steady
-   state is ``participated_stale`` rather than ``absent`` — the same blocking
-   verdict, under the state whose remedy is a re-review trigger.
+6. **Currency arm** — arm 1's surviving participation must not become UNCONDITIONAL,
+   and it must be idempotent. The credit is now an SHA comparison against the merge
+   candidate (``_reviewed_at_merge_candidate``): re-fetching the unchanged Guide at
+   the SAME HEAD keeps the credit (the observer-effect regression the old
+   first-presence arm failed), a force-push that advances HEAD past the reviewed
+   commit turns it ``participated_stale``, and a Guide EDITED in place after the
+   advance is credited again through the edit arm. The drop removes the comment from
+   the findings store, so the reviewed SHA lives in the noise sidecar the fix extends
+   to record it — without which the currency test would be blind on the drop path.
 7. **Rendering-invariance arm** — the drop must not depend on which emphasis
    PR-Agent emits. The verbatim observed #1078 body (HTML ``<strong>`` inside a
    ``<table>``) and the same Guide in GitHub's markdown ``**`` rendering are both
@@ -146,8 +146,14 @@ def _guide_comment(body, comment_id='guide-1', *, created_at=None, updated_at=No
     return comment
 
 
-def _patch_provider(monkeypatch, comments):
-    """Monkeypatch only the GitHub provider surface — the findings store stays real."""
+def _patch_provider(monkeypatch, comments, head_sha='deadbeef'):
+    """Monkeypatch only the GitHub provider surface — the findings store stays real.
+
+    ``head_sha`` is the PR HEAD the producer stamps and, since the currency fix,
+    compares each comment's recorded SHA against. It defaults to ``deadbeef``; a test
+    simulates a loop-back / force-push by re-patching with a DIFFERENT value between
+    fetches.
+    """
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
     monkeypatch.setattr(
         github_pr._github,
@@ -160,7 +166,7 @@ def _patch_provider(monkeypatch, comments):
             'unresolved': len(comments),
         },
     )
-    monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: 'deadbeef')
+    monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: head_sha)
 
 
 def _run_fetch(pr_number, plan_id):
@@ -385,44 +391,43 @@ def test_clean_guide_is_dropped_in_either_emphasis_rendering(plan_context, monke
 #
 # Arm 1 pins that the drop preserves participation evidence. That is only half the
 # contract: PR-Agent declares ``participation_requires_update: true``, so its
-# evidence must ALSO show first presence or ``updated_at`` movement — a stale
-# unchanged Guide proves only that it reviewed some EARLIER HEAD.
+# evidence must ALSO prove a review of the MERGE CANDIDATE — a Guide reviewed against
+# an earlier commit proves only that it reviewed an earlier HEAD.
 #
-# The drop is exactly what put those two halves in tension. ``_has_update_movement``
-# read first presence from the STORED pr-comment findings, and a dropped Guide files
-# none — so its key never entered that set, the first-presence arm was satisfied on
-# every fetch, and the movement requirement silently stopped binding. Arm 1 is
-# single-fetch and so cannot see it. Both directions are asserted below: without the
-# second case, "never credit after the first fetch" would satisfy the first one
-# while breaking every genuine re-review.
+# The drop is exactly what put those two halves in tension. The currency test
+# (``_reviewed_at_merge_candidate``) compares each comment's reviewed SHA against the
+# merge candidate, but a dropped Guide files no pr-comment finding — so its
+# ``reviewed_commit_sha`` lives only in the noise sidecar the fix extends to record it.
+# Without that record the currency test would have no SHA to compare on the drop path.
+# Both directions are asserted below: the same-HEAD idempotence case (fails against the
+# pre-fix observation-history predicate) and its advanced-HEAD staleness control, plus
+# the edit arm that keeps a genuine in-place re-review creditable after a loop-back.
 
 _CREATED_AT = '2026-07-30T09:00:00Z'
 _EDITED_AT = '2026-07-30T11:30:00Z'
+_HEAD_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+_HEAD_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 
 
-def test_second_fetch_of_an_unchanged_guide_does_not_re_credit_participation(plan_context, monkeypatch):
-    """An unchanged clean Guide credits PR-Agent once, never again on a later fetch.
+def test_second_fetch_of_an_unchanged_guide_at_the_same_head_stays_credited(plan_context, monkeypatch):
+    """A dropped clean Guide credits PR-Agent the same way however many times it is fetched.
 
-    The false-positive direction, and the reason ``participation_requires_update``
-    exists: after a force-push the same Guide is still sitting on the PR having only
-    ever reviewed an earlier HEAD. Crediting it a second time reports a proven
-    participant on a diff nothing has reviewed.
+    The observer-effect regression, on the DROP path. Both fetches see the IDENTICAL
+    provider record — same ``comment_id``, ``updated_at == created_at``, same HEAD —
+    so the currency verdict is a pure SHA comparison against the merge candidate and
+    is identical on the second look. This FAILS against the pre-fix code, whose
+    first-presence arm was consumed on the first fetch, flipping the same unchanged
+    Guide at the same HEAD from ``participated`` to ``participated_stale`` between one
+    fetch and the next.
 
-    Both fetches see the IDENTICAL provider record — same ``comment_id``, and
-    ``updated_at == created_at`` so no edit movement is available either. The only
-    thing that differs between them is what the plan has already observed, which is
-    precisely the signal the drop removed from the findings store.
-
-    The steady state is now REPORTED rather than silent: the second fetch names the
-    bot in ``stale_participation_bots``, so the completeness layer classifies it
-    ``participated_stale`` instead of ``absent``. That is a rename of the state, not
-    a change of gate — the bot is still not a proven participant and still blocks a
-    required quorum; what changes is that the remedy the operator is pointed at is a
-    re-review trigger rather than an escalation for a bot that never engaged.
+    The drop and the participation credit are the two halves in tension: the Guide is
+    dropped as noise on both fetches, so its reviewed SHA lives only in the noise
+    sidecar — which the fix extends to record that SHA. Without it the currency test
+    would have nothing to compare for a dropped comment.
     """
     plan_id = 'pr-agent-guide-unchanged-second-fetch'
     guide = _guide_comment(OBSERVED_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_CREATED_AT)
-    _patch_provider(monkeypatch, [guide])
+    _patch_provider(monkeypatch, [guide], head_sha=_HEAD_A)
 
     first = _run_fetch(1205, plan_id)
     second = _run_fetch(1205, plan_id)
@@ -437,42 +442,62 @@ def test_second_fetch_of_an_unchanged_guide_does_not_re_credit_participation(pla
     assert first['producer_mismatch_hash_id'] is None
     assert second['producer_mismatch_hash_id'] is None
 
-    # First presence — the plan is observing this comment for the first time.
-    assert {'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'} in first['participated_bots']
-    # On the crediting fetch there is nothing stale to report.
+    credited = [{'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'}]
+    # Idempotent: the second evaluation at the same HEAD matches the first exactly.
+    assert first['participated_bots'] == credited
     assert first['stale_participation_bots'] == []
-    # Second fetch: already observed and unmoved, so there is no new review to credit.
+    assert second['participated_bots'] == credited
+    assert second['stale_participation_bots'] == []
+
+
+def test_dropped_guide_goes_stale_once_head_advances(plan_context, monkeypatch):
+    """The matched control: after a force-push the dropped Guide is STALE, not credited.
+
+    The false-positive direction the currency rule closes, on the drop path. The Guide
+    was reviewed against ``_HEAD_A``; a force-push advances the merge candidate to
+    ``_HEAD_B`` and the same unchanged Guide now proves only a review of the earlier
+    commit. It resolves to ``participated_stale`` — still blocking, but reported as a
+    stale publish (remedy: re-trigger) rather than a proven participant on a diff
+    nothing reviewed. Paired with the same-HEAD case above, this is the discrimination
+    the pre-fix observation-history test could not make.
+    """
+    plan_id = 'pr-agent-guide-stale-after-advance'
+    guide = _guide_comment(OBSERVED_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_CREATED_AT)
+    _patch_provider(monkeypatch, [guide], head_sha=_HEAD_A)
+    first = _run_fetch(1207, plan_id)
+    assert {'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'} in first['participated_bots']
+    assert first['stale_participation_bots'] == []
+
+    _patch_provider(monkeypatch, [guide], head_sha=_HEAD_B)
+    second = _run_fetch(1207, plan_id)
     assert second['participated_bots'] == []
-    # ...and the reason is now SURFACED as a stale publish rather than dropped into
-    # silence, so the classifier reports participated_stale instead of absent. Still
-    # unproven, still blocking — only the named state and its remedy change.
     assert second['stale_participation_bots'] == [
         {'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'}
     ]
 
 
-def test_guide_edited_between_fetches_credits_participation_again(plan_context, monkeypatch):
-    """An in-place edit between fetches IS movement, so PR-Agent is credited again.
+def test_guide_edited_after_head_advance_credits_participation_again(plan_context, monkeypatch):
+    """An in-place edit after a HEAD advance IS a fresh review, so PR-Agent is credited again.
 
-    The false-negative guard for the case above. PR-Agent re-reviews by editing its
-    one persistent comment rather than posting a new one, so ``updated_at`` movement
-    on an already-observed comment is its ONLY way of publishing a fresh review.
-    Were the observed-keys record to close the first-presence arm without leaving
-    the movement arm live, every genuine PR-Agent re-review would resolve to
-    ``absent`` and hold the completeness gate open forever.
+    The false-negative guard. PR-Agent re-reviews by editing its one persistent
+    comment rather than posting a new one, so ``updated_at`` movement is its ONLY way
+    of publishing a fresh review. HEAD is advanced so the SHA arm misses and only the
+    edit arm can credit — which is exactly the loop-back-then-re-review shape. Without
+    it every genuine PR-Agent re-review after a loop-back would resolve stale forever.
 
     The edited Guide is still fully clean, so it is still dropped — this asserts the
-    movement arm on the drop path specifically, not on the stored-finding path.
+    edit arm on the drop path specifically, not on the stored-finding path.
     """
     plan_id = 'pr-agent-guide-edited-between-fetches'
     unchanged = _guide_comment(OBSERVED_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_CREATED_AT)
-    _patch_provider(monkeypatch, [unchanged])
+    _patch_provider(monkeypatch, [unchanged], head_sha=_HEAD_A)
     first = _run_fetch(1206, plan_id)
     assert {'bot_kind': 'pr-agent', 'evidence_kind': 'issue_comment'} in first['participated_bots']
 
-    # Same comment_id — the bot edited the Guide in place rather than posting anew.
+    # Same comment_id — the bot edited the Guide in place rather than posting anew —
+    # and HEAD has advanced, so only the edit movement can credit it.
     edited = _guide_comment(OBSERVED_CLEAN_GUIDE, created_at=_CREATED_AT, updated_at=_EDITED_AT)
-    _patch_provider(monkeypatch, [edited])
+    _patch_provider(monkeypatch, [edited], head_sha=_HEAD_B)
     second = _run_fetch(1206, plan_id)
 
     assert second['count_stored'] == 0

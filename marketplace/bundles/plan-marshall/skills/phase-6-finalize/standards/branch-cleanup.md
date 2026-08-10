@@ -760,6 +760,8 @@ Parse the returned `findings` list; let `{count}` be its length.
 
 Retain `participated_bots`, `stale_participation_bots`, and `refused_bots` from the `fetch_findings` return above — that call observed every bot comment on the PR at the current HEAD, so its participation sets are the freshest evidence available and no second provider round-trip is needed. `stale_participation_bots[]` is the set whose comment matched a declared publish shape but failed the `participation_requires_update` currency test; feeding it forward is what makes the barrier distinguish a review that merely predates this HEAD from a reviewer that never engaged.
 
+Also retain `{declined_bots}` — the bots the trigger-A re-review found had **declined** to review this HEAD, i.e. answered the re-review with a comment carrying no reviewed-commit SHA (`head_sha_verified: false`, see § "Re-review the rebased HEAD (trigger A)" / [`branch-cleanup-rereview.md`](branch-cleanup-rereview.md)). A decline is not observable from the comment re-fetch — only the re-review round-trip that *asked* the bot can tell a decline from a review that predates this HEAD — so this set is carried from trigger A rather than derived here. It is empty when no re-review ran (no rebase this finalize entry) or when every re-reviewed bot produced a SHA-verified review.
+
 One input is NOT available from the re-fetch, because no earlier call observes it — the PR-wide question of whether any `pull_request`-event workflow run exists for this PR at all. Read it here:
 
 ```bash
@@ -775,14 +777,14 @@ Feed the retained sets to the same predicate the FIND step uses:
 python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness \
   check --plan-id {plan_id} --required-bots "{required_bots}" --optional-bots "{optional_bots}" \
   --participated-bots "{participated_bots}" --refused-bots "{refused_bots}" \
-  --stale-participation-bots "{stale_participation_bots}"
+  --stale-participation-bots "{stale_participation_bots}" --declined-bots "{declined_bots}"
 ```
 
-Append the bare `--not-triggered` flag to that call when and only when the read above reported `has_pull_request_run: false`. It is a `store_true` bool carrying no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the five list flags only.
+Append the bare `--not-triggered` flag to that call when and only when the read above reported `has_pull_request_run: false`. It is a `store_true` bool carrying no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the six list flags only.
 
 This site never passes `--in-progress-bots` — the barrier has no completion-poll observation of its
-own — so the five list flags above are the complete set here. Each is legitimately empty in normal
-operation (no optional bots, no refusals, no stale publishes). **The load-bearing defence is the parser, not the quoting.** The generated
+own — so the six list flags above are the complete set here. Each is legitimately empty in normal
+operation (no optional bots, no refusals, no stale publishes, no declines). **The load-bearing defence is the parser, not the quoting.** The generated
 executor strips every empty-string argument before argparse sees it (`script_args = [a for a in
 script_args if a]` in `.plan/execute-script.py`), so through the executor `--refused-bots ""` arrives
 as a bare `--refused-bots` exactly as an unquoted empty placeholder would — the quotes do NOT survive
@@ -798,7 +800,7 @@ alone to make an empty list safe.**
 
 Read `participation_complete`, `unproven_bots`, and `bot_states` from the returned TOON. The predicate is fail-closed over the REQUIRED set: a required bot that published nothing yields `participation_complete: false`. Which member it resolves to depends on the `--not-triggered` input read above — `not_triggered` when no `pull_request`-event run exists for the PR at all, `absent` otherwise — and the two carry opposite remedies, so read `bot_states` rather than assuming `absent`. An unproven OPTIONAL bot never blocks — a bot on a hard quota that will not clear inside this plan's lifetime belongs in `optional_bots`, which is the configured way to accept its silence, rather than in a force-done that accepts every bot's silence at once.
 
-**Read `bot_states` before disposing of a block, because two of the blocking members name a different remedy than the others.** A required bot on `participated_stale` DID publish — its review merely predates this HEAD — so the productive action is a re-review trigger; and a PR-wide `not_triggered` means no reviewer was ever asked, so the productive action is to generate the trigger event at all. Both are still blocks and neither shortens the barrier, but a `{barrier_mode} == ask` prompt that renders them as *"the bot did not review"* asks the operator to accept the wrong gap. See [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md) § "Two members are refinements, not siblings — and their remedies are opposite".
+**Read `bot_states` before disposing of a block, because several of the blocking members name a different remedy than the others.** A required bot on `participated_stale` DID publish — its review merely predates this HEAD — so the productive action is a re-review trigger; a PR-wide `not_triggered` means no reviewer was ever asked, so the productive action is to generate the trigger event at all; and a required bot on `declined` answered the re-review without reviewing this HEAD, so re-triggering it produces another decline — the productive action is to accept the decline (move it to `optional`, or record a merge-authorization), not to trigger again. All three are still blocks and none shortens the barrier, but a `{barrier_mode} == ask` prompt that renders them as *"the bot did not review"* asks the operator to accept the wrong gap. See [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md) § "Two members are refinements, not siblings — and their remedies are opposite" and § "Detecting a decline".
 
 > **`participation_complete: true` proves PARTICIPATION, never review QUALITY.** It means each required bot published an artifact against this diff — not that the diff was reviewed well. Do not render a satisfied quorum as a reviewed diff in any log line, `display_detail`, or PR-body claim. See [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md) § "Participation is not review quality".
 

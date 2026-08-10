@@ -51,9 +51,9 @@ For GitLab projects use `plan-marshall:workflow-integration-gitlab:gitlab_pr fet
 > returns the participation observation sets — `participated_bots[]`, `stale_participation_bots[]`,
 > `refused_bots[]`, `unclassified_bots[]`. This lifecycle does not classify them; the
 > `plan-marshall:automatic-review` step-done participation guard does, and it resolves every required
-> bot into **exactly one of seven** terminal non-participation states — `absent`, `not_triggered`,
-> `in_progress`, `refused_awaitable`, `refused_hard`, `participated_but_empty`, `participated_stale` —
-> or into `participated`, their complement. The taxonomy is closed and is owned by
+> bot into **exactly one of eight** terminal non-participation states — `absent`, `not_triggered`,
+> `in_progress`, `refused_awaitable`, `refused_hard`, `participated_but_empty`, `participated_stale`,
+> `declined` — or into `participated`, their complement. The taxonomy is closed and is owned by
 > [`automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md);
 > its semantics are not restated here.
 >

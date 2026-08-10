@@ -97,10 +97,12 @@ _PROVENANCE_STATES = ('never_asked', 'migrated', 'answered')
 # The closed NON-participation members. ``participated`` is deliberately NOT a
 # member — it is the complement the taxonomy exists to distinguish from.
 #
-# The last two are the REFINEMENTS of ``absent``, listed after the five mutually
+# The last two are the REFINEMENTS of ``absent``, listed after the six mutually
 # independent observations because that is what they are: each says the bot
 # published nothing, and each carries a remedy opposite to ``absent``'s escalation
-# (re-trigger the stale review / trigger the review at all). This tuple's LENGTH is
+# (re-trigger the stale review / trigger the review at all). ``declined`` sits among
+# the independent observations: like a refusal, it says the bot engaged and would
+# not review this commit, so it is not a refinement of ``absent``. This tuple's LENGTH is
 # load-bearing — the closure-count check below reads the contract's own prose count
 # back as an integer and compares it against ``len`` here, which is what stops a
 # member reaching the classifier and the table while the prose still claims fewer.
@@ -110,6 +112,7 @@ _NON_PARTICIPATION_MEMBERS = (
     rc.STATE_REFUSED_AWAITABLE,
     rc.STATE_REFUSED_HARD,
     rc.STATE_PARTICIPATED_BUT_EMPTY,
+    rc.STATE_DECLINED,
     rc.STATE_PARTICIPATED_STALE,
     rc.STATE_NOT_TRIGGERED,
 )
@@ -564,11 +567,13 @@ class TestFailureTaxonomyIsExhaustive:
         taxonomy_size = len(_NON_PARTICIPATION_MEMBERS)
 
         # Positive: the two shipped defects, verbatim. Both stated the TAXONOMY
-        # size where the BLOCKING subset was meant, which is the error itself.
+        # size where the BLOCKING subset was meant, which is the error itself. The
+        # count word tracks the derived taxonomy size, so these read the current
+        # cardinality rather than a frozen literal that would rot on the next member.
         assert _stated_blocking_counts(
-            'because two of the seven blocking members name a different remedy'
+            f'because two of the {_NUMBER_WORDS[taxonomy_size]} blocking members name a different remedy'
         ) == (taxonomy_size,)
-        assert _stated_blocking_counts('7 blocking members') == (taxonomy_size,)
+        assert _stated_blocking_counts(f'{taxonomy_size} blocking members') == (taxonomy_size,)
 
         # Negative: the corrected wording states no count and must not be read
         # as one — otherwise the fix would itself trip the guard.
@@ -590,6 +595,7 @@ class TestFailureTaxonomyIsExhaustive:
             'participated_empty',
             'participated_with_findings',
             'participated_stale',
+            'declined',
             'not_triggered',
         ],
     )
@@ -628,6 +634,8 @@ class TestFailureTaxonomyIsExhaustive:
             # resolves ``participated_but_empty`` and the widened member would
             # never be exercised while the case still reported green.
             kwargs['stale_participation_bots'] = bots
+        elif observation == 'declined':
+            kwargs['declined_bots'] = bots
         elif observation == 'not_triggered':
             # PR-wide rather than per-bot: a single bool, because the condition
             # ("no pull_request-event run exists for this PR") holds for every bot
@@ -764,16 +772,17 @@ _FAMILY_B = 'github_pr fetch_findings'
 
 #: ``(family, doc-suffix, section-substring, expected list-flag count)`` for the
 #: four CONFIRMED call sites. The counts differ per site and are asserted per
-#: site: the participation guard passes all six, the pre-merge barrier's
-#: Predicate 2 passes five (it never observes an in-progress bot of its own), and
-#: both producer sites pass the two classification flags.
+#: site: the participation guard passes six (``--declined-bots`` is documented in the
+#: canonical block but not interpolated at the FIND-step site), the pre-merge
+#: barrier's Predicate 2 passes six (it never observes an in-progress bot of its own,
+#: but it forwards the trigger-A ``--declined-bots`` observation), and both producer
+#: sites pass the two classification flags.
 #:
 #: ``--not-triggered`` deliberately moves NEITHER count. It is a ``store_true``
 #: bool rather than a ``--*-bots`` list flag, so it carries no interpolated
 #: placeholder to quote — which is also why ``derive_bot_flags`` does not surface
 #: it and why the quoting sweep has nothing to say about it. Both family-A sites
-#: pass it bare; only ``--stale-participation-bots`` added an interpolation, which
-#: is the single +1 on each count.
+#: pass it bare.
 _CONFIRMED_SITES = (
     pytest.param(
         _FAMILY_A,
@@ -786,7 +795,7 @@ _CONFIRMED_SITES = (
         _FAMILY_A,
         'phase-6-finalize/standards/branch-cleanup.md',
         'Predicate 2',
-        5,
+        6,
         id='family-a-premerge-barrier-predicate-2',
     ),
     pytest.param(

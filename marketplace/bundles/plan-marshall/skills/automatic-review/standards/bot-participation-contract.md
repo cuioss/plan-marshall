@@ -49,7 +49,7 @@ await — and that is a legitimate configured state, not a misconfiguration to w
 ## Failure taxonomy
 
 When a bot does not deliver a usable review, the non-participation is classified into exactly one of
-seven members. The taxonomy is closed: every non-participation resolves to one of these.
+eight members. The taxonomy is closed: every non-participation resolves to one of these.
 
 | Member | Condition | Interpretation |
 |--------|-----------|----------------|
@@ -59,7 +59,8 @@ seven members. The taxonomy is closed: every non-participation resolves to one o
 | `refused_awaitable` | The bot posted a refusal whose limit reopens on its own (`rate_limit_class: awaitable_window`). | Worth awaiting — the window resets. |
 | `refused_hard` | The bot posted a refusal that does not reopen on a useful timescale (`rate_limit_class: hard_quota`), or a structural refusal such as a size/diff ceiling. | Not worth awaiting; whether the absence is tolerable is a required-vs-optional question, not a waiting question. |
 | `participated_but_empty` | The bot posted at least one comment, but every comment was filtered out (noise) so it stored zero findings. | **Accounted-for, not a failure.** The bot did its pass and had nothing actionable to say. |
-| `participated_stale` | The bot's comment matched a declared `participation_evidence` publish shape but failed the `participation_requires_update` currency test — the comment was already observed and its `updated_at` has not moved. | The bot reviewed an **earlier** HEAD, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
+| `participated_stale` | The bot's comment matched a declared `participation_evidence` publish shape but failed the `participation_requires_update` currency test — the comment was reviewed against a commit that is **not** the merge candidate, and it was not edited in place since. | The bot reviewed an **earlier** commit, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
+| `declined` | The bot was asked to review the merge candidate (a re-review was triggered) and answered without producing a review of it — an **incremental-review decline**: it responded with a comment carrying no reviewed-commit SHA (`head_sha_verified: false`) rather than a review of this HEAD. | The bot engaged but **declined** to review this commit. Blocking, but re-triggering is futile — the productive action is to accept the decline (move the bot to `optional`, or record a merge-authorization), not to trigger again. |
 
 `participated_but_empty` is the member most often misread. A bot that reviewed and found nothing is a
 *successful* review, not a silent one — it must never be treated as an incompleteness, or a clean PR
@@ -67,7 +68,7 @@ would hold the step open forever.
 
 ### Two members are refinements, not siblings — and their remedies are opposite
 
-Five of the seven members are mutually independent observations. The remaining two exist because
+Six of the eight members are mutually independent observations. The remaining two exist because
 `absent` was doing two other jobs badly, and each carries a remedy that `absent`'s does not:
 
 - **`participated_stale` is the opposite of `absent`.** `absent` means there is no review to refresh,
@@ -97,15 +98,16 @@ The taxonomy member describes *what happened*; the required/optional classificat
 it matters*:
 
 - A **required** bot resolving to `absent`, `not_triggered`, `in_progress`, `refused_awaitable`,
-  `refused_hard`, or `participated_stale` is a completeness failure — the step is not markable done
-  without an explicitly recorded force-done reason.
+  `refused_hard`, `participated_stale`, or `declined` is a completeness failure — the step is not
+  markable done without an explicitly recorded force-done reason.
 - An **optional** bot resolving to any member never blocks.
 - Any bot resolving to `participated_but_empty` is accounted-for regardless of classification.
 
-A completeness failure is not one undifferentiated state: `participated_stale` and `not_triggered`
-block exactly as the other four do, but each names a **different remedy** (re-trigger the review /
-trigger the review at all), so a consumer that renders every blocking member as "the bot did not
-review" discards the one thing the widened taxonomy exists to carry.
+A completeness failure is not one undifferentiated state: several blocking members name a **different
+remedy** than the others — `participated_stale` (re-trigger the stale review), `not_triggered`
+(trigger the review at all), and `declined` (accept the decline, because re-triggering a bot that will
+not review this commit is futile) — so a consumer that renders every blocking member as "the bot did
+not review" discards the one thing the widened taxonomy exists to carry.
 
 ## Evidence taxonomy
 
@@ -180,19 +182,70 @@ signal, and consuming it as one is sanctioned: the completion-aware poll documen
 `review_bot_buffer_seconds` fallback, or stop — none of which is participation input. Only the
 budget-exhausted branch reaches `--in-progress-bots`.
 
+### The currency rule — a credit is evaluated against the commit being merged
+
+**A participation credit is valid only against the merge candidate: a review counts iff the commit it
+reviewed is the merge candidate's HEAD, and that verdict is a pure comparison that consumes no
+observation state, so it is identical however many times it is evaluated.** This one rule governs
+every site that credits participation.
+
+The rule exists because the artifact that merges is **one commit**, while the barrier was asking a
+per-PR question — *"did the bot participate on this PR?"* — that a loop-back, rebase, or force-push
+leaves answered `yes` for a tree no reviewer ever saw. Anchoring the credit to the merge candidate's
+SHA closes that false positive; making the credit a pure SHA comparison rather than a consumed
+observation closes a second defect, the **observer effect** — a credit derived by *looking* changed
+its answer on the second look, so the same unedited comment at the same HEAD flipped from
+`participated` to `participated_stale` between one fetch and the next.
+
 ### Evidence for a bot that edits one comment in place
 
 A bot that re-reviews by **editing its single persistent comment** rather than posting a new one
 declares `participation_requires_update: true`. For such a bot the comment's continued existence
-proves only that it reviewed **once, at some earlier HEAD** — after a force-push the unchanged
-comment would silently credit it with reviewing code it never saw. Its evidence therefore requires
-either **first presence** (the comment is newly observed) or observed **`updated_at` movement**.
+proves only that it reviewed **once, at some commit** — after a loop-back or force-push the unchanged
+comment would silently credit it with reviewing code it never saw. Applying the currency rule, its
+evidence requires the comment to prove a review of the **merge candidate**:
 
-A failed movement test is **not the same as no evidence at all**, and the taxonomy keeps the two
+- the comment is recorded against the merge-candidate SHA — the `reviewed_commit_sha` stamped on the
+  stored finding, or (for a comment the pre-filter drops, so it files no finding) the merge-candidate
+  SHA the noise sidecar recorded when the comment was first observed; **or**
+- it was **edited in place** (`updated_at` differs from `created_at`) since it was posted — a fresh
+  review at the current tree; **or**
+- this fetch is the **first observation** of the comment, which is by definition an observation at the
+  merge candidate.
+
+A comment recorded against an **earlier** commit, unedited, fails the test. Because the test is an SHA
+comparison rather than a first-seen tally, re-running the fetch at the same HEAD returns the same
+answer — the credit no longer depends on how many times the plan has looked. No participation path
+reads the observation ledger (`observed_keys`) as a currency signal.
+
+A failed currency test is **not the same as no evidence at all**, and the taxonomy keeps the two
 apart: the bot published in a declared shape, so the producer reports it in
 `stale_participation_bots[]` and it resolves to `participated_stale` — blocking, but with a
-re-review trigger as the remedy. Discarding the failed movement test toward `absent` would lose
+re-review trigger as the remedy. Discarding the failed currency test toward `absent` would lose
 exactly that distinction and prescribe escalating a reviewer whose review only needed refreshing.
+
+### Detecting a decline — the bot answered without reviewing this commit
+
+`participated_stale` catches *a review anchored to a commit that is not the merge candidate*; it
+cannot catch *no review at all, answered as engagement*. Those are disjoint. When a re-review is triggered for the merge
+candidate and the bot answers with a comment that carries **no reviewed-commit SHA**
+(`head_sha_verified: false` from the re-review await), the bot **declined** to review this commit — an
+**incremental-review decline**. A refusal at first pass leaves no reviewed-SHA to compare, so there is
+nothing stale to detect; the currency rule has nothing to work with, and the decline must be recorded
+in its own right.
+
+Such a bot resolves to the **`declined`** taxonomy member — blocking, and excluded from the quorum
+exactly as `participated_stale` is, but with a **distinct remedy**: re-triggering an incremental-review
+bot that already declined produces another decline, not a review, so the productive action is to
+accept the decline (move the bot to `optional`, or record an operator merge-authorization) rather than
+to trigger again. `declined` is distinct from `refused_awaitable` / `refused_hard`, which name an
+explicit rate-limit / quota / size **refusal notice**; the decline is the quieter shape — the bot
+answered, but its answer named no commit.
+
+The deciding bit — whether the re-review produced a review of the new HEAD (`head_sha_verified: true`)
+or only a comment (`head_sha_verified: false`) — is **computed and must be consumed**: a `matched:
+true` with `head_sha_verified: false` is a decline, never a completed re-review, and a consumer that
+reads `matched` alone credits a review that never named the commit it matched.
 
 ## Participation is not review quality
 
@@ -302,38 +355,38 @@ clean review is. Reading *the drop* as `absent` would turn a successful review i
 failure.
 
 That is a claim about the drop in isolation, and it is deliberately **not** an absolute: it does not
-say a dropped comment can never resolve to a blocking state. Credit still has to clear the movement
-requirement below, and `review_completeness.classify_bot()` assigns `participated_but_empty` only to a
+say a dropped comment can never resolve to a blocking state. Credit still has to clear the currency
+rule below, and `review_completeness.classify_bot()` assigns `participated_but_empty` only to a
 bot present in `proven_participants` — a bot absent from `participated_bots[]` falls through to an
 unproven state that blocks the quorum. For a bot declaring `participation_requires_update` (today,
 only PR-Agent, the sole bot that opts into the contentless drop) an unchanged clean comment is
-credited on the fetch that first observes it and denied on every later fetch, so in the steady state a
-dropped clean Guide resolves to **`participated_stale`, not `absent`** — the producer saw the comment
-in a declared publish shape and reports the bot in `stale_participation_bots[]`, so what the steady
-state records is a review that predates this HEAD rather than a reviewer that never engaged. That is
-the intended reading of a stale unchanged comment, not a defect in the drop, and the member it lands
-on is the one whose remedy — re-trigger the review — actually fits it.
+credited while the merge candidate is the commit it was reviewed against, and denied once HEAD
+advances past that commit, so once a loop-back or force-push moves HEAD a dropped clean Guide resolves
+to **`participated_stale`, not `absent`** — the producer saw the comment in a declared publish shape
+and reports the bot in `stale_participation_bots[]`, so what it records is a review that predates the
+merge candidate rather than a reviewer that never engaged. That is the intended reading of a stale
+comment, not a defect in the drop, and the member it lands on is the one whose remedy — re-trigger the
+review — actually fits it.
 
-**Surviving the drop is not the same as being exempt from the movement requirement.** For a bot
-declaring `participation_requires_update` the evidence that survives the drop must still show **first
-presence or `updated_at` movement** (§ "Evidence for a bot that edits one comment in place"). Keeping
-that requirement live across a drop takes an explicit mechanism, because first presence is answered
-from what the plan has already **observed** — and the natural record of an observation is the
-`pr-comment` finding the comment produced, which a dropped comment by definition does not produce.
-The producer therefore records each noise-dropped comment's `(bot_kind, comment_id)` key in a
-plan-scoped **observation sidecar** kept beside the findings store, and evaluates first presence
-against the **union** of the stored-finding keys and the recorded dropped keys. A dropped comment is
-consequently first-present exactly once — on the fetch that first observed it — after which only a
-real `updated_at` edit credits the bot again.
+**Surviving the drop is not the same as being exempt from the currency rule.** For a bot
+declaring `participation_requires_update` the evidence that survives the drop must still prove a review
+of the **merge candidate** (§ "The currency rule"). Keeping that rule live across a drop takes an
+explicit mechanism, because the SHA a comment was reviewed against is normally read from the
+`reviewed_commit_sha` stamped on the `pr-comment` finding the comment produced — which a dropped
+comment by definition does not produce. The producer therefore records each noise-dropped comment's
+`(bot_kind, comment_id)` key **and the merge-candidate SHA at first observation** in a plan-scoped
+**observation sidecar** kept beside the findings store, and evaluates the currency rule against the
+**union** of the stored-finding SHAs and the recorded sidecar SHAs. A dropped comment's recorded SHA
+is therefore the commit it was first observed against; a later HEAD reads as stale, and a real
+`updated_at` edit credits the bot again.
 
-The sidecar holds **observation keys, not findings**: they are never returned by a findings query,
+The sidecar holds **observation records, not findings**: they are never returned by a findings query,
 never enter the pending-findings gate, and never reach operator triage, so the triage queue stays as
 clean as the drop intends. Recording them as findings in any resolution state would put routine
 clean-review boilerplate back in front of the operator, which is the defect the drop exists to
-remove. Without the record the two halves collide: read from the stored findings alone, the
-first-presence arm stays permanently satisfied for every dropped comment, so a bot whose one stale
-comment never changed would be credited as a proven participant on every fetch — the exact false
-positive `participation_requires_update` exists to close.
+remove. Without the record the currency rule has no SHA for a dropped comment to compare, so a bot
+whose one stale comment never changed could not be told apart from one reviewing the merge candidate —
+the exact false positive `participation_requires_update` exists to close.
 
 ## Consumers
 
@@ -342,7 +395,7 @@ positive `participation_requires_update` exists to close.
 | `automatic-review/SKILL.md` | Both lists, to drive the completion-aware poll, the re-review trigger set, and the step-done guard. |
 | `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]` **and the `stale_participation_bots[]` set that carries `participated_stale`**; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it; each bot's `contentless_review_markers` / `actionable_content_markers`, to drop a fully clean review comment as noise. |
 | `github_pr pull_request_runs` / `ci checks pull-request-runs` | Nothing from this contract — it is the **observation channel for `not_triggered`**, answering the PR-wide question of whether any `pull_request`-event workflow run exists for the PR at all. Its verdict reaches the predicate as the single `--not-triggered` bool. |
-| `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` to split the two refusal states. Consumes `stale_participation_bots[]` via `--stale-participation-bots` to assign `participated_stale`, and the PR-wide `--not-triggered` bool to refine what would otherwise be `absent`. |
+| `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` to split the two refusal states. Consumes `stale_participation_bots[]` via `--stale-participation-bots` to assign `participated_stale`, the bots that answered a re-review without reviewing the merge candidate via `--declined-bots` to assign `declined`, and the PR-wide `--not-triggered` bool to refine what would otherwise be `absent`. |
 | `github_ops pr wait-for-comments` | Each bot's `participation_requires_update`, to select the `updated_at`-movement arm of its completion predicate over the count-growth arm; `participation_evidence` plus `bot_kinds()`, to decide whether the await is answerable at all (`detector_answerable`). |
 | `marshall-steward` | Both lists, to ask the wizard question and record the provenance. |
 

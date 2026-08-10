@@ -47,21 +47,30 @@ Read `re_review_on_branch_cleanup` off the returned `params` object (default: `t
      --pr-number {pr_number} --bot-kind {bot_kind} --head-sha {head_sha} --push-time {push_time} --timeout {re_review_await_timeout_seconds} --plan-id {plan_id}
    ```
 
-   Read both `matched` AND `timed_out` from the returned TOON. **When `matched: true`**, the fresh review is now on the PR. Re-run the consolidated FIND → INGEST → TRIAGE → RESPOND pipeline so the rebase commit is reviewed: call the `fetch_findings` verb (which re-stamps every finding's `reviewed_commit_sha` to the new HEAD and quarantines each body under `raw_input`):
+   Read `matched`, `timed_out`, **and `head_sha_verified`** from the returned TOON. The last is load-bearing and MUST be consulted: `await_fresh_review` matches on EITHER a review whose reviewed-commit SHA equals `{head_sha}` (`head_sha_verified: true`) OR an issue comment that merely post-dates the trigger (`head_sha_verified: false`). Only the first is a review of this HEAD; the second is the bot answering **without** naming the commit it reviewed. Reading `matched` alone credits a review that never happened — the incremental-review decline this step exists to catch.
 
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
-     fetch_findings --pr-number {pr_number} --plan-id {plan_id}
-   ```
+   - **When `matched: true` AND `head_sha_verified: true`**, the fresh review of `{head_sha}` is now on the PR. Re-run the consolidated FIND → INGEST → TRIAGE → RESPOND pipeline so the rebase commit is reviewed: call the `fetch_findings` verb (which re-stamps every finding's `reviewed_commit_sha` to the new HEAD and quarantines each body under `raw_input`):
 
-   The re-filed findings remain `pending` in the store — `automatic-review` is FIND-only and dispatches no triage of its own (see [`../../automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § "Findings await the unified triage"). They are consumed by the dispatcher-owned unified wait-region triage (`producer=finalize-feedback`), which runs the single batched `manage-findings ingest`, the TOP-LEVEL-only triage, and the `post_responses` RESPOND loop over the union of pending `pr-comment` ∪ `sonar-issue` findings for the rebased HEAD (see [`../SKILL.md`](../SKILL.md) Step 3 item 7c). Log the re-review outcome:
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:workflow-integration-github:github_pr \
+       fetch_findings --pr-number {pr_number} --plan-id {plan_id}
+     ```
 
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-     work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: re-reviewed rebased HEAD {head_sha} (bot_kind={bot_kind}, matched={matched})"
-   ```
+     The re-filed findings remain `pending` in the store — `automatic-review` is FIND-only and dispatches no triage of its own (see [`../../automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § "Findings await the unified triage"). They are consumed by the dispatcher-owned unified wait-region triage (`producer=finalize-feedback`), which runs the single batched `manage-findings ingest`, the TOP-LEVEL-only triage, and the `post_responses` RESPOND loop over the union of pending `pr-comment` ∪ `sonar-issue` findings for the rebased HEAD (see [`../SKILL.md`](../SKILL.md) Step 3 item 7c). Log the re-review outcome:
 
-   **When `timed_out: true` (and `matched: false`)**, the await budget expired with no fresh bot review for the rebased HEAD — proceed to "On re-review timeout (trigger A)" below instead of falling through to the Pre-Merge Confirmation Gate with an unreviewed HEAD.
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+       work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: re-reviewed rebased HEAD {head_sha} (bot_kind={bot_kind}, head_sha_verified=true)"
+     ```
+
+   - **When `matched: true` AND `head_sha_verified: false`**, the bot answered the re-review with a comment that names **no** reviewed-commit SHA — an **incremental-review decline**. It did NOT review `{head_sha}`, so this is **not** a completed re-review and MUST NOT be treated as one. Add `{bot_kind}` to the accumulating `{declined_bots}` set (a comma-joined bot_kind list carried forward to the Pre-Merge Review-Completeness Barrier's `--declined-bots`, where it resolves to the blocking `declined` state), log the decline, and proceed to "On re-review timeout (trigger A)" below — re-triggering a bot that just declined produces another decline, so the decline takes the same disposition path as a timeout (proceed-with-authorization / defer / ask) rather than looping the trigger:
+
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+       work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: re-review of rebased HEAD {head_sha} returned a comment with no reviewed-commit SHA (head_sha_verified=false, bot_kind={bot_kind}) — recorded as declined, NOT a completed review"
+     ```
+
+   - **When `timed_out: true` (and `matched: false`)**, the await budget expired with no fresh bot review for the rebased HEAD — proceed to "On re-review timeout (trigger A)" below instead of falling through to the Pre-Merge Confirmation Gate with an unreviewed HEAD.
 
 ### On re-review timeout (trigger A)
 

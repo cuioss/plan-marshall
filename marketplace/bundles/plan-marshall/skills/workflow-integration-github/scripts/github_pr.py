@@ -558,19 +558,44 @@ def _existing_pr_comment_keys(query_findings, plan_id: str) -> set[tuple[str, st
     return keys
 
 
-# The plan-scoped sidecar recording the ``(bot_kind, comment_id)`` keys of comments
-# the NOISE pre-filter dropped. A dropped comment files no ``pr-comment`` finding,
-# so its key never reaches ``_existing_pr_comment_keys`` — and the stored-findings
-# key set alone is therefore an INCOMPLETE record of what the plan has observed.
-# Without this sidecar the first-presence arm of ``_has_update_movement`` below
-# would be permanently satisfied for any comment the pre-filter drops, so a bot
-# declaring ``participation_requires_update`` would be credited as a proven
-# participant on EVERY fetch of one stale, unchanged comment — precisely the
-# false-positive direction that flag exists to close.
+def _existing_pr_comment_shas(query_findings, plan_id: str) -> dict[tuple[str, str], str]:
+    """Return ``(bot_kind, comment_id) -> reviewed_commit_sha`` for stored pr-comment findings.
+
+    Each pr-comment finding carries the PR HEAD SHA stamped at ingestion time in
+    ``reviewed_commit_sha`` and its source ``comment_id`` on a ``comment_id:`` line
+    in ``detail``. Reconstructing the map is what lets ``_reviewed_at_merge_candidate``
+    ask *which commit was reviewed* rather than *how many times the plan has looked*
+    — the anchor the currency test needs, already stored and simply not previously
+    consulted. A finding whose ``reviewed_commit_sha`` was never stamped (an
+    ingest-time head-SHA fetch failure) contributes the empty string, which can never
+    equal a non-empty merge candidate — the fail-closed direction.
+    """
+    result = query_findings(plan_id, finding_type='pr-comment')
+    shas: dict[tuple[str, str], str] = {}
+    for finding in result.get('findings') or []:
+        comment_id = _detail_field(finding.get('detail'), _COMMENT_ID_DETAIL)
+        if comment_id:
+            shas[(finding.get('bot_kind') or '', comment_id)] = str(
+                finding.get('reviewed_commit_sha') or ''
+            )
+    return shas
+
+
+# The plan-scoped sidecar recording, per comment the NOISE pre-filter dropped, its
+# ``(bot_kind, comment_id)`` key AND the merge-candidate SHA at the fetch that first
+# observed it. A dropped comment files no ``pr-comment`` finding, so its
+# ``reviewed_commit_sha`` never reaches ``_existing_pr_comment_shas`` — and the
+# stored-findings SHA map alone is therefore an INCOMPLETE record of what commit each
+# observed comment was reviewed against. Without this sidecar the currency test in
+# ``_reviewed_at_merge_candidate`` below would have no SHA to compare for any comment
+# the pre-filter drops (PR-Agent's contentless Guide, the one bot declaring
+# ``participation_requires_update``), so it could not tell a review of the merge
+# candidate from a review of an earlier commit — precisely the false-positive
+# direction that flag exists to close.
 #
 # It sits BESIDE the findings store (the same ``artifacts/`` root) rather than
 # inside ``artifacts/findings/``, and that placement is load-bearing: these are
-# observation keys, not findings. Filing them as findings — in any resolution
+# observation records, not findings. Filing them as findings — in any resolution
 # state — would put routine clean-review boilerplate back in front of operator
 # triage, into the pending-findings gate, and into the review-retrospective
 # aggregation, which is the whole class of defect the contentless drop removes.
@@ -584,24 +609,26 @@ def _dropped_comment_keys_path(plan_id: str) -> Path:
     return get_artifact_path(plan_id, _DROPPED_COMMENT_KEYS_ARTIFACT)
 
 
-def _recorded_dropped_comment_keys(plan_id: str) -> set[tuple[str, str]]:
-    """Return the ``(bot_kind, comment_id)`` keys EARLIER fetches observed and dropped as noise.
+def _recorded_dropped_comment_shas(plan_id: str) -> dict[tuple[str, str], str]:
+    """Return ``(bot_kind, comment_id) -> reviewed_commit_sha`` for earlier fetches' noise drops.
 
-    The complement of ``_existing_pr_comment_keys``: together the two cover every
-    comment this plan has actually SEEN, whether it survived into the findings
-    store or was dropped by the pre-filter. Only prior fetches contribute — the
-    current fetch's drops are appended after the participation loop has read this
-    set, so a comment observed for the first time still takes the first-presence
-    arm on the run that observed it.
+    The complement of ``_existing_pr_comment_shas`` for comments the pre-filter
+    dropped (which file no finding). Together the two cover every comment this plan
+    has SEEN, each mapped to the commit it was reviewed against. Only prior fetches
+    contribute — the current fetch's drops are appended after the participation loop
+    has read this map, so a comment observed for the first time still takes the
+    first-observation arm on the run that observed it. Last row wins per key, so an
+    in-place edit that re-records the comment at a new HEAD supersedes the old SHA.
 
-    A missing sidecar reads as the empty set (no fetch has run for this plan yet).
+    A missing sidecar reads as the empty map (no fetch has run for this plan yet).
     """
     from jsonl_store import read_jsonl
 
-    return {
-        (str(record.get('bot_kind') or ''), str(record.get('comment_id') or ''))
-        for record in read_jsonl(_dropped_comment_keys_path(plan_id))
-    }
+    shas: dict[tuple[str, str], str] = {}
+    for record in read_jsonl(_dropped_comment_keys_path(plan_id)):
+        key = (str(record.get('bot_kind') or ''), str(record.get('comment_id') or ''))
+        shas[key] = str(record.get('reviewed_commit_sha') or '')
+    return shas
 
 
 def _noise_dropped_comment_keys(comments: list[dict]) -> set[tuple[str, str]]:
@@ -627,50 +654,70 @@ def _noise_dropped_comment_keys(comments: list[dict]) -> set[tuple[str, str]]:
     return keys
 
 
-def _record_dropped_comment_keys(plan_id: str, keys: set[tuple[str, str]]) -> None:
-    """Append newly-observed noise-dropped comment keys to the plan-scoped sidecar.
+def _record_dropped_comment_shas(plan_id: str, records: dict[tuple[str, str], str]) -> None:
+    """Append newly-observed noise-dropped comments, each with its merge-candidate SHA.
 
-    Callers pass only keys absent from ``_recorded_dropped_comment_keys``, so the
-    file accretes one row per distinct dropped comment rather than one row per
-    fetch. Sorted so the file order is deterministic.
+    Callers pass only comments whose key is absent from
+    ``_recorded_dropped_comment_shas``, so the file accretes one row per distinct
+    dropped comment rather than one row per fetch — which keeps the recorded SHA the
+    one at FIRST observation, against which a later HEAD reads as stale. Sorted so
+    the file order is deterministic.
     """
     from jsonl_store import append_jsonl
 
     path = _dropped_comment_keys_path(plan_id)
-    for bot_kind, comment_id in sorted(keys):
-        append_jsonl(path, {'bot_kind': bot_kind, 'comment_id': comment_id})
+    for (bot_kind, comment_id), sha in sorted(records.items()):
+        append_jsonl(
+            path, {'bot_kind': bot_kind, 'comment_id': comment_id, 'reviewed_commit_sha': sha}
+        )
 
 
-def _has_update_movement(comment: dict, observed_keys: set[tuple[str, str]], bot_kind: str) -> bool:
-    """Return True when ``comment`` shows first presence or ``updated_at`` movement.
+def _reviewed_at_merge_candidate(
+    comment: dict,
+    reviewed_shas: dict[tuple[str, str], str],
+    bot_kind: str,
+    merge_candidate_sha: str,
+) -> bool:
+    """Return True when ``comment`` proves a review of the MERGE CANDIDATE commit.
 
-    The evidence qualifier for a bot that re-reviews by EDITING one persistent
+    The currency qualifier for a bot that re-reviews by EDITING one persistent
     comment in place instead of posting a new one. Such a comment's continued
-    existence proves only that the bot reviewed at some earlier HEAD, so crediting
-    it on presence alone would silently score a stale review as a fresh one after a
-    force-push. Movement is established two ways, either of which suffices:
+    existence proves only that the bot reviewed at SOME commit, so crediting it on
+    presence alone would silently score a review of an earlier commit as a review
+    of the tree being merged after a loop-back or a force-push. The credit is
+    therefore anchored to the merge candidate's SHA, and the verdict is a PURE
+    COMPARISON that consumes no observation state — so it is identical however many
+    times it is evaluated. That single change fixes both defects at once: the
+    dead-anchor false positive AND the observer effect (the old first-presence arm
+    was *consumed* on the first fetch, flipping the same unedited comment to stale
+    on the second look at the same HEAD).
 
-    - **First presence** — the comment is not yet in the plan's OBSERVED
-      ``(bot_kind, comment_id)`` key set, so this run is observing it for the first
-      time. The bot posted it during this review cycle.
-    - **``updated_at`` movement** — the comment carries an ``updated_at`` that
-      differs from its ``created_at``, so it has been edited since it was posted.
+    ``reviewed_shas`` maps every ``(bot_kind, comment_id)`` the plan has recorded to
+    the SHA it was reviewed against — the ``reviewed_commit_sha`` stamped on the
+    stored finding, or the merge-candidate SHA the noise sidecar recorded when the
+    comment was first observed (a contentless Guide files no finding, so the
+    sidecar is the only SHA record it has). The credit holds when ANY of:
 
-    ``observed_keys`` must be every comment the plan has SEEN, whether or not it
-    produced a finding — the UNION of the stored-findings keys
-    (``_existing_pr_comment_keys``) and the noise-dropped observation keys
-    (``_recorded_dropped_comment_keys``), never the stored keys alone. Passing the
-    stored keys alone leaves the first-presence arm permanently satisfied for any
-    pre-filtered comment, so the movement requirement stops binding; see
-    ``_DROPPED_COMMENT_KEYS_ARTIFACT`` above.
+    - **First observation** — the comment is not in ``reviewed_shas``, so this fetch
+      is observing it at the merge candidate; the caller records it at that SHA.
+    - **SHA currency** — the recorded review is against the merge candidate. This is
+      the idempotent arm: re-running at the same HEAD reads the same recorded SHA
+      and returns the same answer, and it replaces the old observation-history term
+      so no participation path reads ``observed_keys`` as a currency signal.
+    - **Edit movement** — the bot edited the comment in place since it was posted
+      (``updated_at`` differs from ``created_at``), publishing a fresh review at the
+      current tree. An absent ``updated_at`` degrades to "no movement" — the
+      fail-closed direction, since crediting an unverified review is the expensive
+      error.
 
-    A comment already observed, whose ``updated_at`` has not moved, yields False:
-    no new review was observed. An absent ``updated_at`` degrades to "no movement"
-    rather than being read as movement — the fail-closed direction, since crediting
-    an unverified review is the expensive error.
+    A comment recorded against an EARLIER commit, unedited, yields False: stale
+    evidence, which is neither absence nor participation.
     """
     comment_id = str(comment.get('id') or 'unknown')
-    if (bot_kind, comment_id) not in observed_keys:
+    key = (bot_kind, comment_id)
+    if key not in reviewed_shas:
+        return True
+    if merge_candidate_sha and reviewed_shas[key] == merge_candidate_sha:
         return True
     updated_at = str(comment.get('updated_at') or '')
     created_at = str(comment.get('created_at') or '')
@@ -741,13 +788,16 @@ def cmd_fetch_findings(args):
     the publish shapes its registry record declares in ``participation_evidence``
     — the mere presence of some comment resolving to its login is NOT evidence.
     For a bot whose record sets ``participation_requires_update`` (it re-reviews by
-    editing one persistent comment in place) the record additionally requires first
-    presence or observed ``updated_at`` movement, so a stale unchanged comment
-    cannot credit it with reviewing code it never saw. First presence is measured
-    against every comment this plan has OBSERVED — the stored-findings keys UNIONED
-    with the noise-dropped keys recorded in the sidecar — because a comment the
-    pre-filter drops files no finding, and against the stored keys alone it would
-    read as newly-observed on every fetch forever.
+    editing one persistent comment in place) the record additionally requires the
+    comment to prove a review of the MERGE CANDIDATE commit
+    (``_reviewed_at_merge_candidate``), so a comment reviewed against an earlier
+    commit cannot credit it with reviewing the tree being merged. The credit is an
+    SHA comparison against the current PR HEAD, using the ``reviewed_commit_sha``
+    already stored per comment — the stored-finding stamp, or the merge-candidate SHA
+    the noise sidecar recorded when the comment was first observed (a dropped comment
+    files no finding). Because it is a pure comparison that consumes no observation
+    state, the verdict is idempotent: re-running the fetch at the same HEAD returns
+    the same answer, closing the observer effect the old first-presence arm had.
 
     ``stale_participation_bots``: where that currency-test failure now GOES, instead
     of being discarded. Same ``{bot_kind, evidence_kind}`` record shape as
@@ -828,15 +878,26 @@ def cmd_fetch_findings(args):
     # bot kind, thread-bearing or not — whose key is already present.
     existing_comment_keys = _existing_pr_comment_keys(query_findings, plan_id)
 
-    # The participation movement guard reads the UNION of the stored keys and the
-    # noise-dropped observation keys recorded by earlier fetches (see
-    # ``_DROPPED_COMMENT_KEYS_ARTIFACT``). ``existing_comment_keys`` stays the input
-    # to the cross-iteration dedup (pre-filter 5), which asks a different question —
-    # dedup asks "was this already STAGED as a finding?", participation asks "has
-    # this plan already SEEN this comment?". Widening dedup to the union would drop
-    # a previously-clean comment that has since gained real content.
-    recorded_dropped_keys = _recorded_dropped_comment_keys(plan_id)
-    observed_comment_keys = existing_comment_keys | recorded_dropped_keys
+    # The MERGE CANDIDATE SHA — the current PR HEAD — is fetched up front (before the
+    # participation loop, not only for the ingestion stamp below) because the currency
+    # test now compares each comment's reviewed SHA against it. Empty string on any
+    # failure path; the currency test then falls through to its first-observation /
+    # edit-movement arms rather than crediting on a SHA that could not be read.
+    reviewed_commit_sha = _github.fetch_pr_head_sha(pr_number)
+
+    # The currency test (``_reviewed_at_merge_candidate``) reads, per observed comment,
+    # the SHA it was reviewed against — the union of the stored-finding SHAs and the
+    # noise-dropped sidecar SHAs recorded by earlier fetches (see
+    # ``_DROPPED_COMMENT_KEYS_ARTIFACT``). ``existing_comment_keys`` stays the input to
+    # the cross-iteration dedup (pre-filter 5), which asks a different question — dedup
+    # asks "was this already STAGED as a finding?", currency asks "which commit did this
+    # comment review?". Keeping them separate is what lets a findings key with a later
+    # real edit still be re-credited without being deduped away.
+    recorded_dropped_shas = _recorded_dropped_comment_shas(plan_id)
+    reviewed_shas = {
+        **_existing_pr_comment_shas(query_findings, plan_id),
+        **recorded_dropped_shas,
+    }
 
     # This fetch's noise drops, derived in their own pass because the per-comment
     # filter loop that performs the drops runs AFTER the participation loop below.
@@ -852,9 +913,10 @@ def cmd_fetch_findings(args):
     # observed comment's ``kind`` is one of the publish shapes that bot's registry
     # record declares in ``participation_evidence``, and — for a bot that
     # re-reviews by editing one persistent comment in place
-    # (``participation_requires_update``) — only when first presence or
-    # ``updated_at`` movement is actually observed, since a stale unchanged
-    # comment proves only that the bot reviewed some EARLIER HEAD.
+    # (``participation_requires_update``) — only when that comment proves a review
+    # of the MERGE CANDIDATE commit (``_reviewed_at_merge_candidate``), since a
+    # comment reviewed against an EARLIER commit proves only that the bot reviewed
+    # an earlier HEAD.
     #
     # A bot declaring no evidence shape resolves fail-closed: it can never be
     # proven a participant. There is no bot-name literal here — the evidence
@@ -875,33 +937,34 @@ def cmd_fetch_findings(args):
         _kind = _comment.get('kind') or 'inline'
         if _kind not in bot_registry.participation_evidence(_bot_kind):
             continue
-        if bot_registry.participation_requires_update(_bot_kind) and not _has_update_movement(
-            _comment, observed_comment_keys, _bot_kind
+        if bot_registry.participation_requires_update(_bot_kind) and not _reviewed_at_merge_candidate(
+            _comment, reviewed_shas, _bot_kind, reviewed_commit_sha
         ):
             # The comment's kind ALREADY matched a declared publish shape — only the
             # currency test failed. Discarding it here is what collapsed a stale
             # review into ``absent``, and the two have OPPOSITE remedies: ``absent``
             # means the bot never engaged (escalate the non-participation), while a
-            # stale publish means it engaged against an EARLIER HEAD (re-trigger a
+            # stale publish means it engaged against an EARLIER commit (re-trigger a
             # re-review). Record the observation so the classifier can tell them
             # apart instead of inferring absence from a failed currency test.
             stale_participation[_bot_kind] = _kind
             continue
         participated[_bot_kind] = _kind
 
-    # Persist THIS fetch's noise drops so the NEXT fetch sees them as observed.
-    # Written AFTER the participation loop has read ``observed_comment_keys``, so a
-    # comment observed for the first time here still takes the first-presence arm
-    # on the run that observed it; the record only ever closes that arm on a LATER
-    # fetch — which is exactly the stale-unchanged-comment case the movement
-    # requirement exists to catch.
-    _record_dropped_comment_keys(plan_id, dropped_noise_keys - recorded_dropped_keys)
-
-    # Stamp every finding with the PR HEAD SHA at ingestion time so re-review
-    # matching can tell whether HEAD has advanced past the reviewed commit.
-    # Fetched once for the whole batch (empty string on any failure path — the
-    # field is then simply omitted from the record).
-    reviewed_commit_sha = _github.fetch_pr_head_sha(pr_number)
+    # Persist THIS fetch's noise drops so the NEXT fetch has the SHA each was
+    # reviewed against. Each newly-dropped comment is recorded at the merge candidate
+    # observed this fetch, and only comments whose key is not already recorded are
+    # written — so the recorded SHA stays the one at FIRST observation, against which
+    # a later HEAD reads as stale. Written AFTER the participation loop has read
+    # ``reviewed_shas``, so a comment observed for the first time here takes the
+    # first-observation arm on the run that observed it; on a LATER fetch its recorded
+    # SHA is what the currency test compares against the merge candidate. The PR HEAD
+    # SHA (``reviewed_commit_sha``) was fetched up front, before the participation
+    # loop, so it also serves as the ingestion stamp on every finding below.
+    _record_dropped_comment_shas(
+        plan_id,
+        dict.fromkeys(dropped_noise_keys - set(recorded_dropped_shas), reviewed_commit_sha),
+    )
 
     stored_hashes: list[str] = []
     skipped_noise = 0
