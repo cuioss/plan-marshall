@@ -1,6 +1,6 @@
 # Run report — 010-participation-credited-from-a-superseded-commit (run 01)
 
-**Date (UTC):** 2026-08-10    **Branch:** `claude/participation-superseded-commit-uo7k92` (harness-assigned, kept as-is)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-10    **Branch:** `claude/participation-superseded-commit-uo7k92` (harness-assigned, kept as-is)    **PR:** [#1141](https://github.com/cuioss/plan-marshall/pull/1141)    **Outcome:** _in progress_
 
 ## Skills loaded
 
@@ -164,8 +164,39 @@ The agent could not run the build (per instruction) and could not independently 
 harness; both were verified by this run (build: `./pw verify` SUCCESS; mutation: the harness output is
 recorded above).
 
+### PR review findings (Step 7)
+
+4. **[Real, fixed] PR-Agent (`cuioss-review-bot`, the required bot) — "Bypassed SHA Currency Check".**
+   The edit-movement arm was keyed on `updated_at != created_at`, a permanent "was ever edited" flag:
+   once a `participation_requires_update` comment is edited at commit N, it was credited at N+1, N+2, …
+   without re-review — the exact false-positive class this plan closes, on the edit path. **Disposition:
+   fixed** — the noise sidecar became a proper **currency ledger** recording
+   `(reviewed_commit_sha, updated_at)` per credited comment, refreshed on each credit; the edit arm now
+   measures a *fresh* edit against the recorded `updated_at` ("edited since last credited"), so an edit
+   at N credits N only. `_reviewed_at_merge_candidate` reads the single ledger (dropping the
+   findings-SHA source, which could not carry `updated_at`), so stored and dropped comments are treated
+   identically. Pinned by `test_edit_at_one_commit_does_not_credit_a_later_commit`; the mutation proof
+   and all idempotence/staleness tests still hold. This was a genuine defect the plan's Goal demands
+   closed, found by the required reviewer — the exact case the pre-merge barrier exists to surface.
+
 ## Reviewer participation
-_pending_
+
+Population derived from the registry `author_login` of each
+`automatic-review/standards/{bot_kind}.md`: `coderabbit`→`coderabbitai`, `pr-agent`→`cuioss-review-bot`,
+`sourcery`→`sourcery-ai`. This repo's settled config makes **`pr-agent` the sole REQUIRED bot**
+(`coderabbit`, `sourcery` optional). Verdicts from the stored comment bodies on PR #1141:
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` (pr-agent, **required**) | `reviewed` | Posted "PR Reviewer Guide 🔍" with a real finding ("Bypassed SHA Currency Check") — a review artifact against the diff. |
+| `coderabbitai` (coderabbit, optional) | `rate-limited` | Posted only "Review limit reached … Next review available in 33 minutes" (awaitable window). |
+| `sourcery-ai` (sourcery, optional) | `rate-limited` | Posted only "you have reached your weekly rate limit of 500000 diff characters" (weekly quota). |
+
+**Coverage: 1 of 3 reviewed; the REQUIRED bot (`pr-agent`) reviewed, so the required quorum is
+satisfied.** The two optional bots are rate-limited (routine, outside our control; optional silence
+does not block). Note: the review fix (ledger) pushes a new commit, which re-triggers PR-Agent on the
+new HEAD — the review cycle continues below until that re-review lands and the finding is confirmed
+resolved.
 
 ## Cost
 _pending_

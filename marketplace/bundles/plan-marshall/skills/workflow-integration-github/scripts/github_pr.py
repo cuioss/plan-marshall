@@ -558,40 +558,20 @@ def _existing_pr_comment_keys(query_findings, plan_id: str) -> set[tuple[str, st
     return keys
 
 
-def _existing_pr_comment_shas(query_findings, plan_id: str) -> dict[tuple[str, str], str]:
-    """Return ``(bot_kind, comment_id) -> reviewed_commit_sha`` for stored pr-comment findings.
-
-    Each pr-comment finding carries the PR HEAD SHA stamped at ingestion time in
-    ``reviewed_commit_sha`` and its source ``comment_id`` on a ``comment_id:`` line
-    in ``detail``. Reconstructing the map is what lets ``_reviewed_at_merge_candidate``
-    ask *which commit was reviewed* rather than *how many times the plan has looked*
-    — the anchor the currency test needs, already stored and simply not previously
-    consulted. A finding whose ``reviewed_commit_sha`` was never stamped (an
-    ingest-time head-SHA fetch failure) contributes the empty string, which can never
-    equal a non-empty merge candidate — the fail-closed direction.
-    """
-    result = query_findings(plan_id, finding_type='pr-comment')
-    shas: dict[tuple[str, str], str] = {}
-    for finding in result.get('findings') or []:
-        comment_id = _detail_field(finding.get('detail'), _COMMENT_ID_DETAIL)
-        if comment_id:
-            shas[(finding.get('bot_kind') or '', comment_id)] = str(
-                finding.get('reviewed_commit_sha') or ''
-            )
-    return shas
-
-
-# The plan-scoped sidecar recording, per comment the NOISE pre-filter dropped, its
-# ``(bot_kind, comment_id)`` key AND the merge-candidate SHA at the fetch that first
-# observed it. A dropped comment files no ``pr-comment`` finding, so its
-# ``reviewed_commit_sha`` never reaches ``_existing_pr_comment_shas`` — and the
-# stored-findings SHA map alone is therefore an INCOMPLETE record of what commit each
-# observed comment was reviewed against. Without this sidecar the currency test in
-# ``_reviewed_at_merge_candidate`` below would have no SHA to compare for any comment
-# the pre-filter drops (PR-Agent's contentless Guide, the one bot declaring
-# ``participation_requires_update``), so it could not tell a review of the merge
-# candidate from a review of an earlier commit — precisely the false-positive
-# direction that flag exists to close.
+# The plan-scoped CURRENCY LEDGER: per ``participation_requires_update`` comment the
+# plan has credited, the ``(bot_kind, comment_id)`` key with the merge-candidate SHA
+# AND the comment's ``updated_at`` at the fetch that last credited it. It is the SOLE
+# source the currency test reads, so a comment stored as a finding and a comment
+# dropped as noise (PR-Agent's contentless Guide) are treated identically — the
+# ledger records the credit regardless of whether the comment produced a finding.
+#
+# Recording BOTH the SHA and the ``updated_at`` is load-bearing. Anchoring on the SHA
+# alone leaves the edit-movement arm a permanent "was ever edited" flag: once a
+# comment is edited at some commit, ``updated_at != created_at`` stays true forever,
+# so every later HEAD advance would keep crediting it even though the bot never
+# reviewed those commits. Comparing ``updated_at`` against the value recorded at the
+# LAST credit instead ("edited since we last credited it") closes that hole: an edit
+# at commit N credits N, but not N+1, N+2 unless a FURTHER edit lands.
 #
 # It sits BESIDE the findings store (the same ``artifacts/`` root) rather than
 # inside ``artifacts/findings/``, and that placement is load-bearing: these are
@@ -603,78 +583,67 @@ _DROPPED_COMMENT_KEYS_ARTIFACT = 'pr-noise-dropped-comments.jsonl'
 
 
 def _dropped_comment_keys_path(plan_id: str) -> Path:
-    """Resolve the plan-scoped sidecar path recording noise-dropped comment keys."""
+    """Resolve the plan-scoped path of the currency ledger."""
     from jsonl_store import get_artifact_path
 
     return get_artifact_path(plan_id, _DROPPED_COMMENT_KEYS_ARTIFACT)
 
 
-def _recorded_dropped_comment_shas(plan_id: str) -> dict[tuple[str, str], str]:
-    """Return ``(bot_kind, comment_id) -> reviewed_commit_sha`` for earlier fetches' noise drops.
+def _recorded_currency_records(plan_id: str) -> dict[tuple[str, str], tuple[str, str]]:
+    """Return ``(bot_kind, comment_id) -> (reviewed_commit_sha, updated_at)`` for earlier credits.
 
-    The complement of ``_existing_pr_comment_shas`` for comments the pre-filter
-    dropped (which file no finding). Together the two cover every comment this plan
-    has SEEN, each mapped to the commit it was reviewed against. Only prior fetches
-    contribute — the current fetch's drops are appended after the participation loop
-    has read this map, so a comment observed for the first time still takes the
-    first-observation arm on the run that observed it. Last row wins per key, so an
-    in-place edit that re-records the comment at a new HEAD supersedes the old SHA.
+    The currency ledger the currency test reads. Each entry is the ``(sha,
+    updated_at)`` at which a ``participation_requires_update`` comment was LAST
+    credited — the SHA to compare against the merge candidate, and the ``updated_at``
+    to compare against the comment's current value so a fresh in-place edit
+    (``updated_at`` moved past the recorded one) re-credits it while an old edit does
+    not. Only prior fetches contribute — the current fetch's credits are appended
+    after the participation loop has read this map, so a comment observed for the
+    first time still takes the first-observation arm on the run that observed it.
+    Last row wins per key, so a re-credit at a new HEAD supersedes the old record.
 
-    A missing sidecar reads as the empty map (no fetch has run for this plan yet).
+    A missing ledger reads as the empty map (no fetch has run for this plan yet).
     """
     from jsonl_store import read_jsonl
 
-    shas: dict[tuple[str, str], str] = {}
+    records: dict[tuple[str, str], tuple[str, str]] = {}
     for record in read_jsonl(_dropped_comment_keys_path(plan_id)):
         key = (str(record.get('bot_kind') or ''), str(record.get('comment_id') or ''))
-        shas[key] = str(record.get('reviewed_commit_sha') or '')
-    return shas
+        records[key] = (
+            str(record.get('reviewed_commit_sha') or ''),
+            str(record.get('updated_at') or ''),
+        )
+    return records
 
 
-def _noise_dropped_comment_keys(comments: list[dict]) -> set[tuple[str, str]]:
-    """Derive the ``(bot_kind, comment_id)`` keys the noise pre-filter drops from ``comments``.
+def _record_currency_records(
+    plan_id: str, records: dict[tuple[str, str], tuple[str, str]]
+) -> None:
+    """Append currency records whose ``(sha, updated_at)`` changed since the last fetch.
 
-    Its OWN pass over the raw comment list, deliberately separate from the
-    per-comment filter loop in ``cmd_fetch_findings``: that loop runs AFTER the
-    participation loop, so a dropped-keys set it populated would not exist yet at
-    the point participation is evaluated. Running the derivation up front is what
-    makes the record available at both points in the same fetch.
-
-    The drop predicate is the SAME ``_is_obvious_noise`` the filter loop calls, not
-    a second copy of its rules, so the two can never disagree about what counts as
-    noise. Human comments (``bot_kind`` None) contribute ``('', comment_id)``,
-    mirroring ``_existing_pr_comment_keys``; they can never match a movement lookup,
-    which is always keyed by a non-empty bot kind.
-    """
-    keys: set[tuple[str, str]] = set()
-    for comment in comments:
-        bot_kind = bot_kind_for_author(comment.get('author') or 'unknown')
-        if _is_obvious_noise(str(comment.get('body') or ''), bot_kind):
-            keys.add((bot_kind or '', str(comment.get('id') or 'unknown')))
-    return keys
-
-
-def _record_dropped_comment_shas(plan_id: str, records: dict[tuple[str, str], str]) -> None:
-    """Append newly-observed noise-dropped comments, each with its merge-candidate SHA.
-
-    Callers pass only comments whose key is absent from
-    ``_recorded_dropped_comment_shas``, so the file accretes one row per distinct
-    dropped comment rather than one row per fetch — which keeps the recorded SHA the
-    one at FIRST observation, against which a later HEAD reads as stale. Sorted so
-    the file order is deterministic.
+    Callers pass only records that DIFFER from the current ledger value (a new key,
+    or a re-credit at a new SHA / after a fresh edit), so the file accretes one row
+    per distinct credit rather than one row per fetch. Sorted so the file order is
+    deterministic.
     """
     from jsonl_store import append_jsonl
 
     path = _dropped_comment_keys_path(plan_id)
-    for (bot_kind, comment_id), sha in sorted(records.items()):
+    for (bot_kind, comment_id), (sha, updated_at) in sorted(records.items()):
         append_jsonl(
-            path, {'bot_kind': bot_kind, 'comment_id': comment_id, 'reviewed_commit_sha': sha}
+            path,
+            {
+                'bot_kind': bot_kind,
+                'comment_id': comment_id,
+                'reviewed_commit_sha': sha,
+                'updated_at': updated_at,
+            },
         )
 
 
 def _reviewed_at_merge_candidate(
     comment: dict,
-    reviewed_shas: dict[tuple[str, str], str],
+    currency_records: dict[tuple[str, str], tuple[str, str]],
     bot_kind: str,
     merge_candidate_sha: str,
 ) -> bool:
@@ -687,48 +656,48 @@ def _reviewed_at_merge_candidate(
     of the tree being merged after a loop-back or a force-push. The credit is
     therefore anchored to the merge candidate's SHA, and the verdict is a PURE
     COMPARISON that consumes no observation state — so it is identical however many
-    times it is evaluated. That single change fixes both defects at once: the
-    dead-anchor false positive AND the observer effect (the old first-presence arm
-    was *consumed* on the first fetch, flipping the same unedited comment to stale
-    on the second look at the same HEAD).
+    times it is evaluated. That fixes both original defects at once: the dead-anchor
+    false positive AND the observer effect (the old first-presence arm was *consumed*
+    on the first fetch, flipping the same unedited comment to stale on the second
+    look at the same HEAD).
 
-    ``reviewed_shas`` maps every ``(bot_kind, comment_id)`` the plan has recorded to
-    the SHA it was reviewed against — the ``reviewed_commit_sha`` stamped on the
-    stored finding, or the merge-candidate SHA the noise sidecar recorded when the
-    comment was first observed (a contentless Guide files no finding, so the
-    sidecar is the only SHA record it has). The credit holds when ANY of:
+    ``currency_records`` maps every ``(bot_kind, comment_id)`` the plan has credited
+    to the ``(reviewed_commit_sha, updated_at)`` at that LAST credit — the currency
+    ledger. The credit holds when ANY of:
 
     - **SHA currency** — the recorded review is against the merge candidate. This is
       the idempotent arm: re-running at the same HEAD reads the same recorded SHA
       and returns the same answer, and it replaces the old observation-history term
       so no participation path reads ``observed_keys`` as a currency signal.
-    - **First observation** — the comment is not yet in ``reviewed_shas``, so this
-      fetch is observing it at the merge candidate; the caller records it at that SHA.
-      This arm is guarded on a resolvable (non-empty) ``merge_candidate_sha``: a
-      failed head-SHA read cannot anchor the credit, so it FAILS CLOSED rather than
-      crediting an observation it could not tie to a commit. Failing closed here is
-      also what keeps the verdict idempotent when the head-SHA read fails — a later
-      fetch that likewise cannot read the SHA reaches the same (blocking) answer
-      instead of flipping.
-    - **Edit movement** — the bot edited the comment in place since it was posted
-      (``updated_at`` differs from ``created_at``), publishing a fresh review at the
-      current tree. An absent ``updated_at`` degrades to "no movement" — the
+    - **First observation** — the comment is not yet in the ledger, so this fetch is
+      observing it at the merge candidate; the caller records it. This arm is guarded
+      on a resolvable (non-empty) ``merge_candidate_sha``: a failed head-SHA read
+      cannot anchor the credit, so it FAILS CLOSED rather than crediting an
+      observation it could not tie to a commit. Failing closed here is also what
+      keeps the verdict idempotent when the head-SHA read fails — a later fetch that
+      likewise cannot read the SHA reaches the same (blocking) answer, not a flip.
+    - **Fresh edit** — the bot edited the comment in place SINCE it was last credited
+      (``updated_at`` differs from the recorded ``updated_at``), publishing a fresh
+      review at the current tree. Comparing against the recorded ``updated_at`` — not
+      against ``created_at`` — is what keeps this arm from becoming a permanent "was
+      ever edited" flag: an edit at commit N credits N, but not N+1, N+2 unless a
+      FURTHER edit lands. An absent ``updated_at`` degrades to "no movement" — the
       fail-closed direction, since crediting an unverified review is the expensive
       error.
 
-    A comment recorded against an EARLIER commit, unedited, yields False: stale
-    evidence, which is neither absence nor participation.
+    A comment last credited against an EARLIER commit, with no fresh edit, yields
+    False: stale evidence, which is neither absence nor participation.
     """
     comment_id = str(comment.get('id') or 'unknown')
-    key = (bot_kind, comment_id)
-    recorded = reviewed_shas.get(key)
-    if merge_candidate_sha and recorded == merge_candidate_sha:
-        return True
-    if recorded is None and merge_candidate_sha:
+    record = currency_records.get((bot_kind, comment_id))
+    if record is None:
+        # First observation — credit only when the merge candidate is resolvable.
+        return bool(merge_candidate_sha)
+    recorded_sha, recorded_updated_at = record
+    if merge_candidate_sha and recorded_sha == merge_candidate_sha:
         return True
     updated_at = str(comment.get('updated_at') or '')
-    created_at = str(comment.get('created_at') or '')
-    return bool(updated_at) and updated_at != created_at
+    return bool(updated_at) and updated_at != recorded_updated_at
 
 
 def cmd_fetch_findings(args):
@@ -799,12 +768,15 @@ def cmd_fetch_findings(args):
     comment to prove a review of the MERGE CANDIDATE commit
     (``_reviewed_at_merge_candidate``), so a comment reviewed against an earlier
     commit cannot credit it with reviewing the tree being merged. The credit is an
-    SHA comparison against the current PR HEAD, using the ``reviewed_commit_sha``
-    already stored per comment — the stored-finding stamp, or the merge-candidate SHA
-    the noise sidecar recorded when the comment was first observed (a dropped comment
-    files no finding). Because it is a pure comparison that consumes no observation
+    SHA comparison against the current PR HEAD, read from the plan-scoped currency
+    ledger — the ``(reviewed_commit_sha, updated_at)`` at which each such comment was
+    last credited, recorded uniformly whether the comment was stored as a finding or
+    dropped as noise. Because it is a pure comparison that consumes no observation
     state, the verdict is idempotent: re-running the fetch at the same HEAD returns
-    the same answer, closing the observer effect the old first-presence arm had.
+    the same answer, closing the observer effect the old first-presence arm had. And
+    because a fresh edit is measured against the recorded ``updated_at`` rather than
+    against ``created_at``, an edit at one commit credits that commit only, not every
+    later HEAD.
 
     ``stale_participation_bots``: where that currency-test failure now GOES, instead
     of being discarded. Same ``{bot_kind, evidence_kind}`` record shape as
@@ -892,23 +864,16 @@ def cmd_fetch_findings(args):
     # edit-movement arms rather than crediting on a SHA that could not be read.
     reviewed_commit_sha = _github.fetch_pr_head_sha(pr_number)
 
-    # The currency test (``_reviewed_at_merge_candidate``) reads, per observed comment,
-    # the SHA it was reviewed against — the union of the stored-finding SHAs and the
-    # noise-dropped sidecar SHAs recorded by earlier fetches (see
-    # ``_DROPPED_COMMENT_KEYS_ARTIFACT``). ``existing_comment_keys`` stays the input to
-    # the cross-iteration dedup (pre-filter 5), which asks a different question — dedup
-    # asks "was this already STAGED as a finding?", currency asks "which commit did this
-    # comment review?". Keeping them separate is what lets a findings key with a later
-    # real edit still be re-credited without being deduped away.
-    recorded_dropped_shas = _recorded_dropped_comment_shas(plan_id)
-    reviewed_shas = {
-        **_existing_pr_comment_shas(query_findings, plan_id),
-        **recorded_dropped_shas,
-    }
-
-    # This fetch's noise drops, derived in their own pass because the per-comment
-    # filter loop that performs the drops runs AFTER the participation loop below.
-    dropped_noise_keys = _noise_dropped_comment_keys(raw_comments)
+    # The currency test (``_reviewed_at_merge_candidate``) reads the currency ledger
+    # recorded by earlier fetches (see ``_DROPPED_COMMENT_KEYS_ARTIFACT``): per
+    # ``participation_requires_update`` comment the plan has credited, the
+    # ``(reviewed_commit_sha, updated_at)`` at that last credit. It is the SOLE currency
+    # source, so a comment stored as a finding and a comment dropped as noise are
+    # treated identically. ``existing_comment_keys`` (read above) stays the input to the
+    # cross-iteration dedup (pre-filter 5), which asks a different question — dedup asks
+    # "was this already STAGED as a finding?", currency asks "which commit did this
+    # comment review, and has it been re-edited since?".
+    currency_records = _recorded_currency_records(plan_id)
 
     # Participation signal for the completeness guard, derived BEFORE any noise /
     # duplicate / resolved filtering so a bot whose comments were all
@@ -930,6 +895,10 @@ def cmd_fetch_findings(args):
     # shapes and the update requirement are registry data.
     participated: dict[str, str] = {}
     stale_participation: dict[str, str] = {}
+    # Currency records staged for the ``participation_requires_update`` comments credited
+    # this fetch — written to the ledger after the loop so the NEXT fetch measures a fresh
+    # edit against THIS credit rather than against ``created_at``.
+    currency_updates: dict[tuple[str, str], tuple[str, str]] = {}
     for _comment in raw_comments:
         _bot_kind = bot_kind_for_author(_comment.get('author') or 'unknown')
         if not _bot_kind or _bot_kind in participated:
@@ -944,8 +913,9 @@ def cmd_fetch_findings(args):
         _kind = _comment.get('kind') or 'inline'
         if _kind not in bot_registry.participation_evidence(_bot_kind):
             continue
-        if bot_registry.participation_requires_update(_bot_kind) and not _reviewed_at_merge_candidate(
-            _comment, reviewed_shas, _bot_kind, reviewed_commit_sha
+        _requires_update = bot_registry.participation_requires_update(_bot_kind)
+        if _requires_update and not _reviewed_at_merge_candidate(
+            _comment, currency_records, _bot_kind, reviewed_commit_sha
         ):
             # The comment's kind ALREADY matched a declared publish shape — only the
             # currency test failed. Discarding it here is what collapsed a stale
@@ -956,21 +926,28 @@ def cmd_fetch_findings(args):
             # apart instead of inferring absence from a failed currency test.
             stale_participation[_bot_kind] = _kind
             continue
+        # Credited. For a ``participation_requires_update`` bot, stage its currency
+        # record so the next fetch anchors on THIS credit's SHA and updated_at.
+        if _requires_update:
+            currency_updates[(_bot_kind, str(_comment.get('id') or 'unknown'))] = (
+                reviewed_commit_sha,
+                str(_comment.get('updated_at') or ''),
+            )
         participated[_bot_kind] = _kind
 
-    # Persist THIS fetch's noise drops so the NEXT fetch has the SHA each was
-    # reviewed against. Each newly-dropped comment is recorded at the merge candidate
-    # observed this fetch, and only comments whose key is not already recorded are
-    # written — so the recorded SHA stays the one at FIRST observation, against which
-    # a later HEAD reads as stale. Written AFTER the participation loop has read
-    # ``reviewed_shas``, so a comment observed for the first time here takes the
-    # first-observation arm on the run that observed it; on a LATER fetch its recorded
-    # SHA is what the currency test compares against the merge candidate. The PR HEAD
-    # SHA (``reviewed_commit_sha``) was fetched up front, before the participation
-    # loop, so it also serves as the ingestion stamp on every finding below.
-    _record_dropped_comment_shas(
+    # Persist the currency ledger for the NEXT fetch: for each
+    # ``participation_requires_update`` comment credited above, record (merge-candidate
+    # SHA, updated_at) — but only when it DIFFERS from the current ledger, so the file
+    # accretes one row per distinct credit rather than one per fetch. Written AFTER the
+    # loop has read ``currency_records``, so a comment observed for the first time takes
+    # the first-observation arm on the run that observed it; on a LATER fetch the
+    # recorded SHA is what the currency test compares against the merge candidate, and
+    # the recorded updated_at is what a fresh edit must move past. The PR HEAD SHA
+    # (``reviewed_commit_sha``) was fetched up front, before the participation loop, so
+    # it also serves as the ingestion stamp on every finding below.
+    _record_currency_records(
         plan_id,
-        dict.fromkeys(dropped_noise_keys - set(recorded_dropped_shas), reviewed_commit_sha),
+        {k: v for k, v in currency_updates.items() if currency_records.get(k) != v},
     )
 
     stored_hashes: list[str] = []

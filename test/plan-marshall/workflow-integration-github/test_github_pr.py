@@ -2119,34 +2119,64 @@ def test_at_least_one_registered_bot_requires_update_movement():
     )
 
 
-def test_currency_anchor_is_derived_from_both_sha_sources(plan_context, monkeypatch):
-    """The reviewed-SHA anchor is DERIVED from both the findings stamp and the noise sidecar — D4(d).
+def test_currency_anchor_is_recorded_in_the_ledger_on_credit(plan_context, monkeypatch):
+    """The currency anchor is DERIVED from the production ledger, not hand-listed — D4(d).
 
-    D0 enumerated two SHA sources the currency test unions: the ``reviewed_commit_sha``
-    stamped on a STORED finding, and the SHA the noise sidecar records for a DROPPED
-    comment. A hand-maintained single source would blind the currency test on the other
-    path — the same defect class this plan closes. The currency-subject bot population is
-    itself DERIVED from the registry (``_UPDATE_REQUIRING_BOTS``, guarded non-empty by the
-    test above, in the ``_dispatch_roster`` "guard against vacuity" spirit), and the two
-    sources are asserted here: a stored comment contributes its reviewed SHA through the
-    findings reader, and the sidecar reader is the second contributor the producer unions
-    into ``reviewed_shas``. Both readers exist and are the SUT's own, so the derivation is
-    re-run against production code rather than a copy.
+    D0 named the currency ledger as the single source the currency test compares
+    against. A hand-maintained list of currency sites is the same defect class this
+    plan closes, so the population of currency-subject bots is registry-derived and
+    guarded non-empty (``_UPDATE_REQUIRING_BOTS``, in the ``_dispatch_roster`` "guard
+    against vacuity" spirit), and the anchor is the ledger the producer itself writes
+    on credit. This drives a real fetch and reads the ledger back through the SUT's own
+    reader: a credited comment records its ``(merge_candidate_sha, updated_at)``, so the
+    derivation is re-run against production code rather than a copy.
     """
     assert _UPDATE_REQUIRING_BOTS, 'currency-subject bot population is vacuous'
     bot = _UPDATE_REQUIRING_BOTS[0]
-    plan_id = f'gh-pr-sha-sources-{bot}'
-    comment = _publish_comment(bot, 'c-stored', created_at=_at(1))
+    plan_id = f'gh-pr-ledger-{bot}'
+    comment = _publish_comment(bot, 'c-ledger', created_at=_at(1))
     _patch_provider(monkeypatch, [comment], head_sha=_HEAD_A)
-    _run_fetch(140, plan_id)
+    result = _run_fetch(140, plan_id)
+    assert result['participated_bots'] == [{'bot_kind': bot, 'evidence_kind': comment['kind']}]
 
-    # Source 1 — the stored finding's stamped reviewed_commit_sha.
-    findings_shas = github_pr._existing_pr_comment_shas(query_findings, plan_id)
-    assert findings_shas.get((bot, 'c-stored')) == _HEAD_A
-    # Source 2 — the noise sidecar reader is the second contributor the producer unions
-    # in (empty for this plan, since nothing was dropped, but it is the live reader).
-    sidecar_shas = github_pr._recorded_dropped_comment_shas(plan_id)
-    assert isinstance(sidecar_shas, dict)
+    ledger = github_pr._recorded_currency_records(plan_id)
+    assert ledger.get((bot, 'c-ledger')) == (_HEAD_A, comment['updated_at'])
+
+
+@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+def test_edit_at_one_commit_does_not_credit_a_later_commit(
+    bot_kind, plan_context, monkeypatch
+):
+    """An in-place edit credits the commit it was made against, NOT every later HEAD.
+
+    The defect PR-Agent flagged on #1141: with the edit arm keyed on
+    ``updated_at != created_at`` (a permanent "was ever edited" flag), a comment edited
+    at commit N was credited at N+1, N+2, ... even without re-review, defeating the
+    currency check for the edit case. The ledger fix measures a fresh edit against the
+    recorded ``updated_at`` instead, so the edit at N credits N (and its re-fetches),
+    the re-review edit at N+1 credits N+1, but a further HEAD advance with NO new edit is
+    stale.
+    """
+    plan_id = f'gh-pr-edit-once-{bot_kind}'
+    # HEAD_A: first observation, credited.
+    base = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+    _patch_provider(monkeypatch, [base], head_sha=_HEAD_A)
+    _run_fetch(135, plan_id)
+
+    # HEAD_B: the bot edits its comment in place — a genuine re-review, credited.
+    edited = _publish_comment(bot_kind, 'guide-1', created_at=_at(1), updated_at=_at(9))
+    _patch_provider(monkeypatch, [edited], head_sha=_HEAD_B)
+    at_b = _run_fetch(135, plan_id)
+    assert at_b['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': edited['kind']}]
+
+    # HEAD_C: the SAME edited comment (no NEW edit since B) must NOT credit the later
+    # commit — the false positive PR-Agent found, now closed.
+    _patch_provider(monkeypatch, [edited], head_sha=_HEAD_C)
+    at_c = _run_fetch(135, plan_id)
+    assert at_c['participated_bots'] == []
+    assert at_c['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': edited['kind']}
+    ]
 
 
 def _publish_comment(bot_kind, comment_id, *, created_at, updated_at=None, body=None):
@@ -2181,6 +2211,7 @@ def _publish_comment(bot_kind, comment_id, *, created_at, updated_at=None, body=
 # (``participated_stale``), so the same-HEAD member fails against the pre-fix code.
 _HEAD_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 _HEAD_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+_HEAD_C = 'cccccccccccccccccccccccccccccccccccccccc'
 
 
 @pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
