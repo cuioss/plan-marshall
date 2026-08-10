@@ -240,6 +240,12 @@ is owed for whoever picks the work up locally (the cloud lane cannot sync: it re
 
 ## What have we learned (Step 9)
 
+> **Mitigated by plan `450-cloud-lane-assumes-local-runtime-affordances`.** The lesson recorded here and
+> in § "Why the CLA was falsely read as a merge blocker" — derive a blocked PR's blocker from
+> (required checks ∩ non-green checks), and never promote a visible-but-non-required pending status to
+> "the blocker" in an operator disclosure — is now written into Step 8 condition 1 by that plan's **D3**.
+> (The required-vs-decorative distinction the run also relied on had already landed via plan `030`.)
+
 **One candidate refinement, with evidence from this run — recorded, not shipped.** The evidence is the
 mistake in § "Why the CLA was falsely read as a merge blocker": this run read a PR's
 `mergeable_state: blocked` and attributed it to a *salient but non-required* pending check (`license/cla`)

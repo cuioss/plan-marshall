@@ -128,6 +128,12 @@ Expected population derived from the automatic-review registry `author_login` fi
 
 ## What have we learned (Step 9)
 
+> **Mitigated by plan `450-cloud-lane-assumes-local-runtime-affordances`.** The gap raised here — Step 8
+> did not sanction arming auto-merge and delegating the `MERGED` confirmation when the self-wake tools
+> (`send_later`, `subscribe_pr_activity`) are unavailable — is closed by that plan's **D2** (Step 8:
+> arm-and-hand-off is a *completed* run, not partial), with the self-wake constraint stated in its new
+> "Cloud session affordances" section. Landed via that plan's branch/PR.
+
 **GAP (operator-confirmed): the `cloud-plan-lane` skill should ALLOW this completion path.**
 
 Evidence from this run: Step 8's merge gate is written as a synchronous drive — "verify all checks green, then merge, then confirm `state: MERGED`." That assumes the run can *wait* for CI and reviewers and *re-check* across the review cycle. In this Claude Code cloud session the self-wake mechanisms the wait depends on — the `send_later` and `subscribe_pr_activity` MCP tools — were **approval-gated** (both returned "requires approval"), and Bash cannot poll GitHub (no `gh`, no API auth; the GitHub MCP server is the only path). The run therefore could **not** autonomously block-until-green and confirm the terminal `MERGED` state within the session.

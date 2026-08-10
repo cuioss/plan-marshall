@@ -243,6 +243,15 @@ with **no** merge method. Recorded as What-have-we-learned #4.
 
 ## What have we learned (Step 9)
 
+> **Mitigated in part by plan `450-cloud-lane-assumes-local-runtime-affordances`.** Of the four proposals
+> below: **#2** (required-ness must be read from `mergeStateStatus`, because the ruleset-config API is
+> `403` on the cloud MCP path) and **#3** (the contract needs a `gh`↔MCP spelling of its commands) are
+> closed by that plan's **D3(a)** and its new "Cloud session affordances" § / **D1** `gh`↔MCP mapping.
+> **#4** (arming auto-merge queues the PR immediately; only closing dequeues) had already landed as the
+> Step 8 one-way-door recovery. **#1** (cloud-run authorship leaves `license/cla` permanently pending)
+> remains **open** — an authorship-identity/infra decision with no lane-contract lever (the contract
+> names no individual check), explicitly out of scope for plan 450.
+
 Four candidates, each grounded in this run's evidence — **presented to the operator, not self-approved**;
 none shipped this run (contract changes go as a separate `chore/` PR on approval):
 
