@@ -145,7 +145,7 @@ shortfall disclosure has **not** fired (there is nothing yet to disclose).
 | 6 Verification sub-agent | Done — two independent reviewers (implementation + cold read); two defects found and fixed; dispositions above. |
 | 7 PR cycle | **Not done — held for the operator** (standing "no PR unless asked" rule). Not a skip in the failure sense: the work is complete and pushed; the PR is a deliberate operator gate. |
 | 8 Merge gate | **Not done — pending Step 7.** |
-| 8 Bridge | Done — nothing written under `doc/plans/` outside this plan's own directory (the plan-400 deletion realizes this plan's declared "retire plan 400", a declared action, not a bookkeeping write). |
+| 8 Bridge | **Operator-directed exception.** This run also annotated four sibling reports (`code-intelligence-substrate/010`, `review-apparatus/010`, `truthful-signals/030`, `truthful-signals/040`) to record that the gaps they raised are mitigated by this plan — a write outside this plan's own directory that the Bridge rule otherwise forbids, explicitly directed by the operator ("document in the reports that they are mitigated") and therefore a declared, authorized action, not a silent Bridge write. The plan-400 deletion realizes this plan's declared "retire plan 400". |
 | 9 This check | This table. |
 | 9 What have we learned | Below. |
 
@@ -178,9 +178,13 @@ the distinction it draws is real.
 
 ## Residue
 
-- **PR + merge (Steps 7–8):** held for the operator. The branch is fully pushed; opening the PR is the next
-  step, on authorization. (This is itself the D4 "reachable operator" case — the decision is being put to
-  the operator rather than assumed.)
+- **PR + merge (Steps 7–8):** the operator authorized the PR ("as part of this pr"), so it is opened as part
+  of this run. Arming auto-merge (a one-way door) is left for an explicit go-ahead. (This exchange is itself
+  the D4 "reachable operator" case in practice.)
+- **Sibling-report annotations (operator-directed):** the four source reports were annotated to record that
+  their raised gaps are mitigated by this plan's deliverables (D2 / D3 / D4 / D5a). One item — `030` #1,
+  cloud-run authorship leaving `license/cla` pending — remains open and out of scope. This cross-plan write
+  is recorded as operator-authorized (§ Contract check, Bridge row).
 - **`CLAUDE.md` sync-mirror divergence:** the operator aligns it separately if wanted (§ What have we
   learned) — out of scope for this cloud-lane-skill-only change.
 - **Plugin-cache sync:** none owed (D5b) — a cloud run never performs or owes one.

@@ -110,6 +110,14 @@ GitHub access path used: **GitHub MCP server** (the cloud path). Branch form: **
 
 ## What have we learned (Step 9)
 
+> **Mitigated by plan `450-cloud-lane-assumes-local-runtime-affordances`.** Both cloud-plan-lane items
+> raised in this run are closed by that plan: the operator-escalation-vs-autonomous-fallback question
+> (immediately below) by **D4** (a reachable operator MAY escalate via `AskUserQuestion`; a headless run
+> takes the plan's autonomous fallback), and the build-gate misframing (§ "Build-gate error — I treated a
+> markdown-only change as build-gated" below) by **D5a** (the build gate now triggers on `*.py` only,
+> with the merge queue's `merge_group` run named as the docs-only net). The `_dispatch_roster.py`
+> plan-authoring note is not a cloud-plan-lane change and is unaffected.
+
 **Proposed contract clarification (presented to the operator; not self-approved, not shipped in this PR):** the cloud-plan-lane is written for autonomous execution, but this run executed in an interactive main session with a reachable operator, and a D2 STOP CONDITION offered a re-scope. The contract is silent on whether the main session may escalate to the operator (via `AskUserQuestion`) versus always taking the plan's autonomous fallback. This run escalated; a headless run of the same plan would have halted D2 and shipped D1 only — so the identical plan yields different outcomes depending on operator reachability. **Evidence:** the D2 escalation in this run. **Proposed edit:** a sentence in `cloud-plan-lane` § "Rules that outrank convenience" (or § Step-with-STOP-CONDITION guidance) stating that when the main session has a reachable operator and a plan offers a re-scope, the run MAY escalate via `AskUserQuestion`; a headless run takes the plan's stated autonomous fallback. If the operator accepts, ship as a separate `chore/` PR touching only the skill. If declined, the current behavior (judgment call by the run) stands.
 
 A second, non-contract observation for the orchestrator/plan-author (not a cloud-plan-lane change): both this plan and the sibling `050-migration-shims-have-no-expiry` name `test/_shared/_dispatch_roster.py` as the population source / pattern for a population-derived detector, but that file is a finalize dispatched-vs-inline **step** parser — the wrong mechanism. Plan-authoring for population-derived detectors should point at the ext-point `implements:` frontmatter derivation (or `extension_discovery.find_implementors` where the surface matches), not `_dispatch_roster.py`.
