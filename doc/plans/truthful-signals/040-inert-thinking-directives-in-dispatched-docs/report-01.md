@@ -114,6 +114,14 @@ GitHub access path used: **GitHub MCP server** (the cloud path). Branch form: **
 
 A second, non-contract observation for the orchestrator/plan-author (not a cloud-plan-lane change): both this plan and the sibling `050-migration-shims-have-no-expiry` name `test/_shared/_dispatch_roster.py` as the population source / pattern for a population-derived detector, but that file is a finalize dispatched-vs-inline **step** parser — the wrong mechanism. Plan-authoring for population-derived detectors should point at the ext-point `implements:` frontmatter derivation (or `extension_discovery.find_implementors` where the surface matches), not `_dispatch_roster.py`.
 
+### Build-gate error — I treated a markdown-only change as build-gated (operator-flagged)
+
+**What went wrong.** During the follow-up contract PR (#1145, a `.claude/skills/**` markdown-only change) I ran `./pw quality-gate` and described it as "the per-commit gate," treating the markdown change as build-gated. That is wrong: **the build triggers only on buildable source (`*.py`).** `.github/workflows/python-verify.yml` opts into `skip-on-docs-only: true`, and its reusable workflow skips the build+tests whenever every changed path is non-building (docs/config); markdown under `.claude/skills/**` and `marketplace/bundles/**` is docs, so a markdown-only change does not build. The quality-gate run passed and did no harm, but the framing mis-stated the gating rule.
+
+**Root cause.** I applied the cloud-plan-lane build-gate predicate verbatim — Step 4's per-commit gate and Step 5's table both list `.claude/skills/**` and `marketplace/bundles/**` as `./pw quality-gate` triggers — without reconciling it against `python-verify.yml`'s py-only `skip-on-docs-only` behaviour. The contract's markdown-triggering rows are broader than the actual CI gate; the accurate rule is that the build runs only for `*.py` changes. The plan-040 commits themselves were unaffected — every gated commit there carried `*.py`, so its quality-gate/verify runs were correct — the error was confined to the markdown-only follow-up.
+
+**Durable fix.** The contract's build-gate predicate should be narrowed to `*.py` (dropping the `.claude/skills/**` / `marketplace/bundles/**` rows, or demoting them to an explicitly-optional local lint that is not called a build gate). That is a `cloud-plan-lane` change and is offered to the operator separately, not made here.
+
 ## Residue
 
 - The plan (and its sibling 050) name `test/_shared/_dispatch_roster.py` as the population source for a population-derived detector; that file is the wrong mechanism. A contract/plan-authoring note may be worth proposing (see Step 9). No `/sync-plugin-cache` is owed by this run: it is neither necessary nor possible in the cloud lane (see the Contract-check note above).
