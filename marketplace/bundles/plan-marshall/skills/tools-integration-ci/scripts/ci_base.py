@@ -799,6 +799,60 @@ def output_error(operation: str, error: str, context: str = '') -> int:
 
 
 # ---------------------------------------------------------------------------
+# PR landing-state — the deterministic done-ness discriminator for a branch
+# ---------------------------------------------------------------------------
+#
+# A foreign task's change lands in a DIFFERENT repository, so its done-ness
+# cannot be read from the host plan's own PR — nothing carries that commit into
+# review or merge. `landing-state` measures done-ness at the PR rather than the
+# commit by correlating three deterministic observations about ONE branch:
+# whether a PR for it is merged, whether a PR for it is open, and whether its
+# commit is on a remote at all. The pure correlation lives here, isolated from
+# any provider call, so it is unit-testable without a live gh/glab and so both
+# providers' `pr landing-state` handlers feed it the SAME two inputs.
+
+#: The closed set of landing states, in refuse-most-first precedence order.
+#: Exposed as data so a consumer (the pre-archive gate) and the tests assert the
+#: verb's population against its OWN declared set rather than a hand-copied list.
+LANDING_STATES: tuple[str, ...] = ('merged', 'pr_open', 'pushed_no_pr', 'unpushed')
+
+
+def derive_landing_state(pr_states: list[str], pushed: bool) -> str:
+    """Correlate a branch's PR states and push state into ONE landing state.
+
+    Args:
+        pr_states: The provider's own state spelling for every PR whose head is
+            the branch (e.g. ``'OPEN'`` / ``'CLOSED'`` / ``'MERGED'``), in any
+            order. Empty when no PR references the branch.
+        pushed: True when the branch's commit is present on a remote — a remote
+            branch contains it, or an upstream tracking ref carries it.
+
+    Returns:
+        One member of :data:`LANDING_STATES`:
+
+        - ``'merged'`` — a PR for the branch is merged; the change landed.
+        - ``'pr_open'`` — a PR for the branch is open; the change is in review.
+        - ``'pushed_no_pr'`` — the branch is on a remote but no open/merged PR
+          carries it. A closed-unmerged PR collapses here too: the change sits on
+          a remote branch with nothing carrying it to merge — the exact stranded
+          state the pre-archive gate refuses.
+        - ``'unpushed'`` — the branch's commit is on no remote.
+
+    PR state is authoritative over push state, so the merged/open checks precede
+    the push check: a merged PR reports ``'merged'`` even after the platform
+    deleted its head branch (so ``pushed`` is then False), and a squash-merged
+    branch's tip never becomes a remote ancestor either — reading push state
+    first would misreport a landed change as ``'unpushed'``.
+    """
+    normalized = {str(state).strip().upper() for state in pr_states if str(state).strip()}
+    if 'MERGED' in normalized:
+        return 'merged'
+    if 'OPEN' in normalized:
+        return 'pr_open'
+    return 'pushed_no_pr' if pushed else 'unpushed'
+
+
+# ---------------------------------------------------------------------------
 # Argument parser builder
 # ---------------------------------------------------------------------------
 

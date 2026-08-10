@@ -29,8 +29,10 @@ from ci_base import (
     BODY_KIND_PR_EDIT,
     BODY_KIND_PR_REPLY,
     BODY_KIND_PR_THREAD_REPLY,
+    LANDING_STATES,
     MERGE_QUEUE_ELIGIBLE_CONFIGURED,
     delete_consumed_body,
+    derive_landing_state,
     make_error,
     make_pr_number_handler,
     prepare_body,
@@ -511,6 +513,104 @@ def cmd_pr_list(args: argparse.Namespace) -> dict:
         'state_filter': args.state,
         'head_filter': args.head or '',
         'prs': pr_list,
+    }
+
+
+def _resolve_landing_branch(explicit: str | None) -> tuple[str | None, dict | None]:
+    """Resolve the branch a landing-state query is about.
+
+    Returns ``(branch, None)`` on success or ``(None, error_dict)`` on failure.
+    An explicit ``--branch`` wins; otherwise the checked-out branch of the routed
+    working tree is read via ``git rev-parse --abbrev-ref HEAD``. A detached HEAD
+    (``rev-parse`` yields ``HEAD``) is an error, not a silent classification — a
+    landing state must be about a NAMED branch.
+    """
+    if explicit and explicit.strip():
+        return explicit.strip(), None
+    rc, out, err = github_ops.run_git(['rev-parse', '--abbrev-ref', 'HEAD'])
+    if rc != 0:
+        return None, make_error('pr_landing_state', 'Could not resolve the current branch', err.strip())
+    branch = out.strip()
+    if not branch or branch == 'HEAD':
+        return None, make_error(
+            'pr_landing_state',
+            'Refusing to classify a detached HEAD — pass --branch to name the branch explicitly',
+            branch,
+        )
+    return branch, None
+
+
+def _branch_is_pushed(branch: str) -> bool:
+    """Return True when ``branch``'s commit is present on a remote.
+
+    ``git branch -r --contains <branch>`` lists the remote-tracking branches that
+    contain the ref's tip; a non-empty result proves the commit is on a remote. A
+    non-zero exit (an unknown ref — nothing committed on the branch) is read as
+    NOT pushed: the branch cannot be proven to be on a remote, and ``pushed`` is
+    only ever a POSITIVE proof, never assumed. PR state is consulted first by the
+    caller, so a merged-then-deleted branch is not misjudged here.
+    """
+    rc, out, _err = github_ops.run_git(['branch', '-r', '--contains', branch])
+    return rc == 0 and bool(out.strip())
+
+
+def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
+    """Handle 'pr landing-state' — classify a branch's done-ness at the PR, not the commit.
+
+    Automates the deterministic four-step correlation a foreign task's done-ness
+    requires — resolve the branch, test remote containment, list the branch's
+    PRs, correlate — and returns exactly one member of
+    :data:`ci_base.LANDING_STATES` (``merged`` / ``pr_open`` / ``pushed_no_pr`` /
+    ``unpushed``). The pure correlation is :func:`ci_base.derive_landing_state`;
+    this handler only gathers its two inputs from git and gh.
+
+    Routed through the CI router's ``--project-dir``, every git/gh subprocess
+    runs in the named working tree, so the verb answers "did THIS repository's
+    change land?" for a foreign checkout as readily as for the host one.
+
+    The verb is the backing signal the pre-archive gate reads: a foreign
+    deliverable resolving to ``pushed_no_pr`` is a change committed and pushed to
+    a branch that no PR carries anywhere — the failure this plan closes.
+    """
+    branch, err_dict = _resolve_landing_branch(getattr(args, 'branch', None))
+    if err_dict is not None:
+        return err_dict
+    assert branch is not None  # noqa: S101 — narrowed by the err_dict guard
+
+    # PR state is authoritative, but answering it needs auth; a merged/open
+    # verdict must not be silently downgraded to pushed_no_pr because gh was
+    # unauthenticated, so an auth failure is a hard error here.
+    is_auth, auth_err = github_ops.check_auth()
+    if not is_auth:
+        return make_error('pr_landing_state', auth_err)
+
+    rc, stdout, stderr = github_ops.run_gh(
+        ['pr', 'list', '--head', branch, '--state', 'all', '--json', 'number,state,url,headRefName']
+    )
+    if rc != 0:
+        return make_error('pr_landing_state', f'Failed to list PRs for branch {branch!r}', stderr.strip())
+    try:
+        prs = json.loads(stdout)
+    except json.JSONDecodeError:
+        return make_error('pr_landing_state', 'Failed to parse gh output', stdout[:100])
+    if not isinstance(prs, list):
+        return make_error('pr_landing_state', 'gh pr list returned a non-list payload', str(prs)[:100])
+    pr_states = [str(pr.get('state', '')) for pr in prs if isinstance(pr, dict)]
+
+    pushed = _branch_is_pushed(branch)
+    landing_state = derive_landing_state(pr_states, pushed)
+
+    return {
+        'status': 'success',
+        'operation': 'pr_landing_state',
+        'provider': 'github',
+        'branch': branch,
+        'pushed': pushed,
+        'pr_count': len(pr_states),
+        'landing_state': landing_state,
+        # The verb's OWN declared population, so a consumer/test asserts against
+        # this rather than a hand-copied list that could drift from the code.
+        'landing_states': list(LANDING_STATES),
     }
 
 

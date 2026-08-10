@@ -31,6 +31,23 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 Lesson-sourced plans carry their `lesson-{id}.md` file along when the plan directory is archived — no separate mark-applied step is needed.
 
+## Pre-Archive Foreign-PR Landing Gate
+
+**Runs FIRST, before "Mark Step Complete" and before the archive call.** A *foreign* deliverable — one whose change lands in a different repository than the one being planned — has its done-ness measured at the commit by the rest of the pipeline, which is structurally wrong: nothing carries that commit into review or merge, so a foreign task can report `done` with **no PR anywhere**. This gate measures foreign done-ness at the PR instead, and refuses to archive while any foreign deliverable's change is `pushed_no_pr` (committed and pushed to a branch that no pull request carries).
+
+The gate reads two deterministic signals — the `foreign` column on `manage-solution-outline list-deliverables` (the population it iterates) and the `ci pr landing-state` verb (the per-repository done-ness discriminator) — not artifact prose.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:foreign_pr_gate \
+  check --plan-id {plan_id}
+```
+
+Parse the returned TOON `status`:
+
+- **`status: clear`** — no foreign deliverable is `pushed_no_pr` (this includes the common zero-foreign-deliverable case). Proceed to "Mark Step Complete" below.
+- **`status: blocked`** — at least one foreign deliverable's repository is `pushed_no_pr`. **STOP. Do NOT mark the step done and do NOT archive.** Return an error TOON to the orchestrator carrying the gate's `message` and its `blocking[]` rows verbatim (each names a `repo_root` and the `deliverables` that targeted it). The condition is **blocking**, not advisory: the plan cannot complete until a pull request is opened for each blocking foreign change, because a change with no PR anywhere is not done. Any `unresolved[]` rows (foreign repositories whose landing state could not be read) are surfaced alongside but do not themselves block.
+- **`exit_code != 0` / `status: error`** — the gate could not evaluate (the solution outline could not be listed). Per the exit-code convention above, STOP and return the error TOON verbatim; the gate fails **closed** — an un-evaluable landing gate must not certify the population clean.
+
 ## Mark Step Complete
 
 Record that this step ran on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. This MUST happen BEFORE the archive call below, because archive moves `status.json` out of `.plan/plans/{plan_id}/` and any subsequent `mark-step-done` call would fail to locate the plan.

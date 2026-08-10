@@ -38,6 +38,7 @@ from _architecture_core import (
 from _plan_parsing import (
     _slugify_section_name,
     extract_deliverables,
+    is_foreign_path,
     parse_document_sections,
 )
 from constants import VALID_STEP_INTENTS
@@ -376,6 +377,7 @@ def cmd_list_deliverables(args: argparse.Namespace) -> dict[str, Any]:
         }
 
     deliverables = extract_deliverables(sections['deliverables'])
+    _annotate_foreign(deliverables)
 
     return {
         'status': 'success',
@@ -383,6 +385,37 @@ def cmd_list_deliverables(args: argparse.Namespace) -> dict[str, Any]:
         'deliverable_count': len(deliverables),
         'deliverables': deliverables,
     }
+
+
+def _annotate_foreign(deliverables: list[dict[str, Any]]) -> None:
+    """Stamp a ``foreign`` flag onto every deliverable and each of its
+    ``affected_files`` entries, in place.
+
+    Each ``affected_files`` entry gains ``foreign: true/false`` derived from
+    :func:`is_foreign_path` against the project root (the git toplevel), and the
+    deliverable gains a roll-up ``foreign: true`` when ANY of its paths is
+    foreign. This is what lets a coverage ratio separate the two populations
+    (host vs foreign) instead of silently pooling them, and it is the population
+    the phase-6 pre-archive landing gate iterates.
+
+    The project root is resolved once via :func:`cwd_checkout_root`. When the
+    root cannot be resolved (not in a git checkout), every path is classified
+    host (``foreign: false``) — the fail-open direction here is deliberate: the
+    column is an *advisory* population marker, and the blocking decision lives in
+    the landing gate, which resolves the root explicitly.
+    """
+    try:
+        project_root = cwd_checkout_root()
+    except Exception:
+        project_root = None
+
+    for deliverable in deliverables:
+        any_foreign = False
+        for entry in deliverable.get('affected_files', []):
+            is_foreign = project_root is not None and is_foreign_path(entry.get('path', ''), project_root)
+            entry['foreign'] = is_foreign
+            any_foreign = any_foreign or is_foreign
+        deliverable['foreign'] = any_foreign
 
 
 def _lookup_deliverable(plan_id: str, content: str, deliverable_number: int) -> dict[str, Any]:
