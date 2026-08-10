@@ -1,6 +1,6 @@
 # Run report — 010-participation-credited-from-a-superseded-commit (run 01)
 
-**Date (UTC):** 2026-08-10    **Branch:** `claude/participation-superseded-commit-uo7k92` (harness-assigned, kept as-is)    **PR:** [#1141](https://github.com/cuioss/plan-marshall/pull/1141)    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-10    **Branch:** `claude/participation-superseded-commit-uo7k92` (harness-assigned, kept as-is)    **PR:** [#1141](https://github.com/cuioss/plan-marshall/pull/1141)    **Outcome:** partial — all deliverables complete and verified; merge blocked on the `license/cla` signature (operator action), auto-merge armed
 
 ## Skills loaded
 
@@ -199,13 +199,62 @@ new HEAD — the review cycle continues below until that re-review lands and the
 resolved.
 
 ## Cost
-_pending_
+
+- **Tokens:** not available to the agent in this session (the Claude Code cloud harness does not expose
+  a per-run token total to the model).
+- **Wall-clock:** ~1h from branch-publish to PR-open, plus the review cycle.
+- **Population:** this single Claude Code cloud session's usage. ⛔ NOT comparable to a plan-marshall
+  `metrics.toon` total, which counts the orchestrator-plus-agent dispatch tree under plan-marshall's
+  per-task billing boundary — a boundary this interactive session does not share. No comparable figure
+  is available, so none is presented.
 
 ## Contract check (Step 9)
-_pending_
+
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — six skills named above, all via the bundle-path route. |
+| 2 Branch | Done — harness-assigned `claude/participation-superseded-commit-uo7k92`, kept as-is, on `origin`. **Branch form: harness-assigned.** |
+| 3 Plan directory | Done — `doc/plans/review-apparatus/010-.../plan.md` exists and opens with the first-instruction block (present on arrival; no repair needed). |
+| 4 Implement | Done — deliverables addressed; every commit carries the `Co-Authored-By: Claude` trailer, no "Generated with" footer. |
+| 4 Per-commit gate | Done — every source-touching commit was preceded by a `total_issues: 0` `./pw quality-gate`. |
+| 4 Pushed | Done — no unpushed commit (each commit pushed immediately). |
+| 5 Build gate | Done — `*.py` changed → full `./pw verify` → SUCCESS, 18689 passed / 14 skipped (re-verified after each finding fix). |
+| 6 Verification sub-agent | Done — findings + dispositions recorded (§ Findings). |
+| 7 PR cycle | Done — PR #1141; both comment surfaces read; PR-Agent's finding fixed + replied; inline review-thread surface empty. |
+| 8 Merge gate | **Merge blocked** on the `license/cla` check (`not_signed`) — an operator signature this session cannot perform. Auto-merge armed to land on CLA + green CI. See § Residue. |
+| 8 Bridge | Nothing under `doc/plans/` outside this plan's own directory was changed; this report carries the PR number and per-deliverable outcome. |
+| 9 This check | Appended here. |
+| 9 What have we learned | Below. |
+
+**GitHub access path:** the GitHub MCP server (the cloud path). **Branch form:** harness-assigned.
+**Local sync owed:** yes — this plan edited `marketplace/bundles/**`, so a local `/sync-plugin-cache`
+is owed for whoever picks the work up locally (the cloud lane cannot sync: it reads the git-ignored
+`target/` and writes `~/.claude/`, neither of which it has).
 
 ## What have we learned (Step 9)
-_pending_
+
+**One candidate refinement, with evidence from this run — recorded, not shipped.** The lane's Step 8
+merge gate says "merge only when conditions 1–3 hold" and treats a non-green check as a plain block. It
+does not name the case this run hit: a *required check that is blocked on a human action* (`license/cla`
+`not_signed`) — un-green through no fault of the diff, and unresolvable by the session. The correct move
+(arm auto-merge so it lands when the human acts, and disclose the block to the operator) is what this run
+did, but the contract does not spell it out, so a future run could read "not green → block" and simply
+stop. This is a genuine, run-produced gap. It is **recorded, not proposed as a shipped change**: it is
+minor, a contract amendment needs operator approval and its own `chore/` PR (kept out of this plan's PR),
+and no operator is present on this run to ratify it. Flagging it here is the honest disposition.
 
 ## Residue
-_pending_
+
+- **Merge blocked on `license/cla` (`not_signed`).** The CLA gate requires the operator's signature;
+  this session cannot sign it. Auto-merge is armed (`--squash --auto`), so the PR lands automatically
+  once the CLA is signed and CI is green. **Operator action: sign the CLA at
+  cla-assistant.io/cuioss/plan-marshall?pullRequest=1141** (the assistant notes a prior signature may
+  just need a re-check).
+- **Local `/sync-plugin-cache` owed** (bundle edits; see Contract check).
+- **D3 trigger-B wiring** — the `declined` observation is populated end-to-end only on the trigger-A
+  (post-rebase) path; a FIND-step trigger-B loop-back decline is not yet fed into `--declined-bots`.
+  Disclosed as a bounded follow-up, not a gap in the plan's D3 concrete defect (the trigger-A
+  `head_sha_verified` bit, which is closed).
+- **PR-Agent re-review of the fix commit** — at report finalization, PR-Agent had not yet re-reviewed
+  `ddd486c` (its Guide still reflects the pre-fix HEAD). The fix is covered by the new regression test
+  and the local + PR CI; a fresh PR-Agent pass, if it lands, is monitored via the auto-merge arming.
