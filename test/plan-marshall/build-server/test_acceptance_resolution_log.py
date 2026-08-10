@@ -89,6 +89,14 @@ def _no_reentrancy(monkeypatch):
     monkeypatch.delenv('MARSHALLD_JOB', raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_home(tmp_path, monkeypatch):
+    """Point the machine-global home at tmp so the D5 fallback-streak state that
+    ``_record_resolution`` now writes never touches the real ``~/.plan-marshall``
+    tree (and never accumulates a streak across test runs)."""
+    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(tmp_path))
+
+
 @pytest.fixture
 def captured(monkeypatch) -> list[tuple[str, str | None, str, str]]:
     """Record every ``log_entry`` call the factory makes at the capture seam."""
