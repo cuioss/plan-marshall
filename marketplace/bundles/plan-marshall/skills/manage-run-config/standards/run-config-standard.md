@@ -44,6 +44,9 @@ The run configuration file stores:
   },
   "ci_durations": {
     "<command-name>": [420, 380, 455]
+  },
+  "language_servers": {
+    "python": {"enabled": true, "command": ["pyright-langserver", "--stdio"], "language_id": "python"}
   }
 }
 ```
@@ -62,6 +65,7 @@ The run configuration file stores:
 | maven | Maven build configurations |
 | architecture_refresh | Tier knobs consumed by the `phase-6-finalize` `architecture-refresh` step |
 | ci_durations | Bounded rolling window of observed successful CI-run durations (keyed by command) seeding the adaptive CI-wait first-sleep via `p50` |
+| language_servers | Machine-local binding of a language to its locally-installed language server, read by the `lsp-client` skill |
 
 ---
 
@@ -192,6 +196,50 @@ The `ci_durations` section holds a bounded rolling window of observed **successf
 For an odd-sized window `p50_seconds` is the middle observed duration; for an even-sized window it is the mean of the two middle values. `CI_DURATION_WINDOW_SIZE` is defined in `run_config.py`; see the script source for the exact value.
 
 Producer: the CI-wait handlers (`_github_ci`, `gitlab_ops`) record a duration on natural (non-timeout) completion. Consumer: the same handlers read `p50` to seed the CI-wait first-sleep.
+
+---
+
+## Language-Servers Section
+
+The `language_servers` section binds a language to its locally-installed language server. It is read by the [`lsp-client`](../../lsp-client/SKILL.md) skill, which a `phase-5-execute` leaf uses for opt-in symbol lookup and verified edits. The section is **machine-local**: a language server is locally-installed tooling that differs per machine, so the binding lives in the git-ignored run-configuration store rather than in a version-controlled project file. It is the shared configuration surface the resolver-configuration work extends — not a parallel store.
+
+The section is optional. An absent language, or one with `enabled: false`, is treated by `lsp-client` as *not configured*: the client degrades to the `Read` / `Edit` path, so a project that never configures a server loses nothing.
+
+### Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `language_servers.<language>.enabled` | boolean | Whether the binding is active. Absent defaults to `true`; `false` opts the language out without discarding its command. |
+| `language_servers.<language>.command` | array[string] | The server invocation as an argv list (e.g. `["pyright-langserver", "--stdio"]`). Machine-specific. |
+| `language_servers.<language>.language_id` | string | The LSP `languageId` sent on `didOpen` (defaults to `<language>`). |
+
+### Operations
+
+| Subcommand | Purpose |
+|------------|---------|
+| `language-server get --language <lang>` | Read the binding (`configured: false` when absent) |
+| `language-server set --language <lang> --command <json-array> [--language-id <id>] [--disabled]` | Persist the binding (`--command` is a JSON array of strings) |
+| `language-server list` | List configured language keys |
+| `language-server remove --language <lang>` | Remove the binding |
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config language-server set \
+  --language python --command '["pyright-langserver", "--stdio"]' --language-id python
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config language-server get \
+  --language python
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config language-server list
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config language-server remove \
+  --language python
+```
 
 ---
 

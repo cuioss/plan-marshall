@@ -18,6 +18,7 @@ Operating Plan Marshall in a target project. If you are working on Plan Marshall
 * xref:commands.adoc[Commands] — `/marshall-steward` and `/plan-marshall`.
 * xref:configuration.adoc[Configuration] — surface map of every configuration file Plan Marshall touches and what governs each.
 * xref:code-search.adoc[Code Search] — `architecture find` (path glob) versus `architecture search --content` (file content): the invocations, how to read `match_count` / `files_scanned`, and what a zero result does and does not prove.
+* xref:lsp-code-intelligence.adoc[LSP Code Intelligence in Execute] — the opt-in language-server capability: locate symbols by coordinate and apply verified renames in `phase-5-execute`. Strictly opt-in — an unconfigured project loses nothing.
 * xref:recipes.adoc[Recipes] — the surgical-fix micro-lane fast path for pre-diagnosed fixes: what it skips/keeps, and when (and when not) to use it.
 * xref:efforts.adoc[Efforts] — per-role model selection: wizard presets, polymorphic `marshal.json` shape, worked example, troubleshooting.
 * xref:terminal-title.adoc[Terminal Title] — VS Code and IntelliJ-specific integration for the per-session status indicator.
