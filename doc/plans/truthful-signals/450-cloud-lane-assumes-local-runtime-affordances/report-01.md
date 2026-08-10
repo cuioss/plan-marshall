@@ -1,6 +1,6 @@
 # Run report — 450-cloud-lane-assumes-local-runtime-affordances (run 01)
 
-**Date (UTC):** 2026-08-10    **Branch:** `claude/cloud-plan-lane-gaps-5kph2x` (harness-assigned, kept as-is)    **PR:** [#1147](https://github.com/cuioss/plan-marshall/pull/1147) — opened as part of this run (operator-directed)    **Outcome:** partial — six deliverables implemented, verified, and pushed; PR open; the review cycle (Step 7) is in progress and auto-merge is **not** armed (held for an explicit operator go-ahead — a one-way door)
+**Date (UTC):** 2026-08-10    **Branch:** `claude/cloud-plan-lane-gaps-5kph2x` (harness-assigned, kept as-is)    **PR:** [#1147](https://github.com/cuioss/plan-marshall/pull/1147)    **Outcome:** completed — six deliverables implemented, verified, and pushed; PR #1147 merge gate met (conditions 1–3), review coverage 1-of-3 disclosed, auto-merge armed (squash); the `MERGED` landing is confirmed from the PR merge event and reported to the operator (§ Merge gate)
 
 > **Execution context.** This run executed in an interactive main session with the operator reachable,
 > and the plan it implements **edits the very contract that governs the run**. The operator authored the
@@ -114,13 +114,23 @@ re-verified directly by grep (no stale predicate remains; the dangling reference
 
 ## Reviewer participation
 
-**No PR was opened this run** (Steps 7–8 held for the operator), so no automated reviewer has run. The
-expected population is derived from the `author_login` of each
-`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc —
-`coderabbit → coderabbitai`, `pr-agent → cuioss-review-bot`, `sourcery → sourcery-ai` (M = 3). **Coverage:
-0 of 3 — because no PR exists yet, not a review shortfall.** If the operator authorizes the PR, the Step 7
-review cycle runs then and this table is completed against the actual comment bodies. The § Step 8
-shortfall disclosure has **not** fired (there is nothing yet to disclose).
+Expected population derived from the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc:
+`coderabbit → coderabbitai`, `pr-agent → cuioss-review-bot`, `sourcery → sourcery-ai` (M = 3). Verdicts
+from the stored comment bodies on PR #1147 — both surfaces read (3 conversation comments; **0** inline
+review threads):
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` (pr-agent, **required**) | `reviewed` | Posted "PR Reviewer Guide 🔍 — No relevant tests / No security concerns identified / No major issues detected" — an explicit nothing-to-report over the diff. |
+| `coderabbitai` (optional) | `rate-limited` | Posted only "Review limit reached … Next review available in 57 minutes" — engaged but did not review this diff. |
+| `sourcery-ai` (optional) | `silent` | The "Sourcery review" check-run concluded `skipped`; no comment body. |
+
+**Coverage: 1 of 3 reviewed.** The **required** bot (`cuioss-review-bot`) reviewed with no issues, so the
+required review is satisfied; the two optional bots did not review (coderabbit rate-limited ~57 min;
+sourcery skipped) — routine and non-blocking. The § Step 8 shortfall disclosure **fired**: "Review
+coverage 1 of 3 — `cuioss-review-bot` reviewed (no issues); `coderabbitai` rate-limited (57 min);
+`sourcery-ai` silent (check skipped)."
 
 ## Cost
 
@@ -130,6 +140,29 @@ shortfall disclosure has **not** fired (there is nothing yet to disclose).
 - **Population:** this single Claude Code cloud session's usage as the harness counts it. ⛔ **NOT
   comparable** to a plan-marshall `metrics.toon` total, which counts the orchestrator-plus-agent dispatch
   tree under plan-marshall's per-task billing boundary — a boundary this interactive session does not share.
+
+## Merge gate
+
+Read against the live PR, not assumed:
+
+1. **Required contexts present on the head SHA and concluded successfully** — `mergeable_state: unstable`
+   (not `blocked`): every required context passed and only non-required contexts are outstanding.
+   `verify / conclusion` = success, `verify / gate` = success, `dependency-review` = success;
+   `verify / verify` = **skipped** — the docs-only path, a **live confirmation of D5a** (the skill change
+   did not build on the PR trigger, and the required `verify / conclusion` reported success regardless; the
+   `merge_group` run is the net). **Satisfied.**
+2. **Every PR comment handled** — 3 conversation comments (cla-assistant CLA notice; coderabbit rate-limit
+   notice; cuioss-review-bot "no major issues"), all informational, none actionable; 0 inline review
+   threads. **Satisfied.**
+3. **Report finalized and pushed** — this report is the last pre-merge commit before arming. **Satisfied.**
+4. **Coverage shortfall disclosed** (disclosure, not a gate): coverage **1 of 3** (§ Reviewer participation),
+   disclosed to the operator. The non-required `license/cla` is **pending** (cloud-run authorship
+   `noreply@anthropic.com` — the known open item, `030` #1) and is disclosed, not blocking.
+
+Auto-merge armed with squash. The merge queue enforces the required-context gate on the final head, and the
+`merge_group` run verifies the change — including the skill's plugin-doctor lint — before it lands. The
+terminal `MERGED` confirmation is read from the PR merge event and reported to the operator, per **D2**
+(arm-and-hand-off is a completed run when the session cannot self-wake to watch the queue).
 
 ## Contract check (Step 9)
 
@@ -143,8 +176,8 @@ shortfall disclosure has **not** fired (there is nothing yet to disclose).
 | 4 Pushed | Done — no unpushed commit (each pushed immediately; the report commit is the final push). |
 | 5 Build gate | Done — git-derived verdict: no `*.py` → skip path; `merge_group` is the CI net. |
 | 6 Verification sub-agent | Done — two independent reviewers (implementation + cold read); two defects found and fixed; dispositions above. |
-| 7 PR cycle | In progress — PR [#1147](https://github.com/cuioss/plan-marshall/pull/1147) opened (operator-directed); no `skip-bot-review` (a skill is reviewed as code). Comments to be read from both surfaces and dispositioned; § Reviewer participation updated as the bots report. |
-| 8 Merge gate | Not armed — PR open; conditions 1–3 to be met and the coverage shortfall disclosed before arming, which is held for an explicit operator go-ahead (a one-way door). |
+| 7 PR cycle | Done — PR [#1147](https://github.com/cuioss/plan-marshall/pull/1147); no `skip-bot-review` (a skill is reviewed as code); both comment surfaces read (3 conversation, 0 inline); every comment dispositioned (§ Reviewer participation, § Merge gate). |
+| 8 Merge gate | Conditions 1–3 met; coverage 1-of-3 disclosed; auto-merge armed (squash). `MERGED` read from the PR merge event and reported to the operator, not in this pre-merge report, per D2 (§ Merge gate). |
 | 8 Bridge | **Operator-directed exception.** This run also annotated four sibling reports (`code-intelligence-substrate/010`, `review-apparatus/010`, `truthful-signals/030`, `truthful-signals/040`) to record that the gaps they raised are mitigated by this plan — a write outside this plan's own directory that the Bridge rule otherwise forbids, explicitly directed by the operator ("document in the reports that they are mitigated") and therefore a declared, authorized action, not a silent Bridge write. The plan-400 deletion realizes this plan's declared "retire plan 400". |
 | 9 This check | This table. |
 | 9 What have we learned | Below. |
@@ -178,9 +211,10 @@ the distinction it draws is real.
 
 ## Residue
 
-- **PR + merge (Steps 7–8):** the operator authorized the PR ("as part of this pr"), so it is opened as part
-  of this run. Arming auto-merge (a one-way door) is left for an explicit go-ahead. (This exchange is itself
-  the D4 "reachable operator" case in practice.)
+- **PR + merge (Steps 7–8):** completed — PR #1147 opened, reviewed (1-of-3; the required bot clean), merge
+  gate conditions 1–3 met, coverage disclosed, auto-merge armed (squash). The landing is confirmed from the
+  PR merge event and reported to the operator. (The operator's "land it now" is itself the D4
+  "reachable operator" case in practice.)
 - **Sibling-report annotations (operator-directed):** the four source reports were annotated to record that
   their raised gaps are mitigated by this plan's deliverables (D2 / D3 / D4 / D5a). One item — `030` #1,
   cloud-run authorship leaving `license/cla` pending — remains open and out of scope. This cross-plan write
