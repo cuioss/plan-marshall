@@ -68,11 +68,26 @@ Commits: `6a96ab0` (mechanics + config + tests), `f5ae40f` (docs + consumer wiri
 
 ## Findings
 
-_(filled in from the verification sub-agent, CI, and PR review)_
+### Pre-PR verification sub-agent (Step 6)
+
+The sub-agent re-ran the real-pyright suite (present in this session) and verdicted D0–D4 all **SATISFIED**, both mandated cold reads **passing**:
+
+- **Cold read D3 (diagnostics boundary):** read as *"supplements the quality gate"* — driven by "a clean `diagnose` is *not* a green build. Always run the canonical build … before treating a change as correct." **Pass.**
+- **Cold read D4 (opt-in page):** read as *"you lose nothing if you don't configure it"* — driven by "*This is strictly opt-in, and an unconfigured project loses nothing.*" **Pass.**
+
+**Finding 1 (real, FIXED):** `cmd_preflight` returned `state: 'ok'` for the reachable case, but both consumer surfaces (`execute-task/SKILL.md`, `lsp-client/SKILL.md` Scripts table) tell a leaf to gate on `state: ready` — a state the code never emitted, so a leaf following the wiring would never match a reachable server and wrongly fall back. The reachable-preflight path was also untested. Fixed in `d46769e`: `cmd_preflight` now emits `STATE_READY` ('ready') for the reachable case (the preflight precondition sentinel, distinct from a run verb's `ok`), the `ready`/`ok` distinction is documented, and `test_real_preflight_ready` was added. Re-verified by a focused second sub-agent: original finding **resolved**, no new inconsistency, `35 passed` in the lsp-client suite.
+
+**Observation A (not a gap, no change):** the real-server adversarial test exercises the apply→re-diagnose→verdict helpers inline; the `_run_edit` orchestration's fail/rollback branch is covered separately by `test_edit_worsened_fails_and_rolls_back` (fake transport). Together they satisfy D2's adversarial requirement.
+
+**Observation B (rejected as not-a-defect):** the module docstring's "an unconfigured project never reaches this script" was slightly overstated (a leaf may call a run verb without a preflight guard and get a `degraded` no-op). Outcome is still byte-identical (no mutation, no server contact), so D4's done-condition holds; the wording was tightened in `d46769e` for precision rather than treated as a behavioural defect.
+
+### CI
+
+_(filled in at Step 8 from actual check state)_
 
 ## Reviewer participation
 
-_(filled in at Step 7/8)_
+_(filled in at Step 8 from stored comment bodies; expected population from the automatic-review registry: `coderabbitai`, `cuioss-review-bot`, `sourcery-ai`)_
 
 ## Cost
 
