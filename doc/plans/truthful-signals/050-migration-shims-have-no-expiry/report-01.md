@@ -16,10 +16,42 @@ notation route was not relied on):
 
 ## Deliverables
 
-- **D0 — GATE: re-derive the inventory** — **DONE.** See "D0 inventory" below. STOP CONDITION fired.
-- **D1 — shim-marker convention** — _pending scope decision_
-- **D2 — plugin-doctor rule flagging an unmarked shim** — _pending scope decision_
-- **D3 — retirement sweep over surviving category-B sites** — _pending scope decision_
+- **D0 — GATE: re-derive the inventory** — **DONE.** See "D0 inventory" below. STOP CONDITION fired;
+  operator directed continue → autonomous fallback (scope on D0's output, all 24 sites).
+- **D1 — shim-marker convention** — **DONE.** Convention documented at `pm-plugin-development:
+  plugin-script-architecture/standards/shim-marker-convention.md` (+ SKILL pointer), commit `bcc084d`.
+  All 5 category-A sites carry a conforming `# SHIM(A):` marker (commit `be8e1e4`).
+- **D2 — plugin-doctor rule flagging an unmarked shim** — **DONE.** `shim-marker-missing` rule
+  (`_analyze_shim_marker.py`), population-derived over `bundles/*/skills/*/scripts/**/*.py`, publishes
+  `population_size` (386 on the real tree), both-direction tests, empty-population guard, wired
+  build-failing into quality-gate + analyze, provenance + catalog rows, firing fixture. Commit `80a56a9`.
+- **D3 — retirement sweep over surviving category-B sites** — **DONE.** All 19 category-B sites carry a
+  conforming `# SHIM(B):` marker with a concrete floor + removal trigger (commit `be8e1e4`). **No
+  deletions:** for every surviving site the tolerated shape is persisted state (archived plans,
+  in-flight status.json, machine-global queue state, on-disk credential files, un-resynced configs)
+  that cannot be shown extinct in this clone — so the plan's "delete only against extinction evidence"
+  rule mandates marking, not deletion. Each site's removal trigger records the (often long-horizon)
+  extinction condition, which is exactly the recorded-what-and-since-when the plan wants.
+
+### D2 detector design note (false-positive boundary)
+
+Prose vocabulary cannot cleanly separate a shim from defensive code — "legacy", "written before",
+"backward compatibility", and "pre-dating" all appear in BOTH the 24 shims and the ~18 negatives. So
+the detector is **precision-first**: the marker is the membership signal (it suppresses findings over
+its enclosing function), and the unmarked-shim half fires only on a narrow, corpus-calibrated
+indicator set. Calibration against the real marked tree drove **0 findings** — after dropping two
+over-broad indicators (a bare `retired key/knob` phrase, which hit write-side *rejection* guards in
+`_cmd_system_plan.py`; and `pre-home-root`, which hit a *caller* comment in `_cred_list.py`) and
+widening marker coverage to reach a leading comment block. The `_read_status_created` defensive-`None`
+case and the rejection/caller/external cases are the load-bearing negative tests.
+
+## Build gate
+
+`git diff --name-only origin/main...HEAD -- '*.py'` is non-empty (markers on 16 scripts + the new
+analyzer + 2 test files) → **full path taken.** `./pw quality-gate`: `status: pass`, `total_issues: 0`,
+387 source files, ruff + SPDX + mypy clean. `./pw module-tests` (whole tree): **18808 passed, 14
+skipped.** The plugin-doctor static-analysis pass runs the new `shim-marker-missing` rule over the real
+tree and reports zero findings — the D1 + D2 regression anchor.
 
 ## D0 inventory (GATE deliverable)
 
@@ -116,9 +148,12 @@ by artifact presence).
 ### STOP CONDITION assessment
 
 Count 24 vs 11 (**> 2×**) and B-split 19 vs 6 (**~3×**) — **both STOP-CONDITION triggers fire.** Per
-the plan ("this deliverable may re-scope the plan … halt and report") the scope of D1/D3 is escalated
-to the operator rather than proceeding silently against the plan's framing. The finding *strengthens*
-the plan's thesis rather than refuting it.
+the plan ("this deliverable may re-scope the plan … halt and report") the finding was reported to the
+operator (D0 inventory pushed, divergence stated). **Disposition:** the operator directed the run to
+continue ("continue from where you left off"), so the run takes the plan's stated autonomous fallback
+— **D1 and D3 scope on D0's output** (all 24 confirmed sites), not on the plan's presumed 11. The
+finding *strengthens* the plan's thesis (category-B readers are the accumulating half) rather than
+refuting it, so proceeding on the enlarged scope is consistent with the plan's goal.
 
 ## Build gate
 
