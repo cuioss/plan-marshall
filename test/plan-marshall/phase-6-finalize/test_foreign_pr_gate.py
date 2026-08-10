@@ -98,6 +98,15 @@ def test_pr_open_foreign_deliverable_clears():
     assert result['status'] == 'clear'
 
 
+def test_unpushed_foreign_deliverable_clears():
+    # unpushed is not the blocking state (the plan refuses only on pushed_no_pr);
+    # a positively-read unpushed clears, unlike an unreadable state.
+    deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'])]
+    result = _run(deliverables, roots={'/foreign/repo/a.py': '/foreign/repo'}, landings={'/foreign/repo': 'unpushed'})
+    assert result['status'] == 'clear'
+    assert result['repos'] == [{'repo_root': '/foreign/repo', 'landing_state': 'unpushed', 'deliverables': [1]}]
+
+
 def test_no_foreign_deliverables_clears():
     deliverables = [_deliverable(1, foreign=False, paths=['src/host.py'])]
     result = _run(deliverables)
@@ -118,21 +127,53 @@ def test_unlistable_outline_is_error_and_fails_closed():
     assert result['status'] == 'error'
 
 
-def test_unresolvable_repo_root_is_reported_not_blocking():
+def test_unresolvable_repo_root_fails_closed():
+    # A foreign repo whose root cannot be resolved cannot be certified landed, so
+    # its landing state is indeterminate and the gate refuses to archive rather
+    # than clear on absent evidence.
     deliverables = [_deliverable(1, foreign=True, paths=['/gone/a.py'])]
     result = _run(deliverables, roots={'/gone/a.py': None})
-    assert result['status'] == 'clear'
+    assert result['status'] == 'error'
     assert result['unresolved'][0]['path'] == '/gone/a.py'
 
 
-def test_landing_state_failure_is_reported_not_blocking():
-    # A repo whose landing-state verb fails cannot be certified landed, but a
-    # failure is not pushed_no_pr — it is surfaced as unresolved, never cleared
-    # silently and never counted as a block.
+def test_landing_state_failure_fails_closed():
+    # A repo whose landing-state verb fails cannot be certified landed; the gate
+    # surfaces it as unresolved AND refuses to clear — indeterminate is not clear.
     deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'])]
     result = _run(deliverables, roots={'/foreign/repo/a.py': '/foreign/repo'}, landings={})  # no state → verb error
-    assert result['status'] == 'clear'
+    assert result['status'] == 'error'
     assert any('landing-state unresolved' in u['reason'] for u in result['unresolved'])
+
+
+def test_unknown_landing_state_fails_closed():
+    # An unknown-but-truthy state outside the declared model must NOT clear — the
+    # gate validates against ci_base.LANDING_STATES rather than truthiness.
+    deliverables = [_deliverable(1, foreign=True, paths=['/foreign/repo/a.py'])]
+    result = _run(
+        deliverables,
+        roots={'/foreign/repo/a.py': '/foreign/repo'},
+        landings={'/foreign/repo': 'definitely-landed'},
+    )
+    assert result['status'] == 'error'
+    assert any('landing-state unresolved' in u['reason'] for u in result['unresolved'])
+
+
+def test_unresolvable_project_root_fails_closed(monkeypatch):
+    # If the gate cannot establish the project root, the advisory foreign column
+    # may have stamped everything host; the gate must not clear on that.
+    def boom():
+        raise RuntimeError('not a git checkout')
+
+    monkeypatch.setattr(gate, 'cwd_checkout_root', boom)
+    result = gate.check(
+        'p',
+        deliverables_loader=lambda _p: _listed([_deliverable(1, foreign=True, paths=['/foreign/a.py'])]),
+        root_resolver=lambda _path: '/foreign',
+        landing_resolver=lambda _root: {'landing_state': 'merged'},
+    )
+    assert result['status'] == 'error'
+    assert result['error'] == 'project_root_unresolvable'
 
 
 def test_one_pushed_no_pr_among_several_repos_blocks():

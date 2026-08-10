@@ -38,15 +38,18 @@ Outcome semantics:
   repos and the deliverables that named them) so the operator opens the missing
   PR(s). ``blocked`` is a first-class, distinguishable state — not ``done`` and
   not a crash — exactly as the plan requires.
-* ``error`` — the gate could not evaluate (the solution outline could not be
-  read/listed). Fails CLOSED: an un-evaluable gate stops the archive rather than
-  waving it through, because a gate that cannot see the population must not
-  certify it clean.
+* ``error`` — the gate could not evaluate, or could not READ the evidence for at
+  least one foreign deliverable: the solution outline could not be listed, the
+  project root could not be resolved, a foreign repository root could not be
+  resolved, or its landing state came back unreadable / outside the declared
+  ``LANDING_STATES`` model. Fails CLOSED — a gate that cannot see the evidence
+  must not certify the population clean. The ``unresolved[]`` list names every
+  such item.
 
-An unresolved foreign repository root (the foreign checkout is absent, so its
-landing state cannot be read) is REPORTED in ``unresolved[]`` but does NOT block:
-the refusal condition is precisely ``pushed_no_pr``, and "cannot resolve" is not
-that. Surfacing it keeps the coverage gap visible rather than silent.
+An ``error`` outcome stops the archive exactly as ``blocked`` does; the two
+differ only in why. The gate CLEARS only when it has POSITIVELY read a landing
+state in the declared model for every foreign deliverable's repository and none
+is ``pushed_no_pr`` — never on an absence of evidence.
 
 The script is registered through ``generate_executor.py`` and consumed via the
 executor proxy::
@@ -66,7 +69,8 @@ import os
 import subprocess
 import sys
 
-from file_ops import get_executor_path
+from ci_base import LANDING_STATES
+from file_ops import cwd_checkout_root, get_executor_path
 from toon_parser import parse_toon, serialize_toon
 
 #: The landing state the gate refuses to archive on. Named once, here, so the
@@ -234,6 +238,21 @@ def check(
     resolve_root = root_resolver or _resolve_repo_root
     resolve_landing = landing_resolver or _resolve_landing_state
 
+    # The project root is the substrate the foreign classification rests on. When
+    # it cannot be resolved, the advisory `foreign` column fails open (stamps
+    # every path host), which would let the gate see zero foreign deliverables and
+    # clear on absent evidence. Fail closed here so an unresolvable root can never
+    # produce a false clear.
+    try:
+        project_root = cwd_checkout_root()
+    except Exception as exc:  # noqa: BLE001 — any resolution failure fails the gate closed
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'project_root_unresolvable',
+            'message': f'Could not resolve the project root for foreign classification: {exc}',
+        }
+
     listed = load(plan_id)
     if not isinstance(listed, dict) or listed.get('status') != 'success':
         message = (listed or {}).get('error') or (listed or {}).get('message') or 'list-deliverables did not succeed'
@@ -249,6 +268,7 @@ def check(
         return {
             'status': 'clear',
             'plan_id': plan_id,
+            'project_root': project_root,
             'foreign_deliverable_count': 0,
             'repos': [],
         }
@@ -276,11 +296,17 @@ def check(
         deliverable_numbers = sorted(root_to_deliverables[root])
         landing = resolve_landing(root)
         state = landing.get('landing_state') if isinstance(landing, dict) else None
-        if not state:
-            # The verb failed for this repo. Fail closed: an un-readable landing
-            # state cannot certify the change landed, so it is surfaced as
-            # unresolved rather than silently cleared.
-            reason = (landing or {}).get('error') or (landing or {}).get('message') or 'landing-state did not return a state'
+        if state not in LANDING_STATES:
+            # Unreadable, absent, or outside the declared model. Fail closed: an
+            # unread or unknown landing state cannot certify the change landed, so
+            # it is surfaced as unresolved rather than silently cleared. Validating
+            # against LANDING_STATES (not a bare truthiness check) is what refuses
+            # an unknown-but-truthy state instead of admitting it.
+            reason = (
+                (landing or {}).get('error')
+                or (landing or {}).get('message')
+                or f'landing-state returned {state!r}, not one of {list(LANDING_STATES)}'
+            )
             unresolved.append({'path': root, 'reason': f'landing-state unresolved: {reason}'})
             continue
         row = {'repo_root': root, 'landing_state': state, 'deliverables': deliverable_numbers}
@@ -288,9 +314,20 @@ def check(
         if state == BLOCKING_LANDING_STATE:
             blocking.append({'repo_root': root, 'deliverables': deliverable_numbers})
 
+    # Precedence: a pushed_no_pr block is the loudest; otherwise ANY unresolved
+    # item fails the gate closed (indeterminate is not clear); only a
+    # fully-read, nothing-blocking population clears.
+    if blocking:
+        status = 'blocked'
+    elif unresolved:
+        status = 'error'
+    else:
+        status = 'clear'
+
     result: dict = {
-        'status': 'blocked' if blocking else 'clear',
+        'status': status,
         'plan_id': plan_id,
+        'project_root': project_root,
         'foreign_deliverable_count': len(foreign),
         'repos': repos,
     }
@@ -304,6 +341,14 @@ def check(
         )
     if unresolved:
         result['unresolved'] = unresolved
+    if status == 'error':
+        result['error'] = 'foreign_landing_indeterminate'
+        result.setdefault(
+            'message',
+            f'{len(unresolved)} foreign repository/ies could not be evaluated (root unresolvable or '
+            'landing state unreadable/unknown); refusing to archive on absent evidence. Resolve every '
+            'item in unresolved[] before archiving.',
+        )
     return result
 
 

@@ -42,11 +42,11 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:foreign_pr_gate \
   check --plan-id {plan_id}
 ```
 
-Parse the returned TOON `status`:
+Parse the returned TOON `status`. The gate CLEARS only when it has positively read an in-model landing state for every foreign deliverable's repository and none is `pushed_no_pr`; every other outcome STOPS the archive:
 
-- **`status: clear`** — no foreign deliverable is `pushed_no_pr` (this includes the common zero-foreign-deliverable case). Proceed to "Mark Step Complete" below.
-- **`status: blocked`** — at least one foreign deliverable's repository is `pushed_no_pr`. **STOP. Do NOT mark the step done and do NOT archive.** Return an error TOON to the orchestrator carrying the gate's `message` and its `blocking[]` rows verbatim (each names a `repo_root` and the `deliverables` that targeted it). The condition is **blocking**, not advisory: the plan cannot complete until a pull request is opened for each blocking foreign change, because a change with no PR anywhere is not done. Any `unresolved[]` rows (foreign repositories whose landing state could not be read) are surfaced alongside but do not themselves block.
-- **`exit_code != 0` / `status: error`** — the gate could not evaluate (the solution outline could not be listed). Per the exit-code convention above, STOP and return the error TOON verbatim; the gate fails **closed** — an un-evaluable landing gate must not certify the population clean.
+- **`status: clear`** — no foreign deliverable is `pushed_no_pr`, and every foreign repository's landing state was read (this includes the common zero-foreign-deliverable case). Proceed to "Mark Step Complete" below.
+- **`status: blocked`** — at least one foreign deliverable's repository is `pushed_no_pr`. **STOP. Do NOT mark the step done and do NOT archive.** Return an error TOON to the orchestrator carrying the gate's `message` and its `blocking[]` rows verbatim (each names a `repo_root` and the `deliverables` that targeted it). The condition is **blocking**, not advisory: the plan cannot complete until a pull request is opened for each blocking foreign change, because a change with no PR anywhere is not done.
+- **`exit_code != 0` / `status: error`** — the gate could not evaluate or could not read the evidence for at least one foreign deliverable: the solution outline could not be listed, the project root could not be resolved, a foreign repository root could not be resolved, or its landing state came back unreadable or outside the declared model (the `unresolved[]` rows name each). Per the exit-code convention above, STOP and return the error TOON verbatim. The gate fails **closed** — an un-evaluable or un-read landing gate must not certify the population clean; resolve every `unresolved[]` item (bring the foreign checkout into reach, or open its PR) before re-running.
 
 ## Mark Step Complete
 

@@ -102,8 +102,12 @@ correctness, so it is residue, not a halt.
 - **The gate.** `phase-6-finalize/scripts/foreign_pr_gate.py::check` iterates the foreign deliverables
   (from `list-deliverables`' `foreign` column — D2), resolves each foreign repository's landing state
   via `ci pr landing-state --project-dir {root}`, and returns `status: blocked` while any is
-  `pushed_no_pr`. It fails **closed** on an un-listable outline (`status: error`, exit 1) and surfaces
-  (never blocks on) an unresolvable foreign root. Wired into `standards/archive-plan.md` as the
+  `pushed_no_pr`. It fails **closed** on every indeterminacy — an un-listable outline, an unresolvable
+  project root, an unresolvable foreign root, or a landing state that is unreadable or outside the
+  declared `LANDING_STATES` model all yield `status: error` (exit 1). It CLEARS only when it has
+  positively read an in-model landing state for every foreign repository and none is `pushed_no_pr`
+  (this fail-closed posture was hardened in response to PR review — see Findings). Wired into
+  `standards/archive-plan.md` as the
   **first** section ("Pre-Archive Foreign-PR Landing Gate"), before Mark-Step-Complete and the archive
   call, with the exit-code/status handling spelled out. Auto-discovered by the executor generator's
   glob (no manifest edit; regeneration is machine-local and not owed by this lane).
@@ -174,8 +178,50 @@ Per instance (source / description / disposition):
   being authored absolute-outside-root or `../`-escaping; a bare-relative foreign path would read as
   host. Bounds coverage, not correctness; same discriminator the plan adopts. **Recorded as residue.**
 
-No real gaps were found; nothing required a fix. The verification sub-agent was read-only (reported,
-never edited).
+The verification sub-agent (read-only) found no gaps against the plan. The subsequent PR review did —
+see the next subsection.
+
+### PR review round (CodeRabbit, 9 actionable comments)
+
+CodeRabbit posted 9 comments; most flagged a genuine **fail-closed** weakness (my first cut surfaced
+indeterminacies but still cleared), which aligns with the plan's own discipline and `ref-code-quality`
+§ error-handling ("a gate must fail closed rather than emit an unsubstantiated clean verdict"). Fixed
+in commit that follows this report update:
+
+- **pr-review / gate fail-closed (Major ×2):** the gate cleared on an unresolvable foreign root and on
+  a landing-state read failure. **Fixed** — unresolvable project root, unresolvable foreign root,
+  unreadable landing state, and any state outside `LANDING_STATES` now yield `status: error` (fail
+  closed); the gate clears only on a positively-read in-model state. `archive-plan.md` + the gate
+  docstring + tests updated.
+- **pr-review / handler fail-closed (Major):** `_branch_is_pushed` turned a git failure into `False`
+  (→ `unpushed` → clear), and malformed PR entries were ignored. **Fixed** — a git-containment failure
+  the verdict rests on now errors (tolerated only when a tip-matching merged/open PR settles it);
+  non-object entries and entries with no usable `state` now error. Tests added.
+- **pr-review / stale-tip + truncation (Major):** `gh pr list --head` returns historical PRs by branch
+  name, so a merged PR for an earlier tip could report `merged` for new commits; the default 30-limit
+  could truncate. **Fixed** — the handler resolves the branch tip SHA and counts only PRs whose
+  `headRefOid` is that tip; `--limit 100` with a fail-closed truncation guard. Stale-tip + truncation
+  tests added.
+- **pr-review / derive test population (Minor):** removed the mirrored-literal state-tuple assertion in
+  favour of a non-vacuity guard + a coverage assertion against `LANDING_STATES`. **Fixed.**
+- **pr-review / unpushed coverage (Minor):** added a gate test asserting `unpushed` clears. **Fixed.**
+- **pr-review / manage-solution-outline should hard-error on root-resolution failure (Major, sub-point
+  of the gate comment):** **Rejected, with reason.** `list-deliverables` is a general-purpose command
+  used across planning and finalize; hard-erroring on a non-git cwd would regress every caller, and the
+  plan makes the `foreign` column *advisory* by design with the blocking decision in the gate. The
+  fail-closed guarantee now lives fully in the gate: it resolves its OWN project root and errors if it
+  cannot, so an unresolvable root can never produce a false clear even though the advisory column fails
+  open. Reply posted on the PR.
+- **pr-review / plan.md: contract-load guard, done-vs-archive seam, historical D2 wording (3 comments
+  on the plan spec):** **Rejected, with reason.** These critique the input plan document, not this
+  change's code. (a) The cloud-plan-lane skill-load guard is lane infrastructure, out of this plan's
+  scope. (b) The "done written at the commit, enforced at archive" seam is the plan's *deliberate*
+  design: the foreign PR is opened in finalize, so it legitimately does not exist at per-task
+  `done`-write time (phase 5) — the archive gate is the correct, and plan-specified, enforcement point;
+  moving enforcement to the `done` transition would block on a PR that is not yet due. (c) The plan's
+  *"PR not yet opened"* premise is already reconciled in this report (§ D0) as a historical lead absent
+  from the clone, exactly as the plan's own claim-labels anticipate ("every count is a lead").
+  Replies posted on the PR; the plan spec is the input and is not rewritten here.
 
 ## Reviewer participation
 

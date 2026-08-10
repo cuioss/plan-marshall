@@ -516,6 +516,13 @@ def cmd_pr_list(args: argparse.Namespace) -> dict:
     }
 
 
+#: Upper bound on the PR listing for landing-state correlation. A single head
+#: branch has at most a handful of PRs, so hitting this ceiling means the listing
+#: may be truncated — which the handler treats as an unreadable (fail-closed)
+#: result rather than a complete correlation.
+_PR_LIST_LIMIT = 100
+
+
 def _resolve_landing_branch(explicit: str | None) -> tuple[str | None, dict | None]:
     """Resolve the branch a landing-state query is about.
 
@@ -540,37 +547,69 @@ def _resolve_landing_branch(explicit: str | None) -> tuple[str | None, dict | No
     return branch, None
 
 
-def _branch_is_pushed(branch: str) -> bool:
-    """Return True when ``branch``'s commit is present on a remote.
+def _branch_tip_sha(branch: str) -> tuple[str | None, dict | None]:
+    """Resolve ``branch``'s current tip SHA, or ``(None, error_dict)``.
+
+    The tip SHA is what makes PR correlation revision-accurate: ``gh pr list
+    --head`` returns EVERY PR ever opened from the branch NAME, including one that
+    merged an earlier tip and left the name to be reused. Only a PR whose head is
+    the branch's current tip speaks to the revision being classified, so a failure
+    to resolve the tip is fatal — the verdict cannot be trusted without it.
+    """
+    rc, out, err = github_ops.run_git(['rev-parse', branch])
+    if rc != 0:
+        return None, make_error('pr_landing_state', f'Could not resolve the tip SHA of branch {branch!r}', err.strip())
+    sha = out.strip()
+    if not sha:
+        return None, make_error('pr_landing_state', f'git rev-parse returned an empty tip SHA for branch {branch!r}')
+    return sha, None
+
+
+def _branch_pushed_state(branch: str) -> tuple[bool | None, dict | None]:
+    """Return ``(pushed, None)`` or ``(None, error_dict)`` for ``branch``.
 
     ``git branch -r --contains <branch>`` lists the remote-tracking branches that
-    contain the ref's tip; a non-empty result proves the commit is on a remote. A
-    non-zero exit (an unknown ref — nothing committed on the branch) is read as
-    NOT pushed: the branch cannot be proven to be on a remote, and ``pushed`` is
-    only ever a POSITIVE proof, never assumed. PR state is consulted first by the
-    caller, so a merged-then-deleted branch is not misjudged here.
+    contain the ref's tip; ``rc == 0`` with non-empty output proves the commit is
+    on a remote, ``rc == 0`` with empty output proves it is not. A NON-zero exit
+    is neither proof — it is an UNREADABLE result, returned as ``(None, error)``
+    so the caller can fail closed rather than silently reading a git failure as
+    ``unpushed``, which would clear the archive gate on evidence nobody read.
     """
-    rc, out, _err = github_ops.run_git(['branch', '-r', '--contains', branch])
-    return rc == 0 and bool(out.strip())
+    rc, out, err = github_ops.run_git(['branch', '-r', '--contains', branch])
+    if rc != 0:
+        return None, make_error(
+            'pr_landing_state',
+            f'Could not determine whether branch {branch!r} is on a remote',
+            err.strip(),
+        )
+    return bool(out.strip()), None
 
 
 def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
     """Handle 'pr landing-state' — classify a branch's done-ness at the PR, not the commit.
 
-    Automates the deterministic four-step correlation a foreign task's done-ness
-    requires — resolve the branch, test remote containment, list the branch's
-    PRs, correlate — and returns exactly one member of
-    :data:`ci_base.LANDING_STATES` (``merged`` / ``pr_open`` / ``pushed_no_pr`` /
-    ``unpushed``). The pure correlation is :func:`ci_base.derive_landing_state`;
-    this handler only gathers its two inputs from git and gh.
+    Automates the deterministic correlation a foreign task's done-ness requires —
+    resolve the branch and its tip SHA, list the branch's PRs, keep only those
+    whose head IS that tip, test remote containment, correlate — and returns
+    exactly one member of :data:`ci_base.LANDING_STATES` (``merged`` / ``pr_open``
+    / ``pushed_no_pr`` / ``unpushed``). The pure correlation is
+    :func:`ci_base.derive_landing_state`; this handler only gathers its inputs.
 
-    Routed through the CI router's ``--project-dir``, every git/gh subprocess
-    runs in the named working tree, so the verb answers "did THIS repository's
-    change land?" for a foreign checkout as readily as for the host one.
+    **Fails closed on unreadable evidence.** A merged/open verdict rests on the PR
+    listing and a pushed/unpushed verdict on git containment; whenever the
+    evidence a verdict depends on cannot be read — auth failure, a truncated
+    listing, a malformed/absent PR state, an unresolvable tip, or a git
+    containment failure that the verdict rests on — the handler returns
+    ``status: error`` rather than a state that could clear the archive gate. Only
+    a **tip-matching** PR counts, so a stale PR that merged an earlier tip on a
+    reused branch name cannot report ``merged`` for new, unlanded commits.
 
-    The verb is the backing signal the pre-archive gate reads: a foreign
-    deliverable resolving to ``pushed_no_pr`` is a change committed and pushed to
-    a branch that no PR carries anywhere — the failure this plan closes.
+    Routed through the CI router's ``--project-dir``, every git/gh subprocess runs
+    in the named working tree, so the verb answers "did THIS repository's change
+    land?" for a foreign checkout as readily as for the host one. It is the
+    backing signal the pre-archive gate reads: a foreign deliverable resolving to
+    ``pushed_no_pr`` is a change committed and pushed to a branch that no PR
+    carries anywhere — the failure this plan closes.
     """
     branch, err_dict = _resolve_landing_branch(getattr(args, 'branch', None))
     if err_dict is not None:
@@ -584,8 +623,17 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
     if not is_auth:
         return make_error('pr_landing_state', auth_err)
 
+    tip_sha, err_dict = _branch_tip_sha(branch)
+    if err_dict is not None:
+        return err_dict
+    assert tip_sha is not None  # noqa: S101 — narrowed by the err_dict guard
+
     rc, stdout, stderr = github_ops.run_gh(
-        ['pr', 'list', '--head', branch, '--state', 'all', '--json', 'number,state,url,headRefName']
+        [
+            'pr', 'list', '--head', branch, '--state', 'all',
+            '--limit', str(_PR_LIST_LIMIT),
+            '--json', 'number,state,url,headRefName,headRefOid',
+        ]
     )
     if rc != 0:
         return make_error('pr_landing_state', f'Failed to list PRs for branch {branch!r}', stderr.strip())
@@ -595,18 +643,47 @@ def cmd_pr_landing_state(args: argparse.Namespace) -> dict:
         return make_error('pr_landing_state', 'Failed to parse gh output', stdout[:100])
     if not isinstance(prs, list):
         return make_error('pr_landing_state', 'gh pr list returned a non-list payload', str(prs)[:100])
-    pr_states = [str(pr.get('state', '')) for pr in prs if isinstance(pr, dict)]
+    # Fail closed on a truncated listing: an unread PR could carry the merged/open
+    # state, so a result at the ceiling is not a complete correlation.
+    if len(prs) >= _PR_LIST_LIMIT:
+        return make_error(
+            'pr_landing_state',
+            f'gh pr list returned {len(prs)} PRs at the --limit {_PR_LIST_LIMIT} ceiling for branch '
+            f'{branch!r}; the listing may be truncated and cannot be reliably correlated',
+        )
 
-    pushed = _branch_is_pushed(branch)
-    landing_state = derive_landing_state(pr_states, pushed)
+    # Validate every entry, then keep only PRs whose head IS the current tip.
+    tip_pr_states: list[str] = []
+    for pr in prs:
+        if not isinstance(pr, dict):
+            return make_error('pr_landing_state', 'gh pr list returned a non-object PR entry', str(pr)[:100])
+        state = pr.get('state')
+        if not isinstance(state, str) or not state.strip():
+            return make_error('pr_landing_state', 'gh pr list returned a PR entry with no usable state', str(pr)[:100])
+        if str(pr.get('headRefOid') or '') == tip_sha:
+            tip_pr_states.append(state)
+
+    # Push state informs only the no-PR verdicts (pushed_no_pr vs unpushed). It is
+    # gathered unconditionally, but its unreadability is fatal only when the
+    # verdict actually rests on it — a tip-matching merged/open PR needs no git.
+    pushed_state, pushed_err = _branch_pushed_state(branch)
+    pushed_known = pushed_state is not None
+    landing_state = derive_landing_state(tip_pr_states, bool(pushed_state))
+    if landing_state in ('pushed_no_pr', 'unpushed') and not pushed_known:
+        # pushed_err is set whenever pushed_state is None (the two-state contract
+        # of _branch_pushed_state), so the verdict rests on push evidence we could
+        # not read.
+        assert pushed_err is not None  # noqa: S101 — narrowed by the contract above
+        return pushed_err
 
     return {
         'status': 'success',
         'operation': 'pr_landing_state',
         'provider': 'github',
         'branch': branch,
-        'pushed': pushed,
-        'pr_count': len(pr_states),
+        'tip_sha': tip_sha,
+        'pushed': pushed_state if pushed_known else None,
+        'pr_count': len(tip_pr_states),
         'landing_state': landing_state,
         # The verb's OWN declared population, so a consumer/test asserts against
         # this rather than a hand-copied list that could drift from the code.
