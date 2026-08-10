@@ -1,6 +1,6 @@
 # Run report — 010-lsp-in-execute-lookup-and-write (run 01)
 
-**Date (UTC):** 2026-08-10    **Branch:** `claude/lsp-execute-lookup-write-43d0ar` (harness-assigned; kept as-is per lane contract)    **PR:** _pending_    **Outcome:** in progress
+**Date (UTC):** 2026-08-10    **Branch:** `claude/lsp-execute-lookup-write-43d0ar` (harness-assigned; kept as-is per lane contract)    **PR:** [#1140](https://github.com/cuioss/plan-marshall/pull/1140)    **Outcome:** completed (all deliverables landed on the branch, verified; auto-merge armed — see Merge gate)
 
 ## Skills loaded
 
@@ -83,24 +83,55 @@ The sub-agent re-ran the real-pyright suite (present in this session) and verdic
 
 ### CI
 
-_(filled in at Step 8 from actual check state)_
+Read from actual check state (`pull_request_read get_check_runs`): after the first push, `verify / conclusion` = **success**, `verify / verify` = success, `review / review` = success, `verify / gate` = success, `dependency-review` = success, `generate-check` = success (`auto-merge` and `Sourcery review` checks = skipped). Two further commits followed (the review-fix `9dc172d` and this report), which re-trigger `verify`; the merge queue re-verifies the final head before landing.
+
+**Finding 2 (real, FIXED — from `cuioss-review-bot`):** `_lsp_jsonrpc._read_loop` wrapped its whole loop in `try/except (OSError, ValueError)`, so one malformed frame (a stray stdout line, a bad `Content-Length`, or a length-0 body making `json.loads('')` raise) killed the reader thread permanently and hung every later request until its 30s timeout. Fixed in `9dc172d`: per-message resilience (skip a bad/length-0 frame, keep reading; only EOF/broken-pipe ends the loop), plus `test_lsp_transport.py` driving a fake server that emits a length-0 junk frame before the real response (CI-portable, no pyright). Replied on the thread.
 
 ## Reviewer participation
 
-_(filled in at Step 8 from stored comment bodies; expected population from the automatic-review registry: `coderabbitai`, `cuioss-review-bot`, `sourcery-ai`)_
+Expected population derived from the automatic-review registry `author_login` fields (`automatic-review/standards/{coderabbit,pr-agent,sourcery}.md`; cross-named in `.github/workflows/pr-agent.yml`). Verdicts from the stored comment bodies:
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Posted a "PR Reviewer Guide" over the diff: "PR contains tests", "No security concerns identified", and one actionable finding ("Unhandled Exception in Read Loop") — Finding 2 above, fixed. |
+| `coderabbitai` | `rate-limited` | Published only a quota notice: "Review limit reached … you've reached your PR review limit … Next review available in 37 minutes." Engaged but did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Published only a quota notice: "you have reached your weekly rate limit of 500000 diff characters." |
+
+**Coverage: 1 of 3 reviewed.** § Step 8 shortfall disclosure fired: stated to the operator as "Review coverage 1 of 3 — `cuioss-review-bot` reviewed (its one finding fixed); `coderabbitai` rate-limited (resets in ~37 min); `sourcery-ai` rate-limited (weekly quota)." Per the contract this is a **disclosure, not a block** — rate limits are routine and outside our control, so the merge is not held on them.
+
+(A non-reviewer `cla-assistant` comment reported CLA status `not_signed`; it is an operator/account concern, not a code-review finding, and is not among this repo's required merge checks.)
 
 ## Cost
 
-_(filled in at close)_
+- **Tokens:** not available to the agent in this session — this interactive Claude Code cloud session does not surface its own token accounting to the agent, so no figure is stated rather than a guessed one.
+- **Wall-clock:** ~1.5 h of session time end to end (recon → D0 measurement → implementation → verify → PR → review cycle), read from the run's own tool activity; the PR was opened at 2026-08-10 15:20 UTC.
+- **Population:** whatever the above would count is this single interactive cloud session. ⛔ It is **not comparable** to a plan-marshall `metrics.toon` total, which counts the orchestrator-plus-agent dispatch tree under plan-marshall's per-task billing boundary — a boundary this session does not share. The figures are therefore reported without a comparison.
 
 ## Contract check (Step 9)
 
-_(filled in at Step 9)_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — core skills + conditional (persona-implementer, python-core, pytest-testing, plugin-architecture, ref-asciidoc read on demand); named above. GitHub access path: **GitHub MCP server** (cloud path). Branch form: **harness-assigned** `claude/*`, kept as-is. |
+| 2 Branch on origin | Done — branch pushed on arrival (was absent) and after every commit. |
+| 3 Plan directory | Done — `…/010-lsp-in-execute-lookup-and-write/plan.md` exists and opens with the first-instruction block. |
+| 4 Implement | Done — commits carry the `Co-Authored-By: Claude` trailer; all deliverables addressed. |
+| 4 Per-commit gate | Done — every source-touching commit was preceded by a clean `quality-gate` (mypy/ruff/SPDX/plugin-doctor `total_issues: 0`). |
+| 4 Pushed | Done — no unpushed commit (this report is the final pre-merge commit). |
+| 5 Build gate | Done — `*.py` changed → full `./pw verify` = SUCCESS (18714 passed, 14 pre-existing skips). |
+| 6 Verification sub-agent | Done — one finding (preflight `ready`/`ok`), fixed and re-verified; both cold reads passed. |
+| 7 PR cycle | Done — PR #1140; every comment dispositioned (§ Reviewer participation). |
+| 8 Merge gate | Auto-merge armed (squash); the merge queue enforces green on the final head. **MERGED not confirmable within this session** — the queue lands asynchronously after CI, and this session cannot self-wake (the `send_later` / `subscribe_pr_activity` MCP tools are approval-gated here). The orchestrator collects the landing from the PR merge event. |
+| 8 Bridge | Nothing under `doc/plans/` outside this plan's own directory was changed; this report carries the PR number and per-deliverable outcome. |
+| 9 This check | Appended here. |
+
+⚠ **Sync owed:** the plan edited `marketplace/bundles/**`, so a local `/sync-plugin-cache` is owed (this lane cannot run it).
 
 ## What have we learned (Step 9)
 
-_(filled in at Step 9)_
+**Proposed contract change (evidence from this run):** the lane's Step 7/8 assume the run can wait for CI and reviewers and re-check across the review cycle. In this Claude Code cloud session the self-wake mechanisms — `send_later` and `subscribe_pr_activity` — were **approval-gated** (returned "requires approval"), so the run could not autonomously block-until-green then confirm `state: MERGED`. The run adapted by arming auto-merge (the merge queue enforces the green gate) and disclosing that the final landing is confirmed by the orchestrator at collect, not within the session. **Proposal:** the contract should state explicitly how to complete Step 8 when the self-wake tools are unavailable — arming auto-merge and handing the MERGED confirmation to the collect step is a legitimate completion, not a partial run. This is presented to the operator; it is **not** self-approved, and if accepted it ships as a separate `chore/` PR touching only the skill.
 
 ## Residue
 
-_(filled in at close)_
+- **MERGED confirmation:** auto-merge is armed on PR #1140; the queue lands it once the final head's CI is green. Confirm `state: MERGED` from the PR merge event (orchestrator collect, or an operator check).
+- **Local plugin-cache sync** owed for the `marketplace/bundles/**` edits.
+- **Reviewer coverage** was 1 of 3 (two bots rate-limited); a later re-review is possible once quotas reset but is not required for the merge.
