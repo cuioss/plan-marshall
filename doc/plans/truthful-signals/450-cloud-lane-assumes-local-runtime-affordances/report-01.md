@@ -1,6 +1,6 @@
 # Run report — 450-cloud-lane-assumes-local-runtime-affordances (run 01)
 
-**Date (UTC):** 2026-08-10    **Branch:** `claude/cloud-plan-lane-gaps-5kph2x` (harness-assigned, kept as-is)    **PR:** none yet — implementation complete and pushed on the branch; Steps 7–8 (PR + merge) **held for the operator** per the standing "no PR unless explicitly asked" rule    **Outcome:** partial — all six deliverables implemented, verified, and pushed; only the PR/merge lane-steps are deferred (by policy, not by incomplete work)
+**Date (UTC):** 2026-08-10    **Branch:** `claude/cloud-plan-lane-gaps-5kph2x` (harness-assigned, kept as-is)    **PR:** [#1147](https://github.com/cuioss/plan-marshall/pull/1147) — opened as part of this run (operator-directed)    **Outcome:** partial — six deliverables implemented, verified, and pushed; PR open; the review cycle (Step 7) is in progress and auto-merge is **not** armed (held for an explicit operator go-ahead — a one-way door)
 
 > **Execution context.** This run executed in an interactive main session with the operator reachable,
 > and the plan it implements **edits the very contract that governs the run**. The operator authored the
@@ -143,8 +143,8 @@ shortfall disclosure has **not** fired (there is nothing yet to disclose).
 | 4 Pushed | Done — no unpushed commit (each pushed immediately; the report commit is the final push). |
 | 5 Build gate | Done — git-derived verdict: no `*.py` → skip path; `merge_group` is the CI net. |
 | 6 Verification sub-agent | Done — two independent reviewers (implementation + cold read); two defects found and fixed; dispositions above. |
-| 7 PR cycle | **Not done — held for the operator** (standing "no PR unless asked" rule). Not a skip in the failure sense: the work is complete and pushed; the PR is a deliberate operator gate. |
-| 8 Merge gate | **Not done — pending Step 7.** |
+| 7 PR cycle | In progress — PR [#1147](https://github.com/cuioss/plan-marshall/pull/1147) opened (operator-directed); no `skip-bot-review` (a skill is reviewed as code). Comments to be read from both surfaces and dispositioned; § Reviewer participation updated as the bots report. |
+| 8 Merge gate | Not armed — PR open; conditions 1–3 to be met and the coverage shortfall disclosed before arming, which is held for an explicit operator go-ahead (a one-way door). |
 | 8 Bridge | **Operator-directed exception.** This run also annotated four sibling reports (`code-intelligence-substrate/010`, `review-apparatus/010`, `truthful-signals/030`, `truthful-signals/040`) to record that the gaps they raised are mitigated by this plan — a write outside this plan's own directory that the Bridge rule otherwise forbids, explicitly directed by the operator ("document in the reports that they are mitigated") and therefore a declared, authorized action, not a silent Bridge write. The plan-400 deletion realizes this plan's declared "retire plan 400". |
 | 9 This check | This table. |
 | 9 What have we learned | Below. |
