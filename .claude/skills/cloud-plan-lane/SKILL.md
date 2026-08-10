@@ -491,11 +491,12 @@ review exactly as a `*.py` change does. It is prose, but it is *behavioural* pro
 every future run acts, which is precisely what a reviewer should see; do **not** treat it as
 documentation.
 
-So `skip-bot-review` applies to **one** case only: **Step 5's third row** — no `*.py`, no
-`.claude/skills/**`, no `marketplace/bundles/**` — a diff that is genuinely nothing but `doc/**` prose,
-run reports, or ledger bookkeeping. Determine it from the same git evidence Step 5 uses, and apply the
-label **at creation** — applying it afterwards is too late, because the bots are triggered by the PR
-opening:
+So `skip-bot-review` applies to **one** case only: a diff with **no `*.py`, no `.claude/skills/**`,
+and no `marketplace/bundles/**`** — genuinely nothing but `doc/**` prose, run reports, or ledger
+bookkeeping. This is narrower than Step 5's build skip: a skill- or bundle-only change **skips the
+local build** (the gate is `*.py`-only) yet **still gets reviewed** — build and review are different
+questions. Determine it from the same git evidence Step 5 uses, and apply the label **at creation** —
+applying it afterwards is too late, because the bots are triggered by the PR opening:
 
 ```bash
 gh pr create --label skip-bot-review --fill
@@ -737,7 +738,7 @@ that its artifact exists on disk:
 | 2 Branch | Branch exists **on `origin`** — the harness-assigned `claude/*` branch, or one this run cut from `origin/main` with a prefix from the closed set; the report names which |
 | 3 Plan directory | `doc/plans/{epic}/{plan-name}/plan.md` exists, and opens with the first-instruction block |
 | 4 Implement | Commits carry the trailer; deliverables addressed |
-| 4 Per-commit gate | Every commit touching `*.py`, `.claude/skills/**`, or `marketplace/bundles/**` was preceded by a `total_issues: 0` quality-gate log |
+| 4 Per-commit gate | Every commit touching `*.py` was preceded by a `total_issues: 0` (and empty `errors[]`) quality-gate log |
 | 4 Pushed | No unpushed commit remains (`git status -sb` reports no `ahead`) |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
 | 6 Verification sub-agent | Findings and dispositions in the report |
