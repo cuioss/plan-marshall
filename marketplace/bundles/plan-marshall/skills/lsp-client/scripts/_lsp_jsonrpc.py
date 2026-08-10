@@ -116,27 +116,41 @@ class StdioTransport:
         stdout = self._proc.stdout
         if stdout is None:
             return
-        try:
-            while True:
+        # Resilience is PER MESSAGE, not per loop: a single malformed frame
+        # (a stray non-JSON-RPC stdout line, a bad Content-Length, or an empty
+        # body) must be skipped, never allowed to terminate the reader thread —
+        # a dead reader hangs every subsequent request until it times out. Only
+        # EOF (an empty read) or a broken pipe (OSError) ends the loop.
+        while True:
+            try:
                 header = b''
                 while _HEADER_SEPARATOR not in header:
                     chunk = stdout.read(1)
                     if not chunk:
-                        return
+                        return  # EOF — the server closed stdout
                     header += chunk
                 length = 0
                 for line in header.split(b'\r\n'):
                     if line.lower().startswith(b'content-length:'):
-                        length = int(line.split(b':', 1)[1].strip())
+                        try:
+                            length = int(line.split(b':', 1)[1].strip())
+                        except ValueError:
+                            length = 0
+                if length <= 0:
+                    continue  # not a framed message — skip, keep the reader alive
                 body = b''
                 while len(body) < length:
                     chunk = stdout.read(length - len(body))
                     if not chunk:
-                        return
+                        return  # EOF mid-body
                     body += chunk
-                self._dispatch(json.loads(body.decode('utf-8')))
-        except (OSError, ValueError):
-            return
+                try:
+                    message = json.loads(body.decode('utf-8'))
+                except (ValueError, UnicodeDecodeError):
+                    continue  # malformed frame — skip, keep the reader alive
+                self._dispatch(message)
+            except OSError:
+                return  # pipe closed / broken — end the reader thread
 
     def _dispatch(self, message: dict[str, Any]) -> None:
         server_request: dict[str, Any] | None = None
