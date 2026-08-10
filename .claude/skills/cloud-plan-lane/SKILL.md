@@ -450,18 +450,27 @@ git push
 gh pr create --fill
 ```
 
-**Suppress bot review when the PR changes no source.** Bot-review capacity is contended across this
-repository and is regularly exhausted; a diff that touches only documentation, reports, or ledger
-bookkeeping has nothing to offer a reviewer and spends budget another PR needs. Determine it from the
-same git evidence Step 5 uses, and apply the label **at creation** — applying it afterwards is too
-late, because the bots are triggered by the PR opening:
+**Suppress bot review only when the PR has no reviewable footprint.** Bot-review capacity is contended
+across this repository and is regularly exhausted; a diff with nothing a reviewer can act on spends
+budget another PR needs. But **a skill is code, and is reviewed as code**: any change under
+`.claude/skills/**` or `marketplace/bundles/**` — a `SKILL.md`, a workflow doc, a script — keeps its
+review exactly as a `*.py` change does. It is prose, but it is *behavioural* prose that governs how
+every future run acts, which is precisely what a reviewer should see; do **not** treat it as
+documentation.
+
+So `skip-bot-review` applies to **one** case only: **Step 5's third row** — no `*.py`, no
+`.claude/skills/**`, no `marketplace/bundles/**` — a diff that is genuinely nothing but `doc/**` prose,
+run reports, or ledger bookkeeping. Determine it from the same git evidence Step 5 uses, and apply the
+label **at creation** — applying it afterwards is too late, because the bots are triggered by the PR
+opening:
 
 ```bash
 gh pr create --label skip-bot-review --fill
 ```
 
-The rule in one line: **a PR that changes no source gets no bot review.** A PR that does change
-source keeps its review — this suppresses waste, never scrutiny.
+The rule in one line: **only a PR with no `*.py`, no skill, and no bundle change gets
+`skip-bot-review`.** Anything that touches code keeps its review — and a skill is code. This
+suppresses waste, never scrutiny.
 
 Then work the review cycle until it is genuinely finished:
 
@@ -685,11 +694,12 @@ If there is something worth changing:
    `CLAUDE.md` or `doc/plans/README.md` if the change reaches them):
 
    ```bash
-   gh pr create --label skip-bot-review --title "chore(cloud-plan-lane): {what changed}" --body-file {file}
+   gh pr create --title "chore(cloud-plan-lane): {what changed}" --body-file {file}
    ```
 
-   The `skip-bot-review` label suppresses the automated bot review, which has nothing useful to say
-   about a prose contract.
+   **Do not apply `skip-bot-review`.** This PR changes a skill, and a skill is code that gets reviewed
+   (§ Step 7). The change is behavioural — it governs how future runs act — so the automated reviewers
+   see it like any other code change.
 
 Keep it out of the plan's own PR. Two changes with different review audiences in one diff means
 neither gets read properly, and it couples a contract amendment to whether the plan lands.
