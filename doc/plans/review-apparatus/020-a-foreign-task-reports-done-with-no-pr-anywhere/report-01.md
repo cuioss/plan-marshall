@@ -87,23 +87,99 @@ correctness, so it is residue, not a halt.
 
 ### D1 — a foreign task's done-ness is measured at the PR, not the commit
 
-_in progress_
+**Done.** Commit `5f9cd22` (`fix(review-apparatus): measure foreign-task done-ness at the PR, not the commit`).
+
+- **The verb.** `ci_base.derive_landing_state(pr_states, pushed)` + the declared set
+  `ci_base.LANDING_STATES = ('merged', 'pr_open', 'pushed_no_pr', 'unpushed')` — the pure, provider-
+  agnostic correlation. PR state is authoritative over push state (merged/open precede the push check),
+  so a merged-then-deleted branch is not misread as `unpushed` and a closed-unmerged PR collapses to
+  the blocking `pushed_no_pr`. The github handler `_github_pr.cmd_pr_landing_state` gathers the two
+  inputs — `github_ops.run_git` (new helper, routed at the foreign checkout via the router's
+  `--project-dir`) for remote containment, and `gh pr list --head B --state all` for PR state — and is
+  registered as `('pr','landing-state')` with a `--branch` subparser (github-provider-specific, like
+  `add_pr_create_args`, leaving gitlab untouched). Auth failure / unparseable output / gh-list failure
+  all hard-error rather than silently downgrading a merged/open verdict to `pushed_no_pr`.
+- **The gate.** `phase-6-finalize/scripts/foreign_pr_gate.py::check` iterates the foreign deliverables
+  (from `list-deliverables`' `foreign` column — D2), resolves each foreign repository's landing state
+  via `ci pr landing-state --project-dir {root}`, and returns `status: blocked` while any is
+  `pushed_no_pr`. It fails **closed** on an un-listable outline (`status: error`, exit 1) and surfaces
+  (never blocks on) an unresolvable foreign root. Wired into `standards/archive-plan.md` as the
+  **first** section ("Pre-Archive Foreign-PR Landing Gate"), before Mark-Step-Complete and the archive
+  call, with the exit-code/status handling spelled out. Auto-discovered by the executor generator's
+  glob (no manifest edit; regeneration is machine-local and not owed by this lane).
+- **Tests** (`test/plan-marshall/workflow-integration-github/test_pr_landing_state.py`,
+  `test/plan-marshall/phase-6-finalize/test_foreign_pr_gate.py`): one case per return value driven
+  through **both** the pure function and the real handler, each parametrized over `LANDING_STATES` so
+  the population is asserted against the verb's **own declared set** (`set(_CASE_PER_STATE) ==
+  set(LANDING_STATES)`), not a hand-listed enum; plus the archive-refusal test proving a `pushed_no_pr`
+  foreign deliverable is `blocked`. All fail before the change (the verb/gate did not exist).
 
 ### D2 — the recorded-but-unread gap becomes a gate input; foreign coverage column
 
-_in progress_
+**Done.** Commit `5f9cd22`.
+
+- **The predicate.** `_plan_parsing.is_foreign_path(path, project_root)` — the single lexical
+  (`os.path.normpath`/`commonpath`, never a filesystem `resolve()`, because the foreign tree may be
+  absent) outside-the-project-root discriminator. Correct on every trap: host-relative → host,
+  host-absolute-under-root → host, root-itself → host, foreign-absolute → foreign, `../` escape →
+  foreign, and the sibling-prefix trap (`/repo-other` vs `/repo`, where a naïve `startswith` fails) →
+  foreign.
+- **The column.** `manage-solution-outline list-deliverables` now stamps `foreign: true/false` on each
+  `affected_files` entry and a per-deliverable roll-up (`_annotate_foreign`). This is the population the
+  D1 gate iterates, and it stops a coverage ratio from silently pooling host paths with foreign ones.
+- **The recorded-but-unread gap.** A gate now reads a **structured signal** (the `landing-state` verb
+  and the `foreign` column), not artifact prose — D2's essence. The plan's premise that phase-5 emits a
+  literal *"PR not yet opened"* line does **not** hold against this clone (re-derived as absent, above),
+  so there is no prose line to replace; the structured-signal-a-gate-reads requirement is met by D1's
+  gate, and the coverage column separates the two populations. Recorded as a finding rather than
+  chasing a non-existent string.
+- **Test impact.** The existing `test_list_deliverables` asserted the exact `affected_files` shape and
+  was updated to include the new `foreign` key (`foreign: False` for its repo-relative path) — the sole
+  intended ripple; no other existing assertion changed.
 
 ## Build gate
 
-_pending_
+`git diff --name-only origin/main...HEAD -- '*.py'` is non-empty (production scripts + tests), so the
+build ran. **`./pw verify plan-marshall`: green — `15848 passed, 1 skipped`, `=== verify: SUCCESS ===`.**
+Quality gate clean (mypy `Success: no issues found in 274 source files`; ruff `All checks passed!`;
+SPDX-header check passed) after one fix (mypy `arg-type` narrowing in `_annotate_foreign`:
+`bool(project_root)` → `project_root is not None`). Scoped to the plan-marshall module because the whole
+change is inside that bundle + `test/plan-marshall/`; CI (`python-verify.yml`) runs the full verify on
+the PR.
 
 ## Findings
 
-_pending — verification sub-agent, CI, PR review._
+Per instance (source / description / disposition):
+
+- **verification-subagent / D0:** confirmed the "no halt" verdict independently against the actual
+  code (single completion seam at `_tasks_crud.py:cmd_update`; `normalize_to_repo_relative` preserves
+  outside-root absolute paths; `_extract_affected_files` verbatim). **Accepted — no change.**
+- **verification-subagent / D1:** verb + gate satisfy the plan's exact test demands (population asserted
+  against declared set; archive-refusal test); correlation logic correct (merged authoritative;
+  closed-unmerged → `pushed_no_pr`). **Accepted — no change.**
+- **verification-subagent / D2:** predicate correct on every trap incl. the sibling-prefix case;
+  "PR not yet opened" independently confirmed absent from the tree. **Accepted — no change.**
+- **verification-subagent / out-of-scope:** diff confirmed clear of the landing-message site, the
+  merge-lock/branch-cleanup surfaces, and any other repository. **Accepted — no change.**
+- **verification-subagent / test-harness artifact:** running whole affected directories through a bare
+  single-process `pytest` surfaces 7 failures + collection errors from the pre-existing
+  `github_ops ↔ _github_pr` circular import under single-process collection — **reproduced identically
+  on `origin/main`** (7 failed / 23 errors on main vs 7 failed / 24 on branch, the +1 being the new
+  test file entering the shared `sys.modules`), and the canonical `./pw` harness (which isolates via
+  xdist) is green. **Rejected as collateral — pre-existing, not attributable to this change; verified.**
+- **verification-subagent / cold read of the refusal text:** **BLOCKING** — the operator-facing
+  `archive-plan.md` gate section and the `foreign_pr_gate` blocked-path message both read as an
+  unambiguous prohibition on proceeding, not advice to note. **Passes the plan's cold-read bar.**
+- **verification-subagent / residue (not a gap):** discriminator coverage depends on foreign paths
+  being authored absolute-outside-root or `../`-escaping; a bare-relative foreign path would read as
+  host. Bounds coverage, not correctness; same discriminator the plan adopts. **Recorded as residue.**
+
+No real gaps were found; nothing required a fix. The verification sub-agent was read-only (reported,
+never edited).
 
 ## Reviewer participation
 
-_pending_
+_Filled at the merge gate from the stored comment bodies (§ Step 7 / Step 8)._
 
 ## Cost
 
