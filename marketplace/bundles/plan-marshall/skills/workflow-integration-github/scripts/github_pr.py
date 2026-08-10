@@ -698,12 +698,18 @@ def _reviewed_at_merge_candidate(
     comment was first observed (a contentless Guide files no finding, so the
     sidecar is the only SHA record it has). The credit holds when ANY of:
 
-    - **First observation** — the comment is not in ``reviewed_shas``, so this fetch
-      is observing it at the merge candidate; the caller records it at that SHA.
     - **SHA currency** — the recorded review is against the merge candidate. This is
       the idempotent arm: re-running at the same HEAD reads the same recorded SHA
       and returns the same answer, and it replaces the old observation-history term
       so no participation path reads ``observed_keys`` as a currency signal.
+    - **First observation** — the comment is not yet in ``reviewed_shas``, so this
+      fetch is observing it at the merge candidate; the caller records it at that SHA.
+      This arm is guarded on a resolvable (non-empty) ``merge_candidate_sha``: a
+      failed head-SHA read cannot anchor the credit, so it FAILS CLOSED rather than
+      crediting an observation it could not tie to a commit. Failing closed here is
+      also what keeps the verdict idempotent when the head-SHA read fails — a later
+      fetch that likewise cannot read the SHA reaches the same (blocking) answer
+      instead of flipping.
     - **Edit movement** — the bot edited the comment in place since it was posted
       (``updated_at`` differs from ``created_at``), publishing a fresh review at the
       current tree. An absent ``updated_at`` degrades to "no movement" — the
@@ -715,9 +721,10 @@ def _reviewed_at_merge_candidate(
     """
     comment_id = str(comment.get('id') or 'unknown')
     key = (bot_kind, comment_id)
-    if key not in reviewed_shas:
+    recorded = reviewed_shas.get(key)
+    if merge_candidate_sha and recorded == merge_candidate_sha:
         return True
-    if merge_candidate_sha and reviewed_shas[key] == merge_candidate_sha:
+    if recorded is None and merge_candidate_sha:
         return True
     updated_at = str(comment.get('updated_at') or '')
     created_at = str(comment.get('created_at') or '')

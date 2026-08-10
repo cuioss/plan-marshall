@@ -2215,6 +2215,40 @@ def test_second_fetch_at_the_same_head_stays_participated(
 
 
 @pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
+def test_unresolvable_head_sha_fails_closed_and_stays_idempotent(
+    bot_kind, plan_context, monkeypatch
+):
+    """An unreadable merge-candidate SHA withholds the credit AND returns the same answer twice.
+
+    ``fetch_pr_head_sha`` returns an empty string on any provider-failure path. The
+    credit cannot then be anchored to a commit, so the currency test withholds it —
+    the fail-closed direction, since crediting an unverified review is the expensive
+    error. The property the plan insists on is that the verdict does not depend on how
+    many times it is evaluated: two fetches at an unreadable HEAD return the SAME
+    (blocking) answer, never a flip. Without the fail-closed guard on the
+    first-observation arm the first fetch would credit and the second — reading the
+    recorded empty SHA — would go stale, re-introducing an observer effect on the one
+    path where the SHA is absent.
+    """
+    plan_id = f'gh-pr-empty-sha-{bot_kind}'
+    comment = _publish_comment(bot_kind, 'guide-1', created_at=_at(1))
+    _patch_provider(monkeypatch, [comment], head_sha='')
+
+    first = _run_fetch(134, plan_id)
+    second = _run_fetch(134, plan_id)
+
+    assert first['status'] == 'success' and second['status'] == 'success'
+    # Fail-closed: an un-anchorable comment is not credited as a proven participant.
+    assert first['participated_bots'] == []
+    assert first['stale_participation_bots'] == [
+        {'bot_kind': bot_kind, 'evidence_kind': comment['kind']}
+    ]
+    # Idempotent: the second evaluation matches the first exactly.
+    assert second['participated_bots'] == first['participated_bots']
+    assert second['stale_participation_bots'] == first['stale_participation_bots']
+
+
+@pytest.mark.parametrize('bot_kind', _UPDATE_REQUIRING_BOTS)
 def test_review_predating_the_merge_candidate_is_stale(
     bot_kind, plan_context, monkeypatch
 ):

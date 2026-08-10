@@ -129,7 +129,7 @@ _NON_PARTICIPATION_MEMBERS = (
 # is missing it. Asserting here makes that member fail at IMPORT, once, loudly.
 #
 # ``STATE_PARTICIPATED`` is the sole intended exclusion: it is the taxonomy's
-# COMPLEMENT (the bot delivered a usable review), not an eighth member — see the
+# COMPLEMENT (the bot delivered a usable review), not a ninth member — see the
 # module comment at ``review_completeness.py`` above ``STATE_ABSENT``. The
 # ``vars(rc)`` sweep cannot pick up a ``STATE_``-prefixed name imported from
 # elsewhere: ``rc`` imports only ``argparse``, ``sys``, ``bot_registry``, and

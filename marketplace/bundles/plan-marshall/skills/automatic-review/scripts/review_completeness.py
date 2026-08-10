@@ -122,10 +122,10 @@ import sys
 import bot_registry
 from _findings_core import query_findings
 
-# The state every classified bot resolves to. Seven members are the closed
+# The state every classified bot resolves to. Eight members are the closed
 # NON-participation taxonomy owned by
 # ``standards/bot-participation-contract.md``; ``participated`` is its complement
-# (the bot delivered a usable review) and is deliberately NOT an eighth member of
+# (the bot delivered a usable review) and is deliberately NOT a ninth member of
 # that taxonomy — it is the success case the taxonomy exists to distinguish from.
 STATE_ABSENT = 'absent'
 STATE_IN_PROGRESS = 'in_progress'
