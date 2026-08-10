@@ -85,7 +85,26 @@ its full path.
 
 ## Findings
 
-_(verification sub-agent findings recorded below)_
+**Pre-PR verification sub-agent (independent, read-only, `general-purpose`)** — verdict: **PASS on
+all six deliverables, no blocking gaps.** Both mandated cold reads matched the required answers:
+(a) the preflight line promises nothing about later in the run; (b) the stale-daemon `status` shows
+the running binary as the actual one with the divergence visible. Findings, each with disposition:
+
+| # | Sev | Deliverable | Finding | Disposition |
+|---|---|---|---|---|
+| F1 | INFO | D5 | Preflight uses "observed at this init-time probe" rather than the plan's literal `{ts}` example. | **Rejected (not a gap).** The plan wrote "e.g." (illustrative); the `manage-logging decision` entry is itself timestamped by the logging system, and the done-when ("no longer reads as a whole-run contract") is met by the explicit "NOT a whole-run guarantee" clause. |
+| F2 | LOW | D6 | The BUSY-survival mandate is discharged structurally (`runner.calls == []` → the reconcile issues zero mutating verbs, so it cannot drain the job) rather than by an end-to-end live-job snapshot. | **Accepted as adequate.** The agent judged this "valid and arguably stronger": the survival chain is complete across three layers — a real `Scheduler` with a running job → `in_flight=1` over ping → `decide`→`DEFER` → reconcile runs no verb. The reconcile's only daemon-affecting channel is `action_runner`; asserting it is never invoked proves non-interference at the layer the deliverable lives in. |
+| F3 | INFO | D2 | The two sync surfaces disagreed on `partial`-sync handling (interactive reconciled on success-or-partial; finalize skips on partial). | **Fixed** — aligned the interactive `/sync-plugin-cache` Step 2c to reconcile on `success` only, matching the finalize step. |
+| F4 | INFO | D1 | `marshalld.py::Daemon._ping` edits a shared bundle not named in the Expected-surface list. | **Rejected (authorized).** D1's STOP CONDITION explicitly permits adding a read-only accessor; the daemon ping is the only cross-process channel by which the separate `status` client can read the scheduler's in-flight count. The change is additive and backward-compatible (client handshake reads only `status`/`version`) — not a shared-daemon *behaviour* change, correctly outside the D2 "no shared-daemon behaviour change" ⛔. |
+
+No undeclared collateral change: the `status` verb's old `binary_path` key was renamed to
+`running_binary_path`/`resolved_binary_path`; `run_start`/`run_install` keep their own `binary_path`
+(the launched binary, legitimately) and the sole `status` consumer (`reconcile_daemon.py`) reads the
+new keys.
+
+## Reviewer participation
+
+_(recorded after PR review — populated from the automated reviewers' comment bodies)_
 
 ## Reviewer participation
 

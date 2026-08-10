@@ -138,9 +138,10 @@ re-run with `--bundle NAME` to retry the failures individually.
 
 The cache bump this sync performed is exactly what makes a running `marshalld`
 stale: the daemon is version-pinned to the OLD bundle copy while the fresh cache
-now carries a newer one. After a `success` (or `partial`) sync, run the
-meta-project-only reconcile so an **idle** stale daemon is upgraded to the
-verified pin and a **busy** one is left running with the deferral recorded:
+now carries a newer one. After a `success` sync, run the meta-project-only
+reconcile so an **idle** stale daemon is upgraded to the verified pin and a
+**busy** one is left running with the deferral recorded (SKIP the reconcile on a
+`partial` or `error` sync — the cache is incomplete, matching the finalize step):
 
 ```bash
 python3 .claude/skills/sync-plugin-cache/scripts/reconcile_daemon.py
