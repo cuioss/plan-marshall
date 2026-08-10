@@ -1,6 +1,6 @@
 # Run report — a-foreign-task-reports-done-with-no-pr-anywhere (run 01)
 
-**Date (UTC):** 2026-08-10    **Branch:** `claude/foreign-task-no-pr-ynmbpv` (harness-assigned; kept as-is)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-10    **Branch:** `claude/foreign-task-no-pr-ynmbpv` (harness-assigned; kept as-is)    **PR:** [#1151](https://github.com/cuioss/plan-marshall/pull/1151)    **Outcome:** completed — landing delegated (merge blocked on the operator's CLA signature)
 
 ## Skills loaded
 
@@ -225,19 +225,65 @@ in commit that follows this report update:
 
 ## Reviewer participation
 
-_Filled at the merge gate from the stored comment bodies (§ Step 7 / Step 8)._
+Expected population **derived from the registry** — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` doc
+(`coderabbit.md` → `coderabbitai`; `pr-agent.md` → `cuioss-review-bot`; `sourcery.md` → `sourcery-ai`).
+Verdicts derived from the stored comment bodies on PR #1151, not from check states:
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `coderabbitai` | `reviewed` | Published a full review of the diff (33c8d5c): "Actionable comments posted: 9" with per-site findings, then marked each "✅ Addressed in commit f753907" after the fix. Rate-limited only for a *fresh re-review* of the fix commit ("Review limit reached, next in ~33 min") — that does not undo the substantive review it delivered. |
+| `sourcery-ai` | `rate-limited` | Published only a refusal notice in place of a review: "you have reached your weekly rate limit of 500000 diff characters." Its `Sourcery review` check concluded `skipped`. |
+| `cuioss-review-bot` | `silent` | Published no comment/review body on the PR. Most likely its in-progress review of the first head was aborted by the mid-cycle fix push (f753907); it is a self-hosted action, not quota-limited, so a re-trigger on the final head is owed (see Residue). |
+
+**Coverage: 1 of 3 `reviewed`.** The § Step 8 shortfall disclosure fired: "Review coverage 1-of-3 —
+`coderabbitai` reviewed (findings addressed); `sourcery-ai` rate-limited (weekly quota); `cuioss-review-bot`
+silent (in-progress review likely aborted by the fix push; re-trigger owed)." Per the lane this is a
+disclosure, not a merge block.
 
 ## Cost
 
-_pending_
+- **Tokens:** not available to the agent in this session — the Claude Code cloud harness does not
+  surface a token count to the run.
+- **Wall-clock:** ~one interactive cloud session on 2026-08-10 (PR opened 21:57 UTC; fix commit
+  f753907 pushed 22:24 UTC), plus the delegated merge, which lands out-of-session once the CLA is
+  signed.
+- **Population:** this single Claude Code cloud session's own activity. ⛔ NOT comparable to a
+  plan-marshall `metrics.toon` total — that counts the orchestrator-plus-agent dispatch tree under
+  plan-marshall's per-task billing boundary, which a single interactive cloud session does not share.
+  No comparable figure is available, so none is presented.
 
 ## Contract check (Step 9)
 
-_pending_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | ✅ Named above; all loaded by bundle path. |
+| 2 Branch | ✅ On `origin`: harness-assigned `claude/foreign-task-no-pr-ynmbpv` (kept as-is; the report names the form). Clean tree at start; pushed before any work. |
+| 3 Plan directory | ✅ `doc/plans/review-apparatus/020-…/plan.md` established via `git mv`; opens with the first-instruction block (present as handed — no repair needed). |
+| 4 Implement | ✅ Deliverables addressed; every commit carries the `Co-Authored-By: Claude` trailer and no "Generated with Claude Code" footer. |
+| 4 Per-commit gate | ✅ Every commit touching `*.py` was preceded by a `./pw verify plan-marshall` (quality gate + tests) reporting `total_issues: 0` / empty `errors[]` and `verify: SUCCESS`. |
+| 4 Pushed | ✅ No unpushed commit at each checkpoint; branch pushed after every commit. |
+| 5 Build gate | ✅ Python changed → `./pw verify plan-marshall` run; final green run **15859 passed, 1 skipped, verify: SUCCESS**. |
+| 6 Verification sub-agent | ✅ Dispatched read-only; findings + dispositions recorded (§ Findings); cold-read verdict BLOCKING. |
+| 7 PR cycle | ✅ PR #1151 opened (full bot review — diff touches `*.py` + `marketplace/bundles/**`, so no `skip-bot-review`). Both comment surfaces read; all 9 CodeRabbit comments dispositioned (6 fixed, 3 rejected-with-reason); one consolidated reply posted. |
+| 8 Merge gate | ⚠️ Conditions 1–3: report finalized+pushed as the last pre-merge commit; comments handled. **Auto-merge armed** so the queue lands the PR once required checks are green. **Blocked outside the run:** `license/cla` is unsigned (operator `cuioss-oliver` must sign) — required-ness enforced by the queue. Coverage shortfall (1-of-3) disclosed. Landing delegated to the orchestrator's collect / the operator; the run cannot self-confirm `MERGED` from a cloud session (no reliable self-wake). |
+| 8 Bridge | ✅ No status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; the report carries the PR number and per-deliverable outcome. |
+| 9 This check | ✅ Appended here. |
+| 9 What have we learned | See below. |
+
+No cloud run owes a `/sync-plugin-cache` (machine-local build step). GitHub access path: **GitHub MCP
+server**. Branch form: **harness-assigned**.
 
 ## What have we learned (Step 9)
 
-_pending_
+**None proposed.** The lane handled this run end to end, including the two friction points, without a
+gap: (a) the CCR self-wake tools (`send_later`, the CCR `subscribe_pr_activity`) were **not connected**
+in this session, but the lane already anticipates that ("self-wake tools may be approval-gated") and
+provides the arm-and-hand-off completion, which is exactly the path taken; the GitHub MCP
+`subscribe_pr_activity` covered event-driven wakes. (b) The reviewer rate-limits and the CLA blocker are
+routine, external, and already covered by the § Step 8 disclose-not-block rule. No step was ambiguous
+in practice, no artifact was un-producible as written, and no command failed in the environment. A
+genuine proposal names what happened; nothing here rises to that.
 
 ## Residue
 
@@ -251,3 +297,10 @@ _pending_
   would be a publishable result, not a failure. Do not read this plan's completion as implying the
   check ran.
 - The absolute-path authoring dependency of the foreign discriminator (see D0 caveat).
+- **Merge blocked on the operator's CLA.** `license/cla` is unsigned on PR #1151; the merge queue will
+  not admit the PR until the account that opened it (`cuioss-oliver`) signs the CLA. This is outside the
+  run's control (an agent cannot sign a CLA). Auto-merge is armed, so the PR lands automatically once
+  the CLA is signed and CI is green.
+- **In-house reviewer re-trigger owed.** `cuioss-review-bot` (pr-agent) posted no review body — likely
+  its in-progress review was aborted by the mid-cycle fix push. It is not quota-limited, so a re-trigger
+  on the final head (`@` its trigger comment, or a fresh push) would restore its coverage before merge.
