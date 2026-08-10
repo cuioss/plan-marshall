@@ -189,6 +189,35 @@ here it suppressed coderabbit and sourcery but not cuioss-review-bot.)
   dispatch tree under plan-marshall's per-task billing boundary, which this interactive session does
   not share.
 
+## Merge gate
+
+Read against the live PR, not assumed:
+
+1. **Required contexts present on the exact head SHA and concluded successfully** — `verify / conclusion`
+   = **success**; `verify / gate`, `dependency-review` = success; `mergeable_state` = `unstable` (not
+   `blocked`), i.e. every required context passed and only non-required contexts are outstanding.
+   **Satisfied.**
+2. **Every PR comment handled** — 0 inline review threads; 4 conversation comments (2× CLA request,
+   CodeRabbit skip-by-label, cuioss-review-bot "no major issues"), all informational, none actionable.
+   **Satisfied.**
+3. **Report finalized and pushed as the last pre-merge commit** — this report is on the branch head
+   before auto-merge is (re-)armed. **Satisfied.**
+4. **Review-coverage shortfall disclosed (disclosure, not a gate):** coverage **1 of 3** —
+   `cuioss-review-bot` reviewed (no issues); `coderabbitai` and `sourcery-ai` silent, suppressed by the
+   `skip-bot-review` label this no-source PR carries. The new non-required-check disclosure this plan
+   introduces also fired: `license/cla` is **pending** (non-required, per D0) — disclosed, not blocking.
+
+### Merge-queue recovery (a real incident this run)
+
+The D3 re-derivation (MCP `enable_pr_auto_merge` with `mergeMethod: SQUASH`) did more than test the
+strategy flag: because `verify / conclusion` was already green, arming auto-merge **immediately queued
+the PR**, before the report was finalized. `disable_pr_auto_merge` did **not** dequeue it, and neither
+did converting the PR to draft; the branch stayed queue-locked and the finalized-report push was
+rejected ("Branches that are queued for merging cannot be updated"). The MCP surface exposes no dequeue
+tool and direct GraphQL is blocked, so recovery was: **close the PR** (which removes it from the
+queue), push the finalized report to the now-unqueued branch, reopen, mark ready, and re-arm auto-merge
+with **no** merge method. Recorded as What-have-we-learned #4.
+
 ## Contract check (Step 9)
 
 | Step | Verdict |
@@ -202,7 +231,7 @@ here it suppressed coderabbit and sourcery but not cuioss-review-bot.)
 | 5 Build gate | Done — git-derived verdict: no `*.py`; `./pw quality-gate` clean |
 | 6 Verification sub-agent | Done — findings + dispositions above; cold read passed |
 | 7 PR cycle | Done — PR #1137; both comment surfaces read; all comments dispositioned |
-| 8 Merge gate | See Merge gate below |
+| 8 Merge gate | See § Merge gate above — conditions 1–3 satisfied; condition-4 disclosure fired (1 of 3); a merge-queue-lock incident required a close/reopen recovery (documented) |
 | 8 Bridge | Done — nothing written under `doc/plans/` outside this plan's own directory (SKILL.md is not under `doc/plans/`); report carries PR number + per-deliverable outcome |
 | 9 This check | This table |
 | 9 What have we learned | Below |
@@ -214,7 +243,7 @@ here it suppressed coderabbit and sourcery but not cuioss-review-bot.)
 
 ## What have we learned (Step 9)
 
-Three candidates, each grounded in this run's evidence — **presented to the operator, not self-approved**;
+Four candidates, each grounded in this run's evidence — **presented to the operator, not self-approved**;
 none shipped this run (contract changes go as a separate `chore/` PR on approval):
 
 1. **Cloud-run commit authorship leaves `license/cla` permanently red (D2).** Cloud runs author as
@@ -234,6 +263,16 @@ none shipped this run (contract changes go as a separate `chore/` PR on approval
    (a) an MCP-equivalent spelling of the merge/auto-merge step alongside the `gh` form, or (b) a note
    that the strategy-flag hazard is `gh`-specific. Recorded for the operator; D3's doc edit was not
    shipped precisely because it could not be re-derived here.
+
+4. **Arming auto-merge to test D3 can queue the PR before the report is finalized — and the only
+   reachable dequeue is closing the PR.** On the MCP surface, `enable_pr_auto_merge(mergeMethod: SQUASH)`
+   did not error; because required checks were already green it **immediately queued** the PR, and
+   `disable_pr_auto_merge` + draft-conversion both failed to dequeue it, so the finalized-report push
+   was rejected by the queue lock. Recovery cost a close/reopen cycle (§ Merge gate). The contract's
+   Step 8 should warn that (a) on a merge-queue repo, arming auto-merge while required checks are green
+   queues the PR at once — so any D3-style live test of the arming command must happen only when the
+   run is ready to merge, or via a form that does not arm; and (b) the only MCP-reachable way to remove
+   a queued PR is to **close** it (neither disabling auto-merge nor drafting works).
 
 ## Residue
 
