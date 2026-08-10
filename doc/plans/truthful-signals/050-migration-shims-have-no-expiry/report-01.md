@@ -161,7 +161,44 @@ _pending_
 
 ## Findings
 
-_pending_
+### D0 classification (four read-only sub-agents + first-party anchor reads)
+- Both OBSERVED claims confirmed: `_cmd_mark_step.py :: legacy_string_entry` is a genuine category-B
+  shim; `_read_status_created` is defensive `None`-handling, not a shim (the "older orchestrator
+  versions" phrase is absent). Disposition: `_read_status_created` dropped from the sweep, becomes
+  D2's negative test case. **Fixed/actioned.**
+- Prior-art sub-agent surfaced that the plan's D2 instruction ("copy `_dispatch_roster.py`") points at
+  the wrong mechanism — it is a Markdown-section parser, not a tree enumerator, and sibling plan 040
+  filed a STOP CONDITION on the identical instruction. Disposition: mirrored 040's
+  `_analyze_thinking_directive_in_workflow_docs.py` (population-derived) instead. **Recorded as a
+  plan-authoring finding (see § What have we learned).**
+
+### D2 calibration (against the real marked tree)
+- First calibration run produced 8 findings: 2 false positives on write-side *rejection* guards
+  (`_cmd_system_plan.py:77,177`, "retired key … rejected"), 2 on a caller/constant referencing
+  `pre-home-root`, 1 self-reference (the analyzer's own comment), and 3 cover-gaps on real marked
+  shims. Disposition: dropped the two over-broad indicators, widened marker coverage, and reworded the
+  analyzer's own comment. Final run: **0 findings on the real tree.** **All fixed.**
+
+### Build-gate findings (fixed)
+- ruff C416 (unnecessary dict comprehension on a dead `by_line` local) — removed the dead structure.
+- `historical_prose_in_skills` fired on "earlier version" in the convention doc + SKILL.md — reworded
+  to "older version" (meaning-preserving). **Fixed.**
+- 6 test failures after wiring the gate rule: the empty-population guard fired on clean fixture trees
+  (re-anchored on the convention-doc's existence, mirroring 040), a missing `reason` field, and the
+  canonical `GOLDEN_QG_LABELS` needed the new label. **All fixed; full suite green.**
+
+### Step 6 verification sub-agents (independent, read-only)
+- **Full deliverable verification: CLEAN.** Every deliverable implemented as specified; no gaps
+  requiring a fix. Confirmed `_read_status_created` dropped, 5 A + 19 B = 24 markers each with three
+  non-empty fields, D2 publishes `population_size`, both-direction tests present, population derived
+  not hard-coded, no duplicate detector framework, no undeclared collateral change. Its three
+  "unverifiable from the diff" caveats (build-green, cold-read, build-failing gating) are each verified
+  directly by this run (18808 tests + quality-gate pass; cold-read below; `severity='error'` + the
+  quality-gate `emit`).
+- **D1 convention cold-read: PASSED.** An agent given ONLY the convention doc correctly marked the
+  category-B sample as needing a marker and the defensive-`None` sample as not — quoting the exact
+  discriminator. The convention's wording does not recreate D2's false-positive problem in prose (the
+  plan's explicit cold-read acceptance test).
 
 ## Reviewer participation
 
