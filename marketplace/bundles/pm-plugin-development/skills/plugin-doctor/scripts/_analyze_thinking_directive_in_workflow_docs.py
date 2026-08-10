@@ -47,8 +47,12 @@ high-precision families are recognized (all case-insensitive), each firing on a
 cognition directive and deliberately NOT on procedural prose:
 
 1. ``ultrathink`` — Claude reasoning-mode jargon (``ultrathink`` / ``ultra think``
-   / ``ultra-think``).
-2. ``extended-thinking`` — "extended thinking" reasoning-mode jargon.
+   / ``ultra-think``), REQUIRED to carry a directive cue (use/enable/apply/…) in
+   the same clause. A descriptive mention ("the ultrathink feature is documented
+   elsewhere") is not a directive and is NOT flagged.
+2. ``extended-thinking`` — "extended thinking" reasoning-mode jargon, likewise
+   directive-scoped ("use extended thinking" fires; "extended thinking is
+   configured by the dispatcher" does not).
 3. ``careful-reasoning`` — "careful (step-by-step) reasoning/thinking/thought",
    "reason carefully". Does NOT fire on "careful analysis" (a review activity,
    not a reasoning-level directive).
@@ -59,8 +63,9 @@ cognition directive and deliberately NOT on procedural prose:
 5. ``think-imperative`` — "think carefully/deeply/hard/harder/slowly/thoroughly".
 6. ``take-your-time`` — "take your time".
 
-Fenced code blocks, YAML frontmatter, and inline-code spans are exempt (a token
-inside them is an example, not a live directive).
+YAML frontmatter, fenced code blocks (backtick OR tilde, three-or-more markers),
+and inline-code spans are exempt (a token inside them is an example, not a live
+directive).
 
 Findings have the shape::
 
@@ -129,12 +134,27 @@ RULE_DESCRIPTOR = RuleDescriptor(
 # step-by-step-reasoning) are recorded under the most specific family.
 # ---------------------------------------------------------------------------
 
-# Family 1: Claude reasoning-mode jargon. A dispatched doc cannot enable it —
-# the level is pinned by the variant filename.
-_ULTRATHINK_RE = re.compile(r'\bultra[\s-]?think\b', re.IGNORECASE)
+# A directive cue: an imperative/modal verb that turns a bare reasoning-mode term
+# into an instruction. Required for the two "bare-term" families (ultrathink,
+# extended thinking) so a DESCRIPTIVE mention ("Extended thinking is configured by
+# the dispatcher") is NOT flagged — only a directive ("use ultrathink") is. The
+# cue must sit in a short same-clause window before the term; the window stops at
+# a clause boundary (``.`` / ``;`` / ``:``) so a cue in an unrelated clause on the
+# same line ("Use the search tool; ultrathink is documented below") does not bind.
+_DIRECTIVE_CUES = (
+    r'use|uses|using|enabl(?:e|es|ing)|appl(?:y|ies|ying)|invok(?:e|es|ing)'
+    r'|engag(?:e|es|ing)|employ(?:s|ing)?|activat(?:e|es|ing)|consider(?:s|ing)?'
+    r'|switch(?:es|ing)?\s+to|turn(?:s|ing)?\s+on'
+)
+_CUE_WINDOW = r'[^.;:\n]{0,40}?'
 
-# Family 2: "extended thinking" — reasoning-mode jargon.
-_EXTENDED_THINKING_RE = re.compile(r'\bextended thinking\b', re.IGNORECASE)
+# Family 1: Claude reasoning-mode jargon (``ultrathink`` / ``ultra think`` /
+# ``ultra-think``), directive-scoped. A dispatched doc cannot enable it — the
+# level is pinned by the variant filename.
+_ULTRATHINK_RE = re.compile(rf'\b(?:{_DIRECTIVE_CUES})\b{_CUE_WINDOW}\bultra[\s-]?think\b', re.IGNORECASE)
+
+# Family 2: "extended thinking" reasoning-mode jargon, directive-scoped.
+_EXTENDED_THINKING_RE = re.compile(rf'\b(?:{_DIRECTIVE_CUES})\b{_CUE_WINDOW}\bextended thinking\b', re.IGNORECASE)
 
 # Family 3: "careful (step-by-step) reasoning/thinking/thought", "reason
 # carefully". The cognition noun (reasoning/thinking/thought) is required after
@@ -176,10 +196,12 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     ('take-your-time', _TAKE_YOUR_TIME_RE),
 ]
 
-# Structural-exemption helpers (mirror _analyze_historical_prose_in_skills.py).
+# Structural-exemption helpers. Inline-code spans mirror
+# _analyze_historical_prose_in_skills.py; the fence marker recognizes both
+# backtick and tilde fences of three-or-more markers (CommonMark), not only the
+# exactly-three-backtick form.
 _INLINE_CODE_RE = re.compile(r'`([^`]+)`')
-_FENCE_OPEN_RE = re.compile(r'^\s*```\s*([A-Za-z0-9_+-]*)\s*$')
-_FENCE_CLOSE_RE = re.compile(r'^\s*```\s*$')
+_FENCE_MARKER_RE = re.compile(r'^\s*(`{3,}|~{3,})')
 
 
 # ---------------------------------------------------------------------------
@@ -278,15 +300,27 @@ def enumerate_execution_context_workflow_docs(marketplace_root: Path) -> list[Pa
 
 
 def _build_fence_map(lines: list[str]) -> set[int]:
-    """Return the 0-based indices of lines inside any fenced code block."""
+    """Return the 0-based indices of lines inside any fenced code block.
+
+    Recognizes both backtick and tilde fences of three-or-more markers
+    (CommonMark). A fence closes on a bare line of the SAME marker character, at
+    least as long as the opener (an info string is allowed only on the opener).
+    The opening and closing fence lines themselves are not counted as inside.
+    """
     inside: set[int] = set()
-    in_fence = False
+    fence: tuple[str, int] | None = None  # (marker char, marker length)
     for idx, line in enumerate(lines):
-        if not in_fence:
-            if _FENCE_OPEN_RE.match(line):
-                in_fence = True
-        elif _FENCE_CLOSE_RE.match(line):
-            in_fence = False
+        if fence is None:
+            marker = _FENCE_MARKER_RE.match(line)
+            if marker:
+                token = marker.group(1)
+                fence = (token[0], len(token))
+            continue
+        char, length = fence
+        stripped = line.strip()
+        if stripped and stripped == char * len(stripped) and len(stripped) >= length:
+            # Bare closing fence: same char, at least as long as the opener.
+            fence = None
         else:
             inside.add(idx)
     return inside
@@ -337,10 +371,16 @@ def _scan_doc(path: Path, population_size: int) -> list[dict]:
             continue
         spans = _inline_code_spans(line)
         for family, pattern in _PATTERNS:
-            match = pattern.search(line)
-            if not match:
-                continue
-            if _offset_in_inline_code(match.start(), spans):
+            # Take the first match of this family that is NOT inside an
+            # inline-code span. ``search`` would return only the first match, so
+            # a live directive later on the same line as an in-code mention
+            # (e.g. "Mention `ultrathink`, then use ultrathink mode") would be
+            # missed; ``finditer`` scans every occurrence.
+            match = next(
+                (m for m in pattern.finditer(line) if not _offset_in_inline_code(m.start(), spans)),
+                None,
+            )
+            if match is None:
                 continue
             findings.append(
                 Finding(

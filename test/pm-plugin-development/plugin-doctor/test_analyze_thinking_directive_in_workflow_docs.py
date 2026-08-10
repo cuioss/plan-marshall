@@ -112,7 +112,8 @@ class TestPositive:
         'body, family',
         [
             ('Use **ultrathink mode** for deep analysis and synthesis.', 'ultrathink'),
-            ('This is a complex task that benefits from extended thinking.', 'extended-thinking'),
+            ('Enable ultrathink for the synthesis step.', 'ultrathink'),
+            ('Use extended thinking for this analysis.', 'extended-thinking'),
             ('Uses careful step-by-step reasoning for tone analysis.', 'careful-reasoning'),
             ('Reason carefully about each claim.', 'careful-reasoning'),
             ('Think step by step before deciding.', 'step-by-step-reasoning'),
@@ -154,6 +155,15 @@ class TestPositive:
 
         assert_analyzer_findings(analyze, tmp_path, [RULE_ID])
 
+    def test_live_directive_after_inline_code_mention_fires(self, tmp_path: Path) -> None:
+        """A live directive later on a line whose first match is in inline code
+        is still caught — ``search`` would have stopped at the in-code mention."""
+        _write_doc(tmp_path, 'Mention `ultrathink`, then use ultrathink mode.')
+
+        findings = assert_analyzer_findings(analyze, tmp_path, [RULE_ID])
+
+        assert findings[0]['details']['family'] == 'ultrathink'
+
 
 # ===========================================================================
 # (b) Negative — the false-positive boundary
@@ -176,6 +186,13 @@ class TestNegativeBoundary:
             'Consider the context to determine if the contradiction is real.',
             'The dispatcher retries three times before escalating.',
             'This framework distinguishes factual descriptions from promotional language.',
+            # Descriptive (non-directive) mentions of the bare-term families: a
+            # statement ABOUT the feature is not an instruction to use it.
+            'Extended thinking is configured by the dispatcher.',
+            'The ultrathink feature is documented elsewhere.',
+            # A cue in an unrelated clause on the same line must not bind to the
+            # term across the clause boundary.
+            'Use the search tool; ultrathink is documented below.',
         ],
     )
     def test_procedural_prose_does_not_fire(self, tmp_path: Path, body: str) -> None:
@@ -247,6 +264,18 @@ class TestExemptions:
 
     def test_fenced_code_block_is_exempt(self, tmp_path: Path) -> None:
         _write_doc(tmp_path, '```text\nUse ultrathink mode here.\n```')
+
+        assert analyze(tmp_path) == []
+
+    def test_tilde_fence_is_exempt(self, tmp_path: Path) -> None:
+        """A directive inside a ``~~~`` fence is exempt, not just a backtick one."""
+        _write_doc(tmp_path, '~~~\nUse ultrathink mode here.\n~~~')
+
+        assert analyze(tmp_path) == []
+
+    def test_four_backtick_fence_is_exempt(self, tmp_path: Path) -> None:
+        """A fence of more than three backticks is still a fence."""
+        _write_doc(tmp_path, '````\nUse ultrathink mode here.\n````')
 
         assert analyze(tmp_path) == []
 
