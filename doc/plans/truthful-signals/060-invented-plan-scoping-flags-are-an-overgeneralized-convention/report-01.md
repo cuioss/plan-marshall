@@ -125,6 +125,27 @@ position-dependence: `ci --plan-id X checks status` **works** (router consumes i
 reproduction is deferred to a corpus-enabled implementation run (D3(a) requires it before the fix);
 the executor needed to run it is absent from this clone.
 
+### Verification sub-agent (Step 6)
+
+An independent read-only sub-agent verified the run against the plan (not against the diff's intent).
+It re-derived each item from source and returned **all six HOLD, no blocking gaps**:
+
+| Item | Verdict | Note |
+|---|---|---|
+| STOP-CONDITION trigger legitimate (corpus genuinely unmineable) | HOLDS | `analyze-logs.py` → `base_path('plans', …)` under `.plan/` (git-ignored); only synthetic `argparse_rejection` fixtures are tracked. |
+| Claim-label verdicts accurate (5 spot-checks) | HOLDS | All confirmed/refuted verdicts match source; exit-2 position-dependence code-accurate. |
+| D1(c) "already exists" claims accurate | HOLDS | `ARGUMENT_NAMING_*` doctor + prose signature #2 + recipe-as-remediation all verified. |
+| Carve-out denominator honestly derived | HOLDS | Independent re-run: 324 `add_parser` / 119 `--plan-id` (vs report's 334 / 120) — within noise; caveated as a proxy population, `ci`=45 exact on both. |
+| No undeclared collateral change | HOLDS | Diff is only the two `doc/plans/…/060-…/` files. |
+| Halt is the correct reading of the plan | HOLDS | D2/D3 gated on the corpus; corpus-independent D1(b) was executed, not skipped. |
+
+**Disposition:** accepted; no fix required. **Denominator reconciliation (accepted correction):** the
+`add_parser` / `--plan-id` counts are grep-derived **proxy populations**, not exact verb counts; an
+independent re-run over a slightly different glob scope yields 324 / 119 rather than 334 / 120. Both are
+consistent with the qualitative verdict (near-total within the plan-lifecycle cluster; coherent
+scope-principled carve-out); the one exact figure (`ci` = 45 parser nodes) matches on both runs. The ±10
+spread is glob-scope noise, not a substantive disagreement.
+
 ## Reviewer participation
 
 This PR's diff is confined to `doc/plans/**` (a plan-directory move + this report) — no `*.py`, no
@@ -165,7 +186,24 @@ a no-code-footprint PR. Recorded, not silently omitted.
 
 ## What have we learned (Step 9)
 
-_To be finalized as the last pre-merge commit._
+**No contract change proposed.** This run exercised the cloud-plan-lane end to end as a **gate-only
+run that correctly halted at a plan-defined STOP CONDITION with zero code mutation**, and every step
+was producible as written:
+
+- The build gate's `*.py`-only predicate handled a docs-only gate cleanly (skipped, recorded).
+- Step 6's independent verification worked as intended and caught a real (if minor) over-count in the
+  D1(b) denominators, which was reconciled in-report — the sub-agent gate did its job.
+- The outcome vocabulary (`completed | partial | blocked`) has no dedicated slot for "gate ran to its
+  designed terminal STOP CONDITION with nothing to implement", but the contract already permits a
+  **qualified, per-deliverable** outcome in the report ("the outcome per deliverable — including a run
+  that ended blocked or partial, and why"), so `completed` + an explicit qualifier expresses it without
+  overstatement. No gap that this run's evidence shows the contract failing to handle.
+
+One session-level (not contract-level) note, recorded for honesty: a background enumeration sub-agent
+dispatched for D1(b) became unreachable during a burst of session interrupts, and its result was lost;
+D1(b) was re-derived inline. That is a harness/session artifact, not a cloud-plan-lane step defect, so
+it yields no contract proposal — but it argues for running a gate's load-bearing sub-agent **synchronously**
+when its result is a hard dependency of the next step (as Step 6 was here).
 
 ## Residue
 
