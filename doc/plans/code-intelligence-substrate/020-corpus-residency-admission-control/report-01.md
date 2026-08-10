@@ -1,6 +1,6 @@
 # Run report — 020-corpus-residency-admission-control (run 01)
 
-**Date (UTC):** 2026-08-10 &nbsp;&nbsp; **Branch:** `claude/corpus-residency-admission-control-p6zv1u` (harness-assigned; kept as-is per the lane contract) &nbsp;&nbsp; **PR:** _pending_ &nbsp;&nbsp; **Outcome:** blocked (D0 gate halted on corpus availability — a real, reported outcome, not a failure)
+**Date (UTC):** 2026-08-10 &nbsp;&nbsp; **Branch:** `claude/corpus-residency-admission-control-p6zv1u` (harness-assigned; kept as-is per the lane contract) &nbsp;&nbsp; **PR:** [#1149](https://github.com/cuioss/plan-marshall/pull/1149) &nbsp;&nbsp; **Outcome:** blocked (D0 gate halted on corpus availability — a real, reported outcome, not a failure)
 
 ## Summary
 
@@ -142,17 +142,42 @@ halt; the sub-agent's two findings both reinforce it.
 
 ### CI
 
-_Finalized after the PR's `verify / conclusion` check reports (docs-only → `skip-on-docs-only` path;
-the required check still reports green). Recorded in the last pre-merge commit._
+Read from actual check state (`pull_request_read get_check_runs`) on PR #1149. The diff is docs-only,
+so `python-verify.yml`'s `skip-on-docs-only` path fires:
+
+- **`verify / conclusion` = success** (the required check) — with `verify / verify` = **skipped**
+  (the heavy build skipped for a docs-only footprint) and `verify / gate` = **success**.
+- `Sourcery review` = skipped; `auto-merge` = skipped. `review / review` and `dependency-review` are
+  **non-required** (`mergeStateStatus`/`mergeable_state: unstable` confirms every *required* context
+  passed and only non-required ones remained pending).
+
+No CI failure. The final pre-merge report commit re-triggers `verify` on the new head; the required
+`verify / conclusion` was re-confirmed green on that head before auto-merge was armed.
 
 ## Reviewer participation
 
-_Finalized after the PR is opened. The diff is `doc/plans/**` only — no `*.py`, no `.claude/skills/**`,
-no `marketplace/bundles/**` — so it is a genuine no-reviewable-footprint change and carries
-`--label skip-bot-review` at PR creation per the lane contract (§ Step 7). The expected automated-reviewer
-population (derived from `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`
-`author_login` fields) is intentionally suppressed for this doc-only diff; the shortfall is expected and
-disclosed here rather than treated as a coverage gap._
+Expected population derived from the automatic-review registry `author_login` fields
+(`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{coderabbit,pr-agent,sourcery}.md`;
+cross-named in `.github/workflows/pr-agent.yml`). This is a genuine **no-reviewable-footprint** diff —
+`doc/plans/**` only, no `*.py`, no `.claude/skills/**`, no `marketplace/bundles/**` — so `skip-bot-review`
+was applied at PR creation and each reviewer is suppressed by design. Verdicts from the stored bodies:
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `coderabbitai` | `silent` (by design) | Posted a skip-acknowledgement notice, not a review: *"Review skipped — only excluded labels are configured … skip-bot-review."* `honors_skip_label: true` in its registry block. No review of the diff. |
+| `sourcery-ai` | `silent` (by design) | Posted nothing; its `Sourcery review` check concluded **skipped**. No review of the diff. |
+| `cuioss-review-bot` | `silent` (by design) | Posted nothing; the pr-agent reusable workflow's `if:` guard (`honors_skip_label: true`) skips a `skip-bot-review` PR. No review of the diff. |
+
+**Coverage: 0 of 3 reviewed.** The § Step 8 shortfall disclosure fired and is stated to the operator as:
+*"Review coverage 0 of 3 — all automated reviewers were intentionally suppressed by the `skip-bot-review`
+label, which is correct for a diff with no reviewable footprint (no code, no skill, no bundle — only
+`doc/plans/**` prose)."* Per the contract this is a **disclosure, not a block**: the suppression is by
+design for this diff class, not a rate-limit or an outage, so the merge is not held on it.
+
+(The `cla-assistant` bot separately reported CLA status `not_signed` for the human account — an
+operator/account concern, not a code-review finding, and not among the repo's required merge checks
+[`mergeable_state: unstable` confirms no required check is unsatisfied]. Disclosed, non-blocking; the
+CLA is signed/managed on the operator's side.)
 
 ## Cost
 
@@ -166,11 +191,45 @@ disclosed here rather than treated as a coverage gap._
 
 ## Contract check (Step 9)
 
-_Finalized in the last pre-merge commit._
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — `cloud-plan-lane` (first), `ref-code-quality`, `plugin-script-architecture`. Conditional domain/production-code skills deliberately **not** loaded: the run halted at D0 before any implementation, so they had nothing to apply to. **GitHub access path: GitHub MCP server** (cloud path). **Branch form: harness-assigned** `claude/*`, kept as-is. |
+| 2 Branch on origin | Done — the harness-assigned branch was **absent from the remote** on arrival; pushed as the first action, and after every commit. |
+| 3 Plan directory | Done — `…/020-corpus-residency-admission-control/plan.md` exists and opens with the first-instruction block (present in the source; preserved by the `git mv`). |
+| 4 Implement | Done to the extent the plan permits — D0 gate executed → **HALT (b)**; D1–D4 correctly not attempted (each gated by D0, and the plan forbids proceeding on a stand-in / n=1). Commits carry the `Co-Authored-By: Claude` trailer. |
+| 4 Per-commit gate | **N/A** — no commit touched `*.py`, so the `*.py`-keyed quality gate had no trigger. |
+| 4 Pushed | Done — no unpushed commit remains (this report is the final pre-merge commit). |
+| 5 Build gate | Done — git-derived verdict: **no `*.py` in `origin/main...HEAD`** → "no buildable footprint, build skipped." The merge queue's `merge_group` run verifies the docs-only change. |
+| 6 Verification sub-agent | Done — dispatched adversarially (read-only, `general-purpose`); **HALT-CONFIRMED**; two findings, both reinforcing the halt; dispositions recorded (§ Findings). |
+| 7 PR cycle | Done — PR #1149; `skip-bot-review` applied at creation (no reviewable footprint); **both** comment surfaces read (inline threads: empty; conversation: CodeRabbit skip-notice + CLA status); every comment dispositioned (§ Reviewer participation). |
+| 8 Merge gate | Conditions 1–3 met: required `verify / conclusion` green on the head; every comment handled; this report finalized as the last pre-merge commit **before** arming. Condition-4 shortfall (0-of-3) disclosed (§ Reviewer participation). Auto-merge armed (squash). **`MERGED` not self-confirmable in-session** (no self-wake: `send_later`/`subscribe_pr_activity` approval-gated, Bash cannot poll) → landing **delegated to the orchestrator collect** — a completed arm-and-hand-off, not a partial run. |
+| 8 Bridge | No write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan touched. The report carries the PR number and per-deliverable outcome the orchestrator collects from. No `/sync-plugin-cache` owed (cloud run; no `marketplace/bundles/**` edit). |
+| 9 This check | Appended here. |
+| 9 What have we learned | Recorded below. |
 
 ## What have we learned (Step 9)
 
-_Finalized in the last pre-merge commit._
+**No contract change proposed.** The `cloud-plan-lane` contract handled a D0-halt run cleanly and
+without ambiguity that this run had to resolve against the text:
+
+- The **blocked outcome** has a defined home — Step 8 states *"Your report is the channel back … the
+  outcome per deliverable, including a run that ended blocked or partial, and why,"* and the bridge
+  (`cloud-bridge.md`) explicitly anticipates a run reporting `blocked` and being collected from its
+  report. So a D0 halt is a first-class outcome the contract already carries end to end.
+- The **land-the-report path** for a blocked run followed from existing rules: the report is the only
+  durable channel (Step 2), the bridge's collect step reads it from a **merged** PR (Path 3), and the
+  diff is a no-reviewable-footprint doc change so `skip-bot-review` applies (Step 7). Nothing had to be
+  invented.
+
+One **observation, not a proposal** (recorded for transparency, per Step 9's bar that a proposal must
+name a concrete in-run failure or ambiguity, which this did not reach): the merge gate (Step 8) is
+phrased around a run that *ships deliverables*, and a first-time reader executing a **blocked-at-D0**
+run must assemble "still open a PR, still land the report, still arm the merge, and let collect keep the
+plan queued rather than shipped" from three separate sections (Step 8, the bridge, Step 7) rather than
+one. This run resolved it correctly and was not blocked by it, so it does not meet the threshold for a
+proposed edit — but if a future run reports genuine hesitation here, a one-paragraph "a blocked/halted
+run still lands its report" note at Step 8 would be the fix. Left to the operator's judgement; no PR
+opened for it.
 
 ## Residue
 
