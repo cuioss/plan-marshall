@@ -4,7 +4,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 # Content Review Framework
 
-This standard defines the framework for reviewing AsciiDoc content quality, with emphasis on factual accuracy, clarity, professional tone, and completeness. Uses careful step-by-step reasoning for tone and style analysis.
+This standard defines the framework for reviewing AsciiDoc content quality, with emphasis on factual accuracy, clarity, professional tone, and completeness.
 
 ## Review Dimensions
 
@@ -174,7 +174,7 @@ Suggestion: "{improved version}"
 
 ### Decision Framework
 
-**CRITICAL:** Use careful step-by-step reasoning for comprehensive tone assessment to distinguish factual descriptions from promotional language.
+This framework distinguishes factual descriptions from promotional language.
 
 ### Decision Questions
 

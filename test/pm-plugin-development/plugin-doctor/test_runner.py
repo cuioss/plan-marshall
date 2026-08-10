@@ -77,6 +77,7 @@ GOLDEN_QG_LABELS = [
     'analyze_allowed_tools_drift',
     'analyze_self_declared_rule_compliance',
     'analyze_historical_prose_in_skills',
+    'analyze_thinking_directive_in_workflow_docs',
     'scan_finalize_step_token',
     'analyze_mutates_source_order',
     'scan_step_configurable_contract',

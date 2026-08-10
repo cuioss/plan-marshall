@@ -145,6 +145,9 @@ _alf = _load('_analyze_lane_frontmatter.py', '_alf_fixtures')
 _atrrs = _load('_analyze_triage_read_surface.py', '_atrrs_fixtures')
 _afnds = _load('_analyze_triage_fix_not_done_surface.py', '_afnds_fixtures')
 _avsc = _load('_analyze_verify_step_contract.py', '_avsc_fixtures')
+_atdw = _load(
+    '_analyze_thinking_directive_in_workflow_docs.py', '_atdw_fixtures'
+)
 
 # ---------------------------------------------------------------------------
 # Registered-rule-ID extraction (relocated verbatim from the deleted
@@ -435,6 +438,23 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
                 'AskUserQuestion:\n'
                 '  questions:\n'
                 '    - question: "pick one"\n'
+            )
+        },
+    )
+    # thinking-directive-in-workflow-doc: a dispatched-workflow doc (carries the
+    # execution-context ``implements:`` marker) whose body carries a
+    # reasoning-level directive (``ultrathink``) — inert, because the level is
+    # pinned by the dispatched execution-context-{level} variant.
+    corpus['thinking-directive-in-workflow-doc'] = FixtureSpec(
+        analyzer=_atdw.analyze_thinking_directive_in_workflow_docs,
+        files={
+            _PM_SKILL: (
+                '---\n'
+                'implements: plan-marshall:extension-api/standards/'
+                'ext-point-execution-context-workflow\n'
+                '---\n\n'
+                '# F\n\n'
+                'Use ultrathink mode for deep analysis of the findings.\n'
             )
         },
     )

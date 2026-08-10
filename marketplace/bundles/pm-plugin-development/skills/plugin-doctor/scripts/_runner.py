@@ -71,6 +71,9 @@ from _analyze_skill_notation import analyze_skill_notation
 from _analyze_skill_relative_temp_path import analyze_skill_relative_temp_path
 from _analyze_step_configurable_contract import scan_step_configurable_contract
 from _analyze_sys_path_bootstrap import analyze_sys_path_bootstrap
+from _analyze_thinking_directive_in_workflow_docs import (
+    analyze_thinking_directive_in_workflow_docs,
+)
 from _analyze_tmp_redirect_in_skills import analyze_tmp_redirect_in_skills
 from _analyze_workflow_doc_toon_error_field import analyze_workflow_doc_toon_error_field
 from _cmd_extension import validate_extension_contracts
@@ -187,6 +190,10 @@ class RuleRunner:
         emit(
             'analyze_historical_prose_in_skills',
             suppressed(analyze_historical_prose_in_skills(root)),
+        )
+        emit(
+            'analyze_thinking_directive_in_workflow_docs',
+            scoped(analyze_thinking_directive_in_workflow_docs(root)),
         )
         emit('scan_finalize_step_token', scoped(scan_finalize_step_token(root)))
         emit(
@@ -321,6 +328,7 @@ class RuleRunner:
         issues.extend(analyze_allowed_tools_drift(root))
         issues.extend(analyze_self_declared_rule_compliance(root))
         issues.extend(analyze_historical_prose_in_skills(root))
+        issues.extend(analyze_thinking_directive_in_workflow_docs(root))
         issues.extend(analyze_agentfile_line_budget(root))
         issues.extend(analyze_agentfile_directory_tree(root))
         issues.extend(analyze_role_field(root))
