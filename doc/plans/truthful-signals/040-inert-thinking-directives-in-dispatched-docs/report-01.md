@@ -106,7 +106,7 @@ Expected reviewer population **derived from configuration** — the `author_logi
 | 9 This check | done | This table. |
 | 9 What have we learned | done | Below. |
 
-GitHub access path used: **GitHub MCP server** (the cloud path). Branch form: **harness-assigned** `claude/*`. The plan edited `marketplace/bundles/` (D1 docs + D3 detector), so a local `/sync-plugin-cache` is owed by whoever picks the work up on a developer machine — this lane cannot sync (`target/` and `~/.claude/` are out of reach).
+GitHub access path used: **GitHub MCP server** (the cloud path). Branch form: **harness-assigned** `claude/*`. The plan edited `marketplace/bundles/` (D1 docs + D3 detector), but **no `/sync-plugin-cache` is owed by this run — it is neither necessary nor possible in the cloud lane.** *Not possible:* the lane cannot touch `target/` (git-ignored build output) or `~/.claude/` (the plugin cache). *Not necessary:* the merged `marketplace/bundles/` source is authoritative; any plugin-cache refresh is a local-developer-machine concern, not a debt this cloud run creates.
 
 ## What have we learned (Step 9)
 
@@ -116,4 +116,4 @@ A second, non-contract observation for the orchestrator/plan-author (not a cloud
 
 ## Residue
 
-- The plan (and its sibling 050) name `test/_shared/_dispatch_roster.py` as the population source for a population-derived detector; that file is the wrong mechanism. A contract/plan-authoring note may be worth proposing (see Step 9). The bundle edits under `marketplace/bundles/` mean a local `/sync-plugin-cache` is owed by whoever picks the work up on a developer machine (this lane cannot sync — `target/` and `~/.claude/` are out of reach).
+- The plan (and its sibling 050) name `test/_shared/_dispatch_roster.py` as the population source for a population-derived detector; that file is the wrong mechanism. A contract/plan-authoring note may be worth proposing (see Step 9). No `/sync-plugin-cache` is owed by this run: it is neither necessary nor possible in the cloud lane (see the Contract-check note above).
