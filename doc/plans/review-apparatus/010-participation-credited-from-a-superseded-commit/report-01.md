@@ -1,6 +1,13 @@
 # Run report — 010-participation-credited-from-a-superseded-commit (run 01)
 
-**Date (UTC):** 2026-08-10    **Branch:** `claude/participation-superseded-commit-uo7k92` (harness-assigned, kept as-is)    **PR:** [#1141](https://github.com/cuioss/plan-marshall/pull/1141)    **Outcome:** partial — all deliverables complete and verified; merge blocked on the `license/cla` signature (operator action), auto-merge armed
+**Date (UTC):** 2026-08-10    **Branch:** `claude/participation-superseded-commit-uo7k92` (harness-assigned, kept as-is)    **PR:** [#1141](https://github.com/cuioss/plan-marshall/pull/1141) — **MERGED** (squash `50f67ed`, by `cuioss-oliver`, 2026-08-10T16:12:35Z)    **Outcome:** completed — all deliverables complete and verified; PR merged once `verify` went green (auto-merge fired; the `license/cla` check was **not** required)
+
+> **Correction (post-merge, this file amended on a follow-up branch).** An earlier revision of this
+> report recorded the outcome as *"partial — merge blocked on the `license/cla` signature."* That was
+> **wrong**: the CLA was not a required check, and the PR auto-merged the moment `verify / verify`
+> concluded green. See § "Why the CLA was falsely read as a merge blocker" below for how the mistaken
+> inference happened. Because PR #1141 was already merged when the correction was made, this amendment
+> lands as a fresh change per the merged-PR rule, not as a push to the (merged) PR branch.
 
 ## Skills loaded
 
@@ -194,9 +201,9 @@ Population derived from the registry `author_login` of each
 
 **Coverage: 1 of 3 reviewed; the REQUIRED bot (`pr-agent`) reviewed, so the required quorum is
 satisfied.** The two optional bots are rate-limited (routine, outside our control; optional silence
-does not block). Note: the review fix (ledger) pushes a new commit, which re-triggers PR-Agent on the
-new HEAD — the review cycle continues below until that re-review lands and the finding is confirmed
-resolved.
+does not block). PR-Agent's real finding ("Bypassed SHA Currency Check") was fixed in `ddd486c` and
+acknowledged on the thread; the operator then merged the PR once `verify` went green, so no further
+re-review round was required.
 
 ## Cost
 
@@ -221,7 +228,7 @@ resolved.
 | 5 Build gate | Done — `*.py` changed → full `./pw verify` → SUCCESS, 18689 passed / 14 skipped (re-verified after each finding fix). |
 | 6 Verification sub-agent | Done — findings + dispositions recorded (§ Findings). |
 | 7 PR cycle | Done — PR #1141; both comment surfaces read; PR-Agent's finding fixed + replied; inline review-thread surface empty. |
-| 8 Merge gate | **Merge blocked** on the `license/cla` check (`not_signed`) — an operator signature this session cannot perform. Auto-merge armed to land on CLA + green CI. See § Residue. |
+| 8 Merge gate | **MERGED** — auto-merge (armed `--squash`) fired when `verify / verify` concluded green; confirmed `state: MERGED`, `merged_by: cuioss-oliver`, squash commit `50f67ed`. The `license/cla` check was **not** required (see the correction note); an earlier revision wrongly recorded this row as blocked. |
 | 8 Bridge | Nothing under `doc/plans/` outside this plan's own directory was changed; this report carries the PR number and per-deliverable outcome. |
 | 9 This check | Appended here. |
 | 9 What have we learned | Below. |
@@ -233,24 +240,56 @@ is owed for whoever picks the work up locally (the cloud lane cannot sync: it re
 
 ## What have we learned (Step 9)
 
-**One candidate refinement, with evidence from this run — recorded, not shipped.** The lane's Step 8
-merge gate says "merge only when conditions 1–3 hold" and treats a non-green check as a plain block. It
-does not name the case this run hit: a *required check that is blocked on a human action* (`license/cla`
-`not_signed`) — un-green through no fault of the diff, and unresolvable by the session. The correct move
-(arm auto-merge so it lands when the human acts, and disclose the block to the operator) is what this run
-did, but the contract does not spell it out, so a future run could read "not green → block" and simply
-stop. This is a genuine, run-produced gap. It is **recorded, not proposed as a shipped change**: it is
-minor, a contract amendment needs operator approval and its own `chore/` PR (kept out of this plan's PR),
-and no operator is present on this run to ratify it. Flagging it here is the honest disposition.
+**One candidate refinement, with evidence from this run — recorded, not shipped.** The evidence is the
+mistake in § "Why the CLA was falsely read as a merge blocker": this run read a PR's
+`mergeable_state: blocked` and attributed it to a *salient but non-required* pending check (`license/cla`)
+rather than to the actually-required `verify / verify` that was still running. The lane's Step 8 says
+"all checks are green — verify against actual check state," but it does not say to derive *which* check
+blocks from **(repo required checks) ∩ (non-green checks)**, nor does it warn against promoting a visible
+non-required pending status to "the blocker" in an operator disclosure. Adding that one sentence to Step
+8 would have prevented the wrong "partial — blocked on CLA" outcome. It is **recorded, not shipped**: a
+contract amendment needs operator approval and its own `chore/` PR, and the earlier
+candidate-refinement (a "required check blocked on a human action") was itself premised on the same false
+belief and is withdrawn. The honest, run-produced lesson is the required∩non-green derivation above.
+
+## Why the CLA was falsely read as a merge blocker
+
+The error and its correction, recorded because a misread merge gate is exactly the kind of
+"claim not read back from the source" this lane exists to prevent.
+
+**What I claimed:** the run was "partial — merge blocked on `license/cla` (`not_signed`), an operator
+signature this session cannot perform," and I armed auto-merge as a hand-off.
+
+**What was actually true:** the `license/cla` status is **informational, not a required check** on this
+repository. The PR's `mergeable_state: blocked` was caused by the **still-running `verify / verify`**
+(the one genuinely-required check), not by the CLA. When `verify / verify` concluded green at
+15:59, the PR auto-merged immediately — the CLA still showing `not_signed` and not blocking anything.
+
+**How the mistaken inference happened — three compounding mistakes:**
+
+1. **I equated `mergeable_state: blocked` with a specific named blocker without reading the repo's
+   required-checks configuration.** `blocked` only says *something* required is unsatisfied; it does not
+   say *which*. The correct move was to enumerate the repo's *required* status checks and intersect
+   with the non-green ones — I did not.
+2. **I let the most *salient* pending status stand in for the *required* one.** The CLA posted a
+   prominent "not signed" comment and a `pending` commit status; `verify / verify` was quietly
+   `in_progress`. I reached for the loud signal (CLA) over the quiet one (verify), which is precisely
+   backwards — a `pending` non-required check is cosmetic, an `in_progress` required check is the gate.
+3. **I treated a plausible inference as a confirmed fact in an operator-facing disclosure.** The lane's
+   own rule — "a claim is not an outcome; merge state and check state are read back from the actual
+   source" — applies to *why* a merge is blocked just as much as to *whether* it merged. I asserted the
+   CLA was the blocker without the read that would have refuted it.
+
+**The lesson (also fed to Step 9's "what have we learned"):** when a PR is `blocked`, derive the
+blocker from the intersection of (repo required checks) ∩ (non-green checks), and never promote a
+visible-but-non-required pending status to "the blocker" in an operator disclosure. The one real
+follow-up item below stands; the CLA "block" was never real.
 
 ## Residue
 
-- **Merge blocked on `license/cla` (`not_signed`).** The CLA gate requires the operator's signature;
-  this session cannot sign it. Auto-merge is armed (`--squash --auto`), so the PR lands automatically
-  once the CLA is signed and CI is green. **Operator action: sign the CLA at
-  cla-assistant.io/cuioss/plan-marshall?pullRequest=1141** (the assistant notes a prior signature may
-  just need a re-check).
-- **Local `/sync-plugin-cache` owed** (bundle edits; see Contract check).
+- **Local `/sync-plugin-cache` owed** (bundle edits; see Contract check). This is the only open item:
+  the merge landed on `main`, but the cloud lane cannot sync the plugin cache (it reads the git-ignored
+  `target/` and writes `~/.claude/`), so whoever picks the work up locally runs `/sync-plugin-cache`.
 - **D3 trigger-B wiring** — the `declined` observation is populated end-to-end only on the trigger-A
   (post-rebase) path; a FIND-step trigger-B loop-back decline is not yet fed into `--declined-bots`.
   Disclosed as a bounded follow-up, not a gap in the plan's D3 concrete defect (the trigger-A
