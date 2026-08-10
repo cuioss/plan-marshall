@@ -1,6 +1,6 @@
 # Run report — inert-thinking-directives-in-dispatched-docs (run 01)
 
-**Date (UTC):** 2026-08-10    **Branch:** `claude/inert-thinking-directives-smd2a3` (harness-assigned)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-10    **Branch:** `claude/inert-thinking-directives-smd2a3` (harness-assigned)    **PR:** [#1138](https://github.com/cuioss/plan-marshall/pull/1138)    **Outcome:** completed
 
 ## Skills loaded
 
@@ -61,26 +61,58 @@ Per the contract (§ "Rules that outrank convenience" — a claim is not an outc
 
 No undeclared collateral changes: the reviewer confirmed all 12 changed files are within the plan's expected surface, and `test/_shared/_dispatch_roster.py` was correctly left unmodified.
 
-**CI findings:** _pending — filled after CI runs on the PR._
-**PR review findings:** _pending — filled after the review cycle._
+**CI findings:** None. `./pw verify` was green locally (18718 passed) on the code commit; the PR's `verify / verify` check was confirmed green before arming auto-merge. The one-off `verify / conclusion` cancellations from the per-commit push cadence are superseded runs, not failures.
+
+**PR review findings** (each with disposition):
+
+1. `coderabbitai` — **Continue after an inline-code match** (Minor): `pattern.search` stops at the first match; a later live directive on a line whose first match is an in-code mention was missed. *Fixed* in `de61276` (`finditer` + first-match-outside-inline-code) + mixed-content regression test. Auto-resolved by the bot.
+2. `coderabbitai` / `cuioss-review-bot` — **Require directive context for bare-term families** (Major): `ultrathink` / `extended thinking` matched descriptive prose ("Extended thinking is configured by the dispatcher"), not only directives. *Fixed* in `de61276` (directive-cue requirement, clause-bounded window) + descriptive negatives. Auto-resolved. The same defect was raised by `cuioss-review-bot`'s PR Reviewer Guide (inline-code filter framing) — one fix covers both.
+3. `coderabbitai` — **Support all Markdown fenced-code delimiters** (Minor): only exactly-three backticks were recognized; `~~~` and 4+ backtick fences were not exempt. *Fixed* in `de61276` (CommonMark fence tracking) + tilde / four-backtick regression tests. Auto-resolved.
+4. `coderabbitai` — **Commit the D2 population rescope** (Major, failed to post inline): the plan names `_dispatch_roster.py` and the report used frontmatter derivation. *Rejected with reason (replied on the PR):* the plan's D2 header explicitly permits re-scoping ("this deliverable may re-scope the plan"); the STOP CONDITION's instruction is "halt and report", so the report is the sanctioned deviation record and the plan is the original brief; the frontmatter derivation is a *derived* population (the dispatcher's own addressing mechanism), not the hand-rolled roster / grep the plan forbids; the re-scope IS committed (the enumerator ships). Rewriting the plan's brief would erase the record that a re-scope occurred.
 
 ## Reviewer participation
 
-_Pending — filled after the PR review cycle._
+Expected reviewer population **derived from configuration** — the `author_login` of each `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc:
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Posted the "PR Reviewer Guide" issue-comment carrying a finding (the inline-code filter) against the diff. |
+| `coderabbitai` | `reviewed` | Posted a full review with three actionable inline findings + walkthrough on the first commit; the findings were addressed and the bot auto-resolved all three threads ("✅ Addressed in commit de61276"). Its re-review of the fix commit was subsequently rate-limited (33-min window), but the substantive review of the diff was complete. |
+| `sourcery-ai` | `rate-limited` | Published only a quota notice — "you have reached your weekly rate limit of 500000 diff characters" — in place of a review. |
+
+**Coverage: 2 of 3.** Step 8 shortfall disclosure fired: `sourcery-ai` is rate-limited (weekly diff-char quota, outside our control) and did not review this diff; `coderabbitai`'s re-review of the fix commit is rate-limited but its original review of the diff completed and its findings were resolved. Per the contract this is a disclosure, not a block — rate limits do not hold the merge.
 
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
-- **Wall-clock:** run start ~ session open; `./pw verify` alone was 6m05s. Full run wall-clock recorded at finalization.
+- **Wall-clock:** single interactive session; the two `./pw verify` runs were 6m05s and 4m48s. No precise session start/end timestamp is available to the agent.
 - **Population:** this single Claude Code cloud session's usage. ⛔ NOT comparable to a plan-marshall `metrics.toon` total (that counts the orchestrator-plus-agent dispatch tree under plan-marshall's per-task billing boundary, which a single interactive cloud session does not share).
 
 ## Contract check (Step 9)
 
-_Pending — filled at the merge gate as the last pre-merge commit._
+| Step | Verdict | Evidence |
+|---|---|---|
+| 1 Skills loaded | done | Named in § Skills loaded (read from bundle paths). |
+| 2 Branch | done | Harness-assigned `claude/inert-thinking-directives-smd2a3`, kept as-is, on `origin`. |
+| 3 Plan directory | done | `doc/plans/truthful-signals/040-inert-thinking-directives-in-dispatched-docs/plan.md` exists and opens with the first-instruction block (present, not repaired). |
+| 4 Implement | done | Commits `917ce75` (D1+D3), `de61276` (review fixes) carry the `Co-Authored-By: Claude` trailer; deliverables addressed. |
+| 4 Per-commit gate | done | `917ce75` preceded by a `total_issues: 0` quality-gate log; `de61276` preceded by a green `./pw verify` (quality-gate + tests). |
+| 4 Pushed | done | No unpushed commit remains (the report commit is the final push). |
+| 5 Build gate | done | Python changed → full path. `./pw verify` green twice (18711, then 18718 passed). |
+| 6 Verification sub-agent | done | Findings + dispositions in § Findings; cold read 8/8. |
+| 7 PR cycle | done | PR #1138; every comment fixed-or-answered (§ Findings). |
+| 8 Merge gate | confirmed at merge | Checks read green via the PR check API before arming auto-merge; merge state read back (`state: MERGED`), merge commit reported to the operator. |
+| 8 Bridge | done | Nothing under `doc/plans/` outside this plan's own directory changed; report carries PR number + per-deliverable outcome. |
+| 9 This check | done | This table. |
+| 9 What have we learned | done | Below. |
+
+GitHub access path used: **GitHub MCP server** (the cloud path). Branch form: **harness-assigned** `claude/*`. The plan edited `marketplace/bundles/` (D1 docs + D3 detector), so a local `/sync-plugin-cache` is owed by whoever picks the work up on a developer machine — this lane cannot sync (`target/` and `~/.claude/` are out of reach).
 
 ## What have we learned (Step 9)
 
-_Pending — filled at the merge gate._
+**Proposed contract clarification (presented to the operator; not self-approved, not shipped in this PR):** the cloud-plan-lane is written for autonomous execution, but this run executed in an interactive main session with a reachable operator, and a D2 STOP CONDITION offered a re-scope. The contract is silent on whether the main session may escalate to the operator (via `AskUserQuestion`) versus always taking the plan's autonomous fallback. This run escalated; a headless run of the same plan would have halted D2 and shipped D1 only — so the identical plan yields different outcomes depending on operator reachability. **Evidence:** the D2 escalation in this run. **Proposed edit:** a sentence in `cloud-plan-lane` § "Rules that outrank convenience" (or § Step-with-STOP-CONDITION guidance) stating that when the main session has a reachable operator and a plan offers a re-scope, the run MAY escalate via `AskUserQuestion`; a headless run takes the plan's stated autonomous fallback. If the operator accepts, ship as a separate `chore/` PR touching only the skill. If declined, the current behavior (judgment call by the run) stands.
+
+A second, non-contract observation for the orchestrator/plan-author (not a cloud-plan-lane change): both this plan and the sibling `050-migration-shims-have-no-expiry` name `test/_shared/_dispatch_roster.py` as the population source / pattern for a population-derived detector, but that file is a finalize dispatched-vs-inline **step** parser — the wrong mechanism. Plan-authoring for population-derived detectors should point at the ext-point `implements:` frontmatter derivation (or `extension_discovery.find_implementors` where the surface matches), not `_dispatch_roster.py`.
 
 ## Residue
 
