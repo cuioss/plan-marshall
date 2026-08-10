@@ -451,6 +451,10 @@ def _node_from_dict(data: dict) -> ParserNode:
         # An entry written before ``flag_arity`` existed deserializes to the
         # empty map, which reads as "no flag's arity is known" — the same
         # fail-open state a script whose help renders no options produces.
+        # SHIM(B): persisted parser-surface cache written before the v4 flag_arity field existed.
+        # shim-owner: script-shared
+        # shim-floor: the v4 CACHE_VERSION bump that added per-node flag_arity (see the "v4:" schema comment ~line 168), shipped with the shared argparse_surface.py module in #1127
+        # shim-remove-when: no persisted parser-surface cache predating v4 remains (caches are regenerated on rebuild)
         flag_arity={
             str(name): int(count)
             for name, count in (data.get('flag_arity') or {}).items()

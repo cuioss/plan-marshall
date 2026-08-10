@@ -27,6 +27,10 @@ from marketplace_paths import resolve_project_skill_path
 # rename set: future renames add rows here. The first (and currently only) rename
 # collapses both the built-in-prefixed and bare legacy forms of the review step to
 # the promoted bundle:skill canonical.
+# SHIM(A): retired step ids a prior release emitted (renamed to their canonical ids and dropped).
+# shim-owner: manage-config
+# shim-floor: the RETIRED_STEP_KEY_RENAMES table that collapses default:automated-review / automated-review onto the plan-marshall:automatic-review canonical step id
+# shim-remove-when: no live marshal.json carries a retired step id (idempotent: a re-run reports no renames)
 RETIRED_STEP_KEY_RENAMES: dict[str, str] = {
     'default:automated-review': 'plan-marshall:automatic-review',
     'automated-review': 'plan-marshall:automatic-review',
@@ -104,6 +108,10 @@ def _migrate_retired_step_keys(live: dict, renamed: list[str]) -> dict:
 # The mapping table below covers only the two force values; ``auto`` (and any
 # malformed value) falls through to "omit" while STILL removing the retired key so
 # a re-run is a no-op.
+# SHIM(A): retired run_at_all ceremony-gate values (mapped onto the per-element lane channel and dropped).
+# shim-owner: manage-config
+# shim-floor: the D7 run_at_all->lane migration that moved the four finalize ceremony gates onto the per-element `lane` override channel
+# shim-remove-when: no live marshal.json carries a run_at_all/qgate ceremony-gate key
 _RUN_AT_ALL_TO_LANE: dict[str, str] = {'never': 'off', 'always': 'minimal'}
 
 # Owning finalize step id (marshal.json keyed form, ``default:``-prefixed) for
@@ -279,6 +287,10 @@ def _deep_merge_missing(live: dict, defaults: dict, prefix: str, added: list[str
     Returns:
         The mutated ``live`` subtree.
     """
+    # SHIM(B): an ownerless-step value stored as a legacy {} before the writer switched to None.
+    # shim-owner: manage-config
+    # shim-floor: the ownerless-step writer change that defaults an empty step to None instead of an empty {} dict
+    # shim-remove-when: no marshal.json carries a legacy {} ownerless-step value
     for key, default_value in defaults.items():
         path = f'{prefix}.{key}' if prefix else key
         if key not in live:

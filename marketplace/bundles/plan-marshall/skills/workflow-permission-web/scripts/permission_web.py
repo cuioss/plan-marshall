@@ -66,6 +66,10 @@ def _extract_domain_names(entries: list) -> set[str]:
             d = entry.get('domain', '')
             if d:
                 result.add(d)
+        # SHIM(B): plain-string domain entries in domain-lists.json, before the config switched to enriched {"domain": ...} objects.
+        # shim-owner: workflow-permission-web
+        # shim-floor: the domain-lists.json enrichment that converted every entry from a bare string to a {"domain", "purpose", "trust_level"} object (in-code anchor: the _note field documenting "reads 'domain' fields from enriched entries or plain strings")
+        # shim-remove-when: no shipped or user domain-lists config carries plain-string domain entries
         elif isinstance(entry, str):
             result.add(entry)
     return result

@@ -114,6 +114,10 @@ def get_retention_settings() -> dict[str, Any] | None:
     # would raise an unhandled KeyError instead of producing a structured TOON
     # result. Defaults come from DEFAULT_SYSTEM_RETENTION so this normalization
     # cannot drift from the canonical values.
+    # SHIM(B): marshal.json written before a retention key joined DEFAULT_SYSTEM_RETENTION (backfilled in-memory on read).
+    # shim-owner: manage-run-config
+    # shim-floor: the addition of the newest retention key to DEFAULT_SYSTEM_RETENTION (_config_defaults.py; e.g. build_results_days / plugin_cache_keep_versions / plugin_cache_keep_days); predates this shallow clone's root (dcd3c00 / #1105), so not PR-pinnable here.
+    # shim-remove-when: every project has re-run `manage-config sync-defaults` so no persisted marshal.json lacks a retention key.
     for key, default in DEFAULT_SYSTEM_RETENTION.items():
         retention.setdefault(key, default)
     # Build results live and die with the plan artifact they belong to, so an

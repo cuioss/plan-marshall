@@ -394,6 +394,10 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     plan_id = args.plan_id or plan_dir.name
 
     manifest = load_manifest(plan_dir)
+    # SHIM(B): archived plans predating the execution-manifest deliverable (no execution.toon was written).
+    # shim-owner: plan-retrospective
+    # shim-floor: the introduction of the execution-manifest deliverable (execution.toon; MANIFEST_FILENAME) as a phase output; predates this shallow clone's root (dcd3c00 / #1105), so not PR-pinnable here.
+    # shim-remove-when: no archived plan predating the execution-manifest deliverable is retained.
     if manifest is None:
         # Legacy plans pre-dating the manifest deliverable: emit a skipped
         # fragment so the orchestrator can cleanly drop the section.

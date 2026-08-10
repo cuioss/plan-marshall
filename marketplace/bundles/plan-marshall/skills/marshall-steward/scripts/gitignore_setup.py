@@ -84,12 +84,20 @@ _MANAGED_RULE_LINES = frozenset({
     # Legacy rules — no longer emitted by setup_gitignore, but retained here so
     # the consolidation pass keeps recognizing and preserving them in existing
     # .gitignore files instead of reclassifying them as user content.
+    # SHIM(B): legacy managed .gitignore rules no longer emitted by setup_gitignore but still recognized/preserved.
+    # shim-owner: marshall-steward
+    # shim-floor: the setup_gitignore change that stopped emitting the plugin-doctor exception and .plan/local/worktrees managed rules (retained for recognition only)
+    # shim-remove-when: no existing .gitignore carries the retained legacy managed rules
     GITIGNORE_PLUGIN_DOCTOR_EXCEPTION,
     GITIGNORE_PLAN_LOCAL_WORKTREES,
     '.plan/local/worktrees',
 })
 
 
+# SHIM(A): pre-PR#666 .gitignore files with several managed blocks (collapsed into one).
+# shim-owner: marshall-steward
+# shim-floor: PR#666 -- the single-managed-block consolidation (before it, each re-run appended another managed GITIGNORE_COMMENT block)
+# shim-remove-when: no .gitignore with multiple managed GITIGNORE_COMMENT blocks can exist (idempotent: single-block input is byte-stable)
 def consolidate_managed_blocks(content: str) -> str:
     """
     Merge every managed ``.gitignore`` block into a single managed block.
@@ -185,6 +193,10 @@ def check_gitignore_status_from_content(content: str, exists: bool = True) -> di
     for line in content.splitlines():
         stripped = line.strip()
         # Accept .plan/* (preferred) and .plan/ or .plan (older format)
+        # SHIM(B): the older .plan/ or .plan gitignore rule form (current writer emits .plan/*).
+        # shim-owner: marshall-steward
+        # shim-floor: the change that switched the emitted plan-dir ignore rule to .plan/* (superseding the older .plan/ / .plan form)
+        # shim-remove-when: no .gitignore carries the bare .plan/ or .plan rule form
         if stripped in ('.plan/*', '.plan/', '.plan'):
             has_plan_dir = True
         if stripped == GITIGNORE_MARSHAL_EXCEPTION:

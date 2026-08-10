@@ -186,6 +186,10 @@ def _resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> set[str] |
         except subprocess.CalledProcessError:
             return FOOTPRINT_UNRESOLVED
 
+    # SHIM(B): archived plans' references.modified_files key, written before the change-ledger was removed.
+    # shim-owner: plan-retrospective
+    # shim-floor: the change-ledger removal that stopped persisting references.modified_files (same boundary as analyze-logs resolve_footprint); the current writer no longer emits the key (predates this shallow clone's root dcd3c00 / #1105, so not PR-pinnable here).
+    # shim-remove-when: no archived plan predating the ledger removal is retained.
     legacy = refs.get('modified_files')
     if legacy is None:
         return FOOTPRINT_UNRESOLVED

@@ -557,6 +557,10 @@ def _is_truthy_metadata(value: Any) -> bool:
 # missing ``modified_files`` as valid rather than as drift. This keeps the
 # blocking ``references_valid`` handshake hash stable for in-flight plans whose
 # references.json predates the change.
+# SHIM(B): references.json written before the modified_files key was retired (excluded from the required-keys intersection).
+# shim-owner: plan-marshall
+# shim-floor: the change that dropped modified_files from the references required-key contract (_REFERENCES_REQUIRED_KEYS); the tolerant read treats a missing modified_files as valid rather than as drift. Predates this shallow clone's root (dcd3c00 / #1105), so not PR-pinnable here.
+# shim-remove-when: no in-flight plan's references.json predates the key retirement.
 _REFERENCES_REQUIRED_KEYS: tuple[str, ...] = ('base_branch', 'branch')
 
 
@@ -1337,6 +1341,10 @@ def _capture_phase_steps_complete(
             missing.append(step)
             continue
         raw = phase_entry.get(step)
+        # SHIM(B): bare-string phase_steps entries; mark-step-done now stores dicts, so these are detected and rejected as legacy drift.
+        # shim-owner: plan-marshall
+        # shim-floor: the mark-step-done change that switched phase_steps step storage to {"outcome": ..., "display_detail": ...} dicts; there is no automatic migration for the old bare-string shape. Predates this shallow clone's root (dcd3c00 / #1105), so not PR-pinnable here.
+        # shim-remove-when: no status.json can still carry a bare-string phase_steps entry.
         if isinstance(raw, str):
             legacy_format.append(step)
             continue
