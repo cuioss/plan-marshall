@@ -51,6 +51,11 @@ The explicit-call-or-xref authoring rule for documented script invocations plus 
 ### 7. New get/set Input Shape Validator
 See: `standards/cross-skill-integration.md` § "New get/set input shape must pass its own validator"
 
+### 8. Migration / Back-Compat Shim Marker Convention
+Load: `standards/shim-marker-convention.md`
+
+Every migration or back-compat shim (a read path that accommodates a data shape an earlier version of this tooling wrote and the current version no longer writes) declares an **owner**, a **version floor**, and a **removal trigger** at its definition site via a `# SHIM(A|B):` marker block. Distinguishes a real shim from ordinary defensive `None`-handling, CLI/env-var compatibility, re-export aliases (governed by `SIMPLICITY_BACKWARD_COMPAT_REEXPORT`), external-system variance, and deliberate breaking refusals. Enforced at edit time by the `shim-marker-missing` plugin-doctor rule.
+
 A `get`/`set` verb whose value proposition IS a new input shape (a dotted path, glob, or compound key) must have that exact shape as its first boundary test, driven through the CLI entry point — the input validator is the part most likely to lag the feature and silently reject the shape the verb exists to support. The config-governance companion lives in [`plan-marshall:manage-config`](../../../plan-marshall/skills/manage-config/standards/config-design-principles.md) § "Config Design Principles".
 
 ## References
