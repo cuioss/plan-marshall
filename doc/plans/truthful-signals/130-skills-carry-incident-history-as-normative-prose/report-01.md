@@ -136,13 +136,29 @@ edits to several bundle scripts), so the gate takes its full path.
   `analyze_incident_reference_in_docs` rule running and reporting 0 over the tree.
 - `./pw module-tests` — first run: 18988 passed, 2 failed (both expected new-rule bookkeeping: the
   canonical rule-label-order golden and the zero-match-suite coverage gate). Both fixed
-  (label list + firing fixture) and re-verified green in isolation together with the provenance
-  and new-rule tests (60 passed). Authoritative full re-run recorded in the Findings/Contract
-  sections below.
+  (label list + firing fixture). **Authoritative full re-run: 18990 passed, 14 skipped, 0 failed.**
+- After the verification-driven fixes (commit `ce13730`): `./pw quality-gate` clean again; the
+  plugin-doctor suite (134 tests incl. the new anti-vacuity test) green.
 
 ## Findings
 
-_(pending — verification sub-agent, CI, PR review)_
+**Pre-PR verification sub-agent** (independent `general-purpose` agent; read-only). It read the
+plan in full, the whole `origin/main...HEAD` diff, and swept beyond the diff. Verdicts: D1 verified
+(method + volume/count separation present), D2 verified (exemption-absence confirmed against the
+config), **D3 verified — the load-bearing cold read passes on every checked passage** (a reader who
+never saw the incident can act correctly; REPLACE genuinely implemented, no meaning deleted), D4
+verified (population-derived, unconditional, reuses existing machinery — not a fourth framework,
+scans `.py` unlike the md-only sibling), D5 verified (33/33 tests pass; positive uses the exact
+pre-fix forms, the negative layer proves REPLACE-not-DELETE), D6 verified (measurement trimmed in
+place; roadmap quarantined not deleted). Three findings, all dispositioned:
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| 1 | sub-agent | `doctor-marketplace.py:495` — a second "six content scanners" comment went stale (I fixed the identical one at line 257 but missed this). The exact falsified-count class the plan targets. | **Fixed** — commit `ce13730`, made count-neutral. |
+| 2 | sub-agent | The rule's population is published/asserted only in tests, not at runtime; a strict reading of "D4 must publish its population size" (the epic's namesake) wants a runtime signal. | **Fixed** — commit `ce13730`, the analyzer now emits an `empty_population` finding (`population_size: 0`) when the derived population is empty; catalog/provenance note it; a test pins it. |
+| 3 | sub-agent | Report committed with `Outcome: in progress` and pending sections; D5 red-first evidence not yet visible. | **Addressed** — Deliverables/Build sections were filled in `ce7f8e9` (before the sub-agent's diff snapshot); D5 red-first evidence is in the D5 bullet; the remaining sections (this one, Reviewer participation, Contract check, What-have-we-learned) finalize at the Step 8 pre-merge commit per the lane. |
+
+**CI / PR review** — recorded below once the PR is open.
 
 ## Reviewer participation
 
