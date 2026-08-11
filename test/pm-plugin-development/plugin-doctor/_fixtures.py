@@ -149,6 +149,8 @@ _atdw = _load(
     '_analyze_thinking_directive_in_workflow_docs.py', '_atdw_fixtures'
 )
 _ashm = _load('_analyze_shim_marker.py', '_ashm_fixtures')
+_aced = _load('_analyze_canonical_enum_drift.py', '_aced_fixtures')
+_arsc = _load('_analyze_readme_skill_coverage.py', '_arsc_fixtures')
 
 # ---------------------------------------------------------------------------
 # Registered-rule-ID extraction (relocated verbatim from the deleted
@@ -722,6 +724,41 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
                 '|-----------------|-------------|----------|-----------------|\n'
                 '| Triage | `provides_triage()` | [doc](standards/x.md) | 1 |\n'
             ),
+        },
+    )
+    # A canonical block documenting a truncated ``--kind`` enum ({x|y}) while the
+    # owning script's argparse choices= is {x,y,z} — a canonical-enum-choices-drift.
+    corpus['canonical-enum-choices-drift'] = FixtureSpec(
+        analyzer=_aced.analyze_canonical_enum_drift,
+        files={
+            'mybundle/skills/myskill/scripts/myscript.py': (
+                'import argparse\n\n\n'
+                'def main():\n'
+                '    parser = argparse.ArgumentParser()\n'
+                "    sub = parser.add_subparsers(dest='cmd')\n"
+                "    add = sub.add_parser('add')\n"
+                "    add.add_argument('--kind', choices=['x', 'y', 'z'])\n"
+            ),
+            'mybundle/skills/myskill/SKILL.md': (
+                '# My Skill\n\n'
+                '## Canonical invocations\n\n'
+                '### add\n\n'
+                '```bash\n'
+                'python3 .plan/execute-script.py mybundle:myskill:myscript add \\\n'
+                '  --kind {x|y}\n'
+                '```\n'
+            ),
+        },
+    )
+    # A bundle README that omits a registered skill (beta-security) from its
+    # enumeration while plugin.json registers it — a readme-skill-registration-drift.
+    corpus['readme-skill-registration-drift'] = FixtureSpec(
+        analyzer=_arsc.analyze_readme_skill_coverage,
+        files={
+            'demo/.claude-plugin/plugin.json': (
+                '{"name": "demo", "skills": ["./skills/alpha", "./skills/beta-security"]}\n'
+            ),
+            'demo/README.md': '# Demo\n\n### Skills (1)\n\n- `alpha`\n',
         },
     )
     # A component SKILL.md carrying a relative link to a file that does not
