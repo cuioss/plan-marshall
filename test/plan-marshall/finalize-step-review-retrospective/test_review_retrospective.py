@@ -697,3 +697,128 @@ def test_empty_roster_preserves_observed_only_behaviour():
     result = rr.aggregate([{'author': 'coderabbitai', 'kind': 'inline'}], enabled_reviewers=[])
     assert [r['author'] for r in result['reviewers']] == ['coderabbitai']
     assert result['enabled_reviewers'] == []
+
+
+# ---------------------------------------------------------------------------
+# D2 (plan 050) — the `comparison` grade: an instrument must not mark itself
+# complete on a comparison it could not perform
+#
+# Every case below is a `total_findings == 0` run EXCEPT the `measured` one. The
+# whole point is that a zero-findings store is AMBIGUOUS between "reviewers ran and
+# found nothing" and "no reviewer produced content"; pre-fix the aggregator carried
+# no `comparison` field at all and the two collapsed into one benign
+# "0 findings — nothing to compare". Each assertion on `comparison` fails pre-fix
+# (the key did not exist), and the discrimination test proves the two zero-findings
+# facts are now rendered differently rather than identically.
+# ---------------------------------------------------------------------------
+
+
+def test_comparison_measured_when_findings_exist():
+    # Any finding means there was content to compare — the normal path.
+    result = rr.aggregate(
+        [{'author': 'coderabbitai', 'kind': 'inline'}],
+        enabled_reviewers=['coderabbitai', 'sourcery-ai', 'cuioss-review-bot'],
+        reviewed_reviewers=['coderabbitai'],
+    )
+    assert result['comparison'] == 'measured'
+
+
+def test_comparison_clean_when_a_reviewer_reviewed_and_found_nothing():
+    # Zero findings, but pr-agent is positively substantiated as having reviewed
+    # (participated_but_empty maps into the reviewed-at-all set). Reviewers ran and
+    # found nothing — a legitimate no-op, graded `clean`, NOT indeterminate.
+    result = rr.aggregate(
+        [],
+        enabled_reviewers=['coderabbitai', 'sourcery-ai', 'cuioss-review-bot'],
+        reviewed_reviewers=['cuioss-review-bot'],
+    )
+    assert result['comparison'] == 'clean'
+    assert result['reviewed_reviewers'] == ['cuioss-review-bot']
+
+
+def test_comparison_indeterminate_when_no_reviewer_produced_content():
+    """The load-bearing case: 0 findings, a roster IS configured, none reviewed.
+
+    This is the exact run the instrument exists to detect — reviewer coverage
+    collapsed to zero — and the one that pre-fix recorded a benign
+    "0 pr-comment findings — nothing to compare". The comparison could NOT be
+    performed, so it is graded `indeterminate`, never a clean done.
+    """
+    result = rr.aggregate(
+        [],
+        enabled_reviewers=['coderabbitai', 'sourcery-ai', 'cuioss-review-bot'],
+        reviewed_reviewers=[],
+    )
+    assert result['comparison'] == 'indeterminate'
+
+
+def test_comparison_vacuous_when_no_roster_configured():
+    # Zero findings AND no enabled roster: nothing was ever expected to review, so
+    # "nothing to compare" is the honest empty — `vacuous`, distinct from the
+    # `indeterminate` case where a roster WAS configured and nobody reviewed.
+    result = rr.aggregate([], enabled_reviewers=[], reviewed_reviewers=[])
+    assert result['comparison'] == 'vacuous'
+
+
+def test_comparison_fails_closed_to_indeterminate_without_the_reviewed_signal():
+    """Omitting `reviewed_reviewers` against a non-empty roster is `indeterminate`.
+
+    The reviewed-at-all signal is the only thing that can prove a zero-findings run
+    was a clean review rather than a collapse. Absent it, the instrument must NOT
+    assume clean — an unsubstantiated review is never credited, so the fail-closed
+    default is `indeterminate`.
+    """
+    result = rr.aggregate([], enabled_reviewers=['coderabbitai', 'cuioss-review-bot'])
+    assert result['comparison'] == 'indeterminate'
+    assert result['reviewed_reviewers'] == []
+
+
+def test_comparison_clean_vs_indeterminate_discriminate_on_identical_zero_store():
+    """Two zero-findings runs over the SAME roster differ ONLY by who reviewed.
+
+    This is the discrimination proof. Both inputs have `total_findings == 0` and the
+    identical enabled roster; the sole difference is whether any reviewer is
+    substantiated as having reviewed. Pre-fix both produced byte-identical output
+    (no `comparison` field, all-`unmeasurable` rows). A mutant that hard-codes the
+    grade — the pre-fix "always a benign done" behaviour — cannot satisfy both
+    assertions at once, which is what makes this test discriminating rather than
+    decorative.
+    """
+    roster = ['coderabbitai', 'sourcery-ai', 'cuioss-review-bot']
+
+    reviewed_clean = rr.aggregate([], enabled_reviewers=roster, reviewed_reviewers=['cuioss-review-bot'])
+    nobody_reviewed = rr.aggregate([], enabled_reviewers=roster, reviewed_reviewers=[])
+
+    # Same roster, same (empty) store, same all-unmeasurable rows...
+    assert reviewed_clean['reviewer_count'] == nobody_reviewed['reviewer_count'] == 3
+    assert all(r['participation'] == 'unmeasurable' for r in reviewed_clean['reviewers'])
+    assert all(r['participation'] == 'unmeasurable' for r in nobody_reviewed['reviewers'])
+    # ...yet the grades diverge, because one substantiates a review and the other
+    # does not. That divergence is the whole fix.
+    assert reviewed_clean['comparison'] == 'clean'
+    assert nobody_reviewed['comparison'] == 'indeterminate'
+    assert reviewed_clean['comparison'] != nobody_reviewed['comparison']
+
+
+def test_comparison_states_legend_matches_the_four_graded_constants():
+    """The emitted legend enumerates exactly the four grades the code can assign.
+
+    A legend that drifts from the grades is the confident-but-wrong signal this
+    aggregator exists to avoid — so the legend keys are pinned against the module
+    constants, not a transcribed list.
+    """
+    legend = rr.aggregate([])['comparison_states']
+    assert set(legend) == {
+        rr.COMPARISON_MEASURED,
+        rr.COMPARISON_CLEAN,
+        rr.COMPARISON_VACUOUS,
+        rr.COMPARISON_INDETERMINATE,
+    }
+
+
+def test_grade_comparison_helper_is_directly_unit_testable():
+    # The pure grading helper, exercised without building a whole payload.
+    assert rr._grade_comparison(3, {'a'}, set()) == 'measured'
+    assert rr._grade_comparison(0, {'a'}, {'a'}) == 'clean'
+    assert rr._grade_comparison(0, set(), set()) == 'vacuous'
+    assert rr._grade_comparison(0, {'a'}, set()) == 'indeterminate'

@@ -84,6 +84,71 @@ _STATUS_SUMMARY_SIGNATURE = 'actionable comments posted'
 _UNATTRIBUTED = 'unattributed'
 _UNKNOWN_KIND = 'unknown'
 
+# The COMPARISON grade — the instrument's self-assessment of whether the
+# review-quality comparison it exists to perform could be performed AT ALL. It is
+# distinct from the finalize-lifecycle `--outcome` (which has no `indeterminate`
+# member and stays `done` so the non-fatal step never blocks finalize): this grade
+# is the instrument grading ITS OWN work, not the step's completion.
+#
+# The load-bearing case is zero findings. An empty `pr-comment` store is ambiguous
+# between two facts a bare "0 findings — nothing to compare" collapses: reviewers
+# ran and found nothing (a legitimate no-op), versus NO reviewer produced content
+# (the comparison was impossible — exactly the condition the instrument exists to
+# detect). The findings store alone cannot tell them apart, because a reviewer that
+# `participated_but_empty` files zero findings just like a silent one — so the
+# reviewed-at-all signal (`participated` / `participated_but_empty`, per
+# review_completeness's `_REVIEWED_STATES`) must be supplied by the caller as
+# `reviewed_reviewers`. Absent that signal on a non-empty roster the grade fails
+# CLOSED to `indeterminate`: the instrument must not mark a comparison complete it
+# could not substantiate.
+COMPARISON_MEASURED = 'measured'          # findings exist — the comparison was performed
+COMPARISON_CLEAN = 'clean'                # 0 findings, but a reviewer reviewed and found nothing
+COMPARISON_VACUOUS = 'vacuous'            # 0 findings and NO reviewer roster configured — nothing to compare
+COMPARISON_INDETERMINATE = 'indeterminate'  # 0 findings, roster configured, but no reviewer produced content
+
+
+def _grade_comparison(
+    total_findings: int,
+    enabled_reviewers: set[str],
+    reviewed_reviewers: set[str],
+) -> str:
+    """Grade whether the review-quality comparison could be performed.
+
+    The four grades are checked in strength order so exactly one is assigned:
+
+    - **`measured`** — at least one finding exists, so there is content to compare.
+    - **`clean`** — no findings, but at least one reviewer is positively
+      substantiated as having reviewed (it reviewed and found nothing). A
+      legitimate no-op.
+    - **`vacuous`** — no findings AND no reviewer roster is configured, so nothing
+      was ever expected to review. Genuinely nothing to compare — the honest empty.
+    - **`indeterminate`** — no findings, a roster IS configured, yet no reviewer is
+      substantiated as having reviewed. The comparison could not be performed, and
+      the instrument MUST NOT report a benign done: `no reviewer produced content`
+      is exactly the condition it exists to surface. This is also the fail-closed
+      default when the caller supplies no `reviewed_reviewers` signal against a
+      non-empty roster — an unsubstantiated review is never credited as a clean one.
+
+    Args:
+        total_findings: the number of `pr-comment` findings in the store.
+        enabled_reviewers: the enabled reviewer roster (`author_login` values).
+        reviewed_reviewers: the reviewers positively substantiated as having
+            reviewed the diff — the reviewed-at-all set (`participated` /
+            `participated_but_empty`) from `review_completeness`, as `author_login`
+            values. Empty when no such signal was supplied.
+
+    Returns:
+        One of :data:`COMPARISON_MEASURED`, :data:`COMPARISON_CLEAN`,
+        :data:`COMPARISON_VACUOUS`, :data:`COMPARISON_INDETERMINATE`.
+    """
+    if total_findings > 0:
+        return COMPARISON_MEASURED
+    if reviewed_reviewers:
+        return COMPARISON_CLEAN
+    if not enabled_reviewers:
+        return COMPARISON_VACUOUS
+    return COMPARISON_INDETERMINATE
+
 
 def _is_coderabbit_status_summary(record: dict[str, Any]) -> bool:
     """True when a review_body record is CodeRabbit's META status summary.
@@ -138,6 +203,7 @@ def _empty_reviewer() -> dict[str, Any]:
 def aggregate(
     records: list[dict[str, Any]],
     enabled_reviewers: list[str] | None = None,
+    reviewed_reviewers: list[str] | None = None,
 ) -> dict[str, Any]:
     """Aggregate pr-comment finding records into a per-reviewer retrospective.
 
@@ -179,6 +245,22 @@ def aggregate(
     WITH at least one record carries `participation: measured`. When
     `enabled_reviewers` is omitted the population is the observed authors alone (the
     prior behaviour), so an existing caller is unchanged.
+
+    **The `comparison` grade distinguishes a comparison that HAPPENED from one that
+    was IMPOSSIBLE.** A zero-findings store is ambiguous: reviewers may have reviewed
+    and found nothing (a legitimate no-op) or NO reviewer may have produced content
+    (the comparison could not be performed). The findings store cannot tell them
+    apart — a `participated_but_empty` reviewer files zero findings just like a
+    silent one — so `reviewed_reviewers` supplies the reviewed-at-all signal
+    (`participated` / `participated_but_empty` per `review_completeness`, as
+    `author_login` values). The emitted `comparison` is `measured` (findings exist),
+    `clean` (0 findings, a reviewer reviewed), `vacuous` (0 findings, no roster), or
+    `indeterminate` (0 findings, a roster is configured, no reviewer reviewed). The
+    last is the fail-closed default when `reviewed_reviewers` is omitted against a
+    non-empty roster: the instrument never marks a comparison complete it could not
+    substantiate. This grade is the instrument's assessment of its OWN work; it is
+    not the finalize `--outcome`, which stays `done` so the non-fatal step never
+    blocks finalize.
     """
     per_reviewer: dict[str, dict[str, Any]] = defaultdict(_empty_reviewer)
     per_author_kind: dict[tuple[str, str], int] = defaultdict(int)
@@ -260,16 +342,39 @@ def aggregate(
         for (author, kind), count in sorted(per_author_kind.items())
     ]
 
+    # Grade whether the comparison could be performed at all — so a zero-findings
+    # run that rests on NO reviewer having produced content is `indeterminate`,
+    # never a benign done. The reviewed-at-all signal comes from the caller
+    # (`reviewed_reviewers`); absent it on a non-empty roster the grade fails closed.
+    comparison = _grade_comparison(
+        len(records),
+        set(enabled_reviewers or []),
+        set(reviewed_reviewers or []),
+    )
+
     return {
         'status': 'success',
         'total_findings': len(records),
         'reviewer_count': len(reviewers),
         'enabled_reviewers': sorted(enabled_reviewers or []),
+        # The reviewers positively substantiated as having reviewed the diff, echoed
+        # so the population behind the `comparison` grade is visible, never implied.
+        'reviewed_reviewers': sorted(reviewed_reviewers or []),
+        # The instrument's self-grade: did the review-quality comparison happen?
+        # `indeterminate` marks a comparison that COULD NOT be performed (no reviewer
+        # produced content), which a bare "0 findings — nothing to compare" hides.
+        'comparison': comparison,
         'reviewers': reviewers,
         'by_author_kind': by_author_kind,
         'participation_states': {
             'measured': 'at least one record attributed — the reviewer can be judged',
             'unmeasurable': 'enabled but no record — store substantiates neither participation nor absence; never scored or ranked',
+        },
+        'comparison_states': {
+            'measured': 'findings exist — the review-quality comparison was performed',
+            'clean': '0 findings, but a reviewer reviewed and found nothing — a legitimate no-op',
+            'vacuous': '0 findings and no reviewer roster configured — nothing was expected to compare',
+            'indeterminate': '0 findings, a roster was configured, but no reviewer produced content — the comparison could NOT be performed; never a benign done',
         },
         'kind_actionability': {
             'inline': 'actionable',
@@ -328,14 +433,36 @@ def main(argv: list[str]) -> int:
             'behaviour.'
         ),
     )
+    parser.add_argument(
+        '--reviewed-reviewers',
+        nargs='?',
+        const='',
+        default='',
+        help=(
+            'Comma-separated author_login values for the reviewers positively '
+            'substantiated as having REVIEWED the diff — the reviewed-at-all set '
+            '(participated / participated_but_empty) from review_completeness. Feeds '
+            'the `comparison` grade: on a zero-findings run it is what separates '
+            '`clean` (a reviewer reviewed and found nothing) from `indeterminate` (no '
+            'reviewer produced content — the comparison could not be performed). May '
+            'be supplied bare (no value), which reads as the empty set; against a '
+            'non-empty enabled roster that yields `indeterminate` — the instrument '
+            'never credits an unsubstantiated review as a clean one.'
+        ),
+    )
     args = parser.parse_args(argv)
 
     try:
         from toon_parser import serialize_toon
 
         enabled_reviewers = [r.strip() for r in (args.enabled_reviewers or '').split(',') if r.strip()]
+        reviewed_reviewers = [r.strip() for r in (args.reviewed_reviewers or '').split(',') if r.strip()]
         records = _read_pr_comment_findings(args.plan_id)
-        result = aggregate(records, enabled_reviewers=enabled_reviewers)
+        result = aggregate(
+            records,
+            enabled_reviewers=enabled_reviewers,
+            reviewed_reviewers=reviewed_reviewers,
+        )
         sys.stdout.write(serialize_toon(result) + '\n')
         return 0
     except Exception as e:

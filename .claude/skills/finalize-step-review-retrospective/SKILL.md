@@ -131,26 +131,64 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
 Read both resolved and pending findings (the retrospective wants the full
 picture). The records carry first-class `author` and `kind` fields.
 
-**Zero-findings skip-clean exit**: if `filtered_count` is 0, record the step as
-done and return — there is nothing to compare. Resolve the HEAD SHA immediately
-before marking done, per § HEAD-dependency. Read it from **`{main_checkout}`**:
-this step is ordered at 990, after `default:branch-cleanup` (70) has merged and
-REMOVED the worktree, so `{worktree_path}` no longer exists on disk and a
-`git -C` against it fails — leaving the mandatory `--head-at-completion`
-unresolvable. `{main_checkout}` is the tree the merge landed on and is present
-on both the worktree and no-worktree flows (§ HEAD-dependency states the same
-rule for every terminal record):
+**Zero-findings GRADED exit**: if `filtered_count` is 0 there is nothing to
+compare — but **an empty store is ambiguous, and the step MUST NOT mark itself
+complete on a comparison it could not perform.** Zero `pr-comment` findings is the
+identical store for two opposite facts: reviewers ran and found nothing (a
+legitimate no-op), and NO reviewer produced content (reviewer coverage collapsed —
+exactly the condition this instrument exists to detect). A `participated_but_empty`
+reviewer files zero findings just like a silent one, so the store alone cannot tell
+them apart. **Do not record the benign `"0 pr-comment findings — nothing to
+compare"`** — that string renders the collapse identically to a clean review, which
+is the defect this exit closes. Grade the comparison instead.
+
+The distinguisher is the **reviewed-at-all** signal: which enabled reviewers
+resolved to `participated` / `participated_but_empty` (the `_REVIEWED_STATES` of
+`review_completeness`). Derive the enabled roster exactly as Step 2 does, and the
+reviewed set from `review_completeness`'s `bot_states` (states `participated` /
+`participated_but_empty`, mapped to each bot's `author_login`) when that
+classification is available for this plan; when it is not, pass `--reviewed-reviewers`
+bare and the grade **fails closed to `indeterminate`** — an unsubstantiated review
+is never credited as a clean one. Run the aggregator even though findings are zero:
+
+```bash
+python3 .plan/execute-script.py default-bundle:finalize-step-review-retrospective:review_retrospective run \
+  --plan-id {plan_id} --enabled-reviewers "{enabled_author_logins}" \
+  --reviewed-reviewers "{reviewed_author_logins}"
+```
+
+Read `comparison` from the TOON (`measured` / `clean` / `vacuous` / `indeterminate`
+— see `comparison_states`). Then resolve the HEAD SHA immediately before marking
+done, per § HEAD-dependency. Read it from **`{main_checkout}`**: this step is
+ordered at 990, after `default:branch-cleanup` (70) has merged and REMOVED the
+worktree, so `{worktree_path}` no longer exists on disk and a `git -C` against it
+fails — leaving the mandatory `--head-at-completion` unresolvable. `{main_checkout}`
+is the tree the merge landed on and is present on both the worktree and no-worktree
+flows (§ HEAD-dependency states the same rule for every terminal record):
 
 ```bash
 git -C {main_checkout} rev-parse HEAD
 ```
 
-Capture stdout as `{sha}` and forward it via `--head-at-completion`:
+Capture stdout as `{sha}`, and choose the `--display-detail` from the grade — never
+a bare comment count:
+
+| `comparison` | `--display-detail` |
+|---|---|
+| `clean` | `reviewed-clean — {k} reviewer(s) reviewed, 0 findings; nothing to compare` |
+| `vacuous` | `no reviewer roster configured — nothing to compare` |
+| `indeterminate` | `indeterminate — 0 findings and no reviewer produced content; review-quality comparison could not be performed` |
+
+`--outcome` stays **`done`** for every grade: the finalize `--outcome` enum has no
+`indeterminate` member, and this step is non-fatal — it must never block finalize
+(§ Error Handling). The `indeterminate` grade lives in the `--display-detail` and
+the persisted artifact, not in the lifecycle outcome. The grade is the instrument's
+assessment of its OWN work; the `done` outcome only says the step ran.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step project:finalize-step-review-retrospective \
-  --outcome done --display-detail "0 pr-comment findings — nothing to compare" \
+  --outcome done --display-detail "{graded_detail}" \
   --head-at-completion {sha}
 ```
 
@@ -172,17 +210,25 @@ from the responding authors alone gives them **no row** — rendering three dist
 facts identically (the vacuous-set archetype: the population becomes a strict subset
 of its own domain). A row per enabled reviewer closes that.
 
+Also pass `--reviewed-reviewers` — the `author_login`s that resolved to
+`participated` / `participated_but_empty` (`review_completeness`'s reviewed-at-all
+set), when that classification is available for this plan. It feeds the `comparison`
+grade; on a run with findings the grade is `measured` regardless, but passing it
+keeps the same call shape as the zero-findings exit above.
+
 ```bash
 python3 .plan/execute-script.py default-bundle:finalize-step-review-retrospective:review_retrospective run \
-  --plan-id {plan_id} --enabled-reviewers "{enabled_author_logins}"
+  --plan-id {plan_id} --enabled-reviewers "{enabled_author_logins}" \
+  --reviewed-reviewers "{reviewed_author_logins}"
 ```
 
 Parse the TOON. Key fields:
 
-- `total_findings`, `reviewer_count`, `enabled_reviewers`
+- `total_findings`, `reviewer_count`, `enabled_reviewers`, `reviewed_reviewers`
+- `comparison` — `measured` / `clean` / `vacuous` / `indeterminate` (see `comparison_states`): the instrument's grade of whether the review-quality comparison could be performed. `indeterminate` names a run where no reviewer produced content — never render it, or a `vacuous` run, as a clean comparison.
 - `reviewers[]{author,participation,raw_total,actionable_count,meta_count,fixed,accepted,taken_into_account,rejected,suppressed,pending,positives_count,false_positives_count,resolved_actionable_count,actionable_fixed_count,pct_resolved_as_fixed}`
 - `by_author_kind[]{author,kind,count}` — the per-`(author, kind)` breakdown
-- `kind_actionability`, `resolution_quality`, and `participation_states` — the mapping legends
+- `kind_actionability`, `resolution_quality`, `participation_states`, and `comparison_states` — the mapping legends
 
 `participation` is now a first-class per-row field: `measured` (at least one record
 attributed — the reviewer can be judged) or `unmeasurable` (enabled but no record —
@@ -316,7 +362,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 | Scenario | Action |
 |----------|--------|
-| Zero pr-comment findings | Skip-clean exit — `mark-step-done --outcome done --display-detail "0 pr-comment findings — nothing to compare" --head-at-completion {sha}` so the `phase_steps_complete` handshake counts the step as done |
+| Zero pr-comment findings | **Graded exit, not a benign skip** (§ Step 1). Run the aggregator on the empty store, read `comparison`, and `mark-step-done --outcome done` (non-fatal, always) with the grade's `--display-detail`: `reviewed-clean …` / `no reviewer roster configured …` / `indeterminate — 0 findings and no reviewer produced content …`. Never the flat `"0 pr-comment findings — nothing to compare"` — it renders a coverage collapse identically to a clean review. |
 | Aggregator returns `status: error` | Non-fatal — log the error, skip the qualitative pass, and `mark-step-done --outcome done --head-at-completion {sha}` with a display detail noting the aggregator failure. The retrospective must never block finalize. |
 | `manage-files write` failure | Non-fatal — log the failure and still `mark-step-done --outcome done --head-at-completion {sha}`. The artifact is advisory; finalize must not abort. |
 
@@ -331,7 +377,7 @@ The canonical argparse surface for the backing aggregator `review_retrospective.
 
 ```bash
 python3 .plan/execute-script.py default-bundle:finalize-step-review-retrospective:review_retrospective run \
-  --plan-id PLAN_ID [--enabled-reviewers [ENABLED_REVIEWERS]]
+  --plan-id PLAN_ID [--enabled-reviewers [ENABLED_REVIEWERS]] [--reviewed-reviewers [REVIEWED_REVIEWERS]]
 ```
 
 `--enabled-reviewers` is a comma-separated list of `author_login` values for the
@@ -340,6 +386,15 @@ reviewers this PR enabled. Every enabled reviewer gets a row — carrying
 that produced nothing, one that never ran, and one that refused no longer collapse
 into having no row. It may be supplied bare (no value), which reads as the empty
 roster and preserves the prior observed-authors-only behaviour.
+
+`--reviewed-reviewers` is a comma-separated list of `author_login` values for the
+reviewers positively substantiated as having REVIEWED the diff — the reviewed-at-all
+set (`participated` / `participated_but_empty`) from `review_completeness`. It feeds
+the `comparison` grade: on a zero-findings run it separates `clean` (a reviewer
+reviewed and found nothing) from `indeterminate` (no reviewer produced content). It
+may be supplied bare (no value), which reads as the empty set; against a non-empty
+enabled roster that yields `indeterminate` — the instrument never credits an
+unsubstantiated review as a clean one.
 
 ## Related
 
