@@ -267,32 +267,37 @@ def _scan_file(path: Path, rel_to_bundles: str, default_cfg: dict[str, list[str]
 
         spans = _inline_code_spans(line)
 
-        # Emit at most one finding per line (the family is singular), from the
-        # first narration form whose match starts outside an inline-code span.
+        # Emit at most one finding per line, from the first narration match — of
+        # any form — whose start is OUTSIDE an inline-code span. Iterate ALL
+        # matches of each pattern (``finditer``, not just the first ``search``):
+        # a back-ticked reference early on a line must not mask a bare reference
+        # later on the SAME line (the concrete case is pinned by the rule's tests).
+        emitted = False
         for family_name, pattern in _PATTERNS:
-            m = pattern.search(line)
-            if not m:
-                continue
-            # Skip matches whose start offset is fully inside an inline-code
-            # span — those are code-token references, not narration.
-            if _offset_in_inline_code(m.start(), spans):
-                continue
-            findings.append(
-                Finding(
-                    type=FINDING_TYPE,
-                    file=str(path),
-                    line=idx + 1,
-                    severity='warning',
-                    fixable=False,
-                    rule_id=RULE_ID,
-                    description=(
-                        'Incident reference — state the mechanism the incident '
-                        'named, not the PR number. See rule-catalog.md.'
-                    ),
-                    extra={'rule': RULE_NAME, 'snippet': m.group(0), 'pattern_family': family_name},
+            for m in pattern.finditer(line):
+                # Skip matches whose start offset is fully inside an inline-code
+                # span — those are code-token references, not narration.
+                if _offset_in_inline_code(m.start(), spans):
+                    continue
+                findings.append(
+                    Finding(
+                        type=FINDING_TYPE,
+                        file=str(path),
+                        line=idx + 1,
+                        severity='warning',
+                        fixable=False,
+                        rule_id=RULE_ID,
+                        description=(
+                            'Incident reference — state the mechanism the incident '
+                            'named, not the PR number. See rule-catalog.md.'
+                        ),
+                        extra={'rule': RULE_NAME, 'snippet': m.group(0), 'pattern_family': family_name},
+                    )
                 )
-            )
-            break
+                emitted = True
+                break
+            if emitted:
+                break
 
     return [f.to_dict() for f in findings]
 

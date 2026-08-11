@@ -144,6 +144,20 @@ class TestPositiveDetection:
         assert len(findings) == 1
         assert findings[0]['file'].endswith('_github_pr.py')
 
+    def test_bare_ref_after_backticked_ref_on_same_line_fires(self, tmp_path: Path) -> None:
+        """A back-ticked reference must NOT mask a bare reference later on the same line.
+
+        Regression for the ``search()``-only scan: the analyzer must iterate all
+        matches per family (``finditer``) so a code-token reference early on a
+        line does not bypass a real narration reference after it.
+        """
+        content = 'See `plan-marshall#100` for context, but plan-marshall#101 is the live shape.\n'
+        root, _ = _make_skill_file(tmp_path, content)
+        findings = analyze_incident_reference_in_docs(root)
+        assert len(findings) == 1
+        assert findings[0]['rule_id'] == RULE_ID
+        assert findings[0]['snippet'] == 'plan-marshall#101'
+
     def test_finding_shape(self, tmp_path: Path) -> None:
         """Finding carries the expected shape fields."""
         content = 'Observed on plan-marshall#1045: the required bot never reviewed.\n'
