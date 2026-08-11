@@ -50,15 +50,30 @@ All loaded by reading the bundle-source path (the `plan-marshall` plugin is not 
 
 ## Deliverables
 
-_(filled as implementation proceeds)_
+- **D1 (GATE) — done.** All verdicts recorded above (§ "D1 GATE decisions"). (a) value-materialisation; (b) `effort: {}`; (c) invariant confirmed, named tests `test_materialised_effort_resolves_identically_to_unset` + `test_materialised_scope_resolves_identically_to_unset`. D4 split decision: no split. Mutates nothing. Commit: n/a (analysis).
+- **D2 — done** (commit `5d45dbd`). `DEFAULT_ORCHESTRATOR` now `{'auto_emit': False, 'effort': {}, 'parallelization_scope': 1}` (`_config_defaults.py`). `get_default_config()` deep-copies it (S1). `sync-defaults`' `_deep_merge_missing` back-fills existing projects (S2) with no merge-path change. Config-surface enumeration recorded above (§ D2). Verification: `test_seed_surfaces_every_orchestrator_knob`, `test_get_default_config_seeds_orchestrator_block_with_every_knob`, `test_sync_defaults_backfills_orchestrator_block`, `test_sync_defaults_backfills_new_knobs_into_legacy_block`.
+- **D3 — done** (commit `5d45dbd`). Both defending comments rewritten (`_config_defaults.py` block comment before `DEFAULT_ORCHESTRATOR`; the comment before `validate_orchestrator_block`; the `get_default_config` inline comment) to state the default-surfacing rule + cross-reference recipe Aspect 1 / `config-design-principles.md`; the "(empty)" self-validate comment corrected. Cold-read (Step 6): PASS — see Findings. Verification: cold-read sub-agent.
+- **D4 — done** (commit `5d45dbd`, analysis). Sweep across all 17 module-level `DEFAULT_*` constants; population + trace recorded above (§ D4). Sole gap = the orchestrator block (closed by D2). `BUILD_SYSTEM_DEFAULTS` = documented runtime-only exclusion. No split. Independently corroborated by the verification sub-agent (the orchestrator block is the only one whose settable-field whitelist is decoupled from its seed dict).
+- **D5 — done** (commit `5d45dbd`). (a) `test_seed_surfaces_every_orchestrator_knob` + `test_get_default_config_seeds_orchestrator_block_with_every_knob` — both fail against the old `{'auto_emit': False}` seed (pin the fix). (b) `test_materialised_effort_resolves_identically_to_unset` (uses non-default `plan.effort=level-5` to prove the fall-through coupling survives) + `test_materialised_scope_resolves_identically_to_unset` (ask-prefill `value if set else 1` contract, both yield 1). (c) `test_validation_accepts_both_seeded_and_legacy_shapes` (genuine `{'auto_emit': false}` legacy fixture) + `test_sync_defaults_backfills_new_knobs_into_legacy_block`.
+- **Docs — done** (commit `5d45dbd`). `configuration.adoc`: new `[#orchestrator-knobs]` section for the two newly-materialised keys + `orchestrator` added to the top-level surface list.
+- **Declared collateral truthfulness fixes** (in-scope for a "truthful-signals" change; my change falsified these statements):
+  - `data-model.md` (commit `5d45dbd`) — the section intro's "slots stay unset until written", the "block carrying only the seeded `auto_emit`" phrasing, and the Validation section's "seeded shape (`{"auto_emit": false}`)" all corrected to the surfaced three-key shape (legacy block still noted valid). Beyond the plan's literally-declared doc surface (`configuration.adoc`), but required: leaving them would reproduce the D3 defect in the canonical reference doc.
+  - `_cmd_orchestrator.py` (commit `d711e88`) — `cmd_orchestrator_get` comment + docstring that said `parallelization_scope` "carries no seeded default, so its fallback is `None`" corrected (fallback is now `1`). Found by the verification sub-agent; the same misleading-comment archetype D3 targets.
 
 ## Build gate
 
-_(pending)_
+Python changed (`git diff --name-only origin/main...HEAD -- '*.py'` → `_config_defaults.py`, `_cmd_orchestrator.py`, and four test files), so the gate took its full path.
+
+- `./pw verify plan-marshall` (implementation commit): **clean** — mypy "no issues found in 274 source files", ruff "All checks passed!", SPDX passed, second lint pass clean; **15881 passed, 1 skipped** in 277.83s.
+- `./pw quality-gate` (comment-fix commit): **clean** — mypy "no issues found in 389 source files" (only pre-existing `[annotation-unchecked]` informational notes), ruff "All checks passed!", SPDX passed, plugin-doctor `status: pass, total_issues: 0` across 33 rules.
 
 ## Findings
 
-_(pending — verification sub-agent, CI, PR review)_
+- **Cold read (Step 6, D3) — PASS.** Source: dedicated cold-read sub-agent, given ONLY the rewritten `DEFAULT_ORCHESTRATOR` comment + a hypothetical new settable-but-unseeded knob. Verdict: **SEED** ("a knob that is settable in code but absent from the seeded file is a default-surfacing gap, never an intentional omission"). The rewrite does not reproduce the defect. Disposition: no action needed.
+- **Verification sub-agent (Step 6) — 1 finding, FIXED.** `_cmd_orchestrator.py` `cmd_orchestrator_get` comment/docstring said `parallelization_scope` "carries no seeded default, so its fallback is `None`" — false after D2 (fallback is now `1`). Low severity, comment-only. Disposition: **fixed** in commit `d711e88` (the load-bearing `set`-flag semantics preserved; behaviour unchanged). All other deliverables: PASS (D1–D5, docs, behaviour-preservation confirmed inert — the ask pre-fill keys off `set`, still `False` for a legacy unset field).
+- **Verification note (not a defect) — `data-model.md` beyond declared doc surface.** Disposition: accepted and declared (see Deliverables § collateral fixes) — required to avoid reproducing the D3 defect in the canonical reference.
+- **Re-verification (Step 6, post-fix):** dispatched (focused: confirm the fix + scan the whole diff for sibling stale comments). Result recorded below when it returns.
+- **CI / PR review findings:** recorded after the PR opens.
 
 ## Reviewer participation
 
