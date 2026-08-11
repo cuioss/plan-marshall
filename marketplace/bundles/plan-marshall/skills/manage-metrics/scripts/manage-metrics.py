@@ -340,10 +340,12 @@ def _token_population(phase_row: dict) -> str:
 # of them let the third exceed the rendered figure with the report never saying
 # so. Two eligibility rules keep the comparison honest:
 #
-#   * A measure that cannot state its own coverage may not win. Only
-#     `dispatch_boundary_total` can under-cover (its file may hold fewer rows
-#     than the phase had dispatches), so it is refused the maximum when it is
-#     PARTIAL.
+#   * A measure whose coverage is not exact may not win. Only
+#     `dispatch_boundary_total` can diverge from `subagent_samples` (its file may
+#     hold fewer rows than the phase had dispatches — PARTIAL, a floor — or, across
+#     a resume/re-entry, MORE rows than were sampled — OVER, an impossible /
+#     inflated figure). It is refused the maximum in BOTH cases; only an exact or
+#     coverage-undecidable measure competes (see `_boundary_coverage_state`).
 #   * A measure of a DIFFERENT population may not enter at all. On an `inline`
 #     row `total_tokens` carries a main-context measurement (see
 #     `_token_population`), so it is excluded — putting it in a
@@ -355,20 +357,64 @@ _DISPATCHED_MEASURE_FIELDS = (
     'subagent_total_tokens',
 )
 
+# ---------------------------------------------------------------------------
+# The declared dispatch-boundary population — the classes it excludes
+# ---------------------------------------------------------------------------
+#
+# ``dispatch_boundary_rows_recorded`` counts only the dispatches that call
+# ``record-dispatch-boundary``. That call is issued from a SUBSET of the dispatch
+# classes the orchestrator spawns, so the boundary population is a DECLARED SUBSET
+# of the dispatched population ``enrich`` samples as ``subagent_samples`` — never
+# the whole of it. The classes below register NO boundary; a
+# ``dispatch_boundary_rows_recorded < subagent_samples`` shortfall is expected for
+# exactly these classes. NAMING them is what turns a silent denominator gap into a
+# declared exclusion — an un-named omission is indistinguishable from a class that
+# did not run.
+#
+# Derived from the DISPATCHING code — the call graph in
+# ``ref-workflow-architecture/standards/call-graph.md`` and the
+# ``record-dispatch-boundary`` call sites in the phase workflow docs
+# (``workflow/execution.md`` → 5-execute, ``workflow/planning-outline.md`` →
+# 4-plan, ``phase-6-finalize/SKILL.md`` → 6-finalize) — NOT from any single run's
+# emitted classes, which by construction cannot contain a class that never
+# registers. Of the 9 dispatch classes the call graph enumerates, 3 register a
+# boundary (phase-4-plan, phase-5-execute, phase-6-finalize); the 6 below do not.
+DISPATCH_BOUNDARY_EXCLUDED_CLASSES = (
+    'phase-2-refine',        # main envelope dispatch; issues no record-dispatch-boundary
+    'phase-3-outline',       # main envelope dispatch; issues no record-dispatch-boundary
+    'q-gate-validation',     # shared Q-Gate dispatch (fires from 2-refine / 3-outline / 4-plan)
+    'verification-feedback', # shared triage dispatch (fires from 5-execute / 6-finalize)
+    'research',              # ad-hoc research dispatch (any phase)
+    'enrich-module',         # 6-finalize architecture-refresh parallel dispatch
+)
 
-def _boundary_measure_is_partial(phase_row: dict) -> bool | None:
-    """Does ``dispatch_boundary_total`` under-cover the phase's dispatches?
 
-    Compares the boundary file's row count against ``subagent_samples`` — the
-    count of dispatch returns ``enrich``'s transcript walk attributed to the same
-    window. Fewer boundary rows than dispatches means the sum covers only part of
-    the population it claims to measure.
+def _boundary_coverage_state(phase_row: dict) -> str | None:
+    """Classify ``dispatch_boundary_total``'s coverage against ``subagent_samples``.
 
-    Returns ``None`` when the coverage is UNDECIDABLE: a row carrying no
-    ``subagent_samples`` was never walked by ``enrich``, so there is no reference
-    count to compare against. Undecidable is deliberately NOT partial — treating
-    it as partial would refuse the maximum on every un-enriched plan and lose the
-    accumulator-under-count recovery the reconciliation exists for.
+    The two counts are produced by DIFFERENT mechanisms, so a coverage ratio only
+    holds when both measure one population:
+
+    - numerator ``dispatch_boundary_rows_recorded`` — the number of rows the
+      boundary-file writer (``record-dispatch-boundary``) appended for this phase;
+    - denominator ``subagent_samples`` — the count of dispatch returns
+      ``enrich``'s transcript walk attributed to the phase window.
+
+    Returns one of four commensurability outcomes:
+
+    - ``None`` (UNDECIDABLE) — the row carries no ``subagent_samples``, so there is
+      no reference count. Deliberately NOT partial: treating it as partial would
+      refuse the maximum on every un-enriched plan and lose the accumulator-
+      under-count recovery the reconciliation exists for.
+    - ``'partial'`` — ``rows < samples``. The boundary file covers fewer dispatches
+      than ``enrich`` sampled; the sum is a floor. Expected for the declared
+      exclusion classes (see ``DISPATCH_BOUNDARY_EXCLUDED_CLASSES``).
+    - ``'exact'`` — ``rows == samples``. The two independent counts agree.
+    - ``'over'`` — ``rows > samples``. IMPOSSIBLE for a single population: the
+      numerator exceeds the denominator. The two counts are drawn from different
+      populations (e.g. a resumed / re-entered phase appends boundary rows the
+      single-window ``enrich`` walk never re-counts), so this is not a coverage
+      ratio at all — a loud failure, never ``complete``.
     """
     samples = phase_row.get('subagent_samples')
     if not isinstance(samples, int):
@@ -376,7 +422,25 @@ def _boundary_measure_is_partial(phase_row: dict) -> bool | None:
     rows = phase_row.get('dispatch_boundary_rows_recorded')
     if not isinstance(rows, int):
         return None
-    return rows < samples
+    if rows < samples:
+        return 'partial'
+    if rows > samples:
+        return 'over'
+    return 'exact'
+
+
+def _boundary_measure_is_partial(phase_row: dict) -> bool | None:
+    """Does ``dispatch_boundary_total`` under-cover the phase's dispatches?
+
+    Thin wrapper over :func:`_boundary_coverage_state` preserved for callers that
+    only need the under-coverage bit: ``True`` for ``'partial'``, ``False`` for
+    ``'exact'`` / ``'over'`` (an over-covering measure is not *under*-covering),
+    ``None`` when coverage is undecidable.
+    """
+    state = _boundary_coverage_state(phase_row)
+    if state is None:
+        return None
+    return state == 'partial'
 
 
 def _eligible_dispatched_measures(phase_row: dict) -> list[tuple[str, int]]:
@@ -386,7 +450,7 @@ def _eligible_dispatched_measures(phase_row: dict) -> list[tuple[str, int]]:
     deterministically to the earliest-declared measure.
     """
     population = _token_population(phase_row)
-    boundary_partial = _boundary_measure_is_partial(phase_row)
+    boundary_state = _boundary_coverage_state(phase_row)
 
     eligible: list[tuple[str, int]] = []
     for field in _DISPATCHED_MEASURE_FIELDS:
@@ -395,7 +459,12 @@ def _eligible_dispatched_measures(phase_row: dict) -> list[tuple[str, int]]:
             continue
         if field == 'total_tokens' and population == POPULATION_INLINE:
             continue
-        if field == 'dispatch_boundary_total' and boundary_partial:
+        # A boundary sum is refused the maximum when it cannot be trusted as a
+        # competing measurement: PARTIAL (a floor — fewer rows than dispatches) or
+        # OVER (impossible — more rows than dispatches, so an inflated / double-
+        # counted figure across a resume boundary). Only a coverage-decidable,
+        # non-over measure competes.
+        if field == 'dispatch_boundary_total' and boundary_state in ('partial', 'over'):
             continue
         eligible.append((field, int(value)))
     return eligible
@@ -411,6 +480,31 @@ def _reconcile_dispatched_measures(phase_row: dict) -> tuple[str, int] | None:
     if not eligible:
         return None
     return max(eligible, key=lambda item: item[1])
+
+
+def _reconciliation_relation_clause(value: int, beaten: int | None) -> str:
+    """Render the TRUE relation of a winning measure to the ``total_tokens`` it met.
+
+    The winning measure is compared against ``beaten`` (the row's recorded
+    ``total_tokens``) and annotated with the relation that actually holds:
+
+    - ``value > beaten`` → ``(> total_tokens N)`` — the measure recovered an
+      under-count in ``total_tokens``.
+    - ``value == beaten`` → ``(= total_tokens N; measures agree)`` — the
+      reconciliation IDENTITY: two independent producers agree exactly. This is
+      the single most valuable signal the surface emits; a strict ``>`` here would
+      tell the reader the ledger under-counted when it agreed.
+    - ``value < beaten`` → ``(< total_tokens N)`` — a genuine anomaly (the winner
+      is below the total it was compared against), never dressed up as agreement.
+    - ``beaten is None`` → ``(no recorded total_tokens)`` — nothing to compare.
+    """
+    if beaten is None:
+        return ' (no recorded total_tokens)'
+    if value > beaten:
+        return f' (> total_tokens {beaten:,})'
+    if value == beaten:
+        return f' (= total_tokens {beaten:,}; measures agree)'
+    return f' (< total_tokens {beaten:,})'
 
 
 def _accumulator_path(plan_id: str, phase: str) -> Path:
@@ -470,8 +564,9 @@ def _read_dispatch_boundary_totals(plan_id: str, phase: str) -> tuple[int, int]:
     sum because the sum ALONE cannot state its own coverage: a boundary file
     holding three of a phase's five dispatches sums to a smaller-but-honest-looking
     figure, and without the count nothing downstream can tell that measure apart
-    from a complete one. ``rows_counted`` is what lets the reconciliation mark the
-    measure PARTIAL and refuse it the maximum.
+    from a complete one. ``rows_counted`` is what lets the reconciliation classify
+    the measure's coverage (PARTIAL / exact / OVER) and refuse a partial or
+    over-covering measure the maximum (see ``_boundary_coverage_state``).
 
     Returns ``(0, 0)`` when the file is absent, empty, or carries no parseable
     row — the caller (``cmd_generate``) treats that as a clean no-op, so a plan
@@ -1417,9 +1512,10 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         # Symmetric same-population reconciliation across ALL THREE competing
         # measures of the dispatched population (never their sum — they count the
         # same leaves). The largest ELIGIBLE measure wins and feeds the Total via
-        # tokens_values; a partial boundary measure and a cross-population
-        # total_tokens are both ineligible. When the winner is not total_tokens,
-        # the phase is recorded so the annotation below names which measure won.
+        # tokens_values; a partial or over-covering boundary measure and a
+        # cross-population total_tokens are all ineligible. When the winner is not
+        # total_tokens, the phase is recorded so the annotation below names which
+        # measure won.
         raw_tokens = _numeric(phase.get('total_tokens'))
         winner = _reconcile_dispatched_measures(phase)
         if winner is not None:
@@ -1533,19 +1629,21 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     lines.append(_format_row(total_row))
     lines.append('')
 
-    # Reconciliation annotation: name the phases whose Tokens cell renders the
-    # dispatch-boundary sum instead of the recorded total, stating the deliberate
-    # under-count correction (same-population max) inline under the table.
+    # Reconciliation annotation: name the phases whose Tokens cell renders a
+    # competing dispatched measure instead of the recorded total, and state the
+    # TRUE relation to that total. A winner that EQUALS total_tokens is the
+    # reconciliation identity (agreement), not the under-count a blanket "> " would
+    # assert; a smaller one is a genuine anomaly. See _reconciliation_relation_clause.
     if reconciled_phases:
         details = ', '.join(
-            f'{name} → {field} {value:,}'
-            + (f' (> total_tokens {beaten:,})' if beaten is not None else ' (no recorded total_tokens)')
+            f'{name} → {field} {value:,}' + _reconciliation_relation_clause(value, beaten)
             for name, field, value, beaten in reconciled_phases
         )
         lines.append(
             '> Tokens reconciled across the competing measures of the dispatched '
             'population (largest eligible measure wins, never their sum, since all '
-            'three count the same leaves; a partial measure is ineligible): '
+            'three count the same leaves; a partial or over-covering measure is '
+            'ineligible): '
             f'{details}'
         )
         lines.append('')
@@ -1582,6 +1680,31 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                 f'{", ".join(mixed_population_phases)}.'
             )
         lines.append(' '.join(population_clauses))
+        lines.append('')
+
+    # Declared dispatch-boundary population. Whenever the report carries a boundary
+    # numerator (dispatch_boundary_*) or a subagent_samples denominator, NAME the
+    # dispatch classes that register no boundary, so a
+    # `dispatch_boundary_rows_recorded < subagent_samples` shortfall reads as a
+    # DECLARED exclusion rather than as missing data — the coverage figures below
+    # reference this declaration. Silent exclusion is the defect the ledger exists
+    # to avoid; see DISPATCH_BOUNDARY_EXCLUDED_CLASSES (derived from the call graph).
+    boundary_surface_present = any(
+        isinstance(p.get('subagent_samples'), int)
+        or _numeric(p.get('dispatch_boundary_total')) is not None
+        or isinstance(p.get('dispatch_boundary_rows_recorded'), int)
+        for p in phases.values()
+    )
+    if boundary_surface_present:
+        lines.append(
+            '> Dispatch-boundary population: dispatch_boundary_rows_recorded counts only the '
+            'dispatch classes that call record-dispatch-boundary — a DECLARED SUBSET of the '
+            'dispatched population enrich samples as subagent_samples, never the whole of it. '
+            'These dispatch classes register no boundary and are excluded by declaration: '
+            f'{", ".join(DISPATCH_BOUNDARY_EXCLUDED_CLASSES)}. A phase whose boundary rows fall '
+            'short of its subagent_samples is short by exactly these excluded classes; boundary '
+            'rows that EXCEED subagent_samples are a population failure, not a coverage figure.'
+        )
         lines.append('')
 
     # Phase details
@@ -1651,21 +1774,36 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             # measure has not earned.
             rows_recorded = phase.get('dispatch_boundary_rows_recorded')
             samples = phase.get('subagent_samples')
-            boundary_partial = _boundary_measure_is_partial(phase)
-            if boundary_partial is None:
+            boundary_state = _boundary_coverage_state(phase)
+            if boundary_state is None:
                 coverage = (
                     f'{rows_recorded} row(s) recorded, coverage undecidable — the phase '
                     'carries no subagent_samples to compare against'
                     if isinstance(rows_recorded, int)
                     else 'coverage undecidable'
                 )
-            elif boundary_partial:
+            elif boundary_state == 'partial':
                 coverage = (
                     f'PARTIAL: {rows_recorded} of {samples} dispatch(es) recorded, so this '
                     'measure is a floor and is ineligible for the reconciliation maximum'
                 )
-            else:
-                coverage = f'{rows_recorded} of {samples} dispatch(es) recorded — complete'
+            elif boundary_state == 'over':
+                # Numerator > denominator is IMPOSSIBLE for one population. Never
+                # 'complete': it is a loud failure that names both producers so the
+                # reader sees the two counts are not commensurable, and the measure
+                # is refused the maximum rather than inflating the Total.
+                coverage = (
+                    f'FAILURE: {rows_recorded} boundary rows recorded exceed {samples} '
+                    'sampled dispatch(es) — the numerator (dispatch-boundary rows, written '
+                    'by record-dispatch-boundary) and the denominator (subagent_samples, from '
+                    "enrich's transcript walk) are different populations, so this is not a "
+                    'coverage ratio; the measure is ineligible for the reconciliation maximum'
+                )
+            else:  # 'exact'
+                coverage = (
+                    f'{rows_recorded} of {samples} dispatch(es) recorded — complete '
+                    '(numerator: dispatch-boundary rows; denominator: subagent_samples from enrich)'
+                )
             won = any(
                 name == phase_name and field == 'dispatch_boundary_total'
                 for name, field, _v, _b in reconciled_phases
