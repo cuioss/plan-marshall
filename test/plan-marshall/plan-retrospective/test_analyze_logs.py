@@ -1188,7 +1188,10 @@ def _init_repo(repo: Path) -> None:
 
 
 class TestResolveFootprintTiers:
-    """``resolve_footprint`` resolves live diff, then the legacy key, then empty.
+    """``resolve_footprint`` resolves live diff → realized-footprint capture →
+    merge-commit → legacy key → empty. These tests exercise the tier-1/legacy/empty
+    endpoints (the capture and merge-commit tiers reuse the shared helpers covered in
+    test_footprint_resolver.py).
 
     Tier 1 reaches the worktree through the ONE plan-context resolver
     (``_references_core.resolve_live_worktree``), keyed on ``plan_id``. It no

@@ -935,7 +935,10 @@ class TestSummaryCountsEveryEmittedStatus:
 
 
 # =============================================================================
-# Unit tests for the three-tier footprint resolver (_resolve_footprint).
+# Unit tests for the footprint resolver (_resolve_footprint delegates to the shared
+# whole-chain resolver: live diff → realized-footprint capture → merge-commit →
+# legacy key → unresolvable). These tests exercise the tier-1/legacy/unresolvable
+# endpoints; the capture and merge-commit tiers are covered in test_footprint_resolver.py.
 # =============================================================================
 
 import importlib.util  # noqa: E402
@@ -969,7 +972,9 @@ def _init_repo(repo: Path) -> None:
 
 
 class TestResolveFootprintTiers:
-    """``_resolve_footprint`` resolves live diff, then legacy key, then unresolvable.
+    """``_resolve_footprint`` delegates to the shared whole-chain resolver (live diff →
+    realized-footprint capture → merge-commit → legacy key → unresolvable). These tests
+    exercise the tier-1/legacy/unresolvable endpoints.
 
     Tier 1 reaches the worktree through the ONE plan-context resolver
     (``_references_core.resolve_live_worktree``), keyed on ``plan_id``. It no

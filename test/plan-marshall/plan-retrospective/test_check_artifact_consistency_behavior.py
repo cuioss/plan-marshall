@@ -703,7 +703,7 @@ class TestCmdRunInProcess:
         (plan_dir / 'solution_outline.md').write_text(
             _outline(affected=['src/a.py', 'src/b.py']), encoding='utf-8'
         )
-        # No references.json at all → neither resolution tier answers.
+        # No references.json at all → no resolution tier answers (unresolvable).
         (plan_dir / 'metrics.md').write_text('# Metrics\n', encoding='utf-8')
         tasks = plan_dir / 'tasks'
         tasks.mkdir()
@@ -828,7 +828,7 @@ class TestRecallFindingSeveritySplit:
 
     @classmethod
     def _unmeasurable_plan(cls, plan_dir: Path) -> None:
-        """No references.json at all → neither resolution tier answers."""
+        """No references.json at all → no resolution tier answers (unresolvable)."""
         cls._scaffold(plan_dir, _outline(affected=['src/a.py', 'src/b.py', 'src/c.py']))
 
     def test_measured_recall_failure_emits_error_severity(self, tmp_path):
