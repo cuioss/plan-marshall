@@ -16,6 +16,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 from conftest import _MARKETPLACE_SCRIPT_DIRS, load_script_module
 
 # Unique module_name so the in-process load is distinct from the existing
@@ -303,6 +305,195 @@ def test_generate_executor_returns_error_when_template_missing(tmp_path, monkeyp
     result = _gen.generate_executor({'a:b:c': '/p/c.py'}, tmp_path / 'empty-base', dry_run=False)
 
     assert result['status'] == 'error'
+
+
+# =============================================================================
+# Fail-open guard (D1) — a regeneration that emits ZERO surfaces where the
+# previous executor carried some must fail loudly, and the surface-stats line
+# must be emitted UNCONDITIONALLY (including the zero) so a consumer asserts on
+# a value rather than inferring the outcome from an absent line.
+# =============================================================================
+
+
+def _stats(registered: int, derived: int, reused: int) -> dict:
+    """Build a four-count surface-stats mapping with a consistent residual.
+
+    ``surfaces_not_derivable`` is the residual (registered minus emitted), so the
+    three buckets always sum to ``scripts_registered`` — the invariant the real
+    :func:`derive_script_surfaces` maintains.
+    """
+    return {
+        'scripts_registered': registered,
+        'surfaces_derived': derived,
+        'surfaces_reused': reused,
+        'surfaces_not_derivable': registered - derived - reused,
+    }
+
+
+def _prep_synthetic(tmp_path: Path, monkeypatch) -> Path:
+    """Synthetic base + a tmp PLAN_BASE_DIR + get_templates_dir pointed at it.
+
+    Mirrors ``test_generate_executor_writes_substituted_executor``: the executor
+    lands at ``<PLAN_BASE_DIR>/execute-script.py`` and ``get_templates_dir`` is
+    redirected to the synthetic base's isolated ``_TEMPLATE_BODY`` template so
+    the writer runs deterministically against it.
+    """
+    base = _build_synthetic_base(tmp_path)
+    plan_dir = tmp_path / '.plan'
+    plan_dir.mkdir()
+    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
+    synthetic_templates = base / 'plan-marshall' / 'skills' / 'tools-script-executor' / 'templates'
+    monkeypatch.setattr(_gen, 'get_templates_dir', lambda base_path: synthetic_templates)
+    return base
+
+
+def _surface_literal() -> dict:
+    """One emitted surface entry in the shape the generator writes."""
+    return {'digest': 'd', 'surface': {'root': {'flags': []}}}
+
+
+def test_fail_open_guard_refuses_zero_surfaces_against_nonempty_previous(tmp_path, monkeypatch):
+    """Previous executor had surfaces, this generation emits ZERO → status: error.
+
+    This is the adversarial core of D1: a positive-only test (a normal
+    regeneration still succeeds) passes against the defect and proves nothing.
+    Here the derivation is forced to yield nothing while the previous executor is
+    made to report surfaces, so a generator lacking the guard would return
+    ``status: success`` and write a surfaces-less executor — exactly the shipped
+    failure. The guard must instead refuse and leave the previous executor
+    unwritten.
+    """
+    base = _prep_synthetic(tmp_path, monkeypatch)
+    plan_dir = tmp_path / '.plan'
+    monkeypatch.setattr(_gen, 'read_previous_surfaces', lambda executor: {'a:b:c': _surface_literal()})
+    monkeypatch.setattr(_gen, 'derive_script_surfaces', lambda *a, **k: ({}, _stats(1, 0, 0)))
+
+    result = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=False, target='claude')
+
+    assert result['status'] == 'error'
+    assert 'fail-open' in result['error'].lower()
+    # The counts ride along on the error result so the outcome is a VALUE.
+    assert result['surface_stats'] == _stats(1, 0, 0)
+    # Nothing written — the previous (still-validating) executor is left in place.
+    assert not (plan_dir / 'execute-script.py').exists()
+
+
+def test_fail_open_guard_allows_zero_surfaces_against_empty_previous(tmp_path, monkeypatch):
+    """A fresh install (empty previous) deriving zero is NOT a regression → success.
+
+    Negative control for the guard: it must fire only when surfaces were LOST,
+    never merely because a generation produced none. A first build has no
+    previous surfaces to lose, so a zero-surface result is written normally with
+    an all-zero stats block.
+    """
+    base = _prep_synthetic(tmp_path, monkeypatch)
+    plan_dir = tmp_path / '.plan'
+    monkeypatch.setattr(_gen, 'read_previous_surfaces', lambda executor: {})
+    monkeypatch.setattr(_gen, 'derive_script_surfaces', lambda *a, **k: ({}, _stats(1, 0, 0)))
+
+    result = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=False, target='claude')
+
+    assert result['status'] == 'success'
+    assert result['surface_stats'] == _stats(1, 0, 0)
+    assert (plan_dir / 'execute-script.py').exists()
+
+
+@pytest.mark.parametrize('derived,reused', [(1, 0), (0, 1)])
+def test_fail_open_guard_does_not_trip_when_surfaces_are_emitted(tmp_path, monkeypatch, derived, reused):
+    """Either a derived OR a reused surface is a non-empty emission → no false trip.
+
+    The guard keys on emitting ZERO (neither derived nor reused). A regeneration
+    that reuses every surface unchanged emits a non-zero count and must succeed —
+    otherwise the guard would fail every no-op rebuild.
+    """
+    base = _prep_synthetic(tmp_path, monkeypatch)
+    plan_dir = tmp_path / '.plan'
+    monkeypatch.setattr(_gen, 'read_previous_surfaces', lambda executor: {'a:b:c': _surface_literal()})
+    monkeypatch.setattr(
+        _gen, 'derive_script_surfaces', lambda *a, **k: ({'a:b:c': _surface_literal()}, _stats(1, derived, reused))
+    )
+
+    result = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=False, target='claude')
+
+    assert result['status'] == 'success'
+    assert (plan_dir / 'execute-script.py').exists()
+
+
+def test_surface_stats_line_emitted_on_both_fail_open_and_success(tmp_path, monkeypatch, capsys):
+    """The surface-stats line is present in BOTH the zero and the non-zero case.
+
+    This is the assertion that would fail if the line were emitted only when the
+    derivation was non-empty: the zero case here is the fail-open REFUSAL (an
+    error), and the line — carrying ``surfaces_derived=0`` — must still be on
+    stdout. An absence nothing consumes is not a signal, so the count is emitted
+    as a value even when it is zero.
+    """
+    base = _prep_synthetic(tmp_path, monkeypatch)
+
+    # Zero case — fail-open refusal, yet the line is present with the zero value.
+    monkeypatch.setattr(_gen, 'read_previous_surfaces', lambda executor: {'a:b:c': _surface_literal()})
+    monkeypatch.setattr(_gen, 'derive_script_surfaces', lambda *a, **k: ({}, _stats(1, 0, 0)))
+    result_zero = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=False, target='claude')
+    out_zero = capsys.readouterr().out
+    assert result_zero['status'] == 'error'
+    assert _gen._SURFACE_STATS_LINE_PREFIX in out_zero
+    assert 'surfaces_derived=0' in out_zero
+
+    # Non-zero case — success, the line carries the non-zero value.
+    monkeypatch.setattr(_gen, 'read_previous_surfaces', lambda executor: {})
+    monkeypatch.setattr(
+        _gen, 'derive_script_surfaces', lambda *a, **k: ({'a:b:c': _surface_literal()}, _stats(1, 1, 0))
+    )
+    result_nonzero = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=False, target='claude')
+    out_nonzero = capsys.readouterr().out
+    assert result_nonzero['status'] == 'success'
+    assert _gen._SURFACE_STATS_LINE_PREFIX in out_nonzero
+    assert 'surfaces_derived=1' in out_nonzero
+
+
+def test_format_surface_stats_line_names_every_count():
+    """The rendered line carries a value for each of the four buckets."""
+    line = _gen.format_surface_stats_line(_stats(5, 3, 1))
+
+    assert line.startswith(_gen._SURFACE_STATS_LINE_PREFIX)
+    assert 'scripts_registered=5' in line
+    assert 'surfaces_derived=3' in line
+    assert 'surfaces_reused=1' in line
+    assert 'surfaces_not_derivable=1' in line
+
+
+def test_cmd_generate_flattens_stats_into_fail_open_error(tmp_path, monkeypatch):
+    """cmd_generate surfaces the counts to the TOON top level on the error path.
+
+    The fail-open error result carries ``surface_stats``; cmd_generate must
+    flatten those into the returned dict so the counts reach the serialized TOON
+    output on the error path exactly as they do on success — the evidence a
+    consumer reads to distinguish a stripped surface set from a healthy build.
+    """
+    monkeypatch.setattr(_gen, 'get_base_path', lambda **k: tmp_path)
+    monkeypatch.setattr(_gen, 'discover_scripts', lambda base: {'a:b:c': '/p/c.py'})
+    monkeypatch.setattr(_gen, 'discover_local_scripts', lambda: {})
+    monkeypatch.setattr(_gen, 'read_marshal_target', lambda: 'claude')
+    monkeypatch.setattr(
+        _gen,
+        'generate_executor',
+        lambda *a, **k: {
+            'status': 'error',
+            'error': 'Fail-open regeneration refused: ...',
+            'surface_stats': _stats(3, 0, 0),
+        },
+    )
+    args = types.SimpleNamespace(marketplace=False, marketplace_root=None, dry_run=False, target=None)
+
+    result = _gen.cmd_generate(args)
+
+    assert result['status'] == 'error'
+    assert result['scripts_registered'] == 3
+    assert result['surfaces_derived'] == 0
+    assert result['surfaces_reused'] == 0
+    assert result['surfaces_not_derivable'] == 3
+    # The nested block is flattened away, not left as a sub-mapping.
+    assert 'surface_stats' not in result
 
 
 # =============================================================================
