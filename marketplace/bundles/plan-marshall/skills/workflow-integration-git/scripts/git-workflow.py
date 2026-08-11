@@ -1465,7 +1465,7 @@ def cmd_worktree_list(_args):
     from the underlying ``manage-status list`` census onto its own output: this
     verb inherits the enumeration's cwd-scoped blindness, so a ``worktree_local``
     listing is BLIND to sibling worktrees and an absent plan under it is
-    ``unknown``, NOT authoritative absence (the #948 shape). A consumer MUST NOT
+    ``unknown``, NOT authoritative absence (the sibling-worktree shape). A consumer MUST NOT
     read an empty ``worktree_local`` listing as proof that no other worktree exists.
     See ``manage-locks/standards/cwd-keyed-store-resolution-audit.md``.
     """

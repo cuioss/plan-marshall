@@ -398,7 +398,7 @@ _PREDICATE_STOPWORDS: frozenset[str] = frozenset(
 
 # Duplicate-claimable-key detection (D1).
 # A NEW keyed collection whose key is a caller-supplied identity requires an
-# explicit duplicate-key disposition at the insertion site. The pre-#1067 defect:
+# explicit duplicate-key disposition at the insertion site. The pre-fix defect:
 # a resolver id appended behind a bare falsiness check, so two resolvers answering
 # the same id collapse into one producer identity. See SKILL.md § Detection Rules
 # rule 20.
@@ -443,7 +443,7 @@ _SUBSCRIPT_CLAIM = re.compile(
 
 # Discard-path-without-report detection (D2).
 # A function that owns a suppression report channel and then drops an item on a
-# guarded ``continue``/``break`` WITHOUT recording why. The pre-#1067 defect:
+# guarded ``continue``/``break`` WITHOUT recording why. The pre-fix defect:
 # ``merge_resolver_edges`` dropped self-edges and unknown endpoints without
 # appending to ``notes``, reporting ``status: ok`` and an empty ``notes`` — a
 # vacuous confident zero. See SKILL.md § Detection Rules rule 21.

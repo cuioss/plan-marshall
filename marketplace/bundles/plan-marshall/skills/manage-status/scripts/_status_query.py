@@ -483,7 +483,7 @@ def _resolution_scope() -> str:
         so the scan observes only this worktree's own moved-in plan and is
         structurally BLIND to sibling worktrees. An absent plan under this scope is
         ``unknown`` (not-observed-from-this-scope), NOT authoritative absence — the
-        #948 sibling-worktree shape. A destructive/authority-bearing consumer MUST
+        sibling-worktree shape. A destructive/authority-bearing consumer MUST
         NOT treat a ``worktree_local`` empty as proof of absence; route the decision
         through a main-anchored verdict (e.g. ``merge_lock check`` staleness). See
         ``manage-locks/standards/cwd-keyed-store-resolution-audit.md``.
@@ -532,7 +532,7 @@ def cmd_list(args: argparse.Namespace) -> dict[str, Any]:
     ``unknown``, from :func:`_resolution_scope`) naming the enumeration's
     authoritativeness: a ``worktree_local`` census is cwd-scoped and BLIND to
     sibling worktrees, so a consumer MUST NOT read an absent plan under it as
-    authoritative absence (the #948 shape). See
+    authoritative absence (the sibling-worktree shape). See
     ``manage-locks/standards/cwd-keyed-store-resolution-audit.md``.
     """
     plans: list[dict[str, Any]] = []
@@ -618,7 +618,7 @@ def cmd_list(args: argparse.Namespace) -> dict[str, Any]:
 
     # Surface the resolution scope as a first-class field: a `worktree_local` census
     # is structurally blind to sibling worktrees, so an absent plan under it is
-    # `unknown`, NOT authoritative absence (the #948 shape). See _resolution_scope.
+    # `unknown`, NOT authoritative absence (the sibling-worktree shape). See _resolution_scope.
     return {
         'status': 'success',
         'total': len(plans),

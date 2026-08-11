@@ -293,7 +293,7 @@ Before polling readiness, `safe-merge` probes the platform's queue configuration
 
 Both probes map onto the shared merge-queue eligibility discriminators (see *Workflow: Repo Merge-Queue Probe / Enable* below):
 
-- **`eligible_configured`** — the platform **requires** the queue/train. On GitHub an immediate merge here would close the PR unmerged (the PR #866 failure mode); on GitLab it would bypass the train the project requires. `safe-merge` **refuses immediately** with an actionable error naming both remedies: route through the queue via `ci pr merge-queue`, or reconcile the plan's `use_merge_queue` step param via `/marshall-steward`. It does **not** attempt the immediate merge.
+- **`eligible_configured`** — the platform **requires** the queue/train. On GitHub an immediate merge here would close the PR unmerged (the close-unmerged failure mode); on GitLab it would bypass the train the project requires. `safe-merge` **refuses immediately** with an actionable error naming both remedies: route through the queue via `ci pr merge-queue`, or reconcile the plan's `use_merge_queue` step param via `/marshall-steward`. It does **not** attempt the immediate merge.
 - **`eligible_unconfigured` / `ineligible` / `unsupported`** — no required queue or train; `safe-merge` proceeds unchanged.
 
 The preflight **fails closed** on both providers: an unresolvable base branch (empty `baseRefName`, or a `pr view` that does not succeed), an inability to resolve the repository owner/name or project path, or a probe failure (missing auth scope/permission, a non-404 API error, or a malformed response) all return `status: error` rather than falling back to an immediate merge.

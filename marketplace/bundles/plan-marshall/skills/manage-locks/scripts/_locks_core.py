@@ -234,7 +234,7 @@ def holder_staleness(
     enumeration. This is the guard the manual-release recovery path lacked: the
     operator/agent previously inferred death from a cwd-scoped ``manage-status
     list`` / ``worktree-list`` view that, from a pinned worktree, structurally
-    cannot observe a holder living in a SIBLING worktree — the #948 incident shape,
+    cannot observe a holder living in a SIBLING worktree — the sibling-worktree shape,
     where a live holder read as absent and its lock was stolen. The three verdicts:
 
       * ``'fresh'`` — the holder is alive (its plan dir is on main OR in its own

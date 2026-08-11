@@ -1053,13 +1053,13 @@ def cmd_pr_wait_for_comments(args: argparse.Namespace) -> dict:
 #
 # 1. **Refuse an unsafe base.** On a base branch with a REQUIRED platform merge
 #    queue, an immediate merge closes the PR unmerged instead of merging it (the
-#    #866 signature); conversely ``gh pr merge --auto`` silently degrades from
+#    close-unmerged signature); conversely ``gh pr merge --auto`` silently degrades from
 #    "enqueue into the queue" to "enable plain auto-merge" when the base has NO
 #    queue configured. Both dispositions are properties of the PR's OWN base
 #    branch, so every such verb probes that branch first and fails closed on any
 #    resolution failure.
 # 2. **Prove its own success claim.** A zero exit from ``gh`` means the command
-#    was accepted, never that the merge landed. The #1081 signature is exactly a
+#    was accepted, never that the merge landed. The accepted-not-landed signature is exactly a
 #    verb that reported ``merged: true`` — and deleted the head branch — for a
 #    merge that never happened. The claim is therefore established from a
 #    post-merge RE-READ of provider state, BEFORE any follow-up call (notably
@@ -1141,7 +1141,7 @@ def _refuse_on_required_merge_queue(identifier: str, operation: str) -> dict | N
         return make_error(
             operation,
             f'PR {identifier} targets base branch {base_branch!r}, which has a required platform '
-            f'merge queue — an immediate merge would close the PR unmerged (#866). Route the PR '
+            f'merge queue — an immediate merge would close the PR unmerged. Route the PR '
             f'through the merge queue via "ci pr merge-queue", or reconcile the plan\'s '
             f'use_merge_queue step param via /marshall-steward.',
             detail,
@@ -1288,13 +1288,13 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
 
     - **Base-branch merge-queue preflight** — the same guard ``pr safe-merge``
       carries, via the shared :func:`_refuse_on_required_merge_queue`. Without it
-      this verb merges straight into the #866 signature: on a base branch with a
+      this verb merges straight into the close-unmerged signature: on a base branch with a
       required queue, ``gh pr merge`` closes the PR unmerged.
     - **Post-merge corroboration** — ``merged`` is set ONLY from
       :func:`_corroborate_merge`, a re-read of provider state whose admitted
       evidence is selected by ``--strategy``. It is established BEFORE the
       branch-delete follow-up is allowed to run, so a merge that did not happen
-      can never take the head branch down with it (#1081). A non-corroborated
+      can never take the head branch down with it. A non-corroborated
       merge returns ``status: error`` and deletes nothing.
 
     When ``--delete-branch`` is requested, the merge is performed WITHOUT the
@@ -1344,7 +1344,7 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
         return make_error(
             'pr_merge',
             f'PR {identifier} merge command succeeded but post-merge state does NOT corroborate a '
-            f'merge — refusing to report merged and skipping the branch delete (#1081). Verify the '
+            f'merge — refusing to report merged and skipping the branch delete. Verify the '
             f'PR state; if its base branch requires the platform merge queue, route the PR via '
             f'"ci pr merge-queue" instead of an immediate merge.',
             corroboration,
@@ -1541,7 +1541,7 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
         return err_dict
     assert identifier is not None  # noqa: S101 — narrowing after err_dict guard
 
-    # Base-branch-scoped merge-queue preflight (guards the #866 signature: an
+    # Base-branch-scoped merge-queue preflight (guards the close-unmerged signature: an
     # immediate merge on a branch with a REQUIRED platform merge queue closes
     # the PR unmerged instead of merging it). Shared with ``cmd_pr_merge`` — see
     # :func:`_refuse_on_required_merge_queue`, which probes the PR's OWN base
@@ -1643,13 +1643,13 @@ def cmd_pr_safe_merge(args: argparse.Namespace) -> dict:
     # The admin fallback does NOT go through cmd_pr_merge, so it carries its own
     # corroboration — identically established, and BEFORE the branch-delete
     # follow-up below can influence it. An admin merge that did not land must
-    # never take the head branch down with it (#1081).
+    # never take the head branch down with it.
     merged, corroboration = _corroborate_merge(identifier, args.strategy)
     if not merged:
         return make_error(
             'pr_safe_merge',
             f'Admin merge of PR {identifier} succeeded but post-merge state does NOT corroborate a '
-            f'merge — refusing to report merged and skipping the branch delete (#1081).',
+            f'merge — refusing to report merged and skipping the branch delete.',
             corroboration,
         )
 
