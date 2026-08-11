@@ -1,6 +1,6 @@
 # Run report — 110-landed-residue-promotion-sweep (run 01)
 
-**Date (UTC):** 2026-08-11  **Branch:** `chore/landed-residue-promotion-sweep` (re-issued at operator request; supersedes the run's original harness-assigned `claude/landed-residue-promotion-sweep-11npl8` / PR #1161)  **PR:** see § Run continuation  **Outcome:** completed (merge gated on the `license/cla` signature)
+**Date (UTC):** 2026-08-11  **Branch:** `chore/landed-residue-promotion-sweep` (re-issued at operator request; supersedes the run's original harness-assigned `claude/landed-residue-promotion-sweep-11npl8` / PR #1161)  **PR:** [#1169](https://github.com/cuioss/plan-marshall/pull/1169) (re-issue; supersedes #1161)  **Outcome:** completed (merge gated on the `license/cla` signature)
 
 ## Skills loaded
 
@@ -247,8 +247,8 @@ durable record is complete rather than left in session chat:
   non-issue and to proceed.
 
 - **Re-issued as a new PR at operator request.** The complete work (all six commits) plus this updated
-  report is re-published on `chore/landed-residue-promotion-sweep` as a **new PR carrying the
-  `skip-bot-review` label**. Bot review is suppressed here deliberately and narrowly: the identical
+  report is re-published on `chore/landed-residue-promotion-sweep` as **PR #1169, carrying the
+  `skip-bot-review` label** (applied via a draft→label→ready sequence so no reviewer fired on open). Bot review is suppressed here deliberately and narrowly: the identical
   `marketplace/bundles/**` diff was already reviewed and **confirmed** on #1161 by `cuioss-review-bot`
   and `coderabbitai`, so re-running the (now rate-limited) reviewers on unchanged content would spend
   contended budget for no new scrutiny. This is the one carve-out where a bundle change skips review —
