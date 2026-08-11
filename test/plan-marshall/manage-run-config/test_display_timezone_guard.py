@@ -38,7 +38,8 @@ CLASSIFICATION_PATH = Path(__file__).parent / 'timestamp_render_classification.j
 
 
 def _load_classification() -> dict:
-    return json.loads(CLASSIFICATION_PATH.read_text(encoding='utf-8'))
+    data: dict = json.loads(CLASSIFICATION_PATH.read_text(encoding='utf-8'))
+    return data
 
 
 def _bundle_py_files() -> list[Path]:
