@@ -47,7 +47,8 @@ The run configuration file stores:
   },
   "language_servers": {
     "python": {"enabled": true, "command": ["pyright-langserver", "--stdio"], "language_id": "python"}
-  }
+  },
+  "display_timezone": "UTC"
 }
 ```
 
@@ -66,6 +67,7 @@ The run configuration file stores:
 | architecture_refresh | Tier knobs consumed by the `phase-6-finalize` `architecture-refresh` step |
 | ci_durations | Bounded rolling window of observed successful CI-run durations (keyed by command) seeding the adaptive CI-wait first-sleep via `p50` |
 | language_servers | Machine-local binding of a language to its locally-installed language server, read by the `lsp-client` skill |
+| display_timezone | Display-only IANA zone name (default `UTC`) consumed at rendering surfaces to convert stored UTC timestamps for human reading; never consulted on a write or compare path |
 
 ---
 
@@ -240,6 +242,42 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config langu
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config language-server remove \
   --language python
 ```
+
+---
+
+## Display-Timezone Section
+
+The `display_timezone` field is a single top-level IANA zone name (default `UTC`). It is a **display-only** setting: it is resolved at rendering surfaces to convert a stored UTC timestamp into the operator's chosen zone for human reading, and is **never** consulted on a write or compare path. Storage and comparison stay UTC unconditionally — a stored timestamp is byte-identical under any `display_timezone` value.
+
+The default `UTC` makes the unset behaviour byte-identical to the pre-knob rendering: no existing artifact changes unless the operator opts in. Every rendered timestamp that is actually converted (a non-UTC zone) carries an unambiguous zone label of the form `ABBREV (UTC±HH:MM)`, so both the zone and the exact instant are recoverable; an unlabelled converted timestamp is never emitted.
+
+### Schema
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `display_timezone` | string (IANA zone name) | `UTC` | The display-only render timezone. An absent field, a non-string value, or a stored zone that no longer loads all resolve to `UTC`. |
+
+### Operations
+
+| Subcommand | Purpose |
+|------------|---------|
+| `display-timezone get` | Read `display_timezone` (returns `UTC` when absent or unreadable) |
+| `display-timezone set --value ZONE` | Persist `display_timezone` after IANA-name validation |
+
+A `--value` that is not a loadable IANA zone produces the standard `invalid_value` error response and persists nothing.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config display-timezone get
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config display-timezone set \
+  --value America/New_York
+```
+
+### Boundary — display versus storage
+
+The knob reaches rendering surfaces exclusively. The write and compare paths (record `created`/`removed_at`/`set_at` fields, lesson identifier prefixes, retention and quiet-window cutoffs, CI/build durations, staleness checks, and ordering keys) stay UTC unconditionally. This boundary is enforced by a guard test that scans the bundles and fails if any store/compare site consults `display_timezone`.
 
 ---
 

@@ -14,6 +14,7 @@ import json
 import statistics
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from constants import CLEANUP_TARGET_ALL, CLEANUP_TARGETS, VALID_WARNING_CATEGORIES
 from file_ops import output_toon, read_json, safe_main, write_json
@@ -47,6 +48,14 @@ _BUILD_QUEUE_UPPER_LIMIT_CEILING_SECONDS = 3600
 # ``commands`` keyed shape). The window is bounded to the newest N entries — the
 # oldest is evicted on append once the window is full.
 CI_DURATION_WINDOW_SIZE = 5
+
+# Display-timezone knob. A DISPLAY-ONLY IANA zone name consumed exclusively at
+# rendering surfaces (see ``_display_time.render_timestamp``). Storage and
+# comparison stay UTC unconditionally — this value NEVER reaches a write or
+# compare path; that boundary is asserted by the display-timezone guard test.
+# The default ``'UTC'`` makes the unset behaviour byte-identical to the
+# pre-knob rendering, which is what makes the knob safe to land opt-in.
+DISPLAY_TIMEZONE_DEFAULT = 'UTC'
 
 DEFAULT_STRUCTURE = {
     'version': 1,
@@ -793,6 +802,94 @@ def cmd_language_server_remove(args: argparse.Namespace) -> dict:
 
 
 # =============================================================================
+# Display-Timezone Subcommands
+# =============================================================================
+#
+# A DISPLAY-ONLY timezone. It is resolved at rendering surfaces to convert a
+# stored UTC timestamp for human reading and is NEVER consulted on a write or
+# compare path — storage and comparison stay UTC unconditionally. The rendering
+# helper that consumes this value lives in ``_display_time.py``.
+
+
+def _is_valid_iana_timezone(name: str) -> bool:
+    """Return ``True`` when *name* is a loadable IANA zone name (``'UTC'`` included).
+
+    ``'UTC'`` is accepted without touching the IANA database — it is the default
+    and must remain resolvable on a system whose ``zoneinfo`` has no bundled
+    tzdata. Every other name is validated by attempting to construct its
+    :class:`zoneinfo.ZoneInfo`; an unknown name or a malformed value is invalid.
+    """
+    if name == DISPLAY_TIMEZONE_DEFAULT:
+        return True
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return False
+    return True
+
+
+def read_display_timezone() -> str:
+    """Read the display-only timezone (IANA name), defaulting to ``'UTC'``.
+
+    A missing key, a non-string value, or a stored zone that no longer loads all
+    fall back to ``'UTC'``. A display-only setting must never crash or corrupt a
+    rendering surface, and ``'UTC'`` is the fail-safe fallback — it is also
+    byte-identical to the pre-knob behaviour, so an unreadable value degrades to
+    exactly today's output rather than to an error.
+
+    The default path (value absent or literally ``'UTC'``) never constructs a
+    :class:`zoneinfo.ZoneInfo`, so the unset behaviour has no tzdata dependency.
+
+    Returns:
+        The resolved IANA zone name, or ``'UTC'``.
+    """
+    config = read_run_config(get_run_config_path())
+    value = config.get('display_timezone', DISPLAY_TIMEZONE_DEFAULT)
+    if not isinstance(value, str) or not value:
+        return DISPLAY_TIMEZONE_DEFAULT
+    if value == DISPLAY_TIMEZONE_DEFAULT:
+        return DISPLAY_TIMEZONE_DEFAULT
+    if not _is_valid_iana_timezone(value):
+        return DISPLAY_TIMEZONE_DEFAULT
+    return value
+
+
+def _write_display_timezone(name: str) -> None:
+    """Persist the top-level ``display_timezone`` field."""
+    config_path = get_run_config_path()
+    config = read_run_config(config_path)
+    config['display_timezone'] = name
+    _write_json_file(config_path, config)
+
+
+def cmd_display_timezone_get(args: argparse.Namespace) -> dict:
+    """Get display_timezone (default 'UTC' when absent or unreadable)."""
+    del args  # unused — fixed-shape verb
+    try:
+        return {'status': 'success', 'field': 'display_timezone', 'value': read_display_timezone()}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_display_timezone_set(args: argparse.Namespace) -> dict:
+    """Set display_timezone after IANA-name validation."""
+    try:
+        if not _is_valid_iana_timezone(args.value):
+            return {
+                'status': 'error',
+                'error': 'invalid_value',
+                'message': (
+                    f"Invalid IANA timezone '{args.value}'. Expected an IANA zone name "
+                    "(e.g. 'UTC', 'America/New_York', 'Europe/Berlin')."
+                ),
+            }
+        _write_display_timezone(args.value)
+        return {'status': 'success', 'field': 'display_timezone', 'value': args.value}
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
 # Cleanup Subcommands (delegates to cleanup.py functions)
 # =============================================================================
 
@@ -879,6 +976,12 @@ Examples:
 
   # Get the p50 (median) seed of the CI-run duration window
   %(prog)s ci-duration p50 --command "ci:wait"
+
+  # Get the display-only render timezone (default: UTC)
+  %(prog)s display-timezone get
+
+  # Set the display-only render timezone (IANA zone name)
+  %(prog)s display-timezone set --value America/New_York
 
   # Clean .plan directories based on retention settings
   %(prog)s cleanup
@@ -1096,6 +1199,31 @@ Examples:
     p_ls_remove.add_argument('--language', required=True, help='Language key (e.g. python)')
     p_ls_remove.set_defaults(func=cmd_language_server_remove)
 
+    # display-timezone command with subcommands
+    p_dtz = subparsers.add_parser(
+        'display-timezone',
+        help='Manage the display-only render timezone (IANA name, default UTC)',
+        allow_abbrev=False,
+    )
+    dtz_subparsers = p_dtz.add_subparsers(
+        dest='display_timezone_command', required=True, help='Display-timezone operation'
+    )
+
+    p_dtz_get = dtz_subparsers.add_parser(
+        'get', help="Get display_timezone (default 'UTC')", allow_abbrev=False
+    )
+    p_dtz_get.set_defaults(func=cmd_display_timezone_get)
+
+    p_dtz_set = dtz_subparsers.add_parser(
+        'set', help='Set display_timezone (IANA zone name)', allow_abbrev=False
+    )
+    p_dtz_set.add_argument(
+        '--value',
+        required=True,
+        help='IANA timezone name (e.g. UTC, America/New_York, Europe/Berlin)',
+    )
+    p_dtz_set.set_defaults(func=cmd_display_timezone_set)
+
     # cleanup command
     p_cleanup = subparsers.add_parser(
         'cleanup', help='Clean .plan directories based on retention settings', allow_abbrev=False
@@ -1155,6 +1283,12 @@ Examples:
     if args.command == 'language-server':
         if not args.language_server_command:
             p_ls.print_help()
+            return 1
+
+    # Handle display-timezone subcommand
+    if args.command == 'display-timezone':
+        if not args.display_timezone_command:
+            p_dtz.print_help()
             return 1
 
     result = args.func(args)

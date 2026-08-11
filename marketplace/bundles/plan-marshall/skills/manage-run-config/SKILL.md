@@ -244,6 +244,21 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config langu
 
 `--disabled` on `set` stores the binding but leaves it inactive; `list` reports the configured language keys; `remove` deletes a binding.
 
+### display-timezone get / set
+
+Manage the **display-only** render timezone — a single top-level `display_timezone` IANA zone name (default `UTC`). It is consumed exclusively at rendering surfaces to convert a stored UTC timestamp for human reading, and is **never** consulted on a write or compare path: storage and comparison stay UTC unconditionally. The default `UTC` makes the unset behaviour byte-identical to the pre-knob rendering, so no existing artifact changes unless the operator opts in. See [run-config-standard.md](standards/run-config-standard.md) § "Display-Timezone Section".
+
+```bash
+# Read the display timezone (default UTC when absent)
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config display-timezone get
+
+# Set the display timezone (validated as an IANA zone name)
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config display-timezone set \
+  --value America/New_York
+```
+
+`set` rejects a value that is not a loadable IANA zone with an `invalid_value` error and persists nothing.
+
 ### cleanup / cleanup-status
 
 Directory cleanup using retention settings from marshal.json.
@@ -421,6 +436,17 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config langu
 
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config language-server remove \
   --language LANGUAGE
+```
+
+### display-timezone
+
+`display-timezone` carries the nested sub-verbs `get` and `set`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config display-timezone get
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config display-timezone set \
+  --value VALUE
 ```
 
 ### cleanup
