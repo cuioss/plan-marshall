@@ -317,13 +317,23 @@ class BotRegistry:
         second needs backoff.
 
         A refusal matching an entry here is caused by size; any other detected refusal
-        is a rate/budget **quota**. Each entry is expected to ALSO appear in
-        ``refusal_patterns`` (detection stays that field's job); listing it here only
-        marks its cause. An empty list is the default — the bot declares no size-caused
-        refusal, so every refusal it emits is classified ``quota``.
+        is a rate/budget **quota**. Every returned entry ALSO appears in
+        ``refusal_patterns`` (detection stays that field's job); the subset invariant
+        is ENFORCED here, not merely expected — an entry declared outside
+        ``refusal_patterns`` is dropped, so a stray size marker can never mark a cause
+        for a refusal the detection layer does not recognize. An empty list is the
+        default — the bot declares no size-caused refusal, so every refusal it emits is
+        classified ``quota``.
         """
         value = self._by_kind.get(bot_kind, {}).get('refusal_size_patterns', [])
-        return list(value) if isinstance(value, list) else []
+        declared = list(value) if isinstance(value, list) else []
+        # Derive the returned set from refusal_patterns rather than trusting the
+        # registry block to stay in sync: filtering to the intersection keeps
+        # refusal_size_patterns(bot) ⊆ refusal_patterns(bot) true at runtime, so a
+        # size entry left outside the detection set cannot reclassify a quota refusal
+        # as size. Declared order is preserved.
+        refusal = set(self.refusal_patterns(bot_kind))
+        return [marker for marker in declared if marker in refusal]
 
     def contentless_review_markers(self, bot_kind: str) -> list[str]:
         """Return the literals a CONTENTLESS review body carries (``[]`` if unknown/absent).

@@ -236,6 +236,38 @@ def test_refusal_size_patterns_absent_is_empty():
     assert reg.refusal_size_patterns('nonexistent-bot') == []
 
 
+def test_refusal_size_patterns_is_a_subset_of_refusal_patterns_for_every_bot():
+    """Every declared size marker is also a detection marker — the subset invariant.
+
+    ``refusal_size_patterns`` is a CAUSE overlay on ``refusal_patterns``, never a
+    second detection list: a marker that names a refusal's cause as size but is absent
+    from ``refusal_patterns`` would attribute a cause to a refusal the detection layer
+    never recognizes. Derived over the WHOLE live bot population so a future registry
+    edit that adds a size marker outside the refusal set fails here rather than
+    silently reclassifying a quota refusal as size.
+
+    Non-vacuity: at least one shipped bot must declare a size marker, or the subset
+    assertion is vacuously true and the guard proves nothing.
+    """
+    kinds = bot_registry.bot_kinds()
+    assert kinds, 'the registry declares no bots — the sweep would be vacuous'
+
+    total_size_markers = 0
+    for kind in kinds:
+        size = bot_registry.refusal_size_patterns(kind)
+        refusal = bot_registry.refusal_patterns(kind)
+        total_size_markers += len(size)
+        assert set(size) <= set(refusal), (
+            f'{kind}: refusal_size_patterns {size} is not a subset of refusal_patterns '
+            f'{refusal} — a size marker must also be a detection marker'
+        )
+
+    assert total_size_markers > 0, (
+        'no shipped bot declares a size marker — the subset assertion above is '
+        'vacuously true; the population-derived guard needs at least one to bite'
+    )
+
+
 def test_rate_limit_eta_patterns_per_bot():
     """Only a bot whose notice states a reset time declares extraction patterns.
 
