@@ -1,6 +1,6 @@
 # Run report — surface-every-knob-in-marshal-json (run 01)
 
-**Date (UTC):** 2026-08-11    **Branch:** `claude/marshal-json-surface-knobs-3iptyb` (harness-assigned, kept as-is)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-11    **Branch:** `claude/marshal-json-surface-knobs-3iptyb` (harness-assigned, kept as-is)    **PR:** [#1155](https://github.com/cuioss/plan-marshall/pull/1155)    **Outcome:** completed (conditions 1–3 met; auto-merge armed; landing delegated to the merge queue)
 
 ## Skills loaded
 
@@ -72,25 +72,61 @@ Python changed (`git diff --name-only origin/main...HEAD -- '*.py'` → `_config
 - **Cold read (Step 6, D3) — PASS.** Source: dedicated cold-read sub-agent, given ONLY the rewritten `DEFAULT_ORCHESTRATOR` comment + a hypothetical new settable-but-unseeded knob. Verdict: **SEED** ("a knob that is settable in code but absent from the seeded file is a default-surfacing gap, never an intentional omission"). The rewrite does not reproduce the defect. Disposition: no action needed.
 - **Verification sub-agent (Step 6) — 1 finding, FIXED.** `_cmd_orchestrator.py` `cmd_orchestrator_get` comment/docstring said `parallelization_scope` "carries no seeded default, so its fallback is `None`" — false after D2 (fallback is now `1`). Low severity, comment-only. Disposition: **fixed** in commit `d711e88` (the load-bearing `set`-flag semantics preserved; behaviour unchanged). All other deliverables: PASS (D1–D5, docs, behaviour-preservation confirmed inert — the ask pre-fill keys off `set`, still `False` for a legacy unset field).
 - **Verification note (not a defect) — `data-model.md` beyond declared doc surface.** Disposition: accepted and declared (see Deliverables § collateral fixes) — required to avoid reproducing the D3 defect in the canonical reference.
-- **Re-verification (Step 6, post-fix):** dispatched (focused: confirm the fix + scan the whole diff for sibling stale comments). Result recorded below when it returns.
-- **CI / PR review findings:** recorded after the PR opens.
+- **Re-verification (Step 6, post-fix) — 2 further findings, FIXED.** The focused re-verify confirmed the `_cmd_orchestrator.py` fix AND surfaced two more stale statements the seed change falsified in bundle docs **outside the original diff** (same misleading-signal archetype): `api-reference.md` (the "orchestrator" noun's "slots stay unset (implicit defaults)", the `get`-verb "or `null` when the field carries no seeded default", and the Fields-table `unset` default for `parallelization_scope`) and `SKILL.md` (the `get` "or `null` … (`parallelization_scope`)"). Disposition: **fixed** in commit `72f754e`. Both files document exactly the keys this plan surfaces, so they are in-scope per the plan's own out-of-scope wording. Closure verified two ways: an exhaustive post-edit grep across the `manage-config` bundle returns **zero** surviving "stay unset" / "null-fallback for parallelization_scope" / "seeded shape {auto_emit: false}" claims, and `./pw quality-gate` plugin-doctor reports `total_issues: 0` (`broken-relative-link: 0`, `literal-count-drift: 0`).
+- **CI — clean.** `verify / conclusion` (the required check) = **success** on head `72f754e`; `verify/verify`, `verify/gate`, `review/review`, `dependency-review`, `generate-check` all success. `mergeable_state: unstable` (all required contexts passed; only the non-required `license/cla` is pending).
+- **PR review — no actionable findings.** Inline review threads: 0. `cuioss-review-bot`: "PR contains tests; No security concerns identified; No major issues detected" (clean). `sourcery-ai` / `coderabbitai`: rate-limit notices only (no review of this diff). `cla-assistant`: CLA-not-signed notice — a **non-required** status (see Reviewer participation + the merge-gate disclosure). Nothing required a fix or a reply.
 
 ## Reviewer participation
 
-_(pending)_
+Population derived from `author_login` in the registry docs (`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{sourcery,coderabbit,pr-agent}.md`), cross-named by `.github/workflows/pr-agent.yml`: `sourcery-ai`, `coderabbitai`, `cuioss-review-bot`.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Posted "PR Reviewer Guide 🔍 — PR contains tests; No security concerns identified; No major issues detected" against the diff (a clean review over the diff). |
+| `coderabbitai` | `rate-limited` | Published only a refusal notice: "Review limit reached … we couldn't start this review. Next review available in 59 minutes." No review of this diff. |
+| `sourcery-ai` | `rate-limited` | Published only a refusal notice: "you have reached your weekly rate limit of 500000 diff characters." The review artifact carried no findings. |
+
+**Coverage: 1 of 3.** Step 8 shortfall disclosure fired (see below). Rate limits are routine and outside our control — they change what the run **says**, never whether it merges.
 
 ## Cost
 
-_(pending)_
+- **Tokens:** the main-session total is not exposed to the agent in this session. Observed sub-agent usage (from task-completion `<usage>`): deliverable-verification 118,322; cold-read 36,105; re-verification 77,708 subagent_tokens.
+- **Wall-clock:** PR opened 2026-08-11T08:41:51Z; this check-in fired ~2026-08-11T09:48Z. Session start precedes PR creation; end is when the merge queue lands (delegated).
+- **Population:** this single Claude Code cloud session's usage as the harness counts it. ⛔ NOT comparable to a plan-marshall `metrics.toon` total — that counts an orchestrator-plus-agent dispatch tree under plan-marshall's per-task billing boundary, which a single interactive cloud session does not share. The figures cannot be made comparable, so no parity is implied.
 
 ## Contract check (Step 9)
 
-_(pending)_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — named in § Skills loaded (bundle-path reads; plugin not installed). |
+| 2 Branch | Done — harness-assigned `claude/marshal-json-surface-knobs-3iptyb`, published on `origin`, kept as-is. |
+| 3 Plan directory | Done — `doc/plans/truthful-signals/090-surface-every-knob-in-marshal-json/plan.md` exists and opens with the first-instruction block (verified present; no repair needed). |
+| 4 Implement | Done — 5 commits, all carry the `Co-Authored-By: Claude` trailer; deliverables addressed. |
+| 4 Per-commit gate | Done — each `*.py`-touching commit preceded by a clean gate (`./pw verify plan-marshall` for the implementation commit; `./pw quality-gate` for the comment fix), each confirmed `total_issues: 0` / empty `errors[]`. |
+| 4 Pushed | Done — no unpushed commit remained before the report commit. |
+| 5 Build gate | Done — Python changed → `./pw verify plan-marshall` clean (15881 passed, 1 skipped; mypy/ruff/SPDX/plugin-doctor clean). |
+| 6 Verification sub-agent | Done — deliverable-verification + cold-read + focused re-verification; all findings fixed and recorded in § Findings. |
+| 7 PR cycle | Done — PR #1155; both comment surfaces read; every comment dispositioned (none actionable). |
+| 8 Merge gate | Conditions 1–3 met; reviewer shortfall disclosed (condition 4); auto-merge armed (SQUASH). Session cannot self-wake to watch the queue (send_later fired once as this check-in; further self-wake not guaranteed) → landing delegated to the orchestrator collect / merge queue. Completed, not partial. |
+| 8 Bridge | Done — no status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; the report carries the PR number and per-deliverable outcome. |
+| 9 This check | Done — this table. |
+| 9 What have we learned | Proposal recorded below (headless run — no reachable operator to approve; not shipped). |
+
+GitHub access path used: the **GitHub MCP server** (cloud path). Branch form: **harness-assigned** `claude/*`. A `/sync-plugin-cache` is **not owed** (machine-local build step; a cloud run neither performs nor owes it).
 
 ## What have we learned (Step 9)
 
-_(pending)_
+**Proposal (recorded for operator consideration; not self-approved, not shipped — this is a headless cloud run with no reachable operator to approve a contract change).**
+
+*Evidence from this run:* the Step 6 verification sub-agent, as the contract specifies it, is given "the diff under review" and checks the deliverables and collateral changes **within the diff**. But a change to a seeded default (or any value that documentation restates) can falsify prose in files the diff never touches. This run's seed change left three now-false statements standing — one in a touched file (`_cmd_orchestrator.py`, caught by the first sub-agent) and **two in untouched bundle docs** (`api-reference.md`, `SKILL.md`), which surfaced only because the *re-dispatch* prompt was widened to "scan for sibling stale statements bundle-wide." The contract's own Step 6 wording would not have caught the untouched-file cases.
+
+*Proposed edit:* add a line to cloud-lane Step 6 — when the change alters a value, default, constant, or schema that documentation describes, instruct the verification sub-agent to sweep **beyond the diff** (the owning bundle/skill) for statements the change falsifies, not only the diff's own hunks. This generalises the "no undeclared collateral change" check into "no collateral statement the change made false, wherever it lives."
+
+*Counter-consideration:* the contract's existing fix-then-re-dispatch loop did ultimately catch it, so this is a sharpening, not a hole. Presented for the operator to weigh; not shipped as a separate `chore/` PR because no operator is reachable in this run to approve it.
 
 ## Residue
 
-_(pending)_
+- **`license/cla` pending (non-required).** `mergeable_state: unstable` confirms it does not block the merge queue. If the org intends the CLA to gate merges, a human (the PR author `cuioss-oliver`) may need to sign or trigger a recheck at cla-assistant; this is outside what the agent can do. Disclosed at the merge gate; does not hold the merge.
+- **Reviewer rate limits.** `coderabbitai` (window reopens ~59 min) and `sourcery-ai` (weekly quota) did not review this diff. A future push would re-trigger them, but none is needed — `cuioss-review-bot` reviewed clean and CI is green. No re-request made.
+- **Local plugin-cache sync owed to a developer machine.** This run edited `marketplace/bundles/**`; a local developer should run `/sync-plugin-cache` after this lands so their `~/.claude/` cache reflects the change. The cloud run neither performs nor owes it (§ Contract check).
+- **Landing confirmation delegated.** Auto-merge is armed on a green required check; the merge queue lands it and the orchestrator's collect step reads `state: MERGED` from the PR merge event. The squash-merge SHA does not exist until then, so it is reported to the operator, not embedded here.
