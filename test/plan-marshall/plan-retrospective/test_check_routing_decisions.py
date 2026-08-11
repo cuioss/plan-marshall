@@ -135,6 +135,64 @@ _STEPS_WITHOUT_SIMPLIFY = ['sonar-roundtrip', 'lessons-capture', 'archive-plan']
 _STEPS_WITH_BOTH = ['sonar-roundtrip', 'finalize-step-simplify', 'lessons-capture', 'archive-plan']
 
 
+class TestFootprintResolverFallback:
+    """When ``--diff-file`` is absent, the mis-prune check recovers the footprint
+    through the SHARED resolver — the D4 "one footprint resolution, two consumers".
+
+    A post-merge run has no ``--diff-file`` and no live worktree, so before D4 the
+    mis-prune checks SKIPPED for want of a footprint. They now resolve the realized
+    footprint (capture → merge-commit → legacy) exactly as the recall check does.
+    """
+
+    def _write_refs(self, plan_dir: Path, refs: dict) -> None:
+        (plan_dir / 'references.json').write_text(json.dumps(refs), encoding='utf-8')
+
+    def test_diff_file_absent_recovers_footprint_from_capture(self, tmp_path):
+        """No diff-file + realized_footprint present → the predicate re-evaluates."""
+        plan_dir = _build_plan(
+            tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated line']
+        )
+        self._write_refs(plan_dir, {'realized_footprint': [PRODUCTION_PATH]})
+
+        result = _crd.cmd_run(_run_args(plan_dir, None))
+        assert result['footprint_source'] == 'resolved'
+        check = _check(result['mis_prune_checks'], 'mis_prune:sonar-roundtrip')
+        assert check is not None
+        # no_code_delta is now FALSE (the realized footprint touched production), and
+        # the readable log names no removal cause → a substantiated mis-prune.
+        assert check['status'] == 'fail'
+
+    def test_diff_file_absent_and_unresolvable_footprint_skips(self, tmp_path):
+        """Negative control: nothing resolvable → SKIP, never a fabricated fail."""
+        plan_dir = _build_plan(
+            tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated line']
+        )
+        self._write_refs(plan_dir, {'base_branch': 'main'})
+
+        result = _crd.cmd_run(_run_args(plan_dir, None))
+        assert result['footprint_source'] == 'unresolved'
+        check = _check(result['mis_prune_checks'], 'mis_prune:sonar-roundtrip')
+        assert check is not None
+        assert check['status'] == 'skip'
+        assert check['removal_cause'] == 'not_evaluated'
+
+    def test_diff_file_present_takes_precedence_over_capture(self, tmp_path):
+        """An explicit --diff-file wins over the recorded capture."""
+        plan_dir = _build_plan(
+            tmp_path / 'plan', steps=_STEPS_WITHOUT_SONAR, decision_lines=['unrelated line']
+        )
+        # The capture is doc-only (no production) — if it were consulted the predicate
+        # would still hold and the check would PASS. The production diff-file must win.
+        self._write_refs(plan_dir, {'realized_footprint': ['doc/only.md']})
+        diff = _diff_file(tmp_path, [PRODUCTION_PATH])
+
+        result = _crd.cmd_run(_run_args(plan_dir, diff))
+        assert result['footprint_source'] == 'diff_file'
+        check = _check(result['mis_prune_checks'], 'mis_prune:sonar-roundtrip')
+        assert check is not None
+        assert check['status'] == 'fail'
+
+
 class TestResolvePlanDir:
     """``resolve_plan_dir`` validates its mode/argument combinations."""
 

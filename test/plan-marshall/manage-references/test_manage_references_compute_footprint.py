@@ -328,6 +328,110 @@ def test_compute_footprint_not_a_git_worktree(tmp_path, outside_repo_dir):
 
 
 # =============================================================================
+# capture-footprint: computes the live footprint AND persists it (D4)
+# =============================================================================
+
+
+def _run_capture(base_dir: Path, plan_id: str, worktree: Path, *extra: str):
+    return run_script(
+        SCRIPT_PATH,
+        'capture-footprint',
+        '--plan-id',
+        plan_id,
+        '--worktree-path',
+        str(worktree),
+        *extra,
+        env_overrides={'PLAN_BASE_DIR': str(base_dir)},
+    )
+
+
+def test_capture_footprint_help_declares_plan_id_and_worktree_path():
+    """``capture-footprint --help`` declares --plan-id + --worktree-path (+ --base-ref)."""
+    result = run_script(SCRIPT_PATH, 'capture-footprint', '--help')
+    assert result.success, f'--help failed: {result.stderr}'
+    assert '--plan-id' in result.stdout
+    assert '--worktree-path' in result.stdout
+    assert '--base-ref' in result.stdout
+
+
+def test_capture_footprint_persists_realized_footprint(tmp_path):
+    """capture-footprint WRITES references.realized_footprint (unlike compute-footprint).
+
+    This is the capture-while-true side effect: the realized set is recorded while
+    the worktree still exists, so an archived-plan resolver can recover it after
+    branch-cleanup removes the worktree.
+    """
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+
+    result = _run_capture(base_dir, FOOTPRINT_PLAN_ID, repo)
+    assert result.returncode == 0, f'stderr={result.stderr!r} stdout={result.stdout!r}'
+    data = result.toon()
+    assert data['status'] == 'success'
+    assert data['persisted'] is True
+    assert data['files'] == ['plan_change.py']
+    assert data['realized_footprint_count'] == 1
+
+    # The key is now on disk, equal to the computed live set.
+    refs = _read_references(base_dir, FOOTPRINT_PLAN_ID)
+    assert refs['realized_footprint'] == ['plan_change.py']
+
+
+def test_capture_footprint_matches_compute_footprint(tmp_path):
+    """The captured set is byte-identical to what compute-footprint returns.
+
+    Pins that there is ONE footprint definition, not two that could drift: capture
+    reuses compute's set.
+    """
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    (repo / 'scratch.txt').write_text('scratch\n')  # a porcelain-only path
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+
+    computed = _run_footprint(base_dir, FOOTPRINT_PLAN_ID, repo).toon()
+    captured = _run_capture(base_dir, FOOTPRINT_PLAN_ID, repo).toon()
+    assert captured['files'] == computed['files']
+    refs = _read_references(base_dir, FOOTPRINT_PLAN_ID)
+    assert refs['realized_footprint'] == computed['files']
+
+
+def test_capture_footprint_is_idempotent(tmp_path):
+    """Re-running overwrites realized_footprint with the current worktree state."""
+    repo = tmp_path / 'worktree'
+    _build_absorb_scenario(repo)
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+
+    _run_capture(base_dir, FOOTPRINT_PLAN_ID, repo)
+    # A further committed change on the feature branch changes the realized set.
+    _commit(repo, 'second plan change', {'second.py': 'print("2")\n'})
+    result = _run_capture(base_dir, FOOTPRINT_PLAN_ID, repo)
+    data = result.toon()
+    assert sorted(data['files']) == ['plan_change.py', 'second.py']
+    refs = _read_references(base_dir, FOOTPRINT_PLAN_ID)
+    assert sorted(refs['realized_footprint']) == ['plan_change.py', 'second.py']
+
+
+def test_capture_footprint_error_propagates_without_writing(tmp_path):
+    """A compute failure propagates verbatim and records NOTHING.
+
+    An unusable observation must never fabricate an empty capture — the resolver
+    would then read a resolved-but-empty footprint instead of falling through.
+    """
+    base_dir = tmp_path / 'plan-base'
+    _write_references(base_dir, FOOTPRINT_PLAN_ID, {'base_branch': 'main'})
+    result = _run_capture(base_dir, FOOTPRINT_PLAN_ID, tmp_path / 'does-not-exist')
+    assert result.returncode == 0  # operation failure exits 0
+    assert 'worktree_not_found' in result.stdout
+    # No realized_footprint key was written.
+    refs = _read_references(base_dir, FOOTPRINT_PLAN_ID)
+    assert 'realized_footprint' not in refs
+
+
+# =============================================================================
 # Integration: resolve_project_dir output is a valid --worktree-path argument
 # =============================================================================
 

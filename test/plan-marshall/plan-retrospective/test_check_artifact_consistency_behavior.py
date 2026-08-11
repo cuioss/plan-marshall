@@ -15,6 +15,7 @@ subprocess suite never reaches in-process.
 from __future__ import annotations
 
 import json
+import sys
 from argparse import Namespace
 from pathlib import Path
 
@@ -27,6 +28,9 @@ from conftest import load_script_module
 _cac = load_script_module(
     'plan-marshall', 'plan-retrospective', 'check-artifact-consistency.py', 'cac_behavior_mod'
 )
+# The FOOTPRINT_UNRESOLVED sentinel now lives in the shared ``_footprint_resolver``
+# module (the same instance ``_cac`` imported), which is its canonical home.
+_fr = sys.modules['_footprint_resolver']
 
 
 # Markdown fragments shaped like the production solution_outline.md the
@@ -339,7 +343,7 @@ class TestFootprintResolvedPredicate:
     """
 
     def test_unresolved_sentinel_reads_unresolved(self):
-        assert _cac.footprint_resolved(_cac.FOOTPRINT_UNRESOLVED) is False
+        assert _cac.footprint_resolved(_fr.FOOTPRINT_UNRESOLVED) is False
 
     def test_resolved_empty_set_reads_resolved(self):
         assert _cac.footprint_resolved(set()) is True
@@ -392,7 +396,7 @@ class TestExactMatch:
         here as confident drift.
         """
         status, message, outline_only, references_only = _cac.check_affected_files_exact_match(
-            {'a', 'b'}, _cac.FOOTPRINT_UNRESOLVED
+            {'a', 'b'}, _fr.FOOTPRINT_UNRESOLVED
         )
         assert status == 'inconclusive'
         assert 'could not be resolved' in message

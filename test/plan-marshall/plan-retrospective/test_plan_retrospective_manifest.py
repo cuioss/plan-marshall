@@ -914,8 +914,18 @@ class TestRoutingDecisionsAspect:
         assert sonar is not None
         assert sonar['status'] == 'pass'
 
-    def test_mis_prune_skipped_without_footprint(self, tmp_path, monkeypatch):
-        """No --diff-file → the prune-predicate re-evaluation skips (no false positive)."""
+    def test_mis_prune_skipped_when_footprint_unresolvable(self, tmp_path, monkeypatch):
+        """No --diff-file AND an unresolvable footprint → skip (no false positive).
+
+        With D4 the mis-prune check recovers the footprint through the shared
+        resolver when ``--diff-file`` is absent (the recall check and this check
+        recover together); only a genuinely UNRESOLVABLE footprint still skips. Here
+        there is no diff-file, no live worktree, no realized-footprint capture, and
+        no legacy key — so the resolver returns UNRESOLVED and the check skips
+        rather than fabricating a verdict.
+        """
+        import json as _json
+
         plan_id, plan_dir = _setup_plan_with_manifest(
             tmp_path,
             monkeypatch,
@@ -923,10 +933,14 @@ class TestRoutingDecisionsAspect:
             plan_id='routing-nofoot',
         )
         _write_status_metadata(plan_dir, {'execution_profile': 'standard'})
+        # Strip the happy-fixture's footprint keys so nothing resolves: the shared
+        # resolver's legacy tier would otherwise correctly recover modified_files.
+        (plan_dir / 'references.json').write_text(_json.dumps({'domains': []}), encoding='utf-8')
 
         result = _run_routing(plan_id)
 
         data = result.toon()
+        assert data['footprint_source'] == 'unresolved'
         sonar = _mis_prune(data['mis_prune_checks'], 'sonar-roundtrip')
         assert sonar is not None
         assert sonar['status'] == 'skip'

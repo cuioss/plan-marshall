@@ -951,6 +951,10 @@ def _load_check_module():
 
 
 _check_mod = _load_check_module()
+# ``_resolve_footprint`` now delegates to the shared ``_footprint_resolver`` module,
+# which is where ``resolve_live_worktree`` is looked up — so tier-1 stubs patch THAT
+# module (the same instance ``_check_mod`` imported), not ``_check_mod`` itself.
+_fr_mod = sys.modules['_footprint_resolver']
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -1004,7 +1008,7 @@ class TestResolveFootprintTiers:
             asked.append(plan_id)
             return repo
 
-        monkeypatch.setattr(_check_mod, 'resolve_live_worktree', _resolve)
+        monkeypatch.setattr(_fr_mod, 'resolve_live_worktree', _resolve)
 
         footprint = _check_mod._resolve_footprint(plan_dir, 'demo-plan')
         assert 'committed.py' in footprint
@@ -1028,7 +1032,7 @@ class TestResolveFootprintTiers:
             asked.append(plan_id)
             return None
 
-        monkeypatch.setattr(_check_mod, 'resolve_live_worktree', _resolve)
+        monkeypatch.setattr(_fr_mod, 'resolve_live_worktree', _resolve)
 
         assert _check_mod._resolve_footprint(plan_dir, None) == {'legacy/a.py'}
         assert asked == [None]
@@ -1082,7 +1086,7 @@ class TestResolveFootprintTiers:
         (plan_dir / 'references.json').write_text(json.dumps({'domains': []}))
 
         footprint = _check_mod._resolve_footprint(plan_dir)
-        assert footprint is _check_mod.FOOTPRINT_UNRESOLVED
+        assert footprint is _fr_mod.FOOTPRINT_UNRESOLVED
         assert not _check_mod.footprint_resolved(footprint)
 
     def test_present_but_empty_legacy_key_is_a_resolved_empty_footprint(self, tmp_path):
@@ -1123,10 +1127,10 @@ class TestResolveFootprintTiers:
         (plan_dir / 'references.json').write_text(
             json.dumps({'modified_files': ['legacy/a.py']})
         )
-        monkeypatch.setattr(_check_mod, 'resolve_live_worktree', lambda plan_id: plain)
+        monkeypatch.setattr(_fr_mod, 'resolve_live_worktree', lambda plan_id: plain)
 
         footprint = _check_mod._resolve_footprint(plan_dir, 'demo-plan')
-        assert footprint is _check_mod.FOOTPRINT_UNRESOLVED
+        assert footprint is _fr_mod.FOOTPRINT_UNRESOLVED
         assert not _check_mod.footprint_resolved(footprint)
 
 

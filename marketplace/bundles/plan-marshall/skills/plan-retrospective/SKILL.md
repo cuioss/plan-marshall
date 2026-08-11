@@ -484,7 +484,7 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-routing-d
   [--diff-file DIFF_FILE]
 ```
 
-`--diff-file` carries the realized footprint (one path per line) that the prune-predicate re-evaluation tests; absent → the mis-prune checks SKIP.
+`--diff-file` carries the realized footprint (one path per line) that the prune-predicate re-evaluation tests; absent → the footprint is recovered through the shared resolver (realized-footprint capture → merge-commit → legacy key), and only a still-unresolvable footprint SKIPs the mis-prune checks.
 
 ### script-failure-analysis — run
 

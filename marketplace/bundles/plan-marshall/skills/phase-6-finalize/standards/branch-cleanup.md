@@ -1260,6 +1260,28 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 **Only if `{worktree_path}` is set** (from the Worktree Awareness section).
 
+#### Capture the realized footprint (before removing the worktree)
+
+This is the last moment the plan's realized changes exist on disk as a worktree diff.
+Persist the realized footprint into `references.json` so a post-merge retrospective or
+audit — which runs after this worktree is gone — resolves the exact set the plan
+touched from a **recorded** fact, instead of re-deriving it from a substrate that has
+since changed (the R3 defect). The write is deterministic and idempotent, and it is the
+PRIMARY footprint-recovery mechanism (the merge-commit tier below is only a fallback):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \
+  capture-footprint --plan-id {plan_id} --worktree-path {worktree_path}
+```
+
+On `status: success` the `realized_footprint` key now records the captured set. A
+`status: error` (worktree/git failure) exits 0 and is **non-fatal here** — log it and
+proceed to the worktree removal; the resolver falls through to its lower tiers rather
+than reading a fabricated empty set. This is the one call in this document whose
+`status: error` is not a STOP: an unusable capture must never block cleanup, exactly as
+the post-run source guard never blocks. Take it only on the merged path — a Branch F
+enqueue that has not landed re-enters finalize, and this capture runs on that re-entry.
+
 The worktree must be removed BEFORE executing any post-removal git operations — `git worktree remove` refuses to operate on a worktree that is the current working directory of any shell, and the local branch cannot be deleted while still checked out in a worktree.
 
 The `worktree-remove` verb operates on the main checkout internally and does not rely on the caller's cwd (see `workflow-integration-git` Canonical invocations → `worktree-remove`):
@@ -1317,6 +1339,34 @@ Parse the TOON output:
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Branch cleanup: switch-and-pull failed - {error_type}: {message}"
 ```
+
+#### Record the landing commit SHA (the footprint resolver's fallback seam)
+
+On the `switch-and-pull` success path, `{main_checkout}` is now on the base branch at
+the just-pulled landing commit. Record its SHA into `references.json` so the footprint
+resolver's merge-commit fallback tier (`git diff {sha}^1 {sha}`) can recover the
+realized path set for an archived plan whose `realized_footprint` capture is absent —
+an older plan, or a capture that failed. The `{sha}^1` first-parent range is exact for
+both a squash landing (its single parent is the base) and a queue merge commit (its
+first parent is the base branch), and carries no sibling contamination — it is **not**
+a `base..HEAD` range. Resolve HEAD on the main checkout:
+
+```bash
+git -C {main_checkout} rev-parse HEAD
+```
+
+Capture stdout as `{merge_commit_sha}` and record it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references \
+  set --plan-id {plan_id} --field merge_commit_sha --value {merge_commit_sha}
+```
+
+This seam is available only on the synchronous landing path — both `pr safe-merge` and
+a queue merge this run observed and pulled. On the enqueued-not-yet-landed path (Branch
+F) no pull happens and the SHA is not recorded; the `realized_footprint` capture taken
+before the worktree was removed is the resolution there, and the merge-commit tier is
+the fallback for the older/failed-capture case only.
 
 #### Release the cross-plan merge-lock (both paths)
 

@@ -40,6 +40,10 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from _footprint_resolver import (
+    read_captured_footprint,
+    resolve_merge_commit_footprint,
+)
 from _references_core import (
     compute_plan_branch_diff,
     resolve_base_ref,
@@ -138,15 +142,22 @@ def resolve_logs_dir(mode: str, plan_id: str | None, archived_plan_path: str | N
 def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> list[str]:
     """Resolve the plan footprint for the ARTIFACT-coverage regression check.
 
-    Three-tier resolution, in order:
+    Five-tier resolution, in order:
 
     1. **Live diff** — when ``plan_id`` names a live plan whose worktree the
        ONE resolver (:func:`_references_core.resolve_live_worktree`) resolves to
        a directory on disk, derive the footprint via ``compute_plan_branch_diff``
        (``{base}...HEAD`` ∪ porcelain).
-    2. **Legacy key** — fall back to ``references.modified_files`` when present
+    2. **Realized-footprint capture** — ``references.realized_footprint``, persisted
+       by ``default:branch-cleanup`` while the worktree still existed. Primary tier
+       for an archived plan; shared with the recall / mis-prune consumers through
+       :func:`_footprint_resolver.read_captured_footprint`.
+    3. **Merge-commit** — ``references.merge_commit_sha`` resolved via
+       :func:`_footprint_resolver.resolve_merge_commit_footprint` (``git diff
+       {sha}^1 {sha}``). A post-merge-only fallback below the deterministic capture.
+    4. **Legacy key** — fall back to ``references.modified_files`` when present
        (archived plans created before the ledger was removed still carry it).
-    3. **Empty** — when neither resolves, return an empty list so the regression
+    5. **Empty** — when nothing resolves, return an empty list so the regression
        check cannot falsely fire for plans that recorded no footprint.
 
     Archived mode passes ``plan_id=None`` and therefore skips tier 1 entirely:
@@ -155,7 +166,10 @@ def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> list[str]:
     resolver rather than by re-reading ``status.metadata.worktree_path`` here.
 
     A missing or unreadable references file is treated defensively, mirroring the
-    other reads in the retrospective pipeline.
+    other reads in the retrospective pipeline. This resolver keeps its own
+    diff-failure policy — a tier-1 ``CalledProcessError`` falls THROUGH to the lower
+    tiers rather than reporting unresolvable — so it composes the shared per-tier
+    helpers rather than calling the whole-chain resolver.
     """
     references_path = plan_dir / 'references.json'
     refs: dict = {}
@@ -177,7 +191,15 @@ def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> list[str]:
         try:
             return sorted(compute_plan_branch_diff(worktree, base_ref))
         except subprocess.CalledProcessError:
-            pass  # fall through to the legacy-key read
+            pass  # fall through to the recorded-footprint / legacy-key reads
+
+    captured = read_captured_footprint(refs)
+    if captured is not None:
+        return sorted(captured)
+
+    merge_set = resolve_merge_commit_footprint(plan_dir, refs)
+    if merge_set is not None:
+        return sorted(merge_set)
 
     # SHIM(B): archived plans' references.modified_files key, written before the change-ledger was removed.
     # shim-owner: plan-retrospective
