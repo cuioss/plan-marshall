@@ -1,6 +1,6 @@
 # Run report — 040-canned-no-op-indistinguishable-from-a-review (run 01)
 
-**Date (UTC):** 2026-08-11    **Branch:** `claude/canned-no-op-review-32oz84`    **PR:** _pending_    **Outcome:** in-progress
+**Date (UTC):** 2026-08-11    **Branch:** `claude/canned-no-op-review-32oz84`    **PR:** [#1165](https://github.com/cuioss/plan-marshall/pull/1165)    **Outcome:** completed (landing delegated to the merge queue via armed auto-merge)
 
 ## Skills loaded
 
@@ -129,26 +129,106 @@ and two full-tree greps (`eight[- ]member…`, `refused_awaitable / refused_hard
 
 ### From CI / PR review
 
-_pending — populated after the PR opens._
+- **CI green.** Required `verify / conclusion` = **success** on head `7ecd755`; `verify / verify`,
+  `dependency-review`, `review / review`, `verify / gate`, `generate-check` all success. `Sourcery
+  review` and `auto-merge` check-runs `skipped`. `mergeStateStatus: unstable` (all required contexts
+  passed; only non-required remain), never `blocked`.
+- **No actionable review comments.** Inline review-thread surface: empty. The conversation/review
+  surface carried only non-feedback: two refusals (CodeRabbit, Sourcery), one clean review (PR-Agent),
+  and a CLA-assistant status badge. Per the bot-participation contract and the plan's own thesis, a
+  refusal notice and a clean Guide are participation artifacts, not code feedback — disposed of as
+  accepted without a fix task and without a reply (being frugal about GitHub replies). Nothing required
+  a fix or a thread reply.
+- **Non-required status disclosed:** `cla-assistant` shows `not_signed`. It is **not** a required
+  context (the PR is `unstable`, not `blocked`), the PR author is the repository owner
+  (`cuioss-oliver`), and the badge is the "signed already but pending" transient. It does not gate the
+  merge; recorded here rather than acted on.
 
 ## Reviewer participation
 
-_pending — populated after the PR review cycle._
+Population derived from the registry `author_login` of each
+`automatic-review/standards/{bot_kind}.md` doc (never transcribed): `coderabbitai` (coderabbit),
+`sourcery-ai` (sourcery), `cuioss-review-bot` (pr-agent) — the same set `.github/workflows/pr-agent.yml`
+names.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Published its `## PR Reviewer Guide 🔍` (its declared `issue_comment` shape) against head `7ecd755` — a clean result: "PR contains tests", "No security concerns identified", "No major issues detected". A `participated_but_empty`-shaped review. |
+| `coderabbitai` | `rate-limited` | Published only "⚠ Review limit reached … Next review available in: 5 minutes" — an awaitable-window refusal in place of a review. It engaged but did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Published only "you have reached your weekly rate limit of 500000 diff characters" — a hard-quota (weekly) refusal in place of a review. |
+
+**Coverage: 1 of 3.** The § Step 8 review-coverage shortfall disclosure fired: "Review coverage 1 of 3
+— `cuioss-review-bot` reviewed (clean); `coderabbitai` rate-limited (awaitable window, ~5 min);
+`sourcery-ai` rate-limited (weekly quota)." Rate limits are routine and outside our control, so per the
+contract this is a **disclosure, not a block** — the merge is not held for them.
+
+⭐ This run is itself an instance of the very defect the plan fixes: two reviewers produced only
+refusals and one reviewed-and-found-nothing, which the old `display_detail` and retrospective would
+have rendered indistinguishably from "reviewed clean". After this change the states are distinct
+(`reviewed` vs `rate-limited`), and the disclosure above states the shortfall in words.
 
 ## Cost
 
-_pending_
+- **Tokens:** not available to the agent in this session — the harness does not expose a token count
+  to the run, stated plainly rather than estimated.
+- **Wall-clock:** ~25 min of active session work from branch push (first commit `1bb595e`) to
+  auto-merge arming, plus ~13 min of CI wall-clock for the `verify` job (started 15:08:52, `verify /
+  conclusion` at 15:22:20) that overlapped the review-cycle wait.
+- **Population:** this single Claude Code cloud session's wall-clock, as one interactive session. ⛔
+  **NOT comparable** to a plan-marshall `metrics.toon` total — that counts the orchestrator-plus-agent
+  dispatch tree under plan-marshall's per-task billing boundary, which this session does not share.
+  No token figure is presented, so no false parity is implied.
 
 ## Contract check (Step 9)
 
-_pending_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — six skills, all by bundle path (named in § Skills loaded). |
+| 2 Branch | Done — harness-assigned `claude/canned-no-op-review-32oz84` kept as-is; present on `origin` (pushed before any edit). GitHub access path: **GitHub MCP server** (the cloud path). |
+| 3 Plan directory | Done — `doc/plans/review-apparatus/040-canned-no-op-indistinguishable-from-a-review/plan.md` exists and opens with the first-instruction block (verified present at Step 3). |
+| 4 Implement | Done — commits carry the `Co-Authored-By: Claude` trailer; all five deliverables addressed. |
+| 4 Per-commit gate | Done — every `*.py`-touching commit was preceded by a `./pw quality-gate` with `total_issues: 0` and empty `errors[]`. |
+| 4 Pushed | Done — no unpushed commit remains (each commit pushed immediately). |
+| 5 Build gate | Done — `*.py` changed → `./pw verify` run; `=== verify: SUCCESS ===` (18979 passed) after the drift-guard fix. |
+| 6 Verification sub-agent | Done — findings and dispositions in § Findings; eight doc-drift instances found and fixed, both cold reads PASS. |
+| 7 PR cycle | Done — PR #1165; both comment surfaces read; every comment dispositioned (all non-actionable — refusals / clean review / CLA status). |
+| 8 Merge gate | Conditions 1–3 met; auto-merge armed (SQUASH). Session could not self-wake to watch the queue (self-wake tools approval-gated — § What have we learned), so the `MERGED` confirmation is delegated to the orchestrator's collect — **completed, not partial** (§ Step 8). |
+| 8 Bridge | No status/bookkeeping write outside this plan's own directory; the report carries the PR number and per-deliverable outcome. |
+| 9 This check | Recorded here. |
+| 9 What have we learned | Below. |
+
+No `/sync-plugin-cache` is owed — it is a machine-local build step a cloud run never performs or records (§ Scope and precedence).
 
 ## What have we learned (Step 9)
 
-_pending_
+**Evidence from this run:** both self-wake tools (`subscribe_pr_activity`, `send_later`) returned
+`MCP error -32003: requires approval`. Notably, re-calling `subscribe_pr_activity` **after** the
+operator selected "approve autonomous watch" in an `AskUserQuestion` still returned the same error —
+the chip answer is not the harness permission grant, so the subscription could not be established that
+way. The run nonetheless completed the review cycle by **manual GitHub-MCP polling** (`pull_request_read`
+is not gated): CI finished during the operator exchange, a re-poll saw it green, both comment surfaces
+were read, and auto-merge was armed.
+
+**Proposed contract change (presented to the operator, not self-approved):** § Step 8 / § Cloud session
+affordances frame the gated-self-wake case as "arm-and-hand-off". This run shows a second viable path
+when the operator is reachable or the session stays active: **drive the review cycle by manual
+`pull_request_read` polling** rather than requiring a subscription — read both comment surfaces and the
+check-runs on demand, then arm. Worth a one-line note in § Step 8 that manual MCP polling is the
+in-session fallback when the self-wake tools are approval-gated. Per Step 9 this would ship as a
+**separate `chore/` PR** touching only the skill, not in this plan's PR. Operator decision pending; if
+declined, recorded as "no change".
 
 ## Residue
 
-- Split-out: the wired quota-vs-diff-size refusal **cause** member (`refused_size` / `refused_quota`),
-  deferred as a material widening. The partition is documented as derivable; the wiring is a
-  follow-up plan.
+- **Landing delegated.** Auto-merge is armed (SQUASH); the merge queue lands the PR once required
+  checks pass on the final head. The squash merge SHA does not exist yet and is read from the PR merge
+  event by the orchestrator's collect, not embedded here.
+- **Split-out (follow-up plan):** the *wired* quota-vs-diff-size refusal **cause** member
+  (`refused_size` / `refused_quota`), deferred as a material widening. The partition is documented as
+  derivable from `refusal_patterns`; only the wiring is deferred.
+- **Contract-change proposal pending operator decision** (§ What have we learned): a one-line § Step 8
+  note that manual `pull_request_read` polling is the in-session fallback when self-wake is
+  approval-gated. Ships as a separate `chore/` PR if accepted.
+- **CodeRabbit's window reopens in ~5 min.** Not awaited — rate limits are disclosed, not blocked. If
+  richer coverage is wanted, `@coderabbitai review` could be posted after the reset; deliberately not
+  done here.
