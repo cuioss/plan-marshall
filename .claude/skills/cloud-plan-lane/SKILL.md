@@ -375,8 +375,9 @@ git diff --name-only origin/main...HEAD
 
 **This diff sees committed work only** — staged, unstaged, and untracked files are invisible to it.
 An uncommitted new `.py` file would therefore skip the build *and* be invisible to the Step 6
-sub-agent, which reads the same range. So re-assert the clean tree Step 2 required, and treat a
-dirty result as a defect in the run rather than working around it:
+sub-agent, which likewise sees only committed work — its `git diff` read and any beyond-diff bundle
+sweep alike read committed HEAD content, never an uncommitted file. So re-assert the clean tree Step 2
+required, and treat a dirty result as a defect in the run rather than working around it:
 
 ```bash
 git status --porcelain
@@ -437,6 +438,13 @@ Give it, at minimum:
 - the diff under review (`git diff origin/main...HEAD`);
 - the instruction to check each deliverable for: implemented at all, implemented as specified,
   covered by a test where a test is warranted, and no undeclared collateral change;
+- when the change alters a value, default, constant, or schema that documentation restates, the
+  instruction to sweep **beyond the diff** — across the owning bundle/skill, not only the diff's own
+  hunks — for any comment, docstring, or prose statement the change makes false. A stale claim in an
+  *untouched* file (a "stays unset", a "defaults to `null`", a "the seeded shape is X") is the same
+  misleading-signal defect as one in a touched file, and the diff-scoped collateral check above cannot
+  see it — an observed run had to re-dispatch a second time to catch two such statements in bundle
+  docs the diff never opened;
 - the instruction to report every gap it finds with file and symbol, and to state explicitly when a
   deliverable cannot be verified from the diff alone rather than assuming it passed;
 - the instruction that a clean verdict must name what it checked, so an empty finding list is
