@@ -93,11 +93,47 @@ re-run is green.
 
 ## Findings
 
-_pending_
+### From the pre-PR verification sub-agent (Step 6, general-purpose, read-only)
+
+Verdict: D0–D3 met and (where warranted) tested; both mandated cold reads PASS; the D1 cause-member
+split is legitimate and leaves no "Done when" unmet. It found **eight documentation-drift instances**
+the `refused_unknown` member (eight→nine taxonomy) introduced but the diff did not chase down. Each is
+a now-false taxonomy statement — the exact misleading-signal defect this epic exists to remove — so all
+were **fixed** (commit `607fa10`), then confirmed clean by full-tree greps.
+
+- **[fixed]** `review_completeness.py:160` — the module-level constant-block comment still said "Eight
+  members … NOT a ninth member", contradicting the same file's updated docstring. (HIGH — inside a
+  changed file, in a hunk the diff never opened; my own beyond-diff sweep missed it.)
+- **[fixed]** `workflow-pr-doctor/standards/automated-review-lifecycle.md:54` — "exactly one of eight"
+  + enumeration missing `refused_unknown`. (HIGH, different bundle.)
+- **[fixed]** `tools-integration-ci/standards/pr-review-operations.md:248` — "seven members" (also
+  pre-existing drift: omitted `declined`) → "nine non-participation members"; and `:256` refused row
+  two-way → three-way.
+- **[fixed]** five two-way "refused_awaitable / refused_hard" classification descriptions
+  (`workflow-integration-github/SKILL.md:137`, `github_pr.py:801` & `:984`, `_github_pr.py:177`,
+  `test_github_pr.py:971`) → three-way.
+
+Cold reads (recorded per the plan's Verification section):
+- **D3 strings — PASS.** `"0 comment(s) found — 3 refused …"` reads as *not reviewed*; `"… — 3 empty …"`
+  reads as *reviewed and clean*. The two conclusions differ, so the surface does its job.
+- **D2 deficit — PASS.** A `verdict: deficit` report shows `gates_merge: false` / `proves:
+  reviewer_quality_only` on adjacent lines; a naive operator concludes it does NOT block a merge.
+
+Not independently re-run by the sub-agent (read-only): the "fail pre-fix" clause. Recorded from the
+authoring run — the two flipped collapse-tests were observed `2 failed` against the pre-change code
+before the fix landed (§ Deliverables D4), and the new-symbol tests necessarily error pre-fix.
+
+No `re-dispatch` of the sub-agent: every finding was mechanical count-drift of one class, all fixed,
+and two full-tree greps (`eight[- ]member…`, `refused_awaitable / refused_hard` without
+`refused_unknown`) return clean — a cheaper, exhaustive re-verification of the exact finding class.
+
+### From CI / PR review
+
+_pending — populated after the PR opens._
 
 ## Reviewer participation
 
-_pending_
+_pending — populated after the PR review cycle._
 
 ## Cost
 
