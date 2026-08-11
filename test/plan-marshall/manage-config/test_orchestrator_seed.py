@@ -169,16 +169,49 @@ def test_parallelization_scope_bool_is_rejected():
 
 
 # =============================================================================
-# get_default_config self-validation
+# get_default_config self-validation + default-surfacing (D5a)
 # =============================================================================
 
 
 def test_get_default_config_self_validation_is_clean():
     """get_default_config() runs the orchestrator self-validation without raising."""
     config = _config_defaults_mod.get_default_config()
-    # the seeded block carries only auto_emit=False and passes its own validator
-    assert config['orchestrator'] == {'auto_emit': False}
     validate_orchestrator_block(config['orchestrator'])
+
+
+def test_seed_surfaces_every_orchestrator_knob():
+    """The seeded orchestrator block materialises every settable knob (D5a).
+
+    This assertion FAILS against the old ``{'auto_emit': False}`` seed — it pins
+    the surfacing fix, not the defect. Each knob a reader can set must appear in
+    the seeded file with its effective default so it is discoverable; a knob
+    present in code but absent from the seed is a default-surfacing gap
+    (recipe-marshal-json-config-audit Aspect 1).
+    """
+    orch = _config_defaults_mod.get_default_config()['orchestrator']
+    # every settable knob is individually present (discoverable)
+    assert 'auto_emit' in orch
+    assert 'effort' in orch
+    assert 'parallelization_scope' in orch
+    # each carries its effective default: auto_emit safe-posture False, the effort
+    # sub-block an empty (behaviourally-inert) object, the scope its default of 1
+    assert orch == {'auto_emit': False, 'effort': {}, 'parallelization_scope': 1}
+    validate_orchestrator_block(orch)
+
+
+def test_validation_accepts_both_seeded_and_legacy_shapes():
+    """Both the newly-seeded shape and a genuine legacy block validate (D5c).
+
+    ``{'auto_emit': False}`` is the exact shape a pre-materialisation ``init``
+    wrote, so it is a real legacy fixture, not a synthesised omission. An existing
+    consumer's file must not become invalid: the validator accepts a block missing
+    ``effort`` / ``parallelization_scope`` exactly as it accepts the fully-seeded
+    block.
+    """
+    validate_orchestrator_block(
+        _config_defaults_mod.get_default_config()['orchestrator']
+    )  # newly-seeded shape
+    validate_orchestrator_block({'auto_emit': False})  # genuine legacy shape
 
 
 # =============================================================================
