@@ -408,7 +408,7 @@ class TestMisPruneVerdictDiscriminators:
 
         row = _check(result['mis_prune_checks'], 'mis_prune:sonar-roundtrip')
         assert row['status'] == 'skip'
-        assert row['detail'] == 'no realized footprint'
+        assert row['detail'] == 'footprint unresolvable'
         assert row['removal_cause'] == 'not_evaluated'
 
     def test_present_step_passes(self, tmp_path):

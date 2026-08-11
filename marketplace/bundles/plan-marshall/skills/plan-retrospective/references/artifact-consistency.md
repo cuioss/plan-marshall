@@ -8,7 +8,7 @@ The script consumes:
 - `status.toon` (phase position, metadata)
 - `solution_outline.md` (deliverables section)
 - `references.json` / `references.toon` (domains; `base_branch` for the footprint diff)
-- the plan's live footprint — derived from the worktree (`{base}...HEAD` ∪ porcelain) when one is on disk, falling back to the legacy `references.modified_files` key only for archived plans created before the ledger was removed. The footprint carries a **resolution state**: it either resolved (possibly to a genuinely empty set) or it could not be resolved at all. The two are distinct answers, never collapsed into one empty set — see [Footprint resolution state](#footprint-resolution-state)
+- the plan's footprint — resolved through the shared footprint resolver: live worktree diff (`{base}...HEAD` ∪ porcelain) when one is on disk, else the persisted `references.realized_footprint` capture, then a merge-commit fallback, then the legacy `references.modified_files` key for pre-ledger archives. The footprint carries a **resolution state**: it either resolved (possibly to a genuinely empty set) or it could not be resolved at all. The two are distinct answers, never collapsed into one empty set — see [Footprint resolution state](#footprint-resolution-state)
 - `tasks/TASK-*.json` (task step targets)
 - `metrics.md` (when present)
 

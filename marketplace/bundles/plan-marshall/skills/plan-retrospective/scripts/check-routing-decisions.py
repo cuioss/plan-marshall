@@ -340,7 +340,7 @@ def evaluate_mis_prunes(
     ===================================================  ==============
     Absent step's state                                  Verdict
     ===================================================  ==============
-    No realized footprint                                ``skip``
+    Footprint unresolvable                               ``skip``
     Named by a recorded non-predicate cause              ``skip``
     Log unreadable / absent (``log_readable == False``)  ``inconclusive``
     Readable log names no cause, predicate now false     ``fail``
@@ -380,7 +380,7 @@ def evaluate_mis_prunes(
                 'status': 'skip',
                 'predicate': predicate,
                 'removal_cause': _CAUSE_NOT_EVALUATED,
-                'detail': 'no realized footprint',
+                'detail': 'footprint unresolvable',
             })
             continue
         recorded_cause = removal_causes.get(step)
