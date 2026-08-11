@@ -69,7 +69,7 @@ would hold the step open forever.
 
 ### Two members are refinements, not siblings — and their remedies are opposite
 
-Six of the eight members are mutually independent observations. The remaining two exist because
+Seven of the nine members are mutually independent observations. The remaining two exist because
 `absent` was doing two other jobs badly, and each carries a remedy that `absent`'s does not:
 
 - **`participated_stale` is the opposite of `absent`.** `absent` means there is no review to refresh,

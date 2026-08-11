@@ -619,7 +619,7 @@ def check_completeness(
         ``bot_states`` spans required ∪ optional and assigns exactly one state per
         bot. ``unproven_bots`` is the subset whose state leaves participation
         unproven — the members of ``_UNPROVEN_STATES`` (``absent`` /
-        ``in_progress`` / either refusal member / ``participated_stale`` /
+        ``in_progress`` / any of the three refusal members / ``participated_stale`` /
         ``declined`` / ``not_triggered``);
         ``pending_bots`` is the subset carrying an untriaged finding. Both span
         required ∪ optional for visibility, but only the REQUIRED subset gates
