@@ -24,6 +24,8 @@ Domain-specific document management for request documents. Provides logical docu
 |------|------|---------|
 | `request` | `request.md` | Original user input (source of truth) |
 
+Adding a new document type requires no Python changes — only a `documents/{type}.toon` definition and a `templates/{type}.md` template. See [standards/adding-document-types.md](standards/adding-document-types.md) for the full procedure.
+
 ---
 
 ## API: Noun-Verb Pattern

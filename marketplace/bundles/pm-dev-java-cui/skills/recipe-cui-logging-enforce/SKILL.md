@@ -196,8 +196,8 @@ This section defines how the task executor enforces logging standards within eac
 
 Execute in this order:
 
-1. **Logger migration** — Replace `LoggerFactory.getLogger` / `Logger.getLogger` / `@Slf4j` with `CuiLogger`. Apply patterns from `standards/logging-maintenance-reference.md` → "Logger Migration"
-2. **LogRecord implementation** — Replace direct string logging at INFO/WARN/ERROR/FATAL with LogRecord usage. Convert `{}` placeholders to `%s`. Follow DSL-style structure from `standards/logging-standards.md` → "LogMessages Class Structure"
+1. **Logger migration** — Replace `LoggerFactory.getLogger` / `Logger.getLogger` / `@Slf4j` with `CuiLogger`. Apply patterns from the `pm-dev-java-cui:cui-logging` skill's `standards/logging-maintenance-reference.md` → "Logger Migration"
+2. **LogRecord implementation** — Replace direct string logging at INFO/WARN/ERROR/FATAL with LogRecord usage. Convert `{}` placeholders to `%s`. Follow DSL-style structure from the `pm-dev-java-cui:cui-logging` skill's `standards/logging-standards.md` → "LogMessages Class Structure"
 3. **Remove unused LogRecords** — Remove definitions with no production references. Verify compilation.
 4. **Add LogAssert tests** — Add LogAsserts to existing business logic tests (never standalone coverage tests). Use `@EnableTestLogger` and LogAsserts. If no business logic test exists: ask user.
 5. **Test-only LogRecords** — Report as critical bugs, stop and await user guidance.
