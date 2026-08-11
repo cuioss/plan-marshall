@@ -9,14 +9,16 @@ Python domain extension providing development standards for plan-marshall workfl
 - Integration with ruff, mypy, and pytest toolchains
 - Triage extension for Python findings during plan-finalize phase
 
-## Skills (4 skills, 3 registered + 1 internal)
+## Skills (6 skills)
 
 | Skill | Purpose |
 |-------|---------|
 | `python-core` | Core Python patterns — types, data structures, error handling, naming, imports |
 | `pytest-testing` | Pytest standards — fixtures, isolation, mocking, assertions, coverage |
+| `python-security` | Python security — injection sinks (subprocess, eval/exec, deserialization, SQL), path-traversal, untrusted-input handling |
+| `arch-gate-python` | Python architectural-fitness gate — import-linter structural-boundary check emitting arch-constraint findings |
 | `ext-triage-python` | Triage extension for Python findings during plan-finalize phase |
-| `plan-marshall-plugin` | Python domain registration (internal extension, not registered in plugin.json) |
+| `plan-marshall-plugin` | Python domain registration (extension implementor discovered via the Extension API, registered in plugin.json) |
 
 ## Architecture
 
@@ -29,11 +31,13 @@ pm-dev-python/
     ├── pytest-testing/          # Pytest testing standards (reference)
     │   └── standards/
     │       └── testing-pytest.md
+    ├── python-security/         # Python security standards (reference)
+    ├── arch-gate-python/        # Python architectural-fitness gate
     ├── ext-triage-python/       # Triage extension point
     │   └── standards/
     │       ├── severity.md
     │       └── suppression.md
-    └── plan-marshall-plugin/    # Domain extension (not registered)
+    └── plan-marshall-plugin/    # Domain extension (registered)
         ├── SKILL.md
         └── extension.py
 ```

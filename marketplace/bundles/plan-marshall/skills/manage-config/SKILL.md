@@ -1355,7 +1355,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config list-v
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config finalize-steps set-lane \
-  --step-id STEP_ID --lane {off,auto,full} [--plan-id PLAN_ID]
+  --step-id STEP_ID --lane {off,standard,full} [--plan-id PLAN_ID]
 ```
 
 Persists a resolved per-element `lane` override for one finalize step. `--plan-id` is the **channel selector** and the only argument distinguishing the two declaration channels: omit it to write the project-wide `marshal.json` `plan.phase-6-finalize.steps[<step>].lane`, supply it to write only that plan's `status.metadata.finalize_step_overrides[<step>].lane` and leave `marshal.json` byte-unchanged. The composer merges both (plan-local ▸ marshal) into the one map every per-element reader consults. The `--lane` choices are the resolved answers an operator dialogue produces; the reader enum additionally accepts the `minimal` / `ask` seed values, which only shipped frontmatter and marshal seeding emit.
