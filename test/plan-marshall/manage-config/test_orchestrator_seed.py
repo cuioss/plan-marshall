@@ -205,15 +205,20 @@ def test_seed_surfaces_every_orchestrator_knob():
 def test_orchestrator_known_keys_is_the_authoritative_nonempty_source():
     """ORCHESTRATOR_KNOWN_KEYS is the single, non-empty source of valid block keys.
 
-    Both ``validate_orchestrator_block`` and the seed-completeness tests derive
+    ``validate_orchestrator_block`` and the seed-completeness tests both derive
     from it, so it must be non-empty — a vacuous set would make those derived
-    checks pass trivially (the non-vacuity guard) — and it must match the block's
-    actual supported keys. The validator, which derives its whitelist from this
-    constant, rejects a key outside it.
+    checks pass trivially (the non-vacuity guard). Its exact CONTENT is pinned
+    WITHOUT a hard-coded mirror here: ``test_seed_surfaces_every_orchestrator_knob``
+    asserts ``set(orch) == set(ORCHESTRATOR_KNOWN_KEYS)`` and separately pins the
+    seed's keys via its value assertion, so the known-key set is fixed
+    transitively. This test guards only what that transitive pin does not: the set
+    is non-empty, and the validator actually derives its whitelist from it.
     """
     known = _config_defaults_mod.ORCHESTRATOR_KNOWN_KEYS
     assert known, 'ORCHESTRATOR_KNOWN_KEYS must be non-empty (non-vacuity guard)'
-    assert set(known) == {'auto_emit', 'effort', 'parallelization_scope'}
+    # No `set(known) == {literal}` assertion here — that would be a second
+    # hard-coded mirror of the key set. The content is pinned transitively by the
+    # seed-completeness + seed-value assertions in the tests above.
     # A key outside the authoritative set is rejected by the validator that derives
     # its whitelist from it.
     with pytest.raises(ValueError, match='orchestrator block keys'):
