@@ -74,14 +74,20 @@ obvious signal cannot answer: **is it still running, or was it killed?** The thr
 a shipped diff. They hold for every build engine, because they are properties of how the executor
 emits output and how the harness backgrounds a job, not of any one wrapper.
 
-### The buffered output file carries no information about a running-vs-killed job
+### The backgrounded job's captured output carries no running-vs-killed information
 
-The executor emits its structured result **once, at completion**, so a backgrounded build's captured
-output file is **empty while the build runs**. After the job is killed the file is **also empty** —
-the executor never reached the emit. **The two states are byte-identical.** An empty output file is
-not evidence of "still running" and not evidence of "killed"; it carries no information at all, and
-polling it is reasoning from a constant. Do **not** infer a background build's liveness from its
-output file.
+When a long build dispatch is put in the background, the harness captures the **executor's own
+stdout** — and the executor emits its structured result **once, at completion**. So that captured
+output is **empty while the build runs**, and **also empty** after the job is killed, because the
+executor never reached the emit. **The two states are byte-identical:** an empty captured-output file
+is not evidence of "still running" and not evidence of "killed"; it carries no information at all, and
+polling it is reasoning from a constant.
+
+Read "output" here as the *backgrounded job's captured stdout* — **not** the build's own streamed log
+file under `build-results/…` (see [Log File Handling](#log-file-handling)). That log may fill as the
+build runs, but it is not what a background poller is watching, and it is not a liveness oracle either
+— a half-written log is as consistent with a killed build as with a running one. Do **not** infer a
+background build's liveness from either file; use the change-ledger row below.
 
 ### The `kind=build` change-ledger row is the substitute oracle — read `status`, never mere presence
 
