@@ -221,12 +221,6 @@ _UNPROVEN_STATES = frozenset(
 # can be neither a deficit baseline nor a meaningful finding count.
 _REVIEWED_STATES = frozenset({STATE_PARTICIPATED, STATE_PARTICIPATED_BUT_EMPTY})
 
-# The three refusal members — the awaitability axis. A bot in one of these MAY also
-# carry a CAUSE (size vs quota, the orthogonal axis) supplied via ``--refused-causes``
-# and reported in ``refusal_causes[]``; the cause names the remedy (a smaller diff vs
-# backoff) and never changes which awaitability member the bot resolves to.
-_REFUSAL_STATES = frozenset({STATE_REFUSED_AWAITABLE, STATE_REFUSED_HARD, STATE_REFUSED_UNKNOWN})
-
 # Deficit-signal verdicts (D2). A REVIEWER-QUALITY observation about a required
 # reviewer's YIELD, never a merge verdict and never a participation verdict.
 DEFICIT_DEFICIT = 'deficit'            # a required reviewer under-produced vs a baseline
@@ -729,10 +723,19 @@ def check_completeness(
     # It names the remedy (size → a smaller diff, quota → backoff) alongside the
     # awaitability member, and is advisory — it gates nothing.
     causes_in = dict(refused_causes or {})
+    # Derive the refusal population per-record from the classifier rather than
+    # matching against a second hand-maintained state set: a bot is refused exactly
+    # when its classified state is the one ``_refusal_state`` maps its
+    # ``rate_limit_class`` to — the sole path to a refusal state (see ``classify_bot``).
+    # Any refusal member ``_refusal_state`` can emit is therefore covered
+    # automatically, so a new member cannot silently fall out of this overlay; a
+    # non-refused bot's state (participated / declined / absent / …) never equals a
+    # refusal state and is excluded.
     refusal_causes_out = [
         {'bot_kind': rec['bot_kind'], 'cause': causes_in[rec['bot_kind']]}
         for rec in bot_states
-        if rec['state'] in _REFUSAL_STATES and rec['bot_kind'] in causes_in
+        if rec['bot_kind'] in causes_in
+        and rec['state'] == _refusal_state(bot_registry.rate_limit_class(rec['bot_kind']))
     ]
     return {
         'status': 'success',

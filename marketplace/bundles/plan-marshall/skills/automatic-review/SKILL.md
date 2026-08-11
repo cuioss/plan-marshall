@@ -647,14 +647,14 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   --refused-causes "{refused_causes}"
 ```
 
-Append the bare `--not-triggered` flag to that call when and only when the item-5 read reported `has_pull_request_run: false`. It is a `store_true` bool with no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the six list flags only. An item-5 read that was unreadable never reaches this call at all — it routes to the UNKNOWN verdict below before the predicate is invoked, so there is no third polarity to encode on the flag.
+Append the bare `--not-triggered` flag to that call when and only when the item-5 read reported `has_pull_request_run: false`. It is a `store_true` bool with no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the seven list flags only. An item-5 read that was unreadable never reaches this call at all — it routes to the UNKNOWN verdict below before the predicate is invoked, so there is no third polarity to encode on the flag.
 
-All six list sets are legitimately empty in normal operation — a plan with no optional bots, no in-progress
-bots, no refusals, and no stale publishes is the common case. **The load-bearing defence is the parser, not the quoting.**
+All seven list sets are legitimately empty in normal operation — a plan with no optional bots, no in-progress
+bots, no refusals, no stale publishes, and no refusal causes is the common case. **The load-bearing defence is the parser, not the quoting.**
 The generated executor strips every empty-string argument before argparse sees it (`script_args = [a
 for a in script_args if a]` in `.plan/execute-script.py`), so through the executor `--refused-bots ""`
 arrives as a bare `--refused-bots` exactly as an unquoted empty placeholder would — the quotes do NOT
-survive to the parser. What makes the empty case safe is that all six list flags declare `nargs='?'` with
+survive to the parser. What makes the empty case safe is that all seven list flags declare `nargs='?'` with
 `const=''` (see § Canonical invocations → `review_completeness — check`), so a bare flag reads as the
 empty list instead of swallowing the next token or tripping an argparse rejection at end of line.
 
@@ -897,14 +897,16 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   [--declined-bots [DECLINED_BOTS]] [--not-triggered] [--triage-ran] [--refused-causes [REFUSED_CAUSES]]
 ```
 
-All seven list flags take an OPTIONAL value: each may be supplied bare (the flag with no value at
+All eight list flags take an OPTIONAL value: each may be supplied bare (the flag with no value at
 all), which reads as the empty list — identical to omitting it. Callers interpolating a possibly-empty
 variable MUST still double-quote the placeholder; the bare form is the parser-side backstop, not a
 licence to leave the interpolation unquoted. An empty `--required-bots` is the vacuously-satisfied
 quorum; an empty `--participated-bots` is zero proven participants and can never produce a pass for a
 non-empty required set. An empty `--stale-participation-bots` means no bot's publish failed the
 currency test, so nothing resolves to `participated_stale`. An empty `--declined-bots` means no bot
-answered a re-review of the merge candidate without reviewing it, so nothing resolves to `declined`.
+answered a re-review of the merge candidate without reviewing it, so nothing resolves to `declined`. An
+empty `--refused-causes` supplies no cause overlay, so `refusal_causes[]` is empty and every refusal is
+reported by its awaitability member alone — the advisory cause is simply absent, never a gate.
 
 `--not-triggered` is **not** a list flag and takes no value at all: it is a `store_true` bool, passed
 bare when `ci checks pull-request-runs` reports `has_pull_request_run: false` and omitted otherwise.

@@ -764,6 +764,8 @@ Retain `participated_bots`, `stale_participation_bots`, and `refused_bots` from 
 
 Also retain `{declined_bots}` — the bots the trigger-A re-review found had **declined** to review this HEAD, i.e. answered the re-review with a comment carrying no reviewed-commit SHA (`head_sha_verified: false`, see § "Re-review the rebased HEAD (trigger A)" / [`branch-cleanup-rereview.md`](branch-cleanup-rereview.md)). A decline is not observable from the comment re-fetch — only the re-review round-trip that *asked* the bot can tell a decline from a review that predates this HEAD — so this set is carried from trigger A rather than derived here. It is empty when no re-review ran (no rebase this finalize entry) or when every re-reviewed bot produced a SHA-verified review.
 
+Also retain `{refused_causes}` — the advisory size/quota CAUSE overlay from the same `fetch_findings` return (`refused_causes[]`), rendered as comma-separated `{bot_kind}:{cause}` pairs (`cause` in `size` / `quota`). It defaults to the empty list when the producer emitted no causes, or the field was absent or malformed — the `[]` fallback, never a hard failure. Retaining it is what lets the barrier below NAME a blocked reviewer's remedy — a smaller diff for `size`, backoff for `quota` — when it renders a refusal. Because the cause axis is **advisory** it never enters the participation gate and changes no verdict, as the note below the predicate call restates; it is threaded only so the operator deciding an override reads the remedy alongside the awaitability member.
+
 One input is NOT available from the re-fetch, because no earlier call observes it — the PR-wide question of whether any `pull_request`-event workflow run exists for this PR at all. Read it here:
 
 ```bash
