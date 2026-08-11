@@ -113,8 +113,18 @@ the D4 change to the hot config write path regressed nothing. Per-commit `./pw q
   bare word `'uninstall' not in REMEDIATION`, which failed because the new text says "no uninstall or
   reinstall" (operator reassurance). Tightened to assert the destructive *commands* `/plugin uninstall`
   / `/plugin install` are absent — the actual defect. Disposition: **fixed**.
-- **Verification sub-agent (Step 6, independent).** Dispatched against plan.md + the branch diff;
-  findings and dispositions appended below on completion.
+- **Verification sub-agent (Step 6, independent).** Dispatched against plan.md + the branch diff.
+  Verdict: 9/10 deliverables fully satisfied in the committed range; D3 correctly recorded as
+  already-fixed; all five D10 tests pin what they claim; D4 confirmed a genuine optimistic-concurrency
+  guard (re-reads disk at save time), not merely an atomic write; and it **independently re-derived
+  the contested write-site count** (5 sites, 2 routed / 3 bypass) matching this report, and
+  **independently re-ran the D9 cold-read** with the correct non-destructive answer. It flagged
+  residuals already inside the plan's out-of-scope (the check→`os.replace` TOCTOU window; the three
+  bypass writers remaining unguarded) — acceptable, and now honestly documented rather than hidden.
+  Its ONE actionable finding: the D9 report record (red-first + cold-read) and the Deliverables /
+  Build-gate sections were still placeholders in the commit it reviewed (`b185b49`).
+  **Disposition: already fixed** — those sections were committed in `e501316`, after the agent's
+  review snapshot; the finding is a timing artifact of reviewing an earlier HEAD, not an open gap.
 
 ## Reviewer participation
 
