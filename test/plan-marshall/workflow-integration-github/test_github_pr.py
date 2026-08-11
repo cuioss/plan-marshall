@@ -2367,3 +2367,161 @@ def test_a_fresh_comment_outranks_a_stale_one_through_the_subtraction(
     assert second['status'] == 'success'
     assert second['participated_bots'] == [{'bot_kind': bot_kind, 'evidence_kind': fresh['kind']}]
     assert second['stale_participation_bots'] == []
+
+
+# =============================================================================
+# Refusal CAUSE classification (github_pr.refusal_cause) — size vs quota
+# =============================================================================
+#
+# The orthogonal axis to rate_limit_class (awaitability): whether a refusal was
+# caused by the diff being over a per-PR size ceiling (remedy: a smaller diff) or by
+# a rate/budget quota (remedy: backoff). ``size`` iff a declared refusal_size_pattern
+# matches; every other refusal is ``quota``.
+
+# Sourcery's per-PR size-ceiling refusal — matched by its refusal_patterns (detection)
+# AND its refusal_size_patterns (cause), and invisible to the structural recognizer
+# ("larger than the review limit of" is a comparison, not an "exceeded" statement).
+_SOURCERY_SIZE_NOTICE = (
+    '> [!NOTE]\n'
+    '> Sorry, your pull request is larger than the review limit of 150000 diff '
+    'characters. Please split it into smaller PRs.'
+)
+
+
+def test_refusal_cause_size_matches_the_declared_size_pattern():
+    """A refusal matching a bot's ``refusal_size_patterns`` is caused by diff SIZE."""
+    assert github_pr.refusal_cause(_SOURCERY_SIZE_NOTICE, 'sourcery') == 'size'
+
+
+def test_refusal_cause_quota_is_the_default_for_a_non_size_refusal():
+    """Any refusal that is not a declared size pattern is a rate/budget QUOTA."""
+    # Sourcery's weekly notice is a quota, not a size ceiling.
+    assert github_pr.refusal_cause(_RATE_LIMIT_NOTICES['sourcery'], 'sourcery') == 'quota'
+    # CodeRabbit declares no size patterns, so its refusal is quota.
+    assert github_pr.refusal_cause(_RATE_LIMIT_NOTICES['coderabbit'], 'coderabbit') == 'quota'
+
+
+def test_refusal_cause_unregistered_bot_is_quota():
+    """A structurally-detected refusal with no bot_kind declares no size pattern → quota."""
+    assert github_pr.refusal_cause(_RATE_LIMIT_NOTICES['unknown'], None) == 'quota'
+
+
+def test_refusal_cause_size_pattern_is_bot_scoped():
+    """The size pattern is read from the NAMED bot's registry, not any bot's.
+
+    The same size-ceiling body attributed to a bot that declares no size pattern
+    classifies quota — the cause is grounded in the bot's own declared patterns.
+    """
+    assert github_pr.refusal_cause(_SOURCERY_SIZE_NOTICE, 'coderabbit') == 'quota'
+
+
+def test_fetch_findings_reports_refusal_causes(plan_context, monkeypatch):
+    """fetch_findings emits refused_causes[] — the size vs quota CAUSE per refusing bot.
+
+    Sourcery posts its per-PR size-ceiling refusal (cause=size — the remedy is a
+    smaller diff); CodeRabbit posts a rate-limit refusal (cause=quota — the remedy is
+    backoff). Both are surfaced in refused_bots AND attributed by cause in
+    refused_causes, the orthogonal axis to rate_limit_class.
+    """
+    plan_id = 'gh-pr-refusal-causes'
+    comments = [
+        {
+            'id': 'sr-size',
+            'author': 'sourcery-ai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': _SOURCERY_SIZE_NOTICE,
+            'resolved': False,
+        },
+        {
+            'id': 'cr-quota',
+            'author': 'coderabbitai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': _RATE_LIMIT_NOTICES['coderabbit'],
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(106, plan_id)
+    assert result['status'] == 'success'
+    assert result['refused_bots'] == ['coderabbit', 'sourcery']
+    assert result['refused_causes'] == [
+        {'bot_kind': 'coderabbit', 'cause': 'quota'},
+        {'bot_kind': 'sourcery', 'cause': 'size'},
+    ]
+
+
+def test_fetch_findings_size_cause_is_sticky(plan_context, monkeypatch):
+    """A bot that posted BOTH a quota notice and a size ceiling records cause=size.
+
+    Size is the more actionable remedy (a smaller diff), so it wins over a quota
+    notice on the same PR regardless of order.
+    """
+    plan_id = 'gh-pr-refusal-cause-sticky'
+    comments = [
+        {
+            'id': 'sr-quota',
+            'author': 'sourcery-ai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': (
+                '> [!NOTE]\n'
+                '> Sourcery: you have reached your weekly rate limit of 500000 diff '
+                'characters.'
+            ),
+            'resolved': False,
+        },
+        {
+            'id': 'sr-size',
+            'author': 'sourcery-ai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': _SOURCERY_SIZE_NOTICE,
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(107, plan_id)
+    assert result['status'] == 'success'
+    assert result['refused_bots'] == ['sourcery']
+    # Both notices are quota-and-size for the same bot; size wins (more actionable).
+    assert result['refused_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size'}]
+
+
+def test_fetch_findings_size_cause_is_sticky_size_first(plan_context, monkeypatch):
+    """Sticky-size holds under the reverse order too: size first, then quota, stays size.
+
+    The stickiness must be order-independent — the symmetry the quota-then-size case
+    does not exercise.
+    """
+    plan_id = 'gh-pr-refusal-cause-sticky-reverse'
+    comments = [
+        {
+            'id': 'sr-size',
+            'author': 'sourcery-ai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': _SOURCERY_SIZE_NOTICE,
+            'resolved': False,
+        },
+        {
+            'id': 'sr-quota',
+            'author': 'sourcery-ai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': (
+                '> [!NOTE]\n'
+                '> Sourcery: you have reached your weekly rate limit of 500000 diff '
+                'characters.'
+            ),
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(108, plan_id)
+    assert result['status'] == 'success'
+    assert result['refused_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size'}]

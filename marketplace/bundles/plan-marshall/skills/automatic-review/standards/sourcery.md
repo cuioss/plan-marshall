@@ -38,7 +38,9 @@ ignore_patterns:
 refusal_patterns:
   - "your pull request is larger than the review limit of"         # #1014 refusal notice — handle-free and number-free so it survives a different account handle and a different character budget
   - "reached your weekly rate limit of"                            # #1034 / #1037 refusal notice — the account-level weekly diff-character quota, a DIFFERENT mode from the per-PR size ceiling above
-rate_limit_class: hard_quota   # both observed refusals are quotas, not windows that reopen usefully
+refusal_size_patterns:                                             # the CAUSE overlay: which refusal above is diff-SIZE (needs a smaller diff), not a rate/budget quota (needs backoff)
+  - "your pull request is larger than the review limit of"         # the per-PR size ceiling — cause=size; the weekly-rate-limit notice above is NOT here, so it classifies cause=quota
+rate_limit_class: hard_quota   # both observed refusals are the same AWAITABILITY (hard_quota); their CAUSE differs (size vs quota) — carried by refusal_size_patterns above
 rate_limit_eta_patterns:
 severity_map:
   issue_bug_risk: high      # **issue (bug_risk):**
@@ -117,7 +119,11 @@ a branch".
 **Sourcery has at least TWO observed refusal phrasings**, so the structural recogniser must not be
 assumed to cover this bot: the #1014 per-PR size ceiling above, and a weekly diff-character quota
 ("you have reached your weekly rate limit of … diff characters"). The second is notice-voiced and the
-structural layer does see it; the first it cannot. Both are `hard_quota`.
+structural layer does see it; the first it cannot. Both are `hard_quota` on the **awaitability** axis,
+but their **cause** differs — the size ceiling is listed in `refusal_size_patterns`, so
+`_github_pr.refusal_cause` classifies it `size` (remedy: a smaller diff), while the weekly quota is not,
+so it classifies `quota` (remedy: backoff). See
+[`bot-participation-contract.md`](bot-participation-contract.md) § "Two axes: awaitability and CAUSE".
 
 ## Participation evidence — `review_body`
 

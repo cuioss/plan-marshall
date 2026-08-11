@@ -49,7 +49,8 @@ For GitLab projects use `plan-marshall:workflow-integration-gitlab:gitlab_pr fet
 
 > **Participation classification (cross-reference).** Beside the findings it files, `fetch_findings`
 > returns the participation observation sets — `participated_bots[]`, `stale_participation_bots[]`,
-> `refused_bots[]`, `unclassified_bots[]`. This lifecycle does not classify them; the
+> `refused_bots[]` (with the advisory `refused_causes[]` size/quota overlay), `unclassified_bots[]`.
+> This lifecycle does not classify them; the
 > `plan-marshall:automatic-review` step-done participation guard does, and it resolves every required
 > bot into **exactly one of nine** terminal non-participation states — `absent`, `not_triggered`,
 > `in_progress`, `refused_awaitable`, `refused_hard`, `refused_unknown`, `participated_but_empty`,

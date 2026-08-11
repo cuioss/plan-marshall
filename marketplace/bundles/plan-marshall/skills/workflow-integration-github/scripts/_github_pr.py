@@ -186,6 +186,37 @@ def _is_refusal_notice(body: str, bot_kind: str | None = None) -> bool:
     return _is_rate_limit_notice(body)
 
 
+# The orthogonal CAUSE axis for a detected refusal — distinct from ``rate_limit_class``
+# (the awaitability axis). A refusal is caused by a diff-SIZE ceiling (remedy: a
+# smaller diff) or by a rate/budget QUOTA (remedy: backoff / retry).
+REFUSAL_CAUSE_SIZE = 'size'
+REFUSAL_CAUSE_QUOTA = 'quota'
+
+
+def refusal_cause(body: str, bot_kind: str | None = None) -> str:
+    """Classify a detected refusal's CAUSE — ``'size'`` or ``'quota'``.
+
+    The orthogonal companion to ``rate_limit_class`` (awaitability): whether the bot
+    declined because the DIFF is too big (``size``) or because a rate/budget limit was
+    hit (``quota``). The two axes are independent — a size refusal and a quota refusal
+    can share the same ``hard_quota`` awaitability (both of Sourcery's do) — which is
+    why the cause cannot be read off ``rate_limit_class`` and needs its own registry
+    overlay, ``refusal_size_patterns``.
+
+    ``size`` iff ``body`` matches one of the bot's declared ``refusal_size_patterns``;
+    every other refusal is ``quota``, the rate/budget default. This assumes ``body`` is
+    ALREADY a refusal — the caller gates on :func:`_is_refusal_notice` — so it does not
+    re-detect. A structurally-detected refusal from an unregistered bot declares no
+    size pattern and so classifies ``quota``, which is correct: the rate-limit shape the
+    structural recogniser matches ("exceeded / reached / hit your limit") is a quota
+    shape, while a size ceiling ("larger than the review limit of") is invisible to it
+    and reaches recognition only through a declared pattern.
+    """
+    if bot_kind and any(marker in body for marker in bot_registry.refusal_size_patterns(bot_kind)):
+        return REFUSAL_CAUSE_SIZE
+    return REFUSAL_CAUSE_QUOTA
+
+
 def _extract_rate_limit_eta(body: str, bot_kind: str) -> str:
     """Return the reset ETA ``bot_kind`` stated in ``body``, or ``''`` when none.
 

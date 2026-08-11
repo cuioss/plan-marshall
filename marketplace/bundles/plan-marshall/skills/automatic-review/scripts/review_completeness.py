@@ -96,7 +96,7 @@ state — the quorum is vacuously satisfied and ``participation_complete`` is
 ``true``.
 
 Usage:
-    review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--not-triggered] [--triage-ran]
+    review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--not-triggered] [--triage-ran] [--refused-causes [<csv>]]
     review_completeness.py deficit --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--not-triggered] [--min-deficit <n>]
     review_completeness.py --help
 
@@ -136,6 +136,7 @@ Return TOON shape (check):
     unproven_bots[N]:                    # emitted only when non-empty
       - bot
     bot_states[N]{bot_kind,state}: ...   # one row per required ∪ optional bot
+    refusal_causes[N]{bot_kind,cause}: ...  # emitted only when non-empty — the size/quota CAUSE axis per refusing bot
 
 Return TOON shape (deficit):
     status: success
@@ -219,6 +220,12 @@ _UNPROVEN_STATES = frozenset(
 # state is a non-review (a refusal, an absence, a stale or in-flight publish), so it
 # can be neither a deficit baseline nor a meaningful finding count.
 _REVIEWED_STATES = frozenset({STATE_PARTICIPATED, STATE_PARTICIPATED_BUT_EMPTY})
+
+# The three refusal members — the awaitability axis. A bot in one of these MAY also
+# carry a CAUSE (size vs quota, the orthogonal axis) supplied via ``--refused-causes``
+# and reported in ``refusal_causes[]``; the cause names the remedy (a smaller diff vs
+# backoff) and never changes which awaitability member the bot resolves to.
+_REFUSAL_STATES = frozenset({STATE_REFUSED_AWAITABLE, STATE_REFUSED_HARD, STATE_REFUSED_UNKNOWN})
 
 # Deficit-signal verdicts (D2). A REVIEWER-QUALITY observation about a required
 # reviewer's YIELD, never a merge verdict and never a participation verdict.
@@ -311,6 +318,42 @@ def parse_participation(raw: str | None, flag: str = '--participated-bots') -> d
         if evidence_kind in bot_registry.participation_evidence(bot_kind):
             proven[bot_kind] = evidence_kind
     return proven
+
+
+def parse_causes(raw: str | None, flag: str = '--refused-causes') -> dict[str, str]:
+    """Parse a ``bot_kind:cause`` CSV into a bot -> refusal-cause map.
+
+    The ``refused_causes[]`` records ``github_pr fetch_findings`` emits, forwarded
+    verbatim: each ``{bot_kind, cause}`` becomes a ``bot_kind:cause`` token. ``cause``
+    is the refusal's CAUSE axis (``size`` / ``quota``) — attached to the refusing bot's
+    reported state so the operator sees the remedy (a smaller diff vs backoff). It is
+    ADVISORY: it never changes which awaitability member the bot resolves to.
+
+    A token that is not a ``bot_kind:cause`` pair — a bare ``bot_kind`` with no colon,
+    or a pair with an empty side — is a SHAPE violation and is REJECTED with
+    :class:`MalformedBotFlag`, the same loud-caller-error discipline the other pair-form
+    flags use. The cause VALUE is not validated against a closed set here: the cause
+    vocabulary is the producer's, so a value this flag does not recognise is carried
+    through rather than dropped. An empty token (the bare-flag / trailing-comma form)
+    is skipped.
+    """
+    causes: dict[str, str] = {}
+    for entry in (raw or '').split(','):
+        entry = entry.strip()
+        if not entry:
+            continue
+        bot_kind, sep, cause = entry.partition(':')
+        bot_kind = bot_kind.strip()
+        cause = cause.strip()
+        if not sep or not bot_kind or not cause:
+            raise MalformedBotFlag(
+                f'{flag} expects bot_kind:cause pairs but received the token {entry!r}, '
+                f'which is not a pair. A bare bot_kind carries no cause; silently dropping '
+                f'it would lose the size-vs-quota remedy signal, so it is rejected as a '
+                f'caller error.'
+            )
+        causes[bot_kind] = cause
+    return causes
 
 
 def _refusal_state(rate_limit_class: str) -> str:
@@ -546,6 +589,7 @@ def check_completeness(
     stale_participation_bots: list[str] | None = None,
     declined_bots: list[str] | None = None,
     not_triggered: bool = False,
+    refused_causes: dict[str, str] | None = None,
 ) -> dict:
     """Classify each bot's PARTICIPATION against the plan's ``pr-comment`` findings store.
 
@@ -679,6 +723,17 @@ def check_completeness(
         participation_complete = not required_pending and not required_unproven
     else:
         participation_complete = not required_unproven
+
+    # The orthogonal CAUSE axis, reported only for bots this pass actually classified
+    # as refused: {bot_kind, cause} per refusing bot whose cause the caller supplied.
+    # It names the remedy (size → a smaller diff, quota → backoff) alongside the
+    # awaitability member, and is advisory — it gates nothing.
+    causes_in = dict(refused_causes or {})
+    refusal_causes_out = [
+        {'bot_kind': rec['bot_kind'], 'cause': causes_in[rec['bot_kind']]}
+        for rec in bot_states
+        if rec['state'] in _REFUSAL_STATES and rec['bot_kind'] in causes_in
+    ]
     return {
         'status': 'success',
         'participation_complete': participation_complete,
@@ -693,6 +748,8 @@ def check_completeness(
         # ``display_detail`` reader can tell reviewed-and-clean from nobody-reviewed.
         # ``''`` for an empty roster — nothing to distribute.
         'review_state_summary': compose_review_state_summary(bot_states),
+        # The CAUSE axis per refusing bot (size vs quota) — advisory, names the remedy.
+        'refusal_causes': refusal_causes_out,
     }
 
 
@@ -788,6 +845,11 @@ def _emit_toon(payload: dict) -> None:
         print(f'bot_states[{len(states)}]{{bot_kind,state}}:')
         for record in states:
             print(f'  {record["bot_kind"]},{record["state"]}')
+    causes = payload.get('refusal_causes') or []
+    if causes:
+        print(f'refusal_causes[{len(causes)}]{{bot_kind,cause}}:')
+        for record in causes:
+            print(f'  {record["bot_kind"]},{record["cause"]}')
 
 
 def _emit_deficit_toon(payload: dict) -> None:
@@ -905,6 +967,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     """
     try:
         obs = _parse_bot_observations(args)
+        refused_causes = parse_causes(args.refused_causes, '--refused-causes')
     except MalformedBotFlag as exc:
         _emit_toon({'status': 'error', 'error': 'malformed_bot_flag', 'detail': str(exc)})
         return 1
@@ -919,6 +982,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         stale_participation_bots=obs['stale_participation_bots'],
         declined_bots=obs['declined_bots'],
         not_triggered=args.not_triggered,
+        refused_causes=refused_causes,
     )
     _emit_toon(payload)
     return 0 if payload.get('status') == 'success' else 1
@@ -1112,6 +1176,22 @@ def main(argv: list[str] | None = None) -> int:
             'completeness — only unproven REQUIRED bots gate the mark-done. Pass '
             'it once triage has run so a still-pending required finding blocks as '
             'a real incompleteness.'
+        ),
+    )
+    check_parser.add_argument(
+        '--refused-causes',
+        nargs='?',
+        const='',
+        default='',
+        help=(
+            'Comma-separated bot_kind:cause pairs — the exact shape github_pr '
+            'fetch_findings emits in refused_causes[], forwarded verbatim. cause is '
+            'the refusal CAUSE axis (size / quota), orthogonal to rate_limit_class: '
+            'size means the diff is over a per-PR ceiling (remedy: a smaller diff), '
+            'quota means a rate/budget limit (remedy: backoff). It is ADVISORY — '
+            'reported in refusal_causes[] for a bot classified refused, and never '
+            'changes which refusal member the bot resolves to. May be supplied bare '
+            '(no value), which reads as the empty list.'
         ),
     )
     check_parser.set_defaults(func=cmd_check)
