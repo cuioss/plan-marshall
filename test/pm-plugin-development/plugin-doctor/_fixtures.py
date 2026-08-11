@@ -102,6 +102,7 @@ _abcs = _load('_analyze_bash_chain_shapes_in_skills.py', '_abcs_fixtures')
 _awdtef = _load('_analyze_workflow_doc_toon_error_field.py', '_awdtef_fixtures')
 _aar = _load('_analyze_askuserquestion_reachability.py', '_aar_fixtures')
 _ahps = _load('_analyze_historical_prose_in_skills.py', '_ahps_fixtures')
+_airid = _load('_analyze_incident_reference_in_docs.py', '_airid_fixtures')
 _alis = _load('_analyze_lesson_id_in_skill_prose.py', '_alis_fixtures')
 _aatd = _load('_analyze_allowed_tools_drift.py', '_aatd_fixtures')
 _asdrc = _load('_analyze_self_declared_rule_compliance.py', '_asdrc_fixtures')
@@ -535,6 +536,15 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     corpus['no-lesson-id-in-skill-prose'] = FixtureSpec(
         analyzer=_alis.analyze_lesson_id_in_skill_prose,
         files={_PM_SKILL: '# F\n\nSee lesson `2026-01-01-12-001` for context.\n'},
+    )
+    corpus['no-incident-references'] = FixtureSpec(
+        analyzer=_airid.analyze_incident_reference_in_docs,
+        files={
+            _PM_SKILL: (
+                '# F\n\nObserved on plan-marshall#1045: the required bot never '
+                'reviewed and the step went done through the hatch.\n'
+            )
+        },
     )
     corpus['skill-self-declared-rule-violation'] = FixtureSpec(
         analyzer=_asdrc.analyze_self_declared_rule_compliance,

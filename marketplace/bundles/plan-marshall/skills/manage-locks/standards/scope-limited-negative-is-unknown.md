@@ -15,7 +15,7 @@ it means *not-observed-from-this-scope*, never *does-not-exist*.
 
 Reading that scope-limited negative as authoritative absence, and driving a
 destructive or existence-proof decision on it, is the bug this invariant forbids —
-the `#948` incident, where a live merge-lock holder in a sibling worktree read as
+the concrete case where a live merge-lock holder in a sibling worktree read as
 absent from a worktree-scoped enumeration and its lock was released while it was
 still live in another session.
 

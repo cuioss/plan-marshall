@@ -308,8 +308,7 @@ only when this caller is the recorded holder; idempotent no-op otherwise). With
 CONDITIONAL on the recorded holder's `holder_staleness` verdict — it evicts only a
 provably `stale` holder (through the observed-file eviction arbitration, never a
 blind unlink) and REFUSES (`status: refused`, `reason: holder_not_provably_dead`)
-on a `fresh` or `unknown` verdict, so a holder live in a sibling worktree (the #948
-shape) is never force-released.
+on a `fresh` or `unknown` verdict, so a holder live in a sibling worktree is never force-released.
 
 `--no-title-token` matches the acquire-side suppression: the caller never set a
 token, so there is nothing to clear. Otherwise the release path issues an

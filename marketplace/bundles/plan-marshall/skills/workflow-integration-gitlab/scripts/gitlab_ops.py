@@ -657,7 +657,7 @@ def _corroborate_merge(iid: str) -> tuple[bool, str]:
 
     The single seam every GitLab merge-shaped verb uses to prove its own success
     claim. A zero exit from ``glab`` means the command was accepted, never that
-    the merge landed — the #1081 signature is exactly a verb that reported
+    the merge landed — the accepted-not-landed signature is exactly a verb that reported
     ``merged: true`` (and deleted the source branch) for a merge that never
     happened.
 
@@ -1909,7 +1909,7 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
     - **Post-merge corroboration** — ``merged`` is set ONLY from
       :func:`_corroborate_merge`, a re-read of MR state, established BEFORE the
       branch-delete follow-up is allowed to run, so a merge that did not happen
-      can never take the source branch down with it (#1081). A non-corroborated
+      can never take the source branch down with it. A non-corroborated
       merge returns ``status: error`` and deletes nothing.
 
     When ``--delete-branch`` is requested, the merge is performed WITHOUT
@@ -1962,7 +1962,7 @@ def cmd_pr_merge(args: argparse.Namespace) -> dict:
         return make_error(
             'pr_merge',
             f'MR {iid} merge command succeeded but post-merge state does NOT corroborate a merge — '
-            f'refusing to report merged and skipping the branch delete (#1081). Verify the MR '
+            f'refusing to report merged and skipping the branch delete. Verify the MR '
             f'state; if this project requires the merge train, route the MR via '
             f'"ci pr merge-queue" instead of an immediate merge.',
             corroboration,

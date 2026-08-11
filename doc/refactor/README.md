@@ -1,5 +1,15 @@
 # OpenCode Support — Remaining Work
 
+> ⚠ **Planning material — deliberately exempt from the current-state documentation standards.**
+> This is a living maintainer roadmap. It tracks landed-vs-open status across the OpenCode
+> workstreams (the "Landed baseline" and per-workstream status tables below), which is exactly the
+> transitional status-tracking that `CLAUDE.md` § Documentation Standards keeps out of shipped
+> documentation. That exemption is **intentional** and scoped to this `doc/refactor/` planning
+> tree: tracking what has landed and what remains open is the roadmap's whole purpose, not a
+> standards violation. When a workstream is fully delivered and its decisions are captured in the
+> canonical docs (`doc/developer/`, `doc/concepts/`), retire its entry here rather than leaving it
+> as a permanent record.
+
 ## What this directory is
 
 The plan-marshall marketplace was redesigned for multi-target distribution (Claude Code

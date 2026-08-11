@@ -2004,7 +2004,7 @@ def _detect_worked_example_pairs(
 # Both walk ``.py`` function blocks over the post-image (or the diff's added lines
 # when no ``project_dir`` is available), reusing ``_function_blocks`` /
 # ``_block_is_diff_touched`` — the same infrastructure ``_detect_scan_derived_keys``
-# uses. Both were pinned against the real pre-#1067 defects (findings 8da924 /
+# uses. Both were pinned against the real pre-fix defects (findings 8da924 /
 # 3e04a8), whose pre-fix revisions are checked in as literal fixtures under
 # ``test/pm-plugin-development/ext-self-review-plan-marshall/``.
 
@@ -2067,7 +2067,7 @@ def _identity_validated(identity: str, blob: str) -> bool:
 
     The insertion loop demonstrably TREATS the value as an identity it validates —
     a falsiness check (``if not X``), a ``None`` check, or an ``isinstance`` guard.
-    This is half of the pre-#1067 defect signature; the other half is the ABSENCE
+    This is half of the pre-fix defect signature; the other half is the ABSENCE
     of a uniqueness guard (see :func:`_identity_deduped`). Requiring the validation
     guard is the narrowing that keeps the class off ordinary identity accumulators
     (``reports.append({'id': x})``) that never check the id at all.
@@ -2190,7 +2190,7 @@ def _detect_duplicate_claimable_keys(
     """Detect a caller-supplied identity claimed into a NEW keyed collection inside
     a loop that validates the identity but omits its duplicate-key disposition.
 
-    The pre-#1067 defect (finding 8da924): ``discover_derivation_resolvers``
+    The pre-fix defect (finding 8da924): ``discover_derivation_resolvers``
     appended each resolver's id behind a bare ``if not resolver_id`` falsiness
     check with NO membership test, so two resolvers answering the same id both
     survived and collapsed into one producer identity — the provenance contract's
@@ -2294,7 +2294,7 @@ def _unreported_discards_in_block(
     left alone. That is the narrowing D3 forced: a multi-disposition dispatch loop
     (``github_pr``'s respond loop routes to ``batch`` / ``untransmitted`` /
     ``skipped``) records every drop somewhere, and only its genuinely bare
-    pre-filter ``continue`` — if any — is a candidate. The shipped #1067 fix
+    pre-filter ``continue`` — if any — is a candidate. The shipped fix
     suppresses the class exactly this way: it made each bare ``continue`` non-bare
     by appending to ``notes`` first.
     """
@@ -2322,7 +2322,7 @@ def _detect_discard_without_report(
     """Detect a guarded discard branch inside a function that owns a report channel
     but does not write to it — a suppression with no report path.
 
-    The pre-#1067 defect (finding 3e04a8): ``merge_resolver_edges`` dropped
+    The pre-fix defect (finding 3e04a8): ``merge_resolver_edges`` dropped
     malformed candidates, self-edges, and unknown endpoints on bare ``continue``
     branches WITHOUT appending to its ``notes`` channel, so a resolver whose every
     candidate the merge discarded reported ``status: ok``, zero edges, and an empty

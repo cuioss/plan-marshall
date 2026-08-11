@@ -73,7 +73,7 @@ claim that co-tenants the same store:
     provably ``stale`` holder (through the observed-file eviction arbitration, never
     a blind unlink) and REFUSING (``status: refused``,
     ``reason: holder_not_provably_dead``) on a ``fresh`` or ``unknown`` verdict, so
-    a holder live in a sibling worktree (the #948 shape) is never force-released.
+    a holder live in a sibling worktree is never force-released.
   * ``rate-window {claim,check,release}`` — the cross-plan claim on ONE review
     bot's rate window, used by the automatic-review recovery sequence to stop two
     concurrently-finalizing plans from both re-triggering a rate-limited bot. State
@@ -1334,7 +1334,7 @@ def run_release(args: Namespace) -> dict[str, Any]:
     eviction arbitration, never a blind unlink), and the release REFUSES fail-closed
     (``status: refused``, ``reason: holder_not_provably_dead``) on a ``fresh`` or
     ``unknown`` verdict. This is the manual-release recovery path — releasing a
-    foreign holder's lock under its ``plan_id`` — hardened against the #948
+    foreign holder's lock under its ``plan_id`` — hardened against the
     sibling-worktree misjudgement. The default (no ``--require-stale``) unconditional
     self-holder release below is unchanged.
     """

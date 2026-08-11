@@ -12,7 +12,7 @@ failure shape:
   NOT proof of non-existence. When an authority-bearing consumer reads that
   scope-limited negative as authoritative absence and drives a destructive or
   existence-proof decision on it, a live subject is mistaken for a dead one — the
-  #948 incident, where `steward-provisioning-fail-closed` was judged stale from a
+  sibling-worktree case, where `steward-provisioning-fail-closed` was judged stale from a
   worktree-scoped view and its merge lock released while it was live in a sibling
   worktree's session.
 
@@ -43,7 +43,7 @@ so the fix belongs at the authority-bearing CONSUMERS, not the resolver.
 
 | Site | Disposition |
 |------|-------------|
-| `cmd_list` (the plan census) | **FIX (D3).** Enumerates `get_plans_dir()` + each `get_worktree_root()` child cwd-relatively. From the MAIN checkout this is comprehensive (main + every sibling worktree); from a PINNED worktree the same resolvers anchor at that worktree's own `.plan/local`, so the census sees only the worktree's own moved-in plan and is BLIND to siblings — the #948 shape when a consumer reads an absent plan as authoritative absence. Fixed by surfacing a first-class `scope` field (`main` / `worktree_local` / `unknown`, from `_resolution_scope`) so a consumer cannot silently mistake a cwd-scoped census for a global one; an absent plan under `worktree_local` is `unknown`, and the consumer must route a destructive decision through a main-anchored verdict (e.g. `merge_lock check` staleness). |
+| `cmd_list` (the plan census) | **FIX (D3).** Enumerates `get_plans_dir()` + each `get_worktree_root()` child cwd-relatively. From the MAIN checkout this is comprehensive (main + every sibling worktree); from a PINNED worktree the same resolvers anchor at that worktree's own `.plan/local`, so the census sees only the worktree's own moved-in plan and is BLIND to siblings — the sibling-worktree shape when a consumer reads an absent plan as authoritative absence. Fixed by surfacing a first-class `scope` field (`main` / `worktree_local` / `unknown`, from `_resolution_scope`) so a consumer cannot silently mistake a cwd-scoped census for a global one; an absent plan under `worktree_local` is `unknown`, and the consumer must route a destructive decision through a main-anchored verdict (e.g. `merge_lock check` staleness). |
 | `cmd_list_orphans` (orphan-GC discovery) | **JUSTIFY (fail-safe direction).** Resolves `get_plans_dir()` cwd-relatively and collects directories with no `status.json`. Its authority-bearing consumer (planning.md Step 3b GC) acts on POSITIVE detections only — an empty/under-scoped result yields NO deletion, so scope-blindness can only UNDER-detect (miss an orphan), never mis-delete a live sibling. The one hazardous case (an unreadable dir) already fails closed via the `<unreadable>` sentinel that forces a prompt rather than a silent delete. The failure shape (empty-read → authoritative absence → destructive act) requires positive detection to reach the destructive branch and therefore does not apply. |
 
 ### workflow-integration-git/scripts/git-workflow.py
