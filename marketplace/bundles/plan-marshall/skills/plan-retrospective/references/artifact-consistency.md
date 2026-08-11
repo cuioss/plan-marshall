@@ -32,8 +32,8 @@ checks[*]{name,status,message}:
   metrics_generated,inconclusive,"metrics.md not produced yet — default:record-metrics is ordered after plan-marshall:plan-retrospective"
 findings[*]{severity,message}:
   warning,"metrics.md not produced yet — default:record-metrics (order 998) is ordered after plan-marshall:plan-retrospective (order 995), so it has not had its turn"
-  warning,"Plan footprint could not be resolved (no live worktree diff and no modified_files key) — recall is unmeasurable, not 0%"
-  warning,"Plan footprint could not be resolved (no live worktree diff and no modified_files key) — the comparison substantiates no verdict"
+  warning,"Plan footprint could not be resolved from any tier (no live worktree diff, no realized-footprint capture, no merge-commit, no modified_files key) — recall is unmeasurable, not 0%"
+  warning,"Plan footprint could not be resolved from any tier (no live worktree diff, no realized-footprint capture, no merge-commit, no modified_files key) — the comparison substantiates no verdict"
 summary:
   passed: N
   failed: N
@@ -64,9 +64,9 @@ Both orders are resolved from **discovery** — the same finalize-step ext-point
 
 `_resolve_footprint` reports whether it resolved, not merely what it resolved to. "Resolved to a genuinely empty set" and "could not be resolved at all" are different answers, and both `affected_files_*` checks read the difference through one named predicate rather than by testing emptiness.
 
-The footprint is **unresolvable** when neither resolution tier answers: no live worktree diff (the tier-1 `git` invocation failed, or archived mode skipped tier 1 and no worktree is on disk) and no `references.modified_files` key. A tier-1 diff failure reports unresolvable rather than falling through to the legacy key — the worktree resolved but the diff did not, so the legacy key would answer a different question while presenting as the same measurement. A `modified_files` key that is present but empty is the opposite case: a resolved, genuinely-empty footprint, which still yields a measured verdict.
+The footprint is **unresolvable** only when NO resolution tier answers. The shared whole-chain resolver (`_footprint_resolver.resolve_footprint`) runs five tiers in order — **live diff → realized-footprint capture (`references.realized_footprint`) → merge-commit (`references.merge_commit_sha`) → legacy `references.modified_files` key → unresolvable** — so unresolvable means no live worktree diff (the tier-1 `git` invocation failed, or archived mode skipped tier 1 and no worktree is on disk), no captured realized footprint, no merge-commit recovery, and no legacy key. A tier-1 diff failure reports unresolvable rather than falling through to a lower tier — the worktree resolved but the diff did not, so a lower tier would answer a different question while presenting as the same measurement. A key that is present but empty is the opposite case: a resolved, genuinely-empty footprint, which still yields a measured verdict.
 
-Both peers of the `affected_files_*` pair consume this state. Hardening only one leaves the pair half-hardened: the same deleted worktree that makes recall unmeasurable also makes the exact-match comparison unmeasurable, and a peer that still reports confidently re-introduces the defect through the other half of the pair. The concrete failure this removes: a plan with a 21/21 exact footprint scored a confident "Recall 0% below 70% threshold" because `branch-cleanup` had already deleted the worktree the resolver measures.
+Both peers of the `affected_files_*` pair consume this state — and so does the `routing-decisions` mis-prune check, through the same shared resolver (one footprint resolution, several consumers). Hardening only one leaves the pair half-hardened: the same deleted worktree that makes recall unmeasurable also makes the exact-match comparison unmeasurable, and a peer that still reports confidently re-introduces the defect through the other half of the pair. The concrete failure this removes: a plan with a 21/21 exact footprint scored a confident "Recall 0% below 70% threshold" because `branch-cleanup` had already deleted the worktree the resolver measures.
 
 ## Borrowed grammar: the `Affected files:` bullet form is owned elsewhere
 

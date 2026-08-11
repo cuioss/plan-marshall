@@ -229,10 +229,11 @@ def check_affected_files_recall(
 ) -> tuple[str, str, dict[str, Any]]:
     """Return ``(status, message, details)`` for the affected-files recall check.
 
-    Recall compares the outline's declared ``Affected files:`` against the live
-    plan footprint resolved via :func:`_resolve_footprint` (live diff, then the
-    legacy ``modified_files`` key for older archived plans, then unresolvable).
-    A footprint that could not be resolved yields ``inconclusive``: recall is
+    Recall compares the outline's declared ``Affected files:`` against the plan
+    footprint resolved via :func:`_resolve_footprint`, which delegates to the shared
+    whole-chain resolver (live diff → realized-footprint capture → merge-commit →
+    legacy ``modified_files`` key → unresolvable). A footprint that could not be
+    resolved from any tier yields ``inconclusive``: recall is
     unmeasurable, never a confident 0%. A resolved-but-empty footprint is a
     measured input and still yields a measured verdict.
 
@@ -314,8 +315,9 @@ def check_affected_files_recall(
 
     return (
         'inconclusive',
-        'Plan footprint could not be resolved (no live worktree diff and no '
-        'modified_files key) — recall is unmeasurable, not 0%',
+        'Plan footprint could not be resolved from any tier (no live worktree diff, '
+        'no realized-footprint capture, no merge-commit, no modified_files key) — '
+        'recall is unmeasurable, not 0%',
         {
             'declared': len(declared),
             'deliverables': len(deliverables),
@@ -365,8 +367,9 @@ def check_affected_files_exact_match(
 
     return (
         'inconclusive',
-        'Plan footprint could not be resolved (no live worktree diff and no '
-        'modified_files key) — the comparison substantiates no verdict',
+        'Plan footprint could not be resolved from any tier (no live worktree diff, '
+        'no realized-footprint capture, no merge-commit, no modified_files key) — '
+        'the comparison substantiates no verdict',
         [],
         [],
     )
@@ -609,11 +612,11 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     _route_measured_verdict(findings, rec_status, rec_message)
 
     # Affected-files exact-match (strict variant, peer to recall).
-    # Resolves the same live plan footprint used by
-    # ``check_affected_files_recall`` via ``_resolve_footprint`` — both checks
-    # must agree on the source of truth (live diff, then the legacy
-    # ``modified_files`` key for older archived plans, then unresolvable) AND on
-    # how they read its resolution state (via ``footprint_resolved``).
+    # Resolves the same plan footprint used by ``check_affected_files_recall`` via
+    # ``_resolve_footprint`` — both checks must agree on the source of truth (the
+    # shared whole-chain resolver: live diff → realized-footprint capture →
+    # merge-commit → legacy ``modified_files`` key → unresolvable) AND on how they
+    # read its resolution state (via ``footprint_resolved``).
     outline_files = set(extract_affected_files_per_deliverable(solution_content))
     references_files = _resolve_footprint(plan_dir, live_plan_id)
     exact_status, exact_message, outline_only, references_only = check_affected_files_exact_match(

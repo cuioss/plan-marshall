@@ -16,7 +16,8 @@ The predicate definitions (the closed `prunable_when` vocabulary, the class→de
 |------|---------|
 | `posture` | the chosen `execution_profile` (`minimal` / `standard` / `full`) |
 | `planning_lane` | the resolved `light` / `deep` planning lane |
-| `mis_prune_checks[]` | one per prunable step: `pass` (step ran / predicate still holds), `skip` (no realized footprint, or a recorded non-predicate removal cause), `inconclusive` (removal cause unestablishable), or **`fail`** (predicate now false — a mis-prune). Every row also carries `removal_cause` — see [Removal cause precedes predicate re-evaluation](#removal-cause-precedes-predicate-re-evaluation) |
+| `mis_prune_checks[]` | one per prunable step: `pass` (step ran / predicate still holds), `skip` (footprint unresolvable — no `--diff-file` **and** the shared whole-chain resolver recovered none — or a recorded non-predicate removal cause), `inconclusive` (removal cause unestablishable), or **`fail`** (predicate now false — a mis-prune). Every row also carries `removal_cause` — see [Removal cause precedes predicate re-evaluation](#removal-cause-precedes-predicate-re-evaluation) |
+| `footprint_source` | how the realized footprint was obtained: `diff_file` (explicit `--diff-file`), `resolved` (recovered through the shared resolver), or `unresolved` (no tier answered → the mis-prune checks skip) |
 | `cost_preview` | `predicted_tokens` (init preview) vs `actual_tokens` (`execution_log` sum) and the signed `delta_tokens` / `delta_pct` |
 | `recompose_divergence` | the `lane_resolution` decision-log entry count (init + phase-4 re-compose) |
 | `recorded_lane_decisions[]` | the raw `lane_resolution` decision-log lines |
@@ -30,7 +31,7 @@ The script consults the recorded decision log FIRST and re-evaluates a predicate
 
 | Absent step's state | Verdict | `removal_cause` |
 |---------------------|---------|-----------------|
-| No realized footprint | `skip` | `not_evaluated` |
+| Footprint unresolvable (no `--diff-file` and the shared resolver recovered none) | `skip` | `not_evaluated` |
 | Named by a recorded non-predicate mechanism | `skip` | the mechanism token |
 | Decision log absent or unreadable | `inconclusive` | `unestablishable` |
 | Readable log names no cause, predicate now false | `fail` | `predicate_evaluated` |

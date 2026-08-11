@@ -257,9 +257,10 @@ def lane_resolution_view(decision_lines: list[str]) -> list[str]:
 def load_diff_files(diff_file: str | None) -> list[str]:
     """Return the realized footprint path list from a pre-saved diff file.
 
-    ``--diff-file`` carries one path per line (the end-of-execute diff). Absent
-    or unreadable → an empty footprint (the predicate re-evaluation degrades to
-    "no realized footprint", which is a skip, not a false positive).
+    ``--diff-file`` carries one path per line (the end-of-execute diff). Absent or
+    unreadable → an empty list here; the caller (``cmd_run``) then recovers the
+    footprint through the shared whole-chain resolver, and only a STILL-unresolvable
+    footprint degrades the predicate re-evaluation to a skip (never a false positive).
     """
     if not diff_file:
         return []
