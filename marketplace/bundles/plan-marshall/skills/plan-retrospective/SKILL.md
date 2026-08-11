@@ -126,6 +126,42 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-plan-ar
 
 Capture the manifest TOON for later aspects.
 
+### Step 2.5: Reconcile the phase accumulators into `metrics.md` (live modes only)
+
+The plan-efficiency aspect (aspect 4) reads per-phase token totals from `metrics.md`.
+At this workflow's `order: 995` the `6-finalize` phase is still **open** —
+`default:record-metrics` (order 998) folds its durable
+`work/metrics-accumulator-6-finalize.toon` into the phase row only later, and
+`record-metrics` cannot move earlier because it must first fold this retrospective's
+own spend. So an unreconciled `metrics.md` renders the `6-finalize` row as **zero**,
+and the aspect would read the largest finalize phase — this step's own dispatch spend
+plus every earlier finalize step's — as if it did no work. The plan that motivated
+this named it R2: the retrospective reads an unclosed accumulator.
+
+**Close the accumulator here — do not merely rely on the reader's order.** Fold the
+open accumulators into `metrics.md` *before* aspect 4 reads it by regenerating the
+report:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics generate \
+  --plan-id {plan_id}
+```
+
+`generate` reconciles each phase's durable `work/metrics-accumulator-{phase}.toon`
+into its row (backfill-only, explicit-wins) and re-renders `metrics.md`, so the
+`6-finalize` row now carries its accumulated **floor** rather than zero. It does
+**not** stamp an `end_time`, so the partiality machinery is left intact: `6-finalize`
+stays in `phases_missing_end_time` and is still reported partial until
+`record-metrics` performs the authoritative close at order 998. That final close
+**overwrites** the floor with the complete total (the accumulator read is
+assign-cumulative, not additive — see `manage-metrics/standards/data-format.md`), so
+this reconcile never double-counts and never pre-empts the close.
+
+**Live modes only.** Archived mode is a read-only historic audit and MUST NOT write
+to the archived plan directory (see Prohibited actions): an already-landed plan's
+`metrics.md` was closed by its own `record-metrics` at archive time, so skip this
+reconcile in archived mode entirely.
+
 ### Step 3: Dispatch Aspects (in order)
 
 Before dispatching aspects, initialize the fragment bundle. `collect-fragments init` creates an empty TOON bundle file at the mode-appropriate path: live mode writes to `{plan_dir}/work/retro-fragments.toon`; archived mode writes to an OS tmp directory so the archived plan stays read-only. Capture the returned `bundle_path` for use in Step 4. The mode is persisted into the bundle by `init`, so subsequent register and finalize calls read it back automatically and accept only `--plan-id` and the fragment inputs.
