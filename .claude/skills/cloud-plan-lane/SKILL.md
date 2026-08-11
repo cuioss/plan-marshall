@@ -437,6 +437,13 @@ Give it, at minimum:
 - the diff under review (`git diff origin/main...HEAD`);
 - the instruction to check each deliverable for: implemented at all, implemented as specified,
   covered by a test where a test is warranted, and no undeclared collateral change;
+- when the change alters a value, default, constant, or schema that documentation restates, the
+  instruction to sweep **beyond the diff** — across the owning bundle/skill, not only the diff's own
+  hunks — for any comment, docstring, or prose statement the change makes false. A stale claim in an
+  *untouched* file (a "stays unset", a "defaults to `null`", a "the seeded shape is X") is the same
+  misleading-signal defect as one in a touched file, and the diff-scoped collateral check above cannot
+  see it — an observed run had to re-dispatch a second time to catch two such statements in bundle
+  docs the diff never opened;
 - the instruction to report every gap it finds with file and symbol, and to state explicitly when a
   deliverable cannot be verified from the diff alone rather than assuming it passed;
 - the instruction that a clean verdict must name what it checked, so an empty finding list is
