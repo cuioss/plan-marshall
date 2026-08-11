@@ -180,6 +180,13 @@ each a legitimate consequence of the new behaviour, fixed at the test:
 
 Re-run of `./pw verify` after the fixes: 19060 passed, 14 skipped, 0 failed.
 
+**D5 cold-read verification (plan Verification requirement):** an independent sub-agent was shown ONLY
+the PARTIAL coverage verdict text — a freshness-suspect `mypy(test)` — with no other context, and asked
+"is it safe to push?" It answered **"No"**, correctly naming that mypy over the test tree was not
+verified (the green came from a cache, not analysis of the current tree) and recommending a real
+cache-disabled run before pushing. The reader did NOT take the partial verdict as a pass — the wording
+does not reproduce the defect. D5's coverage-boundary output passes its cold read.
+
 ## Reviewer participation
 
 _pending PR — see Step 7/8._
