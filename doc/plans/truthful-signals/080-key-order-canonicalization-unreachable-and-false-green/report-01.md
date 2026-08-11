@@ -73,15 +73,48 @@ over-claim (D8) is corrected to name cache-vs-**clone** skew.
 
 ## Deliverables
 
-_(filled in as implemented — see commits)_
+| # | Deliverable | Commit | State |
+|---|---|---|---|
+| D1 | GATE — honest-signal shape (mutates nothing) | — | Verdicts recorded above (return shape, warning-not-error, position LAST). Contested bypass-count claimed above. |
+| D2 | `normalize_keys` names what it could not order | `da77a8c` | `normalize_keys()` returns `status`/`action`/`unrecognized_keys`; `unrecognized_top_level_keys()` helper added; dispatch surfaces the verb's own status; manage-config SKILL.md (verb table + canonical-invocations) and marshall-steward Re-Run Pass step (a) updated in lock-step. |
+| D3 | `sync-defaults` reports effect, not intent | — (already satisfied) | REFUTED as a live defect: current `_cmd_sync_defaults.py` computes `added_count = len(added)` from actual `_deep_merge_missing` additions, and `test_sync_defaults.py:296` already pins `added_count == 0` on a no-op (`:307` pins `== len(added)`). No change needed; recorded as a re-derived refutation. |
+| D4 | Guard the whole-document read-modify-write | `da77a8c` | `save_config` optimistic-concurrency guard (`ConcurrentConfigModificationError` when the file changed on disk since `load_config` read it) + atomic write; `load_config` records the fingerprint. |
+| D5 | `upgrade` Stage 2 runs the canonicalizer | `b185b49` | `normalize-keys` added to upgrade-flow.md Stage 2 as the LAST reconcile step. Verified the coarse sub-step (`reconcile-marshal-json`) is emitted from `upgrade.py` but the FINE steps (`sync-defaults`/`steps-sort`/`normalize-keys`) live only in the doc — so this is a doc-grain edit with no code/doc divergence; `upgrade.py` correctly needs no change. |
+| D6 | GATE — what `fresh` may mean (mutates nothing) | — | Verdict recorded above (declare-it-cannot; `fresh` is clone-scoped). |
+| D7 | Implement D6 | `b185b49` | Every `check_freshness` verdict stamps `compared_against: local_clone_manifest`, so `fresh` self-discloses it does not check clone-vs-upstream currency. |
+| D8 | Retire the vacuous ownership claim | `b185b49` | upgrade-flow.md's "owns cache-versus-upstream skew" corrected to cache-versus-clone; both sub-steps' lack of an upstream leg stated plainly. |
+| D9 | Correct remediation text + the test that pins it wrong | `b185b49` | `REMEDIATION` → non-destructive `/plugin update plan-marshall` + version verify (constant + upgrade-flow prose + docstring example). Test corrected; **seen RED first** — see Findings. |
+| D10 | Tests | `da77a8c` + `b185b49` | (a) `test_config_write_guard.py::test_normalize_keys_names_unrecognized_top_level_key` + CLI `test_main_normalize_keys_warns_and_names_unrecognized_key`; (b) `::test_normalize_keys_is_byte_stable_on_already_canonical_file`; (c) `test_upgrade_flow_stage2.py`; (d) `test_cache_freshness.py::test_every_verdict_declares_its_local_clone_comparison_scope`; (e) `::test_save_config_refuses_a_concurrent_overwrite`. |
 
 ## Build gate
 
-_(pending)_
+`git diff --name-only origin/main...HEAD -- '*.py'` is non-empty (Python changed: `_config_core.py`,
+`manage-config.py`, `cache_freshness.py`, and three test modules), so the full path applies.
+
+`./pw verify plan-marshall` → **`verify: SUCCESS`**, **15887 passed, 1 skipped**. The whole
+plan-marshall bundle's tests pass, including every cross-module `save_config`/`load_config` consumer —
+the D4 change to the hot config write path regressed nothing. Per-commit `./pw quality-gate` was clean
+(`total_issues: 0`, empty `issues[]`) before each Python-touching commit.
 
 ## Findings
 
-_(pending — verification sub-agent, CI, PR review)_
+- **D9 red-first (demonstrated).** The corrected `test_remediation_names_the_commands_literally`
+  was run against the OLD `REMEDIATION` and failed RED before the text was changed — captured:
+  `assert '/plugin update plan-marshall' in cache_freshness.REMEDIATION` failed, the assertion error
+  showing the old string "Run '/plugin marketplace update' … '/plugin uninstall plan-marshall'
+  followed by '/plugin install plan-marshall'". The final test additionally asserts the destructive
+  `/plugin uninstall` and `/plugin install` commands are absent and a version-verify step is present —
+  all of which also fail against the old text. After the fix it is GREEN. Disposition: **fixed**.
+- **D9 cold-read (Step 6, isolated sub-agent).** An independent sub-agent was given ONLY the new
+  remediation text and asked what it would run to recover. It answered exactly `/plugin update
+  plan-marshall` then `/plugin` (to verify the version) — the non-destructive update plus a version
+  verify, with no reach for uninstall/install. The wording succeeded. Disposition: **accepted**.
+- **Test-body substring pitfall (self-caught).** The first form of the corrected test asserted the
+  bare word `'uninstall' not in REMEDIATION`, which failed because the new text says "no uninstall or
+  reinstall" (operator reassurance). Tightened to assert the destructive *commands* `/plugin uninstall`
+  / `/plugin install` are absent — the actual defect. Disposition: **fixed**.
+- **Verification sub-agent (Step 6, independent).** Dispatched against plan.md + the branch diff;
+  findings and dispositions appended below on completion.
 
 ## Reviewer participation
 
