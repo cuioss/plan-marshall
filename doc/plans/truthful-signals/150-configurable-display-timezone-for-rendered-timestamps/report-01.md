@@ -81,9 +81,36 @@ bundle; the merge queue runs the full cross-bundle verify.)
 ## Findings
 
 - **Self (pre-commit):** `test-compile` mypy flagged `test_display_timezone_guard.py:41`
-  (`Returning Any` from `json.loads`) — fixed by annotating the local (`data: dict = ...`), commit
+  (`Returning Any` from `json.loads`) — **fixed** by annotating the local (`data: dict = ...`), commit
   `c442db1`. Re-verified green.
-- Verification sub-agent, CI, and PR review: _pending_.
+- **Verification sub-agent — F1 (stale prose): FIXED.**
+  `plan-retrospective/references/report-structure.md:45` claimed the retrospective header `generated`
+  value "is an ISO-8601 UTC timestamp". That value is now routed through `render_timestamp`, so under a
+  non-UTC `display_timezone` it is the converted zone-labelled form — the claim was conditionally false
+  (this epic's namesake misleading-signal defect). Corrected to describe the conditional label, with an
+  xref to the run-config standard. Commit `cdcff5e`. The agent confirmed every OTHER "ISO-8601 UTC"
+  doc claim it swept describes STORE fields (`now_utc_iso()`/`.isoformat()`) that are NOT routed through
+  the helper, so those remain accurate.
+- **Verification sub-agent — F2 (observation): rejected-with-reason (accepted as STORE).**
+  `pm-documents/.../ref-asciidoc/scripts/_cmd_stats.py:102` (`generated`) and `_cmd_validate.py:161`
+  (`timestamp`) emit `datetime.now(UTC)` as structured command-output fields. Left STORE/UTC: they are
+  structured TOON fields in a different bundle's doc-tooling, not a plan-marshall report-body prose
+  line, and under-inclusion is safe per the plan (leaving a timestamp in UTC is never a regression).
+- **Verification sub-agent — F3 (observation): accepted design choice.** The guard is file-granular
+  (whitelists whole RENDER/owner files). A future STORE write *inside* a render file that routed through
+  the knob would not be caught. Accepted: both render files legitimately render, neither currently
+  leaks, and the granularity is documented in the classification artifact.
+- **Verification sub-agent — F4 (observation): accepted design choice.** `render_timestamp(*, tz=None)`
+  accepts a per-call zone override, used only by tests for determinism; both live call sites pass no
+  `tz` and resolve the single global zone, so the out-of-scope "per-surface timezone" is not violated.
+- **Verification sub-agent — cannot-verify notes (addressed):**
+  - D5 red-first: evidenced in this report (stash run → red; restore → 25 passed).
+  - D2 steward configuration-flow surfacing: D2's Done-when is met via the ordinary run-config CLI
+    path (`display-timezone get/set`) and `read_display_timezone`. Broader knob-catalogue surfacing is
+    **deferred** to the sibling knob-cataloguing plan per this plan's Notes; the agent confirmed
+    `marshall-steward` carries no knob catalogue that now omits `display_timezone`, so nothing is stale.
+  - Build/test green: confirmed locally — `./pw verify plan-marshall` → 15997 passed, 1 skipped.
+- **CI and PR review:** _pending PR._
 
 ## Reviewer participation
 
