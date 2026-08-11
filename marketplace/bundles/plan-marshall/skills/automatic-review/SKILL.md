@@ -660,10 +660,10 @@ The placeholders are still double-quoted above, and should stay quoted — quoti
 (non-executor) invocation. Just do not read it as the empty-value defence: **never rely on quoting
 alone to make an empty list safe.**
 
-Read `participation_complete`, `pending_bots`, `unproven_bots`, and `bot_states` from the returned TOON. `bot_states` carries one `{bot_kind, state}` row per classified bot, each resolving to exactly one state: the eight closed non-participation members (`absent`, `not_triggered`, `in_progress`, `refused_awaitable`, `refused_hard`, `participated_but_empty`, `participated_stale`, `declined`) or `participated`. `pending_bots` is reported for visibility but does NOT gate the mark-done at this FIND step (the `--triage-ran` flag is omitted). The predicate is fail-closed over the required set — a plan with no observations reports every required bot as `absent` (or `not_triggered`, when no `pull_request` run exists at all) and `participation_complete: false`, and a bot whose registry record declares no `participation_evidence` can never be proven a participant.
+Read `participation_complete`, `pending_bots`, `unproven_bots`, `bot_states`, and `review_state_summary` from the returned TOON. `bot_states` carries one `{bot_kind, state}` row per classified bot, each resolving to exactly one state: the nine closed non-participation members (`absent`, `not_triggered`, `in_progress`, `refused_awaitable`, `refused_hard`, `refused_unknown`, `participated_but_empty`, `participated_stale`, `declined`) or `participated`. The three refusal members are split ONE-TO-ONE from the refusing bot's three-valued registry `rate_limit_class` — `awaitable_window` → `refused_awaitable`, `hard_quota` → `refused_hard`, `unknown` → `refused_unknown` — so a declared *we-do-not-know* reaches the reader as ignorance rather than as a positive hard-quota finding. `review_state_summary` is the compact one-line distribution of those states (e.g. `"3 refused"`, `"1 reviewed, 2 empty"`, or `""` for an empty roster); Branch A interpolates it into `display_detail` so a reader can tell *reviewed-and-clean* from *nobody-reviewed*. `pending_bots` is reported for visibility but does NOT gate the mark-done at this FIND step (the `--triage-ran` flag is omitted). The predicate is fail-closed over the required set — a plan with no observations reports every required bot as `absent` (or `not_triggered`, when no `pull_request` run exists at all) and `participation_complete: false`, and a bot whose registry record declares no `participation_evidence` can never be proven a participant.
 
 - **`participation_complete: true`** — every REQUIRED bot resolved to `participated` or `participated_but_empty`. An unproven OPTIONAL bot never blocks. Pending-but-fetched findings do NOT block here; they await the downstream dispatcher-owned unified triage. Proceed to Branch A and mark the step `done` — recording participation, never a quality claim.
-- **`participation_complete: false`** — at least one REQUIRED bot is in `unproven_bots` (`absent`, `not_triggered`, `in_progress`, either refusal member, `participated_stale`, or `declined`). A pending-but-fetched bot, an optional bot, or a bot that participated-but-empty does NOT cause `false` at this FIND step. The step is **NOT markable done** on this pass. Take exactly one of two paths:
+- **`participation_complete: false`** — at least one REQUIRED bot is in `unproven_bots` (`absent`, `not_triggered`, `in_progress`, any of the three refusal members, `participated_stale`, or `declined`). A pending-but-fetched bot, an optional bot, or a bot that participated-but-empty does NOT cause `false` at this FIND step. The step is **NOT markable done** on this pass. Take exactly one of two paths:
   1. **Loop back into FIND** (default): treat the unproven participation as an un-surfaced review — re-enter the FIND pipeline (await the bot) and record Branch C (`--outcome loop_back --loop-back-target 6-finalize`) for this iteration instead of Branch A. The terminal Branch A mark waits for a later pass that returns `participation_complete: true`. (This is a FIND-participation loop-back — awaiting an unproven bot review — NOT a triage loop-back; triage loop-back, including any real still-pending incompleteness after triage runs, is owned by the unified triage.)
 
      Read `bot_states` before re-entering, because two of the blocking members enumerated above name a **different** remedy than awaiting: a required bot on `participated_stale` has a review that only predates this HEAD, so the productive action is the re-review trigger (the `re_review_on_loopback` path above) rather than a longer wait for a bot that already published; and a PR-wide `not_triggered` means no reviewer was ever asked, so the productive action is to generate the trigger event at all. Awaiting either one is waiting for something that will not arrive on its own.
@@ -755,12 +755,17 @@ Note what those nets do and do not cover: both are participation / unhandled-com
 git -C {worktree_path} rev-parse HEAD
 ```
 
-Capture stdout as `{sha}` and forward via `--head-at-completion`:
+Capture stdout as `{sha}`. Compose the `display_detail` from the count AND the `review_state_summary` read from the participation guard above, so a reader can tell *reviewed-and-clean* from *nobody-reviewed* — a bare `{N} comment(s) found` renders those two facts identically. When `review_state_summary` is **non-empty**, interpolate it; when it is empty (an empty reviewer roster — nothing to distribute), fall back to the count-only form:
+
+- non-empty summary → `--display-detail "{N} comment(s) found — {review_state_summary} (unified triage pending)"`
+- empty summary → `--display-detail "{N} comment(s) found (unified triage pending)"`
+
+So a run where three required reviewers all refused renders `"0 comment(s) found — 3 refused (unified triage pending)"`, while a clean review by three reviewers renders `"0 comment(s) found — 3 empty (unified triage pending)"` — no longer the same string. Forward the HEAD SHA via `--head-at-completion`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step plan-marshall:automatic-review --outcome done \
-  --display-detail "{N} comment(s) found (unified triage pending)" \
+  --display-detail "{N} comment(s) found — {review_state_summary} (unified triage pending)" \
   --head-at-completion {sha}
 ```
 
@@ -805,9 +810,11 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 ```toon
 status: success | error | loop_back | escalate_ask
-display_detail: "<{N} comment(s) found (unified triage pending)>"
+display_detail: "<{N} comment(s) found — {review_state_summary} (unified triage pending)>"
 comments_found: {N}
 ```
+
+The `display_detail` carries the `review_state_summary` (the reviewer-state distribution) alongside the count, so *reviewed-and-clean* and *nobody-reviewed* — both `0 comment(s) found` — no longer render identically; the summary segment is omitted when the reviewer roster is empty (nothing to distribute).
 
 FIND-only producer — this step fetches and files `pr-comment` findings; the per-finding LLM triage is delegated to the dispatcher-owned unified wait-region triage (`producer=finalize-feedback`), not dispatched here. `comments_found` is the count filed to the store. The `display_detail` value (≤80 chars, ASCII, no trailing period) is forwarded via `mark-step-done --display-detail`. A `loop_back` status is emitted ONLY by the D3 participation guard (awaiting a bot whose participation is unproven), never for a triage disposition; on `loop_back` the step re-fires on the next phase entry per the HEAD-dependent resumability rules above.
 
@@ -901,3 +908,26 @@ bare when `ci checks pull-request-runs` reports `has_pull_request_run: false` an
 It is PR-wide rather than per-bot because the condition holds for every bot at once, so it has no
 placeholder to interpolate and the quoting discipline above does not apply to it. Omit it for a
 `pull_request` run that concluded `skipped` — a skipped run was still triggered.
+
+### review_completeness — deficit
+
+```bash
+python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness deficit \
+  --plan-id PLAN_ID [--required-bots [REQUIRED_BOTS]] [--optional-bots [OPTIONAL_BOTS]] \
+  [--participated-bots [PARTICIPATED_BOTS]] [--in-progress-bots [IN_PROGRESS_BOTS]] \
+  [--refused-bots [REFUSED_BOTS]] [--stale-participation-bots [STALE_PARTICIPATION_BOTS]] \
+  [--declined-bots [DECLINED_BOTS]] [--not-triggered] [--min-deficit N]
+```
+
+The `deficit` subcommand takes the SAME observation flags as `check` (so the step forwards the sets it
+already gathered) plus `--min-deficit` (default 1). It reports whether a REQUIRED reviewer produced
+materially fewer findings than a reviewer that actually reviewed the SAME diff — a **reviewer-quality
+signal, never a merge verdict**. Its TOON carries `gates_merge: false` and `proves:
+reviewer_quality_only` in as many words, and the step MUST NOT gate the merge on it. The verdict is one
+of `deficit` (a required reviewer under-produced against a real baseline), `clean` (a baseline exists
+and no required reviewer under-produced — including `0 : 0` against a baseline that reviewed and found
+nothing), or `unassessable` (NO non-required reviewer reviewed the diff, so there is no baseline and
+the run is evidence neither way). It never fires when every other reviewer refused, and never on
+`0 : 0`. The finding count is the number of FILED `pr-comment` findings per reviewer — never a raw
+comment count, which is wrong in both directions when one reviewer's findings arrive across several
+review bodies.
