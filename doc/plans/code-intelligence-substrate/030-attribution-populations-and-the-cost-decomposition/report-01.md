@@ -96,7 +96,7 @@ The platform-runtime producer was **read, not modified** (D2 mechanism).
   implemented and tested** in the archived-record reader, with no dual-key shim
   on the writer (confirmed against `cmd_generate`, which emits the new keys only
   and drops the retired pair):
-  - Reader: `read_end_time_presence` / `MetricsEndTimePresence` in
+  - Reader: `parse_metrics_end_time_presence` → `MetricsEndTimePresence` in
     `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`.
   - One-record-per-state tests, including old-schema-reported-as-old-schema
     (not defaulted): `test_parse_metrics_end_time_presence_reports_old_schema`
@@ -123,8 +123,29 @@ test_manage_metrics.py). Ran `./pw verify`: **SUCCESS — 18903 passed, 14 skipp
 
 ## Findings
 
-_Pre-PR verification sub-agent dispatched (Step 6); findings + dispositions to be
-recorded here on return. CI/PR-review findings appended after Step 7._
+### Pre-PR verification sub-agent (Step 6)
+
+Independent read-only reviewer (general-purpose Task agent, ~124k tokens). Verdict:
+**all four deliverables PASS, no code defects.** It verified D2's documented
+mechanism line-by-line against `_attribute_cache_read`/`_fold_turn_residency` in
+`claude_runtime.py` and confirmed it is a faithful read (not an inference), and it
+confirmed the D4 three-state reader + per-state tests pre-exist and are untouched.
+It also checked "everywhere emitted/rendered" for D1 across the retrospective,
+audit, and platform-runtime surfaces and found no surviving bare-`unattributed`
+site. Two items, both **accepted**:
+
+| # | Source | Finding | Disposition |
+|---|--------|---------|-------------|
+| 1 | sub-agent | Report cited the D4 reader as `read_end_time_presence`; the actual symbol is `parse_metrics_end_time_presence`. | **Fixed** — report citation corrected. Documentation-accuracy nit; no code impact. |
+| 2 | sub-agent | D3's published ratio is main-context-window `cache_read` ÷ dispatched-subagent `tool_uses` — a genuine cross-population figure whose literal "resident context per call" meaning is weaker than the plan's Problem-section framing implies. | **Accepted as designed** — this follows the plan's explicit formula (`cache_read / tool_uses`); the implementation is *more honest than the plan* in that it prominently discloses the population span (lattice entry, render bullet, § Read-Cost Decomposition) rather than presenting a clean "per-call" number, which is exactly what D4 demands. Recorded as a transparency note, not a defect. No code change. |
+
+No finding required a code fix or a re-dispatch. Out-of-scope list confirmed clean
+(retrospective render path, ledger-disagreement, per-phase cost ranking, and bias
+correction all untouched).
+
+### CI / PR review (Step 7)
+
+_Appended after Step 7 from the stored comment bodies._
 
 ## Reviewer participation
 
