@@ -102,9 +102,9 @@ _UNKNOWN_KIND = 'unknown'
 # CLOSED to `indeterminate`: the instrument must not mark a comparison complete it
 # could not substantiate.
 COMPARISON_MEASURED = 'measured'          # findings exist — the comparison was performed
-COMPARISON_CLEAN = 'clean'                # 0 findings, but a reviewer reviewed and found nothing
+COMPARISON_CLEAN = 'clean'                # 0 findings, but an ENABLED reviewer reviewed and found nothing
 COMPARISON_VACUOUS = 'vacuous'            # 0 findings and NO reviewer roster configured — nothing to compare
-COMPARISON_INDETERMINATE = 'indeterminate'  # 0 findings, roster configured, but no reviewer produced content
+COMPARISON_INDETERMINATE = 'indeterminate'  # 0 findings, roster configured, but no enabled reviewer produced content
 
 
 def _grade_comparison(
@@ -117,17 +117,21 @@ def _grade_comparison(
     The four grades are checked in strength order so exactly one is assigned:
 
     - **`measured`** — at least one finding exists, so there is content to compare.
-    - **`clean`** — no findings, but at least one reviewer is positively
-      substantiated as having reviewed (it reviewed and found nothing). A
-      legitimate no-op.
     - **`vacuous`** — no findings AND no reviewer roster is configured, so nothing
       was ever expected to review. Genuinely nothing to compare — the honest empty.
-    - **`indeterminate`** — no findings, a roster IS configured, yet no reviewer is
-      substantiated as having reviewed. The comparison could not be performed, and
-      the instrument MUST NOT report a benign done: `no reviewer produced content`
-      is exactly the condition it exists to surface. This is also the fail-closed
-      default when the caller supplies no `reviewed_reviewers` signal against a
-      non-empty roster — an unsubstantiated review is never credited as a clean one.
+      Checked BEFORE `clean` so an empty roster is `vacuous` even if some reviewer
+      outside it happens to have reviewed: with no roster there is nothing to grade.
+    - **`clean`** — no findings, but at least one **enabled** reviewer is positively
+      substantiated as having reviewed (an enabled reviewer reviewed and found
+      nothing). A legitimate no-op. The substantiation is `enabled_reviewers ∩
+      reviewed_reviewers`: a reviewed identity OUTSIDE the enabled roster does not
+      make the enabled population's comparison possible, so it cannot earn `clean`.
+    - **`indeterminate`** — no findings, a roster IS configured, yet no enabled
+      reviewer is substantiated as having reviewed. The comparison could not be
+      performed, and the instrument MUST NOT report a benign done: `no reviewer
+      produced content` is exactly the condition it exists to surface. This is also
+      the fail-closed default when the caller supplies no `reviewed_reviewers` signal
+      against a non-empty roster — an unsubstantiated review is never credited clean.
 
     Args:
         total_findings: the number of `pr-comment` findings in the store.
@@ -135,7 +139,8 @@ def _grade_comparison(
         reviewed_reviewers: the reviewers positively substantiated as having
             reviewed the diff — the reviewed-at-all set (`participated` /
             `participated_but_empty`) from `review_completeness`, as `author_login`
-            values. Empty when no such signal was supplied.
+            values. Empty when no such signal was supplied. Only the members that
+            also appear in `enabled_reviewers` earn `clean`.
 
     Returns:
         One of :data:`COMPARISON_MEASURED`, :data:`COMPARISON_CLEAN`,
@@ -143,10 +148,10 @@ def _grade_comparison(
     """
     if total_findings > 0:
         return COMPARISON_MEASURED
-    if reviewed_reviewers:
-        return COMPARISON_CLEAN
     if not enabled_reviewers:
         return COMPARISON_VACUOUS
+    if enabled_reviewers & reviewed_reviewers:
+        return COMPARISON_CLEAN
     return COMPARISON_INDETERMINATE
 
 
@@ -370,11 +375,13 @@ def aggregate(
             'measured': 'at least one record attributed — the reviewer can be judged',
             'unmeasurable': 'enabled but no record — store substantiates neither participation nor absence; never scored or ranked',
         },
+        # Keys are the COMPARISON_* constants themselves, not string literals, so the
+        # serialized legend cannot drift from the grades _grade_comparison can assign.
         'comparison_states': {
-            'measured': 'findings exist — the review-quality comparison was performed',
-            'clean': '0 findings, but a reviewer reviewed and found nothing — a legitimate no-op',
-            'vacuous': '0 findings and no reviewer roster configured — nothing was expected to compare',
-            'indeterminate': '0 findings, a roster was configured, but no reviewer produced content — the comparison could NOT be performed; never a benign done',
+            COMPARISON_MEASURED: 'findings exist — the review-quality comparison was performed',
+            COMPARISON_CLEAN: '0 findings, but an enabled reviewer reviewed and found nothing — a legitimate no-op',
+            COMPARISON_VACUOUS: '0 findings and no reviewer roster configured — nothing was expected to compare',
+            COMPARISON_INDETERMINATE: '0 findings, a roster was configured, but no enabled reviewer produced content — the comparison could NOT be performed; never a benign done',
         },
         'kind_actionability': {
             'inline': 'actionable',

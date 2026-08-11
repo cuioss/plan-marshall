@@ -822,3 +822,34 @@ def test_grade_comparison_helper_is_directly_unit_testable():
     assert rr._grade_comparison(0, {'a'}, {'a'}) == 'clean'
     assert rr._grade_comparison(0, set(), set()) == 'vacuous'
     assert rr._grade_comparison(0, {'a'}, set()) == 'indeterminate'
+
+
+def test_comparison_clean_requires_an_ENABLED_reviewer_not_any_reviewer():
+    """A reviewed identity OUTSIDE the enabled roster does not earn `clean`.
+
+    `clean` means the ENABLED population's comparison could be performed because an
+    enabled reviewer reviewed. A stray reviewed identity that is not on the roster
+    (an unconfigured bot, a human outside the reviewer set) says nothing about the
+    enabled population, so `enabled ∩ reviewed` must be empty → `indeterminate`.
+    Regression for the roster-membership half of the CodeRabbit Major finding.
+    """
+    # 0 findings, one enabled reviewer, but the only "reviewed" identity is off-roster.
+    assert rr._grade_comparison(0, {'a'}, {'external'}) == 'indeterminate'
+    result = rr.aggregate(
+        [],
+        enabled_reviewers=['cuioss-review-bot'],
+        reviewed_reviewers=['a-human-not-on-the-roster'],
+    )
+    assert result['comparison'] == 'indeterminate'
+
+
+def test_comparison_empty_roster_is_vacuous_even_with_an_off_roster_reviewer():
+    """An empty enabled roster is `vacuous` even if some off-roster identity reviewed.
+
+    With no roster configured there is nothing to grade a comparison over, so the
+    honest grade is `vacuous`, never `clean`. Regression for the ordering half of the
+    CodeRabbit Major finding (vacuous is checked before clean).
+    """
+    assert rr._grade_comparison(0, set(), {'external'}) == 'vacuous'
+    result = rr.aggregate([], enabled_reviewers=[], reviewed_reviewers=['external'])
+    assert result['comparison'] == 'vacuous'

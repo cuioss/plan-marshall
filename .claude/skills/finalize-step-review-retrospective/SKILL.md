@@ -144,12 +144,24 @@ is the defect this exit closes. Grade the comparison instead.
 
 The distinguisher is the **reviewed-at-all** signal: which enabled reviewers
 resolved to `participated` / `participated_but_empty` (the `_REVIEWED_STATES` of
-`review_completeness`). Derive the enabled roster exactly as Step 2 does, and the
-reviewed set from `review_completeness`'s `bot_states` (states `participated` /
-`participated_but_empty`, mapped to each bot's `author_login`) when that
-classification is available for this plan; when it is not, pass `--reviewed-reviewers`
-bare and the grade **fails closed to `indeterminate`** — an unsubstantiated review
-is never credited as a clean one. Run the aggregator even though findings are zero:
+`review_completeness`). That set is what `--reviewed-reviewers` expects, mapped from
+`review_completeness`'s `bot_states` `{bot_kind, state}` to each bot's `author_login`
+via the registry.
+
+⚠ **No persisted handoff of that classification currently reaches this step.**
+`review_completeness check` emits `bot_states` in its immediate TOON during the
+automatic-review step and the merge-gate barrier, but nothing persists it in a form
+this step can read at `order: 990` (after the merge gate). So **pass
+`--reviewed-reviewers` bare** here, and the zero-findings grade **fails closed to
+`indeterminate`** — the honest reading of a store that substantiates no review. This
+is correct behaviour, not a stopgap: an unsubstantiated review is never credited as
+a clean one, which is exactly the property this exit exists to guarantee. A `clean`
+grade upgrade — distinguishing a genuinely reviewed-clean run from a coverage
+collapse — becomes available only once a persisted reviewed-at-all handoff exists
+(the `bot_states` reviewed set, mapped to `author_login`, written where a
+post-merge-ordered step can read it); until then a zero-findings run with a
+configured roster grades `indeterminate`, and that is the safe result. Run the
+aggregator even though findings are zero:
 
 ```bash
 python3 .plan/execute-script.py default-bundle:finalize-step-review-retrospective:review_retrospective run \
@@ -212,9 +224,10 @@ of its own domain). A row per enabled reviewer closes that.
 
 Also pass `--reviewed-reviewers` — the `author_login`s that resolved to
 `participated` / `participated_but_empty` (`review_completeness`'s reviewed-at-all
-set), when that classification is available for this plan. It feeds the `comparison`
-grade; on a run with findings the grade is `measured` regardless, but passing it
-keeps the same call shape as the zero-findings exit above.
+set), when a persisted classification is available. As the Step 1 note explains, no
+such persisted handoff currently reaches this step, so this is passed **bare**; on a
+run with findings the grade is `measured` regardless, so the bare flag costs nothing
+here and keeps the same call shape as the zero-findings exit above.
 
 ```bash
 python3 .plan/execute-script.py default-bundle:finalize-step-review-retrospective:review_retrospective run \

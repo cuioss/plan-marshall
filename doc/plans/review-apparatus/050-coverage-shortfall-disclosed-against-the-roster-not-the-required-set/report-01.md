@@ -1,6 +1,6 @@
 # Run report — 050-coverage-shortfall-disclosed-against-the-roster-not-the-required-set (run 01)
 
-**Date (UTC):** 2026-08-11    **Branch:** `claude/coverage-shortfall-disclosure-u3w0pt` (harness-assigned; kept as-is per lane § Step 2)    **PR:** _pending_    **Outcome:** completed — the two `cloud-plan-lane/SKILL.md` deliverables are `proposal recorded` (a complete result, not a partial one, per the plan's own § "READ THIS BEFORE THE DELIVERABLES"); the review-retrospective instrument change (D2) is a landed code change.
+**Date (UTC):** 2026-08-11    **Branch:** `claude/coverage-shortfall-disclosure-u3w0pt` (harness-assigned; kept as-is per lane § Step 2)    **PR:** [#1170](https://github.com/cuioss/plan-marshall/pull/1170)    **Outcome:** completed — the two `cloud-plan-lane/SKILL.md` deliverables are `proposal recorded` (a complete result, not a partial one, per the plan's own § "READ THIS BEFORE THE DELIVERABLES"); the review-retrospective instrument change (D2) is a landed code change.
 
 > **Reading note on populations.** This is a plan about unstated denominators, so every ratio below
 > names its population. The roster for this repository is **3** reviewers — `cuioss-review-bot`
@@ -226,7 +226,7 @@ config through the executor-mediated config script would be inert." **Settled fi
 repository an executor-free read path **does exist**, because `.plan/marshal.json` is **git-tracked**,
 not git-ignored. The `.gitignore` rule is:
 
-```
+```gitignore
 .plan/*
 !.plan/marshal.json
 !.plan/project-architecture/
@@ -362,7 +362,35 @@ verifies docs.
   the aggregator and its SKILL.md, both rewritten). Two items the sub-agent explicitly could not
   mechanically verify — the correctness of the prose proposals (a judgment call; its cold read supports
   them) and the "four landings" claim (records absent) — are recorded as such, not as passes.
-- **CI / PR review findings:** _pending (Step 7)._
+- **CI:** all required checks green on head `677c1c2` — `verify / conclusion` success, `review / review`
+  success, `dependency-review` success; `Sourcery review` skipped (optional); `mergeStateStatus: clean`.
+  (Re-verified after the review-fix push below.)
+- **PR review — CodeRabbit (`coderabbitai`, optional) posted 4 inline findings; all handled.** Reading
+  both surfaces (conversation + inline review threads) was load-bearing: the conversation view showed
+  only a benign "Actionable comments posted: 4" summary, while the *inline* threads carried the real
+  findings — the exact green-check-hides-review failure the lane warns about.
+  1. `review_retrospective.py:149` (🟠 Major, functional correctness) — `clean` accepted *any* reviewed
+     reviewer, not just enabled ones, and empty-roster + non-empty-reviewed wrongly returned `clean`
+     instead of `vacuous`. **CONFIRMED real bug. Fixed** — `_grade_comparison` now checks
+     `not enabled_reviewers → vacuous` first, then `enabled_reviewers ∩ reviewed_reviewers → clean`; two
+     regression tests added (`test_comparison_clean_requires_an_ENABLED_reviewer_not_any_reviewer`,
+     `test_comparison_empty_roster_is_vacuous_even_with_an_off_roster_reviewer`).
+  2. `review_retrospective.py:378` (🟡 Minor, maintainability) — `comparison_states` legend used string
+     literals that mirror the `COMPARISON_*` constants. **Fixed** — the legend now keys off the constants.
+  3. `SKILL.md:157` (🟠 Major, data integrity) — the `--reviewed-reviewers` classification is not
+     persisted anywhere the retrospective can read at `order: 990`. **ACCEPTED the point. Resolution:**
+     the SKILL.md now states plainly that no persisted handoff exists, so `--reviewed-reviewers` is
+     passed **bare** and the zero-findings grade **fails closed to `indeterminate`** — the correct safe
+     behaviour (an unsubstantiated review is never credited `clean`). Building the persisted handoff is a
+     larger cross-step change beyond this plan's surface; recorded as residue, not built.
+  4. `report-01.md:233` (🟡 Minor, lint) — MD040 missing fence language. **Fixed** — the `.gitignore`
+     fence is now tagged `gitignore`.
+- **PR review — `cuioss-review-bot` (pr-agent, REQUIRED)** posted its "PR Reviewer Guide": *"No major
+  issues detected"* with zero findings — `participated_but_empty` / `reviewed-empty`. Nothing to handle
+  (it filed no finding); recorded in Reviewer participation as the empty-participation quorum.
+- **PR review — `sourcery-ai` (sourcery, OPTIONAL)** returned only a refusal: *"reached your weekly rate
+  limit of 500000 diff characters"* — `rate-limited` (hard_quota, weekly). Nothing to handle; disclosed
+  as an optional absence.
 
 ## Claim-label verification
 
@@ -378,8 +406,38 @@ verifies docs.
 
 ## Reviewer participation
 
-_Pending — filled at Step 7 from the PR comment bodies, per the D1a two-ratio format (required k of 1;
-optional j of 2; roster r of 3)._
+Population **derived from configuration** (not transcribed): the roster is the three `author_login`s in
+the registry; the required/optional split is read from `.plan/marshal.json` (D3): required =
+{`pr-agent`}, optional = {`coderabbit`, `sourcery`}. Verdicts are from the stored comment bodies on
+PR #1170 (both surfaces), classified per the D1a proposal's four-verdict scheme.
+
+| Reviewer (`author_login`) | Class | Verdict | Body evidence |
+|---|---|---|---|
+| `cuioss-review-bot` (pr-agent) | **required** | `reviewed-empty` | Posted its "PR Reviewer Guide 🔍": *"No major issues detected"*, "No security concerns", "PR contains tests" — its declared `issue_comment` publish shape, but **zero findings**. Participated; produced nothing actionable = `participated_but_empty`. |
+| `coderabbitai` (coderabbit) | optional | `reviewed` | Published a review with **4 actionable inline findings** (2 Major, 2 Minor) against the diff — one a real correctness bug in the graded code. |
+| `sourcery-ai` (sourcery) | optional | `rate-limited` | Published only a refusal: *"reached your weekly rate limit of 500000 diff characters"* — `hard_quota` (weekly). |
+
+**Coverage, with populations named:**
+- **Required quorum: 1 of 1 — met by EMPTY participation.** The sole required reviewer (`pr-agent`)
+  participated but produced no findings; its Guide asserts "no major issues" on a diff where the
+  *optional* CodeRabbit found two Majors.
+- **Optional coverage: 1 of 2 reviewed** — `coderabbitai` reviewed (4 findings); `sourcery-ai`
+  rate-limited (weekly quota).
+- **Roster: 2 of 3 participated** (`coderabbitai` reviewed; `pr-agent` reviewed-empty; `sourcery-ai`
+  rate-limited).
+
+⭐ **This run is itself a live instance of the plan's false-clean defect.** The required quorum reads
+"met" while the substantive review came entirely from an *optional* reviewer, and the *required*
+reviewer's "no major issues" card would — under the current cloud-lane roster-flat disclosure and its
+`reviewed`-folds-in-empty verdict — have rendered as full coverage. Under the D1 proposal this discloses
+as **"required quorum met by empty participation (1 of 1: `cuioss-review-bot` reviewed-empty); optional
+1 of 2 reviewed (`coderabbitai`: 4 findings incl. 2 Major; `sourcery-ai` rate-limited, weekly quota)."**
+
+**Step 8 shortfall disclosure — FIRED** (see § Merge gate below): stated to the operator before arming
+auto-merge, exactly as the two-ratio line above. Under the current *shipped* cloud-lane text this would
+also have "fired" — but as a bare "2 of 3" roster shortfall that conflates the empty required quorum
+with two optional absences; the disclosure recorded here is the corrected required-vs-optional form the
+D1 proposal specifies.
 
 ## Cost
 
@@ -391,17 +449,58 @@ optional j of 2; roster r of 3)._
 
 ## Contract check (Step 9)
 
-_Filled at Step 8 condition 3 as the final pre-merge commit._
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **Done** — cloud-plan-lane + ref-code-quality + plugin-script-architecture + python-core + pytest-testing, read by bundle path (plugin not assumed installed). Named in § Skills loaded. |
+| 2 Branch | **Done** — harness-assigned `claude/coverage-shortfall-disclosure-u3w0pt`, kept as-is; published to `origin` before any edit. Branch form: **harness-assigned**. |
+| 3 Plan directory | **Done** — `doc/plans/review-apparatus/050-.../plan.md` exists and opens with the first-instruction block (present on receipt; not repaired). |
+| 4 Implement | **Done** — commits carry the `Co-Authored-By: Claude` trailer, no "Generated with" footer. |
+| 4 Per-commit gate | **Done** — every `*.py`-touching commit was preceded by a green build (`./pw verify` = SUCCESS, `total_issues`/failures 0). |
+| 4 Pushed | **Done** — every commit pushed; no unpushed commit remains at merge time. |
+| 5 Build gate | **Done** — Python changed → `./pw verify` run (twice: initial + after the review-fix push), both `=== verify: SUCCESS ===`. |
+| 6 Verification sub-agent | **Done** — one finding (counting-rule Consumers table), fixed and re-verified clean; dispositions in § Findings. |
+| 7 PR cycle | **Done** — PR #1170; all 4 CodeRabbit inline comments dispositioned (3 fixed, 1 accepted-and-resolved-by-fail-closed); both comment surfaces read. |
+| 8 Merge gate | Conditions 1–3 met; auto-merge armed (see § Merge gate). Landing delegated to the orchestrator collect if the session cannot self-confirm; the merge commit is reported to the operator, not embedded here. |
+| 8 Bridge | **Clean** — no status/bookkeeping write landed under `doc/plans/` outside this plan's own directory. The `bot-participation-contract.md` edit is a declared collateral fix (ordinary source), not a bridge write; `cloud-plan-lane/SKILL.md` was NOT edited. |
+| 9 This check | Appended here. |
+| 9 What have we learned | Below. |
+
+**GitHub access path:** the **GitHub MCP server** (cloud path). **`/sync-plugin-cache`:** not owed — a cloud run neither performs nor records it.
 
 ## What have we learned (Step 9)
 
-_Filled at Step 8._
+**No new cloud-lane contract change is proposed for self-approval** — and that is the correct outcome,
+because the changes this run *would* make to `cloud-plan-lane/SKILL.md` (D1/D2/D3) are the plan's own
+deliverables, recorded as proposals precisely because a run may not self-approve a change to its
+governing contract. They are presented to the operator in this report, not shipped here.
+
+Three genuine observations this run produced:
+
+1. **The run empirically reproduced the plan's thesis.** The required reviewer (`pr-agent`) produced a
+   "no major issues" card with zero findings while the *optional* CodeRabbit caught a real Major
+   correctness bug in the graded code. This is exactly the false-clean the plan describes, observed live
+   on the plan's own PR — strengthening the evidence for D1 rather than resting on the cited incidents.
+2. **The lane's two-surface rule proved load-bearing here.** CodeRabbit's real findings were only in the
+   *inline review-thread* surface; the conversation view carried a benign "Actionable comments posted: 4"
+   summary. Reading only the conversation view would have merged with 2 Majors unaddressed. No change —
+   this validates the existing § Step 7 rule.
+3. **All self-wake tools were absent, not merely gated, in this session** — `subscribe_pr_activity`
+   (harness and MCP) and `send_later` (MCP) all returned "No such tool available". The lane's
+   **manual-read-polling** fallback (§ Step 8) carried the run to a self-confirmed state, so no contract
+   change is warranted; but the lane's wording ("may be approval-gated") understates the case where the
+   tools are wholly absent — the manual-read-polling path is then not an alternative but the *only* path,
+   and it worked. Recorded as a data point, not a proposed edit.
 
 ## Residue
 
 - **The cloud-lane fix is a proposal, not a landed change** (by design — the run may not self-approve a
   change to its governing contract). D1a/D1b/D2a/D3 carry exact replacement text; an operator or a
   non-cloud-lane run must apply them to `cloud-plan-lane/SKILL.md`.
+- **A persisted reviewed-at-all handoff to the retrospective** (CodeRabbit finding #3) does not exist:
+  `review_completeness`'s `{bot_kind, state}` classification is not written anywhere the `order: 990`
+  retrospective can read it, so `--reviewed-reviewers` is passed bare and a zero-findings run grades
+  `indeterminate` (fail-closed, correct). Upgrading a genuinely reviewed-clean run to `clean` needs that
+  handoff built — a cross-step change beyond this plan's surface. Follow-up, not built here.
 - **Consumer-project config absence** (D3 scope caveat) is a lead: whether other repos carry the
   `!.plan/marshal.json` negation is unverified and out of scope.
 - **Convergence with the absence-cause plan.** This plan owns the **denominator** (whose absence
