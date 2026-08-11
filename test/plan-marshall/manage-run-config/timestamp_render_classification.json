@@ -1,0 +1,38 @@
+{
+  "_description": "D1 classification of every timestamp call site in marketplace/bundles/**/*.py, separating the RENDER sites (a stored or current timestamp formatted into human-facing text an operator reads) from the STORE/COMPARE sites (created, persisted, parsed for arithmetic, or compared — never shown to a human as a formatted wall-clock string). The display_timezone knob may reach RENDER sites ONLY; it must NEVER reach a STORE or COMPARE site. This file is the classification the display-timezone write-path guard (test_display_timezone_guard.py) is derived over.",
+  "_population_source": "grep -nE 'datetime\\.now|utcnow|strftime|fromisoformat|astimezone|ZoneInfo|zoneinfo|\\.timestamp\\(\\)|fromtimestamp' over marketplace/bundles/**/*.py — re-derived at guard time by scanning the live tree, never a hand-maintained site list. The lead figure was 'about 32 sites, zero naive calls'; the re-derivation found 55 real call sites (plus 2 docstring/comment mentions that are not call sites), across which exactly two RENDER an absolute timestamp for a human. Every datetime.now() call in the tree uses datetime.now(UTC) — the tree is fully converged onto UTC, which is what makes a display-only knob safe.",
+  "scan_regex": "datetime\\.now|utcnow|strftime|fromisoformat|astimezone|ZoneInfo|zoneinfo|\\.timestamp\\(\\)|fromtimestamp",
+  "knob_consumer_symbols": [
+    "render_timestamp",
+    "resolve_display_timezone",
+    "read_display_timezone",
+    "display_timezone"
+  ],
+  "knob_owner_files": [
+    "marketplace/bundles/plan-marshall/skills/manage-run-config/scripts/run_config.py",
+    "marketplace/bundles/plan-marshall/skills/manage-run-config/scripts/_display_time.py"
+  ],
+  "render_files": [
+    "marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/manage-metrics.py",
+    "marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py"
+  ],
+  "render_sites": [
+    {
+      "file": "marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/manage-metrics.py",
+      "classification": "RENDER",
+      "human_text": "Generated: <ts> UTC — the single absolute-timestamp line in the metrics.md report body; every other metrics.md line renders phase names, floors, warnings, and durations-in-ms, never a wall-clock time.",
+      "routed_through": "render_timestamp(datetime.now(UTC), '%Y-%m-%d %H:%M:%S', ' UTC')"
+    },
+    {
+      "file": "marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py",
+      "classification": "RENDER",
+      "human_text": "- generated: <ts>Z — the generated-at line in the plan-retrospective report header list.",
+      "routed_through": "render_timestamp(datetime.now(UTC), '%Y-%m-%dT%H:%M:%S', 'Z')"
+    }
+  ],
+  "store_compare_derivation": "STORE/COMPARE is every scanned file MINUS render_files MINUS knob_owner_files. It is derived (not listed here) so a newly-added timestamp site is classified STORE/COMPARE by default and trips the guard the moment it references a knob_consumer_symbol — the classification cannot silently go stale or empty. The guard publishes the derived STORE/COMPARE file census on every run.",
+  "known_store_traps": [
+    "A lesson identifier prefix (manage-lessons.py) is derived from datetime.now(UTC) date/hour AND doubles as a sort key — converting it would silently reorder the corpus. STORE, out of scope.",
+    "Retention/quiet-window cutoffs, CI/build durations, and title-token staleness all COMPARE timestamps written at different times; two records rendered under different zones would be incomparable with no error. COMPARE, out of scope."
+  ]
+}

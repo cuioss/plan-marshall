@@ -35,6 +35,7 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
+from _display_time import render_timestamp
 from _plan_parsing import extract_deliverable_headings, parse_document_sections
 from constants import FILE_STATUS, FILE_WORK_METRICS, PHASES
 from file_ops import (
@@ -1275,7 +1276,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     lines = []
     lines.append(f'# Metrics: {plan_id}')
     lines.append('')
-    lines.append(f'Generated: {datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")}')
+    lines.append(f'Generated: {render_timestamp(datetime.now(UTC), "%Y-%m-%d %H:%M:%S", " UTC")}')
     lines.append('')
 
     # Phase breakdown table

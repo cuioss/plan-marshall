@@ -27,6 +27,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from _display_time import render_timestamp
 from file_ops import base_path, output_toon, safe_main
 from input_validation import (
     add_plan_id_arg,
@@ -277,7 +278,7 @@ def _heading_from_aspect_key(aspect_key: str) -> str:
 
 def build_header(plan_id: str, mode: str, plan_path: Path, session_id: str | None) -> str:
     """Build the document header (title + metadata list)."""
-    generated = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+    generated = render_timestamp(datetime.now(UTC), '%Y-%m-%dT%H:%M:%S', 'Z')
     session = session_id or 'not provided'
     lines = [
         f'# Plan Retrospective — {plan_id}',
