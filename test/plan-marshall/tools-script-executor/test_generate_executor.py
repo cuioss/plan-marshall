@@ -3099,26 +3099,73 @@ def test_failed_rederivation_drops_the_entry_rather_than_reusing_the_cached_one(
     The very edit that broke the help may be the edit that changed the surface,
     so carrying the old entry forward would assert an accept-set the script no
     longer has — and reject a call that is now valid.
+
+    A good sibling keeps the generation non-empty so the write actually happens
+    and the drop is observable: a TOTAL collapse to zero surfaces against a
+    populated previous is the separate fail-open case pinned by
+    ``test_total_surface_collapse_against_a_populated_previous_fails_open``. The
+    point HERE is the reuse logic — the broken entry is DROPPED, not carried
+    forward from the cache.
+    """
+    module = load_module()
+    executor = _surface_fixture(tmp_path, monkeypatch)
+
+    aliased = _surface_notation('aliased')
+    sibling = _surface_notation('sibling')
+    mappings = {
+        aliased: _write_surface_script(tmp_path, 'aliased', _ALIAS_SCRIPT),
+        sibling: _write_surface_script(tmp_path, 'sibling', _ALIAS_SCRIPT),
+    }
+
+    assert _generate_with_surfaces(module, mappings)['surfaces_derived'] == 2
+    populated = module.read_previous_surfaces(executor)
+    assert aliased in populated and sibling in populated
+
+    # The aliased script's --help now exits non-zero; the sibling is unchanged
+    # (its mapping and path are the same, so only aliased's own bytes changed).
+    _write_surface_script(tmp_path, 'aliased', _BROKEN_SCRIPT)
+
+    result = _generate_with_surfaces(module, mappings)
+    assert result['status'] == 'success', result
+    assert result['surfaces_not_derivable'] == 1, result
+
+    written = module.read_previous_surfaces(executor)
+    assert aliased not in written, (
+        'a failed re-derivation must DROP the entry, not fall back to the cached one'
+    )
+    assert sibling in written, 'the unaffected sibling keeps its surface'
+
+
+def test_total_surface_collapse_against_a_populated_previous_fails_open(
+    tmp_path, monkeypatch
+):
+    """A regeneration that loses its LAST surface refuses rather than shipping inert.
+
+    When every registered script's surface drops to zero while the previous
+    executor carried some, writing the surfaces-less result would ship an
+    executor that dispatches with no pre-spawn validation. This is the fail-open
+    case D1 closes: the generation exits ``status: error`` and the previous —
+    still-validating — executor is left byte-for-byte untouched, rather than
+    reporting success over an inert guard. A real broken script drives it, so
+    this exercises the whole generate path, not a monkeypatched derivation.
     """
     module = load_module()
     executor = _surface_fixture(tmp_path, monkeypatch)
 
     notation = _surface_notation('aliased')
     mappings = {notation: _write_surface_script(tmp_path, 'aliased', _ALIAS_SCRIPT)}
-
     assert _generate_with_surfaces(module, mappings)['surfaces_derived'] == 1
-    assert notation in module.read_previous_surfaces(executor)
+    before = executor.read_text(encoding='utf-8')
 
-    # Same notation and path, now a script whose --help exits non-zero.
-    mappings = {notation: _write_surface_script(tmp_path, 'aliased', _BROKEN_SCRIPT)}
+    # The only script's --help now exits non-zero: nothing derives, nothing to reuse.
+    _write_surface_script(tmp_path, 'aliased', _BROKEN_SCRIPT)
 
     result = _generate_with_surfaces(module, mappings)
-    assert result['surfaces_derived'] == 0
-    assert result['surfaces_reused'] == 0
-    assert result['surfaces_not_derivable'] == 1
-    assert notation not in module.read_previous_surfaces(executor), (
-        'a failed re-derivation must DROP the entry, not fall back to the cached one'
-    )
+    assert result['status'] == 'error', result
+    assert 'fail-open' in result['error'].lower(), result
+    assert result['surfaces_derived'] == 0 and result['surfaces_reused'] == 0, result
+    # The previous executor is preserved byte-for-byte — no surfaces-less write.
+    assert executor.read_text(encoding='utf-8') == before
 
 
 def test_generator_and_shipped_template_declare_the_same_format_version():

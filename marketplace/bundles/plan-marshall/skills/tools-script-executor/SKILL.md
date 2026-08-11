@@ -251,11 +251,19 @@ and is effectively free. Cold cost is therefore paid on a first build, a
 `TEMPLATE_FORMAT_VERSION` is deliberately not a trigger: it is not one of the
 four digest inputs, so bumping it alone reuses every cached entry. A change to
 the derived node shape belongs to `CACHE_VERSION`, which is a digest input
-precisely so it invalidates the entries whose schema it changed. `generate` publishes `scripts_registered`, `surfaces_derived`,
-`surfaces_reused`, and `surfaces_not_derivable` (the three buckets partition the
-population) so a regeneration that quietly derived nothing is visible as a
-number rather than inferred from a green status. `PM_SURFACE_BUDGET_SECONDS`
-bounds the total derivation wall-clock; `0` disables derivation entirely.
+precisely so it invalidates the entries whose schema it changed. `generate`
+publishes `scripts_registered`, `surfaces_derived`, `surfaces_reused`, and
+`surfaces_not_derivable` (the three buckets partition the population) on an
+**unconditional** `surface-stats` line, so a consumer reads the outcome as a
+value rather than inferring it from a green status. And a regeneration that
+emits **zero** surfaces (neither derived nor reused) where the previous executor
+carried some no longer reports success at all: it **fails loudly** (non-zero
+exit) and writes nothing, leaving the still-validating previous executor in
+place — a surfaces-less executor would dispatch with no pre-spawn validation, so
+shipping one silently is the failure this refusal closes. `PM_SURFACE_BUDGET_SECONDS`
+bounds the total derivation wall-clock; `0` disables derivation, which is safe
+on a fresh/empty previous but trips that fail-open refusal when the previous
+executor already carried surfaces.
 
 #### Observation point: when this guard becomes live
 

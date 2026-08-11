@@ -830,10 +830,13 @@ def _surface_derivation_config() -> surface_api.DerivationConfig:
     first build wants the full allowance, while a caller that needs only the
     notation mappings refreshed (a CI path, an anchoring check) should not pay
     for a full accept-set derivation. Setting it to ``0`` disables derivation
-    outright, which is a SAFE configuration rather than a broken one — a
-    surface-less executor dispatches exactly as it did before the map existed
-    (see the fail-closed-on-uncertainty invariant). An unparseable or negative
-    value falls back to the default rather than failing the generation.
+    outright. On a fresh or surface-less previous that is a SAFE configuration —
+    a surface-less executor dispatches exactly as it did before the map existed
+    (the fail-closed-on-uncertainty invariant). Against a previous executor that
+    ALREADY carried surfaces, a zero-surface generation is the regression the
+    fail-open guard in :func:`generate_executor` now refuses, so ``0`` is not
+    universally safe once surfaces exist. An unparseable or negative value falls
+    back to the default rather than failing the generation.
     """
     budget = _DEFAULT_SURFACE_BUDGET_SECONDS
     raw = os.environ.get(_SURFACE_DERIVATION_BUDGET_ENV)
@@ -1054,8 +1057,12 @@ def derive_script_surfaces(
 
     Returns ``(surfaces, stats)`` where ``stats`` carries the four counts the
     command publishes. They are reported rather than merely computed because a
-    regeneration that quietly derived nothing is otherwise indistinguishable
-    from one that derived everything — both exit ``status: success``.
+    regeneration that quietly derived nothing must be distinguishable from one
+    that derived everything: the counts feed the fail-open guard in
+    :func:`generate_executor` — which refuses a zero-surface regeneration against
+    a non-empty previous rather than reporting success — and the unconditional
+    surface-stats line, so the outcome is a value a consumer reads rather than a
+    status the two outcomes would otherwise share.
     """
     shared_digest = _shared_dirs_digest(shared_dirs)
     digests = {
@@ -1959,8 +1966,12 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # The four accept-set counts, published rather than merely computed. A
     # regeneration that quietly derived NOTHING — a broken probe, an exhausted
     # budget, a shared-module edit that invalidated everything and then failed —
-    # exits ``status: success`` exactly like a healthy one, so the only way to
-    # tell them apart is to read the numbers. ``surfaces_not_derivable`` is the
+    # no longer slips through as a healthy ``status: success`` when the previous
+    # executor carried surfaces: the fail-open guard above turns that case into a
+    # ``status: error`` (whose counts the branch above flattens), and a
+    # fresh/empty previous deriving zero still succeeds with all-zero counts. On
+    # every path the counts ride the result, so the outcome is read from a value
+    # rather than inferred from the status. ``surfaces_not_derivable`` is the
     # residual (registered minus emitted), so the three buckets always sum to
     # ``scripts_registered``.
     surface_stats = gen_result.get('surface_stats') or dict(_EMPTY_SURFACE_STATS)
