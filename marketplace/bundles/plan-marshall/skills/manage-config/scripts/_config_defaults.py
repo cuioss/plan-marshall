@@ -233,7 +233,7 @@ DEFAULT_PROJECT = {
 # ask's hard-coded `1`, so materialising `1` is behaviourally inert: for a legacy
 # block that omits the key, `orchestrator get` returns `set:false` and the ask
 # keeps its hard-coded `1`; for the seeded block it returns `set:true, value:1` and
-# the ask uses that same `1` (marshall-orchestrator/workflow/init.md Step 4). Both
+# the ask uses that same `1` (plan-orchestrator/workflow/init.md Step 4). Both
 # worlds pre-fill `1`.
 #
 # `effort` is materialised as an empty object `{}` — the ONLY behaviourally-inert

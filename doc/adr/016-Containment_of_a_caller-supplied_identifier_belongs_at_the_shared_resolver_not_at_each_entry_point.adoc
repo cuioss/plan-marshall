@@ -9,7 +9,7 @@
 // relevance without reading the full file. List fields are comma-separated.
 // summary: A caller-supplied identifier that a shared resolver turns into a filesystem path is grammar-checked once at that resolver, so every entry point is contained by construction; the per-entry-point checks that return a structured error envelope are retained above it for diagnosability, never as the containment mechanism.
 // tags: input-validation, trust-boundary, choke-point, path-resolution, fail-closed, containment, single-resolver
-// affects: plan-marshall, manage-logging, script-shared, persona-security-expert, marshall-orchestrator
+// affects: plan-marshall, manage-logging, script-shared, persona-security-expert, plan-orchestrator
 // supersedes:
 // end-adr-metadata
 

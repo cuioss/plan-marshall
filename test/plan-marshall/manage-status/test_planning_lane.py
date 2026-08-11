@@ -121,7 +121,7 @@ _INGESTED_SPEC_BODY = (
     'epic: truthful-signals\n'
     '\n'
     '> Staged plan spec — one shippable unit of work. See\n'
-    '> `persona-marshall-orchestrator/standards/orchestration-model.md` for the\n'
+    '> `persona-plan-orchestrator/standards/orchestration-model.md` for the\n'
     '> hand-off contract.\n'
     '\n'
     '## Objective\n'
@@ -138,7 +138,7 @@ _INGESTED_SPEC_BODY = (
 
 # The single path token in the truncated head region — a CITATION of a governing
 # document, never a target of the work.
-_BOILERPLATE_CITATION = 'persona-marshall-orchestrator/standards/orchestration-model.md'
+_BOILERPLATE_CITATION = 'persona-plan-orchestrator/standards/orchestration-model.md'
 # A target named in the ingested body BELOW the first nested ``## `` heading. The
 # truncating read could never reach it.
 _TARGET_BELOW_NESTED_HEADING = (

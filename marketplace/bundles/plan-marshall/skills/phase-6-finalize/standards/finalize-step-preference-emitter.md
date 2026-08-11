@@ -186,7 +186,7 @@ DESTINATION of the owed-hint record only — the generalization above and the
 ##### Orchestrated emission contract
 
 Message granularity is **one message per emitted item**, per
-[`../../marshall-orchestrator/standards/inbox-envelope.md`](../../marshall-orchestrator/standards/inbox-envelope.md):
+[`../../plan-orchestrator/standards/inbox-envelope.md`](../../plan-orchestrator/standards/inbox-envelope.md):
 emit **one `kind: candidate-lesson` message per owed hint**. The payload is lesson-shaped —
 the same `key=value` header plus markdown body the lessons corpus uses — so the
 orchestrator-side pickup lifts it with zero transcoding. The plan performs **no**
@@ -206,7 +206,7 @@ Write {plan_dir}/work/inbox-payload.md
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox write \
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox write \
   --slug {epic} --sender-type plan --sender-id {plan_id} --kind candidate-lesson \
   --payload-file {plan_dir}/work/inbox-payload.md
 ```

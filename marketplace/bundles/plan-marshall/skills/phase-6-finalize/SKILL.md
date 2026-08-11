@@ -719,7 +719,7 @@ FOR each step_id in manifest.phase_6.steps:
 
          Classify it through the single detection seam (no second detector, no new persisted metadata field):
 
-            python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox detect \
+            python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox detect \
               --source-id "{source_id}"
 
          Parse `orchestrated`, `epic`, and `detection` from the TOON output. `detection` names WHY the verdict came out the way it did, over the seam's closed four-token vocabulary (`orchestrated`, `not_orchestrator_pointer`, `unrecognised_id`, `unsafe_slug`). Log the verdict, mirroring the Signal-Gate skip log line:

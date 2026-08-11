@@ -80,7 +80,7 @@ Artifacts this ruling edits: `platform-runtime/scripts/_claude_runtime_impl.py`
 `platform-runtime/scripts/runtime_base.py` (abstract docstring),
 `platform-runtime/scripts/opencode_runtime.py` (no-op reason text),
 `plan-marshall/references/hook-authoring-guide.md`,
-`persona-marshall-orchestrator/standards/orchestration-model.md`,
+`persona-plan-orchestrator/standards/orchestration-model.md`,
 `persona-plan-marshall-agent/SKILL.md` and
 `persona-plan-marshall-agent/standards/agent-behavior-rules.md`,
 `plan-marshall/workflow/await-long-running.md`, and this document.
@@ -637,8 +637,8 @@ independently removes the failure mode a guard would defend against:
   a plan. There is no plan→session direction anywhere in the surface, so "which
   session owns this plan?" is a question no consumer can ask and no consumer does
   ask: the two callers of `session resolve-plan` —
-  `marshall-orchestrator/workflow/close.md` and
-  `marshall-orchestrator/workflow/archive.md` — both invoke it with **no
+  `plan-orchestrator/workflow/close.md` and
+  `plan-orchestrator/workflow/archive.md` — both invoke it with **no
   `--session-id`**, resolving only their own caller session. A second session
   bound to the same plan is therefore invisible to every read path.
 - **(b) `unbind` is self-scoped *on the teardown path*.** `session teardown`

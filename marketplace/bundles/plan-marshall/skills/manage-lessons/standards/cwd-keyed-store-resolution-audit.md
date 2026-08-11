@@ -143,7 +143,7 @@ coverage is partial is partial.
 |------|-----------|-------------|
 | The `'lessons-learned'` member of the Form-B subdirectory-name set | — | **JUSTIFY (detector token, resolves nothing).** The literal appears as one entry in the `.plan`-domain subdirectory list the `plan-path-in-scripts` rule matches against when detecting hand-rolled parent-walking path re-derivation. It resolves no store; it is the lint rule that flags Direction-B drift. Included as first-class evidence: this is a guard against the failure shape, not an instance of it. |
 
-### marshall-orchestrator/workflow/lessons-handling.md
+### plan-orchestrator/workflow/lessons-handling.md
 
 | Site | Direction | Disposition |
 |------|-----------|-------------|

@@ -293,12 +293,12 @@ Branch on `orchestrated` before recording anything.
 **`orchestrated: true` — route to the epic inbox.** Make **zero** `manage-lessons add` calls. Step 5a's dedup classification does NOT run on this branch: the corpus it dedups against is the global store, which is not the destination, and only the orchestrator holds the cross-plan context that classification needs. Every proposal — regardless of the kind of finding that produced it — is emitted as one `kind: candidate-lesson` inbox message. Stage each payload body with the `Write` tool first (the same shell-safety reason the global-store flow uses a path-allocate sequence), then write it:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox write \
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox write \
   --slug {epic} --sender-type plan --sender-id {plan_id} --kind candidate-lesson \
   --payload-file {plan_dir}/work/inbox-payload.md
 ```
 
-The proposal body composed for the global store is the payload **verbatim** — no transcoding, which is exactly what the markdown + `key=value` envelope choice buys. No `already_closed` deletion happens on this branch: deleting a global lesson is a corpus mutation the orchestrator owns. See [`../marshall-orchestrator/standards/inbox-envelope.md`](../marshall-orchestrator/standards/inbox-envelope.md) for the envelope schema and the `kind` enum; do not restate them here.
+The proposal body composed for the global store is the payload **verbatim** — no transcoding, which is exactly what the markdown + `key=value` envelope choice buys. No `already_closed` deletion happens on this branch: deleting a global lesson is a corpus mutation the orchestrator owns. See [`../plan-orchestrator/standards/inbox-envelope.md`](../plan-orchestrator/standards/inbox-envelope.md) for the envelope schema and the `kind` enum; do not restate them here.
 
 **`orchestrated: false` — unchanged.** Every existing path below applies byte for byte: Step 5a dedup classification, the `status: new` gate, `manage-lessons add` + `Write` the body, the `merge_into` `Edit` path, and the `already_closed` deletion path.
 

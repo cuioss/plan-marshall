@@ -89,7 +89,7 @@ Both kinds land in the same `enriched.json` `best_practices[]` / `insights[]` sc
 
 == Above the lifecycle
 
-A goal too large for one plan — a roadmap, a campaign, a multi-plan feature — is orchestrated as an *epic* by the `marshall-orchestrator` skill, which decomposes it into workstreams and staged plan specs and emits ready-to-run `/plan-marshall` commands, each of which enters this six-phase lifecycle as an ordinary plan. See xref:orchestration.adoc[Orchestration].
+A goal too large for one plan — a roadmap, a campaign, a multi-plan feature — is orchestrated as an *epic* by the `plan-orchestrator` skill, which decomposes it into workstreams and staged plan specs and emits ready-to-run `/plan-marshall` commands, each of which enters this six-phase lifecycle as an ordinary plan. See xref:orchestration.adoc[Orchestration].
 
 == Related
 

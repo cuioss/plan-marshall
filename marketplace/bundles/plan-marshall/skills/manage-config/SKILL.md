@@ -1072,7 +1072,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config orches
   --field FIELD --value VALUE
 ```
 
-Writes one scalar knob into the top-level `orchestrator` block (a sibling of `plan`), rejecting an unknown `--field` against the same whitelist with `error_type: unknown_field`. Two known scalar fields: `parallelization_scope` (int `>= 1`; `bool` is rejected even though it is an `int` subclass) pre-fills the per-epic `parallelization_scope` ask in `marshall-orchestrator` init; `auto_emit` (bool; the orchestrator-tier autonomy knob, default `false`) governs the post-landing queue-fill emit. `orchestrator.effort.*` is NOT written here — see `effort set --scope orchestrator[...]` below.
+Writes one scalar knob into the top-level `orchestrator` block (a sibling of `plan`), rejecting an unknown `--field` against the same whitelist with `error_type: unknown_field`. Two known scalar fields: `parallelization_scope` (int `>= 1`; `bool` is rejected even though it is an `int` subclass) pre-fills the per-epic `parallelization_scope` ask in `plan-orchestrator` init; `auto_emit` (bool; the orchestrator-tier autonomy knob, default `false`) governs the post-landing queue-fill emit. `orchestrator.effort.*` is NOT written here — see `effort set --scope orchestrator[...]` below.
 
 ### plan {phase} get
 

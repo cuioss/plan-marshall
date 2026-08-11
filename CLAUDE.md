@@ -65,7 +65,7 @@ These rules apply to ALL work in this repository — ad-hoc tasks, plan executio
 
 ## Standalone Plan Lane (`doc/plans/`)
 
-Plans under `doc/plans/` execute **outside the plan-marshall command lifecycle** — no `/plan-marshall`, no `/marshall-orchestrator`, no `.plan/execute-script.py`, no `.plan/` state at all. The lane exists because `.plan/` is git-ignored: its state (plan directories, orchestrator ledgers, findings, locks, and the generated executor) lives only on the machine that created it, so a cloud session at claude.ai/code clones the repository and has none of it. Everything a `doc/plans/` plan needs is in git.
+Plans under `doc/plans/` execute **outside the plan-marshall command lifecycle** — no `/plan-marshall`, no `/plan-orchestrator`, no `.plan/execute-script.py`, no `.plan/` state at all. The lane exists because `.plan/` is git-ignored: its state (plan directories, orchestrator ledgers, findings, locks, and the generated executor) lives only on the machine that created it, so a cloud session at claude.ai/code clones the repository and has none of it. Everything a `doc/plans/` plan needs is in git.
 
 **The complete working contract is the `cloud-plan-lane` skill** (`.claude/skills/cloud-plan-lane/SKILL.md`), loaded as the first action of every run:
 

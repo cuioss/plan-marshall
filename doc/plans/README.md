@@ -1,7 +1,7 @@
 # doc/plans
 
 Git-tracked plans executed by the **standalone plan lane** — the working mode that runs *outside*
-the `/plan-marshall` and `/marshall-orchestrator` command lifecycle.
+the `/plan-marshall` and `/plan-orchestrator` command lifecycle.
 
 This tree exists because `.plan/` is git-ignored: the plan-marshall lifecycle's state lives only on
 the machine that created it, so a cloud session at [claude.ai/code](https://claude.ai/code) clones

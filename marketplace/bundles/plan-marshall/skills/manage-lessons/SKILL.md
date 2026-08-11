@@ -606,7 +606,7 @@ unclassifiable_plans: []
 
 Inverse of `convert-to-plan`: move every `lesson-*.md` at a plan directory's root back into the active corpus at `.plan/local/lessons-learned/{lesson_id}.md`. Plans that consolidate several lessons carry more than one file; every match is restored.
 
-**Four distinguishable outcomes.** The verb reports which kind of answer it is giving over the closed `action` vocabulary, modelled on `marshall-orchestrator`'s `inbox list` triple — the discriminator rides the payload, and the verb stays non-faulting for the benign zero:
+**Four distinguishable outcomes.** The verb reports which kind of answer it is giving over the closed `action` vocabulary, modelled on `plan-orchestrator`'s `inbox list` triple — the discriminator rides the payload, and the verb stays non-faulting for the benign zero:
 
 | `action` | `status` | Meaning |
 |----------|----------|---------|

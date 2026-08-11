@@ -235,7 +235,7 @@ def get_log_path(plan_id: str | None, log_type: str = 'script', store: str = 'pl
 
     if plan_id and store == 'orchestrator':
         # Orchestrator entries have no status.json sentinel contract — the
-        # slug tree is scaffolded by marshall-orchestrator before logging, and
+        # slug tree is scaffolded by plan-orchestrator before logging, and
         # the store is main-anchored, so no plans-style orphan-slot hazard.
         #
         # Resolve with allow_archived=True: appending an audit-trail log entry

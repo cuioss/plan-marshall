@@ -88,7 +88,7 @@ cmd_planning_lane_route = _mod.cmd_planning_lane_route
 # the truncated reading lands on `surgical` (1 path, no glob) rather than on
 # `single_module` for some unrelated reason. That keeps each assertion below
 # attributable to the read seam.
-_CITATION = 'persona-marshall-orchestrator/standards/orchestration-model.md'
+_CITATION = 'persona-plan-orchestrator/standards/orchestration-model.md'
 
 _SPEC_PREAMBLE = (
     '# PLAN-102: Route an orchestrated spec on its whole body\n'
