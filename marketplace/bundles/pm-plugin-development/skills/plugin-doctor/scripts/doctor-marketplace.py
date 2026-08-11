@@ -254,7 +254,7 @@ def collect_filtered_components(
 # Declarative suppression (Granularity-2 driver integration)
 # =============================================================================
 #
-# The six marketplace-wide content scanners each carry a ``rule_id`` field on
+# The marketplace-wide content scanners each carry a ``rule_id`` field on
 # their findings. The driver consults the three-layer suppression substrate
 # (default config < project config < per-file frontmatter, see
 # ``_analyze_shared.is_rule_suppressed``) before extending ``all_issues`` so a
@@ -269,6 +269,7 @@ def collect_filtered_components(
 _SUPPRESSIBLE_RULE_IDS = frozenset(
     {
         'no-historical-prose-in-skills',
+        'no-incident-references',
         'no-lesson-id-in-skill-prose',
         'prose-verb-chain-consistency',
         'allowed-tools-body-drift',

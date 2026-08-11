@@ -51,6 +51,7 @@ from _analyze_fail_closed_gate_reads import analyze_fail_closed_gate_reads
 from _analyze_finalize_step_token import scan_finalize_step_token
 from _analyze_frontmatter import analyze_frontmatter
 from _analyze_historical_prose_in_skills import analyze_historical_prose_in_skills
+from _analyze_incident_reference_in_docs import analyze_incident_reference_in_docs
 from _analyze_lane_frontmatter import analyze_lane_frontmatter
 from _analyze_lesson_id_in_skill_prose import analyze_lesson_id_in_skill_prose
 from _analyze_literal_count import analyze_literal_count
@@ -193,6 +194,10 @@ class RuleRunner:
         emit(
             'analyze_historical_prose_in_skills',
             suppressed(analyze_historical_prose_in_skills(root)),
+        )
+        emit(
+            'analyze_incident_reference_in_docs',
+            suppressed(analyze_incident_reference_in_docs(root)),
         )
         emit(
             'analyze_thinking_directive_in_workflow_docs',
@@ -348,6 +353,7 @@ class RuleRunner:
         issues.extend(analyze_allowed_tools_drift(root))
         issues.extend(analyze_self_declared_rule_compliance(root))
         issues.extend(analyze_historical_prose_in_skills(root))
+        issues.extend(analyze_incident_reference_in_docs(root))
         issues.extend(analyze_thinking_directive_in_workflow_docs(root))
         issues.extend(analyze_agentfile_line_budget(root))
         issues.extend(analyze_agentfile_directory_tree(root))

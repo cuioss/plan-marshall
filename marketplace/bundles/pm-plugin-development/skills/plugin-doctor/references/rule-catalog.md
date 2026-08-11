@@ -702,6 +702,35 @@ Only `SKILL.md` is scanned — the numbering-discipline rule is a property of a 
 
 ---
 
+### no-incident-references
+
+**Rule ID**: `no-incident-references`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_incident_reference_in_docs.py`
+
+**Scope**: All `*.md` **and** `*.py` files under `marketplace/bundles/*/{skills,agents,commands}/**`. Broader than the sibling `no-historical-prose-in-skills` (markdown-only) because an incident label in a docstring or code comment is the same misleading signal as one in prose.
+
+**Intent**: A bundle document or script must reason from the mechanism in front of the reader, not from a plan-marshall PR/issue number the reader cannot see. Such a reference costs context on every load and teaches reasoning from an invisible incident. `CLAUDE.md` § Documentation Standards already forbids it ("No version history", "No timestamps", "Current state only"); this rule enforces it so the pattern cannot regress.
+
+**Detection** — one family (`incident_reference`) fires on any of these narration forms outside the exempt contexts below:
+
+1. **Explicit plan-marshall ref** — `plan-marshall#NNNN`.
+2. **Observed-on citation** — a capitalized `Observed on` clause opener followed by a `#NNNN` reference. Case-sensitive on `Observed`, so a lowercase mid-sentence "…observed on #NNNN" in an observation record (a bot data-sheet citing where a field was confirmed) is not flagged.
+3. **Temporal narration** — `post-#NNNN` / `pre-#NNNN` / `since #NNNN`.
+4. **Incident term-of-art** — a `#NNNN` (optionally `PR #NNNN`) bound to an incident noun (`failure mode` / `signature` / `shape` / `defect` / `incident` / `regression`), with an optional single hyphenated qualifier between.
+
+**Deliberately not flagged**: a bare `#NNNN` in prose with no incident noun (ordinary provenance, a worked-example citation, an external-tracker issue), a back-ticked `#NNNN` (a code token, exempt as inline code), and a lowercase "observed on #NNNN" in an observation record.
+
+**Exemption posture**: Ships **unconditional** — no prefix is registered under `no-incident-references` in `config/default-suppression.yml`. The genuinely-referential contexts that exist (bot data-sheets, `rule-provenance.md` / `rule-catalog.md`) fall outside the detection family above, so none needs a permanent exemption. The shared config-suppression capability remains available (a maintainer may register a prefix) but is left carrying zero entries rather than a token unused mechanism.
+
+**Per-line structural exemptions**: YAML frontmatter, fenced code blocks, `Source:` provenance lines, inline-code spans.
+
+**Suppression mechanism**: Declarative suppression substrate (see [Declarative Suppression Substrate](#declarative-suppression-substrate)). Disable file-wide via `plugin-doctor-disable: [no-incident-references]` in the file's frontmatter (Granularity-3), or path-scoped via the project (`.plan/plugin-doctor.yml`, Granularity-2) or shipped-default (`config/default-suppression.yml`, Granularity-1) config.
+
+**Recommended fix**: State the mechanism the incident named, not the PR number. Where an incident label is a genuine term of art (the recurring name of a behaviour), replace it with a descriptor of the mechanism — e.g. "the close-unmerged failure mode" for "an immediate merge on a merge-queue-required base closes the PR unmerged". Where the mechanism is already stated in the preceding sentence, delete the incident narrative outright — the mechanism statement is the durable artifact.
+
+---
+
 ### shell-active-tokens
 
 **Rule ID**: `shell-active-tokens`
