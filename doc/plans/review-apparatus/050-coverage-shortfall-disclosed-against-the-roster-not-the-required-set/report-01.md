@@ -328,9 +328,14 @@ and on a real shortfall has not been fixed.
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` → the aggregator and its test carry `*.py`, so the
-build ran. Result: _pending — `./pw verify` in progress; this section is completed before the pre-PR
-gate._
+`git diff --name-only origin/main...HEAD -- '*.py'` → the aggregator
+(`.claude/skills/finalize-step-review-retrospective/scripts/review_retrospective.py`) and its test
+carry `*.py`, so the build ran. **`./pw verify` → `=== verify: SUCCESS ===`, `19052 passed, 14 skipped`
+(read from the output, not the exit code).** The instrument's own suite, run targeted
+(`./pw module-tests plan-marshall/finalize-step-review-retrospective`), is **38 passed** — including all
+8 new `comparison`-grade tests. The later `bot-participation-contract.md` edit (Findings, below) is
+docs-only (`*.md`), so it triggers no additional local build; the merge queue's `merge_group` run
+verifies docs.
 
 ## Findings
 
@@ -340,7 +345,23 @@ gate._
   reviewer-coverage ratio at all. All in-lifecycle emitters read `required_bots`, the enabled roster, or
   a per-reviewer quality denominator. Disposition: corroborates D2a's absence claim with a published
   scope; the fix corrects one emitter with no siblings left publishing the wrong denominator.
-- **Verification sub-agent findings:** _pending (Step 6)._
+- **Verification sub-agent (Step 6) — one finding, ACCEPTED and fixed.** The independent sub-agent
+  verified the D2 code (executed `_grade_comparison`/`aggregate` directly — all four grades correct, the
+  fail-closed default correct, backward-compatible), confirmed `VALID_OUTCOMES` has no `indeterminate`
+  member (so `--outcome done` + graded display-detail is the only valid choice), independently
+  re-verified the D3 read mechanism (`.gitignore` negation + `git ls-files` + the marshal.json values),
+  confirmed the D1/D3 proposal anchors match the current `cloud-plan-lane/SKILL.md` verbatim, and ran
+  the plan's central cold read on the D1b proposal (Q2 "gap or accounted-for absence?" **is** answerable;
+  the empty-`required_bots` rendering answers "was a required review performed?" as "no required
+  reviewers configured — vacuously satisfied", not "yes"). **Finding:** the counting-rule Consumers
+  table in `bot-participation-contract.md:516` described the `review_retrospective` consumer as reading
+  only `--enabled-reviewers`; post-change it also consumes the reviewed-at-all predicate via
+  `--reviewed-reviewers` (the counting rule's second named quantity) — incomplete, not false.
+  **Disposition: fixed** — the table row now names both inputs and the `comparison` grade. No other
+  stale claim was found (the only "0 pr-comment findings — nothing to compare" production surfaces were
+  the aggregator and its SKILL.md, both rewritten). Two items the sub-agent explicitly could not
+  mechanically verify — the correctness of the prose proposals (a judgment call; its cold read supports
+  them) and the "four landings" claim (records absent) — are recorded as such, not as passes.
 - **CI / PR review findings:** _pending (Step 7)._
 
 ## Claim-label verification
