@@ -615,3 +615,85 @@ def test_multi_reviewer_coderabbit_vs_sourcery_vs_pr_agent():
     assert pr_agent['positives_count'] == 0
     assert pr_agent['resolved_actionable_count'] == 0
     assert pr_agent['pct_resolved_as_fixed'] is None
+
+
+# ---------------------------------------------------------------------------
+# D3 — a row per ENABLED reviewer, not per responding reviewer
+# ---------------------------------------------------------------------------
+
+
+def test_without_roster_a_silent_reviewer_has_no_row():
+    """The prior behaviour: with no roster, only responding authors get rows.
+
+    This is the vacuous-set defect the roster closes — a reviewer that produced no
+    comments is indistinguishable from one never enabled, because both have no row.
+    Pinned so the roster path below is a genuine change, not a no-op.
+    """
+    result = rr.aggregate([{'author': 'coderabbitai', 'kind': 'inline'}])
+    authors = [r['author'] for r in result['reviewers']]
+    assert authors == ['coderabbitai']
+    assert 'sourcery-ai' not in authors
+
+
+def test_enabled_reviewer_with_no_findings_gets_an_unmeasurable_row():
+    """An enabled reviewer the store is silent on still gets a row (D3).
+
+    "produced nothing", "never ran", and "enabled-invoked-refused" all leave no
+    record; without a row they render identically. The row names the reviewer and
+    marks it unmeasurable — never scored — rather than omitting it.
+    """
+    result = rr.aggregate(
+        [{'author': 'coderabbitai', 'kind': 'inline'}],
+        enabled_reviewers=['coderabbitai', 'sourcery-ai', 'cuioss-review-bot'],
+    )
+    authors = [r['author'] for r in result['reviewers']]
+    assert authors == ['coderabbitai', 'cuioss-review-bot', 'sourcery-ai']
+
+    silent = _reviewer(result, 'sourcery-ai')
+    assert silent['participation'] == 'unmeasurable'
+    assert silent['raw_total'] == 0
+    assert silent['actionable_count'] == 0
+    # An unmeasurable reviewer is never scored — the ratio is absent, not 0%.
+    assert silent['pct_resolved_as_fixed'] is None
+    assert silent['positives_count'] == 0
+    assert silent['false_positives_count'] == 0
+
+
+def test_responding_reviewer_is_marked_measured():
+    result = rr.aggregate(
+        [{'author': 'coderabbitai', 'kind': 'inline', 'resolution': 'fixed'}],
+        enabled_reviewers=['coderabbitai', 'sourcery-ai'],
+    )
+    assert _reviewer(result, 'coderabbitai')['participation'] == 'measured'
+    assert _reviewer(result, 'sourcery-ai')['participation'] == 'unmeasurable'
+
+
+def test_observed_author_outside_the_roster_still_gets_a_row():
+    """The population is roster ∪ observed — an observed non-roster author is not dropped.
+
+    A human reviewer, or a bot that participated without being on the enabled list,
+    keeps its row and is measured.
+    """
+    result = rr.aggregate(
+        [{'author': 'a-human', 'kind': 'inline'}],
+        enabled_reviewers=['coderabbitai'],
+    )
+    authors = [r['author'] for r in result['reviewers']]
+    assert authors == ['a-human', 'coderabbitai']
+    assert _reviewer(result, 'a-human')['participation'] == 'measured'
+    assert _reviewer(result, 'coderabbitai')['participation'] == 'unmeasurable'
+
+
+def test_reviewer_count_spans_the_enabled_roster():
+    # Zero findings, three enabled reviewers → three unmeasurable rows, not zero.
+    result = rr.aggregate([], enabled_reviewers=['coderabbitai', 'sourcery-ai', 'cuioss-review-bot'])
+    assert result['reviewer_count'] == 3
+    assert all(r['participation'] == 'unmeasurable' for r in result['reviewers'])
+    assert result['enabled_reviewers'] == ['coderabbitai', 'cuioss-review-bot', 'sourcery-ai']
+
+
+def test_empty_roster_preserves_observed_only_behaviour():
+    # An explicit empty roster == omitting it: rows only for observed authors.
+    result = rr.aggregate([{'author': 'coderabbitai', 'kind': 'inline'}], enabled_reviewers=[])
+    assert [r['author'] for r in result['reviewers']] == ['coderabbitai']
+    assert result['enabled_reviewers'] == []

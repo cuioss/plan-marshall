@@ -10,6 +10,9 @@ reports whether every REQUIRED bot's participation is proven:
     participated_but_empty  — proven participant that filed none (accounted-for)
     refused_awaitable       — published a refusal whose window reopens on its own
     refused_hard            — published a refusal that does not usefully reopen
+    refused_unknown         — published a refusal whose class the registry declares
+                              unknown (neither awaitable nor a hard quota); its own
+                              member, never folded into refused_hard
     participated_stale      — published in a declared shape, but the currency test
                               failed, so the review predates the merge candidate
                               (blocking, yet remedied by a re-trigger rather than by
@@ -459,11 +462,19 @@ class TestStateTaxonomy:
         assert result['participation_complete'] is False
         assert result['unproven_bots'] == ['coderabbit', 'sourcery']
 
-    def test_refusal_of_unknown_class_is_hard_not_awaitable(self, plan_context):
-        """Fail-closed: an unknown rate-limit class is never treated as awaitable.
+    def test_refusal_of_unknown_class_is_its_own_state_not_hard(self, plan_context):
+        """An ``unknown`` rate-limit class resolves to ``refused_unknown``, never ``refused_hard``.
 
-        Awaiting a quota that never reopens is the expensive failure, so the
-        unknown class resolves to the non-awaiting member.
+        The three-valued ``rate_limit_class`` splits ONE-TO-ONE into three refusal
+        members: ``awaitable_window`` -> ``refused_awaitable``, ``hard_quota`` ->
+        ``refused_hard``, ``unknown`` -> ``refused_unknown``. A binary
+        ``== 'awaitable_window'`` test collapsed ``unknown`` into ``refused_hard``,
+        rendering a declared *we-do-not-know* as a positive *hard quota* finding —
+        which steers an operator toward "waiting is futile, force it" when the refusal
+        shape had simply never been observed. ``refused_unknown`` is its own member so
+        the declared ignorance reaches the reader as ignorance, not as a hard quota.
+        It is still an UNPROVEN, blocking state — a refusal is a refusal — but a
+        DIFFERENT one from ``refused_hard``.
         """
         plan_id = 'rc-state-refused-unknown'
         plan_context.plan_dir_for(plan_id)
@@ -471,7 +482,25 @@ class TestStateTaxonomy:
         result = rc.check_completeness(plan_id, ['pr-agent'], refused_bots=['pr-agent'])
 
         assert rc.bot_registry.rate_limit_class('pr-agent') == 'unknown'
-        assert _state_of(result, 'pr-agent') == rc.STATE_REFUSED_HARD
+        assert _state_of(result, 'pr-agent') == rc.STATE_REFUSED_UNKNOWN
+        assert _state_of(result, 'pr-agent') != rc.STATE_REFUSED_HARD
+        assert rc.STATE_REFUSED_UNKNOWN in rc._UNPROVEN_STATES
+        assert result['participation_complete'] is False
+
+    def test_refusal_state_maps_one_to_one_over_the_three_classes(self, plan_context):
+        """``_refusal_state`` is total and injective over the three declared classes.
+
+        Asserted directly on the mapping so a future fold of any two classes into one
+        member breaks here, not only via a downstream verdict. A value that is neither
+        of the first two — including a malformed one — fails closed to
+        ``refused_unknown`` rather than being asserted as a hard quota.
+        """
+        assert rc._refusal_state('awaitable_window') == rc.STATE_REFUSED_AWAITABLE
+        assert rc._refusal_state('hard_quota') == rc.STATE_REFUSED_HARD
+        assert rc._refusal_state('unknown') == rc.STATE_REFUSED_UNKNOWN
+        assert rc._refusal_state('some_unrecognised_value') == rc.STATE_REFUSED_UNKNOWN
+        # The three refusal members are distinct — no two collapse into one.
+        assert len({rc.STATE_REFUSED_AWAITABLE, rc.STATE_REFUSED_HARD, rc.STATE_REFUSED_UNKNOWN}) == 3
 
     def test_no_evidence_of_any_kind_is_absent(self, plan_context):
         plan_id = 'rc-state-absent'
@@ -711,8 +740,11 @@ class TestStateTaxonomy:
             stale_participation_bots=[bot_kind],
         )
 
-        awaitable = rc.bot_registry.rate_limit_class(bot_kind) == 'awaitable_window'
-        expected = rc.STATE_REFUSED_AWAITABLE if awaitable else rc.STATE_REFUSED_HARD
+        # The expected member is derived ONE-TO-ONE from the bot's own three-valued
+        # rate_limit_class, never written as a literal, so a bot whose class is
+        # ``unknown`` (pr-agent) is asserted as ``refused_unknown`` — not folded into
+        # ``refused_hard`` — and the sweep stays correct if a bot's class changes.
+        expected = rc._refusal_state(rc.bot_registry.rate_limit_class(bot_kind))
 
         assert _state_of(result, bot_kind) == expected
         assert _state_of(result, bot_kind) != rc.STATE_PARTICIPATED_STALE
@@ -883,8 +915,11 @@ class TestStateTaxonomy:
             rc.STATE_IN_PROGRESS,
             rc.STATE_REFUSED_AWAITABLE,
             rc.STATE_REFUSED_HARD,
+            rc.STATE_REFUSED_UNKNOWN,
             rc.STATE_PARTICIPATED_BUT_EMPTY,
             rc.STATE_PARTICIPATED_STALE,
+            rc.STATE_DECLINED,
+            rc.STATE_NOT_TRIGGERED,
             rc.STATE_PARTICIPATED,
         }
         assert {r['state'] for r in result['bot_states']} <= known_states
@@ -1826,3 +1861,206 @@ class TestUnknownVerdictEmitsNoParticipationField:
         captured = capsys.readouterr()
         assert rc_exit == 1
         assert 'participation_complete' not in captured.out
+
+
+# =============================================================================
+# D3 — the reviewer-state distribution reaches the display field
+# =============================================================================
+
+
+class TestReviewStateSummary:
+    """``compose_review_state_summary`` distinguishes reviewed-clean from nobody-reviewed.
+
+    ``"0 comment(s) found"`` is the identical display string for a clean 27-file
+    review and for a run where no reviewer produced any content. The summary is what
+    a reader appends to tell those two facts apart — the whole point of D3.
+    """
+
+    def test_nobody_reviewed_and_reviewed_clean_render_differently(self):
+        """The load-bearing distinction: three refusals is NOT three clean reviews."""
+        nobody = rc.compose_review_state_summary([
+            {'bot_kind': 'coderabbit', 'state': rc.STATE_REFUSED_AWAITABLE},
+            {'bot_kind': 'sourcery', 'state': rc.STATE_REFUSED_HARD},
+            {'bot_kind': 'pr-agent', 'state': rc.STATE_REFUSED_UNKNOWN},
+        ])
+        reviewed_clean = rc.compose_review_state_summary([
+            {'bot_kind': 'coderabbit', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
+            {'bot_kind': 'sourcery', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
+            {'bot_kind': 'pr-agent', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
+        ])
+        assert nobody == '3 refused'
+        assert reviewed_clean == '3 empty'
+        # The two facts MUST NOT share a rendering — this is the whole deliverable.
+        assert nobody != reviewed_clean
+
+    def test_all_three_refusal_members_share_the_refused_bucket(self):
+        summary = rc.compose_review_state_summary([
+            {'bot_kind': 'a', 'state': rc.STATE_REFUSED_AWAITABLE},
+            {'bot_kind': 'b', 'state': rc.STATE_REFUSED_HARD},
+            {'bot_kind': 'c', 'state': rc.STATE_REFUSED_UNKNOWN},
+        ])
+        assert summary == '3 refused'
+
+    def test_mixed_distribution_lists_each_nonzero_bucket_in_order(self):
+        summary = rc.compose_review_state_summary([
+            {'bot_kind': 'a', 'state': rc.STATE_PARTICIPATED},
+            {'bot_kind': 'b', 'state': rc.STATE_PARTICIPATED_BUT_EMPTY},
+            {'bot_kind': 'c', 'state': rc.STATE_REFUSED_HARD},
+        ])
+        assert summary == '1 reviewed, 1 empty, 1 refused'
+
+    def test_empty_roster_produces_no_summary(self):
+        """An empty roster has nothing to distribute — the honest value is ''."""
+        assert rc.compose_review_state_summary([]) == ''
+
+    def test_check_output_carries_the_summary(self, plan_context):
+        """The field reaches the check envelope so ``display_detail`` can interpolate it."""
+        plan_id = 'rc-summary-in-output'
+        plan_context.plan_dir_for(plan_id)
+        result = rc.check_completeness(
+            plan_id, ['coderabbit', 'sourcery', 'pr-agent'],
+            refused_bots=['coderabbit', 'sourcery', 'pr-agent'],
+        )
+        assert result['review_state_summary'] == '3 refused'
+
+    def test_check_output_summary_empty_for_empty_roster(self, plan_context):
+        plan_id = 'rc-summary-empty-roster'
+        plan_context.plan_dir_for(plan_id)
+        result = rc.check_completeness(plan_id, [])
+        assert result['review_state_summary'] == ''
+
+
+# =============================================================================
+# D2/D4 — the comparative deficit signal, fired only against a real baseline
+# =============================================================================
+
+
+class TestDeficitSignal:
+    """The comparative deficit signal — a reviewer-quality bug, never a merge verdict.
+
+    The five corpus rows share ``required_count == 0``, yet their verdicts differ:
+    deficit / deficit / unassessable / unassessable / clean. The required count alone
+    cannot tell them apart; the baseline — whether any OTHER reviewer reviewed the
+    same diff, and how much — is what makes the deficit assessable. Cases (b) and (c)
+    are load-bearing: a detector that fires on them manufactures reviewer-quality
+    bugs out of the rate limiting we already accept as normal.
+    """
+
+    def _required(self, count, reviewed=True):
+        return {'bot_kind': 'pr-agent', 'reviewed': reviewed, 'finding_count': count}
+
+    def _baseline(self, count, reviewed=True, bot='coderabbit'):
+        return {'bot_kind': bot, 'reviewed': reviewed, 'finding_count': count}
+
+    def test_row_a_deficit_four_to_zero(self):
+        # Row A: a baseline reviewer produced 4 findings; the required reviewer
+        # reviewed and produced 0. 4 : 0 is a deficit.
+        result = rc.assess_deficit(
+            [self._required(0), self._baseline(4)], required_bots=['pr-agent']
+        )
+        assert result['verdict'] == rc.DEFICIT_DEFICIT
+        assert result['deficit_reviewers'] == [{'bot_kind': 'pr-agent', 'findings': 0, 'deficit': 4}]
+        assert result['baseline_max'] == 4
+
+    def test_row_b_deficit_two_to_zero(self):
+        result = rc.assess_deficit(
+            [self._required(0), self._baseline(2)], required_bots=['pr-agent']
+        )
+        assert result['verdict'] == rc.DEFICIT_DEFICIT
+
+    def test_row_e_clean_zero_to_zero_with_a_real_baseline(self):
+        # Row E — the necessary counter-example. A baseline reviewer REVIEWED and
+        # found nothing; the required reviewer found nothing. 0 : 0 against a real
+        # baseline is CLEAN, never a deficit. The detector MUST NOT fire here.
+        result = rc.assess_deficit(
+            [self._required(0), self._baseline(0)], required_bots=['pr-agent']
+        )
+        assert result['verdict'] == rc.DEFICIT_CLEAN
+        assert result['deficit_reviewers'] == []
+
+    def test_rows_c_and_d_unassessable_when_every_baseline_refused(self):
+        # Rows C and D — no baseline. Every other reviewer refused, so nothing
+        # reviewed the diff besides the required bot; the run is evidence NEITHER
+        # way. unassessable, NOT clean and NOT a deficit.
+        result = rc.assess_deficit(
+            [
+                self._required(0, reviewed=False),
+                self._baseline(0, reviewed=False, bot='coderabbit'),
+                self._baseline(0, reviewed=False, bot='sourcery'),
+            ],
+            required_bots=['pr-agent'],
+        )
+        assert result['verdict'] == rc.DEFICIT_UNASSESSABLE
+        assert result['verdict'] != rc.DEFICIT_CLEAN
+        assert result['deficit_reviewers'] == []
+        assert result['baseline_reviewers'] == []
+
+    def test_required_count_alone_cannot_distinguish_the_rows(self):
+        """``required_count == 0`` across all rows, yet the verdict differs.
+
+        The sharp point of the plan: a detector keyed on the required reviewer's count
+        alone would label all rows identically. Only the baseline separates deficit
+        from clean from unassessable.
+        """
+        def verdict(baseline):
+            return rc.assess_deficit(
+                [{'bot_kind': 'pr-agent', 'reviewed': True, 'finding_count': 0}, *baseline],
+                required_bots=['pr-agent'],
+            )['verdict']
+
+        # required_count is 0 in every call below; only the baseline varies.
+        assert verdict([self._baseline(4)]) == rc.DEFICIT_DEFICIT
+        assert verdict([self._baseline(0)]) == rc.DEFICIT_CLEAN
+        assert verdict([self._baseline(0, reviewed=False)]) == rc.DEFICIT_UNASSESSABLE
+
+    def test_min_deficit_threshold_is_honoured(self):
+        # A 1-finding gap is a deficit at the default threshold; raising the
+        # threshold above the gap makes the same shape clean.
+        rows = [self._required(1), self._baseline(2)]
+        assert rc.assess_deficit(rows, ['pr-agent'])['verdict'] == rc.DEFICIT_DEFICIT
+        assert rc.assess_deficit(rows, ['pr-agent'], min_deficit=2)['verdict'] == rc.DEFICIT_CLEAN
+
+    def test_signal_never_gates_the_merge(self):
+        """Every deficit envelope declares itself non-gating — the cold-read requirement."""
+        result = rc.assess_deficit(
+            [self._required(0), self._baseline(4)], required_bots=['pr-agent']
+        )
+        assert result['gates_merge'] is False
+        assert result['proves'] == 'reviewer_quality_only'
+
+    def test_check_deficit_reads_finding_counts_from_the_store(self, plan_context):
+        """Integration: ``check_deficit`` derives counts from the pr-comment store.
+
+        Seed a reviewing baseline with four findings and a required reviewer proven to
+        have participated-but-empty; the deficit is read off the store, not passed in.
+        """
+        plan_id = 'rc-deficit-integration'
+        plan_context.plan_dir_for(plan_id)
+        for _ in range(4):
+            _seed(plan_id, 'coderabbit', resolution='fixed')
+
+        result = rc.check_deficit(
+            plan_id,
+            ['pr-agent'],
+            optional_bots=['coderabbit'],
+            participated_bots=rc.parse_participation('pr-agent:issue_comment,coderabbit:inline'),
+        )
+
+        assert result['verdict'] == rc.DEFICIT_DEFICIT
+        assert result['baseline_max'] == 4
+        assert {'bot_kind': 'pr-agent', 'findings': 0, 'deficit': 4} in result['deficit_reviewers']
+
+    def test_deficit_cli_declares_non_gating(self, plan_context):
+        """The CLI TOON carries ``gates_merge: false`` so a cold read sees it is no gate."""
+        plan_id = 'rc-deficit-cli'
+        plan_context.plan_dir_for(plan_id)
+        result = run_script(
+            SCRIPT_PATH, 'deficit', '--plan-id', plan_id,
+            '--required-bots', 'pr-agent',
+            '--optional-bots', 'coderabbit,sourcery',
+            '--refused-bots', 'coderabbit,sourcery',
+        )
+        assert result.returncode == 0
+        assert 'gates_merge: false' in result.stdout
+        # Both baseline candidates refused → no baseline → unassessable, never clean.
+        assert 'verdict: unassessable' in result.stdout

@@ -174,7 +174,8 @@ def _is_refusal_notice(body: str, bot_kind: str | None = None) -> bool:
 
     **A refusal is positive evidence of NON-participation, never noise.** Callers
     MUST branch on it — surfacing the refusing bot so the completeness / quorum
-    layer sees ``refused_awaitable`` / ``refused_hard`` — rather than drop it.
+    layer sees ``refused_awaitable`` / ``refused_hard`` / ``refused_unknown`` —
+    rather than drop it.
     Dropping it is precisely what let a PR whose every required reviewer refused
     report a clean, complete review with substantively zero review coverage.
     """

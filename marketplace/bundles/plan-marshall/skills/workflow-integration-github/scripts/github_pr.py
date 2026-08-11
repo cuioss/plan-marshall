@@ -799,7 +799,9 @@ def cmd_fetch_findings(args):
     ``refusal_patterns`` OR the structural last-resort recognizer). This is the
     producer-side refusal channel the completeness / quorum layer consumes as
     ``--refused-bots``, so it can classify the bot as ``refused_awaitable`` /
-    ``refused_hard`` instead of inferring absence from silence. A refusing comment
+    ``refused_hard`` / ``refused_unknown`` (the one-to-one split of the bot's
+    three-valued ``rate_limit_class``) instead of inferring absence from silence.
+    A refusing comment
     is excluded from ``participated_bots`` — a refusal is positive evidence the bot
     did NOT review — and files no finding, so it never reaches operator triage. A
     refusal from an unregistered login is still dropped from the store but cannot
@@ -982,7 +984,8 @@ def cmd_fetch_findings(args):
         # about the review, not feedback about the code, so it must never reach
         # operator triage), but the refusing bot is SURFACED in ``refused_bots`` so
         # the completeness / quorum layer classifies it as refused_awaitable /
-        # refused_hard rather than inferring absence from silence. Checked BEFORE
+        # refused_hard / refused_unknown rather than inferring absence from silence.
+        # Checked BEFORE
         # the noise filter so a refusal can never be swallowed by a shared ignore
         # regex on its way past. An unregistered login's refusal is still
         # recognized structurally and skipped, but cannot be attributed to a bot.
