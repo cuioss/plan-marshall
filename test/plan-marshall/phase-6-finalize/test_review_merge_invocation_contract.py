@@ -26,9 +26,24 @@ call sites — a curated list is the artifact this plan exists to retire:
 Both populations are asserted NON-EMPTY before anything is swept over them (an empty
 parametrize is a pytest SKIP, not a failure) and publish their size in the failure
 message, so a scan that silently matched nothing fails loudly rather than reporting a
-healthy sweep over an empty set. The derivation copies the heading/fenced-block walk
-already used by ``_dispatch_roster`` and ``test_bot_participation_contract`` rather than
-introducing a third.
+healthy sweep over an empty set. The derivation follows the runtime-derived /
+non-empty-first / size-published DISCIPLINE the plan points at in ``_dispatch_roster``;
+it reimplements a fenced-block walk locally rather than reusing that module's
+heading-bounded LIST-roster walk (``_dispatch_roster`` parses ``- `key` `` list rows,
+a different shape from a fenced code block).
+
+Scope, stated honestly. "The finalize merge-and-review path" is a SEMANTIC scope with
+no machine-readable manifest, so the doc SET below (the barrier, the FIND/participation
+step, and the dispatcher that orchestrates them) is named from the plan's own scope
+definition. What is DERIVED — never hand-listed — is (a) WHERE each script is invoked
+within those docs, and (b) each doc's widening OBLIGATION, read off its own non-manage-*
+invocations rather than asserted. D3's runnable surface is the three participation verbs
+the plan names (``fetch_findings`` / ``review_completeness check`` / ``ci checks
+pull-request-runs``); the re-review / completion-poll / CI-wait verbs are excluded
+because their choice-constrained and value-required flags have no doc-derivable valid
+value, so a placeholder-substituted parse would test the substitution, not the doc. A
+bad flag reintroduced on one of those excluded verbs is therefore outside this sweep —
+an accepted narrowing, recorded here rather than hidden.
 """
 
 from __future__ import annotations
@@ -233,20 +248,31 @@ class TestExitCodeConventionCoversEveryScript:
         )
 
     @pytest.mark.parametrize('doc', _CONVENTION_DOCS, ids=lambda d: d.parent.name + '-' + d.name)
-    def test_convention_is_widened_past_manage_star(self, doc):
-        """The doc's exit-code convention names EVERY script call, not manage-* only.
+    def test_convention_is_widened_wherever_a_non_manage_star_script_is_invoked(self, doc):
+        """The widening OBLIGATION is DERIVED from the doc's own non-manage-* invocations.
 
-        Mutation-proof in both directions: reverting the heading to the manage-*
-        form fails the first assertion, and leaving the manage-*-scoped heading in
-        place alongside the wide one fails the second.
+        The 'why must this doc be widened?' is not asserted by fiat — it is read off the
+        doc's invocations. A doc that invokes only manage-* scripts would not need the
+        widening; this asserts the widened convention exactly where the doc's derived
+        non-manage-* invocations demand it, so the check tracks the tree rather than a
+        curated claim about which docs matter.
+
+        Mutation-proof in both directions: reverting the heading to the manage-* form
+        fails the wide-heading assertion, and leaving the manage-*-scoped heading in place
+        alongside the wide one fails the narrow-heading assertion.
         """
         text = doc.read_text(encoding='utf-8')
+        non_manage = {n for n in _invoked_notations(text) if not _is_manage_star(n)}
 
+        assert non_manage, (
+            f'{doc.name} was expected to invoke a non-manage-* script — that is what makes '
+            'widening the convention obligatory here — but the scan found none. The '
+            'merge-and-review doc set has drifted, or the invocation scan regressed.'
+        )
         assert _WIDE_HEADING in text, (
-            f'{doc.name}: the exit-code convention must be widened to {_WIDE_HEADING!r} — '
-            'a manage-*-scoped convention leaves the non-manage-* github_pr / '
-            'review_completeness / ci calls in the merge-and-review path uncovered, which '
-            'is exactly the swallowed-rejection gap'
+            f'{doc.name} invokes non-manage-* scripts {sorted(non_manage)} yet its exit-code '
+            f'convention is not widened to {_WIDE_HEADING!r}. A manage-*-scoped convention '
+            'leaves exactly those calls uncovered — the swallowed-rejection gap.'
         )
         assert _NARROW_HEADING not in text, (
             f'{doc.name}: the manage-*-scoped convention heading {_NARROW_HEADING!r} '
