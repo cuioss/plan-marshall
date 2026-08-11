@@ -1,6 +1,6 @@
 # Run report — 030-attribution-populations-and-the-cost-decomposition (run 01)
 
-**Date (UTC):** 2026-08-11    **Branch:** `claude/attribution-populations-cost-3tdp5o` (harness-assigned)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-11    **Branch:** `claude/attribution-populations-cost-3tdp5o` (harness-assigned)    **PR:** [#1154](https://github.com/cuioss/plan-marshall/pull/1154)    **Outcome:** completed (auto-merge armed after this commit; landing delegated to the merge queue)
 
 ## Skills loaded
 
@@ -145,16 +145,42 @@ correction all untouched).
 
 ### CI / PR review (Step 7)
 
-_Appended after Step 7 from the stored comment bodies._
+Two automated reviewers produced actionable findings against the diff; both were
+fixed in commit `a1e53b2`, and CodeRabbit confirmed both as addressed. One finding
+was raised independently by two reviewers.
+
+| # | Source | Finding | Disposition |
+|---|--------|---------|-------------|
+| 3 | `coderabbitai` (inline, 🟠 Major) | `cache_read_per_tool_use` could be left stale on regenerate, rendering an invalid identity or raising `KeyError` on an unconditional `int(phase['tool_uses'])`. | **Fixed** (`a1e53b2`) — persist step clears a stale factor (presence ⇔ derivable invariant); render guards on all three operands. Test `test_stale_factor_is_cleared_when_operands_stop_qualifying`. CodeRabbit confirmed addressed. |
+| 4 | `cuioss-review-bot` (conversation "PR Reviewer Guide", focus area) | "Possible KeyError/TypeError" on the same `int(phase['tool_uses'])` render — the identical defect as #3. | **Fixed** (`a1e53b2`, same change) — acknowledged in a PR issue comment. |
+| 5 | `coderabbitai` (inline, 🟡 Minor) | `_UNATTRIBUTED_RENDER` hardcodes a residual set that a new `*unattributed*` field could bypass, silently regressing D1; repo path-instruction requires deriving such a mirror set. | **Fixed** (`a1e53b2`) — residual set derived (`_UNATTRIBUTED_RESIDUAL_FIELDS`) + contract-drift test `test_unattributed_render_map_covers_every_residual`. CodeRabbit confirmed addressed. |
+
+The CI `verify / conclusion` failure notice on the superseded head `572fa47` was a
+concurrency-cancelled run (my `a1e53b2` push superseded it), not a real failure —
+the current head's `verify` was re-triggered and judged on the current head SHA per
+Step 8 condition 1. No `skip-bot-review` label was applied (the diff touches
+`marketplace/bundles/**`, reviewed as code).
 
 ## Reviewer participation
 
-_To be filled after Step 7 from the stored comment bodies, per the configured
-reviewer population._
+Expected reviewer population, derived from the registry docs
+(`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{coderabbit,pr-agent,sourcery}.md`
+→ `author_login`), cross-named by `.github/workflows/pr-agent.yml` — not a
+hand-transcribed list. Each verdict is read from the stored comment bodies, not a
+check state.
 
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
-| _pending_ | _pending_ | _pending_ |
+| `coderabbitai` | **reviewed** | Published a full review (`pullrequestreview-4904421747`) with 2 actionable findings against the diff; both fixed and bot-confirmed as addressed. |
+| `cuioss-review-bot` | **reviewed** | Published a "PR Reviewer Guide" (`issuecomment-5250932702`) with a "Possible KeyError/TypeError" focus-area finding against the diff; fixed and acknowledged. |
+| `sourcery-ai` | **rate-limited** | Published only a quota notice (`pullrequestreview-4904401817`): "you have reached your weekly rate limit of 500000 diff characters." It engaged but did not review this diff; its `Sourcery review` check reports `skipped`. |
+
+**Coverage: 2-of-3 reviewed** (`coderabbitai`, `cuioss-review-bot`); 1-of-3
+rate-limited (`sourcery-ai`, weekly diff-char quota). The Step 8 condition-4
+shortfall disclosure fired: "Review coverage: 2 of 3 — coderabbitai and
+cuioss-review-bot reviewed; sourcery-ai rate-limited (weekly 500k diff-char
+quota)." Per condition 4 this is a disclosure, not a merge block — a rate limit is
+outside our control and does not hold the landing.
 
 ## Cost
 
@@ -169,11 +195,53 @@ reviewer population._
 
 ## Contract check (Step 9)
 
-_Filled at Step 8 condition 3 as the final pre-merge commit._
+| Step | Verdict | Evidence |
+|------|---------|----------|
+| 1 Skills loaded | done | Named above; loaded by path (plugin not required present). |
+| 2 Branch | done | Harness-assigned `claude/attribution-populations-cost-3tdp5o`, published on `origin` (pushed before any work). No run-created branch. |
+| 3 Plan directory | done | `doc/plans/…/030-…/plan.md` exists and opens with the first-instruction block (present on arrival, no repair needed). |
+| 4 Implement | done | Commits carry the `Co-Authored-By: Claude` trailer; all four deliverables addressed. |
+| 4 Per-commit gate | done | Every `*.py`-touching commit was preceded by a `total_issues: 0` / empty-`errors[]` quality-gate log. |
+| 4 Pushed | done | No unpushed commit remains after each commit; branch tracks `origin`. |
+| 5 Build gate | done | Python changed → `./pw verify` run: 18903 passed, 14 skipped; quality gate clean. |
+| 6 Verification sub-agent | done | Independent agent passed all four deliverables, no code defects; two report nits recorded (one fixed). |
+| 7 PR cycle | done | PR #1154; every comment on both surfaces (inline review threads + conversation) dispositioned. |
+| 8 Merge gate | conditions 1–3 met; auto-merge armed (see the arming note below). |
+| 8 Bridge | done | No status/bookkeeping write landed under `doc/plans/` outside this plan's own directory. |
+| 9 This check | done | This table. |
+| 9 What have we learned | done | Recorded below (one proposal, pending operator approval). |
+
+**GitHub access path:** the GitHub MCP server (cloud path), as expected for a cloud
+session. **Branch form:** harness-assigned. **Plugin-cache sync:** not owed — a
+cloud run neither performs nor records a `/sync-plugin-cache` (machine-local build
+step).
+
+**One-command-per-Bash-call slip (recorded honestly):** one Bash call combined
+`git add … && git commit …`. The one-command-per-call discipline binds in this lane;
+this was a process slip. It had no effect on the deliverables (both files staged
+were the intended ones) and every other Bash call used exactly one command. Noted
+so it is not narrated as clean.
 
 ## What have we learned (Step 9)
 
-_Filled at Step 9._
+**One proposal, pending operator approval — not self-applied.** This run observed
+that the lane's "superseded CI run" guidance (§ Step 4 "Commit and push" and
+§ Step 7 "A push during the review cycle") describes a push-superseded run as
+surfacing a `verify / conclusion` **cancellation**. In practice this run received a
+webhook with `Conclusion: failure` for `verify / conclusion` on the superseded head
+`572fa47` — the aggregating gate job reports **failure** (not cancellation) when its
+upstream `verify / verify` is concurrency-cancelled. A run reading the contract
+literally could misclassify this as a real CI failure and enter a needless
+drive-to-green loop. **Proposed edit:** the lane's superseded-run guidance should
+say the superseded run may surface as a cancellation *or* a failure on the
+`verify / conclusion` job, and that the discriminator is the **head SHA** — a
+non-success on a SHA that is no longer the PR head is superseded and is judged only
+on the current head (which Step 8 condition 1 already mandates reading).
+
+This run executed autonomously with no interactively-reachable operator, so per the
+lane's escalation rule the proposal is **recorded here** (the durable channel)
+rather than self-approved or shipped as a separate `chore(cloud-plan-lane)` PR. A
+future run or the operator can adopt it. No other contract change is proposed.
 
 ## Residue
 
