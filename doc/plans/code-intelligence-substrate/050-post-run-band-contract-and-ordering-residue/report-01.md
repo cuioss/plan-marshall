@@ -114,7 +114,28 @@ plan-marshall bundle test suite.
 
 ## Findings
 
-- **Verification sub-agent (Step 6):** _pending dispatch_ — recorded per instance below.
+- **Verification sub-agent (Step 6) — first pass:** verified all five deliverables **behaviorally
+  complete and correct**, with NO correctness defect. Highest-risk checks confirmed: D3's
+  assign-cumulative-overwrite (record-metrics' `end-phase` reads the accumulator with source
+  `accumulator` → `_apply_provenance` ASSIGNS, so the retrospective's pre-fold floor is overwritten,
+  not double-counted) and D4's `{sha}^1 {sha}` merge-commit recipe + the unresolvable→sentinel/skip
+  negative control. **D2 cold-read verdict: "this case IS representable — via a split. Unambiguous."**
+  The reviewer could not land on the "explicitly refused" reading because both contract docs pair the
+  single-step refusal with a titled affirmation of representability. **D2 accepted.**
+  - It found **7 stale-doc/comment/message claims** (the required beyond-diff sweep) — all the same
+    shape: the resolver grew from 2 tiers to 5, and sibling docstrings/messages/reference passages
+    still described the old 2-tier chain. **Disposition: all 7 fixed** in commit `52366d0`
+    (`check-artifact-consistency.py` recall/exact-match docstrings + two inconclusive messages + the
+    call-site comment; `check-routing-decisions.py` `load_diff_files` docstring; `artifact-consistency.md`
+    "Footprint resolution state" + example warnings; `routing-decision-verification.md` skip rows +
+    the new `footprint_source` fact). None was a behaviour defect; each is a misleading-signal
+    accuracy defect the plan scopes in ("a stale claim in an untouched file is the same defect").
+  - Per instance (7): (1) recall docstring, (2) recall inconclusive message, (3) exact-match
+    inconclusive message, (4) exact-match call-site comment, (5) reference-doc example warnings,
+    (6) reference-doc "Footprint resolution state" 2-tier enumeration, (7) `load_diff_files` "which is
+    a skip" over-reach. All fixed.
+  - **Re-dispatched** a focused sub-agent to confirm the 7 fixes and re-sweep for any remaining stale
+    2-tier claim (result recorded after it completes).
 - **CI / PR review (Step 7):** _pending_.
 - **Self-caught during implementation (recorded per instance):**
   - _ruff unused-import_ — after delegating `check-artifact-consistency._resolve_footprint` to the
