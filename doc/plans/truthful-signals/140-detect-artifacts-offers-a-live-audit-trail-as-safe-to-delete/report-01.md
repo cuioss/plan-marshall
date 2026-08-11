@@ -76,7 +76,13 @@ Empirical derivation (method stated):
 
 Every finding with source and disposition. A finding is recorded per instance.
 
-**Verification sub-agent (pre-PR):** _dispatched; results pending — will be recorded here before the merge gate._
+**Verification sub-agent (pre-PR):** dispatched (independent `general-purpose`, read-only). Verdict: **all D1–D5 deliverables PASS, no code defects.** It independently re-derived the git-collapse mechanism (its own `git ls-files` experiments on git 2.43.0), re-derived the D4 caller set, and reasoned each D5 test's pre-fix path. Three findings, each dispositioned:
+
+| # | Finding | Severity | Disposition |
+|---|---|---|---|
+| F1 | The new SKILL.md prose ("a running plan's own worktree is *never scanned*", attributing `work.log` protection to boundary-pruning) overstates: in the documented finalize path the plan's worktree can *be* the scan root and *is* scanned, with `work.log` protected there by `.gitignore`, not by boundary-pruning. Boundary-pruning applies only to a worktree *nested below* the scan root. | low–moderate (doc precision) | **FIXED** (commit `9e…` below). Reworded both SKILL.md spots and the `scan_artifacts` docstring to scope the skip to *nested* worktrees below the scan root and to attribute both mechanisms correctly (gitignore when the worktree is the scan root; pruning when nested). Re-verified. This is precisely the misleading-signal class this epic targets, so it was fixed, not waived. |
+| F2 | `_is_nested_git_boundary` treats any directory containing a `.git` entry — including a pathological stray file literally named `.git` — as a boundary to skip. | nit | **REJECTED (with reason).** The stray-`.git`-file case is pathological and this is exactly how git itself special-cases `.git`; adding heuristics to distinguish a real gitlink from a stray file would add complexity and its own failure modes for a case that does not occur in practice. Consistent-with-git behaviour is the right default. |
+| F3 | `standards/artifact-patterns.json` `_note` describes `skip_dirs` as the traversal-skip and does not mention the new nested-boundary skip ("incomplete, not false"). | low (doc completeness) | **REJECTED (with reason).** The `_note` documents the JSON's *config fields* (what `skip_dirs`/`safe_patterns`/`uncertain_patterns` mean), not the full traversal algorithm. The nested-repo skip is a code behaviour whose contract now lives in the `scan_artifacts` docstring and SKILL.md, where behavioural contracts belong. Coupling the config-schema note to traversal internals would invite the same drift this epic warns against. |
 
 **D5 tests — each seen RED first (pre-fix), then GREEN post-fix:**
 

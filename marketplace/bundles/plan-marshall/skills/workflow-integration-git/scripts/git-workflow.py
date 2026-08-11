@@ -657,12 +657,14 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
     single collapsed entry (every path beneath it is excluded, not just the
     directory itself).
 
-    Nested git repositories and worktrees (submodules, linked worktrees) are
-    never traversed: their contents are a separate checkout, are not committable
-    to the scanned repository, and are exactly where a running plan's own live
-    artifacts (its in-flight ``logs/work.log`` and build caches) live. Offering
-    them as safe-to-delete would let a plan's finalize destroy the audit trail
-    of the run still producing it, so they never appear in either list.
+    A nested git repository or worktree (submodule, linked worktree) below the
+    scan root is never traversed: its contents are a separate checkout and are
+    not committable to the scanned repository. A running plan runs in such a
+    worktree, so this — together with the .gitignore exclusion above — keeps a
+    plan's finalize from offering the run's own live artifacts (its in-flight
+    ``logs/work.log`` and build caches) for deletion, whether that worktree is
+    itself the scan root (excluded via .gitignore) or nested beneath it (never
+    traversed).
 
     Uses a single directory traversal with compiled regex patterns instead
     of multiple Path.glob() calls, improving performance on large repos.
