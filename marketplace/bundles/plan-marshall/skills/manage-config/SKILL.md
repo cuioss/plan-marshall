@@ -1063,7 +1063,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config orches
   --field FIELD
 ```
 
-Returns the stored value plus a `set` boolean distinguishing a configured value from an unset one. When unset, `value` falls back to the canonical default from `DEFAULT_ORCHESTRATOR` (so `auto_emit` reads `false`) or `null` when the field carries no seeded default (`parallelization_scope`). `--field` is checked against the scalar whitelist (`parallelization_scope`, `auto_emit`); an unknown field is rejected before the read.
+Returns the stored value plus a `set` boolean distinguishing a configured value from an unset one. When unset, `value` falls back to the canonical default from `DEFAULT_ORCHESTRATOR` (so `auto_emit` reads `false` and `parallelization_scope` reads `1`; a field with no seeded default would read `null`). `--field` is checked against the scalar whitelist (`parallelization_scope`, `auto_emit`); an unknown field is rejected before the read.
 
 ### orchestrator set
 
