@@ -2144,11 +2144,16 @@ def test_get_default_config_seeds_orchestrator_block_with_every_knob():
     config = _config_defaults_mod.get_default_config()
 
     assert 'orchestrator' in config, 'get_default_config() must seed a top-level orchestrator block'
-    assert config['orchestrator'] == {
-        'auto_emit': False,
-        'effort': {},
-        'parallelization_scope': 1,
-    }, f'the seeded orchestrator block must surface every knob; got {config["orchestrator"]!r}'
+    orch = config['orchestrator']
+    # Field-set completeness DERIVED from the authoritative key set (see
+    # ORCHESTRATOR_KNOWN_KEYS): every supported key must be seeded, so this fails
+    # if a future key is made settable without being materialised in the seed.
+    assert set(orch) == set(_config_defaults_mod.ORCHESTRATOR_KNOWN_KEYS), (
+        f'the seed must surface every supported key; got {sorted(orch)} vs '
+        f'{sorted(_config_defaults_mod.ORCHESTRATOR_KNOWN_KEYS)}'
+    )
+    # Effective-default assertions, kept separate from the field-set check.
+    assert orch == {'auto_emit': False, 'effort': {}, 'parallelization_scope': 1}
 
 
 def test_seeded_orchestrator_leaves_effort_and_scope_resolution_unchanged():

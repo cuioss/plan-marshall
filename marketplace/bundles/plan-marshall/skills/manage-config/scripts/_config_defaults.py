@@ -258,6 +258,24 @@ DEFAULT_ORCHESTRATOR = {
     'parallelization_scope': 1,
 }
 
+# The authoritative set of top-level keys the orchestrator block supports — the
+# single source of truth from which BOTH the block validator's known-key
+# whitelist (`validate_orchestrator_block`) and the seed-completeness tests
+# derive. This is deliberately an explicit set, NOT `frozenset(DEFAULT_ORCHESTRATOR)`:
+# deriving it from the seed would make the "every settable key is seeded" test a
+# tautology. Keeping it independent is what makes the default-surfacing guard
+# real — a new key is made settable by adding it HERE (the validator then accepts
+# it), and the seed-completeness test then fails until the key is also
+# materialised in DEFAULT_ORCHESTRATOR. The reverse mistake — seeding a key
+# without adding it here — is caught by `get_default_config`'s self-validation,
+# which runs the seed through `validate_orchestrator_block` and rejects any key
+# outside this set. So neither direction of drift can pass silently. NOTE this is
+# the FULL key set; the scalar-write whitelist
+# (`_cmd_orchestrator.ORCHESTRATOR_SCALAR_FIELDS`) is a deliberate subset —
+# `effort` is written through the `effort` noun, not the scalar `orchestrator set`
+# verb — so it is intentionally NOT derived from here.
+ORCHESTRATOR_KNOWN_KEYS = frozenset({'auto_emit', 'effort', 'parallelization_scope'})
+
 
 # PR-batching strategy enum (`project.pr_strategy` in marshal.json).
 #   - 'compact'  (default): ride an already-pending related PR when the changed-
@@ -1178,10 +1196,14 @@ def validate_orchestrator_block(value: object) -> None:
     An unknown top-level key in the block is rejected so a typo'd knob fails loud
     rather than persisting silently.
 
-    The level enum (``ALLOWED_LEVELS``) and the writable effort-object key set
-    (``ORCHESTRATOR_EFFORT_SET_KEYS``) are the single source of truth in
-    ``_cmd_effort`` (same skill); they are imported lazily here so the seed-time
-    validator shares that source without a module-import-time coupling.
+    The top-level key whitelist derives from the module-level
+    :data:`ORCHESTRATOR_KNOWN_KEYS` — the same constant the seed-completeness
+    tests assert against, so the set of valid keys and the set of seeded keys
+    cannot drift apart unnoticed. The level enum (``ALLOWED_LEVELS``) and the
+    writable effort-object key set (``ORCHESTRATOR_EFFORT_SET_KEYS``) are the
+    single source of truth in ``_cmd_effort`` (same skill); they are imported
+    lazily here so the seed-time validator shares that source without a
+    module-import-time coupling.
 
     Args:
         value: The candidate ``orchestrator`` block.
@@ -1197,12 +1219,11 @@ def validate_orchestrator_block(value: object) -> None:
     if not value:
         return  # empty block is legal (behaviourally inert)
 
-    known_keys = {'effort', 'parallelization_scope', 'auto_emit'}
-    unknown = sorted(set(value.keys()) - known_keys)
+    unknown = sorted(set(value.keys()) - ORCHESTRATOR_KNOWN_KEYS)
     if unknown:
         raise ValueError(
             f'Invalid orchestrator block keys {unknown}: expected a subset of '
-            f'{sorted(known_keys)}.'
+            f'{sorted(ORCHESTRATOR_KNOWN_KEYS)}.'
         )
 
     if 'effort' in value:
