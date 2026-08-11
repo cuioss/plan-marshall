@@ -96,10 +96,17 @@ A build that ran to completion appends a `kind=build` row to the change-ledger, 
 complete against this working-tree state?"* (see [`../../manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md)
 § Entry Shapes).
 
-- **A missing row means no build completed.** A job whose whole process tree is killed dies *before*
-  the dispatch boundary that writes the row, so it stamps nothing: a missing row plus zero output
-  bytes is the whole-tree-kill signature. Treat a missing row as fail-closed evidence that the tree
-  was **not** built — never as "cannot tell."
+- **A missing row means no build completed** — treat it as fail-closed evidence the tree was **not**
+  built, never as "cannot tell." A missing row does not on its own say *why*: a build still in flight
+  has no row yet either (the row is written only at completion), so "missing row + zero output bytes"
+  is consistent with **both** a running build and a killed one — the same byte-identical ambiguity the
+  captured-output rule above describes. It becomes the **whole-tree-kill signature** only once the job
+  is known to have **terminated** (the harness reports it no longer running): a terminated job that
+  left no row died *before* the dispatch boundary could stamp one, so the missing row plus the 0-byte
+  output is then the kill evidence. This is exactly how the `classify-outcome` verb reads it — it takes
+  the job's terminated status as an input *alongside* the row/byte check (see
+  [`../../manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md) § classify-outcome),
+  never from the row and bytes alone.
 - **A present row is NOT unconditionally authoritative — read its `status`.** The row is stamped only
   for a genuine build-executing dispatch: the stamp predicate is a conjunction — a `build-*` notation
   **AND** the build-executing `run` verb **AND** no `--help` anywhere in argv — so a query subcommand
