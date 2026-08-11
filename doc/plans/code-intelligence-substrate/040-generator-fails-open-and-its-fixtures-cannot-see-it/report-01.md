@@ -63,17 +63,34 @@ The plan's claim labels were re-derived in the clone before scoping, per the lab
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD` includes `*.py` (the generator and two test files),
-so `./pw verify` (full quality-gate + tests) was run. **Result:** _pending — see below._
+`git diff --name-only origin/main...HEAD` includes `*.py` (the generator and three test files),
+so `./pw verify` (full quality-gate + tests) was run.
 
-Per-commit gate: `./pw quality-gate` was run before committing and reported `status: pass`,
-`total_issues: 0`, empty issue list (after fixing one ruff import-order nit and reworking the
-D3 smoke examples so the invocation analyzer stopped flagging the intentionally-partial help
-calls). mypy: `Success: no issues found in 391 source files`.
+- **First run:** 1 failed, 18964 passed, 14 skipped (497s). The single failure was
+  `test_generate_executor.py::test_failed_rederivation_drops_the_entry_rather_than_reusing_the_cached_one`
+  — a genuine, expected collision with D1 (see Findings, F5). The D2 `slow_live` test passed
+  warm at 11.6s and the sibling live-derivation characterization at 6.6s, confirming the
+  shared-cache cost analysis.
+- **Fix:** reconciled that test (gave it a good sibling so the write proceeds and the DROP stays
+  observable) and added a real-path total-collapse fail-open test. Re-ran `./pw verify` — result
+  recorded on completion.
+
+Per-commit gate: `./pw quality-gate` was run before every `*.py`-touching commit and reported
+`status: pass`, `total_issues: 0`, empty issue list (after fixing one ruff import-order nit and
+reworking the D3 smoke examples so the invocation analyzer stopped flagging the
+intentionally-partial help calls). mypy: `Success: no issues found in 391 source files`.
 
 ## Findings
 
-_Verification sub-agent findings recorded below once dispatched. CI / PR-review findings appended as they arrive._
+Findings recorded per instance, each with source and disposition.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| F1 | verification sub-agent | D1 satisfied: guard, adversarial test, unconditional-line test, normative emission contract, fresh-install success all present. | No action — confirmed. |
+| F2 | verification sub-agent | D2 satisfied and NOT sampled; `slow_live`, collected in CI. Honest boundary: the test catches serializer (`to_dict`) strips + validator bugs, but not an upstream *parse-layer* strip (truth and installed lose it in lockstep) nor a `required_flags` strip (test sends only complete valid calls). | **Accepted, no change.** The test docstring discloses this honestly; the plan's D2 verification ("strip an attribute … confirm the test fails") is met by the children-strip demonstration (498 refusals), and `_node_to_dict`/`to_dict` are part of the derivation module. The four *actual* defects were validator bugs, all caught directly. Catching a parse-layer strip needs an oracle independent of the derivation (the live script), which is out of proportion. |
+| F3 | verification sub-agent | D3 cold read: reads unambiguously as a REQUIRED step (quoted "MUST", "required step, not a reviewer's discretion", "does not ship on a red smoke"); both named shapes present; guard count migrated four→five consistently. | No action — confirmed. |
+| F4 | verification sub-agent (beyond-diff sweep) | Four statements still described the pre-guard-5 contract ("derived nothing → status: success, only visible as a number"): SKILL.md cost/accept-set prose (+ the `0`-disables-derivation line); `derive_script_surfaces` docstring ("both exit status: success"); `cmd_generate` comment ("exits status: success exactly like a healthy one"); `_surface_derivation_config` docstring (budget `0` "SAFE configuration"). | **Fixed** in commit `7738921` — each corrected to state the fail-open refusal and keep the fresh/empty-previous case accurate. Re-verified by a focused second sub-agent. |
+| F5 | CI (first `./pw verify`) | `test_failed_rederivation_drops_the_entry_rather_than_reusing_the_cached_one` failed: its single-script fixture collapses all surfaces to zero against a populated previous — exactly the fail-open case the guard now refuses — so the write it asserted on no longer happens. | **Fixed** in commit `7738921` — reconciled to a 2-script scenario (drop observable via a good sibling) and added `test_total_surface_collapse_against_a_populated_previous_fails_open` for the total-collapse case. Both pass; full suite re-run pending. |
 
 ## Reviewer participation
 
