@@ -1207,7 +1207,12 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # the ratio is disclosed as such, not read as a single-population measurement
     # (see data-format.md § Read-Cost Decomposition, and plan 030 D4). Written only
     # when both operands are present and tool_uses > 0; absent otherwise, never a
-    # guessed zero.
+    # guessed zero. The field's presence is an INVARIANT — present iff derivable
+    # from THIS regenerate's operands — so a stale value from an earlier generate
+    # (whose operands no longer qualify) is REMOVED rather than left to render an
+    # invalid identity or crash the render's tool_uses read. This mirrors the
+    # denominator pair, which generate likewise drops when its source stops being
+    # readable.
     for phase_name in PHASE_NAMES:
         if phase_name not in phases:
             continue
@@ -1220,6 +1225,8 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             and int(tool_uses) > 0
         ):
             phase['cache_read_per_tool_use'] = round(int(cache_read) / int(tool_uses))
+        else:
+            phase.pop('cache_read_per_tool_use', None)
 
     # end_time-presence check over the canonical six-phase baseline.
     #
@@ -1728,14 +1735,26 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         # factors are persisted (resident context here; turns is the tool_uses on
         # the row). The population caveat is stated inline because the ratio spans
         # two populations — the exact thing plan 030 exists to stop hiding.
+        # Guard on ALL THREE operands, not on the factor alone: an archived or
+        # hand-edited row could carry a stale cache_read_per_tool_use without a
+        # live cache_read / positive tool_uses, and an unconditional tool_uses read
+        # would then render an invalid identity or raise KeyError. generate's
+        # persist step keeps the field's presence in step with derivability, so in
+        # a freshly-generated row all three are present together; this render guard
+        # is the defence for a row generate did not just write.
         resident = phase.get('cache_read_per_tool_use')
-        if isinstance(resident, (int, float)):
-            cache_read = phase.get('cache_read_input_tokens')
-            turns = int(phase['tool_uses'])
-            cache_read_str = f'{int(cache_read):,}' if isinstance(cache_read, (int, float)) else '?'
+        cache_read = phase.get('cache_read_input_tokens')
+        tool_uses_val = phase.get('tool_uses')
+        if (
+            isinstance(resident, (int, float))
+            and isinstance(cache_read, (int, float))
+            and isinstance(tool_uses_val, (int, float))
+            and int(tool_uses_val) > 0
+        ):
+            turns = int(tool_uses_val)
             lines.append(
                 f'- **Read-cost decomposition**: cache_read_input_tokens '
-                f'({cache_read_str}) ≈ resident context per tool-use ({int(resident):,}) '
+                f'({int(cache_read):,}) ≈ resident context per tool-use ({int(resident):,}) '
                 f'× turns ({turns:,}). resident_context_per_call is a derived-cost ratio '
                 '(main-context-window cache_read ÷ dispatched-subagent tool_uses — the '
                 'two populations differ; see data-format.md § Read-Cost Decomposition), '
@@ -2753,6 +2772,17 @@ _PRESENCE_PERSISTED_FIELDS = (
     *_EXPLORATION_COUNTER_FIELDS,
     *_EXPLORATION_SUBSOURCE_FIELDS,
     *_CACHE_READ_ATTRIBUTION_FIELDS,
+)
+
+# The "unattributed" residuals among the presence-persisted fields, DERIVED from
+# that set rather than hand-listed — so a new residual added to any source group
+# is discovered here instead of silently falling through the render loop to the
+# generic (denominator-less) label, which would regress D1's separation. Every
+# member MUST carry a denominator-bearing render spec in ``_UNATTRIBUTED_RENDER``;
+# the contract-drift test ``test_unattributed_render_map_covers_every_residual``
+# fails loudly if the two ever diverge. Kept next to the derived set it guards.
+_UNATTRIBUTED_RESIDUAL_FIELDS = frozenset(
+    field for field in _PRESENCE_PERSISTED_FIELDS if 'unattributed' in field
 )
 
 

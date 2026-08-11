@@ -2233,6 +2233,62 @@ class TestReadCostDecomposition:
         assert 'derived-cost ratio' in md
         assert 'the two populations differ' in md
 
+    def test_stale_factor_is_cleared_when_operands_stop_qualifying(self, plan_context):
+        """A cache_read_per_tool_use left by an earlier generate is REMOVED (not
+        left to render an invalid identity or crash the render) when a later
+        generate sees a missing or non-positive tool_uses. Presence is an invariant:
+        present iff derivable from this regenerate's operands."""
+        # Row seeded WITH a stale factor but a tool_uses that no longer qualifies:
+        # one row has tool_uses missing entirely, one has tool_uses == 0.
+        manage_metrics.write_metrics(
+            'd3-stale',
+            {
+                'phases': {
+                    '3-outline': {
+                        'duration_seconds': 100,
+                        'cache_read_input_tokens': 5000,
+                        'cache_read_per_tool_use': 999,  # stale
+                    },
+                    '5-execute': {
+                        'duration_seconds': 200,
+                        'tool_uses': 0,
+                        'cache_read_input_tokens': 5000,
+                        'cache_read_per_tool_use': 999,  # stale
+                    },
+                },
+            },
+        )
+
+        # Must not raise (the old unconditional tool_uses read would KeyError here).
+        result = cmd_generate(_ns_generate('d3-stale'))
+        assert result['status'] == 'success'
+
+        phases = manage_metrics.read_metrics_raw('d3-stale')['phases']
+        assert 'cache_read_per_tool_use' not in phases['3-outline']
+        assert 'cache_read_per_tool_use' not in phases['5-execute']
+        # And the render carries no decomposition bullet for either.
+        md = (plan_context.plan_dir_for('d3-stale') / 'metrics.md').read_text()
+        assert '- **Read-cost decomposition**:' not in md
+
+
+def test_unattributed_render_map_covers_every_residual():
+    """Contract-drift guard (mirrors the exploration-bucket drift tests): every
+    "unattributed" residual among the presence-persisted fields MUST have a
+    denominator-bearing render spec, or D1's separation silently regresses to the
+    generic label. The render map's key set must equal the DERIVED residual set."""
+    assert set(manage_metrics._UNATTRIBUTED_RENDER) == set(
+        manage_metrics._UNATTRIBUTED_RESIDUAL_FIELDS
+    ), (
+        'every unattributed residual field must map to a denominator-bearing '
+        'render spec: '
+        f'{set(manage_metrics._UNATTRIBUTED_RESIDUAL_FIELDS) ^ set(manage_metrics._UNATTRIBUTED_RENDER)}'
+    )
+    # The derived set is exactly the two known residuals today; the guard is what
+    # keeps a future third residual from bypassing the denominator render.
+    assert manage_metrics._UNATTRIBUTED_RESIDUAL_FIELDS == frozenset(
+        {'exploration_unattributed_bytes', 'cache_read_unattributed'}
+    )
+
 
 class TestGeneratePartialityFields:
     """generate publishes the end_time-presence check across all three surfaces.
