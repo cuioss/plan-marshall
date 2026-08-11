@@ -1,6 +1,6 @@
 # Run report — 080-key-order-canonicalization-unreachable-and-false-green (run 01)
 
-**Date (UTC):** 2026-08-11    **Branch:** `claude/key-order-canonicalization-unreachable-hygrin` (harness-assigned; kept as-is per lane contract)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-11    **Branch:** `claude/key-order-canonicalization-unreachable-hygrin` (harness-assigned; kept as-is per lane contract)    **PR:** [#1156](https://github.com/cuioss/plan-marshall/pull/1156)    **Outcome:** completed (auto-merge armed; landing delegated to the merge queue)
 
 ## Skills loaded
 
@@ -128,20 +128,80 @@ the D4 change to the hot config write path regressed nothing. Per-commit `./pw q
 
 ## Reviewer participation
 
-_(pending)_
+Expected population derived from configuration — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(`coderabbit.md` → `coderabbitai`; `sourcery.md` → `sourcery-ai`; `pr-agent.md` → `cuioss-review-bot`),
+cross-named by `.github/workflows/pr-agent.yml`.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Posted a "PR Reviewer Guide" against the diff: tests present, no security concerns, one focus-finding — a concurrency concern on the D4 guard's `_CONFIG_FINGERPRINTS`. Addressed in commit `5bb92fc` (unique per-write temp name; the guard's cross-process guarantee and its deliberate in-process limit documented at the definition site) and answered on the thread explaining the threat model + plan scope. |
+| `coderabbitai` | `rate-limited` | Published only a refusal: "Review limit reached … Next review available in: 49 minutes." It engaged but did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Review body is only "you have reached your weekly rate limit of 500000 diff characters." A quota notice in place of a review. |
+
+**Coverage: 1 of 3 reviewed** — `cuioss-review-bot` reviewed (and its finding was addressed);
+`coderabbitai` rate-limited (window reopens ~49 min); `sourcery-ai` rate-limited (weekly quota). The
+§ Step 8 shortfall disclosure fired: the run proceeds on 1-of-3 coverage and **says so** — the two
+shortfalls are routine rate limits outside our control, which disclose-not-block per the contract.
 
 ## Cost
 
-_(recorded at finalize)_
+- **Tokens:** not surfaced to the agent as a precise per-run figure in this session — stated plainly
+  rather than estimated.
+- **Wall-clock:** a single interactive Claude Code cloud session on 2026-08-11, from the first branch
+  push through arming auto-merge (roughly one hour, dominated by two full `./pw verify` passes at ~4.5
+  min each and the CI re-runs each push triggered).
+- **Population:** this single cloud session's usage as the harness counts it. ⛔ NOT comparable to a
+  plan-marshall `metrics.toon` total — that counts an orchestrator-plus-agent dispatch tree under
+  plan-marshall's own per-task billing boundary, which this interactive session does not share. The
+  figures are not made comparable and are not presented as if they were.
 
 ## Contract check (Step 9)
 
-_(recorded at finalize)_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — named above. |
+| 2 Branch | Done — harness-assigned `claude/key-order-canonicalization-unreachable-hygrin`, pushed to `origin` before any work; branch form recorded (harness-assigned). |
+| 3 Plan directory | Done — `doc/plans/truthful-signals/080-…/plan.md` exists and opens with the first-instruction block (verified present before the move). |
+| 4 Implement | Done — commits carry the `Co-Authored-By: Claude` trailer; all deliverables addressed. |
+| 4 Per-commit gate | Done — `./pw quality-gate` (`total_issues: 0`, empty `issues[]`) run before each Python-touching commit. |
+| 4 Pushed | Done — every commit pushed; no unpushed commit remains at finalize. |
+| 5 Build gate | Done — Python changed → full path; `./pw verify plan-marshall` → SUCCESS, 15887 passed / 1 skipped. |
+| 6 Verification sub-agent | Done — independent verifier + isolated D9 cold-read; findings and dispositions in § Findings. |
+| 7 PR cycle | Done — PR #1156; both comment surfaces read (conversation + inline threads, the latter empty); every comment dispositioned. |
+| 8 Merge gate | Conditions 1–3 met; reviewer shortfall disclosed (condition 4); auto-merge armed and the landing delegated to the merge queue (this cloud session cannot self-wake to watch the queue — a completed outcome per § Step 8, not partial). |
+| 8 Bridge | No status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; the report carries the PR number and per-deliverable outcome. |
+| 9 This check | This table. |
+
+GitHub access path used: the **GitHub MCP server** (cloud path). Branch form: **harness-assigned**. A
+cloud run owes no `/sync-plugin-cache` (machine-local build step, not a debt this lane records).
 
 ## What have we learned (Step 9)
 
-_(recorded at finalize)_
+**No contract change proposed.** The run exercised the cloud-plan-lane end to end without hitting an
+ambiguous, unworkable, or unnecessary step. The one notable situation — the plan's snapshot had drifted
+from the current tree (D3 already fixed and test-pinned; the freshness three-valued verdict already
+shipped) — is exactly what the contract's "re-derive every claim at the moment of the claim" and the
+plan's own HYPOTHESIS labelling are built to absorb, and they did: claims were re-verified, the refuted
+one (D3) was recorded as such rather than a no-op change manufactured to match the plan. No step
+produced an artifact it could not, and no command failed in the environment. Nothing here is run-specific
+evidence of a contract gap, so proposing an edit would be speculative — which the contract forbids.
 
 ## Residue
 
-_(recorded at finalize)_
+- **Three `order_config_keys` bypass writers remain unguarded whole-document writes** —
+  `ext_defaults_set`, `ext_defaults_set_default` (`_config_core.py`), and `opencode_runtime._save`.
+  D4 was scoped by the plan to the `save_config` path, and its out-of-scope excludes a general
+  concurrency/ordering framework, so these are left as-is but now **honestly documented** (the
+  `order_config_keys` docstring names them as bypasses). A follow-up that wants every marshal.json
+  write to enforce ordering and lost-update safety would route these three through `save_config` /
+  `order_config_keys` — a separate, reviewable change.
+- **In-process concurrent-writer serialization is not provided** by the `save_config` guard (documented
+  at the definition site). Closing it needs a per-load token or a held file lock — the locking primitive
+  the plan leaves out of scope. Not a defect for these one-shot CLI verbs, which never write the config
+  from two in-process writers concurrently.
+- **The upstream-currency question stays structurally out of scope.** D7 makes `check_freshness` honest
+  about NOT checking clone-vs-upstream currency (`compared_against: local_clone_manifest`), but a real
+  upstream leg belongs to the separately-owned executor-preflight / version-resolution surface. Per the
+  plan's sequencing note: the version-freshness story now has a truthful *scope-disclosure* signal, but
+  no end-to-end upstream check — a follow-up owned elsewhere.
