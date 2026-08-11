@@ -1,6 +1,6 @@
 # Run report — 140-detect-artifacts-offers-a-live-audit-trail-as-safe-to-delete (run 01)
 
-**Date (UTC):** 2026-08-11    **Branch:** `claude/artifact-deletion-audit-trail-m4y1oz` (harness-assigned; kept as-is)    **PR:** _pending_    **Outcome:** completed
+**Date (UTC):** 2026-08-11    **Branch:** `claude/artifact-deletion-audit-trail-m4y1oz` (harness-assigned; kept as-is)    **PR:** [#1171](https://github.com/cuioss/plan-marshall/pull/1171)    **Outcome:** completed
 
 ## Skills loaded
 
@@ -102,11 +102,13 @@ Expected reviewer population, derived from `marketplace/bundles/plan-marshall/sk
 
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
-| `cuioss-review-bot` | _pending_ | _to be recorded from PR comment bodies_ |
-| `coderabbitai` | _pending_ | _to be recorded from PR comment bodies_ |
-| `sourcery-ai` | _pending_ | _to be recorded from PR comment bodies_ |
+| `cuioss-review-bot` | `reviewed` | Published a "PR Reviewer Guide" review artifact against the diff: *"PR contains tests / No security concerns identified / No major issues detected"* — an explicit nothing-to-report over this diff. |
+| `coderabbitai` | `rate-limited` | Published **only** a refusal notice: *"Review limit reached … you've reached your PR review limit, so we couldn't start this review. Next review available in: 59 minutes."* It engaged but did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Published **only** a refusal notice (review body, COMMENTED state): *"you have reached your weekly rate limit of 500000 diff characters."* Its `Sourcery review` check concluded `skipped`. |
 
-Coverage and any § Step 8 shortfall disclosure: _pending PR._
+**Coverage: 1 of 3.** Inline review-thread surface: **0 threads** (read explicitly — not inferred from the conversation view). Both comment surfaces read; no actionable comment on either (the two rate-limit notices need no reply; the one review reported nothing to action), so condition 2 (every comment handled) holds against a genuinely empty actionable set.
+
+**§ Step 8 condition-4 shortfall disclosure (fired):** "Review coverage: 1 of 3 — `cuioss-review-bot` reviewed with no findings; `coderabbitai` rate-limited (window reopens in ~59 min); `sourcery-ai` rate-limited (weekly 500k-diff-char quota)." Per the contract this is a **disclosure, not a block** — rate limits are routine and outside our control, and the merge is gated only on conditions 1–3. The independent pre-PR verification sub-agent (§ Findings) provided the substantive review coverage this diff received.
 
 ## Cost
 
@@ -116,11 +118,35 @@ Coverage and any § Step 8 shortfall disclosure: _pending PR._
 
 ## Contract check (Step 9)
 
-_Completed at the final pre-merge commit — see below._
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | ✅ Named in § Skills loaded (read by bundle path; `plan-marshall` plugin not relied on). |
+| 2 Branch on `origin` | ✅ `claude/artifact-deletion-audit-trail-m4y1oz` (harness-assigned, kept as-is) — pushed to `origin` before any edit (it was absent from the remote at start; `git ls-remote` verified, then pushed). |
+| 3 Plan directory | ✅ `doc/plans/truthful-signals/140-…/plan.md` exists and opens with the first-instruction block (present in the handed file — no repair needed). |
+| 4 Implement | ✅ Deliverables addressed; every commit carries the `Co-Authored-By: Claude` trailer and no "Generated with Claude Code" footer. |
+| 4 Per-commit gate | ✅ Each `*.py`-touching commit was preceded by a clean gate: fix commit `ee780ed` by `./pw verify plan-marshall` (15982 passed, quality-gate "All checks passed!"); F1 commit `f09eb37` by `./pw quality-gate plan-marshall` (mypy "no issues found in 274 files", ruff "All checks passed!", SPDX passed). |
+| 4 Pushed | ✅ No unpushed commit remained at each stage; branch pushed after every commit. |
+| 5 Build gate | ✅ Python changed → full path taken; `./pw verify plan-marshall` clean. |
+| 6 Verification sub-agent | ✅ Dispatched, findings + dispositions in § Findings; F1 fixed and re-verified. |
+| 7 PR cycle | ✅ PR [#1171](https://github.com/cuioss/plan-marshall/pull/1171); both comment surfaces read; every comment dispositioned (no actionable items). |
+| 8 Merge gate | Conditions 2 (comments handled) and 3 (report finalized) met at report-commit time; condition 1 (required `verify` check) confirmed green on the final head immediately before arming; auto-merge then armed. Condition-4 shortfall (1-of-3 coverage) disclosed. The merge commit is recorded to the operator, not embedded here. |
+| 8 Bridge | ✅ No status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; the report carries the PR number and per-deliverable outcome for the collect step. |
+| 9 This check | ✅ This table. |
+| 9 What have we learned | ✅ Below — one proposal, presented to the operator. |
+
+**GitHub access path used:** the GitHub MCP server (the cloud path). **Branch form:** harness-assigned `claude/*`, kept as-is. **`/sync-plugin-cache`:** not owed — a cloud run never performs or owes it (machine-local build step).
 
 ## What have we learned (Step 9)
 
-_Recorded at the final pre-merge commit._
+**Proposed contract change (presented to the operator; NOT self-approved, NOT shipped in this PR).**
+
+**Evidence from this run.** The lane's build-gate wording (§ Step 4 per-commit gate and § Step 5) instructs: *"Open the `log_file` it names and confirm `total_issues: 0` and an empty `errors[]`."* That `log_file` / `total_issues` / `errors[]` vocabulary is the **plan-marshall executor's TOON output contract** (`CLAUDE.md` § Build Commands: "read the result TOON `status`/`errors[]`"). But the lane supersedes the executor and runs `./pw` **directly**, and `./pw quality-gate` / `./pw verify` do **not** emit a named `log_file` or a `total_issues`/`errors[]` structure — they stream raw tool output ending in `ruff … All checks passed!`, `mypy … Success: no issues found in N source files`, `SPDX-header check passed`, and a pytest `N passed, M skipped` summary. A run following the instruction literally would look for a `log_file` and fields that the direct-`./pw` path never produces. I confirmed cleanliness from the actual lines instead, which is the lane-appropriate signal — but the contract's wording does not match what its own prescribed command emits.
+
+**Concrete proposed edit.** In `cloud-plan-lane/SKILL.md` § Step 4 ("Gate before committing") and § Step 5 ("Read the output, not the exit code"), replace the executor-flavoured *"open the `log_file` it names and confirm `total_issues: 0` and an empty `errors[]`"* with direct-`./pw` guidance: confirm the quality-gate lines report all checks passed (`ruff … All checks passed!`, `mypy … no issues found`, `SPDX-header check passed`) **and** the pytest summary reports `0 failed` / `0 errors`, reading the output rather than the exit code (the "wrapper can exit 0 on failure" caution stays). Keep the executor-path phrasing only where the generated executor is actually available.
+
+**Status:** presented to the operator in the run's closing message; pending approval. On approval it ships as its own `chore(cloud-plan-lane):` PR (a skill change, reviewed as code — no `skip-bot-review`), not folded into this plan's PR.
+
+No other contract change is proposed: every other step's artifact was produced as written, and the run exercised the branch/PR/merge/report flow without further friction.
 
 ## Residue
 
