@@ -1,6 +1,6 @@
 # Run report — 050-post-run-band-contract-and-ordering-residue (run 01)
 
-**Date (UTC):** 2026-08-11    **Branch:** claude/post-run-band-contract-ordering-i0th2w    **PR:** _pending_    **Outcome:** completed (landing delegated — see Merge gate)
+**Date (UTC):** 2026-08-11    **Branch:** claude/post-run-band-contract-ordering-i0th2w    **PR:** [#1175](https://github.com/cuioss/plan-marshall/pull/1175)    **Outcome:** completed (landing delegated — see Merge gate)
 
 ## Skills loaded
 
@@ -148,7 +148,13 @@ plan-marshall bundle test suite.
   stale-claim findings resolved.
 - **Build gate (Step 5, final):** `./pw verify plan-marshall` re-run after all stale-claim fixes —
   **green: `verify: SUCCESS`, 16001 passed, 1 skipped**.
-- **CI / PR review (Step 7):** _pending_.
+- **CI (Step 7):** on the PR head, `verify / gate`, `review / review`, `dependency-review`,
+  `generate-check` all **success**; `verify / verify` (the full test suite) ran to green. The
+  required `verify / conclusion` gate is enforced by the merge queue at land time.
+- **PR review (Step 7):** both surfaces read (conversation + inline threads). Inline review-thread
+  surface: **empty (0 threads)**. Conversation: `cuioss-review-bot` posted a clean review ("PR
+  contains tests, no security concerns, no major issues"); CodeRabbit posted only a rate-limit notice;
+  Sourcery's check was skipped. **No comment was actionable** — nothing to fix or reply to.
 - **Self-caught during implementation (recorded per instance):**
   - _ruff unused-import_ — after delegating `check-artifact-consistency._resolve_footprint` to the
     shared resolver, `FOOTPRINT_UNRESOLVED` became an unused re-export. **Disposition: fixed** —
@@ -166,12 +172,22 @@ plan-marshall bundle test suite.
 
 ## Reviewer participation
 
-_Pending PR — filled after the review cycle (§ Step 7). Expected reviewer population derived from the
-`author_login` of each `automatic-review/standards/{bot_kind}.md` registry doc._
+Expected reviewer population **derived from configuration** — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc:
+`coderabbitai` (coderabbit.md), `cuioss-review-bot` (pr-agent.md), `sourcery-ai` (sourcery.md).
 
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
-| … | … | … |
+| `cuioss-review-bot` | `reviewed` | Published a review artifact over the diff — "## PR Reviewer Guide 🔍: PR contains tests / No security concerns identified / No major issues detected". |
+| `coderabbitai` | `rate-limited` | Published only a refusal/quota notice ("Review limit reached … Next review available in: 15 minutes"), not a review of the diff. |
+| `sourcery-ai` | `silent` | Its `Sourcery review` check concluded `skipped`; it published no review artifact and no notice. |
+
+**Coverage: 1 of 3 reviewed.** The § Step 8 review-coverage shortfall disclosure **fired**:
+"Review coverage 1 of 3 — `cuioss-review-bot` reviewed (no major issues, no security concerns);
+`coderabbitai` rate-limited (window reopens ~15 min); `sourcery-ai` silent (Sourcery review check
+skipped)." Per the lane this is a **disclosure, not a block** — a rate limit and a skipped check are
+routine and outside our control, so the merge is armed on the stated partial coverage rather than held
+behind a bot's quota.
 
 ## Cost
 
@@ -186,11 +202,43 @@ _Pending PR — filled after the review cycle (§ Step 7). Expected reviewer pop
 
 ## Contract check (Step 9)
 
-_Completed at Step 8 condition 3 — see the final pre-merge commit._
+Re-read the `cloud-plan-lane` skill and checked each step against what happened:
+
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **done** — named above; the always-load skills were read via bundle path, domain standards consulted at point of use. |
+| 2 Branch | **done** — harness-assigned `claude/post-run-band-contract-ordering-i0th2w`, pushed to `origin` before any edit. |
+| 3 Plan directory | **done** — `doc/plans/code-intelligence-substrate/050-.../plan.md` exists and opens with the first-instruction block (verified present, not repaired). |
+| 4 Implement | **done** — five deliverables addressed; every commit carries the `Co-Authored-By: Claude` trailer and no "Generated with Claude Code" footer. |
+| 4 Per-commit gate | **done** — every `*.py`-touching commit was preceded by a `./pw quality-gate` run with `total_issues: 0` and empty `issues[]` (ruff + plugin-doctor). |
+| 4 Pushed | **done** — pushed after every commit; no unpushed commit remains. |
+| 5 Build gate | **done** — `*.py` changed → `./pw verify plan-marshall` green (`verify: SUCCESS`, 16001 passed). |
+| 6 Verification sub-agent | **done** — two independent passes; findings + dispositions recorded (§ Findings). |
+| 7 PR cycle | **done** — PR #1175; both comment surfaces read; every comment dispositioned (none actionable). |
+| 8 Merge gate | conditions 1–3 met; auto-merge armed (§ Merge gate). Landing delegated to the merge queue / orchestrator collect — this cloud session could not self-wake to watch the queue. **completed, not partial.** |
+| 8 Bridge | **done** — no status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; the report carries the PR number and per-deliverable outcome. |
+| 9 This check | **done** — appended here. |
+| 9 What have we learned | recorded below. |
+
+GitHub access path used: **GitHub MCP server** (cloud). Branch form: **harness-assigned**. No
+`/sync-plugin-cache` owed (machine-local build step a cloud run never performs).
 
 ## What have we learned (Step 9)
 
-_Recorded at Step 9._
+**No contract change proposed.** The run exercised the `cloud-plan-lane` contract end to end and every
+step's artifact was producible as written; no command failed in the actual environment, and no step was
+ambiguous in a way the contract does not already address. The one friction — the Step 6 beyond-diff
+stale-claim sweep needed **two** sub-agent passes plus a manual grep to be exhaustive — is already
+anticipated by the contract's own Step 6 note that a run may "re-dispatch a second time to catch two
+such statements in bundle docs," so it is the contract working as written rather than a gap.
+
+One minor, evidence-backed **observation** (recorded, not proposed as a change): the LLM-driven
+beyond-diff sweep was most reliably exhausted when paired with a **deterministic grep** for the
+changed symbol's prior descriptors (the second sub-agent pass and my own grep together caught four
+stale claims the first pass missed). A future contract refinement *could* recommend pairing the LLM
+sweep with such a grep — but the existing re-dispatch loop converged correctly here, so this is noted
+for the operator rather than shipped as a separate `chore/` PR (which would need operator approval this
+autonomous run cannot obtain).
 
 ## Residue
 
