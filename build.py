@@ -19,11 +19,31 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import tomllib
 import uuid
 from collections.abc import Iterator
 from itertools import chain
 from pathlib import Path
+
+# Gate-coverage honesty helpers (freshness classification, the coverage-boundary
+# reporter, and the derived parity population) live in a pure sibling module
+# under the shared build-scripts dir, mirroring _test_scope_divergence. Put that
+# dir on sys.path so the flat import resolves — the same mechanism
+# _compute_mypypath() uses to reach marketplace_bundles.
+_GATE_COVERAGE_DIR = (
+    Path(__file__).parent
+    / 'marketplace' / 'bundles' / 'plan-marshall'
+    / 'skills' / 'script-shared' / 'scripts' / 'build'
+)
+if str(_GATE_COVERAGE_DIR) not in sys.path:
+    sys.path.insert(0, str(_GATE_COVERAGE_DIR))
+
+from _gate_coverage import (  # noqa: E402
+    CoverageBoundary,
+    classify_check_duration,
+    render_coverage_summary,
+)
 
 # Base paths
 BUNDLES_DIR = Path('marketplace/bundles')
@@ -44,6 +64,13 @@ _CODING_RE = re.compile(r'^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)')
 # Sourcing this from marshal.json (rather than a static constant) is deliberately
 # deferred per the originating request constraint.
 COVERAGE_THRESHOLD = 80
+
+# Distinct non-zero exit code for a freshness-suspect type-check: mypy reported
+# success but implausibly fast for the file set it claims to have checked, so the
+# verdict rests on a cache, not on the current tree. Kept distinct from mypy's own
+# 1 (type errors) and 2 (usage/collection error) so a caller can tell a fail-closed
+# freshness halt from a real type error and render the PARTIAL coverage verdict.
+_FRESHNESS_SUSPECT_RC = 3
 
 # Per-session pytest basetemp root. Each pytest invocation gets its own
 # per-session subdirectory here (see _prepare_session_basetemp) instead of the
@@ -217,6 +244,82 @@ def _mypy_collects_any(path: str, label: str = 'mypy') -> bool:
     )
 
 
+def _mypy_collect_count(paths: list[str]) -> int:
+    """Count the files under ``paths`` that survive mypy's excludes.
+
+    A conservative lower bound on the work a mypy invocation over ``paths``
+    represents: it counts the files passed on the command line that mypy would
+    collect (the import graph mypy actually analyses is a superset). Undercounting
+    is safe for the freshness backstop — it lowers the implied throughput, which
+    only makes a run *less* likely to be judged implausibly fast. Mirrors the
+    exclude-aware crawl of :func:`_mypy_collects_any` so the count agrees with what
+    mypy sees.
+    """
+    patterns = _mypy_exclude_patterns()
+    count = 0
+    for entry in paths:
+        target = Path(entry)
+        if target.is_dir():
+            candidates: Iterator[Path] = chain(target.rglob('*.py'), target.rglob('*.pyi'))
+        elif target.is_file() and target.suffix in ('.py', '.pyi'):
+            candidates = iter((target,))
+        else:
+            continue
+        for candidate in candidates:
+            if not any(pattern.search(candidate.as_posix()) for pattern in patterns):
+                count += 1
+    return count
+
+
+def _run_mypy(
+    paths: list[str],
+    description: str,
+    env: dict[str, str],
+    *,
+    dimension: str,
+    boundary: CoverageBoundary | None = None,
+) -> int:
+    """Run mypy over ``paths`` COLD, with a freshness backstop, recording coverage.
+
+    Two gate-honesty properties (plan 160 D4) ride on every mypy invocation:
+
+    1. **Cold, like CI.** ``--no-incremental`` is always passed, so the verdict is
+       computed against the current tree rather than a possibly-stale incremental
+       cache. A fresh CI clone has no cache and runs cold; a developer machine
+       keeps one across runs, and a stale cache answering "nothing I have cached
+       changed" is exactly how a clean local verdict diverged from a red CI. This
+       closes that hole deterministically — a cache the gate never consults cannot
+       produce a false-clean.
+
+    2. **Freshness backstop (gate paths only).** When a ``boundary`` is supplied
+       (the ``verify`` / ``quality-gate`` paths assembling a coverage verdict), a
+       mypy that exits 0 in a wall-time no real analysis of its file set could
+       achieve is treated as suspect, not reassurance: the boundary records the
+       degradation and the call returns :data:`_FRESHNESS_SUSPECT_RC` so the gate
+       fails closed. A plausibly-timed run records the dimension as checked. Bare
+       ``compile`` / ``test-compile`` (no boundary) still run cold but skip the
+       gate-verdict machinery.
+
+    A non-zero mypy exit (real type error) is returned unchanged; the caller halts
+    and mypy's own output is the signal.
+    """
+    argv = ['uv', 'run', 'mypy', '--no-incremental', *paths]
+    start = time.monotonic()
+    exit_code = run(argv, description, env=env)
+    elapsed = time.monotonic() - start
+    if exit_code != 0:
+        return exit_code
+    if boundary is not None:
+        files_checked = _mypy_collect_count(paths)
+        verdict = classify_check_duration(files_checked, elapsed)
+        if not verdict.plausible:
+            print(f'>>> {description}: FRESHNESS SUSPECT — {verdict.reason}', file=sys.stderr)
+            boundary.record_degraded(dimension, f'freshness suspect — {verdict.reason}')
+            return _FRESHNESS_SUSPECT_RC
+        boundary.record_checked(f'{dimension} [{files_checked} files, cache disabled]')
+    return exit_code
+
+
 def _skip_empty_mypy_scope(command: str, path: str) -> bool:
     """Report whether ``command`` must skip mypy over ``path``, printing the reason.
 
@@ -233,14 +336,15 @@ def _skip_empty_mypy_scope(command: str, path: str) -> bool:
     return True
 
 
-def cmd_compile(module: str | None) -> int:
-    """Run mypy on production sources."""
+def cmd_compile(module: str | None, boundary: CoverageBoundary | None = None) -> int:
+    """Run mypy on production sources (cold; freshness-checked on the gate paths)."""
     path = get_bundle_path(module)
     mypy_env = {**os.environ, 'MYPYPATH': _compute_mypypath()}
     if module:
         if _skip_empty_mypy_scope('compile', path):
             return 0
-        return run(['uv', 'run', 'mypy', path], f'compile: mypy {path}', env=mypy_env)
+        return _run_mypy([path], f'compile: mypy {path}', mypy_env,
+                         dimension='mypy(production)', boundary=boundary)
     paths = [path]
     # Include .claude/ only when a file there survives mypy's excludes. Passing a
     # directory mypy collects nothing from makes it fail with "There are no
@@ -249,16 +353,18 @@ def cmd_compile(module: str | None) -> int:
     # excluded .claude/worktrees/, which an exclude-blind .py count would miss.
     if _mypy_collects_any(str(CLAUDE_DIR), 'compile'):
         paths.append(str(CLAUDE_DIR))
-    return run(['uv', 'run', 'mypy'] + paths, f'compile: mypy {" ".join(paths)}', env=mypy_env)
+    return _run_mypy(paths, f'compile: mypy {" ".join(paths)}', mypy_env,
+                     dimension='mypy(production)', boundary=boundary)
 
 
-def cmd_test_compile(module: str | None) -> int:
-    """Run mypy on test sources."""
+def cmd_test_compile(module: str | None, boundary: CoverageBoundary | None = None) -> int:
+    """Run mypy on test sources (cold; freshness-checked on the gate paths)."""
     path = get_test_path(module)
     mypy_env = {**os.environ, 'MYPYPATH': _compute_mypypath()}
     if _skip_empty_mypy_scope('test-compile', path):
         return 0
-    return run(['uv', 'run', 'mypy', path], f'test-compile: mypy {path}', env=mypy_env)
+    return _run_mypy([path], f'test-compile: mypy {path}', mypy_env,
+                     dimension='mypy(test)', boundary=boundary)
 
 
 def cmd_module_tests(module: str | None, parallel: bool = True) -> int:
@@ -314,7 +420,7 @@ def check_spdx_headers(paths: list[str]) -> list[str]:
     return offenders
 
 
-def cmd_quality_gate(module: str | None) -> int:
+def cmd_quality_gate(module: str | None, boundary: CoverageBoundary | None = None) -> int:
     """Run mypy + ruff + plugin-doctor static-analysis on production sources.
 
     For full-tree quality-gate (module is None), also runs the plugin-doctor
@@ -322,8 +428,25 @@ def cmd_quality_gate(module: str | None) -> int:
     invariants (argparse safety, extension-point contracts, argument-naming
     cluster). Module-scoped quality-gate skips the marketplace-wide sweep
     because it is scoped to a single bundle.
+
+    Records each dimension it clears into a :class:`CoverageBoundary` (plan 160
+    D5) so the run's own output can distinguish a full pass from a partial one.
+    When called standalone (no ``boundary`` supplied) it owns the boundary and
+    prints the coverage summary; when ``cmd_verify`` supplies one, the caller
+    owns the consolidated summary instead.
     """
-    exit_code = cmd_compile(module)
+    owns_summary = boundary is None
+    if boundary is None:
+        boundary = CoverageBoundary()
+
+    exit_code = cmd_compile(module, boundary=boundary)
+    # A freshness-suspect type-check is a fail-closed halt, not a plain failure:
+    # surface the PARTIAL coverage verdict so a reader sees the gate did not
+    # certify the tree, then stop.
+    if exit_code == _FRESHNESS_SUSPECT_RC:
+        if owns_summary:
+            print(render_coverage_summary(boundary))
+        return exit_code
     if exit_code != 0:
         return exit_code
 
@@ -342,6 +465,7 @@ def cmd_quality_gate(module: str | None) -> int:
     exit_code = run(['uv', 'run', 'ruff', 'check'] + paths, f'quality-gate: ruff check {" ".join(paths)}')
     if exit_code != 0:
         return exit_code
+    boundary.record_checked(f'ruff [{", ".join(paths)}]')
 
     # SPDX-header enforcement: every project-owned .py file in scope must carry
     # the FSL-1.1-ALv2 SPDX header. Full-tree runs also cover marketplace/targets
@@ -357,6 +481,7 @@ def cmd_quality_gate(module: str | None) -> int:
         print(f'    Each file must carry "{SPDX_HEADER}" as its first non-shebang, non-encoding-cookie line.', file=sys.stderr)
         return 1
     print('>>> quality-gate: SPDX-header check passed')
+    boundary.record_checked(f'SPDX headers [{", ".join(spdx_paths)}]')
 
     if module is None:
         doctor_script = (
@@ -369,7 +494,12 @@ def cmd_quality_gate(module: str | None) -> int:
             'quality-gate: plugin-doctor static-analysis (marketplace-wide invariants)',
             env=doctor_env,
         )
+        if exit_code != 0:
+            return exit_code
+        boundary.record_checked('plugin-doctor [marketplace-wide]')
 
+    if owns_summary:
+        print(render_coverage_summary(boundary))
     return exit_code
 
 
@@ -407,24 +537,39 @@ def cmd_coverage(module: str | None) -> int:
 
 
 def cmd_verify(module: str | None) -> int:
-    """Run full verification: quality-gate + test-compile + module-tests."""
-    print(f'=== verify: {"all" if not module else module} ===')
+    """Run full verification: quality-gate + test-compile + module-tests.
 
-    exit_code = cmd_quality_gate(module)
+    Threads one :class:`CoverageBoundary` through the type-check steps (plan 160
+    D5) and prints a consolidated coverage verdict: COMPLETE when every dimension
+    was checked over its full scope, PARTIAL — naming the un-certified dimension —
+    when a step was freshness-suspect. A freshness-suspect halt returns
+    :data:`_FRESHNESS_SUSPECT_RC` and prints the PARTIAL verdict so the failure is
+    legible rather than read as a plain error.
+    """
+    print(f'=== verify: {"all" if not module else module} ===')
+    boundary = CoverageBoundary()
+
+    exit_code = cmd_quality_gate(module, boundary=boundary)
     if exit_code != 0:
         print('verify: quality-gate failed', file=sys.stderr)
+        if exit_code == _FRESHNESS_SUSPECT_RC:
+            print(render_coverage_summary(boundary))
         return exit_code
 
-    exit_code = cmd_test_compile(module)
+    exit_code = cmd_test_compile(module, boundary=boundary)
     if exit_code != 0:
         print('verify: test-compile failed', file=sys.stderr)
+        if exit_code == _FRESHNESS_SUSPECT_RC:
+            print(render_coverage_summary(boundary))
         return exit_code
 
     exit_code = cmd_module_tests(module, parallel=True)
     if exit_code != 0:
         print('verify: module-tests failed', file=sys.stderr)
         return exit_code
+    boundary.record_checked('module-tests [whole-tree pytest]' if module is None else f'module-tests [{module}]')
 
+    print(render_coverage_summary(boundary))
     print('=== verify: SUCCESS ===')
     return 0
 

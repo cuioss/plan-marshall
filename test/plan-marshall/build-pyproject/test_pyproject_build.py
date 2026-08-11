@@ -7,6 +7,7 @@ Tests the Python build operations including:
 - execute_direct() - Foundation API (mocked subprocess)
 """
 
+import itertools
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -345,7 +346,12 @@ def test_quality_gate_full_tree_invokes_plugin_doctor():
         invocations.append(list(cmd))
         return 0
 
-    with patch.object(root_build, 'run', side_effect=fake_run):
+    # build.py times each mypy run with time.monotonic() for its freshness
+    # backstop; with `run` stubbed to return instantly, an unpatched clock would
+    # make the whole-tree mypy look implausibly fast and fail closed before the
+    # plugin-doctor step under test. Advance the clock realistically per read.
+    with patch.object(root_build, 'run', side_effect=fake_run), \
+         patch.object(root_build.time, 'monotonic', side_effect=itertools.count(0.0, 60.0)):
         exit_code = root_build.cmd_quality_gate(None)
 
     assert exit_code == 0
@@ -369,7 +375,10 @@ def test_quality_gate_full_tree_propagates_plugin_doctor_failure():
             return 1
         return 0
 
-    with patch.object(root_build, 'run', side_effect=fake_run):
+    # Plausible clock so the freshness backstop does not fire on the stubbed,
+    # instant mypy (see the sibling test above).
+    with patch.object(root_build, 'run', side_effect=fake_run), \
+         patch.object(root_build.time, 'monotonic', side_effect=itertools.count(0.0, 60.0)):
         exit_code = root_build.cmd_quality_gate(None)
 
     assert exit_code == 1, 'cmd_quality_gate must propagate plugin-doctor exit code'
@@ -385,7 +394,10 @@ def test_quality_gate_module_scoped_skips_plugin_doctor():
         invocations.append(list(cmd))
         return 0
 
-    with patch.object(root_build, 'run', side_effect=fake_run):
+    # Plausible clock so the freshness backstop does not fire on the stubbed,
+    # instant mypy (see the full-tree tests above).
+    with patch.object(root_build, 'run', side_effect=fake_run), \
+         patch.object(root_build.time, 'monotonic', side_effect=itertools.count(0.0, 60.0)):
         exit_code = root_build.cmd_quality_gate('plan-marshall')
 
     assert exit_code == 0

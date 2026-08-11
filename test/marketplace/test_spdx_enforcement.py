@@ -113,8 +113,9 @@ def test_quality_gate_fails_when_header_missing(build, tmp_path, monkeypatch):
     _write(test_dir / 'bad.py', ['import os'])  # missing header
 
     # Stub mypy/ruff/doctor so cmd_compile and the ruff run both succeed; the
-    # SPDX check is the only gate that can fail.
-    monkeypatch.setattr(build, 'cmd_compile', lambda module: 0)
+    # SPDX check is the only gate that can fail. The stub accepts ``boundary``
+    # because cmd_quality_gate now threads a coverage boundary into cmd_compile.
+    monkeypatch.setattr(build, 'cmd_compile', lambda module, boundary=None: 0)
     monkeypatch.setattr(build, 'run', lambda *a, **k: 0)
     # Point the module-scoped bundle/test resolution at the temp tree.
     monkeypatch.setattr(build, 'get_bundle_path', lambda module: str(bundle))
@@ -131,7 +132,7 @@ def test_quality_gate_passes_when_all_headers_present(build, tmp_path, monkeypat
     _write(bundle / 'good.py', [HEADER, 'ok = True'])
     _write(test_dir / 'also_good.py', [HEADER, 'fine = True'])
 
-    monkeypatch.setattr(build, 'cmd_compile', lambda module: 0)
+    monkeypatch.setattr(build, 'cmd_compile', lambda module, boundary=None: 0)
     monkeypatch.setattr(build, 'run', lambda *a, **k: 0)
     monkeypatch.setattr(build, 'get_bundle_path', lambda module: str(bundle))
     monkeypatch.setattr(build, 'get_test_path', lambda module: str(test_dir))
