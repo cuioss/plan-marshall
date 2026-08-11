@@ -66,6 +66,67 @@ All output goes to log file. Capture strategy varies per build system:
 
 ---
 
+## Background build execution — reading a long build's completion signal
+
+A build dispatched into the background because it runs long confronts the caller with a question the
+obvious signal cannot answer: **is it still running, or was it killed?** The three rules below are
+**run-observations** — established by watching a long `./pw` build under the harness, not derived from
+a shipped diff. They hold for every build engine, because they are properties of how the executor
+emits output and how the harness backgrounds a job, not of any one wrapper.
+
+### The buffered output file carries no information about a running-vs-killed job
+
+The executor emits its structured result **once, at completion**, so a backgrounded build's captured
+output file is **empty while the build runs**. After the job is killed the file is **also empty** —
+the executor never reached the emit. **The two states are byte-identical.** An empty output file is
+not evidence of "still running" and not evidence of "killed"; it carries no information at all, and
+polling it is reasoning from a constant. Do **not** infer a background build's liveness from its
+output file.
+
+### The `kind=build` change-ledger row is the substitute oracle — read `status`, never mere presence
+
+A build that ran to completion appends a `kind=build` row to the change-ledger, stamped with the
+`worktree_sha` of the tree it built. This row — not the output file — is the oracle for *"did a build
+complete against this working-tree state?"* (see [`../../manage-change-ledger/SKILL.md`](../../manage-change-ledger/SKILL.md)
+§ Entry Shapes).
+
+- **A missing row means no build completed.** A job whose whole process tree is killed dies *before*
+  the dispatch boundary that writes the row, so it stamps nothing: a missing row plus zero output
+  bytes is the whole-tree-kill signature. Treat a missing row as fail-closed evidence that the tree
+  was **not** built — never as "cannot tell."
+- **A present row is NOT unconditionally authoritative — read its `status`.** The row is stamped only
+  for a genuine build-executing dispatch: the stamp predicate is a conjunction — a `build-*` notation
+  **AND** the build-executing `run` verb **AND** no `--help` anywhere in argv — so a query subcommand
+  (`parse`, `discover`, …), a bare `--help`, and a `run --help` probe each write **no** row. But a
+  present row proves only that a build-executing dispatch reached the boundary, **not that the build
+  passed**: only `status == success` is a pass. `status ∈ {error, timeout, killed, unknown}` each fail
+  the freshness gate closed, and `unknown` (exit 0 with no wrapper-claimable status on the payload)
+  records an outcome the boundary could not determine — never read it as a green.
+
+> **Provenance — a corrected form.** An earlier statement of this rule warned that the ledger was
+> merely the *best available* oracle, because a `--help` invocation and a pure log read each stamped a
+> `kind=build` row — an over-inclusiveness that made mere row *presence* untrustworthy. That
+> over-inclusiveness has since been **closed** by the three-way stamp conjunction above (implemented
+> in `tools-script-executor/templates/execute-script.py.template` as `_is_build_class_notation` ANDed
+> with the `_mentions_help` conjunct, and pinned by
+> `test/plan-marshall/tools-script-executor/test_build_class_stamp_discriminator.py`). The surviving
+> caveat is the narrower one stated above: a present row corresponds to a real build-executing
+> dispatch, so read its `status` rather than trusting its presence — the row is not vacuous, but only
+> `status == success` proves the build passed.
+
+### Run a long build in the foreground with an explicit 600000 ms Bash timeout — let the harness auto-background
+
+The mitigation that reliably preserved a long build: invoke it in the **foreground** with an explicit
+Bash timeout of **600000 ms** (the harness Bash ceiling — see [Timeout Management](#timeout-management)
+and [`../../build-pyproject/standards/pyproject-impl.md`](../../build-pyproject/standards/pyproject-impl.md)
+§ "Timeout bound ordering") and let the harness auto-background the job at its own ceiling. The
+observed asymmetry is the point: **harness-initiated auto-backgrounding preserved the job every time;
+caller-initiated background execution was killed twice on the same long build**, producing zero output
+and no ledger row. Do **not** background a long build yourself — run it in the foreground at the
+600000 ms bound and let the harness manage it.
+
+---
+
 ## Acceptable Warnings
 
 ### Configuration
