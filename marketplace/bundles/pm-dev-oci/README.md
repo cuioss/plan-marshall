@@ -8,7 +8,7 @@ This bundle provides comprehensive OCI container expertise through reference ski
 
 ## Components Included
 
-### Skills (3 skills)
+### Skills (4 skills)
 
 1. **oci-standards** - General OCI container practices
    - Image building (minimal bases, multi-stage, pinned versions)
@@ -30,7 +30,7 @@ This bundle provides comprehensive OCI container expertise through reference ski
 
 ### Infrastructure
 
-- **plan-marshall-plugin** - Domain extension for plan-marshall workflow integration (not registered in plugin.json)
+- **plan-marshall-plugin** - Domain extension for plan-marshall workflow integration (extension implementor discovered via the Extension API, registered in plugin.json)
 
 ## Architecture
 
@@ -54,7 +54,7 @@ pm-dev-oci/
     │   └── standards/
     │       ├── suppression.md
     │       └── severity.md
-    └── plan-marshall-plugin/      # Domain extension (not registered)
+    └── plan-marshall-plugin/      # Domain extension (registered)
         ├── SKILL.md
         └── extension.py
 ```

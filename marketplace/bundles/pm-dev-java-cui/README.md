@@ -69,6 +69,15 @@ Recipe for enforcing CUI logging standards across all modules. Discovers modules
 
 **Invoked via:** `/plan-marshall action=recipe` → select "Enforce CUI Logging Standards"
 
+### parse-rewrite-log
+Domain-owned OpenRewrite log-line finding parser for the java-cui domain. Parses the structured WARN lines from the Maven build log, extracting path/line/column/recipe/message per finding and classifying each as newly-detected vs pre-existing.
+
+### search-markers
+Domain-owned OpenRewrite marker detection for the java-cui domain. Scans Java/Kotlin sources for cui-rewrite TODO markers, categorizes them by recipe, and fails the gate on any detected marker.
+
+### plan-marshall-plugin
+Domain manifest with module discovery for plan-marshall workflow integration — the java-cui domain implementor discovered via the Extension API and registered in plugin.json.
+
 ## Usage
 
 Load skills based on project needs:
@@ -83,7 +92,7 @@ skills:
   # CUI-specific (from this bundle)
   - pm-dev-java-cui:cui-logging
   - pm-dev-java-cui:cui-testing
-  - pm-dev-java-cui:cui-logging-enforce
+  - pm-dev-java-cui:recipe-cui-logging-enforce
 ```
 
 ## Dependencies

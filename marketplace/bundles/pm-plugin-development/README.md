@@ -27,24 +27,27 @@ This bundle defines no canonical agents of its own. Plugin-development workflows
 | `plugin-doctor` | Diagnose and fix quality issues with automated safe fixes and prompted risky fixes |
 | `plugin-maintain` | Update components, manage knowledge, maintain READMEs, restructure, and apply orchestration compliance |
 
-### Skills - Context-Loaded (8)
+### Skills - Context-Loaded (11)
 
 These skills are not directly invocable. They are loaded automatically by other components via `Skill:` directives.
 
 | Skill | Description |
 |-------|-------------|
 | `ext-outline-workflow` | Shared workflow steps for plugin development outline, loaded by `phase-3-outline` |
+| `ext-self-review-plan-marshall` | Plan-marshall-domain implementor of the `ext-self-review-{domain}` extension point — surfaces deterministic structural self-review candidates before submission |
 | `ext-triage-plugin` | Triage extension for marketplace plugin findings during plan-finalize phase |
 | `plugin-architecture` | Architecture principles, skill patterns, and design guidance for marketplace components |
 | `plugin-plan-implement` | Implement plugin tasks from plan with step iteration and progress tracking |
 | `plugin-script-architecture` | Script development standards covering implementation patterns, testing, and output contracts |
+| `plugin-security` | Security review and hardening for marketplace meta-project components (Python script surface and markdown trust surface) |
 | `plugin-task-plan` | Create implementation tasks from deliverables using skill delegation |
+| `recipe-fix-argparse-rejection` | Remediation recipe for the argparse-rejection defect class — invented or paraphrased `manage-*` subcommands and flags absent from the script's argparse choices |
 | `tools-marketplace-inventory` | Scan and report complete marketplace inventory (bundles, agents, commands, skills, scripts) |
 | `verification-mode` | Verification mode that stops and analyzes on failures, workarounds, or resolution issues |
 
 ### Extension (1)
 
-Not registered in plugin.json (script-only extension discovered by the Extension API).
+Registered in plugin.json, and also discovered at runtime by the Extension API as this bundle's domain implementor.
 
 | Component | Description |
 |-----------|-------------|

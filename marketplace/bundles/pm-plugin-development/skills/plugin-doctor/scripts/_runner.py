@@ -45,6 +45,7 @@ from _analyze_bash_chain_shapes_in_skills import analyze_bash_chain_shapes_in_sk
 from _analyze_bash_fence_inline_code_exemption import (
     analyze_bash_fence_inline_code_exemption,
 )
+from _analyze_canonical_enum_drift import analyze_canonical_enum_drift
 from _analyze_declared_vs_disk import analyze_declared_vs_disk
 from _analyze_fail_closed_gate_reads import analyze_fail_closed_gate_reads
 from _analyze_finalize_step_token import scan_finalize_step_token
@@ -60,6 +61,7 @@ from _analyze_persona_profile_uniqueness import analyze_persona_profile_uniquene
 from _analyze_plan_path_in_scripts import analyze_plan_path_in_scripts
 from _analyze_plugin_json import analyze_plugin_json_orphans
 from _analyze_provides_method_table import analyze_provides_method_table
+from _analyze_readme_skill_coverage import analyze_readme_skill_coverage
 from _analyze_resolver_matrix_coverage import analyze_resolver_matrix_coverage
 from _analyze_role_field import analyze_role_field
 from _analyze_script_call_drift import analyze_script_call_drift
@@ -231,6 +233,22 @@ class RuleRunner:
             scoped(analyze_provides_method_table(root, cache=cache)),
         )
         emit('literal-count-drift', scoped(analyze_literal_count(root, cache=cache)))
+        # canonical-enum-choices-drift — a documented ``{a|b|c}`` enum in a skill's
+        # ``## Canonical invocations`` block that diverges from the flag's live
+        # argparse ``choices=`` (the same mirror-vs-derived shape as the two rules
+        # above, one surface over from the flag-name check the argument-naming
+        # cluster performs).
+        emit(
+            'canonical-enum-choices-drift',
+            scoped(analyze_canonical_enum_drift(root, cache=cache)),
+        )
+        # readme-skill-registration-drift — a bundle README that fails to name a
+        # skill its plugin.json registers (the same mirror-vs-derived shape, one
+        # surface out: README enumeration vs plugin.json registration).
+        emit(
+            'readme-skill-registration-drift',
+            scoped(analyze_readme_skill_coverage(root)),
+        )
 
         # markdown-mirror cluster — one analyzer call, TWO summary entries
         # partitioned by rule_id (de-registration of either regresses the build).
@@ -339,6 +357,8 @@ class RuleRunner:
         issues.extend(analyze_plugin_json_orphans(root))
         issues.extend(analyze_provides_method_table(root, cache=cache))
         issues.extend(analyze_literal_count(root, cache=cache))
+        issues.extend(analyze_canonical_enum_drift(root, cache=cache))
+        issues.extend(analyze_readme_skill_coverage(root))
         issues.extend(analyze_skill_notation(root))
         issues.extend(analyze_frontmatter(root))
         issues.extend(analyze_resolver_matrix_coverage(root, cache=cache))

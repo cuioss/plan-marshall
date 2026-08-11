@@ -89,6 +89,8 @@ GOLDEN_QG_LABELS = [
     'analyze_persona_binding_resolves',
     'provides-method-table-drift',
     'literal-count-drift',
+    'canonical-enum-choices-drift',
+    'readme-skill-registration-drift',
     'broken-relative-link',
     'fenced-code-no-language',
     'analyze_fail_closed_gate_reads',
