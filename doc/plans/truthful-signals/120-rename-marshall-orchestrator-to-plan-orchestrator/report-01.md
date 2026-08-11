@@ -17,7 +17,7 @@ No skill was unreachable by both routes.
 
 **D0 — GATE: re-derive the surface at HEAD (mutates nothing).**
 - Derivation population: `Grep` over the whole working tree (ripgrep, which honours `.gitignore`, so `.plan/` is excluded — consistent with D6).
-- Hyphen token `marshall-orchestrator`: **265 matching lines across 74 files**. Underscore form `marshall_orchestrator`: **0** (no Python identifier uses it). Only other-cased variant: the single uppercase identifier `_MARSHALL_ORCHESTRATOR_SKILL` (3 uses, one test file).
+- Hyphen token `marshall-orchestrator`: **265 matching lines across 74 files**. Underscore form `marshall_orchestrator`: **0** (no Python identifier uses it). Other-cased variants found in the initial sweep: the single uppercase identifier `_MARSHALL_ORCHESTRATOR_SKILL` (3 uses, one test file). ⚠ **The initial variant sweep was incomplete** — it did not cover the **space-separated title-case display form** `Marshall Orchestrator`, which survived in two `SKILL.md` H1 headings and was caught by the verification sub-agent (findings #1/#2 below, fixed). A later exhaustive `Marshall.Orchestrator` sweep confirmed exactly those two and no others.
 - **Subset relation confirmed** (claim-label check): `persona-marshall-orchestrator` is a strict substring of `marshall-orchestrator`, so a single exact-token replace `marshall-orchestrator` → `plan-orchestrator` transforms BOTH skills and the 3-part notation, and the file count is the union (74), not a sum.
 - **Classification** (rename-target vs must-not-touch): rename-target = all `marketplace/**`, `test/**`, `plugin.json`, `README.md`, live docs (`doc/concepts/**`, `doc/user/**`, `doc/adr/016`), living orientation doc `doc/plans/README.md`, and governance docs `CLAUDE.md` + `.claude/skills/cloud-plan-lane/SKILL.md` (each carried a now-stale `/marshall-orchestrator` command reference). Must-not-touch = records and other-plan specs under `doc/plans/**` (the 6 other pending specs + the 090 historical report + this plan's own `plan.md`/`report-01.md`) and the exclusion set.
 - **Exclusion set derived, not assumed** — each confirmed to exist under its own name via `git ls-files`: `marshall-steward/` skill, `marshalld.py`/`_marshalld_*.py`, `marshal.json`, `plan-marshall` bundle. None contains the substring `marshall-orchestrator`, so the exact-token replace structurally cannot touch them.
@@ -45,9 +45,22 @@ No skill was unreachable by both routes.
 
 ## Findings
 
-- **Scope decision (recorded, not a defect):** `doc/plans/**` records/other-plan specs left untouched (29 occurrences preserved across 8 tracked files + this run's own docs), on the plan's "records are not source" (D6) / "report-not-fix" / "re-grounds exactly one spec" principles. `doc/plans/README.md` (living doc) and governance docs `CLAUDE.md`, `cloud-plan-lane/SKILL.md` updated. This is a defensible reconciliation of D5's literal "zero under doc/" with the plan's own philosophy; flagged for sub-agent/reviewer scrutiny.
-- Pre-PR verification sub-agent: _dispatched; findings pending._
-- CI / PR review: _pending._
+Recorded per instance; source, description, disposition.
+
+**Pre-PR verification sub-agent (run 1)** — verified against the plan's D0–D6; independently reproduced the zero-in-scope sweep, exclusion-set integrity, and the "purely cosmetic" store-key guarantee (`ORCHESTRATOR_STORE = 'orchestrator'` unchanged). Four findings:
+
+1. **[MEDIUM → FIXED]** `plan-orchestrator/SKILL.md:8` H1 heading was still `# Marshall Orchestrator Skill` (space-separated title-case form the exact-token substitution did not match). Fixed → `# Plan Orchestrator Skill`.
+2. **[MEDIUM → FIXED]** `persona-plan-orchestrator/SKILL.md:10` H1 heading was still `# Persona: Marshall Orchestrator`. Fixed → `# Persona: Plan Orchestrator`. After fixing, an exhaustive `Marshall.Orchestrator` sweep across the whole tree (excluding `doc/plans/`) returned **zero**, confirming #1/#2 were the complete title-case residue.
+3. **[LOW → FIXED]** The report's D0 completeness claim understated the variant coverage (missed the title-case form). Corrected in the Deliverables §D0 above.
+4. **[LOW/informational → DEFERRED, deliberate]** `plugin.json` skill arrays: the two renamed entries kept their old array positions, so they no longer sit in local alphabetical order. plugin-doctor does not gate ordering (gate clean), and the array is not strictly alphabetical to begin with (`ref-code-quality` already sits among `build-*`). Left un-re-sorted per the plan's minimal-collateral / "report-not-fix" posture — re-sorting would add review burden to a PR whose budget is verifying nothing changed. Recorded here transparently rather than silently fixed.
+
+**False positives ruled out (not findings):** `plan-marshall orchestrator` (a space-separated descriptive phrase = bundle name + generic "orchestrator") in `manage-metrics/SKILL.md`, `extension-api/.../marshal-json-reference.md`, `doc/concepts/token-management.adoc`, and four `doc/resources/diagrams/*.svg` — pre-existing prose, NOT the renamed skill identifier, correctly untouched.
+
+**Scope decision (recorded, not a defect):** `doc/plans/**` records/other-plan specs left untouched (29 occurrences preserved across 8 tracked files + this run's own docs), on the plan's "records are not source" (D6) / "report-not-fix" / "re-grounds exactly one spec" principles. `doc/plans/README.md` (living doc) and governance docs `CLAUDE.md`, `cloud-plan-lane/SKILL.md` updated. Sub-agent assessed this as "defensible, with one honest caveat: D5's literal 'zero under doc/' is not met" — the D5-vs-D6 tension was resolved in favor of D6 and recorded, not asserted as literal D5 compliance.
+
+**Post-fix build:** `./pw quality-gate` after the heading fixes → mypy/ruff/SPDX clean, plugin-doctor `status: pass, total_issues: 0` (35 rules), including `broken-relative-link: 0` and `readme-skill-registration-drift: 0`.
+
+- CI / PR review: _pending (post-PR)._
 
 ## Reviewer participation
 

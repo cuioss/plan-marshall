@@ -5,7 +5,7 @@ user-invocable: true
 mode: workflow
 ---
 
-# Marshall Orchestrator Skill
+# Plan Orchestrator Skill
 
 Verb router for epic orchestration. Sits ABOVE the plan lifecycle: it manages the persisted ledger under `.plan/local/orchestrator/{slug}/`, stages plans, and hands work down to `/plan-marshall` — it never implements anything itself.
 
