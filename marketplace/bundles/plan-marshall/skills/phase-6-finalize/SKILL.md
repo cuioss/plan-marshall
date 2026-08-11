@@ -41,9 +41,9 @@ Skill: plan-marshall:tools-integration-ci
 **Constraints:**
 - Strictly comply with all rules from persona-plan-marshall-agent, especially tool usage and workflow step discipline
 
-## Exit-code convention for `manage-*` script calls
+## Exit-code convention for every script call
 
-Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+Every `python3 .plan/execute-script.py` call in this document — of EVERY notation, **not only `manage-*`** — carries the following exit-code contract unless a step explicitly states otherwise. The scope is widened past `manage-*` because the swallowed-rejection failures this convention exists to prevent reached non-`manage-*` calls (`github_pr`, `review_completeness`, `ci`) in the review-and-merge path; a `manage-*`-only scope left them uncovered.
 
 - **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
 - **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.

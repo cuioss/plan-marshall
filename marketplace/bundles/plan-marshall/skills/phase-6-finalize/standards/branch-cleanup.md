@@ -54,12 +54,14 @@ Pure executor for the `branch-cleanup` finalize step. Switches back to base bran
 
 This step's late pre-merge rebase (`order: 70`, onto the newly-fetched `origin/{base_branch}` tip) advances `main` when it is a non-noop, so the step is declared `advances_main_via_rebase: true` in its frontmatter — the fact that arms the dispatcher's **post-rebase step-doc re-resolution contract** (see `phase-6-finalize/SKILL.md` Step 3): every subsequent step's authoritative doc is re-read from the just-rebased `{worktree_path}` at dispatch time rather than trusting the session-start-loaded copy.
 
-## Exit-code convention for `manage-*` script calls
+## Exit-code convention for every script call
 
-Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
+Every `python3 .plan/execute-script.py` call in this document — of EVERY notation, **not only `manage-*`** — carries the following exit-code contract unless a step explicitly states otherwise. The scope is deliberately widened past `manage-*`: the swallowed-rejection failures this convention exists to prevent reached `github_pr`, `review_completeness`, and `ci`, none of which is `manage-*`, and every one of which the review-and-merge path below invokes. A convention scoped to `manage-*` alone left exactly those three calls uncovered.
 
 - **`exit_code == 0`**: parse the returned TOON and use the value as the step describes.
-- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden.
+- **`exit_code != 0`**: STOP and return an error TOON to the orchestrator carrying the script's stderr verbatim. Non-zero exits include `argparse_rejection` (exit 2) — silent swallowing of `wrong_parameters` rejections is the prohibited anti-pattern; "log and continue" is equally forbidden. A `github_pr` / `review_completeness` / `ci` rejection a step reads as an empty-but-clean result is exactly that swallow.
+
+A step MAY carry a STRICTER disposition than "STOP and return an error" — the pre-merge barrier's two § "UNKNOWN — …" branches route a failed `fetch_findings` / `ci checks pull-request-runs` / `review_completeness check` into an explicit UNKNOWN verdict that blocks the merge and is never authorizable. That is this convention's "unless a step explicitly states otherwise" at work: a tighter handling of the same non-zero exit, never a licence to swallow it.
 
 Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., `manage-status get-worktree-path` returning an empty `worktree_path`) — are documented inline in the step that issues them.
 

@@ -142,13 +142,28 @@ class TestEvidenceTyping:
         assert rc.parse_participation('coderabbit:issue_comment') == {}
 
     def test_unqualified_presence_is_rejected(self, plan_context):
-        """A bare ``bot_kind`` with no evidence kind proves nothing.
+        """A bare ``bot_kind`` with no evidence kind is REJECTED, never silently dropped.
 
-        This is the contract that changed: the mere existence of a comment
-        resolving to a bot's login used to credit it. Presence is not evidence.
+        Unqualified presence still proves nothing — but the disposition is now a loud
+        caller error, not a silent drop. Silently dropping a bare kind resolves the bot
+        to ``absent`` (a blocking member) and manufactures a confident false merge block
+        against a bot the caller meant to record as a participant; that polarity-selecting
+        misparse is what D1 closes. A pair with an empty side is the same shape violation.
         """
-        assert rc.parse_participation('coderabbit') == {}
-        assert rc.parse_participation('coderabbit,sourcery') == {}
+        with pytest.raises(rc.MalformedBotFlag):
+            rc.parse_participation('coderabbit')
+        with pytest.raises(rc.MalformedBotFlag):
+            rc.parse_participation('coderabbit,sourcery')
+        with pytest.raises(rc.MalformedBotFlag):
+            rc.parse_participation('coderabbit:')
+        with pytest.raises(rc.MalformedBotFlag):
+            rc.parse_participation(':inline')
+        # A well-formed pair whose evidence kind is inadmissible is a SEMANTIC
+        # non-match, not a shape error, and stays a silent drop (diff-derived-evidence).
+        assert rc.parse_participation('coderabbit:pr_body') == {}
+        # The empty-list forms are never malformed.
+        assert rc.parse_participation('') == {}
+        assert rc.parse_participation('  ,  ') == {}
 
     def test_unknown_bot_can_never_be_proven(self, plan_context):
         """A bot with no registry record declares no evidence → fail-closed."""
@@ -1283,7 +1298,14 @@ class TestCLI:
         assert '--not-triggered' in docstring
 
     def test_unqualified_participated_bot_is_rejected_via_cli(self, plan_context):
-        """A bare bot_kind on the CLI does not prove participation either."""
+        """A bare bot_kind on the CLI is a VISIBLE caller error, not an absent verdict.
+
+        The D1 disposition through the real parser: a bare kind fed to the pair-form
+        ``--participated-bots`` exits non-zero with ``status: error`` and NO
+        ``participation_complete`` field (read as an UNKNOWN verdict), instead of the
+        pre-fix silent ``coderabbit,absent`` verdict that manufactured a false merge
+        block over a bot the caller meant to record as a participant.
+        """
         plan_id = 'rc-cli-bare'
         plan_context.plan_dir_for(plan_id)
 
@@ -1298,9 +1320,10 @@ class TestCLI:
             'coderabbit',
         )
 
-        assert result.success, result.stderr
-        assert 'participation_complete: false' in result.stdout
-        assert 'coderabbit,absent' in result.stdout
+        assert result.returncode == 1, result.stderr
+        assert 'status: error' in result.stdout
+        assert 'malformed_bot_flag' in result.stdout
+        assert 'participation_complete' not in result.stdout
 
     def test_optional_bots_flag_does_not_gate(self, plan_context):
         plan_id = 'rc-cli-optional'
@@ -1372,6 +1395,155 @@ class TestCLI:
 
         assert result.success, result.stderr
         assert 'participation_complete: true' in result.stdout
+
+
+# =============================================================================
+# Malformed bot-flag rejection (D1) — a wrong-form token is a loud caller error
+# =============================================================================
+
+
+class TestMalformedBotFlagRejection:
+    """A token forwarded to the wrong flag FORM is a loud caller error, both directions.
+
+    D1's ``Done when``, pinned end to end: a pair fed to a bare-form flag, and a bare
+    kind fed to a pair-form flag. Each is a VISIBLE caller error — non-zero exit,
+    ``status: error``, and NO ``participation_complete`` field, so the caller reads it
+    as an UNKNOWN verdict — never the pre-fix silent ``absent`` verdict that
+    manufactured a confident false merge block over a misparsed population.
+    """
+
+    # --- Unit level: the two parsers reject the wrong form ---
+
+    def test_parse_participation_rejects_a_bare_kind(self, plan_context):
+        """The pair-form parser rejects a colonless token."""
+        with pytest.raises(rc.MalformedBotFlag):
+            rc.parse_participation('coderabbit')
+
+    def test_parse_participation_rejects_an_empty_sided_pair(self, plan_context):
+        """An empty bot_kind or evidence_kind is a shape violation."""
+        for bad in ('coderabbit:', ':inline'):
+            with pytest.raises(rc.MalformedBotFlag):
+                rc.parse_participation(bad)
+
+    def test_parse_participation_names_the_flag_in_the_error(self, plan_context):
+        """The caller error names WHICH flag was misused, so the fix is obvious."""
+        with pytest.raises(rc.MalformedBotFlag, match='--stale-participation-bots'):
+            rc.parse_participation('coderabbit', '--stale-participation-bots')
+
+    def test_split_bots_rejects_a_pair(self, plan_context):
+        """The bare-form splitter rejects a pair-shaped (colon-bearing) token."""
+        with pytest.raises(rc.MalformedBotFlag):
+            rc._split_bots('coderabbit:inline', '--refused-bots')
+
+    def test_split_bots_accepts_bare_and_empty(self, plan_context):
+        """The bare and empty-list forms are never malformed — only a pair is."""
+        assert rc._split_bots('coderabbit,sourcery', '--refused-bots') == ['coderabbit', 'sourcery']
+        assert rc._split_bots('', '--refused-bots') == []
+        assert rc._split_bots('  ,  ', '--refused-bots') == []
+
+    # --- CLI level: both directions are visible caller errors ---
+
+    def test_bare_kind_to_pair_form_flag_is_a_caller_error(self, plan_context):
+        """Direction 1 — a bare kind fed to a pair-form flag exits non-zero, no verdict."""
+        plan_id = 'rc-malformed-bare-to-pair'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'coderabbit',
+            '--participated-bots',
+            'coderabbit',
+        )
+
+        assert result.returncode == 1, result.stderr
+        assert 'status: error' in result.stdout
+        assert 'malformed_bot_flag' in result.stdout
+        assert 'participation_complete' not in result.stdout
+
+    def test_pair_to_bare_form_flag_is_a_caller_error(self, plan_context):
+        """Direction 2 — a pair fed to a bare-form flag exits non-zero, no verdict.
+
+        ``--refused-bots`` is bare-form; the producer emits ``refused_bots[]`` as bare
+        kinds, so a pair here is a caller error, symmetric with direction 1.
+        """
+        plan_id = 'rc-malformed-pair-to-bare'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'coderabbit',
+            '--refused-bots',
+            'coderabbit:inline',
+        )
+
+        assert result.returncode == 1, result.stderr
+        assert 'status: error' in result.stdout
+        assert 'malformed_bot_flag' in result.stdout
+        assert 'participation_complete' not in result.stdout
+
+
+# =============================================================================
+# --stale-participation-bots is pair-form (D1/D2) — matches the producer's shape
+# =============================================================================
+
+
+class TestStaleParticipationIsPairForm:
+    """``--stale-participation-bots`` takes evidence-typed pairs, matching the producer.
+
+    The producer emits ``stale_participation_bots[]`` as ``{bot_kind, evidence_kind}``
+    pairs, identical to ``participated_bots[]``. Making the consumer flag pair-form is
+    the root fix for "the producer emits pairs for both while the flags require
+    different forms": the producer's output forwards to ``--stale-participation-bots``
+    verbatim, and the classifier reads only the bot_kind.
+    """
+
+    def test_pair_form_stale_classifies_participated_stale(self, plan_context):
+        """A pair — the producer's exact shape — classifies the bot participated_stale."""
+        plan_id = 'rc-stale-pair'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'pr-agent',
+            '--stale-participation-bots',
+            'pr-agent:issue_comment',
+        )
+
+        assert result.success, result.stderr
+        assert 'participation_complete: false' in result.stdout
+        assert 'pr-agent,participated_stale' in result.stdout
+
+    def test_bare_kind_to_stale_flag_is_rejected(self, plan_context):
+        """A BARE kind on the now-pair-form flag is a caller error — the other D1 half."""
+        plan_id = 'rc-stale-bare'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            SCRIPT_PATH,
+            'check',
+            '--plan-id',
+            plan_id,
+            '--required-bots',
+            'pr-agent',
+            '--stale-participation-bots',
+            'pr-agent',
+        )
+
+        assert result.returncode == 1, result.stderr
+        assert 'malformed_bot_flag' in result.stdout
+        assert 'participation_complete' not in result.stdout
 
 
 # =============================================================================
