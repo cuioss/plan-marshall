@@ -137,7 +137,7 @@ session_message_count: 127
 | `idle_duration_ms` | int | Derived by `generate` — the per-phase idle residual `max(0, wall_clock_ms - worked_ms)` |
 | `cache_read_per_tool_use` | int | Derived by `generate` — `round(cache_read_input_tokens / tool_uses)`, the resident-context factor of the read-cost decomposition (see § Read-Cost Decomposition). Written ONLY when both operands are present and `tool_uses > 0`; absent otherwise, never a guessed `0`. A **derived-cost** ratio whose numerator and denominator are DIFFERENT populations (main-context-window cache_read over dispatched-subagent tool_uses) — read it as a cost-decomposition factor, never as a single-population measurement |
 | `dispatch_boundary_total` | int | Derived by `generate` — the sum of the `total_tokens` column across the phase's `work/metrics-dispatch-boundaries-{phase}.toon` rows. Persisted as a DISTINCT field (it never overwrites `total_tokens`); present only when the boundary file exists and sums to a truthy value. See Dispatch-Boundary Reconciliation below |
-| `dispatch_boundary_rows_recorded` | int | Derived by `generate` — the number of data rows summed into `dispatch_boundary_total`. Persisted whenever the boundary file held at least one parseable row, INCLUDING when those rows sum to zero. This is the boundary measure's **coverage**: compared against `subagent_samples` it decides whether the measure is partial and therefore ineligible for the reconciliation maximum |
+| `dispatch_boundary_rows_recorded` | int | Derived by `generate` — the number of data rows summed into `dispatch_boundary_total`. Persisted whenever the boundary file held at least one parseable row, INCLUDING when those rows sum to zero. This is the boundary measure's **coverage** against `subagent_samples`: `<` is partial (a floor), `==` is exact agreement, `>` is an impossible over-coverage FAILURE (the two counts are cross-population). A partial OR over measure is ineligible for the reconciliation maximum |
 | `inline_main_context_tokens` | int | Derived by `enrich` — `input_tokens + output_tokens + cache_creation_input_tokens` (EXCLUDING `cache_read_input_tokens`) surfaced on ANY phase whose window carries a non-zero `input_tokens + output_tokens + cache_creation_input_tokens` sum — a phase carrying only `cache_read_input_tokens` therefore receives no field — whether or not a dispatched `total_tokens` also exists. It is the inline measurement's own population-honest name, so the figure is never readable only through the dispatched-population `total_tokens` field. See Inline Main-Context Attribution below |
 | `boundary_non_monotonic` | `true` token | Derived by `generate` — set on a phase whose `start_time` precedes the maximum `end_time` of earlier phases in canonical order (a finalize loop-back re-entry). Read-only annotation; the recorded `start_time` / `end_time` are never rewritten. See Boundary Monotonicity below |
 | `exploration_tool_calls` | int | `enrich` tool-call walk — count of tool calls in this phase's window classified as *exploration* (locate or inspect existing state) |
@@ -284,6 +284,16 @@ so. Two eligibility rules keep the comparison honest:
    `subagent_samples`: an un-enriched row has no reference count, and treating
    undecidable as partial would refuse the maximum on every un-enriched plan and
    lose the accumulator-under-count recovery the reconciliation exists for.
+   Coverage is a **failure** (`over`) when
+   `dispatch_boundary_rows_recorded > subagent_samples`: the numerator exceeds the
+   denominator, which is impossible for one population — the numerator
+   (boundary rows, written by `record-dispatch-boundary`) and the denominator
+   (`subagent_samples`, from `enrich`'s transcript walk) are then drawn from
+   different populations (e.g. a resumed / re-entered phase appends boundary rows
+   the single-window walk never re-counts). An over-covering measure is rendered
+   as a loud `FAILURE` that names both producers — never `complete` — and is
+   **ineligible** for the maximum, so an inflated / double-counted figure cannot
+   feed the Total.
 2. **A measure of a different population may not enter.** On a row whose
    `total_tokens_population` is `inline`, `total_tokens` carries a
    main-context-window measurement (see Inline Main-Context Attribution), so it
@@ -305,14 +315,34 @@ The reconciliation is **generate-side / render-time**:
   `dispatch_boundary_total` / `dispatch_boundary_rows_recorded` fields.
 - The winning measure supplies the Phase Breakdown `Tokens` cell and feeds the
   Total. When the winner is NOT `total_tokens`, an annotation line under the
-  table names the phase, **which measure won**, its value, and the
-  `total_tokens` it beat.
+  table names the phase, **which measure won**, its value, and its **true
+  relation** to the `total_tokens` it met: `> total_tokens N` (recovered an
+  under-count), `= total_tokens N; measures agree` (the reconciliation identity —
+  two independent producers agree exactly, the most valuable signal the surface
+  emits), or `< total_tokens N` (a genuine anomaly). An exact agreement is never
+  dressed up as a strict inequality.
 - The `Dispatch-boundary total` bullet states the measure's coverage on every
-  render (complete / partial / undecidable) and whether it won the maximum. It
-  no longer asserts an unqualified "same-population max" — a partial measure has
-  not earned that claim.
+  render (complete / partial / undecidable / **failure** over-coverage) and
+  whether it won the maximum. It no longer asserts an unqualified "same-population
+  max" — a partial measure has not earned that claim.
 - When the boundary file is absent (no rows) the reconciliation is a clean
   no-op — no field is persisted and the render is unchanged.
+
+### The declared dispatch-boundary population
+
+`dispatch_boundary_rows_recorded` counts only the dispatch classes that call
+`record-dispatch-boundary` — a **declared subset** of the dispatched population
+`enrich` samples as `subagent_samples`, never the whole of it. The classes that
+register no boundary are named in the source-derived
+`DISPATCH_BOUNDARY_EXCLUDED_CLASSES` constant (derived from the call graph in
+`ref-workflow-architecture/standards/call-graph.md`, not from any single run):
+of the 9 dispatch classes, 3 register a boundary (phase-4-plan, phase-5-execute,
+phase-6-finalize) and 6 do not (phase-2-refine, phase-3-outline, q-gate-validation,
+verification-feedback, research, enrich-module). Whenever the report carries a
+boundary numerator or a `subagent_samples` denominator, a declaration line names
+those excluded classes so a `dispatch_boundary_rows_recorded < subagent_samples`
+shortfall reads as a **declared** exclusion rather than as missing data — silent
+exclusion is the defect the ledger exists to avoid.
 
 The `#812` `end_time`-presence check (`any_phase_missing_end_time` /
 `phases_missing_end_time`) is untouched by this reconciliation.
