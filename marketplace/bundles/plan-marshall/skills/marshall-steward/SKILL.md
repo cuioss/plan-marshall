@@ -479,16 +479,17 @@ idempotent (an already-clean project is left byte-stable).
 Steps (a), (b), (d), (e), and (f) are deterministic script calls that are silent
 by default — they run unconditionally and leave an already-normalized project
 unchanged. They surface nothing to the user EXCEPT for the documented warning
-conditions of steps (d) and (e): step (d)'s session-restart warning when it
-regenerates the executor, and step (e)'s detect/warn advisory when the reconcile
-could not see the current config seed. Step (c) is an LLM-driven Y/N
+conditions of steps (a), (d), and (e): step (a)'s `unrecognized_keys` warning when
+`normalize-keys` finds a top-level key it cannot order, step (d)'s session-restart
+warning when it regenerates the executor, and step (e)'s detect/warn advisory when
+the reconcile could not see the current config seed. Step (c) is an LLM-driven Y/N
 `AskUserQuestion` gate that consumes a deterministic diff, mirroring the existing
 entry-time `check-working-prefixes` / missing-default surfacing.
 
-**(a) Normalize `marshal.json` top-level key order** (silent, unconditional).
-Re-write `marshal.json` with the canonical `save_config` key order. Pre-fix
-projects accumulated a non-canonical top-level key order; this re-orders them
-without touching values:
+**(a) Normalize `marshal.json` top-level key order** (silent on a canonical file,
+unconditional). Re-write `marshal.json` with the canonical `save_config` key order.
+Pre-fix projects accumulated a non-canonical top-level key order; this re-orders
+them without touching values:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config normalize-keys
@@ -496,6 +497,10 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config normal
 
 See the `manage-config` Canonical invocations (`normalize-keys`) for the verb
 shape. The call is idempotent — an already-canonical file is left byte-stable.
+When it returns `status: warning` with a non-empty `unrecognized_keys`, surface
+that list to the operator: those top-level keys are absent from the canonical order
+and were preserved but appended out of position (a stray or consumer-added block),
+which `normalize-keys` cannot place and does not drop.
 
 **(b) Consolidate duplicate managed `.gitignore` blocks** (silent,
 unconditional). Run the `.gitignore` setup script via the executor/bootstrap.
