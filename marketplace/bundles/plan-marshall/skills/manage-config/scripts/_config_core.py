@@ -7,6 +7,7 @@ and error handling used by all command modules.
 """
 
 import hashlib
+import itertools
 import json
 import os
 from pathlib import Path
@@ -81,7 +82,24 @@ class ConcurrentConfigModificationError(Exception):
 # process) operating on more than one marshal.json never cross-triggers. A write
 # with no prior recorded load (e.g. ``init`` creating the file) is unguarded, so
 # the guard protects exactly the load→modify→save window that can lose an update.
+#
+# Scope: this map is per-process module state, which is exactly the granularity
+# the threat model needs. The lost update these CLI verbs can actually suffer is
+# CROSS-process — two concurrent ``manage-config`` / ``marshall-steward``
+# invocations, each its own process with its own copy of this map — and there the
+# guard fails closed (the second process's recorded load fingerprint no longer
+# matches the disk the first process rewrote). It does NOT serialize two
+# concurrent writers sharing ONE process: they share this map, so the first
+# save's fingerprint update becomes the second's baseline. These one-shot CLI
+# verbs never mutate the config from two in-process writers concurrently, and
+# serializing that case would require a per-load token or a held file lock — the
+# general locking primitive the plan deliberately leaves out of scope.
 _CONFIG_FINGERPRINTS: dict[str, str] = {}
+
+# Monotonic per-process counter for unique temp-file names in the atomic write,
+# so two writes never collide on a temp name (pid alone is shared across a
+# process's threads).
+_SAVE_SEQ = itertools.count()
 
 
 def _content_fingerprint(text: str) -> str:
@@ -171,9 +189,13 @@ def save_config(config: dict) -> None:
     save), the save is refused with :class:`ConcurrentConfigModificationError`
     rather than silently clobbering the other writer's change. A save with no
     prior recorded load for this path (e.g. ``init`` creating the file) is
-    unguarded. The write itself is atomic (temp file in the same directory +
-    :func:`os.replace`) so a crashed or interrupted writer never leaves a
-    half-written config behind.
+    unguarded. The write itself is atomic (a uniquely-named temp file in the same
+    directory + :func:`os.replace`) so a crashed or interrupted writer never
+    leaves a half-written config behind.
+
+    The guarantee is CROSS-process, which is the mode these one-shot CLI verbs can
+    actually race in — see :data:`_CONFIG_FINGERPRINTS` for why per-process state
+    is the right granularity and what it deliberately does not cover.
     """
     MARSHAL_PATH.parent.mkdir(parents=True, exist_ok=True)
     ordered = order_config_keys(config)
@@ -189,7 +211,9 @@ def save_config(config: dict) -> None:
                 'overwrite a concurrent write. Reload the config and re-apply the change.'
             )
 
-    tmp_path = MARSHAL_PATH.with_name(f'{MARSHAL_PATH.name}.tmp.{os.getpid()}')
+    # Unique temp name per write (pid + monotonic counter) so concurrent writes
+    # never share a temp file; os.replace then swaps it in atomically.
+    tmp_path = MARSHAL_PATH.with_name(f'{MARSHAL_PATH.name}.tmp.{os.getpid()}.{next(_SAVE_SEQ)}')
     tmp_path.write_text(payload, encoding='utf-8')
     os.replace(tmp_path, MARSHAL_PATH)
     _CONFIG_FINGERPRINTS[key] = _content_fingerprint(payload)
