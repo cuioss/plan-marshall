@@ -216,7 +216,7 @@ Project-level settings (committed, shared via git). Seeded on `init` and back-fi
 
 ## Section: orchestrator
 
-A top-level block **sibling of `plan`** (not a child of it) governing the epic-orchestration identity (`marshall-orchestrator`). It carries three key families: the `effort` sub-block (per-surface effort of the orchestrator's read-only dispatch surfaces behind an uplift ceiling), the `parallelization_scope` scalar (the per-epic ask's project default), and the `auto_emit` autonomy knob (the orchestrator-tier analog of the plan-tier `finalize_without_asking` / `loop_back_without_asking` family). `init` seeds the block with `auto_emit` at its safe default (`false`); `sync-defaults` back-fills it non-destructively into existing projects (the same deep-merge `project` relies on). The `effort` and `parallelization_scope` slots stay **unset** until written and are behaviourally inert while unset — with them unset everywhere, every reader resolves exactly as it did before this block existed: `plan.effort` supplies the baseline for the orchestrator's three read-only dispatch surfaces, the uplift ceiling is an unset-no-op, and `parallelization_scope` falls back to the hard-coded default of `1`. `save_config` orders the block canonically immediately after `plan` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`). The scalar knobs are additively shaped: `orchestrator get`/`set --field` and its known-field whitelist are the extension seam a future scalar knob folds into without a schema rework.
+A top-level block **sibling of `plan`** (not a child of it) governing the epic-orchestration identity (`marshall-orchestrator`). It carries three key families: the `effort` sub-block (per-surface effort of the orchestrator's read-only dispatch surfaces behind an uplift ceiling), the `parallelization_scope` scalar (the per-epic ask's project default), and the `auto_emit` autonomy knob (the orchestrator-tier analog of the plan-tier `finalize_without_asking` / `loop_back_without_asking` family). `init` seeds the block with all three key families at their effective defaults — `auto_emit` at its safe default (`false`), the `effort` sub-block as an empty object (`{}`), and `parallelization_scope` at its effective default (`1`); `sync-defaults` back-fills the block non-destructively into existing projects (the same deep-merge `project` relies on). Every knob is materialised so it is discoverable in `marshal.json`, and each resolves exactly as it did before it was seeded — surfacing changes discoverability, not behaviour. The empty `effort` object still falls through to `plan.effort` for the orchestrator's three read-only dispatch surfaces (the uplift ceiling stays an unset-no-op), and `parallelization_scope` `1` is the ask's hard-coded default, so a materialised `1` pre-fills the per-epic ask exactly as the unset key did. `save_config` orders the block canonically immediately after `plan` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`). The scalar knobs are additively shaped: `orchestrator get`/`set --field` and its known-field whitelist are the extension seam a future scalar knob folds into without a schema rework.
 
 ### Structure
 
@@ -236,7 +236,7 @@ A top-level block **sibling of `plan`** (not a child of it) governing the epic-o
 }
 ```
 
-`effort` may also be a bare string (single-level shorthand applying to every orchestrator surface) instead of the object form above. A block carrying only the seeded `auto_emit`, or one missing any of the three key families, is equally legal — every field below resolves to its documented fallback when absent.
+`effort` may also be a bare string (single-level shorthand applying to every orchestrator surface) instead of the object form above. A block carrying only `auto_emit`, or one missing any of the three key families (as a legacy pre-materialisation config does), is equally legal — every field below resolves to its documented fallback when absent.
 
 ### `orchestrator.effort`
 
@@ -278,7 +278,7 @@ Read/write via `manage-config orchestrator get/set --field auto_emit`: `get` ret
 
 ### Validation
 
-The whole block is validated by `validate_orchestrator_block` (`_config_defaults.py`): the seeded shape (`{"auto_emit": false}`) passes trivially; a populated block rejects any top-level key outside `{effort, parallelization_scope, auto_emit}`, any `orchestrator.effort` object key outside `{analyze, decompose, reader, default, max}`, any non-`ALLOWED_LEVELS` effort value, a `parallelization_scope` that is not an int `>= 1`, and an `auto_emit` that is not a bool.
+The whole block is validated by `validate_orchestrator_block` (`_config_defaults.py`): the seeded shape (`{"auto_emit": false, "effort": {}, "parallelization_scope": 1}`) passes trivially, as does a legacy block carrying only `{"auto_emit": false}`; a populated block rejects any top-level key outside `{effort, parallelization_scope, auto_emit}`, any `orchestrator.effort` object key outside `{analyze, decompose, reader, default, max}`, any non-`ALLOWED_LEVELS` effort value, a `parallelization_scope` that is not an int `>= 1`, and an `auto_emit` that is not a bool.
 
 ## Section: plan.phase-6-finalize step params — review-bot participation
 

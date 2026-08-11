@@ -109,12 +109,13 @@ def test_sync_defaults_empty_marshal_gains_all_defaults(plan_context):
 
 
 def test_sync_defaults_backfills_orchestrator_block(plan_context):
-    """A config lacking the ``orchestrator`` block gains the seeded block on sync.
+    """A config lacking the ``orchestrator`` block gains the fully-seeded block on sync.
 
-    ``get_default_config()`` seeds ``orchestrator: {'auto_emit': False}`` (a
-    sibling of ``plan``), so the non-destructive deep-merge back-fills it into a
-    config that predates the block, and reports the ``orchestrator`` top-level
-    path in ``added``.
+    ``get_default_config()`` seeds ``orchestrator`` with every settable knob at its
+    effective default (``auto_emit`` False, ``effort`` empty ``{}``,
+    ``parallelization_scope`` 1; a sibling of ``plan``), so the non-destructive
+    deep-merge back-fills the whole block into a config that predates it, and reports
+    the ``orchestrator`` top-level path in ``added``.
     """
     _write_marshal(plan_context.fixture_dir, {'plan': {'effort': 'level-3'}})
 
@@ -122,10 +123,42 @@ def test_sync_defaults_backfills_orchestrator_block(plan_context):
 
     assert result['status'] == 'success'
     config = _read_marshal(plan_context.fixture_dir)
-    assert config['orchestrator'] == {'auto_emit': False}, (
-        'the seeded orchestrator block (auto_emit=False) must be back-filled'
-    )
+    assert config['orchestrator'] == {
+        'auto_emit': False,
+        'effort': {},
+        'parallelization_scope': 1,
+    }, 'the fully-seeded orchestrator block must be back-filled'
     assert 'orchestrator' in result['added']
+
+
+def test_sync_defaults_backfills_new_knobs_into_legacy_block(plan_context):
+    """A genuine legacy ``{auto_emit: false}`` block gains the two new knobs on sync (D5c/D2).
+
+    ``{'auto_emit': False}`` is the exact block a pre-materialisation ``init`` wrote.
+    The non-destructive deep-merge back-fills the newly-seeded ``effort: {}`` and
+    ``parallelization_scope: 1`` into it while preserving the operator's existing
+    ``auto_emit`` — an existing consumer's file stays valid and simply gains the
+    now-discoverable knobs. Only the two new sub-keys are reported as added (not the
+    ``orchestrator`` root, which was already present).
+    """
+    _write_marshal(
+        plan_context.fixture_dir,
+        {'orchestrator': {'auto_emit': False}, 'plan': {'effort': 'level-3'}},
+    )
+
+    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+
+    assert result['status'] == 'success'
+    config = _read_marshal(plan_context.fixture_dir)
+    assert config['orchestrator'] == {
+        'auto_emit': False,
+        'effort': {},
+        'parallelization_scope': 1,
+    }
+    assert 'orchestrator.effort' in result['added']
+    assert 'orchestrator.parallelization_scope' in result['added']
+    # the pre-existing root is not re-reported as newly added
+    assert 'orchestrator' not in result['added']
 
 
 def test_sync_defaults_preserves_populated_orchestrator_block(plan_context):

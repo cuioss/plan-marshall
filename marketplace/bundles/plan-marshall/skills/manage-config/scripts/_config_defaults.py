@@ -199,7 +199,18 @@ DEFAULT_PROJECT = {
 }
 
 
-# Orchestrator-tier autonomy defaults (`orchestrator.*` in marshal.json).
+# Orchestrator-tier defaults (`orchestrator.*` in marshal.json).
+#
+# Every knob the block supports is materialised here with its EFFECTIVE default,
+# so an operator reading their own marshal.json can DISCOVER that it exists. This
+# is the default-surfacing rule (recipe-marshal-json-config-audit Aspect 1;
+# `manage-config/standards/config-design-principles.md`): a knob that is settable
+# in code but absent from the seeded file is a default-surfacing gap, never an
+# intentional omission — an unset knob is undiscoverable, so a reader has no way
+# to learn it can be set. Surfacing a knob MUST NOT change its effective default:
+# each materialised value below is chosen to resolve identically to leaving the
+# key unset (the fall-through notes say how), so this block changes what is
+# DISCOVERABLE, never what is EFFECTIVE.
 #
 # `auto_emit` (bool, default `false`) is the orchestrator-tier analog of the
 # plan-tier autonomy family (`finalize_without_asking` / `loop_back_without_asking`
@@ -209,17 +220,42 @@ DEFAULT_PROJECT = {
 # confirmation. When `true`, the emit fires automatically under the existing
 # disjointness + prep-readiness + "only if sensible" guards, auto-recording the
 # `launched` transition for every emitted candidate toward `parallelization_scope`.
-#
 # The emit≠running invariant is ABSOLUTE and this knob NEVER weakens it: `auto_emit`
 # automates the *emit* (marking each emitted plan `launched`), never the *start*
 # (the operator-confirmed `launched → running` transition). A colliding, blocked, or
 # unprepared candidate emits nothing and logs the shortfall — never a bad emit to
 # fill a slot. Boolean coercion is handled by `_coerce_value` (exactly as
 # `merge_queue_managed_externally` is), so no bespoke `validate_*` helper is
-# warranted. See `manage-config/standards/data-model.md` for the canonical field
+# warranted.
+#
+# `parallelization_scope` (int >= 1, default `1`) is the project-level value that
+# pre-fills the per-epic parallelization-scope ask. Its effective default is the
+# ask's hard-coded `1`, so materialising `1` is behaviourally inert: for a legacy
+# block that omits the key, `orchestrator get` returns `set:false` and the ask
+# keeps its hard-coded `1`; for the seeded block it returns `set:true, value:1` and
+# the ask uses that same `1` (marshall-orchestrator/workflow/init.md Step 4). Both
+# worlds pre-fill `1`.
+#
+# `effort` is materialised as an empty object `{}` — the ONLY behaviourally-inert
+# materialisation. The effort surfaces fall through to `plan.effort` (an
+# operator-configurable value) when no surface / `default` / `max` is set, so
+# seeding concrete effort leaves would SEVER that coupling and change behaviour
+# whenever `plan.effort` differs from the baked-in value. An empty `{}` surfaces
+# the key — a reader sees the sub-block exists and can populate
+# analyze/decompose/reader/default/max — while `_resolve_orchestrator_level`
+# finds nothing to resolve and falls through to `plan.effort` exactly as an absent
+# key does (an unset `max` stays a no-op). The leaf sub-keys are surfaced in the
+# documentation rather than the seed, because materialising them with values is
+# what would break the fall-through.
+#
+# Validated by `validate_orchestrator_block` below; back-filled into existing
+# projects by `sync-defaults`' non-destructive deep-merge — no new provisioning
+# mechanism. See `manage-config/standards/data-model.md` for the canonical field
 # semantics.
 DEFAULT_ORCHESTRATOR = {
     'auto_emit': False,
+    'effort': {},
+    'parallelization_scope': 1,
 }
 
 
@@ -1103,19 +1139,24 @@ BUILD_SYSTEM_DEFAULTS = {
 DEFAULT_BUILD_QUEUE = {'max_slots': 5, 'max_retries': 10, 'upper_limit_seconds': 600}
 
 # The top-level `orchestrator` block default is `DEFAULT_ORCHESTRATOR`, defined
-# earlier in this module. It seeds only the `auto_emit` autonomy knob (default
-# `False`); the `effort` sub-block and the `parallelization_scope` scalar stay
-# unset (implicit defaults) so with those keys unset every orchestrator reader
-# falls through to today's values — `plan.effort` for the baseline effort of the
-# three read-only orchestrator surfaces, an unset-`max` no-op for the uplift
-# ceiling, and the hard-coded `parallelization_scope` default of 1. The block is
-# the extensible home the orchestrator effort surfaces + scalar knobs
-# (`parallelization_scope`, `auto_emit`) read/write through the `orchestrator`
-# noun and the `effort set --scope orchestrator[...]` writer. Validated by
-# validate_orchestrator_block below (the seeded shape is legal; a populated
-# block's effort + parallelization_scope + auto_emit shapes are checked).
-# `/marshall-steward`'s upgrade verb back-fills the block through the existing
-# `sync-defaults` deep-merge — no new provisioning mechanism.
+# earlier in this module, where every knob is materialised with its effective
+# default (see that definition for the per-knob surfacing rationale). It seeds
+# `auto_emit` (`False`), the `effort` sub-block (empty `{}`), and
+# `parallelization_scope` (`1`) — every knob the block supports appears in the
+# seeded file so an operator reading their own marshal.json can discover it, per
+# the default-surfacing rule (recipe-marshal-json-config-audit Aspect 1). Each
+# materialised default resolves identically to leaving the key unset: `effort` `{}`
+# still falls through to `plan.effort` for the three read-only orchestrator
+# surfaces (with an unset-`max` no-op for the uplift ceiling), and
+# `parallelization_scope` `1` is the ask's hard-coded default — so surfacing
+# changes what is DISCOVERABLE, never what is EFFECTIVE. The block is the home the
+# orchestrator effort surfaces + scalar knobs read/write through the
+# `orchestrator` noun and the `effort set --scope orchestrator[...]` writer.
+# Validated by validate_orchestrator_block below (the seeded shape is legal; a
+# populated block's effort + parallelization_scope + auto_emit shapes are
+# checked). `/marshall-steward`'s upgrade verb back-fills the block into existing
+# projects through the existing `sync-defaults` deep-merge — no new provisioning
+# mechanism.
 
 
 def validate_orchestrator_block(value: object) -> None:
@@ -1252,8 +1293,8 @@ def get_default_config() -> dict:
     # enum string validated from the set path, mirroring validate_gate_mode /
     # validate_simplicity — not self-validated here.)
     validate_lane_prune_thresholds(DEFAULT_PLAN_INIT['lane_prune_thresholds'])
-    # Self-validate the seeded (empty) orchestrator block so a malformed default
-    # fails loud at seed time rather than at first read.
+    # Self-validate the seeded orchestrator block so a malformed default fails
+    # loud at seed time rather than at first read.
     validate_orchestrator_block(DEFAULT_ORCHESTRATOR)
     # Materialize the finalize-step defaults seed lazily via the configurable-
     # contract parser (the `'steps': None` placeholder in DEFAULT_PLAN_FINALIZE is
@@ -1293,11 +1334,12 @@ def get_default_config() -> dict:
             'phase-5-execute': execute_section,
             'phase-6-finalize': finalize_section,
         },
-        # Top-level `orchestrator` block — a sibling of `plan`. Seeds only the
-        # `auto_emit` autonomy knob (default False; see DEFAULT_ORCHESTRATOR);
-        # effort + parallelization_scope stay unset (implicit defaults). Its
-        # canonical placement immediately after `plan` is handled by
-        # _config_core.CANONICAL_TOP_LEVEL_KEY_ORDER at save time.
+        # Top-level `orchestrator` block — a sibling of `plan`. Seeds every knob
+        # the block supports with its effective default (`auto_emit` False,
+        # `effort` empty `{}`, `parallelization_scope` 1; see DEFAULT_ORCHESTRATOR),
+        # so each is discoverable in marshal.json while resolving exactly as an
+        # unset key did. Its canonical placement immediately after `plan` is
+        # handled by _config_core.CANONICAL_TOP_LEVEL_KEY_ORDER at save time.
         'orchestrator': copy.deepcopy(DEFAULT_ORCHESTRATOR),
     }
     return config

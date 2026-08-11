@@ -50,12 +50,14 @@ def _load_module(name: str, filename: str):
 
 _cmd_effort_mod = _load_module('_cmd_effort_for_orchestrator_scope_test', '_cmd_effort.py')
 _cmd_orchestrator_mod = _load_module('_cmd_orchestrator_for_orchestrator_scope_test', '_cmd_orchestrator.py')
+_config_defaults_mod = _load_module('_config_defaults_for_orchestrator_scope_test', '_config_defaults.py')
 
 cmd_effort = _cmd_effort_mod.cmd_effort
 cmd_effort_resolve_target = _cmd_effort_mod.cmd_effort_resolve_target
 cmd_effort_set = _cmd_effort_mod.cmd_effort_set
 cmd_orchestrator_get = _cmd_orchestrator_mod.cmd_orchestrator_get
 cmd_orchestrator_set = _cmd_orchestrator_mod.cmd_orchestrator_set
+get_default_config = _config_defaults_mod.get_default_config
 
 
 def _write_marshal(fixture_dir: Path, config: dict) -> Path:
@@ -292,6 +294,67 @@ def test_empty_orchestrator_block_falls_through_to_plan_effort(plan_context):
 
 
 # =============================================================================
+# Materialised-default == unset behavioural equivalence (D5b, load-bearing)
+# =============================================================================
+
+
+def test_materialised_effort_resolves_identically_to_unset(plan_context):
+    """The seeded ``effort: {}`` resolves every surface identically to a legacy block.
+
+    Effort half of the no-behaviour-change invariant. A NON-DEFAULT ``plan.effort``
+    (``level-5``) is used deliberately: it proves the empty effort object preserves
+    the fall-through COUPLING to ``plan.effort``. A materialisation that baked in
+    concrete effort leaves (e.g. ``default: level-3``) would resolve to those leaves
+    instead and diverge here.
+    """
+    seeded = get_default_config()['orchestrator']  # auto_emit + effort:{} + scope:1
+    legacy = {'auto_emit': False}  # genuine pre-materialisation shape (no effort key)
+
+    resolutions: dict[str, list] = {}
+    for label, block in (('seeded', seeded), ('legacy', legacy)):
+        _write_marshal(
+            plan_context.fixture_dir,
+            {'orchestrator': block, 'plan': {'effort': 'level-5'}},
+        )
+        per_surface = []
+        for surface in ('analyze', 'decompose', 'reader'):
+            r = _read_role(f'orchestrator.{surface}')
+            assert r['status'] == 'success'
+            per_surface.append((r['level'], r['source']))
+        resolutions[label] = per_surface
+
+    # identical resolution for every surface, and each follows plan.effort
+    assert resolutions['seeded'] == resolutions['legacy']
+    assert resolutions['seeded'] == [('level-5', 'plan.effort')] * 3
+
+
+def test_materialised_scope_resolves_identically_to_unset(plan_context):
+    """The seeded ``parallelization_scope: 1`` yields the same effective ask pre-fill.
+
+    Scope half of the invariant. The ask pre-fill contract (marshall-orchestrator
+    init Step 4) is ``value if set else 1``: a legacy block returns ``set: False``
+    and the ask keeps its hard-coded ``1``; the seeded block returns
+    ``set: True, value: 1`` and the ask uses that same ``1``. Both worlds pre-fill
+    ``1``.
+    """
+
+    def _effective_prefill() -> int:
+        result = cmd_orchestrator_get(Namespace(field='parallelization_scope'))
+        assert result['status'] == 'success'
+        return result['value'] if result['set'] else 1
+
+    _write_marshal(
+        plan_context.fixture_dir, {'orchestrator': get_default_config()['orchestrator']}
+    )
+    seeded_prefill = _effective_prefill()
+
+    _write_marshal(plan_context.fixture_dir, {'orchestrator': {'auto_emit': False}})
+    legacy_prefill = _effective_prefill()
+
+    assert seeded_prefill == legacy_prefill == 1
+
+
+# =============================================================================
 # resolve-target
 # =============================================================================
 
@@ -456,14 +519,21 @@ def test_orchestrator_set_parallelization_scope_round_trips(plan_context):
     assert get_result['set'] is True
 
 
-def test_orchestrator_get_unset_reports_none(plan_context):
-    """``orchestrator get`` on an unset field reports value None and set False."""
+def test_orchestrator_get_unset_reports_canonical_default(plan_context):
+    """``orchestrator get`` on an unset field reports the canonical default, set False.
+
+    Now that ``parallelization_scope`` is seeded into ``DEFAULT_ORCHESTRATOR``, the
+    unset fallback ``value`` is its canonical default ``1`` (not ``None``) — a more
+    truthful signal. The load-bearing ``set: False`` flag is unchanged, so a caller
+    (the ask pre-fill) that keys off ``set`` still applies its own default; the
+    reported value flip is behaviourally inert.
+    """
     _write_marshal(plan_context.fixture_dir, {})
 
     get_result = cmd_orchestrator_get(Namespace(field='parallelization_scope'))
 
     assert get_result['status'] == 'success'
-    assert get_result['value'] is None
+    assert get_result['value'] == 1
     assert get_result['set'] is False
 
 

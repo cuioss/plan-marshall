@@ -2133,38 +2133,40 @@ def test_save_config_appends_unknown_keys_after_canonical_block(tmp_path, monkey
     assert actual_order == ['plan', 'system', 'zzz_unknown']
 
 
-def test_get_default_config_seeds_orchestrator_block_with_auto_emit_default():
-    """get_default_config() seeds a top-level ``orchestrator`` block == ``{'auto_emit': False}``.
+def test_get_default_config_seeds_orchestrator_block_with_every_knob():
+    """get_default_config() seeds the ``orchestrator`` block with every settable knob.
 
-    The block is a sibling of ``plan``. It seeds only the ``auto_emit`` autonomy
-    knob at its safe default (``False``); the ``effort`` sub-block and the
-    ``parallelization_scope`` scalar stay unset, so every effort/scope reader
-    falls through to today's values.
+    The block is a sibling of ``plan``. It materialises every knob it supports at
+    its effective default — ``auto_emit`` (``False``), the ``effort`` sub-block
+    (empty ``{}``), and ``parallelization_scope`` (``1``) — so each is discoverable
+    in marshal.json while resolving exactly as an unset key did.
     """
     config = _config_defaults_mod.get_default_config()
 
     assert 'orchestrator' in config, 'get_default_config() must seed a top-level orchestrator block'
-    assert config['orchestrator'] == {'auto_emit': False}, (
-        f'the seeded orchestrator block must carry only auto_emit=False; got {config["orchestrator"]!r}'
-    )
+    assert config['orchestrator'] == {
+        'auto_emit': False,
+        'effort': {},
+        'parallelization_scope': 1,
+    }, f'the seeded orchestrator block must surface every knob; got {config["orchestrator"]!r}'
 
 
 def test_seeded_orchestrator_leaves_effort_and_scope_resolution_unchanged():
-    """With the seeded ``orchestrator`` block, effort + scope resolution is inert.
+    """The seeded ``orchestrator`` block is behaviourally inert (surfacing, not tuning).
 
-    The seed carries only ``auto_emit`` — no ``effort`` surface override,
-    ``default`` slot, or ``max`` ceiling to perturb effort resolution (every
-    surface falls through to ``plan.effort``), and no ``parallelization_scope``
-    (the caller keeps its hard-coded default of 1). The per-surface resolution
-    itself is exercised against a live marshal.json in ``test_orchestrator_scope``;
-    here the seed shape is the assertion surface.
+    The seed materialises ``effort`` as an empty object and ``parallelization_scope``
+    at its effective default of 1: no effort surface override, ``default`` slot, or
+    ``max`` ceiling to perturb effort resolution (every surface still falls through
+    to ``plan.effort``), and a scope value equal to the caller's hard-coded default.
+    The per-surface resolution equivalence is exercised against a live marshal.json
+    in ``test_orchestrator_scope``; here the seed shape is the assertion surface.
     """
     config = _config_defaults_mod.get_default_config()
 
-    # The block carries only auto_emit, so nothing in it can change effort/scope resolution.
-    assert config['orchestrator'] == {'auto_emit': False}
-    assert 'effort' not in config['orchestrator']
-    assert 'parallelization_scope' not in config['orchestrator']
+    # The materialised values are behaviourally inert: an empty effort object and
+    # the scope's own default of 1 cannot change effort/scope resolution.
+    assert config['orchestrator']['effort'] == {}
+    assert config['orchestrator']['parallelization_scope'] == 1
     # plan.effort remains the baseline fallback every orchestrator surface resolves to.
     plan_effort = config['plan']['effort']
     assert isinstance(plan_effort, str) and plan_effort
