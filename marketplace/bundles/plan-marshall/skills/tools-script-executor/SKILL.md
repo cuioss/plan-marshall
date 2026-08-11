@@ -167,8 +167,11 @@ ordinary flag and stays fully validated.
 
 The asymmetry is the safety argument, and it is a claim about **knowledge**, not
 about the check as a whole: a derivation gap degrades to today's behaviour, so a
-missing accept-set cannot manufacture a refusal and an executor generated with
-no surfaces at all is a **safe** configuration rather than a broken one. What
+missing accept-set cannot manufacture a refusal and an executor carrying no
+surfaces at all still **dispatches safely** rather than wrongly rejecting. That
+is a claim about the runtime axis only — distinct from whether the *generator*
+may silently produce such an executor, which (where surfaces existed before) it
+now refuses to (see [Where the accept-set comes from](#where-the-accept-set-comes-from)). What
 the asymmetry does *not* buy on its own is correctness of the walk that decides
 *which* node's accept-set applies — a walk that resolves the wrong node rejects
 from knowledge that is real but attached to the wrong parser, and that is a

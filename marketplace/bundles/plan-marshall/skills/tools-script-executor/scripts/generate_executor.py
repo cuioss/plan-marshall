@@ -1352,10 +1352,13 @@ def generate_executor(
             shared_dirs,
         )
     except OSError as exc:
-        # Derivation is an enhancement, never a precondition: an executor with
-        # no surfaces dispatches exactly as it did before this map existed. A
-        # probe-write failure therefore degrades to no surfaces rather than
-        # failing the generation and leaving the caller with a stale executor.
+        # A probe-write failure degrades to NO surfaces rather than raising here.
+        # Against a fresh/empty previous that is harmless — a surfaces-less
+        # executor dispatches exactly as it did before this map existed. Against
+        # a previous that already carried surfaces it is a total collapse, which
+        # the fail-open guard below then turns into a loud refusal (no write, the
+        # still-validating previous executor preserved) — so this degradation is
+        # never the silent stale-executor it once was.
         print(f'Warning: surface derivation skipped ({exc})', file=sys.stderr)
         surfaces, surface_stats = {}, dict(_EMPTY_SURFACE_STATS)
         surface_stats['scripts_registered'] = len(mappings)
@@ -1394,8 +1397,9 @@ def generate_executor(
                 f'0 (neither derived nor reused). A surfaces-less executor dispatches with '
                 f'no pre-spawn validation, so writing it would silently disable the guard. '
                 f'No executor was written and the previous one was left untouched. Remedy: '
-                f'regenerate with a working surface-derivation budget '
-                f'(check {_SURFACE_DERIVATION_BUDGET_ENV}, then re-run generate).'
+                f'resolve why this generation derived no surfaces — an exhausted '
+                f'{_SURFACE_DERIVATION_BUDGET_ENV}, a broken probe, or an unreadable/failing '
+                f'script set (see any warning above) — then re-run generate.'
             ),
             'surface_stats': surface_stats,
         }
