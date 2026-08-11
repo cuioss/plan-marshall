@@ -100,6 +100,19 @@ relaxation is a parser-robustness change ONLY: an empty required-bots list is
 still the vacuously-satisfied quorum, and no empty list ever launders an
 unproven bot into a pass.
 
+The list flags split into two FORMS, and a token forwarded to the wrong form is a
+loud caller error rather than a silent misparse. The two EVIDENCE-TYPED (pair-form)
+flags — ``--participated-bots`` and ``--stale-participation-bots`` — take
+``bot_kind:evidence_kind`` pairs, the exact shape ``github_pr fetch_findings`` emits
+in ``participated_bots[]`` and ``stale_participation_bots[]``, so the producer's
+output forwards to each verbatim. The remaining list flags are bare-form
+(``bot_kind`` tokens only). A bare kind on a pair-form flag, or a pair on a
+bare-form flag, is REJECTED as a malformed caller error (``status: error``,
+non-zero exit, no ``participation_complete`` field — read as an UNKNOWN verdict):
+a dropped bare kind would resolve to ``absent`` (a blocking member) and a misread
+pair would match no configured bot, both manufacturing a confident verdict over a
+misparsed population. An empty value is the empty list, never a malformed token.
+
 Subcommands:
     check  Report whether every REQUIRED bot's PARTICIPATION is proven and triaged.
 
@@ -170,29 +183,70 @@ _UNPROVEN_STATES = frozenset(
 )
 
 
-def parse_participation(raw: str | None) -> dict[str, str]:
-    """Parse the ``bot_kind:evidence_kind`` CSV into a bot -> evidence-kind map.
+class MalformedBotFlag(ValueError):
+    """A bot-list flag received a token whose SHAPE does not match the flag's form.
+
+    The flag set is split by form. The pair-form flags (``--participated-bots`` and
+    ``--stale-participation-bots``, both fed the producer's
+    ``bot_kind:evidence_kind`` records) require every token to be a pair; a bare
+    ``bot_kind`` is malformed. The bare-form flags (``--required-bots`` /
+    ``--optional-bots`` / ``--in-progress-bots`` / ``--refused-bots`` /
+    ``--declined-bots``) require every token to be a bare ``bot_kind``; a
+    ``bot_kind:evidence_kind`` pair is malformed.
+
+    A malformed token is REJECTED loudly rather than silently reinterpreted. Both
+    misparses are polarity-selecting: a bare kind dropped from the pair-form parse
+    resolves to ``absent`` (a blocking member), manufacturing a confident false merge
+    block against a bot the caller believed participated; a pair fed to a bare-form
+    flag becomes a one-off "bot" named ``bot_kind:evidence_kind`` that matches no
+    configured bot and vanishes, while the real bot still resolves to ``absent``.
+    Raising instead makes the form mismatch a visible caller error the CLI renders as
+    ``status: error`` with a non-zero exit and no ``participation_complete`` field.
+    """
+
+
+def parse_participation(raw: str | None, flag: str = '--participated-bots') -> dict[str, str]:
+    """Parse a ``bot_kind:evidence_kind`` CSV into a bot -> evidence-kind map.
 
     Only pairs whose ``evidence_kind`` is one of the publish shapes the bot's
-    registry record declares in ``participation_evidence`` are admitted; anything
-    else is dropped. This is where the diff-derived-evidence rule is ENFORCED
-    rather than merely asserted: the admissible vocabulary is closed to publish
-    shapes, so a body-derived signal — anything a reviewer could have produced by
-    reading the PR description alone — carries no admissible evidence kind and
-    cannot be laundered in as participation.
+    registry record declares in ``participation_evidence`` are admitted; a
+    well-formed pair whose evidence kind is NOT a declared publish shape is dropped.
+    This is where the diff-derived-evidence rule is ENFORCED rather than merely
+    asserted: the admissible vocabulary is closed to publish shapes, so a
+    body-derived signal — anything a reviewer could have produced by reading the PR
+    description alone — carries no admissible evidence kind and cannot be laundered
+    in as participation.
 
-    A bare ``bot_kind`` with no ``:evidence_kind`` is dropped for the same reason:
-    unqualified presence is exactly the claim this module stopped accepting. A bot
-    whose registry record declares no evidence shape can never match, which is the
-    fail-closed default.
+    A token that is NOT a ``bot_kind:evidence_kind`` pair — a bare ``bot_kind`` with
+    no colon, or a pair with an empty side — is a SHAPE violation and is REJECTED
+    with :class:`MalformedBotFlag`, never silently dropped. That silent drop is
+    precisely the polarity-selecting misparse this rejection closes: the bot would
+    fall through to ``absent`` (a blocking member) and manufacture a confident false
+    merge block against a bot the caller meant to record as a participant. The
+    rejection is the SHAPE check ONLY — a well-formed pair whose evidence kind is
+    inadmissible is a semantic non-match, not a caller error, and stays a silent drop
+    (the diff-derived-evidence rule above). An empty token (the bare-flag /
+    trailing-comma empty-list form) is skipped, not rejected.
+
+    A bot whose registry record declares no evidence shape can never match any
+    admissible pair, which is the fail-closed default.
     """
     proven: dict[str, str] = {}
     for entry in (raw or '').split(','):
-        bot_kind, _, evidence_kind = entry.strip().partition(':')
+        entry = entry.strip()
+        if not entry:
+            continue
+        bot_kind, sep, evidence_kind = entry.partition(':')
         bot_kind = bot_kind.strip()
         evidence_kind = evidence_kind.strip()
-        if not bot_kind or not evidence_kind:
-            continue
+        if not sep or not bot_kind or not evidence_kind:
+            raise MalformedBotFlag(
+                f'{flag} expects bot_kind:evidence_kind pairs but received the token '
+                f'{entry!r}, which is not a pair. A bare bot_kind neither proves '
+                f'participation nor is a valid absence: silently dropping it would '
+                f'resolve the bot to absent (a blocking state) and manufacture a false '
+                f'merge block, so it is rejected as a caller error.'
+            )
         if evidence_kind in bot_registry.participation_evidence(bot_kind):
             proven[bot_kind] = evidence_kind
     return proven
@@ -454,28 +508,79 @@ def _emit_toon(payload: dict) -> None:
             print(f'  {record["bot_kind"]},{record["state"]}')
 
 
-def _split_bots(raw: str | None) -> list[str]:
-    """Split a comma-joined bot list into its non-empty members.
+def _split_bots(raw: str | None, flag: str = 'a bare-form bot flag') -> list[str]:
+    """Split a bare-form ``bot_kind`` list into its non-empty members.
 
     Absent, empty, and whitespace-only values all read as the empty list, so the
     bare-flag, omitted-flag, and explicitly-empty forms agree without a caller-side
     emptiness check.
+
+    A ``bot_kind:evidence_kind`` PAIR token is a SHAPE violation for a bare-form flag
+    and is REJECTED with :class:`MalformedBotFlag`. Fed a pair, a bare-form flag would
+    read it as a bot literally named ``bot_kind:evidence_kind``, which matches no
+    configured bot and vanishes silently while the real bot resolves to ``absent`` —
+    the same polarity-selecting misparse the pair-form flags reject in the other
+    direction. Rejecting it keeps the flag SET internally consistent: a token
+    forwarded to the wrong flag form fails loudly instead of being reinterpreted into
+    a blocking verdict nobody computed.
     """
-    return [b.strip() for b in (raw or '').split(',') if b.strip()]
+    bots: list[str] = []
+    for entry in (raw or '').split(','):
+        entry = entry.strip()
+        if not entry:
+            continue
+        if ':' in entry:
+            raise MalformedBotFlag(
+                f'{flag} expects bare bot_kind tokens but received the pair-shaped '
+                f'token {entry!r}. A bot_kind:evidence_kind pair belongs on a pair-form '
+                f'flag (--participated-bots / --stale-participation-bots); fed to a '
+                f'bare-form flag it would be read as a bot named {entry!r} and silently '
+                f'match nothing.'
+            )
+        bots.append(entry)
+    return bots
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    """Run the completeness predicate and emit the summary TOON to stdout."""
+    """Run the completeness predicate and emit the summary TOON to stdout.
+
+    The bot-list flags are parsed by FORM before the predicate runs. The two
+    pair-form flags — ``--participated-bots`` and ``--stale-participation-bots``,
+    both fed the producer's ``{bot_kind, evidence_kind}`` records verbatim — go
+    through :func:`parse_participation`; the bare-form flags through
+    :func:`_split_bots`. A token whose shape does not match its flag's form is a
+    :class:`MalformedBotFlag` caller error, rendered as a structured ``status:
+    error`` with a NON-ZERO exit and NO ``participation_complete`` field, so the
+    caller reads it as an UNKNOWN verdict (never a false pass and never a false
+    block) — the same shape the load-failure branch and the doc's UNKNOWN-verdict
+    handling already expect.
+    """
+    try:
+        required_bots = _split_bots(args.required_bots, '--required-bots')
+        optional_bots = _split_bots(args.optional_bots, '--optional-bots')
+        participated_bots = parse_participation(args.participated_bots, '--participated-bots')
+        in_progress_bots = _split_bots(args.in_progress_bots, '--in-progress-bots')
+        refused_bots = _split_bots(args.refused_bots, '--refused-bots')
+        # --stale-participation-bots is EVIDENCE-TYPED like --participated-bots: it is
+        # fed the producer's stale_participation_bots[] pair records verbatim, so it
+        # takes the same pair form and the classifier reads only the bot_kinds.
+        stale_participation_bots = list(
+            parse_participation(args.stale_participation_bots, '--stale-participation-bots')
+        )
+        declined_bots = _split_bots(args.declined_bots, '--declined-bots')
+    except MalformedBotFlag as exc:
+        _emit_toon({'status': 'error', 'error': 'malformed_bot_flag', 'detail': str(exc)})
+        return 1
     payload = check_completeness(
         args.plan_id,
-        _split_bots(args.required_bots),
-        optional_bots=_split_bots(args.optional_bots),
+        required_bots,
+        optional_bots=optional_bots,
         triage_ran=args.triage_ran,
-        participated_bots=parse_participation(args.participated_bots),
-        in_progress_bots=_split_bots(args.in_progress_bots),
-        refused_bots=_split_bots(args.refused_bots),
-        stale_participation_bots=_split_bots(args.stale_participation_bots),
-        declined_bots=_split_bots(args.declined_bots),
+        participated_bots=participated_bots,
+        in_progress_bots=in_progress_bots,
+        refused_bots=refused_bots,
+        stale_participation_bots=stale_participation_bots,
+        declined_bots=declined_bots,
         not_triggered=args.not_triggered,
     )
     _emit_toon(payload)
@@ -572,15 +677,19 @@ def main(argv: list[str] | None = None) -> int:
         const='',
         default='',
         help=(
-            'Comma-separated review-bot kinds whose observed comment matched a '
-            'declared participation_evidence publish shape but failed the '
-            'participation_requires_update currency test, as reported by github_pr '
-            "fetch_findings's stale_participation_bots[]. A required bot here is "
-            'classified participated_stale and blocks — it published against an '
-            'earlier HEAD, so nothing has reviewed the current diff — but the remedy '
-            'is a re-review trigger, not the non-participation escalation absent '
-            'calls for. May be supplied bare (no value), which reads as the empty '
-            'list.'
+            'Comma-separated bot_kind:evidence_kind pairs — the SAME evidence-typed '
+            'form as --participated-bots, and the exact shape github_pr '
+            "fetch_findings emits in stale_participation_bots[], so the producer's "
+            'output forwards here verbatim. Each names a bot whose observed comment '
+            'matched a declared participation_evidence publish shape but failed the '
+            'participation_requires_update currency test; the classifier reads only '
+            'the bot_kind. A required bot here is classified participated_stale and '
+            'blocks — it published against an earlier HEAD, so nothing has reviewed '
+            'the current diff — but the remedy is a re-review trigger, not the '
+            'non-participation escalation absent calls for. A bare bot_kind with no '
+            'evidence_kind is rejected as malformed (a bare token belongs on a '
+            'bare-form flag). May be supplied bare (no value), which reads as the '
+            'empty list.'
         ),
     )
     check_parser.add_argument(
