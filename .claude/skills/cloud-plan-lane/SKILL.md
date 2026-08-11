@@ -375,8 +375,9 @@ git diff --name-only origin/main...HEAD
 
 **This diff sees committed work only** — staged, unstaged, and untracked files are invisible to it.
 An uncommitted new `.py` file would therefore skip the build *and* be invisible to the Step 6
-sub-agent, which reads the same range. So re-assert the clean tree Step 2 required, and treat a
-dirty result as a defect in the run rather than working around it:
+sub-agent, which likewise sees only committed work — its `git diff` read and any beyond-diff bundle
+sweep alike read committed HEAD content, never an uncommitted file. So re-assert the clean tree Step 2
+required, and treat a dirty result as a defect in the run rather than working around it:
 
 ```bash
 git status --porcelain
