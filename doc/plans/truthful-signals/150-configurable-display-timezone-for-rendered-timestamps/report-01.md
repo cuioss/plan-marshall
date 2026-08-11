@@ -1,6 +1,6 @@
 # Run report — 150-configurable-display-timezone-for-rendered-timestamps (run 01)
 
-**Date (UTC):** 2026-08-11    **Branch:** claude/configurable-display-timezone-6t3zs0 (harness-assigned)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-11    **Branch:** claude/configurable-display-timezone-6t3zs0 (harness-assigned)    **PR:** [#1172](https://github.com/cuioss/plan-marshall/pull/1172)    **Outcome:** completed (all D1–D5 delivered; CI green; auto-merge armed into the merge queue)
 
 ## Skills loaded
 
@@ -110,27 +110,69 @@ bundle; the merge queue runs the full cross-bundle verify.)
     **deferred** to the sibling knob-cataloguing plan per this plan's Notes; the agent confirmed
     `marshall-steward` carries no knob catalogue that now omits `display_timezone`, so nothing is stale.
   - Build/test green: confirmed locally — `./pw verify plan-marshall` → 15997 passed, 1 skipped.
-- **CI and PR review:** _pending PR._
+- **CI (PR #1172):** all required checks green — `verify / conclusion`, `verify / verify`, `verify / gate`, `dependency-review`, `review / review`, `generate-check` all **success**; `mergeable_state: clean`. No failures.
+- **PR review:** `cuioss-review-bot` posted a PR Reviewer Guide — "PR contains tests / No security concerns identified / No major issues detected" — **no findings, no inline review threads**. Nothing to fix or answer. The other two expected reviewers were rate-limited (see Reviewer participation).
 
 ## Reviewer participation
 
-_Pending PR._
+Expected reviewer population derived from the registry — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`
+(`coderabbit.md`, `pr-agent.md`, `sourcery.md`), cross-named by `.github/workflows/pr-agent.yml`:
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Posted a "PR Reviewer Guide" review over the diff — "PR contains tests / No security concerns identified / No major issues detected"; no findings, no inline threads. |
+| `coderabbitai` | `rate-limited` | Posted only "Review limit reached … Next review available in: 58 minutes" — engaged, did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Posted only "you have reached your weekly rate limit of 500000 diff characters" — engaged, did not review this diff. |
+
+**Coverage: 1 of 3.** The § Step 8 condition-4 shortfall disclosure fired: "Review coverage: 1 of 3 —
+`cuioss-review-bot` reviewed (no findings); `coderabbitai` rate-limited (window reopens ~58 min);
+`sourcery-ai` rate-limited (weekly quota)." Per the lane this is a disclosure, not a merge block: rate
+limits are routine and outside our control, and conditions 1–3 are the only gates on the merge.
 
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
-- **Wall-clock:** single interactive cloud session on 2026-08-11 (UTC).
+- **Wall-clock:** single interactive cloud session on 2026-08-11 (UTC); PR opened 21:32Z, CI green 21:46Z.
 - **Population:** this single Claude Code cloud session's usage; **not comparable** to a plan-marshall
-  `metrics.toon` dispatch-tree total.
+  `metrics.toon` dispatch-tree total (that counts an orchestrator+agent dispatch tree under a different
+  per-task billing boundary this session does not share).
 
 ## Contract check (Step 9)
 
-_Finalized at Step 8 condition 3._
+| Step | Verdict | Evidence |
+|---|---|---|
+| 1 Skills loaded | done | Named under Skills loaded; all via bundle path. |
+| 2 Branch | done | `claude/configurable-display-timezone-6t3zs0` (harness-assigned, kept as-is) pushed to origin as the first action. |
+| 3 Plan directory | done | `doc/plans/truthful-signals/150-.../plan.md` exists and opens with the first-instruction block. |
+| 4 Implement | done | Deliverables addressed; every commit carries the `Co-Authored-By: Claude` trailer. |
+| 4 Per-commit gate | done | The `*.py`-touching commit was preceded by a `total_issues: 0`, empty-`errors[]` quality-gate log. |
+| 4 Pushed | done | No unpushed commit remains at each step. |
+| 5 Build gate | done | `git diff --name-only origin/main...HEAD -- '*.py'` non-empty → `./pw verify plan-marshall` = SUCCESS (15997 passed, 1 skipped). |
+| 6 Verification sub-agent | done | Independent agent: GO, all D1–D5 satisfied; F1 found and fixed, re-verified; F2–F4 recorded as accepted. |
+| 7 PR cycle | done | PR #1172; both comment surfaces read; no actionable comments; reviewer participation recorded. |
+| 8 Merge gate | conditions 1–3 met | All required checks green + `clean`; no open comments; report finalized as the last pre-merge commit. Coverage shortfall (1-of-3) disclosed. Auto-merge arming = the closing action. |
+| 8 Bridge | done | No status/bookkeeping write under `doc/plans/` outside this plan's own directory; report carries the PR number and per-deliverable outcome. |
+| 9 This check | done | This table. |
+
+GitHub access path: **GitHub MCP server** (cloud). Branch form: **harness-assigned** `claude/*`, kept as-is.
+No `/sync-plugin-cache` is owed (machine-local build step; a cloud run never performs or owes it).
 
 ## What have we learned (Step 9)
 
-_Finalized at Step 9._
+**None proposed.** Every step of the cloud-plan-lane contract executed as written and produced its named
+artifact: the branch published before work, the conditional build gate keyed on `*.py`, the independent
+pre-PR verification (and a focused re-dispatch after the F1 fix, done by continuing the same agent —
+which worked and preserved context), the two-surface comment read, the registry-derived reviewer
+population, and the disclose-not-block treatment of the 1-of-3 coverage shortfall. No step was
+ambiguous in practice, no artifact was unproducible as written, and no command failed in the
+environment. With no run-produced evidence of a gap, there is nothing to propose — a speculative
+improvement is explicitly not a proposal.
 
 ## Residue
 
-_Pending._
+- `coderabbitai` and `sourcery-ai` were rate-limited and did not review this diff. Their windows reopen
+  (coderabbit ~58 min; sourcery weekly). Re-review is optional and not a merge blocker; if desired, a
+  maintainer can comment `@coderabbitai review` once the window resets.
+- Broader knob-catalogue / steward-flow surfacing of `display_timezone` is deferred to the sibling
+  knob-cataloguing plan in this epic, per this plan's Notes.
