@@ -255,6 +255,27 @@ durable record is complete rather than left in session chat:
   because the review already happened, not because it was waived. #1161 is left for the operator to
   close as superseded.
 
+- **#1161 closed; branches rebased onto current `main`.** #1161 was closed as superseded by #1169.
+  Both branches were rebased onto current `main` (they rebased cleanly — the reported "conflict" /
+  "build failure" were behind-`main` staleness, `main` having advanced `68a21ca`→`064560a`).
+
+- **Queued merge of #1169 failed the `merge_group` full-verify — a real defect in the promoted
+  standard, caught by the net the PR path skips.** The `no-historical-prose-in-skills` plugin-doctor
+  rule flagged the ledger **Provenance note** ("An earlier statement of this rule warned … has since
+  been closed") at `build-systems-common.md:119` as historical/transitional narrative. It was invisible
+  on the PR because the PR's `verify` is docs-skipped (`skip-on-docs-only`) and never runs
+  plugin-doctor; only the `merge_group` runs the full gate. **Fix:** the note was rewritten as a
+  present-tense *Enforcement* note (keeping the executor-template + regression-test citation and the
+  read-`status` rule, dropping the history); the correction history stays here in the report, which the
+  rule does not scan. Verified locally with `./pw quality-gate` — `total_issues: 0`,
+  `analyze_historical_prose_in_skills: 0`. Committed on the branch as the historical-prose fix.
+  - *Diagnosis correction recorded honestly:* the failure was **first misdiagnosed as a systemic
+    merge-queue/infra issue** from the run's ~1-minute job death and a string of other failed
+    `merge_group` runs. Reproducing the full verify **locally and reading the output rather than the
+    exit code** (exit 0 masked `quality-gate failed` — the very vacuous-diagnostic residue this plan
+    promoted) revealed the true cause was this diff's own content. The lesson: reproduce before
+    concluding "systemic".
+
 ## Residue
 
 - **The plan is a strong candidate for closure.** D0 established the residue set is **not derivable
