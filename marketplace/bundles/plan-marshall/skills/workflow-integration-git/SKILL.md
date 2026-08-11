@@ -97,7 +97,7 @@ Detect artifacts using the script:
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts [--root <repo-root>]
 ```
 
-The script returns `safe` (auto-deletable) and `uncertain` (needs confirmation) lists. Pattern definitions are in `standards/artifact-patterns.json`. The script respects `.gitignore` by default — gitignored files are excluded since they cannot be accidentally committed. Tracked files never appear in `safe`; they are always routed to `uncertain` so the caller must confirm before deletion. For safe artifacts, delete them. For uncertain artifacts, ask user via `AskUserQuestion`.
+The script returns `safe` (auto-deletable) and `uncertain` (needs confirmation) lists. Pattern definitions are in `standards/artifact-patterns.json`. The script respects `.gitignore` by default — gitignored files, and every path beneath a gitignored directory, are excluded since they cannot be accidentally committed. Nested git repositories and worktrees — including a running plan's own worktree — are never scanned; their contents belong to a separate checkout, are not committable here, and so never appear in `safe` or `uncertain` (this is what keeps a plan's finalize from offering the run's own live `logs/work.log` for deletion). Tracked files never appear in `safe`; they are always routed to `uncertain` so the caller must confirm before deletion. For safe artifacts, delete them. For uncertain artifacts, ask user via `AskUserQuestion`.
 
 **Step 4: Generate Commit Message**
 
@@ -273,7 +273,7 @@ status: success
 ### detect-artifacts
 
 Scan a directory for build artifacts and temporary files that should not be committed.
-Files already covered by `.gitignore` are excluded by default since they cannot be accidentally committed.
+Files already covered by `.gitignore` are excluded by default since they cannot be accidentally committed; a gitignored directory is excluded in full (every path beneath it), not just its top-level entry. Nested git repositories and worktrees (submodules, linked worktrees, and a running plan's own worktree) are never traversed — their contents are a separate checkout and are not committable here.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow detect-artifacts \

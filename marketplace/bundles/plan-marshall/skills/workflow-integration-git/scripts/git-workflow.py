@@ -608,12 +608,61 @@ _UNCERTAIN_REGEXES = _compile_patterns(UNCERTAIN_ARTIFACT_PATTERNS)
 _SKIP_DIRS = set(_ARTIFACT_CONFIG.get('skip_dirs', ['.git', 'node_modules']))
 
 
+def _is_nested_git_boundary(dir_path: str) -> bool:
+    """Whether ``dir_path`` is a nested git repository, worktree, or submodule.
+
+    A directory that itself contains a ``.git`` entry — a directory for an
+    embedded repo/submodule, a file for a linked worktree — is a separate
+    checkout. ``git ls-files`` never descends across such a boundary, so
+    ``scan_artifacts`` must not either: those files are not committable to the
+    scanned repository, and a running plan's live worktree — its in-flight
+    ``logs/work.log`` and build caches — lives at exactly such a boundary.
+    """
+    return os.path.exists(os.path.join(dir_path, '.git'))
+
+
+def _split_ignored(ignored: set[str]) -> tuple[set[str], tuple[str, ...]]:
+    """Partition a git-reported ignore set into file entries and dir prefixes.
+
+    ``git ls-files --others --ignored --exclude-standard`` enumerates ignored
+    *files* individually, but collapses a fully-ignored directory — notably a
+    nested repo/worktree boundary — to a single trailing-slash entry rather
+    than listing its contents. Splitting the set lets the caller exclude every
+    path *beneath* such a directory; a plain membership test matches only the
+    directory entry itself and misses all of its descendants.
+    """
+    files = {p for p in ignored if not p.endswith('/')}
+    dirs = tuple(p for p in ignored if p.endswith('/'))
+    return files, dirs
+
+
+def _is_ignored(rel_posix: str, ignored_files: set[str], ignored_dirs: tuple[str, ...]) -> bool:
+    """Whether ``rel_posix`` is a gitignored file or lives under a gitignored dir.
+
+    ``rel_posix`` is a ``/``-separated path relative to the scan root, matching
+    the spelling ``git ls-files`` emits. Membership covers an individually
+    listed ignored file; the prefix test covers every path beneath a collapsed
+    ignored directory entry (see :func:`_split_ignored`).
+    """
+    return rel_posix in ignored_files or rel_posix.startswith(ignored_dirs)
+
+
 def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
     """Scan directory for committable artifacts.
 
     Returns dict with 'safe' (auto-deletable) and 'uncertain' (needs confirmation) lists.
     Files already covered by .gitignore are excluded by default since they
-    cannot be accidentally committed.
+    cannot be accidentally committed. Exclusion honours git's full ignore set,
+    including a fully-ignored directory that ``git ls-files`` reports as a
+    single collapsed entry (every path beneath it is excluded, not just the
+    directory itself).
+
+    Nested git repositories and worktrees (submodules, linked worktrees) are
+    never traversed: their contents are a separate checkout, are not committable
+    to the scanned repository, and are exactly where a running plan's own live
+    artifacts (its in-flight ``logs/work.log`` and build caches) live. Offering
+    them as safe-to-delete would let a plan's finalize destroy the audit trail
+    of the run still producing it, so they never appear in either list.
 
     Uses a single directory traversal with compiled regex patterns instead
     of multiple Path.glob() calls, improving performance on large repos.
@@ -626,7 +675,9 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
     are routed to ``uncertain`` so the caller can confirm before any
     deletion.
     """
-    ignored = get_gitignored_files(root) if respect_gitignore else set()
+    ignored_files, ignored_dirs = _split_ignored(
+        get_gitignored_files(root) if respect_gitignore else set()
+    )
     tracked = get_tracked_files(root)
 
     safe: list[str] = []
@@ -636,10 +687,16 @@ def scan_artifacts(root: Path, respect_gitignore: bool = True) -> dict:
     for dirpath_str, dirnames, filenames in os.walk(root_str):
         # Prune directories we never need to descend into
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        # Never descend into a nested git repository/worktree/submodule — its
+        # contents belong to a separate checkout and a running plan's live
+        # worktree lives at such a boundary (see _is_nested_git_boundary).
+        dirnames[:] = [
+            d for d in dirnames if not _is_nested_git_boundary(os.path.join(dirpath_str, d))
+        ]
 
         for filename in filenames:
             rel = os.path.relpath(os.path.join(dirpath_str, filename), root_str)
-            if rel in ignored:
+            if _is_ignored(rel.replace(os.sep, '/'), ignored_files, ignored_dirs):
                 continue
 
             # Check safe patterns first, but demote tracked files to
