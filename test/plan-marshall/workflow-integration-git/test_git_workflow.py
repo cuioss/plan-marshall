@@ -71,6 +71,28 @@ def _git_init_with_identity(repo: Path) -> None:
     subprocess.run(['git', 'config', 'user.name', 'Test'], cwd=repo, capture_output=True)
 
 
+def _repo_with_live_worktree(
+    root: Path, worktree_path: Path, branch: str = 'feature/EXAMPLE-PLAN'
+) -> Path:
+    """Init ``root`` as a repo with one commit and a linked worktree at ``worktree_path``.
+
+    Models how plan-marshall runs a plan: in a linked git worktree that
+    ``git ls-files`` treats as a separate-checkout boundary (it never
+    enumerates the worktree's contents), while ``os.walk`` descends into it.
+    Returns ``worktree_path`` for convenience.
+    """
+    _git_init_with_identity(root)
+    _create_file(root, 'README.md')
+    subprocess.run(['git', 'add', '.'], cwd=root, capture_output=True)
+    subprocess.run(['git', 'commit', '-m', 'init'], cwd=root, capture_output=True)
+    subprocess.run(['git', 'branch', branch], cwd=root, capture_output=True)
+    worktree_path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ['git', 'worktree', 'add', str(worktree_path), branch], cwd=root, capture_output=True
+    )
+    return worktree_path
+
+
 class TestFormatCommit:
     """Test git_workflow.py format-commit via direct import."""
 
@@ -790,6 +812,170 @@ class TestDetectArtifactsGitignore:
         result = parse_toon(stdout)
         safe_files = result['safe']
         assert any('.class' in f for f in safe_files), f'.class should be present with --no-gitignore: {safe_files}'
+
+
+class TestDetectArtifactsLivePlanArtifacts:
+    """A running plan's own live artifacts must never be offered as safe-to-delete.
+
+    plan-marshall runs a plan in a linked git worktree under
+    ``.plan/local/worktrees/{plan}/``. ``git ls-files --others --ignored
+    --exclude-standard`` collapses that nested-worktree boundary to a single
+    trailing-slash directory entry instead of enumerating its contents, while
+    ``os.walk`` descends into it. An exact-string ``rel in ignored`` membership
+    test therefore misses every file beneath the worktree — including the
+    running plan's in-flight ``logs/work.log`` (its live audit trail) and its
+    build caches — and offers them as safe. A caller that follows the
+    documented "for safe artifacts, delete them" instruction then destroys the
+    evidence of the run still producing it.
+    """
+
+    def test_live_plan_worklog_never_offered_as_safe(self, tmp_path: Path):
+        """D5(b): the running plan's own logs/work.log is never in ``safe``.
+
+        Red pre-fix: the worktree boundary collapses in ``git ls-files`` and the
+        exact-match exclusion misses ``…/logs/work.log``, so it lands in ``safe``.
+        """
+        worktree = _repo_with_live_worktree(
+            tmp_path, tmp_path / '.plan' / 'local' / 'worktrees' / 'EXAMPLE-PLAN'
+        )
+        _create_file(worktree, 'logs/work.log')
+        _create_file(worktree, '.mypy_cache/3.11/builtins.data.json')
+        # A control artifact OUTSIDE any worktree that SHOULD be offered as safe.
+        _create_file(tmp_path, 'scratch.temp')
+
+        result = scan_artifacts(tmp_path, respect_gitignore=True)
+        offered = result['safe'] + result['uncertain']
+
+        assert not any('work.log' in f for f in result['safe']), (
+            f"live plan's own work.log offered as safe: {result['safe']}"
+        )
+        assert not any('EXAMPLE-PLAN' in f for f in offered), (
+            f'running-plan worktree path offered for deletion: {offered}'
+        )
+        # Positive population: the scan DID classify a real artifact, so the
+        # absence above is meaningful rather than a scan that matched nothing.
+        assert 'scratch.temp' in result['safe'], (
+            f'control artifact missing from safe: {result["safe"]}'
+        )
+
+    def test_gitignored_worktree_contents_excluded_per_contract(self, tmp_path: Path):
+        """D5(a): a gitignored path (the worktree tree, under gitignored .plan/)
+        is excluded per the documented contract — neither safe nor uncertain.
+
+        Red pre-fix: the collapsed ``.plan/local/worktrees/EXAMPLE-PLAN/`` entry
+        does not exclude its descendants, so the worktree's ``.mypy_cache`` and
+        ``__pycache__`` files are offered.
+        """
+        (tmp_path / '.gitignore').write_text('.plan/\n')
+        worktree = _repo_with_live_worktree(
+            tmp_path, tmp_path / '.plan' / 'local' / 'worktrees' / 'EXAMPLE-PLAN'
+        )
+        _create_file(worktree, '.mypy_cache/3.11/builtins.data.json')
+        _create_file(worktree, 'module/__pycache__/foo.pyc')
+        _create_file(tmp_path, 'scratch.temp')
+
+        result = scan_artifacts(tmp_path, respect_gitignore=True)
+        offered = result['safe'] + result['uncertain']
+
+        assert not any('.mypy_cache' in f for f in offered), (
+            f'gitignored worktree cache offered for deletion: {offered}'
+        )
+        assert not any('__pycache__' in f for f in offered), (
+            f'gitignored worktree cache offered for deletion: {offered}'
+        )
+        # Positive population — the exclusions above are not a vacuous empty scan.
+        assert 'scratch.temp' in result['safe'], (
+            f'control artifact missing from safe: {result["safe"]}'
+        )
+
+    def test_exposure_derivation_nonempty_and_excludes_live_member(self, tmp_path: Path):
+        """D5(c): the exposure derivation is asserted non-empty and contains a
+        known member, while the live-plan member is excluded.
+
+        The positive half (``safe`` non-empty and containing a known control
+        artifact) is the guard the epic's namesake defect defeats: a scan that
+        matched nothing looks identical to a clean tree, so a negative like
+        D5(b) would pass vacuously. Pairing it with the negative (the live
+        plan's own ``work.log`` is absent) makes this test red pre-fix and
+        proves the derivation both examined a populated tree and filtered the
+        live member out of it.
+        """
+        worktree = _repo_with_live_worktree(
+            tmp_path, tmp_path / '.plan' / 'local' / 'worktrees' / 'EXAMPLE-PLAN'
+        )
+        _create_file(worktree, 'logs/work.log')
+        _create_file(tmp_path, 'scratch.temp')
+
+        result = scan_artifacts(tmp_path, respect_gitignore=True)
+
+        assert result['safe'], 'scan produced an empty safe set — the negatives would be vacuous'
+        assert 'scratch.temp' in result['safe'], (
+            f'control artifact missing from safe: {result["safe"]}'
+        )
+        assert not any('work.log' in f for f in result['safe']), (
+            f"live plan's own work.log offered as safe: {result['safe']}"
+        )
+
+    def test_worklog_excluded_independent_of_gitignore(self, tmp_path: Path):
+        """D3 independence: the invariant holds for a worktree at a NON-gitignored
+        path scanned with ``respect_gitignore=False``.
+
+        This proves the protection is not merely a side effect of the gitignore
+        contract: with the ignore set never consulted, a running plan's own
+        checkout is still never offered for deletion.
+        """
+        worktree = _repo_with_live_worktree(tmp_path, tmp_path / 'nested-wt')
+        _create_file(worktree, 'logs/work.log')
+        _create_file(tmp_path, 'scratch.temp')
+
+        result = scan_artifacts(tmp_path, respect_gitignore=False)
+
+        assert not any('work.log' in f for f in result['safe']), (
+            f"live plan's work.log offered as safe without gitignore: {result['safe']}"
+        )
+        assert 'scratch.temp' in result['safe'], (
+            f'control artifact missing from safe: {result["safe"]}'
+        )
+
+
+class TestIgnoreExclusionHelpers:
+    """Unit coverage for the ignore-set partitioning and prefix-aware exclusion.
+
+    These pin the gitignore-contract logic (D5(a)) deterministically, without
+    depending on whether a particular git version collapses a given ignored
+    directory: they assert directly that a path *under* a reported ignored
+    directory is excluded.
+    """
+
+    def test_is_ignored_matches_exact_file_entry(self):
+        assert git_workflow._is_ignored('build/output.log', {'build/output.log'}, ())
+
+    def test_is_ignored_matches_path_under_ignored_directory(self):
+        # git collapses a fully-ignored directory to one trailing-slash entry;
+        # every descendant must still be treated as ignored.
+        ignored_dirs = ('.plan/local/worktrees/EXAMPLE-PLAN/',)
+        assert git_workflow._is_ignored(
+            '.plan/local/worktrees/EXAMPLE-PLAN/logs/work.log', set(), ignored_dirs
+        )
+
+    def test_is_ignored_no_false_prefix_match(self):
+        # A sibling path that merely shares a name prefix must NOT be excluded.
+        ignored_dirs = ('build/',)
+        assert not git_workflow._is_ignored('build-tools/main.py', set(), ignored_dirs)
+
+    def test_is_ignored_empty_set_excludes_nothing(self):
+        assert not git_workflow._is_ignored('any/path.log', set(), ())
+
+    def test_is_nested_git_boundary_detects_dot_git(self, tmp_path: Path):
+        nested = tmp_path / 'sub'
+        nested.mkdir()
+        (nested / '.git').write_text('gitdir: /elsewhere\n')  # linked-worktree marker
+        assert git_workflow._is_nested_git_boundary(str(nested))
+
+    def test_is_nested_git_boundary_false_for_plain_dir(self, tmp_path: Path):
+        plain = tmp_path / 'sub'
+        plain.mkdir()
+        assert not git_workflow._is_nested_git_boundary(str(plain))
 
 
 class TestWrapText:
