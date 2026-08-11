@@ -83,17 +83,46 @@ failure (which the omission never explained).
 
 ## Deliverables
 
-Per deliverable: what was done, in which commit, and its verification state. _(filled in as the run proceeds)_
+Per deliverable: what was done, in which commit, and its verification state.
 
-- **D1 — GATE**: complete, analysis above. Mutates nothing. Class count 9, registering count 3, both source-derived.
-- **D2**: _pending_
-- **D3**: _pending_
-- **D4**: _pending_
-- **D5**: _pending_
+- **D1 — GATE** (commit `02d098a`, analysis-only): complete. Class count 9,
+  registering count 3, both source-derived from the call graph. The fork
+  (omission → impossible ratio) is **refuted** — the omission drives
+  under-coverage, the impossible ratio is over-coverage from a separate
+  (accumulate-vs-window) cause. Mutates nothing.
+- **D2** (commit `2312559`): a numerator > denominator no longer renders
+  `complete`. New `_boundary_coverage_state` classifier (undecidable / partial /
+  exact / **over**); the `over` case renders a loud `FAILURE` naming both
+  producers and is refused the reconciliation maximum (not just the display).
+  Verified by `test_over_coverage_renders_failure_naming_both_populations` and
+  `test_over_covering_measure_is_ineligible_for_the_maximum` (both fail-first).
+- **D3** (commit `2312559`): `DISPATCH_BOUNDARY_EXCLUDED_CLASSES` constant
+  (source-derived, 6 non-registering classes) rendered as a declaration the
+  coverage figures reference. Verified by `test_excluded_classes_are_named_in_the_report`,
+  the source-derivation guard, and the negative control (a dispatched phase's
+  shortfall is declared, not silently shrunk).
+- **D4** (commit `2312559`): `_reconciliation_relation_clause` renders the true
+  `>` / `=` / `<` relation; exact agreement reads as agreement. Verified by the
+  three-way distinction test (equal + smaller fail-first; larger is the labelled
+  characterization arm).
+- **D5** (commit `2312559`, mypy typing fix `952c4e5`): 8 tests in
+  `test/plan-marshall/manage-metrics/test_dispatch_boundary_ledger_population.py`.
+  Fail-first confirmed: **7 failed, 1 passed** against unmodified code (the 1
+  passing is the declared `larger` characterization arm); **8 passed** after the
+  fix.
 
 ## Build gate
 
-_(filled in at Step 5)_
+`git diff --name-only origin/main...HEAD -- '*.py'` → two Python files changed
+(`manage-metrics.py`, the new test), so the gate is `./pw verify`.
+
+- **Fail-first evidence** (unmodified code): `7 failed, 1 passed` — the impossible
+  ratio rendered `— complete`, no exclusion declaration existed, and the
+  comparator rendered `> total_tokens` for the equal / smaller cases.
+- **`./pw quality-gate`**: `status: pass`, `total_issues: 0`, empty `issues[]`.
+- **`./pw verify`** (full): **19052 passed, 14 skipped**, `verify: SUCCESS`
+  (after the one mypy `no-any-return` fix in the new test helper). No regression
+  in the 398-test manage-metrics suite.
 
 ## Findings
 
