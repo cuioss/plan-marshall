@@ -439,6 +439,36 @@ also have "fired" — but as a bare "2 of 3" roster shortfall that conflates the
 with two optional absences; the disclosure recorded here is the corrected required-vs-optional form the
 D1 proposal specifies.
 
+## Merge gate
+
+Gated on lane § Step 8 conditions 1–3; condition 4 is a disclosure performed before arming.
+
+- **Condition 1 — required contexts green on the head SHA.** Read from `mergeStateStatus` (GitHub
+  applying the ruleset), never a named check. The required contexts are `verify / conclusion` and
+  `review / review`; `Sourcery review` and CodeRabbit's `CodeRabbit` status are **non-required**
+  (advisory) and their skip/rate-limit does not block. Each push re-runs `verify`, so greenness is
+  confirmed on the **final** head immediately before arming. The squash-merge SHA does not exist until
+  the queue lands the PR, so the merge commit and final head are **reported to the operator**, not
+  embedded here (per § Step 8).
+- **Condition 2 — every comment handled.** The 4 CodeRabbit inline findings are dispositioned — 3 fixed
+  in `18f7814`, 1 (the persistence Major) accepted with the fail-closed resolution — and all four
+  threads resolved. Any re-review comment on the fix is handled the same way before arming.
+- **Condition 3 — report finalized and pushed** as the last pre-merge commit (this report).
+
+- **Condition 4 — review-coverage shortfall disclosure: FIRED.** Stated to the operator before arming,
+  in the corrected required-vs-optional form the D1 proposal specifies:
+
+  > **Review coverage — required quorum met by EMPTY participation (1 of 1: `cuioss-review-bot` / pr-agent
+  > posted its Guide "no major issues detected" with zero findings → `reviewed-empty`); optional 1 of 2
+  > reviewed (`coderabbitai`: 4 findings incl. 2 Major; `sourcery-ai`: rate-limited, weekly quota); roster
+  > 2 of 3 participated.**
+
+  Per § Step 8 this is a **disclosure, not a block** — an empty required quorum and an optional
+  rate-limit do not hold the merge; the run states the shortfall and proceeds. This PR is itself a live
+  instance of the false-clean the plan corrects: under the *current shipped* cloud-lane roster-flat text
+  the required reviewer's empty Guide would have rendered as covered, and the real defects came entirely
+  from an *optional* reviewer.
+
 ## Cost
 
 - **Tokens:** not reliably available to the agent in this session; stated plainly rather than guessed.
