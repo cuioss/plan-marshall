@@ -1,6 +1,6 @@
 # Run report — 060-dispatch-boundary-ledger-is-not-a-commensurable-population (run 01)
 
-**Date (UTC):** 2026-08-11    **Branch:** claude/dispatch-boundary-ledger-k8yrwg (harness-assigned)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-11    **Branch:** claude/dispatch-boundary-ledger-k8yrwg (harness-assigned)    **PR:** [#1173](https://github.com/cuioss/plan-marshall/pull/1173)    **Outcome:** completed (landing delegated to the merge queue via armed auto-merge)
 
 ## Skills loaded
 
@@ -147,24 +147,95 @@ Re-verification pass confirmed findings 1–3 correctly account for the `over` s
 introduced no new stale claim, and a final grep-level sweep found only residual #4 (now
 fixed) — no other partial-only eligibility narrative remains.
 
-CI and PR-review findings: _(filled in at Step 7/8)_
+**CI**: `verify / conclusion` **success** on head `3c80d791` (with `verify / verify`,
+`verify / gate`, `review / review`, `dependency-review`, `generate-check` all success;
+`Sourcery review` and `auto-merge` skipped). `mergeable_state: clean`. No CI findings.
+
+**PR review**: no actionable findings. `cuioss-review-bot` posted a clean "PR Reviewer
+Guide" (contains tests · no security concerns · no major issues). `coderabbitai` and
+`sourcery-ai` posted only rate-limit notices (no diff review). Inline review threads: 0.
+Nothing to fix or reply to.
 
 ## Reviewer participation
 
-_(filled in at Step 7/8)_
+Expected population derived from configuration — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry
+doc (`pr-agent.md` → `cuioss-review-bot`, `coderabbit.md` → `coderabbitai`, `sourcery.md` →
+`sourcery-ai`), cross-named by `.github/workflows/pr-agent.yml`. Verdicts derived from the
+stored comment/review bodies:
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Posted "PR Reviewer Guide 🔍 — PR contains tests · No security concerns identified · No major issues detected": an explicit clean review over the diff. |
+| `coderabbitai` | `rate-limited` | Published only "Review limit reached … Next review available in 43 minutes" — engaged but did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Published a review reading "you have reached your weekly rate limit of 500000 diff characters"; its `Sourcery review` check concluded `skipped`. |
+
+**Coverage: 1 of 3.** Step 8 shortfall disclosure fired: "Review coverage 1 of 3 —
+`cuioss-review-bot` reviewed (no findings); `coderabbitai` rate-limited (window reopens ~43
+min); `sourcery-ai` rate-limited (weekly quota)." Per the contract this is a disclosure, not
+a block — rate limits are routine and outside our control, so the merge proceeds once
+conditions 1–3 hold.
 
 ## Cost
 
-_(filled in at close)_
+- **Tokens:** not available to the agent as a precise figure in this session — the harness
+  does not surface a per-run token total to the agent. Not stated rather than guessed.
+- **Wall-clock:** run start ~21:06 UTC (branch push / D1) to merge-gate ~22:05 UTC — roughly
+  one hour, including two independent verification sub-agent passes, three full `./pw verify`
+  runs locally (~6–7 min each), and the CI `verify` wait (~14 min). Source: commit and
+  PR-event timestamps.
+- **Population:** this single Claude Code cloud session's usage. ⛔ **NOT comparable** to a
+  plan-marshall `metrics.toon` total, which counts the orchestrator-plus-agent dispatch tree
+  under plan-marshall's per-task billing boundary — a boundary this interactive cloud session
+  does not share. The figures cannot be made comparable, so no parity is implied.
 
 ## Contract check (Step 9)
 
-_(filled in at close)_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — 6 skills, all by bundle path (§ Skills loaded). |
+| 2 Branch | Done — harness-assigned `claude/dispatch-boundary-ledger-k8yrwg`, kept as-is, on `origin`. |
+| 3 Plan directory | Done — `060-…/plan.md` exists and opens with the first-instruction block. |
+| 4 Implement | Done — commits carry the trailer; D1–D5 addressed. |
+| 4 Per-commit gate | Done — every `*.py` commit preceded by a `total_issues: 0` / empty `errors[]` quality-gate log. |
+| 4 Pushed | Done — no unpushed commit remains. |
+| 5 Build gate | Done — Python changed → `./pw verify` run over the final state: 19052 passed, 14 skipped, SUCCESS. |
+| 6 Verification sub-agent | Done — two passes; 4 stale-claim findings fixed, 1 rejected-with-reason. |
+| 7 PR cycle | Done — PR #1173; both comment surfaces read; no actionable comment. |
+| 8 Merge gate | Conditions 1–3 met; shortfall disclosed (1-of-3); auto-merge armed (SQUASH). Landing delegated to the merge queue (§ Residue). |
+| 8 Bridge | No write landed under `doc/plans/` outside this plan's directory. |
+| 9 This check | This table. |
+| 9 What have we learned | Below. |
+
+GitHub access path: **GitHub MCP server** (cloud path). Branch form: **harness-assigned**
+(`claude/*`, kept as-is). No `/sync-plugin-cache` owed (machine-local build step; a cloud run
+never performs or owes it).
 
 ## What have we learned (Step 9)
 
-_(filled in at close)_
+One minor, run-evidenced candidate: the § Step 8 condition-1 text enumerates
+`mergeStateStatus` values `BLOCKED` and `UNSTABLE` but not **`clean`**, which is the value
+this run actually observed once the required `verify` check went green (`mergeable_state:
+clean`, no non-required contexts pending). `clean` is the "all required green AND nothing else
+pending — fully mergeable" state; a reader following the contract literally finds only
+`BLOCKED`/`UNSTABLE` described. Proposed amendment: add `clean` alongside `UNSTABLE` as a
+"required contexts satisfied → may arm" state. This is a **doc-completeness** nit, not a gap
+that changed the outcome (the contract's intent — read required-ness from GitHub's own
+computation — was clear and correctly applied). Presented to the operator for a decision; not
+self-approved and not shipped in this PR. The one in-run friction (a `send_later` call failed
+on a wrong MCP server prefix) was an agent error, not a contract defect, and turned out
+unnecessary — the merge gate was driven entirely by in-session read-polling, exactly as the
+contract's "Manual read-polling" path prescribes.
 
 ## Residue
 
-_(filled in at close)_
+- **Landing**: auto-merge is armed (SQUASH) on PR #1173 with required checks green; the merge
+  queue lands it. This session delegates the `state: MERGED` confirmation to the
+  orchestrator's collect step (per § Step 8 arm-and-hand-off) — or self-confirms on re-entry
+  if the session is still active when the queue lands it. The squash merge SHA does not exist
+  until then and is read from the PR merge event, not embedded here.
+- **Review coverage**: 1-of-3 by reviewer rate limits (disclosed above); both rate-limited
+  bots' windows reopen on their own schedules. No action owed — re-requesting is optional and
+  the merge does not wait on it.
+- **Contract amendment**: the `clean` `mergeStateStatus` doc nit awaits an operator decision;
+  if accepted it ships as a separate `chore/` PR touching only the skill.
