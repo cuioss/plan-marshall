@@ -245,15 +245,16 @@ When the list is non-empty, the just-observed comment growth is a status notice 
 Every review operation on this surface feeds ONE downstream classification: the closed
 non-participation taxonomy owned by
 [`automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md).
-That taxonomy has **seven** members, and this section records only which observation on this surface
-feeds which member — the semantics, the severity rules, and the closure statement live in the contract
-and are not restated here.
+That taxonomy has **nine** non-participation members, and this section records only which observation
+on this surface feeds which member — the semantics, the severity rules, and the closure statement live
+in the contract and are not restated here (a member fed only by another surface, such as `declined`
+from the re-review await, is therefore absent from the table below).
 
 | Member | Fed by |
 |--------|--------|
 | `participated` / `participated_but_empty` | `github_pr fetch_findings` → `participated_bots[]` (evidence-typed publish shapes) |
 | `participated_stale` | `github_pr fetch_findings` → `stale_participation_bots[]` (publish shape matched, `participation_requires_update` currency test failed) |
-| `refused_awaitable` / `refused_hard` | `github_pr fetch_findings` → `refused_bots[]`, unioned with `pr wait-for-comments` → `rate_limited_bots[]`; the split comes from each bot's registry `rate_limit_class` |
+| `refused_awaitable` / `refused_hard` / `refused_unknown` | `github_pr fetch_findings` → `refused_bots[]`, unioned with `pr wait-for-comments` → `rate_limited_bots[]`; the split comes ONE-TO-ONE from each bot's three-valued registry `rate_limit_class` (`awaitable_window` / `hard_quota` / `unknown`) |
 | `in_progress` | `github_pr bot_completion` → the non-terminal check state at the poll bound |
 | `not_triggered` | `checks pull-request-runs` → `not_triggered` (PR-wide: no `pull_request`-event run exists at all) |
 | `absent` | no observation of any kind — the fail-closed fall-through |

@@ -968,8 +968,8 @@ def test_fetch_findings_splits_a_refusing_bot_from_a_participating_one(plan_cont
     excludes a refusal (a refusal is positive evidence the bot did NOT review, even
     though it is published in one of the bot's declared shapes), while
     ``refused_bots`` carries the refusal so the quorum layer can classify it as
-    ``refused_awaitable`` / ``refused_hard``. The human author (``bot_kind`` None)
-    appears in neither.
+    ``refused_awaitable`` / ``refused_hard`` / ``refused_unknown``. The human author
+    (``bot_kind`` None) appears in neither.
     """
     plan_id = 'gh-pr-refusal-vs-participation'
     comments = [
