@@ -150,15 +150,22 @@ plan emitted for the resolved kind:
   `unknown` is terminal and refusing, never a vacuous `fresh` (ADR-009). On
   either refusing verdict, follow "Partial-failure and abort handling" below and
   report the emitted `remediation`, which names the operator commands verbatim:
-  run `/plugin marketplace update` to refresh the marketplace clone, then
-  reinstall the plugin (`/plugin uninstall plan-marshall` followed by
-  `/plugin install plan-marshall`). Re-run `/marshall-steward upgrade` afterwards.
+  run `/plugin update plan-marshall` to update the installed plugin in place
+  (non-destructive — no uninstall or reinstall), then verify the update landed by
+  running `/plugin` and confirming plan-marshall reports the expected version.
+  Re-run `/marshall-steward upgrade` afterwards.
 
   Note the division of labour with Stage 3's `executor-preflight`: preflight
   compares the executor's stamp against a LOCAL manifest and answers "is my
   executor consistent with my cache?"; it is structurally incapable of seeing
-  cache-versus-upstream skew. This sub-step owns that question, and preflight is
-  unchanged.
+  cache-versus-clone skew. This sub-step owns THAT question — is the cache current
+  with the local marketplace clone? — and preflight is unchanged. Neither sub-step
+  has an upstream leg: whether the clone itself is current with the actual upstream
+  is not verified here, and the `cache_freshness` verdict stamps
+  `compared_against: local_clone_manifest` to declare that scope. A `fresh` verdict
+  is therefore a clone-currency claim, not an upstream-currency one; keeping the
+  clone current with upstream (a separate `/plugin marketplace update`) is an
+  operator action this gate does not perform.
 
 - **`regenerate-target-tree`** (meta only — absent from a consumer plan) —
   regenerate the Claude target tree:
@@ -281,7 +288,7 @@ repository `CLAUDE.md` § "Plugin Cache Sync"): it is a project-local skill unde
 consumer projects neither ship it nor have it seeded. So the mechanism that keeps
 the meta cache fresh is invisible to — and does not cover — a consumer, whose
 cache is refreshed only when the operator explicitly runs
-`/plugin marketplace update` and reinstalls. A consumer therefore has a real
+`/plugin update plan-marshall`. A consumer therefore has a real
 "my cache silently fell behind" failure mode that meta does not, which is exactly
 the failure the freshness gate refuses on. Adding the gate to the meta kind would
 gate on a condition meta's own finalize pipeline already guarantees.
@@ -293,7 +300,9 @@ tree and both leave superseded version dirs behind. The sweep and its
 
 ## Stage 2: reconcile-config (mutating)
 
-Honor the Stage 2 top-level gate, then reconcile `marshal.json`:
+Honor the Stage 2 top-level gate, then reconcile `marshal.json`. Run the three
+reconcile verbs in order — `sync-defaults` then `steps-sort` then, LAST,
+`normalize-keys`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-defaults
@@ -303,8 +312,22 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config sync-d
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config steps-sort
 ```
 
-See the `manage-config` Canonical invocations (`sync-defaults`, `steps-sort`) for
-the verb shapes. Both are idempotent and byte-stable on an already-current config.
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config normalize-keys
+```
+
+See the `manage-config` Canonical invocations (`sync-defaults`, `steps-sort`,
+`normalize-keys`) for the verb shapes. All three are idempotent and byte-stable on
+an already-current config. `normalize-keys` runs **last** and its position is
+load-bearing: `sync-defaults` and `steps-sort` are conditional writes — they
+persist only when they actually change something — so on a config whose only drift
+is a non-canonical top-level key order NEITHER writes and the order is never
+corrected. `normalize-keys` is the **unconditional** top-level canonicalizer (it
+always re-writes in canonical order), and running it after any key-adding reconcile
+gives it the final word. When it returns `status: warning` with a non-empty
+`unrecognized_keys`, surface that list to the operator: those top-level keys are
+absent from the canonical order and were preserved but appended out of position (a
+stray or consumer-added block) rather than dropped.
 
 **Nested gate — `build-map` re-seed (STILL prompts under `integrate=true`).**
 Compute the drift between the persisted `build.map` and the live-tree derivation,

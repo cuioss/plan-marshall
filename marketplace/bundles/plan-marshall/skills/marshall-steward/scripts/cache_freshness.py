@@ -33,6 +33,15 @@ name the exact operator commands to run. ``unknown`` is terminal: there is no
 age-based, mtime-based, or otherwise-inferred fallback that downgrades it to a
 guessed ``fresh``/``stale``. The verdict set is exactly these three values.
 
+Every verdict stamps ``compared_against: local_clone_manifest``. This verb has NO
+upstream leg, so a ``fresh`` verdict means "the cache is current with the LOCAL
+marketplace clone", never "current with the actual upstream": a clone that is
+itself behind upstream can still read ``fresh`` here. The field declares that
+scope so ``fresh`` is never mistakable for an upstream-currency claim — fetching
+the git remote belongs to the separately-owned version-resolution surface, not to
+this read-only deterministic emitter. The refusing verdicts' remediation already
+leads the operator through refreshing the clone.
+
 Subcommand:
     check  Emit the freshness verdict. ``--cache-root`` optionally overrides the
            resolved plugin-cache root (tests / alternate installs).
@@ -47,9 +56,10 @@ Output (TOON):
     refuses_upgrade: true
     cache_version: 0.1.1180
     manifest_version: 0.1.1195
+    compared_against: local_clone_manifest
     cache_root: /Users/x/.claude/plugins/cache/plan-marshall
     manifest_path: /Users/x/.claude/plugins/marketplaces/plan-marshall/dist-manifest.json
-    remediation: Run '/plugin marketplace update', then reinstall the plugin ...
+    remediation: Run '/plugin update plan-marshall' (non-destructive), then verify the version ...
     warning:
 
 Exit 0 on success, 2 on argparse rejection.
@@ -74,13 +84,23 @@ _VERSION_DIR_RE = re.compile(r'^\d+\.\d+')
 # them. It is a module constant so every refusing branch emits the identical
 # string and a test can assert the literal commands.
 REMEDIATION = (
-    "Run '/plugin marketplace update' to refresh the marketplace clone, then reinstall the plugin "
-    "('/plugin uninstall plan-marshall' followed by '/plugin install plan-marshall')."
+    "Run '/plugin update plan-marshall' to update the installed plugin in place "
+    "(non-destructive — no uninstall or reinstall), then verify the update landed by "
+    "running '/plugin' and confirming plan-marshall reports the expected version."
 )
 
 FRESH = 'fresh'
 STALE = 'stale'
 UNKNOWN = 'unknown'
+
+# The comparison scope this verb can substantiate, stamped on every verdict.
+# It compares the cache only against the *local* marketplace-clone manifest; it
+# has no upstream leg (a git-remote fetch belongs to the separately-owned
+# version-resolution surface). Stamping this makes a ``fresh`` verdict declare
+# what it does NOT check — clone-vs-upstream currency — so ``fresh`` can never be
+# read as a claim of being current with the actual upstream (ADR-009: a verdict
+# names what it could not substantiate rather than implying it).
+COMPARED_AGAINST = 'local_clone_manifest'
 
 
 def newest_cache_version(cache_root: Path) -> str:
@@ -124,6 +144,7 @@ def _unknown(reason: str, cache_root: Path | None, cache_version: str) -> dict:
         'refuses_upgrade': True,
         'cache_version': cache_version or UNKNOWN,
         'manifest_version': UNKNOWN,
+        'compared_against': COMPARED_AGAINST,
         'cache_root': str(cache_root) if cache_root is not None else '',
         'manifest_path': '',
         'remediation': REMEDIATION,
@@ -178,6 +199,7 @@ def check_freshness(cache_root: Path | None) -> dict:
         'refuses_upgrade': not is_fresh,
         'cache_version': cache_version,
         'manifest_version': manifest_version,
+        'compared_against': COMPARED_AGAINST,
         'cache_root': str(cache_root),
         'manifest_path': str(manifest_path),
         'remediation': '' if is_fresh else REMEDIATION,
