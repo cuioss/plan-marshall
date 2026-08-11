@@ -24,8 +24,8 @@ shim-to-external-executor split — every documented call site
 
 Self-checking, atomic regeneration:
     ``generate`` is fail-safe by construction — it never overwrites a working
-    executor with a malformed one. After the template is read and all
-    placeholders are substituted, four deterministic guards run BEFORE any
+    executor with a malformed one, and never reports success while writing a
+    surfaces-less one. Five deterministic guards run BEFORE any
     write: (1) a **format handshake** asserts the template's
     ``TEMPLATE_FORMAT_VERSION`` marker equals the generator's
     ``_SUPPORTED_TEMPLATE_FORMAT_VERSION`` constant (a skew is refused loudly
@@ -36,9 +36,12 @@ Self-checking, atomic regeneration:
     than writing; (4) a **provenance guard** refuses a content whose emitted
     paths carry more than one plugin-cache version dir for a single bundle (an
     internally version-split executor), no-opping in the version-less
-    marketplace layout. Guards 1-3 are shape checks; guard 4 is the only one that
-    compares the emitted path families against each other.
-    Only a content that passes all four is committed, and the
+    marketplace layout; (5) a **fail-open guard** refuses a regeneration that
+    emits zero surfaces where the previous executor carried some (a silently
+    stripped surface set would leave the pre-spawn validator inert). Guards 1-3
+    are shape checks on the content; guard 4 compares the emitted path families
+    against each other; guard 5 is a semantic check on the derivation outcome.
+    Only a content that passes all five is committed, and the
     commit is **atomic** — written to a sibling temp path and ``os.replace``-d
     onto the real executor, so a partial or broken write can never leave a
     corrupt executor in place. Every regen caller (the meta upgrade path, the
@@ -827,10 +830,13 @@ def _surface_derivation_config() -> surface_api.DerivationConfig:
     first build wants the full allowance, while a caller that needs only the
     notation mappings refreshed (a CI path, an anchoring check) should not pay
     for a full accept-set derivation. Setting it to ``0`` disables derivation
-    outright, which is a SAFE configuration rather than a broken one — a
-    surface-less executor dispatches exactly as it did before the map existed
-    (see the fail-closed-on-uncertainty invariant). An unparseable or negative
-    value falls back to the default rather than failing the generation.
+    outright. On a fresh or surface-less previous that is a SAFE configuration —
+    a surface-less executor dispatches exactly as it did before the map existed
+    (the fail-closed-on-uncertainty invariant). Against a previous executor that
+    ALREADY carried surfaces, a zero-surface generation is the regression the
+    fail-open guard in :func:`generate_executor` now refuses, so ``0`` is not
+    universally safe once surfaces exist. An unparseable or negative value falls
+    back to the default rather than failing the generation.
     """
     budget = _DEFAULT_SURFACE_BUDGET_SECONDS
     raw = os.environ.get(_SURFACE_DERIVATION_BUDGET_ENV)
@@ -858,6 +864,44 @@ _EMPTY_SURFACE_STATS: dict[str, int] = {
     'surfaces_reused': 0,
     'surfaces_not_derivable': 0,
 }
+
+# The distinctive stdout prefix of the surface-stats line. A single token a
+# consumer greps for, so the emission is asserted on a VALUE rather than
+# inferred from a line's absence.
+_SURFACE_STATS_LINE_PREFIX = 'surface-stats:'
+
+
+def format_surface_stats_line(stats: dict[str, int]) -> str:
+    """Render the four accept-set counts as one greppable stdout line.
+
+    **Emission contract (normative — not a mere convenience).** This line is
+    emitted UNCONDITIONALLY on every real regeneration, including the all-zero
+    case, and a consumer establishes the derivation outcome by reading its
+    VALUES. It must never establish that outcome by noticing the line is
+    missing, because *an absence nothing consumes is not a signal*: the exact
+    failure this line closes is a regeneration that derived nothing yet exited
+    ``status: success``, distinguishable from a healthy one ONLY by a line that
+    was not there to read. A signal that lives in an absence is no signal at
+    all, so the counts are always present — at the value ``0`` when nothing was
+    derived — and the fail-open guard (see :func:`generate_executor`) turns that
+    zero into a loud non-zero exit rather than leaving it for a consumer to
+    infer.
+
+    Args:
+        stats: The four-count surface-stats mapping (the shape of
+            :data:`_EMPTY_SURFACE_STATS`).
+
+    Returns:
+        A single line, prefixed by :data:`_SURFACE_STATS_LINE_PREFIX`, naming
+        every count by key so the emission carries a value per bucket.
+    """
+    return (
+        f'{_SURFACE_STATS_LINE_PREFIX} '
+        f'scripts_registered={stats["scripts_registered"]} '
+        f'surfaces_derived={stats["surfaces_derived"]} '
+        f'surfaces_reused={stats["surfaces_reused"]} '
+        f'surfaces_not_derivable={stats["surfaces_not_derivable"]}'
+    )
 
 # Locates the ``SCRIPT_SURFACES = {`` … ``}`` literal in a previously generated
 # executor so its entries can be reused by digest. Text-scanned rather than
@@ -1013,8 +1057,12 @@ def derive_script_surfaces(
 
     Returns ``(surfaces, stats)`` where ``stats`` carries the four counts the
     command publishes. They are reported rather than merely computed because a
-    regeneration that quietly derived nothing is otherwise indistinguishable
-    from one that derived everything — both exit ``status: success``.
+    regeneration that quietly derived nothing must be distinguishable from one
+    that derived everything: the counts feed the fail-open guard in
+    :func:`generate_executor` — which refuses a zero-surface regeneration against
+    a non-empty previous rather than reporting success — and the unconditional
+    surface-stats line, so the outcome is a value a consumer reads rather than a
+    status the two outcomes would otherwise share.
     """
     shared_digest = _shared_dirs_digest(shared_dirs)
     digests = {
@@ -1117,7 +1165,7 @@ def generate_executor(
     """
     Generate execute-script.py with embedded mappings.
 
-    Four deterministic guards protect the executor, and their ORDER is load
+    Five deterministic guards protect the executor, and their ORDER is load
     bearing in two different ways.
 
     Guard 1 runs ahead of the accept-set derivation, which costs one ``--help``
@@ -1127,13 +1175,19 @@ def generate_executor(
     dry run returns earlier still: it derives nothing and writes nothing, so
     there is nothing for the handshake to protect.)
 
-    Guards 2-4 then run before THE EXECUTOR is written, so a malformed
-    generation can never overwrite a working executor. One write does precede
-    them, and it is not the executor: derivation dispatches its ``--help``
-    probes through a throwaway PROBE executor — a sibling temp file carrying the
-    content about to be written minus its surfaces, unlinked on every exit path
-    — so the probes see the script set being generated rather than the previous
-    one. The real executor is untouched until every guard has passed.
+    Guard 5 runs immediately AFTER the derivation, on its outcome; guards 2-4
+    then run before THE EXECUTOR is written, so a malformed generation can never
+    overwrite a working executor. One write does precede them, and it is not the
+    executor: derivation dispatches its ``--help`` probes through a throwaway
+    PROBE executor — a sibling temp file carrying the content about to be written
+    minus its surfaces, unlinked on every exit path — so the probes see the
+    script set being generated rather than the previous one. The real executor
+    is untouched until every guard has passed.
+
+    Once the derivation outcome is known, the four accept-set counts are emitted
+    as an UNCONDITIONAL surface-stats line (see :func:`format_surface_stats_line`
+    for the "an absence nothing consumes is not a signal" contract) — on the
+    fail-open refusal and the success return alike, carrying identical counts.
 
     1. **Format handshake** — the template's ``TEMPLATE_FORMAT_VERSION`` marker
        must equal :data:`_SUPPORTED_TEMPLATE_FORMAT_VERSION`; a skew returns a
@@ -1151,9 +1205,18 @@ def generate_executor(
        than one plugin-cache version dir returns a ``status: error`` dict naming
        the bundle and the conflicting version dirs, again leaving any pre-existing
        executor byte-identical. The guard no-ops in the version-less marketplace
-       layout. A content passing all four guards is written to a sibling temp path
+       layout. A content passing all guards is written to a sibling temp path
        and ``os.replace``-d onto the real executor so a partial write can never
        leave a corrupt executor in place.
+    5. **Fail-open guard** — a SEMANTIC check on the derivation outcome rather
+       than the content shape: when the previous executor carried surfaces but
+       this generation emits ZERO (neither derived nor reused), it returns a
+       ``status: error`` dict (carrying ``surface_stats``) and writes nothing,
+       leaving the still-validating previous executor in place. A surfaces-less
+       executor dispatches with no pre-spawn validation, so a green regeneration
+       that quietly stripped the whole set would leave the guard inert while
+       every signal reads healthy. A previous state that itself had no surfaces
+       (a fresh install) is not a regression and passes through.
 
     Args:
         mappings: Script notation to path mappings
@@ -1264,6 +1327,13 @@ def generate_executor(
 
     real_executor = executor_path()
 
+    # Read the OUTGOING surfaces once, before the probe/derivation below, and
+    # keep the count: the fail-open guard downstream compares "how many surfaces
+    # the last executor carried" against "how many this generation emits", and
+    # the previous executor is untouched until the atomic write at the very end,
+    # so this read sees the outgoing state whatever the derivation does.
+    previous_surfaces = read_previous_surfaces(real_executor)
+
     # Derive the argparse accept-sets against a PROBE executor — the very
     # content about to be written, minus its surfaces. The alternative,
     # probing through the previous executor, would derive surfaces for the OLD
@@ -1278,14 +1348,17 @@ def generate_executor(
         surfaces, surface_stats = derive_script_surfaces(
             mappings,
             probe_executor,
-            read_previous_surfaces(real_executor),
+            previous_surfaces,
             shared_dirs,
         )
     except OSError as exc:
-        # Derivation is an enhancement, never a precondition: an executor with
-        # no surfaces dispatches exactly as it did before this map existed. A
-        # probe-write failure therefore degrades to no surfaces rather than
-        # failing the generation and leaving the caller with a stale executor.
+        # A probe-write failure degrades to NO surfaces rather than raising here.
+        # Against a fresh/empty previous that is harmless — a surfaces-less
+        # executor dispatches exactly as it did before this map existed. Against
+        # a previous that already carried surfaces it is a total collapse, which
+        # the fail-open guard below then turns into a loud refusal (no write, the
+        # still-validating previous executor preserved) — so this degradation is
+        # never the silent stale-executor it once was.
         print(f'Warning: surface derivation skipped ({exc})', file=sys.stderr)
         surfaces, surface_stats = {}, dict(_EMPTY_SURFACE_STATS)
         surface_stats['scripts_registered'] = len(mappings)
@@ -1295,6 +1368,41 @@ def generate_executor(
             probe_executor.unlink(missing_ok=True)
         except OSError:
             pass
+
+    # Emit the surface-stats line UNCONDITIONALLY, at the single point where the
+    # derivation outcome is known, so it appears on BOTH the fail-open refusal
+    # below and the eventual success return — carrying identical counts. See
+    # format_surface_stats_line for the normative "an absence nothing consumes
+    # is not a signal" contract this closes.
+    print(format_surface_stats_line(surface_stats))
+
+    # Guard 5 — fail-open guard: refuse a regeneration that emits ZERO surfaces
+    # (neither derived nor reused) where the previous executor carried some. A
+    # surfaces-less executor dispatches without any pre-spawn validation, so a
+    # green regeneration that quietly stripped the whole surface set leaves the
+    # guard inert while every signal reads healthy — the exact recurrence this
+    # deliverable closes. This is a SEMANTIC guard on the derivation outcome,
+    # unlike the shape guards 1-4: it fails loudly (non-zero exit) and writes
+    # nothing, so the previous — still-validating — executor is left in place
+    # for the caller to regenerate against a working budget. A previous state
+    # that itself had no surfaces (a fresh install, a first build) is not a
+    # regression and passes through with an all-zero stats line.
+    emitted_surface_count = surface_stats['surfaces_derived'] + surface_stats['surfaces_reused']
+    if previous_surfaces and emitted_surface_count == 0:
+        return {
+            'status': 'error',
+            'error': (
+                f'Fail-open regeneration refused: the previous executor carried '
+                f'{len(previous_surfaces)} derived surface(s) but this generation emitted '
+                f'0 (neither derived nor reused). A surfaces-less executor dispatches with '
+                f'no pre-spawn validation, so writing it would silently disable the guard. '
+                f'No executor was written and the previous one was left untouched. Remedy: '
+                f'resolve why this generation derived no surfaces — an exhausted '
+                f'{_SURFACE_DERIVATION_BUDGET_ENV}, a broken probe, or an unreadable/failing '
+                f'script set (see any warning above) — then re-run generate.'
+            ),
+            'surface_stats': surface_stats,
+        }
 
     content = _substitute(generate_surfaces_code(surfaces))
 
@@ -1849,13 +1957,25 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     print('Generating executor...')
     gen_result = generate_executor(mappings, base_path, dry_run=args.dry_run, target=resolved_target)
     if gen_result.get('status') != 'success':
+        # The fail-open guard's error result carries surface_stats — flatten
+        # them to the top level so the counts reach the TOON output on the error
+        # path exactly as they do on success. The counts are the evidence a
+        # consumer asserts on: without them here, the very outcome the guard
+        # exists to make loud would surface as a bare error with no numbers.
+        stats = gen_result.pop('surface_stats', None)
+        if stats:
+            gen_result.update(stats)
         return gen_result
 
     # The four accept-set counts, published rather than merely computed. A
     # regeneration that quietly derived NOTHING — a broken probe, an exhausted
     # budget, a shared-module edit that invalidated everything and then failed —
-    # exits ``status: success`` exactly like a healthy one, so the only way to
-    # tell them apart is to read the numbers. ``surfaces_not_derivable`` is the
+    # no longer slips through as a healthy ``status: success`` when the previous
+    # executor carried surfaces: the fail-open guard above turns that case into a
+    # ``status: error`` (whose counts the branch above flattens), and a
+    # fresh/empty previous deriving zero still succeeds with all-zero counts. On
+    # every path the counts ride the result, so the outcome is read from a value
+    # rather than inferred from the status. ``surfaces_not_derivable`` is the
     # residual (registered minus emitted), so the three buckets always sum to
     # ``scripts_registered``.
     surface_stats = gen_result.get('surface_stats') or dict(_EMPTY_SURFACE_STATS)

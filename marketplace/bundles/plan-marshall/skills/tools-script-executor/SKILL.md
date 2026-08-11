@@ -167,8 +167,11 @@ ordinary flag and stays fully validated.
 
 The asymmetry is the safety argument, and it is a claim about **knowledge**, not
 about the check as a whole: a derivation gap degrades to today's behaviour, so a
-missing accept-set cannot manufacture a refusal and an executor generated with
-no surfaces at all is a **safe** configuration rather than a broken one. What
+missing accept-set cannot manufacture a refusal and an executor carrying no
+surfaces at all still **dispatches safely** rather than wrongly rejecting. That
+is a claim about the runtime axis only — distinct from whether the *generator*
+may silently produce such an executor, which (where surfaces existed before) it
+now refuses to (see [Where the accept-set comes from](#where-the-accept-set-comes-from)). What
 the asymmetry does *not* buy on its own is correctness of the walk that decides
 *which* node's accept-set applies — a walk that resolves the wrong node rejects
 from knowledge that is real but attached to the wrong parser, and that is a
@@ -251,11 +254,19 @@ and is effectively free. Cold cost is therefore paid on a first build, a
 `TEMPLATE_FORMAT_VERSION` is deliberately not a trigger: it is not one of the
 four digest inputs, so bumping it alone reuses every cached entry. A change to
 the derived node shape belongs to `CACHE_VERSION`, which is a digest input
-precisely so it invalidates the entries whose schema it changed. `generate` publishes `scripts_registered`, `surfaces_derived`,
-`surfaces_reused`, and `surfaces_not_derivable` (the three buckets partition the
-population) so a regeneration that quietly derived nothing is visible as a
-number rather than inferred from a green status. `PM_SURFACE_BUDGET_SECONDS`
-bounds the total derivation wall-clock; `0` disables derivation entirely.
+precisely so it invalidates the entries whose schema it changed. `generate`
+publishes `scripts_registered`, `surfaces_derived`, `surfaces_reused`, and
+`surfaces_not_derivable` (the three buckets partition the population) on an
+**unconditional** `surface-stats` line, so a consumer reads the outcome as a
+value rather than inferring it from a green status. And a regeneration that
+emits **zero** surfaces (neither derived nor reused) where the previous executor
+carried some no longer reports success at all: it **fails loudly** (non-zero
+exit) and writes nothing, leaving the still-validating previous executor in
+place — a surfaces-less executor would dispatch with no pre-spawn validation, so
+shipping one silently is the failure this refusal closes. `PM_SURFACE_BUDGET_SECONDS`
+bounds the total derivation wall-clock; `0` disables derivation, which is safe
+on a fresh/empty previous but trips that fail-open refusal when the previous
+executor already carried surfaces.
 
 #### Observation point: when this guard becomes live
 
@@ -274,6 +285,75 @@ evidence only where a regeneration actually happened. Verify against a
 regenerated executor and say which one, rather than treating a passing suite as
 proof the guard behaves — the synthetic suite for this feature passed while the
 first live executor refused `--help` on every script.
+
+#### Required regenerate-and-dispatch smoke (shipping a validator or derivation change)
+
+Shipping any change to the pre-spawn validator (the executor template's
+`_validate_invocation` / `_resolve_invocation` / `_mentions_help`) or to the
+surface derivation ([`argparse_surface`](../script-shared/scripts/argparse_surface.py))
+**MUST** be preceded by the regenerate-and-dispatch live smoke below. This is a
+**required step, not a reviewer's discretion**, and it is **not** satisfied by a
+green unit suite: the synthetic unit fixtures cannot self-detect where their
+hand-built surfaces diverge from the live derived ones, and every one of the four
+false-rejection defects this guard shipped with was caught by this smoke and
+**none** by the suite. A change that has not run it clean is not ready to ship,
+regardless of the suite's colour.
+
+The smoke, run against **merged source** (so the executor carries the change and
+the full live notation set):
+
+1. **Regenerate the executor directly** — the same command the
+   [broken-executor recovery](#recovery) uses, so it bypasses any executor the
+   change may have broken:
+
+   ```bash
+   python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py generate --marketplace --marketplace-root .
+   ```
+
+   Confirm it exits `status: success` **and** that the `surface-stats` line
+   reports a non-zero `surfaces_derived + surfaces_reused` — a zero there is the
+   fail-open shape the generator now refuses, and a green status over zero
+   surfaces would leave nothing to dispatch against.
+
+2. **Dispatch the two shapes that actually bit**, through the regenerated
+   `.plan/execute-script.py`. Each **MUST dispatch** — a help spelling prints
+   usage; the leading-flag call reaches the script — never a `status: error` /
+   `error: invalid_invocation` pre-spawn refusal:
+
+   - **A help spelling, in both forms** — the long `--help` at the notation, and
+     the short `-h` on a leaf that carries required flags (the exact call that
+     refused pre-fix, because the short spelling fell through the walk). Run it
+     against any registered notation with such a leaf — concretely, the `read`
+     leaf of `plan-marshall:manage-tasks:manage-tasks`, whose required
+     `--plan-id` / `--task-number` are the flags the pre-fix `-h` was wrongly
+     refused for (substitute the notation and leaf verb for `{…}`):
+
+     ```bash
+     python3 .plan/execute-script.py {notation} --help
+     python3 .plan/execute-script.py {notation} {leaf-verb} -h
+     ```
+
+   - **A leading top-level flag before the verb** — a value-taking routing flag
+     argparse accepts only ahead of the subcommand, the shape whose value the
+     walk once swallowed before refusing the verb that followed. Use a notation
+     that genuinely declares one at its root (`--project-dir` on
+     `manage-architecture`), so the whole call dispatches to `status: success`
+     and a refusal is unambiguously the regression:
+
+     ```bash
+     python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture --project-dir . find --pattern "*.py"
+     ```
+
+3. **A refusal of any of these is a regression.** A `status: error` with
+   `reason: unknown_verb`, `unknown_flag`, or `missing_required_flag` on a call
+   the target script in fact accepts means the change ships a false rejection —
+   fix it and re-run the smoke until it is clean. The change does not ship on a
+   red smoke.
+
+The two shapes are named because they are the two that bit: the short `-h` on a
+required-flag leaf, and the leading top-level flag that desynced the walk.
+Naming them keeps the smoke from degrading into "dispatch something and see" — a
+run that skips either shape is not this smoke.
 
 ## Execution Logging
 
