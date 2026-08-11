@@ -1,6 +1,6 @@
 # Run report — 110-landed-residue-promotion-sweep (run 01)
 
-**Date (UTC):** 2026-08-11  **Branch:** `claude/landed-residue-promotion-sweep-11npl8` (harness-assigned, kept as-is)  **PR:** [#1161](https://github.com/cuioss/plan-marshall/pull/1161)  **Outcome:** completed (landing delegated to the merge queue)
+**Date (UTC):** 2026-08-11  **Branch:** `chore/landed-residue-promotion-sweep` (re-issued at operator request; supersedes the run's original harness-assigned `claude/landed-residue-promotion-sweep-11npl8` / PR #1161)  **PR:** see § Run continuation  **Outcome:** completed (merge gated on the `license/cla` signature)
 
 ## Skills loaded
 
@@ -225,6 +225,35 @@ over-inclusiveness ("a present row — the correct answer is no, the row is over
 own claim-label section had already anticipated as possibly fixed ("promote the corrected form"). That
 inconsistency lives in plan 110's text, and the plan is being recommended for closure, so no
 contract-level change is warranted.
+
+## Run continuation (after the run-01 report was finalized)
+
+Events after the last in-PR report commit on `claude/…-11npl8` (`308050c`), recorded here so the
+durable record is complete rather than left in session chat:
+
+- **CodeRabbit confirmed all three fixes.** On re-review of `308050c` it marked each thread resolved:
+  F3 (whole-tree-kill signature) — *"confirmed … only classifies a whole-tree kill after the harness
+  confirms job termination … 🐇 ✅"*; F4 (`gone`→`not derivable`) — *"confirmed … preserves the D0
+  evidence boundary"*; F5 (scope the "no findings" claim) — *"confirmed … correctly scopes the claim"*.
+  All three inline threads are resolved and outdated. No review comment remained open.
+
+- **PR #1161 could not be landed — the merge is queue-only and the queue would not admit it.** A direct
+  merge is rejected by the repository ruleset (`405 "Changes must be made through the merge queue"`,
+  observed on two attempts). Auto-merge was armed (the queue-admission mechanism) with the required
+  `verify / conclusion` green, but the PR stayed at `mergeable_state: unstable` because
+  `license/cla` is `pending` (unsigned), and the queue admits only a `clean` PR. Signing the CLA is the
+  sole unblock and belongs to the repo owner; it is outside this agent's reach (the ruleset-config API
+  returns `403`, and only the author can sign the CLA). The operator directed to treat the CLA as a
+  non-issue and to proceed.
+
+- **Re-issued as a new PR at operator request.** The complete work (all six commits) plus this updated
+  report is re-published on `chore/landed-residue-promotion-sweep` as a **new PR carrying the
+  `skip-bot-review` label**. Bot review is suppressed here deliberately and narrowly: the identical
+  `marketplace/bundles/**` diff was already reviewed and **confirmed** on #1161 by `cuioss-review-bot`
+  and `coderabbitai`, so re-running the (now rate-limited) reviewers on unchanged content would spend
+  contended budget for no new scrutiny. This is the one carve-out where a bundle change skips review —
+  because the review already happened, not because it was waived. #1161 is left for the operator to
+  close as superseded.
 
 ## Residue
 
