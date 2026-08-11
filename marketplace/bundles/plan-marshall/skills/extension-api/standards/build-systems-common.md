@@ -116,16 +116,12 @@ complete against this working-tree state?"* (see [`../../manage-change-ledger/SK
   the freshness gate closed, and `unknown` (exit 0 with no wrapper-claimable status on the payload)
   records an outcome the boundary could not determine — never read it as a green.
 
-> **Provenance — a corrected form.** An earlier statement of this rule warned that the ledger was
-> merely the *best available* oracle, because a `--help` invocation and a pure log read each stamped a
-> `kind=build` row — an over-inclusiveness that made mere row *presence* untrustworthy. That
-> over-inclusiveness has since been **closed** by the three-way stamp conjunction above (implemented
-> in `tools-script-executor/templates/execute-script.py.template` as `_is_build_class_notation` ANDed
-> with the `_mentions_help` conjunct, and pinned by
-> `test/plan-marshall/tools-script-executor/test_build_class_stamp_discriminator.py`). The surviving
-> caveat is the narrower one stated above: a present row corresponds to a real build-executing
-> dispatch, so read its `status` rather than trusting its presence — the row is not vacuous, but only
-> `status == success` proves the build passed.
+> **Enforcement.** The three-way stamp conjunction is enforced at the executor dispatch boundary in
+> `tools-script-executor/templates/execute-script.py.template` (`_is_build_class_notation` ANDed with
+> the `_mentions_help` conjunct) and pinned by
+> `test/plan-marshall/tools-script-executor/test_build_class_stamp_discriminator.py`. A present row
+> therefore corresponds to a genuine build-executing dispatch — so read its `status` for the verdict
+> rather than trusting mere presence, and treat only `status == success` as a pass.
 
 ### Run a long build in the foreground with an explicit 600000 ms Bash timeout — let the harness auto-background
 
