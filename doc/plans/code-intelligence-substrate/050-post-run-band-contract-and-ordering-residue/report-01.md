@@ -134,8 +134,20 @@ plan-marshall bundle test suite.
     inconclusive message, (4) exact-match call-site comment, (5) reference-doc example warnings,
     (6) reference-doc "Footprint resolution state" 2-tier enumeration, (7) `load_diff_files` "which is
     a skip" over-reach. All fixed.
-  - **Re-dispatched** a focused sub-agent to confirm the 7 fixes and re-sweep for any remaining stale
-    2-tier claim (result recorded after it completes).
+- **Verification sub-agent (Step 6) — second pass (re-dispatch):** confirmed all 7 first-pass fixes
+  accurate against the resolver's actual 5-tier chain, with **no new inaccuracy introduced**. Its
+  re-sweep surfaced more of the same defect the first pass missed; combined with my own exhaustive
+  grep of the footprint surface, the full set was fixed in commits `603568f` (four prose passages:
+  `plan-retrospective/SKILL.md` coverage-contract + achieved-thoroughness, `artifact-consistency.md`
+  Inputs bullet, `logging-gap-analysis.md`; plus tightening `check-routing-decisions` "no realized
+  footprint" → "footprint unresolvable") and `5382861` (stale test docstrings: "three-tier"/"live diff
+  then legacy" → the 5-tier chain). A final marketplace-wide grep confirms no stale 2-tier resolver
+  claim remains; the two surviving hits (`pre-push-quality-gate.md` describing the live
+  `compute-footprint` query, and plan 050/320's own historical descriptions) are correct or
+  out-of-scope. **Verification cycle: clean** — no correctness defect, D2 cold read PASS, all
+  stale-claim findings resolved.
+- **Build gate (Step 5, final):** `./pw verify plan-marshall` re-run after all stale-claim fixes —
+  **green: `verify: SUCCESS`, 16001 passed, 1 skipped**.
 - **CI / PR review (Step 7):** _pending_.
 - **Self-caught during implementation (recorded per instance):**
   - _ruff unused-import_ — after delegating `check-artifact-consistency._resolve_footprint` to the
