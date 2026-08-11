@@ -39,6 +39,50 @@ membership, and the derivation of the exclusion from P2) is owned by
 § "Implementor Frontmatter" — consult it rather than re-deriving the classification
 here.
 
+## The both-sides need is representable — by a split, not by one step
+
+A step can genuinely need **both** sides of the gate at once: it must read evidence
+only the merge gate produces (`post_run_review: true`) **and** it must write tracked
+source (`mutates_source: true`). "No step may declare both" (above) closes that off
+for a **single** step, because the two ordering obligations are unsatisfiable
+together. It does **not** make the need itself unrepresentable — **the need is
+representable, by splitting the work across the merge gate into two steps**:
+
+- a **classify (read) pass** — ordered **after** the merge gate
+  (`post_run_review: true`, `mutates_source: false`). It reads the post-merge
+  evidence and records its verdict to a **durable store** — a `--fact` on its step
+  record, a plan-directory artifact, or the lessons corpus — and writes no tracked
+  source;
+- an **apply pass** — ordered in the pre-merge **settle band**
+  (`mutates_source: true`). It reads the verdict the classify pass recorded and
+  applies the pushable source edits, which ride the plan's own PR.
+
+The seam between the two passes is **cross-run, and the durable store is the only
+seam**. Because the apply pass is pre-merge and the classify pass post-merge, within
+one run the apply pass runs **before** the classify pass — so the apply pass in run
+_N_ consumes the verdict the classify pass recorded in run _N-1_. The classify pass
+MUST therefore **persist** its verdict durably; it cannot hand it in-process to an
+apply pass that does not run in the same window. A split that tried to pass the
+verdict in-process would silently degrade to the apply pass reading nothing, which is
+exactly the R1 failure this contract records.
+
+This is **distinct** from the discover-after-merge follow-up-artifact rule (§ below).
+That rule serves a step whose source edit can be **deferred** to a separate follow-up
+PR; the split serves a **recurring, in-band** operation whose edits should keep
+riding the plan's own PR, run over run. A step choosing between them asks: is this a
+one-off owed edit (→ follow-up artifact) or a standing read-then-edit operation (→
+split)?
+
+`project:finalize-step-lessons-housekeeping` is the worked case that motivates this
+rule. It runs in the settle band as a pure source-mutating **apply-style** step
+(`mutates_source: true`); its Step 1 read of the retrospective's
+`quality-verification-report.md` is **best-effort and non-fatal** (the report is
+normally absent at its settle-band order, and it proceeds on `request.md` +
+`modified_files` alone), so it does **not** itself require the post-merge classify
+half and is correctly a single settle-band step today. A future step that needs that
+post-merge evidence as a **hard** input takes the split above rather than declaring
+both facts on one step.
+
 ## The discover-after-merge rule
 
 A step that discovers a needed source edit only AFTER the branch has merged MUST NOT
@@ -84,3 +128,6 @@ When authoring a finalize step that edits source:
   push to a later step or to the operator).
 - If the step can only determine the edit after merge, emit an explicit follow-up
   artifact naming the owed edit — never silently revert.
+- If the step needs **post-merge evidence AND** a source edit, do NOT declare both
+  facts on one step — split it into a post-merge classify pass and a settle-band apply
+  pass (§ "The both-sides need is representable — by a split").
