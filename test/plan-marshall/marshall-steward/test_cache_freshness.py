@@ -229,12 +229,45 @@ def test_unknown_is_not_downgraded_by_cache_age(tmp_path: Path):
     assert young['refuses_upgrade'] == old['refuses_upgrade'] is True
 
 
+def test_every_verdict_declares_its_local_clone_comparison_scope(tmp_path: Path):
+    """Every verdict — fresh, stale, unknown — stamps
+    ``compared_against: local_clone_manifest``, so a ``fresh`` result discloses it
+    compares only against the LOCAL clone and never claims upstream currency. This
+    is the upstream-skew guard: an upstream-blind ``fresh`` cannot masquerade as an
+    upstream-currency claim, because it names the scope it actually checked."""
+    fresh_dir = tmp_path / 'fresh'
+    fresh_root = _make_cache(fresh_dir, ['0.1.200'])
+    _make_clone_manifest(fresh_dir, '0.1.100')
+    fresh = cache_freshness.check_freshness(fresh_root)
+    assert fresh['freshness'] == 'fresh'
+    assert fresh['compared_against'] == 'local_clone_manifest'
+
+    stale_dir = tmp_path / 'stale'
+    stale_root = _make_cache(stale_dir, ['0.1.100'])
+    _make_clone_manifest(stale_dir, '0.1.200')
+    stale = cache_freshness.check_freshness(stale_root)
+    assert stale['freshness'] == 'stale'
+    assert stale['compared_against'] == 'local_clone_manifest'
+
+    unknown = cache_freshness.check_freshness(tmp_path / 'no-such-cache')
+    assert unknown['freshness'] == 'unknown'
+    assert unknown['compared_against'] == 'local_clone_manifest'
+
+
 def test_remediation_names_the_commands_literally():
-    """The remediation names the exact operator commands verbatim rather than
-    describing them."""
-    assert '/plugin marketplace update' in cache_freshness.REMEDIATION
-    assert '/plugin uninstall plan-marshall' in cache_freshness.REMEDIATION
-    assert '/plugin install plan-marshall' in cache_freshness.REMEDIATION
+    """The remediation names the non-destructive update command verbatim and a
+    version-verify step, and never reaches for the destructive uninstall/reinstall.
+
+    `/plugin update plan-marshall` updates the installed plugin in place; the old
+    uninstall + reinstall guidance was destructive and wrong. The version-verify
+    step is what confirms the update actually landed."""
+    assert '/plugin update plan-marshall' in cache_freshness.REMEDIATION
+    # non-destructive: the remediation must NOT tell the operator to run the
+    # destructive uninstall/install commands (the defect this correction fixes)
+    assert '/plugin uninstall' not in cache_freshness.REMEDIATION
+    assert '/plugin install' not in cache_freshness.REMEDIATION
+    # the update is followed by a version-verify step
+    assert 'version' in cache_freshness.REMEDIATION
 
 
 def test_newest_cache_version_orders_numerically(tmp_path: Path):
@@ -272,6 +305,11 @@ def test_cli_check_emits_parseable_toon(tmp_path: Path, capsys: pytest.CaptureFi
     assert exit_code == 0
     assert parsed['status'] == 'success'
     assert parsed['freshness'] == 'stale'
-    assert {'freshness', 'refuses_upgrade', 'cache_version', 'manifest_version', 'remediation'}.issubset(
-        parsed.keys()
-    )
+    assert {
+        'freshness',
+        'refuses_upgrade',
+        'cache_version',
+        'manifest_version',
+        'compared_against',
+        'remediation',
+    }.issubset(parsed.keys())

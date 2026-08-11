@@ -6,7 +6,10 @@ Shared functions for configuration loading, saving, output formatting,
 and error handling used by all command modules.
 """
 
+import hashlib
+import itertools
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -59,12 +62,64 @@ def require_initialized() -> None:
         raise MarshalNotInitializedError('marshal.json not found. Run command /marshall-steward first')
 
 
+class ConcurrentConfigModificationError(Exception):
+    """Raised when marshal.json changed on disk since it was loaded.
+
+    The whole-document read-modify-write on the config path is unguarded across
+    processes: two concurrent writers each :func:`load_config`, mutate, and
+    :func:`save_config`, and the later save silently clobbers the earlier one's
+    change (a lost update). :func:`save_config` detects that the file changed on
+    disk since :func:`load_config` read it and raises this instead of
+    overwriting, so a lost update becomes a recoverable error (reload and
+    re-apply) rather than a silently dropped change.
+    """
+
+
+# Optimistic-concurrency guard state for the marshal.json read-modify-write.
+# ``load_config`` records the on-disk content fingerprint keyed by the resolved
+# marshal.json path; ``save_config`` refuses to overwrite when the file changed
+# under it since that load (a concurrent writer). Keyed by path so a test (or a
+# process) operating on more than one marshal.json never cross-triggers. A write
+# with no prior recorded load (e.g. ``init`` creating the file) is unguarded, so
+# the guard protects exactly the load→modify→save window that can lose an update.
+#
+# Scope: this map is per-process module state, which is exactly the granularity
+# the threat model needs. The lost update these CLI verbs can actually suffer is
+# CROSS-process — two concurrent ``manage-config`` / ``marshall-steward``
+# invocations, each its own process with its own copy of this map — and there the
+# guard fails closed (the second process's recorded load fingerprint no longer
+# matches the disk the first process rewrote). It does NOT serialize two
+# concurrent writers sharing ONE process: they share this map, so the first
+# save's fingerprint update becomes the second's baseline. These one-shot CLI
+# verbs never mutate the config from two in-process writers concurrently, and
+# serializing that case would require a per-load token or a held file lock — the
+# general locking primitive the plan deliberately leaves out of scope.
+_CONFIG_FINGERPRINTS: dict[str, str] = {}
+
+# Monotonic per-process counter for unique temp-file names in the atomic write,
+# so two writes never collide on a temp name (pid alone is shared across a
+# process's threads).
+_SAVE_SEQ = itertools.count()
+
+
+def _content_fingerprint(text: str) -> str:
+    """Return the sha256 hex of ``text`` encoded as UTF-8."""
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+
 def load_config() -> dict:
-    """Load marshal.json."""
+    """Load marshal.json.
+
+    Records the on-disk content fingerprint (see :data:`_CONFIG_FINGERPRINTS`) so
+    a subsequent :func:`save_config` can detect a concurrent write and fail closed
+    rather than silently clobber it.
+    """
     try:
-        config: dict = json.loads(MARSHAL_PATH.read_text(encoding='utf-8'))
+        raw = MARSHAL_PATH.read_text(encoding='utf-8')
+        config: dict = json.loads(raw)
     except json.JSONDecodeError as e:
         raise ValueError(f'Invalid JSON in {MARSHAL_PATH}: {e}') from e
+    _CONFIG_FINGERPRINTS[str(MARSHAL_PATH)] = _content_fingerprint(raw)
     return config
 
 
@@ -98,11 +153,22 @@ def order_config_keys(config: dict) -> dict:
 
     Known keys are emitted first in :data:`CANONICAL_TOP_LEVEL_KEY_ORDER`; any
     remaining (unrecognized) keys are appended afterwards in their existing
-    insertion order, so a stray block is preserved rather than dropped. This is
-    the single authority for top-level marshal.json key ordering: both
-    :func:`save_config` and the ``manage-providers`` ``write_provider_config``
-    write path route through it, so no write appends a block (e.g. a freshly
-    created ``credentials_config``) out of canonical order.
+    insertion order, so a stray block is preserved rather than dropped. Because
+    an appended key has no canonical slot, its presence is a signal the caller
+    should see rather than an ordering this function can fix — see
+    :func:`unrecognized_top_level_keys` and :func:`normalize_keys`, which surface
+    that set.
+
+    This is the ordering authority for top-level marshal.json key ordering. The
+    two whole-document write paths route through it — :func:`save_config` and the
+    ``manage-providers`` ``write_provider_config`` path (via its ``_save_marshal``)
+    — so those paths never append a block (e.g. a freshly created
+    ``credentials_config``) out of canonical order. It is NOT reached by *every*
+    write to marshal.json: the extension-defaults writers
+    (:func:`ext_defaults_set`, :func:`ext_defaults_set_default`) and the OpenCode
+    runtime seed write the document directly with ``json.dumps`` and do not
+    re-order — they preserve the order they loaded rather than enforcing the
+    canonical one.
     """
     ordered: dict = {}
     for key in CANONICAL_TOP_LEVEL_KEY_ORDER:
@@ -115,10 +181,42 @@ def order_config_keys(config: dict) -> dict:
 
 
 def save_config(config: dict) -> None:
-    """Save config to marshal.json with ordered keys."""
+    """Save config to marshal.json with ordered keys.
+
+    Guards the whole-document read-modify-write against a lost update: when this
+    process loaded marshal.json via :func:`load_config` and the file has since
+    changed on disk (a concurrent writer committed between the load and this
+    save), the save is refused with :class:`ConcurrentConfigModificationError`
+    rather than silently clobbering the other writer's change. A save with no
+    prior recorded load for this path (e.g. ``init`` creating the file) is
+    unguarded. The write itself is atomic (a uniquely-named temp file in the same
+    directory + :func:`os.replace`) so a crashed or interrupted writer never
+    leaves a half-written config behind.
+
+    The guarantee is CROSS-process, which is the mode these one-shot CLI verbs can
+    actually race in — see :data:`_CONFIG_FINGERPRINTS` for why per-process state
+    is the right granularity and what it deliberately does not cover.
+    """
     MARSHAL_PATH.parent.mkdir(parents=True, exist_ok=True)
     ordered = order_config_keys(config)
-    MARSHAL_PATH.write_text(json.dumps(ordered, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+    payload = json.dumps(ordered, indent=2, ensure_ascii=False) + '\n'
+
+    key = str(MARSHAL_PATH)
+    recorded = _CONFIG_FINGERPRINTS.get(key)
+    if recorded is not None and MARSHAL_PATH.exists():
+        current = _content_fingerprint(MARSHAL_PATH.read_text(encoding='utf-8'))
+        if current != recorded:
+            raise ConcurrentConfigModificationError(
+                f'{MARSHAL_PATH} changed on disk since it was loaded; refusing to '
+                'overwrite a concurrent write. Reload the config and re-apply the change.'
+            )
+
+    # Unique temp name per write (pid + monotonic counter) so concurrent writes
+    # never share a temp file; os.replace then swaps it in atomically.
+    tmp_path = MARSHAL_PATH.with_name(f'{MARSHAL_PATH.name}.tmp.{os.getpid()}.{next(_SAVE_SEQ)}')
+    tmp_path.write_text(payload, encoding='utf-8')
+    os.replace(tmp_path, MARSHAL_PATH)
+    _CONFIG_FINGERPRINTS[key] = _content_fingerprint(payload)
 
 
 def load_run_config() -> dict:
@@ -714,18 +812,47 @@ def compute_build_map_drift(config: dict) -> dict:
     return {'in_sync': not drift, 'drift': drift}
 
 
+def unrecognized_top_level_keys(config: dict) -> list[str]:
+    """Return the top-level keys absent from :data:`CANONICAL_TOP_LEVEL_KEY_ORDER`.
+
+    These are exactly the keys :func:`order_config_keys` can only append after the
+    canonical block — it has no canonical slot to place them in. They are returned
+    in the config's own insertion order (the order in which they are appended).
+    :func:`normalize_keys` surfaces this set so a caller can distinguish a result
+    that is genuinely canonical from one that merely preserved stray blocks.
+    """
+    canonical = set(CANONICAL_TOP_LEVEL_KEY_ORDER)
+    return [key for key in config if key not in canonical]
+
+
 def normalize_keys() -> dict:
     """Re-write marshal.json with the canonical top-level key order.
 
-    Loads the persisted config and re-saves it via :func:`save_config`, whose
-    ``key_order`` is the single source of truth for the canonical order. No
-    ordering logic is duplicated here. Idempotent: an already-canonical file is
-    rewritten to the same bytes.
+    Loads the persisted config and re-saves it via :func:`save_config`, the single
+    source of truth for the canonical order (no ordering logic is duplicated here).
+    Idempotent: an already-canonical file is rewritten to the same bytes.
+
+    The return value is honest about what could be ordered. :func:`order_config_keys`
+    can place only the keys named in :data:`CANONICAL_TOP_LEVEL_KEY_ORDER`; any
+    other top-level key is preserved but appended out of any canonical position.
+    ``normalize_keys`` therefore names that appended set in ``unrecognized_keys``
+    and downgrades the status to ``warning`` when it is non-empty, so a caller can
+    no longer read ``action: 'normalized'`` and conclude the file is canonical when
+    it is not. An unrecognized top-level key is a warning rather than an error:
+    ``order_config_keys`` deliberately preserves it (dropping it would be
+    destructive), and this is a hygiene verb, not a schema gate.
 
     Returns:
-        A result dict with ``action: 'normalized'``.
+        A result dict with ``status`` (``'warning'`` when unrecognized keys were
+        appended, else ``'success'``), ``action: 'normalized'``, and
+        ``unrecognized_keys`` (the appended set, possibly empty).
     """
     require_initialized()
     config = load_config()
+    unrecognized = unrecognized_top_level_keys(config)
     save_config(config)
-    return {'action': 'normalized'}
+    return {
+        'status': 'warning' if unrecognized else 'success',
+        'action': 'normalized',
+        'unrecognized_keys': unrecognized,
+    }

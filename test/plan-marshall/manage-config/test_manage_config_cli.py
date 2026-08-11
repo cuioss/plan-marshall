@@ -283,6 +283,20 @@ def test_main_normalize_keys(plan_context, monkeypatch, capsys):
     assert data['action'] == 'normalized'
 
 
+def test_main_normalize_keys_warns_and_names_unrecognized_key(plan_context, monkeypatch, capsys):
+    """A top-level key absent from the canonical order surfaces at the CLI as a
+    `warning` naming that key — never a bare `success`/`normalized`."""
+    create_marshal_json(plan_context.fixture_dir, config={'plan': {}, 'zzz_consumer_block': {'x': 1}})
+
+    code, out, _ = _drive(monkeypatch, capsys, 'normalize-keys')
+
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'warning'
+    assert data['action'] == 'normalized'
+    assert 'zzz_consumer_block' in out
+
+
 def test_main_sync_defaults(plan_context, monkeypatch, capsys):
     """`sync-defaults` routes to cmd_sync_defaults and reports the count of back-filled keys."""
     create_marshal_json(plan_context.fixture_dir)

@@ -875,8 +875,9 @@ def main() -> int:
         result = cmd_init(args)
     elif args.noun == 'normalize-keys':
         try:
-            outcome = normalize_keys()
-            result = {'status': 'success', **outcome}
+            # normalize_keys() returns its own status: 'warning' (naming any
+            # unrecognized top-level key it could not order) or 'success'.
+            result = normalize_keys()
         except Exception as e:
             result = {'status': 'error', 'error': str(e)}
     elif args.noun == 'steps-sort':
