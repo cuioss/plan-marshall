@@ -106,7 +106,7 @@ Metadata fields are promoted to top-level in `get-context` output for convenienc
 
 ## Orchestrator Status (`kind=orchestrator`)
 
-Orchestrator epics persist a second, deliberately lean status kind under the main-anchored orchestrator store — `.plan/local/orchestrator/{slug}/status.json`, resolved via `get_store_dir('orchestrator', slug)`. It is the machine authority for an epic's plan queue and resume state (see `persona-marshall-orchestrator/standards/orchestration-model.md` for the consuming contract).
+Orchestrator epics persist a second, deliberately lean status kind under the main-anchored orchestrator store — `.plan/local/orchestrator/{slug}/status.json`, resolved via `get_store_dir('orchestrator', slug)`. It is the machine authority for an epic's plan queue and resume state (see `persona-plan-orchestrator/standards/orchestration-model.md` for the consuming contract).
 
 ### Schema
 
@@ -140,9 +140,9 @@ Arbitrary key-value pairs stored under the epic's `metadata` object. Common fiel
 
 | Field | Set By | Purpose |
 |-------|--------|---------|
-| `parallelization_scope` | `marshall-orchestrator` `init.md` (operator `AskUserQuestion`, asked once per epic) | Maximum number of concurrently-launched plans the orchestrator may emit; positive integer, default `1` (strictly sequential) when unset |
+| `parallelization_scope` | `plan-orchestrator` `init.md` (operator `AskUserQuestion`, asked once per epic) | Maximum number of concurrently-launched plans the orchestrator may emit; positive integer, default `1` (strictly sequential) when unset |
 
-The field is written through the existing `metadata --store orchestrator` verb, which accepts any `snake_case` key without a whitelist — so the knob requires no script or JSON-schema change. For the selection and disjointness rules that consume it, see `persona-marshall-orchestrator/standards/orchestration-model.md` § Parallelization by Surface Disjointness.
+The field is written through the existing `metadata --store orchestrator` verb, which accepts any `snake_case` key without a whitelist — so the knob requires no script or JSON-schema change. For the selection and disjointness rules that consume it, see `persona-plan-orchestrator/standards/orchestration-model.md` § Parallelization by Surface Disjointness.
 
 ### Three-Phase Lifecycle
 

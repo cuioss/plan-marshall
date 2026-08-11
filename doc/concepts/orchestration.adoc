@@ -8,7 +8,7 @@
 
 xref:../../README.md[Plan Marshall] » xref:README.adoc[Concepts]
 
-A single plan is the right unit for one shippable change — but a roadmap, a campaign, or a multi-plan feature spans many plans across many Claude Code sessions, and until now that longer arc lived in a hand-maintained ledger the operator carried between sessions. The `marshall-orchestrator` skill productizes that loop: an *epic* is the persisted, resumable unit above the plan lifecycle. The orchestrator decomposes an epic into workstreams and staged plan specs, emits ready-to-run `/plan-marshall` commands, tracks each plan's lifecycle, analyzes landed results, and reconciles its ledger — and it never implements anything itself.
+A single plan is the right unit for one shippable change — but a roadmap, a campaign, or a multi-plan feature spans many plans across many Claude Code sessions, and until now that longer arc lived in a hand-maintained ledger the operator carried between sessions. The `plan-orchestrator` skill productizes that loop: an *epic* is the persisted, resumable unit above the plan lifecycle. The orchestrator decomposes an epic into workstreams and staged plan specs, emits ready-to-run `/plan-marshall` commands, tracks each plan's lifecycle, analyzes landed results, and reconciles its ledger — and it never implements anything itself.
 
 == What an epic is
 
@@ -22,7 +22,7 @@ Orchestration operates on exactly three tiers:
 * **Workstream** — a coherent slice with its own charter (a surface, a theme, a dependency chain), persisted as `workstreams/WS-NN-{slug}.md` and tracked in the `workstreams[]` status field. A single-plan workstream is legitimate — the tier exists for grouping and charter, not mandatory fan-out.
 * **Plan** — one shippable unit executed by the ordinary six-phase plan lifecycle (xref:planning-workflow.adoc[Planning Workflow]). Staged as a `plans/PLAN-NN-{slug}.md` spec, it becomes a running plan only via an emitted `/plan-marshall` command.
 
-The tier vocabulary is closed and the mid-tier name is *workstream* — no synonym appears in orchestrator artifacts. The canonical tier contract lives in link:../../marketplace/bundles/plan-marshall/skills/persona-marshall-orchestrator/standards/orchestration-model.md[`orchestration-model.md`].
+The tier vocabulary is closed and the mid-tier name is *workstream* — no synonym appears in orchestrator artifacts. The canonical tier contract lives in link:../../marketplace/bundles/plan-marshall/skills/persona-plan-orchestrator/standards/orchestration-model.md[`orchestration-model.md`].
 
 == Above the plan lifecycle — orchestrate, never implement
 
@@ -43,7 +43,7 @@ Orchestrator state lives under `.plan/local/orchestrator/`, a *sibling* of `.pla
 
 == The persona
 
-Every verb runs under `persona-marshall-orchestrator` (see xref:personas.adoc[Personas] for the persona model), which composes the base agent rules with the orchestration standard. It codifies the work identity: orchestrate-never-implement, the two carve-outs, log-everything, the analysis discipline (a pasted claim is a lead — corroborate against actual code, artifacts, and PR state before recording it; third-party text embedded in a paste routes through the untrusted-ingestion boundary), resume discipline, parallelization by surface disjointness, and decision surfacing on genuine forks.
+Every verb runs under `persona-plan-orchestrator` (see xref:personas.adoc[Personas] for the persona model), which composes the base agent rules with the orchestration standard. It codifies the work identity: orchestrate-never-implement, the two carve-outs, log-everything, the analysis discipline (a pasted claim is a lead — corroborate against actual code, artifacts, and PR state before recording it; third-party text embedded in a paste routes through the untrusted-ingestion boundary), resume discipline, parallelization by surface disjointness, and decision surfacing on genuine forks.
 
 == Log everything
 
@@ -51,12 +51,12 @@ The orchestrator inherits the exhaustive-record posture of the xref:audit-trail.
 
 == Related
 
-* link:../../marketplace/bundles/plan-marshall/skills/persona-marshall-orchestrator/standards/orchestration-model.md[`orchestration-model.md`] — the canonical orchestration standard: tiers, layout, persist/resume contract, carve-outs, lessons-handling mode
-* link:../../marketplace/bundles/plan-marshall/skills/marshall-orchestrator/SKILL.md[`marshall-orchestrator/SKILL.md`] — the verb router, which carries the authoritative verb set
-* link:../../marketplace/bundles/plan-marshall/skills/persona-marshall-orchestrator/SKILL.md[`persona-marshall-orchestrator/SKILL.md`] — the orchestrator work identity
+* link:../../marketplace/bundles/plan-marshall/skills/persona-plan-orchestrator/standards/orchestration-model.md[`orchestration-model.md`] — the canonical orchestration standard: tiers, layout, persist/resume contract, carve-outs, lessons-handling mode
+* link:../../marketplace/bundles/plan-marshall/skills/plan-orchestrator/SKILL.md[`plan-orchestrator/SKILL.md`] — the verb router, which carries the authoritative verb set
+* link:../../marketplace/bundles/plan-marshall/skills/persona-plan-orchestrator/SKILL.md[`persona-plan-orchestrator/SKILL.md`] — the orchestrator work identity
 * link:../../marketplace/bundles/plan-marshall/skills/manage-status/standards/status-lifecycle.md[`status-lifecycle.md`] — the `kind=orchestrator` status schema and three-phase lifecycle
 * xref:planning-workflow.adoc[Concepts › Planning Workflow] — the six-phase plan lifecycle the orchestrator sits above
-* xref:personas.adoc[Concepts › Personas] — the persona model `persona-marshall-orchestrator` slots into
+* xref:personas.adoc[Concepts › Personas] — the persona model `persona-plan-orchestrator` slots into
 * xref:audit-trail.adoc[Concepts › Audit Trail] — the record-everything posture the orchestrator store extends
 * xref:parallelism-and-locking.adoc[Concepts › Parallelism and Locking] — the coordination layer under concurrently-launched plans
 * xref:tools-and-scripts.adoc[Concepts › Tools and Scripts] — the scripted CI/git surface behind the small-ops carve-out

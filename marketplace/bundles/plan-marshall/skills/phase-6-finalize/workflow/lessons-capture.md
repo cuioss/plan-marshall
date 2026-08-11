@@ -99,12 +99,12 @@ Write {plan_dir}/work/inbox-payload.md
 ```
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:marshall-orchestrator:orchestrator inbox write \
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox write \
   --slug {epic} --sender-type plan --sender-id {plan_id} --kind {kind} \
   --payload-file {plan_dir}/work/inbox-payload.md
 ```
 
-Staging the body with `Write` first is the same shell-safety reason the lesson three-step flow exists — the anti-pattern list below (inline `python -c`, `$(printf …)`, `#`-bearing heredocs) applies verbatim to inbox payload bodies. See [`../../marshall-orchestrator/standards/inbox-envelope.md`](../../marshall-orchestrator/standards/inbox-envelope.md) for the envelope schema, the `kind` enum, and the header-field table; do not restate them here.
+Staging the body with `Write` first is the same shell-safety reason the lesson three-step flow exists — the anti-pattern list below (inline `python -c`, `$(printf …)`, `#`-bearing heredocs) applies verbatim to inbox payload bodies. See [`../../plan-orchestrator/standards/inbox-envelope.md`](../../plan-orchestrator/standards/inbox-envelope.md) for the envelope schema, the `kind` enum, and the header-field table; do not restate them here.
 
 Branch B4 writes only under `.plan/`, matching the step's `mutates_source: false` fact — so, exactly like every other branch, it never reaches the dispatcher's commit instrumentation at all (item 5f skips (a)-(d) on the declared fact), and, exactly like every other branch, the claim is checked by item 5f's sub-item (0) post-run-band guard rather than trusted.
 

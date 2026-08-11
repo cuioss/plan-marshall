@@ -331,7 +331,7 @@ def test_materialised_effort_resolves_identically_to_unset(plan_context):
 def test_materialised_scope_resolves_identically_to_unset(plan_context):
     """The seeded ``parallelization_scope: 1`` yields the same effective ask pre-fill.
 
-    Scope half of the invariant. The ask pre-fill contract (marshall-orchestrator
+    Scope half of the invariant. The ask pre-fill contract (plan-orchestrator
     init Step 4) is ``value if set else 1``: a legacy block returns ``set: False``
     and the ask keeps its hard-coded ``1``; the seeded block returns
     ``set: True, value: 1`` and the ask uses that same ``1``. Both worlds pre-fill

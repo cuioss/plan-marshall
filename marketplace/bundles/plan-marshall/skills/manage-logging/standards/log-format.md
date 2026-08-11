@@ -222,19 +222,19 @@ Entries use the standard entry format and the standard two-segment `(bundle:skil
 One example line per event type:
 
 ```text
-[2026-07-16T10:02:11Z] [INFO] [b3c9e4] (plan-marshall:marshall-orchestrator) Decomposed epic into 3 workstreams: WS-01-substrate, WS-02-surface, WS-03-ship
+[2026-07-16T10:02:11Z] [INFO] [b3c9e4] (plan-marshall:plan-orchestrator) Decomposed epic into 3 workstreams: WS-01-substrate, WS-02-surface, WS-03-ship
 ```
 
 ```text
-[2026-07-16T10:05:42Z] [INFO] [a7d2f8] [INTERACTION] (plan-marshall:marshall-orchestrator) AskUserQuestion: PLAN-03 ordering -> operator chose "park until PLAN-01 lands"
+[2026-07-16T10:05:42Z] [INFO] [a7d2f8] [INTERACTION] (plan-marshall:plan-orchestrator) AskUserQuestion: PLAN-03 ordering -> operator chose "park until PLAN-01 lands"
 ```
 
 ```text
-[2026-07-16T10:41:07Z] [INFO] [c4e8a1] [PLAN-STATUS] (plan-marshall:marshall-orchestrator) PLAN-02 queued -> running
+[2026-07-16T10:41:07Z] [INFO] [c4e8a1] [PLAN-STATUS] (plan-marshall:plan-orchestrator) PLAN-02 queued -> running
 ```
 
 ```text
-[2026-07-16T11:20:33Z] [INFO] [e9f1b6] [RECONCILIATION] (plan-marshall:marshall-orchestrator) Folded landing report landings/PLAN-01.md into epic.md queue; retired 2 folded queue items
+[2026-07-16T11:20:33Z] [INFO] [e9f1b6] [RECONCILIATION] (plan-marshall:plan-orchestrator) Folded landing report landings/PLAN-01.md into epic.md queue; retired 2 folded queue items
 ```
 
 ---

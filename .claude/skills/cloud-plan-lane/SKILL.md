@@ -9,7 +9,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, Skill, AskUserQuestion
 # Cloud Plan Lane
 
 The working contract for one plan under `doc/plans/`. It is **self-contained**: it does not use
-`/plan-marshall`, `/marshall-orchestrator`, `.plan/execute-script.py`, or any `.plan/` state.
+`/plan-marshall`, `/plan-orchestrator`, `.plan/execute-script.py`, or any `.plan/` state.
 
 Load this skill as the **first action of every run**, before reading the plan.
 

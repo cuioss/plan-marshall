@@ -70,7 +70,7 @@ class TestOrchestratorLogPath:
 
 class TestOrchestratorLibraryRoundTrip:
     def test_should_round_trip_work_entry_under_orchestrator_store(self, plan_context):
-        log_entry('work', 'rt-epic', 'INFO', '[PLAN-STATUS] (plan-marshall:marshall-orchestrator) PLAN-01 queued -> running', store='orchestrator')
+        log_entry('work', 'rt-epic', 'INFO', '[PLAN-STATUS] (plan-marshall:plan-orchestrator) PLAN-01 queued -> running', store='orchestrator')
 
         result = read_work_log('rt-epic', store='orchestrator')
 
@@ -79,7 +79,7 @@ class TestOrchestratorLibraryRoundTrip:
         assert 'PLAN-01 queued -> running' in result['entries'][0]['message']
 
     def test_should_round_trip_decision_entry_under_orchestrator_store(self, plan_context):
-        log_entry('decision', 'rt-epic', 'INFO', '(plan-marshall:marshall-orchestrator) Decomposed epic into 3 workstreams', store='orchestrator')
+        log_entry('decision', 'rt-epic', 'INFO', '(plan-marshall:plan-orchestrator) Decomposed epic into 3 workstreams', store='orchestrator')
 
         result = read_decision_log('rt-epic', store='orchestrator')
 
@@ -142,7 +142,7 @@ class TestOrchestratorArchivedFallback:
             'decision',
             slug,
             'INFO',
-            '(plan-marshall:marshall-orchestrator) archive decision on frozen epic',
+            '(plan-marshall:plan-orchestrator) archive decision on frozen epic',
             store='orchestrator',
         )
 
@@ -172,7 +172,7 @@ class TestOrchestratorCli:
             '--level',
             'INFO',
             '--message',
-            '[RECONCILIATION] (plan-marshall:marshall-orchestrator) Folded landing report PLAN-01',
+            '[RECONCILIATION] (plan-marshall:plan-orchestrator) Folded landing report PLAN-01',
             '--store',
             'orchestrator',
             env_overrides=env,
@@ -205,7 +205,7 @@ class TestOrchestratorCli:
             '--level',
             'INFO',
             '--message',
-            '(plan-marshall:marshall-orchestrator) Parked PLAN-03 until PLAN-01 lands',
+            '(plan-marshall:plan-orchestrator) Parked PLAN-03 until PLAN-01 lands',
             '--store',
             'orchestrator',
             env_overrides=env,

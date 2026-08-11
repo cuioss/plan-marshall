@@ -55,7 +55,7 @@ The write-site set is **three**. The dispatcher enumerates the same three member
 | [`../../plan-retrospective/SKILL.md`](../../plan-retrospective/SKILL.md) Step 5b | Zero `manage-lessons add`; Step 5a dedup and the `already_closed` deletion path do not run; every proposal rides as one `kind: candidate-lesson` message. |
 | [`finalize-step-preference-emitter.md`](finalize-step-preference-emitter.md) Step 4 § "Orchestration branch" | Zero `manage-lessons add`; each owed `architecture enrich` hint rides as one `kind: candidate-lesson` message. No `kind: landing` message — the one landing per run is `lessons-capture`'s. |
 
-The envelope schema is owned by [`../../marshall-orchestrator/standards/inbox-envelope.md`](../../marshall-orchestrator/standards/inbox-envelope.md) and the branch mechanics by the three documents above; neither is restated here.
+The envelope schema is owned by [`../../plan-orchestrator/standards/inbox-envelope.md`](../../plan-orchestrator/standards/inbox-envelope.md) and the branch mechanics by the three documents above; neither is restated here.
 
 Before recording any new lesson, run the canonical before-recording gate sequence in [`../../manage-lessons/standards/lesson-creation-policy.md`](../../manage-lessons/standards/lesson-creation-policy.md): Gate 1 (dedup against the existing corpus), Gate 2 (active-plan check), then Gate 3 (create). That standard is authoritative for the gate mechanics; the two-step path-allocate flow below is Gate 3, reached only when Gates 1 and 2 both clear. When Gate 1 returns `merge_into` / `already_closed` or Gate 2 finds a covering active plan, extend the existing lesson or fold into the plan instead of allocating a new one.
 

@@ -144,4 +144,4 @@ A persona skill may carry an optional **priming preamble** as frontmatter data (
 * xref:extension-architecture.adoc[Concepts › Extension Architecture] — persona (identity) vs profile (domain-resolution axis) vs role/level (compute selection).
 * xref:execution-context.adoc[Concepts › Execution Context] — the role/level compute resolution that runs orthogonally to persona identity.
 * xref:skill-handling.adoc[Concepts › Skill Handling] — how the resolved `skills[]` enters the subagent context.
-* xref:orchestration.adoc[Concepts › Orchestration] — `persona-marshall-orchestrator`, the epic-orchestration work identity resolved through this same composition model.
+* xref:orchestration.adoc[Concepts › Orchestration] — `persona-plan-orchestrator`, the epic-orchestration work identity resolved through this same composition model.

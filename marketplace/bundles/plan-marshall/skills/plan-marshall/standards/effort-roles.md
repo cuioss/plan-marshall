@@ -66,7 +66,7 @@ A **sixth role group — `orchestrator`** — sits OUTSIDE `plan`: it is rooted 
 
 ## Orchestrator role group (sibling `orchestrator.effort` block)
 
-The `orchestrator` role group is the epic-orchestration counterpart of the five phase groups. Unlike them it does NOT resolve under `plan.<phase>` — it resolves under the top-level `orchestrator.effort` block (a sibling of `plan`; see [`extension-api/standards/marshal-json-reference.md` § Orchestrator Configuration](../../extension-api/standards/marshal-json-reference.md)). The group covers the three read-only analysis dispatch surfaces the `marshall-orchestrator` fires — `analyze` context corroboration, `decompose` context research, and the `analyze` untrusted-text reader ingestion — each addressed as `orchestrator.{surface}`.
+The `orchestrator` role group is the epic-orchestration counterpart of the five phase groups. Unlike them it does NOT resolve under `plan.<phase>` — it resolves under the top-level `orchestrator.effort` block (a sibling of `plan`; see [`extension-api/standards/marshal-json-reference.md` § Orchestrator Configuration](../../extension-api/standards/marshal-json-reference.md)). The group covers the three read-only analysis dispatch surfaces the `plan-orchestrator` fires — `analyze` context corroboration, `decompose` context research, and the `analyze` untrusted-text reader ingestion — each addressed as `orchestrator.{surface}`.
 
 `orchestrator.effort` is polymorphic exactly like a phase group: a **string** shorthand applies one level to every surface, or an **object** carries per-surface overrides plus a `default` slot and a `max` uplift ceiling.
 
@@ -106,9 +106,9 @@ Every dispatch site computes the level via `manage-config effort read --phase <c
 | verification-feedback (`producer=build-runner`) | phase-5-execute | `plan.phase-5-execute.effort.verification-feedback` → `plan.phase-5-execute.effort.default` → `plan.effort` |
 | verification-feedback (`producer=sonar` / `pr-comment` / `plugin-doctor` / `pr-state`) | phase-6-finalize | `plan.phase-6-finalize.effort.verification-feedback` → `plan.phase-6-finalize.effort.default` → `plan.effort` |
 | post-run-review (retrospective + lessons-capture) | phase-6-finalize | `plan.phase-6-finalize.effort.post-run-review` → `plan.phase-6-finalize.effort.default` → `plan.effort` |
-| orchestrator analyze context corroboration | marshall-orchestrator (analyze) | `orchestrator.effort.analyze` → `orchestrator.effort.default` → `plan.effort` → `inherit`, then `max` clamp |
-| orchestrator decompose context research | marshall-orchestrator (decompose) | `orchestrator.effort.decompose` → `orchestrator.effort.default` → `plan.effort` → `inherit`, then `max` clamp |
-| orchestrator analyze reader ingestion (composes `execution-context-reader-{level}`) | marshall-orchestrator (analyze) | `orchestrator.effort.reader` → `orchestrator.effort.default` → `plan.effort` → `inherit`, then `max` clamp |
+| orchestrator analyze context corroboration | plan-orchestrator (analyze) | `orchestrator.effort.analyze` → `orchestrator.effort.default` → `plan.effort` → `inherit`, then `max` clamp |
+| orchestrator decompose context research | plan-orchestrator (decompose) | `orchestrator.effort.decompose` → `orchestrator.effort.default` → `plan.effort` → `inherit`, then `max` clamp |
+| orchestrator analyze reader ingestion (composes `execution-context-reader-{level}`) | plan-orchestrator (analyze) | `orchestrator.effort.reader` → `orchestrator.effort.default` → `plan.effort` → `inherit`, then `max` clamp |
 | `/workflow-pr-doctor`, `/plugin-doctor`, `/plan-retrospective` slash commands | phase-6-finalize (synthetic) | The slash command body resolves via `--phase phase-6-finalize --role <matching sub-key>` so the same phase-6-finalize configuration applies whether the workflow fires from finalize or from the slash command. |
 
 ## Resolver

@@ -20,7 +20,7 @@ to ``marshal.json`` where no reader would consult it.
 
 Known scalar fields:
     ``parallelization_scope``  int >= 1  — project default that pre-fills the
-        per-epic parallelization-scope ask in ``marshall-orchestrator`` init.
+        per-epic parallelization-scope ask in ``plan-orchestrator`` init.
     ``auto_emit``  bool  — the orchestrator-tier autonomy knob (default False);
         when true the epic orchestrator auto-fills the emit queue on landing.
 
