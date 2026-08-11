@@ -174,8 +174,38 @@ golden label-order slot, firing fixture). All three were satisfied and the re-ru
 
 ## Findings
 
-_Pre-PR verification sub-agent dispatched (general-purpose). Findings and dispositions to be
-recorded here on completion. CI / PR-review findings recorded during Step 7._
+### Pre-PR verification sub-agent (Step 6, general-purpose, independent)
+
+Verdict: **all D1–D6 SATISFIED** (code), **Out-of-scope RESPECTED**, **no undeclared collateral
+change**. The agent executed both guards over the real tree and ran the synthetic controls to
+confirm they discriminate. What it checked (named, so the clean verdict is not vacuous):
+
+- **Cold-read (the plan's required test), answered correctly:** given `choices=SOURCE_TUPLE`
+  vs a `description=` hand-list of the same values, **the `description=` is the mirror that can
+  drift; the `choices=` is the derived truth.** The agent confirmed `_analyze_canonical_enum_drift`
+  reads `choices=` exclusively (`_authority_by_subcommand_flag` → `_keyword_value(node, 'choices')`),
+  never `description=`/prose, and reproduced live that a `choices=`-derived-from-tuple with a stale
+  `description=` and a doc matching `choices=` yields **0 findings** — the false positive the plan
+  warns against does not occur.
+- **D2** authority resolution, subcommand scoping (`update`-vs-`list --status` not conflated),
+  and fail-closed paths all verified live, including `--promoted {true|false}` correctly skipping
+  (`resolved=False`).
+- **D3** coverage keying, sibling-token boundary, and per-bundle population verified (10 bundles,
+  0 undocumented on the real tree). The "nothing already checks this" claim confirmed by searching
+  the existing rules.
+- **D4/D5** each item verified against its manifest/source; **out-of-scope** confirmed —
+  `manage-metrics` SKILL.md untouched, no `--enabled-bots`/`--participated-bots` work.
+- **D6** controls confirmed to genuinely discriminate (reading `description=`, or dropping
+  subcommand scoping, would each turn a named test red).
+
+**One finding, disposition: rejected — already resolved (timing artifact).** The agent reported
+"no run report exists." It was dispatched **before** this report was written; `report-01.md` now
+exists and is committed (c867667), and it carries exactly what the agent said was missing: the
+swept population and divergent count reported **separately** (D1 §), the refuted leads with
+evidence (D1/D4 §), the D6 "seen to fail before it passed" attestation (D6 §), and the cold-read
+answer (recorded immediately above). No code change was required by any finding.
+
+_CI / PR-review findings recorded during Step 7 below._
 
 ## Reviewer participation
 
