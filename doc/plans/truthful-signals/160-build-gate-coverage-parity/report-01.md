@@ -187,6 +187,14 @@ verified (the green came from a cache, not analysis of the current tree) and rec
 cache-disabled run before pushing. The reader did NOT take the partial verdict as a pass — the wording
 does not reproduce the defect. D5's coverage-boundary output passes its cold read.
 
+**Pre-PR verification sub-agent (Step 6):** an independent `general-purpose` agent verified the diff
+against the plan's D1–D6, Out-of-scope, and Verification. Verdict: **all six deliverables PASS.** Dedup
+constraint honored (`_test_scope_divergence.py` and its test are untouched — confirmed empty in
+`--stat`); D4 cold-run + both-directions duration check confirmed; D5 boundary + finalize-doc fix
+confirmed; out-of-scope compliance PASS; beyond-diff sweep found **no new stale claim** introduced by
+the change. Two findings, both accepted as out-of-scope disclosures (see Residue). No findings required
+a fix.
+
 ## Reviewer participation
 
 _pending PR — see Step 7/8._
@@ -205,4 +213,21 @@ _pending_
 
 ## Residue
 
-_pending_
+Two **pre-existing** imprecise comments the Step-6 sub-agent surfaced during the beyond-diff sweep.
+Neither was introduced by this change, neither is affected by it, and both are out of this plan's
+scope (which moves the gate's freshness/coverage honesty, not build-system help strings). Disclosed
+here rather than silently fixed:
+
+- `build.py` `verify` subparser `help='Full verification (quality-gate + module-tests)'` omits
+  `test-compile`. Already stale before this change (`cmd_test_compile` was already chained into
+  `cmd_verify`), and **explicitly documented as a deliberately-deferred item** in
+  `pre-push-quality-gate.md` § "Adjacent item deliberately not covered". Fixing it here would
+  contradict that recorded deferral. Leave to whoever retires that deferral.
+- `pyproject.toml` `[tool.mypy]` comment "`./pw verify` never mypy-checks `test/`" is loosely worded
+  (verify's `test-compile` arm does mypy-check `test/`; the comment's intent is that
+  `cmd_quality_gate`'s *compile* step checks only `marketplace/bundles`). Pre-existing and unchanged
+  by this diff. A future test-compile-registration change is the natural place to tighten it.
+
+The pytest module-scope conditional subset (reverse cross-module coupling) remains the sibling
+divergence-classification plan's territory — recorded in the D1 table (`pytest-scope: subset`), not
+fixed here (D3 dedup constraint).
