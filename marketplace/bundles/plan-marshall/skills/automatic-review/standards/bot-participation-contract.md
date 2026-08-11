@@ -341,15 +341,26 @@ are `hard_quota` on the awaitability axis, yet their remedies differ — a size 
 diff, a quota refusal needs backoff — so a participation *rate* pooled across the two mis-attributes
 both.
 
-The cause partition is therefore **derivable from the tree**: each bot's `refusal_patterns[]` already
-distinguishes its size notice from its quota notice, so an absence can be attributed to size vs quota
-by which pattern matched, and diff sizes are recoverable from merge commits via git. The taxonomy
-member for the cause axis is deliberately **not wired** here — the awaitability split (three
-`refused_*` members) is what the classifier and the display consume, and threading a matched-cause
-signal through the refusal detector, the producer, and the classifier is a material widening carried by
-a separate plan. What this contract fixes is the invariant: **do not report a participation rate over a
-corpus pooled across causes** — partition by cause (size vs quota, readable from `refusal_patterns`)
-first.
+The cause axis is **wired**, as a per-refusal overlay that is orthogonal to the awaitability member and
+changes none of them:
+
+- **Registry:** each bot declares `refusal_size_patterns` — the subset of its `refusal_patterns` whose
+  cause is a diff-size ceiling. Every other refusal is a rate/budget quota. Sourcery declares its size
+  ceiling there; its weekly-quota notice is deliberately absent, so it classifies `quota`.
+- **Derivation:** `_github_pr.refusal_cause(body, bot_kind)` returns `size` iff a `refusal_size_patterns`
+  entry matches, else `quota`. It assumes a body already recognised as a refusal, so it names the cause
+  rather than re-detecting it.
+- **Producer:** `github_pr fetch_findings` emits `refused_causes[]` — one `{bot_kind, cause}` per
+  refusing bot (`size` sticky: a bot that posted both records `size`).
+- **Classifier:** `review_completeness check --refused-causes` reports the cause back in
+  `refusal_causes[]` for each bot it classified as refused. This is **advisory**: it names the remedy
+  (`size` → a smaller diff; `quota` → backoff) and never changes which `refused_*` awaitability member
+  the bot resolves to, nor whether the merge is gated.
+
+The invariant this enforces: **do not report a participation rate over a corpus pooled across causes** —
+a size refusal and a quota refusal have different remedies, so a rate that mixes them mis-attributes
+both. The partition is now a computed signal, not merely a documented possibility; diff sizes remain
+recoverable from merge commits via git for any after-the-fact audit.
 
 ### A refusal is never noise — it is a branch
 
@@ -495,9 +506,9 @@ is reported over.
 | Consumer | What it reads |
 |----------|---------------|
 | `automatic-review/SKILL.md` | Both lists, to drive the completion-aware poll, the re-review trigger set, and the step-done guard. |
-| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]` **and the `stale_participation_bots[]` set that carries `participated_stale`**; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it; each bot's `contentless_review_markers` / `actionable_content_markers`, to drop a fully clean review comment as noise. |
+| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]` **and the `stale_participation_bots[]` set that carries `participated_stale`**; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it, and its `refusal_size_patterns`, to attribute each refusal's CAUSE into `refused_causes[]` (size vs quota); each bot's `contentless_review_markers` / `actionable_content_markers`, to drop a fully clean review comment as noise. |
 | `github_pr pull_request_runs` / `ci checks pull-request-runs` | Nothing from this contract — it is the **observation channel for `not_triggered`**, answering the PR-wide question of whether any `pull_request`-event workflow run exists for the PR at all. Its verdict reaches the predicate as the single `--not-triggered` bool. |
-| `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` to split the THREE refusal states one-to-one (`refused_awaitable` / `refused_hard` / `refused_unknown`). Consumes `stale_participation_bots[]` via `--stale-participation-bots` to assign `participated_stale`, the bots that answered a re-review without reviewing the merge candidate via `--declined-bots` to assign `declined`, and the PR-wide `--not-triggered` bool to refine what would otherwise be `absent`. Emits `review_state_summary` (the reviewer-state distribution) so `display_detail` can tell reviewed-clean from nobody-reviewed. |
+| `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` to split the THREE refusal states one-to-one (`refused_awaitable` / `refused_hard` / `refused_unknown`). Consumes `stale_participation_bots[]` via `--stale-participation-bots` to assign `participated_stale`, the bots that answered a re-review without reviewing the merge candidate via `--declined-bots` to assign `declined`, and the PR-wide `--not-triggered` bool to refine what would otherwise be `absent`, and the `--refused-causes` overlay (from `refused_causes[]`) to report each refusing bot's CAUSE in `refusal_causes[]` — advisory, gating nothing. Emits `review_state_summary` (the reviewer-state distribution) so `display_detail` can tell reviewed-clean from nobody-reviewed. |
 | `review_completeness deficit` | The same observation flags as `check`, to classify each bot and derive its reviewed-at-all predicate and filed finding count, then report the comparative deficit signal — a reviewer-quality observation that gates no merge (§ "The comparative deficit signal"). |
 | `finalize-step-review-retrospective` (`review_retrospective`) | The enabled roster (`author_login` values) via `--enabled-reviewers`, to emit a row per ENABLED reviewer rather than per responding one, each carrying `participation: measured` / `unmeasurable` (§ "The counting rule" — the row-domain population). |
 | `github_ops pr wait-for-comments` | Each bot's `participation_requires_update`, to select the `updated_at`-movement arm of its completion predicate over the count-growth arm; `participation_evidence` plus `bot_kinds()`, to decide whether the await is answerable at all (`detector_answerable`). |

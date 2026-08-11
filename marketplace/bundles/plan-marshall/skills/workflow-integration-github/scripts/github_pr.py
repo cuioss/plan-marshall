@@ -90,7 +90,12 @@ from typing import Any
 
 import bot_registry
 import github_ops as _github
-from _github_pr import RESOLVE_THREAD_MUTATION, THREAD_REPLY_MUTATION, _is_refusal_notice
+from _github_pr import (
+    RESOLVE_THREAD_MUTATION,
+    THREAD_REPLY_MUTATION,
+    _is_refusal_notice,
+    refusal_cause,
+)
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
 from github_re_review import bot_kind_for_author, is_registered_trigger_comment
 from triage_helpers import (
@@ -808,6 +813,14 @@ def cmd_fetch_findings(args):
     be attributed, so it contributes to ``count_skipped_refusal`` without naming a
     bot here.
 
+    ``refused_causes``: one ``{bot_kind, cause}`` record per refusing bot, ``cause``
+    in ``{size, quota}`` — the orthogonal CAUSE axis (``_github_pr.refusal_cause``),
+    distinct from ``rate_limit_class``'s awaitability. It names the remedy a refusal
+    calls for: ``size`` (the diff is over a per-PR ceiling → a smaller diff) vs
+    ``quota`` (a rate/budget limit → backoff). ``size`` is sticky per bot — a bot that
+    posted both a size ceiling and a quota notice on this PR records ``size``. Forwarded
+    to ``review_completeness check --refused-causes``.
+
     ``unclassified_bots``: the sorted list of bot_kinds that participated but
     appear in NEITHER ``--required-bots`` nor ``--optional-bots``. Per the
     warn-but-ingest rule these comments are **still ingested** — the two lists
@@ -958,6 +971,11 @@ def cmd_fetch_findings(args):
     skipped_refusal = 0
     skipped_self_response = 0
     refused_set: set[str] = set()
+    # Per refusing bot, the CAUSE of its refusal (size vs quota) — the orthogonal
+    # axis to rate_limit_class's awaitability. ``size`` is sticky: a bot that emitted
+    # both a size ceiling and a quota notice on this PR records ``size``, the more
+    # actionable remedy (a smaller diff).
+    refused_causes: dict[str, str] = {}
     unclassified_set: set[str] = set()
     store_failures: list[str] = []
 
@@ -993,6 +1011,12 @@ def cmd_fetch_findings(args):
             skipped_refusal += 1
             if bot_kind:
                 refused_set.add(bot_kind)
+                # Classify the refusal's CAUSE (size vs quota) so the quorum layer can
+                # name the remedy — a smaller diff vs backoff. ``size`` is sticky: once
+                # a size ceiling is seen for this bot it wins over a later quota notice.
+                cause = refusal_cause(body, bot_kind)
+                if cause == 'size' or bot_kind not in refused_causes:
+                    refused_causes[bot_kind] = cause
             continue
 
         # Pre-filter 3: SELF-AUTHORED RESPONSE — the batched disposition comment
@@ -1193,6 +1217,13 @@ def cmd_fetch_findings(args):
             if bot not in participated
         ],
         'refused_bots': sorted(refused_set),
+        # The orthogonal CAUSE axis for each refusing bot — {bot_kind, cause} with
+        # cause in {size, quota}. Distinct from rate_limit_class's awaitability: it
+        # names the remedy (a smaller diff vs backoff). Forwarded to
+        # ``review_completeness check --refused-causes``.
+        'refused_causes': [
+            {'bot_kind': bot, 'cause': refused_causes[bot]} for bot in sorted(refused_causes)
+        ],
         'unclassified_bots': sorted(unclassified_set),
         'stored_hash_ids': stored_hashes,
         'producer_mismatch_hash_id': qgate_hash,

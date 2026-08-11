@@ -769,6 +769,12 @@ _NON_LIST_FLAG_COVERAGE = {
         'the store_true verdict modifier — owned by test_review_completeness.py, '
         "whose triage-state matrix pins both of the predicate's two modes"
     ),
+    '--refused-causes': (
+        'the pair-form CAUSE overlay (bot_kind:cause) — a --*-causes flag OUTSIDE the '
+        '--*-bots family, and ADVISORY (it names the size-vs-quota remedy but gates '
+        'nothing and changes no member); its CLI boundary, the refusal_causes[] output, '
+        'and the malformed-shape rejection are owned by test_review_completeness.py'
+    ),
 }
 
 _FAMILY_A = 'review_completeness check'

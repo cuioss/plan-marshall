@@ -207,6 +207,35 @@ def test_rate_limit_class_fails_closed_for_absent_field(tmp_path):
     assert reg.rate_limit_class('demo') == 'unknown'
 
 
+def test_refusal_size_patterns_mark_the_diff_size_cause():
+    """``refusal_size_patterns`` overlays the diff-SIZE cause onto ``refusal_patterns``.
+
+    The orthogonal CAUSE axis to ``rate_limit_class`` (awaitability): which of a bot's
+    refusals is caused by the diff being too big (remedy: a smaller diff) rather than a
+    rate/budget quota (remedy: backoff). Sourcery is the only shipped bot with a
+    size-caused refusal — its per-PR size ceiling — and that entry ALSO appears in
+    ``refusal_patterns`` (detection stays that field's job). Its weekly-quota notice is
+    deliberately absent here, so it classifies ``quota``. CodeRabbit and PR-Agent
+    declare none, so every refusal they emit is a quota.
+    """
+    sourcery_size = bot_registry.refusal_size_patterns('sourcery')
+    assert sourcery_size == ['your pull request is larger than the review limit of']
+    # The size marker is a genuine subset overlay — it is also a detection pattern.
+    assert sourcery_size[0] in bot_registry.refusal_patterns('sourcery')
+    # The weekly-quota notice is a refusal but NOT a size cause.
+    assert 'reached your weekly rate limit of' in bot_registry.refusal_patterns('sourcery')
+    assert 'reached your weekly rate limit of' not in sourcery_size
+
+    assert bot_registry.refusal_size_patterns('coderabbit') == []
+    assert bot_registry.refusal_size_patterns('pr-agent') == []
+
+
+def test_refusal_size_patterns_absent_is_empty():
+    """A record that declares no size patterns reads as ``[]`` — every refusal is quota."""
+    reg = bot_registry.BotRegistry(standards_dir=bot_registry.STANDARDS_DIR)
+    assert reg.refusal_size_patterns('nonexistent-bot') == []
+
+
 def test_rate_limit_eta_patterns_per_bot():
     """Only a bot whose notice states a reset time declares extraction patterns.
 

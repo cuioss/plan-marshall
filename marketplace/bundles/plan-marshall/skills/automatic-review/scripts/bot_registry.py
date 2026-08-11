@@ -35,6 +35,8 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
       - "No actionable comments were generated"
     refusal_patterns:
       - "Review limit reached"
+    refusal_size_patterns:            # subset of refusal_patterns whose CAUSE is diff-size
+      - "your pull request is larger than the review limit of"
     contentless_review_markers:
       - "## Review Guide"
       - "**Nothing to report**"
@@ -48,7 +50,7 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
     ```
 
 Stdlib-only (no PyYAML): the block is a tightly-constrained subset — top-level
-scalars, lists (``ignore_patterns``, ``refusal_patterns``,
+scalars, lists (``ignore_patterns``, ``refusal_patterns``, ``refusal_size_patterns``,
 ``contentless_review_markers``, ``actionable_content_markers``,
 ``participation_evidence``, ``rate_limit_eta_patterns``), and one nested map
 (``severity_map``) — parsed by a small deterministic reader below. Load order is the sorted
@@ -301,6 +303,28 @@ class BotRegistry:
         value = self._by_kind.get(bot_kind, {}).get('refusal_patterns', [])
         return list(value) if isinstance(value, list) else []
 
+    def refusal_size_patterns(self, bot_kind: str) -> list[str]:
+        """Return the refusal markers whose CAUSE is a diff-SIZE ceiling (``[]`` if absent).
+
+        A **subset overlay** on :meth:`refusal_patterns`, not a separate detection
+        list. ``refusal_patterns`` answers *"did the bot refuse?"*; this field answers
+        *"which of those refusals was because the DIFF is too big?"* — the second,
+        orthogonal **cause** axis. The awaitability axis (``rate_limit_class``) cannot
+        carry it, because a bot can refuse for two different causes at the same
+        awaitability: Sourcery's per-PR size ceiling (``your pull request is larger
+        than the review limit of``) and its weekly quota (``reached your weekly rate
+        limit of``) are BOTH ``hard_quota``, yet the first needs a smaller diff and the
+        second needs backoff.
+
+        A refusal matching an entry here is caused by size; any other detected refusal
+        is a rate/budget **quota**. Each entry is expected to ALSO appear in
+        ``refusal_patterns`` (detection stays that field's job); listing it here only
+        marks its cause. An empty list is the default — the bot declares no size-caused
+        refusal, so every refusal it emits is classified ``quota``.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('refusal_size_patterns', [])
+        return list(value) if isinstance(value, list) else []
+
     def contentless_review_markers(self, bot_kind: str) -> list[str]:
         """Return the literals a CONTENTLESS review body carries (``[]`` if unknown/absent).
 
@@ -450,6 +474,11 @@ def ignore_patterns(bot_kind: str) -> list[str]:
 def refusal_patterns(bot_kind: str) -> list[str]:
     """The per-bot literal refusal-notice markers for ``bot_kind`` (``[]`` if absent)."""
     return REGISTRY.refusal_patterns(bot_kind)
+
+
+def refusal_size_patterns(bot_kind: str) -> list[str]:
+    """The refusal markers whose cause is a diff-SIZE ceiling for ``bot_kind`` (``[]`` if absent)."""
+    return REGISTRY.refusal_size_patterns(bot_kind)
 
 
 def contentless_review_markers(bot_kind: str) -> list[str]:
