@@ -108,8 +108,9 @@ cloud run neither performs nor owes it).
 `git diff --name-only origin/main...HEAD -- '*.py'` is **non-empty** (footprint resolver, capture
 verb, check-* consumers, and several test files), so the Python build gate applies. Per-commit
 `./pw quality-gate` was run green (`total_issues: 0`, empty `issues[]`) before each Python-touching
-commit; the full `./pw verify plan-marshall` was run as the pre-PR gate — result recorded below once
-it completes.
+commit. The full `./pw verify plan-marshall` pre-PR gate is **green: `verify: SUCCESS` — 16001 passed,
+1 skipped** (≈4m41s), covering quality-gate (ruff + plugin-doctor, 36 rules) and the whole
+plan-marshall bundle test suite.
 
 ## Findings
 
