@@ -86,7 +86,9 @@ def _render_report(plan_context, plan_id: str, phases: dict) -> str:
     write_metrics(plan_id, {'phases': phases})
     result = cmd_generate(_ns_generate(plan_id))
     assert result['status'] == 'success', result
-    return (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+    md_path = plan_context.plan_dir_for(plan_id) / 'metrics.md'
+    content: str = md_path.read_text(encoding='utf-8')
+    return content
 
 
 def _boundary_bullet(report: str) -> str:
