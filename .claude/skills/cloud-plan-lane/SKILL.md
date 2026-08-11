@@ -51,7 +51,7 @@ so the steps below rely on them instead of each run re-deriving them.
 | Affordance | In a cloud session |
 |---|---|
 | **GitHub access** | The **GitHub MCP server** only. There is **no `gh` CLI**, and Bash cannot reach `api.github.com` (egress-blocked — direct calls return `403`). Every `gh` spelling in this contract has an MCP equivalent (mapping below). |
-| **Self-wake / polling** | `send_later` and `subscribe_pr_activity` may be **approval-gated** ("requires approval"), and Bash cannot poll GitHub. A run therefore **cannot** reliably block-until-green and re-check inside the session — Step 8's arm-and-hand-off completion exists for exactly this. |
+| **Self-wake / polling** | `send_later` and `subscribe_pr_activity` may be **approval-gated** ("requires approval"), and Bash cannot poll GitHub. A run therefore **cannot** reliably block-until-green and re-check inside the session — Step 8's arm-and-hand-off completion exists for exactly this. The GitHub *read* surface (`pull_request_read`) is **not** gated, though, so a session that stays active may instead drive the cycle by manual read-polling on re-entry (§ Step 8, "Manual read-polling"). |
 | **Ruleset-config API** | **Not reachable** — the MCP server exposes no branch-protection / ruleset tool, and direct API access is `403`. Read required-ness from `mergeStateStatus` (GitHub applying the ruleset for you), never from a ruleset-config call — § Step 8 condition 1. |
 | **Auto-merge arming** | On this merge-queue repo, arming auto-merge while the required checks are green **queues the PR at once** and locks the branch — § Step 8's one-way-door rule. |
 | **Local build** | The build gate triggers on `*.py` only; the merge queue's `merge_group` run verifies docs-only changes before they land — § Step 5. |
@@ -711,6 +711,18 @@ landing delegated** — not `partial`, and not a failure. A run that armed a gre
 merely could not self-wake to watch it has done everything the lane asks; reading its own inability to
 watch the queue as a failed run is the mistake this paragraph prevents. (A run that *can* self-confirm
 still does — this is not licence to assert a merge that was never read back.)
+
+**Manual read-polling is the in-session alternative to arm-and-hand-off while the session stays
+active.** "No way to block-until-landed" forbids a *blocking wait* — never `sleep` on GitHub in Bash
+(§ Cloud session affordances) — not an on-demand *read*. The GitHub read surface (`pull_request_read`:
+check-runs, `mergeStateStatus`, and BOTH comment surfaces) is **not** approval-gated even where
+`send_later` / `subscribe_pr_activity` are, so a session that is still active — an interactive run with a
+reachable operator, or one re-entered by any means — MAY drive the whole review cycle and merge gate by
+polling that read surface on each re-entry: read the checks and comments, handle every comment, finalize
+the report, arm auto-merge, and (since the same read reports `state: MERGED`) self-confirm the landing
+when the queue lands it. Arm-and-hand-off stays the completion for a run that cannot re-enter at all;
+this paragraph only records that a still-live session need not hand off blind, which is how an observed
+run drove a PR to a confirmed merge after both self-wake tools returned "requires approval".
 
 **Record the merge commit outside the in-PR report.** The squash merge SHA does not exist until the
 merge completes, so it cannot appear in a report that was committed before the merge (condition 3
