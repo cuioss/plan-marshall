@@ -126,7 +126,28 @@ Per deliverable: what was done, in which commit, and its verification state.
 
 ## Findings
 
-_(filled in from the verification sub-agent, CI, and PR review)_
+**Pre-PR verification sub-agent** (independent `general-purpose`, read-only, two passes).
+Verdict pass 1: D2–D5 all PASS; out-of-scope respected (no `record-dispatch-boundary`
+call added, no display clamping); dispatch topology independently re-derived from the call
+graph (9 classes, 3 register, 6 excluded — matches the constant); fail-first evidence
+consistent (7 fail / 1 characterization pass pre-fix).
+
+Beyond-diff stale-claim sweep findings — all the same class (narrative that still described
+the pre-fix *partial-only* eligibility rule after `over` was made ineligible too):
+
+| # | Source | Description | Disposition |
+|---|---|---|---|
+| 1 | `manage-metrics.py` `_DISPATCHED_MEASURE_FIELDS` preamble comment | "refused the maximum when it is PARTIAL" — omits `over` | **fixed** (commit `b1d85f5`) |
+| 2 | `manage-metrics.py` rendered reconciliation annotation clause | "a partial measure is ineligible" — user-facing, omits `over` | **fixed** (commit `b1d85f5`) |
+| 3 | `manage-metrics.py` `_read_dispatch_boundary_totals` docstring | "mark the measure PARTIAL and refuse it the maximum" — omits `over` | **fixed** (commit `b1d85f5`) |
+| 4 | `manage-metrics.py:1511-1516` reconciliation-loop comment | "a partial boundary measure … ineligible" — omits `over` (residual, found on re-verify) | **fixed** (commit `344cb43`) |
+| 5 | `manage-metrics.py:~1768` coverage-bullet preamble comment | mentions only "partial" as the illustrative floor case | **rejected — not a defect**: it is motivation for stating coverage on every render, not an eligibility-rule claim; the render below handles all four states explicitly. Sub-agent concurred. |
+
+Re-verification pass confirmed findings 1–3 correctly account for the `over` state, the fix
+introduced no new stale claim, and a final grep-level sweep found only residual #4 (now
+fixed) — no other partial-only eligibility narrative remains.
+
+CI and PR-review findings: _(filled in at Step 7/8)_
 
 ## Reviewer participation
 
