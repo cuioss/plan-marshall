@@ -1,6 +1,6 @@
 # Run report — 100-canonical-block-diverges-from-argparse-choices (run 01)
 
-**Date (UTC):** 2026-08-11    **Branch:** `claude/canonical-block-argparse-divergence-97j051` (harness-assigned)    **PR:** _pending_    **Outcome:** completed
+**Date (UTC):** 2026-08-11    **Branch:** `claude/canonical-block-argparse-divergence-97j051` (harness-assigned)    **PR:** [#1158](https://github.com/cuioss/plan-marshall/pull/1158)    **Outcome:** completed — landing delegated (merge gated on the author's CLA signature + final CI)
 
 ## Skills loaded
 
@@ -209,10 +209,20 @@ _CI / PR-review findings recorded during Step 7 below._
 
 ## Reviewer participation
 
-Expected reviewer population derived from `automatic-review/standards/{bot_kind}.md` `author_login`:
-`coderabbitai`, `cuioss-review-bot`, `sourcery-ai` (3). Verdicts to be recorded from the comment
-bodies after the PR review cycle (Step 7), with the N-of-M coverage and any Step 8 shortfall
-disclosure.
+Expected reviewer population derived from `automatic-review/standards/{bot_kind}.md` `author_login`
+(never transcribed): `coderabbitai`, `cuioss-review-bot`, `sourcery-ai` (3). Verdicts derived from
+the stored comment/review bodies on PR #1158, never from a check state:
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `coderabbitai` | `rate-limited` | Issue comment: "Review limit reached … you've reached your PR review limit … Next review available in: 14 minutes." Engaged, did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Review body: "you have reached your weekly rate limit of 500000 diff characters." The `Sourcery review` check concluded `skipped`. |
+| `cuioss-review-bot` | `silent` | The `review / review` check concluded `success`, but the bot published **no** review or comment body against the diff — a green check is not a review. No findings to disposition. |
+
+**Coverage: 0 of 3 reviewed.** All three engaged the PR but none produced a review of the diff — two
+hit provider rate limits (outside our control, routine), one ran its check green without posting a
+body. The § Step 8 shortfall disclosure fired (below). No push aborted any review — all three
+reached their terminal state before the report-finalization commit.
 
 ## Cost
 
@@ -227,11 +237,51 @@ disclosure.
 
 ## Contract check (Step 9)
 
-_Appended at Step 9, before arming auto-merge._
+GitHub access path: **GitHub MCP server** (cloud path). Branch form: **harness-assigned**
+(`claude/canonical-block-argparse-divergence-97j051`, kept as-is). No `/sync-plugin-cache` is owed
+(machine-local build step, not a cloud-run debt).
+
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — named in § Skills loaded (read by bundle path; plugin not required) |
+| 2 Branch | Done — on `origin`, harness-assigned; pushed before any edit |
+| 3 Plan directory | Done — `…/100-…/plan.md` exists and opens with the first-instruction block (present on hand-over; no repair needed) |
+| 4 Implement | Done — 8 commits, each carrying the `Co-Authored-By: Claude` trailer; all deliverables addressed |
+| 4 Per-commit gate | Done — every `*.py`-touching commit was preceded by a clean quality-gate/verify (`total_issues: 0`, empty `errors[]`) |
+| 4 Pushed | Done — no unpushed commit remains |
+| 5 Build gate | Done — Python changed → `./pw verify` → SUCCESS (18913 passed, 14 skipped) |
+| 6 Verification sub-agent | Done — verdict + cold-read + the one (timing-artifact) finding recorded in § Findings |
+| 7 PR cycle | Done — PR #1158 open; both comment surfaces read; the two informational notices (CodeRabbit rate-limit, CLA) need no fix/reply; no inline review threads |
+| 8 Merge gate | **Pending an external gate** — see § note below. Conditions 2 (comments handled) and 3 (report finalized) met; condition 1 awaits the final `verify` conclusion; the CLA (`license/cla`) is unsigned and only the author can sign it |
+| 8 Bridge | Done — no status/ledger/other-plan write under `doc/plans/` outside this plan's own directory |
+| 9 This check | Done — this table |
+| 9 What have we learned | Done — below |
+
+**Merge-gate note.** At report-finalization the required `verify / verify` check was in progress
+(it passed locally and on `verify / gate`), and `license/cla` was pending because the CLA is
+unsigned — a **human action only `cuioss-oliver` can take**, not something this run can resolve or
+push past. The review-coverage shortfall (§ Reviewer participation, **0 of 3**) is disclosed here
+per Step 8 condition 4 and is explicitly **not** a merge block. Because the merge is gated on an
+external human action (CLA) plus the final CI conclusion, the run hands the landing off rather than
+self-confirming `state: MERGED`: everything the lane asks of the run is complete, and the operator
+report is the durable channel. If the CLA proves non-required once `verify` is green
+(`mergeStateStatus` → `UNSTABLE`), auto-merge can be armed to let the queue land it; if required,
+the human signature is the gate.
 
 ## What have we learned (Step 9)
 
-_Appended at Step 9._
+**No contract change proposed.** The `cloud-plan-lane` contract carried this run end to end with no
+step that was ambiguous in practice, no artifact that could not be produced as written, and no
+command that failed in the environment. The one friction — the first `./pw verify` failing on the
+plugin-doctor rule-integration meta-tests (provenance table, golden label order, zero-match
+fixtures) — is **repo-specific**, not a lane-contract gap: those meta-tests are exactly the guard
+that a new plugin-doctor rule must be fully wired, and the lane cannot (and should not) enumerate a
+repo's meta-tests. The Step 6 sub-agent's "no report exists" finding was a **timing artifact of this
+run's own dispatch** (the sub-agent was sent before the report was written, and the lane legitimately
+finalizes the report later at Step 8 condition 3), not a contract defect — so it argues for how a run
+sequences its own sub-agent prompt, not for a change to the contract. The cloud affordances the lane
+names (no executor in a fresh clone → static AST authority for D2; can't self-wake → arm/hand-off;
+harness-assigned branch kept) all held as written.
 
 ## Residue
 
