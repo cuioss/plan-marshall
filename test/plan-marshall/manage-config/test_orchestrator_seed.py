@@ -189,14 +189,35 @@ def test_seed_surfaces_every_orchestrator_knob():
     (recipe-marshal-json-config-audit Aspect 1).
     """
     orch = _config_defaults_mod.get_default_config()['orchestrator']
-    # every settable knob is individually present (discoverable)
-    assert 'auto_emit' in orch
-    assert 'effort' in orch
-    assert 'parallelization_scope' in orch
-    # each carries its effective default: auto_emit safe-posture False, the effort
-    # sub-block an empty (behaviourally-inert) object, the scope its default of 1
+    # Field-set completeness, DERIVED from the authoritative key set rather than a
+    # hard-coded mirror: every key the block supports must be seeded, so a future
+    # key added to ORCHESTRATOR_KNOWN_KEYS but not to DEFAULT_ORCHESTRATOR fails
+    # here. This is the live default-surfacing guard — a hard-coded list would pass
+    # trivially until a developer remembered to update it.
+    assert set(orch) == set(_config_defaults_mod.ORCHESTRATOR_KNOWN_KEYS)
+    # Effective-default assertions, kept separate from the field-set check:
+    # auto_emit safe-posture False, effort an empty (behaviourally-inert) object,
+    # scope its default of 1.
     assert orch == {'auto_emit': False, 'effort': {}, 'parallelization_scope': 1}
     validate_orchestrator_block(orch)
+
+
+def test_orchestrator_known_keys_is_the_authoritative_nonempty_source():
+    """ORCHESTRATOR_KNOWN_KEYS is the single, non-empty source of valid block keys.
+
+    Both ``validate_orchestrator_block`` and the seed-completeness tests derive
+    from it, so it must be non-empty — a vacuous set would make those derived
+    checks pass trivially (the non-vacuity guard) — and it must match the block's
+    actual supported keys. The validator, which derives its whitelist from this
+    constant, rejects a key outside it.
+    """
+    known = _config_defaults_mod.ORCHESTRATOR_KNOWN_KEYS
+    assert known, 'ORCHESTRATOR_KNOWN_KEYS must be non-empty (non-vacuity guard)'
+    assert set(known) == {'auto_emit', 'effort', 'parallelization_scope'}
+    # A key outside the authoritative set is rejected by the validator that derives
+    # its whitelist from it.
+    with pytest.raises(ValueError, match='orchestrator block keys'):
+        validate_orchestrator_block({'not_a_known_key': 1})
 
 
 def test_validation_accepts_both_seeded_and_legacy_shapes():
