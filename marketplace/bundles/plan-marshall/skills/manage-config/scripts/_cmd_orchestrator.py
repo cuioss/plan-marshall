@@ -78,9 +78,12 @@ def _coerce_bool(raw_value: object) -> bool | None:
 def cmd_orchestrator_get(args) -> dict:
     """Handle ``orchestrator get --field <field>``.
 
-    Returns the stored value (or ``None`` when the field is unset), plus a
-    ``set`` flag distinguishing a configured value from an unset one so callers
-    (e.g. the per-epic ask pre-fill) can fall back to their own default.
+    Returns the stored value when the field is set; when it is unset, returns the
+    field's canonical default from :data:`DEFAULT_ORCHESTRATOR` (``None`` only for
+    a field that carries no seeded default). The accompanying ``set`` flag
+    distinguishes a configured value from an unset one, so callers (e.g. the
+    per-epic ask pre-fill) key off ``set`` — not the value — to decide whether to
+    apply their own default.
     """
     if not is_initialized():
         return error_exit('marshal.json not initialized; run /marshall-steward first')
@@ -98,9 +101,11 @@ def cmd_orchestrator_get(args) -> dict:
     config = load_config()
     orch_block = config.get('orchestrator')
     # When the field is unset in the live block, fall back to the canonical
-    # default (so `auto_emit` reads its seeded `False`); `parallelization_scope`
-    # carries no seeded default, so its fallback is `None` and callers key off
-    # `set` to apply their own default.
+    # default from DEFAULT_ORCHESTRATOR (so `auto_emit` reads its seeded `False`
+    # and `parallelization_scope` its seeded `1`). The value is advisory on an
+    # unset read: `set` is `False`, and callers key off `set` — not the value —
+    # to apply their own default. A field with no seeded default falls back to
+    # `None`.
     if isinstance(orch_block, dict) and field in orch_block:
         is_set = True
         value = orch_block[field]
