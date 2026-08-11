@@ -1511,9 +1511,10 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         # Symmetric same-population reconciliation across ALL THREE competing
         # measures of the dispatched population (never their sum — they count the
         # same leaves). The largest ELIGIBLE measure wins and feeds the Total via
-        # tokens_values; a partial boundary measure and a cross-population
-        # total_tokens are both ineligible. When the winner is not total_tokens,
-        # the phase is recorded so the annotation below names which measure won.
+        # tokens_values; a partial or over-covering boundary measure and a
+        # cross-population total_tokens are all ineligible. When the winner is not
+        # total_tokens, the phase is recorded so the annotation below names which
+        # measure won.
         raw_tokens = _numeric(phase.get('total_tokens'))
         winner = _reconcile_dispatched_measures(phase)
         if winner is not None:
