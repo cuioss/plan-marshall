@@ -156,20 +156,40 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 ### Step 2: Deterministic numbers pass
 
-Invoke the backing aggregator. It groups the findings by `(author, kind)` and
-emits the authoritative per-reviewer metrics as TOON:
+First derive the **enabled reviewer roster** — the `author_login` of every reviewer
+this PR enabled — so the aggregator can emit a row per ENABLED reviewer rather than
+per RESPONDING one. Read the automatic-review step's `required_bots ∪ optional_bots`
+config, then read each of those bots' `author_login` from its registry doc
+(`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`) —
+the same machine-readable source the participation guard uses. **Derive it; never
+transcribe a reviewer list here** — a hand-maintained list goes stale the instant a
+reviewer is added to or removed from the registry.
+
+Pass those logins via `--enabled-reviewers` (comma-separated). This is load-bearing:
+a reviewer that produced no comments, one that never ran, and one that was
+enabled-invoked-and-refused all leave the store with no record, so deriving rows
+from the responding authors alone gives them **no row** — rendering three distinct
+facts identically (the vacuous-set archetype: the population becomes a strict subset
+of its own domain). A row per enabled reviewer closes that.
 
 ```bash
 python3 .plan/execute-script.py default-bundle:finalize-step-review-retrospective:review_retrospective run \
-  --plan-id {plan_id}
+  --plan-id {plan_id} --enabled-reviewers "{enabled_author_logins}"
 ```
 
 Parse the TOON. Key fields:
 
-- `total_findings`, `reviewer_count`
-- `reviewers[]{author,raw_total,actionable_count,meta_count,fixed,accepted,taken_into_account,rejected,suppressed,pending,positives_count,false_positives_count,resolved_actionable_count,actionable_fixed_count,pct_resolved_as_fixed}`
+- `total_findings`, `reviewer_count`, `enabled_reviewers`
+- `reviewers[]{author,participation,raw_total,actionable_count,meta_count,fixed,accepted,taken_into_account,rejected,suppressed,pending,positives_count,false_positives_count,resolved_actionable_count,actionable_fixed_count,pct_resolved_as_fixed}`
 - `by_author_kind[]{author,kind,count}` — the per-`(author, kind)` breakdown
-- `kind_actionability` and `resolution_quality` — the mapping legends
+- `kind_actionability`, `resolution_quality`, and `participation_states` — the mapping legends
+
+`participation` is now a first-class per-row field: `measured` (at least one record
+attributed — the reviewer can be judged) or `unmeasurable` (enabled but no record —
+the store substantiates neither participation nor absence, so the reviewer is named
+but **never scored or ranked**, its metrics all zero / `null`). An enabled reviewer
+that produced nothing therefore has a row marked `unmeasurable`, distinct from an
+absent row for a reviewer that was never enabled.
 
 `raw_total` and `actionable_count` are DISTINCT — the meta comments never inflate
 `actionable_count`. `pct_resolved_as_fixed` is `actionable_fixed_count` ÷
@@ -225,12 +245,16 @@ This pass therefore MUST NOT:
   whole-PR quality claim) on the strength of a low aggregate count alone.
 
 Instead, classify each reviewer into exactly one of two states and report the
-state explicitly:
+state explicitly. This classification is now **backed by the aggregator's
+deterministic `participation` field** (Step 2), not left to LLM judgment: every row
+already carries `measured` or `unmeasurable`, and every ENABLED reviewer has a row
+even when the store is silent on it. Read the field; do not re-derive it from a
+comment count:
 
 | State | Substantiation | How the artifact reports it |
 |-------|----------------|-----------------------------|
 | **measured** | At least one record attributed to that reviewer is present in the store, so its output can be judged. | Normal per-reviewer assessment. |
-| **unmeasurable** | No record attributed to that reviewer is present. | Report participation as `unmeasurable`, naming the reviewer and stating that the store substantiates neither participation nor absence. Do NOT score it, rank it, or count it as a negative. |
+| **unmeasurable** | No record attributed to that reviewer is present (the aggregator emits an `unmeasurable` row for it because it is on the enabled roster). | Report participation as `unmeasurable`, naming the reviewer and stating that the store substantiates neither participation nor absence. Do NOT score it, rank it, or count it as a negative. |
 
 The **comparative verdict** MUST name every reviewer it could not measure and
 MUST scope its claim to the measured ones — a verdict silent about an
@@ -307,8 +331,15 @@ The canonical argparse surface for the backing aggregator `review_retrospective.
 
 ```bash
 python3 .plan/execute-script.py default-bundle:finalize-step-review-retrospective:review_retrospective run \
-  --plan-id PLAN_ID
+  --plan-id PLAN_ID [--enabled-reviewers [ENABLED_REVIEWERS]]
 ```
+
+`--enabled-reviewers` is a comma-separated list of `author_login` values for the
+reviewers this PR enabled. Every enabled reviewer gets a row — carrying
+`participation: unmeasurable` when the store holds no record for it — so a reviewer
+that produced nothing, one that never ran, and one that refused no longer collapse
+into having no row. It may be supplied bare (no value), which reads as the empty
+roster and preserves the prior observed-authors-only behaviour.
 
 ## Related
 

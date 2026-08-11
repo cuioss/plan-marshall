@@ -135,7 +135,10 @@ def _empty_reviewer() -> dict[str, Any]:
     }
 
 
-def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
+def aggregate(
+    records: list[dict[str, Any]],
+    enabled_reviewers: list[str] | None = None,
+) -> dict[str, Any]:
     """Aggregate pr-comment finding records into a per-reviewer retrospective.
 
     Pure function — no I/O, no LLM. `records` is a list of finding dicts as stored
@@ -143,8 +146,8 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     `detail`). Returns a TOON-friendly dict:
 
         total_findings: N
-        reviewers[]{author,raw_total,actionable_count,meta_count,fixed,accepted,
-                    taken_into_account,rejected,suppressed,pending,
+        reviewers[]{author,participation,raw_total,actionable_count,meta_count,fixed,
+                    accepted,taken_into_account,rejected,suppressed,pending,
                     positives_count,false_positives_count,
                     resolved_actionable_count,actionable_fixed_count,
                     pct_resolved_as_fixed}
@@ -160,6 +163,22 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
     `pct_resolved_as_fixed`. `raw_total` feeds no ratio; it is a volume field only.
     Both operands are emitted as first-class fields so the percentage's denominator
     is visible to the reader rather than implied.
+
+    **The row population is the ENABLED roster ∪ the observed authors, never the
+    responding set alone.** `enabled_reviewers` is the set of `author_login` values
+    for the reviewers this PR enabled (derived from the registry, see the SKILL.md).
+    A reviewer that produced no comments, one that never ran, and one that was
+    enabled-invoked-and-refused all leave the findings store with NO record — so
+    deriving rows from the responding authors alone gives them no row at all, which
+    renders those three distinct facts identically (the vacuous-set archetype: the
+    detector's population becomes a strict subset of its own domain). Emitting a row
+    per enabled reviewer closes that: an enabled reviewer with no record still gets a
+    row, carrying `participation: unmeasurable` — the store substantiates neither
+    participation nor absence for it, so it is named rather than silently omitted,
+    and it is never scored or ranked (its metrics are all zero / `None`). A reviewer
+    WITH at least one record carries `participation: measured`. When
+    `enabled_reviewers` is omitted the population is the observed authors alone (the
+    prior behaviour), so an existing caller is unchanged.
     """
     per_reviewer: dict[str, dict[str, Any]] = defaultdict(_empty_reviewer)
     per_author_kind: dict[tuple[str, str], int] = defaultdict(int)
@@ -197,8 +216,14 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
         if actionable and resolution in _POSITIVE_RESOLUTIONS:
             bucket['actionable_fixed_count'] += 1
 
+    # The row population is the ENABLED roster ∪ the observed authors. An enabled
+    # reviewer with no record still gets a row (D3), so "produced nothing", "never
+    # ran", and "enabled-invoked-refused" no longer collapse into no-row. Accessing
+    # ``per_reviewer[author]`` for an enabled-but-silent author materialises a zero
+    # bucket via the defaultdict, which reads as ``participation: unmeasurable``.
+    row_authors = sorted(set(per_reviewer) | set(enabled_reviewers or []))
     reviewers: list[dict[str, Any]] = []
-    for author in sorted(per_reviewer):
+    for author in row_authors:
         bucket = per_reviewer[author]
         raw_total = bucket['raw_total']
         resolved_actionable = bucket['resolved_actionable_count']
@@ -208,8 +233,12 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
             if resolved_actionable
             else None
         )
+        # A row with at least one attributed record is `measured`; an enabled
+        # reviewer the store is silent on is `unmeasurable` — named, never scored.
+        participation = 'measured' if raw_total > 0 else 'unmeasurable'
         reviewers.append({
             'author': author,
+            'participation': participation,
             'raw_total': raw_total,
             'actionable_count': bucket['actionable_count'],
             'meta_count': bucket['meta_count'],
@@ -235,8 +264,13 @@ def aggregate(records: list[dict[str, Any]]) -> dict[str, Any]:
         'status': 'success',
         'total_findings': len(records),
         'reviewer_count': len(reviewers),
+        'enabled_reviewers': sorted(enabled_reviewers or []),
         'reviewers': reviewers,
         'by_author_kind': by_author_kind,
+        'participation_states': {
+            'measured': 'at least one record attributed — the reviewer can be judged',
+            'unmeasurable': 'enabled but no record — store substantiates neither participation nor absence; never scored or ranked',
+        },
         'kind_actionability': {
             'inline': 'actionable',
             'review_body': 'actionable (meta when CodeRabbit status-summary)',
@@ -279,13 +313,29 @@ def main(argv: list[str]) -> int:
     )
     parser.add_argument('command', choices=['run'], help='Subcommand (only `run`).')
     parser.add_argument('--plan-id', required=True, help='Plan identifier.')
+    parser.add_argument(
+        '--enabled-reviewers',
+        nargs='?',
+        const='',
+        default='',
+        help=(
+            'Comma-separated author_login values for the reviewers this PR ENABLED '
+            '(the registry roster — see the SKILL.md). Every enabled reviewer gets a '
+            'row even when it produced no comments, carrying participation: '
+            'unmeasurable, so "produced nothing" / "never ran" / "enabled-invoked-'
+            'refused" no longer collapse into having no row. May be supplied bare (no '
+            'value), which reads as the empty roster — the prior observed-authors-only '
+            'behaviour.'
+        ),
+    )
     args = parser.parse_args(argv)
 
     try:
         from toon_parser import serialize_toon
 
+        enabled_reviewers = [r.strip() for r in (args.enabled_reviewers or '').split(',') if r.strip()]
         records = _read_pr_comment_findings(args.plan_id)
-        result = aggregate(records)
+        result = aggregate(records, enabled_reviewers=enabled_reviewers)
         sys.stdout.write(serialize_toon(result) + '\n')
         return 0
     except Exception as e:
