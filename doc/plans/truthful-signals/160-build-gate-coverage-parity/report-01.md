@@ -1,7 +1,7 @@
 # Run report — 160-build-gate-coverage-parity (run 01)
 
 **Date (UTC):** 2026-08-11    **Branch:** claude/gate-coverage-parity-wra7b0 (harness-assigned)
-**PR:** _pending_    **Outcome:** _in progress_
+**PR:** #1174 (https://github.com/cuioss/plan-marshall/pull/1174)    **Outcome:** _in progress_
 
 ## Skills loaded
 
