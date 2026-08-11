@@ -347,10 +347,41 @@ def analyze_incident_reference_in_docs(marketplace_root: Path) -> list[dict]:
     Returns
     -------
     list[dict]
-        List of finding dicts (empty for a clean tree).
+        List of finding dicts (empty for a clean tree). If the derived file
+        population is empty, returns a single ``empty_population`` anti-vacuity
+        finding instead, so a clean verdict over an unread population cannot be
+        read as a clean tree.
     """
     default_cfg = load_default_suppression_config()
+    targets = incident_reference_targets(marketplace_root)
+    # Anti-vacuity: publish the examined population at runtime. A clean verdict
+    # over an EMPTY population is vacuous — it must not read as a clean tree — so
+    # an empty population is itself surfaced as a finding rather than a silent
+    # pass (the failure archetype this epic is named for).
+    if not targets:
+        return [
+            Finding(
+                type=FINDING_TYPE,
+                file=str(marketplace_root),
+                line=0,
+                severity='warning',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=(
+                    'Incident-reference scan derived an EMPTY file population '
+                    '(no *.md or *.py under */{skills,agents,commands}/**). A '
+                    'clean result over an empty population is vacuous, not a '
+                    'clean tree.'
+                ),
+                extra={
+                    'rule': RULE_NAME,
+                    'snippet': '',
+                    'pattern_family': 'empty_population',
+                    'population_size': 0,
+                },
+            ).to_dict()
+        ]
     findings: list[dict] = []
-    for target_path, rel in incident_reference_targets(marketplace_root):
+    for target_path, rel in targets:
         findings.extend(_scan_file(target_path, rel, default_cfg))
     return findings

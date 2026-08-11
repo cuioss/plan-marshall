@@ -275,6 +275,20 @@ class TestPopulationPublished:
         """A non-existent root yields an empty population, not an error."""
         assert incident_reference_targets(tmp_path / 'does-not-exist') == []
 
+    def test_empty_population_emits_anti_vacuity_finding(self, tmp_path: Path) -> None:
+        """An empty derived population is surfaced at runtime, not a silent clean pass.
+
+        This is the runtime half of the anti-vacuity guard (the epic's namesake):
+        a clean verdict over an unread population must not read as a clean tree.
+        """
+        empty_root = tmp_path / 'empty-bundles'
+        empty_root.mkdir()
+        findings = analyze_incident_reference_in_docs(empty_root)
+        assert len(findings) == 1
+        assert findings[0]['rule_id'] == RULE_ID
+        assert findings[0]['pattern_family'] == 'empty_population'
+        assert findings[0]['population_size'] == 0
+
 
 # ===========================================================================
 # (d) Skip-context cases

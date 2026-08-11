@@ -723,6 +723,8 @@ Only `SKILL.md` is scanned — the numbering-discipline rule is a property of a 
 
 **Exemption posture**: Ships **unconditional** — no prefix is registered under `no-incident-references` in `config/default-suppression.yml`. The genuinely-referential contexts that exist (bot data-sheets, `rule-provenance.md` / `rule-catalog.md`) fall outside the detection family above, so none needs a permanent exemption. The shared config-suppression capability remains available (a maintainer may register a prefix) but is left carrying zero entries rather than a token unused mechanism.
 
+**Anti-vacuity guard**: the examined file population is derived at runtime (`incident_reference_targets()` — never a hand-maintained list) and asserted non-empty by the rule's tests; when the derived population is empty the analyzer emits its own `empty_population` finding (`population_size: 0`), so a clean result over an unread population can never read as a clean tree.
+
 **Per-line structural exemptions**: YAML frontmatter, fenced code blocks, `Source:` provenance lines, inline-code spans.
 
 **Suppression mechanism**: Declarative suppression substrate (see [Declarative Suppression Substrate](#declarative-suppression-substrate)). Disable file-wide via `plugin-doctor-disable: [no-incident-references]` in the file's frontmatter (Granularity-3), or path-scoped via the project (`.plan/plugin-doctor.yml`, Granularity-2) or shipped-default (`config/default-suppression.yml`, Granularity-1) config.

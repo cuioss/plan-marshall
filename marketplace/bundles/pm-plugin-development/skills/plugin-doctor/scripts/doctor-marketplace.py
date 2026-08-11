@@ -492,7 +492,7 @@ def cmd_analyze(args) -> dict:
     all_issues.extend(marketplace_issues)
     total_issues += len(marketplace_issues)
 
-    # Granularity-2 driver integration: drop findings from the six content
+    # Granularity-2 driver integration: drop findings from the content
     # scanners that the project config (`.plan/plugin-doctor.yml`) or a per-file
     # `plugin-doctor-disable` frontmatter key suppresses. The filter is rule-id
     # scoped (`_SUPPRESSIBLE_RULE_IDS`), so every other finding is untouched.
