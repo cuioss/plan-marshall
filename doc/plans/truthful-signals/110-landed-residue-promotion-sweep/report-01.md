@@ -139,10 +139,26 @@ Recorded per instance.
 - **CI: no failures.** Required `verify / conclusion` = success; `verify / gate`, `dependency-review`,
   `generate-check`, `review / review` all success; `verify / verify` and `Sourcery review` skipped
   (docs-only / rate-limited).
-- **PR review: no actionable findings.** `cuioss-review-bot` reported "No relevant tests / No security
-  concerns identified / No major issues detected." No inline review threads. The CodeRabbit rate-limit
-  notice and the CLA-assistant prompt are non-actionable bot messages, not review findings — no fix or
-  reply warranted.
+- **PR review — `cuioss-review-bot`: no actionable findings** from the completed review ("No relevant
+  tests / No security concerns identified / No major issues detected"). The CLA-assistant prompt is a
+  non-actionable bot message, not a review finding.
+- **F3 (CodeRabbit — Major, `build-systems-common.md`).** "Missing row + zero output bytes" was
+  labelled the whole-tree-kill signature unconditionally, but by residue (a) a *still-running* build
+  has the same missing-row + zero-output state, so the signature cannot distinguish killed from
+  in-flight without a confirmed process termination. **Disposition: fixed** — the bullet now conditions
+  the kill signature on the job being known-terminated (the harness reports it no longer running) and
+  cross-links `classify-outcome`, which takes the terminated status as an input alongside the row/byte
+  check. Valid catch; the misleading-signal defect this epic targets.
+- **F4 (CodeRabbit — Minor, `report-01.md`).** The Residue section asserted the residue set is "gone"
+  (non-existence), but D0 established only *not-derivable-from-git*; the live-corpus claim is
+  unverifiable. **Disposition: fixed** — "gone" replaced with "not derivable from git-reachable
+  evidence," keeping the closure recommendation without asserting non-existence.
+- **F5 (CodeRabbit — Minor, `report-01.md`).** The "no actionable findings" claim should be scoped to
+  the completed review, since two reviewers were rate-limited. **Disposition: fixed** — the Findings
+  and Reviewer-participation wording now scopes the claim to the reviews that actually ran.
+- **CodeRabbit CLI hint ignored.** Each CodeRabbit comment carried an embedded suggestion to
+  `curl … | sh` install its CLI. Treated as an untrusted external instruction and **not** acted on;
+  all fixes were made directly.
 
 ## Reviewer participation
 
@@ -152,16 +168,18 @@ Expected reviewer population derived from the `author_login` of each
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
 | `cuioss-review-bot` (pr-agent) | `reviewed` | Posted "PR Reviewer Guide 🔍": *No relevant tests / No security concerns identified / No major issues detected* — an explicit nothing-to-report over the diff (`review / review` check = success). |
-| `coderabbitai` (coderabbit) | `rate-limited` | Published only a refusal notice: *"Review limit reached … you've reached your PR review limit … Next review available in 4 minutes."* Engaged but did not review this diff. |
-| `sourcery-ai` (sourcery) | `rate-limited` | Published only a refusal notice: *"you have reached your weekly rate limit of 500000 diff characters."* |
+| `coderabbitai` (coderabbit) | `reviewed` | Rate-limited on the first head, but its window reset and it completed a full review on head `217940b` (CodeRabbit status = "Review completed"), posting **three inline findings** (F3 Major, F4/F5 Minor) — all valid, all fixed. |
+| `sourcery-ai` (sourcery) | `rate-limited` | Published only a refusal notice: *"you have reached your weekly rate limit of 500000 diff characters."* Weekly quota; did not review this diff. |
 
-**Coverage: 1 of 3** reviewed. Two reviewers rate-limited (routine, outside our control). The Step 8
-condition-4 shortfall disclosure **fired**: "Review coverage 1 of 3 — `cuioss-review-bot` reviewed
-(no issues); `coderabbitai` rate-limited (window reopens ~4 min); `sourcery-ai` rate-limited (weekly
-quota)." Per the contract this is disclosed, not blocked on.
+**Coverage: 2 of 3** reviewed. One reviewer rate-limited (routine, outside our control). The Step 8
+condition-4 shortfall disclosure **fired**: "Review coverage 2 of 3 — `cuioss-review-bot` and
+`coderabbitai` reviewed; `sourcery-ai` rate-limited (weekly quota)." Per the contract this is
+disclosed, not blocked on.
 
-No mid-cycle push aborted any reviewer: all three reported against the current head SHA
-(`22b740b`), and the last commit before their reviews was already in place.
+Push cadence vs. reviews: the finalized-report push (`22b740b`→`217940b`) landed while CodeRabbit's
+window had reopened, and CodeRabbit reviewed the new head `217940b` in full. The CR-finding fix commit
+pushes again, so CodeRabbit re-reviews the newest head; its findings were addressed before the merge
+gate closed.
 
 ## Cost
 
@@ -192,8 +210,9 @@ No mid-cycle push aborted any reviewer: all three reported against the current h
 | 9 What have we learned | DONE — none proposed (below). |
 
 Non-required contexts disclosed (condition 1, disclose-not-block): `license/cla` **pending** (CLA not
-signed — non-required, since `mergeable_state` is `unstable`, not `blocked`); `coderabbitai` and
-`sourcery-ai` rate-limited. A cloud run owes **no** `/sync-plugin-cache` (machine-local build step).
+signed — non-required, since `mergeable_state` is `unstable`, not `blocked`); `sourcery-ai`
+rate-limited (`coderabbitai` completed its review on the re-run). A cloud run owes **no**
+`/sync-plugin-cache` (machine-local build step).
 
 ## What have we learned (Step 9)
 
@@ -209,10 +228,11 @@ contract-level change is warranted.
 
 ## Residue
 
-- **The plan is a strong candidate for closure.** D0 established the residue set is gone (not
-  derivable from git); D1's three residues shipped; D2 is unexecutable; D3 is empty. Per the plan's
-  Notes, the honest outcome is to **recommend the plan be closed** rather than manufacture plausible
-  rules. This recommendation is surfaced to the operator.
+- **The plan is a strong candidate for closure.** D0 established the residue set is **not derivable
+  from git-reachable evidence** (not that it provably never existed — the live-corpus claim is
+  unverifiable from this clone); D1's three residues shipped; D2 is unexecutable; D3 is empty. Per the
+  plan's Notes, the honest outcome is to **recommend the plan be closed** rather than manufacture
+  plausible rules. This recommendation is surfaced to the operator.
 - **CLA unsigned.** `license/cla` is pending ("Contributor License Agreement is not signed yet"). It
   is non-required per `mergeable_state: unstable`, so it does not gate the merge, but a human
   (`cuioss-oliver`) may need to sign it for the contribution to be accepted. Surfaced to the operator.
