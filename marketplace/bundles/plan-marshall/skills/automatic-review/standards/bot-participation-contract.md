@@ -331,7 +331,7 @@ declared *we-do-not-know* as a positive *hard quota* finding. That is the defect
 closes: a declared ignorance is not a hard quota, and an operator shown `refused_hard` is steered
 toward "waiting is futile, force it" for a refusal that might have reopened on its own.
 
-### Two axes: awaitability and CAUSE — and why the partition is derivable from the tree
+### Two axes: awaitability and CAUSE — the wired cause overlay
 
 `rate_limit_class` is the **awaitability** axis (can the caller usefully wait?). It is distinct from the
 refusal's **cause**, which the same bot can carry more than one of: Sourcery declares TWO `hard_quota`
@@ -383,9 +383,12 @@ set: doing so collapses the very distinction the two-field split exists to carry
 
 ### The three per-bot marker lists answer three different questions
 
-A bot's registry doc declares three independent marker surfaces. They are easy to confuse because all
-three are literal-substring lists read by the same producer, but each drives a different outcome and
-none is a superset of another:
+A bot's registry doc declares three independent marker surfaces that each drive a **comment-level**
+outcome (drop or branch). They are easy to confuse because all three are literal-substring lists read
+by the same producer, but each drives a different outcome and none is a superset of another. (The
+`refusal_size_patterns` overlay from § "Two axes" is deliberately NOT one of these three: it drives no
+comment-level outcome — it only *labels* a refusal's cause — and it is by design a subset of
+`refusal_patterns`, so the no-superset property here is scoped to these three comment-level surfaces.)
 
 | Marker surface | Match semantics | Outcome |
 |----------------|-----------------|---------|

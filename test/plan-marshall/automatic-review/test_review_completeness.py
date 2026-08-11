@@ -2179,3 +2179,25 @@ class TestRefusalCauseOverlay:
         )
         assert result.returncode == 0
         assert 'refusal_causes' not in result.stdout
+
+    def test_cause_does_not_change_the_verdict(self, plan_context):
+        """The 'no gating' half of advisory: the verdict is IDENTICAL with vs without a cause.
+
+        Supplying ``--refused-causes`` may add a ``refusal_causes[]`` report but must
+        move neither ``participation_complete``, the unproven/pending sets, nor the
+        ``bot_states`` awaitability members — the cause is reported, never acted on.
+        """
+        plan_id = 'rc-cause-no-gate'
+        plan_context.plan_dir_for(plan_id)
+        without = rc.check_completeness(plan_id, ['sourcery'], refused_bots=['sourcery'])
+        with_cause = rc.check_completeness(
+            plan_id, ['sourcery'], refused_bots=['sourcery'],
+            refused_causes={'sourcery': 'size'},
+        )
+        assert without['participation_complete'] == with_cause['participation_complete']
+        assert without['unproven_bots'] == with_cause['unproven_bots']
+        assert without['pending_bots'] == with_cause['pending_bots']
+        assert without['bot_states'] == with_cause['bot_states']
+        # The only difference is the advisory report itself.
+        assert without['refusal_causes'] == []
+        assert with_cause['refusal_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size'}]

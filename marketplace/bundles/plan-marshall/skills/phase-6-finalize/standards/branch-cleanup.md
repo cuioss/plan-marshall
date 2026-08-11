@@ -779,14 +779,19 @@ Feed the retained sets to the same predicate the FIND step uses:
 python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness \
   check --plan-id {plan_id} --required-bots "{required_bots}" --optional-bots "{optional_bots}" \
   --participated-bots "{participated_bots}" --refused-bots "{refused_bots}" \
-  --stale-participation-bots "{stale_participation_bots}" --declined-bots "{declined_bots}"
+  --stale-participation-bots "{stale_participation_bots}" --declined-bots "{declined_bots}" \
+  --refused-causes "{refused_causes}"
 ```
 
-Append the bare `--not-triggered` flag to that call when and only when the read above reported `has_pull_request_run: false`. It is a `store_true` bool carrying no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the six list flags only.
+Append the bare `--not-triggered` flag to that call when and only when the read above reported `has_pull_request_run: false`. It is a `store_true` bool carrying no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the list flags only.
 
 This site never passes `--in-progress-bots` — the barrier has no completion-poll observation of its
-own — so the six list flags above are the complete set here. Each is legitimately empty in normal
-operation (no optional bots, no refusals, no stale publishes, no declines). **The load-bearing defence is the parser, not the quoting.** The generated
+own. It **does** pass `--refused-causes` (the advisory size/quota overlay from the retained
+`refused_causes[]`), which is the surface where naming a refusal's remedy — a smaller diff vs backoff —
+most helps the operator deciding whether to override a merge blocked by refusing required bots; being
+advisory it gates nothing and changes no verdict. So the seven list flags above are the set here. Each
+is legitimately empty in normal operation (no optional bots, no refusals, no stale publishes, no
+declines, no causes). **The load-bearing defence is the parser, not the quoting.** The generated
 executor strips every empty-string argument before argparse sees it (`script_args = [a for a in
 script_args if a]` in `.plan/execute-script.py`), so through the executor `--refused-bots ""` arrives
 as a bare `--refused-bots` exactly as an unquoted empty placeholder would — the quotes do NOT survive

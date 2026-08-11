@@ -2489,3 +2489,39 @@ def test_fetch_findings_size_cause_is_sticky(plan_context, monkeypatch):
     assert result['refused_bots'] == ['sourcery']
     # Both notices are quota-and-size for the same bot; size wins (more actionable).
     assert result['refused_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size'}]
+
+
+def test_fetch_findings_size_cause_is_sticky_size_first(plan_context, monkeypatch):
+    """Sticky-size holds under the reverse order too: size first, then quota, stays size.
+
+    The stickiness must be order-independent — the symmetry the quota-then-size case
+    does not exercise.
+    """
+    plan_id = 'gh-pr-refusal-cause-sticky-reverse'
+    comments = [
+        {
+            'id': 'sr-size',
+            'author': 'sourcery-ai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': _SOURCERY_SIZE_NOTICE,
+            'resolved': False,
+        },
+        {
+            'id': 'sr-quota',
+            'author': 'sourcery-ai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': (
+                '> [!NOTE]\n'
+                '> Sourcery: you have reached your weekly rate limit of 500000 diff '
+                'characters.'
+            ),
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(108, plan_id)
+    assert result['status'] == 'success'
+    assert result['refused_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size'}]
