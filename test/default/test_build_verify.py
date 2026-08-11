@@ -80,9 +80,15 @@ def _collectable(names: list[str], root: Path) -> list[str]:
 
 
 def _record(calls: list[str], label: str, rc: int):
-    """Return a stub that records its label and yields the given return code."""
+    """Return a stub that records its label and yields the given return code.
 
-    def _stub(module, parallel: bool = True) -> int:
+    The stub accepts ``boundary`` because the refactored ``cmd_verify`` threads a
+    :class:`CoverageBoundary` into ``cmd_quality_gate`` / ``cmd_test_compile`` (and
+    ``parallel`` into ``cmd_module_tests``); a stub that rejected the kwarg would
+    fail with a spurious ``TypeError`` rather than exercising the orchestration.
+    """
+
+    def _stub(module, parallel: bool = True, boundary=None) -> int:
         calls.append(label)
         return rc
 
@@ -240,7 +246,7 @@ def test_scoped_compile_invokes_mypy_for_every_bundle_with_surviving_files(repo_
         build.cmd_compile(name)
 
     assert calls == [
-        ['uv', 'run', 'mypy', f'marketplace/bundles/{name}'] for name in collectable
+        ['uv', 'run', 'mypy', '--no-incremental', f'marketplace/bundles/{name}'] for name in collectable
     ], f'every collectable bundle must reach mypy; got {calls!r}'
 
 
@@ -406,7 +412,7 @@ def test_whole_tree_compile_omits_claude_dir_when_all_its_py_files_are_excluded(
 
     assert rc == 0
     assert _naive_has_py(claude), 'fixture must satisfy the exclude-blind predicate to pin the regression'
-    assert calls == [['uv', 'run', 'mypy', 'marketplace/bundles']], (
+    assert calls == [['uv', 'run', 'mypy', '--no-incremental', 'marketplace/bundles']], (
         f'.claude/ must be omitted when nothing there survives the excludes; got {calls!r}'
     )
 
@@ -423,4 +429,118 @@ def test_whole_tree_compile_includes_claude_dir_when_a_file_survives(repo_root_c
     rc = build.cmd_compile(None)
 
     assert rc == 0
-    assert calls == [['uv', 'run', 'mypy', 'marketplace/bundles', str(claude)]]
+    assert calls == [['uv', 'run', 'mypy', '--no-incremental', 'marketplace/bundles', str(claude)]]
+
+
+# ---------------------------------------------------------------------------
+# Freshness (D4) and coverage boundary (D5)
+#
+# The gate must be a truthful proxy for a cold CI run: it runs mypy with the
+# incremental cache disabled (so a stale cache can no longer produce a clean
+# verdict), backstops that with a duration sanity check (an implausibly fast
+# success over a substantial file set is treated as suspect, not reassurance),
+# and its own output names its coverage boundary (a partially-checked footprint
+# is distinguishable from one that genuinely passed).
+# ---------------------------------------------------------------------------
+
+
+def _ticks(*values: float):
+    """Return a build.time.monotonic replacement yielding the given values in order."""
+    seq = iter(values)
+    return lambda: next(seq)
+
+
+def test_compile_runs_mypy_cold_with_no_incremental(repo_root_cwd, monkeypatch):
+    """Every mypy invocation carries --no-incremental — the gate runs cold like CI.
+
+    This is the deterministic close of the stale-cache hole (D4): a warm
+    incremental cache cannot answer a gate that never consults it.
+    """
+    calls: list[list[str]] = []
+    monkeypatch.setattr(build, 'run', _run_recorder(calls))
+
+    build.cmd_compile(None)
+
+    assert calls, 'mypy must have been invoked'
+    assert '--no-incremental' in calls[0], (
+        f'the gate must run mypy cold (--no-incremental) to match CI; got {calls[0]!r}'
+    )
+
+
+def test_quality_gate_fails_closed_when_whole_tree_mypy_reports_implausibly_fast(
+    repo_root_cwd, monkeypatch, capsys
+):
+    """A whole-tree mypy 'success' in zero wall-time is not trusted — the gate fails closed (D4).
+
+    Models the stale-cache no-op: mypy exits 0 having analysed nothing. Over the
+    substantial whole-tree file set that is impossibly fast, so the freshness
+    backstop converts the clean verdict into a non-clean one rather than reading
+    it as reassurance.
+    """
+    monkeypatch.setattr(build, 'run', _run_recorder([], rc=0))
+    monkeypatch.setattr(build, 'check_spdx_headers', lambda paths: [])
+    # start == end → zero elapsed → infinite throughput over the whole tree.
+    monkeypatch.setattr(build.time, 'monotonic', _ticks(100.0, 100.0))
+
+    rc = build.cmd_quality_gate(None)
+
+    assert rc != 0, 'an implausibly fast whole-tree type-check must not report a clean pass'
+    captured = capsys.readouterr()
+    assert 'FRESHNESS SUSPECT' in captured.err
+    assert 'PARTIAL' in captured.out, 'the coverage verdict must be PARTIAL, not silent'
+
+
+def test_quality_gate_does_not_flag_a_plausibly_timed_whole_tree_run(repo_root_cwd, monkeypatch, capsys):
+    """A whole-tree mypy success that took real time is NOT flagged (D4, negative direction).
+
+    A check that cried wolf on every run would be disabled within a week, so the
+    negative direction is load-bearing: a legitimately-timed cold run passes clean.
+    """
+    monkeypatch.setattr(build, 'run', _run_recorder([], rc=0))
+    monkeypatch.setattr(build, 'check_spdx_headers', lambda paths: [])
+    # 30 s over the whole tree — a plausible cold analysis.
+    monkeypatch.setattr(build.time, 'monotonic', _ticks(100.0, 130.0))
+
+    rc = build.cmd_quality_gate(None)
+
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert 'FRESHNESS SUSPECT' not in out
+    assert 'coverage: COMPLETE' in out
+
+
+def test_verify_prints_complete_coverage_summary_on_success(monkeypatch, capsys):
+    """A fully-checked verify names its coverage as COMPLETE (D5)."""
+    calls: list[str] = []
+    monkeypatch.setattr(build, 'cmd_quality_gate', _record(calls, 'quality-gate', 0))
+    monkeypatch.setattr(build, 'cmd_test_compile', _record(calls, 'test-compile', 0))
+    monkeypatch.setattr(build, 'cmd_module_tests', _record(calls, 'module-tests', 0))
+
+    rc = build.cmd_verify(None)
+
+    assert rc == 0
+    assert 'coverage: COMPLETE' in capsys.readouterr().out
+
+
+def test_verify_prints_partial_coverage_when_a_step_is_freshness_suspect(monkeypatch, capsys):
+    """A freshness-suspect step makes verify's verdict PARTIAL and names the un-certified dimension (D4+D5).
+
+    The cold-read property: shown this verdict for a partially-checked footprint
+    and asked 'is it safe to push?', a reader must read NO — mypy(test) was not
+    certified — never a clean pass.
+    """
+    def _fresh_suspect_test_compile(module, boundary=None):
+        boundary.record_degraded('mypy(test)', 'freshness suspect — reported success implausibly fast')
+        return build._FRESHNESS_SUSPECT_RC
+
+    monkeypatch.setattr(build, 'cmd_quality_gate', _record([], 'quality-gate', 0))
+    monkeypatch.setattr(build, 'cmd_test_compile', _fresh_suspect_test_compile)
+    monkeypatch.setattr(build, 'cmd_module_tests', _record([], 'module-tests', 0))
+
+    rc = build.cmd_verify(None)
+
+    assert rc == build._FRESHNESS_SUSPECT_RC
+    out = capsys.readouterr().out
+    assert 'PARTIAL' in out
+    assert 'mypy(test)' in out
+    assert 'NOT a full pass' in out

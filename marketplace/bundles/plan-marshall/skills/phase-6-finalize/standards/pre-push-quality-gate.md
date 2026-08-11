@@ -47,6 +47,32 @@ Both settlements are scoping decisions only. The existing **honest-degradation b
 
 The module-tests gate consults the callable scope-resolution seam (`pyproject_build resolve-test-scope`, backed by the pure `_test_scope_divergence.resolve_test_scope`) and runs a real whole-tree `module-tests` only when divergence is possible — mirroring the escalate-only-on-trigger discipline of the `finalize-step-plugin-doctor` reference behavior (PLAN-02), so whole-tree cost is paid only where a scoped run could miss a cross-module regression.
 
+## Coverage parity with CI, freshness, and honest coverage
+
+This gate is a proxy for what CI runs — `./pw verify` (`build.py:cmd_verify`, reading the one shared
+`pyproject.toml` tool config) — and is only useful while it stays a *truthful* proxy. Two properties
+keep it honest, both enforced in `build.py` and its pure `_gate_coverage` seam
+(`script-shared/scripts/build/_gate_coverage.py`), so they hold on every arm below:
+
+- **Freshness (cold, like CI).** Every mypy invocation runs with the incremental cache disabled
+  (`--no-incremental`), so the verdict is computed against the current tree rather than a possibly-
+  stale cache. A fresh CI clone runs cold; a developer machine keeps a `.mypy_cache` across runs, and
+  a stale cache answering *"nothing I have cached changed"* is exactly how a clean local verdict once
+  diverged from a red CI. A mypy that then reports success in a wall-time no real analysis of its file
+  set could achieve is treated as **suspect, not reassurance** — `classify_check_duration` flags it
+  and the gate fails closed rather than certifying the tree from a cache.
+- **Honest coverage boundary.** A run that could not fully check a footprint is **distinguishable**
+  from one that genuinely passed: `verify` / `quality-gate` print a coverage verdict that is COMPLETE
+  only when every dimension was checked over its full scope, and PARTIAL — naming the un-certified
+  dimension — otherwise. The same discipline governs this step's own `--display-detail`: see the
+  degraded detail variant under **Mark Step Complete** below, which never reports an un-run arm as
+  green.
+
+The local-gate-vs-CI parity population these properties defend is **derived, not hand-listed**
+(`_gate_coverage.parity_population`), so a test can assert it is non-empty — a parity table computed
+over an empty population is indistinguishable from perfect parity, which is the confident-but-empty
+signal this gate exists to prevent.
+
 ## Exit-code convention for `manage-*` script calls
 
 Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:
@@ -259,6 +285,21 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 ```
 
 The variant is deliberately shorter than the default one. Against the `display_detail` length ceiling owned by [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) (do not restate the number here — read it there), the default string already reaches 75 characters before `{N}` expands, leaving room for only a small bundle count; the skip variant reaches 67 before expansion and therefore stays inside the ceiling for any count this gate can produce. Size any further variant the same way — against its **worst-case placeholder expansion**, never against its literal form. A placeholder-bearing string that fits as written is not evidence that it fits once the placeholder expands.
+
+**Detail variant — whole-tree quality-gate degraded (honest degradation).** When Branch A is reached
+via the whole-tree `quality-gate` **honest-degradation path** (the whole-tree invocation could not run,
+so the three whole-tree-only dimensions were UN-GATED and only a `[WARNING]` was emitted), the default
+detail's "whole-tree quality-gate green" clause would **affirmatively misreport an un-run arm as
+green** — the exact confident-but-untrue signal this gate exists to prevent. Use the degraded variant
+below instead, so the step record names its coverage boundary rather than claiming a pass it did not
+earn (`test-compile` and `module-tests` still ran on this path, so "tests green" is accurate):
+
+```text
+--display-detail "{N} bundles green, whole-tree quality-gate DEGRADED, tests green"
+```
+
+Size it the same way as the module-tests variant — against its worst-case placeholder expansion, not
+its literal form — and it stays inside the same `display_detail` ceiling.
 
 The persisted `head_at_completion` field is consumed by phase-6-finalize Step 3's resumable re-entry check: when the worktree HEAD has advanced past `{sha}` (typically because `automated-review` or `sonar-roundtrip` opened a loop-back fix-task that produced a new commit), the dispatcher re-fires this gate against the newer HEAD instead of skipping it.
 
