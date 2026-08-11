@@ -49,7 +49,7 @@ await — and that is a legitimate configured state, not a misconfiguration to w
 ## Failure taxonomy
 
 When a bot does not deliver a usable review, the non-participation is classified into exactly one of
-eight members. The taxonomy is closed: every non-participation resolves to one of these.
+nine members. The taxonomy is closed: every non-participation resolves to one of these.
 
 | Member | Condition | Interpretation |
 |--------|-----------|----------------|
@@ -57,7 +57,8 @@ eight members. The taxonomy is closed: every non-participation resolves to one o
 | `not_triggered` | No `pull_request`-event workflow run exists for the PR at all, so nothing could have been published — a PR-wide condition, not a per-bot one. | The reviewers were never asked. The remedy is to trigger the review, not to escalate a reviewer that stayed silent. |
 | `in_progress` | The bot's completion check-run is still running when the poll budget expires. | The bot engaged but did not finish in time; left to the pre-merge comment barrier. |
 | `refused_awaitable` | The bot posted a refusal whose limit reopens on its own (`rate_limit_class: awaitable_window`). | Worth awaiting — the window resets. |
-| `refused_hard` | The bot posted a refusal that does not reopen on a useful timescale (`rate_limit_class: hard_quota`), or a structural refusal such as a size/diff ceiling. | Not worth awaiting; whether the absence is tolerable is a required-vs-optional question, not a waiting question. |
+| `refused_hard` | The bot posted a refusal that does not reopen on a useful timescale (`rate_limit_class: hard_quota`) — a per-PR size/diff ceiling or a plan-level quota. | Not worth awaiting; whether the absence is tolerable is a required-vs-optional question, not a waiting question. |
+| `refused_unknown` | The bot posted a refusal whose class the registry declares `unknown` — its refusal shape has never been observed, so whether the window reopens is genuinely not known. | A declared *we-do-not-know*, NEVER a positive hard quota. Rendering it as `refused_hard` steers an operator toward "waiting is futile, force it" for a refusal that might have been awaitable. Its own member so the ignorance reaches the reader as ignorance. |
 | `participated_but_empty` | The bot posted at least one comment, but every comment was filtered out (noise) so it stored zero findings. | **Accounted-for, not a failure.** The bot did its pass and had nothing actionable to say. |
 | `participated_stale` | The bot's comment matched a declared `participation_evidence` publish shape but failed the `participation_requires_update` currency test — the comment was reviewed against a commit that is **not** the merge candidate, and it was not edited in place since. | The bot reviewed an **earlier** commit, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
 | `declined` | The bot was asked to review the merge candidate (a re-review was triggered) and answered without producing a review of it — an **incremental-review decline**: it responded with a comment carrying no reviewed-commit SHA (`head_sha_verified: false`) rather than a review of this HEAD. | The bot engaged but **declined** to review this commit. Blocking, but re-triggering is futile — the productive action is to accept the decline (move the bot to `optional`, or record a merge-authorization), not to trigger again. |
@@ -98,8 +99,8 @@ The taxonomy member describes *what happened*; the required/optional classificat
 it matters*:
 
 - A **required** bot resolving to `absent`, `not_triggered`, `in_progress`, `refused_awaitable`,
-  `refused_hard`, `participated_stale`, or `declined` is a completeness failure — the step is not
-  markable done without an explicitly recorded force-done reason.
+  `refused_hard`, `refused_unknown`, `participated_stale`, or `declined` is a completeness failure —
+  the step is not markable done without an explicitly recorded force-done reason.
 - An **optional** bot resolving to any member never blocks.
 - Any bot resolving to `participated_but_empty` is accounted-for regardless of classification.
 
@@ -307,8 +308,48 @@ successful reviews as refusals. The two lists answer different questions and mus
 
 A bot whose `refusal_patterns[]` is empty has no observed refusal shape; its non-participation
 resolves to one of the non-refusal members — `participated_stale`, `in_progress`, `not_triggered`, or
-`absent` — rather than to either refusal member. This is the fail-closed default: a refusal is only
-ever claimed on positive evidence.
+`absent` — rather than to any of the three refusal members. This is the fail-closed default: a refusal
+is only ever claimed on positive evidence.
+
+### A refusal splits ONE-TO-ONE by the bot's three-valued `rate_limit_class`
+
+A recognised refusal resolves to exactly one of **three** members, mapped one-to-one from the refusing
+bot's registry `rate_limit_class` — a three-valued field (`awaitable_window` / `hard_quota` /
+`unknown`), not a boolean:
+
+| `rate_limit_class` | Member | Meaning |
+|--------------------|--------|---------|
+| `awaitable_window` | `refused_awaitable` | The limit reopens on its own; awaiting the reset is productive. |
+| `hard_quota` | `refused_hard` | A budget that does not reopen on a useful timescale; awaiting it only burns budget. |
+| `unknown` | `refused_unknown` | The registry declares ignorance — the refusal shape has never been observed, so whether waiting helps is not known. |
+
+`review_completeness._refusal_state()` is the one place this mapping lives, and it is total and
+injective: no class value collapses into another, and any value that is neither of the first two —
+including a malformed or absent one — resolves fail-closed to `refused_unknown`. The mapping was once a
+binary `== 'awaitable_window'` test, which folded `unknown` into `refused_hard` and so rendered a
+declared *we-do-not-know* as a positive *hard quota* finding. That is the defect `refused_unknown`
+closes: a declared ignorance is not a hard quota, and an operator shown `refused_hard` is steered
+toward "waiting is futile, force it" for a refusal that might have reopened on its own.
+
+### Two axes: awaitability and CAUSE — and why the partition is derivable from the tree
+
+`rate_limit_class` is the **awaitability** axis (can the caller usefully wait?). It is distinct from the
+refusal's **cause**, which the same bot can carry more than one of: Sourcery declares TWO `hard_quota`
+refusals with different causes — a per-PR **diff-size ceiling** (`"your pull request is larger than the
+review limit of"`) and an account-level **weekly quota** (`"reached your weekly rate limit of"`). Both
+are `hard_quota` on the awaitability axis, yet their remedies differ — a size refusal needs a smaller
+diff, a quota refusal needs backoff — so a participation *rate* pooled across the two mis-attributes
+both.
+
+The cause partition is therefore **derivable from the tree**: each bot's `refusal_patterns[]` already
+distinguishes its size notice from its quota notice, so an absence can be attributed to size vs quota
+by which pattern matched, and diff sizes are recoverable from merge commits via git. The taxonomy
+member for the cause axis is deliberately **not wired** here — the awaitability split (three
+`refused_*` members) is what the classifier and the display consume, and threading a matched-cause
+signal through the refusal detector, the producer, and the classifier is a material widening carried by
+a separate plan. What this contract fixes is the invariant: **do not report a participation rate over a
+corpus pooled across causes** — partition by cause (size vs quota, readable from `refusal_patterns`)
+first.
 
 ### A refusal is never noise — it is a branch
 
@@ -388,6 +429,67 @@ remove. Without the record the currency rule has no SHA for a dropped comment to
 whose one stale comment never changed could not be told apart from one reviewing the merge candidate —
 the exact false positive `participation_requires_update` exists to close.
 
+## The counting rule
+
+The epic's single source of truth for **how a reviewer's output is counted**, so every consumer counts
+the same way and no rate is computed over an invisible denominator. Three named quantities, each with
+its population published:
+
+- **The finding count**, per reviewer per PR, is the number of filed `pr-comment` findings attributed
+  to that reviewer's `bot_kind`. It is the FILED count — *after* the producer's pre-filter has dropped
+  noise, refusals, self-responses, and cross-iteration duplicates — never a raw comment count and never
+  a count of review-body summaries. A naive comment count is wrong in **both** directions: one
+  reviewer's findings can arrive across several review bodies (a `"Actionable comments posted: 3"` then
+  a `"1"`), which over-counts if the summaries are counted and under-counts if only the last is; and a
+  reviewer's inline threads carry its own acknowledgement replies, which are not findings. Counting
+  filed findings sidesteps both, because the producer already collapsed those shapes.
+
+- **The reviewed-at-all predicate** — a reviewer reviewed the diff iff its taxonomy state is
+  `participated` or `participated_but_empty`: a proven publish shape against the merge candidate. Every
+  other state — the three refusals, `absent`, `not_triggered`, `in_progress`, `participated_stale`,
+  `declined` — is a non-review, so it can be neither a deficit baseline nor a meaningful finding count.
+  `participated_but_empty` (reviewed, found nothing) counts as a review with a count of zero; it is
+  **never** collapsed into "did not review".
+
+- **The required-vs-optional denominator** — the populations every rate is computed over, published so a
+  denominator is never invisible: the **required set** (`required_bots` — gates the completeness
+  quorum), the **optional set** (`optional_bots` — reported, never gates), and the **enabled roster**
+  (required ∪ optional — the review-retrospective's row domain, so a reviewer that produced nothing
+  still has a row). A rate reported without its population is the defect this rule exists to remove.
+
+## The comparative deficit signal
+
+A required reviewer that produces materially fewer findings than a reviewer that **actually reviewed
+the same diff** is a reviewer-quality bug, and is reported as one. "No findings" from a single reviewer
+is a legitimate result and never a defect on its own; the defect is comparative — a deficit *against a
+baseline*.
+
+This signal is **observability, never a gate**:
+
+- It is **not a merge verdict.** The reviewer *did* provide a result, so participation and the merge
+  decision are unaffected. `review_completeness deficit` carries `gates_merge: false` and `proves:
+  reviewer_quality_only` in as many words. Turning it into a gate would block a merge on a third party's
+  output.
+- It is **not a participation verdict.** A required reviewer with a deficit still satisfies the quorum
+  (it participated); a deficit is a statement about *yield*, computed only over reviewers that reviewed.
+
+It fires **only against a real baseline** and is otherwise silent:
+
+- **deficit** — a baseline exists (some non-required reviewer reviewed the same diff) and a required
+  reviewer that reviewed produced materially fewer findings than the baseline's best.
+- **clean** — a baseline exists and no required reviewer under-produced; `0 : 0` against a baseline that
+  reviewed and found nothing lands here, never in `deficit`.
+- **unassessable** — NO non-required reviewer reviewed the diff, so there is no baseline and the run is
+  evidence neither way. When every other reviewer refused, nothing reviewed the diff besides the
+  required bot; the signal must not manufacture a reviewer-quality bug out of rate limiting the pipeline
+  already accepts as normal.
+
+**Do not pool measurements across the instruction-generation boundary.** A change to a reviewer's
+instructions (a domain-scoped charter, an agent-instructions file newly resolving in a repository)
+changes the quantity being measured, so a deficit measured before such a change and one measured after
+are not the same number. Which charter a PR's reviewer was running is part of the population a deficit
+is reported over.
+
 ## Consumers
 
 | Consumer | What it reads |
@@ -395,7 +497,9 @@ the exact false positive `participation_requires_update` exists to close.
 | `automatic-review/SKILL.md` | Both lists, to drive the completion-aware poll, the re-review trigger set, and the step-done guard. |
 | `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]` **and the `stale_participation_bots[]` set that carries `participated_stale`**; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it; each bot's `contentless_review_markers` / `actionable_content_markers`, to drop a fully clean review comment as noise. |
 | `github_pr pull_request_runs` / `ci checks pull-request-runs` | Nothing from this contract — it is the **observation channel for `not_triggered`**, answering the PR-wide question of whether any `pull_request`-event workflow run exists for the PR at all. Its verdict reaches the predicate as the single `--not-triggered` bool. |
-| `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` to split the two refusal states. Consumes `stale_participation_bots[]` via `--stale-participation-bots` to assign `participated_stale`, the bots that answered a re-review without reviewing the merge candidate via `--declined-bots` to assign `declined`, and the PR-wide `--not-triggered` bool to refine what would otherwise be `absent`. |
+| `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` to split the THREE refusal states one-to-one (`refused_awaitable` / `refused_hard` / `refused_unknown`). Consumes `stale_participation_bots[]` via `--stale-participation-bots` to assign `participated_stale`, the bots that answered a re-review without reviewing the merge candidate via `--declined-bots` to assign `declined`, and the PR-wide `--not-triggered` bool to refine what would otherwise be `absent`. Emits `review_state_summary` (the reviewer-state distribution) so `display_detail` can tell reviewed-clean from nobody-reviewed. |
+| `review_completeness deficit` | The same observation flags as `check`, to classify each bot and derive its reviewed-at-all predicate and filed finding count, then report the comparative deficit signal — a reviewer-quality observation that gates no merge (§ "The comparative deficit signal"). |
+| `finalize-step-review-retrospective` (`review_retrospective`) | The enabled roster (`author_login` values) via `--enabled-reviewers`, to emit a row per ENABLED reviewer rather than per responding one, each carrying `participation: measured` / `unmeasurable` (§ "The counting rule" — the row-domain population). |
 | `github_ops pr wait-for-comments` | Each bot's `participation_requires_update`, to select the `updated_at`-movement arm of its completion predicate over the count-growth arm; `participation_evidence` plus `bot_kinds()`, to decide whether the await is answerable at all (`detector_answerable`). |
 | `marshall-steward` | Both lists, to ask the wizard question and record the provenance. |
 
