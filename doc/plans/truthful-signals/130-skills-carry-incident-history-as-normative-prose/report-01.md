@@ -1,6 +1,6 @@
 # Run report — skills-carry-incident-history-as-normative-prose (run 01)
 
-**Date (UTC):** 2026-08-11    **Branch:** `claude/skills-incident-history-prose-l55k2b` (harness-assigned, kept as-is)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-11    **Branch:** `claude/skills-incident-history-prose-l55k2b` (harness-assigned, kept as-is)    **PR:** [#1163](https://github.com/cuioss/plan-marshall/pull/1163)    **Outcome:** completed — all six deliverables shipped and verified; auto-merge armed, landing delegated (gated on the operator resolving the CLA check)
 
 ## Skills loaded
 
@@ -158,24 +158,86 @@ place; roadmap quarantined not deleted). Three findings, all dispositioned:
 | 2 | sub-agent | The rule's population is published/asserted only in tests, not at runtime; a strict reading of "D4 must publish its population size" (the epic's namesake) wants a runtime signal. | **Fixed** — commit `ce13730`, the analyzer now emits an `empty_population` finding (`population_size: 0`) when the derived population is empty; catalog/provenance note it; a test pins it. |
 | 3 | sub-agent | Report committed with `Outcome: in progress` and pending sections; D5 red-first evidence not yet visible. | **Addressed** — Deliverables/Build sections were filled in `ce7f8e9` (before the sub-agent's diff snapshot); D5 red-first evidence is in the D5 bullet; the remaining sections (this one, Reviewer participation, Contract check, What-have-we-learned) finalize at the Step 8 pre-merge commit per the lane. |
 
-**CI / PR review** — recorded below once the PR is open.
+**CI / PR review** (PR #1163):
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| 4 | `cuioss-review-bot` (pr-agent) | **Incomplete Pattern Scanning** — `_scan_file` used `pattern.search()` (first match only), so a back-ticked reference early on a line masked a bare reference later on the same line (a false negative). | **Fixed** — commit `6395b40`: iterate `pattern.finditer()` and fire on the first match outside inline-code; regression test added. The fix immediately surfaced a live instance (a bare example ref in the analyzer's own comment that `search()` had masked), which was also cleaned. Replied on the PR thread. |
+
+CI: `verify / gate`, `dependency-review`, `generate-check` green; `verify / verify` re-running on the final head. No inline review-thread comments on either surface (checked `get_review_comments` → empty).
 
 ## Reviewer participation
 
-_(pending)_
+Expected reviewer population **derived from configuration** — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(`coderabbit.md`, `pr-agent.md`, `sourcery.md`), cross-named by `.github/workflows/pr-agent.yml`.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Published a PR Reviewer Guide against the diff with a real finding (Incomplete Pattern Scanning), plus 🧪/🔒 clean rows. The finding was fixed (`6395b40`). |
+| `coderabbitai` | `rate-limited` | Published only a "Review limit reached" notice ("you've reached your PR review limit … next review available in ~13 minutes") — engaged but did not review this diff. |
+| `sourcery-ai` | `silent` | The `Sourcery review` check concluded `skipped` on both heads and Sourcery published no review and no notice. |
+
+**Coverage: 1 of 3** reviewed. The Step 8 shortfall disclosure fires (below).
 
 ## Cost
 
-_(pending)_
+- **Tokens:** not available to the agent in this session (the Claude Code cloud harness does not
+  surface a per-run token count to the running agent).
+- **Wall-clock:** ~1.5–2h of a single interactive cloud session (PR opened 2026-08-11T15:01Z).
+- **Population:** this single Claude Code cloud session's usage. ⛔ **Not comparable** to a
+  plan-marshall `metrics.toon` total — that counts the orchestrator-plus-agent dispatch tree under
+  plan-marshall's own per-task billing boundary, which a single interactive cloud session does not
+  share. No comparable figure is presentable, so none is asserted.
 
 ## Contract check (Step 9)
 
-_(pending)_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — `cloud-plan-lane`, `ref-code-quality`, `plugin-script-architecture` (named above). |
+| 2 Branch | Done — harness-assigned `claude/skills-incident-history-prose-l55k2b`, kept as-is; published on `origin` (it was absent from the remote at start despite a stale local tracking ref — pushed as the first action). |
+| 3 Plan directory | Done — `doc/plans/truthful-signals/130-…/plan.md` exists and opens with the first-instruction block (present, no repair needed). |
+| 4 Implement / per-commit gate / pushed | Done — commits carry the trailer; every `*.py`-touching commit was preceded by a clean quality gate (run over the complete change; the final tree verified before each push); no unpushed commit remains. |
+| 5 Build gate | Done — Python changed, full path taken: quality-gate clean, `module-tests` 18990 passed / 0 failed. |
+| 6 Verification sub-agent | Done — findings and dispositions recorded; two fixes applied, re-verified. |
+| 7 PR cycle | Done — PR #1163; every comment dispositioned (pr-agent fixed + replied; coderabbit rate-limited; sourcery silent; CLA disclosed). Both comment surfaces read. |
+| 8 Merge gate | Conditions 2 (comments handled) and 3 (report finalized, this commit) met; condition 1 (required checks green on the final head) verified at arm time after this commit's `verify` concludes; auto-merge then armed. Landing delegated to the orchestrator collect / auto-merge (a cloud session cannot self-wake to watch the queue). Reviewer shortfall (1-of-3) and the CLA status disclosed to the operator (§ Residue). |
+| 8 Bridge | No status/bookkeeping write outside this plan's own directory. |
+| 9 This check | This table. |
+
+GitHub access path: **GitHub MCP server** (the cloud path). Branch form: **harness-assigned**. A cloud
+run neither performs nor owes a `/sync-plugin-cache`.
 
 ## What have we learned (Step 9)
 
-_(pending)_
+**One candidate contract observation, presented to the operator — not self-approved.** This run's
+commits are authored by `Claude <noreply@anthropic.com>` (the harness-configured git identity), and
+the repository's `cla-assistant` check reports the PR "not signed" on that author. The
+`cloud-plan-lane` contract's § GitHub access and § Step 8 do not mention a CLA gate, so a run has no
+guidance on whether the CLA is a merge blocker or an operator/infra step to disclose. Evidence from
+this run: the CLA check posted `not_signed` while every code check was green or running. **Proposed
+note** (for operator decision, shipped as a separate `chore/` PR only on approval): the lane's merge
+gate should name the CLA check as a disclose-not-block condition when it is non-required, and as an
+operator-action item (sign / recheck) when required — mirroring the reviewer-shortfall disclosure —
+so a cloud run neither blocks on it silently nor merges without surfacing it.
+
+No other contract change is proposed — every other step was performed as written and produced its
+artifact.
 
 ## Residue
 
-_(pending)_
+- **CLA / `license/cla` check.** `cla-assistant` reports the PR "not signed" because the commits are
+  authored by `Claude <noreply@anthropic.com>`. This needs an **operator action** — sign the CLA for
+  the contributing identity, or use the cla-assistant "recheck" link if already covered. Auto-merge
+  is armed to land the PR once all required checks (including CLA, if required) are green, so no
+  further code action is owed here; the merge is gated on the operator resolving the CLA.
+- **Review coverage 1-of-3** — `coderabbitai` rate-limited (window reopens ~13 min; the fix push may
+  let it re-review) and `sourcery-ai` silent (review check skipped). Disclosed, not blocking, per the
+  lane.
+- **Softer incident references left in place (KEEP, out of rule scope):** `#849` (ci:wait ratchet),
+  `#812` (metrics semantics, mostly back-ticked), `#884`, `#990` (back-ticked), `#565`, `#979`,
+  worked-example provenance in `unreachable-guard-detection.md`, code-comment provenance citations,
+  and `# SHIM(…)` markers. Each names its mechanism in-place or is provenance/shim-governed and falls
+  outside the precise incident-narration pattern; the D4 rule does not flag them. A future pass could
+  tighten these if desired, but doing so now risked the wide cross-plan-conflict the plan's Notes
+  warn against.
