@@ -1,7 +1,7 @@
 # Run report — 160-build-gate-coverage-parity (run 01)
 
 **Date (UTC):** 2026-08-11    **Branch:** claude/gate-coverage-parity-wra7b0 (harness-assigned)
-**PR:** #1174 (https://github.com/cuioss/plan-marshall/pull/1174)    **Outcome:** _in progress_
+**PR:** #1174 (https://github.com/cuioss/plan-marshall/pull/1174)    **Outcome:** completed (auto-merge armed; landing confirmed post-merge / delegated to collect)
 
 ## Skills loaded
 
@@ -197,7 +197,33 @@ a fix.
 
 ## Reviewer participation
 
-_pending PR — see Step 7/8._
+Expected population derived from the registry docs
+(`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{coderabbit,sourcery,pr-agent}.md`
+→ `author_login`), cross-named by `.github/workflows/pr-agent.yml`. Verdicts read from the stored
+comment/review bodies on PR #1174, not from check states:
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Posted "PR Reviewer Guide 🔍" over the diff: "PR contains tests / No security concerns identified / No major issues detected". A review with nothing to report. |
+| `coderabbitai` | `rate-limited` | Posted only "Review limit reached … Next review available in 41 minutes … used all free OSS reviews" — engaged but did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Posted only "you have reached your weekly rate limit of 500000 diff characters" — engaged but did not review this diff. |
+
+**Coverage: 1 of 3 reviewed.** Shortfall disclosure (Step 8 condition 4) fired: `cuioss-review-bot`
+reviewed (no issues); `coderabbitai` rate-limited (window reopens ~41 min); `sourcery-ai` rate-limited
+(weekly diff-character quota). Both rate limits are routine and outside our control — disclosed, **not**
+blocked on. No inline review threads (0), no actionable review comment to fix or reply to.
+
+## Cost
+
+- **Tokens:** not available to the agent in this session (the Claude Code cloud harness does not surface
+  a token count to the running agent).
+- **Wall-clock:** the run spanned roughly one interactive cloud session; the two full `./pw verify`
+  runs cost ~305 s and ~351 s (measured from their own summaries), and the environment cold-boot (uv
+  venv + interpreter download) was a one-time cost on the first `uv run`.
+- **Population:** this single Claude Code cloud session's activity. ⛔ **NOT comparable** to a
+  plan-marshall `metrics.toon` total, which counts the orchestrator-plus-agent dispatch tree under
+  plan-marshall's per-task billing boundary — a boundary this single interactive session does not
+  share. The figures above are wall-clock only; no commensurable token total exists to report.
 
 ## Cost
 
@@ -205,11 +231,34 @@ _pending_
 
 ## Contract check (Step 9)
 
-_pending_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — named in § Skills loaded (all by bundle path; plugin not installed). |
+| 2 Branch | Done — harness-assigned `claude/gate-coverage-parity-wra7b0` kept as-is; pushed to `origin` before any work. |
+| 3 Plan directory | Done — `doc/plans/truthful-signals/160-build-gate-coverage-parity/plan.md` exists and opens with the first-instruction block (present on arrival; no repair needed). |
+| 4 Implement / per-commit gate | Done — commits carry the trailer; the `*.py` commit was preceded by a clean `./pw quality-gate` (`total_issues: 0`, empty `errors[]`, `coverage: COMPLETE`). |
+| 4 Pushed | Done — every commit pushed; the final report commit is the last push before arming. |
+| 5 Build gate | Done — Python changed → full `./pw verify`; green (19060 passed) after fixing 5 test co-evolution failures. |
+| 6 Verification sub-agent | Done — all six deliverables PASS; findings dispositioned in § Findings (none required a fix). |
+| 7 PR cycle | Done — PR #1174; both comment surfaces read; no actionable comment; per-reviewer participation recorded. |
+| 8 Merge gate | Conditions 1–3 met, shortfall (1-of-3) disclosed, auto-merge armed (see § Build gate / operator disclosure). Landing confirmed post-merge / delegated to collect. |
+| 9 This check | This table. |
+
+GitHub access path: **GitHub MCP server** (cloud path). Branch form: **harness-assigned**. A
+`/sync-plugin-cache` is **not owed** — a cloud run neither performs nor records it (machine-local build
+step). The PR touches `marketplace/bundles/**` bundle source; a local developer sync is a local concern,
+not a debt of this run.
 
 ## What have we learned (Step 9)
 
-_pending_
+**None proposed.** Every contract step applied cleanly in this environment and produced its named
+artifact: the branch was kept and pushed; the conditional build gate took its full `*.py` path; the
+verification sub-agent produced findings; the PR cycle read both comment surfaces and derived the
+reviewer population from configuration; the merge gate's disclose-not-block shortfall rule fit the
+observed 1-of-3 coverage exactly. No step was ambiguous, unproducible, or contradicted by the actual
+tooling, so this run produced no evidence for a contract change. (The one friction — a stop-hook
+flagging uncommitted changes while I paused mid-run to await a sub-agent — is a harness hook, not a lane
+step, and is resolved by committing coherent units, which the contract already prescribes.)
 
 ## Residue
 
