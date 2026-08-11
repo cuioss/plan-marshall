@@ -339,10 +339,12 @@ def _token_population(phase_row: dict) -> str:
 # of them let the third exceed the rendered figure with the report never saying
 # so. Two eligibility rules keep the comparison honest:
 #
-#   * A measure that cannot state its own coverage may not win. Only
-#     `dispatch_boundary_total` can under-cover (its file may hold fewer rows
-#     than the phase had dispatches), so it is refused the maximum when it is
-#     PARTIAL.
+#   * A measure whose coverage is not exact may not win. Only
+#     `dispatch_boundary_total` can diverge from `subagent_samples` (its file may
+#     hold fewer rows than the phase had dispatches — PARTIAL, a floor — or, across
+#     a resume/re-entry, MORE rows than were sampled — OVER, an impossible /
+#     inflated figure). It is refused the maximum in BOTH cases; only an exact or
+#     coverage-undecidable measure competes (see `_boundary_coverage_state`).
 #   * A measure of a DIFFERENT population may not enter at all. On an `inline`
 #     row `total_tokens` carries a main-context measurement (see
 #     `_token_population`), so it is excluded — putting it in a
@@ -561,8 +563,9 @@ def _read_dispatch_boundary_totals(plan_id: str, phase: str) -> tuple[int, int]:
     sum because the sum ALONE cannot state its own coverage: a boundary file
     holding three of a phase's five dispatches sums to a smaller-but-honest-looking
     figure, and without the count nothing downstream can tell that measure apart
-    from a complete one. ``rows_counted`` is what lets the reconciliation mark the
-    measure PARTIAL and refuse it the maximum.
+    from a complete one. ``rows_counted`` is what lets the reconciliation classify
+    the measure's coverage (PARTIAL / exact / OVER) and refuse a partial or
+    over-covering measure the maximum (see ``_boundary_coverage_state``).
 
     Returns ``(0, 0)`` when the file is absent, empty, or carries no parseable
     row — the caller (``cmd_generate``) treats that as a clean no-op, so a plan
@@ -1637,7 +1640,8 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         lines.append(
             '> Tokens reconciled across the competing measures of the dispatched '
             'population (largest eligible measure wins, never their sum, since all '
-            'three count the same leaves; a partial measure is ineligible): '
+            'three count the same leaves; a partial or over-covering measure is '
+            'ineligible): '
             f'{details}'
         )
         lines.append('')
