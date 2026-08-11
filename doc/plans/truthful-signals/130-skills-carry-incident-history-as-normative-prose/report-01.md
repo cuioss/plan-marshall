@@ -88,11 +88,57 @@ prefix) but carries **zero entries** for this rule — no unused bespoke exempti
 
 ## Deliverables
 
-_(filled as the run proceeds)_
+- **D1 — Population (GATE).** Done. Derivation method and counts recorded above.
+  Population (volume) reported separately from the in-scope occurrence count, per the plan.
+  Commit `5345178`.
+- **D2 — Classification.** Done. Every occurrence carries exactly one verdict (DELETE / REPLACE /
+  KEEP-out-of-scope); REPLACE verdicts name their mechanism. Asserted-absence claim confirmed: no
+  occurrence requires a permanent exemption. Commit `5345178`.
+- **D3 — Apply edits.** Done, commit `e8faca9` (15 files). 2 DELETE + the REPLACE families;
+  every normative claim preserved (verified: the precise incident-narration pattern returns zero
+  matches over `marketplace/bundles`, and no `#866`/`#1081`/`#948`/`#1067`/`#1045`/`#895-898`
+  token remains). The mechanism names introduced: close-unmerged, accepted-not-landed,
+  sibling-worktree, unbound-consent, pre-fix.
+- **D4 — plugin-doctor rule.** Done, commit `c01fa0d`. New `no-incident-references` scanner
+  (`_analyze_incident_reference_in_docs.py`) co-designed with the sibling
+  `no-historical-prose-in-skills` (same `_analyze_shared` exemption machinery — not a fourth
+  framework), extended to `*.py` scripts. Population-derived over the bundle tree via
+  `incident_reference_targets()`, published and asserted non-empty (anti-vacuity). Wired into
+  `run_quality_gate` (build-failing) and `cmd_analyze`; registered in the rule registry, the
+  suppressible-rule set, `rule-catalog.md`, and `rule-provenance.md`. Ships **unconditional** — no
+  registered exemption prefix, because D2 found no occurrence requiring one.
+- **D5 — Tests.** Done, commit `c01fa0d` (`test_analyze_incident_reference_in_docs.py`, 32 tests).
+  (a) fires on `Observed on plan-marshall#NNNN` and every narration form (markdown and python);
+  (b) does **not** fire on the D3-corrected mechanism prose (the load-bearing negative proving
+  REPLACE not DELETE); (c) population derived and asserted non-empty over the real tree.
+  Red-first evidence: (a)/(c) fail without the analyzer (which did not exist pre-change); (b) uses
+  the exact pre-fix incident strings D3 removed as the positive fixtures and the exact corrected
+  strings as the negatives, so the pair discriminates — a rule that had fired on corrected prose
+  would fail (b). The zero-match-suite coverage gate and canonical-label-order gate were updated
+  for the new rule.
+- **D6 — Two transitional instances.** Done, commit `68846f1`.
+  - `doc/analysis/uncompressed-output-measurement.md` — trimmed to the durable SKIP-both decision
+    and its structural rationale; removed the point-in-time snapshot (per-window token totals,
+    transcript/branch counts, top-noisiest tables, named plans with billed figures) the epic no
+    longer stands behind; a note makes the snapshot nature explicit and points to re-measuring.
+  - `doc/refactor/README.md` — confirmed a genuine maintainer roadmap (self-describes as "planning
+    documents, not implementation"). **Not deleted**; quarantined with an explicit banner declaring
+    it planning material intentionally exempt from the current-state documentation standards,
+    scoped to the `doc/refactor/` tree. This is the plan's "if kept, quarantine it clearly" path.
 
 ## Build gate
 
-_(pending)_
+`git diff --name-only origin/main...HEAD` includes `*.py` (the new analyzer, tests, and comment-only
+edits to several bundle scripts), so the gate takes its full path.
+
+- `./pw quality-gate` — **pass**: mypy "no issues found in 392 source files", ruff "All checks
+  passed!", SPDX header check passed, plugin-doctor `total_issues: 0` with the new
+  `analyze_incident_reference_in_docs` rule running and reporting 0 over the tree.
+- `./pw module-tests` — first run: 18988 passed, 2 failed (both expected new-rule bookkeeping: the
+  canonical rule-label-order golden and the zero-match-suite coverage gate). Both fixed
+  (label list + firing fixture) and re-verified green in isolation together with the provenance
+  and new-rule tests (60 passed). Authoritative full re-run recorded in the Findings/Contract
+  sections below.
 
 ## Findings
 
