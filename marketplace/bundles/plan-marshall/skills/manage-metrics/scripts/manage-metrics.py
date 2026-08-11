@@ -271,6 +271,30 @@ _POPULATION_BULLET_NOTE = {
     ),
 }
 
+# The two "unattributed" residuals name the SAME word for two DIFFERENT
+# quantities: a byte residual over exploration payload bytes, and a
+# cache_read-token residual over the phase's recorded cache_read. They are
+# separately computed, have different denominators, and differ materially in
+# share — so a render that labelled both "unattributed" would let a consumer read
+# one as the other (plan 030 D1). Each entry names the residual's DENOMINATOR
+# field, and the render reads that field's value off the SAME row so the share is
+# legible in place. Keyed by the persisted field name; every other
+# ``_PRESENCE_PERSISTED_FIELDS`` member keeps the generic label. The QUANTITY is
+# carried by the label itself (``… exploration bytes`` vs ``… cache_read tokens``)
+# so neither figure is ever named merely ``unattributed``.
+_UNATTRIBUTED_RENDER = {
+    'exploration_unattributed_bytes': (
+        'Unattributed exploration bytes',
+        'exploration_result_bytes',
+        'exploration payload bytes whose call exposed no recoverable target path (fails open here)',
+    ),
+    'cache_read_unattributed': (
+        'Unattributed cache_read tokens',
+        'cache_read_input_tokens',
+        'cache_read tokens the turn-weighted residency walk could not tie to an observed payload',
+    ),
+}
+
 
 def _token_population(phase_row: dict) -> str:
     """Return the population this phase row's ``total_tokens`` figure measures.
@@ -1171,6 +1195,32 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         idle_ms = max(0, wall_ms - _worked_ms(phase))
         phase['idle_duration_ms'] = idle_ms
 
+    # Read-cost decomposition (plan 030 D3). The read cost — cache_read_input_tokens
+    # — is one opaque number that hides two levers: the average resident context
+    # per API call, and the number of calls. Publish the resident-context factor as
+    # a PERSISTED field so a consumer reads it off the row rather than re-deriving
+    # it at render time; the second factor (turns) is the tool_uses count already on
+    # the row, so it is not duplicated. Their product reconstructs the read cost:
+    #   cache_read_input_tokens ≈ cache_read_per_tool_use × tool_uses
+    # This is a DERIVED-COST ratio whose numerator (cache_read, main-context-window)
+    # and denominator (tool_uses, dispatched-subagent) are DIFFERENT populations —
+    # the ratio is disclosed as such, not read as a single-population measurement
+    # (see data-format.md § Read-Cost Decomposition, and plan 030 D4). Written only
+    # when both operands are present and tool_uses > 0; absent otherwise, never a
+    # guessed zero.
+    for phase_name in PHASE_NAMES:
+        if phase_name not in phases:
+            continue
+        phase = phases[phase_name]
+        cache_read = phase.get('cache_read_input_tokens')
+        tool_uses = phase.get('tool_uses')
+        if (
+            isinstance(cache_read, (int, float))
+            and isinstance(tool_uses, (int, float))
+            and int(tool_uses) > 0
+        ):
+            phase['cache_read_per_tool_use'] = round(int(cache_read) / int(tool_uses))
+
     # end_time-presence check over the canonical six-phase baseline.
     #
     # THE KEYS NAME THE PREDICATE THEY COMPUTE, and nothing wider. The check
@@ -1673,6 +1723,25 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                 'work the Tokens column measures, so the two are never summed)'
             )
 
+        # Read-cost decomposition (plan 030 D3): the two levers inside the opaque
+        # read cost, stated as an identity so a reader sees what drives it. Both
+        # factors are persisted (resident context here; turns is the tool_uses on
+        # the row). The population caveat is stated inline because the ratio spans
+        # two populations — the exact thing plan 030 exists to stop hiding.
+        resident = phase.get('cache_read_per_tool_use')
+        if isinstance(resident, (int, float)):
+            cache_read = phase.get('cache_read_input_tokens')
+            turns = int(phase['tool_uses'])
+            cache_read_str = f'{int(cache_read):,}' if isinstance(cache_read, (int, float)) else '?'
+            lines.append(
+                f'- **Read-cost decomposition**: cache_read_input_tokens '
+                f'({cache_read_str}) ≈ resident context per tool-use ({int(resident):,}) '
+                f'× turns ({turns:,}). resident_context_per_call is a derived-cost ratio '
+                '(main-context-window cache_read ÷ dispatched-subagent tool_uses — the '
+                'two populations differ; see data-format.md § Read-Cost Decomposition), '
+                'and turns is the tool_uses count already on the row'
+            )
+
         # Transcript-supplied counters. RENDER-GUARD DIVERGENCE, deliberate: these
         # are guarded on PRESENCE (`field in phase`), not on the truthiness test
         # the four-field bullets above use. A stored 0 is a MEASURED zero here and
@@ -1689,9 +1758,32 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         # bullet, and the cache-read residual rendering as `0` is what tells a
         # reader the split was fully explained.
         for field in _PRESENCE_PERSISTED_FIELDS:
-            if field in phase:
+            if field not in phase:
+                continue
+            value = int(phase[field])
+            unattributed = _UNATTRIBUTED_RENDER.get(field)
+            if unattributed is None:
                 label = field.replace('_', ' ').capitalize()
-                lines.append(f'- **{label}**: {int(phase[field]):,}')
+                lines.append(f'- **{label}**: {value:,}')
+                continue
+            # An "unattributed" residual renders naming its QUANTITY (in the
+            # label) and its DENOMINATOR (the field it is a residual of, with that
+            # field's value off this same row), so the byte residual and the
+            # cache_read residual can never be read as the same number (plan 030
+            # D1). The denominator is co-present in every runtime-produced row; the
+            # absent branch is a display fallback for a hand-edited/partial row,
+            # not a measurement claim.
+            label, denom_field, note = unattributed
+            denom = phase.get(denom_field)
+            if isinstance(denom, (int, float)):
+                lines.append(
+                    f'- **{label}**: {value:,} of {int(denom):,} {denom_field} ({note})'
+                )
+            else:
+                lines.append(
+                    f'- **{label}**: {value:,} ({note}; denominator {denom_field} '
+                    'not recorded on this row)'
+                )
 
         lines.append('')
 
