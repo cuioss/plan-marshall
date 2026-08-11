@@ -42,7 +42,7 @@ The compiler uses `#` for the document title (which is `Plan Retrospective — {
 
 ## Header Block
 
-The first lines of the document, directly below the title, must be a list containing these four keys: `mode`, `generated`, `plan_path`, and `session_id`. The value for `mode` is one of `finalize-step`, `user-invocable`, or `archived`. The value for `generated` is an ISO-8601 UTC timestamp. The value for `plan_path` is the live plan path or the archived plan path. The value for `session_id` is the provided identifier or the literal string `not provided`.
+The first lines of the document, directly below the title, must be a list containing these four keys: `mode`, `generated`, `plan_path`, and `session_id`. The value for `mode` is one of `finalize-step`, `user-invocable`, or `archived`. The value for `generated` is the report-generation time rendered through the display-only timezone: an ISO-8601 UTC timestamp when `display_timezone` is unset or `UTC` (the default), or the converted, zone-labelled form (e.g. `2026-08-11T20:00:45 IST (UTC+05:30)`) when a non-UTC `display_timezone` is configured — see [`manage-run-config`](../../manage-run-config/standards/run-config-standard.md) § "Display-Timezone Section". The value for `plan_path` is the live plan path or the archived plan path. The value for `session_id` is the provided identifier or the literal string `not provided`.
 
 ## Body Conventions
 
