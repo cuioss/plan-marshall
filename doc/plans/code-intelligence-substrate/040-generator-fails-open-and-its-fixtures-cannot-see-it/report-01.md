@@ -1,6 +1,6 @@
 # Run report — 040-generator-fails-open-and-its-fixtures-cannot-see-it (run 01)
 
-**Date (UTC):** 2026-08-11    **Branch:** `claude/generator-fails-open-fixtures-qmy24g` (harness-assigned)    **PR:** _pending_    **Outcome:** completed
+**Date (UTC):** 2026-08-11    **Branch:** `claude/generator-fails-open-fixtures-qmy24g` (harness-assigned)    **PR:** [#1164](https://github.com/cuioss/plan-marshall/pull/1164)    **Outcome:** completed
 
 ## Skills loaded
 
@@ -72,8 +72,12 @@ so `./pw verify` (full quality-gate + tests) was run.
   warm at 11.6s and the sibling live-derivation characterization at 6.6s, confirming the
   shared-cache cost analysis.
 - **Fix:** reconciled that test (gave it a good sibling so the write proceeds and the DROP stays
-  observable) and added a real-path total-collapse fail-open test. Re-ran `./pw verify` — result
-  recorded on completion.
+  observable) and added a real-path total-collapse fail-open test.
+- **Second run (on the fix):** `./pw verify` → **18966 passed, 14 skipped** (457s), `=== verify: SUCCESS ===`.
+- A later comment/prose sweep (commit `948bd51`) changed only a code comment, prose, and one
+  tested error-message string; the full `tools-script-executor` suite (418 tests, plus the
+  fail-open assertions) is green on that exact state, and GitHub CI runs the authoritative
+  `verify` on the PR.
 
 Per-commit gate: `./pw quality-gate` was run before every `*.py`-touching commit and reported
 `status: pass`, `total_issues: 0`, empty issue list (after fixing one ruff import-order nit and
@@ -94,30 +98,80 @@ Findings recorded per instance, each with source and disposition.
 
 ## Reviewer participation
 
-_Recorded after the PR is opened and reviewers report, derived from the `author_login` registry docs and the stored comment bodies._
+Population derived from configuration — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(`pr-agent.md` → `cuioss-review-bot`, `coderabbit.md` → `coderabbitai`, `sourcery.md` →
+`sourcery-ai`), cross-named by `.github/workflows/pr-agent.yml`. Verdicts derived from the stored
+comment/review bodies on PR #1164 (both surfaces read: conversation comments and inline
+review-thread comments — the latter returned 0 threads).
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Published a "PR Reviewer Guide" review over the diff: "PR contains tests / No security concerns identified / No major issues detected". `review / review` check succeeded. No actionable findings. |
+| `coderabbitai` | `rate-limited` | Published only a quota notice: "Review limit reached … Next review available in: 10 minutes … used all free OSS reviews". Its `CodeRabbit` status is `success` ("Review rate limited"). Engaged but did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Published only a refusal review: "you have reached your weekly rate limit of 500000 diff characters". Its `Sourcery review` check concluded `skipped`. Engaged but did not review this diff. |
+
+**Coverage: 1 of 3** — `cuioss-review-bot` reviewed (no issues); `coderabbitai` and `sourcery-ai`
+rate-limited. No inline review-thread comments on any surface; nothing to disposition. The § Step 8
+shortfall disclosure fired: "Review coverage 1 of 3 — cuioss-review-bot reviewed with no issues;
+coderabbitai rate-limited (window reopens ~10 min); sourcery-ai rate-limited (weekly quota)."
 
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
 - **Wall-clock:** a single interactive Claude Code cloud session; not separately instrumented.
+  Notable spans: cold surface derivation ~52–87s (measured), full `./pw verify` ~7.5–8.3 min per run.
 - **Population:** this one cloud session's usage. ⛔ NOT comparable to a plan-marshall
   `metrics.toon` total (that counts the orchestrator-plus-agent dispatch tree under
   plan-marshall's own per-task billing boundary, which this session does not share).
 
 ## Contract check (Step 9)
 
-_Completed at Step 9._
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — named above; all obtained by reading bundle paths. |
+| 2 Branch | Done — harness-assigned `claude/generator-fails-open-fixtures-qmy24g` kept as-is; pushed to `origin` before any edit (branch was absent on the remote at start). |
+| 3 Plan directory | Done — `…/040-generator-fails-open-and-its-fixtures-cannot-see-it/plan.md`; first-instruction block present (no repair needed). |
+| 4 Implement | Done — commits carry the `Co-Authored-By: Claude` trailer, no "Generated with" footer. |
+| 4 Per-commit gate | Done — every `*.py`-touching commit preceded by a `total_issues: 0` / empty-`errors[]` quality-gate. |
+| 4 Pushed | Done — no unpushed commit remains before the merge gate. |
+| 5 Build gate | Done — git diff includes `*.py`; `./pw verify` → 18966 passed, 14 skipped, `verify: SUCCESS`. |
+| 6 Verification sub-agent | Done — two dispatches; all deliverables satisfied; 5 findings (F1–F5) recorded with dispositions; 3 further sweep findings (A fixed, C fixed, B rejected-with-reason). |
+| 7 PR cycle | Done — PR #1164; both comment surfaces read; no actionable comments; per-reviewer participation recorded. |
+| 8 Merge gate | Auto-merge armed (SQUASH) after conditions 2–3 met and the shortfall + CLA disclosed; required-ness deferred to the merge queue (§ arm-and-hand-off). `license/cla` is **pending** — an external gate this run cannot satisfy (see What have we learned / operator disclosure). Landing delegated to the orchestrator's collect. |
+| 8 Bridge | No status/bookkeeping write outside this plan's own directory; report carries PR # and per-deliverable outcome. |
+| 9 This check | This table. |
+| GitHub access path | GitHub MCP server (cloud path). |
+| Branch form | Harness-assigned `claude/*`. |
+| Plugin cache sync | Not owed (cloud run). |
+
+No step reported not-done.
 
 ## What have we learned (Step 9)
 
-_Completed at Step 9._
+**Operator disclosure — the CLA gate.** PR #1164 carries a `license/cla` status "Contributor
+License Agreement is not signed yet" (pending) on the PR author `cuioss-oliver`. This run cannot
+sign a CLA (a legal/account action). Auto-merge is armed and safe — the merge queue will not admit
+the PR until its required contexts pass — but if `license/cla` is a required gate, **the landing
+waits on the operator signing/re-checking the CLA** at https://cla-assistant.io/cuioss/plan-marshall?pullRequest=1164.
+This is disclosed, not blocked: arming defers required-ness to the queue.
+
+**Contract change proposed:** none. The CLA case was handled entirely by the lane's existing
+machinery — Step 8's disclose-not-block for a non-satisfiable context plus the arm-and-hand-off
+completion — so no amendment is warranted; the one refinement worth noting (that an external
+human-gated required status such as a CLA becomes a *landing precondition* the operator owns) is
+already expressible through the existing disclosure step, and is recorded here rather than as a
+skill edit. Every other step worked as written. Recorded as "none proposed" with that reason.
 
 ## Residue
 
-- D2 is `slow_live` (a real derivation, ~52–87s cold). This is by design (the plan forbids
-  sampling and sanctions the slow tier), and it shares the help cache with the sibling
-  `slow_live` test, but it does add one live derivation to a cold CI run.
-- The edit-time `manage-invocation-invalid` analyzer does not model the help short-circuit that
-  the runtime validator does, so a concrete `{notation} --help` / leaf `-h` example cannot be
-  written as a validated canonical call. D3 uses the placeholder convention to sidestep this;
-  teaching the analyzer the help exemption would be a separate change (out of this plan's scope).
+- D2 is `slow_live` (a real derivation, ~52–87s cold). By design (the plan forbids sampling and
+  sanctions the slow tier); it shares the help cache with the sibling `slow_live` test (ran warm at
+  11.6s inside `verify`), so it adds ~one live derivation to a cold CI run.
+- The edit-time `manage-invocation-invalid` analyzer does not model the help short-circuit that the
+  runtime validator does, so a concrete `{notation} --help` / leaf `-h` example cannot be written
+  as a validated canonical call. D3 uses the placeholder convention to sidestep this; teaching the
+  analyzer the help exemption would be a separate change (out of this plan's scope).
+- **`license/cla` pending** — the landing precondition above; the operator's to resolve.
+- `coderabbitai`'s review window reopens ~10 min after PR open; it may auto-review a later commit.
+  Not waited on (rate limits are disclosed, not blocked).
