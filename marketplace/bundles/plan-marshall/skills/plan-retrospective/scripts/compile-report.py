@@ -196,12 +196,15 @@ def render_dispatch_boundaries_body(fragment: Any) -> str:
     """Render the Phase Dispatch Boundaries section body.
 
     Emits a markdown table with one row per recorded phase, columns:
-    ``phase | rows | error_total_tokens (wasted) | retryable_total_tokens |
+    ``phase | rows | error_total_tokens (terminal-error) | retryable_total_tokens |
     returned_with_findings | unknown_count | clean_exit_queue_empty_count``.
-    The ``error_total_tokens (wasted)`` and ``retryable_total_tokens`` columns
-    are the genuinely-wasted-vs-retryable dispatch-spend split — a reported
-    figure so a reader sees the waste without reconstructing it from the rows —
-    reported distinctly because the two need different remedies. Falls back to a
+    The ``error_total_tokens`` and ``retryable_total_tokens`` columns are the
+    terminal-error-vs-retryable dispatch-spend split — a reported figure so a
+    reader sees the terminal-error spend without reconstructing it from the rows
+    — reported distinctly because the two need different remedies. The
+    terminal-error figure is the strongest proxy for genuinely-wasted spend once
+    productive loop-backs are stamped ``returned_with_findings``; the finding-yield
+    proof is the corpus-gated D3 measurement, not this column. Falls back to a
     generic JSON dump after the table for the full fragment data.
     """
     import json
@@ -210,9 +213,9 @@ def render_dispatch_boundaries_body(fragment: Any) -> str:
         return '_No dispatch-boundary artifacts present._\n'
 
     lines = [
-        '| phase | rows | error_total_tokens (wasted) | retryable_total_tokens | '
+        '| phase | rows | error_total_tokens (terminal-error) | retryable_total_tokens | '
         'returned_with_findings | unknown_count | clean_exit_queue_empty_count |',
-        '|-------|------|-----------------------------|------------------------|'
+        '|-------|------|------------------------------------|------------------------|'
         '------------------------|---------------|------------------------------|',
     ]
     for phase in sorted(fragment.keys()):

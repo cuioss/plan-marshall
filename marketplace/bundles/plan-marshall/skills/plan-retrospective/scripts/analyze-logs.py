@@ -548,15 +548,18 @@ _CONTEXT_LOAD_COLUMNS = (
 )
 _UNMEASURED_COLUMN_TOKEN = 'unmeasured'
 
-# Termination-cause classes for the genuinely-wasted vs retryable dispatch-spend
+# Termination-cause classes for the terminal-error vs retryable dispatch-spend
 # split (plan 070-dispatch-spend-on-dispatches-that-produced-nothing). A
 # findings-bearing loop-back is now stamped `returned_with_findings` — a
-# PRODUCTIVE non-completion — so what remains under `error` is genuine terminal
-# waste: a dispatch that raised a fatal error and returned nothing. Retryable /
-# infrastructure terminations are reported DISTINCTLY from that terminal waste
-# because the two need different remedies — a session-restart block is
-# infrastructure a re-run recovers, whereas a fatal error may be deterministic —
-# and conflating them produces a fix for the wrong half.
+# PRODUCTIVE non-completion — so what remains under `error` is terminal-error
+# spend. That is the strongest *proxy* for genuinely-wasted spend, NOT a proof of
+# it: whether an error dispatch produced nothing is a finding-yield question, and
+# confirming it against archived records is the corpus-gated D3 measurement — not
+# asserted here. Retryable / infrastructure terminations are reported DISTINCTLY
+# from the terminal-error spend because the two need different remedies — a
+# session-restart block is infrastructure a re-run recovers, whereas a fatal
+# error may be deterministic — and conflating them produces a fix for the wrong
+# half.
 _TERMINAL_WASTE_CAUSES = ('error',)
 _RETRYABLE_CAUSES = ('blocked_session_restart', 'harness_cancellation')
 _RETURNED_WITH_FINDINGS_CAUSE = 'returned_with_findings'
@@ -608,9 +611,13 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
             ``termination_cause == "returned_with_findings"`` — the PRODUCTIVE
             loop-back population (a dispatch that returned findings and looped
             back), the opposite of wasted spend.
-      - error_total_tokens: sum of ``total_tokens`` over rows whose terminal
-            state is genuinely non-productive (``error``) — the genuinely-wasted
-            dispatch spend, a reported figure rather than a derivable one.
+      - error_total_tokens: sum of ``total_tokens`` over terminal-error
+            (``error``) rows — the terminal-error dispatch spend, a reported
+            figure rather than a derivable one. Post-D1 (productive loop-backs
+            are stamped ``returned_with_findings``, not ``error``) this is the
+            strongest proxy for genuinely-wasted spend; a finding-yield
+            confirmation that these rows produced nothing is the corpus-gated D3
+            measurement, not asserted by this sum.
       - retryable_total_tokens: sum of ``total_tokens`` over RETRYABLE /
             infrastructure terminations (``blocked_session_restart`` +
             ``harness_cancellation``), reported DISTINCTLY from

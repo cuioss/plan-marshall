@@ -3267,11 +3267,11 @@ def main() -> int:
         description=(
             'Append a TOON row to work/metrics-dispatch-boundaries-{phase}.toon '
             'capturing the termination cause of a phase Task dispatch '
-            '(voluntary_checkpoint | task_complete_returned_verbatim | '
-            'budget_yield | harness_cancellation | error | '
-            'clean_exit_queue_empty | step_complete | blocked_user_review | '
-            'blocked_session_restart | task_batch_complete | agent_returned | '
-            'returned_with_findings) '
+            # Derived from the tuple, not hand-copied, so the help text cannot
+            # drift from DISPATCH_TERMINATION_CAUSES — same guarantee `choices=`
+            # (below) already gives. Eliminates a mirror rather than merely
+            # guarding it.
+            f'({" | ".join(DISPATCH_TERMINATION_CAUSES)}) '
             'and the '
             "dispatched agent's <usage> totals at the time of return. "
             '``clean_exit_queue_empty`` is the canonical value the '

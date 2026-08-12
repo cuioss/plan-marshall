@@ -1,6 +1,6 @@
 # Run report — 070-dispatch-spend-on-dispatches-that-produced-nothing (run 01)
 
-**Date (UTC):** 2026-08-12    **Branch:** `claude/dispatch-spend-empty-ds4y39` (harness-assigned)    **PR:** _pending_    **Outcome:** completed
+**Date (UTC):** 2026-08-12    **Branch:** `claude/dispatch-spend-empty-ds4y39` (harness-assigned)    **PR:** [#1180](https://github.com/cuioss/plan-marshall/pull/1180)    **Outcome:** completed
 
 ## Skills loaded
 
@@ -15,7 +15,7 @@ All obtained by reading the bundle-path `SKILL.md` files (the `plan-marshall` pl
 
 ## Deliverables
 
-The plan's founding proxy (`error` == "produced nothing") is REFUTED by the plan itself. The work fixes the proxy first (D1), settles the token-column gate (D2), and reports the genuinely-wasted population (D4/D5); the corpus-dependent measurements (D3, and D4's class shares) are blocked in a fresh clone.
+The plan's founding proxy (`error` == "produced nothing") is REFUTED by the plan itself. The work fixes the proxy first (D1), settles the token-column gate (D2), and reports the terminal-error dispatch spend distinctly from the retryable spend (D4/D5). The terminal-error figure is the strongest *proxy* for genuinely-wasted spend once productive loop-backs are stamped separately — but the finding-yield proof that those `error` rows produced nothing is D3's corpus-gated measurement, which is blocked in a fresh clone (as are D4's class shares).
 
 ### D1 — GATE: taxonomy member for a productive non-completion + widen the audit rule — **DONE**
 
@@ -44,7 +44,7 @@ Code half: the reader (`_parse_dispatch_boundary_file`) now reports `retryable_t
 
 ### D5 — make the waste a reported figure — **DONE**
 
-Genuinely-wasted dispatch spend is emitted as its own field, `error_total_tokens` — the sum of `total_tokens` over `error` rows. After D1, findings-bearing loop-backs are stamped `returned_with_findings`, so what remains under `error` is genuine terminal waste: a dispatch that examined nothing and returned nothing. The field is surfaced in the `dispatch_boundaries` fragment and rendered in the compile-report "Phase Dispatch Boundaries" table (`error_total_tokens (wasted)` column), so a reader sees it without reconstructing it. Covered by `test_error_total_tokens_sums_only_terminal_error_rows` and the compile-report render tests. The productive population it must be told apart from is counted as `returned_with_findings_count`.
+The terminal-error dispatch spend is emitted as its own field, `error_total_tokens` — the sum of `total_tokens` over `error` rows. After D1, findings-bearing loop-backs are stamped `returned_with_findings`, so what remains under `error` is the terminal-error population, which is the strongest **proxy** for genuinely-wasted spend now that the productive loop-backs are pulled out. It is a proxy, not a proof: whether an `error` dispatch produced nothing is a finding-yield question, and confirming it against archived records is D3's corpus-gated measurement — the field asserts only "terminal-error spend", not "proven waste". The field is surfaced in the `dispatch_boundaries` fragment and rendered in the compile-report "Phase Dispatch Boundaries" table (`error_total_tokens (terminal-error)` column), so a reader sees it without reconstructing it. Covered by `test_error_total_tokens_sums_only_terminal_error_rows` and the compile-report render tests. The productive population it must be told apart from is counted as `returned_with_findings_count`. (This precision — proxy vs proof — was tightened in response to a CodeRabbit review comment; see Findings.)
 
 **Owning-module resolution (Expected surface was a HYPOTHESIS).** The plan hypothesised D5's field in `manage-metrics`. It is placed instead in `plan-retrospective`'s dispatch-boundary reader + compile-report, because (a) that reader is where termination causes are already interpreted per-cause (`unknown_count`, `clean_exit_queue_empty_count`), (b) the compile-report "Phase Dispatch Boundaries" section is where a human reader actually sees per-phase dispatch data, and (c) it avoids the `manage-metrics` per-phase token-field **lattice** contract, which would force a lattice row and reconciliation coupling for a figure that is a per-cause interpretation, not a dispatched-population measure. The taxonomy member itself (D1) is in `manage-metrics` as hypothesised.
 
@@ -61,13 +61,33 @@ Genuinely-wasted dispatch spend is emitted as its own field, `error_total_tokens
 - Finding 2 (source: same; low severity): `compile-report.py` `_dispatch_boundaries_has_present_phase` docstring had the same incomplete enumeration. **Disposition: fixed** (commit `d55d3c6`) — same reference-based fix.
 - Re-dispatch after the fix: **RESOLVED** — both fixed, no new staleness, bundle sweep clean (every remaining per-file-shape enumeration is either the authoritative full seven-key list or the complete seven-column table).
 
-No findings were rejected. Nothing was deferred.
+**CI findings:** none. On head `dc8e352` the required `verify / conclusion` check concluded **success**; `verify / verify`, `verify / gate`, `review / review`, `dependency-review`, and `generate-check` all success; `Sourcery review` and `auto-merge` skipped. `mergeStateStatus` reported `clean`.
 
-**CI findings:** _filled in after the PR CI run._
+**PR review findings (CodeRabbit — 6 actionable + 1 inline).** Each dispositioned:
+
+| # | Finding | Disposition |
+|---|---|---|
+| CR-1 | Run report has placeholder sections while `Outcome: completed` (inline, `report-01.md`) | **Fixed** — all sections finalized in this commit before the merge gate. |
+| CR-2 | Guard every full termination-cause mirror; the argparse `description` is unguarded | **Fixed** — made the argparse `description` **derived** from `DISPATCH_TERMINATION_CAUSES` (eliminates the mirror, matching `choices=`); the SKILL.md mirror-note updated. The `data-format.md` enum and `logging-gap-analysis.md` accepted-causes set were already guarded by structural-equality tests (`test_data_format_termination_cause_enum_matches_the_enum`, `test_logging_gap_analysis_termination_cause_set_matches_the_enum`) — noted in the reply. |
+| CR-3 | Add an executable "unavailable-skill" guard for the cloud-plan-lane | **Rejected** — misreads the lane architecture: the lane is executed by the agent, not a runner/loader; the skill-load-failure handling is the agent stopping and reporting blocked (the plan's first-instruction block). There is no entrypoint code to add a guard to, and this PR does not redesign the lane. |
+| CR-4 | Plan D1 wording "read by no rule at all" is imprecise (the reader already globs all phases) | **Acknowledged, no plan-text edit** — the plan's own claim-labels mark that clause a **HYPOTHESIS** ("Read the rule's scope in the clone before widening it"); the implementation and this report already state the precise mechanism (the reader globbed all phases; the rule **doc** was the stale half). Editing the historical plan text would rewrite what was planned; the report carries the correction. |
+| CR-5 | Add an integration test that drives `mark-step-done --outcome loop_back` through the finalize classification, not only the writer | **Rejected (architectural)** — the `loop_back → returned_with_findings` classification lives entirely in `phase-6-finalize/SKILL.md` prose executed by the dispatcher LLM (as does every finalize cause); there is no code seam to drive end-to-end. The test asserts the strongest available proxy (writer-acceptance on the finalize file + the doc classification table). The independent verification sub-agent reached the same conclusion. |
+| CR-6 | Plan D2's binary (populate/drop) omits the shipped `unmeasured` third state | **Acknowledged, no plan-text edit** — same reasoning as CR-4: the report documents D2 settled via the third (`unmeasured`) path, which the plan's own "resolve the owning module at outline" guidance sanctions. The plan's binary was a lead, correctly superseded at implementation. |
+| CR-7 | Keep structural taxonomy evidence separate from corpus-derived waste; qualify `error_total_tokens` as terminal-error spend until finding-yield proves waste | **Fixed** — softened the field's docstring/comment, the rendered column label (`error_total_tokens (terminal-error)`), and the report so the figure asserts "terminal-error spend" (the strongest proxy for genuinely-wasted post-D1), with the finding-yield proof explicitly deferred to the corpus-gated D3. |
+
+Two findings rejected, with reasons above (CR-3, CR-5). Nothing deferred.
 
 ## Reviewer participation
 
-_Filled in after the PR review cycle._
+Expected population derived from the registry docs (`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` `author_login`): `cuioss-review-bot` (pr-agent.md), `coderabbitai` (coderabbit.md), `sourcery-ai` (sourcery.md). Verdicts read from the stored comment/review bodies, not from check states:
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `coderabbitai` | `reviewed` | Full review over the diff: a walkthrough issue-comment + a review with 6 actionable findings and an inline review thread on `report-01.md`. |
+| `cuioss-review-bot` | `reviewed` | Posted a "PR Reviewer Guide 🔍" issue-comment over the diff: "PR contains tests / No security concerns identified / No major issues detected." An explicit nothing-major verdict on this diff. |
+| `sourcery-ai` | `rate-limited` | Published only a refusal notice in place of a review: "you have reached your weekly rate limit of 500000 diff characters." Its check-run concluded `skipped`. It engaged but did not review this diff. |
+
+**Coverage: 2 of 3 reviewed.** The Step-8 shortfall disclosure fired: `sourcery-ai` is rate-limited (weekly quota) — a routine, out-of-our-control shortfall, disclosed and NOT blocked on. The two reviews that landed were fully dispositioned (see Findings).
 
 ## Cost
 
@@ -77,11 +97,29 @@ _Filled in after the PR review cycle._
 
 ## Contract check (Step 9)
 
-_Filled in as the final pre-merge section._
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | done | Named in § Skills loaded; all via bundle path. |
+| 2 Branch | done | `claude/dispatch-spend-empty-ds4y39` (harness-assigned, kept as-is) exists on `origin`; pushed before the first edit. |
+| 3 Plan directory | done | `…/070-…/plan.md` exists and opens with the first-instruction block (present on arrival; not repaired). |
+| 4 Implement | done | Commits carry the `Co-Authored-By: Claude` trailer; all deliverables addressed. |
+| 4 Per-commit gate | done | Every `*.py`-touching commit was preceded by a clean `./pw quality-gate` (ruff/mypy/SPDX/plugin-doctor). |
+| 4 Pushed | done | No unpushed commit remains at each stage. |
+| 5 Build gate | done | `git diff --name-only origin/main...HEAD -- '*.py'` non-empty → `./pw verify plan-marshall` SUCCESS (16077 passed, 1 skipped). |
+| 6 Verification sub-agent | done | Findings + dispositions in § Findings; two docstring findings fixed, re-dispatch RESOLVED. |
+| 7 PR cycle | done | PR #1180; both comment surfaces read (issue comments, review summary bodies, inline threads); every comment dispositioned in § Findings. |
+| 8 Merge gate | done | Conditions 1–3 met (required check green on head; all comments handled; report finalized + pushed as the last pre-merge commit); shortfall disclosed (2-of-3, sourcery rate-limited); auto-merge armed. |
+| 8 Bridge | done | No status/bookkeeping write landed under `doc/plans/` outside this plan's own directory. The report carries the PR number and per-deliverable outcome. |
+| 9 This check | done | This table. |
+| 9 What have we learned | done | Proposal below. |
+
+GitHub access path: the **GitHub MCP server** (cloud path). Branch form: **harness-assigned** `claude/…`. A cloud run owes no `/sync-plugin-cache` (machine-local build step). Self-wake note: the `claude-code-remote` `subscribe_pr_activity` tool was **not available** in this session; the review cycle was driven by the non-gated read surface (`pull_request_read`) per the lane's manual-read-polling path, and CI/reviews had already concluded by first poll.
 
 ## What have we learned (Step 9)
 
-_Filled in as the final pre-merge section._
+**Proposed contract change (evidence from this run): name the review-summary-bodies MCP call in the gh↔MCP mapping.** The lane's § Cloud-session-affordances mapping table maps the *conversation* surface to `gh pr view {N} --comments` and the *inline review-thread* surface to the paginated review-comments call — but it does **not** name an MCP call for **review summary bodies**, even though the prose surface table lists "review summary bodies" under Conversation. In this run, the principal automated-reviewer findings (CodeRabbit's 6 actionable comments) arrived in the **review summary body**, reachable only via `pull_request_read method: get_reviews` — *not* as issue comments (`get_comments`) and *not* as inline threads (`get_review_comments`, which returned only one thread). A run that read only the two surfaces the mapping names by MCP call would have silently missed six findings — the exact false-clean-signal the lane exists to prevent. **Proposed edit:** add a mapping row `gh pr view {N} --json reviews` (review summary bodies) → `pull_request_read` `method: get_reviews`, and state that all three read methods (`get_comments`, `get_reviews`, `get_review_comments`) must be called before the merge gate. Per Step 9 this is **presented to the operator for approval and, if approved, shipped as a separate `chore/` PR** touching only the skill — it is not self-approved and not included in this plan's PR.
+
+No other contract change is proposed. Every other step's artifact was producible as written, and the one deviation encountered (the self-wake tool being unavailable rather than merely approval-gated) was already fully covered by the lane's read-polling / arm-and-hand-off fallbacks — no gap.
 
 ## Residue
 
