@@ -82,7 +82,21 @@ Post-fix: all three PASS (`3 passed`), and the full scoped suite is green (§ Bu
 
 ### Verification sub-agents (pre-PR)
 
-_(pending — recorded below once both sub-agents return)_
+Two independent `general-purpose` sub-agents, read-only (report, never fix).
+
+**1. Isolated recovery-text semantic check** (the plan's flagged "check that matters most" — give the agent ONLY the new recovery text, no other context, and ask what it would do about a dirty `marshal.json`). **PASS.** With no context beyond the authority's recovery text, the agent's first action was `git diff -- .plan/marshal.json` (a read-only inspection); it answered **No** to running an immediate/unconditional discard; it would discard only after reporting the diff AND receiving an explicit operator "Discard" disposition, scoped to that one file; and it summarized the behavior as "inspect → report to operator → no destructive action until the operator explicitly decides." It did **not** reach for `git checkout --`. The wording succeeds by the plan's own test.
+
+**2. Deliverable verification (D0–D3 + beyond-diff stale-claim sweep).** **PASS (clean).** The agent verified against the plan's own requirements, read the post-fix files (not just the diff), ran its **own independent** repo-wide assertion-shape sweep, and reasoned each test against the pre-fix text:
+
+- D0 — shape-based derivation encoded (globs every workflow doc, keys on the heading not the command string); population size (3) vs hit count (several dozen) separated correctly. Its independent missed-site sweep found **no fourth site**; the other `always safe` hits are genuinely unrelated (operation idempotency, "Stop is always safe", log interpolation). It confirmed the two counter-postures (`execute-task` anti-pattern; shim-marker "prove it is safe to delete") are the correct model, not defects.
+- D1 — all three sites inspect-first with operator disposition; **"always" survives in no justification** (the only remaining `always` occurrences in either file are unrelated dispatch-mechanics prose); the old "…makes marshal.json restoration always safe" cross-reference is gone.
+- D2 — the full contract exists exactly once (planning.md, self-labelled "the single authority"); the `git diff -- .plan/marshal.json` command appears in no other file; the two planning-outline.md boundaries are references, not restatements; the drift-corruption is gone.
+- D3 — both tests assert the derivation (subset membership on the swept set), not an enumeration; each would fail against the pre-fix text (RED), matching the recorded evidence. The agent noted it cannot itself witness the "seen red first" process (it was not present pre-fix) but confirmed the verifiable substance — the tests *would* fail pre-fix.
+- Collateral/scope: clean — only the declared surface plus the plan-lane records. Beyond-diff stale-claim sweep across the whole bundle and repo: **none survives** (the only residual quotes of the old wording are in plan.md and this report, which cite it as the defect being fixed).
+
+Two non-blocking observations, both accepted with reason (no fix warranted):
+- The D3 shape derivation is scoped to the named-recovery heading within `skills/plan-marshall/workflow/`. This is the deliberate scope — D3 regression-tests the named-recovery population (the realistic recurrence: a new phase boundary adding such a block, "covered automatically"), while the broader assertion class is D0's one-time human sweep. Consistent with the plan.
+- The RED-evidence table cites the plan-boundary offender at `planning-outline.md:581` — the correct line **in the pre-fix docs** where the RED run executed; the post-fix heading sits at :576 after the shorter reference replaced the longer block. The pre-fix line is the accurate record of the red run.
 
 ## Reviewer participation
 
