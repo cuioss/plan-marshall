@@ -1,6 +1,6 @@
 # Run report — 180-orchestrator-cleanup-verb (run 01)
 
-**Date (UTC):** 2026-08-12    **Branch:** claude/orchestrator-cleanup-verb-pfchgq (harness-assigned)    **PR:** [#1183](https://github.com/cuioss/plan-marshall/pull/1183)    **Outcome:** in-progress
+**Date (UTC):** 2026-08-12    **Branch:** claude/orchestrator-cleanup-verb-pfchgq (harness-assigned)    **PR:** [#1183](https://github.com/cuioss/plan-marshall/pull/1183)    **Outcome:** completed (auto-merge armed; landing delegated to the merge queue)
 
 ## Skills loaded
 
@@ -192,23 +192,78 @@ pre-existing test-isolation flaw in `script-shared` (outside this plan's surface
 streak starts absent, so CI passes it. I cleared the self-poisoned cache and the final `./pw verify` ran to
 `=== verify: SUCCESS ===` (16098 passed). Recorded as residue for a `script-shared` owner.
 
-**CI / PR review findings:** _(pending — recorded at Step 7/8.)_
+**CI findings:** none. On head `7ea2b75`: `verify / conclusion` **success** (required), plus `verify / verify`, `verify / gate`, `dependency-review`, `generate-check` all success; `auto-merge` and `Sourcery review` skipped. `mergeStateStatus: clean`.
+
+**PR review findings:** none actionable. `cuioss-review-bot` posted "No major issues detected / No security concerns / PR contains tests." Inline review-thread surface: **0 threads**. The two conversation comments are a clean review guide (`cuioss-review-bot`) and a rate-limit notice (`coderabbitai`) — neither an actionable request, so nothing to fix or reply to.
 
 ## Reviewer participation
 
-_(pending)_
+Expected population derived from configuration — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(cross-named in `.github/workflows/pr-agent.yml`): `coderabbitai`, `cuioss-review-bot`, `sourcery-ai`.
+Verdicts derived from the stored comment bodies on PR #1183, not from check states.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Posted a review guide over the diff: "🧪 PR contains tests / 🔒 No security concerns identified / ⚡ No major issues detected." An explicit "nothing to report" over this diff. |
+| `coderabbitai` | `rate-limited` | Posted only a refusal in place of a review: "Review limit reached … you've reached your PR review limit, so we couldn't start this review." No findings over the diff. |
+| `sourcery-ai` | `rate-limited` | Posted a review whose body is a quota refusal: "you have reached your weekly rate limit of 500000 diff characters." Corroborated by the `Sourcery review` check concluding `skipped`. |
+
+**Coverage: 1 of 3.** The § Step 8 shortfall disclosure fired: "Review coverage: 1 of 3 —
+`cuioss-review-bot` reviewed (no major issues); `coderabbitai` rate-limited (PR review limit);
+`sourcery-ai` rate-limited (weekly diff-character quota)." Rate limits are routine and not a merge block
+(§ Step 8 condition 4 is disclosure, not a gate); the shortfall was disclosed and the merge proceeded.
 
 ## Cost
 
-_(pending)_
+- **Tokens:** not available to the agent in this session — the harness does not surface a per-session
+  token count to the model, so no figure is reported rather than a guessed one.
+- **Wall-clock:** run spanned roughly the branch's first push through arming auto-merge — PR #1183 was
+  opened at 2026-08-12T10:38Z (source: the PR `created_at`), and the merge gate was reached the same
+  session shortly after CI concluded at 2026-08-12T10:52Z (source: the `verify / verify` check
+  `completed_at`). Earlier investigation/implementation preceded the PR in the same session.
+- **Population:** this single Claude Code cloud session's usage. ⛔ NOT comparable to a plan-marshall
+  `metrics.toon` total — that counts the orchestrator-plus-agent dispatch tree under plan-marshall's own
+  per-task billing boundary, which a single interactive cloud session does not share. The figures cannot
+  be made commensurable, so none is presented as if it were.
 
 ## Contract check (Step 9)
 
-_(pending)_
+GitHub access path: the **GitHub MCP server** (the cloud path). Branch form: **harness-assigned**
+(`claude/orchestrator-cleanup-verb-pfchgq`). No `/sync-plugin-cache` owed — a machine-local build step a
+cloud run never performs (§ Scope and precedence).
+
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **done** — six skills named above, loaded via the bundle-path route |
+| 2 Branch on origin | **done** — harness-assigned branch pushed before any edit |
+| 3 Plan directory | **done** — `…/180-orchestrator-cleanup-verb/plan.md` exists and opens with the first-instruction block |
+| 4 Implement | **done** — deliverables D1–D5 addressed; commits carry the `Co-Authored-By: Claude` trailer, no "Generated with Claude Code" footer |
+| 4 Per-commit gate | **done** — every `*.py`-touching commit preceded by a clean gate (`./pw verify` / `quality-gate`: ruff "All checks passed", mypy "Success: no issues", "SPDX-header check passed") |
+| 4 Pushed | **done** — every commit pushed; the final report commit is the last pre-merge push |
+| 5 Build gate | **done** — Python changed, full path taken; `./pw verify plan-marshall` → `=== verify: SUCCESS ===` (16098 passed) from a clean cache |
+| 6 Verification sub-agent | **done** — three read-only passes; every finding + disposition recorded (§ Findings) |
+| 7 PR cycle | **done** — PR #1183; every comment dispositioned; reviewer participation recorded |
+| 8 Merge gate | **done** — conditions 1–3 met (required `verify / conclusion` green on head; no open comment; report finalized as last pre-merge commit); auto-merge armed; **landing delegated** to the merge queue — the session cannot self-wake (`send_later` is approval-gated on this cloud session), so this is the arm-and-hand-off completion, not a partial run |
+| 8 Bridge | **done** — no status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; the report carries the PR number and per-deliverable outcome the orchestrator collects |
+| 9 This check | **done** — appended here |
+| 9 What have we learned | proposed below |
 
 ## What have we learned (Step 9)
 
-_(pending)_
+**Proposed (pending operator decision) — a build-gate step note about machine-global test-state
+poisoning.** Evidence from this run: `./pw verify` failed once on
+`test/plan-marshall/script-shared/…::test_a_real_plan_id_still_writes_the_work_log`, and the failure had
+nothing to do with the diff — it was the non-isolated machine-global `~/.plan-marshall/marshalld/fallback-streak.json`
+accumulating `a-real-plan`'s streak past a suppression threshold across three full in-session `./pw verify`
+runs. The lane's build-gate step ("read the output, fix and re-run until clean") does not name this failure
+mode, and a run that took the red gate at face value could have thrashed trying to "fix" a diff that was
+never at fault. **Proposed edit:** a one-line note in § Step 5 that a build-gate failure in a test/module
+the diff did not touch, which reproduces only after repeated in-session full runs and clears on a fresh
+cache, is machine-global test-state poisoning — investigate the artifact, do not re-scope the diff. Per the
+lane this is presented to the operator and, only on approval, shipped as a **separate `chore/` PR** touching
+only the skill — never folded into this plan's PR. The underlying `script-shared` test-isolation bug is
+separately recorded as Residue for that module's owner.
 
 ## Residue
 
