@@ -75,11 +75,54 @@ residual gaps.
 
 ## Build gate
 
-TBD (documentation-only expected — no `*.py` in the diff → local build skipped; merge-queue verifies).
+`git diff --name-only origin/main...HEAD -- '*.py'` → **empty**. All seven changed files are Markdown
+(`doc/plans/**` + `pm-dev-java` `SKILL.md`/`standards/*.md`). **No buildable footprint — local build
+skipped.** The merge queue's `merge_group` run verifies the docs-only change before it lands
+(`.github/workflows/python-verify.yml` `skip-on-docs-only`). Verdict derived from git, not assumed.
 
 ## Findings
 
-TBD (verification sub-agent, CI, PR review).
+### Cold read (the plan's central check) — PASS
+
+An independent sub-agent was given ONLY the three null-safety guidance files (no plan, no diff, no
+report — the answer was never leaked) and asked to model an absent configuration value in three
+positions. Result: `@Nullable String` in **all three** —
+
+| Position | Agent wrote | Correct? |
+|---|---|---|
+| Record component (`AppConfig`) | `@Nullable String configValue` | ✅ |
+| Field (`AppService`) | `@Nullable String configValue` | ✅ |
+| Parameter (`void configure(...)`) | `@Nullable String configValue`, and named the overload as the preferred alternative | ✅ |
+
+The agent explicitly stated `Optional<String>` is forbidden in all three positions and cited the
+reasons (not `Serializable`, allocation/dereference cost, caller-wrap). The guidance now leads a fresh
+reader to `@Nullable T` in exactly the positions where the old guidance failed silently. **Disposition:
+pass — no change.**
+
+### Deliverable-vs-plan review (with beyond-diff staleness sweep) — PASS
+
+An independent sub-agent verified all six deliverables against the plan and swept the `pm-dev-java`
+bundle beyond the diff. Verdict: **PASS on D0–D5**, no out-of-scope violation (no consuming-project
+edit, no record→`@Value` conversion, return-type rule preserved verbatim), and **no genuinely-stale
+consumer** found. Non-defect notes, each recorded and dispositioned:
+
+- `java-maintenance/standards/refactoring-triggers.md:49` ("Optional<T> for potential absence") —
+  **not stale**: the enclosing "Inconsistent API Contracts" trigger is return-scoped. **Disposition:
+  no change (correctly scoped to returns).**
+- `java-maintenance/standards/compliance-checklist.md:36` ("No `@Nullable` on return types") —
+  **not stale** (a correct return-rule check), only *less complete* than the widened rule. Extending
+  it to also check "no `Optional` fields/params/components" is in a different skill (`java-maintenance`)
+  and outside this plan's declared deliverables and expected surface. **Disposition: rejected —
+  out of scope; it is a correct signal, not a misleading one.** Recorded as residue.
+- `java-core/standards/java-17-features.md` § "Optional Usage", `java-performance-patterns.md`,
+  `javadoc/**` — all `Optional` examples are **returns**; none show a field/parameter/component
+  `Optional` as idiomatic. **Not stale. Disposition: no change.**
+- Pre-existing imprecise xref `refactoring-triggers.md:48` → java-null-safety "section 'Optional
+  Usage'" (that section actually lives in `java-core/java-17-features.md`). **Predates this change,
+  not made stale by it.** **Disposition: rejected — pre-existing and out of scope.** Recorded as
+  residue for a future plan.
+
+No finding required a code change.
 
 ## Reviewer participation
 
