@@ -304,11 +304,20 @@ runs the same gate directly:
 ./pw quality-gate
 ```
 
-**Open the `log_file` it names and confirm `total_issues: 0` and an empty `errors[]`.** The wrapper
-exits 0 on failure, so the exit code proves nothing; only the log does — and `status` with
-`total_issues` alone is one field short of the repository-wide rule, which names `errors[]` too (a
-build can report a green status and zero issues while `errors[]` is non-empty). Commit when the log is
-clean on all three, then push.
+**Read the tool output, not the exit code** — the gate can report a green summary while failing, so
+the exit code proves nothing. How you read "clean" depends on which of the two commands above you ran,
+because they emit different things:
+
+- **Executor path** (`.plan/execute-script.py … pyproject_build`) emits a TOON result: open the
+  `log_file` it names and confirm `total_issues: 0` **and** an empty `errors[]`. `status` with
+  `total_issues` alone is one field short of the repository-wide rule, which names `errors[]` too (a
+  build can report a green status and zero issues while `errors[]` is non-empty), so all three are
+  checked.
+- **Direct `./pw quality-gate` path** (the ordinary cloud case) emits **no** such structured log — it
+  streams the tools' own output. Confirm each reports clean instead: `ruff … All checks passed!`,
+  `mypy … Success: no issues found`, and the `SPDX-header check passed` line.
+
+Commit only when the path you used reports genuinely clean, then push.
 
 Two points in the run need **no** gate, because neither changes source: Step 2's initial push of an
 empty branch, and Step 3's plan-directory move (a `git mv`, no content change).
@@ -413,10 +422,14 @@ name to scope to one module, e.g. `./pw verify plan-marshall`.
 
 Give every `./pw` call a Bash timeout of at least **600000 ms (10 minutes)**.
 
-**Read the output, not the exit code.** The build wrapper can exit 0 on failure. Confirm the reported
-`status`, and open the `log_file` it names to confirm `total_issues: 0` **and an empty `errors[]`** —
-the repository-wide rule names all three, and a green summary line is not the same as a clean log. Fix
-and re-run until it is genuinely clean; a build that is not clean blocks the PR.
+**Read the output, not the exit code.** The build can report a green summary while failing. How you
+read "clean" depends on the path: the **executor** path emits a TOON result — confirm the reported
+`status` and open the `log_file` it names to confirm `total_issues: 0` **and an empty `errors[]`** (the
+repository-wide rule names all three). The **direct `./pw verify`** path emits no such log — it streams
+the tools' output, so confirm each is clean instead: the quality-gate lines (`ruff … All checks
+passed!`, `mypy … Success: no issues found`, `SPDX-header check passed`) **and** a pytest summary
+reporting `0 failed` / `0 errors`. A green summary line is not the same as a clean run; fix and re-run
+until it is genuinely clean, since a build that is not clean blocks the PR.
 
 **This build can leave lockfile churn.** Under a session interpreter below the project's floor, `./pw`
 rewrites `uv.lock` as a side effect. Do not let it reach a commit: stage the deliverable paths
@@ -758,7 +771,7 @@ that its artifact exists on disk:
 | 2 Branch | Branch exists **on `origin`** — the harness-assigned `claude/*` branch, or one this run cut from `origin/main` with a prefix from the closed set; the report names which |
 | 3 Plan directory | `doc/plans/{epic}/{plan-name}/plan.md` exists, and opens with the first-instruction block |
 | 4 Implement | Commits carry the trailer; deliverables addressed |
-| 4 Per-commit gate | Every commit touching `*.py` was preceded by a `total_issues: 0` (and empty `errors[]`) quality-gate log |
+| 4 Per-commit gate | Every commit touching `*.py` was preceded by a clean quality gate — a `total_issues: 0` / empty `errors[]` executor log, or the direct `./pw` tools each reporting clean (`ruff`/`mypy`/SPDX passed) |
 | 4 Pushed | No unpushed commit remains (`git status -sb` reports no `ahead`) |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
 | 6 Verification sub-agent | Findings and dispositions in the report |
