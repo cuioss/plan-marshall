@@ -814,11 +814,14 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
     decision-log line naming every signal value and the winning predicate.
 
     The return and that decision-log line both carry ``scope_provenance``
-    (``distinct_path_count``, ``fan_out_marker``, ``band_rule``) alongside BOTH
-    verdicts — ``planning_lane`` and ``execution_profile`` — so an operator reading
-    either surface sees not just the two decisions but the band rule that drove
-    them. The pre-existing override seam (``--lane-override`` / S6) is the way to
-    disagree with the verdict; the provenance block is observability, not a gate.
+    (``distinct_path_count``, ``fan_out_marker``, ``band_rule``), the
+    ``confidence`` block (resolved-vs-null signal counts) and any
+    ``suppressed_signals`` (a signal that fired but was denied the lane by the
+    prose-only corroboration), alongside BOTH verdicts — ``planning_lane`` and
+    ``execution_profile`` — so an operator reading either surface sees not just the
+    two decisions but the band rule that drove them and how much of the vector
+    resolved. The pre-existing override seam (``--lane-override`` / S6) is the way
+    to disagree with the verdict; these blocks are observability, not a gate.
     """
     plan_id: str = args.plan_id
     lane_override: str | None = getattr(args, 'lane_override', None)
