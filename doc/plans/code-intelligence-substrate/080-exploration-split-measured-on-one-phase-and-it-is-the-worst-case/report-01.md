@@ -111,8 +111,15 @@ The PR's required `verify / conclusion` check runs via the `pull_request:` trigg
 
 The diff has **no reviewable footprint** — no `*.py`, no `.claude/skills/**`, no `marketplace/bundles/**`;
 nothing but a `doc/plans/**` plan rename and this report. Per the lane contract this is the one case where
-`skip-bot-review` applies, and the label was set on the PR immediately after creation. No bot review is
-expected or solicited; see Reviewer participation.
+`skip-bot-review` applies, and the label was set on the PR immediately after creation. Both comment surfaces
+were read at the merge gate (verdicts below are from the stored bodies, not assumptions): **0 inline review
+threads**, and two conversation comments, **neither actionable**:
+
+- `coderabbitai[bot]` (`issuecomment-5264644499`): "Review skipped — Auto reviews are limited based on label
+  configuration. Excluded labels: skip-bot-review." The label suppressed its review, as intended. Not
+  actionable.
+- `cuioss-review-bot[bot]` (`issuecomment-5264650522`): "PR Reviewer Guide 🔍 — No relevant tests · No
+  security concerns identified · No major issues detected." A clean review over the diff. Not actionable.
 
 ## Reviewer participation
 
@@ -120,19 +127,21 @@ Expected reviewer population derived from configuration — the `author_login` o
 `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
 (`pr-agent.md` → `cuioss-review-bot`, `coderabbit.md` → `coderabbitai`, `sourcery.md` → `sourcery-ai`),
 cross-named by `.github/workflows/pr-agent.yml`. This PR carries `skip-bot-review` (docs-only, no reviewable
-footprint), so every reviewer is intentionally suppressed:
+footprint). Each verdict is read from the stored comment/check bodies at the merge gate, not from an
+assumption:
 
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
-| `cuioss-review-bot` | `silent` | Suppressed by design — PR carries `skip-bot-review` (docs-only diff, no reviewable footprint). |
-| `coderabbitai` | `silent` | Suppressed by design — `skip-bot-review`. |
-| `sourcery-ai` | `silent` | Suppressed by design — `skip-bot-review`. |
+| `cuioss-review-bot` | `reviewed` | Posted a "PR Reviewer Guide 🔍 — No relevant tests · No security concerns identified · No major issues detected" (`issuecomment-5264650522`): an explicit clean review over the diff. Its guide is not gated by `skip-bot-review` the way the full-review bots are. |
+| `coderabbitai` | `silent` | Suppressed by design — posted only a skip notice (`issuecomment-5264644499`): "Review skipped — Excluded labels: skip-bot-review." No review of the diff. Per the taxonomy, `skip-bot-review` suppression is a recorded reason for `silent`. |
+| `sourcery-ai` | `silent` | Suppressed by design — its `Sourcery review` check concluded `skipped`; no comment body posted. |
 
-**Coverage: 0-of-3 reviewed — by design, not by shortfall.** The Step 8 condition-4 disclosure is stated
-plainly: review coverage is 0 of 3 because this is a `skip-bot-review` docs-only PR with no reviewable
-footprint; the suppression is the intended posture for such a diff (the general rule: `skip-bot-review` is for
-a diff with no `*.py`, no skill, and no bundle change), not a rate-limit or an aborted review. Per condition 4
-this is a disclosure, never a merge block.
+**Coverage: 1-of-3 reviewed** (`cuioss-review-bot`, clean). The Step 8 condition-4 disclosure is stated
+plainly: review coverage is 1 of 3 — `cuioss-review-bot` reviewed (clean, no issues); `coderabbitai` and
+`sourcery-ai` are `silent`, both **suppressed by design** by the `skip-bot-review` label (docs-only diff, no
+reviewable footprint — the general rule: `skip-bot-review` is for a diff with no `*.py`, no skill, and no
+bundle change), not rate-limited and not aborted reviews. Per condition 4 this is a disclosure, never a merge
+block.
 
 ## Cost
 
@@ -160,7 +169,7 @@ this is a disclosure, never a merge block.
 | 5 Build gate | done | `git diff … -- '*.py'` empty → no buildable footprint → build skipped (merge-queue `merge_group` is the net). |
 | 6 Verification sub-agent | done | Independent read-only agent; verdict CONFIRMED; four findings, all accepted (three corroborating, one process note), none requiring a fix. |
 | 7 PR cycle | done | PR #1178 created with `skip-bot-review` (no reviewable footprint); both comment surfaces read at the merge gate; no actionable comment. |
-| 8 Merge gate | conditions 1–3 met; coverage disclosed (0-of-3 by design); auto-merge armed (SQUASH). |
+| 8 Merge gate | conditions 1–3 met; coverage disclosed (1-of-3 reviewed; 2 silent by-design skip-bot-review suppression); auto-merge armed (SQUASH). |
 | 8 Bridge | done | No status/bookkeeping write landed under `doc/plans/` outside this plan's own directory. The report carries the PR number and the per-deliverable outcome for the orchestrator's collect step. |
 | 9 This check | done | This table. |
 | 9 What have we learned | done | Recorded below. |
