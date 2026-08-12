@@ -1,6 +1,6 @@
 # Run report — 210-named-recovery-discards-operator-config (run 01)
 
-**Date (UTC):** 2026-08-12    **Branch:** `claude/named-recovery-operator-config-d9v43a` (harness-assigned; kept as-is)    **PR:** _pending_    **Outcome:** completed
+**Date (UTC):** 2026-08-12    **Branch:** `claude/named-recovery-operator-config-d9v43a` (harness-assigned; kept as-is)    **PR:** [#1186](https://github.com/cuioss/plan-marshall/pull/1186)    **Outcome:** completed
 
 ## Skills loaded
 
