@@ -1,6 +1,6 @@
 # Run report — 180-orchestrator-cleanup-verb (run 01)
 
-**Date (UTC):** 2026-08-12    **Branch:** claude/orchestrator-cleanup-verb-pfchgq (harness-assigned)    **PR:** TBD    **Outcome:** in-progress
+**Date (UTC):** 2026-08-12    **Branch:** claude/orchestrator-cleanup-verb-pfchgq (harness-assigned)    **PR:** [#1183](https://github.com/cuioss/plan-marshall/pull/1183)    **Outcome:** in-progress
 
 ## Skills loaded
 
