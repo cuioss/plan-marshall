@@ -367,6 +367,24 @@ Branch A (empty findings) persists nothing — there are no findings to write. B
 
 The dispatcher's existing failure handling halts the phase on `outcome=failed`, matching the gating-step contract used by `pre-push-quality-gate`. The operator must address every finding (amend the diff: rename, tighten regex, rewrite wording, delete duplicate section, fix contract drift), re-run the step, and only then advance to `push`.
 
+## Round-loop termination: converged, self-seeding, and out of budget
+
+This step re-fires per round (§ HEAD-dependency) and closes only on a full-surface clean pass (Step 4 Branch A). Two halves of what it reviews converge at DIFFERENT rates, and the termination criterion MUST keep them distinct — collapsing them is how a spiralling loop reads as either falsely clean or as an endless defect stream.
+
+- **The behavioural half** — findings about SHIPPED CODE (a missing test, an unguarded boundary, a producer with no consumer, an unreachable guard behind a scan-derived key). It converges under fixing: once the code defects are corrected, later rounds find fewer, and eventually a round finds none.
+- **The doc-claim half** — findings about PROSE the change authors (a duplicated section, a stale count, a drifted contract statement, a description-vs-body mismatch). It does NOT converge under *correction*: resolving a doc-claim finding by AUTHORING new prose hands the next round new prose to audit. This is the standing lesson — correction breeds the next instance of the class; only DELETION converges — now observed at the level of the round loop rather than the individual claim.
+
+**A self-seeding round.** A round is **self-seeding** when its findings are ALL doc-claim findings (defect classes that read prose or contract consistency — `duplicate_prose`, `contract_drift`, `stale_count_prose`, `description_body_drift`, `same_document_contradiction`, `touched_claim_unverified`, `ordinal_reference_stale`, `worked_example_clause_mismatch`) located within the round's **delta scope** — the files THIS PLAN'S OWN prior rounds changed since the previous round's anchor (`surface_scope: delta`, the `files_in_scope` the round's `scope_statement` names — see § "Absence claims state the scope they were drawn against" and Step 1). A finding there is the review auditing prose the previous round's own fix just wrote; publishing the searched scope is exactly what makes a self-seeded round *identifiable* rather than indistinguishable from a fresh defect. A self-seeding round is **reported as self-seeding** — recorded as such in the round's outcome, not counted as an ordinary non-clean round. An ordinary non-clean round prescribes another correct-and-re-run cycle, which is precisely the cycle that re-seeds; naming the round self-seeding is what stops it being fed back into that cycle.
+
+**Resolve a self-seeding finding by deletion, not correction.** The convergent action on a self-seeding finding is to DELETE the over-claiming prose — the stale count, the duplicated section, the claim phrased wider than the code — rather than rewrite it. Rewriting authors the next round's finding; deletion ends the class. This is the only resolution that lets the doc-claim half reach a clean pass, and it is the same lesson the round-loop level inherits from the individual claim.
+
+**The termination criterion — converged versus out of budget.** These are two DIFFERENT closes and a later reader MUST NOT collapse them:
+
+- **Converged** — the step closed on a full-surface clean pass (Step 4 Branch A): every counted candidate examined, no check matched, over `surface_scope: full`. The doc-claim half reached a fixpoint by deletion and the behavioural half found nothing. This is the ONLY clean close.
+- **Out of budget** — the loop stopped while the doc-claim half was still non-converged: a self-seeding spiral kept alive by correction-instead-of-deletion, or a round/token ceiling reached, closing on a recorded WARNING DEVIATION rather than a clean pass. This is NOT a converged close and MUST NOT be reported as one. A warning-deviation close is *out of budget*; a clean pass is *converged*.
+
+The cap is on **convergence, not on budget**. The remedy for a spiralling doc-claim half is to recognize it as self-seeding and resolve it by deletion so it converges — NEVER to reduce the number of rounds. Rounds late in a loop have caught structurally unreachable guards on an otherwise-green suite, so the willingness to run a round is never the target; the scope of a round, and how its findings are resolved, is.
+
 ## Worked example: the lesson that drove this workflow
 
 Both defect classes were missed in the dogfood run that drove this workflow's introduction; the LLM pass was reviewing surfaced hunks one at a time without consulting the contracts that lived in the same diff:
