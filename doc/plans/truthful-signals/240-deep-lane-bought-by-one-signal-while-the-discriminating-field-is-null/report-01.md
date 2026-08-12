@@ -159,10 +159,13 @@ provably lane-neutral, which is the intended property.
 |---|--------|---------|-------------|
 | 1 | sub-agent | Nit — SKILL.md Scripts-table row for `planning-lane route` still described the decision-log line as naming only signal values / predicate / posture / `scope_provenance`, omitting the new `confidence` and `suppressed_signals` (the parallel `**route**` bullet WAS updated). | **Fixed** (commit `a80ae4c`) — row now names both. |
 | 2 | sub-agent | Nit — module-docstring S1 row listed the source as only `status.metadata.plan_source`, omitting the `request.md` provenance-header fallback (the SKILL.md S1 row WAS updated). | **Fixed** (commit `a80ae4c`) — row now names `_resolve_orchestrator_plan_source`. |
+| 3 | sub-agent (re-sweep) | Nit — `cmd_planning_lane_route`'s function docstring singled out `scope_provenance` as carried by both the return and the decision-log line, now equally true of `confidence` and `suppressed_signals`. Third spot of the same class; the re-sweep confirmed no other stale parallel description remains skill-wide. | **Fixed** (commit `1ec3b77`). |
 | — | sub-agent | Observations, not defects: `manage-status.py:679` argparse help ("any deep-precondition signal forces deep") was already an approximation before this change (the carve-out already made it non-literal); D3(d)'s pre-fix red was a missing-key KeyError, which is the correct control property (its lane assertion is stable across the fix); the plan's prose "1-of-4 resolved" is looser than the code's precise 3-resolved/4-null. | Recorded; no action. |
 
-Both findings were doc-consistency gaps I introduced by updating one of a pair of parallel descriptions;
-both fixed and re-verified. CI/PR-review findings appended below as they arrive.
+All three were doc-consistency gaps (findings 1–2 introduced by this change; finding 3 predated it but is
+the same class); all fixed, and the agent's skill-wide re-sweep confirmed no other stale parallel
+description remains. No correctness defects were found. CI/PR-review findings appended below as they
+arrive.
 
 ## Reviewer participation
 
