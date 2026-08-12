@@ -11,6 +11,22 @@ path solely from the validated slug and ``--sender-id`` and accepts no
 caller-supplied output path, so no argument value can reach ``status.json``,
 ``epic.md``, ``workstreams/``, ``plans/``, or ``landings/``.
 
+A filed message is corrected through the sanctioned surface, never by a direct
+file edit: :func:`cmd_inbox_amend` replaces a message's body in place while
+preserving ``created`` and stamping an ``amended`` marker plus a monotonic
+``revision``, and :func:`cmd_inbox_supersede` retires a message in favour of a
+named successor (tombstone-style — the retired message stays resolvable but
+stops presenting as live). Both make the post-filing mutation visible in the
+envelope, so a corrected message is never byte-indistinguishable from a virgin
+one. :func:`cmd_inbox_close_stream` files a terminal ``lifecycle=stream-end``
+marker so a sender can signal its stream ended, and the message-state vocabulary
+(``lifecycle`` ∈ :data:`LIFECYCLES`) carries all three concepts in ONE enum.
+
+The archive is foldered per sender (``inbox/archive/{sender}/``);
+:func:`cmd_inbox_migrate_archive` folds a flat archive into that layout, and the
+sequence allocator, the resolver, and the counter all read both layouts so no
+retired sequence number is ever re-opened during a partial migration.
+
 The orchestrator-side drain surface (:func:`cmd_inbox_list`,
 :func:`cmd_inbox_archive`) is bounded by the same construction: both derive
 their target from the validated slug plus a bare message filename, and the only
@@ -32,6 +48,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from file_ops import (
+    atomic_write_file,
     generate_markdown_metadata,
     get_store_dir,
     now_utc_iso,
@@ -68,8 +85,59 @@ SENDER_TYPES = frozenset({'plan', 'orchestrator'})
 #: The payload kinds the channel carries.
 KINDS = frozenset({'landing', 'finding', 'candidate-lesson'})
 
+#: The message-state vocabulary — the SINGLE closed enum this channel carries
+#: for message lifecycle. Derived from the ``manage-lessons`` ``status`` model
+#: (``active`` / ``superseded`` / ``removed``): a state field on the record that
+#: defaults to the live value when absent and lets a replaced record stay
+#: resolvable while it stops presenting as live. All THREE state concepts ride
+#: this one field so no second enum is introduced:
+#:
+#: - ``live`` — the message as filed and current (the default; an absent
+#:   ``lifecycle`` header reads as ``live``, so every message written by
+#:   ``write`` is ``live`` without carrying the field). Amendment does not leave
+#:   this state — it rides :data:`_REVISION_FIELD` / :data:`_AMENDED_FIELD`
+#:   instead, which are a COUNTER and a TIMESTAMP, not a second enum.
+#: - ``superseded`` — replaced by a named successor (``superseded_by``); stays on
+#:   disk and validates green, but stops presenting as live in the listing.
+#: - ``stream-end`` — a terminal control marker: the sender that filed it will
+#:   send no more. This is the stream-termination concept expressed as one more
+#:   value in THIS vocabulary rather than a parallel ``stream_status`` enum.
+LIFECYCLE_LIVE = 'live'
+LIFECYCLE_SUPERSEDED = 'superseded'
+LIFECYCLE_STREAM_END = 'stream-end'
+LIFECYCLES = frozenset({LIFECYCLE_LIVE, LIFECYCLE_SUPERSEDED, LIFECYCLE_STREAM_END})
+
+#: The payload kind a stream-end control marker carries. A stream closure is an
+#: observation the epic should know about, so it rides the existing ``finding``
+#: kind — the terminal signal is the ``lifecycle`` header, NOT the kind, so no
+#: value is added to :data:`KINDS`. Keeping ``kind`` purely the payload-type
+#: vocabulary and ``lifecycle`` the sole state vocabulary is what makes the
+#: whole design one vocabulary rather than two.
+STREAM_END_KIND = 'finding'
+
+#: The default body a ``close-stream`` marker carries when no ``--reason`` is
+#: supplied. A non-empty body keeps the marker a fully-valid message that needs
+#: no message-class branch in :func:`validate_envelope`.
+STREAM_END_DEFAULT_NOTE = (
+    'Sender stream closed; no further messages will be filed on this stream.'
+)
+
+#: The revision counter and amendment-timestamp header fields. Neither is an
+#: enum — they are the attributes an ``amend`` stamps on a still-``live``
+#: message, which is what lets amendment be visible from the envelope alone
+#: without inventing a second state vocabulary.
+_REVISION_FIELD = 'revision'
+_AMENDED_FIELD = 'amended'
+_SUPERSEDED_BY_FIELD = 'superseded_by'
+_LIFECYCLE_FIELD = 'lifecycle'
+
 #: Header fields, in the fixed order :func:`compose_envelope` emits them.
 #: Every field is required; a message missing any one is ``missing_header_field``.
+#: The state fields (:data:`_LIFECYCLE_FIELD`, :data:`_REVISION_FIELD`,
+#: :data:`_AMENDED_FIELD`, :data:`_SUPERSEDED_BY_FIELD`) are DELIBERATELY not
+#: here: they are optional-with-default, so a virgin message stays byte-identical
+#: to how it looked before this vocabulary existed and ``envelope_version`` need
+#: not bump.
 HEADER_FIELDS = (
     'envelope_version',
     'sender_type',
@@ -254,14 +322,62 @@ def _mutate_epic_root(slug: str) -> Path:
     return get_store_dir(ORCHESTRATOR_STORE, slug)
 
 
+def _render_envelope(header: dict[str, str], payload_body: str) -> str:
+    """Render a message from an already-ordered header dict and a body.
+
+    The single place the header/body layout lives: the ``key=value`` header,
+    exactly one blank line, then the trimmed markdown body. The header dict's
+    key order IS the emission order, so callers control field ordering by
+    insertion order.
+    """
+    return f'{generate_markdown_metadata(header)}\n\n{payload_body.strip()}\n'
+
+
+def _apply_state_fields(
+    header: dict[str, str],
+    *,
+    lifecycle: str,
+    revision: int,
+    amended: str,
+    superseded_by: str,
+) -> None:
+    """Append the non-default message-state fields onto ``header`` in place.
+
+    Each field is emitted ONLY when it departs from its default (``lifecycle``
+    other than ``live``, a non-zero ``revision``, a non-empty ``amended`` /
+    ``superseded_by``). A virgin message therefore carries none of them and
+    stays byte-identical to the pre-vocabulary shape, while an amended or
+    superseded one is distinguishable from its envelope alone.
+    """
+    if lifecycle and lifecycle != LIFECYCLE_LIVE:
+        header[_LIFECYCLE_FIELD] = lifecycle
+    if revision:
+        header[_REVISION_FIELD] = str(revision)
+    if amended:
+        header[_AMENDED_FIELD] = amended
+    if superseded_by:
+        header[_SUPERSEDED_BY_FIELD] = superseded_by
+
+
 def compose_envelope(
-    sender_type: str, sender_id: str, epic: str, kind: str, payload_body: str
+    sender_type: str,
+    sender_id: str,
+    epic: str,
+    kind: str,
+    payload_body: str,
+    *,
+    lifecycle: str = LIFECYCLE_LIVE,
+    revision: int = 0,
+    amended: str = '',
+    superseded_by: str = '',
 ) -> str:
     """Render a complete inbox message.
 
     The ``key=value`` header carries :data:`HEADER_FIELDS` in order, one blank
     line separates it from the markdown payload body, and ``created`` is
-    stamped at compose time.
+    stamped at compose time. The optional message-state fields are appended only
+    when non-default (see :func:`_apply_state_fields`), so the default call — the
+    ``write`` path — emits exactly the six base fields.
 
     Args:
         sender_type: One of :data:`SENDER_TYPES`.
@@ -270,21 +386,31 @@ def compose_envelope(
         epic: Epic slug the message is addressed to.
         kind: One of :data:`KINDS`.
         payload_body: The markdown payload; surrounding whitespace is trimmed.
+        lifecycle: One of :data:`LIFECYCLES`; ``live`` is the default and is not
+            emitted. ``stream-end`` marks a terminal control message.
+        revision: Amendment counter; emitted only when non-zero.
+        amended: Amendment timestamp; emitted only when non-empty.
+        superseded_by: Successor message filename; emitted only when non-empty.
 
     Returns:
         The full message text.
     """
-    header = generate_markdown_metadata(
-        {
-            'envelope_version': str(ENVELOPE_VERSION),
-            'sender_type': sender_type,
-            'sender_id': sender_id,
-            'epic': epic,
-            'kind': kind,
-            'created': now_utc_iso(),
-        }
+    header = {
+        'envelope_version': str(ENVELOPE_VERSION),
+        'sender_type': sender_type,
+        'sender_id': sender_id,
+        'epic': epic,
+        'kind': kind,
+        'created': now_utc_iso(),
+    }
+    _apply_state_fields(
+        header,
+        lifecycle=lifecycle,
+        revision=revision,
+        amended=amended,
+        superseded_by=superseded_by,
     )
-    return f'{header}\n\n{payload_body.strip()}\n'
+    return _render_envelope(header, payload_body)
 
 
 def _split_message(text: str) -> tuple[dict[str, str], str]:
@@ -311,8 +437,19 @@ def validate_envelope(
 
     Checks run in a fixed order so a given malformed message always yields the
     same error code: header completeness, envelope version, sender type, kind,
-    payload presence, epic agreement, filename agreement. The last two are
-    checked only when the corresponding context argument is supplied.
+    payload presence, epic agreement, filename agreement, then the message-state
+    fields. The epic/filename pair is checked only when the corresponding context
+    argument is supplied; the state checks run last so the base rejection codes
+    are unchanged and a message carrying none of the state fields (the virgin
+    ``live`` case) always reaches ``True``.
+
+    The state checks enforce the invariants the vocabulary rests on:
+    ``invalid_lifecycle`` (a ``lifecycle`` outside :data:`LIFECYCLES`),
+    ``invalid_revision`` (a non-integer/negative ``revision``),
+    ``revision_not_monotonic`` (an ``amended`` stamp and a ``revision >= 1`` must
+    move together — a claimed amendment with no advanced revision, or an advanced
+    revision with no stamp, is rejected), and ``invalid_supersede_state`` (a
+    ``superseded_by`` pointer is present iff ``lifecycle`` is ``superseded``).
 
     Args:
         text: The full message text.
@@ -344,20 +481,87 @@ def validate_envelope(
         match = _MESSAGE_NAME_RE.match(filename)
         if match is None or match.group('sender') != header['sender_id']:
             return False, 'filename_sender_mismatch', header
+    state_error = _validate_state_fields(header)
+    if state_error is not None:
+        return False, state_error, header
     return True, None, header
+
+
+def _validate_state_fields(header: dict[str, str]) -> str | None:
+    """Validate the message-state fields; return an error code or ``None``.
+
+    Kept a separate seam from :func:`validate_envelope`'s base sweep so the two
+    concerns stay independently readable and the state invariants are testable
+    in isolation. Absent fields read as their defaults (``lifecycle`` → ``live``,
+    ``revision`` → ``0``, no ``amended`` / ``superseded_by``), so a virgin
+    message passes every check.
+    """
+    lifecycle = header.get(_LIFECYCLE_FIELD, LIFECYCLE_LIVE)
+    if lifecycle not in LIFECYCLES:
+        return 'invalid_lifecycle'
+    revision_raw = header.get(_REVISION_FIELD, '')
+    revision = 0
+    if revision_raw != '':
+        if not revision_raw.isdigit():
+            return 'invalid_revision'
+        revision = int(revision_raw)
+    amended = header.get(_AMENDED_FIELD, '').strip()
+    # Monotonicity: a revision advance and its amendment stamp move together.
+    if (revision >= 1) != bool(amended):
+        return 'revision_not_monotonic'
+    superseded_by = header.get(_SUPERSEDED_BY_FIELD, '').strip()
+    if (lifecycle == LIFECYCLE_SUPERSEDED) != bool(superseded_by):
+        return 'invalid_supersede_state'
+    return None
+
+
+def _foldered_archive_dir(archive_dir: Path, sender_id: str) -> Path | None:
+    """Return ``archive/{sender_id}/`` when ``sender_id`` is path-safe, else ``None``.
+
+    The archive is foldered per sender, so the sender becomes a DIRECTORY name.
+    That is a stricter requirement than the filename-component check the sender
+    already passes at write time: a value valid inside a filename (``..``, a
+    dotted token) could traverse out of the archive as a directory. The sender
+    is therefore re-validated against the path-safety validator here, and an
+    unsafe one yields ``None`` rather than a traversing path — the single guard
+    every foldered-archive path construction routes through.
+    """
+    if _validate_identifier(sender_id) is not None:
+        return None
+    return archive_dir / sender_id
+
+
+def _foldered_archive_path(archive_dir: Path, name: str) -> Path | None:
+    """Return ``archive/{sender}/{name}`` for a message name, or ``None``.
+
+    ``None`` when ``name`` yields no sender (off-shape) or a sender that is
+    unsafe as a directory component (:func:`_foldered_archive_dir`).
+    """
+    match = _MESSAGE_NAME_RE.match(name)
+    if match is None:
+        return None
+    sender_dir = _foldered_archive_dir(archive_dir, match.group('sender'))
+    if sender_dir is None:
+        return None
+    return sender_dir / name
 
 
 def next_sequence(inbox_dir: Path, sender_id: str) -> int:
     """Return the next unused sequence number for ``sender_id`` in ``inbox_dir``.
 
-    The scan spans BOTH the live queue (``inbox_dir``) and the archive
-    (``inbox_dir / archive``), taking the highest ``{sender_id}-{NNN}.md``
-    sequence across the two. Consulting the archive is load-bearing: a drain
-    retires a sender's messages out of the live queue, so a live-only scan
-    would reset the proposal to ``001`` and hand the sender a number whose
-    archived twin already exists. Each directory is scanned only when it
-    exists, so an absent ``inbox/`` or a not-yet-created ``archive/``
-    contributes nothing rather than raising.
+    The scan spans the live queue (``inbox_dir``), the sender's foldered archive
+    subdirectory (``inbox_dir / archive / {sender_id}``), AND any flat file left
+    directly under ``inbox_dir / archive`` (a pre-migration twin), taking the
+    highest ``{sender_id}-{NNN}.md`` sequence across all three. Consulting the
+    archive is load-bearing: a drain retires a sender's messages out of the live
+    queue, so a scan that missed them would reset the proposal to ``001`` and
+    hand the sender a number whose archived twin already exists. Scanning BOTH
+    the foldered subdirectory and the flat archive root is what keeps that
+    guarantee across the foldering migration — an un-migrated flat twin is still
+    seen, so no sequence is re-opened while an archive is only partly foldered.
+    Each directory is scanned only when it exists, so an absent ``inbox/``,
+    ``archive/``, or per-sender subdirectory contributes nothing rather than
+    raising.
 
     Only the PROPOSAL widens. On its own this is still a check-then-act read —
     :func:`allocate_message_path` turns it into a safe claim by making the
@@ -365,11 +569,18 @@ def next_sequence(inbox_dir: Path, sender_id: str) -> int:
     collision, and that claim stays scoped to ``inbox/`` alone: no archived
     path is ever a claim target.
     """
+    archive_dir = inbox_dir / INBOX_ARCHIVE_SUBDIR
+    scan_dirs = [inbox_dir, archive_dir]
+    foldered = _foldered_archive_dir(archive_dir, sender_id)
+    if foldered is not None:
+        scan_dirs.append(foldered)
     highest = 0
-    for directory in (inbox_dir, inbox_dir / INBOX_ARCHIVE_SUBDIR):
+    for directory in scan_dirs:
         if not directory.is_dir():
             continue
         for entry in directory.iterdir():
+            if not entry.is_file():
+                continue
             match = _MESSAGE_NAME_RE.match(entry.name)
             if match is not None and match.group('sender') == sender_id:
                 highest = max(highest, int(match.group('seq')))
@@ -443,15 +654,33 @@ def inbox_counts(inbox_dir: Path) -> InboxCounts:
     """
     if not inbox_dir.is_dir():
         return InboxCounts(0, 0, False)
-    archive_dir = inbox_dir / INBOX_ARCHIVE_SUBDIR
-    archived = 0
-    if archive_dir.is_dir():
-        archived = sum(
-            1
-            for entry in archive_dir.iterdir()
-            if entry.is_file() and _MESSAGE_NAME_RE.match(entry.name) is not None
-        )
+    archived = _count_archived(inbox_dir / INBOX_ARCHIVE_SUBDIR)
     return InboxCounts(len(list_messages(inbox_dir)), archived, True)
+
+
+def _count_archived(archive_dir: Path) -> int:
+    """Count archived messages across BOTH the foldered and flat layouts.
+
+    Message-shaped files directly under ``archive/`` (a flat, pre-migration
+    twin) and those one level down under a per-sender subdirectory
+    (``archive/{sender}/``) both count. Counting both is what keeps the derived
+    archive tally correct while an archive is only partly foldered — the same
+    dual-layout awareness :func:`next_sequence` needs.
+    """
+    if not archive_dir.is_dir():
+        return 0
+    total = 0
+    for entry in archive_dir.iterdir():
+        if entry.is_file():
+            if _MESSAGE_NAME_RE.match(entry.name) is not None:
+                total += 1
+        elif entry.is_dir():
+            total += sum(
+                1
+                for sub in entry.iterdir()
+                if sub.is_file() and _MESSAGE_NAME_RE.match(sub.name) is not None
+            )
+    return total
 
 
 def resolve_message_path(inbox_dir: Path, name: str) -> tuple[Path, str]:
@@ -478,9 +707,13 @@ def resolve_message_path(inbox_dir: Path, name: str) -> tuple[Path, str]:
     queued = inbox_dir / name
     if queued.is_file():
         return queued, 'queued'
-    archived = inbox_dir / INBOX_ARCHIVE_SUBDIR / name
-    if archived.is_file():
-        return archived, 'archived'
+    archive_dir = inbox_dir / INBOX_ARCHIVE_SUBDIR
+    foldered = _foldered_archive_path(archive_dir, name)
+    if foldered is not None and foldered.is_file():
+        return foldered, 'archived'
+    flat = archive_dir / name
+    if flat.is_file():
+        return flat, 'archived'
     return queued, 'missing'
 
 
@@ -714,6 +947,10 @@ def cmd_inbox_validate(args: Any) -> dict[str, Any]:
         'sender_id': header['sender_id'],
         'kind': header['kind'],
         'created': header['created'],
+        'lifecycle': header.get(_LIFECYCLE_FIELD, LIFECYCLE_LIVE),
+        'revision': header.get(_REVISION_FIELD, '0'),
+        'amended': header.get(_AMENDED_FIELD, ''),
+        'superseded_by': header.get(_SUPERSEDED_BY_FIELD, ''),
     }
 
 
@@ -769,6 +1006,9 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
                     'sender_id': '',
                     'kind': '',
                     'created': '',
+                    'lifecycle': '',
+                    'revision': '',
+                    'superseded_by': '',
                     'valid': False,
                     'error': 'unreadable',
                 }
@@ -785,10 +1025,32 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
                 'sender_id': header.get('sender_id', ''),
                 'kind': header.get('kind', ''),
                 'created': header.get('created', ''),
+                'lifecycle': header.get(_LIFECYCLE_FIELD, LIFECYCLE_LIVE),
+                'revision': header.get(_REVISION_FIELD, '0'),
+                'superseded_by': header.get(_SUPERSEDED_BY_FIELD, ''),
                 'valid': ok,
                 'error': '' if ok else (error_code or 'invalid_envelope'),
             }
         )
+    # ``live_count`` is the drainable set — VALID messages still presenting as
+    # live, so a superseded message (resolvable but retired) and a stream-end
+    # marker are both excluded. ``closed_senders`` is what lets the drain tell an
+    # empty queue from a finished one: a sender that has filed a valid stream-end
+    # marker will send no more, so live_count == 0 with a non-empty
+    # ``closed_senders`` is *finished*, while live_count == 0 with an empty one
+    # is merely *empty*.
+    live_count = sum(
+        1 for row in messages if row['valid'] and row['lifecycle'] == LIFECYCLE_LIVE
+    )
+    closed_senders = sorted(
+        {
+            row['sender_id']
+            for row in messages
+            if row['valid']
+            and row['lifecycle'] == LIFECYCLE_STREAM_END
+            and row['sender_id']
+        }
+    )
     return {
         'status': 'success',
         'operation': 'inbox-list',
@@ -797,6 +1059,8 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
         'inbox_dir': str(inbox_dir),
         'inbox_state': 'present' if inbox_present else 'missing',
         'count': len(messages),
+        'live_count': live_count,
+        'closed_senders': closed_senders,
         'invalid_count': sum(1 for row in messages if not row['valid']),
         'messages': messages,
     }
@@ -910,7 +1174,30 @@ def cmd_inbox_archive(args: Any) -> dict[str, Any]:
         )
     inbox_dir = root / INBOX_SUBDIR
     source = inbox_dir / name
-    dest = inbox_dir / INBOX_ARCHIVE_SUBDIR / dest_name
+    archive_dir = inbox_dir / INBOX_ARCHIVE_SUBDIR
+    # The destination is foldered under archive/{sender}/, keyed on the SOURCE
+    # message's sender — so a message and its ``--as-name`` recovery twin land in
+    # the same per-sender subdirectory (the override is already constrained to
+    # ``{source_sender}-*``). An off-shape source (no derivable sender — e.g. the
+    # literal ``archive``, which names a directory) keeps a flat destination so
+    # its os.link OSError still surfaces as ``invalid_message_name`` below. A
+    # shaped source whose sender is unsafe as a DIRECTORY component is refused
+    # fail-closed here rather than allowed to traverse out of the archive — the
+    # check the sender's filename-component validation does not itself make.
+    source_match = _MESSAGE_NAME_RE.match(name)
+    if source_match is not None:
+        sender_dir = _foldered_archive_dir(archive_dir, source_match.group('sender'))
+        if sender_dir is None:
+            return _error(
+                'invalid_message_name',
+                f'the sender segment of {name!r} is not safe as an archive '
+                'directory name',
+                slug=args.slug,
+                message_name=name,
+            )
+        dest = sender_dir / dest_name
+    else:
+        dest = archive_dir / dest_name
     # Created before the claim so a FileNotFoundError from os.link below can
     # only mean "the source is gone", never "the archive directory is missing".
     # Guarded in its OWN try/except (never folded into the os.link try block
@@ -981,6 +1268,348 @@ def cmd_inbox_archive(args: Any) -> dict[str, Any]:
         )
     source.unlink()
     return _archive_success(args.slug, name, dest, already_archived=False)
+
+
+def _read_payload_body(payload_file: str) -> tuple[str | None, dict[str, Any] | None]:
+    """Read a staged payload body, returning ``(body, error)``.
+
+    Mirrors :func:`cmd_inbox_write`'s payload handling so ``amend`` accepts a
+    correction body through the same staged-file surface — no message body ever
+    crosses a shell argument. ``(None, error_dict)`` on a missing or empty file;
+    ``(body, None)`` on success. The error dict carries no ``slug``; the caller
+    adds it.
+    """
+    payload_path = Path(payload_file)
+    if not payload_path.is_file():
+        return None, {
+            'error': 'payload_not_found',
+            'message': f'--payload-file not found: {payload_path}',
+        }
+    body = payload_path.read_text(encoding='utf-8').strip()
+    if not body:
+        return None, {
+            'error': 'empty_payload',
+            'message': f'--payload-file is empty: {payload_path}',
+        }
+    return body, None
+
+
+def _resolve_live_message(
+    slug: str, name: str
+) -> tuple[Path | None, dict[str, str], str, dict[str, Any] | None]:
+    """Resolve a bare message name to a LIVE, valid queued message for mutation.
+
+    The shared front half of ``amend`` and ``supersede``: both mutate a message
+    IN PLACE, so both resolve the epic root strictly (no archived read-fallback),
+    require the message to be present in the LIVE queue rather than the archive
+    (a consumed message is past correcting), and require it to validate before it
+    is touched (mutating a message that is already malformed would silently ship
+    a broken result). Returns ``(path, header, body, error_dict)``; on any
+    refusal ``path`` is ``None`` and ``error_dict`` carries ``error``/``message``
+    (no ``slug`` — the caller adds it).
+    """
+    root = _mutate_epic_root(slug)
+    if not root.is_dir():
+        return None, {}, '', {
+            'error': 'epic_not_found',
+            'message': f'epic {slug!r} has no active tree at {root}',
+        }
+    path, location = resolve_message_path(root / INBOX_SUBDIR, name)
+    if location == 'missing':
+        return None, {}, '', {
+            'error': 'file_not_found',
+            'message': f'inbox message not found: {path}',
+        }
+    if location != 'queued':
+        return None, {}, '', {
+            'error': 'not_live',
+            'message': (
+                f'inbox message {name} is {location}, not live; a consumed '
+                'message is past correcting through this surface'
+            ),
+        }
+    text = path.read_text(encoding='utf-8')
+    ok, error_code, header = validate_envelope(text, expected_epic=slug, filename=name)
+    if not ok:
+        return None, header, '', {
+            'error': error_code or 'invalid_envelope',
+            'message': f'cannot mutate an invalid message: {error_code}',
+        }
+    _header, body = _split_message(text)
+    return path, dict(header), body, None
+
+
+def cmd_inbox_amend(args: Any) -> dict[str, Any]:
+    """Correct the body of a filed message IN PLACE through the sanctioned verb.
+
+    The channel is append-only for a sender's OWN new files, but a message found
+    wrong after filing had no sanctioned correction path — writing a successor
+    dirtied the queue, and editing the file directly broke the scripts-only
+    access rule. ``amend`` is that missing verb: it replaces the body with the
+    staged ``--payload-file`` content, PRESERVES ``created`` (so the timestamp
+    keeps naming the message's first filing), stamps ``amended`` at the current
+    UTC instant, and bumps a monotonic ``revision``. The message stays
+    ``lifecycle=live``.
+
+    The mutation is made VISIBLE from the envelope alone — the load-bearing half:
+    a bare in-place body edit that left the envelope untouched would only replace
+    an authorized bypass with an unauthorized one. The ``amended`` /
+    ``revision`` stamp is what distinguishes a corrected message from a virgin
+    one without diffing bodies.
+
+    Refuses an unsafe slug (``invalid_slug``), a path-shaped ``--message``
+    (``invalid_message_name``), a missing/empty payload (``payload_not_found`` /
+    ``empty_payload``), an absent epic (``epic_not_found``), a message present at
+    neither path (``file_not_found``), a consumed message (``not_live``), an
+    already-invalid message (the validator's own code), and a message that is not
+    currently ``live`` — a superseded or stream-end message is not amendable
+    (``not_amendable``).
+    """
+    invalid = _validate_identifier(args.slug)
+    if invalid:
+        return _error('invalid_slug', invalid, slug=args.slug)
+    name = args.message
+    if not _is_bare_filename(name):
+        return _error(
+            'invalid_message_name',
+            f'--message must be a bare filename inside inbox/, got: {name}',
+            slug=args.slug,
+        )
+    body, payload_error = _read_payload_body(args.payload_file)
+    if payload_error is not None:
+        return _error(payload_error['error'], payload_error['message'], slug=args.slug)
+    path, header, _old_body, resolve_error = _resolve_live_message(args.slug, name)
+    if resolve_error is not None:
+        return _error(
+            resolve_error['error'],
+            resolve_error['message'],
+            slug=args.slug,
+            message_name=name,
+        )
+    assert path is not None  # resolve_error is None ⇒ path resolved
+    lifecycle = header.get(_LIFECYCLE_FIELD, LIFECYCLE_LIVE)
+    if lifecycle != LIFECYCLE_LIVE:
+        return _error(
+            'not_amendable',
+            f'inbox message {name} is {lifecycle}; only a live message is amendable',
+            slug=args.slug,
+            message_name=name,
+        )
+    new_revision = int(header.get(_REVISION_FIELD, '0')) + 1
+    header[_REVISION_FIELD] = str(new_revision)
+    header[_AMENDED_FIELD] = now_utc_iso()
+    atomic_write_file(path, _render_envelope(header, body or ''))
+    return {
+        'status': 'success',
+        'operation': 'inbox-amend',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'message': name,
+        'revision': new_revision,
+        'amended': header[_AMENDED_FIELD],
+        'created': header.get('created', ''),
+    }
+
+
+def cmd_inbox_supersede(args: Any) -> dict[str, Any]:
+    """Retire a filed message in favour of a named successor, tombstone-style.
+
+    Mirrors the ``manage-lessons`` supersede model: the retired message stays on
+    disk and keeps validating, but flips to ``lifecycle=superseded`` and records
+    a ``superseded_by`` pointer, so it stops presenting as live in ``inbox list``
+    while staying resolvable through ``inbox validate``. Unlike the lessons
+    surface it does NOT rewrite the body into a redirect stub — the inbox is
+    append-only for content, so the original body is preserved byte-for-byte and
+    the supersession is recorded purely in the envelope, which IS the resolvable
+    tombstone.
+
+    Refuses an unsafe slug (``invalid_slug``), a path-shaped ``--message`` or
+    ``--by`` (``invalid_message_name`` / ``invalid_successor_name``), a message
+    superseding itself (``self_supersede``), an absent epic (``epic_not_found``),
+    a target present at neither path or not live (``file_not_found`` /
+    ``not_live``), an already-invalid target (the validator's own code), and a
+    successor present at neither path (``successor_not_found``).
+    """
+    invalid = _validate_identifier(args.slug)
+    if invalid:
+        return _error('invalid_slug', invalid, slug=args.slug)
+    name = args.message
+    if not _is_bare_filename(name):
+        return _error(
+            'invalid_message_name',
+            f'--message must be a bare filename inside inbox/, got: {name}',
+            slug=args.slug,
+        )
+    successor = args.by
+    if not _is_bare_filename(successor):
+        return _error(
+            'invalid_successor_name',
+            f'--by must be a bare filename inside inbox/, got: {successor}',
+            slug=args.slug,
+            message_name=name,
+        )
+    if successor == name:
+        return _error(
+            'self_supersede',
+            'a message cannot supersede itself',
+            slug=args.slug,
+            message_name=name,
+        )
+    path, header, body, resolve_error = _resolve_live_message(args.slug, name)
+    if resolve_error is not None:
+        return _error(
+            resolve_error['error'],
+            resolve_error['message'],
+            slug=args.slug,
+            message_name=name,
+        )
+    assert path is not None  # resolve_error is None ⇒ path resolved
+    root = _mutate_epic_root(args.slug)
+    _succ_path, succ_location = resolve_message_path(root / INBOX_SUBDIR, successor)
+    if succ_location == 'missing':
+        return _error(
+            'successor_not_found',
+            f'successor {successor!r} is present at neither inbox/ nor inbox/archive/',
+            slug=args.slug,
+            message_name=name,
+            successor=successor,
+        )
+    header[_LIFECYCLE_FIELD] = LIFECYCLE_SUPERSEDED
+    header[_SUPERSEDED_BY_FIELD] = successor
+    atomic_write_file(path, _render_envelope(header, body or ''))
+    return {
+        'status': 'success',
+        'operation': 'inbox-supersede',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'message': name,
+        'lifecycle': LIFECYCLE_SUPERSEDED,
+        'superseded_by': successor,
+    }
+
+
+def cmd_inbox_close_stream(args: Any) -> dict[str, Any]:
+    """File a terminal marker declaring the sender's stream ended.
+
+    The stream-termination half of the vocabulary: a sender marks its stream
+    ended by filing one ``lifecycle=stream-end`` marker, allocated like any other
+    message (so its sequence number is claimed and never re-opened). The marker
+    is a fully-valid message — it carries the ``finding`` kind and a body (the
+    ``--reason`` note, or a default sentence) — so no message-class branch is
+    needed anywhere; the terminal signal rides ``lifecycle`` alone.
+
+    The drain reads the closure from ``inbox list``'s ``closed_senders``: an
+    empty ``live_count`` with the sender present there is a *finished* stream,
+    distinct from an empty queue that may yet receive more.
+
+    Refuses an unsafe slug (``invalid_slug``), an unsafe sender id
+    (``invalid_sender_id``), an out-of-enum sender type (``invalid_sender_type``),
+    and an unscaffolded epic (``epic_not_found``).
+    """
+    invalid = _validate_identifier(args.slug)
+    if invalid:
+        return _error('invalid_slug', invalid, slug=args.slug)
+    invalid = _validate_identifier(args.sender_id)
+    if invalid:
+        return _error('invalid_sender_id', invalid, slug=args.slug)
+    if args.sender_type not in SENDER_TYPES:
+        return _error(
+            'invalid_sender_type',
+            f'--sender-type must be one of {sorted(SENDER_TYPES)}, got: {args.sender_type}',
+            slug=args.slug,
+        )
+    root = get_store_dir(ORCHESTRATOR_STORE, args.slug)
+    if not root.is_dir():
+        return _error(
+            'epic_not_found',
+            f'epic {args.slug!r} has no tree at {root}; run scaffold first',
+            slug=args.slug,
+        )
+    reason = (getattr(args, 'reason', None) or '').strip() or STREAM_END_DEFAULT_NOTE
+    text = compose_envelope(
+        args.sender_type,
+        args.sender_id,
+        args.slug,
+        STREAM_END_KIND,
+        reason,
+        lifecycle=LIFECYCLE_STREAM_END,
+    )
+    message_path = allocate_message_path(root / INBOX_SUBDIR, args.sender_id, text)
+    return {
+        'status': 'success',
+        'operation': 'inbox-close-stream',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'sender_type': args.sender_type,
+        'sender_id': args.sender_id,
+        'lifecycle': LIFECYCLE_STREAM_END,
+        'message': message_path.name,
+        'path': str(message_path),
+    }
+
+
+def cmd_inbox_migrate_archive(args: Any) -> dict[str, Any]:
+    """Fold a flat ``inbox/archive/`` into per-sender subdirectories.
+
+    The one-shot migration that folds every message-shaped file sitting directly
+    under ``archive/`` into ``archive/{sender}/``. It reports the count moved PER
+    SENDER, because a silent relocation is indistinguishable from a lossy one —
+    the operator can reconcile the reported per-sender tallies against the
+    archive they expected. Idempotent: a message already foldered contributes
+    nothing, and a re-run over an already-migrated archive moves zero.
+
+    Each file's sender segment is re-validated as a DIRECTORY component before
+    the move (:func:`_foldered_archive_dir`); an unsafe or off-shape name is left
+    in place and reported under ``skipped[]`` rather than folded into a
+    traversing path. A destination that already exists (a foldered twin) is also
+    skipped rather than clobbered, preserving the audit record.
+
+    Because this verb MUTATES, it resolves the epic root strictly and refuses an
+    archived-only epic (``epic_not_found``).
+    """
+    invalid = _validate_identifier(args.slug)
+    if invalid:
+        return _error('invalid_slug', invalid, slug=args.slug)
+    root = _mutate_epic_root(args.slug)
+    if not root.is_dir():
+        return _error(
+            'epic_not_found',
+            f'epic {args.slug!r} has no active tree at {root}',
+            slug=args.slug,
+        )
+    archive_dir = root / INBOX_SUBDIR / INBOX_ARCHIVE_SUBDIR
+    moved_by_sender: dict[str, int] = {}
+    skipped: list[dict[str, str]] = []
+    if archive_dir.is_dir():
+        for entry in sorted(archive_dir.iterdir()):
+            if not entry.is_file():
+                continue
+            match = _MESSAGE_NAME_RE.match(entry.name)
+            if match is None:
+                skipped.append({'name': entry.name, 'reason': 'off_shape'})
+                continue
+            sender = match.group('sender')
+            sender_dir = _foldered_archive_dir(archive_dir, sender)
+            if sender_dir is None:
+                skipped.append({'name': entry.name, 'reason': 'unsafe_sender'})
+                continue
+            dest = sender_dir / entry.name
+            if dest.exists():
+                skipped.append({'name': entry.name, 'reason': 'foldered_twin_exists'})
+                continue
+            sender_dir.mkdir(parents=True, exist_ok=True)
+            os.rename(entry, dest)
+            moved_by_sender[sender] = moved_by_sender.get(sender, 0) + 1
+    return {
+        'status': 'success',
+        'operation': 'inbox-migrate-archive',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'moved_total': sum(moved_by_sender.values()),
+        'senders': sorted(moved_by_sender),
+        'moved_by_sender': dict(sorted(moved_by_sender.items())),
+        'skipped': skipped,
+    }
 
 
 def cmd_inbox_detect(args: Any) -> dict[str, Any]:

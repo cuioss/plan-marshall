@@ -699,7 +699,7 @@ class TestInboxValidate:
 
         assert result['status'] == 'success'
         assert result['location'] == 'archived'
-        assert result['archive_path'].endswith(f'archive/{written["message"]}')
+        assert result['archive_path'].endswith(f'archive/{SENDER}/{written["message"]}')
 
     def test_should_report_the_same_header_fields_for_both_success_branches(
         self, plan_context, tmp_path
@@ -960,20 +960,27 @@ class TestResolveMessagePath:
 # =============================================================================
 
 
-def _open_race_window(monkeypatch, archive_dir: Path, side_effect) -> None:
-    """Fire ``side_effect`` inside the archive verb's check-to-claim window.
+def _open_race_window(monkeypatch, trigger_dir: Path, side_effect) -> None:
+    """Fire ``side_effect`` ONCE inside the archive verb's check-to-claim window.
 
-    ``cmd_inbox_archive`` creates ``inbox/archive/`` immediately before it
-    claims the destination, so wrapping :meth:`pathlib.Path.mkdir` is the
-    deterministic seam for "a concurrent drain acted after our presence checks
-    and before our own move" — the exact interleaving a real race produces only
-    sporadically.
+    ``cmd_inbox_archive`` creates the destination's per-sender archive
+    subdirectory (``inbox/archive/{sender}/``) immediately before it claims the
+    foldered destination, so wrapping :meth:`pathlib.Path.mkdir` and firing when
+    that subdirectory appears is the deterministic seam for "a concurrent drain
+    acted after our presence checks and before our own move" — the exact
+    interleaving a real race produces only sporadically. The fire is one-shot:
+    ``mkdir(parents=True)`` touches ``trigger_dir`` more than once (the nested
+    parent-creation recursion and the outer call), and a side effect that
+    re-linked or re-wrote the destination on the second touch would raise inside
+    the seam rather than exercising the verb.
     """
     original = Path.mkdir
+    fired = {'done': False}
 
     def mkdir(self, *args, **kwargs):
         original(self, *args, **kwargs)
-        if self == archive_dir:
+        if self == trigger_dir and not fired['done']:
+            fired['done'] = True
             side_effect()
 
     monkeypatch.setattr(Path, 'mkdir', mkdir)
@@ -985,15 +992,19 @@ class TestInboxArchiveRace:
         cmd_inbox_write(_write_args(payload_file=_payload(tmp_path, 'my body')))
         inbox = _inbox_dir(plan_context)
         archive_dir = inbox / 'archive'
-        return inbox / f'{SENDER}-001.md', archive_dir, archive_dir / f'{SENDER}-001.md'
+        # The destination is foldered per sender, so the seam fires on the
+        # sender subdirectory (``dest.parent``), created immediately before the
+        # claim.
+        dest = archive_dir / SENDER / f'{SENDER}-001.md'
+        return inbox / f'{SENDER}-001.md', archive_dir, dest
 
     def test_should_refuse_a_destination_that_appears_inside_the_window(
         self, plan_context, tmp_path, monkeypatch
     ):
-        source, archive_dir, dest = self._seed(plan_context, tmp_path)
+        source, _archive_dir, dest = self._seed(plan_context, tmp_path)
         _open_race_window(
             monkeypatch,
-            archive_dir,
+            dest.parent,
             lambda: dest.write_text('the winner audit record\n', encoding='utf-8'),
         )
 
@@ -1009,13 +1020,13 @@ class TestInboxArchiveRace:
     def test_should_report_already_archived_when_dest_is_the_same_inode_as_source(
         self, plan_context, tmp_path, monkeypatch
     ):
-        source, archive_dir, dest = self._seed(plan_context, tmp_path)
+        source, _archive_dir, dest = self._seed(plan_context, tmp_path)
         # The winner has claimed the destination but has NOT yet unlinked its
         # source, so both paths are one inode. Source presence is therefore
         # true here while ``dest`` is the winner's own in-flight artifact — not
         # a distinct competing audit record — so this must resolve to
         # idempotent success, not ``archive_conflict``.
-        _open_race_window(monkeypatch, archive_dir, lambda: os.link(source, dest))
+        _open_race_window(monkeypatch, dest.parent, lambda: os.link(source, dest))
 
         result = cmd_inbox_archive(Namespace(slug=EPIC, message=source.name))
 
@@ -1043,13 +1054,13 @@ class TestInboxArchiveRace:
     def test_should_report_already_archived_when_the_race_is_lost(
         self, plan_context, tmp_path, monkeypatch
     ):
-        source, archive_dir, dest = self._seed(plan_context, tmp_path)
+        source, _archive_dir, dest = self._seed(plan_context, tmp_path)
 
         def concurrent_winner() -> None:
             os.link(source, dest)
             source.unlink()
 
-        _open_race_window(monkeypatch, archive_dir, concurrent_winner)
+        _open_race_window(monkeypatch, dest.parent, concurrent_winner)
 
         result = cmd_inbox_archive(Namespace(slug=EPIC, message=source.name))
 
@@ -1061,8 +1072,8 @@ class TestInboxArchiveRace:
     def test_should_report_file_not_found_when_the_source_vanishes_in_the_window(
         self, plan_context, tmp_path, monkeypatch
     ):
-        source, archive_dir, _dest = self._seed(plan_context, tmp_path)
-        _open_race_window(monkeypatch, archive_dir, source.unlink)
+        source, _archive_dir, dest = self._seed(plan_context, tmp_path)
+        _open_race_window(monkeypatch, dest.parent, source.unlink)
 
         result = cmd_inbox_archive(Namespace(slug=EPIC, message=source.name))
 
@@ -1152,8 +1163,9 @@ class TestArchiveAwareAllocation:
         assert second['message'] == f'{SENDER}-002.md'
         assert result['status'] == 'success'
         assert result['already_archived'] is False
-        archive = _inbox_dir(plan_context) / 'archive'
-        assert sorted(p.name for p in archive.iterdir()) == [
+        # Both retired messages are foldered under archive/{sender}/.
+        sender_archive = _inbox_dir(plan_context) / 'archive' / SENDER
+        assert sorted(p.name for p in sender_archive.iterdir()) == [
             f'{SENDER}-001.md',
             f'{SENDER}-002.md',
         ]
@@ -1170,7 +1182,8 @@ class TestInboxArchiveClaimPins:
         cmd_inbox_write(_write_args(payload_file=_payload(tmp_path, 'my body')))
         inbox = _inbox_dir(plan_context)
         source = inbox / f'{SENDER}-001.md'
-        dest = inbox / 'archive' / f'{SENDER}-001.md'
+        # The claim target is foldered per sender.
+        dest = inbox / 'archive' / SENDER / f'{SENDER}-001.md'
         return source, dest
 
     def test_should_refuse_a_distinct_archived_record(self, plan_context, tmp_path):
@@ -1211,15 +1224,25 @@ class TestInboxArchiveClaimPins:
 
 class TestInboxArchiveAsName:
     def _strand(self, plan_context, tmp_path) -> tuple[Path, Path]:
-        """Reproduce the pre-fix stranded state: source and a distinct twin."""
+        """Reproduce the stranded state: source + a distinct FOLDERED twin.
+
+        Under per-sender foldering the default destination is
+        ``archive/{sender}/{name}``, so the distinct twin that makes the default
+        archive collide must sit at that foldered path — a flat twin would no
+        longer conflict. The returned directory is the sender's archive
+        subdirectory, where both the twin and any sender-preserving recovery
+        name land.
+        """
         cmd_scaffold(Namespace(slug=EPIC))
         cmd_inbox_write(_write_args(payload_file=_payload(tmp_path, 'stranded body')))
         inbox = _inbox_dir(plan_context)
         source = inbox / f'{SENDER}-001.md'
-        archive = inbox / 'archive'
-        archive.mkdir(parents=True, exist_ok=True)
-        (archive / source.name).write_text('the earlier audit record\n', encoding='utf-8')
-        return source, archive
+        sender_archive = inbox / 'archive' / SENDER
+        sender_archive.mkdir(parents=True, exist_ok=True)
+        (sender_archive / source.name).write_text(
+            'the earlier audit record\n', encoding='utf-8'
+        )
+        return source, sender_archive
 
     def test_should_accept_an_override_that_preserves_the_sender(
         self, plan_context, tmp_path
@@ -1297,7 +1320,8 @@ class TestInboxArchiveAsName:
         result = cmd_inbox_archive(_archive_args(written['message'], as_name=None))
 
         assert result['status'] == 'success'
-        assert result['archived_to'].endswith(f'archive/{written["message"]}')
+        # A default-destination archive folds under archive/{sender}/.
+        assert result['archived_to'].endswith(f'archive/{SENDER}/{written["message"]}')
 
 
 # =============================================================================

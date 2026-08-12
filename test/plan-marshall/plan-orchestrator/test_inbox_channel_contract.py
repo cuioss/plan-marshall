@@ -426,7 +426,7 @@ class TestInboxValidateResolution:
 
         assert parsed['status'] == 'success'
         assert parsed['location'] == 'archived'
-        assert parsed['archive_path'] == str(inbox / 'archive' / f'{SENDER}-001.md')
+        assert parsed['archive_path'] == str(inbox / 'archive' / SENDER / f'{SENDER}-001.md')
 
     def test_should_report_file_not_found_only_when_present_at_neither_path(
         self, plan_context
@@ -565,7 +565,7 @@ class TestInboxArchive:
         assert 'already_archived: false' in archived.stdout
         inbox = _epic_dir(plan_context) / 'inbox'
         assert not (inbox / f'{SENDER}-001.md').exists()
-        assert (inbox / 'archive' / f'{SENDER}-001.md').read_text(
+        assert (inbox / 'archive' / SENDER / f'{SENDER}-001.md').read_text(
             encoding='utf-8'
         ).endswith('first\n')
         remaining = _list(plan_context).toon()['messages']
@@ -602,9 +602,9 @@ class TestInboxArchive:
         result = _archive(plan_context, f'{SENDER}-001.md')
 
         assert 'error: archive_conflict' in result.stdout
-        assert 'original body' in (inbox / 'archive' / f'{SENDER}-001.md').read_text(
-            encoding='utf-8'
-        )
+        assert 'original body' in (
+            inbox / 'archive' / SENDER / f'{SENDER}-001.md'
+        ).read_text(encoding='utf-8')
 
     def test_should_report_a_message_present_at_neither_path(self, plan_context):
         _scaffold(plan_context)
@@ -668,7 +668,7 @@ class TestArchiveAwareAllocationCli:
         assert f'message: {SENDER}-002.md' in second.stdout
         inbox = _epic_dir(plan_context) / 'inbox'
         assert (inbox / f'{SENDER}-002.md').is_file()
-        assert (inbox / 'archive' / f'{SENDER}-001.md').is_file()
+        assert (inbox / 'archive' / SENDER / f'{SENDER}-001.md').is_file()
 
     def test_should_archive_the_second_write_without_a_conflict(
         self, plan_context, tmp_path
@@ -686,15 +686,22 @@ class TestArchiveAwareAllocationCli:
 
 class TestInboxArchiveAsNameCli:
     def _strand(self, plan_context, tmp_path) -> Path:
-        """Hand-construct the pre-fix stranded state through the CLI surface."""
+        """Hand-construct the stranded state through the CLI surface.
+
+        Under per-sender foldering the default destination is
+        ``archive/{sender}/{name}``, so the distinct twin that makes the default
+        archive collide sits at that foldered path; the returned directory is the
+        sender's archive subdirectory, where the twin and any sender-preserving
+        recovery name both land.
+        """
         _scaffold(plan_context)
         _write(plan_context, _payload(tmp_path, 'stranded body', 'a.md'))
-        archive_dir = _epic_dir(plan_context) / 'inbox' / 'archive'
-        archive_dir.mkdir(parents=True, exist_ok=True)
-        (archive_dir / f'{SENDER}-001.md').write_text(
+        sender_archive = _epic_dir(plan_context) / 'inbox' / 'archive' / SENDER
+        sender_archive.mkdir(parents=True, exist_ok=True)
+        (sender_archive / f'{SENDER}-001.md').write_text(
             'the earlier audit record\n', encoding='utf-8'
         )
-        return archive_dir
+        return sender_archive
 
     def test_should_strand_the_message_without_the_override(self, plan_context, tmp_path):
         # Non-vacuity anchor for the recovery cases below: the default
