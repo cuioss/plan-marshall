@@ -53,15 +53,64 @@ docs that assert the re-issue exists are **stale/false claims** and are correcte
 
 ### D2 — the absence of a finalize-phase handshake row is itself a blocking condition
 
-_In progress — see design below._
+**Design chosen — convert arming from a call to a state.** The blocking-findings raise fires only when
+a `capture`/`findings-check` carrying `--phase 6-finalize` is issued (`_invariants.py`
+`_capture_pending_findings_blocking_count`, guarded on `phase in _BLOCKING_BOUNDARIES = {'6-finalize'}`).
+No orchestration issued one, so the gate was inert. The self-review findings the gate exists to catch are
+filed **during** finalize, so the 5→6 **entry** boundary cannot catch them; the gate must live at the
+finalize **merge / completion** boundary. Two firing sites now exist:
+
+1. **Pre-merge (fail-closed):** `branch-cleanup.md` § "Pre-merge blocking-findings store gate" issues
+   `phase_handshake findings-check --phase 6-finalize` before the merge — making the "existing
+   findings-check gate" the doc already referenced (line 655) real, and blocking the merge on a pending
+   actionable finding or an unevaluable query.
+2. **Completion (state assertion):** `_invariants.assert_finalize_findings_clean` (self-armed at
+   `6-finalize`, so a caller cannot disarm it by passing a non-guarded phase) is called by **both**
+   lifecycle completion consumers in `_cmd_lifecycle.py` — `cmd_transition` completing `6-finalize` and a
+   normal-completion `cmd_archive`. It refuses to mark the plan complete while an actionable finding is
+   pending. A deliberate `--reason` archive (abandonment) stays exempt so a low-confidence plan is not
+   stranded. On an unevaluable query the completion boundary fails open with a logged WARNING (the
+   fail-closed path is owned by the pre-merge gate, where the executor is guaranteed present).
+
+Both consumers of `_BLOCKING_BOUNDARIES` are addressed: `_invariants.py` (adds the self-arming assertion,
+predicate unchanged) and `_cmd_lifecycle.py` (calls it from both terminal paths).
+
+**Commits:** `cc7f7a9` (core + tests), `d03cdf8` (pre-merge wiring + doc corrections).
+
+**Negative / positive controls** (`test_manage_status_transition.py`): a pending actionable finding
+REFUSES both `cmd_transition --completed 6-finalize` and a normal `cmd_archive`
+(`blocking_findings_present`, state unchanged); a clean plan is admitted; a knowledge-type finding never
+blocks; a `--reason` archive bypasses; a dry-run does not fire. The negative controls exercise the REAL
+predicate via the `_stub_finding_queries` seam and fail against the pre-fix code (which has no completion
+gate). Plus a direct `assert_finalize_findings_clean` test in `test_phase_handshake_findings.py`
+(raises on pending at 6-finalize with no caller-supplied phase; returns 0 clean; None unevaluable).
 
 ### D3 — the self-review loop-back path resolves the findings whose fixes it lands
 
-_In progress._
+**Design chosen.** `pre-submission-self-review.md` files a Q-Gate finding per structural defect (Branch B)
+but resolves none of its own, so a landed fix left the record stuck at `pending`. New evidence-gated verb
+`manage-findings qgate resolve-evidenced` (`_findings_core.resolve_qgate_findings_by_evidence`) transitions
+a pending Q-Gate finding to `fixed` ONLY when its `file_path` is in the caller-supplied `--changed-path`
+set (the files a landed fix touched); every finding whose file the fix did NOT touch — or that has no
+`file_path` — is LEFT `pending`. A premature resolution is self-correcting: the next round's re-surface
+re-detects the defect and `add_qgate_finding` REOPENS the record. Wired into the self-review delta round
+(Step 1): each loop-back round resolves the prior round's evidenced findings before re-surfacing.
+
+**Commit:** `27951b7`.
+
+**Both directions asserted** (`test_findings_store.py`): file-in-set → `fixed`; file-not-in-set →
+`pending` (the important direction); no-file_path → `pending`; mixed batch partitions correctly;
+already-resolved untouched; premature resolution reopened; invalid phase errors. Plus the CLI
+`--changed-path` input-shape boundary test (`test_manage_findings_cli.py`).
 
 ## Build gate
 
-_pending_
+`git diff --name-only origin/main...HEAD` includes `*.py` (3 production scripts, 4 test files), so the
+full gate ran: **`./pw verify` → SUCCESS**, 19351 passed / 14 skipped (pre-existing environment guards,
+none introduced by this change). Quality gate green throughout (mypy production + test, ruff, SPDX,
+plugin-doctor marketplace-wide). No `uv.lock` churn (staged deliverable paths explicitly; verified clean
+tree after the build). `UV_HTTP_TIMEOUT=600` was needed — the default 30s timed out fetching deps through
+the direct (non-proxied) PyPI path.
 
 ## Findings
 
