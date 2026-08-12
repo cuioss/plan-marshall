@@ -630,9 +630,13 @@ arming auto-merge — it is not a gate on the merge. Merge only when conditions 
    `mergeStateStatus` is GitHub applying the ruleset for you: **`BLOCKED`** means a **required**
    context is unsatisfied — failing, pending, **or absent** — so the merge must wait; **`UNSTABLE`**
    means every required context has passed and only **non-required** contexts are still pending or
-   failed. On this merge-queue repository the queue is the final enforcer — it admits a PR only when
-   the ruleset's required contexts pass — so arming auto-merge (below) defers required-ness to the
-   queue rather than to a greenness check performed here.
+   failed; **`clean`** means every required context has passed and nothing non-required is pending or
+   failing either — the PR is fully mergeable. **`UNSTABLE` and `clean` both report the required
+   contexts satisfied**, so both are states in which the PR may be armed; the difference is only
+   whether a non-required context is still outstanding. On this merge-queue repository the queue is
+   the final enforcer — it admits a PR only when the ruleset's required contexts pass — so arming
+   auto-merge (below) defers required-ness to the queue rather than to a greenness check performed
+   here.
 
    - A **required** context that is failing, pending, or **absent from the head** is **not** satisfied:
      this condition is not met. Absence never reads as success — a required context that has not
