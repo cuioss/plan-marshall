@@ -1,6 +1,6 @@
 # Run report — 240-deep-lane-bought-by-one-signal (run 01)
 
-**Date (UTC):** 2026-08-12    **Branch:** `claude/deep-lane-one-signal-5qyh5k` (harness-assigned)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-12    **Branch:** `claude/deep-lane-one-signal-5qyh5k` (harness-assigned)    **PR:** [#1188](https://github.com/cuioss/plan-marshall/pull/1188)    **Outcome:** _in progress (review cycle)_
 
 ## Skills loaded
 
