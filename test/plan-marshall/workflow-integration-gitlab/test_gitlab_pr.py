@@ -234,15 +234,19 @@ class TestFailLoudUnconfigured:
 class TestPostResponses:
     """post_responses transmits each finding's disposition to its own MR discussion, keyed by hash_id."""
 
-    def _stage_one_finding(self, plan_id, thread_id, body='A substantive concern about null handling.'):
-        """File one pr-comment finding via fetch_findings and return its hash_id."""
+    def _stage_one_finding(self, plan_id, thread_id, body='A substantive concern about null handling.', comment_id='C1'):
+        """File one pr-comment finding via fetch_findings and return its hash_id.
+
+        ``comment_id`` keys the finding's identity, so staging several findings in
+        one plan (an idempotency-across-rounds test) passes a distinct id per call.
+        """
         comments = [
             {
-                'id': 'C1',
+                'id': comment_id,
                 'kind': 'inline',
                 'author': 'reviewer',
                 'body': body,
-                'path': 'src/Main.java',
+                'path': f'src/{comment_id}.java',
                 'line': 42,
                 'thread_id': thread_id,
             },
@@ -333,6 +337,100 @@ class TestPostResponses:
         assert result['count_responded'] == 0
         assert result['count_skipped'] == 1
         mock_glab.assert_not_called()
+
+    def test_second_round_transmits_only_newly_resolved_dispositions(self, plan_context):
+        """Round 2 must re-transmit NOTHING already sent — the idempotency residue.
+
+        Round 1 transmits two dispositions; round 2 adds one new disposition on the
+        SAME plan-scoped store. Only the new one transmits and ``count_responded`` is
+        1 — never a re-count of the two already-sent replies. The pre-fix verb had
+        no prior-transmission term, so it re-transmitted all three and reported 3.
+        """
+        plan_context.plan_dir_for('gl-respond-round2')
+        from _findings_core import resolve_finding
+
+        r1 = [
+            self._stage_one_finding('gl-respond-round2', f'thread-{i}', comment_id=f'r1-{i}') for i in range(2)
+        ]
+        for i, hash_id in enumerate(r1):
+            resolve_finding('gl-respond-round2', hash_id, 'fixed', detail=f'Fixed round-1 {i}.')
+
+        with (
+            patch('gitlab_pr._gitlab.get_project_path', return_value='group/proj'),
+            patch('gitlab_pr._gitlab.run_glab', return_value=(0, '', '')),
+        ):
+            first = cmd_post_responses(_make_args(300, 'gl-respond-round2'))
+        assert first['count_responded'] == 2
+
+        new_hash = self._stage_one_finding('gl-respond-round2', 'thread-new', comment_id='r2-0')
+        resolve_finding('gl-respond-round2', new_hash, 'fixed', detail='Fixed the new one.')
+
+        calls = []
+
+        def _fake_run_glab(argv):
+            calls.append(argv)
+            return 0, '', ''
+
+        with (
+            patch('gitlab_pr._gitlab.get_project_path', return_value='group/proj'),
+            patch('gitlab_pr._gitlab.run_glab', side_effect=_fake_run_glab),
+        ):
+            second = cmd_post_responses(_make_args(300, 'gl-respond-round2'))
+
+        assert second['count_responded'] == 1
+        assert [entry['hash_id'] for entry in second['responded']] == [new_hash]
+        already = [entry for entry in second['skipped'] if entry['reason'] == 'already responded']
+        assert {entry['hash_id'] for entry in already} == set(r1)
+        # Only the new disposition drove glab traffic: one note-reply + one resolve.
+        assert len(calls) == 2
+        assert calls[0][3].endswith('/discussions/thread-new/notes')
+
+    def test_retransmits_a_changed_disposition(self, plan_context):
+        """A disposition CHANGED between rounds transmits again — the fix is a KEY.
+
+        An unchanged re-run skips (the marker holds); re-resolving the finding to a
+        different disposition clears the marker so the corrected reply goes out.
+        """
+        plan_context.plan_dir_for('gl-respond-changed')
+        from _findings_core import resolve_finding
+
+        hash_id = self._stage_one_finding('gl-respond-changed', 'thread-c')
+        resolve_finding('gl-respond-changed', hash_id, 'fixed', detail='Fixed originally.')
+
+        with (
+            patch('gitlab_pr._gitlab.get_project_path', return_value='group/proj'),
+            patch('gitlab_pr._gitlab.run_glab', return_value=(0, '', '')),
+        ):
+            first = cmd_post_responses(_make_args(300, 'gl-respond-changed'))
+        assert first['count_responded'] == 1
+
+        # Unchanged re-run: the marker holds, nothing transmits.
+        with (
+            patch('gitlab_pr._gitlab.get_project_path', return_value='group/proj'),
+            patch('gitlab_pr._gitlab.run_glab', return_value=(0, '', '')) as mock_glab,
+        ):
+            unchanged = cmd_post_responses(_make_args(300, 'gl-respond-changed'))
+        assert unchanged['count_responded'] == 0
+        assert [entry for entry in unchanged['skipped'] if entry['reason'] == 'already responded']
+        mock_glab.assert_not_called()
+
+        # The disposition CHANGES: resolve_finding clears the marker so it re-qualifies.
+        resolve_finding('gl-respond-changed', hash_id, 'rejected', detail='On reflection, rejected.')
+
+        calls = []
+
+        def _fake_run_glab(argv):
+            calls.append(argv)
+            return 0, '', ''
+
+        with (
+            patch('gitlab_pr._gitlab.get_project_path', return_value='group/proj'),
+            patch('gitlab_pr._gitlab.run_glab', side_effect=_fake_run_glab),
+        ):
+            changed = cmd_post_responses(_make_args(300, 'gl-respond-changed'))
+        assert changed['count_responded'] == 1
+        assert changed['responded'][0]['hash_id'] == hash_id
+        assert calls[0][-1] == 'body=On reflection, rejected.'
 
 
 # =============================================================================
