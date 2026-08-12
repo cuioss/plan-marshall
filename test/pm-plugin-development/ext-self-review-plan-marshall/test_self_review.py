@@ -13,6 +13,9 @@ from _resolve_project_dir_fixtures import (
     assert_sentinel_accepted,
     assert_worktree_face_routes_through_resolver,
 )
+from _self_review_detectors import (
+    _collect_skill_contract_sources,
+)
 from _self_review_patterns import (
     CANDIDATE_FAMILIES,
     CANDIDATE_LISTS,
@@ -1592,6 +1595,49 @@ class TestDetectCountProse:
         out = _detect_count_prose(rels, project)
         matched = [e for e in out if 'Nine steps' in e['text']]
         assert len(matched) == 1
+
+    def test_count_prose_planted_in_standards_doc_is_surfaced(self, tmp_path: Path):
+        # NEGATIVE CONTROL (D1): a stale count planted in a standards/*.md doc
+        # MUST be surfaced. This test FAILS against the pre-fix resolver, which
+        # opened only SKILL.md and never descended into standards/ — a
+        # positive-only fixture over SKILL.md would pass against that defect and
+        # prove nothing. The count lives ONLY in the standards doc here.
+        body = '---\nname: my-skill\n---\n# My Skill\nNo counts up here.\n'
+        project = self._build_skill(tmp_path, body)
+        skill = project / 'marketplace' / 'bundles' / 'b1' / 'skills' / 'my-skill'
+        (skill / 'standards').mkdir()
+        (skill / 'standards' / 'rules.md').write_text(
+            'The gate enforces 5 rules over the parsed input.\n'
+        )
+        rel = 'marketplace/bundles/b1/skills/my-skill/scripts/mod.py'
+        out = _detect_count_prose([rel], project)
+        texts = [e['text'] for e in out]
+        assert any('5 rules' in t for t in texts)
+        files = {e['file'] for e in out}
+        assert (
+            'marketplace/bundles/b1/skills/my-skill/standards/rules.md' in files
+        )
+
+    def test_count_prose_file_set_matches_contract_sources_resolver(self, tmp_path: Path):
+        # Pins the D1 agreement: the detector's scanned file set is EXACTLY the
+        # sibling _collect_skill_contract_sources set (SKILL.md + standards/*.md)
+        # resolved through the ONE shared resolver — agreement by construction,
+        # not by coincidence. A count is planted in every contract source, so
+        # the emitted file set must equal the resolver's output verbatim.
+        body = '---\nname: my-skill\n---\n# My Skill\nEmit twelve fields.\n'
+        project = self._build_skill(tmp_path, body)
+        skill = project / 'marketplace' / 'bundles' / 'b1' / 'skills' / 'my-skill'
+        (skill / 'standards').mkdir()
+        (skill / 'standards' / 'a.md').write_text('There are 5 rules enforced.\n')
+        (skill / 'standards' / 'b.md').write_text('Nine steps in the flow.\n')
+        rel = 'marketplace/bundles/b1/skills/my-skill/scripts/mod.py'
+        out = _detect_count_prose([rel], project)
+        emitted_files = {e['file'] for e in out}
+        resolver_files = {
+            str(p.relative_to(project))
+            for p in _collect_skill_contract_sources(skill)
+        }
+        assert emitted_files == resolver_files
 
 
 # =============================================================================
