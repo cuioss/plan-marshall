@@ -68,8 +68,9 @@ pull-request tools and matching what they do:
 | `gh pr merge {N} --squash --auto` | `enable_pr_auto_merge` with `mergeMethod: SQUASH` (`disable_pr_auto_merge` disarms but does **not** dequeue — § Step 8) |
 | `gh pr checks {N}` | `pull_request_read` with `method: get_status` and `get_check_runs` |
 | `gh pr view {N} --json mergeStateStatus,mergeable,state,mergedAt,mergeCommit` | `pull_request_read` with `method: get` |
-| `gh pr view {N} --comments` | `pull_request_read` for the conversation / issue-comment surface |
-| `gh api repos/{owner}/{repo}/pulls/{N}/comments --paginate` | `pull_request_read` for the **inline review-thread** surface (the one the conversation view omits — § Step 7) |
+| `gh pr view {N} --comments` (issue comments only) | `pull_request_read` with `method: get_comments` — the **issue-comment** surface ONLY. Unlike `gh pr view --comments`, the MCP `get_comments` does NOT fold in review-summary bodies, so it is not sufficient on its own — see the next row |
+| `gh pr view {N} --json reviews` | `pull_request_read` with `method: get_reviews` — the **review-summary-body** surface. This is where the principal automated reviewers file their consolidated findings; a run that reads only `get_comments` + `get_review_comments` misses them entirely (observed on an actual run — six bot findings arrived here and nowhere else). MUST be read before the merge gate |
+| `gh api repos/{owner}/{repo}/pulls/{N}/comments --paginate` | `pull_request_read` with `method: get_review_comments` — the **inline review-thread** surface (the one the conversation view omits — § Step 7) |
 
 ## Step 1 — Load the core skills
 
@@ -543,13 +544,19 @@ principal automated reviewers file their findings as *inline review-thread* comm
 conversation view does not contain. Reading only the conversation view and then asserting "all
 comments handled" is a false clean signal — the exact failure this lane is built to avoid.
 
-| Surface | Holds | `gh` |
-|---|---|---|
-| Conversation | Issue comments, review summary bodies | `gh pr view {N} --comments` |
-| Inline review threads | Per-file findings from the review bots | `gh api repos/{owner}/{repo}/pulls/{N}/comments --paginate` |
+| Surface | Holds | `gh` | GitHub MCP `pull_request_read` method |
+|---|---|---|---|
+| Issue comments | Free-form conversation comments | `gh pr view {N} --comments` | `get_comments` |
+| Review summary bodies | The review bots' **consolidated** findings (often the bulk of them) | `gh pr view {N} --json reviews` | `get_reviews` |
+| Inline review threads | Per-file findings anchored to lines | `gh api repos/{owner}/{repo}/pulls/{N}/comments --paginate` | `get_review_comments` |
 
-Both surfaces MUST be read before the merge gate. With the GitHub MCP server, use its equivalent
-pull-request review-comment call for the second surface — not only the conversation listing.
+All THREE surfaces MUST be read before the merge gate — they are three **different** MCP calls, and no
+one of them subsumes the others. The trap is specific to the MCP path: `gh pr view {N} --comments`
+folds review-summary bodies into its output, but the MCP `get_comments` does **not** — review summaries
+live only under `get_reviews`. A run that reads `get_comments` (issue comments) and `get_review_comments`
+(inline threads) but skips `get_reviews` will assert "all comments handled" while never having seen the
+review bots' main findings — the exact false-clean signal this lane exists to prevent, and one observed
+in practice (six bot findings that arrived only in the review summary body).
 
 ### Record per-reviewer participation, from the bodies
 
