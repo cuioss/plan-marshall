@@ -41,19 +41,17 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
 from pathlib import Path
-from typing import Any, TypeGuard
+from typing import Any
 
+from _footprint_resolver import (
+    footprint_resolved,
+    resolve_footprint,
+)
 from _plan_parsing import (
     extract_deliverable_headings,
     parse_document_sections,
     split_deliverable_blocks,
-)
-from _references_core import (
-    compute_plan_branch_diff,
-    resolve_base_ref,
-    resolve_live_worktree,
 )
 from extension_discovery import find_implementors
 from file_ops import base_path, output_toon, safe_main
@@ -119,85 +117,16 @@ def _load_references(plan_dir: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-#: Stated sentinel for a footprint that could NOT be resolved at all.
-#:
-#: Deliberately distinct from ``set()``, which states the opposite thing: the
-#: footprint resolved and the plan genuinely touched no files. Collapsing both
-#: outcomes to an empty set is what let a 21/21 exact footprint score a
-#: confident "Recall 0%" after ``branch-cleanup`` deleted the worktree the
-#: resolver measures — an unmeasurable input rendered as a measured zero.
-FOOTPRINT_UNRESOLVED = None
-
-
-def footprint_resolved(footprint: set[str] | None) -> TypeGuard[set[str]]:
-    """The ONE named predicate callers use to read a footprint's resolution state.
-
-    Per ADR-015, the absent identity is a stated sentinel
-    (:data:`FOOTPRINT_UNRESOLVED`) and every presence guard goes through this
-    named predicate rather than an inline truthiness check. ``not footprint`` is
-    NOT equivalent: it is also true for a resolved-but-empty footprint, which is
-    a measured result and must still yield a measured verdict.
-
-    Typed as a ``TypeGuard`` so callers branch on the predicate positively and
-    the resolved ``set[str]`` narrows for the type checker — no caller needs a
-    separate ``is not None`` restatement that could drift from this definition.
-    """
-    return footprint is not FOOTPRINT_UNRESOLVED
-
-
 def _resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> set[str] | None:
-    """Resolve the plan footprint for an archived (or live) plan.
+    """Resolve the plan footprint — thin delegate to the shared whole-chain resolver.
 
-    Three-tier resolution, in order:
-
-    1. **Live diff** — when ``plan_id`` names a live plan whose worktree the ONE
-       resolver (:func:`_references_core.resolve_live_worktree`) resolves to a
-       directory on disk, derive the footprint via ``compute_plan_branch_diff``
-       (``{base}...HEAD`` ∪ porcelain). This is the single source of truth for a
-       plan whose worktree still exists. A ``CalledProcessError`` here reports
-       UNRESOLVABLE rather than falling through to the legacy read: the worktree
-       resolved but the diff failed, so the legacy key would answer a different
-       question while presenting as the same measurement.
-    2. **Legacy key** — ``references.modified_files`` when the key is PRESENT
-       (archived plans created before the ledger was removed still carry it). A
-       present-but-empty list is a resolved, genuinely-empty footprint.
-    3. **Unresolvable** — when neither tier answers, return
-       :data:`FOOTPRINT_UNRESOLVED`. Key absent and key present-but-empty are
-       different answers and are reported differently.
-
-    Archived mode passes ``plan_id=None`` and therefore skips tier 1 entirely:
-    an archived plan's recorded worktree names a directory finalize has already
-    removed. Tier 1 is reached through the resolver rather than by re-reading
-    ``status.metadata.worktree_path`` here.
-
-    Returns:
-        A set of repo-relative path strings when the footprint resolved (possibly
-        empty), or :data:`FOOTPRINT_UNRESOLVED` when it could not be resolved.
-        Read the distinction through :func:`footprint_resolved`, never by
-        testing emptiness.
+    The tier order (live diff → realized-footprint capture → merge-commit → legacy
+    key → unresolvable), the :data:`FOOTPRINT_UNRESOLVED` sentinel, and the
+    :func:`footprint_resolved` predicate all live in :mod:`_footprint_resolver`, so
+    this recall check and the ``check-routing-decisions`` mis-prune check grade
+    against the SAME resolution — one footprint resolution, two consumers.
     """
-    refs = _load_references(plan_dir)
-
-    worktree = resolve_live_worktree(plan_id)
-    if worktree is not None:
-        base_ref = resolve_base_ref(None, refs)
-        try:
-            return compute_plan_branch_diff(worktree, base_ref)
-        except subprocess.CalledProcessError:
-            return FOOTPRINT_UNRESOLVED
-
-    # SHIM(B): archived plans' references.modified_files key, written before the change-ledger was removed.
-    # shim-owner: plan-retrospective
-    # shim-floor: the change-ledger removal that stopped persisting references.modified_files (same boundary as analyze-logs resolve_footprint); the current writer no longer emits the key (predates this shallow clone's root dcd3c00 / #1105, so not PR-pinnable here).
-    # shim-remove-when: no archived plan predating the ledger removal is retained.
-    legacy = refs.get('modified_files')
-    if legacy is None:
-        return FOOTPRINT_UNRESOLVED
-    if isinstance(legacy, str):
-        legacy = [legacy]
-    if not isinstance(legacy, list):
-        return FOOTPRINT_UNRESOLVED
-    return {str(p).strip() for p in legacy if p}
+    return resolve_footprint(plan_dir, plan_id)
 
 
 def check_solution_outline_sections(content: str) -> tuple[str, str]:
@@ -300,10 +229,11 @@ def check_affected_files_recall(
 ) -> tuple[str, str, dict[str, Any]]:
     """Return ``(status, message, details)`` for the affected-files recall check.
 
-    Recall compares the outline's declared ``Affected files:`` against the live
-    plan footprint resolved via :func:`_resolve_footprint` (live diff, then the
-    legacy ``modified_files`` key for older archived plans, then unresolvable).
-    A footprint that could not be resolved yields ``inconclusive``: recall is
+    Recall compares the outline's declared ``Affected files:`` against the plan
+    footprint resolved via :func:`_resolve_footprint`, which delegates to the shared
+    whole-chain resolver (live diff → realized-footprint capture → merge-commit →
+    legacy ``modified_files`` key → unresolvable). A footprint that could not be
+    resolved from any tier yields ``inconclusive``: recall is
     unmeasurable, never a confident 0%. A resolved-but-empty footprint is a
     measured input and still yields a measured verdict.
 
@@ -385,8 +315,9 @@ def check_affected_files_recall(
 
     return (
         'inconclusive',
-        'Plan footprint could not be resolved (no live worktree diff and no '
-        'modified_files key) — recall is unmeasurable, not 0%',
+        'Plan footprint could not be resolved from any tier (no live worktree diff, '
+        'no realized-footprint capture, no merge-commit, no modified_files key) — '
+        'recall is unmeasurable, not 0%',
         {
             'declared': len(declared),
             'deliverables': len(deliverables),
@@ -436,8 +367,9 @@ def check_affected_files_exact_match(
 
     return (
         'inconclusive',
-        'Plan footprint could not be resolved (no live worktree diff and no '
-        'modified_files key) — the comparison substantiates no verdict',
+        'Plan footprint could not be resolved from any tier (no live worktree diff, '
+        'no realized-footprint capture, no merge-commit, no modified_files key) — '
+        'the comparison substantiates no verdict',
         [],
         [],
     )
@@ -680,11 +612,11 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     _route_measured_verdict(findings, rec_status, rec_message)
 
     # Affected-files exact-match (strict variant, peer to recall).
-    # Resolves the same live plan footprint used by
-    # ``check_affected_files_recall`` via ``_resolve_footprint`` — both checks
-    # must agree on the source of truth (live diff, then the legacy
-    # ``modified_files`` key for older archived plans, then unresolvable) AND on
-    # how they read its resolution state (via ``footprint_resolved``).
+    # Resolves the same plan footprint used by ``check_affected_files_recall`` via
+    # ``_resolve_footprint`` — both checks must agree on the source of truth (the
+    # shared whole-chain resolver: live diff → realized-footprint capture →
+    # merge-commit → legacy ``modified_files`` key → unresolvable) AND on how they
+    # read its resolution state (via ``footprint_resolved``).
     outline_files = set(extract_affected_files_per_deliverable(solution_content))
     references_files = _resolve_footprint(plan_dir, live_plan_id)
     exact_status, exact_message, outline_only, references_only = check_affected_files_exact_match(

@@ -89,10 +89,28 @@ def main() -> int:
         help='Base ref for the diff (defaults to references.base_branch, falling back to main)',
     )
 
+    # capture-footprint — compute the live footprint AND persist it to
+    # references.realized_footprint (the capture-while-true side effect).
+    capture_footprint_parser = subparsers.add_parser(
+        'capture-footprint',
+        help='Compute the live plan footprint and persist it to references.realized_footprint',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(capture_footprint_parser)
+    capture_footprint_parser.add_argument(
+        '--worktree-path',
+        required=True,
+        help='Absolute path to the active git worktree (must still exist at capture time)',
+    )
+    capture_footprint_parser.add_argument(
+        '--base-ref',
+        help='Base ref for the diff (defaults to references.base_branch, falling back to main)',
+    )
+
     args = parse_args_with_toon_errors(parser)
 
     # Import command handlers
-    from _cmd_compute_footprint import cmd_compute_footprint
+    from _cmd_compute_footprint import cmd_capture_footprint, cmd_compute_footprint
     from _cmd_context import cmd_get_context
     from _cmd_list import cmd_add_list, cmd_set_list
     from _references_crud import cmd_create, cmd_get, cmd_read, cmd_set
@@ -107,6 +125,7 @@ def main() -> int:
         'set-list': cmd_set_list,
         'get-context': cmd_get_context,
         'compute-footprint': cmd_compute_footprint,
+        'capture-footprint': cmd_capture_footprint,
     }
 
     handler = handlers.get(args.command)

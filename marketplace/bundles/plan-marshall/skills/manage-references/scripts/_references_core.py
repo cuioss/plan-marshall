@@ -33,6 +33,16 @@ class ReferencesData(TypedDict, total=False):
     domains: list[str]
     affected_files: list[str]
     external_docs: dict[str, Any]
+    # The realized plan footprint, captured from the worktree by
+    # ``manage-references capture-footprint`` (called by ``default:branch-cleanup``
+    # before it removes the worktree). Preferred by the archived-plan footprint
+    # resolver over any re-derivation. See ``_cmd_compute_footprint.cmd_capture_footprint``.
+    realized_footprint: list[str]
+    # The landing commit SHA, recorded by ``default:branch-cleanup`` on the
+    # synchronous merge path. Feeds the footprint resolver's merge-commit fallback
+    # tier (``git diff {sha}^1 {sha}``). Absent on the async merge-queue path, where
+    # ``realized_footprint`` (captured pre-enqueue) is the resolution instead.
+    merge_commit_sha: str
 
 
 # =============================================================================

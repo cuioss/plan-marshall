@@ -1334,6 +1334,57 @@ class TestGenerateReconcilesAccumulator:
         assert six['agent_duration_ms'] == 60000  # folded from accumulator
 
 
+class TestReconcileFloorKeepsPartiality:
+    """The reconcile `plan-marshall:plan-retrospective` performs before reading
+    `metrics.md` (its Step 2.5) folds the OPEN 6-finalize accumulator FLOOR into the
+    phase row while leaving the phase marked partial.
+
+    This pins the D3 guarantee of plan 050: a run where the largest finalize phase
+    did work must read NON-ZERO for that phase, and the partiality machinery must
+    still flag the genuinely-absent boundary. The retrospective (order 995) reads
+    per-phase tokens from `metrics.md` before `default:record-metrics` (order 998)
+    performs the authoritative close, so an unreconciled `metrics.md` renders
+    6-finalize as zero. Calling `generate` before the read folds the durable
+    accumulator into the row (a non-zero floor) WITHOUT stamping an `end_time`, so
+    record-metrics' later close stays authoritative (its accumulator read is
+    assign-cumulative, so it overwrites the floor with the complete total) and a
+    genuinely-open phase is still reported as partial.
+    """
+
+    def test_reconcile_folds_finalize_floor_but_keeps_it_marked_partial(self, plan_context):
+        # A real non-zero phase, NOT a fixture that closes trivially: phases 1-5 are
+        # closed; 6-finalize accrued subagent tokens into its durable accumulator but
+        # was never token-closed (record-metrics has not run yet).
+        phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES[:5]}
+        phases['6-finalize'] = {'duration_seconds': 600}
+        manage_metrics.write_metrics('d3-reconcile-floor', {'phases': phases})
+        cmd_accumulate_agent_usage(
+            _ns_accumulate(
+                'd3-reconcile-floor', '6-finalize', total_tokens=54321, tool_uses=11, duration_ms=120000
+            )
+        )
+
+        # The reconcile the retrospective performs before aspect 4 reads metrics.md.
+        result = cmd_generate(_ns_generate('d3-reconcile-floor'))
+        assert result['status'] == 'success'
+
+        # (1) The largest finalize phase now reads its FLOOR, not zero.
+        six = manage_metrics.read_metrics_raw('d3-reconcile-floor')['phases']['6-finalize']
+        assert six['total_tokens'] == 54321, (
+            'The reconcile must fold the 6-finalize accumulator floor into the row so '
+            'the retrospective reads a phase that did work as non-zero, not zero.'
+        )
+
+        # (2) The partiality machinery is untouched: no end_time was stamped, so the
+        # genuinely-open phase is STILL flagged — record-metrics (998) still owes the
+        # authoritative close, and a future genuine omission still surfaces here.
+        assert result['any_phase_missing_end_time'] is True
+        assert '6-finalize' in result['phases_missing_end_time'], (
+            'Folding the floor must not close the phase: leaving 6-finalize in '
+            'phases_missing_end_time is what keeps the partiality signal honest.'
+        )
+
+
 # =============================================================================
 # Test: enrich delegates to the platform-runtime normalized-tokens op
 # =============================================================================

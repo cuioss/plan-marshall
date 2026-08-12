@@ -57,6 +57,8 @@ JSON format for storage:
 | `domains` | list | Plan domains (e.g., java, documentation) |
 | `affected_files` | list | Files identified during outline phase as potentially needing changes (scope tracking) |
 | `external_docs` | table | External documentation references |
+| `realized_footprint` | list | The realized plan footprint, captured from the worktree by `capture-footprint` (called by `default:branch-cleanup` before worktree removal). The footprint resolver prefers it over any re-derivation. |
+| `merge_commit_sha` | string | The landing commit SHA, recorded by `default:branch-cleanup` on the synchronous merge path. Feeds the footprint resolver's merge-commit fallback tier. Absent on the async merge-queue path. |
 
 ---
 
@@ -274,6 +276,22 @@ live_count: 3
 
 ---
 
+### capture-footprint
+
+Compute the live footprint (identical to `compute-footprint`) AND **persist it** into `references.json` under `realized_footprint`. This is the capture-while-true side effect `default:branch-cleanup` performs before it removes the plan's worktree, so a post-merge retrospective or audit resolves the exact realized set from a recorded fact instead of re-deriving it from a substrate that has since changed.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references capture-footprint \
+  --plan-id {plan_id} --worktree-path {worktree_path} \
+  [--base-ref {ref}]
+```
+
+**Parameters**: same as `compute-footprint` — `--plan-id` and `--worktree-path` required, `--base-ref` optional.
+
+**Output** (TOON): the computed `files` plus `realized_footprint_count` and `persisted: true`. On a compute failure the error is propagated verbatim and nothing is written — the resolver falls through to its lower tiers rather than reading a fabricated empty capture.
+
+---
+
 ## Scripts
 
 **Script**: `plan-marshall:manage-references:manage-references`
@@ -288,6 +306,7 @@ live_count: 3
 | `set-list` | `--plan-id --field --values` | Set a list field (replaces existing) |
 | `get-context` | `--plan-id` | Get the plan's scalar reference context |
 | `compute-footprint` | `--plan-id --worktree-path [--base-ref]` | Derive the live plan footprint from the worktree git state (read-only) |
+| `capture-footprint` | `--plan-id --worktree-path [--base-ref]` | Compute the live footprint AND persist it to `references.realized_footprint` |
 
 ---
 
@@ -356,6 +375,13 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
   --plan-id PLAN_ID --worktree-path ABS_PATH [--base-ref REF]
 ```
 
+### capture-footprint
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-references:manage-references capture-footprint \
+  --plan-id PLAN_ID --worktree-path ABS_PATH [--base-ref REF]
+```
+
 ---
 
 ## Error Responses
@@ -394,6 +420,8 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 | `phase-3-outline` | get, get-context | Read domains and build system for skill routing |
 | `phase-5-execute` | get-context | Read build system for task execution |
 | `phase-6-finalize` | compute-footprint | Derive the live plan footprint for commit scope and PR body |
+| `phase-6-finalize` (`branch-cleanup`) | capture-footprint, set | Persist `realized_footprint` before worktree removal, and record `merge_commit_sha` after the base pull |
+| `plan-retrospective`, `audit-archived-plan-retrospectives` | (reads `realized_footprint` / `merge_commit_sha` via the shared footprint resolver) | Resolve the realized footprint for recall and mis-prune checks post-merge |
 
 ## Related
 

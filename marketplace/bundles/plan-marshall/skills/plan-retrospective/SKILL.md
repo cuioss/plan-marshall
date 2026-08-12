@@ -126,6 +126,42 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-plan-ar
 
 Capture the manifest TOON for later aspects.
 
+### Step 2.5: Reconcile the phase accumulators into `metrics.md` (live modes only)
+
+The plan-efficiency aspect (aspect 4) reads per-phase token totals from `metrics.md`.
+At this workflow's `order: 995` the `6-finalize` phase is still **open** —
+`default:record-metrics` (order 998) folds its durable
+`work/metrics-accumulator-6-finalize.toon` into the phase row only later, and
+`record-metrics` cannot move earlier because it must first fold this retrospective's
+own spend. So an unreconciled `metrics.md` renders the `6-finalize` row as **zero**,
+and the aspect would read the largest finalize phase — this step's own dispatch spend
+plus every earlier finalize step's — as if it did no work. The plan that motivated
+this named it R2: the retrospective reads an unclosed accumulator.
+
+**Close the accumulator here — do not merely rely on the reader's order.** Fold the
+open accumulators into `metrics.md` *before* aspect 4 reads it by regenerating the
+report:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics generate \
+  --plan-id {plan_id}
+```
+
+`generate` reconciles each phase's durable `work/metrics-accumulator-{phase}.toon`
+into its row (backfill-only, explicit-wins) and re-renders `metrics.md`, so the
+`6-finalize` row now carries its accumulated **floor** rather than zero. It does
+**not** stamp an `end_time`, so the partiality machinery is left intact: `6-finalize`
+stays in `phases_missing_end_time` and is still reported partial until
+`record-metrics` performs the authoritative close at order 998. That final close
+**overwrites** the floor with the complete total (the accumulator read is
+assign-cumulative, not additive — see `manage-metrics/standards/data-format.md`), so
+this reconcile never double-counts and never pre-empts the close.
+
+**Live modes only.** Archived mode is a read-only historic audit and MUST NOT write
+to the archived plan directory (see Prohibited actions): an already-landed plan's
+`metrics.md` was closed by its own `record-metrics` at archive time, so skip this
+reconcile in archived mode entirely.
+
 ### Step 3: Dispatch Aspects (in order)
 
 Before dispatching aspects, initialize the fragment bundle. `collect-fragments init` creates an empty TOON bundle file at the mode-appropriate path: live mode writes to `{plan_dir}/work/retro-fragments.toon`; archived mode writes to an OS tmp directory so the archived plan stays read-only. Capture the returned `bundle_path` for use in Step 4. The mode is persisted into the bundle by `init`, so subsequent register and finalize calls read it back automatically and accept only `--plan-id` and the fragment inputs.
@@ -159,7 +195,7 @@ For each aspect below, produce a TOON fragment on disk at `work/fragment-{aspect
 
 The Execution-context dispatch audit (aspect 11) consumes the `[DISPATCH]` work-log lines emitted by every dispatch site per [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) — that standard is the authoritative source for the line shape, and this aspect is its enforcement consumer. The aspect asserts dispatch discipline in **both directions**: that every spawn that DID happen rode the canonical `execution-context-{level}` envelope, AND that every finalize/execute step classified DISPATCHED actually WAS dispatched. The inverse-coverage half (`dispatch_coverage_violation` category) cross-references the SKILL's own dispatched/inline classification against the `status.metadata.phase_steps["6-finalize"]` outcome records — a step marked done with zero matching `[DISPATCH]` evidence is flagged as inline-where-dispatch-was-required. Report readers tracing an audit finding back to its evidence land in `dispatch-logging.md` § "Emission contract" for the canonical log-line format.
 
-> **Coverage contract**: the Artifact-consistency aspect (aspect 1) is the *declared-vs-achieved coverage* comparison — declared in-scope files (`Affected files:`) vs the plan's actual footprint — which is the deterministic item-coverage half of the *thoroughness* dial, graded to the FLOOR. The footprint is derived live from the plan's worktree (`{base}...HEAD` ∪ porcelain) when one is on disk, falling back to the legacy `references.modified_files` key only for archived plans created before the ledger was removed. See the two-dial scope × thoroughness contract (ladders, grade-to-the-floor rule, coupling constraint) in [`../persona-plan-marshall-agent/standards/thoroughness.md`](../persona-plan-marshall-agent/standards/thoroughness.md).
+> **Coverage contract**: the Artifact-consistency aspect (aspect 1) is the *declared-vs-achieved coverage* comparison — declared in-scope files (`Affected files:`) vs the plan's actual footprint — which is the deterministic item-coverage half of the *thoroughness* dial, graded to the FLOOR. The footprint is resolved through the shared footprint resolver: live worktree diff (`{base}...HEAD` ∪ porcelain) when one is on disk, else the persisted realized-footprint capture, a merge-commit fallback, then the legacy `references.modified_files` key for pre-ledger archives. See the two-dial scope × thoroughness contract (ladders, grade-to-the-floor rule, coupling constraint) in [`../persona-plan-marshall-agent/standards/thoroughness.md`](../persona-plan-marshall-agent/standards/thoroughness.md).
 
 **Aspect 12 (manifest decisions)** is skipped when `execution.toon` is absent. When present, the aspect loads the manifest via `plan-marshall:manage-execution-manifest:manage-execution-manifest read --plan-id {plan-id}` and pairs it with matching `(plan-marshall:phase-4-plan:manifest)` decision-log entries — manifest = WHAT was decided, decision.log = WHY. The cross-check engine is `plan-marshall:plan-retrospective:check-manifest-consistency` which evaluates each manifest assumption against the actual end-of-execute diff and emits one finding per violation. See `standards/manifest-crosscheck.md` for the cross-check matrix.
 
@@ -167,7 +203,7 @@ The Execution-context dispatch audit (aspect 11) consumes the `[DISPATCH]` work-
 
 **Aspect 14** is skipped when `--session-id` is absent.
 
-> **Achieved thoroughness**: there is no mechanical achieved-thoroughness measurement. The *achieved* side of coverage is the floor-graded self-report defined in [`../persona-plan-marshall-agent/standards/thoroughness.md`](../persona-plan-marshall-agent/standards/thoroughness.md) § Floor-Graded Self-Report; the Artifact-consistency aspect (aspect 1, above) supplies the deterministic declared-vs-actual footprint (derived live from the worktree, or the legacy `references.modified_files` key for older archived plans) that the self-report grades against.
+> **Achieved thoroughness**: there is no mechanical achieved-thoroughness measurement. The *achieved* side of coverage is the floor-graded self-report defined in [`../persona-plan-marshall-agent/standards/thoroughness.md`](../persona-plan-marshall-agent/standards/thoroughness.md) § Floor-Graded Self-Report; the Artifact-consistency aspect (aspect 1, above) supplies the deterministic declared-vs-actual footprint (resolved through the shared footprint resolver: live worktree diff, else the realized-footprint capture / merge-commit / legacy key) that the self-report grades against.
 
 **Domain-contributed aspects (merged after the fixed table, gated by plan domain)**:
 
@@ -448,7 +484,7 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-routing-d
   [--diff-file DIFF_FILE]
 ```
 
-`--diff-file` carries the realized footprint (one path per line) that the prune-predicate re-evaluation tests; absent → the mis-prune checks SKIP.
+`--diff-file` carries the realized footprint (one path per line) that the prune-predicate re-evaluation tests; absent → the footprint is recovered through the shared resolver (realized-footprint capture → merge-commit → legacy key), and only a still-unresolvable footprint SKIPs the mis-prune checks.
 
 ### script-failure-analysis — run
 

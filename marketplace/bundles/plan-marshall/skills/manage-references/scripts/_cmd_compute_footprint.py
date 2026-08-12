@@ -27,6 +27,7 @@ from _references_core import (
     compute_plan_branch_diff,
     read_references,
     resolve_base_ref,
+    write_references,
 )
 from input_validation import require_valid_plan_id
 
@@ -83,4 +84,48 @@ def cmd_compute_footprint(args: argparse.Namespace) -> dict:
         'base_ref': base_ref,
         'files': files,
         'live_count': len(files),
+    }
+
+
+def cmd_capture_footprint(args: argparse.Namespace) -> dict:
+    """Persist the realized plan footprint into references.json — deterministically.
+
+    ``compute-footprint`` derives the live footprint from the worktree but never
+    records it. That is the read-time-from-a-mutable-substrate defect the plan
+    (R3) exists to close: once ``default:branch-cleanup`` removes the worktree the
+    diff was computed against, an ARCHIVED-plan resolver has nothing live to read,
+    and for a plan created after the change-ledger was removed the legacy
+    ``references.modified_files`` key is absent too — so the archived footprint
+    resolves to UNRESOLVED permanently.
+
+    This verb is the **capture-while-true** side effect: it computes the identical
+    live footprint and WRITES it under ``references.realized_footprint`` while the
+    worktree still exists and the diff is still accurate. A later resolver prefers
+    that recorded set over any re-derivation. ``default:branch-cleanup`` calls this
+    once, before it removes the worktree.
+
+    Idempotent: re-running overwrites the key with the current worktree state. The
+    write reuses ``compute_plan_branch_diff`` through :func:`cmd_compute_footprint`,
+    so the recorded set is byte-identical to what ``compute-footprint`` would
+    return at the same instant — there is no second footprint definition to drift.
+    """
+    computed = cmd_compute_footprint(args)
+    if computed.get('status') != 'success':
+        # Propagate the compute error verbatim (worktree missing, not-a-git-worktree,
+        # references-not-found, git-error) — the caller records nothing on failure and
+        # the resolver falls to its next tier, never a fabricated empty capture.
+        return computed
+
+    files = computed['files']
+    refs = read_references(args.plan_id)
+    refs['realized_footprint'] = files
+    write_references(args.plan_id, refs)
+
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'base_ref': computed['base_ref'],
+        'files': files,
+        'realized_footprint_count': len(files),
+        'persisted': True,
     }

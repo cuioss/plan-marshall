@@ -49,6 +49,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from _footprint_resolver import footprint_resolved, resolve_footprint
 from file_ops import base_path, output_toon, safe_main
 from input_validation import (
     add_plan_id_arg,
@@ -256,9 +257,10 @@ def lane_resolution_view(decision_lines: list[str]) -> list[str]:
 def load_diff_files(diff_file: str | None) -> list[str]:
     """Return the realized footprint path list from a pre-saved diff file.
 
-    ``--diff-file`` carries one path per line (the end-of-execute diff). Absent
-    or unreadable → an empty footprint (the predicate re-evaluation degrades to
-    "no realized footprint", which is a skip, not a false positive).
+    ``--diff-file`` carries one path per line (the end-of-execute diff). Absent or
+    unreadable → an empty list here; the caller (``cmd_run``) then recovers the
+    footprint through the shared whole-chain resolver, and only a STILL-unresolvable
+    footprint degrades the predicate re-evaluation to a skip (never a false positive).
     """
     if not diff_file:
         return []
@@ -338,7 +340,7 @@ def evaluate_mis_prunes(
     ===================================================  ==============
     Absent step's state                                  Verdict
     ===================================================  ==============
-    No realized footprint                                ``skip``
+    Footprint unresolvable                               ``skip``
     Named by a recorded non-predicate cause              ``skip``
     Log unreadable / absent (``log_readable == False``)  ``inconclusive``
     Readable log names no cause, predicate now false     ``fail``
@@ -378,7 +380,7 @@ def evaluate_mis_prunes(
                 'status': 'skip',
                 'predicate': predicate,
                 'removal_cause': _CAUSE_NOT_EVALUATED,
-                'detail': 'no realized footprint',
+                'detail': 'footprint unresolvable',
             })
             continue
         recorded_cause = removal_causes.get(step)
@@ -462,8 +464,29 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     metadata = load_status_metadata(plan_dir)
     decision_lines, log_readable = load_decision_log_lines(plan_dir)
     lane_decision_entries = lane_resolution_view(decision_lines)
+
+    # Footprint resolution: prefer an explicitly-supplied ``--diff-file`` (the live
+    # end-of-execute diff the retrospective saves), and otherwise recover through the
+    # SHARED whole-chain resolver so a POST-MERGE run — no diff-file, worktree gone —
+    # re-evaluates the prune predicates against the realized footprint instead of
+    # skipping. This is the D4 "one footprint resolution, two consumers": the recall
+    # check (check-artifact-consistency) and this mis-prune check recover together off
+    # the same resolution. An unresolvable footprint yields have_footprint=False → the
+    # mis-prune checks SKIP (the negative control), never a fabricated fail.
     footprint = load_diff_files(args.diff_file)
-    have_footprint = bool(footprint)
+    if footprint:
+        footprint_source = 'diff_file'
+        have_footprint = True
+    else:
+        resolved = resolve_footprint(plan_dir, args.plan_id if args.mode == 'live' else None)
+        if footprint_resolved(resolved):
+            footprint = sorted(resolved)
+            footprint_source = 'resolved'
+            have_footprint = True
+        else:
+            footprint = []
+            footprint_source = 'unresolved'
+            have_footprint = False
 
     mis_prune_checks = evaluate_mis_prunes(
         manifest, footprint, have_footprint, decision_lines, log_readable
@@ -486,6 +509,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'posture': metadata.get('execution_profile'),
         'planning_lane': metadata.get('planning_lane'),
         # Deterministic predicate re-evaluation.
+        'footprint_source': footprint_source,
         'mis_prune_checks': mis_prune_checks,
         'cost_preview': cost_preview,
         # Forensic facts for the LLM judgment.
@@ -521,7 +545,11 @@ def main() -> int:
     run_parser.add_argument(
         '--diff-file',
         default=None,
-        help='Pre-saved realized footprint (one path per line). Drives the prune-predicate re-evaluation.',
+        help=(
+            'Pre-saved realized footprint (one path per line). When absent, the footprint '
+            'is recovered through the shared resolver (realized-footprint capture -> '
+            'merge-commit -> legacy key). Drives the prune-predicate re-evaluation.'
+        ),
     )
     run_parser.set_defaults(func=cmd_run)
 

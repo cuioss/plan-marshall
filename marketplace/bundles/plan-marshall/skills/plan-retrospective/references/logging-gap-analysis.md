@@ -51,7 +51,7 @@ findings[*]{severity,message}:
 
 - The ratio `observed / expected_min < 0.5` is a `warning`.
 - Zero `DECISION` entries in phases that made visible choices (outline packaging, plan task ordering) is always a `warning`.
-- Zero `ARTIFACT` entries is an `error` — artifacts were produced but not announced. `phase-5-execute` is expected to emit one `[ARTIFACT]` entry per file operation at task completion, so the canonical check is `counts.artifact_entries > 0` whenever the plan footprint is non-empty (derived live from the worktree, falling back to the legacy `references.modified_files` key only for older archived plans); this is enforced programmatically by the retrospective pipeline rather than being treated as a known offender.
+- Zero `ARTIFACT` entries is an `error` — artifacts were produced but not announced. `phase-5-execute` is expected to emit one `[ARTIFACT]` entry per file operation at task completion, so the canonical check is `counts.artifact_entries > 0` whenever the plan footprint is non-empty (resolved through the shared footprint resolver: live worktree diff, else the realized-footprint capture / merge-commit / legacy key); this is enforced programmatically by the retrospective pipeline rather than being treated as a known offender.
 - `ERROR` entries are expected to be zero; count them but do not flag count itself — the errors surface via log-analysis / script-failure-analysis.
 
 ### Phase-5 invariants (precondition-guarded)
