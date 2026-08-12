@@ -1,6 +1,6 @@
 # Run report — 230-finalize-retriggers-ci-after-it-has-already-gone-green (run 01)
 
-**Date (UTC):** 2026-08-12    **Branch:** `claude/finalize-retriggers-ci-green-agofze` (harness-assigned; kept as-is per lane)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-12    **Branch:** `claude/finalize-retriggers-ci-green-agofze` (harness-assigned; kept as-is per lane)    **PR:** [#1194](https://github.com/cuioss/plan-marshall/pull/1194)    **Outcome:** completed (landing delegated to merge queue)
 
 ## Skills loaded
 
@@ -228,7 +228,12 @@ stale claims. Three findings; all dispositioned.
 
 ### CI / PR review
 
-_recorded during the review cycle below._
+- **CI**: `verify / conclusion` = **success** on head `22853c4` (the required check); `verify / verify`
+  correctly **skipped** (docs-only footprint); `verify / gate`, `dependency-review`, `generate-check`,
+  `review / review` all success. `mergeable_state: clean`. No CI failures — nothing to triage.
+- **PR review**: `cuioss-review-bot` reported "no major issues" over the diff; `coderabbitai` and
+  `sourcery-ai` rate-limited. No actionable finding from any reviewer; no inline thread. Nothing to fix
+  or reply to.
 
 ## Reviewer participation
 
@@ -240,11 +245,15 @@ the PR keeps bot review (no `skip-bot-review`).
 
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
-| `cuioss-review-bot` | _pending review cycle_ | — |
-| `coderabbitai` | _pending review cycle_ | — |
-| `sourcery-ai` | _pending review cycle_ | — |
+| `cuioss-review-bot` | `reviewed` | Posted a review artifact over the diff — "PR Reviewer Guide 🔍 — No relevant tests / No security concerns identified / No major issues detected" (issue comment, head `22853c4`). |
+| `coderabbitai` | `rate-limited` | Published only a refusal notice: "Review limit reached … Next review available in: 45 minutes". Engaged, did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Published only a refusal notice (review body): "you have reached your weekly rate limit of 500000 diff characters". |
 
-Coverage and any Step 8 shortfall disclosure recorded after the review cycle, before arming merge.
+**Coverage: 1 of 3.** Step 8 shortfall disclosure **fired**: "Review coverage: 1 of 3 —
+`cuioss-review-bot` reviewed (no major issues); `coderabbitai` rate-limited (window reopens ~45 min);
+`sourcery-ai` rate-limited (weekly quota)." Per Step 8 condition 4 this is a disclosure, **not** a
+merge block — rate limits are routine and outside our control; conditions 1–3 are the only gates.
+No inline review threads; cuioss-review-bot's verdict is clean, so nothing was actionable to handle.
 
 ## Cost
 
@@ -259,11 +268,37 @@ Coverage and any Step 8 shortfall disclosure recorded after the review cycle, be
 
 ## Contract check (Step 9)
 
-_pending_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | ✅ Named above (`cloud-plan-lane`, `ref-code-quality`, `plugin-script-architecture`, read by bundle path). |
+| 2 Branch | ✅ Harness-assigned `claude/finalize-retriggers-ci-green-agofze` kept as-is; on `origin`. |
+| 3 Plan directory | ✅ `…/230-…/plan.md` exists via `git mv`; opens with the first-instruction block (present, unmodified). |
+| 4 Implement | ✅ Deliverables addressed; every commit carries the `Co-Authored-By: Claude` trailer and no "Generated with" footer. |
+| 4 Per-commit gate | ✅ No commit touched `*.py`, so the quality gate was not required on any commit (correct per the `*.py` predicate). |
+| 4 Pushed | ✅ Every commit pushed; final push below leaves no `ahead`. |
+| 5 Build gate | ✅ `git diff … -- '*.py'` empty → no buildable footprint, local build skipped; merge queue verifies. Recorded. |
+| 6 Verification sub-agent | ✅ Dispatched (read-only); found one MEDIUM overclaim → fixed → re-dispatched → confirmed clean. Findings + dispositions recorded. |
+| 7 PR cycle | ✅ PR #1194; all three comment surfaces read (issue / review-summary / inline threads); every comment dispositioned (none actionable). |
+| 8 Merge gate | Conditions 1–3 met (required contexts green on `22853c4`; comments handled; report finalized as last pre-merge commit); shortfall disclosed (1-of-3); auto-merge armed. Landing delegated to the merge queue (this session cannot block-until-landed). |
+| 8 Bridge | ✅ No status/bookkeeping write under `doc/plans/` outside this plan's own directory. `source-edit-pushability.md` is a declared deliverable (the D1 verdict), not a `doc/plans/` record. |
+| 9 This check | ✅ This table. |
+| 9 What have we learned | ✅ Below. |
+
+GitHub access path: **GitHub MCP server**. Branch form: **harness-assigned** `claude/*`. A
+`/sync-plugin-cache` is **not owed** (machine-local build step; a cloud run neither performs nor
+records it).
 
 ## What have we learned (Step 9)
 
-_pending_
+**None proposed** — the lane's steps handled a plan whose central premise (D3) was **refuted** and whose
+gate (D0) was **unmeasurable** from a cloud clone, exactly as designed: the verify-first sub-agent
+caught a factual overclaim in my own deliverable (ironically, the same "deferred-mechanism-as-present-
+fact" defect class the plan targets), the reachable-operator escalation resolved the D2 re-scope, and
+the honest report distinguished "could not look" from "looked and found nothing." No step's artifact
+could not be produced as written, no documented command failed in this environment, and no step proved
+unnecessary. There is no run-produced evidence of a contract gap, so proposing a speculative change
+would violate the same discipline this plan enforces. Recorded as examined-and-nothing-found, not
+not-examined.
 
 ## Residue
 
