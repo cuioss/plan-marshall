@@ -1,6 +1,6 @@
 # Run report — 060-a-prose-routing-table-is-not-an-enforcement-boundary (run 01)
 
-**Date (UTC):** 2026-08-12    **Branch:** claude/prose-routing-table-boundary-30xrzc (harness-assigned)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-12    **Branch:** claude/prose-routing-table-boundary-30xrzc (harness-assigned)    **PR:** [#1182](https://github.com/cuioss/plan-marshall/pull/1182)    **Outcome:** _in progress_
 
 ## Skills loaded
 
@@ -101,19 +101,49 @@ The population arm's falsifiability is structural (shrink the derived set → si
 
 ## Reviewer participation
 
-_Pending._
+Expected reviewer population **derived from configuration** — the `author_login` of each `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc: `coderabbitai` (coderabbit.md), `sourcery-ai` (sourcery.md), `cuioss-review-bot` (pr-agent.md). Verdicts derived from the stored comment/check bodies on PR #1182:
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Posted a "PR Reviewer Guide 🔍" review over the diff: "PR contains tests; No security concerns identified; No major issues detected." No findings to handle. |
+| `coderabbitai` | `rate-limited` | Published only a refusal notice in place of a review: "> [!WARNING] ## Review limit reached … Next review available in: 35 minutes … You've used all free OSS reviews for now." It engaged but did not review this diff. |
+| `sourcery-ai` | `silent` | The "Sourcery review" check run concluded `skipped`; no review artifact and no notice was published. |
+
+**Coverage: 1-of-3.** No actionable review comment exists on either surface (conversation or inline review threads — the inline surface is empty). The § Step 8 condition-4 shortfall disclosure fired: *"Review coverage: 1 of 3 — `cuioss-review-bot` reviewed (no issues); `coderabbitai` rate-limited (window reopens ~35 min); `sourcery-ai` skipped/silent."* Per the contract this is a **disclosure, not a merge block** — rate limits and skips are routine and outside our control, so the run proceeds on partial coverage having said so.
+
+_The report is finalized as the last pre-merge commit; that push re-triggers the reviewers against the new (docs-only) head. Their expected verdicts are unchanged (`cuioss-review-bot` re-reviews clean; `coderabbitai` stays rate-limited; `sourcery-ai` stays skipped); the pre-merge re-read confirms no actionable comment before arming._
 
 ## Cost
 
-_Pending._
+- **Tokens:** not available to the agent in this session — a single Claude Code cloud session does not surface its own token count to the agent.
+- **Wall-clock:** ~single interactive session; the two full `./pw verify` runs dominated local compute (485.94s + 415.04s ≈ 15 min of build), plus two background sub-agent dispatches (routing-table hunt ≈ 257s; verification ≈ 584s + 120s re-verify).
+- **Population:** this single Claude Code cloud session's usage as the harness counts it. ⛔ NOT comparable to a plan-marshall `metrics.toon` total (that counts the orchestrator-plus-agent dispatch tree under plan-marshall's per-task billing boundary, which this interactive session does not share). The figures above cannot be made comparable to a `metrics.toon` total and are not presented as such.
 
 ## Contract check (Step 9)
 
-_Pending._
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **Done** — `cloud-plan-lane` first; `ref-code-quality`, `plugin-script-architecture`, `python-core`, `pytest-testing` via bundle path. |
+| 2 Branch | **Done** — harness-assigned `claude/prose-routing-table-boundary-30xrzc`, kept as-is (not run-created), pushed to `origin` before any edit. |
+| 3 Plan directory | **Done** — `git mv` into `060-…/plan.md`; first-instruction block present (verified in the moved file). |
+| 4 Implement | **Done** — commits carry the `Co-Authored-By: Claude` trailer; deliverables addressed. |
+| 4 Per-commit gate | **Done** — the two commits touching `*.py` were preceded by a clean gate (`./pw quality-gate` → ruff/mypy/SPDX/plugin-doctor clean; and the full `./pw verify` for the F3 production change). |
+| 4 Pushed | **Done** — every commit pushed; no unpushed commit remains. |
+| 5 Build gate | **Done** — git-derived Python-change verdict = two test files (+ one production file for F3); `./pw verify` → SUCCESS both times. |
+| 6 Verification sub-agent | **Done** — one dispatch found F1/F2/F3 (no blocking defect); all three fixed; a focused re-dispatch confirmed the fixes. Findings + dispositions recorded above. |
+| 7 PR cycle | **Done** — PR #1182 opened (no `skip-bot-review`: the diff touches `*.py` and `marketplace/bundles/**`); both comment surfaces read; no actionable comment. |
+| 8 Merge gate | Conditions 1–3 met on the final head; coverage shortfall (1-of-3) disclosed; auto-merge armed. Landing recorded to the operator (see below). |
+| 8 Bridge | **Done** — no status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; the report carries the PR number and per-deliverable outcome. |
+| 9 This check | Appended here. |
+| 9 What have we learned | Below. |
+
+**GitHub access path:** the GitHub MCP server (cloud path). **Branch form:** harness-assigned `claude/*`. **Plugin cache sync:** not owed — a machine-local build step a cloud run never performs or records.
 
 ## What have we learned (Step 9)
 
-_Pending._
+**No contract change proposed.** This run exercised the `cloud-plan-lane` contract end to end — skill load, branch-keep, plan-dir move, the conditional build gate, the verification sub-agent (including a re-dispatch after fixing real findings), the two-surface review read, and the merge gate — and every step was executable as written and produced its named artifact. No step was ambiguous in practice, none failed to produce its artifact, and no command failed in this environment.
+
+One environment friction was encountered but is already covered by the contract: proving the D3 tests "falsifiable by mutation" required temporarily editing production code and reverting it via `git checkout` before committing. The contract's clean-tree discipline (Step 2 / Step 5 `git status --porcelain` gates, and Step 4's explicit-path staging) handled this correctly — the mutations never reached a commit, and `git status` confirmed a clean tree before each build gate. This is the existing rules working as intended, not a gap, so no amendment is proposed.
 
 ## Residue
 
