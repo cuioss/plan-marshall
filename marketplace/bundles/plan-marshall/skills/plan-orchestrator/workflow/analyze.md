@@ -121,9 +121,9 @@ The drain semantics — enumeration order, the report-never-skip rule for a malf
 
    `queue --set-row` is THE stamping mechanism. The whole-array `manage-status update-field --field plans` rewrite is reserved for `decompose`'s bulk queue seed (see [`decompose.md`](decompose.md)) and MUST NOT be used to stamp a landing — re-serializing every row to change one cell is the lost-update path `--set-row` exists to remove. Editing `status.json` by direct file access is prohibited outright (see the skill's Enforcement block).
 
-4. Reconcile `epic.md` from status.json: update the Ordered Queue row, retire queue items the landing folded in (with a decision naming what absorbed them), move resolved Open Defects out, retire satisfied Watches, and add new defects/watches the landing surfaced.
+4. Reconcile `epic.md` from status.json: the Ordered Queue table is a GENERATED block regenerated in Step 6 (⛔ **never hand-edit the rows between its markers**), so here you move the *narrative* sections the generator does not own — retire queue items the landing folded in (with a decision naming what absorbed them), move resolved Open Defects out, retire satisfied Watches, add new defects/watches the landing surfaced, and record any per-row sequencing caveat in the `### Queue annotations` zone.
 5. Check parallelization consequences: when the landing revealed that two supposedly disjoint plans collided (rebase conflicts, re-verify signals), record the overlap so the next `next`-verb pairing decision uses it.
-6. Regenerate the START-HERE block:
+6. Regenerate both derivable blocks — the START-HERE block AND the Ordered Queue table — and paste each verbatim between its own markers (`resume-summary` and `ordered-queue`):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resume-summary \
@@ -136,7 +136,7 @@ The drain semantics — enumeration order, the report-never-skip rule for a malf
 
 1. **Classify before writing anything.** Decide whether the observation is answered in full by a ledger entry (**absorb**) or warrants new work (**escalate**) — the branch is chosen before any write.
 2. **Act on exactly one arm.** **Absorb** → record the observation as a Watch or Open Defect entry in `epic.md` — NO ship semantics, no landing report, no queue-status transition for the observed plan — and stop there: its `drained[]` disposition is `observed`, and it does NOT reach Step 5b. The absorb arm owes the SAME two-sided auditable record Step 5b requires (see § Step 5b): the `epic.md` entry plus a `manage-logging decision --store orchestrator` line naming the message filename and the `observed` disposition. An absorbed message is archived on consume like any other, so without that line it would leave the drain with no disposition record. **Escalate** → record nothing here; the observation goes to Step 5b and takes exactly one of the four dispositions there (a **fold** into an existing staged `plans/PLAN-NN-{plan_slug}.md` spec is `folded`, a **spawn** of a new spec plus its queue entry via the `decompose.md` Step 5 queue-write shape is `staged`). Anything larger than the small-ops carve-out becomes a plan, never inline work.
-3. Regenerate the START-HERE block only when the queue was touched (the Step 4 item 6 invocation).
+3. Regenerate both derivable blocks (START-HERE and the Ordered Queue table) when the queue was touched — the Step 4 item 6 invocation emits both.
 4. **Conclude with the proactive emit** — the same standing output as Step 4 item 7, under the same `orchestrate.md` selection rules AND the same [`auto_emit` gate](orchestrate.md): emit the queue-filling block, or the explicit "nothing emittable, blocked on {X}" statement with a reason per unemittable candidate. `auto_emit == true` auto-records the emitted block's `launched` transitions; `auto_emit == false` (default) leaves them operator-confirmed; neither records started/`running` (emit≠running).
 
 ### Step 5b: Candidate-lesson message — per-item disposition

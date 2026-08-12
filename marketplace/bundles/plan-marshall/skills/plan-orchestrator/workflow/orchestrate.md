@@ -36,7 +36,7 @@ The on-query epic discovery / store scan enumerates BOTH `.plan/local/orchestrat
 
 ### Step 3 (verb = `status`): Report
 
-Render the queue report from the machine authority: per-plan status (staged / launched / shipped / parked), workstream grouping, open defects and watches from `epic.md`, and the `resume_anchor`. An archived epic reports identically — its tree is resolved from `archived-orchestrators/` and its `status.json` is the same machine authority. When the report reveals stale prose in `epic.md` (a queue row disagreeing with `status.json`), reconcile status.json → epic.md and regenerate the START-HERE block:
+Render the queue report from the machine authority: per-plan status (staged / launched / shipped / parked), workstream grouping, open defects and watches from `epic.md`, and the `resume_anchor`. An archived epic reports identically — its tree is resolved from `archived-orchestrators/` and its `status.json` is the same machine authority. When the report reveals stale prose in `epic.md` (a queue row disagreeing with `status.json`), reconcile status.json → epic.md and regenerate both derivable blocks (START-HERE and the Ordered Queue table — the one invocation emits both):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resume-summary \
@@ -125,7 +125,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update
 
 Word the `resume_anchor` to reflect the Step 5 `auto_emit` branch: under `auto_emit == true` the `launched` transitions are already recorded, so the anchor names the auto-emitted `launched` block awaiting the operator-confirmed start (`launched → running`); under `auto_emit == false` (default) it names the emitted block awaiting operator-confirmed launch. Neither wording ever asserts a `running`/started state the orchestrator did not observe the operator confirm — the emit≠running invariant holds here too.
 
-Regenerate the START-HERE block (Step 3 invocation) after any queue-touching change.
+Regenerate both derivable blocks — START-HERE and the Ordered Queue table (the single `resume-summary` invocation emits both) — after any queue-touching change, and paste each between its own markers.
 
 ## Output
 

@@ -54,7 +54,7 @@ form is reserved for `decompose`'s bulk queue seed.}
 - [ ] epic.md queue reconciled from status.json
 - [ ] {defect/watch opened or retired}
 - [ ] resume_anchor updated — `manage-status update-field --field resume_anchor --store orchestrator`
-- [ ] START-HERE block regenerated — `orchestrator resume-summary` (carries no `(!) missing:` marker once `pr` and `landing` above are stamped — the marker checks those two result links, not `plan_marshall_plan_id`)
+- [ ] START-HERE and Ordered Queue blocks regenerated — `orchestrator resume-summary` (one invocation emits both; the START-HERE block carries no `(!) missing:` marker once `pr` and `landing` above are stamped — the marker checks those two result links, not `plan_marshall_plan_id`)
 
 ## Follow-Ups
 

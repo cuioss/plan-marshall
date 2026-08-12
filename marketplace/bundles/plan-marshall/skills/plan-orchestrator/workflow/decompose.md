@@ -67,14 +67,16 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update
   --plan-id {slug} --field phase --value orchestrating --store orchestrator
 ```
 
-### Step 6: Reconcile epic.md and regenerate START HERE
+### Step 6: Reconcile epic.md — regenerate both derivable blocks
 
-Mirror the queue into `epic.md`'s Ordered Queue table (reconciliation direction is always status.json → epic.md), including each plan's expected surface and sequencing notes. Then regenerate the START-HERE block and paste it verbatim between the generated-block markers:
+The START-HERE block AND the Ordered Queue table are both GENERATED blocks (reconciliation direction is always status.json → epic.md). ⛔ **Do not hand-write the Ordered Queue table** — its derivable columns (`# | Plan | Workstream | Status | Surface`) are regenerated, and each plan's expected surface is derived from its spec's `## Expected Surface`. Regenerate both blocks and paste each verbatim between its own markers (`resume-summary` and `ordered-queue`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resume-summary \
   --slug {slug}
 ```
+
+Sequencing and disjointness notes the generator cannot derive go in the `### Queue annotations` zone below the Ordered Queue markers, keyed by plan id — never in the table between the markers.
 
 ### Step 7: Log decisions and set the resume anchor
 

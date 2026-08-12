@@ -75,15 +75,32 @@ Regroup the corpus by **component first and task second**, and record each move 
 
 A5 is inline-only in full: it is the judgement-heaviest class and the only one that is hard to reverse.
 
-### Step 8 (Phase B): Call the ledger-compaction stage
+### Step 8 (Phase B): Compact the ledger
 
-Call the compaction stage; do **not** re-implement it. When the stage has not landed, report `ledger_compaction: not_available` and state in the same field's reason that no spec yet owns the compaction surface — do **not** invent an owning id, and do not name one until a successor spec claims the surface the way `PLAN-TRUTH-059` claims `registry_parity`. Then continue — the corpus phases already ran and their result is not withheld because a later stage is absent. Two implementations of ledger compaction is a worse outcome than no verb at all (see the subject boundary in [§ Cleanup Contract](../../persona-plan-orchestrator/standards/orchestration-model.md#cleanup-contract)).
+The ledger-compaction stage. Its binding contract — the derivable-versus-narrative discriminator, the GENERATED-marker mechanism, the annotation-zone rule, the `## Decisions` authority, the `settled.md` relocation target, idempotence, and the closed-epic refusal — is owned by [§ Ledger-Compaction Stage](../../persona-plan-orchestrator/standards/orchestration-model.md#ledger-compaction-stage); the deterministic surface (arguments, error codes, report shape) is [`plan-orchestrator/SKILL.md`](../SKILL.md) § Canonical invocations → `compact`. The stage has two halves along the derivable-versus-narrative split, and the split IS the dispatch boundary:
 
-### Step 9 (Phase C): Archive — retire consumed messages, relocate settled narrative
+**Settled-narrative relocation (judgement — inline).** Identify each `epic.md` section whose subject is **closed** — a shipped plan's residue, a resolved defect — and bulky enough to relocate. A section is settled only when its subject is closed, ⛔ **never merely because it is old**: a retraction, a refutation, and a do-not-re-derive note are the anti-rework record and stay reachable, relocated but never dropped. ⛔ **Do not apply the settled-versus-live call silently on a first run** — present the proposed relocations to the operator for confirmation; when no operator is reachable, relocate nothing this pass and record that the judgement was deferred (a deferred relocation is safe; a wrong one is not). For each confirmed section, move its body **verbatim** into `settled.md` (a live-epic sibling of `history.md`, created under the [direct-file-write carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#carve-outs)) under a `## {Heading}`, and leave a pointer at the origin naming that heading in double quotes so the reachability check resolves it:
 
-⛔ **Do not drain the inbox. This phase relocates settled narrative and reports the refusal; it retires no message.** The step's only executable act today is emitting `archive_drain: refused` with its reason into the report.
+```text
+> ↪ Relocated to `settled.md` § "{Heading}" — {one-line reason the subject is settled}
+```
 
-⛔ **This phase is NOT the `archive` verb.** [`archive.md`](archive.md) relocates a *closed epic tree*; this phase would retire consumed inbox messages and relocates settled narrative inside a live epic. This phase MUST NOT call the `archive` verb.
+This is inline-only: it is the judgement-heaviest and least-reversible act here and it writes the ledger, so it fails the [Dispatch Decision Rule](../../persona-plan-orchestrator/standards/orchestration-model.md#dispatch-decision-rule)'s write-freedom test. No sub-step of this phase is dispatchable.
+
+**Derivable regeneration and invariant verification (deterministic — the script).** Call the compaction script; do **not** re-implement it (two implementations of ledger compaction is a worse outcome than no verb at all). It regenerates the START-HERE resume summary and the Ordered Queue table in place, leaves every byte outside the markers untouched, verifies the invariants, and reports:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator compact \
+  --slug {slug}
+```
+
+Report `ledger_compaction: compacted`, and fold the stage's `regenerated[]`, `invariants[]`, and `abstained[]` into this report — every relocation the judgement half applied is named in `applied[]` with its source and destination, per the apply-policy. A `violated` invariant is acted on here, not swallowed (a `relocated_pointer_reachable: violated` means a pointer names a heading `settled.md` does not carry — fix the pointer or the heading and re-run); an `indeterminate` one is an unobservable check, never a failure. The stage refuses a closed epic (`refused_closed`) — but `cleanup` never reaches Phase B on a closed epic, because compaction is a live-epic operation.
+
+### Step 9 (Phase C): Archive — retire consumed messages
+
+⛔ **Do not drain the inbox. This phase reports the refusal; it retires no message.** The step's only executable act today is emitting `archive_drain: refused` with its reason into the report. (Settled-narrative relocation is **not** here — it is the compaction stage's, run in Phase B above.)
+
+⛔ **This phase is NOT the `archive` verb.** [`archive.md`](archive.md) relocates a *closed epic tree*; this phase would retire consumed inbox messages inside a live epic. This phase MUST NOT call the `archive` verb.
 
 **The refusal branch is the permanent documented default.** Three facts, stated plainly rather than as a hypothetical:
 
@@ -148,7 +165,7 @@ applied[A]{spec,finding_class,source,destination}:
   PLAN-07-beta.md,duplication,PLAN-07-beta.md,PLAN-03-alpha.md
 declined[D]{spec,finding_class,reason}:
   PLAN-09-gamma.md,redistribution,"row is running — never re-scoped mid-execution"
-ledger_compaction: not_available | compacted
+ledger_compaction: compacted
 archive_drain: refused
 archive_drain_reason: "no quiescence signal exists — PLAN-TRUTH-032 is superseded"
 restart_verdict: ready | not_ready | indeterminate

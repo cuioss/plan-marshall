@@ -72,7 +72,7 @@ Record a per-lesson disposition for EVERY scanned lesson in the epic ledger (`ep
 | `standalone` | No cluster match; becomes its own single-lesson queue item |
 | `stale` | Premise no longer holds (surface removed, behavior redesigned) — no queue item; candidate for corpus cleanup |
 
-### Step 4: Persist the queue and regenerate START HERE
+### Step 4: Persist the queue and regenerate the derivable blocks
 
 Write the clustered queue into `status.json` as the `plans` list (one entry per cluster/standalone queue item, `status: staged`), via the orchestrator-store field setter:
 
@@ -83,7 +83,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update
 
 The `{plans_json_array}` placeholder is a complete JSON array that MUST be passed as ONE shell-safe `--value` argument — single-quote the whole payload so the shell never word-splits or glob-expands the brackets, commas, and quotes. Never interpolate the raw JSON unquoted onto the command line.
 
-Mirror the queue into `epic.md`'s Ordered Queue table (reconciliation direction is always status.json → epic.md), then regenerate the START-HERE block and paste it verbatim between the generated-block markers:
+The START-HERE block and the Ordered Queue table are both GENERATED blocks (reconciliation direction is always status.json → epic.md); ⛔ **do not hand-write the Ordered Queue table**. Regenerate both blocks and paste each verbatim between its own markers (`resume-summary` and `ordered-queue`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resume-summary \

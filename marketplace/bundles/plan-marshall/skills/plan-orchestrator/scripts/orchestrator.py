@@ -15,16 +15,29 @@ operation groups against the main-anchored orchestrator store
   or set one result field (:data:`PLAN_ROW_FIELDS`) of one plan row. Both
   write forms mutate the located row inside the shared ``rmw_json``
   critical section, so no unsynchronised whole-array rewrite remains.
-- ``resume-summary --slug S`` — generate the "START HERE" block from
-  ``status.json`` (the machine authority) for the LLM to paste into
-  ``epic.md`` between the generated-block markers. Two detectors run on the
-  RENDERED block and ride the same payload: ``count_divergences[]`` (a claimed
-  count that does not match its derivation) and ``contradictions[]`` (two
-  mutually-exclusive claims inside one rendering). Both report and neither
-  rewrites.
+- ``resume-summary --slug S`` — generate the two derivable ``epic.md`` blocks
+  from ``status.json`` (the machine authority) and the filesystem for the LLM to
+  paste between their generated-block markers: the ``summary`` (START-HERE) block
+  and the ``ordered_queue`` (Ordered Queue table) block. This is the lightweight
+  render path a reconciling verb calls after a queue change; ``compact`` rewrites
+  the SAME two blocks in place at ``cleanup``, sharing these renderers. Two
+  detectors run on the RENDERED START-HERE block and ride the same payload:
+  ``count_divergences[]`` (a claimed count that does not match its derivation)
+  and ``contradictions[]`` (two mutually-exclusive claims inside one rendering).
+  Both report and neither rewrites.
 - ``archive --slug S`` — relocate a *closed* epic tree to
   ``.plan/local/archived-orchestrators/{slug}/`` (a mechanical, post-close
   directory move that requires no judgement; refuses a non-closed epic).
+- ``compact --slug S`` — the ledger-compaction stage ``workflow/cleanup.md``
+  Phase B calls: regenerate every DERIVABLE surface of ``epic.md`` in place (the
+  START-HERE resume summary and the Ordered Queue table) from ``status.json``
+  and the staged specs, leaving every byte OUTSIDE the ``BEGIN/END GENERATED``
+  markers untouched, then verify the invariants (bidirectional queue
+  reconciliation, no terminal row in the live queue, relocation-pointer
+  reachability) and report every mutation and every abstention. Idempotent — a
+  second run finds every block ``unchanged`` and writes nothing. Refuses a
+  closed epic (``refused_closed``): compaction is a live-epic operation only.
+  The narrative-versus-settled RELOCATION judgement is NOT here; it stays LLM.
 - ``corpus {enumerate,cross-check,verdicts,set-verdict}`` — the epic's staged
   spec corpus: reconcile the ``status.json`` ``plans[]`` queue against the
   ``plans/PLAN-*.md`` spec files in BOTH directions, cross-check those specs
@@ -227,6 +240,56 @@ NOT_AVAILABLE = 'not_available'
 #: ``registry_parity`` arm's evidence so the report points at the owner rather
 #: than leaving a silent gap. This component observes that surface not at all.
 REGISTRY_PARITY_OWNER = 'PLAN-TRUTH-059'
+
+# --- compact stage (ledger compaction) -------------------------------------
+#
+# The compact stage regenerates every DERIVABLE surface of ``epic.md`` in place
+# — the content between a ``BEGIN/END GENERATED`` marker pair, and nothing else.
+# Everything outside the markers is narrative and is left byte-identical, which
+# is what makes "a retraction survives a pass verbatim" a structural property
+# rather than a test coincidence. The narrative-versus-settled RELOCATION
+# judgement is NOT here — it stays with the orchestrator (``workflow/cleanup.md``
+# Step 8); this stage regenerates the derivable, verifies the invariants, reports.
+
+FILE_EPIC = 'epic.md'
+FILE_SETTLED = 'settled.md'
+
+#: The phase at which the epic is frozen. The compact stage MUTATES ``epic.md``,
+#: so it refuses a closed epic — that tree is the frozen audit record ``close``
+#: already sealed, and compaction is a live-epic operation only.
+CLOSED_PHASE = 'closed'
+
+#: Plan statuses whose row belongs in a landing record, not the LIVE Ordered
+#: Queue. Shares :data:`TERMINAL_PLAN_STATUSES`' membership by construction so
+#: the two never drift; named apart to document the queue-exclusion intent.
+LIVE_QUEUE_EXCLUDED_STATUSES = TERMINAL_PLAN_STATUSES
+
+#: The two GENERATED marker pairs the compact stage regenerates, each keyed by
+#: the block name that rides in the marker comment. Order is the emission order
+#: in ``templates/epic.md``. A block whose markers are ABSENT from a given
+#: epic.md is reported as ``markers_absent`` and skipped — never fabricated,
+#: because inserting markers into a hand-authored document is a structural edit
+#: the stage has no mandate to make.
+GENERATED_BLOCKS = ('resume-summary', 'ordered-queue')
+
+def _begin_marker(name: str) -> str:
+    return f'<!-- BEGIN GENERATED: {name} -->'
+
+def _end_marker(name: str) -> str:
+    return f'<!-- END GENERATED: {name} -->'
+
+#: A settled-narrative relocation pointer left at a section's origin in
+#: ``epic.md``. It names the destination heading in ``settled.md`` in double
+#: quotes, so the compact stage can verify the pointer RESOLVES — a reader
+#: following the old path must land on the content, not on absence. The
+#: relocation itself is the orchestrator's judgement act; this regex is only the
+#: reachability check's parser.
+_RELOCATION_POINTER_RE = re.compile(r'settled\.md[^"\n]*§\s*"(?P<heading>[^"]+)"')
+
+#: Cell separator for a rendered Ordered Queue row's Surface list. A markdown
+#: table cell cannot carry a bare pipe, so the joiner is a semicolon and any
+#: pipe inside a path is escaped by :func:`_queue_cell` before it is emitted.
+_SURFACE_JOIN = '; '
 
 # --- markdown line scanners -------------------------------------------------
 #
@@ -750,12 +813,18 @@ def _rendering_contradictions(summary: str) -> tuple[list[dict[str, Any]], int]:
 
 
 def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
-    """Generate the START-HERE block from status.json.
+    """Generate the two derivable ``epic.md`` blocks from status.json.
 
-    The returned ``summary`` field is the markdown block the LLM pastes
-    verbatim between the ``BEGIN/END GENERATED: resume-summary`` markers in
-    ``epic.md``. It is derived purely from ``status.json`` — the machine
-    authority — never from the prose already in ``epic.md``.
+    The returned ``summary`` field is the START-HERE block, and ``ordered_queue``
+    is the Ordered Queue table body — both markdown the LLM pastes verbatim
+    between their respective ``BEGIN/END GENERATED`` markers (``resume-summary``
+    and ``ordered-queue``). Both are derived purely from ``status.json`` — the
+    machine authority — and the filesystem, never from the prose already in
+    ``epic.md``. This is the LIGHTWEIGHT render path a reconciling verb
+    (``decompose``, ``analyze``, ``lessons``) calls after a queue change; the
+    ``compact`` stage rewrites the SAME two blocks in place at ``cleanup``, so a
+    routine reconciliation keeps both derivable surfaces truthful without a full
+    compaction, and the two paths share the renderers rather than duplicating them.
 
     The inbox counts are the one part NOT read out of ``status.json``: they are
     derived at render time from the epic's ``inbox/`` directory via
@@ -764,10 +833,10 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
     ride the payload as top-level fields so a caller can reconcile them against
     ``inbox list`` without parsing the markdown block.
 
-    Two detectors run on the RENDERED block and ride the same payload beside
-    ``summary``: ``count_divergences[]`` (a count the block claims that does not
-    match its derivation from ``status.json``) and ``contradictions[]`` (two
-    mutually-exclusive claims inside one rendering). Both REPORT and neither
+    Two detectors run on the RENDERED START-HERE block and ride the same payload
+    beside ``summary``: ``count_divergences[]`` (a count the block claims that
+    does not match its derivation from ``status.json``) and ``contradictions[]``
+    (two mutually-exclusive claims inside one rendering). Both REPORT and neither
     mutates — the block is never silently rewritten, which preserves the
     existing derivation-beside-the-prose rule. Each list rides with the
     population it was computed over, so a zero states which zero it is.
@@ -780,8 +849,10 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
         return _error(
             args.slug, 'file_not_found', 'status.json not found in orchestrator store'
         )
-    counts = inbox_counts(_epic_root(args.slug, allow_archived=True) / INBOX_SUBDIR)
+    root = _epic_root(args.slug, allow_archived=True)
+    counts = inbox_counts(root / INBOX_SUBDIR)
     summary = _build_summary(status_doc, counts)
+    ordered_queue = _build_ordered_queue(status_doc, root)
     divergences, count_claims_scanned = _count_divergences(summary, status_doc)
     contradictions, ratio_claims_scanned = _rendering_contradictions(summary)
     return {
@@ -799,6 +870,7 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
         'contradictions_count': len(contradictions),
         'contradictions': contradictions,
         'summary': summary,
+        'ordered_queue': ordered_queue,
     }
 
 
@@ -1801,10 +1873,9 @@ def _worktree_signal() -> dict[str, Any]:
 def _registry_parity_signal() -> dict[str, Any]:
     """The one arm whose surface this component does not own.
 
-    Reported in the same three-part shape the ledger-compaction stage uses for
-    an unowned surface — the field is present, its value is ``not_available``,
-    and it names the spec that owns the surface — so the report carries ONE
-    convention for "a real signal this component does not own" rather than two.
+    Reported in a three-part unowned-surface shape — the field is present, its
+    value is ``not_available``, and it names the spec that owns the surface — so
+    a real signal this component does not own is disclosed rather than dropped.
     Being outside :data:`READINESS_ORDER`, it never reaches the floor.
     """
     return _signal(
@@ -1851,6 +1922,371 @@ def cmd_cleanup_restart_check(args: argparse.Namespace) -> dict[str, Any]:
         'signals_total': len(signals),
         'signals_scored': len(scored),
         'signals': signals,
+    }
+
+
+def _queue_cell(value: str) -> str:
+    """Escape one value for a markdown table cell.
+
+    A bare pipe would open a spurious column and a newline would end the row, so
+    both are neutralised — the pipe escaped, the newline folded to a space. File
+    paths carry neither, so this only ever fires on a pathological surface entry.
+    """
+    return value.replace('|', r'\|').replace('\n', ' ').strip()
+
+
+def _row_surface(spec: Path | None) -> str:
+    """Resolve one row's Surface cell from its spec's ``## Expected Surface``.
+
+    The Surface column is derivable — from the FILESYSTEM, not ``status.json`` —
+    so it is regenerated like the rest. Each *which zero is this* case is a named
+    marker rather than an empty cell: a missing spec, an unreadable one, and a
+    spec with no declared surface are told apart, never collapsed to blank.
+    """
+    if spec is None:
+        return '(spec missing)'
+    text, _ = _read_spec(spec)
+    if text is None:
+        return '(spec unreadable)'
+    paths = sorted(_expected_surface_paths(text))
+    if not paths:
+        return '(no expected surface)'
+    return _queue_cell(_SURFACE_JOIN.join(paths))
+
+
+def _build_ordered_queue(status_doc: dict[str, Any], root: Path) -> str:
+    """Render the LIVE Ordered Queue table, derived from status.json + specs.
+
+    Only non-terminal rows appear: a shipped/landed row belongs in its landing
+    record, not the live queue (:data:`LIVE_QUEUE_EXCLUDED_STATUSES`). The five
+    columns are all derivable — order, plan id, workstream and status from
+    ``status.json``; the surface from each row's spec. Per-row narrative (a
+    sequencing caveat, a park reason) is NOT here — it lives in the annotation
+    zone outside the markers, which regeneration never touches.
+    """
+    header = '| # | Plan | Workstream | Status | Surface (expected) |'
+    divider = '|---|------|------------|--------|--------------------|'
+    lines = [header, divider]
+    rows = [row for row in status_doc.get('plans', []) if isinstance(row, dict)]
+    live = [row for row in rows if str(row.get('status', '')) not in LIVE_QUEUE_EXCLUDED_STATUSES]
+    if not live:
+        lines.append('| — | (empty) | — | — | — |')
+        return '\n'.join(lines)
+    specs = _spec_paths(root)
+    for position, row in enumerate(live, start=1):
+        plan_id = str(row.get('id', ''))
+        spec = next((path for path in specs if plan_id and _spec_matches_row(path, plan_id)), None)
+        plan_cell = _queue_cell(spec.stem if spec is not None else (plan_id or '?'))
+        workstream = _queue_cell(str(row.get('workstream', '') or '?'))
+        status_cell = _queue_cell(str(row.get('status', '') or '?'))
+        surface = _row_surface(spec)
+        lines.append(f'| {position} | {plan_cell} | {workstream} | {status_cell} | {surface} |')
+    return '\n'.join(lines)
+
+
+def _marker_indices(lines: list[str], name: str) -> tuple[int, int]:
+    """Return the ``(begin, end)`` line indices of one GENERATED block's markers.
+
+    ``(-1, -1)`` when either marker is absent, or the end precedes the begin. The
+    match is the WHOLE stripped line equalling the marker, so a marker quoted
+    mid-sentence is never mistaken for the real one.
+    """
+    begin = _begin_marker(name)
+    end = _end_marker(name)
+    begin_idx = next((index for index, line in enumerate(lines) if line.strip() == begin), -1)
+    if begin_idx < 0:
+        return (-1, -1)
+    end_idx = next(
+        (index for index in range(begin_idx + 1, len(lines)) if lines[index].strip() == end), -1
+    )
+    return (begin_idx, end_idx)
+
+
+def _replace_block(text: str, name: str, new_body: str) -> tuple[str, str, int, int]:
+    """Replace one GENERATED block's body in place, reporting the outcome.
+
+    Returns ``(new_text, outcome, lines_before, lines_after)``. ``outcome`` is
+    one of ``regenerated`` (the body changed), ``unchanged`` (byte-identical, so
+    a second run is a no-op), or ``markers_absent`` (the block's markers are not
+    in this epic.md — reported, never fabricated, because inserting markers into
+    a hand-authored document is a structural edit this stage has no mandate for).
+    Splitting on ``\\n`` keeps a trailing newline as a trailing element, so the
+    re-joined text is byte-identical when nothing changed.
+    """
+    lines = text.split('\n')
+    begin_idx, end_idx = _marker_indices(lines, name)
+    if begin_idx < 0 or end_idx < 0:
+        return text, 'markers_absent', 0, 0
+    before = lines[begin_idx + 1 : end_idx]
+    new_lines = new_body.split('\n')
+    if before == new_lines:
+        return text, 'unchanged', len(before), len(new_lines)
+    updated = lines[: begin_idx + 1] + new_lines + lines[end_idx:]
+    return '\n'.join(updated), 'regenerated', len(before), len(new_lines)
+
+
+def _invariant(name: str, verdict: str, evidence: str, population: str) -> dict[str, Any]:
+    """Build one compact-stage invariant row, in the restart-check signal shape.
+
+    ``verdict`` is ``ok`` | ``violated`` | ``indeterminate``. An unobservable
+    check resolves to ``indeterminate`` and never to ``violated`` — the same
+    *unobserved is not failed* rule the readiness signals hold.
+    """
+    return {'invariant': name, 'verdict': verdict, 'evidence': evidence, 'population': population}
+
+
+def _invariant_queue_spec(slug: str) -> dict[str, Any]:
+    """Bidirectional queue <-> spec reconciliation, consuming ``corpus enumerate``.
+
+    The check that BITES: a count match alone passes with a mismatched pair, so
+    both directions are asserted — no row without a spec AND no spec without a
+    row. An unreadable spec outranks an orphan into ``indeterminate``: a corpus
+    that could not be fully read is unobservable, not reconciled-badly.
+    """
+    result = cmd_corpus_enumerate(argparse.Namespace(slug=slug))
+    if result.get('status') != 'success':
+        return _invariant(
+            'queue_spec_bidirectional',
+            'indeterminate',
+            f'corpus enumerate could not run: {result.get("error", "unknown")}',
+            'queue rows and spec files: not enumerable',
+        )
+    population = f'{result["rows_total"]} queue row(s) and {result["specs_total"]} spec file(s)'
+    if result['unreadable_count']:
+        return _invariant(
+            'queue_spec_bidirectional',
+            'indeterminate',
+            f'{result["unreadable_count"]} spec file(s) could not be read',
+            population,
+        )
+    orphan_rows = result['rows_without_spec_count']
+    orphan_specs = result['specs_without_row_count']
+    if orphan_rows or orphan_specs:
+        return _invariant(
+            'queue_spec_bidirectional',
+            'violated',
+            f'{orphan_rows} row(s) without a spec and {orphan_specs} spec(s) without a row',
+            population,
+        )
+    return _invariant(
+        'queue_spec_bidirectional', 'ok', 'queue and specs reconcile both ways', population
+    )
+
+
+def _invariant_no_terminal_in_live_queue(queue_body: str) -> dict[str, Any]:
+    """Assert the RENDERED live queue carries no terminal row.
+
+    A post-condition over the generator's own output rather than over its inputs:
+    the renderer excludes terminal rows by construction, and this reads the
+    emitted Status column back to prove none leaked. Data rows are the ones whose
+    first cell is the position integer.
+
+    It checks the freshly-BUILT body, not the on-disk table. When the
+    ``ordered-queue`` markers are absent, that body is never written, so this
+    verdict speaks to what the renderer WOULD emit — the block's actual absence
+    is surfaced separately as that block's ``markers_absent`` outcome, so the two
+    signals together are not misleading.
+    """
+    statuses: list[str] = []
+    for line in queue_body.split('\n'):
+        cells = [cell.strip() for cell in line.split('|')]
+        if len(cells) >= 7 and cells[1].isdigit():
+            statuses.append(cells[4])
+    population = f'{len(statuses)} live queue row(s) rendered'
+    leaked = sorted({status for status in statuses if status in LIVE_QUEUE_EXCLUDED_STATUSES})
+    if leaked:
+        return _invariant(
+            'no_terminal_in_live_queue',
+            'violated',
+            f'terminal status leaked into the live queue: {", ".join(leaked)}',
+            population,
+        )
+    return _invariant(
+        'no_terminal_in_live_queue', 'ok', 'no shipped/landed row in the live queue', population
+    )
+
+
+def _settled_headings(text: str) -> set[str]:
+    """Extract the heading texts of ``settled.md``, fence-aware.
+
+    A relocation pointer names its destination heading in double quotes; this is
+    the set that pointer is resolved against.
+    """
+    lines = text.split('\n')
+    fenced = _fenced_mask(lines)
+    return {
+        line.strip().strip('#').strip()
+        for index, line in enumerate(lines)
+        if not fenced[index] and _HEADING_RE.match(line)
+    }
+
+
+def _invariant_pointers_reachable(epic_text: str, root: Path) -> dict[str, Any]:
+    """Assert every settled-narrative relocation pointer RESOLVES.
+
+    A reader following the old path must land on the content, not on absence, so
+    each pointer's named heading must exist in ``settled.md``. No pointer is the
+    common case (nothing relocated yet) and resolves to ``ok``; a pointer whose
+    target is missing is ``violated``; an unreadable ``settled.md`` is
+    ``indeterminate``.
+    """
+    wanted = [match.group('heading') for match in _RELOCATION_POINTER_RE.finditer(epic_text)]
+    population = f'{len(wanted)} relocation pointer(s) in epic.md'
+    if not wanted:
+        return _invariant(
+            'relocated_pointer_reachable',
+            'ok',
+            'no settled-narrative relocation pointer to resolve',
+            population,
+        )
+    settled_path = root / FILE_SETTLED
+    if not settled_path.is_file():
+        return _invariant(
+            'relocated_pointer_reachable',
+            'violated',
+            f'{len(wanted)} pointer(s) but settled.md is absent',
+            population,
+        )
+    settled_text, _ = _read_spec(settled_path)
+    if settled_text is None:
+        return _invariant(
+            'relocated_pointer_reachable', 'indeterminate', 'settled.md could not be read', population
+        )
+    present = _settled_headings(settled_text)
+    unreachable = sorted({heading for heading in wanted if heading not in present})
+    if unreachable:
+        return _invariant(
+            'relocated_pointer_reachable',
+            'violated',
+            f'{len(unreachable)} pointer(s) resolve to no settled.md heading: {", ".join(unreachable)}',
+            population,
+        )
+    return _invariant(
+        'relocated_pointer_reachable',
+        'ok',
+        'every relocation pointer resolves to a settled.md heading',
+        population,
+    )
+
+
+#: A top-level (``##``) section heading, used to enumerate the narrative
+#: sections the compact stage abstains from. ``##`` followed by ``#`` is a
+#: level-3 heading and does not match, so annotation subsections are folded into
+#: their parent rather than listed apart.
+_SECTION_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+(?P<title>.+?)[ \t]*#*[ \t]*$')
+
+
+def _abstained_sections(text: str) -> list[dict[str, str]]:
+    """Name every ``##`` section the stage left verbatim, and why.
+
+    A silent compaction is indistinguishable from a lossy one, so the report
+    names not only what changed but what was deliberately NOT touched. A section
+    is abstained-from unless it CONTAINS a GENERATED marker (which makes it a
+    regenerated surface). This is what lets a reader tell "nothing needed
+    touching" from "the stage could not see it".
+    """
+    lines = text.split('\n')
+    fenced = _fenced_mask(lines)
+    begins = {_begin_marker(name) for name in GENERATED_BLOCKS}
+    sections: list[tuple[str, int]] = []
+    for index, line in enumerate(lines):
+        if not fenced[index] and (match := _SECTION_HEADING_RE.match(line)):
+            sections.append((match.group('title').strip(), index))
+    abstained: list[dict[str, str]] = []
+    for order, (title, start) in enumerate(sections):
+        end = sections[order + 1][1] if order + 1 < len(sections) else len(lines)
+        has_generated = any(line.strip() in begins for line in lines[start:end])
+        if not has_generated:
+            abstained.append({'section': title, 'treatment': 'preserved_verbatim'})
+    return abstained
+
+
+def cmd_compact(args: argparse.Namespace) -> dict[str, Any]:
+    """Compact the epic ledger: regenerate the derivable surfaces, verify, report.
+
+    The ledger-compaction stage ``workflow/cleanup.md`` Phase B calls. It
+    regenerates every derivable GENERATED block of ``epic.md`` IN PLACE — the
+    START-HERE resume summary and the Ordered Queue table — from ``status.json``
+    and the staged specs, leaving every byte OUTSIDE the markers untouched. That
+    boundary is the safety property: a retraction, a refutation, a
+    do-not-re-derive note, or the operator-confirmed running note all sit in
+    narrative and survive a pass verbatim, because the stage never reads them as
+    regenerable. The narrative-versus-settled RELOCATION judgement is NOT here —
+    it stays with the orchestrator; this stage only VERIFIES that whatever was
+    relocated is reachable from its pointer.
+
+    Refuses a closed epic (``refused_closed``): that tree is the frozen audit
+    record, and compaction is a live-epic operation only. Resolves the store
+    strictly (never the archived read-fallback), so an archived tree is never
+    mutated at the active path.
+
+    The report names every mutation and every abstention: ``regenerated[]`` (per
+    block: its outcome and line counts), ``invariants[]`` (bidirectional queue
+    reconciliation, no-terminal-in-live-queue, and pointer reachability, each
+    with its verdict, evidence, and population), and ``abstained[]`` (every
+    narrative ``##`` section left verbatim). Idempotent: a second run finds every
+    block ``unchanged`` and writes nothing.
+    """
+    invalid = _validate_slug(args.slug)
+    if invalid:
+        return _error(args.slug, 'invalid_slug', invalid)
+    root = _epic_root(args.slug)
+    if not root.is_dir():
+        return _error(args.slug, 'not_found', f'epic {args.slug!r} has no active store tree')
+    epic_path = root / FILE_EPIC
+    if not epic_path.is_file():
+        return _error(args.slug, 'file_not_found', 'epic.md not found in orchestrator store')
+    status_doc = _read_status(args.slug)
+    if not status_doc:
+        return _error(args.slug, 'file_not_found', 'status.json not found in orchestrator store')
+    phase = str(status_doc.get('phase', '')).strip()
+    if phase == CLOSED_PHASE:
+        return _error(
+            args.slug,
+            'refused_closed',
+            f'epic {args.slug} is phase=closed; compaction is a live-epic operation only — '
+            'the frozen record is never mutated',
+            phase=phase,
+        )
+    counts = inbox_counts(root / INBOX_SUBDIR)
+    original = epic_path.read_text(encoding='utf-8')
+    bodies = {
+        'resume-summary': _build_summary(status_doc, counts),
+        'ordered-queue': _build_ordered_queue(status_doc, root),
+    }
+    text = original
+    regenerated: list[dict[str, Any]] = []
+    for name in GENERATED_BLOCKS:
+        text, outcome, lines_before, lines_after = _replace_block(text, name, bodies[name])
+        regenerated.append(
+            {
+                'surface': name,
+                'outcome': outcome,
+                'lines_before': lines_before,
+                'lines_after': lines_after,
+            }
+        )
+    changed = text != original
+    if changed:
+        epic_path.write_text(text, encoding='utf-8')
+    invariants = [
+        _invariant_queue_spec(args.slug),
+        _invariant_no_terminal_in_live_queue(bodies['ordered-queue']),
+        _invariant_pointers_reachable(text, root),
+    ]
+    abstained = _abstained_sections(original)
+    return {
+        'status': 'success',
+        'operation': 'compact',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'relocation_target': FILE_SETTLED,
+        'epic_changed': changed,
+        'regenerated_count': sum(1 for row in regenerated if row['outcome'] == 'regenerated'),
+        'regenerated': regenerated,
+        'invariants': invariants,
+        'abstained_count': len(abstained),
+        'abstained': abstained,
     }
 
 
@@ -1927,7 +2363,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
     resume = subparsers.add_parser(
         'resume-summary',
-        help='Generate the START-HERE block from status.json (paste into epic.md).',
+        help='Generate the two derivable epic.md blocks (START-HERE + Ordered Queue) from status.json.',
         allow_abbrev=False,
     )
     _add_slug_arg(resume)
@@ -1940,6 +2376,17 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     _add_slug_arg(archive)
     archive.set_defaults(handler=cmd_archive)
+
+    compact = subparsers.add_parser(
+        'compact',
+        help=(
+            'Regenerate the derivable epic.md surfaces in place, verify the '
+            'invariants, and report (live-epic only; refuses a closed epic).'
+        ),
+        allow_abbrev=False,
+    )
+    _add_slug_arg(compact)
+    compact.set_defaults(handler=cmd_compact)
 
     _add_corpus_group(subparsers)
     _add_cleanup_group(subparsers)

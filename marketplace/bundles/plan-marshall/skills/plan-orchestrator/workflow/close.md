@@ -26,14 +26,14 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read \
   --plan-id {slug} --store orchestrator
 ```
 
-Confirm the queue is settled: no `launched` plan remains unreconciled (a still-in-flight plan blocks the close — analyze its state first per [`analyze.md`](analyze.md), or record the operator's explicit decision to close with it parked). Regenerate the START-HERE block one final time so the frozen record carries the terminal queue state:
+Confirm the queue is settled: no `launched` plan remains unreconciled (a still-in-flight plan blocks the close — analyze its state first per [`analyze.md`](analyze.md), or record the operator's explicit decision to close with it parked). Regenerate the two derivable blocks one final time so the frozen record carries the terminal queue state:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resume-summary \
   --slug {slug}
 ```
 
-Write the returned `summary` verbatim into `epic.md` between the `BEGIN/END GENERATED: resume-summary` markers (Write tool) BEFORE Step 3 freezes `history.md`. `history.md` is derived from the epic's final state, so `epic.md` must already carry the terminal START-HERE block when it is frozen — do not leave this write implicit.
+Write **both** returned blocks verbatim into `epic.md` (Write tool) BEFORE Step 3 freezes `history.md`: the `summary` between the `BEGIN/END GENERATED: resume-summary` markers, and the `ordered_queue` between the `BEGIN/END GENERATED: ordered-queue` markers. `history.md` is derived from the epic's final state, so `epic.md` must already carry BOTH terminal blocks when it is frozen — a stale Ordered Queue table frozen here is permanent, so do not leave either write implicit.
 
 ### Step 3: Freeze into history.md
 

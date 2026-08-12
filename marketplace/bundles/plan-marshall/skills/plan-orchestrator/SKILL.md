@@ -48,7 +48,7 @@ Skill: plan-marshall:persona-plan-orchestrator
 **Constraints:**
 - Inline work is limited to the small-ops carve-out: git commands, read-side `plan-marshall:tools-integration-ci:ci` calls (never `gh`/`glab` directly), and read-only analysis. Read-only analysis is unrestricted in location — repository source, `.plan/local/plans/`, other epics' trees, PRs, and logs are all readable — bounded by the category threshold, not by a path: see the [small-ops carve-out](../persona-plan-orchestrator/standards/orchestration-model.md#carve-outs). Anything larger is staged as a `plans/PLAN-NN-{slug}.md` spec and handed off via an emitted command.
 - Verb sub-steps may be dispatched to an `execution-context-{level}` leaf only under the [Dispatch Decision Rule](../persona-plan-orchestrator/standards/orchestration-model.md#dispatch-decision-rule), and no dispatched leaf writes the ledger.
-- `status.json` is the machine authority; the `epic.md` START-HERE block is GENERATED from it (via `orchestrator.py resume-summary`), never hand-written. Reconciliation always flows status.json → epic.md.
+- `status.json` is the machine authority; the `epic.md` START-HERE block AND the Ordered Queue table are both GENERATED from it (via `orchestrator.py resume-summary`, which emits both, and rewritten in place by `compact`), never hand-written. Reconciliation always flows status.json → epic.md.
 - Keep `resume_anchor` current — before stopping and whenever the next action changes.
 - Strictly comply with all rules from `persona-plan-orchestrator` and its central standard `standards/orchestration-model.md`; when a workflow doc and the standard disagree, the standard wins.
 
@@ -86,7 +86,7 @@ Authoring templates for the ledger documents live in `templates/` and mirror the
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| orchestrator | `plan-marshall:plan-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read the plan queue, transition a plan's status, or set one plan row's result field), `resume-summary` (generate the START-HERE block from status.json, with its two self-validation detectors), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `corpus` (reconcile the staged spec corpus against the queue, cross-check it against sibling epics and live plans, and read or stamp the re-grounding verdict field), `cleanup` (report the restart-readiness verdict), `inbox` (append/validate a plan-written OUTBOX message, list the queued messages, archive a consumed one, or detect orchestration context from a plan's `source_id`) |
+| orchestrator | `plan-marshall:plan-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read the plan queue, transition a plan's status, or set one plan row's result field), `resume-summary` (generate the two derivable `epic.md` blocks — START-HERE and the Ordered Queue table — from status.json, with the START-HERE self-validation detectors), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `compact` (regenerate every derivable `epic.md` surface in place, verify the invariants, and report — the ledger-compaction stage `cleanup` Phase B calls; refuses a closed epic), `corpus` (reconcile the staged spec corpus against the queue, cross-check it against sibling epics and live plans, and read or stamp the re-grounding verdict field), `cleanup` (report the restart-readiness verdict), `inbox` (append/validate a plan-written OUTBOX message, list the queued messages, archive a consumed one, or detect orchestration context from a plan's `source_id`) |
 
 ## Canonical invocations
 
@@ -115,7 +115,7 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator res
   --slug SLUG
 ```
 
-Generates the START-HERE markdown block the LLM pastes verbatim between the `BEGIN/END GENERATED: resume-summary` markers in `epic.md`. Returns it as `summary`, plus the derived `inbox_queued`, `inbox_archived`, and `inbox_state` fields. The block carries, in order: `**Resume anchor**` (the operator's prose, rendered VERBATIM), `**Phase**`, `**Inbox (derived)**`, the `**Running**` / `**Parked**` groups, the `**Queue**` (staged, in `plans[]` order), and a residual per-status line for every other status value — so no plan is ever invisible. A terminal row missing a result link carries the `(!) missing: …` completeness marker.
+Generates the **two derivable `epic.md` blocks** the LLM pastes verbatim between their `BEGIN/END GENERATED` markers: the START-HERE block, returned as `summary` (marker `resume-summary`), and the **Ordered Queue table body**, returned as `ordered_queue` (marker `ordered-queue`). Both are derived from `status.json` and the filesystem, plus the derived `inbox_queued`, `inbox_archived`, and `inbox_state` fields. This is the **lightweight render path a reconciling verb calls after a queue change** — the `compact` stage rewrites the same two blocks in place at `cleanup`, sharing these renderers, so a routine reconciliation keeps both derivable surfaces truthful without a full compaction. The START-HERE block carries, in order: `**Resume anchor**` (the operator's prose, rendered VERBATIM), `**Phase**`, `**Inbox (derived)**`, the `**Running**` / `**Parked**` groups, the `**Queue**` (staged, in `plans[]` order), and a residual per-status line for every other status value — so no plan is ever invisible. A terminal row missing a result link carries the `(!) missing: …` completeness marker. The `ordered_queue` block is the LIVE queue only — a shipped/landed row belongs in its landing record — with the derivable columns `# \| Plan \| Workstream \| Status \| Surface`; per-row narrative goes in the adjacent `### Queue annotations` zone, outside the markers.
 
 The inbox counts are the one part NOT read out of `status.json`: they are **derived at render time** from the epic's `inbox/` directory, and they are **authoritative over any count sentence in the `resume_anchor` prose**. The derived line is kept SEPARATE from the anchor line on purpose — a stale narrative count then sits visibly beside the live one instead of outranking it, and the anchor is never silently rewritten. An absent `inbox/` renders that fact explicitly rather than rendering `0 queued`, the same *which zero is this* rule `inbox list`'s `inbox_state` enforces; `inbox_state` is drawn from the same closed `present` / `missing` vocabulary, so the two verbs are directly reconcilable without parsing the markdown block.
 
@@ -127,6 +127,17 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator arc
 ```
 
 Relocates a *closed* epic tree to `archived-orchestrators/{slug}/` — a post-close, mechanical move. Refuses a non-closed epic (`not_closed`), a missing epic (`not_found`), or an existing archive (`archive_conflict`); an already-archived slug returns idempotent success (`already_archived`).
+
+### compact
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator compact \
+  --slug SLUG
+```
+
+The ledger-compaction stage [`workflow/cleanup.md`](workflow/cleanup.md) Phase B runs. Regenerates every DERIVABLE surface of `epic.md` **in place** — the START-HERE resume summary and the Ordered Queue table — from `status.json` and the staged specs, replacing only the content between each `BEGIN/END GENERATED` marker pair and leaving every byte OUTSIDE the markers untouched. That boundary is the safety property: a retraction, a refutation, a do-not-re-derive note, and the operator-confirmed `running` note all sit in narrative and survive a pass verbatim, because the stage never reads them as regenerable. The narrative-versus-settled RELOCATION judgement is NOT here — it is the orchestrator's, and this stage only VERIFIES that whatever was relocated is reachable from its pointer.
+
+The report names every mutation and every abstention: `regenerated[]` (per block: `outcome` ∈ `regenerated` / `unchanged` / `markers_absent`, plus its before/after line counts), `invariants[]` (`queue_spec_bidirectional`, `no_terminal_in_live_queue`, and `relocated_pointer_reachable`, each with a `verdict` ∈ `ok` / `violated` / `indeterminate`, its evidence, and its population), and `abstained[]` (every narrative `##` section left verbatim). **Idempotent** — a second run finds every block `unchanged` and writes nothing (`epic_changed: false`). Resolves the store strictly (never the archived read-fallback) and **refuses a closed epic** (`refused_closed`): compaction is a live-epic operation only, and the frozen record is never mutated. Also refuses an unsafe slug (`invalid_slug`), a missing store tree (`not_found`), and a missing `epic.md` or `status.json` (`file_not_found`).
 
 ### corpus enumerate
 

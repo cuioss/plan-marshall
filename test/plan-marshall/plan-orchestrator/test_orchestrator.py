@@ -462,6 +462,26 @@ class TestResumeSummary:
         assert 'status: landed' in summary
         assert 'PR #901' in summary
 
+    def test_should_also_emit_the_ordered_queue_block_live_rows_only(self, plan_context):
+        # resume-summary is the lightweight render path for BOTH derivable blocks.
+        # The Ordered Queue block carries only the LIVE queue: a landed/shipped row
+        # belongs in its landing record, not here.
+        plans = [
+            _make_plan('PLAN-01', status='landed', pr='#901', landing='PLAN-01.md'),
+            _make_plan('PLAN-02', status='running'),
+            _make_plan('PLAN-03', status='staged', workstream='WS-02'),
+        ]
+        _write_status(plan_context, 'oq-epic', plans=plans)
+
+        result = cmd_resume_summary(Namespace(slug='oq-epic'))
+
+        queue = result['ordered_queue']
+        assert '| # | Plan | Workstream | Status | Surface (expected) |' in queue
+        assert '| 1 | PLAN-02 | WS-01 | running |' in queue
+        assert '| 2 | PLAN-03 | WS-02 | staged |' in queue
+        # The terminal row is excluded from the live queue.
+        assert 'PLAN-01' not in queue
+
     def test_should_mark_terminal_row_missing_both_links(self, plan_context):
         _write_status(
             plan_context, 'gap-both-epic', plans=[_make_plan('PLAN-01', status='shipped')]
