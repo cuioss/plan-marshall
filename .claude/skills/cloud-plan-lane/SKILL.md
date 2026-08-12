@@ -67,7 +67,7 @@ pull-request tools and matching what they do:
 | `gh pr create --fill` / `--label L` | `create_pull_request`; apply the label with the issue-label call *after* create |
 | `gh pr merge {N} --squash --auto` | `enable_pr_auto_merge` with `mergeMethod: SQUASH` (`disable_pr_auto_merge` disarms but does **not** dequeue — § Step 8) |
 | `gh pr checks {N}` | `pull_request_read` with `method: get_status` and `get_check_runs` |
-| `gh pr view {N} --json mergeStateStatus,mergeable,state,mergedAt,mergeCommit` | `pull_request_read` with `method: get` |
+| `gh pr view {N} --json mergeStateStatus,mergeable,state,mergedAt,mergeCommit` | `pull_request_read` with `method: get` — the MCP payload names this field `mergeable_state` (lowercase), **not** `mergeStateStatus`, and omits `auto_merge` (§ Step 8 condition 1) |
 | `gh pr view {N} --comments` (issue comments only) | `pull_request_read` with `method: get_comments` — the **issue-comment** surface ONLY. Unlike `gh pr view --comments`, the MCP `get_comments` does NOT fold in review-summary bodies, so it is not sufficient on its own — see the next row |
 | `gh pr view {N} --json reviews` | `pull_request_read` with `method: get_reviews` — the **review-summary-body** surface. This is where the principal automated reviewers file their consolidated findings; a run that reads only `get_comments` + `get_review_comments` misses them entirely (observed on an actual run — six bot findings arrived here and nowhere else). MUST be read before the merge gate |
 | `gh api repos/{owner}/{repo}/pulls/{N}/comments --paginate` | `pull_request_read` with `method: get_review_comments` — the **inline review-thread** surface (the one the conversation view omits — § Step 7) |
@@ -643,6 +643,14 @@ arming auto-merge — it is not a gate on the merge. Merge only when conditions 
    gh pr view {N} --json mergeStateStatus,mergeable
    ```
 
+   > **On the MCP path this field is `mergeable_state`, not `mergeStateStatus`.** `pull_request_read`
+   > with `method: get` returns GitHub's REST payload, whose merge-state field is **`mergeable_state`**
+   > with **lowercase** values (`clean` / `unstable` / `blocked`, plus `behind` / `dirty` / `unknown`) —
+   > there is no `mergeStateStatus` key and no uppercase form in the response. Read `mergeable_state` and
+   > map it case-insensitively onto the states named below (`clean` → clean, `unstable` → `UNSTABLE`,
+   > `blocked` → `BLOCKED`); the semantics are identical. The MCP `get` payload also omits the
+   > `auto_merge` field, so arm-state cannot be read from it — see "Confirm the merge actually happened".
+
    `mergeStateStatus` is GitHub applying the ruleset for you: **`BLOCKED`** means a **required**
    context is unsatisfied — failing, pending, **or absent** — so the merge must wait; **`UNSTABLE`**
    means every required context has passed and only **non-required** contexts are still pending or
@@ -732,6 +740,17 @@ gh pr view {N} --json state,mergedAt,mergeCommit
 ```
 
 Only `state: MERGED` with a real `mergedAt` is a landing.
+
+**On the MCP path, arm-state is not readable and a queued clean PR looks un-armed.** Observed:
+`enable_pr_auto_merge` returns a canned "Auto-merge enabled …" with an **empty `method`** field
+(identical on repeat calls), the PR's `updated_at` does **not** bump on enqueue, and
+`pull_request_read method: get` omits the `auto_merge` field. So after arming a clean, already-green
+PR, none of these tells you whether the arm took — and the PR can sit `open`/`clean` for many minutes
+while it is in fact queued. Do not read that silence as a failed arm. The two reliable enqueue/landing
+signals are a later `state: MERGED` read, or a `405 "Pull Request is in the merge queue"` returned by a
+`merge_pull_request` attempt — which is harmless here, because the queue **refuses** the direct merge
+rather than performing it, and does not dequeue. Absent either signal, treat the PR as
+armed-and-delegated (below), not failed.
 
 **When the session cannot self-confirm the landing, arm-and-hand-off is a completed run — not a partial
 one.** Confirming `state: MERGED` assumes the run can wait for the queue to land the PR and re-check. A
