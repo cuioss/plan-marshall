@@ -49,15 +49,29 @@ KIND_JOB = 'job'
 # wrapper's own vocabulary (see script-shared/scripts/build/_build_shared.py).
 # The executor dispatch boundary compares a payload's `status` against THIS set
 # and no wider one, so a wrapper can never mint a derived-only verdict below.
-WRAPPER_CLAIMABLE_BUILD_STATUSES = frozenset({'success', 'error', 'timeout'})
+#
+# `killed` is claimable for the same reason `timeout` is: both are FIRST-HAND
+# observations by the process that reaped the child. The wrapper's own
+# `subprocess.run` returns the negative `-N` returncode of a signalled child, and
+# the wrapper knows it did not send that signal (its own outer bound raises
+# TimeoutExpired instead). Excluding it forced every inner kill — a build child
+# killed while the wrapper survived — to be emitted as `error`, i.e. as a red
+# build, which is the collapse the truthful-signals work removes. Admitting it
+# opens no fail-open hole: `killed` fails every gate `error` fails, so the change
+# only ADDS information that consumers were previously denied.
+WRAPPER_CLAIMABLE_BUILD_STATUSES = frozenset({'success', 'error', 'timeout', 'killed'})
 
-# The statuses ONLY the executor dispatch boundary derives; a wrapper claiming
-# one is not believed, because each records the ABSENCE of the very evidence a
-# claim would be. `killed` marks a child terminated by a POSIX signal (negative
-# returncode). `unknown` marks an exit-0 dispatch whose payload carried no
-# claimable status — the outcome is undetermined, and deriving `success` there
-# would be a confident green over a signal that was never read.
-DERIVED_ONLY_BUILD_STATUSES = frozenset({'killed', 'unknown'})
+# The status ONLY the executor dispatch boundary derives; a wrapper claiming it
+# is not believed, because it records the ABSENCE of the very evidence a claim
+# would be. `unknown` marks an exit-0 dispatch whose payload carried no claimable
+# status — the outcome is undetermined, and deriving `success` there would be a
+# confident green over a signal that was never read.
+#
+# `killed` is ALSO derived at the boundary (from a negative returncode of the
+# dispatched script itself — the outer kill, where the wrapper did not survive to
+# report anything), so it is produced on both sides. It is not listed here
+# because this set means "not claimable by a wrapper", not "derivable".
+DERIVED_ONLY_BUILD_STATUSES = frozenset({'unknown'})
 
 # The full truthful build-outcome vocabulary carried by every kind=build entry's
 # `status` field: the wrapper-claimable statuses plus the boundary-derived ones.
@@ -141,8 +155,11 @@ def build_record(
     timed-out build carries ``status: timeout`` despite its exit code 0, and an
     exit-0 dispatch whose payload carried no claimable status carries
     ``status: unknown`` rather than a green it cannot substantiate).
-    ``killed`` and ``unknown`` are :data:`DERIVED_ONLY_BUILD_STATUSES` — the
-    boundary produces them, a wrapper never claims them. ``exit_code``
+    ``unknown`` alone is :data:`DERIVED_ONLY_BUILD_STATUSES` — the boundary
+    produces it, a wrapper never claims it. ``killed`` arrives by either route
+    and is first-hand on both: derived from a negative returncode when the
+    dispatched script itself was signalled, claimed by the wrapper when it
+    reaped a signalled build child and survived. ``exit_code``
     is retained as orthogonal diagnostic detail. Both are stamped against the
     working-tree ``worktree_sha`` at capture time. A build is NOT a commit, so
     this record does NOT carry ``commit_sha`` or ``changed_paths``.

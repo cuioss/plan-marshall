@@ -40,6 +40,7 @@ CORE_FIELDS = ['status', 'exit_code', 'duration_seconds', 'log_file', 'command']
 # Additional fields that may appear after core fields
 EXTRA_FIELDS = [
     'error',
+    'message',
     'timeout_used_seconds',
     'tool_duration_seconds',
     'wrapper',
@@ -48,15 +49,26 @@ EXTRA_FIELDS = [
 ]
 """Additional scalar fields that appear after core fields.
 
+**This list is a whitelist, and omission is silent.** A field absent from it is
+dropped from TOON output with no warning while the JSON path still carries it,
+so the two formats disagree and a TOON consumer is denied a value the producer
+computed. Every scalar a consumer must act on therefore has to be listed here.
+
+``message`` carries the operator-facing detail of a result whose ``status`` alone
+does not say what to do — above all a ``killed`` build's "externally killed — not
+flaky, do not blind-retry". Dropping it would leave the emitted TOON saying a
+build was killed while withholding the one instruction that changes the reader's
+next action.
+
 ``truncated`` is the count reconciling the capped/deduped ``errors`` array against
 the true total (see ``_build_shared._cap_errors_with_truncation``); it must be in
 this whitelist or ``format_toon`` silently drops it and ``errors`` count-vs-shown
 can disagree in TOON output (the JSON path already passes it through).
 
 ``tool_duration_seconds`` is the test tool's own reported run duration, surfaced
-next to ``duration_seconds`` (wall clock) so a timeout-killed run shows how long
-the suite actually took before the kill. Like ``truncated`` it must be listed
-here or ``format_toon`` drops it silently."""
+next to ``duration_seconds`` (wall clock) so a run killed before it finished shows
+how long the suite actually took before the kill. Like ``truncated`` it must be
+listed here or ``format_toon`` drops it silently."""
 
 # Structured fields handled specially
 STRUCTURED_FIELDS = {'errors', 'warnings', 'tests'}

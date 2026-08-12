@@ -392,10 +392,20 @@ return (reported in CLAIMABLE_STATUSES) ? reported : "unknown"
 The final line is the load-bearing one. Defaulting an unrecognised report to
 `"success"` reinstates the very fail-open the clause forbids, one layer in: exit
 `0` proves the process ended, not that the work ran and passed, so a report this
-boundary cannot read leaves the outcome **undetermined**. `"unknown"` is a
-derived-only peer of `"killed"` — a verdict this boundary produces, never a
-status the wrapper may claim for itself — and it must not satisfy any gate that
-accepts `"success"`, so a downstream freshness check fails closed on it.
+boundary cannot read leaves the outcome **undetermined**. `"unknown"` is
+**derived-only** — a verdict this boundary produces, never a status the wrapper
+may claim for itself, because it records the absence of the very evidence a
+claim would be — and it must not satisfy any gate that accepts `"success"`, so a
+downstream freshness check fails closed on it.
+
+What separates a derived-only verdict from a claimable one is **who observed
+it**, not how severe it is. `"killed"` is derived here (line 3: the wrapper died
+and reported nothing) *and* claimable by the wrapper (it reaped a signalled child
+and survived to say so) — a first-hand observation on both sides, exactly like
+`"timeout"`. Excluding a status from the claimable set is therefore a statement
+that no wrapper can have witnessed it; making that call on severity instead
+forces a witnessed condition to be re-reported as its nearest neighbour, which is
+the collapse this whole section exists to prevent.
 
 ### (f) Write direction — check the persist, never refer to a store that rejected it
 
@@ -422,7 +432,8 @@ return { status: "triage_required" }
 
 Three landed behaviours are the reference implementations of these rules:
 
-* **The build-status derivation at the executor dispatch boundary** (`_derive_build_status` in `tools-script-executor/templates/execute-script.py.template`) treats a nonzero exit code as authoritative over any stdout `status: success`, and reads the wrapper's stdout status only on a zero exit — so a timed-out build stamps `timeout` while a script that prints a success payload and exits non-zero stamps `error`. On a zero exit whose payload carries no *wrapper-claimable* status it stamps the derived-only `unknown`, never `success`, so an unreadable report can never mint a false-fresh row. Rules (a), (b) and (e).
+* **The build-status derivation at the executor dispatch boundary** (`_derive_build_status` in `tools-script-executor/templates/execute-script.py.template`) treats a nonzero exit code as authoritative over any stdout `status: success`, and reads the wrapper's stdout status only on a zero exit — so a timed-out build stamps `timeout` while a script that prints a success payload and exits non-zero stamps `error`. A wrapper that survives its own child's signal death exits 0 and claims `status: killed`, which is believed for the same reason its `timeout` claim is: both are first-hand observations by the process that reaped the child. On a zero exit whose payload carries no *wrapper-claimable* status it stamps the derived-only `unknown`, never `success`, so an unreadable report can never mint a false-fresh row. Rules (a), (b) and (e).
+* **The build-outcome emit choke point** (`cmd_run_common` in `script-shared/scripts/build/_build_shared.py`) keeps the two NON-FINISH conditions — `timeout` and `killed` — off the build-failure path entirely. That path asserts the build ran and failed: it stores every parsed issue as a finding and, when the parser found none, synthesises a `build_failure` row so `status` and `errors[]` cannot contradict each other. Routing a non-finish through it manufactures a failure out of a truncated log, so each non-finish gets its own branch, stores no findings, and attaches a parsed test summary only when that summary carries zero failures. Rules (b) and (c).
 * **The pre-commit freshness gate** (`manage-tasks pre-commit-verify-freshness`) matches change-ledger rows on `status == "success"` rather than on `exit_code == 0`, and a row lacking `status` never matches — the gate fails closed to `stale` rather than admitting a row it cannot read. Rules (b) and (e).
 * **The executor preflight verdict** (`generate_executor preflight` in `tools-script-executor`) reports `marshal_status: unknown` plus a legible warning when the installed manifest cannot be resolved, instead of the `fresh` verdict it has no evidence for. Rule (b).
 

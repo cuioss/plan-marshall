@@ -317,12 +317,22 @@ def test_daemon_result_timeout_maps_to_timeout():
     assert result['status'] == 'timeout'
 
 
-def test_daemon_result_killed_carries_no_blind_retry_message():
+def test_daemon_result_killed_maps_to_killed_not_error():
+    """A daemon-classified kill keeps its OWN status through the client mapping.
+
+    Mapping it to ``error`` — as this leg historically did, marking the kill
+    only in a secondary ``error`` field — lost the distinction at the renderer:
+    ``cmd_run_common`` rebuilds its payload from ``status`` alone, so the
+    daemon's correctly-classified kill reached every consuming gate as a build
+    failure, complete with a synthesised ``errors[]`` row.
+    """
     result = factory._daemon_result_to_direct(
         {'job_status': 'killed', 'exit_code': -9, 'duration_seconds': 1, 'log_file': 'd.log'}, 'cmd'
     )
-    assert result['status'] == 'error'
+    assert result['status'] == 'killed'
+    assert result['status'] != 'error'
     assert result['error'] == 'killed'
+    assert result['exit_code'] == -9
     assert 'do not blind-retry' in result['message']
 
 

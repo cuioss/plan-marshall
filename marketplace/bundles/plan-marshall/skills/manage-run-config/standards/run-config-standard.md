@@ -441,6 +441,52 @@ def compute_weighted_timeout(existing: int, new_duration: int) -> int:
 
 **Rationale**: Operations occasionally complete faster (network conditions, caching, etc.) but rarely exceed the worst-case time. Weighting towards higher values prevents premature timeouts.
 
+### What `timeout_seconds` actually measures — and what it does not
+
+The persisted `timeout_seconds` is **not** a model of how long a command takes.
+Reading it as one leads to a specific, reproducible surprise: **a command can
+exceed its budget while a STRICT SUPERSET of that command completes well inside
+its own.** That is not a bug in either budget; it follows from three properties
+of the design, and a reader who does not hold all three will misdiagnose it.
+
+**1. The field holds two different quantities, with nothing to tell them apart.**
+The success path persists a *measured duration*; the timeout path persists a
+*doubled budget* (`min(timeout_used * 2, MAX_TIMEOUT)`). Both land in
+`timeout_seconds`, and `timeout_get` applies the `1.25` safety margin to whichever
+it finds. So the same field means "what this took" on one key and "what we last
+allowed it" on another, and the retrieval cannot distinguish them.
+
+**2. The budget therefore tracks the key's TIMEOUT HISTORY, not the command's
+work.** A key that has only ever succeeded settles near `1.25 x measured`, floored
+at the tool's `min_timeout`. A key that has timed out once jumps to
+`1.25 x (2 x previous budget)` and doubles again on each further timeout, up to
+`MAX_TIMEOUT`. Two keys ratchet independently, so **nothing in the design makes
+`budget(subset) <= budget(superset)`** — the ordering across keys is decided by
+which key happened to time out first, not by which command does more work.
+
+**3. Keys are per-argument-string, and the string does not encode cache state.**
+`quality-gate` and `quality-gate plan-marshall` are separate keys with separate
+histories (see the cold-start note in
+[`../../extension-api/standards/build-execution.md`](../../extension-api/standards/build-execution.md)).
+Neither key records whether the run that taught it was cold or warm, yet the
+difference is first-order: a measured whole-tree `verify` over 19 231 tests
+completed in 444 s warm while a scoped `module-tests` subset of 16 154 tests took
+489 s cold — the subset ran **longer** than the superset containing it, on 3 077
+fewer tests, purely on cache state.
+
+**The consequence for a caller.** A budget overrun is evidence about the KEY, not
+about the command — so a timeout does not mean the command got slower, and
+certainly does not mean the tree is broken. **Do not "fix" an inversion by
+raising the budget**: the raise closes the symptom, and the next inversion
+appears on whichever key has not yet ratcheted. Diagnose which of the three
+properties above produced it first.
+
+**What the learner is fed.** Only a genuine finish updates the persisted value. A
+run whose child was **externally killed** reports an elapsed that is a truncation
+of work that never completed, so `_build_execute` deliberately does NOT call
+`timeout_set` on that path — blending a non-measurement in at 20 % weight would
+launder a figure of unknown sign into the budget that decides the next kill.
+
 ### Integration with await_until
 
 The timeout subcommand complements `await_until.py` from `script-executor`:

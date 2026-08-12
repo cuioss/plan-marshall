@@ -53,8 +53,10 @@ from _build_execute import detect_wrapper as _detect_wrapper  # noqa: E402
 from _build_queue_slot import BuildQueueTimeout, build_queue_slot  # noqa: E402
 from _build_result import (  # noqa: E402
     ERROR_BUILD_FAILED,
+    STATUS_KILLED,
     DirectCommandResult,
     error_result,
+    killed_result,
     success_result,
     timeout_result,
 )
@@ -397,9 +399,19 @@ def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> Direct
 
     The daemon's terminal job statuses (``success|failure|timeout|killed``) are
     rendered into the shared build-result shape so the routed build flows through
-    the SAME ``cmd_run_common`` rendering/parse path as an in-process build. A
-    ``killed`` job carries the no-blind-retry message so a harness reap on the
-    daemon side is never mistaken for a flaky build.
+    the SAME ``cmd_run_common`` rendering/parse path as an in-process build. The
+    mapping is status-preserving in BOTH non-finish directions: ``timeout`` maps
+    to a timeout result and ``killed`` maps to a ``killed`` result carrying the
+    no-blind-retry message, so a harness reap on the daemon side is never
+    mistaken for a flaky build — and never for a red one. Only the daemon's
+    ``failure`` becomes an ``error``.
+
+    The ``killed`` leg previously produced an ``error_result`` whose ``error``
+    field said ``killed``; ``cmd_run_common`` reconstructed its own payload from
+    the status alone, so that marker never reached a consumer and the daemon's
+    correctly-classified kill arrived at every gate as a build failure. Mapping
+    to a first-class ``killed`` status is what carries the daemon's verdict
+    through the renderer intact.
 
     On a ``success`` job status the client independently CROSS-CHECKS the routed
     verdict: it re-reads the job log's own build TOON through the shared
@@ -428,19 +440,26 @@ def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> Direct
         return success_result(duration, log_file, command_str)  # type: ignore[return-value]
     if job_status == 'timeout':
         return timeout_result(duration, duration, log_file, command_str)  # type: ignore[return-value]
-    result = error_result(
-        'killed' if job_status == 'killed' else ERROR_BUILD_FAILED,
+    if job_status == STATUS_KILLED:
+        result = killed_result(
+            exit_code=exit_code or -1,
+            duration_seconds=duration,
+            log_file=log_file,
+            command=command_str,
+        )
+        # The daemon's own wording wins when it supplied one; killed_result's
+        # shared KILLED_MESSAGE is the fallback, so the two legs never diverge.
+        daemon_message = waited.get('message')
+        if daemon_message:
+            result['message'] = str(daemon_message)
+        return result  # type: ignore[return-value]
+    return error_result(  # type: ignore[return-value]
+        ERROR_BUILD_FAILED,
         exit_code or 1,
         duration,
         log_file,
         command_str,
     )
-    if job_status == 'killed':
-        result['error'] = 'killed'
-        result['message'] = str(
-            waited.get('message', 'externally killed — not flaky, do not blind-retry')
-        )
-    return result  # type: ignore[return-value]
 
 
 def _route_to_daemon(

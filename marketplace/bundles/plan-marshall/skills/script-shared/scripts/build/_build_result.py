@@ -5,11 +5,18 @@
 Shared infrastructure for build command result handling across build systems.
 Used by domain extensions (pm-dev-java, pm-dev-frontend) for consistent result formatting.
 
+A build that does not finish produces two conditions that are NOT failures and
+are NOT each other — an outer-budget ``timeout`` and an external ``killed`` — and
+each has its own constructor here. Neither is ever folded into ``error``: an
+externally-killed build is not evidence that the build is broken, and presenting
+it as one manufactures a failure the build never reported.
+
 Usage:
     from build_result import (
         create_log_file, success_result, error_result, timeout_result,
+        killed_result,
         DirectCommandResult,
-        STATUS_SUCCESS, STATUS_ERROR, STATUS_TIMEOUT
+        STATUS_SUCCESS, STATUS_ERROR, STATUS_TIMEOUT, STATUS_KILLED
     )
 
     # Create log file for build output, under the resolving plan's directory
@@ -49,8 +56,11 @@ class DirectCommandResult(TypedDict, total=False):
     not via the type system. This avoids needing Python 3.11+ NotRequired.
 
     Required fields (always present):
-        status: Execution outcome.
-        exit_code: Process exit code (-1 for timeout/execution failure).
+        status: Execution outcome. ``killed`` is a NON-FINISH, distinct from
+            ``error`` (the build ran and failed) and from ``timeout`` (the
+            build exceeded its own outer budget) — see :func:`killed_result`.
+        exit_code: Process exit code (-1 for timeout/execution failure;
+            the negative ``-N`` signal code for ``killed``).
         duration_seconds: Actual execution time.
         log_file: Path to captured output (per R1 requirement).
         command: Full command that was executed.
@@ -84,7 +94,7 @@ class DirectCommandResult(TypedDict, total=False):
     """
 
     # Required fields
-    status: Literal['success', 'error', 'timeout']
+    status: Literal['success', 'error', 'timeout', 'killed']
     exit_code: int
     duration_seconds: int
     log_file: str
@@ -93,7 +103,8 @@ class DirectCommandResult(TypedDict, total=False):
     timeout_used_seconds: int
     wrapper: str  # Maven/Gradle/Python: wrapper path used
     command_type: str  # npm: "npm" or "npx"
-    error: str  # Error message (on error/timeout only)
+    error: str  # Error message (on error/timeout/killed only)
+    message: str  # Operator-facing detail (on killed only)
 
 
 # =============================================================================
@@ -114,12 +125,33 @@ STATUS_ERROR = 'error'
 STATUS_TIMEOUT = 'timeout'
 """Build exceeded timeout limit."""
 
+STATUS_KILLED = 'killed'
+"""Build child was terminated by a signal nobody in this stack sent.
+
+Distinct from :data:`STATUS_ERROR` (the build ran to completion and reported a
+failure) and from :data:`STATUS_TIMEOUT` (the build exceeded the outer budget
+this stack applied, so the kill signal WAS ours). A ``killed`` build reported
+nothing at all — its log is a truncation, not a verdict — so no consumer may
+read it as a red build, and none may read it as a timeout either.
+"""
+
 # Error type identifiers
 ERROR_BUILD_FAILED = 'build_failed'
 """Build process returned non-zero exit code."""
 
 ERROR_TIMEOUT = 'timeout'
 """Build exceeded timeout limit."""
+
+ERROR_KILLED = 'killed'
+"""Build child died by a signal this stack did not send."""
+
+KILLED_MESSAGE = 'externally killed — not flaky, do not blind-retry'
+"""Operator-facing detail carried by every ``killed`` result.
+
+The literal is shared with the daemon-side kill path
+(``_marshalld_supervisor`` / ``manage-change-ledger classify-outcome``) so the
+in-process and routed legs render the same sentence for the same condition.
+"""
 
 ERROR_EXECUTION_FAILED = 'execution_failed'
 """Failed to execute build command (e.g., subprocess error)."""
@@ -290,6 +322,57 @@ def timeout_result(timeout_used_seconds: int, duration_seconds: int, log_file: s
         'error': ERROR_TIMEOUT,
         'exit_code': -1,
         'timeout_used_seconds': timeout_used_seconds,
+        'duration_seconds': duration_seconds,
+        'log_file': log_file,
+        'command': command,
+    }
+    result.update(extra)
+    return result
+
+
+def killed_result(exit_code: int, duration_seconds: int, log_file: str, command: str, **extra) -> dict:
+    """Build an externally-killed result dict.
+
+    A ``killed`` result records that the build child died by a signal that
+    neither this stack's outer timeout nor the build itself produced. It is a
+    NON-FINISH, and it is deliberately its own status rather than an ``error``
+    or a ``timeout``:
+
+    * NOT ``error`` — an ``error`` asserts the build ran and reported a
+      failure. A killed build reported nothing; its log is truncated evidence,
+      so presenting it as a failure manufactures one.
+    * NOT ``timeout`` — a ``timeout`` asserts the build exceeded a budget THIS
+      stack set and that this stack sent the kill. An external kill says
+      nothing about the budget, so folding it into ``timeout`` would blame a
+      bound that never fired.
+
+    Args:
+        exit_code: The observed exit code — the negative ``-N`` signal code
+            when available; ``-1`` when the code could not be recovered.
+        duration_seconds: Wall-clock time before the kill. This is a
+            TRUNCATION, not a measurement of the command (see
+            :mod:`_build_execute`, which therefore never feeds it to the
+            adaptive-timeout learner).
+        log_file: Path to the partial captured output.
+        command: Full command that was executed.
+        **extra: Additional fields to include.
+
+    Returns:
+        Result dict with status="killed", error="killed", and the shared
+        no-blind-retry :data:`KILLED_MESSAGE`.
+
+    Example:
+        >>> result = killed_result(-9, 42, "/path/to/log", "./pw verify")
+        >>> result["status"]
+        'killed'
+        >>> result["exit_code"]
+        -9
+    """
+    result = {
+        'status': STATUS_KILLED,
+        'error': ERROR_KILLED,
+        'message': KILLED_MESSAGE,
+        'exit_code': exit_code,
         'duration_seconds': duration_seconds,
         'log_file': log_file,
         'command': command,

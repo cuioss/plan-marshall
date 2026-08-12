@@ -719,10 +719,17 @@ def _run_build_dispatch(tmp_path: Path, script_body: str) -> list[dict]:
         # with a nonzero exit must stamp error — the exit code is
         # authoritative, so a real process failure can never look fresh.
         ('status: success\nexit_code: 0\n', 1, 'error'),
-        # `killed` is reserved for negative returncodes: a stdout claim of
-        # `status: killed` at exit 0 stamps error (never killed, never
-        # success) — the wrapper's stdout vocabulary does not include killed.
-        ('status: killed\n', 0, 'error'),
+        # A wrapper that survived an INNER kill — its own build child was
+        # signalled — exits 0 and reports `status: killed` on stdout. That is a
+        # first-hand observation by the process that reaped the child, exactly
+        # like its `timeout` claim above, so the boundary believes it. Demoting
+        # it to `error` (the historical behaviour) made every inner kill
+        # indistinguishable from a red build at every consuming gate.
+        ('status: killed\n', 0, 'killed'),
+        # But a status OUTSIDE the wrapper's vocabulary is still undetermined —
+        # widening what is claimable must not widen it to anything at all.
+        ('status: unknown\n', 0, 'unknown'),
+        ('status: totally-made-up\n', 0, 'unknown'),
     ],
 )
 def test_build_boundary_stamps_derived_status(

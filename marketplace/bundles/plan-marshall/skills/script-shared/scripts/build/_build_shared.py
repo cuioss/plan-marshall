@@ -30,9 +30,11 @@ from _build_result import (
     ERROR_BUILD_FAILED,
     ERROR_EXECUTION_FAILED,
     ERROR_LOG_FILE_FAILED,
+    STATUS_KILLED,
     DirectCommandResult,
     assert_truthful_status,
     error_result,
+    killed_result,
     success_result,
     timeout_result,
 )
@@ -503,6 +505,58 @@ def _cap_errors_with_truncation(errors: list[Issue], cap: int = _ERRORS_EMIT_CAP
     return shown, truncated
 
 
+def _non_finish_evidence(
+    log_file: str,
+    command_str: str,
+    parser_fn: ParserFn,
+    parser_needs_command: bool,
+    label: str,
+) -> dict:
+    """Parse the partial log of a NON-FINISH for the evidence it actually proves.
+
+    Shared by the ``timeout`` and ``killed`` branches of :func:`cmd_run_common`.
+    A run that did not finish may still have completed its whole test suite
+    before the kill (a hang in teardown, coverage aggregation, or process
+    shutdown), and discarding the log would make every non-finish look equally
+    uninformative.
+
+    Only a ZERO-FAILURE summary is returned. A summary carrying failures is not
+    evidence that the suite completed — those failures may be the partial output
+    of a run that was interrupted mid-flight — so surfacing them would assert
+    more than the log proves, and would let a non-finish present itself as a red
+    test. A missing or unparseable log degrades to no evidence with a
+    ``[WARNING]`` on stderr, never a crash.
+
+    Args:
+        log_file: Path to the partial captured output.
+        command_str: The command that was executed (for command-aware parsers).
+        parser_fn: The tool's log parser.
+        parser_needs_command: Whether ``parser_fn`` takes the command string.
+        label: Condition name used in the stderr warning (``Timeout`` /
+            ``Killed``).
+
+    Returns:
+        ``{'tests': summary}`` (plus ``tool_duration_seconds`` when the parser
+        supplied one) for a zero-failure summary, else ``{}``.
+    """
+    try:
+        if parser_needs_command:
+            _, test_summary, _ = parser_fn(log_file, command_str)
+        else:
+            _, test_summary, _ = parser_fn(log_file)
+    except Exception as parse_err:
+        print(f'[WARNING] {label} evidence parse failed: {parse_err}', file=sys.stderr)
+        return {}
+
+    extra: dict = {}
+    if test_summary is not None and test_summary.failed == 0:
+        extra['tests'] = test_summary
+        tool_duration = getattr(test_summary, 'duration_seconds', None)
+        if tool_duration is not None:
+            extra['tool_duration_seconds'] = tool_duration
+    return extra
+
+
 def cmd_run_common(
     result: DirectCommandResult,
     parser_fn: ParserFn,
@@ -515,8 +569,18 @@ def cmd_run_common(
 ) -> int:
     """Common cmd_run logic shared across all build skills.
 
-    Handles the execute_direct() result: routes success/error/timeout to
+    Handles the execute_direct() result: routes success/error/timeout/killed to
     the appropriate formatter and parses build failures for structured errors.
+
+    **The two NON-FINISH statuses never reach the build-failure path.** A
+    ``timeout`` and a ``killed`` build each get their own branch, and neither
+    stores findings nor synthesises an ``errors[]`` row. That asymmetry is the
+    point: the build-failure path below asserts the build ran and failed — it
+    stores every parsed issue as a finding and, when the parser found none,
+    manufactures a synthetic ``build_failure`` row so ``status`` and ``errors[]``
+    cannot contradict each other. Routing a non-finish through it would fabricate
+    exactly that failure out of a truncated log, which is how a harness kill came
+    to be presented as a red test.
 
     Note: Uses format_toon()/format_json() from _build_format for all output.
     Both paths share the same normalization logic — format_toon delegates to
@@ -562,42 +626,39 @@ def cmd_run_common(
         print(formatter(err_output))
         return 1
 
+    # Handle an EXTERNAL KILL — a signal this stack did not send.
+    #
+    # This branch precedes the timeout branch deliberately: a kill and a timeout
+    # are the two non-finishes, and the one thing that separates them is WHO
+    # sent the signal. The timeout branch may only claim a run our own bound
+    # terminated, so a kill must be routed out before it can be read as one.
+    # The result carries the kill's own diagnostic fields (`error: killed` and
+    # the shared no-blind-retry `message`), and BOTH are propagated onto the
+    # emitted payload rather than reconstructed — an earlier shape built a fresh
+    # `error_result` here and silently dropped them, so the discriminator the
+    # daemon had already computed never reached any consumer.
+    if result['status'] == STATUS_KILLED:
+        killed_output = killed_result(
+            exit_code=result['exit_code'],
+            duration_seconds=result['duration_seconds'],
+            log_file=log_file,
+            command=command_str,
+            **_non_finish_evidence(log_file, command_str, parser_fn, parser_needs_command, 'Killed'),
+        )
+        message = result.get('message')
+        if message:
+            killed_output['message'] = message
+        print(formatter(killed_output))
+        return 0  # Status modeled in output, not exit code
+
     # Handle timeout
     if result['status'] == 'timeout':
-        # Truthful timeout evidence: a run killed by the outer timeout may have
-        # already completed its whole test suite before the kill (a hang in
-        # teardown, coverage aggregation, or process shutdown). The success
-        # branch below parses the log; the timeout branch historically did not,
-        # so that evidence was discarded and every timeout looked equally
-        # uninformative. Parse the log the same way and attach the resulting
-        # summary — a missing or unparseable log degrades to the historical
-        # bare timeout result with a [WARNING] on stderr, never a crash.
-        try:
-            if parser_needs_command:
-                _, test_summary, _ = parser_fn(log_file, command_str)
-            else:
-                _, test_summary, _ = parser_fn(log_file)
-        except Exception as parse_err:
-            print(f'[WARNING] Timeout evidence parse failed: {parse_err}', file=sys.stderr)
-            test_summary = None
-
-        # Only a zero-failure summary is attached. A summary carrying failures
-        # is not evidence that the suite completed — the failures may be the
-        # partial output of a run the kill interrupted mid-flight, so surfacing
-        # them on a timeout result would assert more than the log proves.
-        timeout_extra: dict = {}
-        if test_summary is not None and test_summary.failed == 0:
-            timeout_extra['tests'] = test_summary
-            tool_duration = getattr(test_summary, 'duration_seconds', None)
-            if tool_duration is not None:
-                timeout_extra['tool_duration_seconds'] = tool_duration
-
         timeout_output = timeout_result(
             timeout_used_seconds=result['timeout_used_seconds'],
             duration_seconds=result['duration_seconds'],
             log_file=log_file,
             command=command_str,
-            **timeout_extra,
+            **_non_finish_evidence(log_file, command_str, parser_fn, parser_needs_command, 'Timeout'),
         )
         print(formatter(timeout_output))
         return 0  # Status modeled in output, not exit code

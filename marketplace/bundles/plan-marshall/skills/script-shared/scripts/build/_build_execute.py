@@ -34,7 +34,7 @@ from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
 
-from _build_result import DirectCommandResult, create_log_file
+from _build_result import DirectCommandResult, create_log_file, killed_result
 from plan_logging import log_entry
 from run_config import timeout_get, timeout_set
 
@@ -166,6 +166,17 @@ def execute_direct_base(
     value — no learned value can reduce it — while the engine's declared floor
     still binds, because the floor protects against under-specification.
 
+    **Three non-green outcomes, three statuses.** The returned ``status``
+    separates the conditions the caller must act on differently:
+
+    * ``error`` — the build ran to completion and reported a failure.
+    * ``timeout`` — the build exceeded the bound resolved above, so the kill
+      signal was OURS and the elapsed equals the bound.
+    * ``killed`` — the child died by a signal this stack did not send
+      (``returncode < 0``). The build reported nothing, so this is neither a
+      failure nor a timeout, and its elapsed is a truncation rather than a
+      measurement — it is therefore NOT fed to the adaptive learner.
+
     Args:
         args: Complete command arguments with all routing embedded.
         command_key: Command identifier for timeout learning (e.g., "maven:verify").
@@ -199,8 +210,9 @@ def execute_direct_base(
             the learned path. It does NOT waive ``min_timeout``.
 
     Returns:
-        DirectCommandResult with status, exit_code, duration_seconds,
-        log_file, command, and optional error/timeout_used_seconds fields.
+        DirectCommandResult with status (``success`` / ``error`` / ``timeout``
+        / ``killed``), exit_code, duration_seconds, log_file, command, and
+        optional error/message/timeout_used_seconds fields.
     """
     log_prefix = tool_name.upper()
     extras = dict(extra_result_fields) if extra_result_fields else {}
@@ -268,10 +280,38 @@ def execute_direct_base(
                 )
         duration_seconds = int(time.time() - start_time)
 
-        # Step 7: Record duration for adaptive learning
+        # Step 7: Classify the exit BEFORE learning from it. ``subprocess.run``
+        # reports a child terminated by POSIX signal N as returncode ``-N``, and
+        # the outer timeout above did NOT send it (that path raises
+        # TimeoutExpired instead). So a negative returncode here is an EXTERNAL
+        # kill: the build reported nothing, and its elapsed is a truncation of a
+        # run that never finished — not a measurement of what this command
+        # costs. Feeding that truncation to the adaptive learner would blend a
+        # non-measurement into the budget at 20% weight (see
+        # ``run_config.compute_weighted_timeout``), so the learner is fed only
+        # by a genuine finish. This is a truthfulness rule, not a budget
+        # adjustment: no bound, margin, floor, or cap is changed here.
+        if result.returncode < 0:
+            log_entry(
+                'script',
+                'global',
+                'ERROR',
+                f'[{log_prefix}] Externally killed by signal {-result.returncode} '
+                f'after {duration_seconds}s: {command_str}',
+            )
+            return killed_result(  # type: ignore[return-value]
+                exit_code=result.returncode,
+                duration_seconds=duration_seconds,
+                log_file=log_file,
+                command=command_str,
+                timeout_used_seconds=timeout_seconds,
+                **extras,
+            )
+
+        # Step 8: Record duration for adaptive learning (genuine finishes only)
         timeout_set(command_key, duration_seconds, project_dir)
 
-        # Step 8: Return structured result
+        # Step 9: Return structured result
         if result.returncode == 0:
             return {
                 'status': 'success',
