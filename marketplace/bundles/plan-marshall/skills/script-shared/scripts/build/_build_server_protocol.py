@@ -138,13 +138,20 @@ TERMINAL_STATUSES = frozenset(
 )
 """The four terminal job statuses — a wait resolves once one of these is seen."""
 
-# Map the shared _build_result status vocabulary (success|error|timeout) to the
-# wire vocabulary (success|failure|timeout). ``killed`` has no _build_result
-# equivalent — the supervisor sets it out of band — so it is not in this table.
+# Map the shared _build_result status vocabulary (success|error|timeout|killed)
+# to the wire vocabulary (success|failure|timeout|killed).
+#
+# ``killed`` is listed EXPLICITLY rather than left to the pass-through fallback
+# in :func:`wire_status_from_result`. The two spellings coincide, so the fallback
+# produces the right answer today — but only by accident of naming, and a table
+# that silently omits a status it must translate is one rename away from mapping
+# a kill onto nothing. The wrapper CAN now claim ``killed`` (it reaps a signalled
+# build child first-hand), so this row is a real translation, not a placeholder.
 _RESULT_STATUS_TO_WIRE = {
     'success': STATUS_SUCCESS,
     'error': STATUS_FAILURE,
     'timeout': STATUS_TIMEOUT,
+    'killed': STATUS_KILLED,
 }
 _WIRE_STATUS_TO_RESULT = {wire: res for res, wire in _RESULT_STATUS_TO_WIRE.items()}
 
@@ -551,11 +558,13 @@ def wire_status_from_result(result_status: str) -> str:
     """Map a :mod:`_build_result` status to the wire status vocabulary.
 
     ``success`` → ``success``, ``error`` → ``failure``, ``timeout`` →
-    ``timeout``. An already-wire status (or an unknown value) passes through
-    unchanged, so this is idempotent on the wire vocabulary.
+    ``timeout``, ``killed`` → ``killed``. An already-wire status (or an unknown
+    value) passes through unchanged, so this is idempotent on the wire
+    vocabulary.
 
     Args:
-        result_status: A ``_build_result`` status (``success``/``error``/``timeout``).
+        result_status: A ``_build_result`` status
+            (``success``/``error``/``timeout``/``killed``).
 
     Returns:
         The corresponding wire status.
@@ -567,8 +576,9 @@ def result_status_from_wire(wire_status: str) -> str:
     """Inverse of :func:`wire_status_from_result`.
 
     ``success`` → ``success``, ``failure`` → ``error``, ``timeout`` →
-    ``timeout``. Statuses without a ``_build_result`` equivalent (``killed``,
-    ``running``, ``queued``, …) pass through unchanged.
+    ``timeout``, ``killed`` → ``killed``. Statuses without a ``_build_result``
+    equivalent (``running``, ``queued``, ``not_found``, …) pass through
+    unchanged.
 
     Args:
         wire_status: A wire status value.
@@ -666,8 +676,12 @@ class LogVerdict:
 
     Attributes:
         status: The ``status:`` value the emitted build TOON carried
-            (``success`` / ``error`` / ``timeout`` — the :mod:`_build_result`
-            vocabulary, NOT the daemon's wire vocabulary).
+            (``success`` / ``error`` / ``timeout`` / ``killed`` — the
+            :mod:`_build_result` vocabulary, NOT the daemon's wire vocabulary).
+            **Both readers must preserve WHICH of these it is.** ``timeout`` and
+            ``killed`` are NON-FINISHES: the wrapper reported no verdict at all,
+            so collapsing either into a failure at the cross-check reinstates the
+            very false signal this shared reader exists to catch, one layer in.
         exit_code: The ``exit_code:`` value, or ``None`` when the log carried no
             parseable one.
     """

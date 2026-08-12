@@ -32,6 +32,7 @@ Four seams are driven, none of them re-implemented here:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -39,7 +40,7 @@ import pytest
 from conftest import load_script_module
 
 from _build_parse import Issue, UnitTestSummary
-from _build_result import KILLED_MESSAGE, STATUS_KILLED
+from _build_result import KILLED_MESSAGE, STATUS_INDETERMINATE, STATUS_KILLED
 from _build_shared import cmd_run_common
 
 import _build_shared as _build_shared_mod
@@ -74,15 +75,26 @@ def _make_result(status, exit_code, *, error=None, message=None):
     return result
 
 
+_INDETERMINATE = 'indeterminate'
+
 _CONDITIONS = {
     _KILLED: _make_result('killed', -9, error='killed', message=KILLED_MESSAGE),
     _TIMEOUT: _make_result('timeout', -1, error='timeout'),
     _RED: _make_result('error', 1, error='build_failed'),
+    _INDETERMINATE: _make_result(
+        'indeterminate', -1, error='indeterminate', message="daemon reported 'quiesced'"
+    ),
 }
 
 #: The two NON-FINISHES. Neither reported a verdict, so neither may be
 #: presented as the other and neither may be presented as a failing build.
 _NON_FINISHES = (_KILLED, _TIMEOUT)
+
+#: Every status that must be kept OFF the build-failure path. The two
+#: non-finishes plus the undetermined outcome: none of the three carries a
+#: verdict, so none may have findings stored or an ``errors[]`` row synthesised
+#: on its behalf.
+_NOT_A_FAILURE = (_KILLED, _TIMEOUT, _INDETERMINATE)
 
 
 def _failing_parser(log_file):
@@ -203,13 +215,21 @@ class TestExecuteClassifiesSignalDeath:
 class TestEmitChokePointKeepsTheThreeApart:
     """``cmd_run_common`` renders each condition as itself."""
 
-    @pytest.mark.parametrize('condition', [_KILLED, _TIMEOUT, _RED])
+    @pytest.mark.parametrize('condition', [_KILLED, _TIMEOUT, _RED, _INDETERMINATE])
     def test_status_is_rendered_verbatim(self, condition, capsys):
         """Each condition's own status reaches stdout — none is folded away."""
         cmd_run_common(_CONDITIONS[condition], _empty_parser, 'python')
         stdout = capsys.readouterr().out
 
         assert f'status: {condition}' in stdout
+
+    def test_indeterminate_carries_its_reason(self, capsys):
+        """The only actionable content an undetermined result has is WHY."""
+        cmd_run_common(_CONDITIONS[_INDETERMINATE], _empty_parser, 'python')
+        stdout = capsys.readouterr().out
+
+        assert 'status: indeterminate' in stdout
+        assert 'quiesced' in stdout
 
     def test_kill_is_not_presented_as_a_timeout(self, capsys):
         """The two non-finishes are not interchangeable."""
@@ -234,18 +254,18 @@ class TestEmitChokePointKeepsTheThreeApart:
 
         assert 'not flaky, do not blind-retry' in stdout
 
-    @pytest.mark.parametrize('condition', _NON_FINISHES)
-    def test_non_finish_synthesises_no_error_row(self, condition, capsys):
-        """A truncated log must not be turned into a fabricated failure."""
+    @pytest.mark.parametrize('condition', _NOT_A_FAILURE)
+    def test_non_failure_synthesises_no_error_row(self, condition, capsys):
+        """A log that proves nothing must not be turned into a fabricated failure."""
         cmd_run_common(_CONDITIONS[condition], _empty_parser, 'python')
         stdout = capsys.readouterr().out
 
         assert 'errors[' not in stdout
         assert 'no structured errors were parsed' not in stdout
 
-    @pytest.mark.parametrize('condition', _NON_FINISHES)
-    def test_non_finish_stores_no_findings(self, condition):
-        """A non-finish reported no verdict, so it produces no findings."""
+    @pytest.mark.parametrize('condition', _NOT_A_FAILURE)
+    def test_non_failure_stores_no_findings(self, condition):
+        """No verdict was reported, so no findings are produced."""
         with patch.object(_build_shared_mod, '_store_build_findings') as store:
             cmd_run_common(
                 _CONDITIONS[condition],
@@ -256,13 +276,20 @@ class TestEmitChokePointKeepsTheThreeApart:
 
         store.assert_not_called()
 
-    @pytest.mark.parametrize('condition', _NON_FINISHES)
-    def test_non_finish_drops_a_failure_carrying_summary(self, condition, capsys):
+    @pytest.mark.parametrize('condition', _NOT_A_FAILURE)
+    def test_non_failure_drops_a_failure_carrying_summary(self, condition, capsys):
         """Partial failures from an interrupted run are not the suite's verdict."""
         cmd_run_common(_CONDITIONS[condition], _failing_parser, 'python')
         stdout = capsys.readouterr().out
 
         assert 'tests:' not in stdout
+
+    def test_kill_preserves_the_bound_that_did_not_fire(self, capsys):
+        """`timeout_used_seconds` is diagnostic on a kill: how much headroom was left."""
+        cmd_run_common(_CONDITIONS[_KILLED], _empty_parser, 'python')
+        stdout = capsys.readouterr().out
+
+        assert 'timeout_used_seconds: 330' in stdout
 
     @pytest.mark.parametrize('condition', _NON_FINISHES)
     def test_non_finish_keeps_a_zero_failure_summary(self, condition, capsys):
@@ -353,6 +380,14 @@ class TestDaemonVerdictSurvivesTheMapping:
         assert result['status'] == 'timeout'
         assert result['status'] != STATUS_KILLED
 
+    def test_unrecognised_job_status_is_indeterminate_not_error(self):
+        """A version-skewed daemon is not evidence that the build failed."""
+        result = self._map('quiesced')
+
+        assert result['status'] == STATUS_INDETERMINATE
+        assert result['status'] != 'error'
+        assert 'quiesced' in result['message']
+
     # --- matched control: a genuinely failing routed build -----------------
 
     def test_control_daemon_failure_still_maps_to_error(self):
@@ -361,6 +396,131 @@ class TestDaemonVerdictSurvivesTheMapping:
 
         assert result['status'] == 'error'
         assert result['error'] == 'build_failed'
+
+
+class TestCrossCheckPreservesTheLogVerdict:
+    """The `job_status: success` cross-check must not flatten what it catches.
+
+    The daemon can report `success` while the job log says otherwise — that is
+    the whole reason the cross-check exists. What the log says is one of the
+    wrapper's three non-green values, and returning a flat `error` for all three
+    would make the backstop itself the collapse: a routed timeout and a routed
+    INNER kill (the wrapper survived, its build child was signalled) would both
+    arrive at every gate as a red build, through the very code that exists to
+    catch a routed false signal.
+    """
+
+    @staticmethod
+    def _map_with_log_verdict(verdict_status, exit_code=-9):
+        factory = load_script_module(
+            'plan-marshall',
+            'script-shared',
+            'build/_build_execute_factory.py',
+            '_build_execute_factory_for_non_finish',
+        )
+        verdict = None
+        if verdict_status is not None:
+            verdict = SimpleNamespace(status=verdict_status, exit_code=exit_code)
+        with patch.object(factory, 'read_log_verdict', return_value=verdict):
+            return factory._daemon_result_to_direct(
+                {
+                    'job_status': 'success',
+                    'log_file': '/tmp/routed.log',
+                    'duration_seconds': 42,
+                    'exit_code': 0,
+                },
+                './pw verify',
+            )
+
+    def test_log_killed_survives_the_cross_check(self):
+        result = self._map_with_log_verdict('killed')
+
+        assert result['status'] == STATUS_KILLED
+        assert result['status'] != 'error'
+        assert result['message'] == KILLED_MESSAGE
+
+    def test_log_timeout_survives_the_cross_check(self):
+        result = self._map_with_log_verdict('timeout', exit_code=-1)
+
+        assert result['status'] == 'timeout'
+        assert result['status'] != 'error'
+
+    def test_log_status_outside_the_vocabulary_is_indeterminate(self):
+        result = self._map_with_log_verdict('speculative')
+
+        assert result['status'] == STATUS_INDETERMINATE
+        assert 'speculative' in result['message']
+
+    # --- matched controls --------------------------------------------------
+
+    def test_control_log_error_still_fails_the_build(self):
+        """CONTROL: the cross-check still catches a genuinely failing build."""
+        result = self._map_with_log_verdict('error', exit_code=2)
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'build_failed'
+        assert result['exit_code'] == 2
+
+    def test_control_agreeing_verdict_keeps_success(self):
+        """CONTROL: a log that agrees does not downgrade a green build."""
+        result = self._map_with_log_verdict('success', exit_code=0)
+
+        assert result['status'] == 'success'
+
+    def test_control_absent_verdict_keeps_success(self):
+        """CONTROL: a non-wrapper command with no parseable TOON stays green."""
+        result = self._map_with_log_verdict(None)
+
+        assert result['status'] == 'success'
+
+
+class TestDaemonNarrowingPreservesTheLogVerdict:
+    """`run_job`'s exit-0-not-sufficient narrowing must keep WHICH non-green.
+
+    Server-side mirror of the class above. The wrapper running inside the daemon
+    child exits 0 and reports its verdict in the TOON, so `classify_terminal`
+    says `success` and the narrowing decides the wire status. Hard-coding
+    `failure` there re-collapses at the daemon exactly what the wrapper
+    distinguished.
+    """
+
+    @staticmethod
+    def _narrow(verdict_status, exit_code=-9):
+        supervisor = load_script_module(
+            'plan-marshall',
+            'manage-build-server',
+            '_marshalld_supervisor.py',
+            '_marshalld_supervisor_for_non_finish',
+        )
+        verdict = SimpleNamespace(status=verdict_status, exit_code=exit_code)
+        # Exercise the narrowing arithmetic directly: classify_terminal(0) is
+        # `success`, and the wire status is the verdict's own, translated.
+        assert supervisor.classify_terminal(0, timed_out=False) == 'success'
+        return supervisor.wire_status_from_result(verdict.status)
+
+    def test_log_killed_narrows_to_wire_killed(self):
+        assert self._narrow('killed') == 'killed'
+
+    def test_log_timeout_narrows_to_wire_timeout(self):
+        assert self._narrow('timeout') == 'timeout'
+
+    # --- matched control ---------------------------------------------------
+
+    def test_control_log_error_still_narrows_to_wire_failure(self):
+        """CONTROL: a real failure still becomes the wire `failure`."""
+        assert self._narrow('error') == 'failure'
+
+    def test_control_supervisor_own_kill_outranks_log_content(self):
+        """CONTROL: the supervisor's OWN legs are not subject to the narrowing."""
+        supervisor = load_script_module(
+            'plan-marshall',
+            'manage-build-server',
+            '_marshalld_supervisor.py',
+            '_marshalld_supervisor_for_non_finish',
+        )
+        assert supervisor.classify_terminal(-9, timed_out=False) == 'killed'
+        assert supervisor.classify_terminal(0, timed_out=True) == 'timeout'
+        assert supervisor.classify_terminal(1, timed_out=False) == 'failure'
 
 
 # ===========================================================================

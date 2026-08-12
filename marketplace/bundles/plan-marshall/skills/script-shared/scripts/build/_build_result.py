@@ -94,7 +94,7 @@ class DirectCommandResult(TypedDict, total=False):
     """
 
     # Required fields
-    status: Literal['success', 'error', 'timeout', 'killed']
+    status: Literal['success', 'error', 'timeout', 'killed', 'indeterminate']
     exit_code: int
     duration_seconds: int
     log_file: str
@@ -135,6 +135,25 @@ nothing at all — its log is a truncation, not a verdict — so no consumer may
 read it as a red build, and none may read it as a timeout either.
 """
 
+STATUS_INDETERMINATE = 'indeterminate'
+"""The outcome could not be determined — it is NOT any of the four above.
+
+This is the value for a case no branch resolves: a producer reported something
+this layer cannot interpret (e.g. a daemon speaking a terminal status a
+version-skewed client does not know — the condition ``manage-build-server
+status`` flags as ``binary_diverges``). Folding it into ``error`` would claim a
+failure nobody observed; folding it into ``success`` would be a green nothing
+substantiates. It is neither, and it must stay neither.
+
+**Deliberately NOT wrapper-claimable at the ledger boundary.**
+``_ledger_core.WRAPPER_CLAIMABLE_BUILD_STATUSES`` excludes it, so
+``_derive_build_status`` falls through to its own derived-only ``unknown`` — the
+ledger's name for the same condition. That is the intended route, not an
+oversight: a wrapper may report that it could not determine the outcome, but the
+boundary derives the verdict of record itself rather than accepting the claim.
+Do NOT "fix" this by adding ``indeterminate`` to the claimable set.
+"""
+
 # Error type identifiers
 ERROR_BUILD_FAILED = 'build_failed'
 """Build process returned non-zero exit code."""
@@ -144,6 +163,9 @@ ERROR_TIMEOUT = 'timeout'
 
 ERROR_KILLED = 'killed'
 """Build child died by a signal this stack did not send."""
+
+ERROR_INDETERMINATE = 'indeterminate'
+"""The outcome could not be determined at all — see :data:`STATUS_INDETERMINATE`."""
 
 KILLED_MESSAGE = 'externally killed — not flaky, do not blind-retry'
 """Operator-facing detail carried by every ``killed`` result.
@@ -372,6 +394,47 @@ def killed_result(exit_code: int, duration_seconds: int, log_file: str, command:
         'status': STATUS_KILLED,
         'error': ERROR_KILLED,
         'message': KILLED_MESSAGE,
+        'exit_code': exit_code,
+        'duration_seconds': duration_seconds,
+        'log_file': log_file,
+        'command': command,
+    }
+    result.update(extra)
+    return result
+
+
+def indeterminate_result(
+    reason: str, duration_seconds: int, log_file: str, command: str, exit_code: int = -1, **extra
+) -> dict:
+    """Build a result whose outcome could not be determined.
+
+    The escape hatch that keeps an unresolvable case from being folded into its
+    nearest neighbour. Use it where a branch genuinely cannot decide — never as a
+    catch-all for a case that simply was not enumerated, because an
+    ``indeterminate`` result blocks every gate that requires ``success`` and
+    tells the operator only that nothing could be concluded.
+
+    Args:
+        reason: Why the outcome could not be determined, specific enough to act
+            on (name the unrecognised value, not just its category).
+        duration_seconds: Wall-clock time observed, if any.
+        log_file: Path to whatever output exists.
+        command: Full command that was executed.
+        exit_code: Observed exit code; ``-1`` when none is meaningful.
+        **extra: Additional fields to include.
+
+    Returns:
+        Result dict with status="indeterminate" and the reason as ``message``.
+
+    Example:
+        >>> result = indeterminate_result("daemon reported 'quiesced'", 3, "/l", "./pw verify")
+        >>> result["status"]
+        'indeterminate'
+    """
+    result = {
+        'status': STATUS_INDETERMINATE,
+        'error': ERROR_INDETERMINATE,
+        'message': reason,
         'exit_code': exit_code,
         'duration_seconds': duration_seconds,
         'log_file': log_file,

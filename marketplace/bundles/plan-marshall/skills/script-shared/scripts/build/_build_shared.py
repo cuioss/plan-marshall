@@ -30,10 +30,12 @@ from _build_result import (
     ERROR_BUILD_FAILED,
     ERROR_EXECUTION_FAILED,
     ERROR_LOG_FILE_FAILED,
+    STATUS_INDETERMINATE,
     STATUS_KILLED,
     DirectCommandResult,
     assert_truthful_status,
     error_result,
+    indeterminate_result,
     killed_result,
     success_result,
     timeout_result,
@@ -569,18 +571,19 @@ def cmd_run_common(
 ) -> int:
     """Common cmd_run logic shared across all build skills.
 
-    Handles the execute_direct() result: routes success/error/timeout/killed to
-    the appropriate formatter and parses build failures for structured errors.
+    Handles the execute_direct() result: routes each status to the appropriate
+    formatter and parses build failures for structured errors.
 
-    **The two NON-FINISH statuses never reach the build-failure path.** A
-    ``timeout`` and a ``killed`` build each get their own branch, and neither
-    stores findings nor synthesises an ``errors[]`` row. That asymmetry is the
-    point: the build-failure path below asserts the build ran and failed — it
-    stores every parsed issue as a finding and, when the parser found none,
-    manufactures a synthetic ``build_failure`` row so ``status`` and ``errors[]``
-    cannot contradict each other. Routing a non-finish through it would fabricate
-    exactly that failure out of a truncated log, which is how a harness kill came
-    to be presented as a red test.
+    **Only a genuine failure reaches the build-failure path.** The two
+    NON-FINISHES (``timeout``, ``killed``) and the undetermined outcome
+    (``indeterminate``) each get their own branch, and none of them stores
+    findings or synthesises an ``errors[]`` row. That asymmetry is the point: the
+    build-failure path below asserts the build ran and failed — it stores every
+    parsed issue as a finding and, when the parser found none, manufactures a
+    synthetic ``build_failure`` row so ``status`` and ``errors[]`` cannot
+    contradict each other. Routing anything but a real failure through it
+    fabricates exactly that failure out of a log that proves nothing, which is how
+    a harness kill came to be presented as a red test.
 
     Note: Uses format_toon()/format_json() from _build_format for all output.
     Both paths share the same normalization logic — format_toon delegates to
@@ -638,17 +641,48 @@ def cmd_run_common(
     # `error_result` here and silently dropped them, so the discriminator the
     # daemon had already computed never reached any consumer.
     if result['status'] == STATUS_KILLED:
+        killed_extra = _non_finish_evidence(
+            log_file, command_str, parser_fn, parser_needs_command, 'Killed'
+        )
+        # The bound that did NOT fire is still diagnostic: it says how much
+        # headroom the run had left when the kill arrived, which is what
+        # separates "killed near its limit" from "killed early". The timeout
+        # branch preserves it, so this one does too.
+        if result.get('timeout_used_seconds') is not None:
+            killed_extra['timeout_used_seconds'] = result['timeout_used_seconds']
         killed_output = killed_result(
             exit_code=result['exit_code'],
             duration_seconds=result['duration_seconds'],
             log_file=log_file,
             command=command_str,
-            **_non_finish_evidence(log_file, command_str, parser_fn, parser_needs_command, 'Killed'),
+            **killed_extra,
         )
         message = result.get('message')
         if message:
             killed_output['message'] = message
         print(formatter(killed_output))
+        return 0  # Status modeled in output, not exit code
+
+    # Handle an UNDETERMINED outcome — no branch above could resolve it.
+    #
+    # It needs its own branch for the same reason the two non-finishes do: the
+    # build-failure path below would parse the log, store findings, and
+    # synthesise a `build_failure` row, manufacturing a verdict out of a case
+    # whose defining property is that no verdict exists. The producer's own
+    # `message` says WHY it could not be determined and is carried through — it
+    # is the only actionable content such a result has.
+    if result['status'] == STATUS_INDETERMINATE:
+        indeterminate_output = indeterminate_result(
+            str(result.get('message') or 'the build outcome could not be determined'),
+            result['duration_seconds'],
+            log_file,
+            command_str,
+            exit_code=result['exit_code'],
+            **_non_finish_evidence(
+                log_file, command_str, parser_fn, parser_needs_command, 'Indeterminate'
+            ),
+        )
+        print(formatter(indeterminate_output))
         return 0  # Status modeled in output, not exit code
 
     # Handle timeout

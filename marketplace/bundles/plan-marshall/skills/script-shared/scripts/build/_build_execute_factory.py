@@ -56,6 +56,7 @@ from _build_result import (  # noqa: E402
     STATUS_KILLED,
     DirectCommandResult,
     error_result,
+    indeterminate_result,
     killed_result,
     success_result,
     timeout_result,
@@ -418,24 +419,34 @@ def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> Direct
     :func:`read_log_verdict` and FAILS CLOSED when that verdict disagrees
     (``status`` is not ``success``), rather than trusting the daemon's
     ``job_status`` blindly. This is the client-side defense-in-depth backstop for
-    the window where a daemon could lag the server-side #979 narrowing. A ``None``
+    the window where a daemon could lag the server-side narrowing. A ``None``
     verdict (no parseable TOON — a non-wrapper command) keeps ``success``,
     mirroring the daemon's own None-keeps-verdict rule so both sides stay
-    consistent. The ``timeout`` / ``killed`` legs are untouched.
+    consistent.
+
+    **The cross-check preserves WHICH non-green the log reported.** Returning a
+    flat ``error`` there would defeat the whole mapping above it: the two
+    conditions a stale daemon is most likely to mis-report are precisely the two
+    NON-FINISHES, so a routed timeout or an inner kill would arrive at every gate
+    as a red build — through the very code path that exists to catch a routed
+    false signal.
+
+    A terminal ``job_status`` this client does not recognise (a version-skewed
+    daemon — the condition ``manage-build-server status`` reports as
+    ``binary_diverges``) is ``indeterminate``, NOT ``error``. Claiming a build
+    failure because the two sides disagree about vocabulary would assert a
+    verdict nobody produced.
     """
     job_status = str(waited.get('job_status', ''))
     log_file = str(waited.get('log_file', '') or '')
     duration = int(waited.get('duration_seconds', 0) or 0)
     exit_code = int(waited.get('exit_code', 0) or 0)
+
     if job_status == 'success':
         verdict = read_log_verdict(log_file)
         if verdict is not None and verdict.status != STATUS_SUCCESS:
-            return error_result(  # type: ignore[return-value]
-                ERROR_BUILD_FAILED,
-                verdict.exit_code or 1,
-                duration,
-                log_file,
-                command_str,
+            return _result_for_log_verdict(
+                verdict, duration=duration, log_file=log_file, command_str=command_str
             )
         return success_result(duration, log_file, command_str)  # type: ignore[return-value]
     if job_status == 'timeout':
@@ -453,12 +464,72 @@ def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> Direct
         if daemon_message:
             result['message'] = str(daemon_message)
         return result  # type: ignore[return-value]
-    return error_result(  # type: ignore[return-value]
-        ERROR_BUILD_FAILED,
-        exit_code or 1,
+    if job_status == 'failure':
+        return error_result(  # type: ignore[return-value]
+            ERROR_BUILD_FAILED,
+            exit_code or 1,
+            duration,
+            log_file,
+            command_str,
+        )
+    return indeterminate_result(  # type: ignore[return-value]
+        f'daemon reported terminal job_status {job_status!r}, which this client '
+        f'does not recognise; the build outcome is undetermined. A version-skewed '
+        f'daemon is the likely cause — check `manage-build-server status` for '
+        f'binary_diverges.',
         duration,
         log_file,
         command_str,
+        exit_code=exit_code or -1,
+    )
+
+
+def _result_for_log_verdict(
+    verdict: Any, *, duration: int, log_file: str, command_str: str
+) -> DirectCommandResult:
+    """Render a disagreeing job-log verdict into its OWN result shape.
+
+    The cross-check in :func:`_daemon_result_to_direct` fires when the daemon
+    said ``success`` and the job log says otherwise. What the log says is one of
+    the wrapper's three non-green values, and they are not interchangeable —
+    ``timeout`` and ``killed`` are NON-FINISHES that reported no verdict, while
+    ``error`` is a build that ran and failed. Mapping all three onto
+    ``error_result`` would make the backstop itself the collapse.
+
+    A status outside the wrapper's vocabulary is ``indeterminate``: the log said
+    something this client cannot interpret, which supports no verdict at all.
+
+    Args:
+        verdict: The :class:`LogVerdict` read back from the job log.
+        duration: Wall-clock duration reported by the daemon.
+        log_file: The job log path.
+        command_str: The command that was executed.
+
+    Returns:
+        The matching ``DirectCommandResult``.
+    """
+    status = str(verdict.status)
+    exit_code = verdict.exit_code
+    if status == 'timeout':
+        return timeout_result(duration, duration, log_file, command_str)  # type: ignore[return-value]
+    if status == STATUS_KILLED:
+        return killed_result(  # type: ignore[return-value]
+            exit_code=exit_code if exit_code is not None else -1,
+            duration_seconds=duration,
+            log_file=log_file,
+            command=command_str,
+        )
+    if status == 'error':
+        return error_result(  # type: ignore[return-value]
+            ERROR_BUILD_FAILED, exit_code or 1, duration, log_file, command_str
+        )
+    return indeterminate_result(  # type: ignore[return-value]
+        f'job log reported status {status!r}, which is outside the build-result '
+        f'vocabulary; the build outcome is undetermined.',
+        duration,
+        log_file,
+        command_str,
+        exit_code=exit_code if exit_code is not None else -1,
     )
 
 

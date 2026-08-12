@@ -160,10 +160,19 @@ def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str 
     * No ``kind=build`` row at all for ``current_sha`` → the tree really did move
       past every observed build (or was never built): ``worktree_mutated``.
     * A row exists for ``current_sha`` but none is ``success`` → the tree WAS
-      observed; report the most recent such row's own status
-      (:data:`_STALE_BY_STATUS`). A status outside the known vocabulary is
-      reported as ``build_indeterminate`` rather than folded into a neighbour —
-      an unresolvable case is its own answer.
+      observed; report the LAST such row's own status (:data:`_STALE_BY_STATUS`).
+      A status outside the known vocabulary is reported as
+      ``build_indeterminate`` rather than folded into a neighbour — an
+      unresolvable case is its own answer.
+
+    "Last" means **last in file order**, not latest by timestamp. The ledger is
+    pure-append (``_ledger_core.append_entry`` writes one line per call and never
+    rewrites), so file order IS write order and the two coincide. This is stated
+    rather than assumed because the distinction would matter the moment the
+    ledger stopped being append-only, and because ``timestamp_iso`` is present on
+    every row and would look like the obvious key to sort on. Sorting on it would
+    be strictly worse: it has one-second resolution, so two builds against the
+    same tree within a second would order arbitrarily.
 
     Args:
         entries: All ledger entries, in file order.
