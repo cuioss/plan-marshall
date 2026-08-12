@@ -130,9 +130,47 @@ the file count, from the first round. This run's absence claims, each with its s
   `marketplace/bundles` tree only; `doc/`, `.claude/`, and `.github/` were not swept, so the claim is
   scoped to `marketplace/bundles`.
 
-### Verification sub-agent / CI / PR review
+### Verification sub-agent (Step 6)
 
-_Filled in from the verification sub-agent, CI, and PR review._
+An independent `general-purpose` sub-agent verified each deliverable against `plan.md`'s literal
+"Done when" text, confirmed the negative controls are real, swept beyond the diff, and did the D5 cold
+read. Verdicts: **D1 PASS, D2 PASS, D3 PASS (code), D4 PASS, D5 PASS.** Details:
+
+- **D2 population published:** the agent independently enumerated all 17 `in_total` keys and confirmed
+  each is referenced in the Step-3 checks region — population = 17, magnitude unchanged by construction.
+- **D3 asserted-absence refuted, coherently:** the agent confirmed `surface_scope`/`files_in_scope`
+  pre-existed and only `scope_statement` is new, and that it is emitted unconditionally including on an
+  empty surface.
+- **D4 no delivery channel:** the agent read the full write path and confirmed `--target-plan` reaches
+  ONLY the guard — never `compose_envelope` or `allocate_message_path` — so the write-boundary is intact.
+- **D5 cold read — distinction HOLDS:** the agent read the termination criterion cold and reported that
+  "converged" and "out of budget" are pinned to disjoint, machine-checkable close states (a full-surface
+  clean pass vs. a warning-deviation close), so a later reader could NOT collapse them. This is the
+  reading the plan's Verification section required.
+
+**Findings and dispositions (per instance):**
+
+1. **[FIXED] Stale echo-field enumeration** — `pre-submission-self-review.md:122` (an untouched line)
+   listed the surfacer's scope-echo fields (`surface_scope`, `since_ref`, `files_in_scope`) but omitted
+   `scope_statement`, which D3 added and the same doc's new absence-claim section depends on — an
+   incomplete-enumeration defect of exactly the beyond-diff shape D3 targets. **Fixed** (commit below):
+   line 122 now includes `scope_statement`. Self-verified by grepping every `files_in_scope` occurrence
+   across the bundles — all scope-echo enumerations (SKILL.md schema + note, ext-point Post-Conditions +
+   schema, the two new subsections) now include `scope_statement`; line 122 was the sole omission. A
+   full sub-agent re-dispatch was not run for this mechanical one-field prose completion the agent had
+   already isolated as the sole omission; instead a targeted re-verification ran the marketplace-wide
+   plugin-doctor zero-findings test + the verdict test (93 passed), confirming the doc-linted file stays
+   clean.
+2. **[NOTED — closed by the PR body] "This run's own claims carry their scope" (D3 second half)** — the
+   agent flagged that this clause is verifiable only against the PR body, which is outside the diff. It
+   is closed by: (a) the § "Scope-bearing absence claims" section above, and (b) the PR body, which
+   states the searched scope + file count for each of its absence claims (§ Step 7).
+
+No undeclared collateral change; the `RUNNING_STATUS` move is the declared D4 shared-token relocation.
+
+### CI / PR review
+
+_Filled in at Step 7/8._
 
 ## Reviewer participation
 
