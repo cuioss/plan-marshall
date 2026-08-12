@@ -254,15 +254,10 @@ dirty_files: {file_list}
 
 Do NOT call `manage-status transition` to 4-plan. Do NOT proceed with the metrics fused-call below. The orchestrator stops here; recovery requires the user to inspect the offending files and either revert them or move them into `.plan/local/plans/{plan_id}/**`.
 
-**Named recovery case — `.plan/marshal.json`**: When `dirty_files` contains `.plan/marshal.json`, output an additional recovery line alongside the generic instruction:
-
-```text
-Recovery: git checkout -- .plan/marshal.json
-```
-
-`marshal.json` holds only project-level configuration read by phases; it is never an outline-phase output artifact. Restoring it from HEAD is always safe — the outline phase MUST NOT have touched it. A dirty `marshal.json` after outline is therefore always a spurious write that is safe to revert without losing any outline-phase work.
+**Named recovery case — `.plan/marshal.json`**: When `dirty_files` contains `.plan/marshal.json`, follow the single named-recovery contract defined at `plan-marshall:plan-marshall/workflow/planning.md` § "Named recovery case — `.plan/marshal.json`": **inspect the diff and obtain an explicit operator disposition before any discard — never revert `marshal.json` unconditionally.** `marshal.json` is never an outline-phase output artifact, so a dirty file was written by something other than this phase — most likely uncommitted operator configuration, which a blind revert would destroy irrecoverably.
 
 **Cross-references**:
+- `plan-marshall:plan-marshall/workflow/planning.md` § "Named recovery case — `.plan/marshal.json`" — the single authority for this recovery (inspect, then dispose; never an unconditional discard)
 - `plan-marshall:plan-marshall/workflow/planning.md` § "Post-dispatch contract assertion" (phase-2-refine) — the canonical clean-main assertion this block mirrors
 - `pm-plugin-development:plugin-doctor` analyzer `outline-contract-violation` (Deliverable 2) — edit-time static complement to this runtime assertion
 
@@ -578,15 +573,10 @@ dirty_files: {file_list}
 
 Do NOT call `manage-status transition` to 5-execute. Do NOT proceed to Step 4c. The orchestrator stops here; recovery requires the user to inspect the offending files and either revert them or move them into `.plan/local/plans/{plan_id}/**`.
 
-**Named recovery case — `.plan/marshal.json`**: When `dirty_files` contains `.plan/marshal.json`, output an additional recovery line alongside the generic instruction:
-
-```text
-Recovery: git checkout -- .plan/marshal.json
-```
-
-`marshal.json` holds only project-level configuration read by phases; it is never a plan-phase output artifact. Restoring it from HEAD is always safe — the plan phase MUST NOT have touched it. A dirty `marshal.json` after plan is therefore always a spurious write that is safe to revert without losing any plan-phase work.
+**Named recovery case — `.plan/marshal.json`**: When `dirty_files` contains `.plan/marshal.json`, follow the single named-recovery contract defined at `plan-marshall:plan-marshall/workflow/planning.md` § "Named recovery case — `.plan/marshal.json`": **inspect the diff and obtain an explicit operator disposition before any discard — never revert `marshal.json` unconditionally.** `marshal.json` is never a plan-phase output artifact, so a dirty file was written by something other than this phase — most likely uncommitted operator configuration, which a blind revert would destroy irrecoverably.
 
 **Cross-references**:
+- `plan-marshall:plan-marshall/workflow/planning.md` § "Named recovery case — `.plan/marshal.json`" — the single authority for this recovery (inspect, then dispose; never an unconditional discard)
 - `plan-marshall:plan-marshall/workflow/planning.md` § "Post-dispatch contract assertion" (phase-2-refine) — the canonical clean-main assertion this block mirrors
 - `pm-plugin-development:plugin-doctor` analyzer `plan-contract-violation` (Deliverable 2) — edit-time static complement to this runtime assertion
 
