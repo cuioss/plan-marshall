@@ -879,3 +879,43 @@ def test_findings_check_fails_closed_on_unevaluable_query(
     assert 'message' in result
     # Read-only: no handshake row is written even on the query-failure path.
     assert store.get_row('fc-query-fail', '6-finalize') is None
+
+
+# =============================================================================
+# assert_finalize_findings_clean: self-arming finalize-boundary STATE assertion
+# (the call -> state conversion the lifecycle completion boundary consumes)
+# =============================================================================
+
+
+def test_assert_finalize_findings_clean_raises_on_pending_actionable(
+    plan_context, stub_query_counts, stub_qgate_count
+) -> None:
+    """The helper is self-armed at 6-finalize: a pending actionable finding
+    raises BlockingFindingsPresent WITHOUT the caller passing any phase — the
+    guarded phase is baked in, so a caller cannot disarm it."""
+    stub_query_counts['build-error'] = 1
+
+    with pytest.raises(inv.BlockingFindingsPresent) as exc_info:
+        inv.assert_finalize_findings_clean('af-block', {})
+
+    assert exc_info.value.phase == '6-finalize'
+    assert exc_info.value.blocking_count == 1
+
+
+def test_assert_finalize_findings_clean_returns_zero_when_clean(
+    plan_context, stub_query_counts, stub_qgate_count
+) -> None:
+    """A clean actionable-findings state returns 0 (proceed)."""
+    result = inv.assert_finalize_findings_clean('af-clean', {})
+    assert result == 0
+
+
+def test_assert_finalize_findings_clean_returns_none_when_unevaluable(
+    plan_context, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unevaluable query (per-type returns None) surfaces None — the
+    completion boundary treats this as 'proceed with a logged warning', while
+    the fail-closed path is owned by the pre-merge findings-check gate."""
+    monkeypatch.setattr(inv, '_query_pending_count_for_type', lambda _p, _t: None)
+    result = inv.assert_finalize_findings_clean('af-unevaluable', {})
+    assert result is None

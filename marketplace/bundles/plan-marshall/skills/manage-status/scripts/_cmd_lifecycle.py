@@ -12,7 +12,11 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from _handshake_commands import cmd_capture, cmd_verify
-from _invariants import _BLOCKING_BOUNDARIES
+from _invariants import (
+    _BLOCKING_BOUNDARIES,
+    BlockingFindingsPresent,
+    assert_finalize_findings_clean,
+)
 from _lessons_query import RESTORE_ACTIONS
 from _short_description import derive_short_description
 from _status_core import (
@@ -185,6 +189,66 @@ def verify_blocks_transition(verify_result: dict[str, Any]) -> bool:
     return verify_result.get('error') in VERIFY_REFUSAL_ERRORS
 
 
+def _finalize_findings_refusal(plan_id: str, status: dict[str, Any]) -> dict[str, Any] | None:
+    """Finalize completion boundary: assert the blocking-findings STATE.
+
+    This is the ``call → state`` conversion for the merge boundary. The
+    blocking-findings gate used to fire only when a
+    ``phase_handshake capture --phase 6-finalize`` *call* was issued during
+    finalize; a missing call left no handshake row and raised nothing, so a
+    plan could complete with actionable findings still ``pending`` and *"the
+    gate never ran"* was indistinguishable from *"the gate passed"*. The
+    completion verbs (``cmd_transition`` completing ``6-finalize`` and
+    ``cmd_archive``) now call this assertion directly, so the gate is armed by
+    *reaching* the completion boundary rather than by an optional call.
+
+    Returns a structured refusal dict when an actionable-type finding is still
+    pending — the caller MUST return it and SKIP the completion write / archive
+    move — or ``None`` when the plan may complete:
+
+    - clean actionable-findings state (:func:`assert_finalize_findings_clean`
+      returns ``0``) → ``None`` (proceed);
+    - unevaluable query (returns ``None`` — executor unreachable / partial query
+      failure) → ``None`` (proceed, with a logged WARNING). The completion
+      boundary fails OPEN on an unevaluable query so a degenerate context with no
+      reachable findings subsystem cannot strand a legitimate completion; the
+      fail-CLOSED handling of a genuine partial query failure is owned by the
+      pre-merge ``findings-check`` gate, where the executor is guaranteed present.
+    """
+    metadata = normalize_metadata(status)
+    try:
+        blocking = assert_finalize_findings_clean(plan_id, metadata)
+    except BlockingFindingsPresent as exc:
+        log_entry(
+            'decision',
+            plan_id,
+            'ERROR',
+            f'(plan-marshall:manage-status) Finalize completion refused at 6-finalize: '
+            f'{exc.blocking_count} actionable finding(s) still pending '
+            f'(per_type={exc.per_type}) — resolve or triage before completing the plan',
+        )
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'blocking_findings_present',
+            'phase': '6-finalize',
+            'blocking_count': exc.blocking_count,
+            'blocking_types': exc.blocking_types,
+            'per_type': exc.per_type,
+            'message': str(exc),
+        }
+    if blocking is None:
+        log_entry(
+            'decision',
+            plan_id,
+            'WARNING',
+            '(plan-marshall:manage-status) Finalize completion blocking-findings check '
+            'was unevaluable (executor unreachable / partial query failure) — proceeding; '
+            'the pre-merge findings-check gate owns the fail-closed path',
+        )
+    return None
+
+
 def cmd_create(args: argparse.Namespace) -> dict[str, Any]:
     """Create status.json for a new plan.
 
@@ -299,6 +363,20 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
         next_phase: str | None = phase_names[completed_idx + 1]
     else:
         next_phase = None
+
+    # Finalize completion boundary (D2): completing ``6-finalize`` asserts the
+    # blocking-findings STATE — the merge boundary asserts a state that must
+    # hold rather than trusting an optional ``capture --phase 6-finalize`` call.
+    # Armed by REACHING this boundary (``args.completed in _BLOCKING_BOUNDARIES``),
+    # NOT by a call, so a plan can no longer be marked complete while an
+    # actionable finding is still pending. Distinct from the entering-finalize
+    # guard below (``next_phase in _BLOCKING_BOUNDARIES``): this fires on the
+    # phase being COMPLETED, that one on the phase being ENTERED. On refusal,
+    # SKIP write_status so current_phase stays on the completed phase.
+    if args.completed in _BLOCKING_BOUNDARIES:
+        findings_refusal = _finalize_findings_refusal(args.plan_id, status)
+        if findings_refusal is not None:
+            return findings_refusal
 
     # Inline strict-verify guard for guarded boundaries — folds the
     # ``phase_handshake verify --phase {completed} --strict`` step that
@@ -429,6 +507,20 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
         # loudly via require_status's error contract instead of moving the
         # broken plan into the archive — silent archives mask data loss.
         return None
+
+    # Finalize completion boundary (D2): a NORMAL-completion archive asserts the
+    # blocking-findings STATE, the same call → state conversion cmd_transition
+    # applies. ``archive-plan`` (the production terminal step) calls
+    # ``manage-status archive`` with NO --reason, so the normal-completion path
+    # is gated. A DELIBERATE archive carrying --reason (an abandonment /
+    # low-confidence close) is exempt: the operator has chosen to close the plan
+    # regardless of pending findings, and blocking that would strand it. On
+    # refusal, return before the phase-close write and the shutil.move.
+    if getattr(args, 'reason', None) is None:
+        findings_refusal = _finalize_findings_refusal(args.plan_id, status)
+        if findings_refusal is not None:
+            return findings_refusal
+
     phases = status.get('phases', [])
     active_idx = next(
         (i for i, p in enumerate(phases) if p.get('status') != PHASE_STATUS_DONE),
