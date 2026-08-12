@@ -123,6 +123,48 @@ complete against this working-tree state?"* (see [`../../manage-change-ledger/SK
 > therefore corresponds to a genuine build-executing dispatch — so read its `status` for the verdict
 > rather than trusting mere presence, and treat only `status == success` as a pass.
 
+### The three non-green conditions, and every gate that must keep them apart
+
+A build that does not finish produces **three distinguishable conditions**, and each degrades a gate
+in a different direction, so none may be presented as another:
+
+| Condition | Meaning | What it is NOT |
+|---|---|---|
+| `error` | The build **ran to completion** and reported a failure. | Not a non-finish — a verdict exists. |
+| `timeout` | The build exceeded a bound **this stack set**, so this stack sent the kill. | Not a failure; no verdict was reported. |
+| `killed` | The build's child died by a signal **nobody in this stack sent**. | Not a failure, and **not a timeout** — no bound fired. |
+
+An outcome that cannot be resolved to one of those is `unknown`, and `unknown` is folded into
+**neither neighbour**: it records that the boundary could not read a verdict, which supports no
+conclusion in either direction.
+
+**Three outcome surfaces carry these conditions, and the consuming gates read them.** The table is
+the derived consumer set — every reader of each surface, enumerated from that surface's closed import
+set (`read_entries` + `kind == build` for the ledger, `read_log_verdict` /
+`WRAPPER_CLAIMABLE_BUILD_STATUSES` for the wrapper TOON, `job_status` for the daemon wire). It is
+the list a change to the vocabulary must walk:
+
+| Consuming gate | Surface it reads |
+|---|---|
+| `_derive_build_status` (executor dispatch boundary) | wrapper TOON `status` + the dispatched script's returncode |
+| `_marshalld_supervisor.run_job` (daemon) | job-log TOON via `read_log_verdict` |
+| `_build_execute_factory._daemon_result_to_direct` | daemon `job_status` + job-log TOON |
+| `_build_shared.cmd_run_common` (emit choke point) | `DirectCommandResult.status` |
+| `build_server.py::_render_job_status` | daemon `job_status` |
+| `manage-change-ledger classify-outcome` | ledger `kind=build` `status` |
+| `manage-tasks pre-commit-verify-freshness` | ledger `kind=build` `status` |
+| The agent reading the emitted build TOON | wrapper TOON `status` / `errors[]` |
+
+**A gate that reads the status field is not thereby discriminating.** Every gate above reads one, so
+a list of "gates that read `status`" identifies nothing on its own — the question is whether reading
+it changes what the gate DOES. Two failure shapes are what to look for, and both have occurred here:
+a gate that reads the status and then reports a cause it did not establish (the freshness gate once
+described every refusal as a worktree mutation, including refusals caused by a kill), and a mapping
+that computes the distinction into a secondary field which the next layer rebuilds its payload
+without (the daemon's `killed` verdict once survived as `error='killed'` and was dropped at the
+renderer). **A discriminator that is read and then not acted on is worth less than an absent one,
+because it makes the gate look discriminating.**
+
 ### Run a long build in the foreground with an explicit 600000 ms Bash timeout — let the harness auto-background
 
 The mitigation that reliably preserved a long build: invoke it in the **foreground** with an explicit
