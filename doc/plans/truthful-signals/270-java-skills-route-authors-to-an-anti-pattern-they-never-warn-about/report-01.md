@@ -1,9 +1,10 @@
 # Run report — 270-java-skills-route-authors-to-an-anti-pattern (run 01)
 
-**Date (UTC):** 2026-08-12    **Branch:** `claude/java-skills-anti-pattern-1y0hs4`    **PR:** TBD    **Outcome:** in progress
+**Date (UTC):** 2026-08-12    **Branch:** `claude/java-skills-anti-pattern-1y0hs4`    **PR:** [#1195](https://github.com/cuioss/plan-marshall/pull/1195)    **Outcome:** completed
 
 ## Skills loaded
 
+- `cloud-plan-lane` (loaded first, as Step 1 requires — the working contract governing this run).
 - `plan-marshall:ref-code-quality` (read from bundle path) — always-load.
 - `pm-plugin-development:plugin-script-architecture` (read from bundle path) — always-load.
 - `pm-plugin-development:plugin-architecture` (read from bundle path) — SKILL.md / bundle-structure surface.
@@ -75,8 +76,9 @@ residual gaps.
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` → **empty**. All seven changed files are Markdown
-(`doc/plans/**` + `pm-dev-java` `SKILL.md`/`standards/*.md`). **No buildable footprint — local build
+The **complete** changed-path set — `git diff --name-only origin/main...HEAD` — is seven files, **all
+Markdown** (`doc/plans/**` + `pm-dev-java` `SKILL.md`/`standards/*.md`); the `-- '*.py'` filter returns
+empty, and no Java or other buildable file is present either. **No buildable footprint — local build
 skipped.** The merge queue's `merge_group` run verifies the docs-only change before it lands
 (`.github/workflows/python-verify.yml` `skip-on-docs-only`). Verdict derived from git, not assumed.
 
@@ -122,24 +124,108 @@ consumer** found. Non-defect notes, each recorded and dispositioned:
   not made stale by it.** **Disposition: rejected — pre-existing and out of scope.** Recorded as
   residue for a future plan.
 
-No finding required a code change.
+The two pre-PR sub-agents required no code change; CodeRabbit's PR review (below) did.
+
+### CodeRabbit PR review (7 findings) — round 1 on `0d90640`
+
+CodeRabbit posted 7 actionable findings (6 inline threads + 1 that failed to post to a thread). Each,
+with disposition:
+
+- **`null-safety-core.md` record-component example (Major) — FIXED.** The `@Nullable Duration validity`
+  component was *defaulted* to non-null inside the compact constructor, so its generated accessor
+  advertised an absence that could never occur — the exact misleading-signal defect this plan targets.
+  Redesigned the Records section: a genuinely-absent component is `@Nullable T` with **no** default
+  (accessor honestly nullable); defaulting is shown with a **non-null** component + a static factory
+  that normalizes the nullable input. Same fix resolves the "wrong-pattern example" Minor finding —
+  the contrived `name == null` guard under `@NullMarked` is gone, replaced by construct/read call-site
+  comments.
+- **`null-safety-core.md` serialization/cost rationale (Minor) — FIXED.** Scoped the absolute claims:
+  "not `Serializable`" → "under default Java serialization"; "an allocation and a dereference on every
+  access" → "adds a wrapper object (a heap allocation the JIT is not guaranteed to elide), unwrapped on
+  read". Accurate, and the point stands.
+- **`report-01.md` complete the report (Major) — FIXED.** All TBD sections completed in this commit.
+- **`report-01.md` record the `cloud-plan-lane` load (Major) — FIXED (partial).** Added `cloud-plan-lane`
+  to Skills loaded (it was loaded first, per Step 1). The finding's second half — "add a guard outside
+  the report to enforce the stop" — is **rejected as N/A by design**: this lane is agent-followed, not
+  machine-enforced; there is deliberately no dispatcher (`.plan/` is git-ignored, absent in a cloud
+  clone). The enforcement is the loaded contract, not a runner.
+- **`report-01.md` check all changed paths (Minor) — clarified.** The build-gate verdict already rested
+  on the full changed set being Markdown, not merely on the `-- '*.py'` filter; strengthened the wording
+  to state the complete-path check explicitly. `git diff --name-only origin/main...HEAD` = 7 files, all
+  `.md`.
+- **`plan.md` synchronize the expected surface (Major, failed to post) — rejected, documented.** The
+  plan's "Expected surface" is the reporter's **hypothesis** (the plan itself flags it as unverified and
+  makes D0 re-verify it). The authoritative placement — D4 → `null-safety-patterns.md`, no `java-21`
+  edit — is recorded in this report's D0 section. The plan is the input record; it is not rewritten to
+  match the verified outcome. No resolvable thread existed for this one (it failed to post).
 
 ## Reviewer participation
 
-TBD.
+Expected reviewer population derived from configuration — the `author_login` of each registry doc under
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/` (`coderabbit.md`, `pr-agent.md`,
+`sourcery.md`), cross-named by `.github/workflows/pr-agent.yml`. M = 3.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `coderabbitai` | `reviewed` | Posted a full review on `0d90640`: summary walkthrough + "Actionable comments posted: 7" with 6 inline review threads. Findings dispositioned above. |
+| `cuioss-review-bot` | `reviewed` | Posted its `## PR Reviewer Guide 🔍`: "No security concerns identified / No major issues detected / No relevant tests" — clean (the 🧪 negative is expected and non-actionable for a docs-only change). |
+| `sourcery-ai` | `rate-limited` | Posted only a refusal notice: "you have reached your weekly rate limit of 500000 diff characters" — matches Sourcery's `refusal_patterns` (`hard_quota`, weekly quota; not awaitable in a useful window). No review of this diff. |
+
+**Coverage: 2 of 3 reviewed.** The § Step 8 shortfall disclosure fired: `sourcery-ai` rate-limited
+(weekly diff-character quota — outside our control, not awaitable), disclosed before arming auto-merge.
+Merge proceeds on the disclosure, not blocked by it (per the contract, a rate-limit is disclosed, never
+a merge blocker).
 
 ## Cost
 
-TBD.
+- **Tokens:** not available to the agent as a reliable figure in this Claude Code cloud session — stated
+  plainly rather than estimated.
+- **Wall-clock:** run start ~21:35 UTC to auto-merge arm ~21:5x UTC (single session); source — PR
+  created 21:42:29 UTC, CodeRabbit round-1 review 21:51 UTC.
+- **Population:** this single Claude Code cloud session's usage. ⛔ NOT comparable to a plan-marshall
+  `metrics.toon` total, which counts an orchestrator-plus-agent dispatch tree under a different
+  per-task billing boundary this interactive session does not share.
 
 ## Contract check (Step 9)
 
-TBD.
+GitHub access path: **GitHub MCP server** (cloud path). Branch form: **harness-assigned** `claude/*`
+(kept as-is per the contract). A cloud run owes **no** `/sync-plugin-cache` (machine-local build step).
+
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — `cloud-plan-lane` (first), `ref-code-quality`, `plugin-script-architecture`, `plugin-architecture`; named in the report |
+| 2 Branch | Done — `claude/java-skills-anti-pattern-1y0hs4` on `origin` (harness-assigned, pushed before any work) |
+| 3 Plan directory | Done — `plan.md` in place, opens with the first-instruction block |
+| 4 Implement | Done — D0–D5 addressed; commits carry the `Co-Authored-By: Claude` trailer |
+| 4 Per-commit gate | N/A — no commit touched `*.py`; no quality gate owed |
+| 4 Pushed | Done — no unpushed commit remains after each push |
+| 5 Build gate | Done — full changed set is Markdown (no `*.py`); local build skipped; merge-queue verifies |
+| 6 Verification sub-agent | Done — cold read PASS (all three positions `@Nullable T`); deliverable review PASS; findings + dispositions recorded |
+| 7 PR cycle | Done — PR #1195; all 3 comment surfaces read; every comment dispositioned |
+| 8 Merge gate | Conditions 1–3 met on the fix head; shortfall (2-of-3) disclosed; auto-merge armed |
+| 8 Bridge | Done — writes confined to this plan's directory; report carries PR # and per-deliverable outcome |
+| 9 This check | Done — this table |
+| 9 What have we learned | One minor observation recorded below |
 
 ## What have we learned (Step 9)
 
-TBD.
+**One minor, evidence-backed observation — recorded, not shipped.** CodeRabbit flagged the report's
+"Skills loaded" section for omitting `cloud-plan-lane`, the skill Step 1 loads *first*. The contract's
+report template (`## Skills loaded`) and Step-1 table do not explicitly say a run must list its own
+`cloud-plan-lane` load — a run can reasonably treat it as implied, which is what happened here. A
+one-line clarification to the report template ("include the `cloud-plan-lane` load itself") would close
+that gap. Per Step 9, a contract change is **not self-approved**: this is presented for the operator's
+decision and **not** shipped as a separate PR absent approval. No other contract gap surfaced — the
+durability-vs-review-integrity tension, the docs-only build skip, and the MCP merge-gate field
+(`mergeable_state`) all behaved as the contract describes.
 
 ## Residue
 
-TBD.
+- `java-maintenance/standards/compliance-checklist.md:36` is correct but less complete than the widened
+  positional rule (checks only "no `@Nullable` returns", not "no `Optional` fields/params/components").
+  A future `java-maintenance` pass could extend it; out of scope here.
+- Pre-existing imprecise xref `java-maintenance/standards/refactoring-triggers.md:48` points to a
+  java-null-safety "section 'Optional Usage'" that actually lives in `java-core/java-17-features.md`.
+  Predates this change; a future doc-hygiene pass should correct it.
+- `sourcery-ai` did not review this diff (weekly quota). If a fresh Sourcery pass is wanted, it needs a
+  smaller diff or a quota reset — neither is actionable from this run.

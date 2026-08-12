@@ -157,11 +157,11 @@ below (§ "Records and Null-Safety").
 
 State the reasons — a rule without its reason gets re-litigated:
 
-- **`Optional` is not `Serializable`.** A field or record component typed `Optional<T>` breaks
-  serialization of its enclosing type; `@Nullable T` does not.
-- **It costs an allocation and a dereference on every access.** A value held behind `Optional` is
-  wrapped once and unwrapped on every read — overhead the `@Nullable` annotation, which is erased,
-  never adds.
+- **`Optional` is not `Serializable`.** Under default Java serialization, a field or record component
+  typed `Optional<T>` makes its enclosing type fail to serialize; a `@Nullable T` field does not.
+- **It adds a wrapper object.** The value is boxed in an `Optional` — a heap allocation the JIT is not
+  guaranteed to elide — and unwrapped on read, overhead a `@Nullable` field (whose annotation is
+  erased) never carries.
 - **As a parameter it forces every caller to wrap.** A method taking `Optional<String>` makes each
   call site write `f(Optional.ofNullable(value))`; a `@Nullable` parameter — or, better, an overload —
   lets callers pass the value directly.
@@ -173,59 +173,78 @@ none of that benefit — only the cost.
 ## Records and Null-Safety
 
 A record component follows the field rule: a component that may be absent is `@Nullable T`, **never**
-`Optional<T>`. The wrong turn here is `record Config(Optional<String> name)` — the exact anti-pattern
-the positional rules above exist to prevent, and the shape a reader who knows only the return-type
-rule will actually produce.
+`Optional<T>`. `@Nullable` propagates to the generated accessor, so `@Nullable String name` yields a
+`name()` that is honestly nullable — whereas `Optional<String> name` yields a component that is not
+`Serializable`, a `name()` every caller must unwrap, and a canonical constructor every caller must
+feed `Optional.ofNullable(...)`. The wrong turn is `record Config(Optional<String> name)` — the exact
+anti-pattern the positional rules above exist to prevent, and the shape a reader who knows only the
+return-type rule will produce.
 
 ### The compact constructor
 
 A record's compact constructor is the one place to **validate, normalize, and defensively copy**. Each
-component is assigned **once**, from the (possibly adjusted) constructor parameter — do not reassign
-after that:
+component is assigned **once**, from the (possibly adjusted) parameter — do not reassign after that.
+Normalization must **preserve the component's declared nullness**: trim, canonicalize, or copy, but do
+not quietly turn a `@Nullable` component into an always-non-null one — that makes the accessor's
+`@Nullable` a lie (see "Defaulting" below):
 
 ```java
-public record TokenConfig(String issuer, @Nullable Duration validity, Set<String> scopes) {
+public record TokenConfig(String issuer, Set<String> scopes, @Nullable Duration validity) {
     public TokenConfig {
-        // validate
-        if (issuer == null || issuer.isBlank()) {
+        // validate (issuer is non-null under @NullMarked)
+        if (issuer.isBlank()) {
             throw new IllegalArgumentException("issuer is required");
         }
-        // normalize / default (see below)
-        validity = validity != null ? validity : Duration.ofHours(1);
-        // defensively copy
+        // defensively copy — non-null stays non-null
         scopes = Set.copyOf(scopes);
+        // validity is left as-is: absent means null, and validity() honestly returns @Nullable
     }
 }
 ```
 
 ### Defaulting without a builder-default annotation
 
-`@Builder.Default` does not work on record components (see `pm-dev-java:java-lombok`). Default a
-component in the compact constructor instead: normalize the incoming value and let the implicit
-assignment take the result, as `validity` does above. No builder-default annotation is involved.
-
-### Legitimate normalization vs reassignment gymnastics
-
-Reassigning a component parameter in the compact constructor is legitimate **only** when it validates,
-normalizes, or defensively copies a value the component should carry. It is **not** legitimate when it
-exists solely to unwrap an `Optional` the component should never have held:
+`@Builder.Default` does not work on record components (see `pm-dev-java:java-lombok`), so a default is
+applied in code. **A defaulted component is never absent** — it always holds a value after
+construction — so declare it **non-null** and apply the default to a nullable *input*, in a static
+factory (or secondary constructor). The canonical component, and its accessor, stay non-null and
+honest:
 
 ```java
-// WRONG - the component should never have been Optional; the constructor does unwrap gymnastics
-public record Config(Optional<String> name) {
-    public Config {
-        name = name == null ? Optional.empty() : name;   // gymnastics to make a null-Optional safe
+public record RetryPolicy(int maxAttempts, Duration backoff) {   // backoff is non-null
+    public RetryPolicy {
+        Objects.requireNonNull(backoff, "backoff");
     }
-    // ...and every reader must call name.orElse(...) forever
-}
 
-// CORRECT - @Nullable component; normalize directly, read directly
-public record Config(@Nullable String name) {
-    public Config {
-        name = name != null ? name : "anonymous";        // legitimate defaulting
+    // the default lives here; the nullable input never reaches the component as null
+    public static RetryPolicy of(int maxAttempts, @Nullable Duration backoff) {
+        return new RetryPolicy(maxAttempts, backoff != null ? backoff : Duration.ofSeconds(1));
     }
 }
 ```
 
-If a compact constructor's only job for a component is to turn `null` into `Optional.empty()` or to
-re-wrap a value, the component is typed wrong — make it `@Nullable T`.
+Defaulting a `@Nullable` component inside the compact constructor is the trap to avoid: the component
+reads `@Nullable` while never actually being null, so its accessor advertises an absence that cannot
+happen. A value is either genuinely absent (`@Nullable` component, no default) **or** it has a default
+(non-null component, default at the factory) — never annotated one way and behaving the other.
+
+### Legitimate normalization vs reassignment gymnastics
+
+Reassigning a component parameter is legitimate only when it validates, canonicalizes, or defensively
+copies a value the component should carry — **without changing its nullness**. It is **not** legitimate
+when it exists solely to unwrap an `Optional` the component should never have held:
+
+```java
+// WRONG - Optional component: not Serializable, every caller wraps, every reader unwraps
+public record Config(Optional<String> name) { }
+//   construct:  new Config(Optional.ofNullable(rawName))   // caller forced to wrap
+//   read:       config.name().orElse("anonymous")          // reader forced to unwrap, everywhere
+
+// CORRECT - @Nullable component: construct and read directly, absence is null
+public record Config(@Nullable String name) { }
+//   construct:  new Config(rawName)                         // pass the value (or null) directly
+//   read:       config.name()                               // @Nullable String — honestly nullable
+```
+
+If a component exists only so a constructor can turn `null` into `Optional.empty()` or a reader can
+call `.orElse(...)`, the component is typed wrong — make it `@Nullable T`.
