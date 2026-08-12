@@ -615,4 +615,5 @@ def test_identify_unknown_shape_is_custom() -> None:
 @pytest.mark.parametrize('bad', [None, {}, {'default': 'level-3'}, {'roles': {}}, 'not-a-dict', 42])
 def test_identify_malformed_payload_is_custom(bad: object) -> None:
     """A payload missing ``default``/``roles`` (or not a dict) is ``custom``, never a crash."""
-    assert mp.EffortPresets.identify(bad) == {'name': None, 'status': 'custom'}
+    # Deliberately passing non-dict / malformed inputs to exercise the guard.
+    assert mp.EffortPresets.identify(bad) == {'name': None, 'status': 'custom'}  # type: ignore[arg-type]

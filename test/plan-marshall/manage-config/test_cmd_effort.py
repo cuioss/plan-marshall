@@ -739,7 +739,7 @@ def test_reconstruct_effort_payload_inverts_apply_preset(plan_context):
 
 
 def _identify(plan_context) -> dict:
-    result = cmd_effort_identify(Namespace())
+    result: dict = cmd_effort_identify(Namespace())
     assert result['status'] == 'success'
     return result
 
