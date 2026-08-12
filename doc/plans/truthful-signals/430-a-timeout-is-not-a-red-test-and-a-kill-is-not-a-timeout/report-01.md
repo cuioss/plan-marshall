@@ -381,25 +381,116 @@ _(filled in before the merge gate — see run continuation below)_
 
 ## Cost
 
-- **Tokens:** not available to the agent in this session.
-- **Wall-clock:** the two D2 measurement builds account for 1 103 s (580 s + 523 s);
-  the post-change full suite 454 s; the pre-commit and pre-PR quality gates a
-  further ~300 s. Session start/end timestamps are not exposed to the agent, so no
-  total is claimed.
-- **Population:** the figures above are **individual command durations measured in
-  this session**, nothing more. ⛔ They are **NOT comparable** to a plan-marshall
-  `metrics.toon` total, which counts an orchestrator-plus-agent dispatch tree under
-  plan-marshall's own per-task billing boundary. A single interactive cloud session
-  does not share that boundary, and no attempt is made here to make the two
-  comparable.
+- **Tokens:** not available to the agent for the main session. The two
+  verification sub-agents self-reported **190 758** and **211 896** tokens
+  (74 and 83 tool uses; 604 s and 931 s wall-clock) — that is **their** usage
+  only, and it does not include the main session that dispatched them, so it is
+  a floor on the run's total, never the total.
+- **Wall-clock (measured commands only):** the two D2 measurement builds 1 103 s
+  (580 + 523); three full-suite runs 454 + 490 + 443 s; five `quality-gate`
+  invocations and one `test-compile` a further ~700 s. Session start/end
+  timestamps are not exposed to the agent, so **no session total is claimed** —
+  the sum of the commands is a lower bound on elapsed time and excludes every
+  interval spent reading, editing, and waiting.
+- **Population:** the figures above are **individual command durations and two
+  sub-agent self-reports measured in this session**, nothing more. ⛔ They are
+  **NOT comparable** to a plan-marshall `metrics.toon` total, which counts an
+  orchestrator-plus-agent dispatch tree under plan-marshall's own per-task
+  billing boundary. A single interactive cloud session does not share that
+  boundary, and no attempt is made here to make the two comparable.
 
 ## Contract check (Step 9)
 
-_(filled in before the merge gate)_
+Re-read `cloud-plan-lane` and checked each step against what actually happened —
+both that the step ran and that its artifact exists.
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **done** | Named in § Skills loaded. `cloud-plan-lane` via the plugin route; `ref-code-quality` + `standards/error-handling.md` by bundle path. No skill was unobtainable by either route. |
+| 2 Branch | **done** | `claude/timeout-kill-signal-semantics-75r3fw` exists on `origin`. **Harness-assigned form** — kept as-is per § Step 2; the run created no branch. Published *before the first edit* (the branch was absent from `origin` on arrival; `git ls-remote` confirmed, then pushed). |
+| 3 Plan directory | **done** | `doc/plans/truthful-signals/430-…/plan.md` exists, moved with `git mv` (history preserved), numeric prefix intact. The first-instruction block was **present** on arrival — checked, not assumed; no repair needed. |
+| 4 Implement | **done** | Five commits, each carrying the `Co-Authored-By` trailer and no "Generated with Claude Code" footer. All four deliverables addressed. |
+| 4 Per-commit gate | **done** | Every commit touching `*.py` was preceded by a clean `./pw quality-gate` — `ruff … All checks passed!`, `mypy … Success: no issues found in 395 source files`, `SPDX-header check passed`, plugin-doctor `total_issues: 0`. Read from the tools' own output, not the exit code. |
+| 4 Pushed | **done** | Pushed after every commit. `git status -sb` reports no `ahead`. |
+| 5 Build gate | **done** | Git-derived verdict recorded in § Build gate: Python changed ⇒ full path taken. Baseline, per-round and final results all stated, each attributed to the commit it was measured at. |
+| 6 Verification sub-agent | **done, twice** | Dispatched, found defects, **re-dispatched** (a pass that found a defect has not finished). 31 findings, all in § Findings with dispositions. |
+| 7 PR cycle | **done** | PR #1193. `skip-bot-review` correctly **not** applied — the diff touches `*.py`, `marketplace/bundles/**` and a skill, and a skill is code. |
+| 8 Merge gate | see below | Conditions 1–3 and the condition-4 disclosure recorded at § Merge gate. |
+| 8 Bridge | **done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory. No ledger, no status file, no other plan touched. |
+| 9 This check | **done** | This table. |
+| 9 What have we learned | **done** | Below. |
+
+**GitHub access path:** the **GitHub MCP server** (the cloud path). No `gh` CLI
+is present in this session.
+
+**Branch form:** harness-assigned `claude/*`, kept per § Step 2.
+
+**Plugin cache sync:** **not owed.** A cloud run neither performs nor owes a
+`/sync-plugin-cache` — it is a machine-local build step reading the git-ignored
+`target/` and writing `~/.claude/`, neither of which this lane has. Recorded
+explicitly because a verification pass raised its absence as a finding
+(V17) against the `CLAUDE.md` line the skill's § Scope and precedence
+supersedes.
+
+**Steps NOT done:** none. Two steps were done *more than once* (verification
+dispatch, build gate) because the first pass surfaced defects.
 
 ## What have we learned (Step 9)
 
-_(filled in before the merge gate)_
+The run exercised the contract end to end across three fix rounds, which is
+where its gaps become visible. **One change is proposed**, and it is grounded in
+what happened here rather than in speculation.
+
+### Proposal — Step 6 should require that the verification agent be re-dispatched until it comes back clean, and should say why
+
+**What the contract says now.** § Step 6: *"Findings that are real → fix them,
+then re-dispatch. A verification pass that found a defect has not finished."*
+That is correct and I followed it. What it does **not** say is what the second
+dispatch is *for*, and the difference is not cosmetic.
+
+**The evidence from this run.** The second verification pass found **12 new
+defects, and every one of them was introduced by the first round's fixes** —
+including the single most serious finding of the entire run: the regression test
+for the headline fix re-implemented the line under test inside the test, so
+reverting the production change left the whole suite green. A re-dispatch read
+as "confirm my fixes landed" would plausibly have checked the 16 sites and
+returned clean. It found 12 more because it was explicitly asked to *hunt for
+defects the fixes themselves introduced*.
+
+**The proposed edit** — add to § Step 6, after the existing re-dispatch line:
+
+> A re-dispatch is not a confirmation pass. Its highest-value target is **the
+> defects the fixes themselves introduced**: a fix written under time pressure
+> against a specific finding routinely widens a vocabulary without updating its
+> consumers, adds a branch without a control that bites, or corrects a claim in
+> one file and falsifies it in three others. Tell the re-dispatched agent to
+> verify each prior finding *and* to hunt for what the fixes broke — including
+> whether each new test would actually fail if its fix were reverted.
+
+**Why this is worth a contract change rather than a lesson.** The re-dispatch
+already happens; what varies is what it is *asked to look for*, and that is
+decided by whoever writes the prompt in the moment. On this run the difference
+between the two framings was 12 findings and one test that could never fail.
+
+### Not proposed, and why
+
+- **A "verify the test bites" step.** Tempting after N1, but it belongs in the
+  D3-style plan wording (*"each verified RED pre-fix"*, which this plan already
+  had) rather than in the lane contract, which is deliberately test-framework
+  agnostic. The contract change above reaches it via the re-dispatch prompt.
+- **Anything about the report's ordering.** V18 flagged the unfilled sections as
+  a defect; the contract's ordering (§ Step 8 condition 3) turned out to be
+  exactly right, and a second independent pass agreed. No change.
+- **Anything about `/sync-plugin-cache`.** The skill already states the carve-out
+  clearly in three places; the finding arose from `CLAUDE.md`, which the skill
+  explicitly supersedes. No change.
+
+**Operator disposition:** presented in-session. This run is **headless with
+respect to approval** — no human input has been received since the initial
+instruction — so the change is **NOT self-approved and NOT shipped**. Per § Step
+9 it would ship as a separate `chore/` PR touching only the skill, without
+`skip-bot-review`, and it is deliberately kept out of this plan's PR so a
+contract amendment is not coupled to whether the plan lands.
 
 ## Residue
 
