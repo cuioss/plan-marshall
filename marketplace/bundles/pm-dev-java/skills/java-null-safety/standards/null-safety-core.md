@@ -134,3 +134,98 @@ public Optional<ValidationResult> tryValidate(String token) {
     // Returns Optional.empty() when no result
 }
 ```
+
+## Null-Safety by Position
+
+`Optional<T>` is a **return-type** idiom and nothing more; `@Nullable` marks every other position.
+Applying the wrong one is the most common null-safety mistake: an author who has internalized "use
+`Optional` for absence" and "never `@Nullable` for returns" — both correct in isolation — will reach
+for `Optional<T>` as a field, a parameter, or a record component, where it is wrong.
+
+| Position | Nullable case | Never |
+|----------|---------------|-------|
+| Return type | `Optional<T>` (absence), or a guaranteed non-null value | `@Nullable T` |
+| Field | `@Nullable T` | `Optional<T>` |
+| Parameter | `@Nullable T`, or a method overload (preferred) | `Optional<T>` |
+| Record component | `@Nullable T` | `Optional<T>` |
+
+The parameter and return rules are detailed above (§ "API Return Type Guidelines") and in
+`standards/null-safety-patterns.md` (§ "Nullable Parameters"); the record-component rule is detailed
+below (§ "Records and Null-Safety").
+
+### Why `Optional` is a return type only
+
+State the reasons — a rule without its reason gets re-litigated:
+
+- **`Optional` is not `Serializable`.** A field or record component typed `Optional<T>` breaks
+  serialization of its enclosing type; `@Nullable T` does not.
+- **It costs an allocation and a dereference on every access.** A value held behind `Optional` is
+  wrapped once and unwrapped on every read — overhead the `@Nullable` annotation, which is erased,
+  never adds.
+- **As a parameter it forces every caller to wrap.** A method taking `Optional<String>` makes each
+  call site write `f(Optional.ofNullable(value))`; a `@Nullable` parameter — or, better, an overload —
+  lets callers pass the value directly.
+
+A return type is the one position where the caller *benefits* from the wrapper: it makes "no result"
+explicit in the type and forces the caller to handle absence. Fields, parameters, and components get
+none of that benefit — only the cost.
+
+## Records and Null-Safety
+
+A record component follows the field rule: a component that may be absent is `@Nullable T`, **never**
+`Optional<T>`. The wrong turn here is `record Config(Optional<String> name)` — the exact anti-pattern
+the positional rules above exist to prevent, and the shape a reader who knows only the return-type
+rule will actually produce.
+
+### The compact constructor
+
+A record's compact constructor is the one place to **validate, normalize, and defensively copy**. Each
+component is assigned **once**, from the (possibly adjusted) constructor parameter — do not reassign
+after that:
+
+```java
+public record TokenConfig(String issuer, @Nullable Duration validity, Set<String> scopes) {
+    public TokenConfig {
+        // validate
+        if (issuer == null || issuer.isBlank()) {
+            throw new IllegalArgumentException("issuer is required");
+        }
+        // normalize / default (see below)
+        validity = validity != null ? validity : Duration.ofHours(1);
+        // defensively copy
+        scopes = Set.copyOf(scopes);
+    }
+}
+```
+
+### Defaulting without a builder-default annotation
+
+`@Builder.Default` does not work on record components (see `pm-dev-java:java-lombok`). Default a
+component in the compact constructor instead: normalize the incoming value and let the implicit
+assignment take the result, as `validity` does above. No builder-default annotation is involved.
+
+### Legitimate normalization vs reassignment gymnastics
+
+Reassigning a component parameter in the compact constructor is legitimate **only** when it validates,
+normalizes, or defensively copies a value the component should carry. It is **not** legitimate when it
+exists solely to unwrap an `Optional` the component should never have held:
+
+```java
+// WRONG - the component should never have been Optional; the constructor does unwrap gymnastics
+public record Config(Optional<String> name) {
+    public Config {
+        name = name == null ? Optional.empty() : name;   // gymnastics to make a null-Optional safe
+    }
+    // ...and every reader must call name.orElse(...) forever
+}
+
+// CORRECT - @Nullable component; normalize directly, read directly
+public record Config(@Nullable String name) {
+    public Config {
+        name = name != null ? name : "anonymous";        // legitimate defaulting
+    }
+}
+```
+
+If a compact constructor's only job for a component is to turn `null` into `Optional.empty()` or to
+re-wrap a value, the component is typed wrong — make it `@Nullable T`.

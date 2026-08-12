@@ -65,6 +65,10 @@ public String format(Locale locale) {
 
 Prefer method overloads over `@Nullable` parameters — they make the API clearer and avoid null checks in the implementation.
 
+**Never accept `Optional<T>` as a parameter.** `Optional` is a return-type idiom (see
+`standards/null-safety-core.md` § "Null-Safety by Position"); as a parameter it forces every caller to
+wrap the value in `Optional.ofNullable(...)`. Use a `@Nullable T` parameter, or an overload, instead.
+
 ## Collections and Generics
 
 Apply null-safety to collection types:
@@ -138,6 +142,27 @@ void shouldAcceptNullableParameters() {
     assertEquals("DEFAULT", service.processWithDefault(null));
 }
 ```
+
+## Static Analysis and Null-Coalescing Helpers
+
+`Objects.requireNonNullElse(value, fallback)` exists to **produce** a non-null result from a
+possibly-null `value` (with a non-null `fallback`). Some null-analysis checkers, however, model the
+result's nullness as carrying the nullness of its **arguments** — because `value` is `@Nullable`, they
+infer the result is possibly-null and raise a false positive on exactly the path the helper made safe.
+During a null-annotation migration this surfaces as a red gate on correct code.
+
+Prefer an explicit null-guard, which flow analysis narrows correctly:
+
+```java
+// May trip a null-checker false positive — result modelled as @Nullable from `value`
+Duration validity = Objects.requireNonNullElse(configuredValidity, Duration.ofHours(1));
+
+// Analyser-friendly — flow-sensitive narrowing proves the result is non-null
+Duration validity = configuredValidity != null ? configuredValidity : Duration.ofHours(1);
+```
+
+Both produce the same non-null value; the ternary is the one a null-checker can prove. Reach for it
+when `requireNonNullElse` draws a false positive, rather than suppressing the warning.
 
 ## Migration Strategy
 
