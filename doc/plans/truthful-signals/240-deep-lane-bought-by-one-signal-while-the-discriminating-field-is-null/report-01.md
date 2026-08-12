@@ -56,9 +56,41 @@ confidence report shows it resolved rather than null, (c) it removes a structura
 reachable in this clone (the decision log, orchestrator ledger, and metrics live under `.plan/`, which
 is git-ignored and absent). **No token figure is carried into any justification.**
 
-### D1 — make an unresolved signal visible in the decision — _implemented (see Findings/commits)_
-### D2 — require corroboration for prose-only routing — _implemented (see Findings/commits)_
-### D3 — tests, each verified red pre-fix — _implemented (see Findings/commits)_
+### D1 — make an unresolved signal visible in the decision — DONE (commit `567c703`)
+
+Added a `confidence` block to `evaluate_signals_pure` and the route return/decision-log:
+`signals_total` / `signals_resolved` / `signals_null` / `null_signals` / `low_confidence`
+(low-confidence = more inputs null than resolved). For the recorded vector this reports 3-of-7
+resolved, 4 null — so a 1-of-4 decision no longer reads like a 1-of-7 one. **Asserted-absence check
+(claim table):** confirmed the route record carried no prior signal-resolution field (only
+`scope_provenance`, which is band observability, not vector confidence), so D1 adds genuinely new
+information.
+
+### D2 — require corroboration for prose-only routing — DONE (commit `567c703`)
+
+Chosen lever: **corroboration** (see Design decisions). Implemented in `evaluate_signals_pure`: when
+`fired == ['S7:risk_prose']` and `scope_estimate` is the resolved non-committal middle band
+(`single_module`), S7 moves to `suppressed_signals` and the lane is `light`. **Rejected alternative
+recorded:** provenance-exemption of spec bodies (the verify-first check refuted the "prose fires on
+markup" hypothesis — the sensor scores semantic vocabulary, so exemption would suppress genuine
+warnings). `surgical` (positively-earned narrow band) is untouched, so the prior false-negative fix's
+test is preserved verbatim.
+
+### D3 — tests, each verified red pre-fix — DONE (commit `567c703`)
+
+`test/plan-marshall/manage-status/test_planning_lane_corroboration.py` (12 tests). Red-first verified
+by stashing the router change and running the file against the pre-fix router:
+- (a) `test_d3a_recorded_vector_does_not_route_deep` — red pre-fix (lane=`deep`), green post-fix.
+- (b) `test_d3b_orchestrator_spec_resolves_plan_source_nonnull` — red pre-fix (`plan_source` None),
+  green post-fix.
+- (c) `test_d3c_several_nulls_reported_low_confidence` — red pre-fix (no `confidence` key), green post-fix.
+- (d) `test_d3d_control_deep_warranting_vector_still_routes_deep` — the CONTROL. Pre-fix its lane
+  assertion held (deep→deep) but it referenced the new observability keys, so it errored red; post-fix
+  green. Its teeth are against an over-de-escalating fix: the deep vector fires S1/S2/S3/S4/S5 — none of
+  which the corroboration touches — so a fix that de-escalated it would have to suppress non-prose
+  signals, which this one demonstrably does not.
+Plus a don't-fight regression (`surgical` + S7-alone still deep), a corroborated-S7-still-deep case,
+and the metadata-wins / plaintext-stays-null bridge cases.
 
 ## Design decisions (D2 lever choice — recorded per D2's "record the rejected alternative")
 
@@ -103,7 +135,16 @@ orchestrated population — a ceremony increase that would work against this epi
 kept inside the defective component (the router / manage-status), the plan's Expected surface.
 
 ## Build gate
-_pending_
+
+`git diff --name-only origin/main...HEAD -- '*.py'` verdict: **Python changed** (`_cmd_planning_lane.py`
+and the new test file). Build takes its full path.
+
+- `./pw quality-gate` — clean (`issues[0]`, coverage COMPLETE: mypy/ruff/SPDX/plugin-doctor).
+- `./pw verify` — **SUCCESS**: 19243 passed, 14 skipped in 431s; quality-gate + test-compile +
+  whole-tree pytest all clean.
+- Per-commit gate: the implementation commit was preceded by a clean `./pw quality-gate`.
+- No lockfile churn: `git status --porcelain` clean after both `quality-gate` and `verify`; deliverable
+  paths were staged explicitly (never `git add -A`).
 
 ## Findings
 _pending_
