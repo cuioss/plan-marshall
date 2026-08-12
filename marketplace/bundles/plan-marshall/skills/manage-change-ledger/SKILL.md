@@ -94,11 +94,15 @@ Every entry carries a `kind` discriminator, a `worktree_sha`, and a
   stamps `status: timeout` despite its exit code 0, a child killed by a POSIX
   signal stamps `status: killed`, and an exit-0 dispatch whose payload carries
   no wrapper-claimable status stamps `status: unknown` rather than a `success`
-  nothing substantiates. `killed` and `unknown` are **derived-only**: the
-  dispatch boundary produces them, and a wrapper that prints either in its own
-  stdout TOON is not believed — the boundary reads a payload claim against the
-  narrower wrapper vocabulary (`success` | `error` | `timeout`) alone. Every
-  member other than `success` fails the freshness gate closed), `worktree_sha`, `log_file`,
+  nothing substantiates. `killed` arrives by **either** route and both are
+  first-hand: the boundary derives it from a negative returncode when the
+  dispatched script itself was signalled (the outer kill, where nothing was
+  reported), and the wrapper claims it in its own stdout TOON when it reaped a
+  signalled build child and survived to say so (the inner kill) — exactly as it
+  claims `timeout`. Only `unknown` is **derived-only**: it records the absence
+  of the very evidence a claim would be, so a wrapper printing it is not
+  believed. Every member other than `success` fails the freshness gate closed),
+  `worktree_sha`, `log_file`,
   `timestamp_iso`. A build is NOT a commit, so a `kind=build` entry does NOT
   carry `commit_sha` or `changed_paths`. The stamp is **tier-agnostic** —
   written at the executor dispatch boundary, it fires identically for an
@@ -233,8 +237,12 @@ job as `success`. Every call site already holds the sha at call time (the
   `status: killed`. The no-row case is the **whole-tree-kill signature**:
   the executor died before the dispatch boundary could stamp a row, so the
   missing row plus the 0-byte output IS the kill evidence. The killed-row
-  case is the **child-kill signature**: the executor survived to the
-  boundary and stamped the `killed` outcome it observed. The returned TOON's
+  case is the **child-kill signature**, and a row reaches it by either of two
+  routes: the executor survived and stamped `killed` from the negative
+  returncode of a signalled build **script**, or the build script survived a
+  signalled build **child** and claimed `status: killed` in its own stdout TOON,
+  which the boundary carries through. Both are first-hand observations of a
+  reaped child, so both land on the same verdict. The returned TOON's
   `display_detail`/`message` render "externally killed — not flaky, do not
   blind-retry" — the call site MUST NOT re-dispatch the identical command as
   a retry.

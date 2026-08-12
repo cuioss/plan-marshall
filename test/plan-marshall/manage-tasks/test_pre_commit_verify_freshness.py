@@ -401,6 +401,161 @@ def test_stale_when_only_change_entry_matches_sha(plan_context, monkeypatch, tmp
     assert result['status'] == 'stale', result
 
 
+# =============================================================================
+# The ``stale`` REASON — four routes, four remedies
+#
+# The gate's pass/fail behaviour is identical on every route below (only
+# ``fresh`` ever permits), so these cases pin the half that differs: what the
+# refusal SAYS. The historical single message asserted "the worktree has been
+# mutated since the last observed build ... re-dispatch a build before
+# retrying" on all four — a cause the gate never established, and a remedy that
+# is exactly the blind retry a ``killed`` build forbids.
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ('row_status', 'expected_reason'),
+    [
+        ('error', 'build_error'),
+        ('timeout', 'build_timeout'),
+        ('killed', 'build_killed'),
+        ('unknown', 'build_indeterminate'),
+        # A status outside the vocabulary resolves to indeterminate rather than
+        # being folded into a neighbour — an unresolvable case is its own answer.
+        ('some-future-status', 'build_indeterminate'),
+    ],
+)
+def test_stale_reason_names_the_observed_build_status(
+    plan_context, monkeypatch, tmp_path, row_status, expected_reason
+) -> None:
+    """A build WAS observed against this tree — the refusal must say which kind."""
+    plan_id = f'freshness-reason-{row_status}'
+    _write_status(plan_context.plan_dir_for(plan_id))
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(
+        tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=-1, status=row_status)]
+    )
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id=plan_id))
+
+    assert result['status'] == 'stale', result
+    assert result['reason'] == expected_reason, result
+    assert result['observed_status'] == row_status, result
+
+
+def test_stale_reason_is_mutation_only_when_no_row_carries_the_sha(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """CONTROL: a genuinely-mutated tree still reports the mutation reason."""
+    _write_status(plan_context.plan_dir_for('freshness-reason-mutated'))
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(tmp_path, [_build_entry(worktree_sha=_OTHER_SHA)])
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-reason-mutated'))
+
+    assert result['status'] == 'stale', result
+    assert result['reason'] == 'worktree_mutated', result
+    # No row was observed for this sha, so there is no status to report.
+    assert 'observed_status' not in result, result
+    assert 'mutated' in result['message']
+
+
+def test_killed_row_is_not_reported_as_a_mutation(plan_context, monkeypatch, tmp_path) -> None:
+    """The defect in one assertion: a kill is not a mutation and must not read as one."""
+    _write_status(plan_context.plan_dir_for('freshness-killed-not-mutated'))
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(
+        tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=-9, status='killed')]
+    )
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-killed-not-mutated'))
+
+    assert result['reason'] == 'build_killed', result
+    assert 'mutated' not in result['message'], result
+    assert 'do not blind-retry' in result['message'], result
+
+
+def test_timeout_row_is_not_reported_as_a_failing_build(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """A timeout is not a red test — the refusal must not describe one."""
+    _write_status(plan_context.plan_dir_for('freshness-timeout-not-red'))
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(
+        tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=0, status='timeout')]
+    )
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-timeout-not-red'))
+
+    assert result['reason'] == 'build_timeout', result
+    assert 'TIMED OUT' in result['message'], result
+    assert 'Fix the reported failures' not in result['message'], result
+
+
+def test_control_error_row_still_prescribes_fixing_the_code(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """CONTROL: a genuinely failing build still tells the caller to fix the code."""
+    _write_status(plan_context.plan_dir_for('freshness-error-remedy'))
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(
+        tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=1, status='error')]
+    )
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-error-remedy'))
+
+    assert result['reason'] == 'build_error', result
+    assert 'Fix the reported failures' in result['message'], result
+    assert 'do not blind-retry' not in result['message'], result
+
+
+def test_stale_reason_reads_the_most_recent_matching_row(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """Several non-green builds against one tree: the LATEST one is the reason."""
+    _write_status(plan_context.plan_dir_for('freshness-latest-row'))
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(
+        tmp_path,
+        [
+            _build_entry(worktree_sha=_CURRENT_SHA, exit_code=1, status='error'),
+            _build_entry(worktree_sha=_CURRENT_SHA, exit_code=-9, status='killed'),
+        ],
+    )
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-latest-row'))
+
+    assert result['reason'] == 'build_killed', result
+
+
+def test_statusless_row_reports_indeterminate_not_mutation(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """A row with no ``status`` was still a build against this tree, not a mutation."""
+    _write_status(plan_context.plan_dir_for('freshness-statusless-reason'))
+    _stub_worktree_sha(monkeypatch, _CURRENT_SHA)
+    ledger_path = _write_ledger(
+        tmp_path, [_build_entry(worktree_sha=_CURRENT_SHA, exit_code=0, status=None)]
+    )
+    _stub_ledger_path(monkeypatch, ledger_path)
+
+    result = cmd_pre_commit_verify_freshness(Namespace(plan_id='freshness-statusless-reason'))
+
+    assert result['status'] == 'stale', result
+    assert result['reason'] == 'build_indeterminate', result
+    # A row with no readable status has no status to report. Emitting one would
+    # mean inventing it, so the field's ABSENCE is the honest answer here — and
+    # `reason` still separates this from the `worktree_mutated` route, which is
+    # the distinction that actually changes the caller's remedy.
+    assert 'observed_status' not in result, result
+
+
 def test_undecidable_when_worktree_sha_unresolvable(plan_context, monkeypatch, tmp_path) -> None:
     """ledger query cannot run because the sha is undefined -> conservative fail.
 

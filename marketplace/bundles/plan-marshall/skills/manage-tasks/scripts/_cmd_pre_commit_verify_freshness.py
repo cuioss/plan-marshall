@@ -66,9 +66,11 @@ Outcomes:
                      been observed against the current on-disk state, so the
                      gate is permitted to pass.
 - ``stale``        — the ledger has entries but none is a successful build
-                     against the current working-tree sha; the worktree has been
-                     mutated since the last observed build, so the gate MUST fail
-                     closed.
+                     against the current working-tree sha, so the gate MUST fail
+                     closed. The verdict carries a ``reason`` naming WHY,
+                     because the four ways to reach it need four different
+                     remedies and this gate must not assert a cause it did not
+                     establish (see ``_stale_reason`` below).
 - ``undecidable``  — no positive freshness proof can be established. Two
                      sub-reasons: ``no_registry`` (the ledger file is absent or
                      empty) and ``head_unresolvable`` (the working-tree sha
@@ -91,6 +93,114 @@ from _ledger_core import (
 )
 from file_ops import WorktreeResolutionError, resolve_plan_context
 from worktree_sha import compute_worktree_sha
+
+# Per observed build ``status``, the ``stale`` reason and the remedy sentence.
+#
+# The gate's PASS/FAIL behaviour does not consult this table at all — only
+# ``status == 'success'`` ever permits the gate, and every entry below is a
+# refusal. What the table decides is what the refusal SAYS, and that is not
+# cosmetic: the caller acts on it. A build that timed out and a build the harness
+# killed both need "the tree is fine, the build did not finish"; a build that
+# genuinely failed needs "fix the code"; and a killed build must NOT be
+# blind-retried, which is the opposite of what the historical single message
+# prescribed for all four.
+_STALE_BY_STATUS: dict[str, tuple[str, str]] = {
+    'error': (
+        'build_error',
+        'The most recent build against this working-tree state FAILED. The tree '
+        'was observed; the build reported errors. Fix the reported failures and '
+        're-run the build.',
+    ),
+    'timeout': (
+        'build_timeout',
+        'The most recent build against this working-tree state TIMED OUT — it '
+        'exceeded its own outer budget and was terminated by this stack. It is '
+        'NOT a failing build and NOT evidence of a code defect: no verdict was '
+        'ever reported. Re-run the build, and diagnose the budget if it recurs.',
+    ),
+    'killed': (
+        'build_killed',
+        'The most recent build against this working-tree state was EXTERNALLY '
+        'KILLED — externally killed, not flaky, do not blind-retry. It is NOT a '
+        'failing build and NOT a timeout: no budget fired and no verdict was '
+        'reported. Establish why the build was killed before re-running it.',
+    ),
+    'unknown': (
+        'build_indeterminate',
+        'The most recent build against this working-tree state reported an '
+        'INDETERMINATE outcome — the dispatch boundary could not read a verdict '
+        'from it. It supports no conclusion in either direction and must not be '
+        'read as a pass or as a failure. Re-run the build to obtain a readable '
+        'verdict.',
+    ),
+}
+
+_STALE_MUTATED = (
+    'worktree_mutated',
+    'No kind=build entry of ANY status was stamped against this working-tree '
+    'state, so no build has observed it — the worktree has been mutated since '
+    'the last observed build. Re-dispatch a build before retrying.',
+)
+
+
+def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str | None]:
+    """Derive the ``stale`` reason from what the ledger actually holds.
+
+    The historical gate emitted one message for every route to ``stale``:
+    "the worktree has been mutated since the last observed build ... re-dispatch
+    a build before retrying." That sentence asserts a CAUSE the gate never
+    established, and prescribes a remedy that is wrong for three of the four
+    routes. When the ledger holds a ``killed`` row for the CURRENT sha the tree
+    was not mutated at all — a build was observed and was killed — so the gate
+    was reporting a mutation that did not happen and prescribing exactly the
+    blind retry the no-blind-retry rule forbids.
+
+    Discrimination is by presence, then by status:
+
+    * No ``kind=build`` row at all for ``current_sha`` → the tree really did move
+      past every observed build (or was never built): ``worktree_mutated``.
+    * A row exists for ``current_sha`` but none is ``success`` → the tree WAS
+      observed; report the LAST such row's own status (:data:`_STALE_BY_STATUS`).
+      A status outside the known vocabulary is reported as
+      ``build_indeterminate`` rather than folded into a neighbour — an
+      unresolvable case is its own answer.
+
+    "Last" means **last in file order**, not latest by timestamp. The ledger is
+    pure-append (``_ledger_core.append_entry`` writes one line per call and never
+    rewrites), so file order IS write order and the two coincide. This is stated
+    rather than assumed because the distinction would matter the moment the
+    ledger stopped being append-only, and because ``timestamp_iso`` is present on
+    every row and would look like the obvious key to sort on. Sorting on it would
+    be strictly worse: it has one-second resolution, so two builds against the
+    same tree within a second would order arbitrarily.
+
+    Args:
+        entries: All ledger entries, in file order.
+        current_sha: The recomputed working-tree currency hash.
+
+    Returns:
+        ``(reason, message, observed_status)``. ``observed_status`` is ``None``
+        on TWO routes, and the caller omits the field for both: the
+        ``worktree_mutated`` route, where no row was observed at all, and the
+        ``build_indeterminate`` sub-case where a row WAS observed but carried no
+        readable ``status`` string. Reporting a status there would mean
+        inventing one — the row's defining property is that it has none — so the
+        field's absence is itself the honest answer, and ``reason`` still
+        distinguishes the two routes.
+    """
+    matching = [
+        entry
+        for entry in entries
+        if entry.get('kind') == KIND_BUILD and entry.get('worktree_sha') == current_sha
+    ]
+    if not matching:
+        reason, message = _STALE_MUTATED
+        return reason, message, None
+
+    observed = matching[-1].get('status')
+    key = observed if isinstance(observed, str) else None
+    reason, message = _STALE_BY_STATUS.get(key or '', _STALE_BY_STATUS['unknown'])
+    return reason, message, key
 
 
 def _build_necessity_verdict(plan_id: str) -> dict:
@@ -215,16 +325,22 @@ def cmd_pre_commit_verify_freshness(args) -> dict:
                 ),
             }
 
-    return {
+    # The gate has refused. WHY it refused is derived from the ledger rather
+    # than assumed, so the caller is not told a mutation happened when a build
+    # was observed and killed.
+    reason, remedy, observed_status = _stale_reason(entries, current_sha)
+    stale: dict = {
         'status': 'stale',
         'plan_id': plan_id,
+        'reason': reason,
         'worktree_sha': current_sha,
         'worktree_root': str(worktree_root),
         'ledger_path': str(ledger_path),
         'message': (
             f'No successful kind=build entry matches the current working-tree '
-            f'sha ({current_sha}); the worktree has been mutated since the last '
-            f'observed build. Gate MUST fail closed; re-dispatch a build before '
-            f'retrying.'
+            f'sha ({current_sha}). Gate MUST fail closed. {remedy}'
         ),
     }
+    if observed_status is not None:
+        stale['observed_status'] = observed_status
+    return stale

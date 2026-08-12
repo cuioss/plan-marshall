@@ -19,7 +19,7 @@ For common standards (timeouts, log handling, acceptable warnings), see `build-s
 **Constraints:**
 - All commands use `python3 .plan/execute-script.py {bundle}:{skill}:{script} {subcommand} {args}`
 - Output format defaults to TOON; use `--format json` only when explicitly required (e.g., programmatic parsing by scripts, CI pipeline integration)
-- Always analyze the result TOON: check `status` for success/error/timeout, review `errors` for failures
+- Always analyze the result TOON: read `status`, and review `errors` only on `error`. **`status` has five values and they are not interchangeable** — `success`, `error` (the build ran and failed), `timeout` (it exceeded its own bound), `killed` (a signal this stack did not send) and `indeterminate` (the outcome could not be read at all). The last three are **not** failing builds: they carry no `errors`, and treating them as red manufactures a failure the build never reported. On `killed`, the result's `message` says *externally killed — not flaky, do not blind-retry*; honour it rather than re-running the same command. See [`build-execution.md`](build-execution.md) § Status values.
 
 ---
 

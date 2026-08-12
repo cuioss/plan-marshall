@@ -29,12 +29,24 @@ reports its real verdict in the build-result TOON it emits (``status:`` /
 build. The shared :func:`_build_server_protocol.read_log_verdict` reads that
 emitted verdict back from the job log — the single reader both this supervisor and
 the client-side ``_build_execute_factory`` cross-check consume — and
-:func:`run_job` downgrades a ``success`` classification to ``failure``
-(carrying the TOON's ``exit_code``) whenever the verdict does not affirmatively
-agree. The ``timeout`` and ``killed`` legs are NOT subject to this narrowing — a
-supervisor timeout and an external kill always outrank log content — and a job log
-carrying no parseable TOON status keeps today's exit-code verdict, so a
-non-wrapper command run through the daemon is unaffected.
+:func:`run_job` downgrades a ``success`` classification (carrying the TOON's
+``exit_code``) whenever the verdict does not affirmatively agree.
+
+**The downgrade preserves WHICH non-green the verdict reported.** The wrapper's
+vocabulary has three non-green values and two of them are NON-FINISHES it
+observed first-hand — ``timeout`` (its own bound fired) and ``killed`` (its build
+child was signalled while it survived: the INNER kill). The narrowed status is
+therefore the verdict's own status translated through
+:func:`_build_server_protocol.wire_status_from_result`, never a hard-coded
+``failure``; flattening them here would re-collapse at the daemon precisely what
+the wrapper distinguished, and a routed timeout or kill would reach every
+downstream gate as a red build.
+
+This supervisor's OWN ``timeout`` and ``killed`` legs are not subject to the
+narrowing at all — a supervisor timeout and an external kill of the child always
+outrank log content — and a job log carrying no parseable TOON status keeps
+today's exit-code verdict, so a non-wrapper command run through the daemon is
+unaffected.
 
 The classification and env helpers are pure and unit-testable without spawning a
 process; :func:`run_job` drives a real ``asyncio`` subprocess and is exercised
@@ -64,10 +76,12 @@ from _build_result import (
 from _build_result import STATUS_SUCCESS as RESULT_STATUS_SUCCESS
 from _build_server_protocol import (
     MARSHALLD_JOB_ENV,
+    STATUS_FAILURE,
     STATUS_KILLED,
     read_log_verdict,
     status_from_result,
     status_payload,
+    wire_status_from_result,
 )
 
 # The fixed server-side env whitelist. Everything not listed here is dropped, so
@@ -172,7 +186,16 @@ def _terminal_payload(
     command_str: str,
     timeout_seconds: int,
 ) -> dict[str, Any]:
-    """Render a terminal status payload reusing the _build_result shape."""
+    """Render a terminal status payload reusing the _build_result shape.
+
+    ``status`` is a WIRE status: either :func:`classify_terminal`'s own verdict
+    or, when the narrowing fired, a log verdict translated by
+    :func:`wire_status_from_result`. Every terminal wire status therefore has an
+    explicit arm here, and ``failure`` is one of them rather than the fallback —
+    a status this function does not recognise must not be rendered as a build
+    that ran and failed, which is the fold-into-a-neighbour the whole
+    non-finish separation exists to prevent.
+    """
     if status == 'timeout':
         return status_from_result(
             timeout_result(timeout_seconds, duration, log_file, command_str)
@@ -186,8 +209,19 @@ def _terminal_payload(
         )
     if status == 'success':
         return status_from_result(success_result(duration, log_file, command_str))
-    return status_from_result(
-        error_result(ERROR_BUILD_FAILED, returncode or 1, duration, log_file, command_str)
+    if status == STATUS_FAILURE:
+        return status_from_result(
+            error_result(ERROR_BUILD_FAILED, returncode or 1, duration, log_file, command_str)
+        )
+    # Unrecognised: the caller handed a status outside the terminal wire
+    # vocabulary. Report it verbatim rather than claiming a failure nobody
+    # observed — the client maps an unrecognised terminal status to
+    # ``indeterminate``, and this arm is what lets it see one.
+    return status_payload(
+        status,
+        duration_seconds=duration,
+        log_file=log_file,
+        exit_code=returncode if returncode is not None else -1,
     )
 
 
@@ -253,12 +287,22 @@ async def run_job(
     returncode = proc.returncode
     # Exit 0 is necessary but not sufficient: the build wrapper exits 0 even when
     # the build failed, so a `success` classification only stands when the
-    # emitted build TOON affirmatively agrees. The timeout / killed legs are
-    # untouched — they always outrank log content.
+    # emitted build TOON affirmatively agrees. The supervisor's OWN timeout /
+    # killed legs are untouched — they always outrank log content.
+    #
+    # When the verdict disagrees, the narrowed status is the verdict's OWN status
+    # translated to the wire vocabulary — never a hard-coded `failure`. The
+    # wrapper reports three ways to be non-green, and two of them are NON-FINISHES
+    # it observed first-hand: its own bound fired (`timeout`), or its build child
+    # was signalled while it survived (`killed`, the INNER kill — distinct from
+    # the outer kill `classify_terminal` sees as a negative returncode). Flattening
+    # those to `failure` here would re-collapse, at the daemon, exactly what the
+    # wrapper just took care to distinguish: a routed timeout and a routed kill
+    # would both reach every downstream gate as a red build.
     if status == 'success':
         verdict = read_log_verdict(log_file)
         if verdict is not None and verdict.status != RESULT_STATUS_SUCCESS:
-            status = 'failure'
+            status = wire_status_from_result(verdict.status)
             returncode = verdict.exit_code
     return _terminal_payload(
         status,

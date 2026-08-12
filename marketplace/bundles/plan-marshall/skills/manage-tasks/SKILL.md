@@ -77,7 +77,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `rename-path` | `--plan-id --old-path --new-path` | Record path rename and rewrite step targets |
 | `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the six deterministic Q-Gate checks for phase-4-plan Step 9 (coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, and an `ambiguous` flag the caller uses to decide whether the LLM q-gate-validation dispatch still needs to fire. Also returns `qgate_persist_failed` (bool) and `qgate_persist_failures` (list of `{title, message}`) — a persist the Q-Gate primitive rejected means the check failed but its finding never reached the store, so the caller MUST fail loudly on `qgate_persist_failed: true` rather than trusting `total_failed` alone. |
 | `loop-exit-guard` | `--plan-id` | Script-level enforcement of the phase-5-execute "unfinished > 0 → must continue" invariant. The predicate is the union of `pending` AND `in_progress` tasks. Emits `status: continue` (with `pending_count`, `pending_ids`, `in_progress_count`, `in_progress_ids`) when EITHER bucket is non-empty — the non-success status forces the orchestrator to re-dispatch the execution-context. Emits `status: success` (with all four count/id fields present and zero-valued) only when BOTH counts are zero. See "Loop-Exit Guard" below for the contract. |
-| `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the current working-tree state has been observed by a successful build before any pre-commit transition — but only where a build was necessary at all. Consults the command-free `build-decision` verdict first, then queries the unified change-ledger for a `kind=build` entry with `status == success` whose `worktree_sha` matches the recomputed working-tree currency hash. Emits `status: fresh` (verdict `not_necessary`, with the verdict's own `reason` forwarded verbatim, or a matching successful build entry), `status: stale` (ledger has entries but none matches the current working-tree sha), or `status: undecidable` (no positive proof — `no_registry` when the ledger is absent/empty, `head_unresolvable` when the working-tree sha cannot be computed). Fail-closed contract: only `fresh` permits transition. See "Pre-Commit Verify Freshness" below for the contract. |
+| `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the current working-tree state has been observed by a successful build before any pre-commit transition — but only where a build was necessary at all. Consults the command-free `build-decision` verdict first, then queries the unified change-ledger for a `kind=build` entry with `status == success` whose `worktree_sha` matches the recomputed working-tree currency hash. Emits `status: fresh` (verdict `not_necessary`, with the verdict's own `reason` forwarded verbatim, or a matching successful build entry), `status: stale` (ledger has entries but none matches the current working-tree sha — carrying a `reason` that names WHICH route: `worktree_mutated`, `build_error`, `build_timeout`, `build_killed`, or `build_indeterminate`, since the four non-mutation routes need different remedies and a `killed` build must never be blind-retried), or `status: undecidable` (no positive proof — `no_registry` when the ledger is absent/empty, `head_unresolvable` when the working-tree sha cannot be computed). Fail-closed contract: only `fresh` permits transition. See "Pre-Commit Verify Freshness" below for the contract. |
 
 ### Loop-Exit Guard (`loop-exit-guard`)
 
@@ -216,9 +216,30 @@ ledger query semantics are not inline-copied here.
   `worktree_sha`, `matched_notation`, `timestamp_iso`, `worktree_root`, and
   `ledger_path` for the audit trail.
 - `status: stale` — the ledger has entries but none is a successful build
-  against the current working-tree sha. The worktree has been mutated since the
-  last observed build, so the gate MUST fail closed. Carries `worktree_sha`,
-  `worktree_root`, and `ledger_path`.
+  against the current working-tree sha, so the gate MUST fail closed. Carries
+  `worktree_sha`, `worktree_root`, `ledger_path`, and a **`reason` naming which
+  of the five routes to `stale` was taken** — plus `observed_status` (the
+  offending row's own build status) whenever the row carried a readable status
+  string. `observed_status` is absent on `worktree_mutated` (no row was
+  observed) and on the `build_indeterminate` sub-case where the row carried no
+  readable `status` at all; supplying one there would mean inventing it, so its
+  absence is the honest answer and `reason` still separates the two. The
+  pass/fail behaviour is identical on all five; what differs is the remedy, and
+  the gate must not assert a cause it did not establish:
+
+  | `reason` | Ledger evidence | Remedy the caller owes |
+  |---|---|---|
+  | `worktree_mutated` | NO `kind=build` row of any status carries this sha | The tree really did move past every observed build — re-dispatch a build. |
+  | `build_error` | Latest row for this sha is `status: error` | The build ran and reported failures — fix them, then re-build. |
+  | `build_timeout` | Latest row for this sha is `status: timeout` | The build exceeded its own outer budget; no verdict was reported. Not a code defect. Re-run, and diagnose the budget if it recurs. |
+  | `build_killed` | Latest row for this sha is `status: killed` | Externally killed — **not flaky, do not blind-retry.** No budget fired and no verdict was reported. Establish why before re-running. |
+  | `build_indeterminate` | Latest row for this sha is `status: unknown`, or a status outside the vocabulary | The outcome could not be read. It supports no conclusion either way; re-run to obtain a readable verdict. |
+
+  `worktree_mutated` is the only route on which the tree is known to have
+  changed. On the other four a build **was** observed against exactly this tree
+  and did not produce a green — reporting those as a mutation would name a cause
+  that did not occur, and prescribing the mutation remedy (re-dispatch) is
+  precisely the blind retry a `killed` build forbids.
 - `status: undecidable` — no positive freshness proof can be established. Two
   sub-reasons: (a) `reason: no_registry` — the change-ledger file is absent or
   empty; (b) `reason: head_unresolvable` — the working-tree sha cannot be

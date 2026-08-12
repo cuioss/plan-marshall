@@ -430,6 +430,27 @@ def _no_sleep(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(bqs.time, 'sleep', lambda _s: None)
 
 
+@pytest.fixture(autouse=True)
+def _isolated_home_root(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    """Point the machine-global home root at a per-test ``tmp_path``.
+
+    ``_record_resolution`` persists a per-plan fallback streak to
+    ``home_root()/marshalld/fallback-streak.json``. Without this fixture that
+    write lands in the developer's REAL ``~/.plan-marshall`` and ACCUMULATES
+    across pytest runs, so a case asserting that a fallback still emits its
+    per-build WARNING passes on a clean machine and fails on any machine that
+    has run the suite more than ``_FALLBACK_WARN_STREAK`` times — the streak
+    escalates once and suppresses the repeat from then on.
+
+    That is a false signal in exactly the direction this suite exists to
+    prevent: the test read green because of where it ran, not because of what
+    the code did. Isolating the home root here makes the outcome a property of
+    the code alone. It follows the same ``PLAN_MARSHALL_HOME`` convention every
+    ``test/plan-marshall/build-server/`` module already uses.
+    """
+    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(tmp_path / 'plan-marshall-home'))
+
+
 def _make_config(*, with_resolve_fn: bool = True) -> factory.ExecuteConfig:
     """A minimal config for factory tests.
 

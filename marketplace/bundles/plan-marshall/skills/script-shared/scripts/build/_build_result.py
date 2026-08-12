@@ -5,11 +5,25 @@
 Shared infrastructure for build command result handling across build systems.
 Used by domain extensions (pm-dev-java, pm-dev-frontend) for consistent result formatting.
 
+**Five statuses, and only one of them means the build failed.** ``error`` is a
+build that RAN and reported a failure. The other three non-green values are not
+that, and are not each other:
+
+* ``timeout`` — a NON-FINISH: the build exceeded a bound this stack set.
+* ``killed`` — a NON-FINISH: the build child died by a signal nobody here sent.
+* ``indeterminate`` — the outcome could not be established at all.
+
+Each has its own constructor here, and none is ever folded into ``error``. An
+externally-killed build is not evidence that the build is broken, and presenting
+it as one manufactures a failure the build never reported.
+
 Usage:
     from build_result import (
         create_log_file, success_result, error_result, timeout_result,
+        killed_result, indeterminate_result,
         DirectCommandResult,
-        STATUS_SUCCESS, STATUS_ERROR, STATUS_TIMEOUT
+        STATUS_SUCCESS, STATUS_ERROR, STATUS_TIMEOUT, STATUS_KILLED,
+        STATUS_INDETERMINATE
     )
 
     # Create log file for build output, under the resolving plan's directory
@@ -49,8 +63,15 @@ class DirectCommandResult(TypedDict, total=False):
     not via the type system. This avoids needing Python 3.11+ NotRequired.
 
     Required fields (always present):
-        status: Execution outcome.
-        exit_code: Process exit code (-1 for timeout/execution failure).
+        status: Execution outcome — one of ``success`` / ``error`` / ``timeout``
+            / ``killed`` / ``indeterminate``. Only ``error`` means the build ran
+            and failed. ``timeout`` and ``killed`` are NON-FINISHES (see
+            :func:`timeout_result`, :func:`killed_result`) and
+            ``indeterminate`` means the outcome could not be established at all
+            (:func:`indeterminate_result`); none of the three may be folded into
+            ``error`` or into each other.
+        exit_code: Process exit code (-1 for timeout / execution failure /
+            indeterminate; the negative ``-N`` signal code for ``killed``).
         duration_seconds: Actual execution time.
         log_file: Path to captured output (per R1 requirement).
         command: Full command that was executed.
@@ -59,7 +80,11 @@ class DirectCommandResult(TypedDict, total=False):
         timeout_used_seconds: Timeout that was applied.
         wrapper: Maven/Gradle/Python wrapper path used.
         command_type: npm command type ("npm" or "npx").
-        error: Error message (on error/timeout only).
+        error: Error type identifier (on error / timeout / killed /
+            indeterminate).
+        message: Operator-facing detail. Carries the no-blind-retry sentence on
+            ``killed``, and on ``indeterminate`` it is the ONLY actionable
+            content the result has — it says why nothing could be concluded.
 
     Example (success):
         {
@@ -84,7 +109,7 @@ class DirectCommandResult(TypedDict, total=False):
     """
 
     # Required fields
-    status: Literal['success', 'error', 'timeout']
+    status: Literal['success', 'error', 'timeout', 'killed', 'indeterminate']
     exit_code: int
     duration_seconds: int
     log_file: str
@@ -93,7 +118,8 @@ class DirectCommandResult(TypedDict, total=False):
     timeout_used_seconds: int
     wrapper: str  # Maven/Gradle/Python: wrapper path used
     command_type: str  # npm: "npm" or "npx"
-    error: str  # Error message (on error/timeout only)
+    error: str  # Error type id (on error/timeout/killed/indeterminate only)
+    message: str  # Operator-facing detail (on killed and indeterminate)
 
 
 # =============================================================================
@@ -114,12 +140,65 @@ STATUS_ERROR = 'error'
 STATUS_TIMEOUT = 'timeout'
 """Build exceeded timeout limit."""
 
+STATUS_KILLED = 'killed'
+"""Build child was terminated by a signal nobody in this stack sent.
+
+Distinct from :data:`STATUS_ERROR` (the build ran to completion and reported a
+failure) and from :data:`STATUS_TIMEOUT` (the build exceeded the outer budget
+this stack applied, so the kill signal WAS ours). A ``killed`` build reported
+nothing at all — its log is a truncation, not a verdict — so no consumer may
+read it as a red build, and none may read it as a timeout either.
+"""
+
+STATUS_INDETERMINATE = 'indeterminate'
+"""The outcome could not be determined — it is NOT any of the four above.
+
+This is the value for a case no branch resolves: a producer reported something
+this layer cannot interpret (e.g. a daemon speaking a terminal status a
+version-skewed client does not know — the condition ``manage-build-server
+status`` flags as ``binary_diverges``). Folding it into ``error`` would claim a
+failure nobody observed; folding it into ``success`` would be a green nothing
+substantiates. It is neither, and it must stay neither.
+
+**Deliberately NOT wrapper-claimable at the ledger boundary.**
+``_ledger_core.WRAPPER_CLAIMABLE_BUILD_STATUSES`` excludes it, so
+``_derive_build_status`` falls through to its own derived-only ``unknown`` — the
+ledger's name for the same condition. That is the intended route, not an
+oversight: a wrapper may report that it could not determine the outcome, but the
+boundary derives the verdict of record itself rather than accepting the claim.
+Do NOT "fix" this by adding ``indeterminate`` to the claimable set.
+"""
+
 # Error type identifiers
 ERROR_BUILD_FAILED = 'build_failed'
 """Build process returned non-zero exit code."""
 
 ERROR_TIMEOUT = 'timeout'
 """Build exceeded timeout limit."""
+
+ERROR_KILLED = 'killed'
+"""Build child died by a signal this stack did not send."""
+
+ERROR_INDETERMINATE = 'indeterminate'
+"""The outcome could not be determined at all — see :data:`STATUS_INDETERMINATE`."""
+
+KILLED_MESSAGE = 'externally killed — not flaky, do not blind-retry'
+"""Operator-facing detail carried by every ``killed`` result built HERE.
+
+⚠ The sentence is **duplicated, not shared**. Three other copies exist —
+``manage-change-ledger.py`` (``_NO_BLIND_RETRY_MESSAGE``),
+``build-server-client/scripts/build_server.py`` (``_KILLED_MESSAGE``), and a
+fourth, differently-punctuated variant in the ``build_killed`` remedy text of
+``manage-tasks``' freshness gate. They agree today only because each was written
+to match; nothing enforces it, and a reader who assumes one definition will
+change one copy and leave the others.
+
+Consolidating them is a cross-skill refactor with its own import-graph
+consequences, so it is recorded here rather than done silently. What must NOT
+happen is this docstring claiming a single source of truth that does not exist:
+the whole point of the surrounding work is that a claim is checked against the
+thing it describes.
+"""
 
 ERROR_EXECUTION_FAILED = 'execution_failed'
 """Failed to execute build command (e.g., subprocess error)."""
@@ -290,6 +369,98 @@ def timeout_result(timeout_used_seconds: int, duration_seconds: int, log_file: s
         'error': ERROR_TIMEOUT,
         'exit_code': -1,
         'timeout_used_seconds': timeout_used_seconds,
+        'duration_seconds': duration_seconds,
+        'log_file': log_file,
+        'command': command,
+    }
+    result.update(extra)
+    return result
+
+
+def killed_result(exit_code: int, duration_seconds: int, log_file: str, command: str, **extra) -> dict:
+    """Build an externally-killed result dict.
+
+    A ``killed`` result records that the build child died by a signal that
+    neither this stack's outer timeout nor the build itself produced. It is a
+    NON-FINISH, and it is deliberately its own status rather than an ``error``
+    or a ``timeout``:
+
+    * NOT ``error`` — an ``error`` asserts the build ran and reported a
+      failure. A killed build reported nothing; its log is truncated evidence,
+      so presenting it as a failure manufactures one.
+    * NOT ``timeout`` — a ``timeout`` asserts the build exceeded a budget THIS
+      stack set and that this stack sent the kill. An external kill says
+      nothing about the budget, so folding it into ``timeout`` would blame a
+      bound that never fired.
+
+    Args:
+        exit_code: The observed exit code — the negative ``-N`` signal code
+            when available; ``-1`` when the code could not be recovered.
+        duration_seconds: Wall-clock time before the kill. This is a
+            TRUNCATION, not a measurement of the command (see
+            :mod:`_build_execute`, which therefore never feeds it to the
+            adaptive-timeout learner).
+        log_file: Path to the partial captured output.
+        command: Full command that was executed.
+        **extra: Additional fields to include.
+
+    Returns:
+        Result dict with status="killed", error="killed", and the shared
+        no-blind-retry :data:`KILLED_MESSAGE`.
+
+    Example:
+        >>> result = killed_result(-9, 42, "/path/to/log", "./pw verify")
+        >>> result["status"]
+        'killed'
+        >>> result["exit_code"]
+        -9
+    """
+    result = {
+        'status': STATUS_KILLED,
+        'error': ERROR_KILLED,
+        'message': KILLED_MESSAGE,
+        'exit_code': exit_code,
+        'duration_seconds': duration_seconds,
+        'log_file': log_file,
+        'command': command,
+    }
+    result.update(extra)
+    return result
+
+
+def indeterminate_result(
+    reason: str, duration_seconds: int, log_file: str, command: str, exit_code: int = -1, **extra
+) -> dict:
+    """Build a result whose outcome could not be determined.
+
+    The escape hatch that keeps an unresolvable case from being folded into its
+    nearest neighbour. Use it where a branch genuinely cannot decide — never as a
+    catch-all for a case that simply was not enumerated, because an
+    ``indeterminate`` result blocks every gate that requires ``success`` and
+    tells the operator only that nothing could be concluded.
+
+    Args:
+        reason: Why the outcome could not be determined, specific enough to act
+            on (name the unrecognised value, not just its category).
+        duration_seconds: Wall-clock time observed, if any.
+        log_file: Path to whatever output exists.
+        command: Full command that was executed.
+        exit_code: Observed exit code; ``-1`` when none is meaningful.
+        **extra: Additional fields to include.
+
+    Returns:
+        Result dict with status="indeterminate" and the reason as ``message``.
+
+    Example:
+        >>> result = indeterminate_result("daemon reported 'quiesced'", 3, "/l", "./pw verify")
+        >>> result["status"]
+        'indeterminate'
+    """
+    result = {
+        'status': STATUS_INDETERMINATE,
+        'error': ERROR_INDETERMINATE,
+        'message': reason,
+        'exit_code': exit_code,
         'duration_seconds': duration_seconds,
         'log_file': log_file,
         'command': command,

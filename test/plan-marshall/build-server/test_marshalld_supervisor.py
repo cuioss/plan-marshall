@@ -32,6 +32,12 @@ import _marshalld_supervisor as supervisor  # noqa: E402
 _EMIT_ERROR_TOON = "print('status: error'); print('exit_code: 3')"
 _EMIT_SUCCESS_TOON = "print('status: success'); print('exit_code: 0')"
 _EMIT_NO_TOON = "print('some build chatter with no build TOON at all')"
+# The two NON-FINISHES the wrapper can observe first-hand and report at exit 0:
+# its own outer bound fired, or its build child was signalled while it survived
+# (the INNER kill — distinct from the outer kill the supervisor sees as a
+# negative returncode of the wrapper itself).
+_EMIT_KILLED_TOON = "print('status: killed'); print('exit_code: -9')"
+_EMIT_TIMEOUT_TOON = "print('status: timeout'); print('exit_code: -1')"
 _EMIT_SUCCESS_THEN_HANG = "print('status: success', flush=True); import time; time.sleep(30)"
 _EMIT_SUCCESS_THEN_SUICIDE = (
     "import os, signal; print('status: success', flush=True); os.kill(os.getpid(), signal.SIGKILL)"
@@ -243,3 +249,48 @@ class TestRunJobTruthfulStatus:
         payload = _run(_EMIT_SUCCESS_THEN_SUICIDE, tmp_path)
 
         assert payload['status'] == 'killed'
+
+
+class TestRunJobNarrowingPreservesTheNonFinish:
+    """The narrowing must keep WHICH non-green the wrapper reported.
+
+    The wrapper exits 0 for all three of its non-green outcomes, so
+    ``classify_terminal`` says ``success`` and the narrowing alone decides the
+    wire status. Downgrading to a hard-coded ``failure`` re-collapses at the
+    daemon exactly what the wrapper took care to distinguish: a routed timeout
+    and a routed INNER kill both reach every downstream gate as a red build.
+
+    These cases drive the REAL :func:`run_job` against a real child process.
+    Asserting the composition ``wire_status_from_result(verdict.status)`` in the
+    test instead would re-implement the very line under test, and would stay
+    green if that line were reverted to ``status = 'failure'`` — a test that
+    cannot fail for the defect it names is the same false signal this whole
+    change exists to remove.
+    """
+
+    def test_exit_zero_with_killed_toon_is_wire_killed_not_failure(self, tmp_path):
+        payload = _run(_EMIT_KILLED_TOON, tmp_path)
+
+        assert payload['status'] == 'killed'
+        assert payload['status'] != 'failure'
+        assert payload['exit_code'] == -9
+
+    def test_exit_zero_with_timeout_toon_is_wire_timeout_not_failure(self, tmp_path):
+        payload = _run(_EMIT_TIMEOUT_TOON, tmp_path)
+
+        assert payload['status'] == 'timeout'
+        assert payload['status'] != 'failure'
+
+    # --- matched control ---------------------------------------------------
+
+    def test_control_exit_zero_with_error_toon_is_still_wire_failure(self, tmp_path):
+        """CONTROL: a build that ran and failed still narrows to ``failure``.
+
+        Without this, a change that stopped narrowing altogether would satisfy
+        both cases above while reinstating the false-green the narrowing exists
+        to prevent.
+        """
+        payload = _run(_EMIT_ERROR_TOON, tmp_path)
+
+        assert payload['status'] == 'failure'
+        assert payload['exit_code'] == 3

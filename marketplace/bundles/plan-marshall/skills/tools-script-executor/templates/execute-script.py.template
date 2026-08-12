@@ -436,8 +436,8 @@ def _derive_build_status(exit_code: int, payload: dict | None) -> str:
 
     1. ``exit_code < 0`` → ``killed``. ``subprocess.run`` reports a child
        terminated by a POSIX signal as a negative returncode, so a build
-       killed while the executor survives is stamped truthfully. ``killed``
-       is reserved for this branch — a stdout status never produces it.
+       killed while the executor survives is stamped truthfully. This is the
+       OUTER kill — the dispatched script itself died and reported nothing.
     2. Any other nonzero ``exit_code`` → ``error``, regardless of what the
        stdout TOON claims (a contradictory ``status: success`` /
        nonzero-exit combination stamps ``error``).
@@ -446,10 +446,12 @@ def _derive_build_status(exit_code: int, payload: dict | None) -> str:
        ``_ledger_core.WRAPPER_CLAIMABLE_BUILD_STATUSES``) → that status. This
        closes the false-fresh hole: the build wrapper reports
        ``status: timeout`` on stdout while the PROCESS exits 0, so the stdout
-       TOON — not the exit code — carries the real outcome. A stdout claim of
-       ``killed`` at exit 0 stamps ``error``: ``killed`` is derived-only, so
-       the claim is untrustworthy — but it must not launder into ``success``
-       either.
+       TOON — not the exit code — carries the real outcome. The same applies
+       to ``killed``: when the wrapper survives an INNER kill (its own build
+       child was signalled) it exits 0 and reports ``status: killed``, which
+       is a first-hand observation of the reaped child, exactly as its
+       ``timeout`` claim is. Rejecting it here would force every inner kill to
+       stamp ``error`` — a red build the build never reported.
     4. Else (``exit_code == 0`` with no claimable status on the payload —
        absent, unparseable, null, or a value outside the wrapper's
        vocabulary) → ``unknown``. **Never ``success``.** Exit 0 alone proves
@@ -484,11 +486,8 @@ def _derive_build_status(exit_code: int, payload: dict | None) -> str:
     if exit_code != 0:
         return 'error'
     candidate = _payload_str(payload, 'status')
-    if candidate is not None:
-        if candidate == 'killed':
-            return 'error'
-        if candidate in WRAPPER_CLAIMABLE_BUILD_STATUSES:
-            return candidate
+    if candidate is not None and candidate in WRAPPER_CLAIMABLE_BUILD_STATUSES:
+        return candidate
     return 'unknown'
 
 

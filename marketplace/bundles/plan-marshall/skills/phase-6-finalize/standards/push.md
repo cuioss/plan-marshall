@@ -46,14 +46,18 @@ Parse `status` from the returned TOON. The contract is **fail-closed**: only `st
 | `status` value | `push` action |
 |----------------|---------------|
 | `fresh` | Proceed to **Execution** below. |
-| `stale` | Halt. Record `outcome=failed` with `display_detail` `"stale: worktree_sha={worktree_sha} ledger={ledger_path}"`. Do NOT push. |
+| `stale` | Halt. Record `outcome=failed` with `display_detail` `"stale: {reason} observed_status={observed_status} worktree_sha={worktree_sha} ledger={ledger_path}"` (substitute `-` for `observed_status` when absent). Do NOT push. |
 | `undecidable` | Halt. Record `outcome=failed` with `display_detail` `"undecidable: {reason}"` (`reason` is `no_registry` or `head_unresolvable`). Do NOT push. |
+
+**The `stale` `reason` MUST be carried into `display_detail` — it is the only thing that tells the operator what to do next.** The gate names five routes to `stale` (`worktree_mutated`, `build_error`, `build_timeout`, `build_killed`, `build_indeterminate`) and they need different responses: re-dispatch a build, fix the reported failures, diagnose a budget, or — for `build_killed` — **establish why the build was killed and do NOT blind-retry**. A `display_detail` that reports only the sha and ledger path hands a `build_killed` refusal to the operator indistinguishable from a `worktree_mutated` one, which is the same discarded-discriminator defect this gate was fixed to stop. See `manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness" for the reason table.
 
 The freshness gate is **complementary to**, NOT redundant with, the `pre-push-quality-gate` step. The quality-gate verifies *what the code is* (mypy + ruff + tests on the on-disk tree); freshness verifies *that the most recent `verify` run actually observed this version of the code*. A worktree that was modified after the most recent successful build passes neither: the quality-gate may pass against the new tree if the orchestrator re-runs it, but the freshness gate fails because no `kind=build` change-ledger entry carries the current working-tree `worktree_sha`. The two gates together close the gap that `loop-exit-guard` cannot close on its own — `loop-exit-guard` answers "is the queue empty?" while freshness answers "has a `verify` run actually observed this version of the code?"
 
 #### Finalize-internal re-stale reconciliation (documented — replaces the silent `--force`)
 
-A `stale` status has two distinct causes, and only ONE is a genuine defect:
+This section is scoped to **one** of the gate's five `stale` routes: `reason: worktree_mutated`, where no `kind=build` row carries the current sha at all. Read the `reason` first — the other four (`build_error`, `build_timeout`, `build_killed`, `build_indeterminate`) mean a build DID observe this exact tree and did not produce a green, so no reconciliation record can exist for them and none should be sought. They halt per the table above, with their own remedies.
+
+Within `worktree_mutated` there are two distinct causes, and only ONE is a genuine defect:
 
 - **Genuine un-built source drift** — source was edited after the last successful `verify`, and no build observed the current tree. This MUST stay fail-closed (halt per the table above).
 - **Finalize-internal re-stale (known-safe)** — a finalize-internal `mutates_source: true` step (`era-stamp-fill`, `lessons-capture`) committed DURING finalize, advancing the working-tree `worktree_sha` past the last `kind=build` ledger entry. The source a `verify` DID observe is unchanged; only a finalize-owned commit moved the currency hash. Overriding this silently with `--force` discards the distinction and the audit trail.

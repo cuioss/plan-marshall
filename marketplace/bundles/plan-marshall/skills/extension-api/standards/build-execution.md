@@ -48,36 +48,63 @@ All build command invocations must return these fields.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `status` | string | Execution outcome: `success`, `error`, or `timeout` |
-| `exit_code` | int | Process exit code (0=success, non-zero=error, -1=timeout/failure) |
+| `status` | string | Execution outcome: `success`, `error`, `timeout`, `killed`, or `indeterminate` |
+| `exit_code` | int | Process exit code (0=success, positive=error, -1=timeout/execution failure/indeterminate, negative `-N`=killed by signal N) |
 | `duration_seconds` | int | Actual execution time in seconds |
 | `log_file` | string | Path to captured output file |
 | `command` | string | Full command that was executed |
 
 **Status values**:
+
 - `success` - Command completed with exit code 0
-- `error` - Command failed (non-zero exit code) or execution failed
-- `timeout` - Command exceeded timeout limit
+- `error` - Command **ran to completion and failed** (non-zero exit code), or execution failed
+- `timeout` - Command exceeded **its own outer budget**, so this stack sent the kill and the elapsed equals the bound
+- `killed` - Command's child died by a signal **this stack did not send**
+- `indeterminate` - The outcome **could not be established at all**
+
+**Only `error` means the build failed.** The other three non-green values are
+not that, and are not each other. `timeout` and `killed` are NON-FINISHES: each
+reported nothing, so its log is a truncation rather than a verdict. Folding
+either into `error` manufactures a failure the build never reported; folding
+`killed` into `timeout` blames a bound that never fired.
+
+`indeterminate` is the value for a case no branch resolves — a producer reported
+something this layer cannot interpret. It exists so that "I could not tell" has
+somewhere to go **other than a neighbour**. Reaching for `error` there claims a
+failure nobody observed; reaching for `success` claims a green nothing
+substantiates.
+
+Because none of the three is a failure, an implementation **must not** store its
+partial log as findings and **must not** synthesise an `errors[]` row for any of
+them — both are reserved for the `error` path, which asserts the build ran and
+failed.
+
+A `killed` result additionally carries the no-blind-retry `message`
+(`externally killed — not flaky, do not blind-retry`); a consumer must not
+re-dispatch the identical command as a retry on it.
 
 #### Error Context (Conditional)
 
-Present when `status` is `error` or `timeout`.
+Present when `status` is `error`, `timeout`, `killed`, or `indeterminate`.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `error` | string | Error type identifier (e.g., `build_failed`, `timeout`, `execution_failed`) |
+| `error` | string | Error type identifier (e.g., `build_failed`, `timeout`, `killed`, `indeterminate`, `execution_failed`) |
+| `message` | string | Operator-facing detail. On `killed` it carries the no-blind-retry sentence; on `indeterminate` it is the **only** actionable content the result has, naming why nothing could be concluded |
 
 #### Parsed Issues and Test Evidence
 
 When a build fails, implementations **should** parse the log file and include structured issue data. The content varies based on `--mode` parameter.
 
-`tests` is **not** failure-only: implementations also parse the log on `timeout`. A suite that finished green and then hung in teardown reports `status: timeout` carrying a zero-failure `tests` block, which is what makes the timeout diagnosable instead of opaque. Only a **zero-failure** summary is attached — a summary carrying failures may be the partial output of a run the kill interrupted mid-flight, so it is not evidence the suite completed. A missing or unparseable log degrades to the bare result without `tests` — never to a crash.
+`tests` is **not** failure-only: implementations also parse the log on both non-finishes, `timeout` and `killed`. A suite that finished green and then hung in teardown reports `status: timeout` carrying a zero-failure `tests` block, which is what makes the non-finish diagnosable instead of opaque. Only a **zero-failure** summary is attached — a summary carrying failures may be the partial output of a run the kill interrupted mid-flight, so it is not evidence the suite completed, and attaching it would let a non-finish present itself as a red test. A missing or unparseable log degrades to the bare result without `tests` — never to a crash.
+
+`errors` and `warnings` stay **failure-only** for the same reason: they assert the build ran and reported something, which a non-finish did not.
 
 | Field | Type | Present on | Description |
 |-------|------|------------|-------------|
 | `errors` | list | error | Compilation/build errors extracted from log |
 | `warnings` | list | error | Build warnings (filtered by mode) |
-| `tests` | object | error, timeout | Test execution summary |
+| `tests` | object | error, timeout, killed | Test execution summary (zero-failure only on the two non-finishes) |
 
 **Error entry structure**:
 ```text
@@ -395,9 +422,9 @@ All `execute_direct()` implementations return `DirectCommandResult` (TypedDict f
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `status` | `Literal["success", "error", "timeout"]` | Execution outcome |
-| `exit_code` | int | Process exit code (-1 for timeout/failure) |
-| `duration_seconds` | int | Actual execution time |
+| `status` | `Literal["success", "error", "timeout", "killed", "indeterminate"]` | Execution outcome |
+| `exit_code` | int | Process exit code (-1 for timeout / execution failure / indeterminate; the negative `-N` signal code for `killed`) |
+| `duration_seconds` | int | Actual execution time. On `killed` this is a **truncation**, not a measurement of the command — which is why it is never fed to the adaptive-timeout learner |
 | `log_file` | string | Path to captured output (R1 requirement) |
 | `command` | string | Full command executed |
 
@@ -406,7 +433,8 @@ All `execute_direct()` implementations return `DirectCommandResult` (TypedDict f
 | Field | Type | Description |
 |-------|------|-------------|
 | `timeout_used_seconds` | int | Timeout that was applied |
-| `error` | string | Error message (on error/timeout only) |
+| `error` | string | Error type identifier (on error/timeout/killed/indeterminate only) |
+| `message` | string | Operator-facing detail (on `killed`: the no-blind-retry sentence; on `indeterminate`: why nothing could be concluded) |
 
 ### Implementation
 
@@ -561,8 +589,10 @@ Timeout case carrying the test evidence the run produced before the kill:
 | 1+ | `error` | Build failed (compilation error, test failure, etc.) |
 | -1 | `error` | Execution failed (wrapper not found, log creation failed) |
 | -1 | `timeout` | Build exceeded timeout |
+| -1 | `indeterminate` | The outcome could not be established at all |
+| `-N` | `killed` | Build child terminated by POSIX signal N, which this stack did not send |
 
-**Note**: Exit code -1 indicates the build system never ran or was interrupted. Check `status` to distinguish between execution failure and timeout.
+**Note**: A negative exit code indicates the build system never ran or was interrupted, so the code alone cannot say which. **Read `status`, never the exit code**, to separate execution failure from timeout from indeterminate from external kill — `-1` is shared by three of them, and only `status` carries the distinction.
 
 ## Caller Interpretation
 
@@ -575,12 +605,30 @@ if result['status'] == 'success':
     # Build passed
     pass
 elif result['status'] == 'timeout':
-    # Consider increasing timeout
+    # NON-FINISH: our own bound fired. Not a failing build — no verdict exists.
     print(f"Timed out after {result.get('timeout_used_seconds', 'unknown')}s")
-else:
-    # Build failed - check log file for details
+elif result['status'] == 'killed':
+    # NON-FINISH: a signal we did not send. Not a failing build, not a timeout.
+    # Do NOT blind-retry — establish why it was killed first.
+    print(result.get('message', 'externally killed'))
+elif result['status'] == 'indeterminate':
+    # Nothing could be concluded. The message says why; it is all there is.
+    print(result.get('message', 'outcome could not be determined'))
+elif result['status'] == 'error':
+    # Build ran and FAILED - check log file for details
     print(f"See: {result['log_file']}")
+else:
+    # A status this caller does not know: report it, never guess at it.
+    print(f"Unrecognised build status {result['status']!r}; see {result['log_file']}")
 ```
+
+**Branch on `error` explicitly; do not let it be the `else`.** Every non-green
+status that falls into a catch-all labelled "the build failed" is reported as a
+failure nobody observed — which is exactly the collapse the separate statuses
+exist to prevent, reintroduced at the call site. Writing `error` as its own arm
+means a status added later lands in the final `else` and is *reported as
+unrecognised*, which is true, instead of silently reported as a red build, which
+is not.
 
 ### Log File Analysis
 
