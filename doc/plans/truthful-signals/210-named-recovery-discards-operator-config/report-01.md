@@ -90,7 +90,7 @@ Two independent `general-purpose` sub-agents, read-only (report, never fix).
 
 - D0 — shape-based derivation encoded (globs every workflow doc, keys on the heading not the command string); population size (3) vs hit count (several dozen) separated correctly. Its independent missed-site sweep found **no fourth site**; the other `always safe` hits are genuinely unrelated (operation idempotency, "Stop is always safe", log interpolation). It confirmed the two counter-postures (`execute-task` anti-pattern; shim-marker "prove it is safe to delete") are the correct model, not defects.
 - D1 — all three sites inspect-first with operator disposition; **"always" survives in no justification** (the only remaining `always` occurrences in either file are unrelated dispatch-mechanics prose); the old "…makes marshal.json restoration always safe" cross-reference is gone.
-- D2 — the full contract exists exactly once (planning.md, self-labelled "the single authority"); the `git diff -- .plan/marshal.json` command appears in no other file; the two planning-outline.md boundaries are references, not restatements; the drift-corruption is gone.
+- D2 — the full contract exists exactly once (planning.md, self-labelled "the single authority"); the `git diff -- .plan/marshal.json` inspection command appears in no other **named-recovery region** across the workflow docs (which is what the `_is_authority` uniqueness test asserts — the string also occurs, as expected, as the predicate literal in the regression test and in this report's prose, neither of which is a recovery block); the two planning-outline.md boundaries are references, not restatements; the drift-corruption is gone.
 - D3 — both tests assert the derivation (subset membership on the swept set), not an enumeration; each would fail against the pre-fix text (RED), matching the recorded evidence. The agent noted it cannot itself witness the "seen red first" process (it was not present pre-fix) but confirmed the verifiable substance — the tests *would* fail pre-fix.
 - Collateral/scope: clean — only the declared surface plus the plan-lane records. Beyond-diff stale-claim sweep across the whole bundle and repo: **none survives** (the only residual quotes of the old wording are in plan.md and this report, which cite it as the defect being fixed).
 
@@ -100,7 +100,17 @@ Two non-blocking observations, both accepted with reason (no fix warranted):
 
 ## Reviewer participation
 
-_(pending PR creation)_
+Expected reviewer population **derived from configuration** — the `author_login` of each `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc (cross-named by `.github/workflows/pr-agent.yml`): `cuioss-review-bot` (pr-agent.md), `coderabbitai` (coderabbit.md), `sourcery-ai` (sourcery.md). M = 3.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Published a "PR Reviewer Guide 🔍" issue-comment against the diff: "PR contains tests / No security concerns identified / No major issues detected" — an explicit nothing-to-report over the diff. |
+| `coderabbitai` | `reviewed` | Published a full walkthrough and a review with "Actionable comments posted: 1" — one inline review-thread comment on `report-01.md:93` (scope the command-uniqueness claim). Handled: fixed + replied on the thread. A later incremental re-review of the report-only push hit its rolling PR limit, but the substantive review over the code diff completed and produced the finding. |
+| `sourcery-ai` | `rate-limited` | Published **only** a refusal (review body, COMMENTED state): "you have reached your weekly rate limit of 500000 diff characters." Its `Sourcery review` check concluded `skipped`. It engaged but did not review this diff. |
+
+**Coverage: 2 of 3.** Inline review-thread surface: 1 thread (CodeRabbit), read explicitly and handled — not inferred from the conversation view. All three comment surfaces (`get_comments`, `get_reviews`, `get_review_comments`) were read before the merge gate.
+
+**§ Step 8 condition-4 shortfall disclosure (fired):** "Review coverage: 2 of 3 — `cuioss-review-bot` reviewed (no findings); `coderabbitai` reviewed (1 actionable comment, fixed); `sourcery-ai` rate-limited (weekly 500k-diff-char quota)." Per the contract this is a **disclosure, not a block** — the rate limit is routine and outside our control, and the merge is gated only on conditions 1–3.
 
 ## Cost
 
@@ -110,12 +120,35 @@ _(pending PR creation)_
 
 ## Contract check (Step 9)
 
-_(completed at Step 8 condition 3, before arming auto-merge)_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | ✅ Named in § Skills loaded (read by bundle path; `plan-marshall` plugin not relied on). |
+| 2 Branch on `origin` | ✅ `claude/named-recovery-operator-config-d9v43a` (harness-assigned, kept as-is) — absent from the remote at start (`git ls-remote` empty), pushed to `origin` before any edit. |
+| 3 Plan directory | ✅ `doc/plans/truthful-signals/210-…/plan.md` exists and opens with the first-instruction block (present in the handed file — no repair needed). |
+| 4 Implement | ✅ D0–D3 addressed; every commit carries the `Co-Authored-By: Claude` trailer and no "Generated with Claude Code" footer. |
+| 4 Per-commit gate | ✅ The one `*.py`-touching commit (`6308698`, the test) was preceded by a clean `./pw verify plan-marshall` (16157 passed, quality-gate + mypy(test) clean, SPDX passed). The plan-dir move and report commits touch no `*.py` → no gate owed. |
+| 4 Pushed | ✅ Branch pushed after every commit; no unpushed commit remained at any stage. |
+| 5 Build gate | ✅ Python changed (the new test) → full path; `./pw verify plan-marshall` clean. |
+| 6 Verification sub-agent | ✅ Two dispatched (isolated-recovery-text + deliverable verification); findings + dispositions in § Findings; both PASS. |
+| 7 PR cycle | ✅ PR [#1186](https://github.com/cuioss/plan-marshall/pull/1186); all three comment surfaces read; the one actionable comment (CodeRabbit) fixed and replied on-thread. |
+| 8 Merge gate | Conditions 2 (comments handled) and 3 (report finalized) met at this report-commit; condition 1 (required `verify` check) confirmed success on the final head immediately before arming; auto-merge (SQUASH) then armed. Condition-4 shortfall (2-of-3 coverage) disclosed. The merge commit is recorded to the operator, not embedded here. |
+| 8 Bridge | ✅ No status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; the report carries the PR number and per-deliverable outcome for the collect step. |
+| 9 This check | ✅ This table. |
+| 9 What have we learned | ✅ Below. |
+
+**GitHub access path used:** the GitHub MCP server (the cloud path). **Branch form:** harness-assigned `claude/*`, kept as-is. **`/sync-plugin-cache`:** not owed — a cloud run never performs or owes it (machine-local build step); the merged bundle source is authoritative.
 
 ## What have we learned (Step 9)
 
-_(recorded at close)_
+**No NEW contract change proposed — but this run independently reproduced the evidence for the sibling plan 140's pending proposal, and that corroboration is worth recording.**
+
+The lane's build-gate wording (§ Step 4 per-commit gate and § Step 5) instructs a run to "open the `log_file` it names and confirm `total_issues: 0` and an empty `errors[]`" — vocabulary from the plan-marshall executor's TOON output. But this lane runs `./pw verify` **directly**, which emits no such `log_file`/`total_issues`/`errors[]` structure; it streams the tools' own output (`ruff … All checks passed!`, `mypy … Success: no issues found`, `SPDX-header check passed`, and the `N passed, M skipped` pytest summary and the `=== verify: SUCCESS ===` line). I read cleanliness from those streamed lines, which is the lane-appropriate signal — the same friction plan 140's report already documented and proposed a wording fix for. Because 140 has already presented that concrete edit to the operator (pending), filing a duplicate here would be noise; this run records the corroboration instead. Presented to the operator in this run's closing message.
+
+One smaller observation, **not** rising to a proposal: the lane's fast red-check has no single-file path — the system `python3` has no `pytest`, and `./pw module-tests` runs the whole bundle suite. I used the session's uv-tool `pytest` (`-o addopts="" -o filterwarnings=ignore`) to see each D3 test red against the unfixed docs quickly, then used the contract's `./pw verify` for the authoritative gate. This worked and needed no contract change; noting it only so a future run knows the fast-red option exists.
 
 ## Residue
 
-_(recorded at close)_
+- **Nothing left open in scope.** All four deliverables (D0–D3) are complete and verified; the one review comment is fixed.
+- **Merge landing** is delegated to the merge queue (auto-merge armed) — see the closing operator note for the confirmed `state: MERGED` / merge commit, which cannot appear in this pre-merge report (the branch locks on arming).
+- **`/sync-plugin-cache`:** not owed — a cloud run never performs or owes it (machine-local build step).
+- **Sibling sequencing (plan Notes):** this plan and the sibling that declares exclusivity against dispatched-workflow-doc edits must not run concurrently; this run touched `planning.md` and `planning-outline.md`, so a concurrent sibling run must be sequenced after this lands.
