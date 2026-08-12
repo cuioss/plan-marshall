@@ -77,9 +77,18 @@ Each red-first observation was produced by an actual edit-run-revert cycle in th
 
 ## Findings
 
-_Pre-PR verification sub-agent and PR-review findings recorded below as they arrive._
+**Verification sub-agent (Task, general-purpose), pre-PR — verdict: D0–D3 all PASS, no blocking gaps.** It independently re-derived the population two ways (via `find_implementors` + the module's own parser, and via an input-table scan of all 25 implementors), confirmed the STOP condition (both generic templates are live dispatch sites; the third `prompt: |` block is the fixed `wait-region-unified-triage` dispatch, correctly unmodified), confirmed `instructions` is a generic-contract field, and ran the 13 tests green. Findings and dispositions (recorded per instance):
 
-- **Verification sub-agent (Task, general-purpose):** _pending — dispatched before PR creation._
+| # | Source | Finding | Disposition |
+|---|--------|---------|-------------|
+| 1 | sub-agent | `ext-point-finalize-step.md` new section wrongly attributed a "`*` row" to `ext-point-execution-context-workflow.md` (that section states the rule in prose, line 66; the actual `*` table row is in `agents/execution-context.md` line 28) | **fixed** (commit 929ffa4) — cite the dispatcher agent's `*` row and the ext-point's prose rule accurately |
+| 2 | sub-agent | Control test docstring called `instructions` a "sixth field" that `finalize-step-simplify` "carries" — it replaces `workflow`, so the block has five field lines | **fixed** (commit 929ffa4) — reworded to "in place of `workflow`" |
+| 3 | sub-agent | `phase-6-finalize/SKILL.md:196-198` (external-step interface contract) describes the input contract without mentioning `requires_prompt_fields` — an internal-consistency gap in the edited file | **fixed** (commit 929ffa4) — added the `requires_prompt_fields` cross-reference |
+| 4 | sub-agent | `ext-point-finalize-step.md:3` "Implementations: 25" — is it stale? | **rejected (no change)** — verified correct: the new row is a frontmatter field, not an implementor; count unaffected |
+| 5 | sub-agent | `ext-point-dynamic-level-executor.md:159` states categorically "Every dispatch site … dispatches … with the 5-field prompt body" — reads as over-broad given the extension slot | **deferred** — a pre-existing simplification in a doc outside this plan's deliverables (it governs the dynamic-level executor agent, not the finalize dispatch); the change did not newly falsify it. Recorded as residue, not fixed here, to hold scope |
+| 6 | sub-agent | D3 "seen red first" is documented in this report, not reproducible from the committed diff | **rejected (no change)** — inherent to a process observation; the permanent `test_orphan_detection_fires_on_an_injected_divergence` / `test_undeclared_detection_fires_on_an_injected_divergence` tests ARE the committed proof the guard fires in both directions, and the sub-agent re-ran them to confirm |
+
+- **CI / PR review findings:** _recorded below as they arrive._
 
 ## Reviewer participation
 
@@ -109,4 +118,4 @@ _Filled at Step 9._
 
 ## Residue
 
-_None open so far. Any deferred review findings recorded here._
+- **Deferred (finding 5):** `extension-api/standards/ext-point-dynamic-level-executor.md:159` still states categorically that "Every dispatch site … dispatches … with the 5-field prompt body". With the extension slot now formalized, that categorical claim is imprecise (it omits both the `instructions` alternative and step-specific `requires_prompt_fields`). It is a pre-existing simplification in a doc outside this plan's declared surface, so it is left for a follow-up harmonization rather than widened into this change. A candidate for a small truthful-signals follow-up.
