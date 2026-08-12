@@ -1,6 +1,6 @@
 # Run report — 200-respread-the-effort-preset-ladder (run 01)
 
-**Date (UTC):** 2026-08-12    **Branch:** `claude/respread-effort-preset-ladder-tbc523` (harness-assigned, kept as-is)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-12    **Branch:** `claude/respread-effort-preset-ladder-tbc523` (harness-assigned, kept as-is)    **PR:** [#1181](https://github.com/cuioss/plan-marshall/pull/1181)    **Outcome:** completed (auto-merge armed; landing delegated to the merge queue / collect)
 
 ## Skills loaded
 
@@ -116,5 +116,52 @@ The re-spread target is **totals 30 / 36 / 41** (economic / balanced / high-end)
 
 ### Step 6 sub-agent — clean verdicts (what it examined)
 
-The sub-agent independently re-derived and PASSED 5 of 6 areas: D3 ladder values (re-summed 30/36/41, per-slot monotonic, economic == former balanced, no level-6/7, high-end reaches level-5); D2 migration (`identify()` + `_LEGACY_PRESETS` hold the *actual* old economic-23/high-end-34 shapes, old balanced-30 handled by current-match-first, full CLI wiring, well-formed SHIM); seeded defaults (values unchanged, comments corrected, guard test binds seed to ECONOMIC); consumer-script verdict (**`check-routing-decisions.py` does NOT depend on preset identity** — independently confirmed, no past-run verdicts change); and D5 tests (spread assertion is concrete-and-red-against-old, level-5 guard inverted not deleted, identify coverage complete incl. genuinely-old-config). The single GAP (wizard-flow.md) is fixed above.
+The sub-agent independently re-derived and PASSED 5 of 6 areas: D3 ladder values (re-summed 30/36/41, per-slot monotonic, economic == former balanced, no level-6/7, high-end reaches level-5); D2 migration (`identify()` + `_LEGACY_PRESETS` hold the *actual* old economic-23/high-end-34 shapes, old balanced-30 handled by current-match-first, full CLI wiring, well-formed SHIM); seeded defaults (values unchanged, comments corrected, guard test binds seed to ECONOMIC); consumer-script verdict (**`check-routing-decisions.py` does NOT depend on preset identity** — independently confirmed, no past-run verdicts change); and D5 tests (spread assertion is concrete-and-red-against-old, level-5 guard inverted not deleted, identify coverage complete incl. genuinely-old-config). The single GAP (wizard-flow.md) is fixed above, and the re-dispatch confirmed **all six areas pass** and no sibling stale claim survives.
+
+## Reviewer participation
+
+Expected reviewer population derived from configuration — the `author_login` of each `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc (cross-named by `.github/workflows/pr-agent.yml`), read at run time, not transcribed:
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Published its "PR Reviewer Guide 🔍" over the diff: "PR contains tests", "No security concerns identified", "No major issues detected". No inline review-thread findings (inline surface read: 0 threads). |
+| `coderabbitai` | `rate-limited` | Published only a refusal notice: "Review limit reached … you've reached your PR review limit, so we couldn't start this review. Next review available in: 42 minutes." It engaged but did not review this diff. |
+| `sourcery-ai` | `silent` | The `Sourcery review` check-run concluded `skipped`; the bot published no review and no notice on either comment surface. |
+
+**Coverage: 1 of 3** reviewed. Both comment surfaces were read (conversation + inline review threads); no comment required action. The § Step 8 condition-4 shortfall disclosure fires: *"Review coverage 1 of 3 — cuioss-review-bot reviewed (no issues); coderabbitai rate-limited (window reopens in ~42 min); sourcery-ai silent (review check skipped)."* Per the contract this is a **disclosure, not a block** — rate limits/quotas are routine and do not hold the merge.
+
+## Cost
+
+- **Tokens:** the main interactive session's total is **not available to the agent** as the harness counts it (no in-session token meter is exposed here). Measured sub-components: the pre-PR verification sub-agent reported **133,648** tokens (first pass) + **146,769** (re-verification pass) across 31 + 6 tool uses.
+- **Wall-clock:** run start ≈ first tool call this session; the two `./pw verify`-class builds dominated local time (quality-gate + the full `verify` at 483 s / 8 min).
+- **Population:** these figures count **this single Claude Code cloud/interactive session** plus its two dispatched verification sub-agents, as the harness/sub-agent meters report them. ⛔ **NOT comparable** to a plan-marshall `metrics.toon` total, which counts the orchestrator-plus-agent dispatch tree under plan-marshall's own per-task billing boundary — a boundary this standalone session does not share. The figures cannot be made comparable, so no parity is implied.
+
+## Contract check (Step 9)
+
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — `cloud-plan-lane`, `ref-code-quality`, `plugin-script-architecture`, `persona-implementer` (all read from bundle paths; plugin not installed). Named above. |
+| 2 Branch | Done — harness-assigned `claude/respread-effort-preset-ladder-tbc523` kept as-is; pushed to `origin` before any work. |
+| 3 Plan directory | Done — `doc/plans/truthful-signals/200-respread-the-effort-preset-ladder/plan.md` exists and opens with the first-instruction block (present in the handed plan; not repaired). |
+| 4 Implement / per-commit gate | Done — commits carry the `Co-Authored-By: Claude` trailer; every `*.py`-touching commit was preceded by a clean `./pw quality-gate` (ruff/mypy/SPDX all clean). |
+| 4 Pushed | Done — no unpushed commit (`git status -sb` clean after each push). |
+| 5 Build gate | Done — Python changed → full path: `./pw verify` = SUCCESS (19168 passed, 14 skipped). |
+| 6 Verification sub-agent | Done — one real GAP found (wizard-flow.md stale "balanced" claim), fixed, re-dispatched → all six areas pass. Findings + dispositions above. |
+| 7 PR cycle | Done — PR #1181; bot review kept (diff touches `*.py` + skills). Both comment surfaces read; no comment required action; per-reviewer participation recorded. |
+| 8 Merge gate | Conditions 1–3 met (checks green on final head, comments handled, report finalized as last pre-merge commit); shortfall disclosed; auto-merge armed. |
+| 8 Bridge | No status/bookkeeping write outside this plan's own directory; report carries PR # and per-deliverable outcome. |
+| 9 This check | Appended here. |
+| 9 What have we learned | Recorded below. |
+
+**GitHub access path:** GitHub MCP server (cloud). **Branch form:** harness-assigned `claude/*`, kept. **Plugin cache sync:** a cloud run neither performs nor owes `/sync-plugin-cache` (machine-local build step).
+
+## What have we learned (Step 9)
+
+**No contract change proposed.** The run exercised the lane end to end and every step's artifact was producible as written. The one execution hiccup — my run-01 coverage note initially claimed `wizard-flow.md` was clean because my own grep searched for a preset-name *and* a level on the same line, and that file names the preset without a level — was **caught by the contract's existing machinery**, not missed by it: § Step 6's mandate to "sweep beyond the diff … across the owning bundle/skill" via an *independent* sub-agent surfaced the stale claim, and the re-dispatch confirmed the fix. That is the beyond-diff + independent-verification requirement working exactly as designed. So the evidence this run produced *validates* the contract rather than revealing a gap; proposing a change here would be speculative. Recorded as "none proposed, because the failure mode was caught by an existing contract requirement."
+
+## Residue
+
+- **coderabbitai** review is deferred by its own rate limit (window reopens ~42 min after PR open). Its coverage is disclosed, not blocked. If the merge queue has not yet landed the PR when the window reopens, a `@coderabbitai review` comment would obtain its pass; this is optional and does not gate the merge.
+- **Plugin cache:** consumers of the `marketplace/bundles/` changes on a developer machine owe a local `/sync-plugin-cache` after this lands (a local-developer concern, not a debt of this cloud run).
+- Nothing else open.
 
