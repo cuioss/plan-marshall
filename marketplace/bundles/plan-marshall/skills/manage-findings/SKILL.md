@@ -367,6 +367,21 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qg
   [--detail TEXT]
 ```
 
+### qgate resolve-evidenced
+
+Evidence-gated batch resolution for the self-review loop-back (D3). Transitions
+every pending Q-Gate finding of `--phase` whose `file_path` is in the supplied
+`--changed-path` set to `fixed`; leaves every pending finding whose file was NOT
+touched (or that carries no `file_path`) at `pending`. `--changed-path` is the
+landed-fix evidence — the caller computes it (e.g. `git diff --name-only
+{prior_anchor}..HEAD`). Returns `{status, phase, resolved[], left_pending[]}`.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate resolve-evidenced \
+  --plan-id PLAN_ID --phase PHASE \
+  [--changed-path PATH ...] [--evidence-sha SHA]
+```
+
 ### qgate clear
 
 ```bash

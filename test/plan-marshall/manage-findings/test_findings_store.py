@@ -24,6 +24,7 @@ query_qgate_findings = _findings_core.query_qgate_findings
 resolve_finding = _findings_core.resolve_finding
 resolve_findings_by_type = _findings_core.resolve_findings_by_type
 resolve_qgate_finding = _findings_core.resolve_qgate_finding
+resolve_qgate_findings_by_evidence = _findings_core.resolve_qgate_findings_by_evidence
 
 # =============================================================================
 # Test: add_finding
@@ -897,6 +898,138 @@ def test_rejected_qgate_finding_is_non_pending_in_unified_read(plan_context):
     titles = {f['title'] for f in unified['findings']}
     assert titles == {'Stays pending'}
     assert pending['hash_id'] in {f['hash_id'] for f in unified['findings']}
+
+
+# =============================================================================
+# Test: resolve_qgate_findings_by_evidence (D3 — self-review loop-back resolution)
+#
+# A loop-back that lands a fix transitions the corresponding finding; a finding
+# with no evidenced fix is left alone. Both directions are asserted — the second
+# is the important one: a finding marked `fixed` without a landed change touching
+# its file is strictly worse than one left `pending`.
+# =============================================================================
+
+
+def test_resolve_evidenced_transitions_finding_whose_file_changed(plan_context):
+    """A pending finding whose file_path IS in the landed-fix set is resolved `fixed`."""
+    pid = 'ev-resolve-changed'
+    r = add_qgate_finding(
+        pid, '6-finalize', 'qgate', 'bug', 'contract_drift at src/a.py:10', 'Detail',
+        file_path='src/a.py',
+    )
+
+    result = resolve_qgate_findings_by_evidence(
+        pid, '6-finalize', ['src/a.py'], evidence_sha='deadbeef'
+    )
+
+    assert result['status'] == 'success'
+    assert [e['hash_id'] for e in result['resolved']] == [r['hash_id']]
+    assert result['left_pending'] == []
+    # The store reflects the transition.
+    pending = query_qgate_findings(pid, '6-finalize', resolution='pending')
+    assert pending['filtered_count'] == 0
+    fixed = query_qgate_findings(pid, '6-finalize', resolution='fixed')
+    assert fixed['filtered_count'] == 1
+    assert 'deadbeef' in fixed['findings'][0]['resolution_detail']
+    assert 'src/a.py' in fixed['findings'][0]['resolution_detail']
+
+
+def test_resolve_evidenced_leaves_finding_whose_file_unchanged(plan_context):
+    """THE important direction: a pending finding whose file_path is NOT in the
+    landed-fix set is left `pending` — an unevidenced fix never auto-resolves."""
+    pid = 'ev-resolve-unchanged'
+    r = add_qgate_finding(
+        pid, '6-finalize', 'qgate', 'bug', 'contract_drift at src/b.py:20', 'Detail',
+        file_path='src/b.py',
+    )
+
+    # The landed fix touched a DIFFERENT file.
+    result = resolve_qgate_findings_by_evidence(pid, '6-finalize', ['src/other.py'])
+
+    assert result['status'] == 'success'
+    assert result['resolved'] == []
+    assert [e['hash_id'] for e in result['left_pending']] == [r['hash_id']]
+    # The finding is untouched.
+    pending = query_qgate_findings(pid, '6-finalize', resolution='pending')
+    assert pending['filtered_count'] == 1
+    assert pending['findings'][0]['hash_id'] == r['hash_id']
+
+
+def test_resolve_evidenced_leaves_finding_with_no_file_path(plan_context):
+    """A pending finding carrying no file_path cannot be evidenced — left `pending`."""
+    pid = 'ev-resolve-no-file'
+    add_qgate_finding(pid, '6-finalize', 'qgate', 'bug', 'defect with no file anchor', 'Detail')
+
+    result = resolve_qgate_findings_by_evidence(pid, '6-finalize', ['src/anything.py'])
+
+    assert result['status'] == 'success'
+    assert result['resolved'] == []
+    assert len(result['left_pending']) == 1
+    assert query_qgate_findings(pid, '6-finalize', resolution='pending')['filtered_count'] == 1
+
+
+def test_resolve_evidenced_mixed_batch_partitions_by_evidence(plan_context):
+    """A batch resolves only the file-matched findings; the rest stay pending."""
+    pid = 'ev-resolve-mixed'
+    fixed_finding = add_qgate_finding(
+        pid, '6-finalize', 'qgate', 'bug', 'defect at src/fixed.py:1', 'Detail',
+        file_path='src/fixed.py',
+    )
+    kept_finding = add_qgate_finding(
+        pid, '6-finalize', 'qgate', 'bug', 'defect at src/kept.py:1', 'Detail',
+        file_path='src/kept.py',
+    )
+
+    result = resolve_qgate_findings_by_evidence(pid, '6-finalize', ['src/fixed.py'])
+
+    assert [e['hash_id'] for e in result['resolved']] == [fixed_finding['hash_id']]
+    assert [e['hash_id'] for e in result['left_pending']] == [kept_finding['hash_id']]
+
+
+def test_resolve_evidenced_ignores_already_resolved_findings(plan_context):
+    """A finding already resolved is neither re-resolved nor reported as pending."""
+    pid = 'ev-resolve-already'
+    r = add_qgate_finding(
+        pid, '6-finalize', 'qgate', 'bug', 'defect at src/done.py:1', 'Detail',
+        file_path='src/done.py',
+    )
+    resolve_qgate_finding(pid, '6-finalize', r['hash_id'], 'accepted')
+
+    result = resolve_qgate_findings_by_evidence(pid, '6-finalize', ['src/done.py'])
+
+    assert result['resolved'] == []
+    assert result['left_pending'] == []
+    # The accepted resolution is untouched (not overwritten to fixed).
+    accepted = query_qgate_findings(pid, '6-finalize', resolution='accepted')
+    assert accepted['filtered_count'] == 1
+
+
+def test_resolve_evidenced_premature_resolution_is_self_correcting(plan_context):
+    """A resolution the fix did not actually earn is corrected by the next round:
+    re-detecting the same (title, discriminator) REOPENS the record to pending."""
+    pid = 'ev-resolve-reopen'
+    add_qgate_finding(
+        pid, '6-finalize', 'qgate', 'bug', 'defect at src/c.py:5', 'Detail',
+        file_path='src/c.py',
+    )
+    # The fix touched src/c.py, so evidence resolves it...
+    resolve_qgate_findings_by_evidence(pid, '6-finalize', ['src/c.py'])
+    assert query_qgate_findings(pid, '6-finalize', resolution='fixed')['filtered_count'] == 1
+
+    # ...but the defect persisted, so the next round re-detects it → reopened.
+    reopened = add_qgate_finding(
+        pid, '6-finalize', 'qgate', 'bug', 'defect at src/c.py:5', 'Detail',
+        file_path='src/c.py',
+    )
+    assert reopened['status'] == 'reopened'
+    assert query_qgate_findings(pid, '6-finalize', resolution='pending')['filtered_count'] == 1
+
+
+def test_resolve_evidenced_invalid_phase_errors(plan_context):
+    """An invalid Q-Gate phase is rejected."""
+    result = resolve_qgate_findings_by_evidence('ev-bad-phase', 'not-a-phase', ['x.py'])
+    assert result['status'] == 'error'
+    assert 'phase' in result['message'].lower()
 
 
 def test_clear_qgate_findings(plan_context):

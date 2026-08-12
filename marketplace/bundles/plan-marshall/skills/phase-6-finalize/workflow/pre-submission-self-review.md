@@ -103,6 +103,26 @@ Locate `metadata.phase_steps.6-finalize.pre-submission-self-review.head_at_compl
 
 Passing `--since-ref` narrows WHICH FILES are surfaced, never how deeply a surfaced file is reviewed: hunks are still computed against the base branch, so every surviving file is still reviewed against its full plan diff.
 
+**Resolve the prior round's evidenced findings first (delta rounds only).** On a delta round a `{since_ref}` is present, which means a loop-back fix has landed since the previous round. Before re-surfacing, transition the prior round's Q-Gate findings whose file that fix ACTUALLY touched to `fixed`. This is the loop-back resolution the step otherwise lacks: the self-review files a finding per defect (Step 4 Branch B) but resolves none of its own, so a genuinely-landed fix used to leave the finding RECORD stuck at `pending` — the record accumulates while the code is green, which is the exact defect this step now closes. Compute the landed-fix file set from the delta the anchor defines, capturing the newline-separated paths as `{changed_paths}` and the current HEAD as `{evidence_sha}`:
+
+```bash
+git -C {worktree_path} diff --name-only {since_ref}..HEAD
+```
+
+```bash
+git -C {worktree_path} rev-parse HEAD
+```
+
+Then resolve by evidence (see [manage-findings SKILL.md](../../manage-findings/SKILL.md) § "qgate resolve-evidenced"):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate resolve-evidenced \
+  --plan-id {plan_id} --phase 6-finalize \
+  --changed-path {path} [--changed-path {path} ...] --evidence-sha {evidence_sha}
+```
+
+Only a finding whose `file_path` is in `{changed_paths}` is resolved `fixed`; a finding whose file the fix did NOT touch is LEFT `pending` — an unevidenced fix is never auto-resolved, because a record marked `fixed` without a landed change touching its file is strictly worse than one left `pending`. A resolution the fix did not actually earn (the file was touched but the defect survives) is self-correcting: the re-surface below re-detects the defect and `add_qgate_finding` REOPENS the record to `pending`. On a **full round** (no `{since_ref}`), skip this sub-step — there is no landed delta to evidence a resolution against, and round 1 filed no prior findings to resolve.
+
 **Resolvable implementor path**: invoke the resolved implementor's `surface` subcommand. The implementor derives the plan footprint live from the worktree (`{base}...HEAD` ∪ porcelain), computes the staged diff against the worktree's base branch, and emits the candidate sub-lists in a single TOON document on stdout. Forward `--contract-radius {N}` derived from `{cov_scope}` (`change-set` → `1`; `artifact`/`inherit` → `3`; `component`/`module`/`overall` → `5`):
 
 ```bash

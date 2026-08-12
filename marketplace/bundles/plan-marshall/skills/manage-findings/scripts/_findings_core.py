@@ -783,6 +783,74 @@ def resolve_qgate_finding(
     return {'status': 'error', 'message': f'Q-Gate finding not found: {hash_id}'}
 
 
+def resolve_qgate_findings_by_evidence(
+    plan_id: str,
+    phase: str,
+    changed_paths: list[str],
+    evidence_sha: str | None = None,
+) -> dict[str, Any]:
+    """Resolve pending Q-Gate findings whose file a landed fix actually touched.
+
+    Evidence-gated self-review loop-back resolution (D3). The self-review step
+    files a Q-Gate finding per structural defect but never resolves its own
+    findings, so a plan whose fixes genuinely landed could still merge with the
+    finding RECORDS stuck at ``pending``. This transitions a pending Q-Gate
+    finding to ``fixed`` ONLY when its ``file_path`` is in ``changed_paths`` — the
+    set of files a landed fix (a commit that advanced HEAD) actually touched.
+
+    A finding whose ``file_path`` is NOT in ``changed_paths`` — or that carries no
+    ``file_path`` at all — is LEFT ``pending``. This is the important direction: a
+    finding marked ``fixed`` without a landed change touching its file is strictly
+    worse than one left pending, so the unevidenced case is never auto-resolved.
+
+    ``changed_paths`` is the evidence the CALLER computes and passes in (e.g.
+    ``git diff --name-only {prior_anchor}..HEAD`` — the loop-back fix's own edits).
+    A premature resolution — the fix touched the file but did not remove the defect
+    — is self-correcting: the next self-review round re-surfaces the defect and
+    :func:`add_qgate_finding` REOPENS the resolved record back to ``pending``.
+
+    Returns ``{status, plan_id, phase, resolved[], left_pending[]}`` where each
+    list carries ``{hash_id, file_path}`` entries, so the caller can report exactly
+    which findings its fix evidenced and which it left for a later round.
+    """
+    if phase not in QGATE_PHASES:
+        return {'status': 'error', 'message': f'Invalid Q-Gate phase: {phase}. Must be one of {QGATE_PHASES}'}
+
+    changed = {p for p in changed_paths if p}
+    path = get_qgate_path(plan_id, phase)
+    records = read_jsonl(path)
+    detail_sha = evidence_sha or 'HEAD'
+
+    resolved: list[dict[str, str]] = []
+    left_pending: list[dict[str, str]] = []
+    for record in records:
+        if record.get('resolution') != 'pending':
+            continue
+        file_path = record.get('file_path')
+        entry = {'hash_id': str(record.get('hash_id', '')), 'file_path': str(file_path or '')}
+        if file_path and file_path in changed:
+            update_jsonl(
+                path,
+                record['hash_id'],
+                {
+                    'resolution': 'fixed',
+                    'resolution_timestamp': timestamp(),
+                    'resolution_detail': f'evidenced by landed change {detail_sha} touching {file_path}',
+                },
+            )
+            resolved.append(entry)
+        else:
+            left_pending.append(entry)
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'phase': phase,
+        'resolved': resolved,
+        'left_pending': left_pending,
+    }
+
+
 def clear_qgate_findings(
     plan_id: str,
     phase: str,

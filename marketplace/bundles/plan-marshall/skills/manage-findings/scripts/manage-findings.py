@@ -50,6 +50,7 @@ from _findings_core import (
     query_qgate_findings,
     resolve_finding,
     resolve_qgate_finding,
+    resolve_qgate_findings_by_evidence,
 )
 from _findings_ingest import ingest_findings
 from file_ops import output_toon, safe_main
@@ -221,6 +222,16 @@ def cmd_qgate_resolve(args: argparse.Namespace) -> dict:
         hash_id=args.hash_id,
         resolution=args.resolution,
         detail=args.detail,
+    )
+
+
+def cmd_qgate_resolve_evidenced(args: argparse.Namespace) -> dict:
+    """Handle: qgate resolve-evidenced"""
+    return resolve_qgate_findings_by_evidence(
+        plan_id=args.plan_id,
+        phase=args.phase,
+        changed_paths=args.changed_path or [],
+        evidence_sha=args.evidence_sha,
     )
 
 
@@ -420,6 +431,28 @@ def main() -> int:
     add_phase_arg(q_resolve_parser, choices=QGATE_PHASES)
     q_resolve_parser.add_argument('--detail', help='Resolution detail')
     q_resolve_parser.set_defaults(func=cmd_qgate_resolve)
+
+    # qgate resolve-evidenced
+    q_resolve_ev_parser = qgate_sub.add_parser(
+        'resolve-evidenced',
+        help='Resolve pending Q-Gate findings whose file a landed fix touched (evidence-gated)',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(q_resolve_ev_parser)
+    add_phase_arg(q_resolve_ev_parser, choices=QGATE_PHASES)
+    q_resolve_ev_parser.add_argument(
+        '--changed-path',
+        action='append',
+        dest='changed_path',
+        metavar='PATH',
+        help='A file path a landed fix touched (repeatable) — the evidence gating resolution',
+    )
+    q_resolve_ev_parser.add_argument(
+        '--evidence-sha',
+        dest='evidence_sha',
+        help='Commit SHA evidencing the landed fix (recorded in the resolution detail)',
+    )
+    q_resolve_ev_parser.set_defaults(func=cmd_qgate_resolve_evidenced)
 
     # qgate clear
     q_clear_parser = qgate_sub.add_parser('clear', help='Clear Q-Gate findings for a phase', allow_abbrev=False)
