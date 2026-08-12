@@ -463,6 +463,23 @@ def resolve_finding(
     if detail:
         updates['resolution_detail'] = detail
 
+    # Invalidate a stale provider-transmission marker. A finding that was already
+    # transmitted to its provider carries ``responded`` (see
+    # ``mark_finding_responded``). Re-resolving it to a DIFFERENT disposition — a new
+    # resolution, or a new reply body — means the reviewer was told the OLD decision,
+    # so the new one must be transmittable again; clear the marker in the same write
+    # that changes the disposition. An unchanged re-resolve (an idempotent no-op)
+    # leaves the marker intact, so an already-sent reply is not needlessly re-sent.
+    # This is what makes the RESPOND idempotency a per-(finding, disposition) key
+    # rather than a permanent suppression, and it holds for every provider that reads
+    # the marker (GitHub, Sonar) without either provider re-implementing it.
+    if parent.get('responded'):
+        resolution_changed = parent.get('resolution') != resolution
+        detail_changed = bool(detail) and parent.get('resolution_detail') != detail
+        if resolution_changed or detail_changed:
+            updates['responded'] = False
+            updates['responded_at'] = None
+
     if update_jsonl_in_dir(get_findings_dir(plan_id), hash_id, updates):
         return {'status': 'success', 'hash_id': hash_id, 'resolution': resolution}
     return {'status': 'error', 'message': f'Finding not found: {hash_id}'}
@@ -496,12 +513,24 @@ def resolve_findings_by_type(
         if r.get('type') in type_set and r.get('resolution') == from_resolution
     ]
 
-    updates: dict[str, Any] = {'resolution': to_resolution}
+    base_updates: dict[str, Any] = {'resolution': to_resolution}
     if detail:
-        updates['resolution_detail'] = detail
+        base_updates['resolution_detail'] = detail
+    # A bulk resolve re-decides dispositions just as ``resolve_finding`` does, so it
+    # must invalidate a stale provider-transmission marker on the SAME terms — the
+    # ``(finding, disposition)`` idempotency key must hold no matter which resolve
+    # entry point re-decided the finding. ``resolution`` changes uniformly (matched
+    # records all carry ``from_resolution``); the reply body is compared per record.
+    resolution_changed = to_resolution != from_resolution
     resolved_hash_ids: list[str] = []
     for record in matched:
         hash_id = record['hash_id']
+        updates = dict(base_updates)
+        if record.get('responded'):
+            detail_changed = bool(detail) and record.get('resolution_detail') != detail
+            if resolution_changed or detail_changed:
+                updates['responded'] = False
+                updates['responded_at'] = None
         path = get_findings_path(plan_id, record['type'])
         if update_jsonl(path, hash_id, updates):
             resolved_hash_ids.append(hash_id)
@@ -528,11 +557,16 @@ def mark_finding_responded(
 ) -> dict[str, Any]:
     """Stamp a finding as having had its provider response transmitted.
 
-    Idempotency marker for the RESPOND verb (``sonar.py post_responses``): after a
-    successful ``/api/issues/do_transition`` POST, record ``responded=True`` plus a
-    ``responded_at`` UTC timestamp keyed to the finding's ``hash_id``. A subsequent
-    ``post_responses`` pass observes the marker and skips the finding instead of
-    re-POSTing the same dismissal. Locates the per-type file by ``hash_id``.
+    Idempotency marker for the RESPOND verb across every provider's
+    ``post_responses`` (``sonar.py`` server-side dismissal, ``github_pr.py`` PR
+    thread-reply / batched comment): after a successful transmission, record
+    ``responded=True`` plus a ``responded_at`` UTC timestamp keyed to the finding's
+    ``hash_id``. A subsequent ``post_responses`` pass observes the marker and skips
+    the finding instead of re-transmitting the same disposition. The marker is
+    cleared by ``resolve_finding`` when the finding's disposition changes, so a
+    re-decided disposition is transmittable again — the guard is a per-``(finding,
+    disposition)`` key, not a permanent suppression. Locates the per-type file by
+    ``hash_id``.
     """
     updates: dict[str, Any] = {'responded': True, 'responded_at': timestamp()}
 

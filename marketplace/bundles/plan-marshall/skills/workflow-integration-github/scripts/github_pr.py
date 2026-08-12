@@ -1461,10 +1461,23 @@ def cmd_post_responses(args):
     Nothing is folded into a generic skip and nothing is masked by an
     unconditional ``success``.
 
+    **Idempotent across rounds, keyed on (finding, disposition).** The findings
+    store is plan-scoped and persists between passes, and terminality
+    (``_RESPONDABLE_RESOLUTIONS``) is the SELECTION criterion — a terminal finding
+    re-qualifies on every pass. So after a reply is transmitted its finding is
+    stamped with the ``responded`` marker (``mark_finding_responded``) in the same
+    unit of work as the send, and a later pass skips any finding already carrying
+    it (recorded in ``skipped`` with reason ``already responded``). Consequently
+    ``count_responded`` reports only the dispositions transmitted THIS round, never
+    a standing re-count of every terminal finding. A disposition that genuinely
+    CHANGED between rounds is re-transmitted: ``manage-findings resolve`` clears the
+    marker whenever it changes a finding's resolution or reply body, so the guard
+    is a per-``(finding, disposition)`` key, not a blanket suppression.
+
     Fail-loud: returns a typed ``unconfigured`` status when GitHub is not
     authenticated.
     """
-    from _findings_core import query_findings
+    from _findings_core import mark_finding_responded, query_findings
 
     pr_number: int = args.pr_number
     plan_id: str = args.plan_id
@@ -1508,6 +1521,21 @@ def cmd_post_responses(args):
             # is visibly deferred rather than silently dropped or misdelivered.
             reason = 'pr_number_unrecorded' if not finding_pr else f'belongs_to_pr_{finding_pr}'
             skipped.append({'hash_id': hash_id, 'reason': reason})
+            continue
+
+        # Idempotency across rounds: a finding carrying the `responded` marker had
+        # its reply transmitted on a prior pass, so skip it rather than re-post the
+        # same disposition. Terminality (`_RESPONDABLE_RESOLUTIONS`) is the
+        # SELECTION criterion here, never an exclusion — a terminal finding stays
+        # eligible on every pass — so this explicit per-finding marker is what makes
+        # the pass idempotent. `resolve_finding` CLEARS the marker when the
+        # disposition changes, so a genuinely re-decided disposition re-qualifies
+        # below: the guard is keyed on (finding, disposition), not a blanket
+        # suppression. The marker is set in the same unit of work that sends the
+        # reply (below), so a crash between send and mark leaves the finding
+        # eligible for a safe retry rather than silently dropped.
+        if finding.get('responded'):
+            skipped.append({'hash_id': hash_id, 'reason': 'already responded'})
             continue
 
         reply_body = finding.get('resolution_detail') or ''
@@ -1560,6 +1588,9 @@ def cmd_post_responses(args):
                 'resolved_on_provider': True,
             }
         )
+        # Stamp the idempotency marker in the SAME unit of work that transmitted
+        # the reply, so a subsequent pass over this unchanged disposition skips it.
+        mark_finding_responded(plan_id, hash_id)
 
     if batch:
         body = _build_batched_response_body([(comment_id, text) for _hash, comment_id, text in batch])
@@ -1574,6 +1605,9 @@ def cmd_post_responses(args):
                         'resolved_on_provider': False,
                     }
                 )
+                # The batched post IS the send for these dispositions; stamp each
+                # marker now that it succeeded, so a later pass skips them.
+                mark_finding_responded(plan_id, hash_id)
         else:
             # The single post carries the WHOLE batch — one failure means every
             # disposition in it is untransmitted.
