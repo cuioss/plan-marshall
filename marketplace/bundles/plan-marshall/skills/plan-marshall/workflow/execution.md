@@ -284,24 +284,18 @@ guard in `manage-tasks finalize-step`.
 
 **Handling procedure** (runs in the orchestrator's main context):
 
-1. **Resolve the verification-feedback target** via the role resolver:
+1. **Resolve the verification-feedback target** via the role resolver, passing the dispatch context so the seam emits the standardized `[DISPATCH]` work-log line and its paired decision-log record itself — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; each re-fire of this triage loop re-runs the resolve, so the record is re-emitted per firing:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-     effort resolve-target --phase phase-5-execute --role verification-feedback
+     effort resolve-target --phase phase-5-execute --role verification-feedback \
+     --workflow plan-marshall:plan-marshall/workflow/verification-feedback.md \
+     --plan-id {plan_id} --caller plan-marshall:phase-5-execute
    ```
 
-   Extract the `target` field from the TOON output. Use it as `{target}` in the dispatch and the log line below.
+   Extract the `target` field from the TOON output. Use it as `{target}` in the dispatch below.
 
-2. **Emit the standardized post-resolve dispatch log line** — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
-
-   ```bash
-   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-     work --plan-id {plan_id} --level INFO \
-     --message "[DISPATCH] (plan-marshall:phase-5-execute) target={target} level={level} role=verification-feedback workflow=plan-marshall:plan-marshall/workflow/verification-feedback.md plan_id={plan_id}"
-   ```
-
-3. **Dispatch `verification-feedback`** as a top-level `Task:` in the main context (the dispatch is by-reference — the subagent queries the per-plan findings store as its first workflow step; the findings are NOT embedded in the prompt):
+2. **Dispatch `verification-feedback`** as a top-level `Task:` in the main context (the dispatch is by-reference — the subagent queries the per-plan findings store as its first workflow step; the findings are NOT embedded in the prompt):
 
    ```text
    Task: plan-marshall:{target}
@@ -323,7 +317,7 @@ guard in `manage-tasks finalize-step`.
 
    `caller_phase: phase-5-execute` is the legitimate top-level phase-context field the orchestrator passes for this phase-agnostic workflow (see [`../../extension-api/standards/ext-point-execution-context-workflow.md`](../../extension-api/standards/ext-point-execution-context-workflow.md) § Phase-context propagation for phase-agnostic workflows). The Scope-Deviation Escalation guard lives in [`triage.md`](triage.md) § Step 6.
 
-4. **Consume the triage return** to drive the branch:
+3. **Consume the triage return** to drive the branch:
 
    - If `fix_tasks_created > 0` → increment `verify_iteration` in the verification task's metadata, reset the verification task to `pending`, and re-dispatch the execution-context (fix tasks execute before the re-queued verification task via `depends_on`).
    - If `fix_tasks_created == 0` AND `overflow_deferred == 0` → mark the verification task complete (all findings suppressed / accepted / `taken_into_account`); resume the normal post-return classification.
