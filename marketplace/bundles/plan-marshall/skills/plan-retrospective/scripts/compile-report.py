@@ -85,9 +85,11 @@ def _dispatch_boundaries_has_present_phase(fragment: Any) -> bool:
 
     The dispatch_boundaries fragment is structurally a per-phase dict
     keyed by phase name (e.g. ``"4-plan"``, ``"5-execute"``, ``"6-finalize"``).
-    Each value is the per-file shape from analyze-logs.read_dispatch_boundaries_per_phase
-    (``present``, ``rows``, ``unknown_count``, ``clean_exit_queue_empty_count``).
-    The section emits when at least one phase has ``present: true``.
+    Each value is the per-file shape from
+    analyze-logs.read_dispatch_boundaries_per_phase (whose authoritative key set
+    lives in ``_parse_dispatch_boundary_file``); this gate reads only the
+    ``present`` flag. The section emits when at least one phase has
+    ``present: true``.
     """
     if not isinstance(fragment, dict) or not fragment:
         return False

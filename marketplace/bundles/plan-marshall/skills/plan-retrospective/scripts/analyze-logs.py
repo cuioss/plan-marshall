@@ -819,9 +819,11 @@ def read_dispatch_boundaries_per_phase(plan_dir: Path) -> dict[str, dict[str, An
     The artifact filename ``metrics-dispatch-boundaries-{phase}.toon`` encodes
     the originating phase as the trailing path-stem segment. The returned dict
     is keyed by extracted phase name (e.g. ``"4-plan"``, ``"5-execute"``,
-    ``"6-finalize"``) with each value carrying the same per-file shape as the
-    legacy single-phase reader (``present``, ``rows``, ``unknown_count``,
-    ``clean_exit_queue_empty_count``).
+    ``"6-finalize"``) with each value carrying the per-file shape
+    ``_parse_dispatch_boundary_file`` returns — see its "Returned dict shape"
+    docstring for the authoritative key set (``present``, ``rows``, the per-cause
+    counts, and the genuinely-wasted / retryable token sums). Enumerated there,
+    not here, so this docstring does not drift when a key is added.
 
     An empty work directory produces an empty dict — the top-level
     ``dispatch_boundaries`` key surfaces in ``cmd_run`` output regardless,
