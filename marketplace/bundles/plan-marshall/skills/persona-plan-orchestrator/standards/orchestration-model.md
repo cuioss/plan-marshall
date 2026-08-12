@@ -111,7 +111,7 @@ The orchestrator MAY perform small operations inline, without spawning a plan:
 
 **The one sanctioned exception — `inbox/`.** An executing plan MAY create `inbox/{sender}-{seq}` message files inside its epic's tree, and nothing else. The exception is bounded by three qualifiers:
 
-- **Append-only** — a plan creates new message files and never edits or deletes an existing one, including its own.
+- **Append-only, with one sanctioned correction path** — a plan creates new message files and never deletes one. The only in-place edit it may make is correcting its OWN filed message through `inbox amend` or `inbox supersede`, each of which stamps the envelope (`amended` plus a monotonic `revision`, or `lifecycle=superseded` plus a successor pointer) so the mutation is never invisible — it never silently rewrites a message, and never edits another sender's file. The message-state vocabulary is defined in [`inbox-envelope.md` § Message-state vocabulary](../../plan-orchestrator/standards/inbox-envelope.md).
 - **Own-file-only** — a plan may write only files whose `{sender}` segment is its own plan id.
 - **One-way** — the plan writes, the orchestrator drains — the drain being the `analyze` verb's inbox-scan input mode ([`plan-orchestrator/workflow/analyze.md`](../../plan-orchestrator/workflow/analyze.md) § The four input modes), which enumerates through `inbox list` and consumes through `inbox archive` ([`plan-orchestrator/SKILL.md`](../../plan-orchestrator/SKILL.md) § Canonical invocations). The plan never reads the ledger to make a decision.
 
