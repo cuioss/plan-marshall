@@ -5,7 +5,7 @@
      role="img" aria-labelledby="title desc"
      font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
   <title id="title">Per-dispatch context isolation — single growing context vs orchestrator-plus-execution-context-variants</title>
-  <desc  id="desc">Side-by-side comparison of two context-growth strategies. On the left, a monolithic single-context approach accumulates everything (system prompt, tool outputs, raw build logs, intermediate reasoning) into one growing context that ends near the token-window limit. On the right, the plan-marshall orchestrator stays small and dispatches per-phase or per-task work into `execution-context-{level}` variants that each run in their own context; each variant returns a small TOON record to the orchestrator and is then discarded. Net effect: the orchestrator's context grows only by the size of the TOON returns, while the heavy intermediate context lives and dies inside the execution-context envelope.</desc>
+  <desc  id="desc">Side-by-side comparison of two context-growth strategies. On the left, a monolithic single-context approach accumulates everything (system prompt, tool outputs, raw build logs, intermediate reasoning) into one growing context; every byte, once added, stays resident and is re-read on every later turn until the session ends. On the right, the plan-marshall orchestrator stays small and dispatches per-phase or per-task work into `execution-context-{level}` variants that each run in their own context; each variant returns a small TOON record to the orchestrator and is then discarded. Net effect: each byte's residency is bounded to its short-lived envelope and re-read only while that envelope is live, then discarded; the orchestrator's context grows only by the size of the TOON returns.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
@@ -27,7 +27,7 @@
   </defs>
 
   <!-- ============= Header ============= -->
-  <text x="500" y="34" class="col-header">Per-dispatch context isolation — where the heavy context actually lives</text>
+  <text x="500" y="34" class="col-header">Per-dispatch context isolation — how long each byte stays resident</text>
   <text x="500" y="54" class="col-sub">same task, two approaches · only the right column survives a long-running session</text>
 
   <!-- Vertical centre divider -->
@@ -43,7 +43,7 @@
   <!-- Internal segments (cumulative bands) -->
   <line class="sep" x1="170" y1="180" x2="330" y2="180"/>
   <text x="250" y="160" class="item">System prompt + skills</text>
-  <text x="250" y="174" class="mono">~3 K</text>
+  <text x="250" y="174" class="item">resident for the whole run</text>
 
   <line class="sep" x1="170" y1="240" x2="330" y2="240"/>
   <text x="250" y="200" class="item">Tool calls + tool outputs</text>
@@ -54,7 +54,7 @@
   <text x="250" y="265" class="item">Raw build / test output</text>
   <text x="250" y="280" class="item">accumulated as the LLM</text>
   <text x="250" y="294" class="item">polls and narrates</text>
-  <text x="250" y="310" class="mono">~10–25 K</text>
+  <text x="250" y="310" class="item">re-read every later turn</text>
 
   <line class="sep" x1="170" y1="400" x2="330" y2="400"/>
   <text x="250" y="345" class="item">Intermediate reasoning,</text>
@@ -63,9 +63,9 @@
   <text x="250" y="390" class="mono">monotonically growing</text>
 
   <text x="250" y="430" class="item">Final answer</text>
-  <text x="250" y="448" class="mono">tokens at session end:</text>
-  <text x="250" y="466" class="col-header" style="font-size: 13px">30 – 50 K</text>
-  <text x="250" y="485" class="item">(or context-window overflow)</text>
+  <text x="250" y="448" class="item">every byte stays resident,</text>
+  <text x="250" y="466" class="col-header" style="font-size: 13px">re-read every turn</text>
+  <text x="250" y="485" class="item">(and risks window overflow)</text>
 
   <!-- Caption -->
   <text x="250" y="555" class="col-sub">Failure mode: context grows monotonically with task duration.</text>
@@ -78,7 +78,7 @@
   <!-- Orchestrator (small, persistent) -->
   <rect class="fill-faint" x="670" y="135" width="160" height="80" rx="6" ry="6"/>
   <text x="750" y="160" class="col-header">orchestrator</text>
-  <text x="750" y="180" class="mono">~5 K</text>
+  <text x="750" y="180" class="item">stays small</text>
   <text x="750" y="198" class="item">grows only by TOON returns</text>
 
   <!-- Three dispatched execution-context variants at lower y -->
@@ -87,7 +87,7 @@
   <text x="595" y="320" class="mono">execution-context</text>
   <text x="595" y="335" class="mono" style="font-weight: 700">-medium</text>
   <text x="595" y="354" class="item">isolated context</text>
-  <text x="595" y="368" class="mono">~10–15 K</text>
+  <text x="595" y="368" class="item">few resident turns</text>
   <text x="595" y="384" class="item">discarded at return</text>
 
   <!-- Variant 2: high effort -->
@@ -95,7 +95,7 @@
   <text x="745" y="320" class="mono">execution-context</text>
   <text x="745" y="335" class="mono" style="font-weight: 700">-high</text>
   <text x="745" y="354" class="item">isolated context</text>
-  <text x="745" y="368" class="mono">~10–15 K</text>
+  <text x="745" y="368" class="item">few resident turns</text>
   <text x="745" y="384" class="item">discarded at return</text>
 
   <!-- Variant 3: xhigh effort -->
@@ -103,7 +103,7 @@
   <text x="895" y="320" class="mono">execution-context</text>
   <text x="895" y="335" class="mono" style="font-weight: 700">-xhigh</text>
   <text x="895" y="354" class="item">isolated context</text>
-  <text x="895" y="368" class="mono">~10–15 K</text>
+  <text x="895" y="368" class="item">few resident turns</text>
   <text x="895" y="384" class="item">discarded at return</text>
 
   <!-- Arrows orchestrator → subagents (Task dispatches) -->
@@ -116,14 +116,14 @@
 
   <!-- TOON returns — text annotation only; rendering all six arrows would clutter the column -->
   <text x="750" y="420" class="item">each variant returns one TOON record · the rest is discarded</text>
-  <text x="750" y="438" class="mono">~200 – 500 tokens each</text>
+  <text x="750" y="438" class="item">its context never re-enters a later turn</text>
 
-  <text x="750" y="468" class="item">orchestrator token-cost after 3 dispatches:</text>
-  <text x="750" y="488" class="col-header" style="font-size: 13px">~5 K + 3 × ~300  ≈  6 K</text>
+  <text x="750" y="468" class="item">each byte is re-read only while its envelope is live:</text>
+  <text x="750" y="488" class="col-header" style="font-size: 13px">bounded resident turns</text>
 
   <!-- Caption -->
   <text x="750" y="555" class="col-sub">Heavy intermediate context lives and dies inside the execution-context envelope.</text>
-  <text x="750" y="572" class="col-sub">Long task → orchestrator stays small; recall stays high; no overflow.</text>
+  <text x="750" y="572" class="col-sub">Long task → each byte's residency is bounded; recall stays high; no overflow.</text>
 
   <!-- ============= Footer caption ============= -->
   <text x="500" y="605" class="col-sub">Side-effect: every execution-context dispatch is a fresh context that re-loads `persona-plan-marshall-agent` and caller-named skills — process rules cannot decay.</text>
