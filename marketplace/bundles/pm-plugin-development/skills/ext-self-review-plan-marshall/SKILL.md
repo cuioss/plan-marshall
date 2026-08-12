@@ -174,7 +174,7 @@ unguarded_boundaries[N14]{file,line,boundary,guarded}:
   {repo-relative-path},{line},{boundary-call-kind},false
 
 count_prose[N15]{file,line,text}:
-  {repo-relative-skill-md-path},{line},{matched-count-prose-line}
+  {repo-relative-contract-source-path},{line},{matched-count-prose-line}
 
 touched_claims[N16]{file,line,text}:
   {repo-relative-path},{line},{added-line-text}
