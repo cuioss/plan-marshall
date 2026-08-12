@@ -1,6 +1,6 @@
 # Run report — 080-landing-message-carries-the-outcome-post-merge (run 01)
 
-**Date (UTC):** 2026-08-12    **Branch:** `claude/landing-message-outcome-j5up5s` (harness-assigned)    **PR:** (recorded to operator at finalize)    **Outcome:** completed — plan **REFUTED** at the verify-first gate
+**Date (UTC):** 2026-08-12    **Branch:** `claude/landing-message-outcome-j5up5s` (harness-assigned)    **PR:** #1196    **Outcome:** completed — plan **REFUTED** at the verify-first gate
 
 ## Summary
 
@@ -75,13 +75,15 @@ Recorded per instance (source · finding · disposition):
 
 ## Reviewer participation
 
-The change is docs-only (`doc/plans/**` prose — no `*.py`, no `.claude/skills/**`, no `marketplace/bundles/**`), so the PR carries `skip-bot-review` and no automated reviewer is expected to run. The expected-reviewer population (derived from `automatic-review/standards/{bot_kind}.md` registry docs) is therefore intentionally not invoked for this PR.
+The change is docs-only (`doc/plans/**` prose — no `*.py`, no `.claude/skills/**`, no `marketplace/bundles/**`), so the PR carries `skip-bot-review`. Verdicts derived from the actual comment bodies on PR #1196 (all three surfaces read: issue comments, review summaries, inline threads — the last is empty):
 
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
-| (all registry reviewers) | `silent` | `skip-bot-review` applied at PR creation — docs-only diff with no reviewable code footprint. |
+| `cuioss-review-bot` | `reviewed` | Issue comment "PR Reviewer Guide 🔍 — No relevant tests, No security concerns identified, No major issues detected" — a clean review over the diff, no actionable findings. |
+| `coderabbitai` | `silent` | Status comment "Review skipped — only excluded labels are configured (`skip-bot-review`)"; honored the label, produced no review. |
+| `sourcery-ai` | `rate-limited` | Review body "you have reached your weekly rate limit of 500000 diff characters" — engaged but did not review this diff. |
 
-Coverage: **0-of-M by design** (suppressed footprint). The § Step 8 shortfall disclosure is not applicable in the "reviewer scored a diff" sense; the suppression is disclosed here and in the PR label.
+Coverage: **1-of-3** — `cuioss-review-bot` reviewed clean; `coderabbitai` suppressed by `skip-bot-review`; `sourcery-ai` rate-limited (weekly quota). Disclosed per § Step 8: the shortfall is routine and is **not** a merge block; no actionable finding appeared on any surface, so every comment is dispositioned as no-action.
 
 ## Cost
 
@@ -101,8 +103,8 @@ Coverage: **0-of-M by design** (suppressed footprint). The § Step 8 shortfall d
 | 4 Pushed | Done at finalize — no unpushed commit remains. |
 | 5 Build gate | Done — git-derived verdict: no Python changes; build skipped. |
 | 6 Verification sub-agent | Done — adversarial refutation check returned REFUTATION CONFIRMED; findings recorded above. |
-| 7 PR cycle | Done — docs-only PR opened with `skip-bot-review`; no code footprint to review. |
-| 8 Merge gate | Conditions 1–3 met; auto-merge armed. Landing self-confirmed or delegated to orchestrator collect (recorded to operator). |
+| 7 PR cycle | Done — docs-only PR #1196 opened with `skip-bot-review`. Three bot comments read across all surfaces (`cuioss-review-bot` clean, `coderabbitai` skipped, `sourcery-ai` rate-limited); none actionable, all dispositioned no-action. |
+| 8 Merge gate | Conditions 1–3 met; auto-merge armed (`SQUASH`). Landing self-confirmed if the session can re-read, else delegated to orchestrator collect (recorded to operator). |
 | 8 Bridge | No status/bookkeeping write outside this plan's directory; report carries the outcome for collect. |
 | 9 This check | This table. |
 
