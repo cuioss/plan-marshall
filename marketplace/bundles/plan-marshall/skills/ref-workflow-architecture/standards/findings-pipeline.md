@@ -47,12 +47,12 @@ The plan-marshall findings pipeline routes every quality signal — PR review co
 │                          │  pending_findings_           │                   │
 │                          │   blocking_count             │                   │
 │                          │                              │                   │
-│                          │  Guarded boundary:           │                   │
-│                          │   6-finalize entry  +        │                   │
-│                          │   intra-finalize re-issues   │                   │
-│                          │   (automatic-review →        │                   │
-│                          │    branch-cleanup;           │                   │
-│                          │    sonar-roundtrip → next)   │                   │
+│                          │  Guarded boundaries:         │                   │
+│                          │   pre-merge findings-check   │                   │
+│                          │   + completion state assert  │                   │
+│                          │   (branch-cleanup merge;     │                   │
+│                          │    transition / archive      │                   │
+│                          │    complete 6-finalize)      │                   │
 │                          │                              │                   │
 │                          │  Raises BlockingFindings-    │                   │
 │                          │   Present when any           │                   │
@@ -114,7 +114,7 @@ The **`pr-comment-overflow` finding** files when the consumer's 900 s triage bud
 
 The pipeline is structurally enforced: producers can never bypass the store (no inline-JSON batch surfaces remain in LLM-callable scope), consumers can never bypass the per-domain decision-grounding knowledge (every triage decision loads `ext-triage-{domain}`), and boundaries can never be crossed with unresolved blocking findings (the invariant raises `BlockingFindingsPresent`).
 
-The pipeline is the canonical finding store for all plan-marshall phases. The two boundary areas most likely to need wiring in a fresh installation are qgate aggregation and intra-finalize re-capture; see plan `findings-pipeline-blocking-fixes` for tracked follow-up work, and the diagram above for the current wiring state.
+The pipeline is the canonical finding store for all plan-marshall phases. The finalize blocking-finding gate is wired at two sites — the pre-merge `phase_handshake findings-check --phase 6-finalize` in `branch-cleanup`, and the completion-boundary `assert_finalize_findings_clean` state assertion in the lifecycle verbs (see the § "Guarded boundaries" table below and the diagram above); qgate aggregation is the other boundary area a fresh installation checks.
 
 ## Producers
 

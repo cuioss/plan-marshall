@@ -84,7 +84,7 @@ Scope limits:
 
 ### `findings-check`
 
-Read-only single-invariant gate. Evaluates ONLY the `pending_findings_blocking_count` invariant (via [resolution rule](#pending_findings_blocking_count-resolution)) for `phase` and writes **no** handshake row. Unlike `capture` it never runs `capture_all`, so `phase_steps_complete` is never evaluated — the verb cannot short-circuit on `phase_steps_incomplete`. It exists for the intra-finalize boundaries, where the downstream finalize steps (`branch-cleanup`, `record-metrics`, `archive-plan`) have not run yet so the composite `capture` gate would always fail on `phase_steps_incomplete` before ever evaluating the blocking-findings invariant.
+Read-only single-invariant gate. Evaluates ONLY the `pending_findings_blocking_count` invariant (via [resolution rule](#pending_findings_blocking_count-resolution)) for `phase` and writes **no** handshake row. Unlike `capture` it never runs `capture_all`, so `phase_steps_complete` is never evaluated — the verb cannot short-circuit on `phase_steps_incomplete`. It exists for the pre-merge finalize gate (`branch-cleanup` § "Pre-merge blocking-findings store gate"), where the downstream finalize steps (`record-metrics`, `archive-plan`) have not run yet so the composite `capture` gate would always fail on `phase_steps_incomplete` before ever evaluating the blocking-findings invariant.
 
 On a clean count:
 
@@ -95,9 +95,9 @@ phase: 6-finalize
 blocking_count: 0
 ```
 
-On a pending blocking-type finding the verb returns the **same** structured error payload `capture` emits for `blocking_findings_present` (`blocking_count`, `blocking_types`, `per_type`, `message`), so the intra-finalize callers branch on an interchangeable envelope. There is no `--strict` flag — the verdict is carried entirely in the TOON `status` field, and a `status: error` payload still exits 0 (mirroring the `capture` exit convention the callers already handle).
+On a pending blocking-type finding the verb returns the **same** structured error payload `capture` emits for `blocking_findings_present` (`blocking_count`, `blocking_types`, `per_type`, `message`), so the pre-merge `findings-check` caller and the composite `capture` gate present an interchangeable envelope. There is no `--strict` flag — the verdict is carried entirely in the TOON `status` field, and a `status: error` payload still exits 0 (mirroring the `capture` exit convention the callers already handle).
 
-**Fails closed on an unevaluable invariant.** When the underlying blocking-count query cannot run (executor unreachable / partial query failure, surfaced as a `None` count), the verb returns `status: error, error: query_failed` rather than `status: success`. As a gate verb its sole output is the go/no-go verdict, so it cannot fail open: an unevaluable invariant must halt the intra-finalize boundary, not silently advance it to `branch-cleanup`. (The composite `capture` records the same `None` as an empty column for retrospective analysis — acceptable there because `capture`'s gate is the `BlockingFindingsPresent` raise, not the return value.) The callers treat `query_failed` as a halt-and-retry environmental failure (no findings to triage, no loop-back).
+**Fails closed on an unevaluable invariant.** When the underlying blocking-count query cannot run (executor unreachable / partial query failure, surfaced as a `None` count), the verb returns `status: error, error: query_failed` rather than `status: success`. As a gate verb its sole output is the go/no-go verdict, so it cannot fail open: an unevaluable invariant must halt the merge, not silently proceed past the pre-merge gate in `branch-cleanup`. (The composite `capture` records the same `None` as an empty column for retrospective analysis — acceptable there because `capture`'s gate is the `BlockingFindingsPresent` raise, not the return value.) The caller treats `query_failed` as a halt-and-retry environmental failure (no findings to triage, no loop-back).
 
 ### `list` / `clear`
 

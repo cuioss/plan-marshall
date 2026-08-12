@@ -246,17 +246,16 @@ Phase transitions are guarded by a registry of **invariants** captured at every 
 | Row | Behavior at every boundary | Behavior at guarded boundaries |
 |-----|----------------------------|--------------------------------|
 | `pending_findings_by_type` | per-type breakdown of pending findings (passive — never raises) | identical (passive) |
-| `pending_findings_blocking_count` | sum of pending counts across the hardcoded ACTIONABLE finding-type set | raises `BlockingFindingsPresent` when the count is non-zero — capture refuses to persist a row, gating the boundary |
+| `pending_findings_blocking_count` | sum of pending counts across the hardcoded ACTIONABLE finding-type set | raises `BlockingFindingsPresent` when the count is non-zero at a guarded boundary — the capture / findings-check refuses, gating the boundary |
 
 The actionable-vs-knowledge classification is a **fixed, hardcoded** rule in `plan-marshall/scripts/_invariants.py` — not per-phase configuration, no `marshal.json` key, no wizard seed. ACTIONABLE types (`build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `qgate`, `pr-comment`) block when pending at a guarded boundary; KNOWLEDGE types (`insight`, `tip`, `best-practice`, `improvement`) never block. See [`references/phase-handshake.md`](references/phase-handshake.md) § `pending_findings_blocking_count` resolution for the full rule.
 
-**Guarded boundaries** (the only points where the strict-verify check refuses to advance):
+**Guarded boundaries** (the points where the blocking-finding gate refuses to advance):
 
-- `5-execute → 6-finalize` (covers the phase-level transition)
-- `automated-review → branch-cleanup` (intra-finalize)
-- `sonar-roundtrip → next` (intra-finalize)
+- **finalize merge (pre-merge)** — `phase-6-finalize`'s `branch-cleanup` issues `phase_handshake findings-check --phase 6-finalize` before the merge and blocks on a pending actionable finding.
+- **finalize completion** — `manage-status transition --completed 6-finalize` / a normal-completion `manage-status archive` call `_invariants.assert_finalize_findings_clean`, a STATE assertion (armed by reaching the boundary) that refuses to mark the plan complete while an actionable finding is pending.
 
-Every other capture point — phases `1-init` through `5-execute` and any other finalize sub-step — captures the rows passively for retrospective analysis without blocking the transition.
+The `5-execute → 6-finalize` transition is **not** a blocking-finding firing site: it inlines `phase_handshake verify --phase 5-execute --strict`, which detects drift on the captured `5-execute` row but does not raise `BlockingFindingsPresent` (that raise fires only at `phase == '6-finalize'`, and the self-review findings the gate catches are filed *during* finalize). Every other capture point captures the rows passively for retrospective analysis without blocking the transition.
 
 The resolutions counted as **resolved** (and therefore non-blocking) are: `fixed`, `suppressed`, `accepted`, `taken_into_account`. Only `pending` contributes to the count.
 

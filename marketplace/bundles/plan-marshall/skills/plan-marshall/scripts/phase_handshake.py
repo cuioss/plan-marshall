@@ -14,7 +14,7 @@ All subcommands emit TOON to stdout. `verify` with ``--strict`` exits 1 on
 
 ``findings-check`` is a read-only single-invariant gate: it evaluates ONLY the
 ``pending_findings_blocking_count`` invariant (never ``phase_steps_complete``)
-and writes NO handshake row. It exists for the intra-finalize boundaries where
+and writes NO handshake row. It exists for the pre-merge finalize gate where
 the composite ``capture`` would short-circuit on ``phase_steps_incomplete``
 because downstream finalize steps have not run yet. Its exit code follows the
 ``capture`` convention — a ``status: error`` payload still exits 0; the verdict

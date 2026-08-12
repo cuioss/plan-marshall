@@ -1959,6 +1959,31 @@ def test_archive_dry_run_does_not_fire_findings_gate(plan_context, monkeypatch):
     assert 'would_archive_to' in result
 
 
+def test_archive_of_already_complete_plan_not_blocked_by_pending_finding(plan_context, monkeypatch):
+    """The cleanup pass archives already-`complete` plans (no --reason). A stale
+    pending record on such a plan must NOT wedge cleanup — the completion gate
+    fires only while the plan is actively in 6-finalize, not after it completed.
+    This is exactly the pre-D3 residue (a permanently-pending qgate record) whose
+    cleanup a broad gate would have blocked."""
+    _stub_finding_queries(monkeypatch, {})  # clean, so the plan can complete
+    plan_id = 'finalize-cleanup-complete'
+    _seed_finalize_phase_plan(plan_id)
+    # Complete it normally (clean) → current_phase becomes 'complete'.
+    done = cmd_transition(Namespace(plan_id=plan_id, completed='6-finalize'))
+    assert done['status'] == 'success'
+
+    # A stale pending actionable record now appears (the pre-D3 residue).
+    _stub_finding_queries(monkeypatch, {'build-error': 1})
+
+    # The cleanup archive (no --reason) of the already-complete plan must proceed.
+    result = cmd_archive(Namespace(plan_id=plan_id, dry_run=False, reason=None))
+    assert result['status'] == 'success', (
+        'A cleanup archive of an already-complete plan must not be blocked by a '
+        'stale pending finding — the completion gate fires only while in 6-finalize.'
+    )
+    assert 'archived_to' in result
+
+
 def test_run_executor_skips_when_executor_absent(monkeypatch, tmp_path):
     """_run_executor is a no-op (no subprocess) when the executor is not on disk."""
     missing = tmp_path / 'execute-script.py'  # deliberately not created

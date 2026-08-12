@@ -511,12 +511,19 @@ def cmd_archive(args: argparse.Namespace) -> dict[str, Any] | None:
     # Finalize completion boundary (D2): a NORMAL-completion archive asserts the
     # blocking-findings STATE, the same call → state conversion cmd_transition
     # applies. ``archive-plan`` (the production terminal step) calls
-    # ``manage-status archive`` with NO --reason, so the normal-completion path
-    # is gated. A DELIBERATE archive carrying --reason (an abandonment /
-    # low-confidence close) is exempt: the operator has chosen to close the plan
-    # regardless of pending findings, and blocking that would strand it. On
-    # refusal, return before the phase-close write and the shutil.move.
-    if getattr(args, 'reason', None) is None:
+    # ``manage-status archive`` with NO --reason while the plan is still in
+    # ``6-finalize``, so that genuine-completion path is gated. Two exemptions:
+    #  - A DELIBERATE archive carrying --reason (an abandonment / low-confidence
+    #    close): the operator chose to close the plan regardless of pending
+    #    findings, and blocking that would strand it.
+    #  - An already-``complete`` plan being garbage-collected by the cleanup pass
+    #    (``planning.md`` § cleanup archives ``current_phase == 'complete'`` plans
+    #    with no --reason): the completion decision was already made and gated at
+    #    the time; re-gating a legacy plan's cleanup on a stale pending record
+    #    (exactly the pre-D3 residue this plan fixes) would wedge cleanup. The
+    #    gate therefore fires only while the plan is actively IN finalize.
+    # On refusal, return before the phase-close write and the shutil.move.
+    if getattr(args, 'reason', None) is None and status.get('current_phase') == '6-finalize':
         findings_refusal = _finalize_findings_refusal(args.plan_id, status)
         if findings_refusal is not None:
             return findings_refusal
