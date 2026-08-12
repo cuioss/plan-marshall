@@ -86,7 +86,7 @@ Authoring templates for the ledger documents live in `templates/` and mirror the
 
 | Script | Notation | Purpose |
 |--------|----------|---------|
-| orchestrator | `plan-marshall:plan-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read the plan queue, transition a plan's status, or set one plan row's result field), `resume-summary` (generate the START-HERE block from status.json, with its two self-validation detectors), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `corpus` (reconcile the staged spec corpus against the queue, cross-check it against sibling epics and live plans, and read or stamp the re-grounding verdict field), `cleanup` (report the restart-readiness verdict), `inbox` (append/validate a plan-written OUTBOX message, list the queued messages, archive a consumed one, or detect orchestration context from a plan's `source_id`) |
+| orchestrator | `plan-marshall:plan-orchestrator:orchestrator` | Thin scaffolding: `scaffold` (create the epic tree), `queue` (read the plan queue, transition a plan's status, or set one plan row's result field), `resume-summary` (generate the START-HERE block from status.json, with its two self-validation detectors), `archive` (relocate a closed epic tree to `archived-orchestrators/`), `compact` (regenerate every derivable `epic.md` surface in place, verify the invariants, and report — the ledger-compaction stage `cleanup` Phase B calls; refuses a closed epic), `corpus` (reconcile the staged spec corpus against the queue, cross-check it against sibling epics and live plans, and read or stamp the re-grounding verdict field), `cleanup` (report the restart-readiness verdict), `inbox` (append/validate a plan-written OUTBOX message, list the queued messages, archive a consumed one, or detect orchestration context from a plan's `source_id`) |
 
 ## Canonical invocations
 
@@ -127,6 +127,17 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator arc
 ```
 
 Relocates a *closed* epic tree to `archived-orchestrators/{slug}/` — a post-close, mechanical move. Refuses a non-closed epic (`not_closed`), a missing epic (`not_found`), or an existing archive (`archive_conflict`); an already-archived slug returns idempotent success (`already_archived`).
+
+### compact
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator compact \
+  --slug SLUG
+```
+
+The ledger-compaction stage [`workflow/cleanup.md`](workflow/cleanup.md) Phase B runs. Regenerates every DERIVABLE surface of `epic.md` **in place** — the START-HERE resume summary and the Ordered Queue table — from `status.json` and the staged specs, replacing only the content between each `BEGIN/END GENERATED` marker pair and leaving every byte OUTSIDE the markers untouched. That boundary is the safety property: a retraction, a refutation, a do-not-re-derive note, and the operator-confirmed `running` note all sit in narrative and survive a pass verbatim, because the stage never reads them as regenerable. The narrative-versus-settled RELOCATION judgement is NOT here — it is the orchestrator's, and this stage only VERIFIES that whatever was relocated is reachable from its pointer.
+
+The report names every mutation and every abstention: `regenerated[]` (per block: `outcome` ∈ `regenerated` / `unchanged` / `markers_absent`, plus its before/after line counts), `invariants[]` (`queue_spec_bidirectional`, `no_terminal_in_live_queue`, and `relocated_pointer_reachable`, each with a `verdict` ∈ `ok` / `violated` / `indeterminate`, its evidence, and its population), and `abstained[]` (every narrative `##` section left verbatim). **Idempotent** — a second run finds every block `unchanged` and writes nothing (`epic_changed: false`). Resolves the store strictly (never the archived read-fallback) and **refuses a closed epic** (`refused_closed`): compaction is a live-epic operation only, and the frozen record is never mutated. Also refuses an unsafe slug (`invalid_slug`), a missing store tree (`not_found`), and a missing `epic.md` or `status.json` (`file_not_found`).
 
 ### corpus enumerate
 
