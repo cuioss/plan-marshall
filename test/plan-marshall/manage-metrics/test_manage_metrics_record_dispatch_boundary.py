@@ -512,6 +512,80 @@ def test_budget_yield_subprocess_accepted_by_argparse(plan_context):
 
 
 # =============================================================================
+# (j) returned_with_findings — the productive-loop-back dispatch-ledger member
+#
+#     The finalize dispatcher stamps a review-shaped dispatch that returned
+#     findings and signalled a loop-back (its mark-step-done recorded
+#     outcome: loop_back) as returned_with_findings — NEVER error. Before this
+#     member existed, such a return fell through to `error`, conflating the most
+#     productive dispatches with fatal failures. This block pins both the enum
+#     membership and the recorder's acceptance of the value on the finalize
+#     boundary file (its actual routing target).
+# =============================================================================
+
+
+def test_dispatch_termination_causes_contains_returned_with_findings():
+    """The live tuple includes the productive-loop-back member.
+
+    RED before the member was added — the taxonomy modelled how a dispatch
+    stopped but not the verdict a review-shaped dispatch returns, so a
+    findings-bearing loop-back had no member of its own.
+    """
+    assert 'returned_with_findings' in DISPATCH_TERMINATION_CAUSES
+
+
+def test_returned_with_findings_recorded_on_the_finalize_boundary(plan_context):
+    """A loop-back dispatch is stamped returned_with_findings in the finalize file.
+
+    This is the D1 done-when for the stamping half: a finalize dispatch that
+    returned findings lands one boundary row carrying the new member verbatim in
+    `work/metrics-dispatch-boundaries-6-finalize.toon`. RED before the member
+    existed (argparse `choices` rejected it and the writer errored).
+    """
+    plan_id = 'disp-returned-with-findings'
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    _seed_status_json(plan_dir)
+    result = cmd_record_dispatch_boundary(
+        _ns(
+            plan_id,
+            phase='6-finalize',
+            termination_cause='returned_with_findings',
+            total_tokens=73000,
+            tool_uses=21,
+            duration_ms=210000,
+        )
+    )
+    assert result['status'] == 'success'
+    assert result['termination_cause'] == 'returned_with_findings'
+
+    path = _boundary_path(plan_dir, '6-finalize')
+    content = path.read_text(encoding='utf-8')
+    rows = _data_rows(content)
+    assert len(rows) == 1
+    assert ',returned_with_findings,73000,21,210000' in rows[0]
+
+
+def test_returned_with_findings_subprocess_accepted_by_argparse(plan_context):
+    """End-to-end: argparse accepts returned_with_findings (a member of choices)."""
+    plan_dir = plan_context.plan_dir_for('disp-rwf-sub')
+    _seed_status_json(plan_dir)
+    result = run_script(
+        SCRIPT_PATH,
+        'record-dispatch-boundary',
+        '--plan-id',
+        'disp-rwf-sub',
+        '--phase',
+        '6-finalize',
+        '--termination-cause',
+        'returned_with_findings',
+    )
+    assert result.returncode == 0, (
+        f'returned_with_findings MUST be accepted by argparse: {result.stderr}'
+    )
+    assert _boundary_path(plan_dir, '6-finalize').exists()
+
+
+# =============================================================================
 # (h) Script-side require_plan_exists guard
 #
 # cmd_record_dispatch_boundary MUST refuse to write a dispatch-boundary row

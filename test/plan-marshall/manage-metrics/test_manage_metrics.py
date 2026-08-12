@@ -2879,10 +2879,21 @@ _NEW_TERMINATION_CAUSES_WITH_PHASE = [
 class TestDispatchTerminationCausesEnum:
     """Structural assertions on the DISPATCH_TERMINATION_CAUSES tuple."""
 
-    def test_enum_contains_exactly_eleven_values(self):
-        """The enum extends to exactly 11 entries — the legacy 5, the phase-6/phase-4
-        extension (5), plus the budget_yield phase-5 dispatch-loop signal."""
-        assert len(manage_metrics.DISPATCH_TERMINATION_CAUSES) == 11
+    def test_enum_contains_exactly_twelve_values(self):
+        """The enum extends to exactly 12 entries — the legacy 5, the phase-6/phase-4
+        extension (5), the budget_yield phase-5 dispatch-loop signal, plus
+        returned_with_findings (the productive-loop-back member)."""
+        assert len(manage_metrics.DISPATCH_TERMINATION_CAUSES) == 12
+
+    def test_enum_contains_returned_with_findings_cause(self):
+        """The productive-non-completion member is present.
+
+        A findings-bearing loop-back is a success of the dispatched step and a
+        non-completion of the loop; before this member the dispatch ledger had no
+        token for it and such returns fell through to `error`. RED before the
+        member was added.
+        """
+        assert 'returned_with_findings' in manage_metrics.DISPATCH_TERMINATION_CAUSES
 
     def test_enum_preserves_legacy_five_values(self):
         """The legacy 5 entries remain present so prior callers do not break."""
@@ -3988,7 +3999,7 @@ def test_termination_cause_check_detects_a_single_stale_site():
     """
     content = _SKILL_MD.read_text(encoding='utf-8')
     expected = set(manage_metrics.DISPATCH_TERMINATION_CAUSES)
-    victim = 'agent_returned'
+    victim = 'error'
     assert victim in expected
 
     brace_sites = [
@@ -3997,8 +4008,11 @@ def test_termination_cause_check_detects_a_single_stale_site():
     ]
     assert len(brace_sites) > 1, 'need more than one brace site to prove single-site detection'
 
-    # Drop the victim from exactly ONE brace-form occurrence.
-    mutated = content.replace(f'|{victim}}}', '}', 1)
+    # Drop the victim from exactly ONE brace-form occurrence. `error` sits in the
+    # middle of the pipe list, so `|error|` -> `|` removes it without depending
+    # on which value happens to be last in the enum (which changes when a member
+    # is appended).
+    mutated = content.replace(f'|{victim}|', '|', 1)
     assert mutated != content
 
     stale = [

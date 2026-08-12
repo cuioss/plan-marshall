@@ -77,6 +77,18 @@ DISPATCH_TERMINATION_CAUSES = (
     'blocked_session_restart',
     'task_batch_complete',
     'agent_returned',
+    # A dispatch that returned findings and signalled a loop-back. This is a
+    # PRODUCTIVE non-completion — a success of the dispatched step (it examined
+    # its surface and filed findings) AND a non-completion of the loop (its
+    # findings send control back to an earlier phase). The taxonomy modelled how
+    # a dispatch STOPPED but not the verdict a review-shaped dispatch returns, so
+    # a findings-bearing loop-back had no member of its own and fell through to
+    # `error` — conflating the most productive dispatches with fatal failures.
+    # This member is the step-completion `loop_back` outcome's counterpart on the
+    # dispatch ledger; the finalize dispatcher stamps it when a dispatched step's
+    # `mark-step-done` recorded `outcome: loop_back` (see
+    # phase-6-finalize/SKILL.md item 5c).
+    'returned_with_findings',
 )
 
 # ---------------------------------------------------------------------------
@@ -3255,10 +3267,11 @@ def main() -> int:
         description=(
             'Append a TOON row to work/metrics-dispatch-boundaries-{phase}.toon '
             'capturing the termination cause of a phase Task dispatch '
-            '(voluntary_checkpoint | task_complete_returned_verbatim | '
-            'budget_yield | harness_cancellation | error | '
-            'clean_exit_queue_empty | step_complete | blocked_user_review | '
-            'blocked_session_restart | task_batch_complete | agent_returned) '
+            # Derived from the tuple, not hand-copied, so the help text cannot
+            # drift from DISPATCH_TERMINATION_CAUSES — same guarantee `choices=`
+            # (below) already gives. Eliminates a mirror rather than merely
+            # guarding it.
+            f'({" | ".join(DISPATCH_TERMINATION_CAUSES)}) '
             'and the '
             "dispatched agent's <usage> totals at the time of return. "
             '``clean_exit_queue_empty`` is the canonical value the '

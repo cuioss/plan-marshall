@@ -548,6 +548,22 @@ _CONTEXT_LOAD_COLUMNS = (
 )
 _UNMEASURED_COLUMN_TOKEN = 'unmeasured'
 
+# Termination-cause classes for the terminal-error vs retryable dispatch-spend
+# split (plan 070-dispatch-spend-on-dispatches-that-produced-nothing). A
+# findings-bearing loop-back is now stamped `returned_with_findings` — a
+# PRODUCTIVE non-completion — so what remains under `error` is terminal-error
+# spend. That is the strongest *proxy* for genuinely-wasted spend, NOT a proof of
+# it: whether an error dispatch produced nothing is a finding-yield question, and
+# confirming it against archived records is the corpus-gated D3 measurement — not
+# asserted here. Retryable / infrastructure terminations are reported DISTINCTLY
+# from the terminal-error spend because the two need different remedies — a
+# session-restart block is infrastructure a re-run recovers, whereas a fatal
+# error may be deterministic — and conflating them produces a fix for the wrong
+# half.
+_TERMINAL_WASTE_CAUSES = ('error',)
+_RETRYABLE_CAUSES = ('blocked_session_restart', 'harness_cancellation')
+_RETURNED_WITH_FINDINGS_CAUSE = 'returned_with_findings'
+
 
 def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
     """Parse a single ``metrics-dispatch-boundaries-{phase}.toon`` artifact.
@@ -591,6 +607,21 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
       - unknown_count: number of rows with ``termination_cause == "unknown"``
       - clean_exit_queue_empty_count: number of rows with
             ``termination_cause == "clean_exit_queue_empty"``
+      - returned_with_findings_count: number of rows with
+            ``termination_cause == "returned_with_findings"`` — the PRODUCTIVE
+            loop-back population (a dispatch that returned findings and looped
+            back), the opposite of wasted spend.
+      - error_total_tokens: sum of ``total_tokens`` over terminal-error
+            (``error``) rows — the terminal-error dispatch spend, a reported
+            figure rather than a derivable one. Post-D1 (productive loop-backs
+            are stamped ``returned_with_findings``, not ``error``) this is the
+            strongest proxy for genuinely-wasted spend; a finding-yield
+            confirmation that these rows produced nothing is the corpus-gated D3
+            measurement, not asserted by this sum.
+      - retryable_total_tokens: sum of ``total_tokens`` over RETRYABLE /
+            infrastructure terminations (``blocked_session_restart`` +
+            ``harness_cancellation``), reported DISTINCTLY from
+            ``error_total_tokens`` because the two need different remedies.
     """
     if not artifact.is_file():
         return {
@@ -598,6 +629,9 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
             'rows': [],
             'unknown_count': 0,
             'clean_exit_queue_empty_count': 0,
+            'returned_with_findings_count': 0,
+            'error_total_tokens': 0,
+            'retryable_total_tokens': 0,
         }
 
     try:
@@ -608,6 +642,9 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
             'rows': [],
             'unknown_count': 0,
             'clean_exit_queue_empty_count': 0,
+            'returned_with_findings_count': 0,
+            'error_total_tokens': 0,
+            'retryable_total_tokens': 0,
         }
 
     rows: list[dict[str, Any]] = []
@@ -669,11 +706,29 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
     clean_exit_queue_empty_count = sum(
         1 for row in rows if row['termination_cause'] == 'clean_exit_queue_empty'
     )
+    # The productive-loop-back population: dispatches that returned findings and
+    # looped back. Counted so a reader can tell the productive dispatches apart
+    # from the genuinely-wasted ones rather than reconstructing it from the rows.
+    returned_with_findings_count = sum(
+        1 for row in rows if row['termination_cause'] == _RETURNED_WITH_FINDINGS_CAUSE
+    )
+    # Genuinely-wasted (terminal) vs retryable (infrastructure) dispatch spend,
+    # summed by cause-class and reported DISTINCTLY (never folded into one
+    # "failure" figure) so the two, which need different remedies, stay separable.
+    error_total_tokens = sum(
+        row['total_tokens'] for row in rows if row['termination_cause'] in _TERMINAL_WASTE_CAUSES
+    )
+    retryable_total_tokens = sum(
+        row['total_tokens'] for row in rows if row['termination_cause'] in _RETRYABLE_CAUSES
+    )
     return {
         'present': True,
         'rows': rows,
         'unknown_count': unknown_count,
         'clean_exit_queue_empty_count': clean_exit_queue_empty_count,
+        'returned_with_findings_count': returned_with_findings_count,
+        'error_total_tokens': error_total_tokens,
+        'retryable_total_tokens': retryable_total_tokens,
     }
 
 
@@ -771,9 +826,11 @@ def read_dispatch_boundaries_per_phase(plan_dir: Path) -> dict[str, dict[str, An
     The artifact filename ``metrics-dispatch-boundaries-{phase}.toon`` encodes
     the originating phase as the trailing path-stem segment. The returned dict
     is keyed by extracted phase name (e.g. ``"4-plan"``, ``"5-execute"``,
-    ``"6-finalize"``) with each value carrying the same per-file shape as the
-    legacy single-phase reader (``present``, ``rows``, ``unknown_count``,
-    ``clean_exit_queue_empty_count``).
+    ``"6-finalize"``) with each value carrying the per-file shape
+    ``_parse_dispatch_boundary_file`` returns — see its "Returned dict shape"
+    docstring for the authoritative key set (``present``, ``rows``, the per-cause
+    counts, and the genuinely-wasted / retryable token sums). Enumerated there,
+    not here, so this docstring does not drift when a key is added.
 
     An empty work directory produces an empty dict — the top-level
     ``dispatch_boundaries`` key surfaces in ``cmd_run`` output regardless,

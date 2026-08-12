@@ -864,7 +864,10 @@ class TestPhaseDispatchBoundariesSection:
         content = (plan_dir / 'quality-verification-report.md').read_text(encoding='utf-8')
         assert '## Phase Dispatch Boundaries' in content
         # The per-phase markdown table renders with one row per recorded phase.
-        assert '| 5-execute | 0 | 0 | 3 |' in content
+        # Columns: phase | rows | error_total_tokens (wasted) | retryable_total_tokens
+        #          | returned_with_findings | unknown_count | clean_exit_queue_empty_count.
+        # This fixture carries none of the new figures, so they default to 0.
+        assert '| 5-execute | 0 | 0 | 0 | 0 | 0 | 3 |' in content
 
     def test_section_omitted_when_fragment_absent(self, tmp_path, monkeypatch):
         """No fragment ⇒ section is omitted (gate returns false)."""
@@ -912,6 +915,9 @@ class TestPhaseDispatchBoundariesSection:
                     'rows': [],
                     'unknown_count': 0,
                     'clean_exit_queue_empty_count': 0,
+                    'error_total_tokens': 10000,
+                    'retryable_total_tokens': 16000,
+                    'returned_with_findings_count': 2,
                 },
             },
         )
@@ -928,9 +934,12 @@ class TestPhaseDispatchBoundariesSection:
         assert result.success, result.stderr
         content = (plan_dir / 'quality-verification-report.md').read_text(encoding='utf-8')
         # Per-phase markdown table includes one row per recorded phase, sorted.
-        assert '| 4-plan | 0 | 0 | 0 |' in content
-        assert '| 5-execute | 0 | 1 | 2 |' in content
-        assert '| 6-finalize | 0 | 0 | 0 |' in content
+        # Columns: phase | rows | error_total_tokens (wasted) | retryable_total_tokens
+        #          | returned_with_findings | unknown_count | clean_exit_queue_empty_count.
+        assert '| 4-plan | 0 | 0 | 0 | 0 | 0 | 0 |' in content
+        assert '| 5-execute | 0 | 0 | 0 | 0 | 1 | 2 |' in content
+        # 6-finalize carries the genuinely-wasted vs retryable split distinctly.
+        assert '| 6-finalize | 0 | 10000 | 16000 | 2 | 0 | 0 |' in content
 
 
 # =============================================================================

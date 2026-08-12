@@ -85,9 +85,11 @@ def _dispatch_boundaries_has_present_phase(fragment: Any) -> bool:
 
     The dispatch_boundaries fragment is structurally a per-phase dict
     keyed by phase name (e.g. ``"4-plan"``, ``"5-execute"``, ``"6-finalize"``).
-    Each value is the per-file shape from analyze-logs.read_dispatch_boundaries_per_phase
-    (``present``, ``rows``, ``unknown_count``, ``clean_exit_queue_empty_count``).
-    The section emits when at least one phase has ``present: true``.
+    Each value is the per-file shape from
+    analyze-logs.read_dispatch_boundaries_per_phase (whose authoritative key set
+    lives in ``_parse_dispatch_boundary_file``); this gate reads only the
+    ``present`` flag. The section emits when at least one phase has
+    ``present: true``.
     """
     if not isinstance(fragment, dict) or not fragment:
         return False
@@ -194,8 +196,16 @@ def render_dispatch_boundaries_body(fragment: Any) -> str:
     """Render the Phase Dispatch Boundaries section body.
 
     Emits a markdown table with one row per recorded phase, columns:
-    ``phase | rows | unknown_count | clean_exit_queue_empty_count``. Falls
-    back to a generic JSON dump after the table for the full fragment data.
+    ``phase | rows | error_total_tokens (terminal-error) | retryable_total_tokens |
+    returned_with_findings | unknown_count | clean_exit_queue_empty_count``.
+    The ``error_total_tokens`` and ``retryable_total_tokens`` columns are the
+    terminal-error-vs-retryable dispatch-spend split — a reported figure so a
+    reader sees the terminal-error spend without reconstructing it from the rows
+    — reported distinctly because the two need different remedies. The
+    terminal-error figure is the strongest proxy for genuinely-wasted spend once
+    productive loop-backs are stamped ``returned_with_findings``; the finding-yield
+    proof is the corpus-gated D3 measurement, not this column. Falls back to a
+    generic JSON dump after the table for the full fragment data.
     """
     import json
 
@@ -203,8 +213,10 @@ def render_dispatch_boundaries_body(fragment: Any) -> str:
         return '_No dispatch-boundary artifacts present._\n'
 
     lines = [
-        '| phase | rows | unknown_count | clean_exit_queue_empty_count |',
-        '|-------|------|---------------|------------------------------|',
+        '| phase | rows | error_total_tokens (terminal-error) | retryable_total_tokens | '
+        'returned_with_findings | unknown_count | clean_exit_queue_empty_count |',
+        '|-------|------|------------------------------------|------------------------|'
+        '------------------------|---------------|------------------------------|',
     ]
     for phase in sorted(fragment.keys()):
         phase_data = fragment[phase]
@@ -217,7 +229,13 @@ def render_dispatch_boundaries_body(fragment: Any) -> str:
         row_count = len(rows) if isinstance(rows, list) else 0
         unknown_count = phase_data.get('unknown_count', 0)
         clean_count = phase_data.get('clean_exit_queue_empty_count', 0)
-        lines.append(f'| {phase} | {row_count} | {unknown_count} | {clean_count} |')
+        wasted = phase_data.get('error_total_tokens', 0)
+        retryable = phase_data.get('retryable_total_tokens', 0)
+        returned_with_findings = phase_data.get('returned_with_findings_count', 0)
+        lines.append(
+            f'| {phase} | {row_count} | {wasted} | {retryable} | '
+            f'{returned_with_findings} | {unknown_count} | {clean_count} |'
+        )
 
     table_block = '\n'.join(lines) + '\n\n'
     data_block = '```json\n' + json.dumps(fragment, indent=2, default=str) + '\n```\n'

@@ -7,7 +7,7 @@ Identifies places where the LLM or a component should have logged but didn't —
 - `work.log`, `decision.log`, `script.log` — what was actually logged.
 - Skill reference documents in scope (loaded from marketplace based on `references.json` domains).
 - `references.json` `affected_files` — evidence of actions that should produce log entries.
-- `work/metrics-dispatch-boundaries-5-execute.toon` (when present) — per-dispatch termination-cause audit trail written by `manage-metrics record-dispatch-boundary`. Used by the `DISPATCH_TERMINATION_CAUSE` rule below to detect agent-initiated re-dispatch and correlate it with `[OUTCOME]`-log coverage gaps. Plans whose execution preceded this artifact will not have the file; the rule is precondition-guarded so its absence is not a gap.
+- `work/metrics-dispatch-boundaries-{phase}.toon` (each phase that dispatches Task agents — in practice `5-execute` **and** `6-finalize`, whichever are present) — per-dispatch termination-cause audit trail written by `manage-metrics record-dispatch-boundary`. The fact extractor (`analyze-logs.py read_dispatch_boundaries_per_phase`) globs every `metrics-dispatch-boundaries-*.toon` and surfaces each phase's rows under its own key, so the `DISPATCH_TERMINATION_CAUSE` rule below reads **all** dispatching phases — not the execute file alone. The finalize file is where a review-shaped dispatch's `returned_with_findings` (productive loop-back) and `error` (genuine terminal failure) rows land, and it carries the majority of the finalize dispatch spend; a rule scoped to execute only would leave it audited by nothing. Used to detect agent-initiated re-dispatch and correlate it with `[OUTCOME]`-log coverage gaps. Plans whose execution preceded this artifact will not have the file; the rule is precondition-guarded so its absence is not a gap.
 
 ## Expected Log Patterns
 
@@ -102,13 +102,20 @@ deliverable. When the precondition is absent, the rule emits no finding.
   still applies).
 
 - **DISPATCH_TERMINATION_CAUSE** (category: `DISPATCH_TERMINATION_CAUSE`) —
-  **Precondition**: `work/metrics-dispatch-boundaries-5-execute.toon` exists
-  (i.e. the orchestrator was running a build that includes the
+  **Precondition**: at least one `work/metrics-dispatch-boundaries-{phase}.toon`
+  exists (i.e. the orchestrator was running a build that includes the
   `record-dispatch-boundary` subcommand from D3 and the workflow change
-  from D4). When the precondition holds, parse the file and count rows by
-  `termination_cause`. Emit findings:
+  from D4). When the precondition holds, parse **every** such file — the fact
+  extractor surfaces one entry per dispatching phase, so read `5-execute` **and**
+  `6-finalize` (and any other phase present), not the execute file alone — and
+  count rows by `termination_cause`, per phase. The finalize file is where a
+  review-shaped dispatch's `returned_with_findings` (productive loop-back) and
+  `error` (genuine terminal failure) rows land and carries the majority of the
+  finalize dispatch spend; auditing it is the point of the widened scope. Emit
+  findings:
 
-  - One `info`-severity finding with the per-cause distribution over the
+  - One `info`-severity finding per dispatching phase with that phase's per-cause
+    distribution over the
     canonical `termination_cause` value set. That set is exactly the
     `record-dispatch-boundary` `--termination-cause` `choices` (the
     `DISPATCH_TERMINATION_CAUSES` tuple in `manage-metrics.py`) — the accepted
@@ -116,12 +123,13 @@ deliverable. When the precondition is absent, the rule emits no finding.
     `voluntary_checkpoint`, `task_complete_returned_verbatim`, `budget_yield`,
     `harness_cancellation`, `error`, `clean_exit_queue_empty`, `step_complete`,
     `blocked_user_review`, `blocked_session_restart`, `task_batch_complete`,
-    `agent_returned`.
+    `agent_returned`, `returned_with_findings`.
     Report the count for every value in that set — including the causes that did
     not occur, as an explicit zero — e.g. `"4 voluntary_checkpoint,
     1 task_complete_returned_verbatim, 2 budget_yield, 0 harness_cancellation,
     0 error, 1 clean_exit_queue_empty, 0 step_complete, 0 blocked_user_review,
-    0 blocked_session_restart, 0 task_batch_complete, 0 agent_returned"`.
+    0 blocked_session_restart, 0 task_batch_complete, 0 agent_returned,
+    0 returned_with_findings"`.
   - A `warning`-severity finding when `unknown_count > 0` — any row
     carrying the literal `unknown` termination cause is legacy data from
     before the `clean_exit_queue_empty` migration (the recorder no longer
@@ -142,6 +150,27 @@ deliverable. When the precondition is absent, the rule emits no finding.
     threshold; a high `budget_yield` share simply reflects how many
     execution envelopes the bin-packer produced (one yield per envelope
     boundary) and is expected for multi-envelope plans.
+    **`returned_with_findings` is EXCLUDED from this > 50 % count for the same
+    reason, from the opposite direction**: it is a PRODUCTIVE non-completion —
+    the dispatch found defects and looped back — so it is the opposite of wasted
+    spend and must never be read as an agent-initiated-re-dispatch failure. A
+    high `returned_with_findings` share means the review dispatches were doing
+    their job; do not flag it.
+  - **Genuinely-wasted vs retryable dispatch spend (per phase).** The fact
+    extractor also sums `total_tokens` by cause-class so a reader sees the waste
+    without reconstructing it from the raw rows:
+    - `error_total_tokens` — the spend on dispatches whose terminal state is
+      **genuinely non-productive**: they raised a fatal `error` and returned
+      nothing (findings-bearing loop-backs are now stamped `returned_with_findings`,
+      not `error`, so what remains under `error` is genuine terminal waste). This
+      is the figure a reader acts on: a dispatch that examined nothing and
+      returned nothing cost real tokens and bought zero detection.
+    - `retryable_total_tokens` — the spend on **retryable / infrastructure**
+      terminations (`blocked_session_restart` + `harness_cancellation`). Reported
+      **distinctly** from `error_total_tokens` because the two need different
+      remedies: a session-restart block is infrastructure that a re-run recovers,
+      whereas a fatal error may be deterministic. Conflating them produces a fix
+      for the wrong half, so they are never summed into one "failure" figure here.
 
   Plans without the artifact skip the rule entirely.
 

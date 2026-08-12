@@ -129,13 +129,31 @@ class TestRenderDispatchBoundariesBody:
                 'rows': [{'x': 1}, {'x': 2}],
                 'unknown_count': 1,
                 'clean_exit_queue_empty_count': 3,
+                'error_total_tokens': 10000,
+                'retryable_total_tokens': 16000,
+                'returned_with_findings_count': 2,
             },
             '4-plan': {'present': False},
         }
         body = _cr.render_dispatch_boundaries_body(fragment)
-        # The present phase renders with its row count; the absent phase is skipped.
-        assert '| 5-execute | 2 | 1 | 3 |' in body
+        # The present phase renders its row count, the genuinely-wasted vs
+        # retryable spend split, the productive-loop-back count, and the legacy
+        # cause counts; the absent phase is skipped.
+        assert '| 5-execute | 2 | 10000 | 16000 | 2 | 1 | 3 |' in body
         assert '| 4-plan |' not in body
+
+    def test_present_phase_defaults_new_figures_to_zero(self):
+        """A phase entry missing the new figures renders them as 0, not a crash."""
+        fragment = {
+            '6-finalize': {
+                'present': True,
+                'rows': [{'x': 1}],
+                'unknown_count': 0,
+                'clean_exit_queue_empty_count': 0,
+            }
+        }
+        body = _cr.render_dispatch_boundaries_body(fragment)
+        assert '| 6-finalize | 1 | 0 | 0 | 0 | 0 | 0 |' in body
 
 
 class TestRenderSectionBody:

@@ -405,7 +405,7 @@ See `plan-retrospective` for the correlation logic.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
   --plan-id {plan_id} --phase {phase} \
-  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty|step_complete|blocked_user_review|blocked_session_restart|task_batch_complete|agent_returned} \
+  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty|step_complete|blocked_user_review|blocked_session_restart|task_batch_complete|agent_returned|returned_with_findings} \
   [--total-tokens N] [--tool-uses N] [--duration-ms N] \
   [--input-tokens N] [--output-tokens N] [--cache-read-input-tokens N] [--cache-creation-input-tokens N]
 ```
@@ -424,10 +424,11 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
   - `blocked_session_restart` — the dispatch stopped because the session must restart before the work can continue.
   - `task_batch_complete` — the dispatch completed the batch of tasks assigned to it.
   - `agent_returned` — the agent returned without one of the more specific causes above applying.
+  - `returned_with_findings` — the dispatch returned findings and signalled a loop-back: a PRODUCTIVE non-completion (the dispatched step examined its surface and filed findings, and those findings send control back to an upstream phase). Stamped by the finalize dispatcher when a dispatched step's `mark-step-done` recorded `outcome: loop_back` (see [phase-6-finalize/SKILL.md](../phase-6-finalize/SKILL.md) item 5c). It is the dispatch-ledger counterpart of the step-completion `loop_back` outcome, so a findings-bearing loop-back stays distinguishable from a fatal `error` in the ledger.
 
   Because this bullet list, the command block above, and the `record-dispatch-boundary` block under **Canonical invocations** all enumerate the same set, a value added to `DISPATCH_TERMINATION_CAUSES` must be added to all three in the same change; the contract test in `test/plan-marshall/manage-metrics/test_manage_metrics.py` discovers every occurrence in this document and fails until each one matches the tuple.
 
-  That test reads **this document only**, so those three sites are the whole *guarded* population — not the whole population. Any enumeration of the same set living in another file is unguarded, and this guard cannot tell you how many such files exist. Two are known and currently in sync: the `termination_cause` enum line in [standards/data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution, and the `record-dispatch-boundary` argparse `description=` string in `scripts/manage-metrics.py` (its `choices=` is derived from the tuple and so is not a mirror). Update those in the same change — and search for other full-set enumerations rather than assuming these are all, because nothing fails if you miss one.
+  That test reads **this document only**, so those three sites are the whole *guarded-in-SKILL.md* population — not the whole population. Full-set enumerations living in other files are guarded by their own structural-equality tests, also in `test_manage_metrics.py`: the `termination_cause` enum line in [standards/data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution (`test_data_format_termination_cause_enum_matches_the_enum`) and the accepted-causes set in [plan-retrospective/references/logging-gap-analysis.md](../plan-retrospective/references/logging-gap-analysis.md) (`test_logging_gap_analysis_termination_cause_set_matches_the_enum`). The `record-dispatch-boundary` argparse `description=` and `choices=` in `scripts/manage-metrics.py` are **both derived from the tuple** and so are not mirrors — nothing to keep in sync there. When adding a new full-set enumeration, either derive it from the tuple or add a structural-equality test, and prefer deriving.
 - `--total-tokens`, `--tool-uses`, `--duration-ms` — Subagent `<usage>` totals at termination (each optional, default 0).
 - `--input-tokens`, `--output-tokens`, `--cache-read-input-tokens`, `--cache-creation-input-tokens` — Per-dispatch context-load totals from the dispatched agent's four-field `message.usage` view at termination (each optional). These are the per-DISPATCH counterpart to the per-PHASE four-field view `enrich` writes; they are recorded as four columns appended at the END of each row so the legacy five columns stay positionally unchanged. **They have no numeric default**: an omitted flag writes the literal `unmeasured` into its column and omits the key from the result TOON, so "the caller passed no measurement" stays distinguishable from "the dispatch loaded zero context". A *measured* zero is still written and returned as `0`. See [data-format.md](standards/data-format.md) § Per-Dispatch Context-Load Attribution for the canonical column order, count, and the three-way (measured / unmeasured / unrecognised) reader contract.
 
@@ -686,7 +687,7 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics accu
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
   --plan-id PLAN_ID --phase PHASE \
-  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty|step_complete|blocked_user_review|blocked_session_restart|task_batch_complete|agent_returned} \
+  --termination-cause {voluntary_checkpoint|task_complete_returned_verbatim|budget_yield|harness_cancellation|error|clean_exit_queue_empty|step_complete|blocked_user_review|blocked_session_restart|task_batch_complete|agent_returned|returned_with_findings} \
   [--total-tokens N] [--tool-uses N] [--duration-ms N] \
   [--input-tokens N] [--output-tokens N] [--cache-read-input-tokens N] [--cache-creation-input-tokens N]
 ```
