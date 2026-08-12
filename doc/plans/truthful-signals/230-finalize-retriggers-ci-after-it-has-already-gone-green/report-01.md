@@ -92,6 +92,10 @@ doc note):
   review/analysis). Not internally computable earlier. **Verdict: consolidate via D2** — already the
   target of the unified barrier.
 
+**Recorded durably** in `phase-6-finalize/standards/source-edit-pushability.md` (§ "Its post-PR CI run
+is intrinsic, not a defect to relocate") — an anti-speculation note so a future plan does not
+re-litigate the era-stamp's extra run by relocating its commit. Commit: see Deliverables/commits below.
+
 ### D3 — self-review phase mismatch: PREMISE REFUTED (nothing to implement)
 
 Verified at all four load-bearing sites (each independently re-read): writer files at `6-finalize`
@@ -113,21 +117,62 @@ D4 is framed "Given D3, decide what the step should examine." With D3 refuted, t
 and the absolute token figure D4 must be measured against (709k) is under `.plan/` and unreachable.
 No self-review scoping change is made this run (operator chose CI-half + findings).
 
-### D2 — one loop-back barrier across all finding producers (IN PROGRESS)
+### D2 — one loop-back barrier across all finding producers (VERIFY-FIRST verdict: dispatcher change DEFERRED)
 
-Feasibility confirmed (agent-mapped, re-grounded against current code): fold `ci-verify` into the
-existing item-7c unified triage barrier so all three producers share one loop-back round, without
-advancing the CI-completion precondition (verify-first satisfied — deferring ci-verify's triage from
-order 22 to the 7c juncture never forces CI earlier). Five fail-closed sites to preserve. Implementation
-detail and tests recorded below as the work proceeds.
+**Mechanical feasibility (agent-mapped, re-grounded against current code):** `automatic-review`(30) +
+`sonar-roundtrip`(40) already share one unified triage barrier (dispatcher item 7c,
+`producer=finalize-feedback`, `SKILL.md:1379-1421`). `ci-verify`(22) is the lone outlier. The
+`finalize-feedback` union query is already type-agnostic (`manage-findings list --resolution pending
+--include-qgate`, `verification-feedback.md:162`) and `triage` ∈ `FINDING_TYPES`
+(`constants.py:123`), so the union query would already surface ci-verify's findings. CI-completion is
+already the common precondition for all three (`requires: [ci-complete]`, resolved once at order 22 and
+cached by HEAD SHA), so deferring ci-verify's *triage* to the 7c juncture never advances CI-completion —
+the plan's verify-first "no CI-completion reorder" is satisfied.
+
+**But the plan's D5(c) "fail-closed must hold" and its own epistemic discipline block shipping the fold
+this run.** Three findings, from verify-first:
+
+1. **Fail-closed rests on a mechanism a naive fold breaks.** ci-verify files `type: triage` findings,
+   and `triage` is **NOT** in `_ACTIONABLE_FINDING_TYPES` (`_invariants.py:1049-1056` =
+   `build-error, test-failure, lint-issue, sonar-issue, qgate, pr-comment`). So ci-verify's findings do
+   **not** block the phase boundary. ci-verify's entire fail-closed comes from the step **returning
+   `step_marked_done: False` and never calling mark-done on red CI** (`ci_verify.py:691,733`; locked by
+   `test_ci_verify.py:489-490, 535-536`). A fold that makes ci-verify mark done after filing (the way
+   `sonar-roundtrip`/`automatic-review` legitimately do — *their* findings ARE actionable) opens a
+   fail-closed hole: red CI could merge on non-blocking `triage` findings. Preserving fail-closed
+   requires either (a) keeping ci-verify un-`done` and adding a dispatcher done-record-on-resolve
+   coupling (to avoid a phase-transition **deadlock** when 7c resolves ci-verify findings as
+   accept/suppress with no loop-back), or (b) making ci-verify findings a blocking type — which breaks
+   their deliberate operator-decides-between-runs `triage` design. Both are real redesigns.
+2. **The fold reverses a documented design rationale.** `ci-verify.md:128-136` explicitly argues
+   ci-verify must triage CI **first** so `architecture-refresh`/`automated-review`/`sonar-roundtrip`
+   benefit and the loop-back signal is not delayed, and that placing it later "would be wrong." D2
+   defers ci-verify's triage to *after* sonar(40) — a direct reversal, trading a faster loop-back
+   signal for fewer CI runs. That trade-off is a design judgment, not a mechanical fold.
+3. **The benefit is unmeasured and unmeasurable here.** The plan labels "Consolidating loop-backs
+   yields a material token saving" a HYPOTHESIS blocked behind **D0** ("a plausible mechanism is not
+   evidence"), and D0's corpus is unreachable from this clone. Implementing a design reversal (finding
+   2) to chase an unmeasured benefit (finding 3) on a fail-closed-sensitive surface (finding 1) is the
+   exact untruthful-signal move this plan exists to eliminate.
+
+**Verdict:** the fold is mechanically feasible but its dispatcher change is **deferred** — it belongs
+in a follow-up that (a) re-grounds against the sibling "gate re-firing over the loop-back diff" plan the
+plan's Notes say to sequence after, (b) carries D0's measured benefit, and (c) resolves the
+"triage-CI-first vs consolidate" trade-off against that measurement, with the fail-closed done-record
+coupling designed explicitly. The full design is recorded above so the follow-up starts from it, not
+from scratch.
 
 ### D5 — tests
 
-- (b) two producers → one loop-back round — planned in `test/plan-marshall/phase-6-finalize/`.
-- (c) fail-closed under the batched barrier — planned in
-  `test/plan-marshall/workflow-integration-github/` (closest analog: `test_pre_merge_barrier.py`).
-- (a) era-stamp-only → one CI run: the D1 verdict shows the extra run is intrinsic; the ordering
-  invariant (era-stamp 21 < ci-verify 22) already holds. Recorded as a verdict, not a new mechanism.
+- (a) era-stamp-only → one CI run: the D1 verdict shows the extra run is **intrinsic** to the
+  PR-number dependency (not a defect to relocate), recorded in `source-edit-pushability.md`. The
+  ordering invariant (era-stamp 21 < ci-verify 22) already holds and is derived by
+  `test_finalize_edge_ordering.py`. No new mechanism, so no new test.
+- (b) two producers → one loop-back round: **coupled to the deferred D2 dispatcher change** — not added
+  this run (there is no consolidated barrier to turn it green against).
+- (c) fail-closed still holds: the invariant a batched barrier must preserve — ci-verify's red path
+  returns `step_marked_done: False` — is **already locked** by `test_ci_verify.py:489-490, 535-536`.
+  This is the guard any future D2 fold must keep green; referenced, not duplicated.
 - (d) self-review finds a known defect: **already covered** by
   `test/pm-plugin-development/ext-self-review-plan-marshall/test_self_review_defect_regression.py`
   (positive-fires / negative-silent / cross-class matched controls). No phase-mismatch test is added

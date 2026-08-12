@@ -117,6 +117,28 @@ because the prior convention — a prose instruction to hand-edit the PR number 
 merge — was the guessed-PR-number / post-merge-unpushable era-stamp defect: an edit
 that could not be pushed on `main` and was silently reverted or guessed.
 
+### Its post-PR CI run is intrinsic, not a defect to relocate
+
+A `PR-PENDING` fill commits and pushes AFTER `create-pr`, which advances the PR head
+and so provokes one further CI run whenever a sentinel is present. That run is
+**intrinsic to the PR-number dependency**, not an avoidable inefficiency — do not try
+to remove it by relocating the commit:
+
+- **Computing the value before the PR exists is impossible** — the real PR number is
+  not known until `create-pr` (order 20) runs.
+- **Deferring the resolution to after the merge is refused** — a post-merge edit is
+  unpushable on `main`, which is exactly the guessed-PR-number / post-merge-unpushable
+  defect this contract exists to prevent (§ "The discover-after-merge rule").
+- **Riding an existing post-PR commit has no reliable carrier in the common case** —
+  `create-pr` authors no commit, and a loop-back fix commit is not guaranteed to occur.
+  When one *does* occur, the fill's correction rides that commit rather than pushing
+  separately (the dispatcher's commit instrumentation batches it), so the extra run is
+  paid only in the sentinel-only finalize.
+
+The lever that would collapse the sentinel-only case to a single completed run —
+superseding the pre-fill CI run via workflow concurrency cancellation — lives in the
+CI workflow definition, not in any finalize step, and is out of this contract's scope.
+
 ## Authoring checklist
 
 When authoring a finalize step that edits source:
