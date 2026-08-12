@@ -180,8 +180,8 @@ def _discriminator_for(mod, verb: str, mode: str) -> str:
     handler POSTs rather than reading the probe) — the run stub's ``mt_post_ok``
     carries that case.
     """
-    configured = mod.MERGE_QUEUE_ELIGIBLE_CONFIGURED
-    unconfigured = mod.MERGE_QUEUE_ELIGIBLE_UNCONFIGURED
+    configured = str(mod.MERGE_QUEUE_ELIGIBLE_CONFIGURED)
+    unconfigured = str(mod.MERGE_QUEUE_ELIGIBLE_UNCONFIGURED)
     if verb == 'merge-queue':
         # off-routing = NO queue configured; compliant = queue configured.
         return unconfigured if mode == 'off_routing' else configured
