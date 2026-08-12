@@ -244,7 +244,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config init -
 
 **Note**: marshal.json contains configuration only. The module list comes from `_project.json["modules"]` (Step 8), which is the source of truth — per-module derived data is computed lazily off that index on demand by `crawl_module_derived`.
 
-**Effort defaults are seeded at init**: `get_default_config()` seeds per-phase `effort` keys (`plan.<phase>.effort`) plus the plan-wide `plan.effort` fallback, mirroring the `balanced` named preset's expanded shape. A freshly-initialized project therefore gets per-phase model tuning out of the box — `effort resolve-target` resolves a concrete `execution-context-{level}` rather than silently falling back to `level: inherit`. The post-wizard **Effort menu** (see [effort-menu.md](../standards/effort-menu.md)) still tunes these after init via `apply-preset` or per-phase edits; init seeding and the menu are complementary (seed-then-tune), not redundant.
+**Effort defaults are seeded at init**: `get_default_config()` seeds per-phase `effort` keys (`plan.<phase>.effort`) plus the plan-wide `plan.effort` fallback, mirroring the `economic` named preset's expanded shape. A freshly-initialized project therefore gets per-phase model tuning out of the box — `effort resolve-target` resolves a concrete `execution-context-{level}` rather than silently falling back to `level: inherit`. The post-wizard **Effort menu** (see [effort-menu.md](../standards/effort-menu.md)) still tunes these after init via `apply-preset` or per-phase edits; init seeding and the menu are complementary (seed-then-tune), not redundant.
 
 ---
 
