@@ -1557,6 +1557,145 @@ def test_post_responses_thread_reply_failure_is_untransmitted(plan_context, monk
 
 
 # =============================================================================
+# post_responses idempotency — a reply is transmitted once per (finding,
+# disposition). The store is plan-scoped and persists across rounds, so a
+# terminal finding re-qualifies on every pass unless a prior-transmission marker
+# excludes it. Terminality is the SELECTION criterion (``_RESPONDABLE_RESOLUTIONS``),
+# never an exclusion — so the guard is an explicit per-finding ``responded`` marker,
+# not a property of terminality. A disposition that genuinely CHANGED between rounds
+# clears the marker (via ``manage-findings resolve``) and transmits again.
+# =============================================================================
+
+
+def test_post_responses_second_round_transmits_only_newly_resolved_dispositions(plan_context, monkeypatch):
+    """The observed defect: round 2 must re-transmit NOTHING already sent.
+
+    Round 1 stages four resolved dispositions and transmits them. Round 2 adds
+    three genuinely new dispositions on top of the SAME plan-scoped store. The
+    verb must transmit exactly the three new ones and report ``count_responded:
+    3`` — never re-send the four already-satisfied replies. The pre-fix code had
+    no prior-transmission term, so round 2 re-selected all seven and reported
+    ``count_responded: 7`` — a confident affirmative over work that mostly did not
+    need to happen. This is the (a) case of D3.
+    """
+    plan_id = 'gh-pr-respond-round2-only-new'
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    spy = _PostSpy()
+    monkeypatch.setattr(github_pr._github, 'post_pr_comment', spy)
+
+    round1 = [
+        _stage_respondable(
+            plan_id, pr_number=400, comment_id=f'r1-{i}', thread_id='', resolution_detail=f'Accepted: round-1 reply {i}.'
+        )
+        for i in range(4)
+    ]
+    first = _run_post_responses(400, plan_id)
+    assert first['count_responded'] == 4
+
+    round2 = [
+        _stage_respondable(
+            plan_id, pr_number=400, comment_id=f'r2-{i}', thread_id='', resolution_detail=f'Accepted: round-2 reply {i}.'
+        )
+        for i in range(3)
+    ]
+    second = _run_post_responses(400, plan_id)
+
+    # Only the three new dispositions transmit; the four already-sent are skipped
+    # as already-responded, not folded into the count as work done.
+    assert second['count_responded'] == 3
+    assert {entry['hash_id'] for entry in second['responded']} == set(round2)
+    already = [entry for entry in second['skipped'] if entry['reason'] == 'already responded']
+    assert {entry['hash_id'] for entry in already} == set(round1)
+
+    # The round-2 batched body must carry ONLY the new comment_ids, never the old.
+    round2_body = spy.calls[1][1]
+    for i in range(3):
+        assert f'r2-{i}' in round2_body
+    for i in range(4):
+        assert f'r1-{i}' not in round2_body
+
+
+def test_post_responses_retransmits_a_changed_disposition(plan_context, monkeypatch):
+    """A disposition CHANGED between rounds must transmit again — the fix is a KEY.
+
+    The ``responded`` marker suppresses an UNCHANGED disposition, but re-resolving
+    a finding to a different disposition (a new resolution or a new reply body)
+    must make it transmittable again — otherwise the reviewer never sees the
+    corrected decision. This is the (b) case of D3, and it is what distinguishes a
+    per-``(finding, disposition)`` key from a blanket suppression.
+    """
+    plan_id = 'gh-pr-respond-changed'
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    spy = _PostSpy()
+    monkeypatch.setattr(github_pr._github, 'post_pr_comment', spy)
+
+    hash_id = _stage_respondable(
+        plan_id, pr_number=401, comment_id='cc', thread_id='', resolution_detail='Accepted: original reply.'
+    )
+    first = _run_post_responses(401, plan_id)
+    assert first['count_responded'] == 1
+
+    # An UNCHANGED re-run transmits nothing — the marker holds.
+    unchanged = _run_post_responses(401, plan_id)
+    assert unchanged['count_responded'] == 0
+    assert [entry for entry in unchanged['skipped'] if entry['reason'] == 'already responded']
+
+    # The disposition genuinely CHANGES: a new resolution AND a new reply body.
+    # ``resolve_finding`` must clear the marker so the corrected decision goes out.
+    _findings_core.resolve_finding(plan_id, hash_id, 'rejected', detail='Rejected: on reflection, out of scope.')
+    changed = _run_post_responses(401, plan_id)
+
+    assert changed['count_responded'] == 1
+    assert changed['responded'][0]['hash_id'] == hash_id
+    assert 'Rejected: on reflection, out of scope.' in spy.calls[-1][1]
+
+
+def test_post_responses_count_responded_names_this_rounds_transmits(plan_context, monkeypatch):
+    """The count-field family names what it counts — non-empty-asserted and covered.
+
+    D0 derived the PRODUCTION consumer set of ``count_responded`` as empty: the
+    review-retrospective computes ``pct_resolved_as_fixed`` from each finding's
+    ``resolution`` field (not from this return), and the RESPOND workflow reads
+    ``status`` / ``count_untransmitted``. The population a consumer reads for
+    "replies this round" is therefore the return's own responded-count family.
+    Derive that family from the return contract, assert it is non-empty (the
+    vacuous-set guard, per ``test/_shared/_dispatch_roster.py``'s
+    non-empty-first discipline), and cover every member: after a round has already
+    satisfied some dispositions, the family must report only the NEW transmit,
+    never the standing total of terminal findings. This is the (c) case of D3.
+    """
+    plan_id = 'gh-pr-respond-count-contract'
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    spy = _PostSpy()
+    monkeypatch.setattr(github_pr._github, 'post_pr_comment', spy)
+
+    prior = [
+        _stage_respondable(
+            plan_id, pr_number=402, comment_id=f'p-{i}', thread_id='', resolution_detail=f'Accepted: prior {i}.'
+        )
+        for i in range(5)
+    ]
+    _run_post_responses(402, plan_id)  # all five now satisfied and marked
+
+    new_one = _stage_respondable(
+        plan_id, pr_number=402, comment_id='n', thread_id='', resolution_detail='Accepted: the only new one.'
+    )
+    result = _run_post_responses(402, plan_id)
+
+    # Derive the responded-count family from the return contract, non-empty first.
+    responded_family = {key: value for key, value in result.items() if key in ('count_responded', 'responded')}
+    assert responded_family, 'the return must expose a responded-count family'
+
+    # Every member names ONLY this round's transmit — the single new disposition,
+    # never the six standing terminal findings.
+    assert responded_family['count_responded'] == 1
+    assert [entry['hash_id'] for entry in responded_family['responded']] == [new_one]
+    # The five already-satisfied are named as already-responded, not counted as work.
+    already = [entry['hash_id'] for entry in result['skipped'] if entry['reason'] == 'already responded']
+    assert set(already) == set(prior)
+
+
+# =============================================================================
 # bot_completion — per-bot check-run completion read
 # =============================================================================
 
