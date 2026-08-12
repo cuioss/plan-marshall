@@ -36,10 +36,24 @@ from file_ops import (
     get_store_dir,
     now_utc_iso,
     parse_markdown_metadata,
+    read_json,
 )
 from input_validation import validate_plan_id
 
 ORCHESTRATOR_STORE = 'orchestrator'
+
+#: The epic status document, relative to the epic store root — the machine
+#: authority for per-plan lifecycle state (``plans[]`` rows carrying ``id`` and
+#: ``status``).
+STATUS_FILE = 'status.json'
+
+#: The plan-lifecycle status a plan row carries WHILE it is executing. This is
+#: the single source of the token: ``orchestrator.py`` imports it from here
+#: rather than re-declaring the literal, so the two modules cannot drift. A
+#: message aimed at a plan in this state is undeliverable — the inbox is drained
+#: BETWEEN plans, so a running plan will have finished before the next drain and
+#: never reads the message (see :func:`cmd_inbox_write`).
+RUNNING_STATUS = 'running'
 
 #: Envelope schema version. A message carrying any other value is REJECTED
 #: (``unknown_envelope_version``) rather than silently accepted — the
@@ -198,6 +212,33 @@ def _read_epic_root(slug: str) -> Path:
 def _inbox_dir(slug: str) -> Path:
     """Resolve the epic's ``inbox/`` directory for a READ-side verb."""
     return _read_epic_root(slug) / INBOX_SUBDIR
+
+
+def _running_plan_ids(epic_root: Path) -> set[str]:
+    """Return the ids of every plan currently ``running`` in the epic.
+
+    Reads the epic's ``status.json`` — the machine authority for per-plan
+    lifecycle state — and returns the id of every ``plans[]`` row whose
+    ``status`` is :data:`RUNNING_STATUS`, mirroring the extraction
+    ``orchestrator.py`` performs for its own running-plans readiness signal.
+
+    A missing, unreadable, or malformed status document, or one carrying no
+    ``plans[]`` array, yields an EMPTY set: with no readable queue there is no
+    plan whose running state can be confirmed, so the deliverability guard that
+    consumes this set does not fire on an unverifiable state (it refuses only a
+    plan it can positively read as running).
+    """
+    data = read_json(epic_root / STATUS_FILE)
+    if not isinstance(data, dict):
+        return set()
+    rows = data.get('plans')
+    if not isinstance(rows, list):
+        return set()
+    return {
+        str(row.get('id', ''))
+        for row in rows
+        if isinstance(row, dict) and str(row.get('status', '')) == RUNNING_STATUS
+    }
 
 
 def _mutate_epic_root(slug: str) -> Path:
@@ -550,6 +591,35 @@ def cmd_inbox_write(args: Any) -> dict[str, Any]:
             f'epic {args.slug!r} has no tree at {root}; run scaffold first',
             slug=args.slug,
         )
+    # Deliverability guard. ``--target-plan`` NAMES a plan the message is aimed
+    # at, but the inbox is the epic's plan->orchestrator OUTBOX, drained BETWEEN
+    # plans; it has no delivery path to a plan, and a plan never reads it. When
+    # the named plan is currently RUNNING, the message is architecturally
+    # undeliverable — the plan will have finished before the orchestrator's next
+    # drain — so it is REFUSED at write time and never silently queued for a
+    # reader that will not exist. A message aimed at a plan that is NOT running
+    # (landed, parked, or absent from the queue) is not blocked: it queues as an
+    # ordinary epic-addressed message the orchestrator drains. Building a mid-run
+    # delivery channel is a larger design question and is deliberately NOT done
+    # here — this guard only makes the existing undeliverability visible.
+    target_plan = getattr(args, 'target_plan', None)
+    if target_plan is not None:
+        invalid = _validate_identifier(target_plan)
+        if invalid:
+            return _error('invalid_target_plan', invalid, slug=args.slug)
+        if target_plan in _running_plan_ids(root):
+            return _error(
+                'undeliverable_to_running_plan',
+                f'message names target plan {target_plan!r}, which is currently '
+                f'running in epic {args.slug!r}. The inbox is the epic OUTBOX, '
+                'drained by the orchestrator between plans; it has no delivery '
+                'path to a running plan, so this message would never be read. It '
+                'is refused at write time rather than silently queued. To reach a '
+                'running plan, do not aim a message at it — mid-run delivery is '
+                'not a channel this inbox provides.',
+                slug=args.slug,
+                target_plan=target_plan,
+            )
     payload_path = Path(args.payload_file)
     if not payload_path.is_file():
         return _error(

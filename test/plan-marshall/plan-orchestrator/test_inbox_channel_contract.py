@@ -50,6 +50,7 @@ in the same style as the existing ``test_step_termination_contract.py`` /
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from conftest import MARKETPLACE_ROOT, get_script_path, run_script
@@ -110,9 +111,9 @@ def _write(
     slug: str = EPIC,
     kind: str = 'landing',
     sender: str = SENDER,
+    target_plan: str | None = None,
 ):
-    return run_script(
-        SCRIPT_PATH,
+    argv = [
         'inbox',
         'write',
         '--slug',
@@ -125,7 +126,22 @@ def _write(
         kind,
         '--payload-file',
         payload_file,
-        env_overrides=_env(plan_context),
+    ]
+    # Appended only when supplied, so the default path exercises the same argv
+    # shape a caller that never heard of --target-plan produces.
+    if target_plan is not None:
+        argv += ['--target-plan', target_plan]
+    return run_script(SCRIPT_PATH, *argv, env_overrides=_env(plan_context))
+
+
+def _write_status(plan_context, plans: list[dict], slug: str = EPIC) -> None:
+    """Write the epic's ``status.json`` with a ``plans[]`` queue.
+
+    The machine authority the deliverability guard reads to decide whether a
+    named target plan is currently running.
+    """
+    (_epic_dir(plan_context, slug) / 'status.json').write_text(
+        json.dumps({'plans': plans}), encoding='utf-8'
     )
 
 
@@ -273,6 +289,78 @@ class TestWellFormedMessage:
         _scaffold(plan_context)
 
         assert (_epic_dir(plan_context) / 'inbox').is_dir()
+
+
+# =============================================================================
+# Deliverability guard: a message aimed at a RUNNING plan has no reader
+# =============================================================================
+
+
+class TestTargetPlanDeliverability:
+    """``--target-plan`` makes an architecturally undeliverable write visible.
+
+    The inbox is the epic's plan->orchestrator OUTBOX, drained BETWEEN plans, so
+    a message aimed at a plan that is currently running can never be read by it —
+    the plan finishes before the next drain. The guard reports that at write time
+    instead of silently queuing a message no reader will consume; it does NOT
+    build a mid-run delivery channel.
+    """
+
+    def test_naming_a_running_plan_is_refused_as_undeliverable(
+        self, plan_context, tmp_path
+    ):
+        _scaffold(plan_context)
+        _write_status(plan_context, [{'id': 'plan-alpha', 'status': 'running'}])
+
+        result = _write(
+            plan_context, _payload(tmp_path), kind='finding', target_plan='plan-alpha'
+        )
+        data = result.toon()
+
+        assert data['status'] == 'error'
+        assert data['error'] == 'undeliverable_to_running_plan'
+        # The undeliverable write is REFUSED, not silently queued — no message
+        # file is left behind for a reader that will never exist.
+        assert not (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').exists()
+
+    def test_naming_a_non_running_plan_queues_normally(self, plan_context, tmp_path):
+        # A landed (non-running) plan is deliverable to the orchestrator at the
+        # next drain, so the guard does not block it — the running distinction is
+        # load-bearing, not a blanket refusal of every target.
+        _scaffold(plan_context)
+        _write_status(plan_context, [{'id': 'plan-alpha', 'status': 'landed'}])
+
+        result = _write(
+            plan_context, _payload(tmp_path), kind='finding', target_plan='plan-alpha'
+        )
+
+        assert 'status: success' in result.stdout
+        assert (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').is_file()
+
+    def test_untargeted_write_is_unaffected_by_a_running_plan(
+        self, plan_context, tmp_path
+    ):
+        # The guard fires ONLY on --target-plan. An ordinary epic-addressed
+        # write (a plan's own OUTBOX message) is never blocked by another plan
+        # being in flight — that is the primary, unbroken use case.
+        _scaffold(plan_context)
+        _write_status(plan_context, [{'id': 'plan-alpha', 'status': 'running'}])
+
+        result = _write(plan_context, _payload(tmp_path))
+
+        assert 'status: success' in result.stdout
+        assert (_epic_dir(plan_context) / 'inbox' / f'{SENDER}-001.md').is_file()
+
+    def test_malformed_target_plan_is_rejected(self, plan_context, tmp_path):
+        _scaffold(plan_context)
+
+        result = _write(
+            plan_context, _payload(tmp_path), target_plan='Not A Valid Id!'
+        )
+        data = result.toon()
+
+        assert data['status'] == 'error'
+        assert data['error'] == 'invalid_target_plan'
 
 
 # =============================================================================
@@ -725,7 +813,14 @@ class TestWriteBoundary:
     def test_should_expose_no_output_path_argument(self, plan_context):
         result = run_script(SCRIPT_PATH, 'inbox', 'write', '--help', env_overrides={})
 
-        for forbidden_flag in ('--path', '--output', '--target', '--file '):
+        # The write TARGET (the message file path) must stay derived from
+        # --slug + --sender-id alone, so no caller-supplied output-PATH flag may
+        # appear. The trailing spaces are the metavar boundary that lets a
+        # precise flag through: `--target ` matches a bare `--target PATH`
+        # output arg but NOT `--target-plan TARGET_PLAN` (a plan IDENTIFIER used
+        # only for the deliverability guard, never as an output path), exactly as
+        # `--file ` admits `--payload-file` while forbidding a bare `--file`.
+        for forbidden_flag in ('--path', '--output', '--target ', '--file '):
             assert forbidden_flag not in result.stdout, forbidden_flag
 
 
