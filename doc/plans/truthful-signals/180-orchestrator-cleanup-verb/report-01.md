@@ -149,7 +149,34 @@ executor in this cloud clone).
 
 ## Findings
 
-_(pending — verification sub-agent, CI, PR review)_
+Recorded per instance. The Step 6 verification sub-agent (`general-purpose`) was dispatched three times
+(find → fix → re-verify), which is the lane's fix-and-re-dispatch loop.
+
+**Pass 1 (verification sub-agent).**
+- All deliverables D1–D5: **PASS** (verdict named per deliverable; the D3 cold-read test returned A,B
+  REGENERABLE / C,D PRESERVE — exactly the plan's mandated answers, so the written boundary does not
+  invite fabricating a fact). Out-of-scope constraints all honored (never deletes; no `resume_anchor`
+  reshape; no inbox foldering).
+- **Finding (real, fixed):** three verb docs (`decompose.md`, `analyze.md`, `lessons-handling.md`) still
+  instructed *hand-writing* the now-guarded Ordered Queue block — the doc-contract-divergence archetype
+  this epic exists to close. **Disposition: fixed** in `8e160d3` by giving those verbs a render path —
+  `resume-summary` now emits both derivable blocks (`ordered_queue` added), reusing `_build_ordered_queue`.
+- **Finding (real, fixed):** stale `_registry_parity_signal` docstring claimed the compaction stage uses a
+  `not_available` unowned-surface convention it does not have. **Fixed** in `8e160d3`.
+- **Findings (minor, fixed):** double `_abstained_sections(original)` compute; `no_terminal_in_live_queue`
+  docstring understated the markers-absent case. **Fixed** in `8e160d3`.
+
+**Pass 2 (re-verification).** Points 1–3 confirmed clean. **Finding (real regression the Pass-1 fix
+introduced, fixed):** making `resume-summary` a two-block emitter left several *consumers* pasting only the
+START-HERE block — most seriously `close.md` (would freeze a stale Ordered Queue into `history.md`
+permanently), plus `resume.md`, `orchestrate.md`, `analyze.md` (a back-reference), `landing-analysis.md`,
+`persona SKILL.md`, and `init.md`. **Disposition: fixed** in `dbe474b` (all consumers paste/regenerate both
+blocks). An independent `git grep` sweep then found six more single-block descriptions (SKILL.md Scripts row
++ Enforcement, argparse help, `orchestrate.md` status path, two headers) — **fixed** in `14e23a3`.
+
+**Pass 3 (final focused re-verification).** _(result pending — recorded before the merge gate.)_
+
+**CI / PR review findings:** _(pending — recorded at Step 7/8.)_
 
 ## Reviewer participation
 
