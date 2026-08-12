@@ -901,21 +901,25 @@ Deterministic planning-lane router with two sub-verbs (`route` / `escalate`). Re
 
 **Routing-tier sequencing** — this `planning-lane` router is **Tier 2** of the routing model. Tier 1 recipe-match (`manage-config recipe-match`, phase-1-init Step 5c) runs **ahead** of this `planning-lane route` call (phase-1-init Step 8b): registry-wide recipe scoring precedes the light/deep lane decision. The router's own resolution logic is unaffected by Tier 1 — the sequencing note records ordering only. See `manage-config` Canonical invocations → `recipe-match` for the Tier 1 verb contract and `ref-workflow-architecture/standards/phase-lifecycle.md` for the routing-tier position in the lifecycle.
 
-**route** — evaluate the signal set, resolve the lane, project the recommended execution-profile posture, and (with `--persist`) write `status.metadata.planning_lane` and `status.metadata.execution_profile`. Emits one decision-log line naming every signal value, the winning predicate, the projected posture, and the `scope_provenance` block (`distinct_path_count`, `fan_out_marker`, `band_rule`) — so both verdicts and the band rule that drove them are on one line.
+**route** — evaluate the signal set, resolve the lane, project the recommended execution-profile posture, and (with `--persist`) write `status.metadata.planning_lane` and `status.metadata.execution_profile`. Emits one decision-log line naming every signal value, the winning predicate, the projected posture, the `scope_provenance` block (`distinct_path_count`, `fan_out_marker`, `band_rule`), the signal-resolution `confidence` (resolved-vs-null counts), and any `suppressed_signals` (a signal that fired but was denied the lane) — so both verdicts, the band rule that drove them, and how much of the vector actually resolved are on one line.
 
 The signal set (`deep` IFF any deep-precondition fires; otherwise `light`):
 
 | # | Signal | Source (cheap read) | → deep when |
 |---|--------|---------------------|-------------|
-| S1 | `plan_source` | `status.metadata.plan_source` | source is free-form (absent/unset) **AND** S5 concreteness fails (`lesson`/`recipe` bias light) |
+| S1 | `plan_source` | `status.metadata.plan_source`, falling back to the `request.md` provenance header (`source: description` + a non-empty `source_id`) when the metadata field is null | source is free-form (absent/unset) **AND** S5 concreteness fails (`lesson`/`recipe` bias light). The fallback bridges the orchestrator-spec pointer phase-1-init records as `source_id` but never seeds into `status.metadata.plan_source`, so an orchestrator-launched plan is no longer read as free-form. Read-time only — it fills the router's own read, it does not write `status.metadata`. |
 | S2 | `scope_estimate` | `references.scope_estimate` | ∈ {`multi_module`, `broad`, `none`, unset}. `surgical` and `single_module` do not fire S2, but only `surgical` counts as **narrow** — it alone earns the S3/S4 narrow-and-concrete carve-out, so a `single_module` request keeps its S3/S4 escalation. See the `scope-estimate-heuristic` row of the Scripts table for the band table that produces these values. |
 | S3 | `change_type` | `status.metadata.change_type` | ∈ {`feature`, `feature_breaking`} (`bug_fix`/`tech_debt`/`enhancement`/`verification` → light) |
 | S4 | `compatibility` | `marshal.json plan.phase-2-refine.compatibility` | == `breaking` |
 | S5 | request concreteness | regex over the **whole** `request.md` body (heading-blind: the entire file minus its own `# Request` title line — no section is selected) | body names NO file path **AND** NO concrete fix signal (fenced code block / `python3 .plan/execute-script.py` CLI / `manage-*` notation) |
 | S6 | explicit override | `status.metadata.planning_lane_override` (or `--lane-override deep`) | == `deep` forces deep (one-way) |
-| S7 | author risk prose | regex over the **whole** `request.md` body | the body carries an explicit scale warning (`multi-PR`, `codebase-wide`, `largest`, `riskiest`, `expect a split`, `foundation`, `epic`, `campaign` — case-insensitive, word-boundary anchored). Deliberately OUTSIDE the carve-out below: the author stating the scale outranks a cheap band. `epic` additionally excludes the metadata-key form (`epic:`), so an ingested orchestrator spec's preamble is not mistaken for a hand-written warning. |
+| S7 | author risk prose | regex over the **whole** `request.md` body | the body carries an explicit scale warning (`multi-PR`, `codebase-wide`, `largest`, `riskiest`, `expect a split`, `foundation`, `epic`, `campaign` — case-insensitive, word-boundary anchored). Deliberately OUTSIDE the carve-out below: the author stating the scale outranks a POSITIVELY-earned narrow band (`surgical`). Bounded by the prose-only corroboration below: S7 does not carry the lane ALONE against the non-committal middle band (`single_module`). `epic` additionally excludes the metadata-key form (`epic:`), so an ingested orchestrator spec's preamble is not mistaken for a hand-written warning. |
 
 **narrow-and-concrete carve-out** — when `scope_estimate` is `surgical` **AND** the request is concrete (S5 passes), S3 and S4 (and only those two) are suppressed so a bounded, well-specified change cannot be forced `deep` by its `change_type` or `compatibility` alone. The carve-out requires **actual** narrowness: `single_module` is the catch-all middle band, so it does not qualify. The same predicate governs the execution-profile projection below, so a non-narrow request can neither hide its S3/S4 escalation nor collapse its posture to `minimal`.
+
+**prose-only corroboration** — a prose warning (S7) that is the SOLE fired signal does not carry the lane when it is contradicted by a resolved scope estimate. Concretely: when `fired == [S7:risk_prose]` **AND** `scope_estimate` resolved to the non-committal middle band (`single_module` — resolved, yet neither deep-biasing nor `surgical`), the warning is uncorroborated and the lane stays `light`; the fired-but-denied signal is reported under `suppressed_signals` (`signals.risk_prose` still reads `true`, so the record shows the signal fired and was suppressed). S7 still outranks a POSITIVELY-earned narrow band (`surgical`), and a genuinely large change is unaffected because it fires a corroborating signal (broad/unknown scope → S2, generative change → S3, breaking compat → S4, no anchors → S5). This is corroboration, not a provenance exemption: the sensor scores semantic scale vocabulary, not markup, so a genuine warning in a spec body is never blanket-suppressed.
+
+**signal-resolution confidence** — the route reports how much of the S1–S7 vector actually resolved, under `confidence` (`signals_total` / `signals_resolved` / `signals_null` / `null_signals` / `low_confidence`). A signal whose value is `None` cannot vote for or against `deep`, so a verdict over a mostly-null vector is flagged `low_confidence` (more inputs unresolved than resolved) — a 1-of-4 decision no longer reads like a 1-of-7 one.
 
 **deep-lane short-circuit** — `plan.phase-1-init.deep_lane` is read BEFORE the signal set: `always` → force `deep`; `never` → force `light` (the DQ3 hard-escalation ratchet still fires unless `plan.phase-1-init.escalation: never` is also set); `auto` (default) → the signal set decides.
 
@@ -936,6 +940,13 @@ decision_predicate: signal_set
 fired_signals[2]:
   - "S3:change_type"
   - "S4:compatibility"
+suppressed_signals[0]:
+confidence:
+  signals_total: 7
+  signals_resolved: 6
+  signals_null: 1
+  null_signals[1]: [ planning_lane_override ]
+  low_confidence: false
 execution_profile: full
 profile:
   recommended_posture: full

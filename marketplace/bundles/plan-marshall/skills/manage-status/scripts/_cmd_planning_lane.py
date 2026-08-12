@@ -19,7 +19,20 @@ The signal set (DQ1 of the planning-lanes solution outline):
 | S6 | explicit override | ``status.metadata.planning_lane_override`` | == deep forces deep (one-way) |
 | S7 | author risk prose | regex over ``request.md`` body | body carries an explicit scale warning |
 
-``deep`` IFF (S1 ∨ S2 ∨ S3 ∨ S4 ∨ S5 ∨ S6-deep ∨ S7); otherwise ``light``.
+``deep`` IFF (S1 ∨ S2 ∨ S3 ∨ S4 ∨ S5 ∨ S6-deep ∨ S7); otherwise ``light`` — with
+ONE corroboration bound (D2): S7 alone does not carry ``deep`` when the scope
+estimate resolved to the non-committal middle band (``single_module``). A prose
+warning that is the SOLE fired signal AND is contradicted by a resolved scope
+estimate is uncorroborated, so it cannot force ``deep`` on its own; the fired-but-
+denied signal is reported under ``suppressed_signals`` (``signals.risk_prose`` still
+reports True). S7 still OUTRANKS a positively-earned narrow band (``surgical``) —
+the author overriding a concrete bound — so that case is unchanged.
+
+The route also reports the signal-vector confidence (D1): the resolved-vs-null
+split of the S1–S7 inputs under ``confidence`` (``signals_resolved`` /
+``signals_null`` / ``null_signals`` / ``low_confidence``). A signal whose value is
+None cannot vote for or against ``deep``, so a verdict over a mostly-null vector is
+flagged low-confidence — a 1-of-4 decision no longer reads like a 1-of-7 one.
 
 The narrow-and-concrete carve-out: when ``scope_estimate == surgical`` AND the
 request is concrete, S3 (generative change_type) and S4 (breaking compatibility)
@@ -357,6 +370,63 @@ def _read_scope_estimate(plan_id: str) -> str | None:
     return None
 
 
+# S1 provenance bridge — the ``source:`` / ``source_id:`` header fields
+# ``request.md`` carries (see manage-plan-documents ``templates/request.md``). The
+# file-pointer (orchestrator-spec) branch of phase-1-init records the spec pointer
+# as ``source_id`` via ``request create --source-id`` (SKILL.md Step 4/5.1) but —
+# unlike the lesson (Step 5b.5) and recipe (Step 5c) branches — never seeds
+# ``status.metadata.plan_source``. So ``metadata.plan_source`` is null for EVERY
+# orchestrator-launched plan even though the provenance IS captured, just under a
+# different key in a different file. These read that header so the router can
+# bridge the two at read time.
+_REQUEST_SOURCE_RE = re.compile(r'^source:\s*(\S+)\s*$', re.MULTILINE)
+_REQUEST_SOURCE_ID_RE = re.compile(r'^source_id:\s*(\S+)\s*$', re.MULTILINE)
+
+
+def _resolve_orchestrator_plan_source(plan_id: str) -> str | None:
+    """S1 — resolve ``plan_source`` from ``request.md`` provenance (None otherwise).
+
+    Returns the retained spec pointer (``source_id``) when ``request.md`` records a
+    file-pointer ``description`` source — ``source: description`` with a non-empty
+    ``source_id`` — and None otherwise. That shape is UNIQUE to an orchestrator-
+    launched plan: a plain-text ``description`` omits ``source_id`` (the template's
+    ``source_id`` line is stripped when unset, see manage-plan-documents
+    ``_cleanup_unreplaced_placeholders``), and lesson / issue / recipe carry a
+    different ``source``. So the match identifies orchestrator-spec provenance and
+    nothing else.
+
+    The router calls this ONLY when ``status.metadata.plan_source`` is absent, so a
+    lesson- or recipe-seeded value always wins. Resolving here — read-time and
+    router-local — rather than writing ``status.metadata`` is deliberate: writing
+    the metadata field would activate downstream metadata consumers (notably
+    phase-2-refine's narrative-vs-code q-gate, which fires whenever ``plan_source``
+    is set and is not ``"recipe"``) for the WHOLE orchestrated population, a
+    ceremony increase this router change has no business making. The fix stays
+    inside the component that reads the field.
+
+    Only the header block (everything before the first ``## `` section) is parsed,
+    so a ``source:`` / ``source_id:`` line inside the ingested spec BODY can never
+    be misread as the request's own provenance.
+    """
+    request_path = get_plan_dir(plan_id) / 'request.md'
+    if not request_path.exists():
+        return None
+    try:
+        content = request_path.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return None
+    header = content.split('\n## ', 1)[0]
+    source_match = _REQUEST_SOURCE_RE.search(header)
+    source_id_match = _REQUEST_SOURCE_ID_RE.search(header)
+    if source_match is None or source_id_match is None:
+        return None
+    source = source_match.group(1)
+    source_id = source_id_match.group(1)
+    if source == 'description' and source_id.lower() not in ('none', ''):
+        return source_id
+    return None
+
+
 def _read_compatibility() -> str | None:
     """S4 — read ``plan.phase-2-refine.compatibility`` from marshal.json."""
     try:
@@ -532,12 +602,28 @@ def evaluate_signals_pure(
     """Score the S1–S7 signal set into a lane verdict — pure, I/O-free.
 
     Takes the realized signal values directly (the reads happen in the caller)
-    and returns the ``{lane, fired_signals, signals, profile}`` dict that drives
-    the route dispatch. ``profile`` carries the recommended execution-profile
-    posture (``project_profile_pure``) plus the candidate posture lattice — the
-    init dialogue consumes it as the default recommendation. Importable by
-    downstream consumers (e.g. the audit retrospective check) so the routing
-    thresholds are never duplicated.
+    and returns the ``{lane, fired_signals, suppressed_signals, confidence,
+    signals, profile}`` dict that drives the route dispatch. ``profile`` carries
+    the recommended execution-profile posture (``project_profile_pure``) plus the
+    candidate posture lattice — the init dialogue consumes it as the default
+    recommendation. Importable by downstream consumers (e.g. the audit
+    retrospective check) so the routing thresholds are never duplicated.
+
+    Two keys make the verdict's basis legible rather than leaving a bare lane:
+
+    - ``suppressed_signals`` (D2) — signals that FIRED but were denied the lane by
+      the prose-only corroboration rule. When S7 (``risk_prose``) is the sole fired
+      signal AND the scope estimate resolved to the non-committal middle band
+      (``single_module``), the prose warning is uncorroborated and contradicted by a
+      resolved scope estimate, so it does not carry the lane alone; ``S7:risk_prose``
+      moves here and ``fired_signals`` is left empty. ``signals.risk_prose`` still
+      reports True, so the record shows the signal fired and was suppressed rather
+      than hiding it.
+    - ``confidence`` (D1) — the resolved-vs-null split of the signal vector
+      (``signals_total`` / ``signals_resolved`` / ``signals_null`` / ``null_signals``
+      / ``low_confidence``). A signal whose value is None cannot vote, so a verdict
+      over a mostly-null vector is reported as low-confidence — a 1-of-4 decision no
+      longer reads like a 1-of-7 one.
 
     ``risk_prose`` (S7) defaults to False so a consumer that scores only the
     band-and-metadata signals keeps working; the default is the ABSENCE of a
@@ -574,8 +660,10 @@ def evaluate_signals_pure(
     # narrow-and-concrete carve-out: the carve-out exists to stop a cheap band
     # plus a generative change_type from forcing deep, but S7 is not a cheap
     # inference — it is the author stating the scale. An explicit warning
-    # therefore outranks the band, even for a surgical, concretely-specified
-    # request.
+    # therefore outranks a POSITIVELY-EARNED narrow band (surgical), even for a
+    # concretely-specified request. The one bound on that reach is the D2
+    # corroboration below: S7 does not carry the lane ALONE against the
+    # non-committal middle band (single_module) — see the corroboration block.
     s7_deep = risk_prose
 
     fired = []
@@ -594,7 +682,67 @@ def evaluate_signals_pure(
     if s7_deep:
         fired.append('S7:risk_prose')
 
+    # D2 — corroboration for prose-only routing. S7 (the author's prose scale
+    # warning) is the one signal that is a STATEMENT rather than a MEASUREMENT, so
+    # it deliberately OUTRANKS a positively-earned narrow band: an author overriding
+    # a concrete `surgical` bound is a high-information act, and that case
+    # (surgical + S7-alone -> deep) is preserved verbatim — the prior false-negative
+    # fix this seam already carries. But when S7 is the SOLE fired signal AND the
+    # scope estimate resolved to the NON-COMMITTAL middle band (`single_module` —
+    # resolved, yet neither deep-biasing nor positively narrow), the prose warning
+    # is uncorroborated and contradicted by a resolved scope estimate, so it must
+    # NOT carry the lane alone. This is the exact shape of a prose-heavy
+    # orchestrator-spec ingestion tripping S7 on house-convention vocabulary while
+    # the measured scope reads middle-band. It is CORROBORATION, not a provenance
+    # exemption of the spec body: the sensor (`_RISK_PROSE_RE`) scores semantic
+    # scale-warning vocabulary, not markup, so blanket-exempting spec bodies would
+    # suppress a genuine author warning. The condition is expressed through this
+    # module's own scope frozensets, so its residue is exactly {single_module} and
+    # it adapts automatically if the band set changes. A genuinely large change is
+    # unaffected: it fires a corroborator (broad/unknown scope -> S2, generative
+    # change_type -> S3, breaking compat -> S4, no anchors -> S5), keeps the S6
+    # override, and keeps the mid-execute escalation ratchet.
+    scope_resolved_noncommittal = (
+        scope_estimate is not None
+        and scope_estimate not in _DEEP_SCOPE_ESTIMATES
+        and scope_estimate not in _NARROW_SCOPE_ESTIMATES
+    )
+    suppressed_signals: list[str] = []
+    if fired == ['S7:risk_prose'] and scope_resolved_noncommittal:
+        suppressed_signals = ['S7:risk_prose']
+        fired = []
+
     lane = DEEP if fired else LIGHT
+
+    signals = {
+        'plan_source': plan_source,
+        'scope_estimate': scope_estimate,
+        'change_type': change_type,
+        'compatibility': compatibility,
+        'request_concrete': request_concrete,
+        'risk_prose': risk_prose,
+        'planning_lane_override': override,
+    }
+    # D1 — signal-resolution confidence. A signal whose value is None resolved to
+    # NOTHING: it cannot vote for or against deep, so a verdict over a mostly-null
+    # vector is structurally low-confidence — every unresolved field is one that
+    # cannot contradict a signal that did fire. Reporting the resolved-vs-null split
+    # keeps a 1-of-4 decision from reading like a 1-of-7 one. The two boolean
+    # readings (`request_concrete`, `risk_prose`) are derived from the request body
+    # and are never None, so they always count as resolved.
+    null_signals = sorted(name for name, value in signals.items() if value is None)
+    signals_null = len(null_signals)
+    signals_resolved = len(signals) - signals_null
+    confidence = {
+        'signals_total': len(signals),
+        'signals_resolved': signals_resolved,
+        'signals_null': signals_null,
+        'null_signals': null_signals,
+        # More of the vector was unresolved than resolved — the majority of inputs
+        # could not vote, so the verdict rests on a minority of the signal set.
+        'low_confidence': signals_null > signals_resolved,
+    }
+
     recommended_posture = project_profile_pure(
         scope_estimate=scope_estimate,
         change_type=change_type,
@@ -604,15 +752,9 @@ def evaluate_signals_pure(
     return {
         'lane': lane,
         'fired_signals': fired,
-        'signals': {
-            'plan_source': plan_source,
-            'scope_estimate': scope_estimate,
-            'change_type': change_type,
-            'compatibility': compatibility,
-            'request_concrete': request_concrete,
-            'risk_prose': risk_prose,
-            'planning_lane_override': override,
-        },
+        'suppressed_signals': suppressed_signals,
+        'confidence': confidence,
+        'signals': signals,
         'profile': {
             'recommended_posture': recommended_posture,
             'candidate_postures': [MINIMAL, STANDARD, FULL],
@@ -635,6 +777,11 @@ def _evaluate_signals(plan_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
       module-mapping derivation may have overwritten with a measured band.
     """
     plan_source = metadata.get('plan_source')
+    if plan_source is None:
+        # D0/S1 — bridge the orchestrator-spec provenance that phase-1-init records
+        # as request.md `source_id` but never seeds into status.metadata.plan_source.
+        # metadata wins when present (lesson / recipe seeds); this only fills a null.
+        plan_source = _resolve_orchestrator_plan_source(plan_id)
     change_type = metadata.get('change_type')
     override = metadata.get('planning_lane_override')
 
@@ -717,6 +864,13 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
     # gate, so it survives both short-circuit branches below unchanged.
     scope_provenance = signal_evaluation['scope_provenance']
 
+    # The signal-vector confidence (D1) is a property of the resolved inputs, not
+    # of the deep_lane gate, so it is reported under both short-circuit branches
+    # too — a gate-forced lane over a mostly-null vector is still a low-confidence
+    # read of that vector. A gate branch suppresses nothing by corroboration (it
+    # bypasses the signal logic), so its ``suppressed_signals`` is empty.
+    confidence = signal_evaluation['confidence']
+
     evaluation: dict[str, Any]
     if ceremony == 'always':
         lane = DEEP
@@ -724,13 +878,22 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
         evaluation = {
             'lane': lane,
             'fired_signals': ['deep_lane:always'],
+            'suppressed_signals': [],
+            'confidence': confidence,
             'signals': signal_evaluation['signals'],
             'profile': profile,
         }
     elif ceremony == 'never':
         lane = LIGHT
         decision = 'plan.phase-1-init.deep_lane=never'
-        evaluation = {'lane': lane, 'fired_signals': [], 'signals': signal_evaluation['signals'], 'profile': profile}
+        evaluation = {
+            'lane': lane,
+            'fired_signals': [],
+            'suppressed_signals': [],
+            'confidence': confidence,
+            'signals': signal_evaluation['signals'],
+            'profile': profile,
+        }
     else:
         evaluation = signal_evaluation
         lane = evaluation['lane']
@@ -754,6 +917,7 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
         persisted = True
 
     fired = evaluation['fired_signals']
+    suppressed = evaluation['suppressed_signals']
     log_entry(
         'decision',
         plan_id,
@@ -761,6 +925,9 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
         (
             f'(plan-marshall:manage-status:planning-lane) Routed planning_lane={lane} '
             f'(predicate={decision}, fired={fired or "none"}, '
+            f'suppressed={suppressed or "none"}, '
+            f'confidence={confidence["signals_resolved"]}/{confidence["signals_total"]} resolved '
+            f'(low_confidence={confidence["low_confidence"]}, null={confidence["null_signals"]}), '
             f'ceremony.deep_lane={ceremony}, execution_profile={recommended_posture}, '
             f'scope_provenance={scope_provenance}, '
             f'signals={evaluation["signals"]})'
@@ -774,6 +941,8 @@ def cmd_planning_lane_route(args: argparse.Namespace) -> dict[str, Any]:
         'ceremony_deep_lane': ceremony,
         'decision_predicate': decision,
         'fired_signals': fired,
+        'suppressed_signals': suppressed,
+        'confidence': confidence,
         'signals': evaluation['signals'],
         'execution_profile': recommended_posture,
         'profile': profile,
