@@ -75,7 +75,7 @@ In each mutation run, the mutated member's off-routing test went red while the o
 
 ## Build gate
 
-_Pending._
+`git diff --name-only origin/main...HEAD -- '*.py'` = two test files (`test/_shared/_merge_shaped_roster.py`, `test/plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal.py`) — a Python footprint, so the full gate ran. `./pw verify` → **SUCCESS**: `19160 passed, 14 skipped in 485.94s`; mypy(production) [395 files] clean, ruff clean, SPDX clean, plugin-doctor marketplace-wide clean, mypy(test) [715 files] clean, module-tests (whole-tree) passed. No production source was changed by this plan (the two mutations were reverted via `git checkout`), so the guards under test are the shipped ones.
 
 ## Findings
 
