@@ -687,11 +687,12 @@ def resolve_message_path(inbox_dir: Path, name: str) -> tuple[Path, str]:
     """Resolve one message name to its path, probing the archive second.
 
     The single place the archive-probe ORDER lives. A drain relocates a consumed
-    message under ``inbox/archive/`` rather than deleting it, so a name that is
-    absent from the live queue is not necessarily missing — it may have been
-    consumed. Probing ``inbox/{name}`` first and ``inbox/archive/{name}``
-    second is what makes those two states distinguishable instead of collapsing
-    both into "not found".
+    message under ``inbox/archive/{sender}/`` rather than deleting it, so a name
+    that is absent from the live queue is not necessarily missing — it may have
+    been consumed. Probing ``inbox/{name}`` first, then the sender's foldered
+    ``inbox/archive/{sender}/{name}``, then any un-migrated flat
+    ``inbox/archive/{name}`` twin, is what makes those two states distinguishable
+    instead of collapsing both into "not found".
 
     Args:
         inbox_dir: The epic's ``inbox/`` directory.
@@ -1101,9 +1102,9 @@ def cmd_inbox_archive(args: Any) -> dict[str, Any]:
     relocating a file inside its frozen archived record.
 
     The relocation itself is an ATOMIC claim rather than a check-then-move:
-    :func:`os.link` creates ``inbox/archive/{name}`` without ever replacing an
-    existing destination, and the source is unlinked only once that claim has
-    succeeded. Every response is derived from the claim's own outcome, so two
+    :func:`os.link` creates ``inbox/archive/{sender}/{name}`` (the foldered
+    destination) without ever replacing an existing destination, and the source
+    is unlinked only once that claim has succeeded. Every response is derived from the claim's own outcome, so two
     racing drains cannot both clear a presence check and have the loser fault
     on a source the winner already moved:
 
@@ -1297,16 +1298,20 @@ def _read_payload_body(payload_file: str) -> tuple[str | None, dict[str, Any] | 
 def _resolve_live_message(
     slug: str, name: str
 ) -> tuple[Path | None, dict[str, str], str, dict[str, Any] | None]:
-    """Resolve a bare message name to a LIVE, valid queued message for mutation.
+    """Resolve a bare message name to a QUEUED, valid message for mutation.
 
     The shared front half of ``amend`` and ``supersede``: both mutate a message
     IN PLACE, so both resolve the epic root strictly (no archived read-fallback),
     require the message to be present in the LIVE queue rather than the archive
     (a consumed message is past correcting), and require it to validate before it
     is touched (mutating a message that is already malformed would silently ship
-    a broken result). Returns ``(path, header, body, error_dict)``; on any
-    refusal ``path`` is ``None`` and ``error_dict`` carries ``error``/``message``
-    (no ``slug`` — the caller adds it).
+    a broken result). It does NOT filter on ``lifecycle`` — the
+    lifecycle-specific guard is the caller's, because ``amend`` and ``supersede``
+    refuse different states (``amend`` refuses any non-``live`` message;
+    ``supersede`` refuses only a ``stream-end`` marker). Returns
+    ``(path, header, body, error_dict)``; on any refusal ``path`` is ``None`` and
+    ``error_dict`` carries ``error``/``message`` (no ``slug`` — the caller adds
+    it).
     """
     root = _mutate_epic_root(slug)
     if not root.is_dir():
@@ -1427,8 +1432,10 @@ def cmd_inbox_supersede(args: Any) -> dict[str, Any]:
     ``--by`` (``invalid_message_name`` / ``invalid_successor_name``), a message
     superseding itself (``self_supersede``), an absent epic (``epic_not_found``),
     a target present at neither path or not live (``file_not_found`` /
-    ``not_live``), an already-invalid target (the validator's own code), and a
-    successor present at neither path (``successor_not_found``).
+    ``not_live``), an already-invalid target (the validator's own code), a
+    stream-end marker (``not_supersedable`` — a terminal control marker cannot be
+    retired by a successor), and a successor present at neither path
+    (``successor_not_found``).
     """
     invalid = _validate_identifier(args.slug)
     if invalid:
@@ -1464,6 +1471,18 @@ def cmd_inbox_supersede(args: Any) -> dict[str, Any]:
             message_name=name,
         )
     assert path is not None  # resolve_error is None ⇒ path resolved
+    # A stream-end marker is a terminal control record, not a payload message to
+    # retire: flipping it to ``superseded`` would drop the sender from
+    # ``closed_senders`` and silently re-open the stream. Refuse it. An
+    # already-superseded message may be re-superseded (the pointer is updated).
+    if header.get(_LIFECYCLE_FIELD, LIFECYCLE_LIVE) == LIFECYCLE_STREAM_END:
+        return _error(
+            'not_supersedable',
+            f'inbox message {name} is a stream-end marker; a terminal control '
+            'marker cannot be superseded',
+            slug=args.slug,
+            message_name=name,
+        )
     root = _mutate_epic_root(args.slug)
     _succ_path, succ_location = resolve_message_path(root / INBOX_SUBDIR, successor)
     if succ_location == 'missing':

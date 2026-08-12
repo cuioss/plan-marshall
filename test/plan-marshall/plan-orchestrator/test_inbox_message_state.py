@@ -338,6 +338,21 @@ class TestInboxSupersede:
 
         assert result['error'] == 'invalid_successor_name'
 
+    def test_should_refuse_to_supersede_a_stream_end_marker(self, plan_context, tmp_path):
+        # A terminal control marker cannot be retired-by-successor: flipping it to
+        # superseded would drop the sender from closed_senders and re-open the
+        # stream. The successor must still exist so the refusal is the marker
+        # guard firing, not successor_not_found.
+        cmd_scaffold(Namespace(slug=EPIC))
+        marker = cmd_inbox_close_stream(_close_stream_args())['message']
+        successor = _write_message(plan_context, tmp_path, 'successor', 'b.md')
+
+        result = cmd_inbox_supersede(_supersede_args(marker, successor))
+
+        assert result['error'] == 'not_supersedable'
+        # The marker still closes the stream — the guard preserved the signal.
+        assert cmd_inbox_list(Namespace(slug=EPIC))['closed_senders'] == [SENDER]
+
 
 # =============================================================================
 # validate — the revision-monotonicity and lifecycle invariants (D2, D5d)
