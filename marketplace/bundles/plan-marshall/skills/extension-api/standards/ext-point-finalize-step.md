@@ -119,7 +119,7 @@ The three scan facts on `default:sonar-roundtrip` are already computed from the 
 
 ### Step-specific prompt-body fields (`requires_prompt_fields`)
 
-The generic dispatch contract carries five prompt-body fields — `name`, `plan_id`, `skills[]`, exactly one of `workflow`/`instructions`, and `WORKTREE` (defined by [`ext-point-execution-context-workflow.md`](ext-point-execution-context-workflow.md) § "Input Contract — what the implementor can rely on", whose `*` row is the contract-level statement that *workflow-specific runtime inputs flow through additional prompt-body fields the implementor declares in its own input table*). A finalize step that needs MORE than the five carries each extra field in its own dispatch `prompt:` block and declares it here.
+The generic dispatch contract carries five prompt-body fields — `name`, `plan_id`, `skills[]`, exactly one of `workflow`/`instructions`, and `WORKTREE`. Its authoritative statement is the dispatcher agent's prompt-body table (see [`../../agents/execution-context.md`](../../../agents/execution-context.md) § "Input — Prompt-Body Contract", whose catch-all `*` row carries the workflow-specific runtime inputs), and the ext-point contract [`ext-point-execution-context-workflow.md`](ext-point-execution-context-workflow.md) § "Input Contract — what the implementor can rely on" states the same rule in prose: *workflow-specific runtime inputs … flow through additional prompt-body fields the implementor declares in its own input table*. A finalize step that needs MORE than the five carries each extra field in its own dispatch `prompt:` block and declares it here.
 
 #### The producerless-contract gap this closes
 

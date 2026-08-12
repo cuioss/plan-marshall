@@ -196,7 +196,9 @@ they dispatch under `Task: execution-context-{level}` with the step's own SKILL.
 as the `workflow` prompt-body field. Their input contract is the 5-field
 prompt-body shape (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`) plus any
 workflow-specific runtime inputs (`--iteration`, `producer`, whitelisted
-`--session-id`). See the Execute Step Pipeline step § "DISPATCHED project/skill step" for the
+`--session-id`) and any step-specific fields the step declares in its
+`requires_prompt_fields` frontmatter (see [`../extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md)
+§ "Step-specific prompt-body fields"). See the Execute Step Pipeline step § "DISPATCHED project/skill step" for the
 dispatch shape.
 
 In both cases the step body can access the plan's context via manage-* scripts (references, status, config).

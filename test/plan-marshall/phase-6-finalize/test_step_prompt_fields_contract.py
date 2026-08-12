@@ -39,11 +39,11 @@ carriage agreement in BOTH directions, mirroring
     field a step's ``prompt:`` body carries beyond the generic contract is a
     member of that step's declaration.
 (5) *(control)* A step whose dispatch body carries only generic-contract fields
-    (``default:finalize-step-simplify``, which carries ``instructions`` — the
-    XOR-alternative to ``workflow``, a contract field, not a step-specific one)
-    is NOT flagged. A guard that rejected any dispatch carrying a sixth field
-    would break that step while passing (1)-(4); this control is what forbids
-    the over-broad fix.
+    (``default:finalize-step-simplify``, which carries ``instructions`` in place
+    of ``workflow`` — the XOR-alternative in the contract, not a step-specific
+    field) is NOT flagged. A guard that mis-classified the ``instructions``
+    alternative as a step-specific field would break that step while passing
+    (1)-(4); this control is what forbids that over-broad fix.
 
 Assertions (1)-(4) are **population-derived**: the step set comes from
 ``find_implementors()`` and the obligation from each doc's own frontmatter, so a
@@ -334,18 +334,18 @@ def test_no_undeclared_prompt_field():
 
 
 # ---------------------------------------------------------------------------
-# (5) control — the over-broad-fix guard, on a real six-field dispatch
+# (5) control — the over-broad-fix guard, on a real instructions-based dispatch
 # ---------------------------------------------------------------------------
 
 
 def test_contract_only_dispatch_is_not_flagged():
     """(5) A step carrying only generic-contract fields dispatches unchanged.
 
-    ``finalize-step-simplify`` carries a sixth field, ``instructions`` — but it
-    is the XOR-alternative to ``workflow`` in the dispatch contract, NOT a
-    step-specific field. A guard that rejected any dispatch with more than five
-    fields would break this step while passing (1)-(4); this control forbids
-    that over-broad fix.
+    ``finalize-step-simplify`` carries ``instructions`` in place of ``workflow``
+    — the XOR-alternative in the dispatch contract, NOT a step-specific field
+    (its block still has five field lines). A guard that mis-classified the
+    ``instructions`` alternative as a step-specific field would break this step
+    while passing (1)-(4); this control forbids that over-broad fix.
     """
     record = _record_for(_CONTROL_STEP)
     carried = _step_specific_fields(Path(record['path']))
