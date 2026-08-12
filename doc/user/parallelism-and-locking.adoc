@@ -10,6 +10,7 @@ xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
 
 Operating Plan Marshall with several plans in flight at once. Concurrent plans contend for two shared resources — the merge-to-`main` boundary and the build machine — and Plan Marshall serializes both with cooperative, main-anchored locks. This page covers the operator-tunable knobs (build concurrency and the PR-merge boundary), where the lock events are logged, and what to do when the build queue looks stuck. For how the locks work, see xref:../concepts/parallelism-and-locking.adoc[Concepts › Parallelism and Locking].
 
+[#knobs]
 == Knobs
 
 Three knobs govern build concurrency and stale-slot recovery.
