@@ -79,3 +79,37 @@ The re-spread target is **totals 30 / 36 / 41** (economic / balanced / high-end)
 
 **Seeded-defaults decision (`_config_defaults.py`):** the literal per-phase defaults (= old balanced = 30) are **kept at their current values** — a fresh project's cost is unchanged (out-of-scope forbids an unprompted new-project cost increase). Because those values now equal the **`economic`** preset, the "balanced-preset baseline" comments are corrected to `economic`, and a guard test asserts the seeded shape deep-equals `EffortPresets.ECONOMIC`. Net effect: a fresh project's wizard display changes `balanced → economic` with **no cost change**.
 
+## Deliverables
+
+| Deliverable | What was done | Commit | Verification |
+|---|---|---|---|
+| **D1 GATE** | All HYPOTHESIS claims re-derived (table above); 4 questions settled/escalated; STOP CONDITION lifted by operator | `4a78fdf` (report) | Mutates nothing; claim table is the artifact |
+| **D2 MIGRATION** | `LEGACY_PRESETS` registry (SHIM(A)-marked) + `EffortPresets.identify()` + `reconstruct_effort_payload()` + new `manage-config effort identify` verb (wired in `manage-config.py`) + wizard `effort-menu.md` Step 1/2 rewrite to call it. Pre-respread economic (23) / high-end (34) shapes recognised as `previous-ladder` with a re-apply offer instead of silent `custom` reclassification. Deterministic script result replaces LLM deep-equality eyeball (truthful-signals) | `3ce2258` | identify unit tests + round-trip + **genuinely-old-config** tests (both old economic & old high-end shapes) + end-to-end CLI test |
+| **D3 Apply ladder** | Three payloads re-spread to 30/36/41; module + attribute docstrings, `_DESCRIPTIONS`, and the level-5 reservation prose updated in lock-step (reservation re-anchored to the alias-gated level-6/7) | `3ce2258` | value-assertion tests updated; monotonic + spread tests green |
+| **D4 Docs** | Full population re-derived (below). Updated: `effort-roles.md` (no false value — left as-is, verified), `api-reference.md` (apply-preset success payload + new `identify` verb section + verb table), `effort-menu.md` (deterministic legacy-aware Step 1/2), `manage-config/SKILL.md` (Canonical invocations: `effort identify`), `doc/user/efforts.adoc` (preset table + **fixed false "No slot is level-5"** + identify note). `_config_defaults.py` comments balanced→economic. **Consumer script verdict:** `check-routing-decisions.py` does NOT depend on preset identity — no retrospective verdicts on past runs change (see Findings) | `3ce2258` | plugin-doctor clean; grep sweep for stale reservation prose clean |
+| **D5 Tests** | Spread assertion (30/36/41 + gaps ≥5), **seen red against the old ladder**; inverted level-5 guard (high-end must reach level-5, no preset uses level-6/7); identify unit/round-trip/legacy/CLI tests; seeded-defaults deep-equality guard | `3ce2258`, `216ebdc` | all green in `./pw verify` |
+
+### D4 derived population (re-derived across all three names + apply verb + class/module ids)
+
+**Sites that restated tier values/names and were updated (6):** `effort_presets.py`, `_config_defaults.py`, `api-reference.md`, `effort-menu.md`, `manage-config/SKILL.md`, `doc/user/efforts.adoc`. **Plus 3 test files.**
+
+**Sites in the population that needed NO change (verified, not assumed):** `effort-roles.md` (names presets + "monotonic ladder" — still true), `execution-context.adoc` (generic cross-refs only), `effort-variants.md` (level enum only), `plan-marshall/SKILL.md` / `marshall-steward/SKILL.md` / `wizard-flow.md` / `menu-configuration.md` (no name+value restatement), `manage-logging/SKILL.md` (generic "balanced preset" log example), and the two REFUTED retrospective sites (`check-routing-decisions.py`, `routing-decision-verification.md`).
+
+**Count:** derived population ≈ 15 sites naming a preset/verb; **9 files changed** (6 docs/code + 3 tests). A count of files touched is a volume, not coverage — the coverage claim is: every site restating a tier *value* was updated, and every site naming a preset was inspected and either updated or verified still-true.
+
+## Build gate
+
+`git diff --name-only origin/main...HEAD -- '*.py'` → non-empty (production + tests). Build takes its **full path**.
+
+- `./pw quality-gate` → **0 issues** (mypy production 395 files, ruff, SPDX, plugin-doctor marketplace-wide; `coverage: COMPLETE`).
+- `./pw verify` → **`=== verify: SUCCESS ===`**, **19168 passed, 14 skipped** (adds mypy(test) 713 files + whole-tree module-tests). One iteration: an initial `test-compile` surfaced 2 mypy errors in the new tests (a `no-any-return` on the dynamically-loaded handler and an `arg-type` on the deliberate malformed-input guard test), both fixed in `216ebdc`, after which verify is clean.
+
+## Findings
+
+| Source | Finding | Disposition |
+|---|---|---|
+| D1 verification | The level-5 "reservation" is prose-only: `RESERVED_LEVELS=()` empty and its comment says presets "may reference level-7" — internally contradicting the docstrings. | Fixed by the re-spread: level-5 is now a deliberate preset default; reservation prose re-anchored to the genuinely alias-gated level-6/7. Contradiction resolved. |
+| D4 consumer-script verdict | `check-routing-decisions.py` reasons about `execution_profile` **posture** and the `no_code_delta` prune predicate, **not** preset names/values (the only `economic` grep hit is substring "token-**economic**s"). | **The re-spread changes NO retrospective verdicts on past runs.** The plan's "highest-consequence unknown" is refuted with evidence. No edit needed to that script or `routing-decision-verification.md`. |
+| D1 cost disclosure | Old economic (23) → new economic (30) is a ~30% floor increase for every project on `economic`. | Disclosed to operator (Q4); operator accepted via the "Allow level-5" decision. Seeded new-project defaults kept at current values to avoid an *additional* unprompted increase. |
+| build test-compile | 2 mypy errors in new tests (no-any-return, arg-type). | Fixed in `216ebdc`; verify re-run clean. |
+
