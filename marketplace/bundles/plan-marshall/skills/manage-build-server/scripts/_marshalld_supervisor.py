@@ -76,6 +76,7 @@ from _build_result import (
 from _build_result import STATUS_SUCCESS as RESULT_STATUS_SUCCESS
 from _build_server_protocol import (
     MARSHALLD_JOB_ENV,
+    STATUS_FAILURE,
     STATUS_KILLED,
     read_log_verdict,
     status_from_result,
@@ -185,7 +186,16 @@ def _terminal_payload(
     command_str: str,
     timeout_seconds: int,
 ) -> dict[str, Any]:
-    """Render a terminal status payload reusing the _build_result shape."""
+    """Render a terminal status payload reusing the _build_result shape.
+
+    ``status`` is a WIRE status: either :func:`classify_terminal`'s own verdict
+    or, when the narrowing fired, a log verdict translated by
+    :func:`wire_status_from_result`. Every terminal wire status therefore has an
+    explicit arm here, and ``failure`` is one of them rather than the fallback —
+    a status this function does not recognise must not be rendered as a build
+    that ran and failed, which is the fold-into-a-neighbour the whole
+    non-finish separation exists to prevent.
+    """
     if status == 'timeout':
         return status_from_result(
             timeout_result(timeout_seconds, duration, log_file, command_str)
@@ -199,8 +209,19 @@ def _terminal_payload(
         )
     if status == 'success':
         return status_from_result(success_result(duration, log_file, command_str))
-    return status_from_result(
-        error_result(ERROR_BUILD_FAILED, returncode or 1, duration, log_file, command_str)
+    if status == STATUS_FAILURE:
+        return status_from_result(
+            error_result(ERROR_BUILD_FAILED, returncode or 1, duration, log_file, command_str)
+        )
+    # Unrecognised: the caller handed a status outside the terminal wire
+    # vocabulary. Report it verbatim rather than claiming a failure nobody
+    # observed — the client maps an unrecognised terminal status to
+    # ``indeterminate``, and this arm is what lets it see one.
+    return status_payload(
+        status,
+        duration_seconds=duration,
+        log_file=log_file,
+        exit_code=returncode if returncode is not None else -1,
     )
 
 

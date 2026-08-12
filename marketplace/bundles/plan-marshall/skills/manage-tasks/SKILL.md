@@ -218,10 +218,14 @@ ledger query semantics are not inline-copied here.
 - `status: stale` — the ledger has entries but none is a successful build
   against the current working-tree sha, so the gate MUST fail closed. Carries
   `worktree_sha`, `worktree_root`, `ledger_path`, and a **`reason` naming which
-  of the four routes to `stale` was taken** — plus `observed_status` (the
-  offending row's own build status) on every route but the first. The pass/fail
-  behaviour is identical on all four; what differs is the remedy, and the gate
-  must not assert a cause it did not establish:
+  of the five routes to `stale` was taken** — plus `observed_status` (the
+  offending row's own build status) whenever the row carried a readable status
+  string. `observed_status` is absent on `worktree_mutated` (no row was
+  observed) and on the `build_indeterminate` sub-case where the row carried no
+  readable `status` at all; supplying one there would mean inventing it, so its
+  absence is the honest answer and `reason` still separates the two. The
+  pass/fail behaviour is identical on all five; what differs is the remedy, and
+  the gate must not assert a cause it did not establish:
 
   | `reason` | Ledger evidence | Remedy the caller owes |
   |---|---|---|

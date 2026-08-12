@@ -53,7 +53,6 @@ from _build_execute import detect_wrapper as _detect_wrapper  # noqa: E402
 from _build_queue_slot import BuildQueueTimeout, build_queue_slot  # noqa: E402
 from _build_result import (  # noqa: E402
     ERROR_BUILD_FAILED,
-    STATUS_KILLED,
     DirectCommandResult,
     error_result,
     indeterminate_result,
@@ -61,11 +60,22 @@ from _build_result import (  # noqa: E402
     success_result,
     timeout_result,
 )
+from _build_result import STATUS_KILLED as RESULT_STATUS_KILLED  # noqa: E402
 from _build_server_protocol import (  # noqa: E402
     MARSHALLD_JOB_ENV,
     STATUS_SUCCESS,
     read_log_verdict,
 )
+from _build_server_protocol import STATUS_FAILURE as WIRE_STATUS_FAILURE  # noqa: E402
+from _build_server_protocol import STATUS_KILLED as WIRE_STATUS_KILLED  # noqa: E402
+from _build_server_protocol import STATUS_TIMEOUT as WIRE_STATUS_TIMEOUT  # noqa: E402
+
+# Two vocabularies meet in this module and their members happen to share
+# spellings, so an unqualified `STATUS_KILLED` reads as correct while silently
+# comparing a WIRE status against a _build_result constant. The aliases above
+# make each comparison state which side it is on — the same "right only by
+# accident of naming" hazard that made the explicit `killed` row necessary in
+# `_build_server_protocol._RESULT_STATUS_TO_WIRE`.
 from _build_shared import cmd_run_common  # noqa: E402
 from marketplace_paths import NO_PLAN_SENTINEL, home_root, names_real_plan  # noqa: E402
 from plan_logging import log_entry  # noqa: E402
@@ -449,9 +459,9 @@ def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> Direct
                 verdict, duration=duration, log_file=log_file, command_str=command_str
             )
         return success_result(duration, log_file, command_str)  # type: ignore[return-value]
-    if job_status == 'timeout':
+    if job_status == WIRE_STATUS_TIMEOUT:
         return timeout_result(duration, duration, log_file, command_str)  # type: ignore[return-value]
-    if job_status == STATUS_KILLED:
+    if job_status == WIRE_STATUS_KILLED:
         result = killed_result(
             exit_code=exit_code or -1,
             duration_seconds=duration,
@@ -459,12 +469,12 @@ def _daemon_result_to_direct(waited: dict[str, Any], command_str: str) -> Direct
             command=command_str,
         )
         # The daemon's own wording wins when it supplied one; killed_result's
-        # shared KILLED_MESSAGE is the fallback, so the two legs never diverge.
+        # KILLED_MESSAGE is the fallback, so the two legs never diverge.
         daemon_message = waited.get('message')
         if daemon_message:
             result['message'] = str(daemon_message)
         return result  # type: ignore[return-value]
-    if job_status == 'failure':
+    if job_status == WIRE_STATUS_FAILURE:
         return error_result(  # type: ignore[return-value]
             ERROR_BUILD_FAILED,
             exit_code or 1,
@@ -512,7 +522,7 @@ def _result_for_log_verdict(
     exit_code = verdict.exit_code
     if status == 'timeout':
         return timeout_result(duration, duration, log_file, command_str)  # type: ignore[return-value]
-    if status == STATUS_KILLED:
+    if status == RESULT_STATUS_KILLED:
         return killed_result(  # type: ignore[return-value]
             exit_code=exit_code if exit_code is not None else -1,
             duration_seconds=duration,

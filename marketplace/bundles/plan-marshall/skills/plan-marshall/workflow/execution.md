@@ -375,7 +375,17 @@ Because the `await-long-running` seam is the ONLY component permitted to backgro
 
 1. **Take the verification step(s) named in the leaf's yield** as the work list. The manifest's `phase_5.step_execution_tier` map MAY be read alongside it for context (how many orchestrator-tier steps this plan expected at compose), but it is advisory — the leaf's live-resolved verdict names the steps to run here, and a disagreement with the stamp is expected, not a defect.
 2. **Resolve and run each `orchestrator`-tier step through the [`await-long-running`](await-long-running.md) seam** — the detach-and-notify recipe owns the full acquire-slot → background (`run_in_background: true`) → wake-on-notification → state-gated clear → release flow. Resolve the canonical build via `architecture resolve --command {canonical} --audit-plan-id {plan_id}` (whole-tree; the step id `verify:{canonical}` names the canonical) and hand the resolved `executable` to the seam. The orchestrator does NOT block synchronously and does NOT run the build inline — the seam is the authoritative long-build owner.
-3. **On a green build**, re-dispatch phase-5-execute (per the dispatch block above) so the leaf resumes; the freshness gate (`pre-commit-verify-freshness`, Step 12a) now sees the `kind=build` ledger stamp the orchestrator-tier build wrote and permits the transition. **On a failing build**, route the findings through the same `verification-feedback` triage the leaf's `triage_required` path uses (§ "Verification-feedback triage").
+3. **Read the build's `status`, and branch on all of it.** The outcome is not a two-way green/red split — a build has five possible verdicts and three of them are neither:
+
+   | Build `status` | Orchestrator action |
+   |---|---|
+   | `success` | Re-dispatch phase-5-execute (per the dispatch block above) so the leaf resumes; the freshness gate (`pre-commit-verify-freshness`, Step 12a) now sees the `kind=build` ledger stamp the orchestrator-tier build wrote and permits the transition. |
+   | `error` | Route the findings through the same `verification-feedback` triage the leaf's `triage_required` path uses (§ "Verification-feedback triage"). |
+   | `timeout` | **Not a failing build.** No verdict was reported and no findings exist, so there is nothing to triage. Re-run the step once; if it recurs, treat the budget as the subject and escalate rather than re-running a third time — see `manage-run-config/standards/run-config-standard.md` § "What `timeout_seconds` actually measures". |
+   | `killed` | **Not a failing build and not a timeout** — externally killed, **not flaky, do not blind-retry.** Establish why the build was killed before dispatching anything; a re-run here is the exact response the condition forbids. |
+   | `indeterminate` | Nothing could be concluded. Do not triage (there are no findings) and do not treat it as green. Re-run once to obtain a readable verdict, and record that the first attempt produced none. |
+
+   ⛔ **Do not route a non-finish into `verification-feedback` triage.** That path exists to consume findings from a build that ran and reported them; a `timeout`, `killed`, or `indeterminate` build produces none by design, so the triage would run over an empty set and report a clean sweep — a false green assembled out of a build that never finished.
 
 This handler is the consuming half of the leaf's live `execution_tier` resolution: the leaf hands back every step whose live tier puts it outside the `per_task` slice, and the orchestrator picks it up here. The leaf never backgrounds a build; the orchestrator's `await-long-running` seam always does.
 

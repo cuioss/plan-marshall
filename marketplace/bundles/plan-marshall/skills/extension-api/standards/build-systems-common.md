@@ -138,11 +138,12 @@ An outcome that cannot be resolved to one of those is `unknown`, and `unknown` i
 **neither neighbour**: it records that the boundary could not read a verdict, which supports no
 conclusion in either direction.
 
-**Three outcome surfaces carry these conditions, and the consuming gates read them.** The table is
+**Four outcome surfaces carry these conditions, and the consuming gates read them.** The table is
 the derived consumer set — every reader of each surface, enumerated from that surface's closed import
 set (`read_entries` + `kind == build` for the ledger, `read_log_verdict` /
-`WRAPPER_CLAIMABLE_BUILD_STATUSES` for the wrapper TOON, `job_status` for the daemon wire). It is
-the list a change to the vocabulary must walk:
+`WRAPPER_CLAIMABLE_BUILD_STATUSES` for the wrapper TOON, `job_status` for the daemon wire, and every
+reference to `pre-commit-verify-freshness` for the freshness verdict). It is the list a change to the
+vocabulary must walk:
 
 | Consuming gate | Surface it reads |
 |---|---|
@@ -154,16 +155,33 @@ the list a change to the vocabulary must walk:
 | `manage-change-ledger classify-outcome` | ledger `kind=build` `status` |
 | `manage-tasks pre-commit-verify-freshness` | ledger `kind=build` `status` |
 | The agent reading the emitted build TOON | wrapper TOON `status` / `errors[]` |
+| `plan-marshall/workflow/execution.md` § Orchestrator-tier phase-5 verification | the orchestrator-tier build's `status` |
+| `phase-5-execute/SKILL.md` Step 12a | the freshness verdict's `status` + `reason` |
+| `phase-6-finalize/standards/push.md` § Freshness precondition | the freshness verdict's `status` + `reason` |
+
+**The last three are second-order and are the ones a derivation most easily misses.** They do not
+read a build status at all — two read the *freshness verdict* that a build status feeds, and one
+reads a build outcome the orchestrator (not a leaf) obtained. A consumer set derived only from
+"who reads a build `status`" omits all three, yet they are precisely the gates that *degrade*: they
+halt a phase transition, halt a push, and decide whether findings get triaged. **Derive the set
+transitively — a gate that consumes a verdict derived from the outcome is a consumer of the
+outcome.**
 
 **A gate that reads the status field is not thereby discriminating.** Every gate above reads one, so
 a list of "gates that read `status`" identifies nothing on its own — the question is whether reading
-it changes what the gate DOES. Two failure shapes are what to look for, and both have occurred here:
-a gate that reads the status and then reports a cause it did not establish (the freshness gate once
-described every refusal as a worktree mutation, including refusals caused by a kill), and a mapping
-that computes the distinction into a secondary field which the next layer rebuilds its payload
-without (the daemon's `killed` verdict once survived as `error='killed'` and was dropped at the
-renderer). **A discriminator that is read and then not acted on is worth less than an absent one,
-because it makes the gate look discriminating.**
+it changes what the gate DOES. Three failure shapes are what to look for, and all three have occurred
+here:
+
+1. **Reads the status, then reports a cause it did not establish.** The freshness gate once described
+   every refusal as a worktree mutation, including refusals caused by a kill.
+2. **Computes the distinction into a field the next layer rebuilds its payload without.** The
+   daemon's `killed` verdict once survived as `error='killed'` and was dropped at the renderer — and
+   later, the freshness gate's new `reason` reached neither of its two documented consumers.
+3. **Splits an N-way outcome two ways.** A green/red branch has no arm for a non-finish, so whichever
+   arm is the `else` silently absorbs it. The orchestrator-tier handler above did exactly this.
+
+**A discriminator that is read and then not acted on is worth less than an absent one, because it
+makes the gate look discriminating.**
 
 ### Run a long build in the foreground with an explicit 600000 ms Bash timeout — let the harness auto-background
 

@@ -180,7 +180,13 @@ def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str 
 
     Returns:
         ``(reason, message, observed_status)``. ``observed_status`` is ``None``
-        on the ``worktree_mutated`` route, where no row was observed at all.
+        on TWO routes, and the caller omits the field for both: the
+        ``worktree_mutated`` route, where no row was observed at all, and the
+        ``build_indeterminate`` sub-case where a row WAS observed but carried no
+        readable ``status`` string. Reporting a status there would mean
+        inventing one — the row's defining property is that it has none — so the
+        field's absence is itself the honest answer, and ``reason`` still
+        distinguishes the two routes.
     """
     matching = [
         entry

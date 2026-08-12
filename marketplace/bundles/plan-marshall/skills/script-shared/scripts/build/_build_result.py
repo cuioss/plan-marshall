@@ -5,18 +5,25 @@
 Shared infrastructure for build command result handling across build systems.
 Used by domain extensions (pm-dev-java, pm-dev-frontend) for consistent result formatting.
 
-A build that does not finish produces two conditions that are NOT failures and
-are NOT each other — an outer-budget ``timeout`` and an external ``killed`` — and
-each has its own constructor here. Neither is ever folded into ``error``: an
+**Five statuses, and only one of them means the build failed.** ``error`` is a
+build that RAN and reported a failure. The other three non-green values are not
+that, and are not each other:
+
+* ``timeout`` — a NON-FINISH: the build exceeded a bound this stack set.
+* ``killed`` — a NON-FINISH: the build child died by a signal nobody here sent.
+* ``indeterminate`` — the outcome could not be established at all.
+
+Each has its own constructor here, and none is ever folded into ``error``. An
 externally-killed build is not evidence that the build is broken, and presenting
 it as one manufactures a failure the build never reported.
 
 Usage:
     from build_result import (
         create_log_file, success_result, error_result, timeout_result,
-        killed_result,
+        killed_result, indeterminate_result,
         DirectCommandResult,
-        STATUS_SUCCESS, STATUS_ERROR, STATUS_TIMEOUT, STATUS_KILLED
+        STATUS_SUCCESS, STATUS_ERROR, STATUS_TIMEOUT, STATUS_KILLED,
+        STATUS_INDETERMINATE
     )
 
     # Create log file for build output, under the resolving plan's directory
@@ -56,11 +63,15 @@ class DirectCommandResult(TypedDict, total=False):
     not via the type system. This avoids needing Python 3.11+ NotRequired.
 
     Required fields (always present):
-        status: Execution outcome. ``killed`` is a NON-FINISH, distinct from
-            ``error`` (the build ran and failed) and from ``timeout`` (the
-            build exceeded its own outer budget) — see :func:`killed_result`.
-        exit_code: Process exit code (-1 for timeout/execution failure;
-            the negative ``-N`` signal code for ``killed``).
+        status: Execution outcome — one of ``success`` / ``error`` / ``timeout``
+            / ``killed`` / ``indeterminate``. Only ``error`` means the build ran
+            and failed. ``timeout`` and ``killed`` are NON-FINISHES (see
+            :func:`timeout_result`, :func:`killed_result`) and
+            ``indeterminate`` means the outcome could not be established at all
+            (:func:`indeterminate_result`); none of the three may be folded into
+            ``error`` or into each other.
+        exit_code: Process exit code (-1 for timeout / execution failure /
+            indeterminate; the negative ``-N`` signal code for ``killed``).
         duration_seconds: Actual execution time.
         log_file: Path to captured output (per R1 requirement).
         command: Full command that was executed.
@@ -69,7 +80,11 @@ class DirectCommandResult(TypedDict, total=False):
         timeout_used_seconds: Timeout that was applied.
         wrapper: Maven/Gradle/Python wrapper path used.
         command_type: npm command type ("npm" or "npx").
-        error: Error message (on error/timeout only).
+        error: Error type identifier (on error / timeout / killed /
+            indeterminate).
+        message: Operator-facing detail. Carries the no-blind-retry sentence on
+            ``killed``, and on ``indeterminate`` it is the ONLY actionable
+            content the result has — it says why nothing could be concluded.
 
     Example (success):
         {
@@ -103,8 +118,8 @@ class DirectCommandResult(TypedDict, total=False):
     timeout_used_seconds: int
     wrapper: str  # Maven/Gradle/Python: wrapper path used
     command_type: str  # npm: "npm" or "npx"
-    error: str  # Error message (on error/timeout/killed only)
-    message: str  # Operator-facing detail (on killed only)
+    error: str  # Error type id (on error/timeout/killed/indeterminate only)
+    message: str  # Operator-facing detail (on killed and indeterminate)
 
 
 # =============================================================================
@@ -168,11 +183,21 @@ ERROR_INDETERMINATE = 'indeterminate'
 """The outcome could not be determined at all — see :data:`STATUS_INDETERMINATE`."""
 
 KILLED_MESSAGE = 'externally killed — not flaky, do not blind-retry'
-"""Operator-facing detail carried by every ``killed`` result.
+"""Operator-facing detail carried by every ``killed`` result built HERE.
 
-The literal is shared with the daemon-side kill path
-(``_marshalld_supervisor`` / ``manage-change-ledger classify-outcome``) so the
-in-process and routed legs render the same sentence for the same condition.
+⚠ The sentence is **duplicated, not shared**. Three other copies exist —
+``manage-change-ledger.py`` (``_NO_BLIND_RETRY_MESSAGE``),
+``build-server-client/scripts/build_server.py`` (``_KILLED_MESSAGE``), and a
+fourth, differently-punctuated variant in the ``build_killed`` remedy text of
+``manage-tasks``' freshness gate. They agree today only because each was written
+to match; nothing enforces it, and a reader who assumes one definition will
+change one copy and leave the others.
+
+Consolidating them is a cross-skill refactor with its own import-graph
+consequences, so it is recorded here rather than done silently. What must NOT
+happen is this docstring claiming a single source of truth that does not exist:
+the whole point of the surrounding work is that a claim is checked against the
+thing it describes.
 """
 
 ERROR_EXECUTION_FAILED = 'execution_failed'

@@ -730,6 +730,13 @@ def _run_build_dispatch(tmp_path: Path, script_body: str) -> list[dict]:
         # widening what is claimable must not widen it to anything at all.
         ('status: unknown\n', 0, 'unknown'),
         ('status: totally-made-up\n', 0, 'unknown'),
+        # `indeterminate` is the wrapper-side name for "could not be
+        # determined"; the boundary derives its OWN verdict of record for that
+        # condition rather than accepting the claim, and `unknown` IS that
+        # verdict. The two names are the same condition at two layers, which is
+        # exactly why the wrapper's name is not the boundary's — pinned here so
+        # nobody "fixes" it by adding `indeterminate` to the claimable set.
+        ('status: indeterminate\n', 0, 'unknown'),
     ],
 )
 def test_build_boundary_stamps_derived_status(

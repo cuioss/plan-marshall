@@ -474,53 +474,47 @@ class TestCrossCheckPreservesTheLogVerdict:
         assert result['status'] == 'success'
 
 
-class TestDaemonNarrowingPreservesTheLogVerdict:
-    """`run_job`'s exit-0-not-sufficient narrowing must keep WHICH non-green.
+class TestVocabularyTranslationIsTotal:
+    """Every ``_build_result`` status has an explicit wire row.
 
-    Server-side mirror of the class above. The wrapper running inside the daemon
-    child exits 0 and reports its verdict in the TOON, so `classify_terminal`
-    says `success` and the narrowing decides the wire status. Hard-coding
-    `failure` there re-collapses at the daemon exactly what the wrapper
-    distinguished.
+    The daemon-side narrowing (``_marshalld_supervisor.run_job``) translates a
+    disagreeing log verdict through :func:`wire_status_from_result`, so a status
+    missing from the translation table would fall to that function's
+    pass-through and be right only by accident of spelling. The end-to-end
+    behaviour of that narrowing is pinned where it belongs — against the real
+    ``run_job`` and a real child process — in
+    ``test/plan-marshall/build-server/test_marshalld_supervisor.py``
+    (``TestRunJobNarrowingPreservesTheNonFinish``). This class covers only the
+    table's totality, which that seam depends on.
     """
 
     @staticmethod
-    def _narrow(verdict_status, exit_code=-9):
-        supervisor = load_script_module(
+    def _protocol():
+        return load_script_module(
             'plan-marshall',
-            'manage-build-server',
-            '_marshalld_supervisor.py',
-            '_marshalld_supervisor_for_non_finish',
+            'script-shared',
+            'build/_build_server_protocol.py',
+            '_build_server_protocol_for_non_finish',
         )
-        verdict = SimpleNamespace(status=verdict_status, exit_code=exit_code)
-        # Exercise the narrowing arithmetic directly: classify_terminal(0) is
-        # `success`, and the wire status is the verdict's own, translated.
-        assert supervisor.classify_terminal(0, timed_out=False) == 'success'
-        return supervisor.wire_status_from_result(verdict.status)
 
-    def test_log_killed_narrows_to_wire_killed(self):
-        assert self._narrow('killed') == 'killed'
+    @pytest.mark.parametrize(
+        ('result_status', 'wire_status'),
+        [('success', 'success'), ('error', 'failure'), ('timeout', 'timeout'), ('killed', 'killed')],
+    )
+    def test_every_status_translates_explicitly(self, result_status, wire_status):
+        protocol = self._protocol()
 
-    def test_log_timeout_narrows_to_wire_timeout(self):
-        assert self._narrow('timeout') == 'timeout'
+        assert protocol.wire_status_from_result(result_status) == wire_status
+        # Explicit row, not the pass-through: a rename must break the table
+        # rather than silently map a status onto itself.
+        assert result_status in protocol._RESULT_STATUS_TO_WIRE
 
-    # --- matched control ---------------------------------------------------
+    def test_translation_round_trips(self):
+        protocol = self._protocol()
 
-    def test_control_log_error_still_narrows_to_wire_failure(self):
-        """CONTROL: a real failure still becomes the wire `failure`."""
-        assert self._narrow('error') == 'failure'
-
-    def test_control_supervisor_own_kill_outranks_log_content(self):
-        """CONTROL: the supervisor's OWN legs are not subject to the narrowing."""
-        supervisor = load_script_module(
-            'plan-marshall',
-            'manage-build-server',
-            '_marshalld_supervisor.py',
-            '_marshalld_supervisor_for_non_finish',
-        )
-        assert supervisor.classify_terminal(-9, timed_out=False) == 'killed'
-        assert supervisor.classify_terminal(0, timed_out=True) == 'timeout'
-        assert supervisor.classify_terminal(1, timed_out=False) == 'failure'
+        for result_status in ('success', 'error', 'timeout', 'killed'):
+            wire = protocol.wire_status_from_result(result_status)
+            assert protocol.result_status_from_wire(wire) == result_status
 
 
 # ===========================================================================

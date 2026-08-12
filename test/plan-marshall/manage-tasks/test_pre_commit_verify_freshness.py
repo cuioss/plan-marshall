@@ -549,6 +549,11 @@ def test_statusless_row_reports_indeterminate_not_mutation(
 
     assert result['status'] == 'stale', result
     assert result['reason'] == 'build_indeterminate', result
+    # A row with no readable status has no status to report. Emitting one would
+    # mean inventing it, so the field's ABSENCE is the honest answer here — and
+    # `reason` still separates this from the `worktree_mutated` route, which is
+    # the distinction that actually changes the caller's remedy.
+    assert 'observed_status' not in result, result
 
 
 def test_undecidable_when_worktree_sha_unresolvable(plan_context, monkeypatch, tmp_path) -> None:
