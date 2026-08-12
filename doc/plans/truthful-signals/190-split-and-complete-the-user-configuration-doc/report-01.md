@@ -81,15 +81,17 @@ The narrow `off/standard/full` is the **deliberate, documented** writer subset �
 
 **Decision:** the set IS settleable, so D2 documents it accurately (Option A), NOT "leave undocumented". `configuration.adoc` line 247 already correctly states the override value space `off|minimal|standard|full|ask`; D2 adds a clarifying note that `set-lane` writes only `off|standard|full` (with the reason) and disambiguates the two unrelated "lane" concepts (planning lane `light`/`deep` vs. the finalize-step `lane`). The residual friction — `set-lane` rejects `minimal`/`ask`, which are valid override values — is **reported as a finding** (a code-level divergence that "belongs in its own change" per Out-of-scope), not fixed here.
 
-### D3 — Split, with pointer stubs
+### D3 — Split, with pointer stubs — DONE (commit `da1cc37`)
 
-_See D1 split boundaries. Execution status below (Findings/commits)._
+Extracted §merge-strategy + §merge-queue (the full param table, all NOTEs, and the merge-queue provisioning/eligibility/verification subsections) from `configuration.adoc` into `parallelism-and-locking.adoc` under a new `== PR merge and the merge boundary` section. No content deleted — every moved line exists at the destination. Origin stubs preserve the `[#merge-strategy]` and `[#merge-queue]` anchors and point to the destination in the demonstrated §effort-and-models stub style. The two internal `<<step-configuration>>` / `<<automated-review>>` refs in the moved content were rewritten as cross-file xrefs; the pre-push-quality-gate NOTE (about `build.map`, not merge) stayed in `configuration.adoc`.
 
-### D4 — Close the coverage gap
+### D4 — Close the coverage gap — DONE (commit `2da48a3`)
 
-_Document the UNCOVERED list above; replace the line-49 parenthetical with a `data-model.md` pointer (never a prose list); add the `build.queue` sibling cross-ref._
+- Replaced the stale line-49 parenthetical with a single pointer to `data-model.md` (no prose list — verified: the new text names zero knobs).
+- Documented the UNCOVERED knobs: new §Refinement behaviour (`confidence_threshold`, `compatibility`, `simplicity`), §Coverage — thoroughness and scope (`plan.coverage.*`), §Iteration limits (`max_iterations` ×2), §Sonar roundtrip (`touched_file_cleanup`, `do_transition`); added rows for `required_bots`/`optional_bots`/`bot_lists_provenance` (§automated-review), the four missing `system.retention.*` knobs (§retention-and-ci), `project.merge_queue_managed_externally` (§project-branch-naming); added a §Build queue cross-ref to `parallelism-and-locking.adoc#knobs` (the sibling that already documents `build.queue.*`).
+- Corrected a stale `enabled_bots` reference (line 417) to `required_bots`/`optional_bots` — `enabled_bots` is retired (`data-model.md` § review-bot participation). Beyond-diff sweep confirms no other live-doc `enabled_bots` reference survives (only the deliberate "migrated from the retired `enabled_bots`" provenance mention).
 
-### D5 — Evict meta-project content
+### D5 — Evict meta-project content — DONE (commit `2da48a3`)
 
 Sweep (`meta-project`, `sync-plugin-cache`, `deploy-target`, `target/claude`, `derived-state`) hits in `configuration.adoc`:
 - **Line 236** — "and the meta-project derived-state steps" embedded in the `minimal` posture description → the prose-embedded mention (finding 3); removed (a consumer's minimal floor has no derived-state steps).
@@ -97,9 +99,15 @@ Sweep (`meta-project`, `sync-plugin-cache`, `deploy-target`, `target/claude`, `d
 - **Line 294** — `project:finalize-step-deploy-target` used as a generic `project:` example → genericised (removes the meta-project-specific name from the consumer page).
 - **Line 509** — "a meta-project's own domain (e.g. `plan-marshall-plugin-dev`)" → **kept**: this is a legitimate use-case illustration for the `always_on` knob (relevant to any consumer who maintains a meta-project), not meta-project-only noise. Recorded as a deliberate keep.
 
-### D6 — Verification
+### D6 — Verification — in progress
 
-_Cross-reference integrity across the split (incl. from outside `doc/user/`) + documentation lint. Status below._
+Self-verification done (manual — the `ref-asciidoc` lint scripts need the absent `.plan/execute-script.py`, so the automated lint runs in CI / the merge-queue `merge_group`):
+- All 28 `[#anchor]` ids in `configuration.adoc` are unique; the 5 new ones (`refine-behaviour`, `coverage-cell`, `iteration-limits`, `sonar-roundtrip`, `build-queue`) collide with nothing.
+- Every `<<anchor>>` in `configuration.adoc` resolves to an in-file anchor (the `<<merge-strategy>>` refs resolve to the preserved stub, which points onward — the intended stub double-hop).
+- Cross-file xrefs resolve: `configuration.adoc` → `parallelism-and-locking.adoc#{merge-strategy,merge-queue,knobs}` (all three anchors added there); `parallelism-and-locking.adoc` → `configuration.adoc#{step-configuration,automatic-review}`; `marketplace-build.adoc` → `configuration.adoc#execution-profile-lane-selection`.
+- Inbound external refs (11 occurrences across 8 files under `doc/concepts/` + `doc/user/`) all target preserved anchors (`recipe-routing`, `per-envelope-packing-budget`, `build-systems`, `review-gates`, `worktrees`, `micro-lane-fast-path`) — none pointed at the extracted `#merge-strategy`/`#merge-queue`, so the extraction broke no inbound reference.
+
+Independent pre-PR verification sub-agent (Step 6) dispatched — its findings and dispositions are recorded under Findings once it returns.
 
 ## Build gate
 
