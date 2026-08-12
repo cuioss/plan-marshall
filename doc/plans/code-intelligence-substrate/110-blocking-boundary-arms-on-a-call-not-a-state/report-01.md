@@ -114,11 +114,54 @@ the direct (non-proxied) PyPI path.
 
 ## Findings
 
-_pending_
+**Pre-fix negative-control record (plan Verification requirement).** The D2 negative controls
+(`test_transition_finalize_refuses_when_actionable_finding_pending`,
+`test_archive_refuses_when_actionable_finding_pending`) fail against the pre-fix code: the independent
+verification sub-agent confirmed via `git show origin/main:_cmd_lifecycle.py` that the pre-fix module has
+zero references to `assert_finalize_findings_clean` / `blocking_findings` / `_finalize_findings_refusal`,
+so pre-fix a pending actionable finding does NOT prevent `cmd_transition --completed 6-finalize` from
+setting `current_phase='complete'` nor a no-reason `cmd_archive` from moving the directory — both return
+success. The gate exists only post-fix; the controls therefore demonstrate the change rather than pass
+vacuously.
+
+**Verification sub-agent (independent, `general-purpose`) — pass 1.** Verdict: D1 derivation sound; D2
+implemented with both consumers covered, negative control confirmed to fail pre-fix, non-vacuous,
+abandonment exemption correctly scoped; D3 both directions asserted, no false-fixed path. It found **six
+stale-claim gaps in UNTOUCHED files** (the change makes the old arming mechanism false) and **one
+over-broad gate interaction** — all recorded per-instance below with disposition:
+
+1. `workflow-integration-git/standards/worktree-handling.md` — "the phase-6-finalize orchestrator already
+   does this for the automated-review → branch-cleanup and sonar-roundtrip → next boundaries". **Fixed**
+   (commit `491ccd8`) → corrected to the real pre-merge `findings-check` example.
+2. `plan-marshall/SKILL.md` guarded-boundaries list still named the never-wired intra-finalize re-issues.
+   **Fixed** → replaced with the two real firing sites + the "5→6 is not a firing site" note.
+3. `ref-workflow-architecture/standards/findings-pipeline.md` ASCII diagram box named "6-finalize entry +
+   intra-finalize re-issues", and the prose pointed to it as "the current wiring state". **Fixed** →
+   diagram box and prose corrected (box width preserved).
+4. `plan-marshall/references/phase-handshake.md` findings-check verb doc said "intra-finalize
+   **boundaries**" / "the intra-finalize **callers**" (plural) / "advance to branch-cleanup". **Fixed** →
+   singular pre-merge caller; halt-the-merge phrasing.
+5. `plan-marshall/scripts/_handshake_commands.py` `cmd_findings_check` docstring "the two intra-finalize
+   callers". **Fixed** → pre-merge findings-check caller + composite capture.
+6. `plan-marshall/scripts/phase_handshake.py` CLI docstring "intra-finalize boundaries". **Fixed** →
+   pre-merge finalize gate.
+7. Archive-gate interaction: the no-reason `cmd_archive` gate would fire on the `planning.md` cleanup pass
+   that archives already-`complete` plans, so a legacy plan carrying a stale pending record (the pre-D3
+   residue) could be refused at cleanup. **Fixed** → gate scoped to `current_phase == '6-finalize'`, with
+   a new `test_archive_of_already_complete_plan_not_blocked_by_pending_finding` exemption test.
+
+Two minor observations the sub-agent raised were **not acted on** with reasons: (a) the run report was
+"in progress" at pass-1 time — expected, it is finalized as the last pre-merge commit; (b) the
+`--reason` help text lists `normal_completion` as an example value — a latent bypass token, but no
+production caller passes it, so it is left as-is (out of this plan's scope).
+
+Re-verification (pass 2) after the fixes was dispatched; its result is recorded in the Contract check.
+
+CI / PR-review findings: recorded after the review cycle (§ below).
 
 ## Reviewer participation
 
-_pending_
+_recorded after the review cycle_
 
 ## Cost
 
