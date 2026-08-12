@@ -121,9 +121,9 @@ The drain semantics — enumeration order, the report-never-skip rule for a malf
 
    `queue --set-row` is THE stamping mechanism. The whole-array `manage-status update-field --field plans` rewrite is reserved for `decompose`'s bulk queue seed (see [`decompose.md`](decompose.md)) and MUST NOT be used to stamp a landing — re-serializing every row to change one cell is the lost-update path `--set-row` exists to remove. Editing `status.json` by direct file access is prohibited outright (see the skill's Enforcement block).
 
-4. Reconcile `epic.md` from status.json: update the Ordered Queue row, retire queue items the landing folded in (with a decision naming what absorbed them), move resolved Open Defects out, retire satisfied Watches, and add new defects/watches the landing surfaced.
+4. Reconcile `epic.md` from status.json: the Ordered Queue table is a GENERATED block regenerated in Step 6 (⛔ **never hand-edit the rows between its markers**), so here you move the *narrative* sections the generator does not own — retire queue items the landing folded in (with a decision naming what absorbed them), move resolved Open Defects out, retire satisfied Watches, add new defects/watches the landing surfaced, and record any per-row sequencing caveat in the `### Queue annotations` zone.
 5. Check parallelization consequences: when the landing revealed that two supposedly disjoint plans collided (rebase conflicts, re-verify signals), record the overlap so the next `next`-verb pairing decision uses it.
-6. Regenerate the START-HERE block:
+6. Regenerate both derivable blocks — the START-HERE block AND the Ordered Queue table — and paste each verbatim between its own markers (`resume-summary` and `ordered-queue`):
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resume-summary \

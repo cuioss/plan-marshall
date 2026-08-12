@@ -83,7 +83,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update
 
 The `{plans_json_array}` placeholder is a complete JSON array that MUST be passed as ONE shell-safe `--value` argument — single-quote the whole payload so the shell never word-splits or glob-expands the brackets, commas, and quotes. Never interpolate the raw JSON unquoted onto the command line.
 
-Mirror the queue into `epic.md`'s Ordered Queue table (reconciliation direction is always status.json → epic.md), then regenerate the START-HERE block and paste it verbatim between the generated-block markers:
+The START-HERE block and the Ordered Queue table are both GENERATED blocks (reconciliation direction is always status.json → epic.md); ⛔ **do not hand-write the Ordered Queue table**. Regenerate both blocks and paste each verbatim between its own markers (`resume-summary` and `ordered-queue`):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resume-summary \

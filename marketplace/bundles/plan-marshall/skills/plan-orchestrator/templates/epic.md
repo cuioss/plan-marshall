@@ -39,11 +39,12 @@ and what "done" looks like at the epic level.}
 ## Ordered Queue
 
 <!-- GENERATED BLOCK — never hand-write or hand-edit the table between the markers.
-     Regenerated in place by the compact stage (orchestrator.py compact --slug {slug}),
-     which renders the derivable columns from status.json and the staged specs. Only the
-     LIVE queue is rendered here — a shipped/landed row belongs in its landing record, not
-     in the live queue. Per-row notes a reader wants to ADD go in the annotation zone below,
-     outside the markers — never inside them. -->
+     Regenerated from status.json and the staged specs: emitted as `ordered_queue` by
+     orchestrator.py resume-summary --slug {slug} (paste it verbatim after a queue change),
+     and rewritten in place by the compact stage (orchestrator.py compact --slug {slug}) at
+     cleanup. Only the LIVE queue is rendered here — a shipped/landed row belongs in its
+     landing record, not in the live queue. Per-row notes a reader wants to ADD go in the
+     annotation zone below, outside the markers — never inside them. -->
 
 <!-- BEGIN GENERATED: ordered-queue -->
 | # | Plan | Workstream | Status | Surface (expected) |

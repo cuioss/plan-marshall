@@ -15,13 +15,16 @@ operation groups against the main-anchored orchestrator store
   or set one result field (:data:`PLAN_ROW_FIELDS`) of one plan row. Both
   write forms mutate the located row inside the shared ``rmw_json``
   critical section, so no unsynchronised whole-array rewrite remains.
-- ``resume-summary --slug S`` — generate the "START HERE" block from
-  ``status.json`` (the machine authority) for the LLM to paste into
-  ``epic.md`` between the generated-block markers. Two detectors run on the
-  RENDERED block and ride the same payload: ``count_divergences[]`` (a claimed
-  count that does not match its derivation) and ``contradictions[]`` (two
-  mutually-exclusive claims inside one rendering). Both report and neither
-  rewrites.
+- ``resume-summary --slug S`` — generate the two derivable ``epic.md`` blocks
+  from ``status.json`` (the machine authority) and the filesystem for the LLM to
+  paste between their generated-block markers: the ``summary`` (START-HERE) block
+  and the ``ordered_queue`` (Ordered Queue table) block. This is the lightweight
+  render path a reconciling verb calls after a queue change; ``compact`` rewrites
+  the SAME two blocks in place at ``cleanup``, sharing these renderers. Two
+  detectors run on the RENDERED START-HERE block and ride the same payload:
+  ``count_divergences[]`` (a claimed count that does not match its derivation)
+  and ``contradictions[]`` (two mutually-exclusive claims inside one rendering).
+  Both report and neither rewrites.
 - ``archive --slug S`` — relocate a *closed* epic tree to
   ``.plan/local/archived-orchestrators/{slug}/`` (a mechanical, post-close
   directory move that requires no judgement; refuses a non-closed epic).
@@ -810,12 +813,18 @@ def _rendering_contradictions(summary: str) -> tuple[list[dict[str, Any]], int]:
 
 
 def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
-    """Generate the START-HERE block from status.json.
+    """Generate the two derivable ``epic.md`` blocks from status.json.
 
-    The returned ``summary`` field is the markdown block the LLM pastes
-    verbatim between the ``BEGIN/END GENERATED: resume-summary`` markers in
-    ``epic.md``. It is derived purely from ``status.json`` — the machine
-    authority — never from the prose already in ``epic.md``.
+    The returned ``summary`` field is the START-HERE block, and ``ordered_queue``
+    is the Ordered Queue table body — both markdown the LLM pastes verbatim
+    between their respective ``BEGIN/END GENERATED`` markers (``resume-summary``
+    and ``ordered-queue``). Both are derived purely from ``status.json`` — the
+    machine authority — and the filesystem, never from the prose already in
+    ``epic.md``. This is the LIGHTWEIGHT render path a reconciling verb
+    (``decompose``, ``analyze``, ``lessons``) calls after a queue change; the
+    ``compact`` stage rewrites the SAME two blocks in place at ``cleanup``, so a
+    routine reconciliation keeps both derivable surfaces truthful without a full
+    compaction, and the two paths share the renderers rather than duplicating them.
 
     The inbox counts are the one part NOT read out of ``status.json``: they are
     derived at render time from the epic's ``inbox/`` directory via
@@ -824,10 +833,10 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
     ride the payload as top-level fields so a caller can reconcile them against
     ``inbox list`` without parsing the markdown block.
 
-    Two detectors run on the RENDERED block and ride the same payload beside
-    ``summary``: ``count_divergences[]`` (a count the block claims that does not
-    match its derivation from ``status.json``) and ``contradictions[]`` (two
-    mutually-exclusive claims inside one rendering). Both REPORT and neither
+    Two detectors run on the RENDERED START-HERE block and ride the same payload
+    beside ``summary``: ``count_divergences[]`` (a count the block claims that
+    does not match its derivation from ``status.json``) and ``contradictions[]``
+    (two mutually-exclusive claims inside one rendering). Both REPORT and neither
     mutates — the block is never silently rewritten, which preserves the
     existing derivation-beside-the-prose rule. Each list rides with the
     population it was computed over, so a zero states which zero it is.
@@ -840,8 +849,10 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
         return _error(
             args.slug, 'file_not_found', 'status.json not found in orchestrator store'
         )
-    counts = inbox_counts(_epic_root(args.slug, allow_archived=True) / INBOX_SUBDIR)
+    root = _epic_root(args.slug, allow_archived=True)
+    counts = inbox_counts(root / INBOX_SUBDIR)
     summary = _build_summary(status_doc, counts)
+    ordered_queue = _build_ordered_queue(status_doc, root)
     divergences, count_claims_scanned = _count_divergences(summary, status_doc)
     contradictions, ratio_claims_scanned = _rendering_contradictions(summary)
     return {
@@ -859,6 +870,7 @@ def cmd_resume_summary(args: argparse.Namespace) -> dict[str, Any]:
         'contradictions_count': len(contradictions),
         'contradictions': contradictions,
         'summary': summary,
+        'ordered_queue': ordered_queue,
     }
 
 
@@ -1861,10 +1873,9 @@ def _worktree_signal() -> dict[str, Any]:
 def _registry_parity_signal() -> dict[str, Any]:
     """The one arm whose surface this component does not own.
 
-    Reported in the same three-part shape the ledger-compaction stage uses for
-    an unowned surface — the field is present, its value is ``not_available``,
-    and it names the spec that owns the surface — so the report carries ONE
-    convention for "a real signal this component does not own" rather than two.
+    Reported in a three-part unowned-surface shape — the field is present, its
+    value is ``not_available``, and it names the spec that owns the surface — so
+    a real signal this component does not own is disclosed rather than dropped.
     Being outside :data:`READINESS_ORDER`, it never reaches the floor.
     """
     return _signal(
@@ -2069,6 +2080,12 @@ def _invariant_no_terminal_in_live_queue(queue_body: str) -> dict[str, Any]:
     the renderer excludes terminal rows by construction, and this reads the
     emitted Status column back to prove none leaked. Data rows are the ones whose
     first cell is the position integer.
+
+    It checks the freshly-BUILT body, not the on-disk table. When the
+    ``ordered-queue`` markers are absent, that body is never written, so this
+    verdict speaks to what the renderer WOULD emit — the block's actual absence
+    is surfaced separately as that block's ``markers_absent`` outcome, so the two
+    signals together are not misleading.
     """
     statuses: list[str] = []
     for line in queue_body.split('\n'):
@@ -2257,6 +2274,7 @@ def cmd_compact(args: argparse.Namespace) -> dict[str, Any]:
         _invariant_no_terminal_in_live_queue(bodies['ordered-queue']),
         _invariant_pointers_reachable(text, root),
     ]
+    abstained = _abstained_sections(original)
     return {
         'status': 'success',
         'operation': 'compact',
@@ -2267,8 +2285,8 @@ def cmd_compact(args: argparse.Namespace) -> dict[str, Any]:
         'regenerated_count': sum(1 for row in regenerated if row['outcome'] == 'regenerated'),
         'regenerated': regenerated,
         'invariants': invariants,
-        'abstained_count': len(_abstained_sections(original)),
-        'abstained': _abstained_sections(original),
+        'abstained_count': len(abstained),
+        'abstained': abstained,
     }
 
 
