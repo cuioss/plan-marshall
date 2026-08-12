@@ -1035,11 +1035,12 @@ FOR each step_id in manifest.phase_6.steps:
   5c. Record dispatch-boundary row for the just-returned step (per-step, only when 5b also ran):
       Apply the SAME gate as 5b — fire only when the step ran as a Task agent and did NOT time out. Every step classified under [`standards/dispatch-inline-split.md`](standards/dispatch-inline-split.md) § "Inline steps" — the single source of truth for inline membership, not re-listed here — skips this call uniformly, mirroring the 5b gate. The call fires per-step — once for each dispatched finalize step return — NOT once per phase entry.
 
-      Classify the step's return into exactly one of the four phase-6-finalize termination causes:
+      Classify the step's return into exactly one of the five phase-6-finalize termination causes:
 
       | Cause | Detection rule |
       |-------|----------------|
       | `step_complete` | The dispatched step returned cleanly (its `mark-step-done` call recorded `outcome: done`). |
+      | `returned_with_findings` | The dispatched step returned findings and signalled a loop-back (its `mark-step-done` call recorded `outcome: loop_back`, carrying a `loop_back_target`). This is a PRODUCTIVE non-completion, NOT an error: the step examined its surface and filed findings, and those findings send control back to an upstream phase (admitted at item 7b). Stamp this cause — never `error` — so a findings-bearing loop-back stays distinguishable from a fatal failure in the ledger. |
       | `blocked_user_review` | The dispatched step raised an `AskUserQuestion` review gate that halted dispatch (e.g., branch-cleanup confirmation, or a `plan-marshall:automatic-review` `escalate_ask{reason: re_review_timeout}` return whose `ask` policy made the dispatcher fire the re-review-timeout `AskUserQuestion` — see item 7a). |
       | `blocked_session_restart` | The dispatch was cut short by a session restart, harness cancellation, or the per-agent timeout budget firing (timeout block at item 5 above). |
       | `error` | The dispatched step's `mark-step-done` call recorded `outcome: failed`. |
@@ -1049,7 +1050,7 @@ FOR each step_id in manifest.phase_6.steps:
       Forward the `<usage>` totals captured by 5b (total_tokens, tool_uses, duration_ms):
 
          python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics record-dispatch-boundary \
-           --plan-id {plan_id} --phase 6-finalize --termination-cause {step_complete|blocked_user_review|blocked_session_restart|error} \
+           --plan-id {plan_id} --phase 6-finalize --termination-cause {step_complete|returned_with_findings|blocked_user_review|blocked_session_restart|error} \
            --total-tokens {total_tokens} --tool-uses {tool_uses} --duration-ms {duration_ms}
 
       The accumulating artifact at `work/metrics-dispatch-boundaries-6-finalize.toon` is the per-step audit trail that `plan-retrospective` correlates with finalize-step `[STEP]` log coverage; the same shape as the phase-5-execute boundary artifact, generalised to per-phase keying.
