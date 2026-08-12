@@ -706,7 +706,17 @@ def cmd_pr_merge_queue(args: argparse.Namespace) -> dict:
     if returncode != 0:
         stderr_text = stderr.strip()
         if _is_auth_scope_error(stderr_text) or 'http 404' in stderr_text.lower():
-            return make_error('pr_merge_queue', _MERGE_TRAIN_INELIGIBLE_HINT, stderr_text)
+            # Name the alternative ROUTED verb, not only the eligibility hint: a
+            # reader who cannot enable merge trains must be led to the correct next
+            # verb (a boundary), never left at a dead end (a wall). Mirrors the
+            # GitHub cmd_pr_merge_queue refusal, which also offers the safe-merge path.
+            return make_error(
+                'pr_merge_queue',
+                f'{_MERGE_TRAIN_INELIGIBLE_HINT} To merge this MR now instead, disable the '
+                "plan's use_merge_queue step param (via /marshall-steward) and merge via "
+                '"ci pr safe-merge".',
+                stderr_text,
+            )
         return make_error('pr_merge_queue', f'Failed to enqueue MR {iid} onto the merge train', stderr_text)
 
     # Best-effort parse of the returned merge-train car for the position/id.

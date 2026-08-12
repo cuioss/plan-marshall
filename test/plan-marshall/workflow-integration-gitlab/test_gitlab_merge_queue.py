@@ -79,6 +79,10 @@ def test_cmd_pr_merge_queue_ineligible_on_403(monkeypatch):
     assert result['operation'] == 'pr_merge_queue'
     message = ' '.join(str(v) for v in result.values()).lower()
     assert 'merge train' in message
+    # A boundary, not a wall: the refusal must also name the alternative routed
+    # verb so a reader who cannot enable merge trains is led to the correct next
+    # verb rather than left at a dead end.
+    assert 'safe-merge' in message
 
 
 def test_cmd_pr_merge_queue_ineligible_on_404(monkeypatch):

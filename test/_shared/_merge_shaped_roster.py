@@ -1,11 +1,20 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared derivation of the merge-shaped ``ci pr`` verb population.
 
-The single implementation of the merge-shaped verb-set derivation, so every
-suite that reasons about that population reads an **identical** set rather than
-each maintaining its own copy that can silently drift out of step — the same
-single-source discipline :mod:`_dispatch_roster` applies to the phase-6-finalize
-roster sections.
+The designated single source for the merge-shaped verb-set derivation, following
+the single-source discipline :mod:`_dispatch_roster` applies to the
+phase-6-finalize roster sections — a suite that reasons about this population
+imports the derivation here rather than maintaining its own copy that can
+silently drift out of step.
+
+The behavioural off-routing suite
+(``test_merge_shaped_offrouting_refusal.py``) is the consumer that reads its
+population from here. The pre-existing first-instance source-guard
+(``test/plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing.py``)
+still carries its OWN registry derivation with byte-identical regexes; the two
+derive the same 8-member population today, and consolidating that guard onto this
+helper is a follow-up recorded in the plan's run report, not done here so the
+first-instance reference apparatus is left intact.
 
 The population is the closed set the plan
 ``060-a-prose-routing-table-is-not-an-enforcement-boundary`` derived: the

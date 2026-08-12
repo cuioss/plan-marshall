@@ -55,23 +55,27 @@ The routing decision (`use_merge_queue`) is instrumented at every consumption si
 
 Two artifacts:
 
-- **`test/_shared/_merge_shaped_roster.py`** — the single-source derivation of the merge-shaped population from each provider's `handlers: HandlerMap` registry literal (the `_dispatch_roster.py` shared-single-source pattern D3(c) names). Pure functions over the module source text; path resolution is the caller's job. It uses the identical registry regexes as the first-instance source-guard (`test_branch_cleanup_merge_queue_routing.py`), so the two suites derive the SAME 8-member population — source-completeness (that guard) and behavioural-completeness (this one) are the same population viewed differently, over one derivation.
+- **`test/_shared/_merge_shaped_roster.py`** — the designated single-source derivation of the merge-shaped population from each provider's `handlers: HandlerMap` registry literal (the `_dispatch_roster.py` shared-single-source pattern D3(c) names). Pure functions over the module source text; path resolution is the caller's job. The behavioural suite reads its population from here. It uses registry regexes byte-identical to the first-instance source-guard (`test_branch_cleanup_merge_queue_routing.py`), which still carries its own copy; the two derive the same 8-member population today — source-completeness (that guard) and behavioural-completeness (this one) are the same population viewed differently. Migrating the source-guard onto this helper is a recorded follow-up (see Findings F1 / Residue), not done here so the first-instance reference apparatus is left intact.
 - **`test/plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal.py`** — the population-complete BEHAVIOURAL guard (18 tests):
   - `test_merge_shaped_population_is_derived_nonempty_and_sized` — asserts the derived population is non-empty FIRST, then `== 8` (4 verbs × 2 providers), 4-per-provider; the size is published in every failure message (distinguishes a passing run from an empty one).
   - `test_every_derived_member_has_an_offrouting_scenario` — a new merge-shaped verb added to a registry without an off-routing scenario fails here rather than being silently skipped.
   - `test_offrouting_dispatch_is_refused_at_the_callee` (parametrized over all 8 members) — dispatches each member off-routing and asserts the callee refuses (`status: error`), except `auto-merge` (the sanctioned exception), which must self-route to the enqueue and report `disposition: enqueued` with NO `merged` key.
   - `test_compliant_route_succeeds` (parametrized over all 8) — the compliant dispatch of every member still succeeds (`merged`/`enqueued`/`disposition: enabled`), so the guard is a boundary, not a wall.
 
-**Proven falsifiable by mutation (Verification requirement).** Two mutations were run and reverted (via `git checkout`), each producing exactly the incident shape — a false `merged: true` off-routing:
+**Proven falsifiable by mutation (Verification requirement).** Four mutations were run and reverted (via `git checkout`), covering all three off-routing scenario classes across both providers. In every run the mutated member's off-routing test went red while the other seven stayed green — the guard discriminates a guarded handler from a gutted one:
 
-| Mutation | Member test that failed | Observed result under mutant |
-|---|---|---|
-| Neutralize `_refuse_on_required_merge_queue` guard in GitHub `cmd_pr_merge` | `test_offrouting_dispatch_is_refused_at_the_callee[github:merge]` | `{'status':'success', ..., 'merged': True, 'merge_corroboration':'state=MERGED, ...'}` |
-| Neutralize `_refuse_on_required_merge_train` guard in GitLab `cmd_pr_merge` | `test_offrouting_dispatch_is_refused_at_the_callee[gitlab:merge]` | `{'status':'success', ..., 'merged': True, 'merge_corroboration':'state=merged'}` |
+| # | Scenario class | Mutation | Failing member | Observed result under mutant |
+|---|---|---|---|---|
+| 1 | refuse_immediate | Neutralize `_refuse_on_required_merge_queue` in GitHub `cmd_pr_merge` | `[github:merge]` | `{'status':'success', ..., 'merged': True, 'merge_corroboration':'state=MERGED, ...'}` |
+| 2 | refuse_immediate | Neutralize `_refuse_on_required_merge_train` in GitLab `cmd_pr_merge` | `[gitlab:merge]` | `{'status':'success', ..., 'merged': True, 'merge_corroboration':'state=merged'}` |
+| 3 | refuse_unconfigured | Neutralize the `discriminator != CONFIGURED` refusal in GitHub `cmd_pr_merge_queue` | `[github:merge-queue]` | success/`enqueued` off-routing instead of the refusal |
+| 4 | report_disposition | Hardcode `disposition = 'enabled'` (drop the probe-derived value) in GitHub `cmd_pr_auto_merge` | `[github:auto-merge]` | `disposition: 'enabled'` on a queued base instead of `'enqueued'` |
 
-In each mutation run, the mutated member's off-routing test went red while the other 7 stayed green — the guard discriminates a guarded handler from a gutted one, per provider. The population arm's falsifiability is structural: shrink the derived set and the size assertion fails; add an unclassified verb and the scenario arm fails.
+`safe-merge` is the same `refuse_immediate` class as `merge` (its guard is the same `_refuse_on_required_merge_*` preflight, run before it delegates), and GitLab's `merge-queue`/`auto-merge` mirror GitHub's, so mutations 1–4 exercise the falsifiability of every class on both providers. The population arm's falsifiability is structural (shrink the derived set → size assertion fails; add an unclassified verb → scenario arm fails).
 
-*Done:* all three arms hold on the live tree (18 passed); the population size (8) appears in the test's own output; every member covered; falsifiability proven by mutation.
+`test_compliant_route_succeeds` is an honest **regression lock**, not a mutation-falsified check: it passes both pre- and post-mutation (a guard neutralization does not stop the compliant route succeeding). Its purpose is the D3(b) obligation — proving the guard is a boundary, not a wall — and it would go red if a guard OVER-refused a compliant dispatch.
+
+*Done:* all three arms hold on the live tree (18 passed); the population size (8) appears in the test's own output; every member covered; the off-routing refusal arm proven falsifiable by mutation across all three scenario classes and both providers.
 
 ## Build gate
 
@@ -79,7 +83,15 @@ In each mutation run, the mutated member's off-routing test went red while the o
 
 ## Findings
 
-_Filled as the run proceeds._
+**Pre-PR verification sub-agent (Task tool, `general-purpose`, read-only).** It independently re-derived the 8-member population from both `handlers: HandlerMap` literals, traced all 8 handler bodies and their guard chains, confirmed the monkeypatch indirection is real and that every off-routing refusal is caused by the queue/train guard (not an incidental missing-arg/auth error — `_resolve_pr_identifier`/`_resolve_mr_iid` return `str(pr_number)` with no network call, and `check_auth` is stubbed OK), cold-read all four refusal messages, and confirmed no vacuous-pass stub. **Verdict: no blocking defect; D0–D3 substantively satisfied.** Three minor findings, all dispositioned:
+
+- **F1 (fixed).** The shared helper's "single-source" docstring (and a report line) overstated: the pre-existing source-guard `test_branch_cleanup_merge_queue_routing.py` still carries its own byte-identical derivation, so two copies exist. **Disposition:** softened the helper docstring and the report to state it is the single source for the behavioural suite and that the source-guard's identical copy is a recorded consolidation follow-up — leaving the first-instance reference apparatus intact per D1's "do not re-do it." (Consolidating the two onto the helper is Residue.)
+
+- **F2 (fixed).** The mutation evidence originally measured only 2 of the 3 off-routing scenario classes, and filed the compliant-route regression lock under "proven falsifiable by mutation" without the honest passes-pre-and-post distinction. **Disposition:** ran two further mutations (`github:merge-queue`, `github:auto-merge`) so all three scenario classes are measured across both providers, and corrected the report to label the compliant arm a regression lock (see Build gate / D3 mutation table).
+
+- **F3 (fixed — cold-read of the refusal message, plan Verification ⭐).** The cold-read of all four refusal messages found three were boundaries (they name the correct routed verb — GitHub `_refuse_on_required_merge_queue` → `ci pr merge-queue`; GitHub `cmd_pr_merge_queue` → `ci pr safe-merge`; GitLab `_refuse_on_required_merge_train` → `ci pr merge-queue`) but **GitLab `cmd_pr_merge_queue`'s ineligible refusal was a wall**: it explained the Premium/Ultimate merge-train requirement but named no alternative routed verb, unlike its GitHub sibling. A reader who enqueued and cannot enable trains was left without the correct next verb. **Disposition:** fixed at the call site — the ineligible refusal now also names "disable `use_merge_queue` … and merge via `ci pr safe-merge`", mirroring GitHub, and a `test_gitlab_merge_queue.py` assertion locks that the message names `safe-merge`. This is a refusal-message parity fix, NOT a re-implementation of the guard (the guard is unchanged); it directly serves the plan's boundary-not-wall thesis, which the mandated cold-read exists to enforce. The shared `_MERGE_TRAIN_INELIGIBLE_HINT` constant (also used by `repo merge-queue enable`) was left unchanged; the remedy was added only at the merge dispatch site.
+
+**CI / automated review:** recorded under Reviewer participation once the PR is open.
 
 ## Reviewer participation
 
