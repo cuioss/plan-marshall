@@ -1695,6 +1695,42 @@ def test_post_responses_count_responded_names_this_rounds_transmits(plan_context
     assert set(already) == set(prior)
 
 
+def test_post_responses_thread_reply_path_is_idempotent_across_rounds(plan_context, monkeypatch):
+    """The thread-reply branch stamps and honours the ``responded`` marker too.
+
+    The (a)/(b)/(c) tests exercise the batched path; this one covers the
+    thread-bearing branch, where the marker is stamped after a successful
+    reply-then-resolve. A second pass over the unchanged disposition must skip it
+    and issue NO further GraphQL mutations — otherwise the reviewer's thread is
+    re-replied and re-resolved on every round.
+    """
+    plan_id = 'gh-pr-respond-thread-idempotent'
+    monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
+    mutations = []
+
+    def _run_graphql(query, variables):
+        mutations.append((query, variables))
+        return (0, {}, '')
+
+    monkeypatch.setattr(github_pr._github, 'run_graphql', _run_graphql)
+
+    hash_id = _stage_respondable(
+        plan_id, pr_number=405, comment_id='ti', thread_id='PRRT_IDEM', resolution_detail='Fixed in TASK-9.', kind='inline'
+    )
+
+    first = _run_post_responses(405, plan_id)
+    assert first['count_responded'] == 1
+    assert len(mutations) == 2  # thread-reply + resolve-thread
+
+    second = _run_post_responses(405, plan_id)
+    assert second['count_responded'] == 0
+    assert [entry for entry in second['skipped'] if entry['reason'] == 'already responded'] == [
+        {'hash_id': hash_id, 'reason': 'already responded'}
+    ]
+    # No further GraphQL traffic — the thread was not re-replied or re-resolved.
+    assert len(mutations) == 2
+
+
 # =============================================================================
 # bot_completion — per-bot check-run completion read
 # =============================================================================

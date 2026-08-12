@@ -513,12 +513,24 @@ def resolve_findings_by_type(
         if r.get('type') in type_set and r.get('resolution') == from_resolution
     ]
 
-    updates: dict[str, Any] = {'resolution': to_resolution}
+    base_updates: dict[str, Any] = {'resolution': to_resolution}
     if detail:
-        updates['resolution_detail'] = detail
+        base_updates['resolution_detail'] = detail
+    # A bulk resolve re-decides dispositions just as ``resolve_finding`` does, so it
+    # must invalidate a stale provider-transmission marker on the SAME terms — the
+    # ``(finding, disposition)`` idempotency key must hold no matter which resolve
+    # entry point re-decided the finding. ``resolution`` changes uniformly (matched
+    # records all carry ``from_resolution``); the reply body is compared per record.
+    resolution_changed = to_resolution != from_resolution
     resolved_hash_ids: list[str] = []
     for record in matched:
         hash_id = record['hash_id']
+        updates = dict(base_updates)
+        if record.get('responded'):
+            detail_changed = bool(detail) and record.get('resolution_detail') != detail
+            if resolution_changed or detail_changed:
+                updates['responded'] = False
+                updates['responded_at'] = None
         path = get_findings_path(plan_id, record['type'])
         if update_jsonl(path, hash_id, updates):
             resolved_hash_ids.append(hash_id)
