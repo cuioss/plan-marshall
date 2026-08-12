@@ -1,6 +1,6 @@
 # Run report — 240-deep-lane-bought-by-one-signal (run 01)
 
-**Date (UTC):** 2026-08-12    **Branch:** `claude/deep-lane-one-signal-5qyh5k` (harness-assigned)    **PR:** [#1188](https://github.com/cuioss/plan-marshall/pull/1188)    **Outcome:** _in progress (review cycle)_
+**Date (UTC):** 2026-08-12    **Branch:** `claude/deep-lane-one-signal-5qyh5k` (harness-assigned)    **PR:** [#1188](https://github.com/cuioss/plan-marshall/pull/1188)    **Outcome:** completed (conditions 1–3 met; auto-merge armed SQUASH; landing delegated to the merge queue)
 
 ## Skills loaded
 
@@ -176,20 +176,69 @@ Expected reviewer population, derived from the `author_login` of each
 
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
-| `cuioss-review-bot` | _pending PR_ | — |
-| `coderabbitai` | _pending PR_ | — |
-| `sourcery-ai` | _pending PR_ | — |
+| `cuioss-review-bot` | `reviewed` | Published a "PR Reviewer Guide" over the diff (issue-comment surface): "PR contains tests / No security concerns identified / No major issues detected." A clean review — no actionable findings. |
+| `coderabbitai` | `rate-limited` | Published only a quota notice (issue-comment surface): "Review limit reached… Next review available in 28 minutes." Engaged, did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Published only a quota notice (**review-summary body surface — `get_reviews`, not `get_comments`**): "you have reached your weekly rate limit of 500000 diff characters." Did not review this diff. |
 
-Coverage and the Step 8 shortfall disclosure to be filled after the review cycle.
+**Coverage: 1 of 3** — `cuioss-review-bot` reviewed (clean); `coderabbitai` rate-limited (window reopens
+~28 min); `sourcery-ai` rate-limited (weekly quota). **Step 8 shortfall disclosure fired:** stated in
+words to the operator before arming auto-merge (below). Rate limits are routine and outside our
+control — a disclosure, not a merge block (§ Step 8 condition 4). No inline review threads existed on
+any surface; no actionable comment required a fix or reply.
+
+Reading all three surfaces was load-bearing: `sourcery-ai`'s notice lived **only** in the
+review-summary body (`get_reviews`), which the issue-comment read (`get_comments`) does not fold in — a
+run that skipped `get_reviews` would have recorded `sourcery-ai` as `silent` instead of `rate-limited`.
 
 ## Cost
-_pending_
+
+- **Tokens:** not available to the agent in this session — the Claude Code cloud harness does not surface
+  a per-run token count to the running agent, so no figure is reported rather than a guessed one.
+- **Wall-clock:** ~20 min of active work (PR #1188 created 2026-08-12T18:01:51Z; merge gate reached
+  ~18:20Z), plus one `./pw verify` (~7 min) and CI (~13 min) that overlap the agent's own turns.
+  Source: PR/commit timestamps and the local `./pw verify` duration line (431s).
+- **Population:** this single Claude Code cloud session's own activity. ⛔ **NOT comparable** to a
+  plan-marshall `metrics.toon` total: that counts an orchestrator-plus-agent dispatch tree under
+  plan-marshall's per-task billing boundary, which a single interactive cloud session does not share.
+  The two figures cannot be made comparable, so none is presented as if they were.
 
 ## Contract check (Step 9)
-_pending_
+
+Re-read the `cloud-plan-lane` skill; each step checked against what actually happened and its artifact
+confirmed on disk.
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | done | Named in § Skills loaded; all via the bundle-path route (plugin not installed). |
+| 2 Branch | done | `claude/deep-lane-one-signal-5qyh5k` (harness-assigned) exists on `origin`; pushed before any edit. |
+| 3 Plan directory | done | `…/240-…/plan.md` exists; opens with the ⛔ first-instruction block (verified at read). |
+| 4 Implement | done | Commits carry the `Co-Authored-By: Claude` trailer; D0–D3 addressed. |
+| 4 Per-commit gate | done | Every `*.py`-touching commit was preceded by a clean `./pw quality-gate` (`issues[0]`, coverage COMPLETE). |
+| 4 Pushed | done | No unpushed commit (verified `git status -sb` before the merge gate). |
+| 5 Build gate | done | Python changed → `./pw verify` SUCCESS (19243 passed, 14 skipped); recorded in § Build gate. |
+| 6 Verification sub-agent | done | Dispatched (general-purpose, read-only); 3 doc nits found, all fixed and re-verified; no correctness defects. § Findings. |
+| 7 PR cycle | done | PR #1188; all three comment surfaces read; every comment dispositioned (no actionable findings). |
+| 8 Merge gate | conditions 1–3 met | verify/conclusion success + `mergeable_state: unstable` (required contexts satisfied); no open comments; report finalized+pushed as the last pre-merge commit; then auto-merge armed (SQUASH). Landing confirmation recorded to the operator. |
+| 8 Bridge | done | No status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; report carries PR # and per-deliverable outcome. |
+| 9 This check | done | This table. |
+| 9 What have we learned | done | Below. |
+
+GitHub access path: **GitHub MCP server** (the cloud path). Branch form: **harness-assigned**
+(`claude/*`). A `/sync-plugin-cache` is **not owed** — it is a machine-local build step a cloud run
+never performs or records (§ Scope and precedence).
 
 ## What have we learned (Step 9)
-_pending_
+
+**None proposed.** The run exercised the contract end to end and every step's artifact was produced as
+written; no step was ambiguous in practice, none failed in this environment, and no command behaved
+differently than the contract describes. The one friction — `send_later` returned "requires approval",
+so no unattended self-wake was possible — is already covered by the contract: § Step 8 names
+manual read-polling for a still-active session as the in-session alternative, and it worked exactly as
+described (the read surface `pull_request_read` is not gated, so the whole CI/review/merge gate was
+driven by on-demand reads). The three-surface comment read and the registry-derived reviewer
+population both behaved as the contract promises — `sourcery-ai`'s rate-limit notice lived only in
+`get_reviews`, precisely the false-clean trap § Step 7 warns about. Nothing this run produced is
+evidence of a contract gap, so no amendment is proposed (a speculative improvement is not a proposal).
 
 ## Residue
 
