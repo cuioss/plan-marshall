@@ -147,10 +147,37 @@ and the new test file). Build takes its full path.
   paths were staged explicitly (never `git add -A`).
 
 ## Findings
-_pending_
+
+**Step 6 pre-PR verification sub-agent (general-purpose, read-only).** Verdict: implementation
+satisfies D0–D3; no blockers, no correctness defects. It independently substantiated each deliverable
+against the source (not the report), and surfaced one reinforcing insight: **S1's firing condition is a
+strict subset of S5's** (`s1_deep ⟹ s5_deep`), so resolving `plan_source` (dropping S1 from `fired`)
+can never change the lane — S5 co-fires in exactly the same cases. That makes the D3b bridge
+provably lane-neutral, which is the intended property.
+
+| # | Source | Finding | Disposition |
+|---|--------|---------|-------------|
+| 1 | sub-agent | Nit — SKILL.md Scripts-table row for `planning-lane route` still described the decision-log line as naming only signal values / predicate / posture / `scope_provenance`, omitting the new `confidence` and `suppressed_signals` (the parallel `**route**` bullet WAS updated). | **Fixed** (commit `a80ae4c`) — row now names both. |
+| 2 | sub-agent | Nit — module-docstring S1 row listed the source as only `status.metadata.plan_source`, omitting the `request.md` provenance-header fallback (the SKILL.md S1 row WAS updated). | **Fixed** (commit `a80ae4c`) — row now names `_resolve_orchestrator_plan_source`. |
+| — | sub-agent | Observations, not defects: `manage-status.py:679` argparse help ("any deep-precondition signal forces deep") was already an approximation before this change (the carve-out already made it non-literal); D3(d)'s pre-fix red was a missing-key KeyError, which is the correct control property (its lane assertion is stable across the fix); the plan's prose "1-of-4 resolved" is looser than the code's precise 3-resolved/4-null. | Recorded; no action. |
+
+Both findings were doc-consistency gaps I introduced by updating one of a pair of parallel descriptions;
+both fixed and re-verified. CI/PR-review findings appended below as they arrive.
 
 ## Reviewer participation
-_pending_
+
+Expected reviewer population, derived from the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(cross-named by `.github/workflows/pr-agent.yml`): **`cuioss-review-bot`** (pr-agent.md),
+**`coderabbitai`** (coderabbit.md), **`sourcery-ai`** (sourcery.md).
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | _pending PR_ | — |
+| `coderabbitai` | _pending PR_ | — |
+| `sourcery-ai` | _pending PR_ | — |
+
+Coverage and the Step 8 shortfall disclosure to be filled after the review cycle.
 
 ## Cost
 _pending_
