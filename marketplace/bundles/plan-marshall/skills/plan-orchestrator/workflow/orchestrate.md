@@ -125,7 +125,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status update
 
 Word the `resume_anchor` to reflect the Step 5 `auto_emit` branch: under `auto_emit == true` the `launched` transitions are already recorded, so the anchor names the auto-emitted `launched` block awaiting the operator-confirmed start (`launched → running`); under `auto_emit == false` (default) it names the emitted block awaiting operator-confirmed launch. Neither wording ever asserts a `running`/started state the orchestrator did not observe the operator confirm — the emit≠running invariant holds here too.
 
-Regenerate the START-HERE block (Step 3 invocation) after any queue-touching change.
+Regenerate both derivable blocks — START-HERE and the Ordered Queue table (the single `resume-summary` invocation emits both) — after any queue-touching change, and paste each between its own markers.
 
 ## Output
 

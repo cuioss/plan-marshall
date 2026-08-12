@@ -45,7 +45,7 @@ python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator res
   --slug {slug}
 ```
 
-Paste the returned block verbatim between the generated-block markers in `epic.md`. Then read `epic.md` for the human context (Vision, Decisions, Open Defects, Watches) — any statement there that conflicts with `status.json` is stale prose; reconcile status.json → epic.md, never the reverse.
+Paste **both** returned blocks verbatim between their generated-block markers in `epic.md` — the `summary` between the `resume-summary` markers and the `ordered_queue` between the `ordered-queue` markers. Then read `epic.md` for the human context (Vision, Decisions, Open Defects, Watches) — any statement there that conflicts with `status.json` is stale prose; reconcile status.json → epic.md, never the reverse.
 
 **Derived-beats-narrative reconciliation rule.** The block's `**Inbox (derived)**` line and the returned `inbox_queued` / `inbox_archived` / `inbox_state` fields are derived at render time from the epic's `inbox/` directory. When they disagree with a count sentence in the `resume_anchor` prose, **the derived line wins** — the anchor is the stale party, not the filesystem. Correct the anchor via `manage-status update-field` (the Step 5 call below), in the same status.json → epic.md direction this doc already mandates; never edit the derived line to match the prose. An `inbox_state: missing` is NOT "zero queued": it means the epic has no `inbox/` directory, so nothing could be drained from it — treat it as a scaffold gap to report, not as an empty queue.
 
@@ -55,7 +55,7 @@ For each `launched` plan in the queue, verify the recorded state against ground 
 
 ### Step 5: Report and confirm the anchor
 
-When Step 4's ground-truth verification changed any queue state (a plan transitioned, a reconciliation landed), the Step 3 START-HERE block is now stale — it rendered the pre-reconciliation queue. Regenerate it and replace the block between the generated-block markers BEFORE returning, so the persisted `epic.md` reflects the reconciled queue:
+When Step 4's ground-truth verification changed any queue state (a plan transitioned, a reconciliation landed), the Step 3 blocks are now stale — they rendered the pre-reconciliation queue. Regenerate and replace **both** blocks (START-HERE and Ordered Queue) between their markers BEFORE returning, so the persisted `epic.md` reflects the reconciled queue:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resume-summary \
