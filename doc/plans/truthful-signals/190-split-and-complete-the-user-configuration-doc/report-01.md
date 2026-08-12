@@ -107,7 +107,18 @@ Self-verification done (manual — the `ref-asciidoc` lint scripts need the abse
 - Cross-file xrefs resolve: `configuration.adoc` → `parallelism-and-locking.adoc#{merge-strategy,merge-queue,knobs}` (all three anchors added there); `parallelism-and-locking.adoc` → `configuration.adoc#{step-configuration,automatic-review}`; `marketplace-build.adoc` → `configuration.adoc#execution-profile-lane-selection`.
 - Inbound external refs (11 occurrences across 8 files under `doc/concepts/` + `doc/user/`) all target preserved anchors (`recipe-routing`, `per-envelope-packing-budget`, `build-systems`, `review-gates`, `worktrees`, `micro-lane-fast-path`) — none pointed at the extracted `#merge-strategy`/`#merge-queue`, so the extraction broke no inbound reference.
 
-Independent pre-PR verification sub-agent (Step 6) dispatched — its findings and dispositions are recorded under Findings once it returns.
+Independent pre-PR verification sub-agent (Step 6) returned **all deliverables PASS**:
+- Cold-read-of-a-stub test: **YES / YES** — both the §merge-strategy and §merge-queue stubs name the destination file, anchor, and human label, so a reader with no other context can find the content. Neither stub is "a deletion with extra steps".
+- D3: every moved line (the 10-row table incl. `drop_review_on_scope_gate`, both NOTEs, the full merge-queue body) exists verbatim at the destination; the only textual changes are the two required cross-file xref rewrites. Both origin anchors preserved.
+- D4: the parenthetical replacement hand-enumerates **zero** knobs (pointer only); every added knob's default matches `data-model.md`.
+- D5: caveat NOTE gone, embedded phrase removed, example genericised, content relocated additively; the kept `always_on` "meta-project's own domain" example judged acceptable.
+- D6: all internal `<<…>>`, both-direction cross-file xrefs, and every repo-wide inbound `configuration.adoc#…` reference resolve; nothing points at the now-stub merge anchors from outside the file.
+- Beyond-diff sweep: clean (the only `enabled_bots` live-doc hit is the deliberate "retired `enabled_bots`" provenance mention).
+- Out-of-scope: `data-model.md` not modified; `doc/developer/` change is a single additive subsection; no knob behaviour/default changed.
+
+Sub-agent caveat (dispositioned): it did not itself re-read `_config_defaults.py`, so it corroborated D4 against `data-model.md` rather than the code seed. **This does not leave D1 ungrounded** — the primary investigator (this run) read `_config_defaults.py` in full (all 1452 lines, incl. `get_default_config()` and every `DEFAULT_*`/`VALID_*` constant), which is the authoritative population source; the sub-agent's `data-model.md` cross-check independently corroborated the covered/uncovered split.
+
+Non-blocking observation (accepted, no change): the three in-file `<<merge-strategy>>` refs in §automated-review now resolve to the stub, which redirects onward — a two-hop that is exactly the demonstrated stub pattern (inbound refs land on the stub). Left as-is for consistency with the pattern; the anchor resolves and nothing is broken.
 
 ## Build gate
 
@@ -120,7 +131,7 @@ Independent pre-PR verification sub-agent (Step 6) dispatched — its findings a
 | 1 | D1 cross-check | `data-model.md` (the claimed population authority) omits two real seeded knobs — `plan.phase-1-init.auto_route_recipe` and `auto_route_recipe_threshold` (`_config_defaults.py:605,613`) — that `configuration.adoc` §recipe-routing already documents. The population authority has drifted behind the code seed. | **Reported, not fixed** — `data-model.md` is read-only per the plan's Expected surface; belongs in its own change (documentation-standard fix to `data-model.md`). |
 | 2 | D2 investigation | `finalize-steps set-lane` validates `--lane` against `off/standard/full` (`_cmd_finalize_steps.py:68`), rejecting `minimal` and `ask` — both valid per-element override values (`VALID_LANE_OVERRIDE`). A user who sets a per-element lane via `set-lane --lane minimal` is rejected, though `minimal` is a documented override value. Intentional/documented as a writer-subset, but a real user-facing divergence. | **Reported, not fixed** — code defect surfaced by a docs plan; belongs in its own change (per Out-of-scope). Documented accurately (disambiguated) rather than encoding a contradiction. |
 
-_(Verification-sub-agent, CI, and PR-review findings appended as they arrive.)_
+The independent verification sub-agent found **no new defects** (all deliverables PASS; see D6). CI and PR-review findings appended as they arrive.
 
 ## Reviewer participation
 
