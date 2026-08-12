@@ -180,7 +180,14 @@ from scratch.
 
 ## Build gate
 
-_pending_
+`git diff --name-only origin/main...HEAD -- '*.py'` → **empty**. No buildable footprint, local build
+skipped (the gate is `*.py`-only; the merge queue's `merge_group` run verifies the docs/skill change
+before it lands). Tree clean (`git status --porcelain` empty) at the gate.
+
+Note: the plan's Verification section expected "Python, documentation, and test changes … the build
+gate takes its full path." This run made **no** Python/test changes because the verify-first verdict
+deferred D2's dispatcher change (see D2 above), so the full build path did not apply. This is an
+honest consequence of the verdict, not a skipped step.
 
 ## Findings
 
@@ -188,11 +195,30 @@ _pending_
 
 ## Reviewer participation
 
-_pending_
+Expected reviewer population, derived from the registry docs
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` `author_login`
+fields (M = 3): `sourcery-ai` (`sourcery.md:25`), `coderabbitai` (`coderabbit.md:27`),
+`cuioss-review-bot` (`pr-agent.md:55`). The diff touches `marketplace/bundles/**` (a skill doc), so
+the PR keeps bot review (no `skip-bot-review`).
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | _pending review cycle_ | — |
+| `coderabbitai` | _pending review cycle_ | — |
+| `sourcery-ai` | _pending review cycle_ | — |
+
+Coverage and any Step 8 shortfall disclosure recorded after the review cycle, before arming merge.
 
 ## Cost
 
-_pending_
+- **Tokens:** not available to the agent in this session — the Claude Code cloud harness does not expose
+  a per-run token figure to the model. Stated plainly rather than estimated.
+- **Wall-clock:** single interactive cloud session on 2026-08-12 (UTC); exact start/end not
+  instrumented by the agent.
+- **Population:** this single Claude Code cloud session's usage. ⛔ NOT comparable to a plan-marshall
+  `metrics.toon` total (that counts the orchestrator-plus-agent dispatch tree under plan-marshall's
+  per-task billing boundary, which this interactive session does not share). No comparable figure is
+  presented.
 
 ## Contract check (Step 9)
 
@@ -204,4 +230,17 @@ _pending_
 
 ## Residue
 
-_pending_
+- **D2 dispatcher change (fold ci-verify into the unified triage barrier)** — deferred to a follow-up
+  plan. The full design and the three blocking reasons are recorded under Deliverables → D2. The
+  follow-up must: (a) re-ground against the sibling "gate re-firing over the loop-back diff" plan; (b)
+  carry D0's measured benefit (needs the archived CI-manifest corpus, unreachable from a cloud clone);
+  (c) resolve the "triage-CI-first vs consolidate" trade-off against that measurement; (d) design the
+  fail-closed done-record coupling so ci-verify's step-not-done blocking is preserved (guard:
+  `test_ci_verify.py:489-490, 535-536`).
+- **D5(b) test** (two producers → one loop-back round) — coupled to the deferred D2 change; add it with
+  that change.
+- **D3/D4 (self-review half)** — no valid implementation target this run (D3 premise refuted). The real
+  self-review concern (detector blindness) is owned by the out-of-scope sibling
+  `doc/plans/code-intelligence-substrate/100-self-review-surfacing-integrity.md`.
+- **D0 quantitative attribution + token sizing** — unreachable from this clone (`.plan/` corpus
+  absent). Re-derivable only where the archived CI manifests and metrics are present.
