@@ -11,7 +11,7 @@ The signal set (DQ1 of the planning-lanes solution outline):
 
 | # | Signal | Source (cheap read) | → deep when |
 |---|--------|---------------------|-------------|
-| S1 | ``plan_source`` | ``status.metadata.plan_source`` | free-form (absent/unset) **AND** S5 concreteness fails |
+| S1 | ``plan_source`` | ``status.metadata.plan_source``, else the ``request.md`` provenance header (see ``_resolve_orchestrator_plan_source``) | free-form (absent/unset) **AND** S5 concreteness fails |
 | S2 | ``scope_estimate`` | ``references.scope_estimate`` | ∈ {multi_module, broad, none, unset} |
 | S3 | ``change_type`` | ``status.metadata.change_type`` | ∈ {feature, feature_breaking} **AND NOT** narrow-and-concrete |
 | S4 | ``compatibility`` | ``marshal.json plan.phase-2-refine.compatibility`` | == breaking **AND NOT** narrow-and-concrete |
