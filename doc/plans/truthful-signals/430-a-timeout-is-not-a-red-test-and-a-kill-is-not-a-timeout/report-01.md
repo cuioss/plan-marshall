@@ -1,12 +1,20 @@
 # Run report — 430-a-timeout-is-not-a-red-test-and-a-kill-is-not-a-timeout (run 01)
 
-**Date (UTC):** 2026-08-12    **Branch:** `claude/timeout-kill-signal-semantics-75r3fw`    **PR:** _(recorded at the merge gate, below)_    **Outcome:** _(recorded at the merge gate, below)_
+**Date (UTC):** 2026-08-12    **Branch:** `claude/timeout-kill-signal-semantics-75r3fw`    **PR:** [#1193](https://github.com/cuioss/plan-marshall/pull/1193)    **Outcome:** completed
 
-> The PR number and the outcome are stated at § Contract check, which is written
-> as the last pre-merge commit per `cloud-plan-lane` § Step 8 condition 3. They
-> are deliberately not asserted here ahead of being true — an outcome field that
-> claims `completed` before the run has completed is the same premature-green
-> this plan is about.
+> `completed` is asserted here only now, at the merge gate, with every
+> deliverable landed, the suite green, all three comment surfaces read, and the
+> coverage shortfall disclosed. It was deliberately left unstated while the run
+> was in flight — an outcome field claiming `completed` before the run has
+> completed is the same premature green this plan is about.
+>
+> **On the landing itself:** this session cannot self-wake to watch the merge
+> queue (`send_later` / `subscribe_pr_activity` are approval-gated here), so if
+> the queue has not landed the PR before the session ends, the run is
+> **completed with the landing delegated** to the orchestrator's collect step,
+> which reads `MERGED` from the PR merge event. That is a completed outcome, not
+> a partial one. The merge commit SHA cannot appear in this file — it does not
+> exist until after this, the last pre-merge commit.
 
 ## Skills loaded
 
@@ -276,7 +284,8 @@ was measured at:
 | Pre-change baseline, `./pw verify` on `origin/main` | green — 19 231 passed, 14 skipped, `coverage: COMPLETE`, `=== verify: SUCCESS ===` |
 | Round 1 (`5ac6cda`) full suite | 19 276 passed, 14 skipped, 0 failed (454 s) |
 | Round 2 (`fbbf99c`) full suite | 19 293 passed, 14 skipped, 0 failed (490 s) |
-| Round 3 (final) full suite | recorded at the merge gate, below |
+| Round 3 (final) full suite | **19 298 passed, 14 skipped, 0 failed** (443 s) |
+| CI on the PR head | `verify / conclusion` **success** (the required context), plus `verify / verify`, `verify / gate`, `dependency-review`, `generate-check` all **success** |
 | `./pw quality-gate`, every round | clean — `ruff … All checks passed!`, `mypy … Success: no issues found in 395 source files`, `SPDX-header check passed`, plugin-doctor `status: pass`, `total_issues: 0` across 36 rules |
 | `./pw test-compile` | `Success: no issues found in 717 source files` |
 
@@ -377,7 +386,44 @@ defects is re-dispatched rather than trusted once.
 
 ## Reviewer participation
 
-_(filled in before the merge gate — see run continuation below)_
+**Expected population derived from configuration**, not transcribed: the
+`author_login` of each `automatic-review/standards/{bot_kind}.md` registry doc
+(`coderabbit.md`, `pr-agent.md`, `sourcery.md`), cross-named by
+`.github/workflows/pr-agent.yml`. **M = 3.**
+
+Each verdict is read from the stored comment **bodies** across all three
+surfaces (`get_comments`, `get_reviews`, `get_review_comments` — three distinct
+MCP calls, none subsuming the others), never from a check state.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | **`reviewed`** | Issue comment: *"PR Reviewer Guide 🔍 — PR contains tests / No security concerns identified / No major issues detected"*. A published review artifact over this diff with an explicit nothing-to-report. |
+| `sourcery-ai` | **`rate-limited`** | Review-summary body: *"Sorry @cuioss-oliver, your pull request is larger than the review limit of 150000 diff characters"*. A refusal notice in place of a review — it engaged and did not review this diff. The `Sourcery review` check also concluded `skipped`, but the **body** is the evidence; the check state is not a verdict. |
+| `coderabbitai` | **`rate-limited`** | Two bodies, and the second supersedes the first. Initially: *"Review failed — the head commit changed during the review from `860dae0` to `dc25cbf`"* — **an abort caused by my own push** of the report's closing sections while its review was in flight. Per § Step 4/§ Step 7 the push was correct (durability outranks review cleanliness) but the aborted attempt is **not** counted as coverage, so it was re-requested with the registry's own `trigger_comment` (`@coderabbitai review`) and the abort was disclosed in that comment as mine. The re-request returned *"Review rate limited"*, and the original comment updated to *"Review limit reached … Next review available in: 50 minutes. You've used all free OSS reviews for now."* ⇒ the window does not permit a re-review; the verdict is `rate-limited`, never `reviewed`. |
+
+**Coverage: 1 of 3 (1/3).**
+
+**§ Step 8 condition 4 disclosure — FIRED.** Stated to the operator in-session,
+before arming auto-merge, in these words:
+
+> Review coverage: **1 of 3** — `cuioss-review-bot` reviewed (no issues found);
+> `sourcery-ai` rate-limited (diff exceeds its 150 000-character limit);
+> `coderabbitai` rate-limited (OSS review quota exhausted, window reopens in
+> ~50 minutes) after its first attempt was aborted by my own push.
+
+⛔ This is a **disclosure, not a block.** Both shortfalls are quota exhaustion —
+routine, outside this run's control, and blocking on them would strand the
+landing behind a bot's rate window, which is explicitly the wrong direction. The
+defect the rule closes is the *silence*, not the shortfall: proceeding on partial
+coverage is fine, proceeding without saying so is not. One shortfall is
+**partly self-inflicted** and is recorded as such rather than attributed
+entirely to the bot: my push consumed CodeRabbit's first attempt.
+
+**Comments handled:** none required action. All three surfaces were read; there
+are **zero** inline review threads (`get_review_comments` → `totalCount: 0`), and
+every issue-comment/review body on the PR is either a participation notice
+(quota / abort) or the one clean review. No comment asserted a defect, so none
+was fixed and none was rebutted.
 
 ## Cost
 
@@ -415,7 +461,7 @@ both that the step ran and that its artifact exists.
 | 5 Build gate | **done** | Git-derived verdict recorded in § Build gate: Python changed ⇒ full path taken. Baseline, per-round and final results all stated, each attributed to the commit it was measured at. |
 | 6 Verification sub-agent | **done, twice** | Dispatched, found defects, **re-dispatched** (a pass that found a defect has not finished). 31 findings, all in § Findings with dispositions. |
 | 7 PR cycle | **done** | PR #1193. `skip-bot-review` correctly **not** applied — the diff touches `*.py`, `marketplace/bundles/**` and a skill, and a skill is code. |
-| 8 Merge gate | see below | Conditions 1–3 and the condition-4 disclosure recorded at § Merge gate. |
+| 8 Merge gate | **done** | Condition 1: every required context present and successful on the head — `verify / conclusion` **success**, read from GitHub's own `mergeStateStatus` computation rather than from the shape of the check set, and no individual check is named as required by this report. Condition 2: every comment handled — zero inline threads, no comment asserted a defect (§ Reviewer participation). Condition 3: this report finalized and committed as the **last pre-merge commit**, before arming. Condition 4 (a **disclosure**, not a gate): review coverage **1 of 3**, stated in words before arming. |
 | 8 Bridge | **done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory. No ledger, no status file, no other plan touched. |
 | 9 This check | **done** | This table. |
 | 9 What have we learned | **done** | Below. |
