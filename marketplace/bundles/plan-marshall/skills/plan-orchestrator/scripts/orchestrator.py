@@ -2363,7 +2363,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
     resume = subparsers.add_parser(
         'resume-summary',
-        help='Generate the START-HERE block from status.json (paste into epic.md).',
+        help='Generate the two derivable epic.md blocks (START-HERE + Ordered Queue) from status.json.',
         allow_abbrev=False,
     )
     _add_slug_arg(resume)

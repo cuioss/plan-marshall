@@ -38,7 +38,7 @@ The read-only gate keys off `phase == closed`, NOT narrowly "is it archived" —
 
 **When `phase != closed`** (`init` or `orchestrating`): proceed to Step 3 as documented below.
 
-### Step 3: Regenerate and reconcile START HERE
+### Step 3: Regenerate and reconcile the derivable blocks
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resume-summary \
