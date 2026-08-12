@@ -53,7 +53,25 @@ The routing decision (`use_merge_queue`) is instrumented at every consumption si
 
 ### D3 — tests, each verified to fail pre-fix by mutation
 
-_Filled as the test lands._
+Two artifacts:
+
+- **`test/_shared/_merge_shaped_roster.py`** — the single-source derivation of the merge-shaped population from each provider's `handlers: HandlerMap` registry literal (the `_dispatch_roster.py` shared-single-source pattern D3(c) names). Pure functions over the module source text; path resolution is the caller's job. It uses the identical registry regexes as the first-instance source-guard (`test_branch_cleanup_merge_queue_routing.py`), so the two suites derive the SAME 8-member population — source-completeness (that guard) and behavioural-completeness (this one) are the same population viewed differently, over one derivation.
+- **`test/plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal.py`** — the population-complete BEHAVIOURAL guard (18 tests):
+  - `test_merge_shaped_population_is_derived_nonempty_and_sized` — asserts the derived population is non-empty FIRST, then `== 8` (4 verbs × 2 providers), 4-per-provider; the size is published in every failure message (distinguishes a passing run from an empty one).
+  - `test_every_derived_member_has_an_offrouting_scenario` — a new merge-shaped verb added to a registry without an off-routing scenario fails here rather than being silently skipped.
+  - `test_offrouting_dispatch_is_refused_at_the_callee` (parametrized over all 8 members) — dispatches each member off-routing and asserts the callee refuses (`status: error`), except `auto-merge` (the sanctioned exception), which must self-route to the enqueue and report `disposition: enqueued` with NO `merged` key.
+  - `test_compliant_route_succeeds` (parametrized over all 8) — the compliant dispatch of every member still succeeds (`merged`/`enqueued`/`disposition: enabled`), so the guard is a boundary, not a wall.
+
+**Proven falsifiable by mutation (Verification requirement).** Two mutations were run and reverted (via `git checkout`), each producing exactly the incident shape — a false `merged: true` off-routing:
+
+| Mutation | Member test that failed | Observed result under mutant |
+|---|---|---|
+| Neutralize `_refuse_on_required_merge_queue` guard in GitHub `cmd_pr_merge` | `test_offrouting_dispatch_is_refused_at_the_callee[github:merge]` | `{'status':'success', ..., 'merged': True, 'merge_corroboration':'state=MERGED, ...'}` |
+| Neutralize `_refuse_on_required_merge_train` guard in GitLab `cmd_pr_merge` | `test_offrouting_dispatch_is_refused_at_the_callee[gitlab:merge]` | `{'status':'success', ..., 'merged': True, 'merge_corroboration':'state=merged'}` |
+
+In each mutation run, the mutated member's off-routing test went red while the other 7 stayed green — the guard discriminates a guarded handler from a gutted one, per provider. The population arm's falsifiability is structural: shrink the derived set and the size assertion fails; add an unclassified verb and the scenario arm fails.
+
+*Done:* all three arms hold on the live tree (18 passed); the population size (8) appears in the test's own output; every member covered; falsifiability proven by mutation.
 
 ## Build gate
 
