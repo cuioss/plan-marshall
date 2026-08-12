@@ -387,17 +387,27 @@ dirty_files: {file_list}
 
 Do NOT call `manage-status transition` to 3-outline. Do NOT proceed with the metrics fused-call. The orchestrator stops here; recovery requires the user to inspect the offending files and either revert them or move them into `.plan/local/plans/{plan_id}/**`.
 
-**Named recovery case — `.plan/marshal.json`**: When `dirty_files` contains `.plan/marshal.json`, output an additional recovery line alongside the generic instruction:
+**Named recovery case — `.plan/marshal.json`** (the single authority for this recovery — the outline and plan phase boundaries reference this block): When `dirty_files` contains `.plan/marshal.json`, the clean-main assertion has established only that **the dispatched phase did not write it** — no planning phase (2-refine, 3-outline, 4-plan) may mutate project configuration (`plan-marshall:phase-2-refine` § Enforcement → Prohibited actions forbids the mutating `manage-config` verbs `set`, `init`, `sync-defaults`, `sync-plan-defaults`, and confines writes to `.plan/local/plans/{plan_id}/**`), so `marshal.json` is never a planning-phase output artifact.
+
+It does **not** follow that the file is safe to discard. The guard cannot see *who* wrote it — only that this phase did not. The likeliest author of a dirty `marshal.json` in the main checkout is the **operator**: uncommitted, unstaged configuration edits (for example, effort-level changes staged to carry into a plan) that were never a phase output. Discarding the file with `git checkout -- .plan/marshal.json` would destroy those edits **irrecoverably** — no reflog covers an unstaged worktree file, so nothing (`git fsck` included) can bring them back.
+
+The recovery is therefore **inspection first, disposition second — never an unconditional discard**:
+
+1. Surface the change so its content is visible before anything touches the file:
 
 ```text
-Recovery: git checkout -- .plan/marshal.json
+git diff -- .plan/marshal.json
 ```
 
-`marshal.json` holds only project-level configuration read by phases; it is never a refine-phase output artifact. Restoring it from HEAD is always safe — refine MUST NOT have touched it (the manage-config mutation prohibition in `plan-marshall:phase-2-refine` § Enforcement → Prohibited actions forbids `set`, `init`, `sync-defaults`, and `sync-plan-defaults` during refine). A dirty `marshal.json` after refine is therefore always a spurious write that safe to revert without losing any refine-phase work.
+2. Report the diff to the operator and obtain an **explicit disposition** — only the operator can say whether the edits are theirs to keep:
+   - **Keep** — commit the edits, or move them aside, per the operator's instruction.
+   - **Discard** — only once the operator confirms the edits are unwanted may the file be reverted, and only that one file.
+
+This is the generic recovery instruction above (inspect the offending files, then revert or relocate) applied to `marshal.json` — it is **not** an exception to it.
 
 **Cross-references**:
-- `plan-marshall:phase-2-refine` § Enforcement → Allowed write paths — the prohibition this assertion enforces
-- `plan-marshall:phase-2-refine` § Enforcement → Prohibited actions — the manage-config mutation prohibition that makes marshal.json restoration always safe
+- `plan-marshall:phase-2-refine` § Enforcement → Allowed write paths — the write-prohibition establishing that this phase did not write `marshal.json` (it does not establish who did)
+- `plan-marshall:phase-2-refine` § Enforcement → Prohibited actions — the manage-config mutation prohibition behind that non-output premise
 - `feedback_phase2_refine_never_implements` — driving failure history
 - `pm-plugin-development:plugin-doctor` analyzer `REFINE_CONTRACT_VIOLATION` (Deliverable 5) — edit-time complement to this runtime assertion
 
