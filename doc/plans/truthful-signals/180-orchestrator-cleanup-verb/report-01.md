@@ -174,7 +174,23 @@ permanently), plus `resume.md`, `orchestrate.md`, `analyze.md` (a back-reference
 blocks). An independent `git grep` sweep then found six more single-block descriptions (SKILL.md Scripts row
 + Enforcement, argparse help, `orchestrate.md` status path, two headers) — **fixed** in `14e23a3`.
 
-**Pass 3 (final focused re-verification).** _(result pending — recorded before the merge gate.)_
+**Pass 3 (final focused re-verification).** Points 1–3 confirmed clean and complete. **Finding (real,
+fixed):** the *binding standard* `orchestration-model.md` § Persist/Stop-Resume (line 55) and the concept
+doc `orchestration.adoc:38` still described `resume-summary` as a single-block (START-HERE-only) emitter —
+and since the standard wins over workflow docs, this was the last place the contract lagged the docs that
+bind to it. **Disposition: fixed** in `d232913` (both name the two generated blocks; also the
+directory-layout comment and the START-HERE marker comment, for symmetry). An independent full-repo
+`git grep` confirmed no remaining single-block description or hand-write instruction anywhere.
+
+**Build-gate flake (pre-existing, NOT mine — disclosed, not fixed).** The full `./pw verify` failed once on
+`test/plan-marshall/script-shared/test_build_execute_factory.py::…::test_a_real_plan_id_still_writes_the_work_log`.
+Root cause: that test does not isolate `home_root()`, so it writes to the **machine-global**
+`~/.plan-marshall/marshalld/fallback-streak.json`; running the full suite three times in this session
+incremented `a-real-plan`'s daemon-unreachable streak to 7 (> the threshold of 3), which **correctly**
+suppresses the repeated work-log write — so the test's own state accumulation defeats its assertion. It is a
+pre-existing test-isolation flaw in `script-shared` (outside this plan's surface); on a fresh CI checkout the
+streak starts absent, so CI passes it. I cleared the self-poisoned cache and the final `./pw verify` ran to
+`=== verify: SUCCESS ===` (16098 passed). Recorded as residue for a `script-shared` owner.
 
 **CI / PR review findings:** _(pending — recorded at Step 7/8.)_
 
@@ -199,3 +215,10 @@ _(pending)_
 - **Owed work (recorded per plan):** the `resume_anchor` shape question is **cut** and needs its own
   plan (a different file/authority, operator-owed, and a dependency of other epic plans). The `inbox/`
   per-sender foldering is owned by the sibling inbox plan. Neither is implemented here.
+- **Pre-existing test-isolation flaw (for a `script-shared` owner):**
+  `test_build_execute_factory.py::…::test_a_real_plan_id_still_writes_the_work_log` writes to the
+  machine-global `~/.plan-marshall/marshalld/fallback-streak.json` (it does not isolate `home_root()`),
+  so repeated full-suite runs in one session accumulate `a-real-plan`'s streak past the suppression
+  threshold and the test starts failing on state it wrote itself. It should isolate the streak store
+  (e.g. `monkeypatch` `home_root`/`_fallback_state_path`, or reset the plan's streak in setup). Out of
+  this plan's surface; disclosed, not fixed.
