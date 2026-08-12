@@ -54,7 +54,16 @@ Genuinely-wasted dispatch spend is emitted as its own field, `error_total_tokens
 
 ## Findings
 
-_Verification sub-agent findings pending — filled in after the Step-6 dispatch returns._
+**Pre-PR verification sub-agent (Step 6)** — independent `general-purpose` agent, verified against the plan's requirements with a beyond-the-diff sweep of the owning bundles.
+
+- Verdicts: **D1 VERIFIED** (member added; finalize 5c routes `loop_back → returned_with_findings`, `failed` stays `error`; audit-rule doc widened; all enum-mirror sites in sync; RED-before tests present). **D2 VERIFIED** — both claims independently confirmed: the measured-`0`-vs-`unmeasured` distinction is implemented and tested in the writer and both readers, and **no producer** forwards the context-load flags (only the writer's argparse, the schema doc, and the SKILL.md mention them). **D3 VERIFIED as correctly ships-nothing** — no measurement/sweep code, no fabricated share, the retired figure appears only inside `plan.md` labelled RETIRED. **D4 VERIFIED** — `error_total_tokens` and `retryable_total_tokens` are separate sums, never folded. **D5 VERIFIED** — `error_total_tokens` emitted, tested (RED-before), and rendered in the compile-report table.
+- Finding 1 (source: sub-agent beyond-the-diff sweep; low severity): `analyze-logs.py` `read_dispatch_boundaries_per_phase` docstring enumerated the per-file shape with only the old four keys — stale after three keys were added. **Disposition: fixed** (commit `d55d3c6`) — replaced the enumeration with a reference to `_parse_dispatch_boundary_file`'s authoritative shape.
+- Finding 2 (source: same; low severity): `compile-report.py` `_dispatch_boundaries_has_present_phase` docstring had the same incomplete enumeration. **Disposition: fixed** (commit `d55d3c6`) — same reference-based fix.
+- Re-dispatch after the fix: **RESOLVED** — both fixed, no new staleness, bundle sweep clean (every remaining per-file-shape enumeration is either the authoritative full seven-key list or the complete seven-column table).
+
+No findings were rejected. Nothing was deferred.
+
+**CI findings:** _filled in after the PR CI run._
 
 ## Reviewer participation
 
