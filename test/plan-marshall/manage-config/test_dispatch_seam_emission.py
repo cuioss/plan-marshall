@@ -177,6 +177,36 @@ def test_dispatch_line_fields_match_the_resolved_envelope(plan_context):
     assert line.startswith(f'[DISPATCH] ({_CALLER})')
 
 
+def test_two_flag_resolve_emits_bare_role_key(plan_context):
+    # A --phase X --role Y resolve emits the caller's bare role-key Y (matching
+    # the dispatch-logging standard and the audit's existing role matching), NOT
+    # the resolver's dotted X.Y payload role.
+    _seed_marshal(plan_context)
+    _init_plan(plan_context, 'two-flag')
+
+    result = run_script(
+        SCRIPT_PATH,
+        'effort',
+        'resolve-target',
+        '--phase',
+        'phase-5-execute',
+        '--role',
+        'verification-feedback',
+        '--workflow',
+        'plan-marshall:plan-marshall/workflow/verification-feedback.md',
+        '--plan-id',
+        'two-flag',
+        '--caller',
+        'plan-marshall:phase-5-execute',
+    )
+    assert result.returncode == 0, result.stderr
+
+    lines = _dispatch_lines('two-flag')
+    assert len(lines) == 1
+    assert 'role=verification-feedback ' in lines[0]
+    assert 'role=phase-5-execute.verification-feedback' not in lines[0]
+
+
 # =============================================================================
 # (D2) Both audit surfaces are written from the ONE seam — they share an emitter.
 # =============================================================================

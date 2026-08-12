@@ -541,8 +541,19 @@ def cmd_effort_resolve_target(args) -> dict:
     # so a failed resolution never emits a spurious dispatch record.
     workflow = getattr(args, 'workflow', None)
     if workflow:
+        # The emitted role is the ROLE-KEY the caller resolved against — the
+        # `--role` argument, or the `--phase` when `--role` is absent — per the
+        # dispatch-logging standard's field semantics. This is the caller's
+        # single-level role-key (`verification-feedback`, `phase-5-execute`),
+        # NOT the resolver's dotted `group.subkey` payload role, so the emitted
+        # `role=` field matches the form the audit already pairs and rosters on.
+        emission_role = (
+            getattr(args, 'role', None)
+            or getattr(args, 'phase', None)
+            or read_result.get('role')
+        )
         _emit_dispatch_records(
-            role=read_result.get('role'),
+            role=emission_role,
             level=level,
             target=target,
             workflow=workflow,

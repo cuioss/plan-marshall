@@ -129,12 +129,16 @@ The execute phase runs as ONE `execution-context` envelope dispatched under the 
 
 Compute the dispatch target via the role resolver and resolve the active worktree path so the Worktree Header can be populated explicitly (when `metadata.use_worktree==false`, `get-worktree-path` returns the main checkout, so the same call covers both flows):
 
+The resolve carries the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the seam emits the standardized `[DISPATCH]` work-log line and its paired decision-log record itself — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; re-running this resolve on a re-fire re-emits, per firing.
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-5-execute
+  effort resolve-target --phase phase-5-execute \
+  --workflow plan-marshall:phase-5-execute/SKILL.md --plan-id {plan_id} \
+  --caller plan-marshall:plan-marshall
 ```
 
-Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch below.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
@@ -142,14 +146,6 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status \
 ```
 
 Extract the `worktree_path` field from the TOON output. Use that value as `{worktree_path}` in the dispatch's `WORKTREE:` header below.
-
-Emit the standardized post-resolve dispatch log line — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract for the field semantics and placement rule:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-5-execute workflow=plan-marshall:phase-5-execute/SKILL.md plan_id={plan_id}"
-```
 
 Dispatch:
 
