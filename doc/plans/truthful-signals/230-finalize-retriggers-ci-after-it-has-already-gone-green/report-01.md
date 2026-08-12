@@ -55,6 +55,14 @@ should this run deliver?
 barrier), record the D1 era-stamp verdict, add D5(b)+D5(c) tests (each seen red first), and report
 D0/D3/D4 honestly. Defer the self-review half and the risky-beyond-D2 work.
 
+**Second operator decision (after the verify-first findings on D2 were surfaced):** the three D2
+blockers (fail-closed sensitivity, documented "triage-CI-first" reversal, unmeasured benefit blocked
+behind an unreachable D0) were reported back to the operator. **The operator directed: "descope it,
+document at the report and continue."** D2's dispatcher change is therefore **descoped for this run**
+by explicit operator decision — recorded here as the only durable trace of that conversation event.
+The run proceeds with: D1 verdict (committed), D0/D2/D3/D4 findings (this report), and the finalize
+cycle (PR + review + merge).
+
 ## Deliverables
 
 ### D0 — attribution (mechanism-level; quantitative split "could not look")
@@ -117,7 +125,7 @@ D4 is framed "Given D3, decide what the step should examine." With D3 refuted, t
 and the absolute token figure D4 must be measured against (709k) is under `.plan/` and unreachable.
 No self-review scoping change is made this run (operator chose CI-half + findings).
 
-### D2 — one loop-back barrier across all finding producers (VERIFY-FIRST verdict: dispatcher change DEFERRED)
+### D2 — one loop-back barrier across all finding producers (DESCOPED by operator decision; verify-first verdict below)
 
 **Mechanical feasibility (agent-mapped, re-grounded against current code):** `automatic-review`(30) +
 `sonar-roundtrip`(40) already share one unified triage barrier (dispatcher item 7c,
