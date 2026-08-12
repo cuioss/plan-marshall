@@ -103,6 +103,39 @@ from resolve_project_dir import (
 # =============================================================================
 
 
+def _format_scope_statement(
+    surface_scope: str, files_in_scope: int, since_ref: str | None
+) -> str:
+    """Render the scope statement every absence/residual claim must publish.
+
+    An absence claim the cognitive review makes downstream — the clean verdict
+    (``"no check matched"``), or a finding that asserts a literal appears in no
+    file — is only true within the file set that was actually searched. A scoped
+    (``delta``) round searches a NARROWER set than a full round, so a claim
+    phrased more widely than its scope over-reports: the observed failure was a
+    round asserting a literal appeared in "zero test and source files" while
+    survivors sat in merged main, because the sweep was scoped to one directory
+    tree while the CLAIM said "test and source". This statement is the scope the
+    claim was drawn against, rendered once so a downstream absence claim states
+    it verbatim rather than reconstructing (and widening) it.
+
+    It is emitted UNCONDITIONALLY — including on an empty surface
+    (``files_in_scope == 0``) — so the surface never presents an absence without
+    the scope it was drawn against.
+    """
+    noun = 'file' if files_in_scope == 1 else 'files'
+    if surface_scope == 'delta':
+        anchor = since_ref or 'the previous round'
+        return (
+            f'searched delta scope: {files_in_scope} {noun} changed since '
+            f'{anchor} — a scoped round, so a clean result covers only these '
+            f'{noun}, NOT the full plan surface'
+        )
+    return (
+        f'searched full scope: {files_in_scope} {noun} across the whole plan diff'
+    )
+
+
 def _compose_candidate_output(detected: dict[str, list]) -> dict[str, Any]:
     """Derive the counts block and the candidate payload from ``CANDIDATE_LISTS``.
 
@@ -321,14 +354,19 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'discard_without_report': discard_without_report,
     }
 
+    surface_scope = 'delta' if since_ref is not None else 'full'
+    files_in_scope = len(modified_files)
     output = {
         'status': 'success',
         'plan_id': plan_id,
         'project_dir': str(project_dir),
         'base_branch': base_branch,
         'since_ref': since_ref or '',
-        'surface_scope': 'delta' if since_ref is not None else 'full',
-        'files_in_scope': len(modified_files),
+        'surface_scope': surface_scope,
+        'files_in_scope': files_in_scope,
+        'scope_statement': _format_scope_statement(
+            surface_scope, files_in_scope, since_ref
+        ),
         **_compose_candidate_output(detected),
     }
     output_toon(output)

@@ -1040,18 +1040,25 @@ def _detect_unguarded_boundaries(
 def _detect_count_prose(
     modified_files: list[str], project_dir: Path
 ) -> list[dict[str, Any]]:
-    """Detect count-prose in SKILL.md siblings of modified files (Facet 2).
+    """Detect count-prose in a modified file's skill contract sources (Facet 2).
 
     For each modified file nested inside a skill directory (reuse
-    ``_find_skill_dir``), scan every ``SKILL.md`` in that same skill directory
-    for count-prose — a digit OR an English number word immediately adjacent to
-    one of the cardinality nouns (``operation``, ``field``, ``step``, ``rule``,
-    ``command``). The cognitive review re-checks that the surfaced number is
-    still correct after a sibling file in the directory changed.
+    ``_find_skill_dir``), scan every contract source of that skill for
+    count-prose — a digit OR an English number word immediately adjacent to one
+    of the cardinality nouns (``operation``, ``field``, ``step``, ``rule``,
+    ``command``). The contract sources are resolved through the SAME
+    :func:`_collect_skill_contract_sources` resolver the contract-source
+    detector uses — ``SKILL.md`` PLUS every ``standards/*.md`` in the skill
+    directory — so a stale count living in a ``standards/*.md`` doc is surfaced,
+    not only one in ``SKILL.md``. Both detectors resolving "the docs carrying
+    this skill's contract" through one resolver is what keeps their file sets in
+    agreement by construction rather than by coincidence. The cognitive review
+    re-checks that the surfaced number is still correct after a sibling file in
+    the directory changed.
 
-    Each entry carries ``file`` (the SKILL.md path), ``line`` (the matched line
-    number, 1-based), and ``text`` (the truncated matched line). Deduplicated
-    per ``(file, line)``.
+    Each entry carries ``file`` (the contract-source path), ``line`` (the
+    matched line number, 1-based), and ``text`` (the truncated matched line).
+    Deduplicated per ``(file, line)``.
     """
     skill_dirs: set[Path] = set()
     for rel in modified_files:
@@ -1067,22 +1074,20 @@ def _detect_count_prose(
     out: list[dict[str, Any]] = []
     seen: set[tuple[str, int]] = set()
     for skill_dir in sorted(skill_dirs):
-        skill_md = skill_dir / 'SKILL.md'
-        if not skill_md.is_file():
-            continue
-        try:
-            text = skill_md.read_text(encoding='utf-8', errors='replace')
-        except OSError:
-            continue
-        rel_md = str(skill_md.relative_to(project_dir))
-        for idx, line in enumerate(text.splitlines(), start=1):
-            if _COUNT_PROSE.search(line) is None:
+        for doc in _collect_skill_contract_sources(skill_dir):
+            try:
+                text = doc.read_text(encoding='utf-8', errors='replace')
+            except OSError:
                 continue
-            key = (rel_md, idx)
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append({'file': rel_md, 'line': idx, 'text': _truncate(line.strip(), 200)})
+            rel_md = str(doc.relative_to(project_dir))
+            for idx, line in enumerate(text.splitlines(), start=1):
+                if _COUNT_PROSE.search(line) is None:
+                    continue
+                key = (rel_md, idx)
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append({'file': rel_md, 'line': idx, 'text': _truncate(line.strip(), 200)})
     return out
 
 

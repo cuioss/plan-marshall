@@ -27,6 +27,21 @@ The orchestrator drains the queue; the two drain verbs are mechanical and carry 
 - **The append-only invariant is unbroken.** Archival RELOCATES the file; it never edits or deletes it. The message body at the archived path is byte-identical to the one the sender wrote.
 - **A stranded message is recovered with `inbox archive --as-name`.** A message left undrainable by a pre-fix sequence collision — its default destination already holds a distinct archived record, so `archive_conflict` fires forever — is retired under a non-colliding archived name supplied by `--as-name`. The recovery relocates the file exactly as an ordinary archival does, so the append-only invariant still holds and the existing audit record is never clobbered. The override is **sender-constrained** on top of the bare-filename guard: it must match `{sender_id}-*` for the source message's sender, or the call is refused with `as_name_sender_mismatch` (a path-shaped value is still refused with `invalid_message_name`). The constraint keeps the archive's `{sender}-{seq}`-derived provenance intact, so a recovered file can never be attributed to a different sender.
 
+## Write-side deliverability
+
+`orchestrator inbox write` accepts an optional `--target-plan {plan_id}` naming the plan a message is aimed at. The inbox is a **one-way** channel — a plan writes, the orchestrator drains, and the drain is an act BETWEEN plans (§ Invariants) — so it has no delivery path to a plan. A message aimed at a plan that is currently **running** is therefore architecturally undeliverable: that plan will have finished before the orchestrator's next drain and never reads the message. The write verb reports this **at write time** rather than silently queuing a message no reader will consume.
+
+The guard fires only when `--target-plan` is supplied, and refuses only a plan the epic's `status.json` positively reads as `running` (`plans[]` row with `status: running` — the same machine authority `orchestrator`'s own running-plans signal reads):
+
+| Condition | Outcome |
+|-----------|---------|
+| `--target-plan` names a plan whose `status.json` row is `running` | `status: error, error: undeliverable_to_running_plan` — the message is REFUSED, never queued |
+| `--target-plan` is not a path-safe identifier | `status: error, error: invalid_target_plan` |
+| `--target-plan` names a non-running plan (landed, parked, or absent), or `status.json` is unreadable / carries no queue | the write PROCEEDS — the message queues as an ordinary epic-addressed message the orchestrator drains |
+| `--target-plan` omitted | the write proceeds unchanged (the primary path) |
+
+The guard makes the existing undeliverability **visible**; it deliberately does NOT build a mid-run delivery channel — routing a message into a running plan is a larger design question this channel does not answer. `--target-plan` never reaches the write path: the message file target stays derived from the epic slug and `--sender-id` alone, so the ledger write-boundary carve-out is untouched. Because these are write-side deliverability outcomes, they are distinct from the envelope-VALIDATION verdicts in § Validator error codes, which govern message FORMAT.
+
 ## File naming and sequence semantics
 
 | Segment | Rule |

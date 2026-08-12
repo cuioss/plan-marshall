@@ -89,6 +89,7 @@ from _locks_core import rmw_json
 from _orchestrator_inbox import (
     INBOX_SUBDIR,
     KINDS,
+    RUNNING_STATUS,
     SENDER_TYPES,
     InboxCounts,
     cmd_inbox_archive,
@@ -139,10 +140,12 @@ TERMINAL_REQUIRED_FIELDS = ('pr', 'landing')
 PLANS_SUBDIR = 'plans'
 SPEC_GLOB = 'PLAN-*.md'
 
-# A row at this status is enumerated but carries ``excluded_reason`` so a caller
-# cannot re-scope it: re-scoping a spec mid-execution changes the brief under a
-# running plan (orchestration-model.md § Cleanup Contract, running-row exclusion).
-RUNNING_STATUS = 'running'
+# ``RUNNING_STATUS`` — a row at this status is enumerated but carries
+# ``excluded_reason`` so a caller cannot re-scope it: re-scoping a spec
+# mid-execution changes the brief under a running plan (orchestration-model.md
+# § Cleanup Contract, running-row exclusion). The token is defined once, in
+# ``_orchestrator_inbox`` (which also needs it for the inbox deliverability
+# guard), and imported above so the two modules cannot drift.
 
 # The re-grounding verdict field. The grammar is defined ONCE, in
 # ``persona-plan-orchestrator/standards/orchestration-model.md``
@@ -2551,6 +2554,19 @@ def _add_inbox_group(subparsers: Any) -> None:
         '--payload-file',
         required=True,
         help='Path to the staged markdown payload body (never inline text).',
+    )
+    write.add_argument(
+        '--target-plan',
+        required=False,
+        default=None,
+        help=(
+            'Optional plan id the message is aimed at. When it names a plan that '
+            'is currently RUNNING, the write is REFUSED as '
+            'undeliverable_to_running_plan: the inbox is drained between plans, '
+            'so a running plan never reads it. A non-running target does not '
+            'block the write. This flag makes the undeliverability visible; it '
+            'does NOT deliver a message to a plan.'
+        ),
     )
     write.set_defaults(handler=cmd_inbox_write)
 
