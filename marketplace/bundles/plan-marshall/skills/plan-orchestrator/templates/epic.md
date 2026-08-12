@@ -17,7 +17,8 @@ and what "done" looks like at the epic level.}
 <!-- GENERATED BLOCK — never hand-write or hand-edit this section.
      Regenerate after every queue-touching state change via:
      python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator resume-summary --slug {slug}
-     Paste the returned block verbatim between the markers.
+     Paste the returned `summary` block verbatim between the markers (the same
+     invocation also emits `ordered_queue` for the Ordered Queue section below).
      Anything a reader wants to add BY HAND goes in the annotation zone below,
      outside the markers — never inside them. -->
 

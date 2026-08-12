@@ -22,8 +22,8 @@ Each epic lives in one main-anchored tree under the orchestrator store:
 
 ```text
 .plan/local/orchestrator/{slug}/
-├── epic.md              # Human-facing ledger: vision, generated START HERE block,
-│                        #   ordered queue, decisions, open defects, watches
+├── epic.md              # Human-facing ledger: vision, the two generated blocks
+│                        #   (START HERE + ordered queue), decisions, defects, watches
 ├── status.json          # MACHINE AUTHORITY: kind=orchestrator state (see below)
 ├── history.md           # Frozen record of the closed epic (written at close)
 ├── references.json      # External references (repos, PRs, source documents)
@@ -52,7 +52,7 @@ Document templates for `epic.md`, `workstreams/WS-NN-{slug}.md`, `plans/PLAN-NN-
 Orchestration is resumable by construction: any session can stop at any point and a fresh session MUST be able to re-anchor from the persisted tree alone.
 
 - **`status.json` is the machine authority.** The plan queue, workstream states, per-plan lifecycle states, and the resume anchor live in `status.json` (`kind=orchestrator`, managed via `manage-status --store orchestrator`; schema documented in [`manage-status/standards/status-lifecycle.md`](../../manage-status/standards/status-lifecycle.md)). Any statement in `epic.md` that conflicts with `status.json` is stale prose — `status.json` wins, and the reconciliation direction is always status.json → epic.md, never the reverse.
-- **The `epic.md` "START HERE" block is GENERATED, never hand-written.** The block renders the queue, running/parked plans, and the resume anchor from `status.json` (via `orchestrator.py resume-summary`). Hand-editing the block is prohibited: a hand-written block silently forks the authority and defeats the resume contract. Regenerate it after every state change that touches the queue.
+- **The two derivable `epic.md` blocks are GENERATED, never hand-written.** Both the "START HERE" block and the Ordered Queue table are rendered from `status.json` and the filesystem: a single `orchestrator.py resume-summary` invocation emits both (as `summary` and `ordered_queue`) for a reconciling verb to paste, and the `compact` stage rewrites the same two blocks in place at `cleanup` — the two paths share the renderers. Hand-editing either block is prohibited: a hand-written block silently forks the authority and defeats the resume contract; per-row narrative the generator cannot derive lives in the adjacent `### Annotations` / `### Queue annotations` zones OUTSIDE the markers. Regenerate both after every state change that touches the queue.
 - **`resume_anchor` is kept current.** The `resume_anchor` field in `status.json` names the exact next action a resuming session takes (e.g. "await PR #912 CI, then analyze landing"). Every session updates it before stopping and whenever the next action changes. A stale anchor is a defect, not a cosmetic issue — it is the single field a fresh session trusts first.
 - **Stop is always safe.** Because every decision, interaction, plan-status change, and reconciliation is persisted (to `status.json`, `epic.md`, and `logs/` via `manage-logging --store orchestrator`), no orchestration state lives only in model context. A session that ends mid-thought loses nothing that the resume contract needs.
 - **Close freezes, never deletes.** Closing an epic writes the final state into `history.md` and marks `status.json` phase `closed`; the tree remains on disk as the audit record.
