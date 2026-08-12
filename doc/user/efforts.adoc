@@ -62,10 +62,12 @@ Don't tune individual sub-keys until you've tried a preset. Three are bundled an
 |===
 | Preset | Profile
 
-| `economic` | Cost-optimised. Default `level-2`. The three analytical phases (`phase-2-refine`, `phase-3-outline`, `phase-4-plan`) plus the `verification-feedback` workflow on phase-5-execute and phase-6-finalize are bumped to `level-3`. `post-run-review` stays `level-2`.
-| `balanced` | Middle of the road. Default `level-3`. Lifts `phase-3-outline`, `phase-5-execute.default`, and `phase-6-finalize.post-run-review` to `level-4`; `verification-feedback` stays at `level-3`.
-| `high-end` | Upper-tier. Default `level-3`. Every analytical / `verification-feedback` / `post-run-review` slot (including `phase-5-execute.default`) is `level-4`. **No slot is `level-5` or higher** — those tiers require explicit per-phase opt-in.
+| `economic` | Cost-optimised. Default `level-3` (Sonnet high). Lifts `phase-3-outline`, `phase-5-execute.default`, and `phase-6-finalize.post-run-review` to `level-4` (Opus medium); the triage (`verification-feedback`) slots stay at `level-3`. Summed-level spread 30.
+| `balanced` | Middle of the road. Default `level-4` (Opus medium). Lifts the analytical phases (`phase-2-refine`, `phase-4-plan`) to `level-4` and the highest-value reasoning slots (`phase-3-outline`, `phase-5-execute.default`, `phase-6-finalize.post-run-review`) to `level-5` (Opus high); triage stays at `level-3`. Summed-level spread 36.
+| `high-end` | Upper-tier. Default `level-4` (Opus medium). Pushes every analytical phase, `phase-5-execute.default`, and `post-run-review` to `level-5` (Opus high); only the triage (`verification-feedback`) and finalize-default slots stay at `level-4`. Summed-level spread 41. `level-6`/`level-7` are **not** used by any preset — those alias-capability-gated tiers (Opus xhigh / Fable max) fall back silently when the resolved alias can't emit them, so they require explicit per-phase opt-in.
 |===
+
+The three presets form an evenly-spaced ladder along the summed-level spread (30 / 36 / 41), so each rung is genuinely distinct — no preset collapses onto its neighbour.
 
 Apply via the wizard:
 
@@ -83,6 +85,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 ----
 
 The preset payloads live in link:../../marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/effort_presets.py[`effort_presets.py`].
+
+The wizard names your project's current preset (it runs `manage-config effort identify`, which deep-matches the on-disk config against the presets). If your project was configured under a **previous** version of the ladder, the wizard recognises the old shape and marks re-applying that preset as the recommended choice — re-applying adopts the current values (which may cost more, so it is your opt-in). Your configuration keeps working unchanged until you re-apply.
 
 == Direct configuration
 

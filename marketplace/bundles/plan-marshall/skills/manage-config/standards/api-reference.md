@@ -381,6 +381,7 @@ per-scope writer covering `plan.<phase>.<role>`, the plan-wide scalar, and the
 | `resolve-target` | same as `read` | Resolve + compute the dispatched-variant target name (`execution-context-{level}` or canonical). For `--role orchestrator.reader`, the resolved level is what the *dispatch site* composes into the read-only `execution-context-reader-{level}` variant — `resolve-target` itself still returns the plain `execution-context-{level}` name. |
 | `apply-preset` | `--preset` | **Completely overwrite** the per-phase effort configuration with a named preset (see `effort_presets.py` for per-preset values). Does not touch `orchestrator.effort`. |
 | `set` | `--scope`, `--level` | Surgical per-scope writer — see [Verb: set](#verb-set) below |
+| `identify` | (none) | Classify the on-disk effort config as a named preset: `current` (matches a preset), `previous-ladder` (matches a pre-respread shape — offer a re-apply), `custom`, or `not_configured`. Read-only; the deterministic recognition the wizard's `Current: …` line prints — see [Verb: identify](#verb-identify) below |
 
 ### Verb: read
 
@@ -496,9 +497,9 @@ Success payload:
 ```toon
 status: success
 preset: balanced
-default: level-3
+default: level-4
 roles_count: 9
-overrides_count: 5
+overrides_count: 6
 ```
 
 `roles_count` is the total number of sub-key entries written under
@@ -521,6 +522,48 @@ Common errors:
   defense-in-depth: a preset value drifted out of `ALLOWED_LEVELS`. Should
   not occur in normal operation; indicates a desync between
   `_cmd_effort.ALLOWED_LEVELS` and the validation in `effort_presets.py`.
+
+### Verb: identify
+
+```bash
+manage-config effort identify
+```
+
+Reconstructs the `{default, roles}` effort payload from the on-disk config
+(`plan.effort` + every `plan.<phase>.effort`) and classifies it against the
+preset ladder via `EffortPresets.identify()`. Takes no arguments and writes
+nothing — this is the deterministic recognition the `marshall-steward` Effort
+submenu calls to render its `Current: …` line, replacing an LLM deep-equality
+eyeball with a verified script result.
+
+Because preset recognition is deep-equality against the payloads, a preset
+value re-spread would otherwise make a project holding a PRIOR ladder's shape
+stop matching every current preset and be silently reclassified as `custom`.
+`identify` closes that gap: it matches the current presets first, then the
+pre-respread shapes recorded in `EffortPresets._LEGACY_PRESETS`, so a legacy
+config is reported as `previous-ladder` (with a re-apply offer) rather than
+`custom`.
+
+Success payload:
+
+```toon
+status: success
+preset: economic
+match: current
+message: 'Current: economic preset'
+```
+
+`match` is one of:
+
+- `current` — the on-disk config equals a current preset; `preset` names it.
+- `previous-ladder` — it equals a pre-respread shape no current preset matches;
+  `preset` is the preset it used to be. Re-applying that preset adopts the
+  current (re-spread) values — an explicit opt-in, since the re-spread raised
+  the tier's cost.
+- `custom` — matches nothing; `preset` is `null`.
+- `not_configured` — no effort attributes present at all; `preset` is `null`.
+
+`message` is the ready-to-print `Current: …` string the wizard displays.
 
 ---
 

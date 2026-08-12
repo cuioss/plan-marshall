@@ -566,8 +566,13 @@ def validate_lane_prune_thresholds(value: object) -> None:
 # model tuning out of the box and `effort resolve-target` resolves a concrete
 # `execution-context-{level}` rather than silently falling back to
 # `level: inherit, source: implicit_default`. The seeded values mirror the
-# `balanced` named preset's expanded per-phase shape (the middle-of-the-road
-# tuning) — see `plan-marshall:plan-marshall` `effort_presets.py::EffortPresets.BALANCED`.
+# `economic` named preset's expanded per-phase shape — see
+# `plan-marshall:plan-marshall` `effort_presets.py::EffortPresets.ECONOMIC`.
+# These are the same operator-visible values that shipped before the effort
+# ladder was re-spread (they were the `balanced` shape then); the re-spread
+# moved that value set onto `economic`, so a fresh project's cost is unchanged
+# while the wizard now reports `Current: economic preset` for it. Keeping the
+# seed on `economic` deliberately avoids raising a new project's default cost.
 # The canonical level palette, the resolver chain, and the role registry are
 # owned by the effort standards — see
 # `plan-marshall:plan-marshall/standards/effort-variants.md`,
@@ -647,7 +652,7 @@ DEFAULT_PLAN_REFINE = {
     'confidence_threshold': 95,
     'compatibility': 'breaking',
     'simplicity': 'lean',
-    # Per-phase effort default (seeded at init; balanced-preset baseline).
+    # Per-phase effort default (seeded at init; economic-preset baseline).
     'effort': 'level-3',
     # Premise / narrative-vs-code safety-check gate_mode gate
     # (auto|always|never). Consumed by the light lane + deep refine
@@ -663,7 +668,7 @@ DEFAULT_PLAN_OUTLINE = {
     # the emerging outline. Validated by validate_q_gate_validation. Read via
     # `manage-config plan phase-3-outline get --field q_gate_validation`.
     'q_gate_validation': 'once',
-    # Per-phase effort default (seeded at init; balanced-preset baseline lifts
+    # Per-phase effort default (seeded at init; economic-preset baseline lifts
     # outline analysis to level-4).
     'effort': 'level-4',
 }
@@ -675,7 +680,7 @@ DEFAULT_PLAN_PLAN = {
     # plan. Validated by validate_q_gate_validation. Read via
     # `manage-config plan phase-4-plan get --field q_gate_validation`.
     'q_gate_validation': 'once',
-    # Per-phase effort default (seeded at init; balanced-preset baseline).
+    # Per-phase effort default (seeded at init; economic-preset baseline).
     'effort': 'level-3',
 }
 
@@ -903,10 +908,10 @@ DEFAULT_PLAN_EXECUTE = {
     # dependency on the extension-api parser); this literal `None` placeholder is
     # replaced there. Mirrors the `DEFAULT_PLAN_FINALIZE['steps']` lazy-seed shape.
     'verification_steps': None,
-    # Per-phase effort default (seeded at init; balanced-preset baseline). The
+    # Per-phase effort default (seeded at init; economic-preset baseline). The
     # phase-5-execute role group has the `default` (per-task implementation) and
     # `verification-feedback` (build-runner triage) subkeys, so the on-disk shape
-    # is an object. balanced lifts the per-task tier to level-4 and keeps triage
+    # is an object. economic lifts the per-task tier to level-4 and keeps triage
     # at level-3. Read via
     # `manage-config plan phase-5-execute get --field effort` or
     # `effort resolve-target --phase phase-5-execute --role <subkey>`.
@@ -1116,10 +1121,10 @@ DEFAULT_PLAN_FINALIZE = {
     # parser delegation cannot run at module import without a hard cross-bundle
     # dependency); this literal `None` placeholder is replaced there.
     'steps': None,
-    # Per-phase effort default (seeded at init; balanced-preset baseline). The
+    # Per-phase effort default (seeded at init; economic-preset baseline). The
     # phase-6-finalize role group has `default`, `verification-feedback`
     # (sonar / pr-comment / plugin-doctor / pr-state triage), and
-    # `post-run-review` subkeys, so the on-disk shape is an object. balanced
+    # `post-run-review` subkeys, so the on-disk shape is an object. economic
     # lifts post-run-review to level-4 and keeps default + verification-feedback
     # at level-3. Read via
     # `manage-config plan phase-6-finalize get --field effort` or

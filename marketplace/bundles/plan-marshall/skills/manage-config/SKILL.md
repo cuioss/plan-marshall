@@ -1211,6 +1211,14 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort
 
 Surgical per-scope writer. `--scope {phase}.{role}` (e.g. `phase-6-finalize.verification-feedback`) writes one nested effort scope, preserving sibling sub-keys (a pre-existing scalar `effort` string is normalised into an object first). `--scope plan` writes the `plan.effort` plan-wide scalar. `--scope orchestrator` writes the `orchestrator.effort` scalar shorthand (a bare level string applying to every orchestrator surface); `--scope orchestrator.{analyze|decompose|reader}` writes one per-surface override (normalising a pre-existing scalar `orchestrator.effort` into an object first, seeding its prior value into `default`); `--scope orchestrator.default` writes the in-block fallback slot; `--scope orchestrator.max` writes the uplift **ceiling** that clamps every resolved orchestrator surface level on the ordinal ladder (an unset `max` is a no-op). Unknown phase/role, an unwritable `orchestrator.<key>` sub-key, and invalid `--level` are all rejected.
 
+### effort identify
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort identify
+```
+
+Read-only recogniser. Reconstructs the `{default, roles}` payload from the on-disk effort config and classifies it against the preset ladder: `match: current` (equals a preset — `preset` names it), `previous-ladder` (equals a pre-respread shape no current preset matches — offer a re-apply of `preset`), `custom`, or `not_configured`. Returns a ready-to-print `message` the wizard's `Current: …` line displays. Recognises pre-respread preset shapes so a value re-spread never silently reclassifies a working config as `custom`.
+
 ### coverage read
 
 ```bash

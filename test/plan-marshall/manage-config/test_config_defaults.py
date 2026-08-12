@@ -2413,12 +2413,15 @@ def test_marshal_build_queue_max_retries_override_wins(plan_context, monkeypatch
 # =============================================================================
 #
 # get_default_config() seeds per-phase `effort` keys (plan.<phase>.effort) plus
-# the plan-wide `plan.effort` fallback, mirroring the `balanced` named preset's
+# the plan-wide `plan.effort` fallback, mirroring the `economic` named preset's
 # expanded shape, so a freshly-initialized project gets per-phase model tuning
 # out of the box and `effort resolve-target` resolves a concrete
-# `execution-context-{level}` rather than falling back to `inherit`.
+# `execution-context-{level}` rather than falling back to `inherit`. These are
+# the same values that shipped before the effort ladder was re-spread (they were
+# the `balanced` shape then); the re-spread moved that value set onto `economic`,
+# so a fresh project's cost is unchanged and the seed now mirrors `economic`.
 
-# The seeded per-phase effort shape (mirrors EffortPresets.BALANCED expanded).
+# The seeded per-phase effort shape (mirrors EffortPresets.ECONOMIC expanded).
 _EXPECTED_PHASE_EFFORT = {
     'phase-2-refine': 'level-3',
     'phase-3-outline': 'level-4',
@@ -2434,7 +2437,7 @@ _EXPECTED_PLAN_WIDE_EFFORT = 'level-3'
 
 
 def test_default_plan_blocks_carry_per_phase_effort():
-    """Each DEFAULT_PLAN_* block must seed an `effort` key matching the balanced baseline."""
+    """Each DEFAULT_PLAN_* block must seed an `effort` key matching the economic baseline."""
     blocks = {
         'phase-2-refine': _config_defaults_mod.DEFAULT_PLAN_REFINE,
         'phase-3-outline': _config_defaults_mod.DEFAULT_PLAN_OUTLINE,
@@ -2456,6 +2459,23 @@ def test_default_plan_blocks_carry_per_phase_effort():
 def test_default_plan_effort_plan_wide_fallback_is_level_3():
     """DEFAULT_PLAN_EFFORT must seed the plan-wide fallback at level-3."""
     assert _config_defaults_mod.DEFAULT_PLAN_EFFORT == _EXPECTED_PLAN_WIDE_EFFORT
+
+
+def test_seeded_effort_shape_deep_equals_economic_preset():
+    """Anti-drift guard: a fresh project's reconstructed effort payload must deep-equal
+    EffortPresets.ECONOMIC.
+
+    The seeded per-phase defaults are literal copies (not imported from the
+    preset), so they drift the moment the economic payload changes. This guard
+    binds the seed to the preset: reconstruct the {default, roles} payload from
+    get_default_config()'s plan block exactly as the wizard's `effort identify`
+    does, and assert it equals the current economic preset. If someone re-spreads
+    economic without re-syncing this seed (or vice-versa), a fresh project would
+    stop matching `Current: economic preset` and this test fails.
+    """
+    config = _config_defaults_mod.get_default_config()
+    payload = _cmd_effort_mod.reconstruct_effort_payload(config['plan'])
+    assert payload == _cmd_effort_mod.EffortPresets.get('economic')
 
 
 def test_get_default_config_seeds_per_phase_effort():
