@@ -822,3 +822,88 @@ def cmd_effort_apply_preset(args) -> dict:
             'overrides_count': overrides_count,
         }
     )
+
+
+def reconstruct_effort_payload(plan_block: dict) -> dict:
+    """Rebuild the ``{"default", "roles"}`` preset payload from a plan block.
+
+    The inverse of :func:`cmd_effort_apply_preset`'s write: the plan-wide
+    ``plan.effort`` string becomes ``default``, and each :data:`KNOWN_ROLES`
+    phase's ``plan.<phase>.effort`` attribute becomes the matching ``roles``
+    entry. A phase carrying no ``effort`` attribute contributes no ``roles``
+    entry, so a partially-configured project reconstructs to a payload that
+    matches no preset (classified ``custom`` by :meth:`EffortPresets.identify`).
+
+    Pure over its input — reads ``plan_block`` and writes nothing.
+    """
+    if not isinstance(plan_block, dict):
+        return {'default': None, 'roles': {}}
+    default = plan_block.get('effort')
+    roles: dict = {}
+    for phase in KNOWN_ROLES:
+        phase_entry = plan_block.get(phase)
+        if isinstance(phase_entry, dict) and 'effort' in phase_entry:
+            roles[phase] = phase_entry['effort']
+    return {'default': default, 'roles': roles}
+
+
+# The Step-1 display strings the marshall-steward Effort submenu prints, keyed
+# by the classification :meth:`EffortPresets.identify` returns. Co-located with
+# the writer so the wizard's "Current: …" line is a deterministic script output
+# rather than an LLM deep-equality guess (see effort-menu.md Step 1).
+def _identify_message(match: str, preset: str | None) -> str:
+    if match == 'not_configured':
+        return 'Current: not configured — defaults apply'
+    if match == 'current':
+        return f'Current: {preset} preset'
+    if match == 'previous-ladder':
+        return (
+            f'Current: {preset} preset (previous ladder) — the effort values '
+            f"predate the ladder re-spread; re-apply '{preset}' to adopt the "
+            'current values'
+        )
+    return 'Current: custom (manually edited)'
+
+
+def cmd_effort_identify(args) -> dict:
+    """Handle ``effort identify`` — classify the on-disk effort config as a preset.
+
+    Reconstructs the ``{"default", "roles"}`` payload from ``marshal.json``
+    (:func:`reconstruct_effort_payload`) and delegates to
+    :meth:`EffortPresets.identify`. This is the deterministic recognition the
+    ``marshall-steward`` Effort submenu (``effort-menu.md`` Step 1) calls to
+    render its ``Current: …`` line — replacing an LLM deep-equality eyeball
+    with a verified script result, and recognising a PRE-RESPREAD preset shape
+    (``previous-ladder``) instead of silently reclassifying it as ``custom``.
+
+    Emits ``preset`` (the name or ``None``), ``match`` (one of
+    ``not_configured`` / ``current`` / ``previous-ladder`` / ``custom``), and a
+    ready-to-print ``message``. Reads only; writes nothing.
+    """
+    if not is_initialized():
+        return error_exit('marshal.json not initialized; run /marshall-steward first')
+
+    config = load_config()
+    plan_block = config.get('plan', {})
+    payload = reconstruct_effort_payload(plan_block if isinstance(plan_block, dict) else {})
+
+    # Not-configured: no plan-wide effort AND no per-phase effort attribute.
+    if payload['default'] is None and not payload['roles']:
+        return success_exit(
+            {
+                'preset': None,
+                'match': 'not_configured',
+                'message': _identify_message('not_configured', None),
+            }
+        )
+
+    classification = EffortPresets.identify(payload)
+    match = classification['status']
+    preset = classification['name']
+    return success_exit(
+        {
+            'preset': preset,
+            'match': match,
+            'message': _identify_message(match, preset),
+        }
+    )

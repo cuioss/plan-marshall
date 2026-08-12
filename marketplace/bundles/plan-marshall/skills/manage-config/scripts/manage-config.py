@@ -24,6 +24,7 @@ from _cmd_domain_detect import cmd_domain_detect
 from _cmd_effort import (
     cmd_effort,
     cmd_effort_apply_preset,
+    cmd_effort_identify,
     cmd_effort_resolve_target,
     cmd_effort_set,
 )
@@ -550,6 +551,17 @@ def main() -> int:
         help='Effort level keyword (level-1..level-7 or inherit).',
     )
 
+    # identify: classify the on-disk effort config as a named preset. Reads
+    # marshal.json, reconstructs the {default, roles} payload, and returns the
+    # current / previous-ladder / custom / not_configured verdict the wizard's
+    # `Current: …` line prints. Recognises pre-respread preset shapes so a value
+    # re-spread does not silently reclassify a working config as custom.
+    effort_sub.add_parser(
+        'identify',
+        help='Classify the on-disk effort config as a named preset (current / previous-ladder / custom)',
+        allow_abbrev=False,
+    )
+
     # --- orchestrator ---
     # Scalar (non-effort) knobs of the top-level `orchestrator` block. The
     # effort knobs live on the `effort` noun (`--role orchestrator.{surface}` /
@@ -894,6 +906,8 @@ def main() -> int:
             result = cmd_effort_resolve_target(args)
         elif args.verb == 'set':
             result = cmd_effort_set(args)
+        elif args.verb == 'identify':
+            result = cmd_effort_identify(args)
         else:
             result = cmd_effort(args)
     elif args.noun == 'orchestrator':

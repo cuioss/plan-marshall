@@ -24,19 +24,26 @@ Then execute the workflow described below.
 
 ### Step 1: Show Current State
 
-Read the current per-phase `effort` configuration from `.plan/marshal.json` (the `plan.effort` plan-wide fallback plus every `plan.<phase>.effort` attribute) and identify which preset (if any) it matches by deep-equality against `EffortPresets.ECONOMIC`, `EffortPresets.BALANCED`, and `EffortPresets.HIGH_END`. Display one of:
+Classify the project's current per-phase `effort` configuration with the deterministic recogniser — do **not** eyeball the deep-equality yourself:
 
-- `Current: economic preset` — when the on-disk effort configuration is exactly equal to `EffortPresets.ECONOMIC`.
-- `Current: balanced preset` — when the on-disk effort configuration is exactly equal to `EffortPresets.BALANCED`.
-- `Current: high-end preset` — when the on-disk effort configuration is exactly equal to `EffortPresets.HIGH_END`.
-- `Current: custom (manually edited)` — when an effort configuration exists but does not match any preset.
-- `Current: not configured — defaults apply` — when no `effort` attributes are present.
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort identify
+```
 
-The display walks `EffortPresets.all_names()` to produce the deep-equality comparison set, so any future preset added to `effort_presets.py` is automatically picked up here without further wizard changes.
+It reconstructs the `{default, roles}` payload from `.plan/marshal.json` (the `plan.effort` plan-wide fallback plus every `plan.<phase>.effort` attribute) and returns a `match` verdict and a ready-to-print `message`. **Print the returned `message` verbatim.** It is one of:
+
+- `Current: economic preset` / `Current: balanced preset` / `Current: high-end preset` — the on-disk config matches that current preset exactly (`match: current`).
+- `Current: <name> preset (previous ladder) — the effort values predate the ladder re-spread; re-apply '<name>' to adopt the current values` — the config matches a **pre-respread** preset shape (`match: previous-ladder`). The configuration still works as-is; re-applying the named preset in Step 2 adopts the current (re-spread) values, which may raise that tier's cost, so it is the user's opt-in. Surface the named preset as the recommended choice.
+- `Current: custom (manually edited)` — an effort configuration exists but matches no preset (`match: custom`).
+- `Current: not configured — defaults apply` — no `effort` attributes are present (`match: not_configured`).
+
+`effort identify` matches the current presets first and then the pre-respread shapes recorded in `EffortPresets._LEGACY_PRESETS`, so a value re-spread never silently reclassifies a working config as `custom`. The recogniser walks `EffortPresets.all_names()`, so any future preset added to `effort_presets.py` is picked up here without further wizard changes.
 
 ### Step 2: Preset Selection
 
 Single `AskUserQuestion` with four options. Each preset's description is sourced verbatim from `EffortPresets.describe(name)` so the wizard never duplicates the preset's per-role rationale.
+
+When Step 1 reported `match: previous-ladder`, mark the matching preset's option as the recommended choice (e.g. append `(recommended — re-applies the updated <name> values)` to its label) so the re-apply that adopts the re-spread values is the obvious pick.
 
 ```text
 AskUserQuestion:

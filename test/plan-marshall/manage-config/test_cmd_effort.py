@@ -62,7 +62,9 @@ _cmd_effort_mod = _load_module(
 )
 cmd_effort = _cmd_effort_mod.cmd_effort
 cmd_effort_apply_preset = _cmd_effort_mod.cmd_effort_apply_preset
+cmd_effort_identify = _cmd_effort_mod.cmd_effort_identify
 cmd_effort_set = _cmd_effort_mod.cmd_effort_set
+reconstruct_effort_payload = _cmd_effort_mod.reconstruct_effort_payload
 KNOWN_ROLES = _cmd_effort_mod.KNOWN_ROLES
 
 
@@ -213,7 +215,7 @@ def test_apply_preset_economic_writes_expanded_payload(plan_context):
 
     assert result['status'] == 'success'
     assert result['preset'] == 'economic'
-    assert result['default'] == 'level-2'
+    assert result['default'] == 'level-3'
     # roles_count reflects the leaf-level EXPANDED set (flat groups
     # contribute 1, nested groups contribute len(subkeys)). Overrides
     # count is the per-leaf override count from the preset payload.
@@ -240,10 +242,9 @@ def test_apply_preset_economic_writes_expanded_payload(plan_context):
                     f"subkey '{group}.{subkey}' missing from on-disk map"
                 )
 
-    # ECONOMIC carries `phase-6-finalize` as a dict-valued override
-    # ({'verification-feedback': 'level-3'}); the writer expands the
-    # dict so every sub-key is explicit on disk (overrides win,
-    # missing sub-keys receive the ECONOMIC default of 'level-2').
+    # ECONOMIC carries `phase-6-finalize` as a dict-valued override; the
+    # writer expands the dict so every sub-key is explicit on disk (overrides
+    # win, any missing sub-key receives the ECONOMIC default of 'level-3').
     # The resolver returns the sub-key-specific source path because
     # the on-disk phase-6-finalize entry is a dict.
     read_result = cmd_effort(
@@ -351,7 +352,7 @@ def test_apply_preset_uppercase_underscore_alias_succeeds(plan_context):
     result = cmd_effort_apply_preset(Namespace(preset='HIGH_END'))
 
     assert result['status'] == 'success'
-    assert result['default'] == 'level-3'
+    assert result['default'] == 'level-4'
 
     on_disk = _read_marshal_models(plan_context.fixture_dir)
     assert on_disk == _expanded_preset(EffortPresets.HIGH_END)
@@ -363,7 +364,7 @@ def test_apply_preset_lowercase_underscore_alias_succeeds(plan_context):
     result = cmd_effort_apply_preset(Namespace(preset='high_end'))
 
     assert result['status'] == 'success'
-    assert result['default'] == 'level-3'
+    assert result['default'] == 'level-4'
 
     on_disk = _read_marshal_models(plan_context.fixture_dir)
     assert on_disk == _expanded_preset(EffortPresets.HIGH_END)
@@ -409,17 +410,16 @@ def test_apply_preset_round_trip_no_residue(plan_context):
     # BALANCED's per-phase entries must not survive the swap.
     # ECONOMIC's clean-slate write replaces every per-phase entry
     # with the ECONOMIC payload after writer-expansion: phase-6-finalize
-    # is a dict-valued override in ECONOMIC ({'verification-feedback':
-    # 'level-3'}), so the writer emits a dict with the ECONOMIC default
-    # ('level-2') filling every other sub-key.
+    # is a dict-valued override in ECONOMIC, expanded so every sub-key is
+    # explicit on disk (post-run-review at 'level-4', the others at 'level-3').
     assert on_disk['roles']['phase-6-finalize'] == {
-        'default': 'level-2',
+        'default': 'level-3',
         'verification-feedback': 'level-3',
-        'post-run-review': 'level-2',
+        'post-run-review': 'level-4',
     }
-    # phase-2-refine is bumped to 'level-3' in both BALANCED and ECONOMIC
-    # (the new ladder pushes the three analytical phases up); the
-    # writer keeps the string shorthand for flat-group overrides.
+    # phase-2-refine sits at 'level-3' in the re-spread ECONOMIC (the former
+    # balanced shape); the writer keeps the string shorthand for flat-group
+    # overrides.
     assert on_disk['roles']['phase-2-refine'] == 'level-3'
 
 
@@ -686,3 +686,131 @@ def test_set_wired_through_argparse_end_to_end(plan_context):
     # The write landed on disk through the CLI plumbing.
     on_disk = _read_phase_effort(plan_context.fixture_dir, 'phase-6-finalize')
     assert on_disk == {'verification-feedback': 'level-5'}
+
+
+# =============================================================================
+# effort identify — deterministic, legacy-aware preset recognition (D2)
+# =============================================================================
+
+# The genuinely pre-respread economic and high-end shapes a project could have
+# on disk today (written by `apply-preset` under the previous ladder). These are
+# the ACTUAL old payloads, not a synthesised config that happens to differ — the
+# claim D2 addresses is about configs already on users' machines.
+_PRE_RESPREAD_ECONOMIC = {
+    'default': 'level-2',
+    'roles': {
+        'phase-2-refine': 'level-3',
+        'phase-3-outline': 'level-3',
+        'phase-4-plan': 'level-3',
+        'phase-5-execute': {'default': 'level-2', 'verification-feedback': 'level-3'},
+        'phase-6-finalize': {
+            'default': 'level-2',
+            'verification-feedback': 'level-3',
+            'post-run-review': 'level-2',
+        },
+    },
+}
+_PRE_RESPREAD_HIGH_END = {
+    'default': 'level-3',
+    'roles': {
+        'phase-2-refine': 'level-4',
+        'phase-3-outline': 'level-4',
+        'phase-4-plan': 'level-4',
+        'phase-5-execute': {'default': 'level-4', 'verification-feedback': 'level-4'},
+        'phase-6-finalize': {
+            'default': 'level-3',
+            'verification-feedback': 'level-4',
+            'post-run-review': 'level-4',
+        },
+    },
+}
+
+
+def test_reconstruct_effort_payload_inverts_apply_preset(plan_context):
+    """reconstruct_effort_payload rebuilds the exact preset payload apply-preset wrote."""
+    _write_marshal_with_models(plan_context.fixture_dir, None)
+    cmd_effort_apply_preset(Namespace(preset='balanced'))
+
+    marshal_path = plan_context.fixture_dir / 'marshal.json'
+    config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    payload = reconstruct_effort_payload(config.get('plan', {}))
+
+    assert payload == _expanded_preset(EffortPresets.BALANCED)
+
+
+def _identify(plan_context) -> dict:
+    result = cmd_effort_identify(Namespace())
+    assert result['status'] == 'success'
+    return result
+
+
+def test_identify_recognises_each_applied_preset_round_trip(plan_context):
+    """apply-preset X -> effort identify returns match=current, preset=X for all three.
+
+    This is the D5 round-trip: apply -> on-disk shape -> the wizard's recognition
+    call agrees it is exactly that preset.
+    """
+    for name in ('economic', 'balanced', 'high-end'):
+        _write_marshal_with_models(plan_context.fixture_dir, None)
+        cmd_effort_apply_preset(Namespace(preset=name))
+        result = _identify(plan_context)
+        assert result['match'] == 'current', f'{name}: {result}'
+        assert result['preset'] == name, f'{name}: {result}'
+
+
+def test_identify_recognises_genuinely_old_economic_config(plan_context):
+    """A marshal.json holding the ACTUAL pre-respread economic shape is recognised
+    as previous-ladder economic — not silently reclassified as custom."""
+    _write_marshal_with_models(plan_context.fixture_dir, _PRE_RESPREAD_ECONOMIC)
+    result = _identify(plan_context)
+    assert result['match'] == 'previous-ladder'
+    assert result['preset'] == 'economic'
+    assert 're-apply' in result['message']
+
+
+def test_identify_recognises_genuinely_old_high_end_config(plan_context):
+    """The ACTUAL pre-respread high-end shape is recognised as previous-ladder high-end."""
+    _write_marshal_with_models(plan_context.fixture_dir, _PRE_RESPREAD_HIGH_END)
+    result = _identify(plan_context)
+    assert result['match'] == 'previous-ladder'
+    assert result['preset'] == 'high-end'
+
+
+def test_identify_old_balanced_config_resolves_to_current_economic(plan_context):
+    """A project on the old balanced shape now matches the current economic preset
+    exactly (values unchanged), so it reports economic/current — the honest
+    relabel, cost unchanged."""
+    _write_marshal_with_models(plan_context.fixture_dir, EffortPresets.get('economic'))
+    result = _identify(plan_context)
+    assert result['match'] == 'current'
+    assert result['preset'] == 'economic'
+
+
+def test_identify_custom_config_is_custom(plan_context):
+    _write_marshal_with_models(
+        plan_context.fixture_dir,
+        {'default': 'level-1', 'roles': {'phase-2-refine': 'level-7'}},
+    )
+    result = _identify(plan_context)
+    assert result['match'] == 'custom'
+    assert result['preset'] is None
+
+
+def test_identify_unconfigured_config_is_not_configured(plan_context):
+    _write_marshal_with_models(plan_context.fixture_dir, None)
+    result = _identify(plan_context)
+    assert result['match'] == 'not_configured'
+    assert result['preset'] is None
+
+
+def test_identify_end_to_end_via_cli(plan_context):
+    """`effort identify` resolves through the full CLI plumbing."""
+    _write_marshal_with_models(plan_context.fixture_dir, None)
+    cmd_effort_apply_preset(Namespace(preset='high-end'))
+
+    result = run_script(SCRIPT_PATH, 'effort', 'identify')
+    assert result.success, f'effort identify should succeed; stderr={result.stderr}'
+    payload = result.toon()
+    assert payload['status'] == 'success'
+    assert payload['match'] == 'current'
+    assert payload['preset'] == 'high-end'

@@ -5,27 +5,41 @@ Defines :class:`EffortPresets` — a constant-class that bundles a per-phase
 effort payload (``{"default": <level>, "roles": {<phase>: <level | dict>, ...}}``)
 under three named profiles:
 
+The three profiles form an evenly-spaced ladder along the crude
+summed-level metric (sum of the ordinal ``N`` in ``level-N`` across the
+nine effort slots): ``economic`` 30, ``balanced`` 36, ``high-end`` 41 —
+so each rung is genuinely distinct from its neighbours (every adjacent
+step is at least +5).
+
 - ``ECONOMIC`` — minimum-cost configuration; stored in literal-expanded
   form (every ``KNOWN_ROLES`` phase carries an explicit entry mirroring
   the on-disk shape that ``apply-preset economic`` writes after
-  ``_expand_phase_effort``). Defaults to ``level-2`` and bumps the
-  analytical phases (phase-2-refine, phase-3-outline, phase-4-plan) plus
-  the verification-feedback workflow on phase-5-execute and
-  phase-6-finalize to ``level-3``.
+  ``_expand_phase_effort``). Defaults to ``level-3`` (sonnet, high) and
+  lifts ``phase-3-outline``, ``phase-5-execute.default``, and
+  ``phase-6-finalize.post-run-review`` to ``level-4`` (opus, medium).
 - ``BALANCED`` — middle-of-the-road profile; stored in literal-expanded
   form (every ``KNOWN_ROLES`` phase carries an explicit entry mirroring
   the on-disk shape that ``apply-preset balanced`` writes after
-  ``_expand_phase_effort``). Defaults to ``level-3`` and lifts
-  ``phase-3-outline``, ``phase-5-execute.default``, and
-  ``phase-6-finalize.post-run-review`` to ``level-4``.
+  ``_expand_phase_effort``). Defaults to ``level-4`` (opus, medium),
+  lifts the analytical phases (phase-2-refine, phase-4-plan) to
+  ``level-4`` and the highest-value reasoning slots (``phase-3-outline``,
+  ``phase-5-execute.default``, ``phase-6-finalize.post-run-review``) to
+  ``level-5`` (opus, high), keeping the triage (verification-feedback)
+  slots at ``level-3``.
 - ``HIGH_END`` — upper-tier profile; stored in literal-expanded form
   (every ``KNOWN_ROLES`` phase carries an explicit entry mirroring the
   on-disk shape that ``apply-preset high-end`` writes after
-  ``_expand_phase_effort``). Defaults to ``level-3`` and pushes every
-  analytical / verification-feedback / post-run-review slot to ``level-4``.
-  No slot uses ``level-5`` — ``level-5`` (opus, high) is reserved for
-  explicit per-phase opt-in as a cost/intensity policy choice, never a
-  preset default.
+  ``_expand_phase_effort``). Defaults to ``level-4`` (opus, medium) and
+  pushes every analytical (phase-2/3/4) and primary-execution
+  (``phase-5-execute.default``) slot plus ``post-run-review`` to
+  ``level-5`` (opus, high), keeping only the triage
+  (verification-feedback) and finalize-default slots at ``level-4``.
+  ``level-5`` is a deliberate preset default here — the top rung is meant
+  to be genuinely high-end. ``level-6``/``level-7`` are NOT used as preset
+  defaults: they resolve to alias-capability-gated efforts (opus xhigh /
+  fable max) that the build target refuses to emit when the resolved alias
+  lacks the capability (silently falling back to the canonical variant),
+  so those two tiers stay reserved for explicit per-phase opt-in.
 
 The presets sit alongside the role registry inside the
 ``plan-marshall:plan-marshall`` skill so that policy decisions about
@@ -101,87 +115,94 @@ class EffortPresets:
     # ---- preset payloads -------------------------------------------------
 
     ECONOMIC: dict = {
-        'default': 'level-2',
+        'default': 'level-3',
         'roles': {
             'phase-2-refine': 'level-3',
-            'phase-3-outline': 'level-3',
+            'phase-3-outline': 'level-4',
             'phase-4-plan': 'level-3',
             'phase-5-execute': {
-                'default': 'level-2',
+                'default': 'level-4',
                 'verification-feedback': 'level-3',
             },
             'phase-6-finalize': {
-                'default': 'level-2',
+                'default': 'level-3',
                 'verification-feedback': 'level-3',
-                'post-run-review': 'level-2',
+                'post-run-review': 'level-4',
             },
         },
     }
     """Minimum-cost preset, stored in literal-expanded form (every
-    ``KNOWN_ROLES`` phase carries an explicit entry). Default ``level-2``;
-    bumps the three analytical phases (phase-2-refine, phase-3-outline,
-    phase-4-plan) to ``level-3``, plus the verification-feedback workflow on
-    phase-5-execute (build-runner triage) and phase-6-finalize (sonar /
-    pr-comment / plugin-doctor / pr-state triage). The redundancy against
-    the bubbling-resolution semantics is intentional — it mirrors the
-    on-disk shape produced by ``apply-preset economic`` after
+    ``KNOWN_ROLES`` phase carries an explicit entry). Default ``level-3``
+    (sonnet, high); lifts ``phase-3-outline``, ``phase-5-execute.default``,
+    and ``phase-6-finalize.post-run-review`` to ``level-4`` (opus, medium),
+    keeping every other slot at ``level-3``. Summed-level spread 30. The
+    redundancy against the bubbling-resolution semantics is intentional — it
+    mirrors the on-disk shape produced by ``apply-preset economic`` after
     ``_expand_phase_effort`` so the wizard's deep-equality match in
     ``effort-menu.md`` Step 1 recognises ``Current: economic preset``."""
 
     BALANCED: dict = {
-        'default': 'level-3',
+        'default': 'level-4',
         'roles': {
-            'phase-2-refine': 'level-3',
-            'phase-3-outline': 'level-4',
-            'phase-4-plan': 'level-3',
+            'phase-2-refine': 'level-4',
+            'phase-3-outline': 'level-5',
+            'phase-4-plan': 'level-4',
             'phase-5-execute': {
-                'default': 'level-4',
+                'default': 'level-5',
                 'verification-feedback': 'level-3',
             },
             'phase-6-finalize': {
                 'default': 'level-3',
                 'verification-feedback': 'level-3',
-                'post-run-review': 'level-4',
+                'post-run-review': 'level-5',
             },
         },
     }
     """Middle-of-the-road preset, stored in literal-expanded form (every
-    ``KNOWN_ROLES`` phase carries an explicit entry). Default ``level-3``;
-    lifts ``phase-3-outline``, ``phase-5-execute.default``, and
-    ``phase-6-finalize.post-run-review`` to ``level-4``. The redundancy
-    against the bubbling-resolution semantics is intentional — it mirrors
-    the on-disk shape produced by ``apply-preset balanced`` after
-    ``_expand_phase_effort`` so the wizard's deep-equality match in
-    ``effort-menu.md`` Step 1 recognises ``Current: balanced preset``."""
+    ``KNOWN_ROLES`` phase carries an explicit entry). Default ``level-4``
+    (opus, medium); lifts the analytical phases (phase-2-refine,
+    phase-4-plan) to ``level-4`` and the highest-value reasoning slots
+    (``phase-3-outline``, ``phase-5-execute.default``,
+    ``phase-6-finalize.post-run-review``) to ``level-5`` (opus, high),
+    keeping the triage (verification-feedback) slots at ``level-3``.
+    Summed-level spread 36. The redundancy against the bubbling-resolution
+    semantics is intentional — it mirrors the on-disk shape produced by
+    ``apply-preset balanced`` after ``_expand_phase_effort`` so the wizard's
+    deep-equality match in ``effort-menu.md`` Step 1 recognises ``Current:
+    balanced preset``."""
 
     HIGH_END: dict = {
-        'default': 'level-3',
+        'default': 'level-4',
         'roles': {
-            'phase-2-refine': 'level-4',
-            'phase-3-outline': 'level-4',
-            'phase-4-plan': 'level-4',
+            'phase-2-refine': 'level-5',
+            'phase-3-outline': 'level-5',
+            'phase-4-plan': 'level-5',
             'phase-5-execute': {
-                'default': 'level-4',
+                'default': 'level-5',
                 'verification-feedback': 'level-4',
             },
             'phase-6-finalize': {
-                'default': 'level-3',
+                'default': 'level-4',
                 'verification-feedback': 'level-4',
-                'post-run-review': 'level-4',
+                'post-run-review': 'level-5',
             },
         },
     }
     """Upper-tier preset, stored in literal-expanded form (every
-    ``KNOWN_ROLES`` phase carries an explicit entry). Default ``level-3``;
-    pushes every analytical / verification-feedback / post-run-review slot
-    to ``level-4``, including ``phase-5-execute.default`` (the per-task
-    implementation tier). No slot uses ``level-5`` — ``level-5`` (opus,
-    high) is reserved for explicit per-phase opt-in as a cost/intensity
-    policy choice, never a preset default. The redundancy against the bubbling-resolution
-    semantics is intentional — it mirrors the on-disk shape produced by
-    ``apply-preset high-end`` after ``_expand_phase_effort`` so the
-    wizard's deep-equality match in ``effort-menu.md`` Step 1 recognises
-    ``Current: high-end preset``."""
+    ``KNOWN_ROLES`` phase carries an explicit entry). Default ``level-4``
+    (opus, medium); pushes every analytical phase (phase-2/3/4), the
+    per-task implementation tier (``phase-5-execute.default``), and
+    ``post-run-review`` to ``level-5`` (opus, high), keeping only the triage
+    (verification-feedback) and finalize-default slots at ``level-4``.
+    Summed-level spread 41. ``level-5`` is a deliberate preset default here —
+    the top rung is meant to be genuinely high-end; ``level-6``/``level-7``
+    stay out of presets because their alias-capability-gated efforts (opus
+    xhigh / fable max) silently fall back to the canonical variant when the
+    resolved alias lacks the capability. The redundancy against the
+    bubbling-resolution semantics is intentional — it mirrors the on-disk
+    shape produced by ``apply-preset high-end`` after ``_expand_phase_effort``
+    so the wizard's deep-equality match in ``effort-menu.md`` Step 1
+    recognises ``Current: high-end preset``."""
 
     # ---- canonical name table -------------------------------------------
 
@@ -194,26 +215,84 @@ class EffortPresets:
         'high-end': HIGH_END,
     }
 
+    # ---- pre-respread legacy shapes (recognition-only) -------------------
+
+    # Effort-preset payload shapes a PRIOR release wrote and the current
+    # release no longer writes, kept so the wizard recognises an existing
+    # project's preset instead of silently reclassifying it as ``custom``
+    # (the deep-equality-match brittleness — see ``identify``). Only the two
+    # shapes that no current preset matches are listed: the previous
+    # ``economic`` (summed-level spread 23) and the previous ``high-end``
+    # (spread 34). The previous ``balanced`` (spread 30) is deliberately
+    # absent — it is byte-identical to the CURRENT ``economic`` payload, so
+    # ``identify`` resolves it as ``economic``/``current`` (current match is
+    # checked first), and listing it here would only mislead. These shapes are
+    # NEVER written — they exist to CLASSIFY an on-disk config and offer a
+    # re-apply, never to migrate values silently (re-applying is the user's
+    # opt-in, honouring the cost increase the re-spread carries).
+    # SHIM(A): pre-respread effort-preset payload shapes (recognised so the wizard offers re-apply instead of silently reclassifying as custom).
+    # shim-owner: plan-marshall (effort_presets)
+    # shim-floor: the effort-ladder re-spread that changed the economic/balanced/high-end payloads (economic 23->30, balanced 30->36, high-end 34->41)
+    # shim-remove-when: no live marshal.json carries a pre-respread economic (spread 23) or high-end (spread 34) preset shape
+    _LEGACY_PRESETS: dict[str, dict] = {
+        'economic': {
+            'default': 'level-2',
+            'roles': {
+                'phase-2-refine': 'level-3',
+                'phase-3-outline': 'level-3',
+                'phase-4-plan': 'level-3',
+                'phase-5-execute': {
+                    'default': 'level-2',
+                    'verification-feedback': 'level-3',
+                },
+                'phase-6-finalize': {
+                    'default': 'level-2',
+                    'verification-feedback': 'level-3',
+                    'post-run-review': 'level-2',
+                },
+            },
+        },
+        'high-end': {
+            'default': 'level-3',
+            'roles': {
+                'phase-2-refine': 'level-4',
+                'phase-3-outline': 'level-4',
+                'phase-4-plan': 'level-4',
+                'phase-5-execute': {
+                    'default': 'level-4',
+                    'verification-feedback': 'level-4',
+                },
+                'phase-6-finalize': {
+                    'default': 'level-3',
+                    'verification-feedback': 'level-4',
+                    'post-run-review': 'level-4',
+                },
+            },
+        },
+    }
+
     _DESCRIPTIONS: dict[str, str] = {
         'economic': (
-            'Minimum-cost preset (literal-expanded) — default level-2, '
-            'with phase-2-refine / phase-3-outline / phase-4-plan and '
-            'phase-5-execute / phase-6-finalize verification-feedback '
-            'bumped to level-3; mirrors the on-disk shape written by '
+            'Minimum-cost preset (literal-expanded) — default level-3 '
+            '(sonnet high), with phase-3-outline, phase-5-execute.default, '
+            'and phase-6-finalize.post-run-review at level-4 (opus medium); '
+            'summed-level spread 30. Mirrors the on-disk shape written by '
             'apply-preset economic.'
         ),
         'balanced': (
-            'Middle-of-the-road preset (literal-expanded) — default level-3, '
-            'with phase-3-outline, phase-5-execute.default, and '
-            'phase-6-finalize.post-run-review lifted to level-4; mirrors the '
-            'on-disk shape written by apply-preset balanced.'
+            'Middle-of-the-road preset (literal-expanded) — default level-4 '
+            '(opus medium), with the analytical phases at level-4 and the '
+            'highest-value slots (phase-3-outline, phase-5-execute.default, '
+            'phase-6-finalize.post-run-review) at level-5 (opus high); '
+            'summed-level spread 36. Mirrors the on-disk shape written by '
+            'apply-preset balanced.'
         ),
         'high-end': (
-            'Upper-tier preset (literal-expanded) — default level-3, with '
-            'every analytical / verification-feedback / post-run-review '
-            'slot at level-4 (including phase-5-execute.default); mirrors '
-            'the on-disk shape written by apply-preset high-end. No slot '
-            'uses level-5.'
+            'Upper-tier preset (literal-expanded) — default level-4 (opus '
+            'medium), with every analytical phase, phase-5-execute.default, '
+            'and post-run-review at level-5 (opus high); summed-level spread '
+            '41. Mirrors the on-disk shape written by apply-preset high-end. '
+            'level-6/level-7 stay opt-in only (alias-gated).'
         ),
     }
 
@@ -291,6 +370,54 @@ class EffortPresets:
                 f"unknown preset '{name}'; valid names: {cls.all_names()}"
             )
         return description
+
+    @classmethod
+    def identify(cls, payload: dict) -> dict:
+        """Classify a reconstructed effort payload against the preset ladder.
+
+        The configuration wizard recognises a project's preset by
+        deep-equality of its on-disk effort configuration against the preset
+        payloads (see ``marshall-steward:effort-menu.md`` Step 1). A value
+        re-spread changes those payloads, so a project holding a PRIOR
+        ladder's shape would stop matching every current preset and be
+        silently reclassified as ``custom``. This method closes that gap: it
+        first tries an exact match against the CURRENT presets, then against
+        the pre-respread :data:`_LEGACY_PRESETS` shapes, so a legacy config is
+        reported as its old preset name with a ``previous-ladder`` status the
+        wizard surfaces as a re-apply offer.
+
+        Current match is checked FIRST, so a payload that is byte-identical to
+        both a current preset and a legacy shape (the previous ``balanced``,
+        now identical to the current ``economic``) resolves to the current
+        preset — never the stale legacy name.
+
+        Args:
+            payload: The reconstructed ``{"default": ..., "roles": {...}}``
+                effort payload (the same shape the preset constants carry),
+                as rebuilt from ``plan.effort`` + every ``plan.<phase>.effort``
+                by the caller.
+
+        Returns:
+            ``{"name": <preset name | None>, "status": <status>}`` where
+            ``status`` is one of:
+
+            - ``current`` — ``payload`` equals a current preset; ``name`` is it.
+            - ``previous-ladder`` — ``payload`` equals a pre-respread shape no
+              current preset matches; ``name`` is the preset it used to be.
+              Re-applying that preset adopts the current (re-spread) values.
+            - ``custom`` — ``payload`` matches nothing; ``name`` is ``None``.
+
+        Never mutates ``payload`` and never writes anything — recognition only.
+        """
+        if not isinstance(payload, dict) or 'default' not in payload or 'roles' not in payload:
+            return {'name': None, 'status': 'custom'}
+        for name, preset in cls._NAME_TO_PRESET.items():
+            if payload == preset:
+                return {'name': name, 'status': 'current'}
+        for name, legacy in cls._LEGACY_PRESETS.items():
+            if payload == legacy:
+                return {'name': name, 'status': 'previous-ladder'}
+        return {'name': None, 'status': 'custom'}
 
 
 # --- import-time self-check ----------------------------------------------
@@ -370,6 +497,10 @@ def _validate_preset(name: str, preset: dict) -> None:
 
 
 # Run the self-check at import time so schema typos surface immediately.
+# Both the current presets and the pre-respread legacy shapes are validated:
+# a legacy shape referencing an unknown level would misclassify a live config.
 for _preset_name, _preset in EffortPresets._NAME_TO_PRESET.items():
     _validate_preset(_preset_name, _preset)
+for _preset_name, _preset in EffortPresets._LEGACY_PRESETS.items():
+    _validate_preset(f'{_preset_name} (legacy)', _preset)
 del _preset_name, _preset
