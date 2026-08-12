@@ -89,16 +89,12 @@ class BlockingFindingsPresent(Exception):
     surfaces which finding types are gated, preserving the consumer envelope
     contract in ``_handshake_commands.py``.
 
-    Guarded boundaries (where this exception fires):
+    Firing sites (where this exception surfaces):
 
-    - phase ``6-finalize`` capture (covers the ``5-execute → 6-finalize``
-      transition; a phase-5-execute capture for the next phase persists
-      first, and the marshal then issues a ``capture --phase 6-finalize``
-      which surfaces this exception when blocking counts are non-zero).
-    - The intra-finalize **merge boundary**, where ``branch-cleanup`` runs
+    - The finalize **merge boundary**, where ``branch-cleanup`` runs
       ``phase_handshake findings-check --phase 6-finalize`` before the merge
-      (the same exception fires on a pending actionable finding).
-    - The **finalize completion boundary**, where the lifecycle verbs
+      (the exception fires on a pending actionable finding and blocks the merge).
+    - The finalize **completion boundary**, where the lifecycle verbs
       (``manage-status transition --completed 6-finalize`` /
       ``manage-status archive``) call :func:`assert_finalize_findings_clean`
       and refuse to mark the plan complete while an actionable finding is
@@ -107,6 +103,15 @@ class BlockingFindingsPresent(Exception):
       earlier. A missing call used to be indistinguishable from a passing
       gate (both leave no row and raise nothing); the completion boundary
       closes that by evaluating the findings directly.
+
+    The ``5-execute → 6-finalize`` transition is **not** a firing site: it
+    inlines ``phase_handshake verify --phase 5-execute --strict``, which detects
+    drift on the captured ``5-execute`` row but does not raise this exception —
+    the raise is gated on ``phase == '6-finalize'``, and the self-review findings
+    the gate catches are filed *during* finalize, after that boundary. A composite
+    ``capture --phase 6-finalize`` would raise, but no orchestration step issues
+    one; the two firing sites above are the actual arming, a state rather than a
+    never-emitted call.
 
     All other phase captures **read** the rows (so retrospective analysis
     sees pending counts at each handshake) but do **not** raise — see the
