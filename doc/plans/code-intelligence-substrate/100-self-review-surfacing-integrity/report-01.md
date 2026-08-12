@@ -60,7 +60,16 @@ Standards from these skills are loaded on-demand as the work requires.
 
 ## Build gate
 
-_Filled in at Step 5._
+`git diff --name-only origin/main...HEAD -- '*.py'` verdict: **Python changed** (both bundles —
+`_self_review_detectors.py`, `self_review.py`, `_orchestrator_inbox.py`, `orchestrator.py`, plus three
+test files), so the full `./pw verify` gate ran.
+
+**Result: SUCCESS.** `19241 passed, 14 skipped` (0 failed / 0 errors, in 10m59s); `=== verify: SUCCESS
+===`. Coverage line: mypy(production) 395 files, ruff over `marketplace/bundles`/`test`/`.claude`, SPDX
+headers, **plugin-doctor marketplace-wide** (so the workflow-doc / ext-point / SKILL.md / inbox-envelope
+changes passed structural lint and `test_real_marketplace_quality_gate_has_zero_findings`), mypy(test)
+717 files, and whole-tree module-tests. The 14 skips are environment guards (the strict-no-skip gate is
+off by default). Per-commit quality gates were also clean throughout (mypy/ruff/SPDX).
 
 ## Findings
 
