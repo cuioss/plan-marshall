@@ -57,6 +57,17 @@ This provides rules for:
 | JPA entity with business key | `@Getter` + `@Setter` + `@EqualsAndHashCode(of = ...)` |
 | Static utility methods | `@UtilityClass` |
 
+## Known gaps in this guidance
+
+Recorded so they are not mistaken for settled decisions — these are **gaps, not rules**:
+
+- The decision guide is silent on **parameter contracts via Lombok `@NonNull`** — it gives no guidance
+  on when to annotate a method or constructor parameter with `@NonNull` to generate an entry
+  null-check, versus relying on `@NullMarked` + JSpecify (see `pm-dev-java:java-null-safety`).
+- There is **no trigger for auditing utility-class eligibility** — the guide recommends `@UtilityClass`
+  for static-method classes but names no signal for *when* to check whether an existing class (all
+  static methods, no instance state) should become one.
+
 ## Related Skills
 
 - `pm-dev-java:java-core` - Core Java patterns, records migration
