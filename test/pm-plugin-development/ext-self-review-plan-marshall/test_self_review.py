@@ -3684,6 +3684,9 @@ class TestSinceRefDeltaScoping:
         assert data['surface_scope'] == 'delta'
         assert data['since_ref'] == since_ref
         assert int(data['files_in_scope']) == 1
+        # D3: the scope the round was drawn against is published as a statement a
+        # downstream absence claim states verbatim — a delta round says so.
+        assert data['scope_statement'].startswith('searched delta scope: 1 file')
 
         surfaced = {entry['file'] for entry in data['regexes']}
         assert surfaced == {'beta.py'}, (
@@ -3706,6 +3709,8 @@ class TestSinceRefDeltaScoping:
 
         assert data['surface_scope'] == 'full'
         assert int(data['files_in_scope']) == 2
+        # D3: a full round's scope statement names the whole-diff scope.
+        assert data['scope_statement'].startswith('searched full scope: 2 files')
 
         surfaced = {entry['file'] for entry in data['regexes']}
         assert surfaced == {'alpha.py', 'beta.py'}
@@ -3744,6 +3749,12 @@ class TestSinceRefDeltaScoping:
         assert data['surface_scope'] == 'delta'
         assert int(data['files_in_scope']) == 0
         assert int(data['counts']['total']) == 0
+        # D3 — the "absence carries its scope" invariant: even when the surface
+        # is empty (nothing to review), it STILL publishes the scope it was drawn
+        # against, so a downstream absence/clean verdict can never be made
+        # without the scope statement being present in the surface output.
+        assert data['scope_statement']
+        assert data['scope_statement'].startswith('searched delta scope: 0 files')
 
     def test_parser_defaults_since_ref_to_none(self):
         # Omitting the flag is the full-sweep path (round 1, and the closing

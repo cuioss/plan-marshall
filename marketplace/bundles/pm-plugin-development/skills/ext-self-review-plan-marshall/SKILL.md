@@ -102,6 +102,7 @@ base_branch: {base_branch}
 since_ref: {sha, or empty when the round was not delta-scoped}
 surface_scope: delta | full
 files_in_scope: N
+scope_statement: {human-readable statement of the scope this round searched — the file set an absence/residual claim it produces must publish}
 counts:
   by_family:
     structural: {sum of the in_total structural lists}
@@ -196,6 +197,8 @@ duplicate_claimable_keys[N21]{file,line,collection,key,form}:
 discard_without_report[N22]{file,line,channel,discard}:
   {repo-relative-py-path},{line},{report-channel-name},{continue|break}
 ```
+
+> **`surface_scope`, `files_in_scope`, and `scope_statement` are the round's scope, published on every surface — including an empty one.** `surface_scope` (`delta` or `full`) and `files_in_scope` state which file set the round searched, and `scope_statement` renders them as a single human-readable sentence. They are emitted UNCONDITIONALLY, so the surface never presents an absence (empty candidate lists) without the scope it was drawn against. Their purpose is a claim-scoping one: a `delta` round searches a NARROWER set than a `full` one, so any absence/residual claim a downstream consumer makes from the round — the clean verdict, or a finding asserting a literal appears in no file — is true only within `files_in_scope`, and MUST publish that scope rather than a wider one. The consumer contract for this is [`../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md`](../../../plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md) § "Absence claims state the scope they were drawn against".
 
 > The `total` count covers the seventeen line-level heuristics (`regexes`, `user_facing_strings`, `markdown_sections`, `symmetric_pairs`, `flag_guard_pairs`, `keep_markers`, `producer_consumer`, `source_of_truth`, `same_document_consistency`, `description_vs_body`, `unguarded_boundaries`, `touched_claims`, `ordinal_references`, `scan_derived_keys`, `worked_example_pairs`, `duplicate_claimable_keys`, `discard_without_report`) only. `contract_sources`, `schema_bearing_files`, `count_prose`, and `advertised_form_help_strings` are review-anchor categories with their own counts; they are not summed into `total` — `contract_sources` and `schema_bearing_files` because each modified file contributes at most one entry whose payload is references rather than candidates, `count_prose` because it anchors a sibling-SKILL.md re-check rather than flagging an added line, and `advertised_form_help_strings` because it anchors a contract-drift sub-check rather than flagging a standalone line-level defect. `ordinal_references` IS summed into `total` because it flags a specific added line (the ordinal cross-reference whose referenced list the same change touched), `scan_derived_keys` IS summed for the same reason (it flags the scan loop's own line), `worked_example_pairs` IS summed for the same reason (it flags the GOOD marker's own line), `duplicate_claimable_keys` IS summed because it flags the insertion site, and `discard_without_report` IS summed because it flags the discard branch — all line-level heuristics. `protected_identifiers` is a derived index over `keep_markers` entries with `kind: keep_protected` — it does not contribute to `total` either.
 

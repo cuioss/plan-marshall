@@ -61,7 +61,7 @@ implements: plan-marshall:extension-api/standards/ext-point-self-review-surfacin
 ### Post-Conditions
 
 - TOON to stdout carrying one candidate sub-list per registry entry, as enumerated below (some MAY be empty).
-- The echo fields `since_ref`, `surface_scope`, and `files_in_scope` state which round variant produced the payload, so a consumer never has to reconstruct it.
+- The echo fields `since_ref`, `surface_scope`, `files_in_scope`, and `scope_statement` state which round variant produced the payload and the file set it searched, so a consumer never has to reconstruct it. `scope_statement` is emitted on every surface — including an empty one — so an absence/residual claim a consumer derives from the round can never be made without the scope it was drawn against.
 - An empty intersection surfaces NOTHING. A delta round whose intersection is empty genuinely has no files to review, so the implementor MUST emit empty candidate lists rather than falling back to the unfiltered diff.
 - Non-zero exit on git-unavailable, base-branch-missing, worktree-resolution, or since-ref-resolution failure.
 
@@ -75,6 +75,7 @@ base_branch: {base_branch}
 since_ref: {sha or empty when the round was not delta-scoped}
 surface_scope: delta | full
 files_in_scope: N
+scope_statement: {human-readable statement of the file set this round searched — published on every surface, empty ones included, so an absence claim can never be made without it}
 counts:
   by_family:
     structural: {sum of the in_total structural lists}
