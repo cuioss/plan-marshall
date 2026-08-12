@@ -1,6 +1,6 @@
 # Run report — 190-split-and-complete-the-user-configuration-doc (run 01)
 
-**Date (UTC):** 2026-08-12    **Branch:** `claude/user-config-doc-split-d37w8m` (harness-assigned, kept)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-12    **Branch:** `claude/user-config-doc-split-d37w8m` (harness-assigned, kept)    **PR:** #1179    **Outcome:** completed (landing delegated to the merge queue)
 
 ## Skills loaded
 
@@ -135,7 +135,22 @@ The independent verification sub-agent found **no new defects** (all deliverable
 
 ## Reviewer participation
 
-_Pending PR._
+Expected reviewer population, derived from the `author_login` of each `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc: `coderabbitai` (coderabbit.md), `sourcery-ai` (sourcery.md), `cuioss-review-bot` (pr-agent.md). Verdicts derived from the stored comment bodies on PR #1179 (both surfaces read: the issue-comment surface, and the inline review-thread surface which returned empty).
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` (pr-agent) | `reviewed` | Posted "PR Reviewer Guide 🔍 — No relevant tests / No security concerns identified / No major issues detected" — a review artifact over the diff. Ran despite the label (the org's own reviewer); found nothing actionable. |
+| `coderabbitai` | `silent` | Posted a "Review skipped — Auto reviews are limited based on label configuration → excluded label `skip-bot-review`" notice; deliberately suppressed by this run's `skip-bot-review` label. Not a review of the diff. |
+| `sourcery-ai` | `silent` | "Sourcery review" check-run concluded `skipped`; no comment posted. Deliberately suppressed by `skip-bot-review`. |
+
+Coverage: **1 of 3**. The § Step 8 condition-4 shortfall disclosure fired: "Review coverage 1 of 3 — `cuioss-review-bot` reviewed (no issues); `coderabbitai` and `sourcery-ai` deliberately suppressed via the `skip-bot-review` label (doc-only diff)." The shortfall is **by design** — a doc-only diff (no `*.py`, no `.claude/skills/**`, no `marketplace/bundles/**`) qualifies for `skip-bot-review` to conserve contended bot-review capacity, and the independent pre-PR verification sub-agent is the substantive review. Disclosed, not blocking (conditions 1–3 are the only merge gates).
+
+## Findings (PR review)
+
+| Source | Comment | Disposition |
+|---|---|---|
+| `cuioss-review-bot` | "PR Reviewer Guide — no relevant tests / no security concerns / no major issues detected." | Not actionable (no findings). No change needed. |
+| `coderabbitai` | "Review skipped (excluded label `skip-bot-review`)." | Not actionable (skip notice, by design). No change needed. |
 
 ## Cost
 
@@ -145,12 +160,34 @@ _Pending PR._
 
 ## Contract check (Step 9)
 
-_Appended at finalize._
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | done | Named above; `ref-asciidoc` scripts unavailable (no executor) → manual verification, recorded. |
+| 2 Branch | done | Harness-assigned `claude/user-config-doc-split-d37w8m`, on `origin` (pushed before any edit). |
+| 3 Plan directory | done | `doc/plans/truthful-signals/190-split-and-complete-the-user-configuration-doc/plan.md` exists and opens with the first-instruction block (verified present on the handed plan; nothing to repair). |
+| 4 Implement | done | Commits carry the `Co-Authored-By: Claude` trailer; all six deliverables addressed. |
+| 4 Per-commit gate | n/a | No commit touched `*.py` → no quality gate owed (docs-only). |
+| 4 Pushed | done | No unpushed commit remains after the final report commit (`git status -sb` clean). |
+| 5 Build gate | done | `git diff --name-only origin/main...HEAD -- '*.py'` empty → no buildable footprint, build skipped; the merge-queue `merge_group` verifies. |
+| 6 Verification sub-agent | done | All-PASS; findings/dispositions recorded (D6). |
+| 7 PR cycle | done | PR #1179; every comment dispositioned (none actionable). |
+| 8 Merge gate | pending arm | Conditions 1–3 met (required `verify / conclusion` green; comments handled; report finalized as last pre-merge commit). Coverage shortfall (1-of-3) disclosed. Auto-merge to be armed; landing delegated to the queue + orchestrator collect (this cloud session cannot self-wake to watch the queue — § Cloud session affordances). |
+| 8 Bridge | done | No status/bookkeeping write outside this plan's own directory; report carries the PR number + per-deliverable outcome. |
+| 9 This check | done | This table. |
+| 9 What have we learned | done | Below. |
+
+GitHub access path: GitHub MCP server. Branch form: harness-assigned. No `/sync-plugin-cache` owed (cloud run; machine-local step).
 
 ## What have we learned (Step 9)
 
-_Appended at finalize._
+One low-confidence observation, presented to the operator, **not** shipped as a separate PR (it needs approval and is marginal):
+
+- **Step 1's "Always load `plugin-script-architecture`" is pure context cost for a docs-only plan.** This run touched no scripts, no `SKILL.md`, no bundle code — yet the contract's Step 1 table lists `plugin-script-architecture` as an unconditional load, which its own opening line ("Loading skills you will not use is pure context cost") argues against. Candidate change: make `plugin-script-architecture` conditional (load only when the plan touches scripts / `SKILL.md` / bundle code), leaving `ref-code-quality` as the sole unconditional load. Evidence: this run loaded it and never exercised it. Marginal — recorded for the operator's judgement rather than opened as a `chore(cloud-plan-lane)` PR.
+
+No other contract change proposed: the lane executed cleanly end to end (skill loading via bundle paths, the docs-only build skip, the report lifecycle, the draft→label→ready technique for applying `skip-bot-review` via MCP, and the merge gate all worked as written).
 
 ## Residue
 
-_Appended at finalize._
+- **Finding #1** (`data-model.md` omits the seeded `auto_route_recipe`/`auto_route_recipe_threshold`) → a documentation-standard fix to `data-model.md`, its own change (out of scope here; `data-model.md` is read-only for this plan).
+- **Finding #2** (`finalize-steps set-lane` rejects `minimal`/`ask`, both valid per-element override values) → a code-level divergence, its own change (Out-of-scope names it explicitly).
+- **Landing** delegated to the merge queue: this cloud session cannot self-wake to confirm `state: MERGED`; the orchestrator's collect reads the merge event. Completed-with-landing-delegated, not partial.
