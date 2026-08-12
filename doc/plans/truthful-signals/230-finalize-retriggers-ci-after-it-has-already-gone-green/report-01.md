@@ -94,8 +94,10 @@ doc note):
   sentinel exists to prevent. **Verdict: must remain its own pre-merge commit; its one extra CI run in
   the era-stamp-only case is intrinsic to the PR-number dependency.** The only lever that removes it
   (verify-workflow concurrency cancellation) lives in `.github/workflows/`, outside this plan's
-  declared surface. When a co-occurring loop-back commit exists, its correction should ride that
-  commit rather than a separate push (D2 consolidation reduces the co-occurring case).
+  declared surface. The fill self-commits+self-pushes at order 21, *before* any loop-back commit
+  exists (loop-backs come only from `ci-verify`/22, `automatic-review`/30, `sonar-roundtrip`/40), so
+  its correction cannot ride a co-occurring commit today — deferring its push to do so would be a
+  future D2-style consolidation, not current behaviour.
 - **`automatic-review`(30)/`sonar-roundtrip`(40)**: post-PR by nature (react to PR-side
   review/analysis). Not internally computable earlier. **Verdict: consolidate via D2** — already the
   target of the unified barrier.
@@ -110,9 +112,9 @@ Verified at all four load-bearing sites (each independently re-read): writer fil
 (`pre-submission-self-review.md:334`); the phase-transition blocking gate loops **all** `QGATE_PHASES`
 including 6-finalize (`_invariants.py:1103-1164`, "phase-agnostic" by docstring); the lessons signal
 gate loops all five phases (`SKILL.md:741-760`); the unified triage loops `QGATE_PHASES`
-(`_findings_core.py:396-408`); the retrospective globs **all** `qgate-*.jsonl`
-(`audit.py:3248`), with `no_qgate6` firing on genuine `self_total == 0` (`:3322-3324`) — the "6" is a
-label, not a phase filter. **No execute-phase query reads self-review findings**, so there is no
+(`_findings_core.py:396-408`); the retrospective globs **all** `*.jsonl` finding files (no phase
+filter — `audit.py:3248`), with `no_qgate6` firing on genuine `self_total == 0` (`:3322-3324`) — the
+"6" is a label, not a phase filter. **No execute-phase query reads self-review findings**, so there is no
 mismatch to fix. The "examined-nothing vs found-nothing" distinguishability the plan wants **already
 exists** as two disjoint clean verdicts (`:296-302`). The real self-review concern (detector
 blindness) is owned by the out-of-scope sibling `100-self-review-surfacing-integrity`. Reporting the
@@ -199,7 +201,34 @@ honest consequence of the verdict, not a skipped step.
 
 ## Findings
 
-_pending_
+### Pre-PR verification sub-agent (independent, read-only)
+
+The sub-agent verified the committed diff against the plan's requirements and swept beyond-diff for
+stale claims. Three findings; all dispositioned.
+
+1. **[MEDIUM — FIXED] Overclaim in the committed D1 note** (`source-edit-pushability.md`). The note's
+   sentence "the fill's correction rides that commit … (the dispatcher's commit instrumentation
+   batches it), so the extra run is paid only in the sentinel-only finalize" described the *deferred*
+   D2 consolidation as present-tense fact — the exact truthful-signals defect this plan targets. In
+   reality era-stamp self-commits+self-pushes at order 21, before any loop-back commit exists
+   (`finalize-step-era-stamp-fill/SKILL.md:123-144`), so its extra run is paid in **every** sentinel
+   case. **Fixed**: the bullet now states the extra run is paid whenever a sentinel is present and
+   marks the "ride a co-occurring commit" behaviour as a future D2-style consolidation, not current.
+   The report's D1 text was aligned in the same edit.
+2. **[LOW — FIXED] Report imprecision** (`report-01.md` D3 section). Said the retrospective globs
+   `qgate-*.jsonl`; the code globs `*.jsonl` (all finding files, `audit.py:3248`) — broader, and it
+   does not weaken the refutation. **Fixed** to `*.jsonl`.
+3. **[LOW — NO CHANGE NEEDED] Scope-deviation reconciliation.** The sub-agent (reviewing an earlier
+   HEAD) noted the report quotes the operator's first answer ("implement D2 … add tests") but then
+   defers D2/tests without an explicit reconciliation. This was **already resolved** by the later
+   "Second operator decision" note (§ Scope decision): the operator explicitly directed "descope it,
+   document at the report and continue" after the verify-first blockers were surfaced. No overstated
+   outcome exists (D2 = descoped, D5(b) = not added, D5(c) = referenced not duplicated, all honestly
+   labelled).
+
+### CI / PR review
+
+_recorded during the review cycle below._
 
 ## Reviewer participation
 

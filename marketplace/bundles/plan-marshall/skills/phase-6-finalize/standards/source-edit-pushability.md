@@ -129,11 +129,13 @@ to remove it by relocating the commit:
 - **Deferring the resolution to after the merge is refused** — a post-merge edit is
   unpushable on `main`, which is exactly the guessed-PR-number / post-merge-unpushable
   defect this contract exists to prevent (§ "The discover-after-merge rule").
-- **Riding an existing post-PR commit has no reliable carrier in the common case** —
-  `create-pr` authors no commit, and a loop-back fix commit is not guaranteed to occur.
-  When one *does* occur, the fill's correction rides that commit rather than pushing
-  separately (the dispatcher's commit instrumentation batches it), so the extra run is
-  paid only in the sentinel-only finalize.
+- **Riding an existing post-PR commit is not what the current mechanism does** — the fill
+  self-commits and self-pushes at order 21 (`finalize-step-era-stamp-fill` Step 3), and at
+  that point no loop-back fix commit exists to ride: loop-back commits arise only later, from
+  `ci-verify` (22), `automatic-review` (30), or `sonar-roundtrip` (40). So the extra CI run is
+  paid whenever a sentinel is present — not only in a sentinel-only finalize. Deferring the
+  fill's push to ride a co-occurring loop-back commit is a possible future consolidation, not
+  current behaviour, and is not assumed here.
 
 The lever that would collapse the sentinel-only case to a single completed run —
 superseding the pre-fill CI run via workflow concurrency cancellation — lives in the
