@@ -71,6 +71,8 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings li
 
 **FIND flow:** `fetch_findings` is the producer surface. It fetches review comments, applies the `comment-patterns.json` keyword pre-filter to drop obvious noise (bot signatures, "lgtm", etc.), and files one `pr-comment` finding per surviving comment (the untrusted body quarantined under `raw_input.{body}`). The batched `manage-findings ingest` pass then promotes the validated body to the clean top-level fields; the consolidated triage pass reads those top-level fields and decides dispositions, which `post_responses` transmits back. Triage is not on this provider surface.
 
+`post_responses` is idempotent per `(finding, disposition)`: it stamps each finding with a `responded` marker in the same unit of work that transmits its reply and skips any finding already carrying it (`skipped`, reason `already responded`), so `count_responded` reports only the dispositions transmitted that round rather than a standing re-count of every terminal finding. A disposition genuinely re-decided between rounds via `manage-findings resolve` clears the marker and transmits again.
+
 **Steps:**
 
 1. **FIND — file comments to the ledger**:
