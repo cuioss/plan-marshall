@@ -74,15 +74,33 @@ Commit `032e3e7`.
 - Wired into the dispatcher at the one branch where the SHAs already differ
   (`phase-6-finalize/SKILL.md` § "Special case — HEAD-dependent steps" table and the item-1
   pseudocode).
-- Declared on `default:pre-push-quality-gate` and `project:finalize-step-plugin-doctor`, each
-  substantiated arm-by-arm from the step's own doc rather than guessed.
+- **Declared on ONE step — `project:finalize-step-plugin-doctor`.** The first attempt also declared
+  `default:pre-push-quality-gate`; the verification round refuted that surface and it was withdrawn.
+  See § Findings F1 for the evidence and § D1 addendum below.
 
-**The fail-toward-re-running direction is structural, not advisory.** `preserved` is reachable on
-exactly ONE control-flow path — a resolved, non-empty declaration whose globs match no changed path.
-Every other path returns `invalidated` with a `reason` naming the uncertainty: absent declaration,
-unresolvable step doc, unavailable discovery machinery, absent recorded SHA, unresolvable live HEAD,
-or a tree diff git could not compute. Each of those branches is pinned by its own test, individually
-— an aggregate "it usually re-fires" assertion could pass while one branch leaked a skip.
+**The fail-toward-re-running direction is structural, not advisory.** `preserved` is reachable only
+past a resolution gate — the step doc resolved AND the step declares `head_dependent: true` — and past
+that gate on exactly two paths, each of which *proves* the recorded tree is still in force: the SHAs
+are equal (byte-identical trees, decided without consulting any declaration), or a non-empty
+declaration's globs match no path in the tree difference. Every other path returns `invalidated` with
+a `reason` naming the uncertainty: absent declaration on a genuinely advanced HEAD, unresolvable step
+doc, unavailable discovery machinery, absent recorded SHA, unresolvable live HEAD, or a tree diff git
+could not compute. Each branch is pinned by its own test, individually — an aggregate "it usually
+re-fires" assertion could pass while one branch leaked a skip.
+
+**D1 addendum — the lever is engaged on one step, and the second withdrawal is the more interesting
+result.** `pre-push-quality-gate` looked like the biggest prize: it is the most expensive
+head-dependent gate and it is inline, so its cost is invisible to the dispatch-boundary ledger. Its
+declared surface did not survive scrutiny. Its module-tests arm executes this repository's own pytest
+suite, and that suite asserts over the *real* tree — retired-token sweeps over `doc/**`, an `.adoc`
+governed-population contract that also reads root `CLAUDE.md`, and branch-prefix / merge-trigger
+contracts asserted against the live `.github/workflows/python-verify.yml`; its whole-tree
+`quality-gate` arm additionally runs plugin-doctor's build-failing agentfile analyzers over the
+repository root. So no proper subset of the tree is a sound surface for it, and a declaration naming
+the whole tree would be an inert lever wearing the shape of a real one. The refusal is recorded with
+its evidence at `pre-push-quality-gate.md` § "Verdict-input surface — deliberately undeclared", and
+the ext-point now states the superset bar and names both shapes that must not declare. That is the
+honest outcome: **the mechanism is sound and general; its current reach is one step, not two.**
 
 **A tree diff, not a commit walk.** `git diff --name-only {recorded} {live}` compares two trees, so
 one call is correct under all three supersession mechanisms (loop-back commit, force-push, rebase)
@@ -218,7 +236,37 @@ staged explicitly.
 |---|---|---|---|
 | 8 | `./pw test-compile` | Unused `type: ignore[arg-type]` in `test_refire_report.py:222` | **Fixed** in `2ebc266` |
 
-### From the verification sub-agent
+### From the verification sub-agent (round 1)
+
+One finding per instance, never bundled. All were accepted; none was rejected. Every fix landed in
+`176cee2`, after which the sub-agent was re-dispatched — a verification pass that found a defect has
+not finished.
+
+| # | Finding | Disposition |
+|---|---|---|
+| F1 | `pre-push-quality-gate`'s `verdict_inputs` missed `CLAUDE.md` / `AGENTS.md`, which its whole-tree arm's plugin-doctor agentfile analyzers lint from the repository root — a build-failing rule the gate would have skipped | **Fixed** — declaration withdrawn entirely (see the D1 addendum) |
+| F2 | The same surface missed `doc/**`, which its pytest arm reads: three real test modules assert over the live `doc/` tree, so a `doc/`-only commit can turn the gate red | **Fixed** — same withdrawal; this is the finding that made the withdrawal the right answer rather than a wider glob list |
+| F3 | The same surface missed `.github/**` (two test modules assert against the live workflow file) and `uv.lock` (pins every arm's tool versions) | **Fixed** — same withdrawal |
+| F4 | `preserved` was claimed reachable on "exactly ONE path" in four places while the code had two (the equal-SHA short-circuit) | **Fixed** — all four sites corrected; the equal-SHA check also moved BEFORE the declaration check, so an undeclared step whose HEAD never moved no longer answers `invalidated` against the dispatcher's own steady-state row |
+| F5 | `resolve_verdict_inputs` called `_read_frontmatter_fields` outside any `try`; its call-time import could escape as a traceback, breaking the documented always-exit-0 contract | **Fixed** — guarded, returning `discovery_unavailable` |
+| F6 | Every `classify_step` test patched `resolve_verdict_inputs`, so the real discovery + `canonicalize_step_key` bridge had no coverage | **Fixed** — three tests now drive the unpatched seam against the live population |
+| F7 | The new `## Verdict-input surface` H2 split `## Mark Step Complete`'s Branch A from Branch B, leaving an execution branch under an unrelated heading | **Fixed** — section moved above `## Mark Step Complete` |
+| F8 | Branch F is reached only on `use_merge_queue == true` — the path that now never rebases — yet mandated `--fact action=` and `--fact upstream_commit_count=`, which have no value there | **Fixed** — both facts dropped from Branch F and bracketed as conditional on Branch A and Branch E |
+| F9 | Branch A's rebase-clause table had no row for a skipped rebase, and its stated 71-char worst case assumed a now-unreachable clause pairing | **Fixed** — clause added; worst case re-derived to 70 by measuring, with the `use_merge_queue` coupling that makes the 71 pairing unreachable recorded |
+| F10 | The amended trigger-A paragraph opened with the advanced-HEAD condition and still closed with "load and execute it here when `state == open`" | **Fixed** — the paragraph was split and the entry condition stated once |
+| F11 | `branch-cleanup-rereview.md` was untouched and still asserted "a rebase + force-push happened above", including a sentence directly negating the new skip | **Fixed** — the sub-standard now defers its entry condition to its caller instead of restating one |
+| F12 | The operator merge prompt asserted "CI passed on the rebased branch" on a path where neither the rebase nor an authoritative CI wait happened | **Fixed** — prompt wording routed by `use_merge_queue`, with an explicit pre-merge-rebase line |
+| F13 | The merge-mutex section, its heading, its acquire rationale, and invariant 1's re-rebase clause all justified themselves by a force-push the queue path no longer performs | **Fixed** — rationale restated as "the first staleness-creating operation", which the routing then names per path |
+| F14 | The pre-rebase confirmation gate still asked the operator to authorize a rebase and force-push that would not run | **Fixed** — action list and question routed by `use_merge_queue` |
+| F15 | The new `use_merge_queue` consumption site carried no `**Observability (mandatory)**` block, and `test_every_use_merge_queue_consumption_site_is_observable` reported green because its derivation regex could not see the site's phrasing | **Fixed** — the site adopted the canonical `read \`use_merge_queue\` off` phrasing so the guard counts it, and carries the mandatory block. Fixed by making the site conform, not by loosening the guard |
+| F16 | Two section references introduced by the change pointed at headings that do not exist (`§ "CI wait"`, `§ "Rebase onto base"`) | **Fixed** |
+| F17 | `phase-5-execute/standards/sync-with-main.md` still cross-referenced the rebase as "unconditional" | **Fixed** |
+| F18 | `doc/user/parallelism-and-locking.adoc` did not record that `use_merge_queue` now also skips the pre-merge rebase and force-push — a user-visible behaviour change | **Fixed** |
+| F19 | `refires` was attributed wholly to the HEAD-advance re-entry check, though `loop_back`, a retry after `failed`, and the `push` barrier's parity re-fire also produce extra `executed` rows | **Fixed** — corrected in both the SKILL.md and the script docstring; the column now states it counts extra firings, not re-stales |
+| F20 | The `skipped` column's stated purpose was unverifiable from the pseudocode — whether a preserved SKIP reaches item 5e was not resolvable | **Fixed** — item 1 now states the obligation explicitly at the SKIP branches; without that row the saving would appear only as an absence |
+| F21 | `refire-report` was absent from both the § Scripts table and § Canonical invocations in its own SKILL.md | **Fixed** |
+
+### From the verification sub-agent (round 2)
 
 _Pending — recorded at Step 8 condition 3._
 
@@ -255,10 +303,17 @@ _Pending — recorded at Step 8 condition 3._
 - **D4's measurement is owed** and is the plan's only unmet deliverable — see D4 above for the exact
   before/after procedure and the instrument to take it with. It needs a local plan-marshall run; it
   cannot be taken in this lane.
-- **Nine of the eleven head-dependent steps declare no `verdict_inputs` surface** and therefore keep
-  the unconditional re-fire. Three of those are remote-state verdicts and correctly stay that way.
-  The remaining six — `lessons-housekeeping`, `pre-submission-self-review`, `finalize-step-simplify`,
+- **Ten of the eleven head-dependent steps declare no `verdict_inputs` surface** and therefore keep
+  the unconditional re-fire. Three are remote-state verdicts and correctly stay that way. One —
+  `pre-push-quality-gate` — is a **recorded refusal on evidence**, not an unwritten obligation: no
+  proper subset of the tree is sound for it (§ D1 addendum). The remaining six —
+  `lessons-housekeeping`, `pre-submission-self-review`, `finalize-step-simplify`,
   `finalize-step-security-audit`, `era-stamp-fill`, `review-retrospective` — were left undeclared
   because this run could not substantiate their surfaces arm-by-arm from their own docs, which is the
   admissibility bar the ext-point sets. Each is a candidate for a later, evidence-led declaration, and
   `pre-submission-self-review` (7× in the observed runs) is the highest-value one.
+- **Decomposing `pre-push-quality-gate` is the unblocking condition for its own declaration.** Its
+  per-bundle `quality-gate` sweep has a bounded surface even though its module-tests arm does not, so
+  separating the arms would make a sound declaration possible on the bounded half. That is a
+  decomposition of the step rather than a declaration on it, and it is deliberately out of scope here;
+  the condition is recorded in the step's own doc for whoever revisits it.
