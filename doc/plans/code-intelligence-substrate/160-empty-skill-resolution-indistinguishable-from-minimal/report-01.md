@@ -55,19 +55,88 @@ sibling plans exist to defend." D2 aligns with them rather than inventing a thir
 
 ### D2 — make the two states distinguishable in the inventory
 
-_in progress_
+**Mechanism:** a boolean `minimal` marker on a `skills_by_profile.{profile}` block. `"minimal": true`
+positively declares an empty profile deliberate; an empty profile block WITHOUT it is the distinct
+**undeclared-empty** state.
+
+**Reasoning (recorded per D2):** the marker aligns with the store's existing fail-closed,
+positive-marker posture — the graph's zero-edge disambiguation (`resolver_count`) and the `files`
+inventory (`truncated` / `elided`), both of which distinguish "answered nothing" from "was not looked
+at" *without inferring intent from cardinality* (`architecture-persistence.md` lines 568–573). It is
+**not a third parallel vocabulary mechanism** (the out-of-scope drift the plan warns against): it is a
+single boolean predicate on the existing profile block, read by the same read-path guard that already
+reports `skills_by_profile` health. What makes the *next* unmarked-empty profile detectable: the guard
+checks each present profile block for `defaults == [] and optionals == [] and minimal is not True` and
+emits the named condition; only a positive `minimal: true` silences it.
+
+**Fail-closed declaration:** `_validate_skills_by_profile_structure` (`_cmd_enrich.py`, the enrich
+write path) now flags a non-boolean `minimal` (`"minimal": "true"`, `1`) as malformed. A malformed
+declaration leaves the profile in the undeclared-empty state — it cannot silently launder the signal
+(`is True` identity check in `_profile_declares_minimal`).
+
+**Schema documented:** `architecture-persistence.md` § "Skills by Profile" now carries the three-state
+table (populated / declared-minimal / undeclared-empty) and the read-path condition.
+
+*Done:* the declaration exists in the schema and the undeclared empty is a distinct representable
+state. Commit: guard/schema/validator commit below.
 
 ### D3 — report the named condition at allocation time (non-fatal)
 
-_in progress_
+`detect_stale_skills_by_profile` (`_cmd_client_query.py`) now emits, per present-but-empty **undeclared**
+profile, the named condition *"module '{M}': profile '{P}' resolves no skills and is not declared
+minimal — set \"minimal\": true …"*. It is surfaced by `_emit_skills_by_profile_staleness_warning` as a
+non-blocking `[STALENESS]` WARNING on the `architecture module` read exercised by phase-4-plan's module
+pre-fetch — **at allocation time, and it does not abort the run** (the guard returns a list of strings;
+its emitter swallows logging exceptions). A `minimal: true` profile emits nothing.
+
+The LLM-side consumer was aligned in lock-step: **phase-4-plan Step 5** now short-circuits a
+declared-minimal profile (no warning, no Q-Gate finding) and re-words the undeclared-empty branch as an
+*UNRESOLVED* condition that points at both remedies (enrich, or declare `minimal: true`). The scenario
+table and "Profile Not in Module" section were updated to match.
+
+*Done:* the condition surfaces in allocation output and is non-fatal.
 
 ### D4 — a test that fails today, in both directions
 
-_in progress_
+Added to `test/plan-marshall/manage-architecture/test_skills_by_profile_staleness_guard.py`:
+
+- `test_warns_on_unresolved_undeclared_empty_profile` — a populated `implementation` + empty,
+  undeclared `module_testing` surfaces the named condition. **Empty-case assertion.**
+- `test_no_warning_on_declared_minimal_profile` — the same empty profile with `minimal: true` surfaces
+  nothing.
+- `test_declared_minimal_and_unmarked_empty_are_distinguishable` — both directions in one assertion
+  (the vacuous-guard trap: an empty-only assertion cannot detect the escape hatch swallowing the
+  signal).
+
+**Pre-fix failure OBSERVED and recorded** (D4 / Verification requirement). Running the tests against the
+un-patched guard:
+
+```
+FAILED ... test_warns_on_unresolved_undeclared_empty_profile
+  AssertionError: []
+  assert False = any(<generator ...>)
+FAILED ... test_declared_minimal_and_unmarked_empty_are_distinguishable
+  assert (False)
+2 failed, 7 passed
+```
+
+The empty-case assertion fails with `AssertionError: []` — the pre-fix guard returns `[]` for the
+undeclared-empty profile, exactly the invisibility D1 confirmed. Post-fix: **9 passed**.
+
+Two enrich-validator tests were also added (`test_enrich_skills_by_profile_declared_minimal_persists_without_warnings`,
+`test_enrich_skills_by_profile_warns_on_non_boolean_minimal`) covering the fail-closed `minimal`
+validation.
+
+*Done:* both assertions exist and the empty-case pre-fix failure was observed.
 
 ## Build gate
 
-_pending_
+`git diff --name-only origin/main...HEAD -- '*.py'` at gate time: two production scripts
+(`_cmd_client_query.py`, `_cmd_enrich.py`) and two test files changed → Python footprint present →
+build required. `UV_HTTP_TIMEOUT=600 ./pw verify plan-marshall` (all three sub-steps, scoped to the
+bundle where every changed file lives): **SUCCESS** — mypy(production) 278 files, ruff, SPDX,
+mypy(test) 588 files, module-tests **16446 passed, 1 skipped** (`0:08:09`). No `uv.lock` churn (3.12
+interpreter matched the floor).
 
 ## Findings
 

@@ -189,6 +189,17 @@ def _validate_skills_by_profile_structure(skills_by_profile: dict[str, Any]) -> 
         if not isinstance(profile_data, dict):
             warnings.append(f"Profile '{profile_name}' must be a dict, got {type(profile_data).__name__}")
             continue
+        # A profile MAY positively declare itself deliberately minimal via a
+        # boolean `minimal` flag (see architecture-persistence.md § "Skills by
+        # Profile"). The declaration is validated fail-closed: a non-boolean
+        # value is a malformed declaration, not a silent truthy pass, so an
+        # empty profile carrying `"minimal": "true"` still surfaces the
+        # unresolved-profile condition on read.
+        if 'minimal' in profile_data and not isinstance(profile_data['minimal'], bool):
+            warnings.append(
+                f"Profile '{profile_name}.minimal' must be a boolean, "
+                f'got {type(profile_data["minimal"]).__name__}'
+            )
         for section in ['defaults', 'optionals']:
             entries = profile_data.get(section, [])
             if not isinstance(entries, list):

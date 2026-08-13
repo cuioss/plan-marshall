@@ -432,6 +432,45 @@ defaults/optionals structure:
 - `optionals`: LLM-selected based on description match against deliverable
   context.
 
+#### Declaring a deliberately-minimal profile
+
+A profile block MAY carry a boolean `minimal` marker that positively declares the
+empty resolution deliberate:
+
+```json
+{
+  "skills_by_profile": {
+    "module_testing": {"defaults": [], "optionals": [], "minimal": true}
+  }
+}
+```
+
+This keeps three states distinct **without inferring intent from cardinality** —
+the same fail-closed, positive-marker discipline the graph's zero-edge
+disambiguation (`resolver_count`) and the `files` inventory (`truncated` /
+`elided`) apply:
+
+| State | Profile block | Meaning |
+|-------|---------------|---------|
+| Populated | `defaults` and/or `optionals` non-empty | The inventory answered, with skills. |
+| **Declared minimal** | `defaults` + `optionals` empty, `"minimal": true` | The inventory answered, and the answer is *deliberately* empty. |
+| **Undeclared empty** | `defaults` + `optionals` empty, no `"minimal": true` | The inventory did **not** answer — an unresolved profile. Surfaces the read-path named condition below. |
+
+The marker is validated fail-closed: `minimal` must be the boolean `true`. A
+non-boolean value (`"true"`, `1`) is flagged by the enrich structure validator
+and leaves the profile in the undeclared-empty state, so a malformed declaration
+can never silently launder the signal. An empty profile is **never** made
+non-fatal by inserting a placeholder skill — the read-path condition is a
+non-blocking WARNING (see below), so there is no error to work around.
+
+**Read-path condition** — `architecture module` reads run
+`detect_stale_skills_by_profile` (`_cmd_client_query.py`), which emits a
+non-blocking `[STALENESS]` WARNING for each present-but-empty, **undeclared**
+profile: *"profile '{P}' resolves no skills and is not declared minimal"*. A
+declared-minimal profile is silent. This is the allocation-time signal that an
+empty resolution is unresolved rather than deliberately minimal; it never aborts
+task planning.
+
 Skills are derived from configured domain skill sets. Query available
 domains and their skills via:
 

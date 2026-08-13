@@ -466,6 +466,38 @@ def test_enrich_skills_by_profile_mixed_format():
         assert isinstance(stored['module_testing'], dict)
 
 
+def test_enrich_skills_by_profile_declared_minimal_persists_without_warnings():
+    """A boolean ``minimal: true`` on an empty profile persists and produces no warning."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        setup_test_project(tmpdir)
+
+        skills_by_profile = {
+            'module_testing': {'defaults': [], 'optionals': [], 'minimal': True},
+        }
+        result = enrich_skills_by_profile('module-a', skills_by_profile, tmpdir)
+
+        assert result['status'] == 'success'
+        assert 'warnings' not in result or len(result.get('warnings', [])) == 0
+
+        enriched = load_module_enriched('module-a', tmpdir)
+        assert enriched['skills_by_profile']['module_testing']['minimal'] is True
+
+
+def test_enrich_skills_by_profile_warns_on_non_boolean_minimal():
+    """A non-boolean ``minimal`` is a malformed declaration and is flagged fail-closed."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        setup_test_project(tmpdir)
+
+        skills_by_profile = {
+            'module_testing': {'defaults': [], 'optionals': [], 'minimal': 'true'},
+        }
+        result = enrich_skills_by_profile('module-a', skills_by_profile, tmpdir)
+
+        assert result['status'] == 'success'
+        assert 'warnings' in result
+        assert any('minimal' in w and 'must be a boolean' in w for w in result['warnings'])
+
+
 # =============================================================================
 # Tests for enrich_dependencies
 # =============================================================================

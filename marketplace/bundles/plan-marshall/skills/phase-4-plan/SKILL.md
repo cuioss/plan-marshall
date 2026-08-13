@@ -311,10 +311,13 @@ For each deliverable D:
       4v. Add depends on all other tasks from this deliverable
     ELSE:
       2. Extract skills: module.skills_by_profile.{P}
-         IF skills_by_profile is empty/missing OR skills_by_profile.{P} is empty/missing:
-           - Log WARNING: "(plan-marshall:phase-4-plan) Module {D.module} has empty skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate."
+         IF skills_by_profile.{P} is present AND declared minimal (skills_by_profile.{P}.minimal == true):
+           - Set task.skills = [] — a DELIBERATELY-minimal profile carries no domain skills by design.
+           - Do NOT log a gap warning and do NOT record a finding: the empty is declared, not unresolved.
+         ELSE IF skills_by_profile is empty/missing OR skills_by_profile.{P} is empty/missing:
+           - Log WARNING: "(plan-marshall:phase-4-plan) Module {D.module} has an UNRESOLVED (undeclared-empty) skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate, or declare the profile deliberately minimal with \"minimal\": true."
            - Set task.skills = [] (continue with empty skills rather than erroring)
-           - Record a Q-Gate triage finding via `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add --plan-id {plan_id} --phase 4-plan --source qgate --type triage --title "Missing skills_by_profile: {D.module}.{P}" --detail "Module {D.module} has empty skills_by_profile.{P} — task created with skills: []. Run architecture enrichment to populate the missing profile."` so phase-5-execute and phase-6-finalize can surface the gap.
+           - Record a Q-Gate triage finding via `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add --plan-id {plan_id} --phase 4-plan --source qgate --type triage --title "Unresolved skills_by_profile: {D.module}.{P}" --detail "Module {D.module} has an undeclared-empty skills_by_profile.{P} — task created with skills: []. Run architecture enrichment to populate, or declare the profile deliberately minimal (\"minimal\": true) to silence this as intentional."` so phase-5-execute and phase-6-finalize can surface the gap.
          ELSE:
            - Load all `defaults` directly into task.skills
            - For each `optional`, evaluate its `description` against deliverable context
@@ -1137,7 +1140,8 @@ Skills are resolved from architecture based on `module` + `profile`:
 | Multiple profiles | Create one task per profile, each with its own resolved skills |
 | `verification` profile | Skip architecture query — no skills needed, use verification commands as steps |
 | Module not in architecture | Error - module must exist in project architecture |
-| Profile not in module | Log WARNING, set `task.skills = []`, record a Q-Gate triage finding with the architecture-enrichment recommendation in `--detail`, then continue. See Step 5 for the canonical procedure. |
+| Profile empty/absent, declared minimal (`skills_by_profile.{P}.minimal == true`) | Set `task.skills = []` and continue — a deliberate empty; NO warning, NO finding. |
+| Profile empty/absent, NOT declared minimal | Log WARNING, set `task.skills = []`, record a Q-Gate triage finding with the architecture-enrichment recommendation in `--detail`, then continue. See Step 5 for the canonical procedure. |
 
 ## Error Handling
 
@@ -1155,11 +1159,13 @@ If `deliverable.module` is not found in architecture:
 
 ### Profile Not in Module
 
-If a profile from `deliverable.profiles` is not in `module.skills_by_profile`, this is NOT plan-blocking. Follow Step 5's canonical procedure:
+If a profile from `deliverable.profiles` is empty or absent in `module.skills_by_profile`, this is NOT plan-blocking. First distinguish the two states — a deliberately-minimal profile declares itself, an unresolved one does not:
 
-- Log WARNING: `(plan-marshall:phase-4-plan) Module {D.module} has empty skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate.`
-- Set `task.skills = []` and continue creating the task.
-- Record a Q-Gate triage finding via `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add --plan-id {plan_id} --phase 4-plan --source qgate --type triage --title {title} --detail {detail}`, with the architecture-enrichment recommendation inlined in `--detail`, so phase-5-execute and phase-6-finalize can surface the gap.
+- **Declared minimal** (`skills_by_profile.{P}.minimal == true`): set `task.skills = []` and continue. Do NOT log a warning and do NOT record a finding — the empty is intentional, not a gap.
+- **Undeclared empty / absent**: follow Step 5's canonical procedure:
+  - Log WARNING: `(plan-marshall:phase-4-plan) Module {D.module} has an UNRESOLVED (undeclared-empty) skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate, or declare the profile deliberately minimal with "minimal": true.`
+  - Set `task.skills = []` and continue creating the task.
+  - Record a Q-Gate triage finding via `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add --plan-id {plan_id} --phase 4-plan --source qgate --type triage --title {title} --detail {detail}`, with the architecture-enrichment recommendation inlined in `--detail`, so phase-5-execute and phase-6-finalize can surface the gap.
 
 ### Ambiguous Deliverable
 

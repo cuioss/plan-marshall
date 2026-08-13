@@ -445,32 +445,73 @@ def _iter_skill_notations(skills_by_profile: dict[str, Any]) -> list[str]:
     return notations
 
 
+def _profile_resolves_no_skills(profile_data: dict[str, Any]) -> bool:
+    """Whether a profile block carries no ``defaults`` and no ``optionals`` entries."""
+    for section in ('defaults', 'optionals'):
+        entries = profile_data.get(section) or []
+        if isinstance(entries, list) and entries:
+            return False
+    return True
+
+
+def _profile_declares_minimal(profile_data: dict[str, Any]) -> bool:
+    """Whether a profile block positively declares itself deliberately minimal.
+
+    The declaration is the exact boolean ``True`` — cardinality is never inferred
+    to mean "deliberate". Any other value (absent, ``False``, a truthy non-bool)
+    leaves the empty profile in the undeclared-empty state that surfaces the
+    named condition, keeping the marker fail-closed.
+    """
+    return profile_data.get('minimal') is True
+
+
 def detect_stale_skills_by_profile(
     module_name: str, skills_by_profile: dict[str, Any], is_live: Callable[[str], bool]
 ) -> list[str]:
-    """Return non-blocking WARNING messages for a stale or missing skills_by_profile map.
+    """Return non-blocking WARNING messages for a stale, missing, or unresolved skills_by_profile map.
 
-    Two independent signals are surfaced:
+    Three independent signals are surfaced:
 
     * The map is missing entirely or empty.
+    * A profile block is present but **resolves no skills** (no defaults, no
+      optionals) **and is not declared minimal** (`"minimal": true`). This is the
+      unresolved-profile condition: an empty resolution that no one marked
+      deliberate. A profile that DOES declare itself minimal is silent — the
+      escape hatch that keeps "the inventory answered, and the answer is empty"
+      distinct from "the inventory was never populated", without the distinction
+      being inferred from cardinality.
     * The map references one or more skill notations that ``is_live`` reports as
       absent from the live registry (retired / renamed IDs).
 
     ``is_live`` is injected so the check is deterministic and unit-testable
-    without a real bundle tree. Returns an empty list when the map is present
-    and every notation resolves.
+    without a real bundle tree. Returns an empty list when the map is present,
+    every present profile either resolves skills or declares itself minimal, and
+    every notation resolves.
     """
     if not isinstance(skills_by_profile, dict):
         return [f"module '{module_name}': skills_by_profile is malformed (expected a dictionary)"]
     if not skills_by_profile:
         return [f"module '{module_name}': skills_by_profile is missing or empty"]
+
+    messages: list[str] = []
+    for profile_name in sorted(skills_by_profile):
+        profile_data = skills_by_profile[profile_name]
+        if not isinstance(profile_data, dict):
+            continue  # structural defects are the enrich validator's surface
+        if _profile_resolves_no_skills(profile_data) and not _profile_declares_minimal(profile_data):
+            messages.append(
+                f"module '{module_name}': profile '{profile_name}' resolves no skills and is "
+                'not declared minimal — set "minimal": true to declare a deliberately-minimal '
+                'profile, or enrich it'
+            )
+
     stale = sorted({n for n in _iter_skill_notations(skills_by_profile) if not is_live(n)})
     if stale:
-        return [
+        messages.append(
             f"module '{module_name}': skills_by_profile references skill notations "
             f'absent from the live registry: {", ".join(stale)}'
-        ]
-    return []
+        )
+    return messages
 
 
 def _skill_notation_is_live(notation: str, bundles_root: Path) -> bool:
