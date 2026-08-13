@@ -12,6 +12,10 @@ head_dependent: true
 verdict_inputs:
   - 'marketplace/*'
   - '.claude/*'
+  - 'CLAUDE.md'
+  - '*/CLAUDE.md'
+  - 'AGENTS.md'
+  - '*/AGENTS.md'
 default_on: false
 presets: []
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
@@ -46,7 +50,12 @@ In a worktree-backed plan, the gate step is preceded by a worktree-fresh-executo
 
 This step declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [ext-point-finalize-step.md](../../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). Its verdict is a structural-lint **pass/fail gate over the tree's marketplace source**, so a HEAD advance changes both the derived `--paths` scope (Step 2) and the gate's verdict. Both `--outcome done` records below assert something about the tree that a loop-back commit can falsify — the Step 5 pass asserts "the gated source is lint-clean", and the Step 3 Case (a) skip-clean asserts "the plan touched no skill" — so BOTH MUST capture the worktree HEAD immediately before their `mark-step-done` call and forward it via `--head-at-completion {sha}`. The `--outcome failed` record does NOT take the flag: the dispatcher retries `failed` records on re-entry regardless of HEAD, so the SHA carries no decision value there.
 
-The paired `verdict_inputs` declaration names the surface that verdict actually reads: `marketplace/*` and `.claude/*`. Both halves of this step's scope live there — the scoped `--paths` targets Step 2 derives are skill directories under exactly those two roots, and the F1 whole-tree trigger fires on a plugin-doctor / plan-doctor analyzer or rule script, which are themselves marketplace source. A HEAD advance touching neither root therefore changes neither the derived scope nor the lint verdict, and the dispatcher preserves the recorded verdict instead of re-firing the gate; every other advance re-fires it. See [verdict-currency.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/verdict-currency.md).
+The paired `verdict_inputs` declaration names the surface that verdict actually reads, derived from this step's own rule roster rather than guessed. It must be a **superset** of what the gate reads, so it covers three things:
+
+- `marketplace/*` and `.claude/*` — the scoped `--paths` targets Step 2 derives are skill directories under exactly those two roots, and the F1 whole-tree trigger fires on a plugin-doctor / plan-doctor analyzer or rule script, which are themselves marketplace source.
+- `CLAUDE.md` / `*/CLAUDE.md` and `AGENTS.md` / `*/AGENTS.md` — the roster's build-failing agentfile analyzers (`analyze_agentfile_line_budget`, `analyze_agentfile_directory_tree`) anchor at the **repository root** and lint every agentfile at any nesting level, so an agentfile edit can turn this gate red without touching either skill root. Both the bare and the nested form are declared because the matcher is plain `fnmatch` against the full repo-relative path, and a bare basename glob matches only a root-level file.
+
+The globs use the single-`*` `build.map` convention (`fnmatch`'s `*` spans `/`). A HEAD advance whose tree difference touches none of them changes neither the derived scope nor the lint verdict, so the dispatcher preserves the recorded verdict instead of re-firing the gate; every other advance, and every uncertainty, re-fires it. Unlike `default:pre-push-quality-gate` — whose module-tests arm executes a pytest suite that reads the real `doc/` and `.github/` trees, making any proper subset unsound — this step runs a fixed rule roster over a bounded set of roots, which is what makes a declaration admissible here at all. See [verdict-currency.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/verdict-currency.md).
 
 ## Workflow
 

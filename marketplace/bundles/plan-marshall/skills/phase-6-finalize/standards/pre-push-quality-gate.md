@@ -7,13 +7,6 @@ description: Run quality-gate per affected bundle then one whole-tree quality-ga
 order: 5
 mutates_source: false
 head_dependent: true
-verdict_inputs:
-  - '*.py'
-  - '*.toml'
-  - 'pw*'
-  - 'marketplace/*'
-  - '.claude/*'
-  - 'test/*'
 default_on: true
 presets:
   - full
@@ -264,6 +257,20 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
 
 The module-tests outcome folds into the Mark Step Complete branches below: Branch A (green) requires a clean per-bundle `quality-gate` sweep AND a clean whole-tree `quality-gate` AND a clean whole-tree `test-compile` AND a clean module-tests gate; Branch B (failure) covers a red per-bundle `quality-gate` OR a red whole-tree `quality-gate` OR a red `test-compile` OR a red module-tests run.
 
+## Verdict-input surface — deliberately undeclared
+
+This gate declares **no** `verdict_inputs` (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"), so the dispatcher's verdict-currency classifier never narrows its re-fire: every HEAD advance re-runs it, exactly as before that mechanism existed. The absence is a **recorded refusal on evidence**, not an obligation left unwritten — and it is recorded here because the refusal is easy to mistake for an oversight and easy to "fix" wrongly.
+
+The admissibility bar for a declaration is that the globs be a **superset** of what the gate's verdict reads. Three of this gate's arms make that unachievable as a proper subset of the tree:
+
+- **The module-tests arm executes this repository's own pytest suite**, and that suite asserts over the *real repository tree*. Test modules read `doc/` (retired-token sweeps over `doc/**/*.md` / `*.adoc` / `*.svg`, and an `.adoc` governed-population contract that also reads root `CLAUDE.md`) and `.github/workflows/*.yml` (branch-prefix and merge-trigger contracts asserted against the live workflow). A commit confined to any of those turns this gate red, so none of them can be excluded.
+- **The whole-tree `quality-gate` arm runs the marketplace-wide plugin-doctor pass**, whose build-failing agentfile analyzers walk the **repository root** and lint every `CLAUDE.md` / `AGENTS.md` at any depth.
+- **Every arm resolves its tool versions through the lockfile**, so `uv.lock` is an input to all of them.
+
+Taken together the honest surface is "the tracked tree", and a declaration naming it would be an inert lever wearing the shape of a real one — the confident-but-untrue signal this document already refuses on the coverage-verdict and `display_detail` paths. Declaring nothing keeps the fail-closed default and says so.
+
+**The unblocking condition, for whoever revisits this.** A sound declaration becomes possible only if the gate's arms are separated so each carries its own surface — the module-tests arm's surface is unbounded, but the per-bundle `quality-gate` sweep's is not. That is a decomposition of this step, not a declaration on it, and it is deliberately out of scope here.
+
 ## Mark Step Complete
 
 Record the outcome on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. Branch A requires ALL FOUR of the per-bundle `quality-gate` sweep, the whole-tree `quality-gate` arm, the whole-tree `test-compile`, and the module-tests divergence gate to be green; Branch B fires when ANY of the four failed.
@@ -308,24 +315,7 @@ earn (`test-compile` and `module-tests` still ran on this path, so "tests green"
 Size it the same way as the module-tests variant — against its worst-case placeholder expansion, not
 its literal form — and it stays inside the same `display_detail` ceiling.
 
-The persisted `head_at_completion` field is consumed by phase-6-finalize Step 3's resumable re-entry check: when the worktree HEAD has advanced past `{sha}` (typically because `automated-review` or `sonar-roundtrip` opened a loop-back fix-task that produced a new commit), the dispatcher re-fires this gate against the newer HEAD — **unless** the verdict-currency classifier proves the advance touched nothing this gate reads, in which case the recorded verdict is preserved and the SHA stays where it is. See § "Verdict-input surface" immediately below and [`verdict-currency.md`](verdict-currency.md).
-
-## Verdict-input surface
-
-This gate declares `verdict_inputs` in its frontmatter — the fnmatch globs naming the tracked paths whose CONTENT its verdict reads. The declaration is derived from § Execution above, arm by arm, so it is substantiated rather than guessed:
-
-| Declared glob | The arm that reads it |
-|---|---|
-| `*.py` | the per-bundle `quality-gate` sweep (mypy + ruff over production sources) and the module-tests divergence gate |
-| `*.toml` | the one shared `pyproject.toml` tool config every arm resolves its rules from |
-| `pw*` | the pyprojectx wrapper the arms are invoked through |
-| `marketplace/*` | the whole-tree arm's marketplace-wide plugin-doctor static-analysis pass (which lints markdown skill bodies) and its `marketplace/targets` SPDX-header coverage |
-| `.claude/*` | the whole-tree arm's `.claude/` ruff path coverage |
-| `test/*` | the whole-tree `test-compile` (mypy over `test/`) and the pytest gate's fixtures |
-
-A HEAD advance whose tree difference touches **none** of those paths — a settle-band commit confined to `doc/`, or a derived-state commit under an ignored tree — cannot change what any arm above computes, so re-running the gate would re-confirm the identical verdict at full whole-tree cost. That advance preserves the verdict; every other advance, and every uncertainty, re-fires it.
-
-The surface is deliberately **wider than the arms strictly need** wherever narrowing would need a premise this document has not established — the same fail-closed reasoning § "Documentation-only loop-back" applies to the `test-compile` arm. Widening the surface costs re-runs; narrowing it past the evidence costs correctness.
+The persisted `head_at_completion` field is consumed by phase-6-finalize Step 3's resumable re-entry check: when the worktree HEAD has advanced past `{sha}` (typically because `automated-review` or `sonar-roundtrip` opened a loop-back fix-task that produced a new commit), the dispatcher re-fires this gate against the newer HEAD. See § "Verdict-input surface — deliberately undeclared" below for why the verdict-currency classifier never narrows that re-fire for THIS gate.
 
 **Branch B — at least one bundle's quality-gate failed OR the whole-tree quality-gate failed OR test-compile failed OR the module-tests gate failed**:
 

@@ -112,14 +112,28 @@ mechanism. It is also strictly narrower than a commit walk: a change and its rev
 cancel out, and a rebase folding in upstream commits that touch nothing in the surface
 reports no difference on that surface.
 
-**Fail-closed, structurally.** `preserved` is returned on exactly one path — a resolved,
-non-empty declaration whose globs match no changed path. Every other path returns
-`invalidated` with a `reason` naming the uncertainty: an absent declaration, an
-unresolvable step doc, unavailable discovery machinery, an absent recorded SHA, or a
-tree diff git could not compute (a SHA that no longer resolves after a force-push and a
-prune is exactly this case). An unnecessary re-run costs tokens; a skipped necessary one
-costs correctness, so the asymmetry is built into the control flow rather than stated as
+**Fail-closed, structurally.** `preserved` is reachable only past a resolution gate — the
+step doc resolved AND the step declares `head_dependent: true` — and past that gate on
+exactly two paths, each of which *proves* the recorded tree is still in force: the two SHAs
+are equal (byte-identical trees, decided without consulting any declaration), or a non-empty
+declaration's globs match no path in the tree difference. Every other path returns
+`invalidated` with a `reason` naming the uncertainty: an absent declaration on a genuinely
+advanced HEAD, an unresolvable step doc, unavailable discovery machinery, an absent recorded
+SHA, or a tree diff git could not compute (a SHA that no longer resolves after a force-push
+and a prune is exactly this case). An unnecessary re-run costs tokens; a skipped necessary
+one costs correctness, so the asymmetry is built into the control flow rather than stated as
 guidance.
+
+**A declaration is admissible only when it is a SUPERSET of what the step reads — and some
+steps have no such subset.** The bar is not "name the paths the step obviously cares about";
+it is "name a set the step's verdict provably cannot depend on the complement of". A step
+whose body executes something open-ended — this repository's own pytest suite is the clearest
+case, since its tests assert over the real `doc/` and `.github/` trees and the root agentfile
+— has no proper subset of the tree that satisfies the bar, and MUST declare nothing.
+Declaring a whole-tree surface there would be an inert lever wearing the shape of a real one.
+`default:pre-push-quality-gate` is exactly that case, and its refusal is recorded at
+[`pre-push-quality-gate.md`](pre-push-quality-gate.md) § "Verdict-input surface —
+deliberately undeclared" rather than left as an unexplained absence.
 
 **A preserved verdict keeps its original anchor.** The dispatcher does NOT re-stamp
 `head_at_completion` to the live HEAD on a preserved skip. Re-stamping would make the
@@ -157,7 +171,7 @@ so the deviation stops being unwritten:
 The ruling is therefore not "the rebase was always unnecessary" and not "skipping it was
 unsafe" — it is that its necessity is a function of `use_merge_queue`, and the operator
 deviation that prompted this ruling was correct **on the path it was taken on**. The
-mechanics live at [`branch-cleanup.md`](branch-cleanup.md) § "Rebase onto base"; this
+mechanics live at [`branch-cleanup.md`](branch-cleanup.md) § "Rebase Branch onto Base"; this
 section is the ruling, not a second implementation of it.
 
 ## Obtaining the re-fire count
@@ -174,14 +188,31 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 Per step it reports `firings`, `refires` (`max(0, firings - 1)`), `skipped`, `errors`,
 and the summed token-attribution triple, sorted worst-offender first.
 
-**Two coverage boundaries the report names rather than hides.** A `skipped` row is never
-folded into `firings` — a skip is precisely what a preserved verdict produces, so
-counting it as a firing would make the instrument unable to measure the thing it exists
-to measure. And `total_tokens` is a **floor**: `record-step` receives the `<usage>`
-triple only for steps dispatched as Task agents, while every inline step records zeros by
-contract, so the payload carries a `token_population` field naming exactly which rows the
-figure was summed over. A saving computed from this column is stated with that floor
-attached, never as a measured total.
+**`refires` counts extra firings, NOT re-stales — the causes are several and the column
+does not separate them.** `max(0, firings - 1)` is agnostic about *why* a step fired
+again, and at least four mechanisms produce a second `executed` row: the HEAD-advance
+re-entry check re-firing a re-staled verdict (the mechanism this document is about), a
+`loop_back` record re-firing the step on the next entry, a retry after a `failed` record,
+and the `push` barrier's parity-driven re-fire plus its explicit post-PR re-invocation.
+Attributing the whole column to the re-stale treadmill would be the confident-but-untrue
+framing this epic files against. A before/after comparison over the SAME plan shape is
+still sound — the other causes are common to both arms — but a single run's `refires` is
+not a re-stale count, and must not be reported as one.
+
+**A preserved skip lands a `skipped` row, so the saving has a positive trace.** The
+dispatcher's item-5e `record-step` call fires for every step on every entry, including the
+re-entry-check SKIP branches, with `--outcome skipped`. Without that row the saving would
+show up only as an *absence* — one fewer `executed` row — which is indistinguishable from a
+step that was never in the manifest. `skipped` is therefore counted in its own column and
+never folded into `firings`: folding it in would restore the very count the classification
+removes and blind the instrument to its own effect.
+
+**`total_tokens` is a floor.** `record-step` receives the `<usage>` triple only for steps
+dispatched as Task agents, while every inline step records zeros by contract, so the payload
+carries a `token_population` field naming exactly which rows the figure was summed over.
+`default:pre-push-quality-gate` is inline AND head-dependent, so the single most expensive
+re-firing gate contributes zero to this column. A saving computed from it is stated with
+that floor attached, never as a measured total.
 
 ## Related
 
@@ -189,7 +220,8 @@ attached, never as a measured total.
   check this model narrows, and the single authoritative statement of head-dependence.
 - [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md)
   § "Implementor Frontmatter" — the `head_dependent` / `verdict_inputs` declarations.
-- [`pre-push-quality-gate.md`](pre-push-quality-gate.md) § "Verdict-input surface" — the
-  worked derivation of one step's declared surface from its own arms.
-- [`branch-cleanup.md`](branch-cleanup.md) § "Rebase onto base" — the rebase site the
+- [`pre-push-quality-gate.md`](pre-push-quality-gate.md) § "Verdict-input surface —
+  deliberately undeclared" — the worked NEGATIVE case: why this gate's arms admit no sound
+  surface, recorded as a refusal on evidence rather than left as an absence.
+- [`branch-cleanup.md`](branch-cleanup.md) § "Rebase Branch onto Base" — the rebase site the
   ruling above governs.

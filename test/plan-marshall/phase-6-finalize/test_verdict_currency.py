@@ -10,11 +10,12 @@ it, mostly to re-confirm the identical verdict. ``scripts/verdict_currency.py``
 narrows that to advances that can actually change the answer.
 
 The safety property is asymmetric and these tests pin it in that shape: a
-``preserved`` verdict is reachable on exactly ONE path (a resolved, non-empty
-``verdict_inputs`` declaration whose globs match no changed path), and EVERY
-other path must return ``invalidated``. So the fail-closed branches are asserted
-one at a time — an aggregate "it usually re-fires" assertion could pass while one
-branch silently leaked a skip, which is the failure mode with real cost.
+``preserved`` verdict is reachable only past a resolution gate (the step doc
+resolved AND the step is head-dependent), and past that gate on exactly two paths
+— identical SHAs, or a non-empty declaration whose globs match no changed path.
+EVERY other path must return ``invalidated``. So the fail-closed branches are
+asserted one at a time — an aggregate "it usually re-fires" assertion could pass
+while one branch silently leaked a skip, which is the failure mode with real cost.
 
 Covered:
 
@@ -47,6 +48,7 @@ from pathlib import Path
 import pytest
 
 import extension_discovery
+from _step_key_canonical import canonicalize_step_key
 from extension_discovery import find_implementors
 
 _SCRIPTS_DIR = (
@@ -223,6 +225,22 @@ def test_undeclared_surface_keeps_the_unconditional_refire(monkeypatch):
 
     assert payload['verdict'] == _INVALIDATED
     assert payload['reason'] == _mod.REASON_UNDECLARED
+
+
+def test_undeclared_surface_still_preserves_on_an_unmoved_head(monkeypatch):
+    """Equal SHAs are decided before the declaration is consulted.
+
+    Identical SHAs mean byte-identical trees, so the verdict is current whatever
+    the step reads. Answering ``invalidated`` here would contradict the
+    dispatcher's own steady-state SKIP row and make this verb unsound to reuse as
+    a general re-entry oracle.
+    """
+    _patch_declaration(monkeypatch, [], True, None)
+
+    payload = _mod.classify_step('sonar-roundtrip', '/nowhere', 'cafe', 'cafe')
+
+    assert payload['verdict'] == _PRESERVED
+    assert payload['reason'] == _mod.REASON_HEAD_UNCHANGED
 
 
 def test_uncomputable_tree_diff_invalidates(monkeypatch):
@@ -404,6 +422,44 @@ def _declared_surfaces() -> dict[str, tuple[list[str], bool]]:
 def test_at_least_one_step_declares_a_verdict_input_surface():
     """A conformance guard over an empty population is vacuously green."""
     assert _declared_surfaces(), 'no finalize step declares verdict_inputs'
+
+
+def test_real_resolver_reads_a_declared_surface_off_the_live_population():
+    """The resolution seam itself, unpatched — the riskiest part of the wiring.
+
+    Every ``classify_step`` test above patches ``resolve_verdict_inputs``, so none
+    of them exercises the discovery lookup or the ``canonicalize_step_key``
+    matching that bridges discovery's ``default:``-prefixed name to the bare key
+    the dispatcher holds. A rename or an alias change there would break the
+    feature silently while every patched test stayed green.
+    """
+    declared = _declared_surfaces()
+    assert declared, 'no finalize step declares verdict_inputs'
+
+    for discovery_name, (expected_globs, _head_dependent) in declared.items():
+        # The dispatcher holds the CANONICAL key, not discovery's spelling.
+        canonical = canonicalize_step_key(discovery_name)
+        globs, is_head_dependent, unresolved = _mod.resolve_verdict_inputs(canonical)
+
+        assert unresolved is None, f'{canonical} did not resolve: {unresolved}'
+        assert is_head_dependent, f'{canonical} resolved as not head-dependent'
+        assert globs == expected_globs, f'{canonical} resolved a different surface'
+
+
+def test_real_resolver_reports_a_non_head_dependent_step_as_such():
+    """``push`` is deliberately not head-dependent; the resolver must say so."""
+    globs, is_head_dependent, unresolved = _mod.resolve_verdict_inputs('push')
+
+    assert unresolved is None
+    assert is_head_dependent is False
+    assert globs == []
+
+
+def test_real_resolver_reports_an_unknown_step_as_unresolved():
+    """An unrecognised key must fail closed, not resolve to an empty surface."""
+    _globs, _head_dependent, unresolved = _mod.resolve_verdict_inputs('no-such-finalize-step')
+
+    assert unresolved == _mod.REASON_STEP_UNRESOLVED
 
 
 def test_every_declared_surface_rides_a_head_dependent_step():

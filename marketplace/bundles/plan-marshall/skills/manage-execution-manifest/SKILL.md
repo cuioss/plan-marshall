@@ -459,6 +459,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 | `read` | `--plan-id` | Read manifest as TOON |
 | `lanes preview` | `--plan-id [--phase-6-steps]` | Resolve the minimal/standard/full phase-6 step sets + cost sums in one TOON (the posture-dialogue projection) |
 | `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome {executed\|skipped\|error} [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon |
+| `refire-report` | `--plan-id [--phase {5-execute\|6-finalize}]` | Report per-step firing / re-fire counts derived from the existing `execution_log[]` rows (read-only; names its token-population floor) |
 | `step-params get` | `--plan-id --phase {5-execute\|6-finalize} --step-id` | Return a step's snapshotted param object from the manifest (plan-local read) |
 | `step-params set` | `--plan-id --phase {5-execute\|6-finalize} --step-id --param --value` | Write a per-plan param override into the manifest snapshot |
 | `validate` | `--plan-id [--phase-5-steps] [--phase-6-steps]` | Validate manifest schema + step IDs against the caller-supplied allow-list CSVs (a separate surface from compose's candidate source) |
@@ -535,6 +536,16 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   --outcome {executed|skipped|error} \
   [--total-tokens N] [--tool-uses N] [--duration-ms N]
 ```
+
+### refire-report
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest refire-report \
+  --plan-id PLAN_ID \
+  [--phase {5-execute|6-finalize}]
+```
+
+Read-only over the `execution_log[]` rows `record-step` appends — it writes nothing and emits no decision-log line. Omitting `--phase` covers every phase.
 
 ### validate
 

@@ -41,13 +41,23 @@ Fail-closed: every uncertainty is ``invalidated``
 The plan this seam implements states the safety direction explicitly — *fail
 TOWARD re-running when the classification is uncertain; an unnecessary re-run
 costs tokens, a skipped necessary one costs correctness.* That direction is
-structural here rather than advisory: ``preserved`` is returned on exactly ONE
-path (a resolved, non-empty declaration whose globs match no changed path), and
-EVERY other path — an absent declaration, an unresolvable step doc, unavailable
-discovery machinery, an unreadable SHA, a git failure — returns ``invalidated``
-with a ``reason`` naming the uncertainty. A step that declares nothing keeps
-the pre-existing always-re-fire behaviour, so adoption is opt-in per step and
-silence is never read as permission to skip.
+structural here rather than advisory: ``preserved`` is reachable ONLY past a
+resolution gate — the step doc resolved AND the step is head-dependent — and past
+that gate on exactly TWO paths, each of which proves the tree the verdict was
+computed against is still in force:
+
+1. ``REASON_HEAD_UNCHANGED`` — the two SHAs are equal, so the trees are
+   byte-identical and the verdict is current whatever the step reads. This path
+   needs no declaration, and consults none.
+2. ``REASON_DISJOINT`` — a non-empty declaration whose globs match no path in the
+   tree difference.
+
+EVERY other path — an absent declaration on a genuinely-advanced HEAD, an
+unresolvable step doc, unavailable discovery machinery, an unreadable SHA, a git
+failure — returns ``invalidated`` with a ``reason`` naming the uncertainty. A step
+that declares nothing keeps the pre-existing always-re-fire behaviour on every
+real advance, so adoption is opt-in per step and silence is never read as
+permission to skip.
 
 Return shape (CLI emits this as TOON; programmatic callers consume
 :func:`classify_advance` directly)::
@@ -93,6 +103,7 @@ import argparse
 import fnmatch
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 from toon_parser import serialize_toon
@@ -110,7 +121,9 @@ VERDICT_INPUTS_KEY = 'verdict_inputs'
 #: The frontmatter key that declares head-dependence.
 HEAD_DEPENDENT_KEY = 'head_dependent'
 
-#: The ONLY verdict that lets the dispatcher skip a re-fire.
+#: The only verdict that lets the dispatcher skip a re-fire. Reachable past the
+#: resolution gate on two paths — ``REASON_HEAD_UNCHANGED`` and
+#: ``REASON_DISJOINT``; see the module docstring for why both are safe.
 VERDICT_PRESERVED = 'preserved'
 
 #: Every uncertain or genuinely-invalidating outcome.
@@ -273,12 +286,17 @@ def resolve_verdict_inputs(step: str) -> tuple[list[str], bool, str | None]:
     for record in records:
         if canonicalize_step_key(str(record.get('name', ''))) != wanted:
             continue
-        from pathlib import Path
-
-        fields = extension_discovery._read_frontmatter_fields(
-            Path(str(record.get('path', ''))),
-            (VERDICT_INPUTS_KEY, HEAD_DEPENDENT_KEY),
-        )
+        # Guarded like the discovery call above: ``_read_frontmatter_fields``
+        # imports its parsing primitives at call time, so an import failure there
+        # would otherwise escape as a traceback and break the always-exit-0
+        # contract this verb's callers branch on.
+        try:
+            fields = extension_discovery._read_frontmatter_fields(
+                Path(str(record.get('path', ''))),
+                (VERDICT_INPUTS_KEY, HEAD_DEPENDENT_KEY),
+            )
+        except Exception:  # noqa: BLE001 - an unreadable declaration is fail-closed, not fatal
+            return [], False, REASON_DISCOVERY_UNAVAILABLE
         declared = fields.get(VERDICT_INPUTS_KEY)
         globs = [str(item).strip() for item in declared if str(item).strip()] if isinstance(declared, list) else []
         return globs, bool(fields.get(HEAD_DEPENDENT_KEY, False)), None
@@ -364,9 +382,12 @@ def classify_step(
 ) -> dict[str, Any]:
     """Resolve the declaration and the tree diff, then classify the advance.
 
-    Every early return below is ``invalidated``; the single ``preserved`` path
-    runs through :func:`classify_advance` with a resolved, non-empty declaration
-    and a successfully-computed tree difference.
+    Two returns below are ``preserved`` and both prove the recorded tree is still
+    in force: the equal-SHA short-circuit (byte-identical trees, decided without
+    consulting any declaration) and :func:`classify_advance` reached with a
+    resolved, non-empty declaration and a successfully-computed tree difference.
+    Every other return is ``invalidated``, carrying the reason it could not prove
+    currency.
     """
     if not recorded_head:
         return _payload(
@@ -393,15 +414,22 @@ def classify_step(
             step, VERDICT_INVALIDATED, REASON_NOT_HEAD_DEPENDENT,
             recorded_head, live_head, globs, [], [],
         )
-    if not globs:
-        return _payload(
-            step, VERDICT_INVALIDATED, REASON_UNDECLARED,
-            recorded_head, live_head, globs, [], [],
-        )
 
+    # Equal SHAs are decided BEFORE the declaration is consulted: identical SHAs
+    # mean byte-identical trees, so the verdict is current whatever the step
+    # reads and no surface is needed to prove it. Deciding this after the
+    # declaration check would answer ``invalidated`` for an UNDECLARED step whose
+    # HEAD never moved, contradicting the dispatcher's own steady-state SKIP row
+    # and making this verb unsound to reuse as a general re-entry oracle.
     if recorded_head == live_head:
         return _payload(
             step, VERDICT_PRESERVED, REASON_HEAD_UNCHANGED,
+            recorded_head, live_head, globs, [], [],
+        )
+
+    if not globs:
+        return _payload(
+            step, VERDICT_INVALIDATED, REASON_UNDECLARED,
             recorded_head, live_head, globs, [], [],
         )
 

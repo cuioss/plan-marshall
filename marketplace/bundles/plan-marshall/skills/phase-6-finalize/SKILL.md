@@ -711,6 +711,17 @@ FOR each step_id in manifest.phase_6.steps:
            - IF no record OR any other value: dispatch normally
      Log skip/retry/re-fire decisions at INFO level so the work.log reflects the re-entry path.
 
+     **Every SKIP branch above ALSO records its item-5e `record-step` row** with
+     `--outcome skipped` and a zero token triple, then continues to the next iteration
+     without running items 2-7. Item 5e's contract already names this case ("the
+     resumable re-entry check skipped an already-`done` step or a HEAD-comparison decided
+     no re-run was needed"); this sentence is where the SKIP branch discharges it, so the
+     obligation is not left to be inferred from a `continue`. The row is load-bearing for
+     the `verdict: preserved` skip in particular: without it the saving that skip creates
+     would appear only as one FEWER `executed` row, which is indistinguishable from a step
+     that was never in the manifest — see [`standards/verdict-currency.md`](standards/verdict-currency.md)
+     § "Obtaining the re-fire count".
+
      **Named exemption — a re-entry SKIP intentionally emits NO completion line.** Every SKIP
      branch above (the HEAD-dependent `head_at_completion == live HEAD` skip, the `push`
      parity-driven `state == "synced"` skip, and the general `outcome == "done"` skip) is exempt
