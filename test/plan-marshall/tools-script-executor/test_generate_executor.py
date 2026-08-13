@@ -1756,11 +1756,9 @@ def test_preflight_subcommand_registered_and_emits_toon(tmp_path):
     env = _subprocess_env()
     env['PM_DIST_MANIFEST'] = str(manifest)
     env['PLAN_BASE_DIR'] = str(tmp_path / '.plan')
-    # Isolate HOME so the orthogonal multi-version-pollution scan cannot read a
-    # real (possibly stale/polluted) plugin-cache tree — cache-first resolution
-    # then falls back to the marketplace source, keeping this end-to-end case
-    # hermetic. Mirrors the _detect_multi_version_pollution stub the in-process
-    # preflight tests use (which a subprocess cannot monkeypatch).
+    # Isolate HOME so cache-first base-path resolution cannot read a real
+    # (possibly stale) plugin-cache tree — it then falls back to the marketplace
+    # source, keeping this end-to-end case hermetic.
     env['HOME'] = str(tmp_path)
     (tmp_path / '.plan').mkdir()
 
