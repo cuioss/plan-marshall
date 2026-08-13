@@ -18,8 +18,11 @@ from pathlib import Path
 from typing import Any
 
 from _architecture_core import (
+    GENERATION_FIELD,
     DataNotFoundError,
     ModuleNotFoundInProjectError,
+    current_worktree_sha,
+    derive_freshness,
     get_root_module,
     iter_modules,
     load_module_derived,
@@ -165,8 +168,18 @@ def _enriched_dependencies(module_name: str, derived: dict[str, Any], project_di
 
 
 def get_project_info(project_dir: str = '.') -> dict[str, Any]:
-    """Get project summary with metadata and module overview."""
+    """Get project summary with metadata and module overview.
+
+    Each module row carries a ``description`` and a ``freshness`` verdict read
+    from the root index's per-module header (``_project.json``'s ``modules``
+    entry) — the description a consumer uses to decide which concept documents to
+    open, and the staleness verdict derived from the index's ``generation.tree_sha``
+    against the current working tree. Both come from the index header, NOT from
+    parsing any concept body, so a consumer can filter before loading.
+    """
     meta = load_project_meta(project_dir)
+    index = meta.get('modules') or {}
+    tree_sha = current_worktree_sha(project_dir)
 
     module_names = iter_modules(project_dir)
 
@@ -184,7 +197,16 @@ def get_project_info(project_dir: str = '.') -> dict[str, Any]:
 
         enriched = load_module_enriched_or_empty(name, project_dir)
         paths = derived.get('paths', {})
-        module_overview.append({'name': name, 'path': paths.get('module', ''), 'purpose': enriched.get('purpose', '')})
+        index_entry = index.get(name) or {}
+        module_overview.append(
+            {
+                'name': name,
+                'path': paths.get('module', ''),
+                'purpose': enriched.get('purpose', ''),
+                'description': index_entry.get('description', ''),
+                'freshness': derive_freshness(index_entry.get(GENERATION_FIELD), tree_sha),
+            }
+        )
 
     return {
         'project': {'name': meta.get('name', ''), 'description': meta.get('description', '')},

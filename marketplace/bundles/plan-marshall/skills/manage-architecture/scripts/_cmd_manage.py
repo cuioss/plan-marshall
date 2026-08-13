@@ -20,9 +20,12 @@ from pathlib import Path
 from typing import Any
 
 from _architecture_core import (
+    GENERATION_FIELD,
+    LEGACY_CONCEPT_TYPE,
     DataNotFoundError,
     ModuleNotFoundInProjectError,
     _write_json,
+    build_generation,
     crawl_all_modules,
     error_result_module_not_found,
     get_data_dir,
@@ -516,9 +519,11 @@ def _empty_module_enrichment() -> dict[str, Any]:
 
     Shared between ``api_discover`` (which seeds per-module ``enriched.json``
     stubs at discovery time) and ``api_init`` (which fills in the same shape
-    for legacy callers).
+    for legacy callers). Carries the required concept ``type`` (``module``); the
+    ``generation`` header is stamped by the writer, not seeded here.
     """
     return {
+        'type': LEGACY_CONCEPT_TYPE,
         'responsibility': '',
         'responsibility_reasoning': '',
         'purpose': '',
@@ -655,14 +660,42 @@ def api_discover(project_dir: str = '.', force: bool = False, regenerate_descrip
         resolved_description = description_raw if isinstance(description_raw, str) else ''
         resolved_description_reasoning = reasoning_raw if isinstance(reasoning_raw, str) else ''
 
-    # Build the project-meta document. The ``modules`` index here is the
-    # canonical record of "which modules existed at last discover".
+    # Resolve each module's concept document, then derive its index entry from it.
+    # Preserve any prior enrichment (already migrated to the concept model on read)
+    # VERBATIM — including its original ``generation`` header, so preserved content
+    # is never falsely restamped as generated against the current tree. A fresh
+    # (first-seen) module gets the empty stub stamped with generation provenance
+    # against the current tree.
+    module_documents: dict[str, dict[str, Any]] = {}
+    module_index: dict[str, dict[str, Any]] = {}
+    for module_name in sorted(modules.keys()):
+        existing = load_module_enriched_or_empty(module_name, project_dir)
+        if existing:
+            document = existing
+        else:
+            document = _empty_module_enrichment()
+            document[GENERATION_FIELD] = build_generation(project_dir)
+        module_documents[module_name] = document
+        # The index entry is a read-side pre-flight surface: a consumer reads
+        # _project.json alone to see each module's description and generation
+        # header, deciding which concept documents to open and whether each is
+        # stale — without opening any concept body.
+        module_index[module_name] = {
+            'description': document.get('responsibility', '') or '',
+            GENERATION_FIELD: document.get(GENERATION_FIELD, {}),
+        }
+
+    # Build the project-meta document. The ``modules`` index is the record of
+    # "which modules existed at last discover" AND the description/generation
+    # pre-flight surface above. It is NOT the discovery gatekeeper: module
+    # discovery crawls the live filesystem (``iter_modules``), so a module present
+    # on disk but absent from this index is still discovered.
     project_meta: dict[str, Any] = {
         'name': resolved_name,
         'description': resolved_description,
         'description_reasoning': resolved_description_reasoning,
         'extensions_used': extensions_used,
-        'modules': {name: {} for name in sorted(modules.keys())},
+        'modules': module_index,
     }
 
     # Stage the new layout under .tmp/ so the swap is atomic.
@@ -678,13 +711,10 @@ def api_discover(project_dir: str = '.', force: bool = False, regenerate_descrip
 
     # Write per-module enriched.json stubs only — derived.json is ephemeral
     # under the on-demand crawl model.
-    for module_name in modules.keys():
+    for module_name in sorted(modules.keys()):
         module_tmp = tmp_dir / module_name
         module_tmp.mkdir(parents=True, exist_ok=True)
-        # Preserve any prior enrichment so re-discovery never loses LLM-authored
-        # content; fall back to an empty stub on first-run discovery.
-        existing = load_module_enriched_or_empty(module_name, project_dir)
-        _write_json(module_tmp / DIR_PER_MODULE_ENRICHED, existing or _empty_module_enrichment())
+        _write_json(module_tmp / DIR_PER_MODULE_ENRICHED, module_documents[module_name])
 
     # Atomically swap the staged tree into place.
     swap_data_dir(tmp_dir, project_dir)

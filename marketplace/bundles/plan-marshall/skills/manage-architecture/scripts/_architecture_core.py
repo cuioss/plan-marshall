@@ -118,6 +118,18 @@ class CommandNotFoundError(ArchitectureError):
     pass
 
 
+class InvalidConceptTypeError(ArchitectureError):
+    """Raised when a concept document declares a ``type`` outside the closed vocabulary."""
+
+    pass
+
+
+class NonResolvingPathKeyError(ArchitectureError):
+    """Raised when a package-entry key does not resolve to a real filesystem path."""
+
+    pass
+
+
 # =============================================================================
 # Path Helpers
 # =============================================================================
@@ -167,6 +179,252 @@ def get_module_derived_path(module_name: str, project_dir: str = '.') -> Path:
 def get_module_enriched_path(module_name: str, project_dir: str = '.') -> Path:
     """Path to a module's ``enriched.json``."""
     return get_module_dir(module_name, project_dir) / DIR_PER_MODULE_ENRICHED
+
+
+# =============================================================================
+# Concept Model — type vocabulary, generation provenance, path identity
+# =============================================================================
+#
+# A per-module ``enriched.json`` is a CONCEPT DOCUMENT. Three constructs make the
+# store answerable without reading every document:
+#
+#   * a required, closed ``type`` (this store can hold more than modules) —
+#     an unknown type is refused at write time;
+#   * a ``generation`` header recording who wrote the document and the
+#     working-tree it was written against, so a reader can derive a staleness
+#     verdict from the TREE IDENTIFIER (mtime is inadmissible evidence) without
+#     parsing the concept body;
+#   * package-entry keys that are repo-relative PATHS (path is identity), so a
+#     key resolves to a real filesystem location and no second identity system
+#     (dotted pseudo-identifiers) needs keeping in sync.
+
+# The closed, validated concept-type vocabulary. Declared once here (the single
+# source of truth, mirrored by ``FILE_CATEGORIES`` above for file inventory) so a
+# writer, a reader, and a refusal message all read the same set. The store is NOT
+# an open producer-defined vocabulary: an unknown type is refused at write time
+# (fail-closed), the same closed-vocabulary posture the file-inventory categories
+# take.
+CONCEPT_TYPES: frozenset[str] = frozenset(
+    {
+        'module',
+        'skill',
+        'script',
+        'standard',
+        'decision_record',
+    }
+)
+
+# The migration target for a pre-field document. Before ``type`` existed the store
+# held ONLY modules, so an absent type is unambiguously a module — this is a
+# deterministic, named migrate-on-read outcome, never a silent default that would
+# make an unmigrated document indistinguishable from a migrated one.
+LEGACY_CONCEPT_TYPE = 'module'
+
+CONCEPT_TYPE_FIELD = 'type'
+GENERATION_FIELD = 'generation'
+
+# The producer id stamped into a document's ``generation.by`` — the architecture
+# tooling is "who generated it" for both discover-seeded stubs and enrich writes.
+GENERATED_BY = 'architecture'
+
+# Staleness verdicts derived from the generation header.
+FRESHNESS_FRESH = 'fresh'
+FRESHNESS_STALE = 'stale'
+FRESHNESS_UNKNOWN = 'unknown'
+
+
+def validate_concept_type(concept_type: str) -> str:
+    """Refuse a concept ``type`` outside the closed vocabulary (fail-closed).
+
+    A non-string value (a malformed ``type``) is likewise refused — it cannot be
+    a member of the string vocabulary.
+
+    Raises:
+        InvalidConceptTypeError: naming the accepted set, so the refusal is
+            actionable rather than a bare rejection.
+    """
+    if concept_type not in CONCEPT_TYPES:
+        raise InvalidConceptTypeError(
+            f'Unknown concept type {concept_type!r}. Accepted types: {sorted(CONCEPT_TYPES)}'
+        )
+    return concept_type
+
+
+def migrate_concept_document(data: dict[str, Any]) -> dict[str, Any]:
+    """Resolve a concept document's required ``type`` deterministically.
+
+    The single named migration rule, applied on both read and write:
+
+    * **absent** ``type`` → :data:`LEGACY_CONCEPT_TYPE` (``module``). The store held
+      only modules before the field existed, so a pre-field document is
+      unambiguously a module. This is *migrate-on-read* (a named, deterministic
+      outcome), NOT a silent default — the rule is documented and applied here
+      rather than scattered as inline ``.get('type', 'module')`` calls;
+    * **present** ``type`` → validated; an **unknown** type is REFUSED
+      (:class:`InvalidConceptTypeError`) rather than accepted.
+
+    Returns a shallow copy carrying a valid ``type`` — never mutates the caller's
+    dict.
+    """
+    result = dict(data)
+    concept_type = result.get(CONCEPT_TYPE_FIELD)
+    if concept_type is None:
+        result[CONCEPT_TYPE_FIELD] = LEGACY_CONCEPT_TYPE
+    else:
+        validate_concept_type(concept_type)
+    return result
+
+
+def _load_compute_worktree_sha():
+    """Import the shared working-tree currency hash from ``script-shared``.
+
+    Mirrors the deferred cross-skill imports elsewhere in this module
+    (:func:`_load_route_matcher`): resolves the ``script-shared/scripts`` dir via
+    ``marketplace_bundles`` and imports the single canonical
+    ``compute_worktree_sha`` — the same primitive every freshness writer/reader
+    shares — rather than re-implementing the hash here.
+    """
+    import sys
+
+    from marketplace_bundles import (
+        resolve_bundle_path,
+        resolve_bundles_root,
+    )
+
+    bundles_root = resolve_bundles_root(Path(__file__))
+    shared_dir = str(resolve_bundle_path(bundles_root, 'plan-marshall', 'skills/script-shared/scripts'))
+    if shared_dir not in sys.path:
+        sys.path.insert(0, shared_dir)
+    from worktree_sha import compute_worktree_sha
+
+    return compute_worktree_sha
+
+
+# Process-lifetime memo for the current working-tree sha, keyed by resolved
+# ``project_dir``. The hash shells out to git, so a write path that saves many
+# documents in one invocation (``enrich all``) would otherwise pay the subprocess
+# once per document. The tree is stable within one CLI call; the memo is dropped
+# by :func:`invalidate_crawl_cache` alongside the crawl memo so a refresh recomputes.
+_WORKTREE_SHA_CACHE: dict[str, str | None] = {}
+
+
+def current_worktree_sha(project_dir: str = '.') -> str | None:
+    """The current working-tree currency hash for ``project_dir`` (memoized).
+
+    Returns the shared ``compute_worktree_sha`` digest, or ``None`` when the tree
+    is not a git worktree / the primitive is unavailable — the degraded shape a
+    freshness reader maps to a ``unknown`` verdict, never a false ``fresh``.
+    """
+    key = str(Path(project_dir).resolve())
+    if key in _WORKTREE_SHA_CACHE:
+        return _WORKTREE_SHA_CACHE[key]
+    try:
+        compute = _load_compute_worktree_sha()
+    except ImportError:
+        _WORKTREE_SHA_CACHE[key] = None
+        return None
+    # ``compute`` arrives through a deferred import, so its return is untyped at
+    # this boundary; pin the contracted type rather than leaking Any.
+    sha: str | None = compute(project_dir)
+    _WORKTREE_SHA_CACHE[key] = sha
+    return sha
+
+
+def build_generation(project_dir: str = '.', by: str = GENERATED_BY) -> dict[str, Any]:
+    """Provenance header stamped on a concept document at write time.
+
+    Records WHO wrote the document (``by``) and the working-tree identifier it was
+    written against (``tree_sha``). The tree sha — NOT a wall clock — is the
+    freshness primitive: it answers *generated against which tree*, the stronger
+    question than *when* (mtime has repeatedly been ruled inadmissible evidence in
+    this project). ``tree_sha`` is ``None`` outside a git worktree.
+    """
+    return {'by': by, 'tree_sha': current_worktree_sha(project_dir)}
+
+
+def derive_freshness(generation: Any, current_tree_sha: str | None) -> str:
+    """Staleness verdict from a generation header vs the current working-tree sha.
+
+    Reads ONLY the header's ``tree_sha`` — never the concept body — so a consumer
+    can filter documents before loading them. Returns:
+
+    * :data:`FRESHNESS_FRESH` — the recorded tree matches the current tree;
+    * :data:`FRESHNESS_STALE` — the recorded tree differs from the current tree;
+    * :data:`FRESHNESS_UNKNOWN` — either sha is absent (a legacy document with no
+      provenance, or a non-git tree). Fail-closed: absence is never ``fresh``.
+    """
+    if not isinstance(generation, dict):
+        return FRESHNESS_UNKNOWN
+    recorded = generation.get('tree_sha')
+    if not recorded or not current_tree_sha:
+        return FRESHNESS_UNKNOWN
+    return FRESHNESS_FRESH if recorded == current_tree_sha else FRESHNESS_STALE
+
+
+def package_key_resolves(key: str, project_dir: str = '.') -> bool:
+    """Whether a package-entry key resolves to an existing path under ``project_dir``.
+
+    The key IS a repo-relative path (path is identity). An absolute path or one
+    that climbs out of the tree (``..``) never resolves — it is not a repo-relative
+    location — regardless of what is on disk.
+    """
+    if not key:
+        return False
+    normalized = key.replace('\\', '/')
+    if normalized.startswith('/'):
+        return False
+    if '..' in normalized.split('/'):
+        return False
+    return (Path(project_dir) / normalized).exists()
+
+
+def validate_package_key(key: str, project_dir: str = '.') -> str:
+    """Refuse a package-entry key that does not resolve to a real path (D1 write gate).
+
+    Raises:
+        NonResolvingPathKeyError: naming the offending key, so a writer learns a
+            dotted pseudo-identifier is no longer accepted rather than silently
+            persisting a key that resolves to nothing.
+    """
+    if not package_key_resolves(key, project_dir):
+        raise NonResolvingPathKeyError(
+            f'Package key {key!r} does not resolve to an existing path under the project root. '
+            'Package keys are repo-relative paths (path is identity), not dotted package names.'
+        )
+    return key
+
+
+def migrate_key_packages(
+    key_packages: dict[str, Any], derived_packages: dict[str, Any], project_dir: str = '.'
+) -> tuple[dict[str, Any], list[str]]:
+    """Rewrite legacy dotted-identifier package keys to repo-relative paths.
+
+    Uses the derived ``packages`` map (dotted name → ``{path, ...}``) as the
+    dotted→path bridge — the exact "second identity system" D1 retires. Per key:
+
+    * a key that already resolves to a path is kept as-is;
+    * a dotted key found in ``derived_packages`` is rewritten to that entry's
+      ``path``;
+    * a key that resolves to neither is kept under its original key AND reported in
+      the returned ``unresolved`` list — a named outcome, never a silent drop.
+
+    Returns:
+        A ``(migrated, unresolved)`` pair.
+    """
+    migrated: dict[str, Any] = {}
+    unresolved: list[str] = []
+    for key, value in key_packages.items():
+        if package_key_resolves(key, project_dir):
+            migrated[key] = value
+            continue
+        derived_entry = derived_packages.get(key)
+        path = derived_entry.get('path') if isinstance(derived_entry, dict) else None
+        if path:
+            migrated[path] = value
+        else:
+            migrated[key] = value
+            unresolved.append(key)
+    return migrated, unresolved
 
 
 # =============================================================================
@@ -237,6 +495,10 @@ def invalidate_crawl_cache(project_dir: str | None = None) -> None:
             stale memoized data.
     """
     _PATH_CLAIM_CACHE.clear()
+    # The worktree-sha memo is dropped WHOLESALE: it is keyed by resolved
+    # project_dir, but a refresh anywhere means the tree may have moved, and a
+    # stale sha would silently mis-report freshness.
+    _WORKTREE_SHA_CACHE.clear()
     if project_dir is None:
         _CRAWL_CACHE.clear()
         return
@@ -425,35 +687,60 @@ def save_module_derived(module_name: str, data: dict[str, Any], project_dir: str
 
 
 def load_module_enriched(module_name: str, project_dir: str = '.') -> dict[str, Any]:
-    """Load one module's ``enriched.json``.
+    """Load one module's ``enriched.json``, migrated to the concept model.
+
+    Applies :func:`migrate_concept_document` on read, so a pre-field document
+    surfaces with its deterministic ``type`` and an unknown type is refused
+    (fail-closed) rather than read as valid.
 
     Raises:
         DataNotFoundError: If the file does not exist.
+        InvalidConceptTypeError: If the document declares an unknown ``type``.
     """
     path = get_module_enriched_path(module_name, project_dir)
     if not path.exists():
         raise DataNotFoundError(
             f"Enrichment data not found for module '{module_name}'. Run 'architecture.py init' first. Expected: {path}"
         )
-    return _read_json(path)
+    return migrate_concept_document(_read_json(path))
 
 
 def load_module_enriched_or_empty(module_name: str, project_dir: str = '.') -> dict[str, Any]:
-    """Load one module's ``enriched.json`` or return an empty dict.
+    """Load one module's ``enriched.json`` (migrated) or return an empty dict.
 
     Use this when callers want to tolerate missing enrichment (e.g. read paths
-    after ``discover`` but before ``init``).
+    after ``discover`` but before ``init``). A genuinely-absent file returns ``{}``
+    (no document exists to migrate); a present document is migrated exactly as
+    :func:`load_module_enriched` migrates it.
     """
     path = get_module_enriched_path(module_name, project_dir)
     if not path.exists():
         return {}
-    return _read_json(path)
+    return migrate_concept_document(_read_json(path))
 
 
-def save_module_enriched(module_name: str, data: dict[str, Any], project_dir: str = '.') -> Path:
-    """Save one module's ``enriched.json``."""
+def save_module_enriched(
+    module_name: str, data: dict[str, Any], project_dir: str = '.', generated_by: str = GENERATED_BY
+) -> Path:
+    """Save one module's ``enriched.json`` — the single concept-document writer.
+
+    Two concept-model constructs are enforced here so every persisted document
+    carries them regardless of which caller wrote it:
+
+    * ``type`` is migrated/validated via :func:`migrate_concept_document` — an
+      absent type is filled with the module default, an **unknown** type is
+      REFUSED (:class:`InvalidConceptTypeError`) at write time;
+    * a fresh ``generation`` header is stamped, recording ``generated_by`` and the
+      current working-tree sha — the document is being written against *this* tree
+      now, so its provenance is refreshed on every write.
+
+    Raises:
+        InvalidConceptTypeError: If ``data`` declares an unknown ``type``.
+    """
     path = get_module_enriched_path(module_name, project_dir)
-    _write_json(path, data)
+    document = migrate_concept_document(data)
+    document[GENERATION_FIELD] = build_generation(project_dir, generated_by)
+    _write_json(path, document)
     return path
 
 
@@ -571,6 +858,23 @@ def get_root_module(project_dir: str = '.') -> str | None:
     return sorted(modules.keys())[0]
 
 
+def _log_unresolved_package_keys(module_name: str, unresolved: list[str]) -> None:
+    """Emit a non-blocking WARNING for legacy package keys that could not be migrated."""
+    try:
+        from plan_logging import log_entry
+
+        log_entry(
+            'script',
+            None,
+            'WARNING',
+            f"[ARCHITECTURE] module '{module_name}': {len(unresolved)} key_packages "
+            f'key(s) do not resolve to a path and were not migrated to path identity: '
+            f'{", ".join(sorted(unresolved))}',
+        )
+    except Exception:
+        pass
+
+
 def merge_module_data(module_name: str, project_dir: str = '.') -> dict[str, Any]:
     """Merge derived and enriched data for a single module.
 
@@ -579,11 +883,26 @@ def merge_module_data(module_name: str, project_dir: str = '.') -> dict[str, Any
     data. Enriched values that are falsy do NOT overwrite derived values — this
     matches the legacy semantics that downstream callers depend on.
 
+    Legacy dotted ``key_packages`` keys are migrated to repo-relative path
+    identities here (via :func:`migrate_key_packages`), using the module's derived
+    ``packages`` map as the dotted→path bridge — both sides are already loaded, so
+    the migration is free. A key that resolves to neither a path nor a derived
+    entry is surfaced as a non-blocking WARNING rather than silently dropped.
+
     Raises:
         DataNotFoundError: If ``derived.json`` is missing for the named module.
     """
     derived = load_module_derived(module_name, project_dir)
     enriched = load_module_enriched_or_empty(module_name, project_dir)
+
+    key_packages = enriched.get('key_packages')
+    if isinstance(key_packages, dict) and key_packages:
+        migrated_packages, unresolved = migrate_key_packages(
+            key_packages, derived.get('packages') or {}, project_dir
+        )
+        enriched = {**enriched, 'key_packages': migrated_packages}
+        if unresolved:
+            _log_unresolved_package_keys(module_name, unresolved)
 
     merged = dict(derived)
     for key, value in enriched.items():

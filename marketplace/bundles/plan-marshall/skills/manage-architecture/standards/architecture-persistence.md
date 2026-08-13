@@ -27,11 +27,14 @@ under a sibling staging directory `project-architecture.tmp/` and then
 before or after the rename leaves the project in a consistent state — the
 old layout is intact, or the new layout is intact, never half-written.
 
-**Source of truth invariant**: `_project.json`'s `modules` field is the
-canonical answer to "which modules exist". Per-module directory presence on
-disk is **not** a substitute for the index — half-written directories from
-interrupted writes must be ignored. Clients iterate `_project.json` and
-lazy-load per-module files; they MUST NOT enumerate the directory tree.
+**Discovery is the live crawl, NOT the index.** Module discovery walks the live
+worktree filesystem (`iter_modules` → `crawl_all_modules`); the `_project.json`
+`modules` index is **not** the discovery gatekeeper. A module present on disk but
+absent from the index is still discovered — "what is on disk is what exists". The
+index is instead a **read-side pre-flight surface**: each entry carries a
+`description` and a `generation` header (see below), so a consumer can read
+`_project.json` alone to decide which concept documents to open and whether each
+is stale, without opening any concept body.
 
 **Benefits of the per-module layout:**
 - Smaller, easier-to-read files per module (no 60+ KB monoliths).
@@ -56,10 +59,14 @@ Top-level project metadata and the module index.
   "description_reasoning": "Derived from: root README.md first paragraph",
   "extensions_used": ["pm-dev-java", "plan-marshall"],
   "modules": {
-    "oauth-sheriff-parent": {},
-    "oauth-sheriff-core": {},
-    "oauth-sheriff-quarkus": {},
-    "oauth-sheriff-quarkus-deployment": {}
+    "oauth-sheriff-parent": {
+      "description": "Aggregator POM for the OAuth Sheriff modules",
+      "generation": {"by": "architecture", "tree_sha": "9f2c…"}
+    },
+    "oauth-sheriff-core": {
+      "description": "Core JWT validation logic",
+      "generation": {"by": "architecture", "tree_sha": "9f2c…"}
+    }
   }
 }
 ```
@@ -72,17 +79,22 @@ Top-level project metadata and the module index.
 | `description` | LLM-generated 1-2 sentence project description |
 | `description_reasoning` | Source/rationale for the description |
 | `extensions_used` | Domain extensions that contributed to discovery |
-| `modules` | **Module index** — keys are module names, values are reserved for future per-module overrides (empty objects today). The set of keys is the canonical "which modules exist" answer. |
+| `modules` | **Module index** — keys are module names; each value is a read-side header `{description, generation}` mirroring the module's concept document (see below). |
 
-### `modules` index — discovery surface
+### `modules` index — read-side pre-flight surface
 
-Clients iterate `_project.json["modules"]` to know which modules to load.
-The values are presently empty objects but the field is reserved as the
-extension point for per-module project-level metadata in future revisions.
+Each index entry carries two mirrored fields, refreshed at `discover` time from
+the module's concept document:
 
-The `iter_modules()` core helper returns the sorted key list and is the
-only blessed way to enumerate modules; callers MUST NOT scan the
-`project-architecture/` directory tree directly.
+| Field | Description |
+|-------|-------------|
+| `description` | The module's `responsibility` (its 1-2 sentence description), so a consumer can decide which concept documents to open **from the index alone**. |
+| `generation` | The concept document's generation header `{by, tree_sha}`, so a consumer can derive a staleness verdict (`derive_freshness`) from the tree identifier **without opening the concept body**. |
+
+The index is **not** the discovery gatekeeper (see "Discovery is the live crawl"
+above): `iter_modules()` crawls the live filesystem, so a module on disk but
+absent from the index is still discovered. The index is a denormalized pre-flight
+snapshot; the per-module concept document is authoritative.
 
 ---
 
@@ -303,26 +315,38 @@ The corresponding npm sibling lives at
 
 ---
 
-## Per-module `enriched.json`
+## Per-module `enriched.json` — the concept document
 
 Path: `.plan/project-architecture/{module}/enriched.json`
 
-LLM-generated enrichments for one module. Seeded as an empty stub by
-`architecture discover` and by `architecture init` — which seeds only
-MISSING stubs and preserves existing enrichment by default, blanking every
-module's enrichment back to the empty stub only under `init --reset` — then
-populated by the `architecture enrich *` commands.
+A per-module **concept document**. LLM-generated enrichments plus two
+concept-model constructs the writer stamps on every write: a required, closed
+`type` and a `generation` provenance header. Seeded as an empty stub (already
+carrying `type: module`) by `architecture discover` and by `architecture init` —
+which seeds only MISSING stubs and preserves existing enrichment by default,
+blanking every module's enrichment back to the empty stub only under
+`init --reset` — then populated by the `architecture enrich *` commands.
+
+### The concept model
+
+| Construct | Contract |
+|-----------|----------|
+| `type` | Required, drawn from a **closed, validated** vocabulary declared once as `CONCEPT_TYPES` in `scripts/_architecture_core.py` (`module`, `skill`, `script`, `standard`, `decision_record`). An unknown type is **refused at write time** with a message naming the accepted set. A pre-field document (no `type`) migrates deterministically to `module` on read (the store held only modules before the field existed) — a named migrate-on-read outcome, never a silent default. |
+| `generation` | A provenance header `{by, tree_sha}` recording **who** wrote the document and the **working-tree it was written against** (`compute_worktree_sha`). Freshness is derived from `tree_sha` — the tree identifier, **not** mtime (`derive_freshness`: `fresh` when it matches the current tree, `stale` when it differs, `unknown` when absent). Readable without parsing the body; also mirrored into the root index. |
+| `key_packages` keys | **Repo-relative paths (path is identity)**, not dotted pseudo-identifiers. A key must resolve to a real filesystem location; `enrich package` **refuses a non-resolving key** with a named error. Legacy dotted keys migrate to paths on read via the derived `packages` map (dotted → path). |
 
 ### Structure
 
 ```json
 {
+  "type": "module",
+  "generation": {"by": "architecture", "tree_sha": "9f2c…"},
   "responsibility": "Core JWT validation logic including claim extraction and signature verification",
   "responsibility_reasoning": "Derived from: README overview, ClaimValidator pattern",
   "purpose": "library",
   "purpose_reasoning": "packaging=jar, no runtime dependencies",
   "key_packages": {
-    "de.cuioss.sheriff.oauth.core.pipeline": {
+    "oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/pipeline": {
       "description": "JWT validation pipeline components",
       "components": ["ClaimValidator", "JwtPipeline", "ValidationResult"]
     }
@@ -352,11 +376,13 @@ populated by the `architecture enrich *` commands.
 
 | Field | Description |
 |-------|-------------|
+| `type` | Required concept type from the closed `CONCEPT_TYPES` vocabulary (see "The concept model" above) |
+| `generation` | Provenance header `{by, tree_sha}` — who wrote it and the tree it was written against |
 | `responsibility` | Human-readable module description (1-2 sentences) |
 | `responsibility_reasoning` | Sources used for derivation |
 | `purpose` | Module classification (see values below) |
 | `purpose_reasoning` | Analysis rationale |
-| `key_packages` | Important packages with descriptions and components |
+| `key_packages` | Important packages with descriptions and components, keyed by **repo-relative path** |
 | `internal_dependencies` | Dependencies on other project modules |
 | `key_dependencies` | Important external dependencies (no technology prefix) |
 | `key_dependencies_reasoning` | Filtering rationale |
@@ -457,9 +483,9 @@ files for output:
 
 | API Output | `_project.json` | `{module}/derived.json` | `{module}/enriched.json` |
 |------------|-----------------|--------------------------|---------------------------|
-| `module` (default) | — | paths, commands | responsibility, purpose, key_packages, internal_dependencies, key_dependencies, skills_by_profile |
+| `module` (default) | — | paths, commands | type, generation, responsibility, purpose, key_packages, internal_dependencies, key_dependencies, skills_by_profile |
 | `module --full` | — | + packages, dependencies | + reasoning fields |
-| `info` | name, description | build_systems (per module) | purpose (per module) |
+| `info` | name, description; per-module `description` + `freshness` (from the index `generation` header) | build_systems (per module) | purpose (per module) |
 
 ---
 
@@ -467,6 +493,8 @@ files for output:
 
 | Field | Source | Default Output | Full Output |
 |-------|--------|----------------|-------------|
+| `type` | `enriched.json` | Yes | Yes |
+| `generation` | `enriched.json` | Yes | Yes |
 | `name` | `derived.json` | Yes | Yes |
 | `build_systems` | `derived.json` | Yes | Yes |
 | `paths` | `derived.json` | Yes | Yes |

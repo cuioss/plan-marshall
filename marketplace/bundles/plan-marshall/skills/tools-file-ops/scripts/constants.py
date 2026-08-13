@@ -410,10 +410,13 @@ FILE_WORK_METRICS = 'work/metrics.toon'
 # Project-architecture per-module storage
 # ---------------------------------------------------------------------------
 # Top-level project metadata file at the root of `.plan/project-architecture/`.
-# Acts as the single source of truth for "which modules exist": its `modules`
-# index is what clients iterate via `iter_modules`. Per-module directory
-# presence on disk is NOT a substitute for the index — half-written
-# directories must be ignored.
+# Holds project identity plus the `modules` index. The index is NOT the
+# discovery gatekeeper — `iter_modules` crawls the live worktree filesystem, so a
+# module on disk but absent from the index is still discovered. The index is a
+# read-side pre-flight surface: each entry mirrors the module's concept-document
+# `description` and `generation` header so a consumer can filter which documents
+# to open (and whether each is stale) from `_project.json` alone. See
+# manage-architecture/standards/architecture-persistence.md.
 FILE_PROJECT_META = '_project.json'
 
 # Per-module filenames, sitting under `.plan/project-architecture/{module}/`.
