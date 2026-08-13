@@ -25,7 +25,7 @@ from typing import Any
 
 from _git_helpers import git_dirty_count, git_dirty_files, git_head
 from constants import QGATE_PHASES
-from file_ops import get_base_dir
+from file_ops import get_base_dir, get_marshal_path
 from marketplace_paths import find_marketplace_path
 from toon_parser import parse_toon
 
@@ -1308,25 +1308,49 @@ def assert_finalize_findings_clean(plan_id: str, metadata: dict[str, Any]) -> in
     return int(count)
 
 
-def _capture_config_hash(plan_id: str, _metadata: dict[str, Any], phase: str) -> Any:
-    # Phase config keys use the `phase-{phase}` naming convention.
-    stdout = _run_script(
-        [
-            'plan-marshall:manage-config:manage-config',
-            'plan',
-            f'phase-{phase}',
-            'get',
-            '--audit-plan-id',
-            plan_id,
-        ]
-    )
-    if stdout is None:
+def _capture_config_hash(_plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
+    """Fingerprint the plan-governing configuration, independent of the phase.
+
+    Returns a stable SHA of the ``plan`` section of ``marshal.json``. The value
+    is deliberately **phase-independent**: the same configuration hashes to the
+    same value at every boundary. That is what the two consumers need to
+    discriminate:
+
+    - the cross-phase drift scan (``summarize-invariants.detect_drift``) reports a
+      drift only when the config genuinely changed between two phases, instead of
+      firing at every boundary;
+    - the same-phase re-verify (``_handshake_commands.cmd_verify``) still blocks on
+      a real mid-phase config change (``blocking_at_every_boundary`` classification
+      retained).
+
+    This replaces the earlier ``manage-config plan phase-{phase} get`` capture,
+    which had two defects. (1) It keyed the hash on ``phase-{phase}`` — a different
+    config subtree at every phase — so the value changed at every boundary *by
+    construction* and the cross-phase scan flagged a spurious drift every time (it
+    could not tell a real config change from the phase simply advancing). (2) It
+    passed ``--audit-plan-id``, which the ``plan`` noun does not accept, so the
+    subprocess exited non-zero and the capture was silently ``None`` at every
+    boundary — a signal that never fired at all. Reading the phase-independent
+    ``plan`` section fixes both.
+
+    The whole-checkout stability of ``marshal.json`` (worktree vs. main resolution
+    when a plan edits ``marshal.json`` on its branch) is out of scope here — that
+    is the repository-root resolver owned by the main-scoped-field plan.
+
+    Returns ``None`` (not-applicable) when ``marshal.json`` is absent or
+    unreadable, fail-closed, so a transient read failure never surfaces as a false
+    "config emptied" drift.
+    """
+    marshal_path = get_marshal_path()
+    if not marshal_path.exists():
         return None
     try:
-        parsed = parse_toon(stdout)
-    except Exception:
-        return _hash_dict(stdout.strip())
-    return _hash_dict(parsed)
+        config = json.loads(marshal_path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(config, dict):
+        return None
+    return _hash_dict(config.get('plan', {}))
 
 
 def _capture_phase_steps_complete(

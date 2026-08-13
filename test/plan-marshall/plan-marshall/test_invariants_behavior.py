@@ -27,7 +27,9 @@ each test asserts genuine return-value / branch behaviour, never a smoke check.
 
 from __future__ import annotations
 
+import json
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -193,43 +195,112 @@ def test_capture_worktree_dirty_uses_path_when_present(monkeypatch) -> None:
 
 
 # =============================================================================
-# _capture_config_hash
+# _capture_config_hash — phase-independent plan-config fingerprint
+#
+# The capture reads the ``plan`` section of ``marshal.json`` directly (via
+# ``get_marshal_path``), NOT the phase-scoped ``manage-config plan phase-{phase}
+# get`` subprocess it used before. The old path (a) passed ``--audit-plan-id``,
+# which the ``plan`` noun rejects (exit 2 -> silent ``None`` every boundary), and
+# (b) keyed the hash on ``phase-{phase}`` so it changed at every boundary by
+# construction, which the cross-phase drift scan then flagged as a spurious drift
+# every time. The tests below pin the phase-independent, genuine-change-sensitive
+# contract.
 # =============================================================================
 
 
-def test_capture_config_hash_none_when_executor_unreachable(monkeypatch) -> None:
-    """A ``None`` stdout from ``_run_script`` propagates as ``None``."""
-    monkeypatch.setattr(inv, '_run_script', lambda _args: None)
+def _write_marshal(tmp_path: Path, config: dict) -> Path:
+    """Write ``config`` as ``marshal.json`` under ``tmp_path`` and return the path."""
+    marshal = tmp_path / 'marshal.json'
+    marshal.write_text(json.dumps(config), encoding='utf-8')
+    return marshal
+
+
+def test_capture_config_hash_none_when_marshal_absent(monkeypatch, tmp_path) -> None:
+    """Absent ``marshal.json`` -> ``None`` (not-applicable contract).
+
+    A stub ``_run_script`` returning a hashable payload is installed to prove the
+    capture no longer consults the subprocess: the old implementation would have
+    returned a hash here rather than ``None``.
+    """
+    monkeypatch.setattr(inv, 'get_marshal_path', lambda: tmp_path / 'marshal.json', raising=False)
+    monkeypatch.setattr(inv, '_run_script', lambda _args: 'status: success\nmax_iterations: 5\n')
     assert inv._capture_config_hash('p', {}, '5-execute') is None
 
 
-def test_capture_config_hash_hashes_parsed_toon(monkeypatch) -> None:
-    """Parseable config TOON yields a stable 16-hex fingerprint."""
+def test_capture_config_hash_none_when_marshal_unreadable(monkeypatch, tmp_path) -> None:
+    """Corrupt ``marshal.json`` -> ``None`` (fail-closed; never a false empty hash)."""
+    marshal = tmp_path / 'marshal.json'
+    marshal.write_text('{ this is not valid json', encoding='utf-8')
+    monkeypatch.setattr(inv, 'get_marshal_path', lambda: marshal, raising=False)
     monkeypatch.setattr(inv, '_run_script', lambda _args: 'status: success\nmax_iterations: 5\n')
+    assert inv._capture_config_hash('p', {}, '5-execute') is None
+
+
+def test_capture_config_hash_hashes_plan_section(monkeypatch, tmp_path) -> None:
+    """A present ``marshal.json`` yields a stable 16-hex fingerprint of plan config."""
+    marshal = _write_marshal(tmp_path, {'plan': {'phase-5-execute': {'max_iterations': 5}}})
+    monkeypatch.setattr(inv, 'get_marshal_path', lambda: marshal, raising=False)
+    monkeypatch.setattr(inv, '_run_script', lambda _args: None)
     h = inv._capture_config_hash('p', {}, '5-execute')
     assert isinstance(h, str)
     assert len(h) == 16
 
 
-def test_capture_config_hash_changes_with_config(monkeypatch) -> None:
-    """Distinct config payloads produce distinct fingerprints (drift sensitivity)."""
-    monkeypatch.setattr(inv, '_run_script', lambda _args: 'status: success\nmax_iterations: 5\n')
-    first = inv._capture_config_hash('p', {}, '5-execute')
-    monkeypatch.setattr(inv, '_run_script', lambda _args: 'status: success\nmax_iterations: 9\n')
-    second = inv._capture_config_hash('p', {}, '5-execute')
-    assert first != second
+def test_capture_config_hash_stable_across_phases(monkeypatch, tmp_path) -> None:
+    """D2(a): the SAME configuration hashed from two different phase contexts
+    produces the SAME value.
+
+    Pre-fix the value was phase-scoped (``manage-config plan phase-{phase} get``),
+    so hashing at ``1-init`` and ``5-execute`` produced two different values and
+    the cross-phase drift scan flagged a drift at every boundary. The stub
+    ``_run_script`` returns a phase-DEPENDENT payload so the old implementation
+    fails this assertion red.
+    """
+    marshal = _write_marshal(
+        tmp_path,
+        {
+            'plan': {
+                'phase-1-init': {'branch_strategy': 'feature'},
+                'phase-5-execute': {'max_iterations': 5},
+            }
+        },
+    )
+    monkeypatch.setattr(inv, 'get_marshal_path', lambda: marshal, raising=False)
+    monkeypatch.setattr(inv, '_run_script', lambda args: f'phase: {args[2]}\n')
+
+    at_init = inv._capture_config_hash('p', {}, '1-init')
+    at_execute = inv._capture_config_hash('p', {}, '5-execute')
+
+    assert at_init is not None
+    assert at_init == at_execute
 
 
-def test_capture_config_hash_falls_back_to_raw_on_parse_failure(monkeypatch) -> None:
-    """When ``parse_toon`` raises, the raw stripped stdout is hashed instead."""
-    monkeypatch.setattr(inv, '_run_script', lambda _args: '  raw config text  ')
+def test_capture_config_hash_drifts_on_genuine_config_change(monkeypatch, tmp_path) -> None:
+    """D2(b): a genuine configuration change STILL produces a drift signal.
 
-    def _raise(_text):
-        raise ValueError('unparseable')
+    This is the control that stops the fix from silencing the invariant
+    altogether — "no longer fires at every boundary" must not degrade into "never
+    fires at all". The stub ``_run_script`` returns a CONSTANT payload so the old
+    (subprocess-based) implementation would report no change and fail this
+    assertion red.
+    """
+    marshal = tmp_path / 'marshal.json'
+    monkeypatch.setattr(inv, 'get_marshal_path', lambda: marshal, raising=False)
+    monkeypatch.setattr(inv, '_run_script', lambda _args: 'phase: constant\n')
 
-    monkeypatch.setattr(inv, 'parse_toon', _raise)
-    h = inv._capture_config_hash('p', {}, '5-execute')
-    assert h == inv._hash_dict('raw config text')
+    marshal.write_text(
+        json.dumps({'plan': {'phase-5-execute': {'max_iterations': 5}}}), encoding='utf-8'
+    )
+    before = inv._capture_config_hash('p', {}, '5-execute')
+
+    marshal.write_text(
+        json.dumps({'plan': {'phase-5-execute': {'max_iterations': 9}}}), encoding='utf-8'
+    )
+    after = inv._capture_config_hash('p', {}, '5-execute')
+
+    assert before is not None
+    assert after is not None
+    assert before != after
 
 
 # =============================================================================

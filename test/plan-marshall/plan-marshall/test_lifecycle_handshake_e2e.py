@@ -14,12 +14,14 @@ the run, ``summarize-invariants`` is asserted to return zero
 Implementation notes
 --------------------
 The handshake capture functions shell out to ``manage-tasks list``,
-``manage-tasks read``, ``manage-findings qgate query`` and
-``manage-config plan ... get`` via ``.plan/execute-script.py``. To keep
-this test deterministic and independent of an installed executor, the
-``_invariants._run_script`` hook is replaced with an in-process stub
-that dispatches the same TOON contracts using the manage-tasks command
-handlers loaded directly. This mirrors the pattern in
+``manage-tasks read`` and ``manage-findings qgate query`` via
+``.plan/execute-script.py``. To keep this test deterministic and
+independent of an installed executor, the ``_invariants._run_script``
+hook is replaced with an in-process stub that dispatches the same TOON
+contracts using the manage-tasks command handlers loaded directly. The
+``config_hash`` capture reads ``marshal.json`` directly (not the
+executor); ``stub_marshal_config`` writes one into the sandbox so the
+fingerprint is stable and non-null. This mirrors the pattern in
 ``test_invariants.py`` and exercises the real capture + storage path
 end-to-end.
 
@@ -30,6 +32,7 @@ The summarize step uses a real subprocess (``run_script``) so the
 from __future__ import annotations
 
 import importlib.util
+import json
 import shutil
 import sys
 import types
@@ -110,16 +113,17 @@ cmd_read = _query.cmd_read
 
 
 def _make_stub_run_script():
-    """Return a stub for ``inv._run_script`` covering the four notations the
-    capture functions invoke.
+    """Return a stub for ``inv._run_script`` covering the notations the capture
+    functions invoke.
 
     - ``manage-tasks list`` and ``manage-tasks read`` resolve in-process via
       the manage-tasks command handlers (same pattern as test_invariants.py).
     - ``manage-findings qgate query`` returns a fixed zero-count payload —
       this test fixture has no Q-Gate findings.
-    - ``manage-config plan ... get`` returns a stable empty config payload so
-      ``_capture_config_hash`` produces a deterministic hash without needing
-      a real marshal.json.
+
+    ``_capture_config_hash`` no longer goes through ``_run_script`` — it reads
+    ``marshal.json`` directly (see ``stub_marshal_config``), so there is no
+    ``manage-config`` branch here.
     """
     from file_ops import serialize_toon
 
@@ -160,11 +164,6 @@ def _make_stub_run_script():
             # qgate query → zero open findings for any phase.
             return serialize_toon({'filtered_count': 0, 'findings': []})
 
-        if notation == 'plan-marshall:manage-config:manage-config':
-            # `plan phase-X get` → return an empty payload so the hash is
-            # deterministic across phases (an empty config is the same hash).
-            return serialize_toon({'plan': {}})
-
         return None
 
     return _stub
@@ -174,6 +173,24 @@ def _make_stub_run_script():
 def stub_handshake_run_script(monkeypatch: pytest.MonkeyPatch) -> None:
     """Redirect ``inv._run_script`` so handshake captures run in-process."""
     monkeypatch.setattr(inv, '_run_script', _make_stub_run_script())
+
+
+@pytest.fixture
+def stub_marshal_config(monkeypatch: pytest.MonkeyPatch, plan_context) -> None:
+    """Provide a ``marshal.json`` so ``_capture_config_hash`` reads a real,
+    phase-independent plan-config fingerprint.
+
+    The capture reads ``marshal.json`` directly (not via the executor), so
+    ``inv.get_marshal_path`` is redirected at a fixture file written into the
+    per-test sandbox. Its content is fixed for the whole lifecycle, so the
+    fingerprint is stable across every phase and non-null in every row.
+    """
+    marshal = plan_context.fixture_dir / 'marshal.json'
+    marshal.write_text(
+        json.dumps({'plan': {'phase-5-execute': {'max_iterations': 5}}}),
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(inv, 'get_marshal_path', lambda: marshal)
 
 
 @pytest.fixture
@@ -249,7 +266,9 @@ def _transition(plan_id: str, completed_phase: str) -> dict:
 # =============================================================================
 
 
-def test_lifecycle_captures_handshakes_for_all_phases(stub_handshake_run_script, stub_load_status_metadata, plan_context) -> None:
+def test_lifecycle_captures_handshakes_for_all_phases(
+    stub_handshake_run_script, stub_load_status_metadata, stub_marshal_config, plan_context
+) -> None:
     """Driving the orchestrator-shape sequence populates one row per phase.
 
     Iterates the five inter-phase boundaries (``1-init`` → ``2-refine`` …
@@ -304,7 +323,7 @@ def test_lifecycle_captures_handshakes_for_all_phases(stub_handshake_run_script,
 
 
 def test_lifecycle_summarize_invariants_zero_warnings_live_mode(
-    stub_handshake_run_script, stub_load_status_metadata, plan_context
+    stub_handshake_run_script, stub_load_status_metadata, stub_marshal_config, plan_context
 ) -> None:
     """After a populated lifecycle, ``summarize-invariants run --mode live``
     must report zero ``phase_handshake`` findings.
@@ -331,7 +350,7 @@ def test_lifecycle_summarize_invariants_zero_warnings_live_mode(
 
 
 def test_lifecycle_summarize_invariants_zero_warnings_archived_mode(
-    stub_handshake_run_script, stub_load_status_metadata, plan_context, tmp_path: Path
+    stub_handshake_run_script, stub_load_status_metadata, stub_marshal_config, plan_context, tmp_path: Path
 ) -> None:
     """Archive the populated plan and re-run ``summarize-invariants`` in
     ``archived`` mode against the archived path. Zero ``phase_handshake``
