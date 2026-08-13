@@ -1,6 +1,6 @@
 # Run report — 360-collapse-the-version-selection-machinery (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** claude/version-selection-collapse-gt8iqd (harness-assigned)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-13    **Branch:** claude/version-selection-collapse-gt8iqd (harness-assigned)    **PR:** [#1223](https://github.com/cuioss/plan-marshall/pull/1223)    **Outcome:** _in progress — merge gate_
 
 ## Skills loaded
 
