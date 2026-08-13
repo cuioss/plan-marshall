@@ -416,14 +416,17 @@ def get_module_graph(
 # =============================================================================
 #
 # The enriched ``skills_by_profile`` map can drift out of sync with the live
-# skill registry: a skill can be renamed or retired while a module's
-# enriched.json still references the old ``bundle:skill`` notation, or a module
-# can carry no ``skills_by_profile`` at all. Neither case is fatal — task
-# planning still runs — so the guard surfaces a non-blocking WARNING on the
-# module read path rather than raising. Registry resolution is deferred and
-# fail-safe: when the bundle root cannot be located (e.g. a unit test running
-# outside a bundle tree) the stale-notation check is skipped, but the
-# missing/empty check still fires because it needs no registry.
+# skill registry, or answer nothing for a profile without saying so. Three
+# non-fatal signals are surfaced: a skill renamed or retired while a module's
+# enriched.json still references the old ``bundle:skill`` notation; a module
+# carrying no ``skills_by_profile`` at all; and a present-but-empty profile
+# block that resolves no skills and is not declared minimal (an unresolved
+# profile). None is fatal — task planning still runs — so the guard surfaces a
+# non-blocking WARNING on the module read path rather than raising. Registry
+# resolution is deferred and fail-safe: when the bundle root cannot be located
+# (e.g. a unit test running outside a bundle tree) the stale-notation check is
+# skipped, but the missing/empty and unresolved-profile checks still fire
+# because they need no registry.
 
 
 def _iter_skill_notations(skills_by_profile: dict[str, Any]) -> list[str]:
@@ -528,7 +531,11 @@ def _skill_notation_is_live(notation: str, bundles_root: Path) -> bool:
 
 
 def _emit_skills_by_profile_staleness_warning(module_name: str, merged: dict[str, Any]) -> None:
-    """Emit a non-blocking WARNING when ``merged``'s skills_by_profile is stale or missing."""
+    """Emit a non-blocking WARNING when ``merged``'s skills_by_profile is stale, missing, or unresolved.
+
+    "Unresolved" is a present-but-empty profile block that resolves no skills and
+    is not declared minimal — see :func:`detect_stale_skills_by_profile`.
+    """
     skills_by_profile = merged.get('skills_by_profile', {})
 
     if skills_by_profile:
@@ -570,7 +577,8 @@ def get_module_info(module_name: str | None = None, full: bool = False, project_
     merged = merge_module_data(module_name, project_dir)
 
     # Read-path staleness guard: non-blocking WARNING when skills_by_profile is
-    # stale (retired notations) or missing entirely. Never raises.
+    # stale (retired notations), missing entirely, or carries an unresolved
+    # (present-but-empty, undeclared) profile. Never raises.
     _emit_skills_by_profile_staleness_warning(module_name, merged)
 
     if not full:

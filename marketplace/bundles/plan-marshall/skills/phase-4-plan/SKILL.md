@@ -1140,8 +1140,8 @@ Skills are resolved from architecture based on `module` + `profile`:
 | Multiple profiles | Create one task per profile, each with its own resolved skills |
 | `verification` profile | Skip architecture query — no skills needed, use verification commands as steps |
 | Module not in architecture | Error - module must exist in project architecture |
-| Profile empty/absent, declared minimal (`skills_by_profile.{P}.minimal == true`) | Set `task.skills = []` and continue — a deliberate empty; NO warning, NO finding. |
-| Profile empty/absent, NOT declared minimal | Log WARNING, set `task.skills = []`, record a Q-Gate triage finding with the architecture-enrichment recommendation in `--detail`, then continue. See Step 5 for the canonical procedure. |
+| Profile present but empty, declared minimal (`skills_by_profile.{P}.minimal == true`) | Set `task.skills = []` and continue — a deliberate empty; NO warning, NO finding. |
+| Profile empty or absent, NOT declared minimal | Log WARNING, set `task.skills = []`, record a Q-Gate triage finding with the architecture-enrichment recommendation in `--detail`, then continue. See Step 5 for the canonical procedure. |
 
 ## Error Handling
 

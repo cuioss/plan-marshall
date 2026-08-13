@@ -140,11 +140,40 @@ interpreter matched the floor).
 
 ## Findings
 
-_pending_
+**Verification sub-agent** (independent, read-only; general-purpose). Verdict: implementation matches
+the plan — all four deliverables present, correctly specified, test-covered, no undeclared collateral
+change. Findings:
+
+| # | Source | Description | Disposition |
+|---|--------|-------------|-------------|
+| 1 | sub-agent (beyond-diff sweep) | `_cmd_client_query.py` module-section comment (block above the guard) still enumerated only the two-signal (stale / missing) model, omitting the new unresolved-profile signal. | **Fixed** — comment rewritten to name all three signals. |
+| 2 | sub-agent (beyond-diff sweep) | `_emit_skills_by_profile_staleness_warning` docstring said "stale or missing", omitting the unresolved signal. | **Fixed** — docstring now says "stale, missing, or unresolved" and cross-references the guard. |
+| 3 | sub-agent (beyond-diff sweep) | `get_module_info` call-site comment said "stale (retired notations) or missing entirely", omitting the unresolved signal. | **Fixed** — comment now names the unresolved-profile case. |
+| 4 | sub-agent (minor) | phase-4-plan scenario-table row read "Profile empty/absent, declared minimal" — an *absent* profile has no block to carry `minimal: true`, so that combination is unreachable. | **Fixed** — reworded to "Profile present but empty, declared minimal" / "Profile empty or absent, NOT declared minimal". |
+| 5 | sub-agent (minor, out of scope) | `_cmd_client_render.py` renders per-profile skill *counts*, so declared-minimal and undeclared-empty both render as `0 skills` — the render surface does not reflect the distinction. | **Rejected (out of scope)** — a count summary, not a false claim; the plan scoped the distinction to the guard/allocation surface, not the render. Recorded as residue. |
+| 6 | sub-agent (minor, out of scope) | A contradictory `{"defaults":[x], "minimal": true}` is treated as populated by the guard but emptied by phase-4-plan Step 5 (which checks `minimal` first). | **Rejected (out of scope)** — nonsensical input; neither the plan nor the closed-vocabulary posture asks to reconcile a `minimal` flag on a populated profile. Recorded as residue. |
+
+Findings 1–3 are three instances of one defect kind (old two-state model restatement), recorded per
+instance. After fixes, `./pw quality-gate plan-marshall` re-ran clean (mypy 278 files, ruff, SPDX);
+the fixes are comment/docstring/table-wording only — no logic or test behavior changed.
+
+**CI findings:** _pending PR._
+
+**PR review findings:** _pending PR._
 
 ## Reviewer participation
 
-_pending_
+Expected reviewer population, derived from configuration — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(cross-named by `.github/workflows/pr-agent.yml`):
+
+| Reviewer (`author_login`) | Verdict (`reviewed` / `rate-limited` / `silent`) | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` (pr-agent) | _pending PR_ | — |
+| `coderabbitai` (coderabbit) | _pending PR_ | — |
+| `sourcery-ai` (sourcery) | _pending PR_ | — |
+
+Coverage: _pending PR_ (of 3).
 
 ## Cost
 
