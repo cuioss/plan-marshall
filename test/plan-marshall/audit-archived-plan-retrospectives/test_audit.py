@@ -147,12 +147,19 @@ def test_finalize_flow_conformance_carries_this_plan_pr_boundary():
     assert audit.CHECK_ERA["finalize-flow-conformance"] == "#884"
 
 
-def test_sequence_build_minimality_carries_plan7_boundary():
-    # sequence-and-build-minimality's era boundary is plan-7's PR (#887): plan-7's
-    # D1 which-module containment fix and the per-task-vs-per-deliverable build-cost
-    # model change are the mechanics this check's rows are read against. plan-8 does
-    # NOT rework it, so its stamp stays resolved at #887.
-    assert audit.CHECK_ERA["sequence-and-build-minimality"] == "#887"
+def test_sequence_build_minimality_carries_this_plan_pr_boundary():
+    # This plan RE-BASES the sequence-and-build-minimality check's build-duration
+    # derivation off the plan-scoped log onto the structured change-ledger (every
+    # build system, every phase), and adds the ledger-derived status ratio, the
+    # build-vs-wall-clock share, the suspect-zero rule, and the
+    # build-time-exceeds-wall-clock invariant. Those ARE the build-minimality
+    # mechanics this check's rows are read against, so its era boundary is this
+    # plan's own PR, carried as the PR-PENDING placeholder (bumped from #887) until
+    # project:finalize-step-era-stamp-fill resolves it to the real PR at finalize.
+    # This is the co-changing mirror of the audit.py CHECK_ERA constant — the pair
+    # changes together and is the designated acceptance for era-fill firing from a
+    # composed manifest.
+    assert audit.CHECK_ERA["sequence-and-build-minimality"] == "#1224"
 
 
 def test_plan8_reworked_checks_carry_pr_pending_boundary():
@@ -752,7 +759,8 @@ def test_sequence_ci_rerun_fires_on_multiple_ci_run_dirs(tmp_path):
     )
     inputs = audit.collect_inputs(plan_dir)
 
-    result = audit.cross_sequence_build_minimality([inputs])
+    # No builds staged in the ledger — this pins the ci_rerun signal (CI dirs).
+    result = audit.cross_sequence_build_minimality([inputs], {})
     row = next(r for r in result["rows"] if r["plan_id"] == "seq-plan")
     assert row["ci_runs"] == 2
     assert any(f.startswith("ci_rerun") for f in row["flags"]), row["flags"]

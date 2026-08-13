@@ -12,6 +12,20 @@ Facts come from `plan-marshall:plan-retrospective:analyze-logs` which consumes t
 aspect: log_analysis
 status: success
 plan_id: {plan_id}
+build_time:
+  # Build time from the change-ledger (the build-time ORACLE) — spans every build
+  # system and every phase. total_build_seconds sums valid (> 0) durations ONLY;
+  # a zero / absent duration is counted in suspect_count and NOT summed (a floor
+  # when suspect_count > 0). `killed` is SEPARATE from `error`. build_count: 0 =
+  # no ledger rows = build time UNAVAILABLE (absent is not zero). The
+  # `plan_efficiency` aspect READS total_build_seconds from here into its totals.
+  total_build_seconds: NUM
+  build_count: N
+  suspect_count: N
+  pass: N
+  error: N
+  timeout: N
+  killed: N
 counts:
   work_entries: N
   decision_entries: N

@@ -3252,6 +3252,55 @@ def _sbm_dispatch(ts: str, role: str) -> str:
     """
     return f'[{ts}Z] [INFO] [3befe7] [DISPATCH] (orchestrator) role={role} dispatched'
 
+# Build-notation constants for staged kind=build ledger rows. The re-base derives
+# build time from the change-ledger, which records `command` per build system, so
+# a NON-pyproject build (Maven) is used to prove the single-tool blindness closed.
+_LEDGER_NOTATION_PYPROJECT = 'plan-marshall:build-pyproject:pyproject_build'
+_LEDGER_NOTATION_MAVEN = 'plan-marshall:build-maven:maven_build'
+
+
+def _sbm_ledger_row(
+    plan_id: str,
+    *,
+    dur: float | None,
+    status: str = 'success',
+    ts: str = '2026-06-01T10:00:00Z',
+    notation: str = _LEDGER_NOTATION_PYPROJECT,
+    command: str = './pw verify',
+) -> dict[str, Any]:
+    """One kind=build change-ledger row — the build-time oracle's unit.
+
+    ``dur=None`` (or 0) is a SUSPECT duration; ``status`` is one of
+    success/error/timeout/killed/unknown; ``notation``/``command`` name the build
+    system so a non-pyproject build is attributable.
+    """
+    return {
+        'kind': 'build',
+        'plan_id': plan_id,
+        'notation': notation,
+        'command': command,
+        'duration_seconds': dur,
+        'status': status,
+        'timestamp_iso': ts,
+    }
+
+
+def _write_change_ledger(repo_root: Path, rows: list[dict[str, Any]]) -> None:
+    """Append kind=build rows to ``<repo_root>/.plan/work/change-ledger.jsonl``."""
+    import json as _json
+
+    work = repo_root / '.plan' / 'work'
+    work.mkdir(parents=True, exist_ok=True)
+    with (work / 'change-ledger.jsonl').open('a', encoding='utf-8') as fh:
+        for row in rows:
+            fh.write(_json.dumps(row) + '\n')
+
+
+def _sbm_index(repo_root: Path) -> dict[str, list[dict[str, Any]]]:
+    """The ledger build-index the check consumes, loaded from the staged ledger."""
+    return audit._load_build_ledger_index(repo_root)
+
+
 def _write_sbm_plan(
     repo_root: Path,
     plan_id: str,
@@ -3261,6 +3310,8 @@ def _write_sbm_plan(
     modified_files: list[str] | None = None,
     change_type: str | None = None,
     ci_runs: int = 0,
+    ledger_builds: list[dict[str, Any]] | None = None,
+    metrics_phases: dict[str, float] | None = None,
 ) -> Any:
     """Materialise a synthetic plan dir for the sequence-and-build-minimality check.
 
@@ -3268,9 +3319,13 @@ def _write_sbm_plan(
     ``logs/work.log`` (dispatch markers + build-verb mentions),
     ``references.json`` (the ``modified_files`` footprint), ``status.json``
     (``metadata.change_type``), and ``ci_runs`` empty ``artifacts/ci-runs/run-N/``
-    directories. The plan is then parsed through the real ``collect_inputs`` so the
-    check reads ``change_type`` end-to-end. Lives under ``.plan/temp/`` — never the
-    real ``.plan/local/``.
+    directories. When ``ledger_builds`` is given, each entry (a ``_sbm_ledger_row``
+    kwargs dict) is appended to the shared ``.plan/work/change-ledger.jsonl`` under
+    this ``plan_id`` — that ledger is the build-time oracle the check derives from.
+    ``metrics_phases`` (``{phase: duration_seconds}``) writes a ``work/metrics.toon``
+    supplying the wall-clock denominator. The plan is then parsed through the real
+    ``collect_inputs``. Lives under ``.plan/temp/`` — never the real
+    ``.plan/local/``.
     """
     import json as _json
 
@@ -3293,6 +3348,15 @@ def _write_sbm_plan(
     for i in range(ci_runs):
         (plan_dir / 'artifacts' / 'ci-runs' / f'run-{i}').mkdir(
             parents=True, exist_ok=True
+        )
+    if ledger_builds:
+        _write_change_ledger(
+            repo_root, [_sbm_ledger_row(plan_id, **b) for b in ledger_builds]
+        )
+    if metrics_phases:
+        _write_metrics_toon(
+            plan_dir,
+            {phase: {'duration_seconds': dur} for phase, dur in metrics_phases.items()},
         )
     return audit.collect_inputs(plan_dir)
 
@@ -3346,23 +3410,24 @@ class TestSequenceBuildMinimalityPhaseBucketing:
             work_lines=[_sbm_dispatch('2026-06-01T11:00:00', 'phase-5-execute')],
         )
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # the call predates the dispatch, so it falls in the default
         # ``1-init`` bucket (role normalized: ``phase-`` stripped).
         assert '1-init:1' in row['phase_graph']
 
     def test_call_after_dispatch_buckets_to_normalized_role(self, tmp_path: Path):
-        # a build call after a phase-5-execute dispatch marker
+        # a call after a phase-5-execute dispatch marker + a ledger build in-phase
         inputs = _write_sbm_plan(
             tmp_path, 'phase-exec',
             sel_lines=[_sbm_call('2026-06-01T12:00:00', _BUILD, 'run', 30.0)],
             work_lines=[_sbm_dispatch('2026-06-01T11:00:00', 'phase-5-execute')],
+            ledger_builds=[{'dur': 30.0, 'ts': '2026-06-01T12:00:00Z'}],
         )
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
-        # the call is attributed to ``5-execute`` and tagged with one build
+        # the call is attributed to ``5-execute`` and the ledger build tags b=1
         assert '5-execute:1(b=1)' in row['phase_graph']
 
     def test_arch_call_annotates_phase_with_arch_count(self, tmp_path: Path):
@@ -3373,7 +3438,7 @@ class TestSequenceBuildMinimalityPhaseBucketing:
             work_lines=[_sbm_dispatch('2026-06-01T11:00:00', 'phase-4-plan')],
         )
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # the architecture call lands in 4-plan with an ``a=1`` annotation
         assert '4-plan:1(a=1)' in row['phase_graph']
@@ -3384,17 +3449,17 @@ class TestSequenceBuildMinimalityBuildClass:
     build-second aggregates."""
 
     def test_three_bands_counted_independently(self, tmp_path: Path):
-        # one minimal (<120), one scoped (120..400), one heavy (>400) build
+        # one minimal (<120), one scoped (120..400), one heavy (>400) ledger build
         inputs = _write_sbm_plan(
             tmp_path, 'three-bands',
-            sel_lines=[
-                _sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 30.0),
-                _sbm_call('2026-06-01T11:00:00', _BUILD, 'run', 250.0),
-                _sbm_call('2026-06-01T12:00:00', _BUILD, 'run', 500.0),
+            ledger_builds=[
+                {'dur': 30.0, 'ts': '2026-06-01T10:00:00Z'},
+                {'dur': 250.0, 'ts': '2026-06-01T11:00:00Z'},
+                {'dur': 500.0, 'ts': '2026-06-01T12:00:00Z'},
             ],
         )
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # each band counted once; aggregates reflect the heaviest + total
         assert row['builds'] == 3
@@ -3414,7 +3479,7 @@ class TestSequenceBuildMinimalityBuildClass:
             ],
         )
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # two calls recorded, zero builds
         assert row['calls'] == 2
@@ -3435,7 +3500,7 @@ class TestSequenceBuildMinimalityVerbMining:
             ],
         )
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # scoped counted once (smt), all-modules counted once (amt)
         assert 'smt=1' in row['verbs']
@@ -3448,7 +3513,7 @@ class TestSequenceBuildMinimalityVerbMining:
             work_lines=['ran module-tests not-a-real-module here'],
         )
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # an unrecognised arg falls into the all-modules bucket
         assert 'smt=0' in row['verbs']
@@ -3466,7 +3531,7 @@ class TestSequenceBuildMinimalityVerbMining:
             ],
         )
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # each verb tallied in its own slot
         assert 'qg=1' in row['verbs']
@@ -3479,73 +3544,73 @@ class TestSequenceBuildMinimalityFlags:
     absent on a clean plan."""
 
     def test_build_churn_flag_on_clustered_builds(self, tmp_path: Path):
-        # two builds 5 minutes apart (< 10-minute clustering window)
+        # two ledger builds 5 minutes apart (< 10-minute clustering window)
         inputs = _write_sbm_plan(
             tmp_path, 'flag-churn',
-            sel_lines=[
-                _sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 30.0),
-                _sbm_call('2026-06-01T10:05:00', _BUILD, 'run', 30.0),
+            ledger_builds=[
+                {'dur': 30.0, 'ts': '2026-06-01T10:00:00Z'},
+                {'dur': 30.0, 'ts': '2026-06-01T10:05:00Z'},
             ],
         )
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # the second build clusters with the first
         assert row['build_churn'] == 1
         assert any(f.startswith('build_churn(') for f in row['flags'])
 
     def test_no_churn_when_builds_spaced_beyond_window(self, tmp_path: Path):
-        # two builds 20 minutes apart (> 10-minute window)
+        # two ledger builds 20 minutes apart (> 10-minute window)
         inputs = _write_sbm_plan(
             tmp_path, 'flag-nochurn',
-            sel_lines=[
-                _sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 30.0),
-                _sbm_call('2026-06-01T10:20:00', _BUILD, 'run', 30.0),
+            ledger_builds=[
+                {'dur': 30.0, 'ts': '2026-06-01T10:00:00Z'},
+                {'dur': 30.0, 'ts': '2026-06-01T10:20:00Z'},
             ],
         )
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # spaced builds do not cluster
         assert row['build_churn'] == 0
         assert not any(f.startswith('build_churn(') for f in row['flags'])
 
     def test_non_minimal_build_flag_on_heavy_build(self, tmp_path: Path):
-        # a single heavy (> 400s) build
+        # a single heavy (> 400s) ledger build
         inputs = _write_sbm_plan(
             tmp_path, 'flag-heavy',
-            sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 600.0)],
+            ledger_builds=[{'dur': 600.0}],
         )
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # the heavy build raises non_minimal_build
         assert row['build_heavy'] == 1
         assert any(f.startswith('non_minimal_build(') for f in row['flags'])
 
     def test_docs_only_build_flag_when_no_py_touched(self, tmp_path: Path):
-        # a build ran but only a markdown file was modified
+        # a ledger build ran but only a markdown file was modified
         inputs = _write_sbm_plan(
             tmp_path, 'flag-docs',
-            sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 30.0)],
+            ledger_builds=[{'dur': 30.0}],
             modified_files=['doc/guide.md'],
         )
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # docs_only footprint + a build => the docs_only_build flag
         assert row['docs_only'] is True
         assert any(f.startswith('docs_only_build(') for f in row['flags'])
 
     def test_no_docs_only_flag_when_py_touched(self, tmp_path: Path):
-        # a build ran and a .py file was modified
+        # a ledger build ran and a .py file was modified
         inputs = _write_sbm_plan(
             tmp_path, 'flag-py',
-            sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 30.0)],
+            ledger_builds=[{'dur': 30.0}],
             modified_files=['scripts/audit.py'],
         )
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # a .py touch clears docs_only
         assert row['docs_only'] is False
@@ -3555,7 +3620,7 @@ class TestSequenceBuildMinimalityFlags:
         # two CI run directories under artifacts/ci-runs/
         inputs = _write_sbm_plan(tmp_path, 'flag-ci', ci_runs=2)
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # >1 CI run directory raises ci_rerun
         assert row['ci_runs'] == 2
@@ -3565,7 +3630,7 @@ class TestSequenceBuildMinimalityFlags:
         # exactly one CI run directory (not a rerun)
         inputs = _write_sbm_plan(tmp_path, 'flag-ci-single', ci_runs=1)
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # a single CI run is not a rerun signal
         assert row['ci_runs'] == 1
@@ -3581,21 +3646,24 @@ class TestSequenceBuildMinimalityFlags:
             ],
         )
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # the re-dispatched role surfaces in phase_reentry + the flag fires
         assert row['phase_reentry'] == '5-execute'
         assert any(f.startswith('phase_reentry(') for f in row['flags'])
 
     def test_arch_over_resolution_flag_when_arch_dwarfs_builds(self, tmp_path: Path):
-        # 5 architecture calls against a single build (>= 5x ratio)
+        # 5 architecture calls against a single ledger build (>= 5x ratio)
         sel = [
             _sbm_call(f'2026-06-01T10:0{i}:00', _ARCH, 'resolve', 0.5) for i in range(5)
         ]
-        sel.append(_sbm_call('2026-06-01T10:06:00', _BUILD, 'run', 30.0))
-        inputs = _write_sbm_plan(tmp_path, 'flag-arch', sel_lines=sel)
+        inputs = _write_sbm_plan(
+            tmp_path, 'flag-arch',
+            sel_lines=sel,
+            ledger_builds=[{'dur': 30.0, 'ts': '2026-06-01T10:06:00Z'}],
+        )
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # arch (5) >= 5 * builds (1) raises arch_over_resolution
         assert row['arch_calls'] == 5
@@ -3612,25 +3680,23 @@ class TestSequenceBuildMinimalityFlags:
             ],
         )
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # the second identical call is a consecutive duplicate
         assert row['consecutive_dup'] == 1
         assert any(f.startswith('consecutive_dup(') for f in row['flags'])
 
     def test_clean_minimal_plan_has_no_flags(self, tmp_path: Path):
-        # one minimal build touching a .py file, single CI run, distinct calls
+        # one minimal ledger build touching a .py file, single CI run, distinct calls
         inputs = _write_sbm_plan(
             tmp_path, 'flag-clean',
-            sel_lines=[
-                _sbm_call('2026-06-01T10:00:00', _ARCH, 'resolve', 0.5),
-                _sbm_call('2026-06-01T10:05:00', _BUILD, 'run', 30.0),
-            ],
+            sel_lines=[_sbm_call('2026-06-01T10:00:00', _ARCH, 'resolve', 0.5)],
             modified_files=['scripts/audit.py'],
             ci_runs=1,
+            ledger_builds=[{'dur': 30.0, 'ts': '2026-06-01T10:05:00Z'}],
         )
 
-        row = audit._sequence_build_minimality_plan(inputs)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
 
         # the expected minimal shape carries no redundancy flag
         assert row['flags'] == []
@@ -3655,10 +3721,10 @@ class TestSequenceBuildMinimalityEmitBlock:
         # one plan with a single minimal build
         inputs = _write_sbm_plan(
             tmp_path, 'emit-thresholds',
-            sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 30.0)],
+            ledger_builds=[{'dur': 30.0}],
             modified_files=['scripts/audit.py'],
         )
-        result = audit.cross_sequence_build_minimality([inputs])
+        result = audit.cross_sequence_build_minimality([inputs], _sbm_index(tmp_path))
 
         block = audit.emit_sequence_build_minimality_block(result)
 
@@ -3676,10 +3742,10 @@ class TestSequenceBuildMinimalityEmitBlock:
         # per-plan row must stamp the genuine severity cell.
         inputs = _write_sbm_plan(
             tmp_path, 'emit-genuine',
-            sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 600.0)],
+            ledger_builds=[{'dur': 600.0}],
             modified_files=['scripts/audit.py'],
         )
-        result = audit.cross_sequence_build_minimality([inputs])
+        result = audit.cross_sequence_build_minimality([inputs], _sbm_index(tmp_path))
 
         block = audit.emit_sequence_build_minimality_block(result)
         row_line = next(
@@ -3696,10 +3762,10 @@ class TestSequenceBuildMinimalityEmitBlock:
         # a minimal-only plan with no redundancy primitive: informational
         inputs = _write_sbm_plan(
             tmp_path, 'emit-clean',
-            sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 30.0)],
+            ledger_builds=[{'dur': 30.0}],
             modified_files=['scripts/audit.py'],
         )
-        result = audit.cross_sequence_build_minimality([inputs])
+        result = audit.cross_sequence_build_minimality([inputs], _sbm_index(tmp_path))
 
         block = audit.emit_sequence_build_minimality_block(result)
         row_line = next(
@@ -3716,22 +3782,22 @@ class TestSequenceBuildMinimalityEmitBlock:
         # two plans; the heavier total must sort first
         light = _write_sbm_plan(
             tmp_path, 'sort-light',
-            sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 30.0)],
+            ledger_builds=[{'dur': 30.0}],
             modified_files=['scripts/audit.py'],
         )
         heavy = _write_sbm_plan(
             tmp_path, 'sort-heavy',
-            sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 600.0)],
+            ledger_builds=[{'dur': 600.0}],
             modified_files=['scripts/audit.py'],
         )
-        result = audit.cross_sequence_build_minimality([light, heavy])
+        result = audit.cross_sequence_build_minimality([light, heavy], _sbm_index(tmp_path))
 
         # rows ordered by descending total_build_seconds
         assert [r['plan_id'] for r in result['rows']] == ['sort-heavy', 'sort-light']
 
     def test_empty_corpus_yields_zero_aggregates_no_rows(self):
         # no plans in the corpus
-        result = audit.cross_sequence_build_minimality([])
+        result = audit.cross_sequence_build_minimality([], {})
         block = audit.emit_sequence_build_minimality_block(result)
 
         # all-zero aggregates, no rows, zero genuine signals
@@ -3739,6 +3805,243 @@ class TestSequenceBuildMinimalityEmitBlock:
         assert result['rows'] == []
         assert 'plans_in_corpus: 0' in block
         assert 'genuine_signal_count: 0' in block
+
+class TestSequenceBuildMinimalityLedgerFacets:
+    """The re-base onto the change-ledger (D1/D2): build time comes from the
+    ledger's structured `duration_seconds` for every build system and every phase,
+    the pass/fail/timeout/killed status ratio (killed SEPARATE), the
+    build-vs-wall-clock share, the suspect-zero rule, and the
+    build-time-exceeds-wall-clock invariant.
+
+    Each test states, in its comment, why it would have FAILED against the pre-fix
+    (log-derived, pyproject-only, no-ledger) implementation — the plan requires
+    each seen red first.
+    """
+
+    def test_status_ratio_counts_all_four_with_killed_separate(self, tmp_path: Path):
+        # D4(a). A ledger with all four statuses; `killed` is an INFRASTRUCTURE
+        # event, never folded into `error`. Pre-fix there was no ledger status
+        # field at all (build state came only from a log duration), so no status
+        # ratio existed and this row's four columns did not exist — red.
+        inputs = _write_sbm_plan(
+            tmp_path, 'ledger-status',
+            modified_files=['a.py'],
+            ledger_builds=[
+                {'dur': 10.0, 'status': 'success'},
+                {'dur': 10.0, 'status': 'error'},
+                {'dur': 10.0, 'status': 'timeout'},
+                {'dur': 10.0, 'status': 'killed', 'ts': '2026-06-01T11:00:00Z'},
+                {'dur': 10.0, 'status': 'killed', 'ts': '2026-06-01T12:00:00Z'},
+            ],
+        )
+
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
+
+        assert row['build_success'] == 1
+        assert row['build_error'] == 1          # killed is NOT counted here
+        assert row['build_timeout'] == 1
+        assert row['build_killed'] == 2         # counted on its own axis
+
+    def test_status_ratio_visibly_separate_in_emitted_block(self, tmp_path: Path):
+        # `killed` must be VISIBLY separate in the output, not merely in the code:
+        # the block carries a distinct corpus_build_killed line and a `killed`
+        # column. Pre-fix the block had neither line nor column — red.
+        inputs = _write_sbm_plan(
+            tmp_path, 'ledger-killed',
+            modified_files=['a.py'],
+            ledger_builds=[{'dur': 10.0, 'status': 'killed'}],
+        )
+        result = audit.cross_sequence_build_minimality([inputs], _sbm_index(tmp_path))
+
+        block = audit.emit_sequence_build_minimality_block(result)
+
+        assert 'corpus_build_killed: 1' in block
+        assert 'corpus_build_error: 0' in block   # the kill did not read as an error
+        assert ',pass,error,timeout,killed,' in block
+
+    def test_status_unknown_reconciles_corpus_build_count(self, tmp_path: Path):
+        # A build carrying an unrecognized status is tallied in
+        # corpus_build_status_unknown so the status ratio accounts for every build:
+        # pass + error + timeout + killed + status_unknown == corpus_builds. Pre-fix
+        # the field was computed but emitted nowhere, so the sum silently fell short.
+        inputs = _write_sbm_plan(
+            tmp_path, 'status-unknown',
+            modified_files=['a.py'],
+            ledger_builds=[
+                {'dur': 10.0, 'status': 'success'},
+                {'dur': 10.0, 'status': 'weird-unrecognized-status'},
+            ],
+        )
+        result = audit.cross_sequence_build_minimality([inputs], _sbm_index(tmp_path))
+        block = audit.emit_sequence_build_minimality_block(result)
+        corpus = result['corpus']
+
+        assert corpus['status_unknown'] == 1
+        assert 'corpus_build_status_unknown: 1' in block
+        assert (
+            corpus['success'] + corpus['error'] + corpus['timeout']
+            + corpus['killed'] + corpus['status_unknown']
+        ) == corpus['builds']
+
+    def test_build_time_exceeds_wallclock_is_flagged(self, tmp_path: Path):
+        # D4(b). A 500s build against a 100s plan wall-clock is impossible — a
+        # recording defect (a duration plumbed through wrongly). Pre-fix there was
+        # no wall-clock denominator and no such invariant, so nothing flagged — red.
+        inputs = _write_sbm_plan(
+            tmp_path, 'inv-violate',
+            modified_files=['a.py'],
+            ledger_builds=[{'dur': 500.0}],
+            metrics_phases={'5-execute': 100.0},
+        )
+
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
+
+        assert row['wall_clock_seconds'] == 100
+        assert any(f.startswith('build_exceeds_wallclock(') for f in row['flags'])
+
+    def test_build_within_wallclock_does_not_flag_invariant(self, tmp_path: Path):
+        # Negative control: a build well inside wall-clock must NOT trip the
+        # invariant (else the flag would fire on every plan).
+        inputs = _write_sbm_plan(
+            tmp_path, 'inv-ok',
+            modified_files=['a.py'],
+            ledger_builds=[{'dur': 50.0}],
+            metrics_phases={'5-execute': 500.0},
+        )
+
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
+
+        assert not any(f.startswith('build_exceeds_wallclock(') for f in row['flags'])
+
+    def test_non_pyproject_build_appears_in_totals(self, tmp_path: Path):
+        # D4(c) — the test that proves the SINGLE-TOOL blindness is closed. A Maven
+        # build carries no `build-pyproject:pyproject_build` notation, so the
+        # pre-fix log matcher (`_sbm_is_build`) never saw it and its time was
+        # invisible. The ledger records `command` per build system, so its duration
+        # now lands in the totals. Pre-fix: builds==0, total==0 — red.
+        inputs = _write_sbm_plan(
+            tmp_path, 'maven-plan',
+            modified_files=['a.py'],
+            ledger_builds=[{
+                'dur': 250.0,
+                'notation': _LEDGER_NOTATION_MAVEN,
+                'command': 'mvn -q verify',
+            }],
+        )
+
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
+
+        assert row['builds'] == 1
+        assert row['total_build_seconds'] == 250      # the Maven build's time
+        assert row['build_scoped'] == 1               # 250s ⇒ scoped band
+        # and it is NOT invisible to the corpus total either
+        result = audit.cross_sequence_build_minimality([inputs], _sbm_index(tmp_path))
+        assert result['corpus']['build_seconds'] == 250
+
+    def test_suspect_zero_flagged_not_averaged_in(self, tmp_path: Path):
+        # The suspect-zero rule (Verification): feed a zero duration alongside a
+        # real one; the zero is FLAGGED and counted separately, never averaged into
+        # the total. Pre-fix a 0.0 log duration classified as `unknown` but was
+        # still summed (adding 0) with no suspect flag — the defect this closes is
+        # that a 0 could not be told from a real measurement.
+        inputs = _write_sbm_plan(
+            tmp_path, 'suspect-zero',
+            modified_files=['a.py'],
+            ledger_builds=[
+                {'dur': 300.0, 'ts': '2026-06-01T10:00:00Z'},
+                {'dur': 0.0, 'ts': '2026-06-01T11:00:00Z'},   # killed-as-0 / cache-hit shape
+                {'dur': None, 'ts': '2026-06-01T12:00:00Z'},  # absent duration
+            ],
+        )
+
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
+
+        assert row['total_build_seconds'] == 300       # the two suspects added nothing
+        assert row['build_unknown'] == 2               # counted on the suspect axis
+        assert any(f.startswith('suspect_build_duration(2') for f in row['flags'])
+
+    def test_wallclock_denominator_derivation_is_non_empty(self, tmp_path: Path):
+        # D4(d). D0's derived denominator — the sum of per-phase metrics
+        # `duration_seconds` — is a REAL value, not a vacuous zero: with metrics
+        # present the wall-clock is non-empty and the build-vs-wall-clock share
+        # computes. Pre-fix there was no denominator derivation at all — red.
+        inputs = _write_sbm_plan(
+            tmp_path, 'denominator',
+            modified_files=['a.py'],
+            ledger_builds=[{'dur': 120.0}],
+            metrics_phases={'4-plan': 100.0, '5-execute': 300.0, '6-finalize': 100.0},
+        )
+
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
+
+        assert row['wall_clock_seconds'] == 500        # 100 + 300 + 100, summable
+        assert row['wall_clock_seconds'] > 0           # the denominator is non-empty
+        assert row['build_share'] is not None          # so the share is computed
+        assert abs(row['build_share'] - (120 / 500)) < 1e-9
+
+    def test_build_share_withheld_when_metrics_absent(self, tmp_path: Path):
+        # The denominator inherits the metrics ABSENT-FILE hole: with no
+        # metrics.toon the share is WITHHELD (None → `n/a`), never a fabricated
+        # ratio over a zero denominator.
+        inputs = _write_sbm_plan(
+            tmp_path, 'no-metrics',
+            modified_files=['a.py'],
+            ledger_builds=[{'dur': 120.0}],
+        )
+
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
+        result = audit.cross_sequence_build_minimality([inputs], _sbm_index(tmp_path))
+        block = audit.emit_sequence_build_minimality_block(result)
+
+        assert row['wall_clock_seconds'] == 0
+        assert row['build_share'] is None
+        assert ',n/a,' in block                        # rendered as n/a, not 0%
+
+    def test_ledger_delta_over_ledger_bearing_population(self, tmp_path: Path):
+        # D1's delta: the ledger total vs the OLD log-derived total, measured over
+        # the SAME ledger-bearing plans. A plan whose only build reached the log
+        # (a pyproject build logged with a duration) shows the delta the ledger
+        # adds. A plan with no ledger rows is UNAVAILABLE (absent is not zero) and
+        # named separately, never folded into the delta.
+        logged = _write_sbm_plan(
+            tmp_path, 'logged',
+            modified_files=['a.py'],
+            sel_lines=[_sbm_call('2026-06-01T10:00:00', _BUILD, 'run', 40.0)],
+            ledger_builds=[
+                {'dur': 40.0, 'ts': '2026-06-01T10:00:00Z'},                       # the same pyproject build
+                {'dur': 200.0, 'ts': '2026-06-01T11:00:00Z',                       # a maven build the log never saw
+                 'notation': _LEDGER_NOTATION_MAVEN, 'command': 'mvn verify'},
+            ],
+        )
+        absent = _write_sbm_plan(tmp_path, 'absent', modified_files=['a.py'])
+
+        result = audit.cross_sequence_build_minimality([logged, absent], _sbm_index(tmp_path))
+        corpus = result['corpus']
+
+        assert corpus['build_seconds'] == 240                      # ledger: 40 + 200
+        assert corpus['build_seconds_log_derived'] == 40           # log saw only pyproject
+        assert corpus['build_seconds_delta'] == 200                # what the re-base now sees
+        assert result['plans_without_ledger'] == 1
+        assert result['plans_without_ledger_ids'] == ['absent']
+
+    def test_load_build_ledger_index_attributes_date_prefixed_dir(self, tmp_path: Path):
+        # End-to-end attribution: an archived plan dir named {YYYY-MM-DD}-{plan_id}
+        # is matched to ledger rows carrying the BARE plan_id. Stage a real ledger
+        # and an archived-shaped plan, and assert the build lands.
+        archived = tmp_path / '.plan' / 'local' / 'archived-plans' / '2026-06-01-real-plan'
+        (archived / 'logs').mkdir(parents=True)
+        (archived / 'logs' / 'script-execution.log').write_text('\n', encoding='utf-8')
+        (archived / 'logs' / 'work.log').write_text('\n', encoding='utf-8')
+        (archived / 'references.json').write_text('{"modified_files": ["a.py"]}', encoding='utf-8')
+        (archived / 'status.json').write_text('{"metadata": {}}', encoding='utf-8')
+        _write_change_ledger(tmp_path, [_sbm_ledger_row('real-plan', dur=99.0)])
+
+        inputs = audit.collect_inputs(archived)
+        row = audit._sequence_build_minimality_plan(inputs, _sbm_index(tmp_path))
+
+        assert row['has_ledger'] is True
+        assert row['builds'] == 1
+        assert row['total_build_seconds'] == 99
 
 # =============================================================================
 # D7 — input-integrity meta-check (per-plan presence/health + corpus
