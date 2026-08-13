@@ -1,6 +1,6 @@
 # Run report — 250-inbox-has-no-amend-or-supersede-verb (run 01)
 
-**Date (UTC):** 2026-08-12    **Branch:** `claude/inbox-amend-supersede-verb-sidmu7` (harness-assigned)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-12    **Branch:** `claude/inbox-amend-supersede-verb-sidmu7` (harness-assigned)    **PR:** [#1198](https://github.com/cuioss/plan-marshall/pull/1198)    **Outcome:** completed (all six deliverables shipped; auto-merge armed after the report landed)
 
 ## Skills loaded
 
@@ -100,7 +100,51 @@ Also fixed proactively during my own beyond-diff sweep (before the sub-agent ran
 
 ## Reviewer participation
 
-_pending PR — recorded after the automated reviewers report._
+Expected reviewer population **derived from configuration** — the `author_login` of each `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc (`pr-agent.md`, `coderabbit.md`, `sourcery.md`), cross-named by `.github/workflows/pr-agent.yml`. Verdicts read from the stored comment bodies on PR #1198 head `7b503ca`:
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Posted a "PR Reviewer Guide" review artifact against the diff: "PR contains tests", "No security concerns identified", "No major issues detected". No actionable findings. |
+| `coderabbitai` | `rate-limited` | Posted only a "Review limit reached … Next review available in: 11 minutes" notice in place of a review. Engaged but did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Posted only "you have reached your weekly rate limit of 500000 diff characters" in place of a review. |
+
+**Coverage: 1 of 3.** No inline review-thread comments; no actionable comment on any surface, so every comment is handled (nothing to fix). The § Step 8 shortfall disclosure fired: *"Review coverage 1 of 3 — cuioss-review-bot reviewed (no issues); coderabbitai rate-limited (window reopens ~11 min); sourcery-ai rate-limited (weekly quota)."* Rate limits are routine and outside our control; the shortfall is DISCLOSED, not blocked (per § Step 8 condition 4). The final report commit re-triggers the reviewers on a new head — any review that then arrives is a bonus, not a gate.
+
+## Cost
+
+- **Tokens:** not available to the agent in this session — no per-session token meter is exposed to the run. The verification sub-agent self-reported ~305k subagent tokens across its two passes (146.8k + 158.2k) as harness-counted usage.
+- **Wall-clock:** ~1h from run start (branch push, plan-dir establishment) to PR #1198 open and the merge gate; the `verify` CI run itself took ~15 min (22:31→22:46 UTC).
+- **Population:** this single Claude Code cloud session's usage as the harness counts it. ⛔ NOT comparable to a plan-marshall `metrics.toon` total, which counts the orchestrator-plus-agent dispatch tree under plan-marshall's own per-task billing boundary — a boundary a single interactive cloud session does not share. The figures above are wall-clock and sub-agent self-report only; a comparable per-task token total is not derivable here.
+
+## Contract check (Step 9)
+
+Re-read `cloud-plan-lane` and checked each step against what happened:
+
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — 5 skills via bundle-path `Read` (named in § Skills loaded). |
+| 2 Branch | Done — kept the harness-assigned `claude/inbox-amend-supersede-verb-sidmu7`; pushed to `origin` before any work (branch was absent from the remote at start). |
+| 3 Plan directory | Done — `git mv` to `.../250-…/plan.md`; the first-instruction block was present and survives. |
+| 4 Implement / per-commit gate / pushed | Done — commits carry the `Co-Authored-By: Claude` trailer and no "Generated with" footer; each `*.py`-touching commit was preceded by a clean `./pw quality-gate`; every commit pushed (no unpushed commit remains). Staged explicit paths (never `git add -A`); no `uv.lock` churn. |
+| 5 Build gate | Done — Python changed → full path. `./pw quality-gate` clean; `./pw module-tests plan-marshall` 16287 passed (2 unrelated xdist-flaky, pass in isolation). |
+| 6 Verification sub-agent | Done — one `general-purpose` pass (clean verdict, 3 findings), all findings fixed, re-verified clean via a focused re-dispatch. Findings + dispositions in § Findings. |
+| 7 PR cycle | Done — PR #1198 (no `skip-bot-review`: the diff touches `marketplace/bundles/**` and `*.py`, so it is reviewed as code). All three comment surfaces read; every comment dispositioned; per-reviewer participation recorded. |
+| 8 Merge gate | Conditions 1–3 met (required contexts green on head `7b503ca` → `mergeable_state: clean`; every comment handled; report finalized as the last pre-merge commit). Coverage shortfall (1-of-3) disclosed. Auto-merge armed (SQUASH). |
+| 8 Bridge | No status/bookkeeping write landed outside this plan's own directory; the report carries the PR number and per-deliverable outcome the orchestrator will collect. |
+| 9 This check | Recorded here. |
+
+**GitHub access path:** the GitHub MCP server (cloud path). **Branch form:** harness-assigned `claude/*`. A cloud run **owes no** `/sync-plugin-cache` — it is a machine-local build step, not a debt this run records.
+
+## What have we learned (Step 9)
+
+**None proposed.** The run exercised the contract end to end without hitting a step that was ambiguous in practice, an artifact that could not be produced as written, or a command that failed in the environment. The one friction — the full `./pw module-tests plan-marshall` run surfacing two flaky failures in unrelated subsystems (git change-ledger, marshal.json) under xdist — is already covered by the contract's "read the output, not the exit code" rule plus the in-isolation re-check I performed, so it is not a contract defect. This is a **headless/autonomous** run with no reachable operator, so a proposal could not be presented for approval regardless; recording "none, with reason" is the honest outcome (per § "A run that examined the contract and found nothing is a different fact from a run that never looked").
+
+## Residue
+
+- **`analyze` drain workflow does not yet consume the new state.** The Step 3 drain loop routes by `kind` and does not skip `superseded` messages or recognize `stream-end` closure via `closed_senders`. The SCRIPT surface D2/D3 require is complete (list carries the state; the drain *can* tell empty from finished); teaching the workflow to *act* on it is CONSUMER-side follow-up, belonging to the epic-compaction work the plan explicitly scopes out. → a follow-up plan on `plan-orchestrator/workflow/analyze.md`.
+- **Real `.plan/` archive migration is owed on a local run.** `inbox migrate-archive` ships, but the physical fold of the repository's actual archive (git-ignored, absent from this clone) must be run where `.plan/` exists. The dual-layout reads keep allocation safe until then.
+- **Plan "Expected surface" named the pre-rename skill** (`marshall-orchestrator`); re-grounded on `plan-orchestrator`. A plan-authoring staleness for the orchestrator to note, not a lane-contract issue.
+- **Stale plugin-pin hazard** (plan Notes): a stale pinned executor running flat-writing code against a foldered archive is bounded (only this repo, only post-migration) and mitigated by the dual-layout reads; it is the standing plugin-pin issue, noted because it recurs.
 
 ## Cost
 
