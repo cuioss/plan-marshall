@@ -1,6 +1,6 @@
 # Run report — 280 dispatch-audit-emitter (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** `claude/dispatch-audit-surfaces-rc5j18` (harness-assigned; kept as-is)    **PR:** [#1200](https://github.com/cuioss/plan-marshall/pull/1200)    **Outcome:** _in progress (review cycle)_
+**Date (UTC):** 2026-08-13    **Branch:** `claude/dispatch-audit-surfaces-rc5j18` (harness-assigned; kept as-is)    **PR:** [#1200](https://github.com/cuioss/plan-marshall/pull/1200)    **Outcome:** completed (conditions 1–3 met, review shortfall disclosed, auto-merge armed; landing delegated to the merge queue)
 
 This plan owns the **emitter** only (dispatch-record emission). Every detector-side
 change is out of scope per the plan's ownership block (owned by the four
@@ -183,7 +183,13 @@ Beyond-diff stale-claim sweep — **three real stale claims found, all fixed in 
   plan's own diff.
 - **Token-mismatch (M3):** real, single instance, disposition = reported-not-fixed (detector-side,
   owned by plan 290). Rejected here on ownership-boundary grounds, recorded with full evidence.
-- **CI / PR review:** _pending (filled after the PR is opened)._
+- **CI:** green on the final reviewed head. A `verify / conclusion` **failure** arrived for the
+  superseded head `6367684` (cancelled by the report-update push via Actions concurrency) — a
+  superseded run, not a real failure, per the lane; the live head's `verify / conclusion` and
+  `verify / verify` both concluded **success**. No fix warranted.
+- **PR review:** no actionable comment. `cuioss-review-bot` reviewed clean; `coderabbitai` and
+  `sourcery-ai` posted only rate-limit notices. No inline threads. Disposition: nothing to fix or
+  reply to; the shortfall is disclosed (Reviewer participation, above).
 
 ## Reviewer participation
 
@@ -194,11 +200,19 @@ Expected reviewer population derived from configuration
 
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
-| `coderabbitai` | _pending_ | Initial status: "Review rate limited" (CodeRabbit status context) — confirm from bodies |
-| `cuioss-review-bot` | _pending_ | `review / review` check in progress at PR open |
-| `sourcery-ai` | _pending_ | `Sourcery review` check concluded `skipped` at PR open |
+| `cuioss-review-bot` | `reviewed` | Posted a review summary over the diff — "PR Reviewer Guide: 🧪 PR contains tests · 🔒 No security concerns identified · ⚡ No major issues detected" (issue-comment 5277414099). A clean review, no findings to handle. |
+| `coderabbitai` | `rate-limited` | Published only a quota notice, no review: "Review limit reached … we couldn't start this review. Next review available in: 100 minutes" (issue-comment 5277404207). |
+| `sourcery-ai` | `rate-limited` | Published only a quota notice, no review: "you have reached your weekly rate limit of 500000 diff characters" (review 4924525204). Its `Sourcery review` check concluded `skipped`. |
 
-_Verdicts + N-of-M coverage + Step-8 shortfall disclosure filled after reviews land._
+**Coverage: 1 of 3.** Inline review threads (`get_review_comments`): none. All three surfaces
+(`get_comments`, `get_reviews`, `get_review_comments`) were read before the merge gate. No actionable
+review comment exists — the one review is clean and the other two are quota notices.
+
+**Step-8 shortfall disclosure (fired — disclosure, not a block):** *Review coverage: 1 of 3 —
+`cuioss-review-bot` reviewed (no major issues, no security concerns); `coderabbitai` rate-limited
+(next window ~100 min); `sourcery-ai` rate-limited (weekly diff-character quota).* Rate limits are
+routine and outside our control; per the lane this changes only what the run says, not whether it
+merges. Auto-merge is armed exactly as full coverage would be.
 
 ## Cost
 
@@ -210,11 +224,48 @@ _Verdicts + N-of-M coverage + Step-8 shortfall disclosure filled after reviews l
 
 ## Contract check (Step 9)
 
-_Filled at Step 9, before the merge gate._
+Re-read the `cloud-plan-lane` skill; each step checked against what happened and its on-disk artifact:
+
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **done** — named above; loaded by bundle path (plugin absent, as the lane anticipates). |
+| 2 Branch on `origin` | **done** — harness-assigned `claude/dispatch-audit-surfaces-rc5j18`, pushed before any work; kept as-is. |
+| 3 Plan directory | **done** — `…/280-…/plan.md` exists and opens with the first-instruction block (present on receipt; no repair needed). |
+| 4 Implement | **done** — commits `41fdecf`,`bb5a14e`,`2da6285`,`618121c`,`6367684` + report commits; each carries the `Co-Authored-By: Claude` trailer, no "Generated with" footer. |
+| 4 Per-commit gate | **done** — every `*.py`-touching commit was preceded by a clean `./pw quality-gate` (0 issues across ruff/mypy/SPDX/plugin-doctor). |
+| 4 Pushed | **done** — this final report commit is the last; `git status -sb` clean, no `ahead`. |
+| 5 Build gate | **done** — Python changed → `./pw verify` SUCCESS (19341 passed, 0 failed). |
+| 6 Verification sub-agent | **done** — dispatched read-only; D1/D2/D3 PASS, three stale-claim gaps found → fixed → re-confirmed closed. Findings + dispositions above. |
+| 7 PR cycle | **done** — PR #1200 (no `skip-bot-review`: the diff is code — `*.py` + skills/bundles). Every comment dispositioned; all three comment surfaces read. |
+| 8 Merge gate | conditions 1–3 met (required checks deferred to the queue via auto-merge; comments handled; report finalized as the last pre-merge commit), 1-of-3 shortfall disclosed, auto-merge armed (SQUASH). Landing delegated to the merge queue (self-wake `send_later` is approval-gated in this session, so the run cannot block-until-landed — arm-and-hand-off is a completed outcome per the lane). |
+| 8 Bridge | **done** — no status/bookkeeping write under `doc/plans/` outside this plan's own directory; no shared lane doc touched. The report carries the PR number and per-deliverable outcome for the orchestrator's collect. |
+| 9 This check | **done** — recorded here. |
+| 9 What have we learned | **done** — below. |
+
+GitHub access path used: **GitHub MCP server**. Branch form: **harness-assigned**. No `/sync-plugin-cache`
+is owed (machine-local build step, not a debt a cloud run records).
 
 ## What have we learned (Step 9)
 
-_Filled at Step 9._
+**No `cloud-plan-lane` contract change proposed.** The contract executed cleanly end-to-end and every
+gate held: skill-by-path loading, the harness-assigned branch, the conditional build gate, the
+pre-PR verification sub-agent (whose beyond-diff stale-claim sweep earned its keep — it caught three
+real stale docs the diff-scoped checks missed), the three-surface comment read, and the
+disclose-not-block shortfall rule all behaved as written. The one friction — `send_later` being
+approval-gated, so no fallback self-check-in could be scheduled — is already documented in the lane
+(§ Cloud session affordances), and the `subscribe_pr_activity` path covered event delivery. No step
+was ambiguous in practice, no artifact failed to produce as written, and no command failed in the
+environment. A speculative edit is not a proposal, so none is made.
+
+**Observation for the operator (plan-authoring, not a lane-contract change).** Plan 280 carries an
+internal contradiction: its ownership block forcefully excludes *every* detector-side change ("⛔ Do
+not implement any row but the first"), yet deliverable **D3(e)** asks for a test that makes the
+token-mismatch **detector** (Rule M3) fire — which is a detector change. This run resolved it by
+honouring the ownership block (the most authoritative, most forcefully-stated section): D0 reports
+the mismatch (the in-scope half), and D3(e)'s "make it fire" half is deferred to plan 290 with full
+evidence. If the operator intended M3 to be fixed here, that is a re-scope decision for a follow-up;
+the safer reading — not crossing the settled ownership boundary the plan itself warns about — was
+taken autonomously.
 
 ## Residue
 
