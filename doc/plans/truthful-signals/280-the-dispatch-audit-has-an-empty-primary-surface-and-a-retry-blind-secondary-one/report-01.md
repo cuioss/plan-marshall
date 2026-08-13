@@ -132,7 +132,9 @@ because the pre-fix behaviour is "emit nothing"), then **green** after D1.
 `git diff --name-only origin/main...HEAD -- '*.py'` is **non-empty** (`_cmd_effort.py`,
 `manage-config.py`, the new test file), so the build takes its full path: `./pw verify`
 (quality-gate + tests). Per-commit `./pw quality-gate` ran clean (0 issues) before every
-`*.py`-touching commit. Full-verify result: _pending (running)_.
+`*.py`-touching commit. **Full `./pw verify`: SUCCESS — 19341 passed, 14 skipped, 0 failed;
+coverage COMPLETE over mypy(production+test), ruff, SPDX headers, plugin-doctor (marketplace-wide),
+and whole-tree pytest.** Read from the build output, not the exit code.
 
 ## Findings
 
