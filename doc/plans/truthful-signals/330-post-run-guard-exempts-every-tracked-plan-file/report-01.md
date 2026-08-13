@@ -48,31 +48,127 @@ _Verification state: complete. Committed as the D0 GATE checkpoint._
 
 ### D1 — Shared trackedness predicate
 
-_pending_
+Done. New shared module
+`marketplace/bundles/plan-marshall/skills/script-shared/scripts/_plan_state_exemption.py`
+(`partition_plan_state_exemption` / `tracked_plan_paths` / `is_plan_state_path`). A `.plan/` path
+is exempt **only when it is NOT git-tracked**; a tracked `.plan/` file is retained like any other
+tracked source; non-`.plan/` paths are never exempted by this predicate; on an unusable trackedness
+observation the predicate **fails closed (retains)**. **Both** confirmed sites import and call the
+single predicate: `post_run_source_guard.py` (`_observe_dirty_source`) and `_invariants.py`
+(`_filter_main_dirty_paths`, threaded the tree, called from `_capture_main_dirty_files`). It is one
+predicate, not a per-site copy — the plan's central D1 requirement. Commit `4d882c5`.
 
 ### D2 — Publish examined population
 
-_pending_
+Done. The post-run guard's TOON output now carries `considered_paths` (every dirty tracked path
+observed, the population the verdict is drawn from), `exempted_paths` (the untracked `.plan/` subset
+dropped — always empty at this site because its porcelain is `--untracked-files=no`, so honest and
+correct), and `offending_paths` (retained). A `clean: true` naming a non-empty `considered_paths` is
+distinguishable from a looked-at-nothing pass. Verified non-empty in the CLI output by
+`test_cli_publishes_examined_population`. Contract prose updated in `phase-6-finalize/SKILL.md`.
+Commit `4d882c5`.
 
 ### D3 — Fix declared footprint at freeze point
 
-_pending_
+Done — **choice recorded: option B (teach consumers it is a declaration, never a record).** The
+freeze point is `manage-solution-outline/scripts/_plan_parsing.py::_extract_affected_files`, which
+parses the outline `**Affected files:**` blocks at phase-3 and is never re-derived during execution
+(claim "frozen at outline time" → confirmed by symbol). Rather than update the frozen list at
+execution time (option A) or re-derive scope inside each consumer gate (explicitly rejected — it
+multiplies the source of truth), the declaration-vs-record distinction is made explicit in the
+contract: a new subsection in `manage-execution-manifest/standards/decision-rules.md` states that
+`affected_files` / `outline_affected_files` / `affected_files_count` are a frozen declared lower-bound
+surface (a pre-filter hint) and the single authoritative touched-file record is `live_footprint` —
+the source `security_class_inactive` and the retrospective footprint checks already consult. The
+wording is correct for both sanctioned and unsanctioned widenings ("approval is not recording"), and
+does not implement the refuted absent-key remedy. The freeze-point docstring names its role. Commit
+`3e415f8`.
 
 ### D4 — Disposition for legitimately-dirty tracked `.plan/` file
 
-_pending_
+Done — **the run cannot autonomously make the finalize-lifecycle decision, so a proposal is recorded
+(the plan's sanctioned fallback).** Evidence gathered this run: `default:architecture-refresh` is
+`order: 10` (before the merge gate `default:branch-cleanup`, order 70), so it writes AND commits the
+architecture descriptors on the feature branch (`chore(architecture)`) pre-merge — those writes are
+pushable and the main checkout is clean by the time the post-run band runs. `finalize-step-preference-emitter`
+(order 992, post-merge) deliberately NAMES owed enrich calls rather than writing them. So **the fixed
+guard does NOT create a recurring block in the current flow** — no post-run step writes a tracked
+`.plan/` file today. A tracked `.plan/` path reported by the guard therefore means an owed enrich
+write ESCAPED the pre-merge commit — a genuine gap, surfaced non-blocking (item 5f is advisory). The
+disposition is documented in `phase-6-finalize/SKILL.md` item 5f. The **durable remedy is an open
+proposal** — see the "Contract / lifecycle proposal (D4)" section below.
 
 ### D5 — Tests (each seen RED pre-fix)
 
-_pending_
+Done. Red-first evidence captured against the unfixed code (3 controls RED, matched negative control
+GREEN by construction), then GREEN after the fix:
+
+- **(a) positive control, site 1** — `test_dirty_tracked_plan_state_is_reported`: a dirty TRACKED
+  `.plan/` file IS reported. Seen RED pre-fix (asserted `clean False`, got `True`).
+- **(c) positive control, site 2** — `test_capture_main_dirty_files_reports_tracked_plan_state`: a
+  dirty TRACKED `.plan/` file is retained in the capture. Seen RED pre-fix (captured `[]`).
+- **(d) population non-empty** — `test_cli_publishes_examined_population`: the `considered_paths`
+  field is non-empty. Seen RED pre-fix (field absent).
+- **(b) matched negative controls** — site 1 `test_dirty_untracked_plan_state_is_not_reported`, site 2
+  `test_capture_main_dirty_files_exempts_untracked_plan_state`, plus the shared-module
+  `test_partition_exempts_untracked_plan_file`: an UNTRACKED `.plan/` file stays exempt. GREEN both
+  before and after by construction (they assert the preserved behavior — the plan's own D5(b) frames
+  the negative control as guarding the over-broad fix, i.e. it must stay green; it cannot be red-first
+  because that would require the current code to already report untracked `.plan/`, which it does not).
+
+Both confirmed sites carry the positive+negative pair (D5c). The shared-predicate logic (prefix
+precision, tracked/untracked split, fail-closed, sort/dedupe) is covered by the new
+`test/plan-marshall/script-shared/test_plan_state_exemption.py`. Commits `4d882c5`, `ad40b0f`.
 
 ## Build gate
 
-_pending_
+`git diff --name-only origin/main...HEAD -- '*.py'` is non-empty (guard predicate, both sites, the
+outline parser, and tests), so the build gate takes its full path (as the plan's Verification section
+requires). `./pw quality-gate` clean at each `.py` commit (ruff / mypy / SPDX / plugin-doctor, coverage
+COMPLETE, `issues[0]`). Final `./pw verify`: **SUCCESS — 19515 passed, 14 skipped, 0 failed** in
+7:20, coverage COMPLETE across quality-gate + mypy(production, 397 files) + mypy(test, 728 files) +
+whole-tree module-tests. `UV_HTTP_TIMEOUT=600` and a 600000 ms Bash timeout were used on every `./pw`
+call.
+
+One note on the gate revealing a real defect: the first `./pw verify` failed on two of the new
+shared-module non-repo tests. Under `./pw`, `build.py` roots `tmp_path` INSIDE the repo (`--basetemp`
+under `.plan/temp/`), so `git -C <tmp_path subdir>` resolves the enclosing plan-marshall repo instead
+of failing — a `tmp_path`-based "not a repository" test does not exercise the fail-closed path.
+Switched those two tests to the `outside_repo_dir` fixture (system-temp, genuinely outside any repo);
+re-verify is green. This is exactly the class of ambient-vs-pinned divergence `./pw verify` exists to
+catch — the ambient-pytest run had hidden it (its tmp is `/tmp`, outside the repo). Commit `ad40b0f`.
+
+## Contract / lifecycle proposal (D4)
+
+**Problem (recorded, not decided this run).** With the guard fixed, a legitimately-owed
+architecture-enrich write to a tracked `.plan/` file that lands AFTER the merge gate has no push path
+onto the already-merged feature branch, and the guard now (correctly) reports it. In the current flow
+this does not occur (architecture-refresh commits pre-merge at order 10; no post-run step writes
+tracked `.plan/`), so no recurring block exists today — but the durable question "a finalize step
+legitimately produces a tracked write and there is no push path for it" needs an owner's decision.
+
+**Options and consequences** (a finalize-lifecycle change that alters when/where architecture-enrich
+writes — out of scope for the guard fix, which is why this is a proposal):
+
+- **A. Flush all owed enrich hints in the pre-merge `architecture-refresh` band (order 10).** Owed
+  descriptor writes ride the current PR and are pushable. Consequence: couples enrich-flushing to
+  every plan's pre-merge band; a hint discovered post-merge (by the preference-emitter at order 992)
+  still cannot ride this PR — it lands next plan.
+- **B. Give the post-run band a follow-up push path.** After the post-run band, commit an owed tracked
+  `.plan/` enrich write and open a small follow-up PR. Consequence: extra PR churn per enriching plan.
+- **C. Classify the tracked-`.plan/`-descriptor finding as informational (non-blocking at the
+  completion boundary), distinct from a tracked-source `mutates_source` violation.** Consequence: the
+  enrich lag persists across plans, but no plan is ever blocked; requires the guard to categorize
+  offenders (tracked source vs tracked plan-config).
+
+**Recommendation for the operator:** A (flush owed hints pre-merge) is the cleanest — it keeps one
+push path and no extra PRs — but it does not close the post-merge-discovery case, for which C is the
+safety net. This run implements neither; it surfaces the reported path non-blocking and records this
+proposal.
 
 ## Findings
 
-_pending_
+_Pending the verification sub-agent (Step 6) and PR review._
 
 ## Reviewer participation
 
