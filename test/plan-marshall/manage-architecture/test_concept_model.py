@@ -367,6 +367,22 @@ def test_package_key_resolves_rejects_absolute_and_traversal():
         assert package_key_resolves('missing', tmpdir) is False
 
 
+def test_package_key_resolves_refuses_target_escaping_root():
+    """A key whose target resolves OUTSIDE the project root is refused, even though
+    the target exists — path identity means in-tree identity. Guards the containment
+    check that also catches the Windows drive-letter escape (`Path.__truediv__`
+    discarding project_dir for a `C:/…` key)."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        outside = Path(tmpdir) / 'outside'
+        outside.mkdir()
+        project = Path(tmpdir) / 'project'
+        project.mkdir()
+        # A symlink inside the project that points outside it: the target exists,
+        # but resolves out of the tree, so the key must not validate.
+        (project / 'escape').symlink_to(outside)
+        assert package_key_resolves('escape', str(project)) is False
+
+
 def test_validate_package_key_returns_key_when_resolving():
     """The write gate returns the key unchanged when it resolves (chaining contract)."""
     with tempfile.TemporaryDirectory() as tmpdir:

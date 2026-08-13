@@ -366,9 +366,16 @@ def derive_freshness(generation: Any, current_tree_sha: str | None) -> str:
 def package_key_resolves(key: str, project_dir: str = '.') -> bool:
     """Whether a package-entry key resolves to an existing path under ``project_dir``.
 
-    The key IS a repo-relative path (path is identity). An absolute path or one
-    that climbs out of the tree (``..``) never resolves — it is not a repo-relative
-    location — regardless of what is on disk.
+    The key IS a repo-relative path (path is identity), and it must stay strictly
+    inside the project root. Rejected regardless of what is on disk:
+
+    * an absolute path (leading ``/``);
+    * a path that climbs out of the tree (a ``..`` component);
+    * a **drive-letter** path such as ``C:/Windows`` — it does not start with
+      ``/``, but ``Path(project_dir) / "C:/Windows"`` silently discards
+      ``project_dir`` on Windows and resolves to the drive-absolute target, so the
+      containment check below is what refuses it (and any symlink that resolves
+      outside the tree) rather than the leading-slash guard.
     """
     if not key:
         return False
@@ -377,7 +384,14 @@ def package_key_resolves(key: str, project_dir: str = '.') -> bool:
         return False
     if '..' in normalized.split('/'):
         return False
-    return (Path(project_dir) / normalized).exists()
+    root = Path(project_dir).resolve()
+    candidate = (root / normalized).resolve()
+    # Anything that escaped the project root — a drive-letter component, or a
+    # symlink resolving outside the tree — is not a repo-relative location.
+    # ``candidate == root`` is the key that names the root itself.
+    if candidate != root and root not in candidate.parents:
+        return False
+    return candidate.exists()
 
 
 def validate_package_key(key: str, project_dir: str = '.') -> str:
