@@ -59,7 +59,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
   Read `auto_rebase_threshold` off the returned `params` object as `{threshold}`. Default: `no_overlap_only`. Accepted values (the same set as `branch-cleanup`'s pre-rebase gate):
 
   - `no_overlap_only` — auto-proceed only when the classifier returns `classification: no_overlap`.
-  - `auto_resolvable` — also auto-proceed when the classifier returns `classification: overlap_no_content_conflict` AND `auto_reconciled: true`.
+  - `auto_resolvable` — also auto-proceed when the classifier returns `classification: overlap_no_content_conflict` AND `auto_reconcilable: true`.
   - `never` — always prompt the operator; skip the classifier entirely.
 
 ## Execution
@@ -73,14 +73,14 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Sync baseline: classifier bypassed (threshold=never), pre-rebase gate will fire"
 ```
 
-Otherwise, dispatch the existing `baseline-reconcile` probe to classify the upcoming rebase against `origin/{base_branch}`. `--no-emit` suppresses Q-Gate finding emission (those are a phase-2-refine concern; this step consumes the classification directly). The probe performs only `fetch + diff + merge-tree` and never mutates the working tree:
+Otherwise, dispatch the existing `baseline-reconcile` probe to classify the upcoming rebase against `origin/{base_branch}`. `--no-emit` suppresses Q-Gate finding emission (those are a phase-2-refine concern; this step consumes the classification directly). The probe is a **non-mutating classifier on every classification** — it performs only `fetch + diff + merge-tree`, anchors its ranges on `merge-base(HEAD, origin/{base_branch})` recomputed per call, and never moves the branch ref. The rebase itself is performed later by `worktree-rebase-to`, not by the probe:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
   baseline-reconcile --plan-id {plan_id} --no-emit
 ```
 
-Parse the returned TOON for `classification`, `auto_reconciled`, `conflict_count`, `conflicts[]`, and `upstream_commit_count`.
+Parse the returned TOON for `classification`, `auto_reconcilable`, `conflict_count`, `conflicts[]`, and `upstream_commit_count`.
 
 If the script exits non-zero (per the **Exit-code convention** above) → STOP and return an error TOON to the dispatcher carrying the stderr verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict and must surface as an error.
 
@@ -89,15 +89,15 @@ If the script exits non-zero (per the **Exit-code convention** above) → STOP a
 Apply the following rules in order; the first match wins:
 
 - `classification == no_overlap` → `{decision} = auto_proceed` (regardless of threshold, except `never` which already short-circuited above).
-- `classification == overlap_no_content_conflict` AND `auto_reconciled == true` AND `{threshold} == auto_resolvable` → `{decision} = auto_proceed`.
-- `classification == overlap_no_content_conflict` AND (`auto_reconciled == false` OR `{threshold} == no_overlap_only`) → `{decision} = needs_user`.
+- `classification == overlap_no_content_conflict` AND `auto_reconcilable == true` AND `{threshold} == auto_resolvable` → `{decision} = auto_proceed`.
+- `classification == overlap_no_content_conflict` AND (`auto_reconcilable == false` OR `{threshold} == no_overlap_only`) → `{decision} = needs_user` (the threshold opts out even for an auto-reconcilable overlap — `auto_reconcilable` is a non-mutating capability signal, so an `overlap_no_content_conflict` always reports `auto_reconcilable == true`; the probe never performs the reconcile itself, that is `worktree-rebase-to`'s job).
 - `classification == overlap_with_content_conflict` → `{decision} = needs_user` (genuine conflict requiring human resolution).
 
 Log the classifier decision for grep-ability and retrospective audit:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Sync baseline classifier: classification={classification}, auto_reconciled={auto_reconciled}, threshold={threshold}, decision={decision}, upstream_commits={upstream_commit_count}"
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Sync baseline classifier: classification={classification}, auto_reconcilable={auto_reconcilable}, threshold={threshold}, decision={decision}, upstream_commits={upstream_commit_count}"
 ```
 
 ### Semantic re-verify of upstream-touched deliverables
@@ -147,7 +147,7 @@ AskUserQuestion:
       header: "Sync Baseline — Pre-rebase"
       description: |
         **Branch**: {head_branch} → {base_branch}
-        **Classifier**: classification={classification}, auto_reconciled={auto_reconciled}, upstream_commits={upstream_commit_count}
+        **Classifier**: classification={classification}, auto_reconcilable={auto_reconcilable}, upstream_commits={upstream_commit_count}
 
         origin/{base_branch} advanced since this plan's baseline. Rebasing now
         makes the downstream local quality gates and CI validate the actual

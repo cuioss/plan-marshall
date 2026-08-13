@@ -497,6 +497,45 @@ class TestBranchSyncState:
     def _push(self, work: Path) -> None:
         subprocess.run(['git', 'push', '-u', 'origin', self.BRANCH], cwd=work, capture_output=True)
 
+    def _seed_merged_and_deleted(self, tmp_path: Path) -> Path:
+        """Feature branch whose work LANDED on ``origin/main`` with no
+        ``origin/{branch}`` tracking ref — the merged-and-deleted shape.
+
+        HEAD is an ancestor of ``origin/main`` (the feature commit was
+        fast-forward-merged into main and pushed) and the feature branch itself
+        was never pushed, so ``origin/{branch}`` does not resolve.
+        """
+        origin = tmp_path / 'origin.git'
+        origin.mkdir()
+        subprocess.run(['git', 'init', '--bare'], cwd=origin, capture_output=True)
+        work = tmp_path / 'work'
+        work.mkdir()
+        _git_init_with_identity(work)
+        (work / '.gitignore').write_text('.plan/\n')
+        (work / 'file.txt').write_text('one')
+        subprocess.run(['git', 'add', '.'], cwd=work, capture_output=True)
+        subprocess.run(['git', 'commit', '-m', 'init'], cwd=work, capture_output=True)
+        # Deterministic base branch name regardless of the git default.
+        subprocess.run(['git', 'branch', '-M', 'main'], cwd=work, capture_output=True)
+        subprocess.run(
+            ['git', 'remote', 'add', 'origin', f'file://{origin}'], cwd=work, capture_output=True
+        )
+        subprocess.run(['git', 'push', '-u', 'origin', 'main'], cwd=work, capture_output=True)
+        # Feature branch with a commit, fast-forward-merged into main and pushed.
+        subprocess.run(['git', 'checkout', '-b', self.BRANCH], cwd=work, capture_output=True)
+        (work / 'feature.txt').write_text('feat')
+        subprocess.run(['git', 'add', '.'], cwd=work, capture_output=True)
+        subprocess.run(['git', 'commit', '-m', 'feature work'], cwd=work, capture_output=True)
+        feature_tip = self._rev_parse(work, 'HEAD')
+        subprocess.run(['git', 'checkout', 'main'], cwd=work, capture_output=True)
+        subprocess.run(['git', 'merge', '--ff-only', self.BRANCH], cwd=work, capture_output=True)
+        subprocess.run(['git', 'push', 'origin', 'main'], cwd=work, capture_output=True)
+        # Return to the feature branch; its tip is now an ancestor of origin/main
+        # and origin/{BRANCH} was never pushed.
+        subprocess.run(['git', 'checkout', self.BRANCH], cwd=work, capture_output=True)
+        assert self._rev_parse(work, 'HEAD') == feature_tip
+        return work
+
     def _commit_past_origin(self, work: Path) -> None:
         (work / 'file.txt').write_text('two')
         subprocess.run(['git', 'commit', '-am', 'local-only'], cwd=work, capture_output=True)
@@ -543,15 +582,40 @@ class TestBranchSyncState:
         assert result['remote_sha'] == self._rev_parse(work, f'origin/{self.BRANCH}')
         assert result['head_sha'] != result['remote_sha']
 
-    def test_no_remote_when_never_pushed(self, tmp_path: Path, monkeypatch):
-        """A branch with no origin tracking ref reports state: no_remote, no remote_sha."""
+    def test_remote_absent_unverified_when_never_pushed(self, tmp_path: Path, monkeypatch):
+        """A never-pushed branch with no resolvable base ref reports
+        ``remote_absent_unverified`` — the DECLINE verdict, not a re-fire.
+
+        An absent tracking ref is ambiguous: never-pushed and
+        squash-merged-and-deleted are indistinguishable from local state alone.
+        With no ``origin/main`` to prove containment, the verb declines to
+        assert "safe to re-push" rather than routing to a resurrecting re-fire.
+        """
         work = self._seed_repo_with_origin(tmp_path)
 
         result = self._state(monkeypatch, work)
 
         assert result['status'] == 'success'
-        assert result['state'] == 'no_remote'
+        assert result['state'] == 'remote_absent_unverified'
         assert result['head_sha'] == self._rev_parse(work, 'HEAD')
+        assert 'remote_sha' not in result
+
+    def test_remote_absent_landed_when_merged_and_deleted(self, tmp_path: Path, monkeypatch):
+        """A merged-and-deleted branch reports ``remote_absent_landed`` — never a
+        re-fire verdict.
+
+        The branch's work is contained in ``origin/main`` (HEAD is an ancestor)
+        and its remote branch was deleted after the merge. Re-pushing here would
+        resurrect a landed branch, so the verdict is disambiguated as landed and
+        the consumer must NOT re-fire.
+        """
+        work = self._seed_merged_and_deleted(tmp_path)
+
+        result = self._state(monkeypatch, work)
+
+        assert result['status'] == 'success'
+        assert result['state'] == 'remote_absent_landed'
+        assert result['base_branch'] == 'main'
         assert 'remote_sha' not in result
 
     def test_missing_branch_metadata_is_error(self, tmp_path: Path, monkeypatch):
@@ -570,26 +634,49 @@ class TestBranchSyncState:
     def test_verdict_token_drives_refire_skip_mapping(self, tmp_path: Path, monkeypatch):
         """The state token drives the documented barrier mapping.
 
-        Per phase-6-finalize/SKILL.md item 1 (push-specific branch):
-        ahead -> RE-FIRE, no_remote -> RE-FIRE, synced -> SKIP.
+        Per phase-6-finalize/SKILL.md the push barrier re-fires ONLY on a
+        present-but-behind tracking ref (``ahead``). A ref-absent verdict never
+        re-fires: ``synced`` skips, ``remote_absent_landed`` skips (the work is
+        already on the base — re-pushing would resurrect it), and
+        ``remote_absent_unverified`` DECLINES (the ambiguity is surfaced, not
+        resolved by a resurrecting re-push). Only ``ahead`` is a re-fire.
         """
-        documented_mapping = {'ahead': 'RE-FIRE', 'no_remote': 'RE-FIRE', 'synced': 'SKIP'}
 
-        # no_remote: never pushed
+        def verdict(state: str) -> str:
+            return 'RE-FIRE' if state == 'ahead' else 'SKIP-OR-DECLINE'
+
+        # remote_absent_unverified: never pushed, no base ref to prove landing.
         work = self._seed_repo_with_origin(tmp_path)
-        no_remote_state = self._state(monkeypatch, work)['state']
-        # synced: pushed, no local commits
+        unverified_state = self._state(monkeypatch, work)['state']
+        assert unverified_state == 'remote_absent_unverified'
+        # synced: pushed, no local commits.
         self._push(work)
         synced_state = self._state(monkeypatch, work)['state']
-        # ahead: committed locally past origin
+        # ahead: committed locally past origin.
         self._commit_past_origin(work)
         ahead_state = self._state(monkeypatch, work)['state']
+        # remote_absent_landed: merged into origin/main, feature ref deleted.
+        # A distinct subdir avoids colliding with the first fixture's origin.git.
+        merged_root = tmp_path / 'merged'
+        merged_root.mkdir()
+        merged_work = self._seed_merged_and_deleted(merged_root)
+        landed_state = self._state(monkeypatch, merged_work)['state']
+        assert landed_state == 'remote_absent_landed'
 
         verdicts = {
-            state: ('SKIP' if state == 'synced' else 'RE-FIRE')
-            for state in (no_remote_state, synced_state, ahead_state)
+            state: verdict(state)
+            for state in (unverified_state, synced_state, ahead_state, landed_state)
         }
-        assert verdicts == documented_mapping
+        assert verdicts == {
+            'remote_absent_unverified': 'SKIP-OR-DECLINE',
+            'synced': 'SKIP-OR-DECLINE',
+            'ahead': 'RE-FIRE',
+            'remote_absent_landed': 'SKIP-OR-DECLINE',
+        }
+        # The resurrection defect this fix closes: NEITHER ref-absent state maps
+        # to a re-fire.
+        assert verdict(unverified_state) != 'RE-FIRE'
+        assert verdict(landed_state) != 'RE-FIRE'
 
 
 class TestDetectArtifacts:

@@ -175,7 +175,7 @@ pushed: true
 | `force-push-with-lease` | `(--plan-id \| --project-dir --branch)` | Force-push feature branch to origin with `--force-with-lease` guard (post-rebase). Resolves branch and worktree path from plan metadata when `--plan-id` is used. |
 | `switch-and-pull` | `(--plan-id \| --project-dir) --base` | Checkout `--base` on the main checkout and pull from origin. Resolves main checkout root from plan metadata when `--plan-id` is used. |
 | `prune-local-and-remote-ref` | `(--plan-id \| --project-dir --head) [--mode local_and_remote\|local_only]` | Delete local feature branch and optionally prune the remote-tracking ref after merge. Internal `show-ref` guard skips ref deletion when already absent. Default mode `local_and_remote`; use `local_only` in local-only plans. |
-| `branch-sync-state` | `--plan-id` | Report push parity of the plan's feature branch vs its `origin/{branch}` tracking ref: `ahead` \| `synced` \| `no_remote`. Pure read-only comparison (`git rev-parse HEAD` vs `git rev-parse origin/{branch}`), no fetch. Resolves branch from `metadata.worktree_branch` and the tree via the canonical worktree-resolution channel. |
+| `branch-sync-state` | `--plan-id` | Report push parity of the plan's feature branch vs its `origin/{branch}` tracking ref: `ahead` \| `synced` \| `remote_absent_landed` \| `remote_absent_unverified` (a missing ref is disambiguated so a merged-and-deleted branch is never re-pushed). Pure read-only comparison (`git rev-parse HEAD` vs `git rev-parse origin/{branch}`), no fetch. Resolves branch from `metadata.worktree_branch` and the tree via the canonical worktree-resolution channel. |
 | `worktree-path` | `--plan-id` | Resolve the persisted worktree path via `manage-status get-worktree-path` |
 | `worktree-create` | `--plan-id --branch [--base]` | Run `git worktree add` plus project-state bookkeeping (`metadata.use_worktree`/`worktree_path`/`worktree_branch`) |
 | `worktree-remove` | `--plan-id [--force]` | Remove the worktree first, then delete the branch ref |
@@ -430,7 +430,7 @@ remote_ref_warning: "remote-tracking ref refs/remotes/origin/feature/EXAMPLE-PLA
 
 ### branch-sync-state
 
-Report the push-parity state of the plan's feature branch versus its `origin/{branch}` tracking ref. Pure read-only comparison — no fetch, no working-tree mutation. The branch is resolved from `status.metadata.worktree_branch` and the working tree via the canonical worktree-resolution channel (`manage-status get-worktree-path`). The verb compares `git rev-parse HEAD` against `git rev-parse origin/{branch}`; a missing origin tracking ref means the branch was never pushed (`no_remote`). Consumed by the phase-6-finalize resumable re-entry check to make the push barrier's skip/re-fire decision parity-driven rather than done-record-driven.
+Report the push-parity state of the plan's feature branch versus its `origin/{branch}` tracking ref. Pure read-only comparison — no fetch, no working-tree mutation. The branch is resolved from `status.metadata.worktree_branch` and the working tree via the canonical worktree-resolution channel (`manage-status get-worktree-path`). The verb compares `git rev-parse HEAD` against `git rev-parse origin/{branch}`. A **missing** origin tracking ref is ambiguous — a never-pushed branch and a merged-and-deleted branch both lack it, yet need OPPOSITE remedies (push vs. do-not-resurrect) — so the verb **disambiguates rather than collapsing both into a single "never pushed" answer** (see States below). Consumed by the phase-6-finalize resumable re-entry check to make the push barrier's skip/re-fire decision parity-driven rather than done-record-driven.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow branch-sync-state \
@@ -441,9 +441,10 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 - `--plan-id` (required): Plan identifier (mandatory — resolves the branch from `status.metadata.worktree_branch` and the tree via the canonical worktree-resolution channel).
 
 **States**:
-- `ahead` — local HEAD differs from `origin/{branch}` (commits not yet pushed).
+- `ahead` — `origin/{branch}` resolves but local HEAD differs from it (commits not yet pushed). The only state the push barrier re-fires on.
 - `synced` — local HEAD equals `origin/{branch}`.
-- `no_remote` — `origin/{branch}` does not resolve locally (branch never pushed). `remote_sha` is omitted.
+- `remote_absent_landed` — `origin/{branch}` does not resolve AND HEAD is an ancestor of `origin/{base_branch}` (the branch's work already landed; it merged and the remote branch was deleted). `remote_sha` is omitted; `base_branch` names the ref used to prove containment. The push barrier must NOT re-fire — re-pushing would resurrect a landed branch.
+- `remote_absent_unverified` — `origin/{branch}` does not resolve AND containment could not be proven (no resolvable base ref, or HEAD is not an ancestor — which a squash merge also produces). Never-pushed and squash-merged-and-deleted are indistinguishable from local state alone, so the verb DECLINES to assert "safe to re-push". `remote_sha` is omitted; `base_branch` carries the base checked (or `null`). The push barrier declines to re-fire on this state.
 
 **Output** (TOON, remote ref present):
 ```toon
@@ -455,13 +456,14 @@ head_sha: abc123def456
 remote_sha: 789fed654cba
 ```
 
-**Output** (TOON, branch never pushed):
+**Output** (TOON, tracking ref absent, cause unverified):
 ```toon
 status: success
 plan_id: EXAMPLE-PLAN
 branch: feature/EXAMPLE-PLAN
-state: no_remote
+state: remote_absent_unverified
 head_sha: abc123def456
+base_branch: main
 ```
 
 **Typed errors**:

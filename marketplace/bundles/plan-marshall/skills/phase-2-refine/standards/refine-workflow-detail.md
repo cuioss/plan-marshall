@@ -231,8 +231,8 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 The script resolves the worktree path (from `status.metadata.worktree_path`), reads `base_branch` from the plan's phase-2-refine config (falling back to `main`), runs `git fetch origin {base_branch}` (the only network round-trip), and computes:
 
-- `upstream_commits[]` — every commit that landed on `origin/{base_branch}` since the plan's captured `worktree_sha`, each entry with its touched files.
-- `conflicts[]` — files whose three-way merge against `origin/{base_branch}` fails (`git merge-tree --write-tree HEAD origin/{base_branch}`). The worktree is NOT modified by the predicate step itself.
+- `upstream_commits[]` — every commit that landed on `origin/{base_branch}` since `merge-base(HEAD, origin/{base_branch})` (the divergence point, recomputed on every call — never a SHA captured at plan initialisation), each entry with its touched files.
+- `conflicts[]` — files whose three-way merge against `origin/{base_branch}` fails (`git merge-tree --write-tree HEAD origin/{base_branch}`). The predicate is non-mutating on every classification — it never moves the branch ref.
 - `classification` — one of `no_overlap` / `overlap_no_content_conflict` / `overlap_with_content_conflict`, derived deterministically from `upstream_commit_count` and `conflict_count` plus a file-set intersection between the upstream commits' touched files and the worktree's in-flight changes.
 
 The three-way classification determines the next sub-step:
@@ -240,25 +240,22 @@ The three-way classification determines the next sub-step:
 | classification | meaning | next sub-step |
 |----------------|---------|---------------|
 | `no_overlap` | upstream commits touch disjoint files (or none landed) | fast-path — skip 3d.2 and 3d.3 |
-| `overlap_no_content_conflict` | upstream + in-flight touch overlapping files BUT `git merge-tree` reports zero conflicts | Sub-step 3d.1a (focused reconcile) |
+| `overlap_no_content_conflict` | upstream + in-flight touch overlapping files BUT `git merge-tree` reports zero conflicts | fast-path — skip 3d.2 and 3d.3 (no content conflict ⇒ no re-authoring; the reconcile is deferred to the rebase steps — see Sub-step 3d.1a) |
 | `overlap_with_content_conflict` | `git merge-tree` reports content conflicts | Sub-step 3d.2 (LLM scope-classification) |
 
 When classification is `no_overlap` the script returns success and emits no findings.
 
 When classification is `overlap_with_content_conflict`, the script emits ONE Q-Gate finding per conflicted file under `--source qgate`. Findings are recorded against `phase 2-refine` and flow into the existing iterate-to-confidence loop via the standard Q-Gate finding-resolution path.
 
-### Sub-step 3d.1a — Focused reconcile (when `classification == overlap_no_content_conflict`)
+### Sub-step 3d.1a — Auto-reconcilable overlap (when `classification == overlap_no_content_conflict`)
 
-This is the new auto-resolvable branch. The script performs a focused `git merge origin/{base_branch}` against the resolved worktree (or main checkout when the plan runs against main). The merge is **only** attempted when `merge-tree` predicted zero conflicts; the prediction is the structural gate that distinguishes this branch from `overlap_with_content_conflict`.
+An `overlap_no_content_conflict` means upstream and in-flight touch overlapping files but `git merge-tree` predicts a clean three-way merge — so no re-authoring is needed, this sub-step adds no findings, and it does NOT re-enter the iterate-to-confidence loop (that loop is reserved for `overlap_with_content_conflict`, where re-authoring is genuinely required).
 
-Outcomes:
+**The probe does NOT perform the merge.** `baseline-reconcile` is a non-mutating classifier on every path: it reports `auto_reconcilable: true` — a *capability* signal established by the tree-level `git merge-tree`, not a claim that a merge happened — and leaves HEAD unchanged. The actual reconcile is owned by the standard rebase steps that already run against `origin/{base_branch}`: phase-5's `sync-with-main` self-absorption and phase-6's `sync-baseline` / `branch-cleanup` rebases. A probe that merged here would move the branch ref out from under the very merge-base its ranges anchor on, so the next call would re-report the merged-in commits as still-upstream — a self-inflicted, self-amplifying over-report. Deferring the reconcile to the rebase steps is what keeps the classifier truthful and idempotent.
 
-| merge result | script payload fields | next sub-step |
-|--------------|----------------------|---------------|
-| merge succeeds cleanly | `auto_reconciled: true`, `merge_commit_sha: {sha}`, `findings_emitted: 0` | skip 3d.2 and 3d.3 — drift is resolved in-place |
-| merge fails (rare; `merge-tree` predicted no conflict but the real merge surfaced one — e.g., overlapping renames the predicate cannot model) | `auto_reconciled: false`, `merge_error: {stderr}`, one `baseline_drift_reconcile_failed` finding per conflicting path | escalate to Sub-step 3d.2 |
-
-The script logs a `decision` entry naming the absorbed upstream commits when the merge succeeds. The auto-resolved branch does NOT re-enter the iterate-to-confidence loop — that loop is reserved for content-overlap cases where re-authoring is genuinely required.
+| classification | script payload fields | next sub-step |
+|----------------|----------------------|---------------|
+| `overlap_no_content_conflict` | `auto_reconcilable: true`, `findings_emitted: 0`, HEAD unchanged | skip 3d.2 and 3d.3 — the drift is auto-reconcilable and is reconciled by the rebase steps |
 
 ### Sub-step 3d.2 — LLM scope-classification (only when upstream commits landed)
 
@@ -266,7 +263,7 @@ The script reports `upstream_commit_count` and `upstream_commits[].files`; the p
 
 ### Sub-step 3d.3 — Feedback Loop
 
-Findings emitted by the script (only on `overlap_with_content_conflict` or on a failed focused reconcile) and by Sub-step 3d.2's classification step flow into the Step 8-12 iterate-to-confidence loop via the standard Q-Gate finding-resolution path. The loop reads pending findings at Step 1 (next iteration), surfaces them as clarifications in Step 11, and the user-supplied resolution feeds the request update in Step 12. The loop terminates when confidence reaches threshold AND no pending baseline findings remain. The `overlap_no_content_conflict` auto-resolved branch produces no findings and does NOT re-enter the loop.
+Findings emitted by the script (only on `overlap_with_content_conflict`) and by Sub-step 3d.2's classification step flow into the Step 8-12 iterate-to-confidence loop via the standard Q-Gate finding-resolution path. The loop reads pending findings at Step 1 (next iteration), surfaces them as clarifications in Step 11, and the user-supplied resolution feeds the request update in Step 12. The loop terminates when confidence reaches threshold AND no pending baseline findings remain. The `overlap_no_content_conflict` branch produces no findings and does NOT re-enter the loop.
 
 ### Conflict Handling
 

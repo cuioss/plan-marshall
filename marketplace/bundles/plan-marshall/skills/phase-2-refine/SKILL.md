@@ -126,12 +126,12 @@ For the complete procedure (extraction, probe construction, result handling, wor
 Sync the target branch and surface overlapping diffs before quality analysis runs against an outdated `main`. Activates whenever the plan has a configured base branch (the default flow). The reconcile script classifies the upstream drift into three outcomes:
 
 1. **`no_overlap`** — upstream commits touch disjoint files. Fast-path: continue without findings.
-2. **`overlap_no_content_conflict`** (focused reconcile) — upstream commits touch overlapping files but `git merge-tree` reports zero content conflicts. The script performs a focused `git merge origin/{base_branch}` against the worktree, surfaces ANY real conflicts that arise during the merge, and resolves the drift in-place without re-entering the iterate-to-confidence loop. When the merge succeeds cleanly, the auto-resolved drift produces no finding.
+2. **`overlap_no_content_conflict`** — upstream commits touch overlapping files but `git merge-tree` reports zero content conflicts, so the overlap is auto-reconcilable. The script reports `auto_reconcilable: true` and emits no finding, and it is **non-mutating** — it does NOT perform the merge; the reconcile is deferred to the rebase steps (phase-5 `sync-with-main`, phase-6 `sync-baseline` / `branch-cleanup`). No re-entry into the iterate-to-confidence loop.
 3. **`overlap_with_content_conflict`** — `git merge-tree` reports content conflicts. Emits Q-Gate findings that feed back into Steps 8-12 (the iterate-to-confidence loop is the right place to absorb baseline shifts that cannot be merged mechanically).
 
 Skipped silently for main-checkout flow (`metadata.use_worktree=false`) and when no base branch is configured.
 
-For the complete procedure (sync invocation, diff surfacing, finding-emission contract, three-way classification, focused reconcile/rebase routing), see [refine-workflow-detail.md § Step 3d](standards/refine-workflow-detail.md#step-3d-baseline-reconciliation).
+For the complete procedure (sync invocation, diff surfacing, finding-emission contract, three-way classification, auto-reconcilable/rebase routing), see [refine-workflow-detail.md § Step 3d](standards/refine-workflow-detail.md#step-3d-baseline-reconciliation).
 
 ### Step 4: Load Confidence Threshold
 
