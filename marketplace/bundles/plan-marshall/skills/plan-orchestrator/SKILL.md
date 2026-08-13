@@ -310,9 +310,21 @@ A pointer under `.plan/local/orchestrator/{slug}/plans/` with a path-safe `{slug
 
 Every negative verdict returns `orchestrated: false` with empty `epic` / `plan_spec`. This is the single detection seam — consumers never add a second detector or a new persisted metadata field.
 
+### inbox landing-check
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox landing-check \
+  --slug SLUG --message NAME
+```
+
+The drain-completeness check. Resolves a `kind: landing` message (`--message`, a bare filename; queued or archived) and reports whether its payload carries the machine-readable facts a complete landing must carry. Returns `complete` (bool), `missing_keys` (the required keys the payload lacks), and `location`.
+
+A landing carries a fenced `landing-facts` block specified by [`standards/landing-payload-spec.md`](standards/landing-payload-spec.md); the check reports the block present with the right `schema` and every required key non-empty (`complete: true`), or names what is missing (`complete: false`). A PRE-FIX prose-only landing has no block at all, so `missing_keys` is the whole required set — this is the known-incomplete input the check is SEEN to fail on. `complete: false` is a VERDICT (`status: success`), never a fault: the drain records it as an Open Defect and continues. This is what lets the orchestrator turn "the queue is empty" into "nothing material is outstanding" — the two coincide only when every drained landing was complete. Consumed by [`workflow/analyze.md`](workflow/analyze.md) Step 4.
+
 ## Related
 
 - [`standards/inbox-envelope.md`](standards/inbox-envelope.md) — the inbox message schema, invariants, and validator error codes
+- [`standards/landing-payload-spec.md`](standards/landing-payload-spec.md) — the machine-readable `landing` payload contract (the report↔inbox delta and the required fact keys)
 - [`persona-plan-orchestrator`](../persona-plan-orchestrator/SKILL.md) — the orchestrator work identity and its central standard
 - [`manage-status`](../manage-status/SKILL.md) — `--store orchestrator` status verbs (`kind=orchestrator` schema)
 - [`manage-logging`](../manage-logging/SKILL.md) — `--store orchestrator` decision/work logging

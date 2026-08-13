@@ -175,6 +175,7 @@ The compose-time step-resolution gate is the complementary guard, not a substitu
 | `default:finalize-step-preference-emitter` | `standards/finalize-step-preference-emitter.md` | Inline per-plan preference-learning sweep — aggregates recurring `(module, finding-class, disposition)` patterns in the just-finished plan and files the threshold-passing ones as owed durable architecture hints (post-merge-ordered, so it names the owed `architecture enrich` calls rather than writing them) |
 | `default:record-metrics` | `standards/record-metrics.md` | Record final plan metrics before archive |
 | `default:finalize-step-print-phase-breakdown` | `standards/finalize-step-print-phase-breakdown.md` | Optional override mode: capture the Phase Breakdown table from metrics.md so the renderer emits it in place of the per-step [OK] block |
+| `default:emit-landing` | `standards/emit-landing.md` | Terminal machine-readable emission — assembles the run's facts into one `kind: landing` inbox message for the epic to drain (inline; composed OUT of a non-orchestrated plan at compose time) |
 | `default:archive-plan` | `standards/archive-plan.md` | Archive the completed plan |
 
 ### Interface Contract for External Steps
@@ -720,9 +721,9 @@ FOR each step_id in manifest.phase_6.steps:
 
       a0. Resolve orchestration context (runs BEFORE the three-zero short-circuit):
 
-         An orchestrated plan — one launched from an epic's staged plan spec — routes its lesson-shaped output to the epic's `inbox/` OUTBOX instead of the global lessons store. The verdict is resolved ONCE per finalize run, here, and consumed by EVERY step whose body emits lesson-shaped output. That set is currently **three** steps: `default:lessons-capture`, `plan-marshall:plan-retrospective` (Step 5b), and `default:finalize-step-preference-emitter` (Step 4). A future step that gains a `manage-lessons add` call site MUST be added to this list and receive the same two runtime inputs.
+         An orchestrated plan — one launched from an epic's staged plan spec — routes its epic-bound output to the epic's `inbox/` OUTBOX instead of the global lessons store. The verdict is resolved ONCE per finalize run, here, and consumed by EVERY step whose body writes to the epic inbox. That set is currently **four** steps: `default:lessons-capture`, `plan-marshall:plan-retrospective` (Step 5b), and `default:finalize-step-preference-emitter` (Step 4) route lesson-shaped output as `kind: candidate-lesson`; `default:emit-landing` (the terminal step at `order: 1000`) writes the run's one `kind: landing` message. A future step that gains a `manage-lessons add` call site OR writes to the epic inbox MUST be added to this list and receive the same two runtime inputs.
 
-         The two dispatched consumers receive the verdict as prompt-body runtime inputs (item c below); `default:finalize-step-preference-emitter` is an inline step, so it reads the values the dispatcher already holds — it MUST NOT re-issue either resolution call. All three run at or after `order: 991`, so the verdict resolved here is available to each of them.
+         The dispatched consumers receive the verdict as prompt-body runtime inputs (item c below); the inline consumers — `default:finalize-step-preference-emitter` and `default:emit-landing` — read the values the dispatcher already holds and MUST NOT re-issue either resolution call. All four run at or after `order: 991`, so the verdict resolved here is available to each of them.
 
          Read the plan's spec pointer through its canonical owner:
 
@@ -798,9 +799,9 @@ FOR each step_id in manifest.phase_6.steps:
 
       b. Three-zero short-circuit:
 
-         **Orchestration carve-out**: when `orchestrated: true` (from a0) the three-zero short-circuit does NOT fire — the body is dispatched even at zero signals, because an orchestrated plan owes its epic a `kind: landing` message regardless of whether it produced lesson-bearing signals. Skip straight to item c. When `orchestrated: false` the short-circuit below is unchanged, byte for byte.
+         The short-circuit fires on zero signals **regardless of orchestration** — this step no longer carries an orchestration carve-out. lessons-capture no longer owes its epic a landing at zero signals: the one `kind: landing` message an orchestrated run owes is the dedicated `default:emit-landing` terminal step's (`order: 1000`), emitted unconditionally there and composed OUT of a non-orchestrated plan at compose time. So an orchestrated run at zero signals has nothing for lessons-capture to emit and skips exactly as a non-orchestrated one does. The a0 orchestration verdict is still resolved above (before this short-circuit) because the LATER consumers — `plan-retrospective`, `finalize-step-preference-emitter`, and `emit-landing` — need it whether or not lessons-capture itself skips.
 
-         When `orchestrated == false AND signal_1_count == 0 AND signal_2_count == 0 AND signal_3_count == 0`:
+         When `signal_1_count == 0 AND signal_2_count == 0 AND signal_3_count == 0`:
             - Mark the step done with `outcome=skipped` directly from the dispatcher (do NOT dispatch the envelope):
 
               python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
@@ -822,7 +823,7 @@ FOR each step_id in manifest.phase_6.steps:
 
             - CONTINUE the FOR loop (skip item 5 dispatch entirely for this step).
 
-      c. Forward gate counts and orchestration context on dispatch (when at least one signal is non-zero, OR `orchestrated: true`):
+      c. Forward gate counts and orchestration context on dispatch (reached only when at least one signal is non-zero — item b skipped the step otherwise):
 
          The envelope no longer re-computes the three signals — the dispatcher forwards them as runtime inputs so the body skips its (now-removed) Signal Gate step. It likewise forwards the a0 orchestration verdict so no body re-issues the detection. Add all five fields verbatim into the prompt body's runtime-inputs block alongside `plan_id` (see item 5 below):
 
@@ -837,7 +838,7 @@ FOR each step_id in manifest.phase_6.steps:
             orchestrated: {true|false}
             epic: {slug|""}
 
-         `default:finalize-step-preference-emitter` (Step 4) is the third write-site and is INLINE, so it takes no prompt body — carry the same two values into it directly when the FOR loop reaches it at `order: 992`. It MUST NOT re-issue `request read --section source_id` or `orchestrator inbox detect`.
+         `default:finalize-step-preference-emitter` (Step 4) is the third write-site and is INLINE, so it takes no prompt body — carry the same two values into it directly when the FOR loop reaches it at `order: 992`. `default:emit-landing` (the terminal step at `order: 1000`) is the fourth write-site and is likewise INLINE — carry the same two values into it directly when the FOR loop reaches it. Neither inline step may re-issue `request read --section source_id` or `orchestrator inbox detect`.
 
          Continue to item 5 (Dispatch with timeout wrapper).
 

@@ -1,6 +1,6 @@
 # Extension Point: Finalize Step
 
-> **Type**: Phase-6 Step Doc Extension | **Hook Method**: `implements:` frontmatter on each step doc | **Implementations**: 25 | **Status**: Active
+> **Type**: Phase-6 Step Doc Extension | **Hook Method**: `implements:` frontmatter on each step doc | **Implementations**: 26 | **Status**: Active
 
 ## Overview
 
@@ -116,8 +116,9 @@ Each row is the step-level **union** per the reconciliation rule above — NOT a
 | `default:finalize-step-sync-baseline` | Watch-entry anchor | `action`, `upstream_commit_count`, `work_performed` | `action` / `upstream_commit_count` are carried by the branch that actually rebased. The Skipped branch performs no rebase and records `work_performed=false` alone. | `action` — *"did this rebase replay anything, or was it a no-op?"* `upstream_commit_count` — *"how far behind was the branch?"* |
 | `default:branch-cleanup` | Watch-entry anchor | `action`, `upstream_commit_count`, `merge_mechanism`, `work_performed` | `action` / `upstream_commit_count` are carried only by a terminal call site whose path actually reached "Rebase Branch onto Base" and parsed its `worktree-rebase-to` TOON. `merge_mechanism` only by a path that actually merged. | The same rebase pair as above, plus `merge_mechanism` — *"which merge mechanism landed this plan?"* (`pr safe-merge` vs the `use_merge_queue` enqueue), unanswerable from prose once `use_merge_queue` made it a two-way branch. |
 | `default:sonar-roundtrip` | operator-added — NOT a Watch-entry member | `count_status`, `new_code_issue_count`, `issues_fetched`, `work_performed` | The three scan facts are carried only by the call sites that actually scanned. The no-scan branch records `work_performed=false` alone. | `count_status` — *"was the count confirmed or undecidable?"* `new_code_issue_count` — *"how many new-code issues did the confirmed scan find?"* `issues_fetched` — *"how many findings did this producer actually hand to the unified triage?"*, the question that distinguishes a confirmed non-zero count from the findings that reached the triage store, and whose disagreement with `new_code_issue_count` is itself a producer defect. |
+| `default:record-metrics` | operator-added (plan 302) — NOT a Watch-entry member | `total_tokens`, `total_wall_seconds`, `any_phase_missing_end_time` | All three carried at the single `--outcome done` call site (this step has one terminal branch). | `total_tokens` — *"what did this run cost?"* (the token-total-disagreement finding the terminal landing must make drainable); `total_wall_seconds` — *"how long did it take?"*; `any_phase_missing_end_time` — *"is the token total a floor because a phase boundary was dropped?"*. |
 
-The three scan facts on `default:sonar-roundtrip` are already computed from the `sonar-scan-summary.jsonl` marker and already declared in that step's `## Output` TOON — they are discarded at the record boundary today, which is what wiring them fixes.
+The three scan facts on `default:sonar-roundtrip` are already computed from the `sonar-scan-summary.jsonl` marker and already declared in that step's `## Output` TOON — they are discarded at the record boundary today, which is what wiring them fixes. The three `default:record-metrics` facts are the same shape: `generate` already computes `total_tokens` / `total_wall_seconds` / `any_phase_missing_end_time` for the step's output contract, and wiring them as `--fact` is what lets the terminal `default:emit-landing` step carry the run's cost into the epic landing as machine-readable data rather than a re-parsed prose row.
 
 ### Step-specific prompt-body fields (`requires_prompt_fields`)
 
@@ -250,6 +251,7 @@ Every step doc that declares the finalize-step interface. Built-in steps live un
 | `plan-marshall:plan-retrospective` | bundle-optional | 995 | false | `[full]` |
 | `default:record-metrics` | built-in | 998 | true | `[local, standard, full]` |
 | `default:finalize-step-print-phase-breakdown` | built-in | 999 | true | `[]` |
+| `default:emit-landing` | built-in | 1000 | true | `[local, standard, full]` |
 | `default:archive-plan` | built-in | 1100 | true | `[local, standard, full]` |
 
 Project steps carry `default_on: false` and `presets: []` because they are hand-registered in the meta-project's `phase-6-finalize.steps` array (presets ship to consumer projects, which do not have the meta-project's project-local finalize-step skills). The `plan-marshall:automatic-review` step is a default-on bundle step (`default_on: true`, member of the `standard` and `full` presets). The bundle-optional `plan-marshall:plan-retrospective` step is opt-in (`default_on: false`) and a member of the `full` preset only.

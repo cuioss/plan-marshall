@@ -274,11 +274,24 @@ EXECUTION_LOG_KEY = 'execution_log'
 # ``lessons-capture`` (991) and ``record-metrics`` (998) sit after the merge gate
 # ``branch-cleanup`` (70) because they declare ``post_run_review: true``: they
 # report on the finished run and read evidence only the gate produces.
-# ``archive-plan`` (1100, the terminus) is ordered last for an unrelated reason and
+# ``emit-landing`` (1000) sits in the reserved terminal-emission band (1000-1099),
+# after every reporting step (so it carries their facts) and before the archive
+# move — the single machine-readable terminal emission. It is default-on via
+# discovery (``default_on: true`` in its frontmatter, so every real plan's
+# marshal.json seed includes it), and is composed OUT of a non-orchestrated plan
+# at compose time (``_apply_terminal_emission_orchestration_gate``). It is
+# deliberately NOT a member of this candidate tuple: this tuple is the CSV
+# fallback for a caller without a marshal.json (notably unit tests), where the
+# plan's ``source_id`` — hence its orchestration — is not determinable, so seeding
+# an orchestration-gated emission here would be a step the fallback path could
+# never correctly resolve. The tuple already omits several ``default_on`` steps
+# for kindred reasons; membership here is a curated fallback SET, not the default
+# roster (which discovery owns). ``archive-plan`` (1100, the terminus) is ordered
+# last for an unrelated reason and
 # declares no ``post_run_review`` fact — an archival move explicitly fails the P1
 # backward-looking-output predicate. It runs last because it moves the plan
-# directory out from under every later reader. The reserved terminal-emission band
-# (1000-1099) sits below it — see extension-api/standards/finalize-step-order-bands.md.
+# directory out from under every later reader. See
+# extension-api/standards/finalize-step-order-bands.md.
 DEFAULT_PHASE_5_STEPS = ('verify:quality-gate', 'verify:module-tests')
 DEFAULT_PHASE_6_STEPS = (
     'finalize-step-simplify',

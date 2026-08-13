@@ -864,6 +864,100 @@ def _apply_domain_seeded_step_resolvability(
     return kept, dropped
 
 
+#: The terminal-emission step's canonical bare name. It exists only to write the
+#: run's ``kind: landing`` message to the governing epic's inbox, so a
+#: non-orchestrated plan (no epic inbox) has the step composed OUT at compose time
+#: by :func:`_apply_terminal_emission_orchestration_gate`. Its ``default_on``
+#: seeding is therefore a CANDIDATE the gate filters — an observable compose-time
+#: decision, never a runtime no-op.
+_TERMINAL_EMISSION_STEP = 'emit-landing'
+
+
+def _read_plan_source_id(plan_id: str) -> str | None:
+    """Read the plan's ``request.md`` ``source_id`` header value, or ``None``.
+
+    Reads the SAME ``source_id`` pointer ``phase-1-init`` persisted and
+    :func:`_orchestrator_inbox.classify_source_id` classifies — no second detector
+    and no new persisted field. Returns ``None`` when the request is missing /
+    unreadable, the field is absent, or it is a null sentinel (``''`` / ``none``),
+    so every unreadable state is treated as "no orchestration pointer" rather than
+    guessed at.
+    """
+    request_path = get_plan_dir(plan_id) / 'request.md'
+    if not request_path.is_file():
+        return None
+    try:
+        content = request_path.read_text(encoding='utf-8')
+    except OSError:
+        return None
+    try:
+        from _plan_parsing import parse_document_sections
+    except ImportError:
+        return None
+    sections = parse_document_sections(content)
+    raw = sections.get('source_id')
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip()
+    if not value or value.lower() == 'none':
+        return None
+    return value
+
+
+def _apply_terminal_emission_orchestration_gate(
+    phase_6_candidates: list[str], plan_id: str
+) -> tuple[list[str], str | None]:
+    """Compose the terminal-emission step OUT of a NON-orchestrated plan.
+
+    ``default:emit-landing`` writes the run's ``kind: landing`` message to the
+    governing epic's inbox, and a non-orchestrated plan has no epic inbox. The step
+    is therefore dropped at COMPOSE time — an OBSERVABLE compose-time decision (the
+    caller emits a ``[STATUS]`` line naming the drop), never a silent runtime no-op
+    that would leave a dead step in the manifest to write nowhere.
+
+    Orchestration is classified through the single sanctioned detector
+    (:func:`_orchestrator_inbox.classify_source_id`) over the ``source_id`` pointer
+    ``phase-1-init`` already persisted. When the plan IS orchestrated (a recognised
+    pointer) the step stays; on EVERY other verdict — no pointer, an unrecognised
+    id, an unsafe slug, or an unreadable request — it is DROPPED, because none of
+    those is a live epic inbox and failing toward inclusion would seed an emission
+    that writes nowhere.
+
+    The gate is a no-op when ``emit-landing`` is already absent from the candidate
+    list. Returns ``(kept, reason)`` — the filtered list, and the drop reason (or
+    ``None`` when the step was kept or was already absent).
+    """
+    present = any(
+        canonicalize_step_key(step) == _TERMINAL_EMISSION_STEP for step in phase_6_candidates
+    )
+    if not present:
+        return phase_6_candidates, None
+
+    source_id = _read_plan_source_id(plan_id)
+    try:
+        from _orchestrator_inbox import classify_source_id
+    except ImportError:
+        # The single detector is unavailable in this environment; fail toward the
+        # non-orchestrated default and drop the step rather than seed an emission
+        # that may write nowhere.
+        return (
+            [s for s in phase_6_candidates if canonicalize_step_key(s) != _TERMINAL_EMISSION_STEP],
+            'orchestration detector unavailable; dropping terminal emission (fails toward non-orchestrated)',
+        )
+
+    verdict = classify_source_id(source_id or '')
+    if verdict.orchestrated:
+        return phase_6_candidates, None
+
+    kept = [
+        s for s in phase_6_candidates if canonicalize_step_key(s) != _TERMINAL_EMISSION_STEP
+    ]
+    return (
+        kept,
+        f'plan is not orchestrated (detection={verdict.detection}); no epic inbox to write a landing to',
+    )
+
+
 def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dropped_step: str) -> None:
     """Emit one decision-log entry per scope_gated_finalize subtraction."""
     message = (
@@ -1838,6 +1932,28 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         phase_6_candidates, marshal_phase_6_map, ci_provider, sonar_provider
     )
 
+    # Pre-filter 7 (terminal_emission_orchestration_gate, plan 302 D2): compose the
+    # terminal emission step OUT of a non-orchestrated plan. ``default:emit-landing``
+    # writes the run's ``kind: landing`` message to the governing epic's inbox, and a
+    # non-orchestrated plan has no epic inbox — so the step is dropped HERE, at
+    # compose time, as an OBSERVABLE decision (the [STATUS] line below names it),
+    # never a runtime no-op that leaves a dead step in the manifest to write nowhere.
+    # Orchestration is classified through the single sanctioned detector
+    # (_orchestrator_inbox.classify_source_id) over the source_id pointer
+    # phase-1-init persisted — no second detector, no new persisted field. Runs at
+    # the candidate-narrowing stage so it only ever narrows the candidate list.
+    (
+        phase_6_candidates,
+        terminal_emission_dropped_reason,
+    ) = _apply_terminal_emission_orchestration_gate(phase_6_candidates, plan_id)
+    if terminal_emission_dropped_reason is not None:
+        _log_dropped_records(
+            plan_id,
+            'terminal_emission_orchestration_gate',
+            [{'step': _TERMINAL_EMISSION_STEP, 'reason': terminal_emission_dropped_reason}],
+            target=' from phase_6.steps',
+        )
+
     # The third return value is the firing row's ``{step, reason}`` subtraction
     # records — one per candidate the row removed. Five of the six matrix rows
     # narrow the candidate lists, and every one of them used to do it silently;
@@ -2288,6 +2404,9 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'scope_gated_finalize_dropped': scope_gated_dropped,
         'scope_gated_finalize_immune': scope_gated_immune,
         'unresolved_ask_provider_dropped': unresolved_ask_dropped,
+        'terminal_emission_dropped': (
+            [_TERMINAL_EMISSION_STEP] if terminal_emission_dropped_reason is not None else []
+        ),
         'ceremony_finalize_gates': ceremony_finalize_gates,
         'ceremony_finalize_forced_in': [c['step'] for c in ceremony_forced_in],
         'ceremony_finalize_forced_out': [c['step'] for c in ceremony_forced_out],

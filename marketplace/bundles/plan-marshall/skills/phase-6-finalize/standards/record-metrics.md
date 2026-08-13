@@ -12,6 +12,10 @@ presets:
   - local
   - standard
   - full
+records_facts:
+  - total_tokens
+  - total_wall_seconds
+  - any_phase_missing_end_time
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
@@ -131,8 +135,13 @@ Pass a `--display-detail` value alongside `--outcome done` so the output-templat
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step record-metrics --outcome done \
-  --display-detail "{total_wall_formatted} / {total_tokens_formatted} tokens"
+  --display-detail "{total_wall_formatted} / {total_tokens_formatted} tokens" \
+  --fact total_tokens={total_tokens} \
+  --fact total_wall_seconds={total_wall_seconds} \
+  --fact any_phase_missing_end_time={any_phase_missing_end_time}
 ```
+
+**Structured facts (`records_facts`)**: the three `--fact` flags persist the run's token total, wall-clock, and end-time-gap flag as typed per-step facts (the raw integer/bool values captured from `generate`, not the `_formatted` display variants). This is a ROUTING fix, not new modelling: the values are already computed for the `display_detail` and the output contract above — wiring them as facts lets the `default:emit-landing` terminal step (`order: 1000`) carry the token totals into the epic landing as machine-readable data rather than re-parsing a prose row. The consumer question each key earns: `total_tokens` — *"what did this run cost?"* (the token-total-disagreement finding the landing must make drainable); `total_wall_seconds` — *"how long did it take?"*; `any_phase_missing_end_time` — *"is the token total a floor because a phase boundary was dropped?"*. All three keys are recorded at this single `--outcome done` call site, satisfying the `records_facts` both-direction contract.
 
 The `{total_wall_formatted}` and `{total_tokens_formatted}` placeholders are populated from the fields captured in `## Generate Final Metrics Report` above. Use the formatted variants — never the raw `{total_wall_seconds}s / {total_tokens} tokens` template, which produces the unformatted `6381s / 599089 tokens` row that the central formatter exists to replace.
 
