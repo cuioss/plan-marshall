@@ -1,6 +1,6 @@
 # Run report — 140-project-local-artifact-provider (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** `claude/project-local-artifact-provider-3ajym0` (harness-assigned, kept as-is)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-13    **Branch:** `claude/project-local-artifact-provider-3ajym0` (harness-assigned, kept as-is)    **PR:** [#1208](https://github.com/cuioss/plan-marshall/pull/1208)    **Outcome:** completed — auto-merge armed, landing delegated to the merge queue
 
 ## Skills loaded
 
@@ -22,7 +22,7 @@ existing docs that already establish the house style, and the reference model
 
 | Claim | Verdict | How re-derived |
 |---|---|---|
-| One `.claude/` subtree resolves to a module, its sibling resolves to null | **Confirmed** | `plan-marshall`'s `claim_paths()` returns `('.claude/skills', 'plan-marshall')`; `.claude/commands` and `.claude/settings.json` are claimed by no attributor and are dotfile trees the crawl never inventories, so they resolve to `null`. Pinned by `test_which_module_plan_claim.py::test_both_shipped_claims_arrive_through_the_same_seam`. |
+| One `.claude/` subtree resolves to a module, its sibling resolves to null | **Confirmed** | At run start `plan-marshall`'s `claim_paths()` returned `('.claude/skills', 'plan-marshall')`; `.claude/commands` and `.claude/settings.json` were claimed by no attributor and are dotfile trees the crawl never inventories, so they resolved to `null`. This pre-change premise was pinned by the seam-merge assertions in `test_which_module_plan_claim.py` (since updated to the new owner by this run). |
 | Project-local dotfile trees are never inventoried; attribution is the sole route | **Confirmed** | `cmd_which_module` docstring + `code-intelligence.adoc` § "Inventory scope is not tree scope": `.claude/**` is outside the crawl's allowlist, so rungs 1/2/4 are structurally blind and only rung-3 (Axis-D) can answer. |
 | The hard-coded prefix map is already retired from core | **Confirmed, verified first-party** | `_architecture_core.py` rung-3 resolution goes entirely through `_load_path_attribution_seam()` → `discover_path_attributors` / `merge_path_claims` / `lookup_claim`. No project-local prefix constant in core. |
 | The plugin-development bundle already implements module discovery | **Confirmed** | `pm-plugin-development` `Extension(ExtensionBase, DerivationResolverBase)` implements `discover_modules()` (one module per bundle). |
@@ -53,24 +53,65 @@ existing docs that already establish the house style, and the reference model
 
 ## Findings
 
-_Pending verification sub-agent + CI + review._
+Recorded per instance.
+
+| # | Source | Description | Disposition |
+|---|---|---|---|
+| 1 | Verification sub-agent | `doc/concepts/extension-architecture.adoc:29` said `plan-marshall-plugin` claims `.plan` and `.claude/skills` — stale after the move. Line 31's Axis-A straddle roster omitted `pm-plugin-development`. | **Fixed** in `eef6a02` — line 29 now names the three claimants; line 31 adds `pm-plugin-development`. |
+| 2 | Verification sub-agent | `doc/resources/diagrams/extension-topology.svg:144-145` showed `plan-marshall-plugin · .claude/skills · .plan (Axis-D)` with `1 impl` — stale attribution + wrong count. | **Fixed** in `eef6a02` — now `claims: .plan · .claude · doc (Axis-D)` / `3 impls`. |
+| 3 | Verification sub-agent (final sweep) | `test/plan-marshall/extension-api/test_path_attribution_merge.py:641-651` — a stub fixture encoding `('.claude/skills', 'plan-marshall')` and asserting `.claude/settings.json` is unclaimed, under a "the two claims the seam ships" comment. Passed (stub-based, so CI would not catch it) but misleads a reader. | **Fixed** in `f741ba0` — fixture updated to the two real attributors (`pm-plugin-development` owns `.claude`, `plan-marshall` owns `.plan`); `.claude/settings.json` assertion flipped to `pm-plugin-development`; `_MODULES` gained `pm-plugin-development`. |
+| — | Build gate (local) | Ruff `I001` import-order in the new `test_path_attribution.py`. | **Fixed** during the gate — marketplace-first-party (`extension_base`) grouped before local (`conftest`). |
+| — | Build gate (local) | Two stale `.claude/skills → plan-marshall` consumer tests in `test_files_inventory.py` failed under the new ownership. | **Fixed** during the gate — seed gained a `pm-plugin-development` module; assertions updated; the `.claude/settings.json`-is-unclaimed test repurposed to assert the founding inconsistency is now closed. |
+| — | CI (`review / review`, `cuioss-review-bot`) | "PR contains tests; No security concerns identified; No major issues detected." | No action — a clean review with no findings. |
+| — | CI (`coderabbitai`, `sourcery-ai`) | Rate-limit / quota notices in place of a review. | No action — routine rate limits; disclosed under Reviewer participation (not a merge block). |
+
+No verification finding was rejected — all three were real and fixed, then re-swept clean. The pre-PR sub-agent confirmed D1–D4, the no-core-edit constraint, and the D2 ownership record (by cold read).
 
 ## Reviewer participation
 
-_Pending._
+Population derived from configuration — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc:
+`coderabbitai` (coderabbit.md), `sourcery-ai` (sourcery.md), `cuioss-review-bot` (pr-agent.md).
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Published the "PR Reviewer Guide" review artifact over the diff — "PR contains tests · No security concerns identified · No major issues detected." No actionable findings. |
+| `coderabbitai` | `rate-limited` | Published only "Review limit reached … we couldn't start this review. Next review available in: 92 minutes." Engaged but did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Published only "you have reached your weekly rate limit of 500000 diff characters." Engaged but did not review this diff. |
+
+**Coverage: 1 of 3.** The § Step 8 shortfall disclosure fired: "Review coverage 1 of 3 — `cuioss-review-bot` reviewed with no findings; `coderabbitai` rate-limited (window reopens ~92 min); `sourcery-ai` rate-limited (weekly quota)." Per the contract this is a disclosure, not a block — rate limits are routine and outside our control, so auto-merge is armed on 1-of-3 with the shortfall stated.
 
 ## Cost
 
-_Filled at close._
+- **Tokens:** not available to the agent in this session — this interactive cloud session exposes no token meter to the run.
+- **Wall-clock:** not precisely metered by the agent; observable anchors — PR #1208 created `2026-08-13T10:22Z`; the run's build gates alone (`./pw quality-gate` + `./pw module-tests` ×2 + `./pw verify plan-marshall`) consumed ≈ 22 min of wall-clock, and the three verification-sub-agent dispatches ≈ 8 min.
+- **Population:** these figures count only this single Claude Code cloud session's own activity. They are **NOT comparable** to a plan-marshall `metrics.toon` total, which sums an orchestrator-plus-agent dispatch tree under plan-marshall's per-task billing boundary that a single interactive cloud session does not share.
 
 ## Contract check (Step 9)
 
-_Filled at close._
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — named in § Skills loaded. |
+| 2 Branch | Done — harness-assigned `claude/project-local-artifact-provider-3ajym0` kept as-is; present on `origin`. |
+| 3 Plan directory | Done — `doc/plans/code-intelligence-substrate/140-project-local-artifact-provider/plan.md` exists and opens with the first-instruction block. |
+| 4 Implement | Done — five commits carry the `Co-Authored-By: Claude` trailer; D1–D5 addressed. |
+| 4 Per-commit gate | Done — every `*.py`-touching commit was preceded by a clean gate (whole-tree `./pw quality-gate` green, and `./pw verify plan-marshall` green for the finding-3 commit). |
+| 4 Pushed | Done — no unpushed commit (each commit pushed immediately). |
+| 5 Build gate | Done — Python footprint present; whole-tree quality gate green, `plan-marshall` 16342 passed, `pm-plugin-development` 2241 passed. Full-suite `./pw verify` delegated to CI's required `verify` check. |
+| 6 Verification sub-agent | Done — 3 findings, all fixed; dispositions above; final sweep clean. |
+| 7 PR cycle | Done — PR #1208; all three comment surfaces read; every comment dispositioned (no actionable ones). |
+| 8 Merge gate | Conditions 1–3 gated at arm time (verify green on the report-inclusive head; no open comments; report finalized and pushed as the last pre-merge commit). Auto-merge armed; landing delegated to the merge queue (this session cannot self-wake to watch the queue). |
+| 8 Bridge | No status/bookkeeping write outside this plan's own directory; the report carries the PR number and per-deliverable outcome. |
+| 9 This check | Recorded here. |
+| 9 What have we learned | Recorded below. |
+
+**GitHub access path used:** the GitHub MCP server (the cloud path). **Branch form:** harness-assigned. A `/sync-plugin-cache` is **not owed** — it is a machine-local build step, not a debt a cloud run records.
 
 ## What have we learned (Step 9)
 
-_Filled at close._
+**Proposed contract change (pending operator approval — NOT shipped in this run).** This run produced concrete evidence for one refinement to the `cloud-plan-lane` Step 6 sweep instruction. Finding 3 was a **test stub/fixture that hardcoded the retired value** (`('.claude/skills', 'plan-marshall')`) and *still passed CI* because it is driven by a `_StubAttributor`, not the real discovered seam — so neither the local build gate nor CI would ever have caught it, and it survived two sub-agent sweeps before a third, explicitly-`*.py`-inclusive sweep found it. Step 6 today names consumer kinds "a prose restatement, a schema field or its placeholder, a worked example, a cross-document reference" but does **not** name *a test fixture/stub that encodes the changed value and passes regardless because it is not driven by the real code path*. Adding that consumer kind (and instructing the sweep to grep `*.py` fixtures, not only prose/docs) would have surfaced Finding 3 on the first pass. Evidence: `test_path_attribution_merge.py:641-651`, caught only on the third dispatch. **Recommendation:** if the operator approves, ship as a separate `chore(cloud-plan-lane)` PR (not `skip-bot-review`), touching only the skill. Not self-approved and not bundled into this PR, per Step 9.
 
 ## Residue
 
-_Filled at close._
+- The full-suite `./pw verify` across every module was not run whole locally (10-minute per-command bound + already-green quality gate); it is covered by CI's required `verify` check and the merge queue's `merge_group` run. All `*.py` changes are confined to the two modules run green locally.
+- `coderabbitai` and `sourcery-ai` may re-review once their windows reopen; the subscription remains active until the PR merges or closes, and any late review comment will wake this session for handling.
