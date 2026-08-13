@@ -196,12 +196,26 @@ missed; both accepted and fixed:
 | 5 | `phase-6-finalize/workflow/lessons-capture.md:24` | "reports any dirty TRACKED path **outside `.plan/`**" — the same stale pattern already fixed in the sibling `finalize-step-preference-emitter.md`, missed here | **fixed** — mirrored the preference-emitter wording ("source, or a tracked `.plan/` config/descriptor, keyed on trackedness"); also clarified the step writes only UNTRACKED plan state |
 | 6 | `test/plan-marshall/plan-marshall/test_invariants.py` `test_capture_main_dirty_files_only_dot_plan_paths_returns_empty_list` | LOW — docstring "Only `.plan/` paths dirty → empty" generalizes the old drop-all; the test also relied implicitly on the ambient checkout's tracked-`.plan/` set | **fixed** — renamed to `..._only_untracked_dot_plan_paths_...`, docstring corrected, and made robust by stubbing `_repo_root` to a controlled repo |
 
-Post-fix third sweep (my own) for `(TRACKED) (path/source) outside .plan/` / `only .plan/ → empty` /
-`.plan/`-filtered / removed symbols: **clean** — every surviving "outside `.plan/`" occurrence is a
-*correct* description of the non-`.plan/` tracked-source case (the (g) control) or an explicit
-contrast against tracked `.plan/`, not a stale drop-all claim. Quality gate green after each fix round;
-`./pw verify` green before this round (19515 passed) and the fixes since are prose/comment/test-scaffold
-only (no runtime behavior change).
+**Convergence round (round 3, same sub-agent).** After the round-2 fixes the agent ran one more
+EXHAUSTIVE beyond-diff sweep (96 marketplace hits + 72 test hits reviewed in full, plus `doc/**` and
+the guard output-field enumeration). Verdict: **CLEAN** — both round-2 fixes truthful, and no remaining
+stale statement of the old guard/layer-D "all `.plan/` dropped / always exempt / dirty tracked source
+outside `.plan/` / only `.plan/` → empty" behavior in any current-state prose, docstring, comment,
+section header, worked example, or test scaffold. Every surviving "outside `.plan/`" occurrence is a
+correct description of the non-`.plan/` tracked-source control or an explicit contrast against tracked
+`.plan/`.
+
+The round-3 sweep flagged one BORDERLINE pre-existing statement (not a guard-scope restatement):
+`workflow-integration-git/standards/worktree-handling.md:27` restated the blanket premise D0 refuted
+("`.plan/` is … excluded from version control"). Its operative claim (worktree placement under
+`.plan/local/worktrees/` inherits gitignore coverage) is true, but the lead clause is the epic's exact
+false premise, so — being already in this file — it was **tightened** to "its runtime `.plan/local/**`
+subtree is git-ignored … (a handful of files under `.plan/` are tracked — `marshal.json`, the
+`project-architecture/**` descriptors — but `.plan/local/**` is not)."
+
+Total: **six stale-restatement findings across two rounds, plus one borderline premise — all seven
+fixed; round-3 verdict clean.** Quality gate green after every fix round; `./pw verify` green (19515
+passed) and all fixes since are prose/comment/test-scaffold only (no runtime behavior change).
 
 _CI / PR-review findings: pending (filled at Step 7)._
 

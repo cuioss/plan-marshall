@@ -24,7 +24,7 @@ Worktrees live at the platform-neutral location:
 
 Rationale:
 
-- `.plan/` is the canonical plan-state root that is already excluded from version control by every plan-marshall project's `.gitignore`. Placing worktrees under `.plan/local/worktrees/` inherits the same gitignore coverage without a separate carve-out.
+- `.plan/` is the canonical plan-state root, and its runtime `.plan/local/**` subtree is git-ignored by every plan-marshall project's `.gitignore` (a handful of files under `.plan/` are tracked — `marshal.json`, the `project-architecture/**` descriptors — but `.plan/local/**` is not). Placing worktrees under `.plan/local/worktrees/` inherits that gitignore coverage without a separate carve-out.
 - `local/` signals "host-local, do not transport" — the directory is a per-host scratch space, never published, never archived.
 - `{plan-id}/` is the plan identifier (e.g., `my-feature-plan`), one directory per active plan.
 
