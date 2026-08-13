@@ -1,6 +1,6 @@
 # Run report — 290-config-hash-cannot-fail-usefully (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** `claude/main-sha-worktree-config-hash-mrscwi` (harness-assigned, kept as-is)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-13    **Branch:** `claude/main-sha-worktree-config-hash-mrscwi` (harness-assigned, kept as-is)    **PR:** [#1205](https://github.com/cuioss/plan-marshall/pull/1205)    **Outcome:** completed (auto-merge armed SQUASH; landing delegated to the merge queue)
 
 Scope note: this plan is narrowed to the **`config_hash` half**. The `main_sha` half is
 owned in full by `doc/plans/code-intelligence-substrate/310-main-sha-records-the-pinned-cwd.md`
@@ -129,25 +129,81 @@ reference-platform strict-no-skip gate is opt-in and not set in this session).
 | Verification sub-agent — D2b proxy note | D2(b) asserted only at the capture level; a future addition of `config_hash` to `detect_drift`'s `excluded` set would silence the cross-phase signal while D2(b) still passed. | **Fixed** — added the detector-level regression lock `test_config_hash_change_is_drift` (above). |
 | Verification sub-agent — R-1 | Report's D2 and Build-gate sections were unpopulated placeholders. | **Fixed** — both sections populated (above). |
 | Verification sub-agent — verdict | Change substantively meets all three deliverables; no undeclared collateral; D0 hand-off conclusion correct; no other stale `config_hash` prose in the tree. | Accepted — no code change required. |
+| CI — `verify / conclusion` (required) | Concluded `success` on head `b89fb37`; the full check set (`verify / verify`, `verify / gate`, `dependency-review`, `review / review`, `generate-check`) is green, `mergeable_state: clean`. | No action — required check green. |
+| PR review — `cuioss-review-bot` | Clean `## PR Reviewer Guide 🔍`: no security concerns, no major issues, PR contains tests. No finding to action. | No action — clean review. |
+| PR review — `coderabbitai` | Refusal notice ("Review limit reached") in place of a review; no finding carried. | No action — refusal, not a finding (§ Reviewer participation). |
+| PR review — `sourcery-ai` | Refusal notice ("weekly rate limit of 500000 diff characters") in place of a review; no finding carried. | No action — refusal, not a finding (§ Reviewer participation). |
 
-An empty CI/PR-review row set below reflects that the PR has not yet been opened; populated after
-Step 7.
+All three inline-review-thread surfaces read empty (`get_review_comments` → `totalCount: 0`); the
+review-summary surface (`get_reviews`) and issue-comment surface (`get_comments`) were both read (§
+Reviewer participation). No reviewer produced an actionable finding, so nothing was fixed, rejected,
+or deferred from CI/PR review.
 
 ## Reviewer participation
 
-_(populated after the PR review cycle)_
+Expected reviewer population **derived from configuration** — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(`coderabbit.md`, `pr-agent.md`, `sourcery.md`), cross-named by `.github/workflows/pr-agent.yml`.
+M = 3. Each verdict is read from the stored comment bodies, not from a check state.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` (pr-agent) | `reviewed` | Posted its `## PR Reviewer Guide 🔍` issue comment (id `5278870121`) over this diff: "🔒 No security concerns identified", "⚡ No major issues detected", "🧪 PR contains tests" — an explicit clean review, no findings to action. |
+| `coderabbitai` (coderabbit) | `rate-limited` | Posted **only** its "Review limit reached" refusal notice (id `5278862141`) in place of a review — "you've reached your PR review limit … Next review available in: 112 minutes". Class `awaitable_window` (rolling window, reopens on its own); commit-status `CodeRabbit` context is `success`/"Review rate limited". Engaged but did not review this diff. |
+| `sourcery-ai` (sourcery) | `rate-limited` | Posted **only** a `COMMENTED` review (id `4925755119`) carrying its refusal — "you have reached your weekly rate limit of 500000 diff characters". Class `hard_quota` (weekly diff-character quota, cause=quota); does not reopen by waiting. Engaged but did not review this diff. |
+
+**Coverage: 1 of 3 reviewed.** The § Step 8 shortfall disclosure fired before arming auto-merge:
+"Review coverage 1 of 3 — `cuioss-review-bot` reviewed clean; `coderabbitai` rate-limited (rolling
+window, reopens ~112 min); `sourcery-ai` rate-limited (weekly diff-character quota)." Both rate
+limits are routine and outside our control, so per § Step 8 condition 4 (disclose-not-block) the
+shortfall changed only what the run **said**, not whether it merged.
 
 ## Cost
 
-_(populated at close)_
+- **Tokens:** not available to the agent in this session — the Claude Code cloud harness does not
+  surface a per-run token total to the agent.
+- **Wall-clock:** not precisely available. Derivable GitHub anchors only: PR #1205 opened
+  `2026-08-13T10:02:55Z`; the first `verify` run concluded `10:13:58Z` (~11 min build). The run
+  spanned an initial implementation session plus this resumed review/merge session; no single
+  authoritative start/end timestamp is exposed to the agent.
+- **Population:** these anchors count one interactive Claude Code cloud session's GitHub-observable
+  timestamps. They are **NOT comparable** to a plan-marshall `metrics.toon` total, which counts the
+  orchestrator-plus-agent dispatch tree under plan-marshall's per-task billing boundary — a boundary
+  this single interactive cloud session does not share. No comparable figure can be produced here.
 
 ## Contract check (Step 9)
 
-_(populated at close)_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — named in § Skills loaded; all obtained via bundle path. |
+| 2 Branch | Done — harness-assigned `claude/main-sha-worktree-config-hash-mrscwi`, published on `origin`, kept as-is (no rename, no prefix). |
+| 3 Plan directory | Done — `doc/plans/truthful-signals/290-…/plan.md` exists and opens with the first-instruction block. |
+| 4 Implement | Done — 3 implementation commits carry the `Co-Authored-By: Claude` trailer; D0–D2 addressed. |
+| 4 Per-commit gate | Done — the `*.py`-touching commit was preceded by a clean `./pw quality-gate` (`total_issues: 0`). |
+| 4 Pushed | Done — no unpushed commit remains after each push. |
+| 5 Build gate | Done — Python change (`_invariants.py` + tests) → `./pw verify` green (`=== verify: SUCCESS ===`, 19458 passed). |
+| 6 Verification sub-agent | Done — findings D0-1, D2-1, D2b-proxy, R-1 all fixed (§ Findings). |
+| 7 PR cycle | Done — PR #1205; all three comment surfaces read; every comment dispositioned (2 rate-limit refusals + 1 clean guide; no actionable findings; no inline threads). |
+| 8 Merge gate | Conditions 1–3 met; 1-of-3 coverage disclosed (condition 4); auto-merge armed (SQUASH). Session cannot block-until-landed (§ Cloud session affordances), so the landing is delegated to the merge queue / orchestrator collect — completed, not partial. |
+| 8 Bridge | No status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; report carries the PR number + per-deliverable outcome the orchestrator collects. |
+| 9 This check | This table. |
+| 9 What have we learned | Recorded below. |
+
+**GitHub access path:** GitHub MCP server (the cloud path).
+**Branch form:** harness-assigned (`claude/*`), kept as-is.
+**Plugin cache sync:** not owed — `/sync-plugin-cache` is a machine-local build step a cloud run
+never performs or owes (§ Scope and precedence).
 
 ## What have we learned (Step 9)
 
-_(populated at close)_
+**None proposed.** This resumed session exercised Steps 7–9 (PR review cycle + merge gate) end to
+end and the contract described the environment accurately: the three comment surfaces were read as
+specified (`get_comments`, `get_reviews`, `get_review_comments`), the reviewer population derived
+cleanly from the three registry docs, the MCP `mergeable_state: clean` mapping held (§ Step 8
+condition 1), and the merge-queue arm-and-hand-off completion covered the case where the session
+cannot block-until-landed. No step was ambiguous in practice and no command failed as written, so
+there is no run-produced evidence for a contract change — speculative edits are excluded by the
+step's own rule.
 
 ## Residue
 
