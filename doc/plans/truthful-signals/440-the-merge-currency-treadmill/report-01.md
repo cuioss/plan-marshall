@@ -103,16 +103,29 @@ either "yes" or "no":
 - **`project:finalize-step-plugin-doctor` — withdrawn.** The near-miss, and the one that took two
   rounds to see. Its `--paths` scope really is two skill roots, which makes `marketplace/*` plus
   `.claude/*` read like the whole story. It is not: its roster's `broken-relative-link` rule resolves
-  every relative link *target* against the repository root and stats it on disk, and marketplace docs
-  link into `doc/**`, `test/**`, and root files in bulk. The target set cannot be captured by a static
-  glob at all, because any file can become a link target.
-- **`project:finalize-step-era-stamp-fill` — declared, and sound by construction.** Its verdict is a
-  property of exactly two files named by full path in its own doc: that neither
+  every relative link *target* against the linking file's own directory and stats it whenever the
+  result falls inside the repository-root containment boundary — a boundary the whole-tree call site
+  passes precisely so in-repo cross-tree links ARE existence-checked. Marketplace docs link into
+  `doc/**`, `test/**`, and root files in bulk (32 such links across 16 files). The target set cannot
+  be captured by a static glob at all, because any file can become a link target.
+- **`project:finalize-step-era-stamp-fill` — declared, and sound.** Its verdict is a property of two
+  files named by full path in its own doc: that neither
   `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` nor
   `test/plan-marshall/audit-archived-plan-retrospectives/test_audit.py` carries an unresolved
-  `PR-PENDING` sentinel. It reads nothing else to compute that, and stages exactly that pair. The
-  surface is a superset by construction rather than by survey — which is precisely what the other two
-  could not offer.
+  `PR-PENDING` sentinel — and its declaration names a **third** path, `era_stamp_fill.py`, the
+  executor whose matcher defines what "unresolved" means. That third glob was added after the first
+  two were declared, on the observation that a commit widening or narrowing the matcher would make
+  the recorded claim false with neither audited file touched. Its other inputs (`{pr_number}`,
+  `{plan_id}`, `{worktree_path}`) are dispatcher values, not tracked files. The surface is a superset
+  by construction rather than by survey — which is precisely what the other two could not offer.
+
+  **The rule that fell out of getting this right: declare what determines the TRUTH of the recorded
+  claim, not what determines the step's future behaviour.** That is why the executor is in
+  (it redefines what the verdict means) and the step's own procedural SKILL.md is out (it governs
+  what the step does next time and cannot falsify a verdict already recorded about the tree). Without
+  that line the surface regresses to "everything the process touches" — the classifier, the discovery
+  machinery, the interpreter — which is the inert whole-tree declaration this mechanism exists to
+  avoid.
 
 **The generalizable result: a gate whose body executes something open-ended over the repository has no
 sound static surface, and a gate whose verdict is a property of named files has a trivially sound
@@ -298,7 +311,7 @@ declaring done after a round of fixes. All fixes landed in `d12be01`.
 
 | # | Finding | Disposition |
 |---|---|---|
-| G1 | `finalize-step-plugin-doctor`'s surface was STILL not a superset. Its roster's `broken-relative-link` rule resolves each relative link target found in a marketplace doc **against the repository root** and stats it on disk; marketplace docs link into `doc/**`, `test/**`, and root files in bulk, so renaming a link *target* turns the gate red without touching either declared root. After round 1's withdrawal this was the only declaration left in the tree, so the feature's entire live surface was the unsound one | **Fixed** — declaration withdrawn, refusal recorded with both disqualifying rules named (see the D1 addendum) |
+| G1 | `finalize-step-plugin-doctor`'s surface was STILL not a superset. Its roster's `broken-relative-link` rule resolves each relative link target against the **linking file's own directory** and stats it whenever the result falls inside the **repository-root containment boundary**; marketplace docs link into `doc/**`, `test/**`, and root files in bulk, so renaming a link *target* turns the gate red without touching either declared root. After round 1's withdrawal this was the only declaration left in the tree, so the feature's entire live surface was the unsound one | **Fixed** — declaration withdrawn, refusal recorded with both disqualifying rules named (see the D1 addendum). Round 3 corrected the mechanism wording: the earlier phrasing said targets resolve *against the repository root*, which conflated the resolution base with the containment boundary and would have misled anyone repairing the refusal later |
 | G2 | The ext-point rule round 1 wrote — a step performing "a whole-repo walk" MUST NOT declare — disqualified `finalize-step-plugin-doctor` by its own words (its agentfile analyzers walk the repo root), and nothing reconciled the tension | **Fixed** — resolved by G1's withdrawal; the rule and the roster now agree |
 | G3 | `phase-6-finalize/SKILL.md`'s dispatcher consumption site still asserted `preserved` "on exactly one path" — the most-read statement of the classifier's contract, and false about the code | **Fixed** (see F4) |
 | G4 | `verdict-currency.md` carried a one-path summary 19 lines above its own corrected two-path paragraph | **Fixed** — the summary now defers to the single authoritative statement below it |
@@ -318,6 +331,36 @@ declaring done after a round of fixes. All fixes landed in `d12be01`.
 70-character worst case character by character and confirmed both the arithmetic and the coupling
 argument, and re-traced the reordered `classify_step` end to end confirming no new unsafe path — those
 are recorded here as confirmations rather than findings.
+
+### From the verification sub-agent (round 3)
+
+Round 3 confirmed the mechanism's first **sound** declaration — it exercised the real classifier
+through the real executor against the live discovery population and reproduced a `preserved` verdict
+with its evidence, rather than reading the code and inferring one. It also re-derived the 70 / 47 / 59
+character claims, the eleven-member head-dependent population with its orders, and the whole-suite
+result, all confirming. Its findings were the restatement-propagation class that had recurred in every
+prior round, plus two merge-path residuals. All fixed in `3767bfe`.
+
+| # | Finding | Disposition |
+|---|---|---|
+| H1 | `verdict-currency.md`'s worked positive example still said era-stamp asserts over "two files" and "reads nothing else" — the exact claim the step's own doc had just disavowed by declaring its executor. The third consecutive round in which a restatement site went un-propagated | **Fixed** — and the general rule (declare what determines the claim's TRUTH, not the step's future behaviour) is now stated once in `verdict-currency.md` and applied, not restated, at the step |
+| H2 | The same overtaken claim in this report's own D1 addendum | **Fixed** |
+| H3 | `verdict-currency.md` labelled `finalize-step-plugin-doctor` "(both shapes)" when it exhibits neither shape 1 nor any shape that section enumerated — its actual disqualifiers were a discovered-input scan and a whole-repo walk, and the walk was not in the taxonomy at all | **Fixed** — taxonomy widened to three named shapes with a per-step attribution table |
+| H4 | The ext-point's disqualifying-shape list and `verdict-currency.md`'s had diverged, and **neither was a superset of the other**. The ext-point — the doc an implementor reads *before* declaring — omitted the discovered-input case, which is the exact shape that disqualified plugin-doctor and is this deliverable's headline finding | **Fixed** — the ext-point now names all three shapes and points at `verdict-currency.md` as the taxonomy's owner instead of maintaining a second copy |
+| H5 | `finalize-step-plugin-doctor`'s refusal said `broken-relative-link` resolves targets "against the repository root". It resolves against the linking file's directory; the repository root is the containment boundary. Conclusion right, stated mechanism wrong | **Fixed** in both the step doc and this report's G1 row |
+| H6 | `branch-cleanup.md`'s merge-routing section asserted the mutex "guards the pre-enqueue rebase/force-push window" **inside the `use_merge_queue == true` bullet** — the one path that performs neither — contradicting the same knob's own `configurable:` description | **Fixed** |
+| H7 | The `upstream_commit_count` disambiguation was prose-only: the fact template still interpolated `{upstream_commit_count}`, the token the *later* classifier re-run binds, at the exact site whose prose forbids that binding. An executor would have taken the wrong value by name | **Fixed structurally** — the rebase payload is captured as `{rebase_upstream_commit_count}` at its parse site and the fact template consumes that; the recorded fact KEY is unchanged |
+| H8 | The pre-rebase prompt's question alternation had no arm for `state == merged`, a path its own enclosing section admits (pre-existing, re-expressed by this branch) | **Fixed** — third arm added |
+| H9 | The `[STATUS]` line rendered "rebased onto …" even on `action: noop`, a distinction Branch A's own clause table makes | **Fixed** — three-arm alternation |
+| H10 | The Merge-Authorization Roster cited `red-ci-override`'s site as "§ Rebase Branch onto Base", imprecise since the CI gate gained its own heading | **Fixed** — re-anchored, and it now records why the merge-queue arm needs no such grant |
+
+**Residual accepted, not fixed:** round 3 observed that the step's own `SKILL.md` is an undeclared
+input, demonstrated live (the commit that added the third glob changed only that file, and the
+classifier answered `preserved`). This is **recorded as a deliberate exclusion with its reason**
+rather than fixed, because fixing it has no stopping point — the classifier, the discovery machinery
+and the interpreter are inputs by the same argument, and the surface would regress to the inert
+whole-tree declaration the mechanism exists to avoid. The line drawn is truth-of-the-claim versus
+future-behaviour, stated at the step and in the governing standard.
 
 ### From CI and PR review
 
