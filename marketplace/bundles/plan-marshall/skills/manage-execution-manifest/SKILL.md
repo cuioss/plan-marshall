@@ -286,6 +286,40 @@ execution_log_count: 1
 
 On a missing manifest: `status: error`, `error: file_not_found`. On an invalid `--phase` / `--outcome` value: `status: error`, `error: invalid_phase` / `invalid_outcome`.
 
+### refire-report
+
+Report per-step firing / re-fire counts derived from the `execution_log[]` rows `record-step` already appends. Read-only — it writes nothing and emits no decision-log line.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  refire-report \
+  --plan-id {plan_id} \
+  [--phase {5-execute|6-finalize}]
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--phase` (optional, default all phases): Restrict the derivation to one phase
+
+Because `execution_log[]` is an ordered append log with one row per firing, a step's re-fire count is `max(0, firings - 1)`: the first `executed` row is the firing the pipeline owes, and every later one is a re-fire the dispatcher's HEAD-advance re-entry check drove. Rows are sorted by descending `refires`, then by `step_id`, so the worst offender reads first. The consuming model — what advances HEAD, what a re-stale costs, and how an advance is classified as invalidating or not — is owned by [`phase-6-finalize/standards/verdict-currency.md`](../phase-6-finalize/standards/verdict-currency.md).
+
+**Two coverage boundaries the payload names rather than hides.** A `skipped` row is counted in its own column and never folded into `firings` — a skip is precisely what a preserved verdict produces, so folding it in would make the instrument unable to measure the thing it exists to measure. And `total_tokens` is a **floor**: `record-step` receives the `<usage>` triple only for steps dispatched as Task agents, while every inline step records zeros by contract, so `token_population` states which rows the figure was summed over. A saving computed from this column is reported with that floor attached, never as a measured total.
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+phase: 6-finalize
+execution_log_rows: 11
+steps[2]{step_id,firings,refires,skipped,errors,total_tokens,tool_uses,duration_ms}:
+  pre-submission-self-review,7,6,0,0,412000,58,930000
+  push,1,0,3,0,0,0,0
+totals: { steps: 2, firings: 8, refires: 6, skipped: 3, errors: 0, ... }
+token_population: record-step rows only; ...
+```
+
+On a missing manifest: `status: error`, `error: file_not_found`. On an invalid `--phase` value: `status: error`, `error: invalid_phase`.
+
 ### step-params get
 
 Return a step's snapshotted param object from the plan-local manifest — a literal file read of the compose-time snapshot under `body[phase].step_params[step_id]`, never a marshal.json read. The one-stop read that phase-5/6 runtime consumers use instead of per-field `manage-config get --field` reads of step-owned params.

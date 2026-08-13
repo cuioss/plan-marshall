@@ -1,0 +1,195 @@
+# Verdict Currency — what re-stales a finalize verdict, and what it costs
+
+The dispatcher's re-entry check re-fires a head-dependent step whose recorded
+`head_at_completion` differs from the live worktree HEAD (see
+[`../SKILL.md`](../SKILL.md) § "Special case — HEAD-dependent steps"). That rule is
+safe. Left as a bare SHA inequality it is also **maximally expensive**: one finalize
+advances HEAD many times, and each advance re-stales every verdict recorded before
+it — mostly re-confirming the identical answer.
+
+This document owns the model that bounds it. It states **which events advance HEAD**
+inside finalize (the trigger set), **what a re-stale costs** per step, **how an
+advance is classified** as invalidating or not, and **how the re-fire count is
+obtained**. It does not restate head-dependence membership, which is declared per
+step and read from frontmatter — see [`../SKILL.md`](../SKILL.md) § "Special case —
+HEAD-dependent steps" for the single authoritative statement.
+
+## Two levers, and only one of them was ever pulled
+
+Bounding this cost has exactly two levers, and they are independent:
+
+| Lever | Bounds | Owner |
+|---|---|---|
+| **Delta-scoping** — a re-run examines only what changed since its own last record | the cost of EACH re-run | the individual gate (e.g. `pre-submission-self-review`'s `--since-ref` anchor) |
+| **Re-stale classification** — an advance that cannot change a verdict does not re-run the gate | the NUMBER of re-runs | this document |
+
+Delta-scoping does not reduce the number of re-runs, and pulling it harder never
+will. A gate that re-fires seven times with a perfectly-scoped delta still pays
+seven envelopes, seven skill loads, and — where the gate carries an unconditional
+whole-tree arm — seven whole-tree sweeps. **Read a landed delta-scoping improvement
+as bounding the first column only.**
+
+## The trigger set — what advances HEAD inside finalize
+
+A verdict re-stales when, and only when, the worktree HEAD moves. Every mechanism
+that moves it during finalize is one of the following. The set is **derived from
+declared frontmatter facts**, not hand-maintained: each row names the fact that puts
+the step in it, so a step added later is covered by its own declaration.
+
+| Trigger | Declared by | Mechanism |
+|---|---|---|
+| A settle-band step's edits being committed | `mutates_source: true` on a step ordered `< 11` | the dispatcher's commit instrumentation (Step 3 item 5f) commits the step's output before advancing, which moves HEAD |
+| A post-push step's edits being committed | `mutates_source: true` on a step ordered `> 11` and before the merge gate | same instrumentation, plus the item-5f post-PR re-push |
+| A baseline rebase replaying commits | `advances_main_via_rebase: true` | the branch's history is rewritten onto a freshly-fetched base tip, so every SHA on it changes at once |
+| A loop-back fix commit | the unified wait-region triage opening a fix task | the fix lands as a new commit on the feature branch |
+
+Two properties of this set are load-bearing and easy to get wrong:
+
+- **A rebase re-stales EVERYTHING at once, not incrementally.** Replaying the branch
+  changes every commit's SHA, so every head-dependent verdict recorded before it
+  fails the equality test in the same instant. It is the single largest re-stale
+  event in the pipeline.
+- **A rebase that replays nothing advances nothing.** `worktree-rebase-to` reads HEAD
+  immediately before and after the rebase and returns `action: noop` with HEAD
+  unchanged when the branch already contained the base — and returns `noop` without
+  running a rebase at all when the branch is already `clean` relative to it. So a
+  rebase step is a re-stale trigger **only on its `action: rebased` return**. A claim
+  that an unconditional rebase re-stales every verdict is therefore true of the
+  replaying case and false of the noop case; the discriminator is the step's own
+  returned `action`, and it is reported on the payload with both SHAs.
+
+## What a re-stale costs
+
+The cost of one re-fire is the step's whole body, not a delta of it — the re-entry
+check re-dispatches the step as a fresh run. Two properties make that expensive
+beyond the obvious:
+
+- **A dispatched step pays a full envelope per re-fire** — target resolution, the
+  agent spawn, the skill loads its prompt body names, and its own tool calls. Delta
+  scoping shrinks what the body examines; it does not shrink the envelope.
+- **An unconditional whole-tree arm is paid in full every time.** `pre-push-quality-gate`
+  scopes its per-bundle sweep to the live footprint but runs its whole-tree
+  `quality-gate`, whole-tree `test-compile`, and module-tests gate unconditionally by
+  design (see [`pre-push-quality-gate.md`](pre-push-quality-gate.md) § "Whole-tree
+  quality-gate arm"). Those arms exist to catch what a scoped run structurally cannot,
+  so they are not delta-scopable — which makes not re-running them the only lever
+  available on this gate.
+
+The earliest head-dependent steps absorb the most re-fires, because every later
+trigger in the pipeline is behind them: a step at `order: 4` is re-staled by every
+mutating step, every rebase, and every loop-back commit that follows it, while a step
+at `order: 40` is re-staled only by what comes after IT.
+
+## The classification — an advance that cannot change a verdict does not re-run it
+
+A head-dependent step MAY declare `verdict_inputs` — the fnmatch globs naming the
+tracked paths whose content its verdict reads (see
+[`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md)
+§ "Implementor Frontmatter"). Given that declaration, the classifier
+`plan-marshall:phase-6-finalize:verdict_currency` answers one question per step:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:verdict_currency classify \
+  --step {step_id} --worktree-path {worktree_path} --head-at-completion {recorded_sha}
+```
+
+It returns `verdict: preserved` when the **tree difference** between the recorded SHA
+and the live HEAD touches none of the declared paths, and `verdict: invalidated`
+otherwise. The dispatcher consumes it at the one branch where the SHAs already differ.
+
+**Why the rule is a purity argument, not a heuristic.** A step's verdict is a function
+of the content of its declared inputs. When that content is byte-identical between the
+two trees, re-running the step recomputes the same verdict by construction. Nothing is
+being predicted or estimated — the skip is licensed by the declaration itself, which is
+why the declaration must be substantiated arm-by-arm from the step's own doc rather
+than guessed.
+
+**Why a tree diff rather than a commit walk.** `git diff --name-only {recorded} {live}`
+compares two trees. That is correct under all three supersession mechanisms the
+dispatcher must handle — a loop-back commit, a force-push, and a rebase — because none
+of them changes what the two trees contain, and it needs no separate detector per
+mechanism. It is also strictly narrower than a commit walk: a change and its revert
+cancel out, and a rebase folding in upstream commits that touch nothing in the surface
+reports no difference on that surface.
+
+**Fail-closed, structurally.** `preserved` is returned on exactly one path — a resolved,
+non-empty declaration whose globs match no changed path. Every other path returns
+`invalidated` with a `reason` naming the uncertainty: an absent declaration, an
+unresolvable step doc, unavailable discovery machinery, an absent recorded SHA, or a
+tree diff git could not compute (a SHA that no longer resolves after a force-push and a
+prune is exactly this case). An unnecessary re-run costs tokens; a skipped necessary one
+costs correctness, so the asymmetry is built into the control flow rather than stated as
+guidance.
+
+**A preserved verdict keeps its original anchor.** The dispatcher does NOT re-stamp
+`head_at_completion` to the live HEAD on a preserved skip. Re-stamping would make the
+record claim the verdict was computed against a tree it was never computed against —
+the exact false-currency signal this mechanism exists to remove. Keeping the original
+anchor also makes the classification monotone: the diff range only grows, so the first
+advance that touches the surface invalidates the verdict no matter how many preserved
+advances preceded it.
+
+**A remote-state verdict declares no surface.** `ci-verify`, `automatic-review`, and
+`sonar-roundtrip` record verdicts about the *pushed* HEAD, not about the local tree.
+Any advance that reaches the remote re-stales them regardless of which paths moved, so
+they carry no `verdict_inputs` and keep the unconditional re-fire.
+
+## Ruling — the pre-merge rebase is conditional on the merge queue
+
+`branch-cleanup` rebases the feature branch onto the freshly-fetched base tip before
+merging. The rebase has two stated purposes: the merged history is a linear append, and
+CI runs against the exact commits that will land. **Both purposes are already discharged
+by the merge queue when one is in use**, and this document records the resulting ruling
+so the deviation stops being unwritten:
+
+- **`use_merge_queue == true` — the pre-merge rebase is redundant, and is skipped.** The
+  queue re-tests the branch against the latest base and refuses a still-red one; the
+  same document already downgrades the pre-merge CI wait to a non-authoritative snapshot
+  for exactly this reason. A rebase performed here duplicates the queue's own work while
+  paying its full price: on a replaying rebase every recorded verdict re-stales at once,
+  which is the pipeline's largest single re-stale event.
+- **`use_merge_queue == false` — the rebase stays unconditional.** The immediate
+  `pr safe-merge` path has no queue re-test, so the rebase plus the authoritative CI wait
+  after it ARE what make the merged history linear and verified. Nothing else discharges
+  those purposes on this path, so removing it here would trade a real safety property for
+  a cost saving.
+
+The ruling is therefore not "the rebase was always unnecessary" and not "skipping it was
+unsafe" — it is that its necessity is a function of `use_merge_queue`, and the operator
+deviation that prompted this ruling was correct **on the path it was taken on**. The
+mechanics live at [`branch-cleanup.md`](branch-cleanup.md) § "Rebase onto base"; this
+section is the ruling, not a second implementation of it.
+
+## Obtaining the re-fire count
+
+The count is **derived from instrumentation that already exists**, not from a new
+emitter. `record-step` appends one `execution_log[]` row per firing — for every finalize
+step, dispatched and inline alike — so a step that fired seven times carries seven rows:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  refire-report --plan-id {plan_id} --phase 6-finalize
+```
+
+Per step it reports `firings`, `refires` (`max(0, firings - 1)`), `skipped`, `errors`,
+and the summed token-attribution triple, sorted worst-offender first.
+
+**Two coverage boundaries the report names rather than hides.** A `skipped` row is never
+folded into `firings` — a skip is precisely what a preserved verdict produces, so
+counting it as a firing would make the instrument unable to measure the thing it exists
+to measure. And `total_tokens` is a **floor**: `record-step` receives the `<usage>`
+triple only for steps dispatched as Task agents, while every inline step records zeros by
+contract, so the payload carries a `token_population` field naming exactly which rows the
+figure was summed over. A saving computed from this column is stated with that floor
+attached, never as a measured total.
+
+## Related
+
+- [`../SKILL.md`](../SKILL.md) § "Special case — HEAD-dependent steps" — the re-entry
+  check this model narrows, and the single authoritative statement of head-dependence.
+- [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md)
+  § "Implementor Frontmatter" — the `head_dependent` / `verdict_inputs` declarations.
+- [`pre-push-quality-gate.md`](pre-push-quality-gate.md) § "Verdict-input surface" — the
+  worked derivation of one step's declared surface from its own arms.
+- [`branch-cleanup.md`](branch-cleanup.md) § "Rebase onto base" — the rebase site the
+  ruling above governs.

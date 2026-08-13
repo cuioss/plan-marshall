@@ -533,7 +533,7 @@ The version-skew failure mode this contract closes is behavioural: between sessi
 | Persisted state | Live worktree HEAD | Action |
 |-----------------|--------------------|--------|
 | `outcome == done` AND `head_at_completion == HEAD` | matches | SKIP (steady-state — gate already validated this exact tree) |
-| `outcome == done` AND `head_at_completion != HEAD` | differs | RE-FIRE (treat as no record — HEAD is no longer the SHA the verdict was computed against) |
+| `outcome == done` AND `head_at_completion != HEAD` | differs | **Consult the verdict-currency classifier** (below). `verdict: invalidated` → RE-FIRE (treat as no record). `verdict: preserved` → SKIP, leaving `head_at_completion` at its original SHA |
 | `outcome == done` AND `head_at_completion` absent | n/a | RE-FIRE **and report the prior verdict UNVERIFIED** (see below) — a record with no SHA was never anchored to a tree |
 | `outcome == failed` | n/a | RETRY (unchanged — same as the general rule) |
 | `outcome == loop_back` | n/a | RE-FIRE (treat as no record — same as the general rule for loop_back) |
@@ -541,7 +541,21 @@ The version-skew failure mode this contract closes is behavioural: between sessi
 
 **A head-dependent verdict is never left standing as green for a HEAD it was not computed against.** That is the governing rule the table encodes, and the two RE-FIRE rows are its two halves: a superseded SHA re-fires, and an absent SHA re-fires AND is reported UNVERIFIED. On the absent-SHA row the dispatcher MUST log the prior verdict as unverified rather than discarding it silently, so a `done` record that was never anchored to a SHA stays visibly distinguishable from one that was genuinely validated and later superseded — the two are different facts, and collapsing them hides which gate never ran at all.
 
-The `!= HEAD` comparison covers **all three supersession mechanisms in scope**: a loop-back commit, a force-push, and a rebase. Each one replaces the SHA the verdict was computed against, so a plain SHA inequality is sufficient for all three — no separate force-push detector and no rebase detector is introduced. (A rebase additionally arms the post-rebase step-doc re-resolution contract above; that is a different obligation on the same event, not a second membership test.)
+**The verdict-currency classifier — a HEAD advance that cannot change a verdict does not re-run the gate that produced it.** A bare SHA inequality treats EVERY advance as invalidating, which is safe and maximally expensive: one finalize advances HEAD many times (settle-band commits, a replaying rebase, loop-back fixes), and each advance re-stales every verdict recorded before it, mostly to re-confirm the identical answer. On the differing-SHA row above, resolve the question instead of assuming it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:verdict_currency classify \
+  --step {step_id} --worktree-path {worktree_path} --head-at-completion {recorded_sha}
+```
+
+Branch on the returned `verdict`:
+
+- **`invalidated`** → RE-FIRE exactly as the table's differing-SHA row has always done. This is the answer on every uncertainty as well as on every genuine invalidation — the classifier returns `preserved` on exactly one path (the step declares a `verdict_inputs` surface AND the tree difference between the recorded SHA and the live HEAD touches none of it) and `invalidated` on all others, with a `reason` naming which. A step that declares no surface therefore keeps the unconditional re-fire, so adoption is opt-in per step and silence never buys a skip.
+- **`preserved`** → SKIP, and **do NOT re-stamp `head_at_completion`**. The record keeps the SHA the verdict was genuinely computed against; re-stamping it to the live HEAD would make the record claim a currency it does not have, which is the false-green signal this whole mechanism exists to prevent. Keeping the original anchor also makes the decision monotone — the diff range only grows, so the first advance that touches the surface invalidates the verdict however many preserved advances preceded it. Log the `reason` and `detail` at INFO alongside the skip decision so the preservation is auditable rather than silent.
+
+The classifier compares TREES (`git diff --name-only {recorded} {live}`), not the commits between them, which is what makes one call correct under all three supersession mechanisms below. The model — the trigger set, the per-step cost, the declaration's discriminator, and the coverage boundary of the re-fire count — is owned by [`standards/verdict-currency.md`](standards/verdict-currency.md); this section states only where the dispatcher consults it.
+
+The `!= HEAD` comparison covers **all three supersession mechanisms in scope**: a loop-back commit, a force-push, and a rebase. Each one replaces the SHA the verdict was computed against, so a plain SHA inequality is sufficient to detect all three — no separate force-push detector and no rebase detector is introduced. (A rebase additionally arms the post-rebase step-doc re-resolution contract above; that is a different obligation on the same event, not a second membership test.)
 
 The comparison consults HEAD-advance only — there is no dirty-tree re-fire branch. The dispatcher's commit instrumentation (item 5f) commits every `mutates_source: true` step's output before the dispatcher advances, so no head-dependent step can leave an uncommitted tree at re-entry. A dirty tree at any re-entry indicates an upstream contract violation rather than a re-fire trigger; every head-dependent step follows the HEAD-only table.
 
@@ -657,7 +671,13 @@ FOR each step_id in manifest.phase_6.steps:
            Resolve the live worktree HEAD via `git -C {worktree_path} rev-parse HEAD`.
            Read this fresh per iteration; do NOT cache across the loop.
              - IF outcome == "done" AND head_at_completion == live HEAD: SKIP this step
-             - IF outcome == "done" AND head_at_completion != live HEAD: RE-FIRE (treat as no record — dispatch as fresh run)
+             - IF outcome == "done" AND head_at_completion != live HEAD:
+                 Consult the verdict-currency classifier (see "Special case — HEAD-dependent steps"):
+                   verdict_currency classify --step {step_id} --worktree-path {worktree_path}
+                     --head-at-completion {head_at_completion}
+                 - IF verdict == "invalidated": RE-FIRE (treat as no record — dispatch as fresh run)
+                 - IF verdict == "preserved": SKIP this step, log the returned reason/detail at INFO,
+                   and leave head_at_completion at its recorded SHA (never re-stamp it to live HEAD)
              - IF outcome == "done" AND head_at_completion is absent: RE-FIRE and report the prior
                verdict UNVERIFIED (a record with no SHA was never anchored to a tree; dispatch as fresh run)
              - IF outcome == "failed": RETRY (proceed to dispatch as fresh run)
@@ -694,7 +714,9 @@ FOR each step_id in manifest.phase_6.steps:
      **Named exemption — a re-entry SKIP intentionally emits NO completion line.** Every SKIP
      branch above (the HEAD-dependent `head_at_completion == live HEAD` skip, the `push`
      parity-driven `state == "synced"` skip, and the general `outcome == "done"` skip) is exempt
-     from the item-7 pairing, because a SKIP records NO outcome — it observes a terminal record
+     from the item-7 pairing — including the HEAD-dependent `verdict: preserved` skip, which is
+     the same shape: it observes an earlier verdict the classifier proved still current, and
+     records no outcome of its own. A SKIP records NO outcome — it observes a terminal record
      an EARLIER entry already wrote, and that entry already emitted the step's
      `[STEP] ... Completed step:` line. The pairing binds a step's outcome RECORDING to its
      completion emission; with no recording there is nothing to pair, and emitting here would
@@ -1733,10 +1755,11 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `scripts/derive_gate_bundles.py` | `plan-marshall:phase-6-finalize:derive_gate_bundles` | Derives the unique bundle set the pre-push quality gate runs over, from the live footprint |
 | `scripts/pr_intent_section.py` | `plan-marshall:phase-6-finalize:pr_intent_section` | Renders the distilled `## Intent` section into the generated PR body — owns the character budget and its visible truncation, and omits the section entirely (heading included) when the plan has no outline intent |
 | `scripts/post_run_source_guard.py` | `plan-marshall:phase-6-finalize:post_run_source_guard` | Runtime tracked-source guard for the `post_run_review` band (item 5f sub-item 0) — reports dirty TRACKED paths outside `.plan/` left by a step that declared `mutates_source: false`; advisory and non-blocking (always exits 0) |
+| `scripts/verdict_currency.py` | `plan-marshall:phase-6-finalize:verdict_currency` | Classifies whether a HEAD advance invalidates a head-dependent step's recorded verdict, by diffing the recorded SHA's tree against the live HEAD over the step's declared `verdict_inputs` surface; fails closed to `invalidated` on every uncertainty |
 
 ## Canonical invocations
 
-The canonical argparse surface for `ci_complete_precondition.py`, `pr_intent_section.py` and `post_run_source_guard.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for `ci_complete_precondition.py`, `pr_intent_section.py`, `post_run_source_guard.py` and `verdict_currency.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
 ### ci_complete_precondition — resolve
 
@@ -1763,6 +1786,20 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:post_run_source_g
 `--project-dir` is required and takes the MAIN CHECKOUT — it carries no default
 because every caller runs after `default:branch-cleanup` removed the worktree,
 so a cwd default would silently observe a deleted tree.
+
+### verdict_currency — classify
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:verdict_currency classify \
+  --step STEP --head-at-completion HEAD_AT_COMPLETION \
+  [--worktree-path WORKTREE_PATH] [--live-head LIVE_HEAD]
+```
+
+`--live-head` is resolved from `git -C {worktree-path} rev-parse HEAD` when omitted.
+The command always exits `0` — an `invalidated` verdict is a normal answer, not an
+error — so the caller branches on the returned `verdict` field, never on the exit
+code. See [`standards/verdict-currency.md`](standards/verdict-currency.md) for the
+model this verb serves.
 
 ## Related
 

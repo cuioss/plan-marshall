@@ -351,7 +351,20 @@ Follow the **FIFO poll/backoff loop** and **Budget-exhaustion escalation** proce
 
 ### Rebase Branch onto Base
 
-**Only if `state == open`**: Rebase the feature branch onto the latest base branch before merging so the merge lands as a linear-history append. This step is unconditional — it runs every time the PR is still open, regardless of whether the branch was already up to date. A uniform rebase guarantees the merged history is linear and that CI runs against the exact commits that will land on the base branch.
+**Only if `state == open`**: Rebase the feature branch onto the latest base branch before merging so the merge lands as a linear-history append. The rebase serves exactly two purposes — the merged history is linear, and CI runs against the exact commits that will land on the base branch.
+
+**Whether it is performed is routed by `use_merge_queue`**, read off the same one-stop `step-params get` `params` object resolved in the **Conflict-Severity Classifier** section above (default: `false`). The routing exists because both purposes above are already discharged by the merge queue when one is in use — the same reason § "CI wait" already downgrades the pre-merge CI wait to a non-authoritative snapshot on that path. Doing the work twice is not free: a rebase that actually replays rewrites every SHA on the branch, which re-stales every head-dependent verdict recorded during this finalize in one stroke (see [`verdict-currency.md`](verdict-currency.md) § "Ruling — the pre-merge rebase is conditional on the merge queue" for the ruling and its evidence).
+
+- **`use_merge_queue == true`** — SKIP the rebase and the force-push-with-lease below, and proceed directly to the **CI wait**. The queue rebases-and-re-tests the branch against the latest base as its own authoritative gate and refuses a still-red result, so a rebase here duplicates it. Record the decision so the skip is legible rather than inferred from an absence:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: pre-merge rebase SKIPPED (use_merge_queue=true; provenance: default:branch-cleanup step-params object, Conflict-Severity Classifier one-stop read) — the merge queue rebases and re-tests against the latest base as the authoritative gate, so a rebase here would only re-stale every recorded head-dependent verdict"
+  ```
+
+- **`use_merge_queue == false`** (default) — the rebase is **unconditional**: it runs every time the PR is still open, regardless of whether the branch was already up to date. The immediate `pr safe-merge` path below has no queue re-test, so this rebase plus the authoritative CI wait after it ARE what make the merged history linear and verified; nothing else discharges those purposes on this path. Proceed with the dispatch below.
+
+Note that "unconditional" governs whether the verb is *called*, not whether history *moves*: `worktree-rebase-to` returns `action: noop` with HEAD unchanged when the branch already contained the base, so a call on an already-current branch re-stales nothing.
 
 Dispatch the rebase via the structured `worktree-rebase-to` verb so the result is consumed as a TOON payload (rather than ad-hoc shell parsing):
 
@@ -453,15 +466,17 @@ The disposition of a red gate depends on WHICH path produced it — the two path
 
     The grant is in addition to the WARNING decision-log line, never in place of it. `--gap-class red-ci-gate` is this row's `authorizes:` claim: the ruling covers a red CI gate and nothing else, so it can never be read as authorization at the later review barrier, which reports a different gap.
 
-Log the rebase:
+Log the pre-merge preparation, naming what actually ran so a skipped rebase is not reported as a performed one:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: rebased onto origin/{base_branch}, force-pushed with lease, CI gated"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: {rebased onto origin/{base_branch}, force-pushed with lease | pre-merge rebase skipped (merge-queue path)}, CI gated"
 ```
 
 ### Re-review the rebased HEAD (trigger A)
 
-**Only if `state == open`** (a rebase + force-push happened above): the rebase/force-push advanced HEAD past the `reviewed_commit_sha` of the staged `pr-comment` findings, so branch-cleanup's own rebase commit is unreviewed. This step re-requests a fresh bot review for the new HEAD (gated by the `re_review_on_branch_cleanup` knob, default `true`, owned by the `plan-marshall:automatic-review` step) and, on a re-review await timeout, resolves the unreviewed-HEAD decision via the `re_review_on_timeout` knob (default `ask`, an inline operator gate). The full walkthrough — bot_kind resolution, the `github_re_review re-review` invocation, the matched/timed_out branches, and the three timeout dispositions (proceed / defer / ask) — lives in the same-directory sub-standard [`branch-cleanup-rereview.md`](branch-cleanup-rereview.md). Load and execute it here when `state == open`, then continue to the **Pre-Merge Confirmation Gate**. This gate is an operator-wait boundary, so it obeys the § "Merge-Mutex Hold Window" release-before-wait / re-acquire-and-re-validate invariants.
+**Only if `state == open` AND HEAD actually advanced above** — that is, the rebase ran AND returned `action: rebased`. When it did, the rebase/force-push advanced HEAD past the `reviewed_commit_sha` of the staged `pr-comment` findings, so branch-cleanup's own rebase commit is unreviewed and this section closes that gap.
+
+When HEAD did NOT advance — the rebase was skipped on the merge-queue path, or it ran and returned `action: noop` — there is no unreviewed commit: the staged findings' `reviewed_commit_sha` still names the live HEAD, so a re-review would re-request a bot review of the exact tree already reviewed. Skip this section and continue to the **Pre-Merge Confirmation Gate**. This narrows *when* the re-review fires and never *what it checks*: the gate's own precondition is an advanced HEAD, and an unadvanced HEAD does not satisfy it. Resolve the discriminator from the rebase step's returned `action` (which reports `pre_sha` and `post_sha` as its evidence), and when that return is unavailable or ambiguous, **fail toward re-reviewing** — an unnecessary re-review costs a bot's rate window, a skipped necessary one merges unreviewed code. This step re-requests a fresh bot review for the new HEAD (gated by the `re_review_on_branch_cleanup` knob, default `true`, owned by the `plan-marshall:automatic-review` step) and, on a re-review await timeout, resolves the unreviewed-HEAD decision via the `re_review_on_timeout` knob (default `ask`, an inline operator gate). The full walkthrough — bot_kind resolution, the `github_re_review re-review` invocation, the matched/timed_out branches, and the three timeout dispositions (proceed / defer / ask) — lives in the same-directory sub-standard [`branch-cleanup-rereview.md`](branch-cleanup-rereview.md). Load and execute it here when `state == open`, then continue to the **Pre-Merge Confirmation Gate**. This gate is an operator-wait boundary, so it obeys the § "Merge-Mutex Hold Window" release-before-wait / re-acquire-and-re-validate invariants.
 
 ### Pre-Merge Confirmation Gate
 
