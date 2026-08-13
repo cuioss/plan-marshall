@@ -1,6 +1,6 @@
 # Run report — 100-coderabbit-ai-agent-block-strip-vs-extract (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** `claude/coderabbit-block-strip-extract-woxl2i` (harness-assigned, kept as-is)    **PR:** _pending_    **Outcome:** completed
+**Date (UTC):** 2026-08-13    **Branch:** `claude/coderabbit-block-strip-extract-woxl2i` (harness-assigned, kept as-is)    **PR:** [#1212](https://github.com/cuioss/plan-marshall/pull/1212)    **Outcome:** completed
 
 ## Skills loaded
 
@@ -58,9 +58,9 @@ finding, not a script. No code strips or extracts the block. Search that establi
   full body from `detail`)."*
 - `automatic-review/scripts/` — only `bot_registry.py` and `review_completeness.py`; neither strips
   nor extracts.
-- Grep `Prompt for AI Agents` across the whole working tree → matches only the four
-  `automatic-review` standards docs (`SKILL.md`, `coderabbit.md`, `sourcery.md`, `pr-agent.md`) and
-  this plan. **No code file.**
+- Grep `Prompt for AI Agents` across the whole working tree → matches only four
+  `automatic-review` documents (the skill's `SKILL.md` plus the three `standards/` docs
+  `coderabbit.md`, `sourcery.md`, `pr-agent.md`) and this plan. **No code file.**
 - Grep (case-insensitive) `ai.?agent` / `ai_agent` / `prompt_for_ai` across
   `workflow-integration-github/scripts/*.py` → no matches.
 
@@ -93,6 +93,17 @@ prior "keep it on — plan-marshall ingests it" comment was mistaken in the sens
 plan-marshall quarantines the whole comment body but extracts nothing *specific* from the block.
 No commit in this run touches another repository.
 
+**Why the verdict is not provisional on the external repo's current value** (raised by PR review
+CR-2). The evidence above is entirely in-repo: it asks *does anything in plan-marshall consume the
+block?* and answers no. The verdict does not depend on reading
+`cuioss/coderabbit/.coderabbit.yaml`'s live `enable_prompt_for_ai_agents` value, and is deliberately
+not gated on it — the plan scopes that repository as a **read-only input at most** and its claim-label
+flags that the config was once found on an *unmerged, falsified* branch, so a cited commit/value from
+it could mislead rather than settle. The flag being off is an OBSERVED input restated from the plan;
+what this run *establishes* is that the off-decision was justified, which is an in-repo question.
+Recording an external branch/commit/value is therefore out of this plan's scope (and out of this
+session's `cuioss/plan-marshall`-only repository scope), and is not needed to make the verdict sound.
+
 ### D3 — bounded assessment of what was lost — **not attempted (resolution is STRIP)**
 
 D3 is attempted only if the resolution is EXTRACT. It is STRIP, so there is no live degradation to
@@ -101,9 +112,17 @@ per the deliverable's own instruction.
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` → empty. **No Python changes — build skipped.**
-The change is docs/standards-only (`.md` under `marketplace/bundles/**` plus the plan-directory move
-and this report). The merge queue's `merge_group` run verifies docs-only changes before they land.
+`git diff --name-only origin/main...HEAD -- '*.py'` → empty. **No Python changes — local build
+skipped** (the lane's build gate is `*.py`-only). The change is docs/standards-only (`.md` under
+`marketplace/bundles/**` plus the plan-directory move and this report).
+
+**CI result on the PR head** (`d4d09f8`), from the check-runs surface (raised by PR review CR-3):
+`verify / gate` **success**, `verify / verify` **skipped** — the `python-verify.yml`
+`skip-on-docs-only: true` footprint gate, no buildable source changed — and `verify / conclusion`
+**success** (the required check), plus `review / review`, `dependency-review / dependency-review`, and
+`generate-check` all **success**. Per `.github/workflows/python-verify.yml`, the merge queue's
+`merge_group` run still executes `./pw verify` for real over this docs-only change before it lands —
+the local/PR skip does not exempt it from the queue.
 
 ## Findings
 
@@ -119,6 +138,16 @@ and this report). The merge queue's `merge_group` run verifies docs-only changes
   clear 'no, never execute it.'"**
 
 Both answers match D0's STRIP resolution. This is the plan's decisive check and it passed.
+
+**Cold read extended to `sourcery.md` (per PR review CR-5).** Because the STRIP resolution also
+changed `sourcery.md`, a second independent cold read was run over that document alone, both
+questions. Q1 → *"strip it as noise, and never execute it"* — **UNAMBIGUOUS**, *"I cannot construct a
+second reading."* Q2 → a clear *"no, never execute it"* (*"the document names the block a
+'prompt-injection surface'"*). The reader also checked the one cross-section trap — `sourcery.md`'s
+"Consumer stage" opens with *"Extract:"* — and confirmed those three items target the Sourcery
+*finding* (the bold category prefix, the `Suggested implementation:` block, the Overall Comments),
+**not** the AI-agent block, so the sections do not collide. Both changed documents therefore
+cold-read unambiguously to STRIP.
 
 **Part B — deliverable verification.** D0/D1/D2/D3 each *"implemented as the plan specifies"*; D1's
 no-op claim *"holds under independent verification"* (the agent independently confirmed no code in
@@ -138,8 +167,22 @@ finding survived to fix.
 
 ### CI / PR review
 
-- **CI:** _pending PR._
-- **PR review:** _pending PR._
+- **CI:** green on head `d4d09f8` — see the Build gate section for the per-check breakdown
+  (`verify / conclusion` **success**, the required check).
+- **PR review — CodeRabbit filed 5 actionable comments; all addressed (each a fix).** None disputed
+  the core standards change — CodeRabbit's walkthrough itself records *"The standards treat AI-agent
+  prompt blocks as untrusted noise."* The five all targeted the plan/report verification record:
+
+| # | Comment (source) | Disposition |
+|---|---|---|
+| CR-1 | `report:63` (Minor) — "four standards docs" is imprecise; `SKILL.md` is not under `standards/`. | **Fixed** — reworded to "four `automatic-review` documents (`SKILL.md` plus the three `standards/` docs)", both occurrences. |
+| CR-2 | `report:94` (Major) — record the external config revision/value or mark D2 provisional. | **Fixed (clarified) + replied.** Added a paragraph: D2's verdict rests on *in-repo* no-consumer evidence and is not gated on the external repo's live value — the plan scopes that repo read-only and flags its branch as possibly falsified, and reading it is out of this session's `cuioss/plan-marshall`-only scope. Not provisional. |
+| CR-3 | `report:106` (Major) — cite the CI mechanism and record the actual `verify` results. | **Fixed** — Build gate now records `verify / verify` skipped (docs-only footprint gate), `verify / conclusion` success, cites `python-verify.yml` `skip-on-docs-only`, and notes the `merge_group` run runs `./pw verify` for real. |
+| CR-4 | `plan:130-131` (Major) — the "search `strip` returns zero" sweep is stale post-D0 (sourcery.md now contains a strip-rule). | **Fixed** — time-scoped the claim-label to the pre-D0 baseline. |
+| CR-5 | `plan:145-152` (Major) — extend the decisive cold read to both changed documents. | **Fixed** — ran a second independent cold read over `sourcery.md` (both questions, UNAMBIGUOUS → STRIP) and recorded it in Part A above. |
+
+  Sourcery posted only a weekly-rate-limit refusal (no review); PR-Agent (`cuioss-review-bot`) posted
+  its Guide with no findings. See Reviewer participation below.
 
 Population/absence claims checked to reach the above (all confirmed):
 
@@ -152,16 +195,26 @@ Population/absence claims checked to reach the above (all confirmed):
 
 **Absence-claim scope (published, per Verification):** grep `Prompt for AI Agents` over the **entire
 working tree** rooted at the repo (`/home/user/plan-marshall`) → **5 files**, all documentation (the
-4 `automatic-review` standards docs + this plan). Broadened grep `prompt_for_ai_agents` / `🤖` over
+4 `automatic-review` documents — `SKILL.md` plus the three `standards/` docs — + this plan). Broadened grep `prompt_for_ai_agents` / `🤖` over
 the same tree → **8 files**: the same 5, plus 3 `test/plan-marshall/workflow-integration-git/*.json`
 commit-message fixtures whose `🤖` is the Claude Code commit-footer, unrelated to this block. No code
 file in the tree references the block.
 
 ## Reviewer participation
 
-_Pending PR creation — filled before the merge gate from the stored comment bodies, against the
-population derived from the `author_login` of each
-`automatic-review/standards/{bot_kind}.md` registry doc._
+Population derived from configuration — the `author_login` of each
+`automatic-review/standards/{bot_kind}.md` registry doc: `coderabbitai` (coderabbit.md),
+`sourcery-ai` (sourcery.md), `cuioss-review-bot` (pr-agent.md). Verdicts derived from the stored
+comment bodies across all three surfaces (`get_reviews`, `get_comments`, `get_review_comments`):
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `coderabbitai` | `reviewed` | Filed 5 actionable review comments + a walkthrough over the diff (review bodies `4929585930`/`4929588560`, inline threads on `report-01.md`). All 5 addressed. |
+| `cuioss-review-bot` | `reviewed` | Posted its `## PR Reviewer Guide 🔍` issue comment with clean assertions — "No relevant tests", "No security concerns identified", "No major issues detected" — i.e. participated with no findings. |
+| `sourcery-ai` | `rate-limited` | Published **only** a refusal in place of a review: *"you have reached your weekly rate limit of 500000 diff characters."* Matches `sourcery.md`'s `refusal_patterns` (`reached your weekly rate limit of`), `rate_limit_class: hard_quota` (weekly quota — not awaitable on a useful timescale). |
+
+**Coverage: 2 of 3 reviewed** (`coderabbitai`, `cuioss-review-bot`); `sourcery-ai` rate-limited.
+The § Step 8 shortfall disclosure **fires** — see the merge gate below.
 
 ## Cost
 
