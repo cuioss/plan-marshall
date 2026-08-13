@@ -114,21 +114,23 @@ class Extension(ExtensionBase, PathAttributionBase):
     def claim_paths(self) -> tuple[list[tuple[str, str]], list[str]]:
         """Declare the repo-relative trees the ``plan-marshall`` module owns.
 
-        ``.claude/skills`` is the re-homed form of the project-local prefix map
-        that previously lived inline in ``manage-architecture``. The owner is
-        carried over verbatim from that map — this is a relocation of the claim,
-        NOT a fresh ownership ruling. Whether ``.claude/skills/**`` should instead
-        belong to ``pm-plugin-development`` is out of scope here and owned
-        elsewhere; a future reader should not read the re-homing as having settled
-        that question.
+        ``.plan`` is core's own runtime-state tree — the executor,
+        ``marshal.json``, and every plan-scoped script — and this claim closes the
+        ``module: null`` answer every ``.plan/`` path previously received. The
+        prefix is the BARE root segment so prefix containment covers
+        ``.plan/execute-script.py``, ``.plan/marshal.json`` and every nested script
+        path — an fnmatch-shaped ``.plan/**`` would miss the segment itself.
 
-        ``.plan`` is core's own claim, and it closes the ``module: null`` answer
-        every ``.plan/`` path previously received. The prefix is the BARE root
-        segment so prefix containment covers ``.plan/execute-script.py``,
-        ``.plan/marshal.json`` and every nested script path — an fnmatch-shaped
-        ``.plan/**`` would miss the segment itself.
+        The project-local ``.claude`` tree is deliberately NOT claimed here. It
+        previously carried a ``.claude/skills`` claim — a re-homing of a legacy
+        inline prefix map, explicitly *"NOT a fresh ownership ruling"*, with the
+        ``pm-plugin-development`` question deferred. That question is now settled:
+        the whole ``.claude`` tree (skills, commands, and settings) belongs to the
+        ``pm-plugin-development`` module, whose domain understands Claude Code
+        plugin artifacts. See that bundle's ``claim_paths`` for the decision and
+        its reasoning.
         """
-        return [('.claude/skills', 'plan-marshall'), ('.plan', 'plan-marshall')], []
+        return [('.plan', 'plan-marshall')], []
 
     def provides_recipes(self) -> list[dict]:
         """Return built-in recipes provided by plan-marshall."""

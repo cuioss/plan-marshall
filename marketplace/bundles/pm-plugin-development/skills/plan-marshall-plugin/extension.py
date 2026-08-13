@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Extension API for pm-plugin-development bundle.
 
-Owns two axes of the extension contract:
+Owns three axes of the extension contract:
 
 - **Axis-A** (:class:`ExtensionBase`) — skill domains, triage, outline skill, and
   module discovery. Marketplace bundles are discovered as modules for the
@@ -14,9 +14,13 @@ Owns two axes of the extension contract:
   materializes. Markdown cross-references (script notation, skill references,
   relative-path xrefs, ``implements:``) are marketplace domain knowledge, and
   the bundle that already understands that data is the one that owns it.
+- **Axis-D** (:class:`PathAttributionBase`) — the project-local artifact
+  attributor. The plugin-development domain understands Claude Code plugin
+  artifacts, so it owns the ``.claude`` project-local tree — skills, commands,
+  and settings alike. See ``claim_paths`` for the ownership decision.
 
-The Axis-C methods are opted into by multiple inheritance, the only shape
-reachable from both otherwise-disjoint hierarchies.
+The Axis-C and Axis-D faces are opted into by multiple inheritance, the only
+shape reachable from the otherwise-disjoint hierarchies.
 """
 
 import sys
@@ -27,7 +31,7 @@ SCRIPTS_DIR = Path(__file__).parent / 'scripts'
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from extension_base import DerivationResolverBase, ExtensionBase  # noqa: E402
+from extension_base import DerivationResolverBase, ExtensionBase, PathAttributionBase  # noqa: E402
 
 MARKDOWN_DEP_TYPES = frozenset({'script', 'skill', 'path', 'implements'})
 """Reference kinds the markdown resolver owns.
@@ -48,8 +52,15 @@ handed, in the order they are seeded here.
 """
 
 
-class Extension(ExtensionBase, DerivationResolverBase):
-    """Plugin development extension and markdown module-edge derivation resolver."""
+class Extension(ExtensionBase, DerivationResolverBase, PathAttributionBase):
+    """Plugin development extension, markdown edge-derivation resolver, and project-local artifact attributor.
+
+    Opts into Axis-C (edge derivation) and Axis-D (path attribution) by multiple
+    inheritance — the only shape that lets an Axis-A domain extension also derive
+    module edges and declare path claims. See
+    ``extension-api/standards/ext-point-derivation-resolver.md`` and
+    ``ext-point-path-attribution.md``.
+    """
 
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
@@ -266,3 +277,66 @@ class Extension(ExtensionBase, DerivationResolverBase):
                     edges.add((module_name, target))
 
         return sorted(edges), self._aggregate_notes(suppressed)
+
+    # =========================================================================
+    # Axis-D: path attribution (the plugin-development domain owns .claude)
+    # =========================================================================
+
+    def path_attributor_id(self) -> str:
+        """Return this attributor's stable provenance identity (Axis-D)."""
+        return 'pm-plugin-development'
+
+    def claim_paths(self) -> tuple[list[tuple[str, str]], list[str]]:
+        """Declare the project-local ``.claude`` tree for the ``pm-plugin-development`` module.
+
+        **The ownership decision, made explicitly.** The ``.claude`` tree holds
+        the project-local Claude Code plugin artifacts — skills under
+        ``.claude/skills``, slash commands under ``.claude/commands``, and the
+        ``.claude/settings.json`` harness configuration. Every one of them is a
+        Claude Code plugin artifact, and the plugin-development domain is the one
+        that understands that content: it owns the plugin doctor, the marketplace
+        inventory, and the plugin architecture standards. **Owner = who
+        understands the content**, so the tree belongs here.
+
+        **This move is a decision, not a refactor side effect.** ``.claude/skills``
+        previously resolved to the ``plan-marshall`` module, but that was a
+        re-homing of a legacy inline prefix map — carried over verbatim and, in
+        its own words, *"NOT a fresh ownership ruling"*, with the question of
+        whether the tree should belong to ``pm-plugin-development`` explicitly
+        deferred to *"elsewhere"*. This attributor is that elsewhere: it settles
+        the deferred question in favour of the domain that understands the
+        content, and ``plan-marshall`` correspondingly drops its ``.claude/skills``
+        claim (keeping only ``.plan``, which is core's own runtime-state tree).
+        The two readings — legacy ``plan-marshall`` versus deliberate
+        ``pm-plugin-development`` — do not genuinely conflict, because the former
+        was never a ruling.
+
+        **Why the bare ``.claude`` root rather than an enumerated subtree list.**
+        The prefix is the BARE root segment, so prefix containment covers every
+        path under the tree uniformly — ``.claude/skills/**``, ``.claude/commands/**``,
+        ``.claude/settings.json`` and any subtree added later — the same shape
+        ``plan-marshall`` uses for ``.plan``. An enumerated list (``skills`` +
+        ``commands`` + ...) would be exactly the "what one reader saw" trap: it
+        claims today's population and silently misses tomorrow's, which is the
+        inconsistency this attributor exists to end. An fnmatch-shaped
+        ``.claude/**`` would miss the segment ``.claude`` itself; the seam matches
+        by directory-prefix nesting, not glob, so the bare segment is correct.
+
+        **A split of artifacts from their tests is accepted, not introduced.** The
+        project-local skills under ``.claude/skills`` have their tests under
+        ``test/{skill}`` trees owned by other modules — but that split predates
+        this claim (it held under ``plan-marshall`` ownership too), so the move
+        does not newly separate anything. Ownership tracks who understands the
+        artifact's content, which is the plugin-development domain regardless of
+        where the tests live.
+
+        **Inert where it should be.** A claim naming ``pm-plugin-development`` is
+        dropped by the core merge in any project where that module does not exist
+        (the module-existence guard). A consumer project has no
+        ``marketplace/bundles/pm-plugin-development`` module, so the claim is
+        dropped there — exactly as ``plan-marshall``'s ``.claude/skills`` claim was
+        already dropped there, so no consumer-project behaviour changes.
+
+        See ``extension-api/standards/ext-point-path-attribution.md``.
+        """
+        return [('.claude', 'pm-plugin-development')], []
