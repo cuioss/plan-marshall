@@ -118,6 +118,16 @@ The provenance residue is the same one axis over:
 
 A `module: null` carrying a collision note is a third answer again — the ownership is disputed rather than merely unclaimed.
 
+=== The doc corpus, and why a claim outranks the root crawl
+
+The documentation bundle is the first content domain to claim its own corpus: it attributes `doc/**` and the repo-root prose files — `README.md`, `CONTRIBUTING.md` — to the `documentation` module. The agent-instruction files `CLAUDE.md` and `AGENTS.md` are deliberately left out; they are not prose documentation, and sweeping the whole repo root into one module by glob would mis-own them.
+
+That claim exposes a duplication the crawl always contained but nothing had reason to resolve. The `documentation` module walks `doc/**`, and the project-root module's whole-tree crawl walks it too, so one physical file was inventoried twice — and the readers that enumerate the inventory (`find`, `search`) returned a row per attributing module. A caller asking "how many files match?" got a *row* count spanning both indexes, not a *file* count.
+
+The fix is a **precedence, not a decree that the root stops indexing documentation** — the root module is a real module with a legitimate claim on repo-root files, and amputating a slice of its crawl by fiat would be the wrong shape. Instead, an explicit Axis-D claim outranks the root crawl: when a path is owned by a claim, the readers collapse its duplicate rows onto the owning module's single row. The precedence is keyed on the ownership claim, so an *unclaimed* duplicate — a marketplace `SKILL.md` inventoried by both its bundle module and the root — is left exactly as it was. One physical file, one row, for the corpus a bundle has claimed and nothing else.
+
+The claim itself rides the extension point; the collapse is the one hook the inventory readers needed, because a crawl row and an ownership claim were two facts no reader previously had to reconcile.
+
 == The other Tier-0 reader: content search
 
 Path attribution asks a question *about* the inventory. Content search asks a question about what is *inside* it: which files contain a given string. `search --content` is a second reader over the same Tier 0 product — it opens the files the crawl already enumerated and applies a regex to each body. That is worth being precise about, because "search the code" sounds like the tier above.
