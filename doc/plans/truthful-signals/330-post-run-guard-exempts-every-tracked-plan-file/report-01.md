@@ -1,6 +1,6 @@
 # Run report — 330-post-run-guard-exempts-every-tracked-plan-file (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** `claude/post-run-guard-exempts-plans-q4if33` (harness-assigned, kept as-is)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-13    **Branch:** `claude/post-run-guard-exempts-plans-q4if33` (harness-assigned, kept as-is)    **PR:** [#1217](https://github.com/cuioss/plan-marshall/pull/1217)    **Outcome:** completed (auto-merge armed; landing delegated to the merge queue)
 
 ## Skills loaded
 
@@ -217,24 +217,93 @@ Total: **six stale-restatement findings across two rounds, plus one borderline p
 fixed; round-3 verdict clean.** Quality gate green after every fix round; `./pw verify` green (19515
 passed) and all fixes since are prose/comment/test-scaffold only (no runtime behavior change).
 
-_CI / PR-review findings: pending (filled at Step 7)._
+**CI (PR #1217).** All required and non-required contexts green: `verify / conclusion` **success**,
+`verify / verify` success, `verify / gate` success, `generate-check` success, `dependency-review`
+success, `review / review` success; `auto-merge` and `Sourcery review` checks skipped (expected).
+`mergeable_state: clean`. No CI finding.
+
+**PR review.** No actionable review comment on any surface (issue comments, review summaries, inline
+threads all read). Dispositions: `cuioss-review-bot` posted "No major issues detected / No security
+concerns / PR contains tests" — nothing to address; `coderabbitai` and `sourcery-ai` posted only
+rate-limit notices — no review content to act on. Inline review threads: none.
 
 ## Reviewer participation
 
-_pending_
+Expected reviewer population **derived from configuration** — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(cross-named by `.github/workflows/pr-agent.yml`): `coderabbitai` (coderabbit.md), `sourcery-ai`
+(sourcery.md), `cuioss-review-bot` (pr-agent.md).
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Published a "PR Reviewer Guide 🔍" review artifact over the diff: "🧪 PR contains tests · 🔒 No security concerns identified · ⚡ No major issues detected" — an explicit nothing-to-report over this diff (issue-comment #5284248810; `review / review` check success). |
+| `coderabbitai` | `rate-limited` | Published only a refusal notice ("Review limit reached … Next review available in: 74 minutes"), not a review (issue-comment #5284240965). |
+| `sourcery-ai` | `rate-limited` | Published only a refusal notice ("you have reached your weekly rate limit of 500000 diff characters"), not a review (review #4929898432; `Sourcery review` check skipped). |
+
+**Coverage: 1 of 3 reviewed.** The § Step 8 condition-4 shortfall disclosure fired: coverage is 1-of-3
+— `cuioss-review-bot` reviewed (no issues); `coderabbitai` rate-limited (window reopens ~74 min);
+`sourcery-ai` rate-limited (weekly quota). Per the lane this is a disclosure, not a merge block — rate
+limits are routine and outside our control — so the run discloses the shortfall and arms auto-merge on
+the same conditions full coverage would.
 
 ## Cost
 
-_pending_
+- **Tokens:** verification sub-agent (3 rounds) ≈ 531k output tokens (144,942 + 177,185 + 209,348, from
+  the sub-agent usage records). The **main Claude Code cloud session's** own token total is **not
+  available to the agent in this session** (the harness does not surface it here) — stated plainly
+  rather than estimated.
+- **Wall-clock:** ≈ from the first plan-directory commit to auto-merge arm on 2026-08-13, roughly
+  1.5–2 h of session wall-clock (source: git commit timestamps and the PR event times 17:38–17:52 UTC).
+- **Population:** this single Claude Code cloud session's usage as the harness/sub-agent records count
+  it. ⛔ **NOT comparable** to a plan-marshall `metrics.toon` total — that counts the orchestrator +
+  per-task dispatch tree under plan-marshall's own per-task billing boundary, which a single
+  interactive cloud session does not share. No parity figure is presented.
 
 ## Contract check (Step 9)
 
-_pending_
+Re-read the `cloud-plan-lane` skill; per-step verdict against what actually happened:
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | done | named in "Skills loaded" (all obtained via bundle path — the `plan-marshall` plugin was not assumed present) |
+| 2 Branch | done | `claude/post-run-guard-exempts-plans-q4if33` exists on `origin` — **harness-assigned** form, kept as-is; pushed before any work |
+| 3 Plan directory | done | `doc/plans/truthful-signals/330-…/plan.md` exists and opens with the first-instruction block (present in the handed plan; not repaired) |
+| 4 Implement | done | commits carry the `Co-Authored-By: Claude` trailer; all deliverables addressed |
+| 4 Per-commit gate | done | every `*.py`-touching commit preceded by a clean `./pw quality-gate` (`issues[0]`, coverage COMPLETE) |
+| 4 Pushed | done | every commit pushed; no `ahead` remains |
+| 5 Build gate | done | Python changed → full path; `./pw verify` SUCCESS (19515 passed, 0 failed) |
+| 6 Verification sub-agent | done | findings + dispositions recorded (§ Findings); iterated to a clean verdict over 3 rounds |
+| 7 PR cycle | done | PR #1217 open; every comment dispositioned; all three comment surfaces read |
+| 8 Merge gate | done | conditions 1–3 met, coverage shortfall disclosed (cond. 4), auto-merge armed; landing delegated to the merge queue |
+| 8 Bridge | done | no status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; report carries PR # and per-deliverable outcome |
+| 9 This check | done | this table |
+| 9 What have we learned | done | below |
+
+**GitHub access path used:** the **GitHub MCP server** (cloud path; `gh` CLI not used). **Branch form:**
+harness-assigned `claude/*`. A `/sync-plugin-cache` is **not owed** by this cloud run (machine-local
+build step). One local sync IS owed on a developer machine that wants the edited `marketplace/bundles/`
+reflected in its plugin cache — recorded here as a note, not a debt of this run.
 
 ## What have we learned (Step 9)
 
-_pending_
+**No contract change proposed.** Every `cloud-plan-lane` step was executable as written and produced its
+named artifact; nothing was ambiguous in practice, no command failed in the actual environment, and no
+step proved unnecessary. The one multi-round event — the verification sub-agent needing three sweeps to
+converge on all seven stale restatements of the changed value — is the contract's Step 6 rule
+("a verification pass that found a defect has not finished") operating **correctly**, not a gap in it;
+the run followed that mandate to a clean pass. (A minor operational note, not a contract change: ambient
+`pytest` installed for fast iteration gave both a false failure and a hidden pass that `./pw verify`
+corrected — reinforcing the contract's existing insistence that `./pw verify` is the authoritative gate;
+no wording change is warranted.) This run examined the contract and found nothing to change.
 
 ## Residue
 
-_pending_
+- **D4 durable remedy is an open proposal** (§ "Contract / lifecycle proposal (D4)"): the push-path /
+  classification for a legitimately-owed post-merge tracked `.plan/` enrich write is a finalize-lifecycle
+  decision for the operator. Not blocking (the fixed guard creates no recurring block in the current
+  flow); it belongs to the architecture-enrich surface, out of scope for the guard fix.
+- **Two external reviewers were rate-limited** (`coderabbitai` ~74 min, `sourcery-ai` weekly quota). If a
+  fuller external review is wanted, re-request once the windows reopen (`@coderabbitai review`) — the
+  code already carries `cuioss-review-bot`'s clean review.
+- **Local plugin-cache sync owed on a developer machine** that edits `marketplace/bundles/` (not a debt
+  of this cloud run).
