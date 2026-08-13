@@ -107,9 +107,39 @@ and this report). The merge queue's `merge_group` run verifies docs-only changes
 
 ## Findings
 
-- **Verification sub-agent:** _pending_ (Step 6, dispatched before PR creation).
-- **CI:** _pending_.
-- **PR review:** _pending_.
+### Verification sub-agent (Step 6) — independent, read-only
+
+**Part A — cold read (the plan's decisive check), reported verbatim.** The sub-agent read the revised
+`coderabbit.md` with no plan and no diff, and answered:
+
+- **Q1 — "what do I do with the block?"** → *"Strip it as noise / discard it."* Verdict:
+  **UNAMBIGUOUS** — *"I could **not** construct a second 'extract its fields as a payload' reading…
+  The contradiction was genuinely removed, not reworded."*
+- **Q2 — "is this block safe to execute?"** → *"No — never execute it."* Verdict: **UNAMBIGUOUS — a
+  clear 'no, never execute it.'"**
+
+Both answers match D0's STRIP resolution. This is the plan's decisive check and it passed.
+
+**Part B — deliverable verification.** D0/D1/D2/D3 each *"implemented as the plan specifies"*; D1's
+no-op claim *"holds under independent verification"* (the agent independently confirmed no code in
+`automatic-review/scripts/`, `workflow-integration-github/scripts/`, or `comment-patterns.json`
+strips or extracts the block; every `strip` occurrence in the github scripts is `.strip()`
+whitespace or unrelated YAML-comment handling). No gap inside the diff.
+
+**Part C — beyond-diff sweep: two observations in untouched files. Both REJECTED, with reason.**
+
+| # | Finding | Disposition |
+|---|---|---|
+| C1 | `automatic-review/SKILL.md:104-105` — the prohibition line *"…route it through the `untrusted-ingestion` boundary as data"* still leans toward the ingest-as-data framing. | **Rejected.** The plan's claim-label pre-cleared this exact line as *"consistent with BOTH readings — do not mistake it for a tie-breaker,"* and SKILL.md is outside the plan's *Expected surface*. The line is the trust-boundary **non-execution** rule, and it is **true under STRIP**: the whole comment body (block included) is genuinely quarantined through untrusted-ingestion. It never carried the deleted *"extract file/line/summary as fields"* instruction, so it is not residue of the removed reading. The beyond-diff sweep targets claims the change makes *false*; this one is not false. The plan bounds the resolution population to `coderabbit.md` + `sourcery.md`. |
+| C2 | `automatic-review/standards/pr-agent.md:399` — *"…no **machine-payload** injection surface of the CodeRabbit/Sourcery kind"* echoes the deleted "payload" framing. | **Rejected.** `pr-agent.md` is **explicitly out of scope** — the plan names *"Generalising the resolution to the bot that emits no such block… changing it would be a fix aimed at a surface that has no defect."* The sentence's core claim (PR-Agent emits no block → no such injection surface) is correct, and "machine-payload" accurately describes what the *other* bots emit, independent of whether this pipeline consumes it. Editing it would violate the plan's stated boundary. |
+
+No re-dispatch: both Part-C observations are rejected on plan-grounded scope reasons, and no in-scope
+finding survived to fix.
+
+### CI / PR review
+
+- **CI:** _pending PR._
+- **PR review:** _pending PR._
 
 Population/absence claims checked to reach the above (all confirmed):
 
