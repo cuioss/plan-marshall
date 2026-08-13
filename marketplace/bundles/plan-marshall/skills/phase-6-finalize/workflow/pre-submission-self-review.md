@@ -9,6 +9,8 @@ mutates_source: false
 head_dependent: true
 default_on: true
 presets: []
+requires_prompt_fields:
+  - candidates
 implements:
   - plan-marshall:extension-api/standards/ext-point-execution-context-workflow
   - plan-marshall:extension-api/standards/ext-point-finalize-step
@@ -47,6 +49,8 @@ The deterministic surfacer is pluggable via the `plan-marshall:extension-api/sta
 | `plan_id` | Yes | Plan identifier. |
 | `WORKTREE` | Yes | Repo-relative working-directory path. |
 | `candidates` | Yes | TOON envelope from the resolved `ext-self-review-{domain}` surface helper — carries the candidate sub-lists and the emitted `counts` block. The orchestrator runs the surface helper in Step 1 and forwards its output verbatim; the workflow body does NOT re-invoke the surface helper. |
+
+`candidates` is this step's one **step-specific required prompt-body field** — a field beyond the generic dispatch contract (`name`/`plan_id`/`skills[]`/`workflow`/`WORKTREE`). It is declared machine-readably in this step's `requires_prompt_fields` frontmatter and carried in the Step 2 dispatch body below. A both-direction guard, `test/plan-marshall/phase-6-finalize/test_step_prompt_fields_contract.py`, fails the build if the declaration and the carriage disagree — the generic template cannot carry a step-specific field, so a step declaring one MUST carry it in its own dispatch body. See [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Step-specific prompt-body fields".
 
 **The candidate sub-list vocabulary is NOT restated here.** Each sub-list's key, entry schema, and the check that consumes it are declared once, authoritatively, in [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) § Output Schema and § Required Candidate Sub-Lists — derived in turn from the implementor's `CANDIDATE_LISTS` registry, which is the single code-side source of the emitted key set. Read the emitted `counts` block for what this round actually surfaced, and that document for what each key means.
 
