@@ -1,6 +1,6 @@
 # Run report — 300-the-operator-report-is-an-evidence-surface-the-inbox-cannot-see (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** claude/operator-report-evidence-surface-qv6kyn (harness-assigned)    **PR:** _pending_    **Outcome:** _in progress (plan split; D0 done, D1–D3 pending)_
+**Date (UTC):** 2026-08-13    **Branch:** claude/operator-report-evidence-surface-qv6kyn (harness-assigned)    **PR:** [#1211](https://github.com/cuioss/plan-marshall/pull/1211)    **Outcome:** completed (plan split; D0–D3 complete + verified; PR green; auto-merge armed, landing delegated to the merge queue)
 
 ## Plan split (operator decision)
 
@@ -253,31 +253,86 @@ now (a fixture reorder is out of D2's scope and risks the test's permutation log
 
 ### CI / PR review
 
-_(pending — recorded after the PR review cycle)_
+PR #1211 CI: all checks green on head `83d422b` — required `verify / conclusion` **success**, plus
+`verify / verify`, `verify / gate`, `review / review`, `dependency-review`, `generate-check` all success
+(`Sourcery review`, `auto-merge` skipped — non-required). No CI failures, no fixes needed.
+
+Review comments: **no actionable findings.** `cuioss-review-bot` posted "PR contains tests · No security
+concerns identified · No major issues detected". `sourcery-ai` and `coderabbitai` posted only rate-limit
+notices (no findings). Inline review threads: **0**. Nothing to fix or reply to.
 
 ## Reviewer participation
 
-_(pending)_
+Expected reviewer population derived from the registry (`author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`): three reviewers.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | "PR Reviewer Guide 🔍 — PR contains tests · No security concerns identified · No major issues detected" (issue-comment surface) |
+| `sourcery-ai` | `rate-limited` | "you have reached your weekly rate limit of 500000 diff characters" (review-summary surface) |
+| `coderabbitai` | `rate-limited` | "Review limit reached … Next review available in: 26 minutes" (issue-comment surface) |
+
+**Coverage: 1 of 3.** § Step 8 shortfall disclosure fires: *"Review coverage 1 of 3 —
+`cuioss-review-bot` reviewed (no issues); `sourcery-ai` rate-limited (weekly diff-character quota);
+`coderabbitai` rate-limited (window reopens ~26 min)."* Rate limits are routine and outside our control;
+the shortfall is **disclosed, not blocked on** (the merge proceeds).
 
 ## Cost
 
-_(pending)_
+- **Tokens:** not available to the agent in this session (no per-session token meter is exposed to the
+  run). Stated plainly rather than estimated.
+- **Wall-clock:** the run spanned one extended interactive Claude Code cloud session (plan read → split →
+  D0–D3 → PR → merge gate), interleaved with several ~5-minute `./pw verify` builds and two ~5-minute
+  sub-agent dispatches. No precise start/end timestamp source is available to the agent.
+- **Population:** these would be a single Claude Code cloud session's usage. ⛔ **NOT comparable** to a
+  plan-marshall `metrics.toon` total (which counts an orchestrator-plus-agent dispatch tree under
+  plan-marshall's per-task billing boundary — a boundary this single interactive session does not share).
+  No comparable figure is presented.
 
 ## Contract check (Step 9)
 
-_(pending)_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — named in § Skills loaded (read via bundle paths; plugin not installed, bundle-path route used). |
+| 2 Branch | Done — harness-assigned `claude/operator-report-evidence-surface-qv6kyn`, on `origin`. GitHub access path: **GitHub MCP server**. Branch form: **harness-assigned**. |
+| 3 Plan directory | Done — `doc/plans/truthful-signals/300-.../plan.md` exists and opens with the first-instruction block (present on hand-off; not repaired). |
+| 4 Implement | Done — D0–D3; commits carry the `Co-Authored-By: Claude` trailer. |
+| 4 Per-commit gate | Done — `*.py`-touching commits gated via `./pw verify` (read output, not exit code). |
+| 4 Pushed | Done — every commit pushed; no unpushed commit remains. |
+| 5 Build gate | Done — git-derived Python changes present → full `./pw verify` path; whole-tree green (19459 passed) incl. plugin-doctor marketplace-wide. |
+| 6 Verification sub-agent | Done — findings + disposition in § Findings (11 stale restatements caught and fixed). |
+| 7 PR cycle | Done — PR #1211; all three comment surfaces read; no actionable comments; reviewer participation recorded. |
+| 8 Merge gate | Conditions 1–3 met (required checks green, comments handled, report finalized+pushed); 1-of-3 shortfall disclosed; auto-merge armed. Landing delegated to the merge queue (cloud session cannot self-wake — `subscribe_pr_activity` approval-gated). |
+| 8 Bridge | No status/bookkeeping write outside this plan's own directory; the report carries the PR number + per-deliverable outcome for the orchestrator's collect. |
+| 9 This check | Appended here. |
+
+A cloud run owes **no** `/sync-plugin-cache` (machine-local build step, not a debt this lane records).
 
 ## What have we learned (Step 9)
 
-_(pending)_
+**No cloud-lane contract change proposed.** The contract held end to end: the branch/PR/merge cycle, the
+build gate (correctly took the full `*.py` path), the verification sub-agent (its beyond-diff
+staleness-sweep mandate is exactly what caught the 11 stale order restatements the first sweep missed —
+the contract's existing wording worked as intended), the three-comment-surface read (surfaced the
+rate-limit verdicts correctly), the reviewer-population-from-registry rule, and the shortfall-disclosure
++ arm-and-hand-off completion for an approval-gated cloud session all behaved as written. The one
+friction — the wide restatement blast radius of a small renumber — is a property of *this plan's task*
+(an ordering-contract change), not a gap in the lane contract, and the contract already handles it (the
+sub-agent's beyond-diff sweep). Nothing this run exercised produced evidence of a contract gap, so per
+the "propose only where this run produced the evidence" rule, none is proposed.
 
 ## Residue
 
-- **300 D1–D3 not yet executed in this run.** D0 (the gate) is derived and recorded; D1 (banded
-  contract), D2 (collision fix), D3 (collision check) remain. The load-bearing order is preserved: D3
-  must be SEEN to fire on the live order-9 collision (`architecture-refresh` / `finalize-step-security-audit`)
-  before D2 resolves it.
-- **302 authored, not executed.** The follow-up plan is committed to the epic directory as a single
-  plan file, ready to be picked up as its own run after 300 lands.
-- No PR opened this run — the split restructuring landed on the branch; the 300 deliverables (D1–D3) are
-  the next work, and 302 is a separate future run.
+- **Landing delegated.** Auto-merge is armed and the PR is green; the merge queue lands it. This cloud
+  session cannot self-wake to confirm `state: MERGED` (`subscribe_pr_activity` is approval-gated), so per
+  the cloud-lane the run is **completed with the landing delegated** to the orchestrator's collect (which
+  reads it from the PR merge event) — not partial.
+- **302 authored, not executed.** The follow-up plan (`302-…`) is committed to the epic directory as a
+  single plan file, ready to be picked up as its own run **after 300 lands** (its D0 gate stops if 300's
+  reserved terminal slot is absent).
+- **Two pre-existing stale fixture comments left for a future cleanup** (not caused by this renumber):
+  `test_manage_execution_manifest_validate.py` `_ORDER_RESOLVABLE_CANDIDATES` — `architecture-refresh
+  # order 25` (real 10) and `finalize-step-preference-emitter # order 61` (real 992). Cosmetic (the
+  fixture uses the real resolver + sorts); a proper fix is a fixture reorder out of D2's scope.
+- **Local plugin-cache sync** is a machine-local concern this cloud run neither performs nor owes; the
+  merged bundle source is authoritative.
