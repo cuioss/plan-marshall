@@ -1260,7 +1260,7 @@ def test_compose_default_phase_6_steps_when_csv_omitted(plan_context):
 # cmd_compose never re-sorted the marshal.json ``phase_6.steps`` map by
 # frontmatter order, so ``manage-config sync-defaults`` back-filling a missing
 # default-on step by APPENDING it landed the new step after ``archive-plan``
-# (order 1000) regardless of its own order. cmd_compose now sorts the FINAL
+# (terminus order 1100) regardless of its own order. cmd_compose now sorts the FINAL
 # ``phase_6.steps`` by resolved frontmatter order before persistence, so
 # ``archive-plan`` sorts last among order-resolvable steps automatically.
 # =============================================================================
@@ -1271,19 +1271,19 @@ def test_compose_sorts_phase_6_steps_by_frontmatter_order(plan_context):
     step emits the lower-order step first in the composed manifest.
 
     Reproduces the live bug: ``finalize-step-preference-emitter`` (order 992) was
-    appended AFTER ``archive-plan`` (order 1000) by ``manage-config
+    appended AFTER ``archive-plan`` (terminus order 1100) by ``manage-config
     sync-defaults``. cmd_compose now sorts ``phase_6.steps`` by resolved
     frontmatter order, so the preference-emitter is emitted strictly before
     ``archive-plan``, which sorts last among order-resolvable steps.
     """
-    # Bug-reproducing candidate order: archive-plan (order 1000) precedes the
+    # Bug-reproducing candidate order: archive-plan (terminus order 1100) precedes the
     # lower-order preference-emitter (order 992) — exactly the layout
     # sync-defaults produced by appending the back-filled default-on step.
     candidates = [
         'push',
         'create-pr',
         'lessons-capture',
-        'archive-plan',  # order 1000
+        'archive-plan',  # order 1100 (terminus)
         'finalize-step-preference-emitter',  # order 992 — appended AFTER archive-plan
     ]
     result = cmd_compose(
@@ -1303,7 +1303,7 @@ def test_compose_sorts_phase_6_steps_by_frontmatter_order(plan_context):
     # The composer sorted by frontmatter order: the low-order step now precedes
     # archive-plan even though the input placed it after.
     assert steps.index('finalize-step-preference-emitter') < steps.index('archive-plan')
-    # archive-plan (order 1000, the highest) sorts last among order-resolvable steps.
+    # archive-plan (order 1100, the highest/terminus) sorts last among order-resolvable steps.
     assert steps[-1] == 'archive-plan'
 
 
@@ -4712,7 +4712,7 @@ def test_lanes_preview_applies_the_composer_ordering_authority(plan_context, mon
         assert result['lanes'][posture]['phase_6_steps'] == _mem._sort_steps_by_frontmatter_order(kept)
 
     # Concretely, for the full posture the sort places the order-resolvable steps
-    # ascending — deploy-target (81) before archive-plan (1000) — where the
+    # ascending — deploy-target (81) before archive-plan (1100) — where the
     # candidate list had archive-plan second.
     full_steps = result['lanes']['full']['phase_6_steps']
     assert full_steps.index('project:finalize-step-deploy-target') < full_steps.index('archive-plan')
@@ -4793,7 +4793,7 @@ def test_compose_minimal_profile_prunes_phase_6_to_floor(plan_context, monkeypat
     assert result is not None
     assert result['execution_profile'] == 'minimal'
     manifest = read_manifest(plan_id)
-    # The D1 sort choke-point places archive-plan (order 1000) terminal among
+    # The D1 sort choke-point places archive-plan (order 1100) terminal among
     # the order-resolvable steps, so it now trails deploy-target.
     assert manifest['phase_6']['steps'] == ['push', 'project:finalize-step-deploy-target', 'archive-plan']
     assert _dropped_steps(result['lane_dropped']) == {

@@ -11,7 +11,8 @@ renderer rely on:
 
 1. Standards file exists at the expected built-in location.
 2. Frontmatter declares ``name: default:finalize-step-print-phase-breakdown``
-   and ``order: 995`` (slots between record-metrics 990 and archive-plan 1000).
+   and ``order: 999`` (slots after record-metrics 998, before the reserved
+   terminal-emission band 1000-1099 and archive-plan's terminus 1100).
 3. Body documents the producer side of the cross-deliverable contract:
    it must reference ``work/phase-breakdown-output.txt`` (the artifact path
    the renderer reads) and ``manage-metrics print-phase-breakdown`` (the
@@ -96,9 +97,10 @@ class TestStandardsFrontmatter:
 
     def test_order_is_999(self, frontmatter: dict[str, str]):
         # 999 slots after record-metrics (998, which writes metrics.md) and
-        # before archive-plan (1000). record-metrics is the last token-accounting
-        # step, so print-phase-breakdown — which reads the generated metrics.md —
-        # must resolve immediately above it in the finalize tail.
+        # before the reserved terminal-emission band (1000-1099) and archive-plan's
+        # terminus (1100). record-metrics is the last token-accounting step, so
+        # print-phase-breakdown — which reads the generated metrics.md — must
+        # resolve immediately above it in the post-run-review band tail.
         assert frontmatter['order'] == '999'
 
 

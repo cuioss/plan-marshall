@@ -4,8 +4,10 @@ lane:
   cost_size: XS
 name: default:archive-plan
 description: Archive the completed plan
-order: 1000
+order: 1100
 mutates_source: false
+destroys:
+  - plan-directory
 default_on: true
 presets:
   - local
@@ -85,9 +87,9 @@ This is the **automatic caller** for the session-store GC — without it the swe
 has no scheduled invocation and the per-session cache grows unboundedly across
 plans.
 
-**Main-anchored-caller invariant**: this step runs at `order: 1000`, after
-`default:branch-cleanup` has removed the worktree, so the process cwd is the main
-checkout. That is load-bearing, not incidental — `session_binding._plan_is_live`
+**Main-anchored-caller invariant**: this step runs at `order: 1100` (the terminus
+of the banded allocation contract), after `default:branch-cleanup` has removed the
+worktree, so the process cwd is the main checkout. That is load-bearing, not incidental — `session_binding._plan_is_live`
 resolves plan directories **relative to the process cwd**, so a sweep fired from
 inside a worktree would find none of the main checkout's live plan dirs and would
 judge every other live plan's binding stale. Any future caller of `session doctor

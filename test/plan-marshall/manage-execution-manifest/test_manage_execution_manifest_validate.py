@@ -446,7 +446,7 @@ _ORDER_RESOLVABLE_CANDIDATES = [
     'branch-cleanup',  # order 70
     'record-metrics',  # order 998
     'finalize-step-print-phase-breakdown',  # order 999
-    'archive-plan',  # order 1000 — the plan-mutating barrier, highest order
+    'archive-plan',  # order 1100 — the plan-mutating barrier, highest order (terminus)
 ]
 
 # Several arbitrary/shuffled seed orderings of the SAME candidate set. Each is a

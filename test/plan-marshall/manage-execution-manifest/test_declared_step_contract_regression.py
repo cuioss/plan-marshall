@@ -381,7 +381,7 @@ class TestComposedPhase6IsAscending:
 
         steps = _persisted_phase_6_steps('dsc-order-whole')
         assert _mem.check_emitted_steps_ascending_order(steps) is None
-        # archive-plan (order 1000) is the terminal barrier.
+        # archive-plan (order 1100, the terminus) is the terminal barrier.
         assert steps[-1] == 'archive-plan'
 
     def test_discriminator_unverifiable_order_is_rejected_where_the_legacy_walk_passed(
@@ -442,7 +442,7 @@ class TestPreviewAgreesWithCompose:
     #: already-ordered seed.
     _CONFIG_DECIDED_SEED: dict[str, dict | None] = {
         'default:branch-cleanup': None,   # order 70
-        'default:archive-plan': None,     # order 1000
+        'default:archive-plan': None,     # order 1100
         'default:create-pr': None,        # order 20
         'default:ci-verify': None,        # order 22
         'default:lessons-capture': None,

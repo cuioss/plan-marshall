@@ -36,7 +36,7 @@ The step is the **producer** in the cross-deliverable contract documented in `ou
 
 ## Ordering constraint
 
-`order: 999` places this step AFTER `default:record-metrics` (order 998, which produces `metrics.md`) and BEFORE `default:archive-plan` (order 1000, which moves the plan directory). Do NOT relocate this step outside that window — the producer relies on `metrics.md` existing under `.plan/local/plans/{plan_id}/`, and the consumer (renderer snapshot) reads `work/phase-breakdown-output.txt` from the same live directory before archive moves it.
+`order: 999` places this step AFTER `default:record-metrics` (order 998, which produces `metrics.md`) and BEFORE the reserved terminal-emission band (1000–1099) and `default:archive-plan` (terminus order 1100, which moves the plan directory). Do NOT relocate this step outside that window — the producer relies on `metrics.md` existing under `.plan/local/plans/{plan_id}/`, and the consumer (renderer snapshot) reads `work/phase-breakdown-output.txt` from the same live directory before archive moves it.
 
 ## Workflow
 
