@@ -197,11 +197,14 @@ def test_save_module_derived_writes_per_module_file():
 
 
 def test_load_module_enriched_success():
-    """load_module_enriched reads ``{module}/enriched.json``."""
+    """load_module_enriched reads ``{module}/enriched.json`` (concept-model migrated)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         save_module_enriched('mod-a', {'responsibility': 'resp'}, tmpdir)
         loaded = load_module_enriched('mod-a', tmpdir)
-        assert loaded == {'responsibility': 'resp'}
+        # The writer stamps the concept ``type`` and a ``generation`` header; the
+        # authored field round-trips unchanged.
+        assert loaded['responsibility'] == 'resp'
+        assert loaded['type'] == 'module'
 
 
 def test_load_module_enriched_missing_raises():
@@ -219,11 +222,12 @@ def test_load_module_enriched_or_empty_returns_empty_when_missing():
 
 
 def test_load_module_enriched_or_empty_returns_data_when_present():
-    """load_module_enriched_or_empty returns the stored dict when present."""
+    """load_module_enriched_or_empty returns the stored dict (concept-model migrated) when present."""
     with tempfile.TemporaryDirectory() as tmpdir:
         save_module_enriched('mod-a', {'responsibility': 'resp'}, tmpdir)
         result = load_module_enriched_or_empty('mod-a', tmpdir)
-        assert result == {'responsibility': 'resp'}
+        assert result['responsibility'] == 'resp'
+        assert result['type'] == 'module'
 
 
 def test_save_module_enriched_writes_per_module_file():
@@ -234,7 +238,12 @@ def test_save_module_enriched_writes_per_module_file():
         assert result_path.exists()
         assert result_path.name == 'enriched.json'
         assert result_path.parent.name == 'mod-a'
-        assert json.loads(result_path.read_text()) == {'purpose': 'library'}
+        written = json.loads(result_path.read_text())
+        # The authored field round-trips; the writer additionally stamps the
+        # concept ``type`` and a ``generation`` provenance header.
+        assert written['purpose'] == 'library'
+        assert written['type'] == 'module'
+        assert written['generation']['by'] == 'architecture'
 
 
 # =============================================================================

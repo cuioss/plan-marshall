@@ -17,6 +17,7 @@ from typing import Any
 from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundInProjectError,
+    NonResolvingPathKeyError,
     crawl_all_modules,
     get_module_enriched_path,
     handle_module_not_found_result,
@@ -28,6 +29,7 @@ from _architecture_core import (
     require_project_meta_result,
     save_module_enriched,
     save_project_meta,
+    validate_package_key,
 )
 
 # =============================================================================
@@ -125,8 +127,15 @@ def enrich_package(
     project_dir: str = '.',
     components: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Add or update key package description and components."""
+    """Add or update key package description and components.
+
+    The package key is a repo-relative PATH (path is identity, D1): it must
+    resolve to a real filesystem location under the project root. A non-resolving
+    key — a dotted pseudo-identifier, an absolute path, or a path to nothing — is
+    refused with :class:`NonResolvingPathKeyError` rather than persisted.
+    """
     _load_module_or_raise(module_name, project_dir)
+    validate_package_key(package_name, project_dir)
 
     enriched = load_module_enriched_or_empty(module_name, project_dir)
 
@@ -594,6 +603,8 @@ def cmd_enrich_package(args: argparse.Namespace) -> dict[str, Any]:
         return enrich_package(args.module, args.package, args.description, args.project_dir, components)
     except ModuleNotFoundInProjectError:
         return handle_module_not_found_result(args.module, args.project_dir)
+    except NonResolvingPathKeyError as e:
+        return {'status': 'error', 'error': 'non_resolving_package_key', 'message': str(e)}
     except DataNotFoundError:
         return require_project_meta_result(args.project_dir)
     except Exception as e:

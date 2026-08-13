@@ -179,47 +179,63 @@ def test_enrich_module_with_separate_reasoning():
 # =============================================================================
 
 
+# D1: package keys are repo-relative PATHS (path is identity), so each test
+# materialises a real package directory under the tmp project and keys the entry
+# by its path. A dotted pseudo-identifier no longer validates (see
+# test_concept_model.py::test_enrich_package_refuses_non_resolving_key).
+_PKG_PATH = 'module-a/core'
+
+
+def _make_pkg_dir(tmpdir: str) -> str:
+    """Create the package directory the path key resolves to, and return the key."""
+    (Path(tmpdir) / 'module-a' / 'core').mkdir(parents=True)
+    return _PKG_PATH
+
+
 def test_enrich_package_adds_new_key_package():
-    """enrich_package adds a new entry into the module's ``key_packages``."""
+    """enrich_package adds a new entry into the module's ``key_packages`` keyed by path."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
+        key = _make_pkg_dir(tmpdir)
 
-        result = enrich_package('module-a', 'com.example.core', 'Core package', tmpdir)
+        result = enrich_package('module-a', key, 'Core package', tmpdir)
 
         assert result['status'] == 'success'
         assert result['action'] == 'added'
 
         enriched = load_module_enriched('module-a', tmpdir)
-        assert 'com.example.core' in enriched['key_packages']
-        assert enriched['key_packages']['com.example.core']['description'] == 'Core package'
+        assert key in enriched['key_packages']
+        assert enriched['key_packages'][key]['description'] == 'Core package'
 
 
 def test_enrich_package_updates_existing():
     """enrich_package updates an existing key package description."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
+        key = _make_pkg_dir(tmpdir)
 
-        enrich_package('module-a', 'com.example.core', 'Original', tmpdir)
-        result = enrich_package('module-a', 'com.example.core', 'Updated', tmpdir)
+        enrich_package('module-a', key, 'Original', tmpdir)
+        result = enrich_package('module-a', key, 'Updated', tmpdir)
 
         assert result['action'] == 'updated'
         enriched = load_module_enriched('module-a', tmpdir)
-        assert enriched['key_packages']['com.example.core']['description'] == 'Updated'
+        assert enriched['key_packages'][key]['description'] == 'Updated'
 
 
 def test_enrich_package_with_components():
     """enrich_package stores components when provided."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
+        key = _make_pkg_dir(tmpdir)
 
         components = ['ClaimValidator', 'JwtPipeline', 'ValidationResult']
-        result = enrich_package('module-a', 'com.example.core', 'Core components', tmpdir, components=components)
+        result = enrich_package('module-a', key, 'Core components', tmpdir, components=components)
 
         assert result['status'] == 'success'
         assert result['components'] == components
 
         enriched = load_module_enriched('module-a', tmpdir)
-        pkg = enriched['key_packages']['com.example.core']
+        pkg = enriched['key_packages'][key]
         assert pkg['description'] == 'Core components'
         assert pkg['components'] == components
 
@@ -228,12 +244,13 @@ def test_enrich_package_update_preserves_components():
     """Updating description without components preserves the stored components."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
+        key = _make_pkg_dir(tmpdir)
 
-        enrich_package('module-a', 'com.example.core', 'Original', tmpdir, components=['Class1', 'Class2'])
-        enrich_package('module-a', 'com.example.core', 'Updated', tmpdir)
+        enrich_package('module-a', key, 'Original', tmpdir, components=['Class1', 'Class2'])
+        enrich_package('module-a', key, 'Updated', tmpdir)
 
         enriched = load_module_enriched('module-a', tmpdir)
-        pkg = enriched['key_packages']['com.example.core']
+        pkg = enriched['key_packages'][key]
         assert pkg['description'] == 'Updated'
         assert pkg['components'] == ['Class1', 'Class2']
 
@@ -242,12 +259,13 @@ def test_enrich_package_update_components():
     """enrich_package can replace components on an existing package."""
     with tempfile.TemporaryDirectory() as tmpdir:
         setup_test_project(tmpdir)
+        key = _make_pkg_dir(tmpdir)
 
-        enrich_package('module-a', 'com.example.core', 'Desc', tmpdir, components=['Class1'])
-        enrich_package('module-a', 'com.example.core', 'Desc', tmpdir, components=['Class1', 'Class2', 'Class3'])
+        enrich_package('module-a', key, 'Desc', tmpdir, components=['Class1'])
+        enrich_package('module-a', key, 'Desc', tmpdir, components=['Class1', 'Class2', 'Class3'])
 
         enriched = load_module_enriched('module-a', tmpdir)
-        pkg = enriched['key_packages']['com.example.core']
+        pkg = enriched['key_packages'][key]
         assert pkg['components'] == ['Class1', 'Class2', 'Class3']
 
 
