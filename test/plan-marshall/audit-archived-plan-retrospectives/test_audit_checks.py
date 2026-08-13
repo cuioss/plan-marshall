@@ -3859,6 +3859,30 @@ class TestSequenceBuildMinimalityLedgerFacets:
         assert 'corpus_build_error: 0' in block   # the kill did not read as an error
         assert ',pass,error,timeout,killed,' in block
 
+    def test_status_unknown_reconciles_corpus_build_count(self, tmp_path: Path):
+        # A build carrying an unrecognized status is tallied in
+        # corpus_build_status_unknown so the status ratio accounts for every build:
+        # pass + error + timeout + killed + status_unknown == corpus_builds. Pre-fix
+        # the field was computed but emitted nowhere, so the sum silently fell short.
+        inputs = _write_sbm_plan(
+            tmp_path, 'status-unknown',
+            modified_files=['a.py'],
+            ledger_builds=[
+                {'dur': 10.0, 'status': 'success'},
+                {'dur': 10.0, 'status': 'weird-unrecognized-status'},
+            ],
+        )
+        result = audit.cross_sequence_build_minimality([inputs], _sbm_index(tmp_path))
+        block = audit.emit_sequence_build_minimality_block(result)
+        corpus = result['corpus']
+
+        assert corpus['status_unknown'] == 1
+        assert 'corpus_build_status_unknown: 1' in block
+        assert (
+            corpus['success'] + corpus['error'] + corpus['timeout']
+            + corpus['killed'] + corpus['status_unknown']
+        ) == corpus['builds']
+
     def test_build_time_exceeds_wallclock_is_flagged(self, tmp_path: Path):
         # D4(b). A 500s build against a 100s plan wall-clock is impossible — a
         # recording defect (a duration plumbed through wrongly). Pre-fix there was

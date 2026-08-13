@@ -173,8 +173,12 @@ _(updated as the run proceeds)_
   Each new test's red-pre-fix state demonstrated against HEAD (see Findings). Check docs +
   SKILL.md Surfaces cell reconciled; the stated check count stays **twenty-four** (folded, not
   added — verified `len(CHECK_NAMES) == 24`). `CHECK_ERA["sequence-and-build-minimality"]` bumped to
-  the `PR-PENDING` sentinel (test mirror updated in lock-step); resolved to the real PR by
-  `era_stamp_fill.py` after create-pr. D4 doc reconciliation for D3's surface lands with D3.
+  the `PR-PENDING` sentinel (test mirror in `test_audit.py` updated in lock-step). ⚠ **The
+  `project:finalize-step-era-stamp-fill` step does NOT fire in the standalone `doc/plans/` lane**, so
+  the sentinel is resolved by running `era_stamp_fill.py` **manually** after create-pr (rewrites both
+  `audit.py` and `test_audit.py` in lock-step), committed and pushed **before** the merge gate so it
+  rides this PR and never lands on `main` as `PR-PENDING`. D4 doc reconciliation for D3's surface
+  lands with D3.
 
 ## Build gate
 
@@ -201,6 +205,32 @@ so the gate takes its full path.
 - **Own-code mypy finding, fixed.** The quality gate caught a type collision: the ledger loop's
   duration variable reused the name `dur` already bound as `float` by the earlier call-timeline loop,
   so assigning `float | None` was rejected. Renamed to `ledger_dur`. Gate then clean.
+
+### Pre-PR verification sub-agent (Step 6) — findings + dispositions
+
+The independent sub-agent returned **PASS** (it executed both consumer sites against synthetic ledger
+rows — 10 audit scenarios + 3 retrospective scenarios green — cross-checked the producer schema, and
+swept both skills for stale references). Every claim label and every D0–D4 requirement was confirmed
+met in code, not merely claimed; out-of-scope respected (no producer touched).
+
+- **Finding 1 (minor, dead field + inaccurate doc) — FIXED.** `build_status_unknown` was computed
+  per-plan but emitted nowhere, and the check doc falsely called it "a corpus-only tally", so when
+  unknown-status builds existed `pass+error+timeout+killed < builds` with no accounting — itself a
+  small truthfulness gap. Fixed by actually emitting it: `corpus` gains `status_unknown`, the block
+  gains a `corpus_build_status_unknown` line, the doc now states `pass+error+timeout+killed+
+  status_unknown == corpus_builds`, and a new test
+  (`test_status_unknown_reconciles_corpus_build_count`) locks the reconciliation in.
+- **Observation (red-first not diff-re-verifiable) — accepted, no action.** The new tests are
+  structurally red pre-fix (signature/row-key/`build_time`-block absence); demonstrated against HEAD
+  (see above). A sound structural red.
+- **Observation (PR-PENDING won't auto-resolve in the lane) — accepted, report corrected.** The
+  finalize step does not fire here; the sentinel is resolved by running `era_stamp_fill.py` manually
+  after create-pr (see D4 above). Report wording corrected from "automatic".
+- **Observation (`plan-retrospective/SKILL.md:131` narrow) — rejected with reason.** Line 131 is
+  Step 2.5's token-accumulator-reconciliation concern, accurately scoped to per-phase *token totals*
+  from `metrics.md`. Build time flows through a different data path — the `log_analysis` fragment's
+  `build_time` block — documented in `plan-efficiency.md`'s Inputs. Adding build_time to line 131
+  would be off-topic, not more accurate.
 
 ## Out-of-scope items recorded (not fixed — per plan)
 

@@ -136,9 +136,12 @@ corpus totals (`corpus_build_pass` / `_error` / `_timeout` / `_killed`):
 | `timeout` | the build hit its ceiling. |
 | `killed` | an **infrastructure event** (a whole-tree or child kill). ⛔ **NOT folded into `error`** — collapsing a kill into "failed" would report a harness problem as a code problem. It is counted, and rendered, on its own axis so a reader can tell an infrastructure kill from a red build. |
 
-A build whose `status` is `unknown` (or unrecognized) is counted in
-`build_status_unknown` (a corpus-only tally); it is orthogonal to `build_unknown`,
-which is the suspect-DURATION band above.
+A build whose `status` is `unknown` (or unrecognized) is counted per plan in
+`build_status_unknown` and summed into the emitted `corpus_build_status_unknown`
+line, so `pass + error + timeout + killed + status_unknown == corpus_builds` — the
+ratio accounts for every build rather than leaving a silent gap. This is
+orthogonal to `build_unknown`, which is the suspect-DURATION band above (a build
+can be `status: success` yet duration-suspect, e.g. a cache hit).
 
 ### Build time vs plan wall-clock (share + the invariant)
 
@@ -204,6 +207,7 @@ corpus_build_pass: <sum>
 corpus_build_error: <sum>
 corpus_build_timeout: <sum>
 corpus_build_killed: <sum>               # SEPARATE from error
+corpus_build_status_unknown: <sum>       # pass+error+timeout+killed+status_unknown == corpus_builds
 corpus_build_seconds: <sum>              # ledger total
 corpus_build_seconds_log_derived: <sum>  # OLD log total, ledger-bearing plans only
 corpus_build_seconds_delta: <ledger - log>   # what the re-base now sees

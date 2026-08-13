@@ -3915,6 +3915,10 @@ def cross_sequence_build_minimality(
         "error": sum(int(r["build_error"]) for r in rows),
         "timeout": sum(int(r["build_timeout"]) for r in rows),
         "killed": sum(int(r["build_killed"]) for r in rows),
+        # Builds carrying an unrecognized / unknown STATUS — the remainder that
+        # makes pass+error+timeout+killed+status_unknown == corpus_builds, so the
+        # status ratio accounts for every build rather than leaving a silent gap.
+        "status_unknown": sum(int(r["build_status_unknown"]) for r in rows),
         "build_churn": sum(int(r["build_churn"]) for r in rows),
         "ci_runs": sum(int(r["ci_runs"]) for r in rows),
         "consecutive_dup": sum(int(r["consecutive_dup"]) for r in rows),
@@ -5631,6 +5635,7 @@ def emit_sequence_build_minimality_block(result: dict[str, Any]) -> str:
         f"corpus_build_error: {corpus['error']}",
         f"corpus_build_timeout: {corpus['timeout']}",
         f"corpus_build_killed: {corpus['killed']}",
+        f"corpus_build_status_unknown: {corpus['status_unknown']}",
         f"corpus_build_seconds: {corpus['build_seconds']}",
         f"corpus_build_seconds_log_derived: {corpus['build_seconds_log_derived']}",
         f"corpus_build_seconds_delta: {corpus['build_seconds_delta']}",
