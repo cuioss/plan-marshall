@@ -152,7 +152,19 @@ _(updated as the run proceeds)_
   `killed` column and the `corpus_build_killed` line. Invariant `build_exceeds_wallclock` fires on a
   violating fixture; suspect-zero rule counts a zero/absent duration in `build_unknown` +
   `suspect_build_duration` and never sums it. Commit: audit re-base.
-- **D3** — pending (plan-retrospective `plan_efficiency` aspect, next commit).
+- **D3** — **done.** `analyze-logs.py` gains `summarize_build_ledger`, which reads the change-ledger
+  (`_ledger_core.read_entries`), filters `kind=build` by the plan's bare `plan_id` (date-prefix
+  stripped for archived mode), and emits a `build_time` block — `total_build_seconds` (valid `> 0`
+  durations only, suspect-zero applied), `build_count`, `suspect_count`, and the
+  pass/error/timeout/`killed`-separate ratio — for **every build system and every phase**. The
+  `plan_efficiency` aspect (`references/plan-efficiency.md`) now carries `total_build_seconds` in its
+  `totals`, **read** from that block (not re-derived), with the suspect-zero-floor and killed-separate
+  rules documented; `log-analysis.md` documents the block; `report-structure.md` §7 names it. So a
+  plan's total build time appears on **its own reporting surface** (the retrospective report), the
+  surface D0 named — not only the cross-plan audit. Tests: `TestBuildTimeFromLedger` in
+  `test_analyze_logs.py` (sum, suspect-zero, killed-separate, non-pyproject, absent-is-not-zero,
+  cross-plan non-attribution). Commit: D3 plan-retrospective. **A local `/sync-plugin-cache` is owed
+  for this bundle change but a cloud run neither performs nor owes it** (§ cloud-plan-lane).
 - **D4 (audit side)** — **done.** New tests in `test_audit_checks.py`
   (`TestSequenceBuildMinimalityLedgerFacets`): (a) all-four-status ratio with killed separate; (b)
   build-exceeds-wall-clock flagged (+ negative control); (c) a non-pyproject (Maven) build in the

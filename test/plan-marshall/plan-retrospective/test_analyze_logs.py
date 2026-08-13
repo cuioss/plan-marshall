@@ -1556,3 +1556,115 @@ class TestDetectVoluntaryCheckpointPolling:
         assert result['precondition_met'] is True
         assert result['polling_pairs_count'] == 2
         assert result['candidate_line_numbers'] == [1, 4]
+
+
+# ---------------------------------------------------------------------------
+# D3 — build time from the change-ledger (the build-time oracle)
+# ---------------------------------------------------------------------------
+
+
+def _write_ledger(base: Path, rows: list[dict]) -> None:
+    """Append kind=build rows to ``<base>/work/change-ledger.jsonl`` — the path
+    ``resolve_ledger_path()`` derives from the fixture's PLAN_BASE_DIR."""
+    work = base / 'work'
+    work.mkdir(parents=True, exist_ok=True)
+    with (work / 'change-ledger.jsonl').open('a', encoding='utf-8') as fh:
+        for row in rows:
+            fh.write(json.dumps(row) + '\n')
+
+
+def _build_row(
+    plan_id: str,
+    *,
+    dur,
+    status: str = 'success',
+    notation: str = 'plan-marshall:build-pyproject:pyproject_build',
+    command: str = './pw verify',
+) -> dict:
+    return {
+        'kind': 'build',
+        'plan_id': plan_id,
+        'notation': notation,
+        'command': command,
+        'duration_seconds': dur,
+        'status': status,
+        'timestamp_iso': '2026-06-01T10:00:00Z',
+    }
+
+
+class TestBuildTimeFromLedger:
+    """D3: ``analyze-logs.py`` sums the plan's build time from the change-ledger —
+    the build-time ORACLE — into a ``build_time`` block the ``plan_efficiency``
+    aspect reads into its totals.
+
+    Each test would FAIL pre-fix: pre-fix ``analyze-logs.py`` never read the ledger
+    and its output carried no ``build_time`` block at all (``KeyError``)."""
+
+    def test_total_build_seconds_sums_valid_durations(self, tmp_path, monkeypatch):
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        _write_ledger(tmp_path / 'base', [
+            _build_row(plan_id, dur=30.0),
+            _build_row(plan_id, dur=250.0),
+        ])
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        bt = result.toon()['build_time']
+        assert float(bt['total_build_seconds']) == 280.0
+        assert int(bt['build_count']) == 2
+
+    def test_suspect_zero_not_summed(self, tmp_path, monkeypatch):
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        _write_ledger(tmp_path / 'base', [
+            _build_row(plan_id, dur=300.0),
+            _build_row(plan_id, dur=0.0),      # killed-as-0 / cache-hit shape
+        ])
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        bt = result.toon()['build_time']
+        assert float(bt['total_build_seconds']) == 300.0   # the 0 is NOT averaged in
+        assert int(bt['suspect_count']) == 1
+
+    def test_killed_separate_from_error(self, tmp_path, monkeypatch):
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        _write_ledger(tmp_path / 'base', [
+            _build_row(plan_id, dur=10.0, status='error'),
+            _build_row(plan_id, dur=10.0, status='killed'),
+            _build_row(plan_id, dur=10.0, status='killed'),
+        ])
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        bt = result.toon()['build_time']
+        assert int(bt['error']) == 1     # killed is NOT folded into error
+        assert int(bt['killed']) == 2
+
+    def test_non_pyproject_build_counted(self, tmp_path, monkeypatch):
+        # the single-tool blindness is closed: a Maven build is counted here too.
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        _write_ledger(tmp_path / 'base', [
+            _build_row(
+                plan_id, dur=200.0,
+                notation='plan-marshall:build-maven:maven_build', command='mvn verify',
+            ),
+        ])
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        bt = result.toon()['build_time']
+        assert float(bt['total_build_seconds']) == 200.0
+        assert int(bt['build_count']) == 1
+
+    def test_no_ledger_rows_all_zero(self, tmp_path, monkeypatch):
+        # absent is not zero: no rows => build_count 0 (unavailable), total 0.
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        bt = result.toon()['build_time']
+        assert int(bt['build_count']) == 0
+        assert float(bt['total_build_seconds']) == 0.0
+
+    def test_other_plan_rows_not_attributed(self, tmp_path, monkeypatch):
+        # rows for a different plan_id are not summed into this plan.
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        _write_ledger(tmp_path / 'base', [
+            _build_row(plan_id, dur=100.0),
+            _build_row('some-other-plan', dur=999.0),
+        ])
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        bt = result.toon()['build_time']
+        assert float(bt['total_build_seconds']) == 100.0
+        assert int(bt['build_count']) == 1
