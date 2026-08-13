@@ -99,18 +99,12 @@ Compute the dispatch target via the role resolver. Phases 2-4 always run on the 
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --role phase-3-outline
+  effort resolve-target --role phase-3-outline \
+  --workflow plan-marshall:phase-3-outline/SKILL.md --plan-id {plan_id} \
+  --caller plan-marshall:plan-marshall
 ```
 
-Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
-
-Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-3-outline workflow=plan-marshall:phase-3-outline/SKILL.md plan_id={plan_id}"
-```
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch below. The resolve carries the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the seam emits the standardized `[DISPATCH]` work-log line and its paired decision-log resolution record itself — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; re-running this resolve on a re-fire re-emits, per firing.
 
 Dispatch:
 
@@ -127,7 +121,7 @@ Task: plan-marshall:{target}
 
 The agent returns the outline summary (`track`, `deliverable_count`, `qgate_pending_count`, `qgate_validation_required`, etc.) in its TOON. The Complex-Track per-deliverable loop (Steps 9c + 10 + 10b) iterates *inside* this envelope; the per-deliverable loop never spawns per-iteration subagents.
 
-**Post-return `outline_prompt` batched operator-question dispatch (conditional)**: Read the `outline_prompt` envelope from the phase return TOON captured above. When it is present with one or more questions, the leaf surfaced operator-facing design uncertainties it could not resolve on its own — it completed the outline with best-judgment defaults but flagged these for confirmation. Because the dispatched leaf cannot reach the operator but this orchestrator runs in the main context and can (see [`ref-workflow-architecture/standards/agents.md` § Leaf cannot fire AskUserQuestion](../../ref-workflow-architecture/standards/agents.md#leaf-cannot-fire-askuserquestion--return-a-prompt-required-envelope)), fire ONE batched `AskUserQuestion` covering EVERY question in the envelope, presenting each with the leaf's `recommended` default. After the operator answers, re-dispatch phase-3-outline **at most once** via the same `Task: plan-marshall:{target}` envelope used in Step 2 above, baking every answer into the dispatch prompt so the leaf resolves each open point deterministically on re-entry. When the `outline_prompt` envelope is absent or carries no questions, skip this block. This batched single-cycle handling — together with the Step 3 review-gate change-requests folded into it (§ 3c below) — is what bounds a normal outline to at most one feedback re-dispatch.
+**Post-return `outline_prompt` batched operator-question dispatch (conditional)**: Read the `outline_prompt` envelope from the phase return TOON captured above. When it is present with one or more questions, the leaf surfaced operator-facing design uncertainties it could not resolve on its own — it completed the outline with best-judgment defaults but flagged these for confirmation. Because the dispatched leaf cannot reach the operator but this orchestrator runs in the main context and can (see [`ref-workflow-architecture/standards/agents.md` § Leaf cannot fire AskUserQuestion](../../ref-workflow-architecture/standards/agents.md#leaf-cannot-fire-askuserquestion--return-a-prompt-required-envelope)), fire ONE batched `AskUserQuestion` covering EVERY question in the envelope, presenting each with the leaf's `recommended` default. After the operator answers, re-dispatch phase-3-outline **at most once** by re-running Step 2's phase-3-outline resolve (which re-emits the `[DISPATCH]` record per firing) and re-issuing the `Task: plan-marshall:{target}` envelope, baking every answer into the dispatch prompt so the leaf resolves each open point deterministically on re-entry. When the `outline_prompt` envelope is absent or carries no questions, skip this block. This batched single-cycle handling — together with the Step 3 review-gate change-requests folded into it (§ 3c below) — is what bounds a normal outline to at most one feedback re-dispatch.
 
 **Post-return q-gate-validation dispatch (conditional, deep lane only)**: Read `qgate_validation_required` from the phase return TOON captured above. When `true` (the surgical-bypass predicate did NOT fire in Step 11) AND `plan.phase-3-outline.q_gate_validation != off` (read via `manage-config plan phase-3-outline get --field q_gate_validation`), dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. This is the FIRST q-gate-validation pass and always runs unconditionally when the knob is `once` or `until_clean` (it is never content-gated — only re-runs in Step 2b are). When `false` (bypass fired or recipe path short-circuited), when the plan ran the light lane (which sets `qgate_validation_required: false`), or when the `plan.phase-3-outline.q_gate_validation` knob resolves to `off` (the operator opted out at config-set time), skip this block and continue directly to "Log solution outline creation" below.
 
@@ -135,16 +129,12 @@ Resolve the dispatch target via the same role used for phase-3-outline (q-gate-v
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --role phase-3-outline
+  effort resolve-target --role phase-3-outline \
+  --workflow plan-marshall:plan-marshall/workflow/q-gate-validation.md --plan-id {plan_id} \
+  --caller plan-marshall:plan-marshall
 ```
 
-Extract the `target` field. Emit the standardized post-resolve dispatch log line:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-3-outline workflow=plan-marshall:plan-marshall/workflow/q-gate-validation.md plan_id={plan_id}"
-```
+Extract the `target` field. The resolve carries the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the seam emits the standardized `[DISPATCH]` work-log line and its paired decision-log resolution record itself — `role=phase-3-outline` (the role-key this q-gate resolve tracks), `workflow=` the q-gate-validation body. Do NOT hand-write a separate `[DISPATCH]` line; each re-run of this resolve re-emits, per firing.
 
 Dispatch:
 
@@ -198,9 +188,9 @@ MAX_QGATE_ITERATIONS = 3
 WHILE qgate_pending_count > 0 AND qgate_iteration < MAX_QGATE_ITERATIONS:
   qgate_iteration += 1
   1. Log: "(plan-marshall:plan-marshall:qgate) Auto-fix iteration {qgate_iteration}/{MAX_QGATE_ITERATIONS}: {count} findings — re-dispatching phase-3-outline"
-  2. Re-dispatch phase-3-outline via the same Task: plan-marshall:{target} envelope used in Step 2 (phase reads findings at Step 1 and addresses them)
+  2. Re-run Step 2's phase-3-outline resolve (re-emits the [DISPATCH] record per firing) and re-dispatch phase-3-outline via the resulting Task: plan-marshall:{target} envelope (phase reads findings at Step 1 and addresses them)
   3. EVALUATE THE EXIT GATES FIRST — before any loop re-entry or break, evaluate the two exit gates in order:
-     a. WHOLE-OUTLINE CONTENT-HASH RE-RUN GATE — compare the current solution_outline.md content against the whole-outline hash recorded on the previous pass (the `__whole_outline__` row in work/deliverable-hashes.toon, written by q-gate-validation.md Step 3.5). When the outline content is UNCHANGED since the last validated pass, SKIP the q-gate-validation re-dispatch entirely — the deterministic validators would return an identical result on identical input, so a fresh sibling dispatch is pure waste. Leave qgate_pending_count at its current (possibly non-zero) value and BREAK the loop (no progress is possible without an outline change). Only when the content CHANGED do you re-dispatch q-gate-validation as the sibling top-level Task (same envelope used in the Post-return block above) and update qgate_pending_count from its return.
+     a. WHOLE-OUTLINE CONTENT-HASH RE-RUN GATE — compare the current solution_outline.md content against the whole-outline hash recorded on the previous pass (the `__whole_outline__` row in work/deliverable-hashes.toon, written by q-gate-validation.md Step 3.5). When the outline content is UNCHANGED since the last validated pass, SKIP the q-gate-validation re-dispatch entirely — the deterministic validators would return an identical result on identical input, so a fresh sibling dispatch is pure waste. Leave qgate_pending_count at its current (possibly non-zero) value and BREAK the loop (no progress is possible without an outline change). Only when the content CHANGED do you re-run the q-gate-validation resolve from the Post-return block above (re-emits the [DISPATCH] record per firing) and re-dispatch it as the sibling top-level Task, then update qgate_pending_count from its return.
      b. ITERATION COUNTER — the WHILE condition re-checks qgate_iteration < MAX_QGATE_ITERATIONS on the next pass; exhaustion falls through to the unified post-loop gate below.
   4. Loop condition re-evaluated with the updated qgate_pending_count.
 
@@ -394,7 +384,7 @@ AskUserQuestion:
     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
       decision --plan-id {plan_id} --level INFO --message "(plan-marshall:plan-marshall) User review: {count} change requests recorded to artifacts/qgate-3-outline.jsonl"
     ```
-  - Re-dispatch phase-3-outline ONCE via the same Task: plan-marshall:{target} envelope used in Step 2, carrying every captured change request together (the phase reads the Q-Gate findings at Step 1)
+  - Re-dispatch phase-3-outline ONCE by re-running Step 2's resolve (which re-emits the [DISPATCH] record per firing) and re-issuing the Task: plan-marshall:{target} envelope, carrying every captured change request together (the phase reads the Q-Gate findings at Step 1)
   - **Loop back to Step 3a** to review the revised outline
 
 ---
@@ -418,18 +408,12 @@ Compute the dispatch target via the role resolver:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --role phase-4-plan
+  effort resolve-target --role phase-4-plan \
+  --workflow plan-marshall:phase-4-plan/SKILL.md --plan-id {plan_id} \
+  --caller plan-marshall:plan-marshall
 ```
 
-Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
-
-Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-4-plan workflow=plan-marshall:phase-4-plan/SKILL.md plan_id={plan_id}"
-```
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch below. The resolve carries the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the seam emits the standardized `[DISPATCH]` work-log line and its paired decision-log resolution record itself — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; re-running this resolve on a re-fire re-emits, per firing.
 
 Dispatch:
 
@@ -473,16 +457,12 @@ Resolve the dispatch target via the same role used for phase-4-plan (q-gate-vali
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --role phase-4-plan
+  effort resolve-target --role phase-4-plan \
+  --workflow plan-marshall:plan-marshall/workflow/q-gate-validation.md --plan-id {plan_id} \
+  --caller plan-marshall:plan-marshall
 ```
 
-Extract the `target` field. Emit the standardized post-resolve dispatch log line:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=q-gate-validation workflow=plan-marshall:plan-marshall/workflow/q-gate-validation.md plan_id={plan_id}"
-```
+Extract the `target` field. The resolve carries the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the seam emits the standardized `[DISPATCH]` work-log line and its paired decision-log resolution record itself — with `role=phase-4-plan`, the role-key this q-gate resolve tracks (per [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract "Field semantics"; `workflow=` names the q-gate-validation body). Do NOT hand-write a separate `[DISPATCH]` line; each re-run of this resolve re-emits, per firing.
 
 Dispatch:
 
@@ -505,7 +485,7 @@ Task: plan-marshall:{target}
     validators: [module-mapping-validator, scope-criterion-validator]
 ```
 
-The agent returns `qgate_pending_count` in its TOON. ADD that value to the `qgate_pending_count` already returned by phase-4-plan so the combined aggregate drives the existing 3-iteration auto-loop predicate. The loop behaviour follows the same `plan.phase-4-plan.q_gate_validation` knob folded into `qgate_validation_required` above: under **`once`** (default) do NOT auto-loop — the single validation pass is the contract and any remaining findings surface at the next operator gate; under **`until_clean`** re-dispatch phase-4-plan via the same envelope used in Step 4 when the combined count is non-zero, up to `max_iterations`. Evaluate the exit gates FIRST on each pass, before any loop re-entry or break: guard every q-gate-validation re-dispatch in the `until_clean` loop with the whole-outline content-hash re-run gate (the `__whole_outline__` row in `work/deliverable-hashes.toon`, written by q-gate-validation.md Step 3.5): when the outline/task-plan content is unchanged since the last validated pass, SKIP the re-dispatch — the deterministic validators would return an identical result on identical input — leaving the combined pending count at its current (possibly non-zero) value and breaking the loop. Unify the post-loop exit on the pending COUNT, not on how the loop terminated: proceed past the Q-Gate loop (to the Metrics fused-call and the Step 4b transition below) ONLY when the combined `qgate_pending_count == 0`; ANY exit with a non-zero count — the hash-unchanged break (unchanged-and-pending) just as much as iteration exhaustion — escalates to the user (present the remaining findings and ask how to proceed), closing the unchanged-and-pending gap. Fold the q-gate-validation `<usage>` data into the per-phase running totals so it lands in the fused `phase-boundary` metrics call below.
+The agent returns `qgate_pending_count` in its TOON. ADD that value to the `qgate_pending_count` already returned by phase-4-plan so the combined aggregate drives the existing 3-iteration auto-loop predicate. The loop behaviour follows the same `plan.phase-4-plan.q_gate_validation` knob folded into `qgate_validation_required` above: under **`once`** (default) do NOT auto-loop — the single validation pass is the contract and any remaining findings surface at the next operator gate; under **`until_clean`** re-run Step 4's phase-4-plan resolve (which re-emits the `[DISPATCH]` record per firing) and re-dispatch phase-4-plan when the combined count is non-zero, up to `max_iterations`. Evaluate the exit gates FIRST on each pass, before any loop re-entry or break: guard every q-gate-validation re-dispatch in the `until_clean` loop with the whole-outline content-hash re-run gate (the `__whole_outline__` row in `work/deliverable-hashes.toon`, written by q-gate-validation.md Step 3.5): when the outline/task-plan content is unchanged since the last validated pass, SKIP the re-dispatch — the deterministic validators would return an identical result on identical input — leaving the combined pending count at its current (possibly non-zero) value and breaking the loop. Unify the post-loop exit on the pending COUNT, not on how the loop terminated: proceed past the Q-Gate loop (to the Metrics fused-call and the Step 4b transition below) ONLY when the combined `qgate_pending_count == 0`; ANY exit with a non-zero count — the hash-unchanged break (unchanged-and-pending) just as much as iteration exhaustion — escalates to the user (present the remaining findings and ask how to proceed), closing the unchanged-and-pending gap. Fold the q-gate-validation `<usage>` data into the per-phase running totals so it lands in the fused `phase-boundary` metrics call below.
 
 **Metrics**: After the plan agent completes, record the `4-plan → 5-execute`
 boundary in a single fused call (forwarding the aggregated `<usage>` data
