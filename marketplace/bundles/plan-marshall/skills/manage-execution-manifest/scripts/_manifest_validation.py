@@ -795,20 +795,29 @@ def check_emitted_steps_resolvable(
                         ),
                     }
                 if marshal_map is not None:
-                    # Routed / derived step — present in the emitted list, absent
-                    # from the marshal.json map. Name its routing origin so the
-                    # reader traces it to the emitting build verb, not to a
-                    # non-existent marshal.json key.
+                    # A step present in the emitted list but absent from the
+                    # marshal.json step map was not authored there. Only phase_5
+                    # has a routing path that injects such a step: the
+                    # execution_tier COMMAND routing pass appends it from a derived
+                    # `verification.commands` entry (a command
+                    # ``architecture derive-verification`` emitted), so name that
+                    # origin and the emitting tool. phase_6 has no such path
+                    # (finalize steps are authored or composer-injected built-ins),
+                    # so it gets a neutral not-in-marshal.json note rather than a
+                    # false derive-verification attribution.
+                    if phase == 'phase_5':
+                        origin_note = (
+                            'This step was appended by execution_tier COMMAND routing '
+                            'from a derived `verification.commands` entry (architecture '
+                            'derive-verification) — it is NOT authored in marshal.json'
+                        )
+                    else:
+                        origin_note = 'This step is not authored in marshal.json (composer-injected)'
                     return {
                         'phase': phase,
                         'step_id': step,
                         'marshal_key': step,
-                        'message': (
-                            f'{phase} step `{step}` is unresolvable: {base_reason}. '
-                            'This step was appended by execution_tier COMMAND routing '
-                            'from a derived `verification.commands` entry (architecture '
-                            'derive-verification) — it is NOT authored in marshal.json'
-                        ),
+                        'message': f'{phase} step `{step}` is unresolvable: {base_reason}. {origin_note}',
                     }
                 # CSV-fallback compose path (no marshal step map): the emitted id is
                 # the best identifier available.

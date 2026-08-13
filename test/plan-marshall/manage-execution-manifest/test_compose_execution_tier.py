@@ -596,13 +596,18 @@ class TestStampReflectsALiveResolvedCeilingVerdict:
 
 
 class TestRouteUnmappedOrchestratorVerbs:
-    """Orchestrator-tier commands with a NON-canonical verb route to ``verify:{verb}``.
+    """Orchestrator-tier commands with a NON-canonical, UNKNOWN verb route to ``verify:{verb}``.
 
     The canonical map (``_VERB_TO_PHASE_5_STEP``) is only the fast path: an
-    orchestrator-tier build command whose parseable verb is unmapped generalizes
-    to the bare ``verify:{verb}`` step ID and is REMOVED from the task, so no
-    leaf ever runs an orchestrator-tier command inline. Only an unparseable
-    (raw-shell / non-``plan-marshall:build-``) command survives per-task.
+    orchestrator-tier build command whose parseable verb is unmapped AND is not a
+    known build-phase canonical (e.g. a custom target like ``perf-suite``)
+    generalizes to the bare ``verify:{verb}`` step ID and is REMOVED from the task.
+
+    Two OTHER kinds of orchestrator-tier command survive per-task instead of
+    routing, and are covered elsewhere, not here: an unparseable (raw-shell /
+    non-``plan-marshall:build-``) command, and a known canonical build verb with
+    no phase-5 verify gate (``compile`` / ``test-compile`` — see
+    ``TestBuildPhaseCanonicalCarveOut``).
     """
 
     _CUSTOM_VERB_CMD = (
@@ -1047,3 +1052,19 @@ class TestUnresolvableStepProvenance:
         message = result['message']
         assert 'in marshal.json is unresolvable' in message
         assert 'execution_tier COMMAND routing' not in message
+
+    def test_phase_6_absent_step_is_not_attributed_to_derive_verification(self):
+        """A phase-6 step absent from the map is NOT misattributed to derive-verification.
+
+        derive-verification emits phase-5 verification commands only; a phase-6
+        finalize step has no execution_tier routing path, so an unresolvable
+        phase-6 step absent from the marshal map gets a neutral composer-injected
+        note, never a false derive-verification attribution."""
+        # marshal_phase_6_map is {} (provided, empty) → the step has no marshal origin.
+        result = _mem.check_emitted_steps_resolvable([], ['bogus-finalize-step'], None, {})
+
+        assert result is not None
+        assert result['phase'] == 'phase_6'
+        message = result['message']
+        assert 'derive-verification' not in message
+        assert 'composer-injected' in message
