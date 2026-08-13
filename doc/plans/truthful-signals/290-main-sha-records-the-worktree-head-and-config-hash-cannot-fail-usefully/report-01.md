@@ -27,17 +27,26 @@ attempted; the bundle-path route always works in a fresh clone). No skill was un
 stdout of the subprocess
 `manage-config plan phase-{phase} get --audit-plan-id {plan_id}` (run via `_run_script`).
 
-**Classification — resolves against an explicit handle, not the cwd.** The config *value* is
-addressed by the phase key and `plan_id`, not by the working directory. It reaches the
-repository-root helper `_repo_root()` only *transitively* (via `_run_script`, which uses it to set
-the subprocess cwd), and the resolved config content is checkout-invariant (`marshal.json` is
-git-tracked). The plan's own evidence confirms this: the observed 4/4 drift was "over a footprint
-with **no config file at all**" — so `marshal.json` was identical across all four boundaries and the
-drift could not have come from worktree-vs-main resolution; it came purely from the per-phase key.
+**Classification — the config *value* is not cwd-derived, but the config *file* is located by a
+cwd-relative resolver.** The pre-fix capture addressed the config by the phase key and `plan_id`
+(reaching `_repo_root()` only transitively, to set the subprocess cwd). The shipped capture reads
+`marshal.json` via `get_marshal_path()` → `get_tracked_config_dir()` → `_find_plan_root_from_cwd()`,
+which is **cwd-relative** — the *same class* of resolution the sibling defect turns on (in a worktree
+it would read `<worktree>/.plan/marshal.json`, not main's). The reason the captured value is
+checkout-stable in practice is **not** that it resolves against an explicit handle — it is that
+`marshal.json` is git-tracked and typically unchanged on-branch, so its content is identical across
+checkouts. The plan's own evidence confirms this for the observed incident: the 4/4 drift was "over a
+footprint with **no config file at all**", so `marshal.json` was identical across all four boundaries
+and the drift came purely from the per-phase key, not from worktree-vs-main resolution.
+*(This corrects the run's initial "resolves against an explicit handle" wording, which described the
+pre-fix subprocess path — flagged as finding D0-1 by the verification sub-agent.)*
 
-**Hand-off condition: NOT triggered.** Fixing `config_hash` does **not** require touching the
-worktree-vs-main root resolver that the sibling plan (310) owns. The `config_hash` defect is
-independent of that resolver. Proceeding here.
+**Hand-off condition: NOT triggered.** Fixing `config_hash` does **not** touch, modify, or depend on
+*fixing* the worktree-vs-main root resolver that the sibling plan (310) owns — the fix removes the
+per-phase key and leaves every resolver (`_repo_root`, `get_base_dir`, `get_tracked_config_dir`,
+`_find_plan_root_from_cwd`) untouched. The in-scope defect (phase-key → 4/4 spurious drift) is
+resolver-independent, so there is no "fix the resolver twice" collision. The residual checkout-context
+stability of `marshal.json` remains the sibling plan's concern (see Residue). Proceeding here.
 
 **Two compounding defects found (both empirically confirmed):**
 
@@ -78,15 +87,51 @@ no rename, no `handshakes.toon` schema churn). Suppression was never on the tabl
 
 ### D2 — Tests, each verified to FAIL pre-fix
 
-_(populated during implementation — see Findings / Build gate)_
+All in `test/plan-marshall/plan-marshall/test_invariants_behavior.py` unless noted. Each of the two
+required controls was run RED against the current implementation, then GREEN after the fix (the full
+config_hash block was seen `5 failed` pre-fix, `5 passed` post-fix — the failing assertions are
+quoted below):
+
+- **(a) context-stability** — `test_capture_config_hash_stable_across_phases`: the same config hashed
+  at `1-init` and `5-execute` must be equal. Pre-fix RED on `assert at_init == at_execute`
+  (`'ca1f86cbb4eff823' == 'cf7a8a48e0e8766a'` — the old phase-scoped hashes differ per phase);
+  post-fix GREEN.
+- **(b) genuine-change-still-drifts (the control against silencing)** —
+  `test_capture_config_hash_drifts_on_genuine_config_change`: a genuine `marshal.json` change must
+  change the hash. Pre-fix RED on `assert before != after`
+  (`'34852a9e3c835d7e' != '34852a9e3c835d7e'` — the old subprocess capture ignored the marshal
+  change); post-fix GREEN. The sub-agent independently re-ran both reds against `origin/main` and
+  confirmed they fail for the right reasons (non-vacuous).
+- Supporting contract tests rewritten for the new read: `..._none_when_marshal_absent`,
+  `..._none_when_marshal_unreadable` (fail-closed), `..._hashes_plan_section`.
+- **Supplementary regression lock (added after sub-agent review, not a red-then-green test):**
+  `test/plan-marshall/plan-retrospective/test_summarize_invariants_behavior.py::TestDetectDrift::test_config_hash_change_is_drift`
+  asserts a changed `config_hash` across phases surfaces a drift entry — locking `config_hash` out of
+  `detect_drift`'s `excluded` set so the phase-independence fix cannot later degrade into silencing
+  the cross-phase signal. (The same-phase blocking path is already guarded by the pre-existing
+  `test_verify_drift_config_hash`.)
 
 ## Build gate
 
-_(populated after `./pw verify`)_
+`git diff --name-only origin/main...HEAD -- '*.py'` → **`_invariants.py` and two test files changed
+→ Python change → full path taken.** `./pw verify` reported **`=== verify: SUCCESS ===`**:
+`19458 passed, 14 skipped`, coverage `COMPLETE` over mypy(production, 396 files), ruff, SPDX headers,
+plugin-doctor (marketplace-wide), mypy(test, 724 files), and whole-tree module-tests. The per-commit
+`./pw quality-gate` also reported `total_issues: 0`. The 14 skips are environment guards (the
+reference-platform strict-no-skip gate is opt-in and not set in this session).
 
 ## Findings
 
-_(verification sub-agent, CI, PR review — populated as they arrive)_
+| Source | Description | Disposition |
+|---|---|---|
+| Verification sub-agent — D0-1 | Report's initial D0 classification ("resolves against an explicit handle") described the pre-fix subprocess path; the shipped capture reads `marshal.json` via a cwd-relative resolver. | **Fixed** — D0 classification above rewritten to be accurate; hand-off conclusion unchanged (still not triggered). |
+| Verification sub-agent — D2-1 | `test_invariants_behavior.py:17` module-docstring bullet still described the deleted subprocess branches (unreachable/parseable/unparseable). | **Fixed** — bullet rewritten to the new absent/unreadable/non-dict/plan-section branches. |
+| Verification sub-agent — D2b proxy note | D2(b) asserted only at the capture level; a future addition of `config_hash` to `detect_drift`'s `excluded` set would silence the cross-phase signal while D2(b) still passed. | **Fixed** — added the detector-level regression lock `test_config_hash_change_is_drift` (above). |
+| Verification sub-agent — R-1 | Report's D2 and Build-gate sections were unpopulated placeholders. | **Fixed** — both sections populated (above). |
+| Verification sub-agent — verdict | Change substantively meets all three deliverables; no undeclared collateral; D0 hand-off conclusion correct; no other stale `config_hash` prose in the tree. | Accepted — no code change required. |
+
+An empty CI/PR-review row set below reflects that the PR has not yet been opened; populated after
+Step 7.
 
 ## Reviewer participation
 

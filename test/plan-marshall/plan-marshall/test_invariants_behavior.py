@@ -14,7 +14,8 @@ helpers and capture functions that had no direct test reference:
 * ``_capture_main_sha`` / ``_capture_main_dirty`` — git-probe captures.
 * ``_capture_worktree_sha`` / ``_capture_worktree_dirty`` — worktree-gated
   captures including the no-path ``None`` contract.
-* ``_capture_config_hash`` — the unreachable / parseable / unparseable branches.
+* ``_capture_config_hash`` — the absent / unreadable / non-dict / plan-section
+  branches of the phase-independent ``marshal.json`` read.
 * ``_query_pending_count_for_type`` — the ``count`` fallback key and the
   unparseable / unreachable ``None`` contract.
 * ``_capture_qgate_open_count`` — the unparseable ``None`` contract.
