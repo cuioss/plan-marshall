@@ -320,7 +320,7 @@ Each dispatched phase envelope (phases 2–6) runs the workflow doc inside the s
 │   │                                                                                                       │    │
 │   │  OPT-IN STEPS (not in default 17-step set):                                                           │    │
 │   │    ══►  execution-context  --phase phase-6-finalize --role post-run-review                            │    │
-│   │            (8 LLM aspects iterate IN-CONTEXT)                                                         │    │
+│   │            (8 analytical aspects iterate IN-CONTEXT)                                                  │    │
 │   │    ══►  execution-context  --phase phase-6-finalize --role verification-feedback (producer=pr-state)  │    │
 │   │            (diagnose + report + internal loop;                                                        │    │
 │   │             overflow returns to the orchestrator, which                                               │    │
@@ -459,7 +459,7 @@ The granularity heuristics live in `../../extension-api/standards/dispatch-granu
 | phase-6-finalize automated-review orchestration | Inline scripts + `phase-6-finalize.verification-feedback` (producer=pr-comment) | Producer + enumeration inline; triage shared envelope. |
 | phase-6-finalize sonar-roundtrip orchestration | Inline scripts + `phase-6-finalize.verification-feedback` (producer=sonar) | Same shape. |
 | phase-6-finalize lessons-capture | `phase-6-finalize.post-run-review` | Lesson extraction is LLM work (shares level with retrospective). |
-| phase-6-finalize retrospective | `phase-6-finalize.post-run-review` | 8 LLM aspects iterate in-context (shares level with lessons-capture). |
+| phase-6-finalize retrospective | `phase-6-finalize.post-run-review` | 8 analytical aspects iterate in-context (shares level with lessons-capture). |
 | /workflow-pr-doctor slash command | `phase-6-finalize.verification-feedback` (producer=pr-state) | Diagnose + report + internal triage via verification-feedback. |
 | phase-6-finalize architecture-refresh Tier 0 | Inline scripts | Deterministic discover + diff. |
 | phase-6-finalize architecture-refresh Tier 1 | `--phase phase-6-finalize` (enrich-module tracks phase default) × N parallel | The only per-iteration parallel dispatch. |

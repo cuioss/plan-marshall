@@ -62,7 +62,7 @@ A **sixth role group — `orchestrator`** — sits OUTSIDE `plan`: it is rooted 
 |---------|------------------------|----------------|
 | `default` | The phase's primary workflow body (or any sub-workflow without its own sub-key — see "Workflow → resolver-key mapping" below). Also covers research dispatched from inside the phase, q-gate-validation, manage-architecture-enrich-module, create-pr, pre-submission-self-review, etc. | Every dispatch under that phase that does NOT pass `--role <subkey>`. |
 | `verification-feedback` | Per-finding FIX / SUPPRESS / ACCEPT / AskUserQuestion triage with smart grouping. Producer-mode runtime input branches the data source: `build-runner`, `sonar`, `pr-comment`, `plugin-doctor`, `pr-state`. | phase-5-execute Step 11 + Step 11b (producer=build-runner); phase-6-finalize sonar-roundtrip (sonar), automated-review (pr-comment), `project:finalize-step-plugin-doctor` (plugin-doctor), `/workflow-pr-doctor` slash command (pr-state). |
-| `post-run-review` | Retrospective (eight LLM aspects) plus lessons extraction — both look back at the full plan history and ride the same level. | Opt-in `default:retrospective` / `default:lessons-capture` finalize steps AND the user-invokable `/plan-retrospective` slash command. |
+| `post-run-review` | Retrospective (eight analytical aspects) plus lessons extraction — both look back at the full plan history and ride the same level. | Opt-in `default:retrospective` / `default:lessons-capture` finalize steps AND the user-invokable `/plan-retrospective` slash command. |
 
 ## Orchestrator role group (sibling `orchestrator.effort` block)
 
