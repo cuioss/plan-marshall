@@ -59,8 +59,8 @@ _cmd_client = load_script_module(
     'plan-marshall', 'manage-architecture', '_cmd_client.py', 'cmd_client_graph_e2e'
 )
 
-EXPECTED_RESOLVER_IDS = ['markdown', 'maven', 'python']
-"""The shipped resolver roster: one Axis-B implementor and two Axis-A ones.
+EXPECTED_RESOLVER_IDS = ['documentation', 'markdown', 'maven', 'python']
+"""The shipped resolver roster: one Axis-B implementor and three Axis-A ones.
 
 This literal is the module's SINGLE executable pin, and it is deliberate. It is
 consumed only by :func:`test_the_expected_resolver_roster_is_discovered` (which
@@ -80,7 +80,7 @@ assertion set.
 # materially larger refactor than the roster-duplication these constants sit
 # next to, so they remain literals and are asserted as membership, not equality.
 AXIS_B_RESOLVER_IDS = {'maven'}
-AXIS_A_RESOLVER_IDS = {'markdown', 'python'}
+AXIS_A_RESOLVER_IDS = {'documentation', 'markdown', 'python'}
 
 
 # =============================================================================
@@ -503,7 +503,14 @@ def test_collapse_mechanism_holds_over_a_controlled_module_map():
     edges, reports = _merge.merge_resolver_edges(resolvers, derived_by_name, {})
 
     assert edges == [{'from': 'alpha', 'to': 'beta', 'producers': ['markdown', 'python']}]
-    assert [report['edge_count'] for report in reports] == [1, 1]
+    # markdown and python each derived the pair (corroboration); any other Axis-A
+    # resolver in the set — the documentation resolver joins over ``path`` refs on
+    # documentation modules, of which this controlled map has none — is inert here
+    # and contributes a zero-edge report, so assert the corroborating pair by id
+    # rather than pinning the exact report count.
+    edge_counts = {report['id']: report['edge_count'] for report in reports}
+    assert edge_counts['markdown'] == 1
+    assert edge_counts['python'] == 1
 
 
 def test_plugin_discover_exposes_the_materialization_helper():

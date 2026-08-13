@@ -1,6 +1,6 @@
 # Extension Point: Path Attribution
 
-> **Type**: Path-to-Module Ownership (Axis-D) | **Hook Method**: `PathAttributionBase` subclass | **Implementations**: see [§ Current implementations](#current-implementations) | **Status**: Shipped — the `extension_base.py` ABC is wired and `plan-marshall-plugin` implements it
+> **Type**: Path-to-Module Ownership (Axis-D) | **Hook Method**: `PathAttributionBase` subclass | **Implementations**: see [§ Current implementations](#current-implementations) | **Status**: Shipped — the `extension_base.py` ABC is wired and the attributors in [§ Current implementations](#current-implementations) implement it
 
 ## Overview
 
@@ -136,14 +136,14 @@ The trailing-separator half is the **nest-inside guard**. Normalizing the candid
 | Attributor | Id | Owner | Claims |
 |------------|-----|-------|--------|
 | Plan Marshall core tree | `plan-marshall` | `plan-marshall-plugin` (`Extension(ExtensionBase, PathAttributionBase)`) | `.claude/skills → plan-marshall`, `.plan → plan-marshall`. The first is the re-homed form of the project-local prefix map that previously lived inline in `manage-architecture`; the owner is carried over unchanged. The second closes the `module: null` answer every `.plan/` script path previously received. |
+| Documentation corpus | `documentation` | `pm-documents` `plan-marshall-plugin` (`Extension(ExtensionBase, PathAttributionBase, DerivationResolverBase)`) | `doc → documentation`, `README.md → documentation`, `CONTRIBUTING.md → documentation`. The doc tree and its repo-root prose siblings. The agent-instruction files `CLAUDE.md`/`AGENTS.md` are per-file excluded — they are not prose documentation. Claiming the whole `doc` prefix means every file beneath it, `.adoc` and `.svg` alike, resolves to `documentation`. |
 
 **Out of scope for this contract's current implementations** — named so the table reads as the complete shipped set rather than an open-ended promise:
 
-- **`doc/resources/**` attribution** — `doc/resources/diagrams/*.svg` currently resolves to no module while its sibling `doc/concepts/*.adoc` files resolve to `documentation`. Whether a third claim is warranted is not settled here.
 - **Whether `.claude/skills/**` belongs to `pm-plugin-development`** rather than to `plan-marshall` — the re-homing preserved the existing owner and is not a fresh ownership ruling.
 - **Build-side attributors** — no `BuildExtensionBase` subclass ships a claim yet, though the discovery collector already spans that hierarchy.
 
-None of the three requires a change to this contract.
+Neither requires a change to this contract.
 
 ## Related Specifications
 

@@ -741,6 +741,60 @@ def cmd_files(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _collapse_claimed_duplicate_rows(
+    results: list[dict[str, Any]], module_names: list[str]
+) -> list[dict[str, Any]]:
+    """Collapse duplicate inventory rows for a claimed path onto its owner's row.
+
+    The reader-side de-duplication precedence for the Axis-D ownership seam. One
+    physical file can be inventoried by more than one module: the documentation
+    corpus is walked by both the ``documentation`` module (its ``doc/**`` tree) and
+    the project-root module (whose whole-tree crawl also sees ``doc/**``), so a
+    cross-module reader would emit a ROW PER attributing module and a
+    "how many files match?" count would span both indexes rather than counting
+    files. This collapses such duplicates to the SINGLE row of the module that OWNS
+    the path through an Axis-D claim — the root crawl yields to the explicit
+    ownership claim.
+
+    The precedence is **keyed on the ownership claim, not on module-path
+    specificity**: an unclaimed duplicate (a marketplace ``SKILL.md`` inventoried
+    by both its bundle module and the root) is left UNTOUCHED, so this fixes
+    exactly the corpus a bundle has claimed and nothing else. A path with a single
+    row is never changed — there is nothing to de-duplicate — so a claimed file the
+    owner does NOT itself inventory (a repo-root prose doc the doc module claims but
+    does not walk) keeps its lone crawled row rather than vanishing. A claimed path
+    whose owner is not among its rows is likewise left intact: the reader has no
+    owner row to collapse onto and must never drop a path.
+
+    This reader precedence is the ONE architecture-core change this seam required
+    — the claim itself goes through the extension point, but the readers that
+    consume the inventory had no notion of an ownership claim overriding a crawl
+    row, so the de-duplication could not live entirely on the bundle side. See the
+    plan's out-of-scope note on core edits.
+    """
+    by_path: dict[str, list[dict[str, Any]]] = {}
+    order: list[str] = []
+    for row in results:
+        path = row['path']
+        if path not in by_path:
+            order.append(path)
+        by_path.setdefault(path, []).append(row)
+
+    collapsed: list[dict[str, Any]] = []
+    for path in order:
+        rows = by_path[path]
+        if len(rows) < 2:
+            collapsed.extend(rows)
+            continue
+        owner, _reports = resolve_path_attribution(path, module_names)
+        if owner is None:
+            collapsed.extend(rows)
+            continue
+        owner_rows = [row for row in rows if row['module'] == owner]
+        collapsed.extend(owner_rows if owner_rows else rows)
+    return collapsed
+
+
 def cmd_which_module(args: argparse.Namespace) -> dict[str, Any]:
     """CLI handler for the ``which-module`` reader.
 
@@ -920,6 +974,7 @@ def cmd_find(args: argparse.Namespace) -> dict[str, Any]:
             if fnmatch.fnmatchcase(path, pattern):
                 results.append({'module': name, 'category': category, 'path': path})
 
+    results = _collapse_claimed_duplicate_rows(results, module_names)
     results.sort(key=lambda item: (item['module'], item['category'], item['path']))
 
     return {
@@ -1047,6 +1102,7 @@ def cmd_search(args: argparse.Namespace) -> dict[str, Any]:
                     {'module': name, 'category': category, 'path': path, 'match_count': match_count}
                 )
 
+    results = _collapse_claimed_duplicate_rows(results, module_names)
     results.sort(key=lambda item: (item['module'], item['category'], item['path']))
 
     return {

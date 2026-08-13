@@ -692,15 +692,22 @@ Import `CMD_*` constants from `extension_base` for type-safe command references.
 
 ### Minimal Extension (Skill-Only Domain)
 
+This illustrates the smallest valid extension shape — a domain that only loads
+skills, subclassing `ExtensionBase` alone. A real bundle may additionally opt into
+the Axis-B/C/D faces by multiple inheritance; the documentation bundle, for
+instance, adds path attribution and edge derivation (see
+[ext-point-path-attribution.md](ext-point-path-attribution.md) § Current
+implementations). The bundle name below is illustrative.
+
 ```python
 #!/usr/bin/env python3
-"""Extension API for pm-documents bundle."""
+"""Extension API for a skill-only documentation-style domain bundle."""
 
 from extension_base import ExtensionBase
 
 
 class Extension(ExtensionBase):
-    """Documentation extension for pm-documents bundle."""
+    """A minimal skill-only domain extension (illustrative)."""
 
     def get_skill_domains(self) -> list[dict]:
         """Domain metadata for skill loading."""
