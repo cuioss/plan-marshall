@@ -178,10 +178,15 @@ _(updated as the run proceeds)_
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` is non-empty (audit.py + tests), so the gate
-takes its full path. `./pw quality-gate` after the audit re-base: **clean** — mypy "Success: no
-issues found in 398 source files", ruff "All checks passed!", "SPDX-header check passed",
-plugin-doctor marketplace-wide COMPLETE. Full `./pw verify` (with tests) run before the PR (Step 5).
+`git diff --name-only origin/main...HEAD -- '*.py'` is non-empty (audit.py, analyze-logs.py, tests),
+so the gate takes its full path.
+
+- Per-commit `./pw quality-gate` (both commits): **clean** — mypy "Success: no issues found in 398
+  source files", ruff "All checks passed!", "SPDX-header check passed", plugin-doctor marketplace-wide
+  COMPLETE.
+- Step 5 full `./pw verify plan-marshall`: **SUCCESS** — all three sub-steps green: quality-gate
+  (mypy production 278, ruff, SPDX), **test-compile (mypy over the whole `test/plan-marshall` tree,
+  588 files — no issues)**, module-tests **`16457 passed, 1 skipped in 362s`**. `=== verify: SUCCESS ===`.
 
 ## Findings
 
