@@ -388,7 +388,7 @@ CHECK_ERA: dict[str, str] = {
     # numbers. Those ARE the build-minimality mechanics this check's rows are read
     # against, so pre-boundary log-derived rows read as era-expected and
     # post-boundary ledger-derived rows as the current truth.
-    "sequence-and-build-minimality": "PR-PENDING",
+    "sequence-and-build-minimality": "#1224",
     # token-economics — PR-PENDING (plan-8's boundary, a placeholder resolved to
     # the real PR at finalize by project:finalize-step-era-stamp-fill AFTER
     # create-pr): plan-8's finalize-wait consolidation changes the finalize_heavy
