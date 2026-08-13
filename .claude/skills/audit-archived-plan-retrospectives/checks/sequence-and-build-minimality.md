@@ -5,39 +5,82 @@ Reconstructs each plan's call sequence from its plan-scoped
 every call into a phase by the `logs/work.log` `[DISPATCH] role=phase-N`
 timeline, and studies **build minimality**: the thesis that a build after a
 deliverable should be FOCUSED (compile + test-compile + test-run for the CHANGED
-module only) and should only run on buildable stuff. Operationalizes the two
-prototype deep-dives — `.plan/temp/sequence_analysis.py` (per-plan sequence
-reconstruction + redundancy detection) and `.plan/temp/build_minimality.py`
-(build-duration classification + build-verb mining) — as a single repeatable
-cross-plan check. The deterministic computation lives in `scripts/audit.py`
-(`cross_sequence_build_minimality` / `_sequence_build_minimality_plan` /
-`emit_sequence_build_minimality_block`); this sub-document is the interpretation
-guide.
+module only) and should only run on buildable stuff. The deterministic
+computation lives in `scripts/audit.py` (`cross_sequence_build_minimality` /
+`_sequence_build_minimality_plan` / `emit_sequence_build_minimality_block`); this
+sub-document is the interpretation guide.
 
 This is a cross-plan check: it emits one aggregate block (per-plan rows + corpus
-build-class / build-verb totals + the duration-band thresholds) rather than one
-row per plan in isolation. It builds on the D1 severity infrastructure — every
-per-plan row carries the uniform `severity` column and the block carries a
+build-class / status / build-verb totals + the duration-band thresholds) rather
+than one row per plan in isolation. It builds on the D1 severity infrastructure —
+every per-plan row carries the uniform `severity` column and the block carries a
 `genuine_signal_count` summary line.
+
+## Build time comes from the change-ledger — the build-time ORACLE
+
+**Build DURATION, the build COUNT, the pass/fail STATUS, and the build-class
+bands are derived from the structured change-ledger** (`manage-change-ledger`'s
+single append-only `<repo>/.plan/work/change-ledger.jsonl`), **not** by
+regex-parsing `(N.NNs)` fragments out of a log. The ledger stamps one `kind=build`
+row per build-**executing** dispatch at the executor boundary — for **every**
+build system and **every** phase — each carrying a structured `duration_seconds`,
+a truthful `status`, and the wrapper-resolved `command`. `_load_build_ledger_index`
+reads that one file once and indexes the rows by bare `plan_id`
+(`_ledger_plan_key` strips the `{YYYY-MM-DD}-` archive-date prefix from the plan
+dir name, because a ledger row carries the bare execution-time id).
+
+This RE-BASE (not an addition — the ledger REPLACES the log as the build-time
+source) closes two blindnesses the log derivation carried:
+
+1. **Single build system.** The old log matcher matched only
+   `build-pyproject:pyproject_build`; Maven / Gradle / npm builds were invisible.
+   The ledger records `command` per build system, so every build system is counted.
+2. **Early-phase invisibility.** A build run before the plan-scoped log exists
+   never reached it. The ledger is written at the dispatch boundary in every phase,
+   so early-phase builds are counted.
+
+The log-derived total is **retained only as the delta baseline**: the block
+reports `corpus_build_seconds` (ledger) beside `corpus_build_seconds_log_derived`
+(the OLD pyproject-only log total over the SAME ledger-bearing plans) and their
+`corpus_build_seconds_delta` — the number that makes "we now see more" evidence
+rather than a claim.
+
+**ABSENT IS NOT ZERO.** A plan archived before the ledger existed carries no
+`kind=build` rows: its build time is **UNAVAILABLE**, not zero. Such a plan is
+counted in `plans_without_ledger` and named in `plans_without_ledger_ids`, and is
+EXCLUDED from the delta baseline (folding its log-derived seconds into the delta
+would compare the ledger's silence against the log's speech). Its ledger totals
+read 0 with `has_ledger: false` — read that as "unmeasurable", never "no builds".
+
+**SUSPECT-ZERO rule.** A `kind=build` row whose `duration_seconds` is `0`, absent,
+or non-numeric is **SUSPECT**, never data: a zero is indistinguishable from a cache
+hit, a no-op, or a build killed at N seconds whose routed status reported
+`duration_seconds = 0`. A suspect duration is counted in the `unknown` band
+(`build_unknown`) and the `suspect_build_duration` flag, and is **NOT summed into
+`total_build_seconds` and NOT averaged in** — a zero silently included is worse
+than an absent value, because it drags a total toward a number nobody measured.
+A plan carrying suspect builds has a build-time total that is a **floor**.
 
 ## Inputs the check reads
 
-For every scanned plan the script joins four structured inputs:
+For every scanned plan the script joins these structured inputs:
 
 | Input | Field(s) read | Used for |
 |-------|---------------|----------|
-| `logs/script-execution.log` | per-call `notation subcommand (N.NNs)` lines (timestamp-ordered) | call timeline, per-phase call counts, build duration, arch-call count, consecutive-dup |
+| `.plan/work/change-ledger.jsonl` (repo-level, once) | `kind=build` rows: `plan_id`, `duration_seconds`, `status`, `command`, `notation`, `timestamp_iso` | **build count, per-build duration, duration-band class, status ratio, per-phase build attribution, churn** — the build-time oracle |
+| `work/metrics.toon` | per-phase `duration_seconds` | plan wall-clock denominator (build-vs-wall-clock share + the invariant) |
+| `logs/script-execution.log` | per-call `notation subcommand (N.NNs)` lines (timestamp-ordered) | call timeline, per-phase call counts, arch-call count, consecutive-dup, **and the OLD log-derived build seconds kept only as the delta baseline** |
 | `logs/work.log` | `[DISPATCH] role=phase-N` markers; `module-tests`/`quality-gate`/`verify`/`coverage`/`compile` verb mentions | phase segmentation, per-role dispatch counts (phase-reentry), build-verb scope mining |
 | `references.json` | `modified_files` / `affected_files` list | docs-only footprint (`.py` presence) |
 | `status.json::metadata` | `change_type` | docs-only classification |
 | `artifacts/ci-runs/` | directory count | `ci_runs` (CI re-run signal) |
 
-The `script-execution.log` is the authoritative ordered source — it records every
-script call with its three-segment notation, subcommand, and optional trailing
-`(N.NNs)` duration. The `work.log` supplies the phase-dispatch timeline (each
-phase-N agent dispatch is a `role=phase-N` marker) and the qualitative build-verb
-mentions. Best-effort: a plan with no logs degrades to an all-zero row rather than
-raising.
+The change-ledger is the authoritative build source (see § "Build time comes from
+the change-ledger" above). The `script-execution.log` remains the ordered call
+timeline and supplies the log-derived delta baseline; the `work.log` supplies the
+phase-dispatch timeline and the qualitative build-verb mentions. Best-effort: a
+plan with no ledger rows degrades to an unavailable (`has_ledger: false`) row, and
+a plan with no logs degrades to an all-zero call row, rather than raising.
 
 ### Corpus partition (delivery-cost check)
 
@@ -65,19 +108,53 @@ belongs to the most recent `role=phase-N` marker at or before `t` (defaulting to
 
 ### Build classification (duration bands)
 
-Every `build-pyproject:pyproject_build run` call is classified by its recorded
-wall-clock duration against the centralized `THRESHOLDS` bands — **no magic number
-is re-declared in the check**:
+Every **ledger `kind=build` row** is classified by its `duration_seconds` against
+the centralized `THRESHOLDS` bands — **no magic number is re-declared in the
+check**:
 
 | Class | Band | Reading |
 |-------|------|---------|
 | `minimal` | `< build_minimal_seconds` (120s) | compile / small scoped run. |
 | `scoped` | `build_minimal_seconds … build_heavy_seconds` (120–400s) | single-module tests. |
 | `heavy` | `> build_heavy_seconds` (400s) | whole-tree `verify` / all-modules — **NOT minimal**. |
-| `unknown` | duration not recorded (0.0) | classification withheld. |
+| `unknown` | duration `0` / absent / non-numeric — **SUSPECT** | classification withheld; counted as `build_unknown` and flagged `suspect_build_duration`, NEVER summed into `total_build_seconds`. |
 
 `max_build_seconds` and `total_build_seconds` carry the worst single build and the
-summed build time for the plan.
+summed build time for the plan, over **valid (`> 0`) durations only** — a suspect
+zero contributes to neither (the suspect-zero rule).
+
+### Build-status ratio (killed is SEPARATE from error)
+
+Each `kind=build` row's `status` is tallied into a pass/fail ratio, reported per
+plan (`build_success` / `build_error` / `build_timeout` / `build_killed`) and as
+corpus totals (`corpus_build_pass` / `_error` / `_timeout` / `_killed`):
+
+| Status | Reading |
+|--------|---------|
+| `success` (`pass`) | a green build. |
+| `error` | a red build — a code problem. |
+| `timeout` | the build hit its ceiling. |
+| `killed` | an **infrastructure event** (a whole-tree or child kill). ⛔ **NOT folded into `error`** — collapsing a kill into "failed" would report a harness problem as a code problem. It is counted, and rendered, on its own axis so a reader can tell an infrastructure kill from a red build. |
+
+A build whose `status` is `unknown` (or unrecognized) is counted in
+`build_status_unknown` (a corpus-only tally); it is orthogonal to `build_unknown`,
+which is the suspect-DURATION band above.
+
+### Build time vs plan wall-clock (share + the invariant)
+
+`wall_clock_seconds` is the sum of per-phase `duration_seconds` from
+`work/metrics.toon`. `build_share` = `total_build_seconds / wall_clock_seconds` —
+the fraction of a plan's elapsed time spent inside builds. When wall-clock is
+absent or zero (the metrics **absent-file hole** the ratio inherits), the share is
+**WITHHELD** (`n/a`), never a fabricated ratio over a zero denominator.
+
+The **invariant** (`build_exceeds_wallclock` flag): summed build time cannot exceed
+plan wall-clock. A violation is a **RECORDING defect** — a duration plumbed through
+wrongly — not a code problem, and follows the same impossible-values family the
+`metrics` check models (`worked > wall`). *Caveat:* builds detached and run
+concurrently could in principle sum past wall-clock legitimately; the invariant
+treats the common serial case, where a summed build time larger than the whole
+plan's elapsed time is impossible.
 
 ### Build-verb mining (work.log)
 
@@ -108,6 +185,8 @@ value so a flagged row is self-describing:
 | `phase_reentry` | a `phase-N` role was dispatched more than once | a loop-back re-entered a phase. **Post-#849/#850 caveat**: a `5-execute` / `6-finalize` re-entry is the EXPECTED shape of the finalize triage loop-back (the `loop_back_without_asking` inline-replay cycle), not necessarily redundant work — a loop-back that fixed a real finding is correct-by-design. |
 | `arch_over_resolution` | `arch_calls ≥ 5 × builds` while builds exist | resolution overhead dwarfing the work it resolves. |
 | `consecutive_dup` | ≥1 back-to-back identical `(notation, subcommand)` call | a mechanical double-call (see caveat 3). |
+| `suspect_build_duration` | ≥1 ledger build with a zero / absent duration | the plan's build-time total is a **floor** — a killed run reporting 0, a cache hit, or a no-op is indistinguishable, so the missing time is surfaced, never averaged in. |
+| `build_exceeds_wallclock` | summed build time > plan wall-clock (+1s) | a **recording defect** (a duration plumbed through wrongly) — the D2 invariant, the check that catches a duration plumbed wrongly. |
 
 ## Emitted columns
 
@@ -120,23 +199,43 @@ corpus_builds: <sum>
 corpus_build_minimal: <sum>
 corpus_build_scoped: <sum>
 corpus_build_heavy: <sum>
-corpus_build_seconds: <sum>
+corpus_build_unknown: <sum>              # suspect-duration builds
+corpus_build_pass: <sum>
+corpus_build_error: <sum>
+corpus_build_timeout: <sum>
+corpus_build_killed: <sum>               # SEPARATE from error
+corpus_build_seconds: <sum>              # ledger total
+corpus_build_seconds_log_derived: <sum>  # OLD log total, ledger-bearing plans only
+corpus_build_seconds_delta: <ledger - log>   # what the re-base now sees
 corpus_build_churn: <sum>
 corpus_ci_runs: <sum>
 corpus_consecutive_dup: <sum>
 corpus_docs_only_build_plans: <count>
+plans_without_ledger: <count>            # build time UNAVAILABLE (absent is not zero)
+plans_without_ledger_ids: <;-joined ids>
 genuine_signal_count: G
-rows[K]{plan_id,change_type,calls,span_seconds,builds,build_minimal,build_scoped,build_heavy,max_build_seconds,build_churn,arch_calls,ci_runs,consecutive_dup,phase_reentry,verbs,phase_graph,flags,severity}
+rows[K]{plan_id,change_type,calls,span_seconds,has_ledger,builds,build_minimal,build_scoped,build_heavy,build_unknown,pass,error,timeout,killed,total_build_seconds,max_build_seconds,log_build_seconds,wall_clock_seconds,build_share,build_churn,arch_calls,ci_runs,consecutive_dup,phase_reentry,verbs,phase_graph,flags,severity}
 ```
+
+The `build_share` cell is a percentage or `n/a` (withheld when wall-clock is
+absent). `has_ledger: false` marks a plan whose build time is unavailable — its
+build columns read 0 by absence, never as a measurement.
 
 | Column | Meaning |
 |--------|---------|
 | `plan_id` | The scanned plan's directory basename (rows sorted by total build seconds, desc). |
 | `change_type` | Joined `status.json::metadata` change_type. |
 | `calls` / `span_seconds` | Total calls and wall-clock span of the reconstructed sequence. |
-| `builds` | Count of `pyproject_build run` calls. |
+| `has_ledger` | `true` when the plan has `kind=build` ledger rows; `false` = build time UNAVAILABLE (absent is not zero). |
+| `builds` | Count of `kind=build` ledger rows (every build system, every phase). |
 | `build_minimal` / `build_scoped` / `build_heavy` | Duration-band counts. |
+| `build_unknown` | Suspect-duration builds (zero / absent) — the suspect-zero band. |
+| `pass` / `error` / `timeout` / `killed` | Build-status ratio; `killed` is SEPARATE from `error`. |
+| `total_build_seconds` | Summed ledger build time over valid (`> 0`) durations. |
 | `max_build_seconds` | Worst single build's duration. |
+| `log_build_seconds` | OLD log-derived pyproject-only total — the delta baseline. |
+| `wall_clock_seconds` | Plan wall-clock (sum of per-phase metrics durations). |
+| `build_share` | `total_build_seconds / wall_clock_seconds`, or `n/a` when withheld. |
 | `build_churn` | Clustered-rebuild count. |
 | `arch_calls` | architecture-call count (resolution overhead numerator). |
 | `ci_runs` | CI run-directory count. |
