@@ -26,8 +26,9 @@ Subcommands:
     force-push-with-lease     Force-push feature branch with lease guard (post-rebase)
     switch-and-pull           Checkout base branch and pull from origin (post-merge cleanup)
     prune-local-and-remote-ref Delete local feature branch and remote-tracking ref (post-merge)
-    branch-sync-state         Report push parity of the plan's feature branch vs its
-                              origin tracking ref (ahead | synced | no_remote); read-only, no fetch
+    branch-sync-state         Report push parity of the plan's feature branch vs its origin
+                              tracking ref (ahead | synced | remote_absent_landed |
+                              remote_absent_unverified); read-only, no fetch
     worktree-path             Resolve the persisted worktree path for a plan
     worktree-create           Create a worktree + feature branch + .plan symlink for a plan
     worktree-remove           Remove a worktree (worktree first, then branch ref)
@@ -975,6 +976,55 @@ def cmd_worktree_path(args):
     }
 
 
+def _ref_resolves(worktree, ref: str) -> bool:
+    """True when ``ref`` resolves to a commit in ``worktree`` (read-only, no fetch)."""
+    rc, stdout, _ = run_git(['-C', str(worktree), 'rev-parse', '--verify', '--quiet', ref])
+    return rc == 0 and bool(stdout.strip())
+
+
+def _resolve_sync_base_branch(plan_id: str, worktree) -> str | None:
+    """Resolve the base branch used to disambiguate a missing tracking ref.
+
+    Read-only, no fetch: only a LOCAL ``origin/{base}`` ref is consulted.
+    Preference order, taking the first whose ``origin/{base}`` resolves locally:
+    the plan's configured ``references.base_branch``, then ``main``, then
+    ``master``. Returns ``None`` when none resolves — the caller then cannot
+    verify containment and DECLINES rather than guessing a verdict.
+    """
+    try:
+        from _references_core import read_references
+
+        refs = read_references(plan_id)
+        candidate = refs.get('base_branch') if isinstance(refs, dict) else None
+        if isinstance(candidate, str) and candidate.strip():
+            base = candidate.strip()
+            if _ref_resolves(worktree, f'origin/{base}'):
+                return base
+    except (ImportError, FileNotFoundError, OSError, ValueError):
+        pass
+
+    for fallback in ('main', 'master'):
+        if _ref_resolves(worktree, f'origin/{fallback}'):
+            return fallback
+    return None
+
+
+def _head_contained_in_base(worktree, head_sha: str, base_branch: str) -> bool:
+    """True when ``head_sha`` is an ancestor of ``origin/{base_branch}``.
+
+    An ancestor relationship means the branch's commits are already contained
+    in the base — the branch's work LANDED (fast-forward or merge-commit merge).
+    Squash merges rewrite history and are NOT ancestors, so a False result does
+    not prove the work never landed; it proves only that containment could not
+    be established, which is why the caller declines rather than asserting
+    "never pushed" on a False.
+    """
+    rc, _, _ = run_git(
+        ['-C', str(worktree), 'merge-base', '--is-ancestor', head_sha, f'origin/{base_branch}']
+    )
+    return rc == 0
+
+
 def cmd_branch_sync_state(args):
     """Report the push-parity state of the plan's feature branch vs origin.
 
@@ -984,10 +1034,22 @@ def cmd_branch_sync_state(args):
     (:func:`_resolve_worktree_path_for_plan`). ``git rev-parse HEAD`` is
     compared against ``git rev-parse origin/{branch}``:
 
-    - the origin tracking ref is absent → ``state: no_remote``
-      (the branch was never pushed);
+    - the SHAs match → ``state: synced``;
     - the SHAs differ → ``state: ahead`` (local commits not on origin);
-    - the SHAs match → ``state: synced``.
+    - the origin tracking ref is absent → the verdict is DISAMBIGUATED rather
+      than collapsed into a single "never pushed" answer, because an absent
+      tracking ref has two causes needing OPPOSITE remedies: a never-pushed
+      branch should be (re-)pushed, but a pushed-merged-and-deleted branch
+      must NOT be re-pushed (that resurrects a landed branch). So:
+
+      - ``state: remote_absent_landed`` — HEAD is an ancestor of
+        ``origin/{base_branch}``, proving the work already landed; do NOT
+        re-push.
+      - ``state: remote_absent_unverified`` — containment could not be proven
+        (no resolvable base ref, or HEAD is not an ancestor, which a squash
+        merge also produces). Never-pushed and squash-merged-and-deleted are
+        indistinguishable from local state alone, so the verb DECLINES to
+        assert "safe to re-push" and surfaces the ambiguity instead.
 
     ``remote_sha`` is present only when the tracking ref resolves.
     """
@@ -1017,22 +1079,37 @@ def cmd_branch_sync_state(args):
     rc, remote_sha, _stderr = run_git(
         ['-C', str(worktree), 'rev-parse', '--verify', '--quiet', f'origin/{branch}']
     )
-    if rc != 0:
+    if rc == 0:
         return {
             'status': 'success',
             'plan_id': plan_id,
             'branch': branch,
-            'state': 'no_remote',
+            'state': 'synced' if head_sha == remote_sha else 'ahead',
             'head_sha': head_sha,
+            'remote_sha': remote_sha,
+        }
+
+    # origin/{branch} does not resolve — the ambiguous case. Disambiguate via
+    # containment in the base branch (read-only, local refs only) so the
+    # consumer never routes a merged-and-deleted branch to a re-push.
+    base_branch = _resolve_sync_base_branch(plan_id, worktree)
+    if base_branch is not None and _head_contained_in_base(worktree, head_sha, base_branch):
+        return {
+            'status': 'success',
+            'plan_id': plan_id,
+            'branch': branch,
+            'state': 'remote_absent_landed',
+            'head_sha': head_sha,
+            'base_branch': base_branch,
         }
 
     return {
         'status': 'success',
         'plan_id': plan_id,
         'branch': branch,
-        'state': 'synced' if head_sha == remote_sha else 'ahead',
+        'state': 'remote_absent_unverified',
         'head_sha': head_sha,
-        'remote_sha': remote_sha,
+        'base_branch': base_branch,
     }
 
 

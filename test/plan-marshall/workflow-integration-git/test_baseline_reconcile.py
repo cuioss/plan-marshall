@@ -3,11 +3,13 @@
 """Tests for git-workflow.py baseline-reconcile subcommand.
 
 The subcommand is the mechanical predicate for phase-2-refine Step 3d:
-fetches origin/{base_branch}, lists upstream commits since the plan's
-captured worktree SHA, and runs ``git merge-tree`` to detect potential
-conflicts — without modifying the worktree. Each conflicted file becomes
-a Q-Gate finding (under --source qgate) so the existing phase-2-refine
-iterate-to-confidence loop addresses the drift.
+fetches origin/{base_branch}, lists upstream commits since the
+**merge-base of HEAD and origin/{base_branch}** (recomputed per call, never
+read from a stored SHA), and runs ``git merge-tree`` to detect potential
+conflicts. It is a **non-mutating classifier on every path** — it never
+moves the branch ref. Each conflicted file becomes a Q-Gate finding (under
+--source qgate) so the existing phase-2-refine iterate-to-confidence loop
+addresses the drift.
 """
 
 from __future__ import annotations
@@ -691,17 +693,30 @@ def test_classification_no_overlap(plan_context):
     result = cmd_baseline_reconcile(args)
     assert result['status'] == 'success'
     assert result['classification'] == 'no_overlap'
-    assert result['auto_reconciled'] is False
+    assert result['auto_reconcilable'] is False
     assert result['findings_emitted'] == 0
 
 
-def test_classification_overlap_no_content_conflict_auto_reconciles(plan_context):
-    """Same-file non-overlapping line edits -> auto-merge, no findings, no loop re-entry."""
+def test_classification_overlap_no_content_conflict_is_non_mutating(plan_context):
+    """Same-file non-overlapping line edits -> overlap_no_content_conflict and
+    auto_reconcilable, but the probe performs NO merge: HEAD is unchanged, no
+    merge_commit_sha is reported, and the working tree is untouched.
+
+    ``auto_reconcilable`` is a truthful capability signal (the overlap CAN be
+    reconciled cleanly), never a claim that a merge happened — the reconcile is
+    owned by the caller's rebase step, not by this classifier.
+    """
     plan_dir = plan_context.plan_dir_for('br-class-overlap-ok')
     fixture_root = plan_dir / 'fixture'
     fixture_root.mkdir(parents=True, exist_ok=True)
     _, worktree, baseline_sha = _setup_overlap_no_conflict(fixture_root)
     _write_status(plan_dir, worktree, baseline_sha)
+    head_before = subprocess.run(
+        ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
     args = Namespace(
         plan_id='br-class-overlap-ok',
         base_branch='main',
@@ -712,17 +727,23 @@ def test_classification_overlap_no_content_conflict_auto_reconciles(plan_context
     result = cmd_baseline_reconcile(args)
     assert result['status'] == 'success'
     assert result['classification'] == 'overlap_no_content_conflict'
-    assert result['auto_reconciled'] is True
-    assert result.get('merge_commit_sha')
+    assert result['auto_reconcilable'] is True
     assert result['findings_emitted'] == 0
-    # The auto-merge path no longer writes back a modified_files ledger (D4):
-    # the reconcile/write-back call site was removed, so the payload must NOT
-    # carry the legacy reconciled_modified_files_count observability field.
-    assert 'reconciled_modified_files_count' not in result
-    # The worktree HEAD should now contain both changes.
+    # Non-mutating: the real-merge focused-reconcile was removed, so there is no
+    # merge commit and the ref never moved.
+    assert 'merge_commit_sha' not in result
+    head_after = subprocess.run(
+        ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert head_before == head_after, 'the probe moved HEAD on overlap_no_content_conflict'
+    # The worktree file still carries only the local edit — the upstream edit
+    # was NOT merged in.
     head_text = (worktree / 'shared.txt').read_text(encoding='utf-8')
     assert 'A-local' in head_text
-    assert 'H-upstream' in head_text
+    assert 'H-upstream' not in head_text
 
 
 def test_classification_overlap_with_content_conflict_keeps_loop_entry(plan_context):
@@ -754,7 +775,7 @@ def test_classification_overlap_with_content_conflict_keeps_loop_entry(plan_cont
     result = cmd_baseline_reconcile(args)
     assert result['status'] == 'success'
     assert result['classification'] == 'overlap_with_content_conflict'
-    assert result['auto_reconciled'] is False
+    assert result['auto_reconcilable'] is False
     assert result['findings_emitted'] >= 1
     # Worktree HEAD must be unchanged (no merge attempted).
     head_after = subprocess.run(
@@ -773,23 +794,30 @@ def test_classification_overlap_with_content_conflict_keeps_loop_entry(plan_cont
 # =============================================================================
 
 
-def test_rejected_persist_flips_status_and_carries_finding_content(plan_context):
+def test_rejected_persist_flips_status_and_carries_finding_content(plan_context, monkeypatch):
     """A REJECTED conflict-finding persist flips the status and inlines the finding.
 
-    Driven by the live failure mode: the merge-failure branch passes
-    ``finding_type='baseline_drift_reconcile_failed'``, which is not a member of
-    ``FINDING_TYPES``, so the real ``add_qgate_finding`` validator rejects it. The
-    fixture reaches that branch by leaving an uncommitted local edit, so
-    merge-tree predicts no conflict but the real merge refuses.
+    The conflict finding IS this path's primary output, so a lost persist must
+    surface as an error carrying the rejected content inline — never a clean
+    result with findings_emitted: 0 (fail-closed rule f, write direction). The
+    probe no longer performs a real merge, so its only emitted finding_type
+    (``triage``) is valid; the store-rejection path is exercised by stubbing the
+    persist call, which is the boundary the rule actually governs.
     """
     plan_dir = plan_context.plan_dir_for('br-persist-reject')
     fixture_root = plan_dir / 'fixture'
     fixture_root.mkdir(parents=True, exist_ok=True)
-    _, worktree, baseline_sha = _setup_overlap_no_conflict(fixture_root)
+    _, worktree, baseline_sha = _setup_remote_and_worktree(
+        fixture_root,
+        upstream_commits=1,
+        upstream_conflicts=True,
+    )
     _write_status(plan_dir, worktree, baseline_sha)
-    # Uncommitted local edit — merge-tree still predicts no conflict, but
-    # ``git merge`` refuses to overwrite the dirty working-tree file.
-    (worktree / 'shared.txt').write_text('A-local-dirty\nB\nC\nD\nE\nF\nG\nH\n', encoding='utf-8')
+
+    def _reject(**kwargs):
+        return {'status': 'error', 'message': 'Simulated store rejection'}
+
+    monkeypatch.setattr(_mod, 'add_qgate_finding', _reject)
 
     args = Namespace(
         plan_id='br-persist-reject',
@@ -801,7 +829,6 @@ def test_rejected_persist_flips_status_and_carries_finding_content(plan_context)
     result = cmd_baseline_reconcile(args)
 
     assert result['classification'] == 'overlap_with_content_conflict'
-    assert result['merge_failure_paths']
     # The finding is this path's primary output — a lost persist is an error,
     # never a clean result with findings_emitted: 0.
     assert result['status'] == 'error'
@@ -810,15 +837,11 @@ def test_rejected_persist_flips_status_and_carries_finding_content(plan_context)
     assert result['findings_emitted'] == 0
 
     failure = result['qgate_persist_failures'][0]
-    assert failure['finding_type'] == 'baseline_drift_reconcile_failed'
-    assert 'Invalid finding type' in failure['message']
+    assert failure['finding_type'] == 'triage'
+    assert 'Simulated store rejection' in failure['message']
     # The rejected finding's own content travels inline.
     assert 'merge conflict' in failure['title']
     assert 'origin/main' in failure['detail']
-
-    # FINDING_TYPES is PLAN-85's scope — the rejection is preserved, not papered over.
-    findings_path = plan_dir / 'artifacts' / 'findings' / 'qgate-2-refine.jsonl'
-    assert not findings_path.exists(), 'a rejected persist must leave no stored record'
 
 
 def test_deduplicated_conflict_finding_stays_benign(plan_context):
@@ -852,3 +875,279 @@ def test_deduplicated_conflict_finding_stays_benign(plan_context):
     assert 'error' not in second
     assert 'qgate_persist_failed' not in second
     assert second['findings_emitted'] == 0
+
+
+# =============================================================================
+# Merge-base anchor + non-mutation (D1–D5)
+# =============================================================================
+
+
+def _setup_disjoint_upstream_and_local(fixture_root: Path) -> tuple[Path, Path, str]:
+    """A disjoint fixture: upstream edits ``upstream.txt``; the branch edits
+    ``local.txt``. Returns ``(remote, worktree, baseline_sha)``.
+
+    The worktree carries ONE in-flight commit on ``local.txt``; the remote main
+    carries ONE upstream commit on ``upstream.txt`` landed after the clone. The
+    two file sets are disjoint, so a correct classifier reports ``no_overlap``.
+    """
+    remote = fixture_root / 'remote.git'
+    seed = fixture_root / 'seed'
+    worktree = fixture_root / 'worktree'
+
+    _git_init_repo(seed, default_branch='main')
+    _commit_file(seed, 'base.txt', 'base\n', 'seed: initial')
+    subprocess.run(
+        ['git', 'clone', '--bare', '-q', str(seed), str(remote)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ['git', 'clone', '-q', str(remote), str(worktree)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    _git(worktree, 'config', 'user.email', 'tests@example.com')
+    _git(worktree, 'config', 'user.name', 'Test')
+    baseline_sha = subprocess.run(
+        ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    # In-flight: the branch adds local.txt.
+    _commit_file(worktree, 'local.txt', 'local change\n', 'local: add local.txt')
+    # Upstream: a disjoint commit adds upstream.txt on the remote main.
+    _commit_file(seed, 'upstream.txt', 'upstream change\n', 'upstream: add upstream.txt')
+    _git(seed, 'push', '-q', str(remote), 'main')
+    return remote, worktree, baseline_sha
+
+
+def _behind_count(worktree: Path) -> int:
+    """Number of commits ``origin/main`` is ahead of HEAD (the branch's behind-count)."""
+    out = subprocess.run(
+        ['git', '-C', str(worktree), 'rev-list', '--count', 'HEAD..origin/main'],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    return int(out)
+
+
+def test_two_calls_after_reconcile_agree_zero_upstream_no_overlap(plan_context):
+    """D5(a) + D5(d): after a focused reconcile leaves the branch 0 commits
+    behind, BOTH call sites report zero upstream and ``no_overlap``, and the two
+    verdicts do not contradict.
+
+    Pre-fix (stale stored anchor) the second call — issued after ``origin/main``
+    was merged into HEAD — re-lists the merged-in upstream commit as still
+    upstream and flips ``no_overlap`` -> ``overlap_no_content_conflict``,
+    contradicting the first call AND misreporting a 0-behind branch as 1
+    upstream. Post-fix (merge-base anchor) both calls agree: 0 upstream,
+    ``no_overlap``.
+    """
+    plan_dir = plan_context.plan_dir_for('br-two-call')
+    fixture_root = plan_dir / 'fixture'
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    _, worktree, baseline_sha = _setup_disjoint_upstream_and_local(fixture_root)
+    _write_status(plan_dir, worktree, baseline_sha)
+
+    args = Namespace(
+        plan_id='br-two-call',
+        base_branch='main',
+        worktree_path=str(worktree),
+        no_emit=True,
+        skip_fetch=False,
+    )
+
+    # First call (the baseline-sync analog), BEFORE the reconcile: the branch is
+    # genuinely 1 behind and the file sets are disjoint.
+    first = cmd_baseline_reconcile(args)
+    assert first['status'] == 'success'
+    assert first['classification'] == 'no_overlap'
+    assert first['upstream_commit_count'] == 1
+
+    # Simulate the focused reconcile: merge origin/main into HEAD. The branch is
+    # now 0 commits behind origin/main — the exact ground truth of the live run.
+    _git(worktree, 'merge', 'origin/main', '--no-edit')
+    assert _behind_count(worktree) == 0, 'fixture precondition: 0 behind after the reconcile'
+
+    # Second call (the branch-cleanup analog) against the SAME unchanged state.
+    second = cmd_baseline_reconcile(args)
+    assert second['status'] == 'success'
+    # D5(a): a 0-behind branch reports zero upstream and no overlap.
+    assert second['upstream_commit_count'] == 0, (
+        'a 0-behind branch reported upstream commits — the anchor re-listed the '
+        'merged-in commit as upstream'
+    )
+    assert second['classification'] == 'no_overlap'
+    # D5(d): the two verdicts against one unchanged state do not contradict.
+    assert first['classification'] == second['classification']
+
+
+def test_in_flight_set_excludes_files_the_plan_never_touched(plan_context):
+    """D5(b): after a reconcile brings origin/main into HEAD, the in-flight set
+    contains only the plan's own file (``local.txt``) — never the upstream file
+    the plan never touched (``upstream.txt``).
+
+    A stale anchor would diff ``{init SHA}..HEAD``, folding in the merged-in
+    upstream file and inflating the in-flight set with a file the plan never
+    touched.
+    """
+    plan_dir = plan_context.plan_dir_for('br-inflight')
+    fixture_root = plan_dir / 'fixture'
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    _, worktree, baseline_sha = _setup_disjoint_upstream_and_local(fixture_root)
+    _write_status(plan_dir, worktree, baseline_sha)
+
+    args = Namespace(
+        plan_id='br-inflight',
+        base_branch='main',
+        worktree_path=str(worktree),
+        no_emit=True,
+        skip_fetch=False,
+    )
+    cmd_baseline_reconcile(args)  # first call fetches origin/main
+    _git(worktree, 'merge', 'origin/main', '--no-edit')  # focused reconcile
+    result = cmd_baseline_reconcile(args)
+
+    assert result['status'] == 'success'
+    assert 'in_flight_files' in result
+    assert 'local.txt' in result['in_flight_files']
+    assert 'upstream.txt' not in result['in_flight_files'], (
+        'the in-flight set folded in an upstream file the plan never touched — '
+        'the anchor is stale, not the merge-base'
+    )
+
+
+def test_merge_base_recomputed_not_read_from_stored_status(plan_context):
+    """D5(c): a bogus stored ``worktree_sha`` is ignored — the anchor is the
+    recomputed merge-base, so the upstream count is correct despite the poison.
+
+    If the resolver still read ``status.metadata.worktree_sha``, the all-zero
+    SHA below would make ``{sha}..origin/main`` fail and the branch read as
+    0-behind. The correct answer (1 upstream) can only come from a recomputed
+    merge-base.
+    """
+    plan_dir = plan_context.plan_dir_for('br-recompute')
+    fixture_root = plan_dir / 'fixture'
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    _, worktree, _ = _setup_disjoint_upstream_and_local(fixture_root)
+    # Poison the stored anchor.
+    _write_status(plan_dir, worktree, '0' * 40)
+
+    args = Namespace(
+        plan_id='br-recompute',
+        base_branch='main',
+        worktree_path=str(worktree),
+        no_emit=True,
+        skip_fetch=False,
+    )
+    result = cmd_baseline_reconcile(args)
+
+    assert result['status'] == 'success'
+    assert result['upstream_commit_count'] == 1, (
+        'the anchor came from the poisoned stored worktree_sha, not the '
+        'recomputed merge-base'
+    )
+    assert result.get('merge_base_source') == 'merge_base'
+
+
+def test_classify_only_never_moves_head_on_every_classification(plan_context):
+    """D5(e): the probe leaves HEAD byte-for-byte unchanged on EVERY
+    classification — including overlap_no_content_conflict, which previously ran
+    a real merge that moved the ref.
+    """
+    cases = [
+        (
+            'no_overlap',
+            lambda root: _setup_remote_and_worktree(
+                root, upstream_commits=2, upstream_conflicts=False
+            ),
+        ),
+        ('overlap_no_content_conflict', _setup_overlap_no_conflict),
+        (
+            'overlap_with_content_conflict',
+            lambda root: _setup_remote_and_worktree(
+                root, upstream_commits=1, upstream_conflicts=True
+            ),
+        ),
+    ]
+    for expected, builder in cases:
+        plan_dir = plan_context.plan_dir_for(f'br-nomut-{expected}')
+        fixture_root = plan_dir / 'fixture'
+        fixture_root.mkdir(parents=True, exist_ok=True)
+        _, worktree, baseline_sha = builder(fixture_root)
+        _write_status(plan_dir, worktree, baseline_sha)
+        head_before = subprocess.run(
+            ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        args = Namespace(
+            plan_id=f'br-nomut-{expected}',
+            base_branch='main',
+            worktree_path=str(worktree),
+            no_emit=True,
+            skip_fetch=False,
+        )
+        result = cmd_baseline_reconcile(args)
+        head_after = subprocess.run(
+            ['git', '-C', str(worktree), 'rev-parse', 'HEAD'],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        assert result['status'] == 'success'
+        assert result['classification'] == expected
+        assert head_before == head_after, f'the probe moved HEAD on {expected}'
+
+
+def test_d3_guard_fires_when_probe_moves_head(plan_context, monkeypatch):
+    """D3: a deliberate ref move DURING the probe is caught AT the probe as a
+    fail-loud ``probe_mutated_head`` error — not discovered later at the landing.
+
+    A guard never seen to fail is indistinguishable from one that cannot, so
+    this test injects a ref move mid-classification (via a stubbed
+    ``_detect_merge_conflicts``) and confirms the post-probe assertion fires.
+    """
+    plan_dir = plan_context.plan_dir_for('br-guard')
+    fixture_root = plan_dir / 'fixture'
+    fixture_root.mkdir(parents=True, exist_ok=True)
+    _, worktree, baseline_sha = _setup_remote_and_worktree(fixture_root)
+    _write_status(plan_dir, worktree, baseline_sha)
+
+    real_detect = _mod._detect_merge_conflicts
+
+    def _moving_detect(worktree_path, base_branch):
+        # Regression stand-in: move HEAD mid-probe.
+        (Path(worktree_path) / 'sneaky.txt').write_text('x\n', encoding='utf-8')
+        subprocess.run(
+            ['git', '-C', worktree_path, 'add', 'sneaky.txt'],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ['git', '-C', worktree_path, 'commit', '-q', '-m', 'sneaky mid-probe commit'],
+            check=True,
+            capture_output=True,
+        )
+        return real_detect(worktree_path, base_branch)
+
+    monkeypatch.setattr(_mod, '_detect_merge_conflicts', _moving_detect)
+
+    args = Namespace(
+        plan_id='br-guard',
+        base_branch='main',
+        worktree_path=str(worktree),
+        no_emit=True,
+        skip_fetch=False,
+    )
+    result = cmd_baseline_reconcile(args)
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'probe_mutated_head'
+    assert result['head_before'] != result['head_after']
