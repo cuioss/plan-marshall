@@ -244,7 +244,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "{N} inbox message(s) -> epic {epic}"
 ```
 
-**Branch C — no lesson-bearing signals (skip)**: NOT emitted by this body. The `outcome=skipped` recording is now the dispatcher's responsibility (see `phase-6-finalize/SKILL.md` Step 3 item 4b) and fires before this workflow is dispatched — but only when `orchestrated: false`, because the three-zero short-circuit carries the orchestration carve-out (item 4b.b). This body therefore runs when at least one signal was non-zero OR when the run is orchestrated, and its `mark-step-done` calls are drawn from Branches A, B, B2, B3, and B4 above — an orchestrated run that reached this body at zero signals settles on B4, which is exactly the case a "Branches A or B only" reading would miss.
+**Branch C — no lesson-bearing signals (skip)**: NOT emitted by this body. The `outcome=skipped` recording is now the dispatcher's responsibility (see `phase-6-finalize/SKILL.md` Step 3 item 4b) and fires before this workflow is dispatched, at zero signals **regardless of orchestration** — the three-zero short-circuit no longer carries an orchestration carve-out (the landing an orchestrated run owes is the `emit-landing` terminal step's now, not this step's). This body therefore runs only when at least one signal was non-zero, and its `mark-step-done` calls are drawn from Branches A, B, B2, B3, and B4 above — an orchestrated run with at least one signal routes its candidate-lessons through B4.
 
 ## Output
 

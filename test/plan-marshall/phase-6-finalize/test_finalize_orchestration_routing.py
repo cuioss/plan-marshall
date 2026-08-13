@@ -352,8 +352,8 @@ class TestZeroGlobalStoreWritesPreferenceEmitter:
         assert '--kind candidate-lesson' in self._branch()
 
     def test_orchestrated_branch_emits_no_landing_message(self):
-        # The one landing per orchestrated run is lessons-capture's; a second one
-        # from here would put two landings on a single run.
+        # The one landing per orchestrated run is the emit-landing terminal step's;
+        # a second one from here would put two landings on a single run.
         assert 'emits NO `kind: landing` message' in self._branch()
 
     def test_declaration_leaves_the_non_orchestrated_path_unchanged(self):
