@@ -156,7 +156,7 @@ target/claude/plan-marshall/agents/
 
 ### Dispatch site
 
-Every dispatch site computes the target via the role resolver and dispatches the matching `execution-context` variant with the 5-field prompt body (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`):
+Every dispatch site computes the target via the role resolver and dispatches the matching `execution-context` variant. The prompt body carries the generic contract fields — `name`, `plan_id`, `skills[]`, exactly one of `workflow`/`instructions`, `WORKTREE` — plus any workflow-specific runtime inputs the workflow declares in its own input table (the example below adds `producer` and `caller_phase`):
 
 ```bash
 # Resolve the dispatch target for the verification-feedback workflow under phase-6-finalize
