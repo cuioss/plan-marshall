@@ -219,7 +219,7 @@ def test_malformed_rows_are_skipped_rather_than_crashing():
     """The log is append-only history; one bad row must not deny the whole report."""
     rows = [_row('push'), 'not-a-dict', {'phase': '6-finalize'}]
 
-    steps, totals = summarize_refires(rows)  # type: ignore[arg-type]
+    steps, totals = summarize_refires(rows)
 
     assert [s['step_id'] for s in steps] == ['push']
     assert totals['steps'] == 1
