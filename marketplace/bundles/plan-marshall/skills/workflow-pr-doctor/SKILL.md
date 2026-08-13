@@ -27,16 +27,12 @@ When `/workflow-pr-doctor` is invoked, resolve the level + target via:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-6-finalize --role verification-feedback
+  effort resolve-target --phase phase-6-finalize --role verification-feedback \
+  --workflow plan-marshall:plan-marshall/workflow/verification-feedback.md \
+  --plan-id {plan_id} --caller plan-marshall:workflow-pr-doctor
 ```
 
-Emit the standardized post-resolve dispatch log line — see [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:workflow-pr-doctor) target={target} level={level} role=verification-feedback workflow=plan-marshall:plan-marshall/workflow/verification-feedback.md plan_id={plan_id}"
-```
+The resolve carries the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the seam emits the standardized `[DISPATCH]` work-log line and its paired decision-log resolution record itself — see [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line. For a standalone `/workflow-pr-doctor` run with no active plan, pass `--plan-id none` (the seam routes the record to the dated global log).
 
 Then dispatch the returned `target` (`execution-context-{level}` or canonical) with this prompt body:
 
