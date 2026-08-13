@@ -421,6 +421,17 @@ Both commands run from the repository root:
 Narrower calls when you need them: `./pw module-tests` (tests only), `./pw compile`. Append a bundle
 name to scope to one module, e.g. `./pw verify plan-marshall`.
 
+**Gate on the full `./pw verify` — the narrower calls do not add up to it.** `./pw verify` is exactly
+three sub-steps: **quality-gate** (`ruff`/`mypy` over `*.py` sources, SPDX, plugin-doctor),
+**test-compile** (`mypy` over the whole `test/` tree), and **module-tests** (`pytest`). Only
+`test-compile` type-checks the tests, and *neither* `quality-gate` *nor* `module-tests` runs it. So do
+not substitute `./pw quality-gate` + a scoped `./pw module-tests` for the gate: that pair goes green
+while a test-only type error slips straight through to CI, which runs the full `verify`. The classic
+shape is a dynamically-loaded class (`load_script_module`) bound to a module-level name and then used
+as a type annotation — legal at runtime, but `mypy` rejects a variable used as a type, so it is green
+locally under the narrower calls and red on CI's `test-compile`. Run the full `./pw verify` (scope it
+to a bundle if you must, but keep all three sub-steps).
+
 Give every `./pw` call a Bash timeout of at least **600000 ms (10 minutes)**.
 
 Also export **`UV_HTTP_TIMEOUT=600`** (or higher) on every `./pw` call in a cloud session. The wrapper
