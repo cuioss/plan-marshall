@@ -1926,13 +1926,13 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
 
     # Pre-filter 4b (security_class_inactive) is NOT the symmetric peer of
     # simplify_inactive. It shares no helper and no gate: the change-type leg is
-    # absent entirely, because ``change_type`` is a semantic outline-time label the
-    # caller selects FIRST-DELIVERABLE-WINS, so a plan opening with a read-only
-    # discovery deliverable forwards ``verification`` however much production code
-    # its later deliverables mutate. A security sweep must never be removed on that
-    # evidence, so the gate FAILS TOWARD INCLUSION and keeps only the zero-surface
-    # leg — now evaluated against the declared AND the live change surface. The
-    # protected population is derived from each candidate's frontmatter
+    # absent entirely, because ``change_type`` — even reconciled to the plan's settled
+    # classification (see the change_type scope reconciliation above) — is orthogonal
+    # to the security surface. A ``bug_fix`` or ``feature`` plan can equally touch
+    # security-sensitive code, so a security sweep must gate on the change SURFACE, not
+    # on the plan's change type. The gate therefore FAILS TOWARD INCLUSION and keeps
+    # only the zero-surface leg — evaluated against the declared AND the live change
+    # surface. The protected population is derived from each candidate's frontmatter
     # ``persona: persona-security-expert``, never from a step-id literal. See
     # standards/decision-rules.md § Pre-Filter: security_class_inactive.
     #
