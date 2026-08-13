@@ -1,6 +1,6 @@
 # Run report — 110-participation-derived-from-a-lossy-view (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** `claude/participation-lossy-view-sqtb8u` (harness-assigned, kept as-is)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-13    **Branch:** `claude/participation-lossy-view-sqtb8u` (harness-assigned, kept as-is)    **PR:** [#1219](https://github.com/cuioss/plan-marshall/pull/1219)    **Outcome:** completed — landing delegated (auto-merge armed SQUASH; `verify` finishing on the final head)
 
 ## Skills loaded
 
@@ -197,24 +197,115 @@ directly by this run (build: `=== verify: SUCCESS ===`; #1141 MERGED squash `50f
 
 ### CI / PR review
 
-_pending — populated after the PR review cycle._
+- **pr-agent (`cuioss-review-bot`, the required bot) — reviewed, no findings.** Posted its "PR Reviewer
+  Guide 🔍": *🧪 PR contains tests · 🔒 No security concerns identified · ⚡ No major issues detected.* A
+  review artifact against the diff with nothing actionable. **Disposition: nothing to fix.**
+- **coderabbit / sourcery — refusals, not code feedback.** coderabbit posted "Review limit reached"
+  (awaitable window, ~43 min); sourcery posted "reached your weekly rate limit of 500000 diff characters"
+  (weekly quota). These are rate-limit notices, not comments about the code, so there is nothing to
+  handle or reply to; recorded as `rate-limited` participation below.
+- **Inline review threads:** none (`get_review_comments` → 0).
+- **CI:** `verify / gate` success, `dependency-review` success, `review / review` (pr-agent) success.
+  `verify / verify` — the required check — was `in_progress` at the merge gate (see Merge gate below).
+
+No CI or PR-review finding required a code change.
+
+## Merge gate
+
+- **Condition 1 (required contexts green on the head):** the sole required check is `verify / verify`
+  (per #1141's landing: `license/cla` and the bot reviews are NOT required). At the gate it was
+  `in_progress` on the head. `verify / gate`, `dependency-review`, and `review / review` had all
+  concluded `success`; `verify / verify` is the one still running.
+- **Condition 2 (every comment handled):** met — two refusals (not code feedback) + one clean required-bot
+  review, none actionable; no inline threads.
+- **Condition 3 (report finalized + pushed as last pre-merge commit):** this report is committed as the
+  final pre-merge commit before arming.
+- **Condition 4 (coverage-shortfall disclosure):** fired — 1-of-3, both shortfalls optional rate-limited
+  bots (see Reviewer participation). A disclosure, not a block.
+
+**Disposition — arm-and-hand-off (no self-wake available).** `send_later` / `subscribe_pr_activity` are
+absent in this session (the `claude-code-remote` MCP server is not connected) and Bash cannot poll
+GitHub, so the session cannot reliably block-until-green. Per the lane's Step 8 carve-out — *"when there
+is no self-wake AND a required check is still `in_progress` at the gate, arm anyway; the merge queue is
+the enforcer"* — auto-merge is armed `SQUASH` after this commit. GitHub auto-merge holds the merge until
+`verify / verify` concludes green on the final head, then lands it. **This is a completed run with the
+landing delegated, not partial.** The squash merge commit is read from the PR merge event and reported to
+the operator, not embedded here (it does not exist at commit time). Note: committing this report advances
+the head, so it supersedes the in-flight `verify` and a fresh `verify` runs on the final head — that is
+the run auto-merge waits on.
 
 ## Reviewer participation
 
-_pending._
+Population derived from the registry `author_login` of each `automatic-review/standards/{bot_kind}.md`
+(cross-named by `.github/workflows/pr-agent.yml`): `coderabbit`→`coderabbitai`,
+`pr-agent`→`cuioss-review-bot`, `sourcery`→`sourcery-ai`. This repo's settled config makes **`pr-agent`
+the sole REQUIRED bot** (`coderabbit`, `sourcery` optional). Verdicts from the stored comment bodies on
+PR #1219:
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` (pr-agent, **required**) | `reviewed` | Posted "PR Reviewer Guide 🔍" — "No major issues detected", "No security concerns identified", "PR contains tests": a review artifact against the diff, nothing actionable. |
+| `coderabbitai` (coderabbit, optional) | `rate-limited` | Posted only "Review limit reached … Next review available in 43 minutes" (awaitable window). |
+| `sourcery-ai` (sourcery, optional) | `rate-limited` | Posted only "you have reached your weekly rate limit of 500000 diff characters" (weekly quota). |
+
+**Coverage: 1 of 3 reviewed; the REQUIRED bot (`pr-agent`) reviewed, so the required quorum is
+satisfied.** The two optional bots are rate-limited (routine, outside our control; optional silence does
+not block). **Step 8 shortfall disclosure fired:** "Review coverage 1 of 3 — `cuioss-review-bot`
+(pr-agent, required) reviewed clean; `coderabbitai` rate-limited (awaitable window reopens ~43 min);
+`sourcery-ai` rate-limited (weekly quota). Both shortfalls are OPTIONAL bots — the merge proceeds; the
+disclosure changes what the run says, not whether it merges."
 
 ## Cost
 
-_pending._
+- **Tokens:** not available to the agent in this session (the Claude Code cloud harness does not expose a
+  per-run token total to the model).
+- **Wall-clock:** ~1h from branch publish to PR open + review cycle (branch pushed ~20:0x UTC, PR opened
+  20:19 UTC).
+- **Population:** this single Claude Code cloud session's usage. ⛔ NOT comparable to a plan-marshall
+  `metrics.toon` total, which counts the orchestrator-plus-agent dispatch tree under plan-marshall's
+  per-task billing boundary — a boundary this interactive session does not share. No comparable figure is
+  available, so none is presented.
 
 ## Contract check (Step 9)
 
-_pending._
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — five skills named above, all via the bundle-path route. |
+| 2 Branch | Done — harness-assigned `claude/participation-lossy-view-sqtb8u`, kept as-is, on `origin` (pushed before any work). **Branch form: harness-assigned.** |
+| 3 Plan directory | Done — `doc/plans/review-apparatus/110-…/plan.md` exists and opens with the first-instruction block (present on arrival; no repair needed). |
+| 4 Implement | Done — one test deliverable; every commit carries the `Co-Authored-By: Claude` trailer, no "Generated with" footer. |
+| 4 Per-commit gate | Done — the source-touching commit was covered by a clean full `./pw verify` (subsumes quality-gate). |
+| 4 Pushed | Done — every commit pushed immediately; no unpushed commit remains. |
+| 5 Build gate | Done — `*.py` changed (one test file) → full `./pw verify` → SUCCESS, 19606 passed / 14 skipped. |
+| 6 Verification sub-agent | Done — independent agent confirmed the refutation cold; no findings to fix (§ Findings). |
+| 7 PR cycle | Done — PR #1219; all three comment surfaces read; two refusals + one clean required-bot review, none actionable. |
+| 8 Merge gate | See Merge gate below. |
+| 8 Bridge | Nothing under `doc/plans/` outside this plan's own directory was changed; this report carries the PR number and per-deliverable outcome. |
+| 9 This check | Appended here. |
+| 9 What have we learned | Below. |
+
+**GitHub access path:** the GitHub MCP server (the cloud path). **Branch form:** harness-assigned. A
+cloud run **never owes** a `/sync-plugin-cache` — and this run touched no `marketplace/bundles/**` source
+anyway (only a test and docs), so there is no cache debt of any kind.
 
 ## What have we learned (Step 9)
 
-_pending._
+**One observation worth surfacing, recorded not shipped.** This run's substantive finding is that the
+plan's target defects were already fixed by a sibling plan that landed first (#1141) — the "cross-plan
+collision" the plan itself anticipated, resolved in the opposite direction. The cloud-plan-lane contract
+handled this cleanly: D0 is a gate that re-establishes-or-refutes at HEAD, so "already fixed" is a
+first-class outcome, not an error. **No contract change is proposed** — the lane's D0-gate framing, its
+"a claim is not an outcome / re-derive at HEAD" rule, and the pre-PR cold-read all worked exactly as
+written and are what caught that the production work was already done rather than re-doing it. The one
+latent risk the run exposed (a plan whose production deliverable a sibling already landed) is already
+covered by the plan template's own cross-plan-collision section and the D0 HALT/refute mechanics; nothing
+in the *contract* needed to change to handle it. Recorded here as the run-produced evidence that the
+existing contract was sufficient.
 
 ## Residue
 
-_pending._
+- **None blocking.** The plan's production goal (participation read from artifacts + durable ledger,
+  SHA-anchored, code-enforced) is met at HEAD by #1141; this run added the one uncovered regression guard
+  and verified the rest. No follow-up owed.
+- **Optional-bot re-review** (coderabbit/sourcery rate-limited) — routine, outside our control; both are
+  optional so they do not block, and no re-trigger is warranted for a docs+test PR.
