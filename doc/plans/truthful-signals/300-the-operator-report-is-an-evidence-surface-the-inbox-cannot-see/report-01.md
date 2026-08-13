@@ -134,6 +134,37 @@ order is NOT established from this clone (consumer repos not readable here) — 
 **Naming drift noted:** the plan's "Expected surface" names `marshall-orchestrator/scripts/orchestrator.py`;
 the actual path is `plan-orchestrator/…` (plan 120 renamed it). Working against the real path.
 
+### D1 — banded allocation contract with reserved gaps (committed `feba50d`)
+
+**Status: implemented; quality gate green; full test suite verifying.**
+
+- **New contract doc** `extension-api/standards/finalize-step-order-bands.md` — the bands (settle 1–69,
+  merge gate 70, post-merge operational 71–899, post-run review 900–999, **reserved terminal-emission
+  band 1000–1099**, terminus 1100), their reserved insertion gaps, the ranges reserved for
+  project-local/third-party vs the shared bundle, the collision rule (no two same-ext-point steps share
+  an order), and the `reads`/`destroys` declared facts. Cites `code-intelligence-substrate` plan 050's
+  post-run band contract without restating the P1/P2 discriminator or the mutual-exclusion rule.
+- **Reserved terminal slot** (300 Verification requirement) — `archive-plan` moved `1000 → 1100`, opening
+  the 1000–1099 band plan 302's terminal step occupies. Existing steps stayed in place (their bands
+  already carry free insertion room), so the renumber is the single move the reserved slot requires.
+- **`reads`/`destroys` ordering keys** — added to the ext-point frontmatter contract table, with concrete
+  declarations: `archive-plan` `destroys: [plan-directory]`, `branch-cleanup` `destroys: [worktree]`.
+- **Restatement sweep** — every `archive-plan 1000` reference updated across the composer
+  (`_manifest_core.py`, `manage-execution-manifest.py`, `SKILL.md`, `decision-rules.md`), the ext-point
+  Current-Implementations table, `terminal-title-architecture.md`, and 7 test files. One was a hard
+  assertion (`test_cmd_skill_resolution.py` `== 1000 → 1100`); one was a **pre-existing stale docstring**
+  (`test_finalize_step_print_phase_breakdown.py` said `order: 995`/`record-metrics 990` — both already
+  wrong) which the sweep also corrected.
+- Quality gate: `ruff` all-passed, `mypy` clean (580 files), SPDX passed. Full `./pw verify plan-marshall`
+  test run in progress at commit time.
+
+### D2 / D3 — collision fix + check
+
+**Status: pending (next).** The load-bearing order is preserved: D3 (extend
+`test_finalize_orchestration_routing.py` with the order-uniqueness check) must be SEEN to fire on the
+live `order: 9` collision (`architecture-refresh` / `finalize-step-security-audit`) before D2 resolves
+it.
+
 ## Build gate
 
 _(pending)_
