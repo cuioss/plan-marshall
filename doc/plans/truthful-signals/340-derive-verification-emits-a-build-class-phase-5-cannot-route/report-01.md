@@ -152,7 +152,42 @@ paths explicitly, never `git add -A`).
 
 ## Findings
 
-_Pending._
+### Pre-PR verification sub-agent (round 1) — 5 findings
+
+All three code deliverables verified PASS by the independent sub-agent (router
+carve-out correct and registry-derived; D3 error genuinely diagnosable; D4 matched
+pair valid, unroutable half seen to fail pre-fix). Findings were documentation +
+one low-severity code edge:
+
+1. **[fixed]** `manage-execution-manifest/SKILL.md:569,571` — the "every parseable
+   verb generalizes to `verify:{verb}` / no leaf ever runs an orchestrator-tier
+   command inline" claim was made false by the carve-out. Rewrote § "Command-level
+   execution_tier routing" to name the two kept-with-task cases. (commit `53c9926`)
+2. **[fixed]** `manage-execution-manifest/SKILL.md:174,449` — the `unresolvable_step`
+   message docs asserted it always names the "original marshal.json key". Updated to
+   describe the marshal.json-authored vs derive-verification-routed provenance split.
+   (commit `53c9926`)
+3. **[fixed]** `test_compose_execution_tier.py` `TestRouteUnmappedOrchestratorVerbs`
+   docstring (L603–605) — "Only an unparseable command survives per-task" now false.
+   Clarified it covers only the custom-verb generalization; pointed to
+   `TestBuildPhaseCanonicalCarveOut`. (commit `53c9926`)
+4. **[fixed]** `_manifest_validation.py::check_emitted_steps_resolvable` — the
+   routed-provenance branch was phase-agnostic but named derive-verification (a
+   phase-5-only routing path), so an unresolvable phase-6 step absent from the map
+   would be misattributed. Scoped the derive-verification attribution to `phase_5`;
+   phase_6 gets a neutral "composer-injected" note. New test
+   `test_phase_6_absent_step_is_not_attributed_to_derive_verification`. (commit `53c9926`)
+5. **[addressed by ongoing report]** The sub-agent read an early report snapshot with
+   `_Pending._` sections. The report is written as the run proceeds; the D1–D4 /
+   build-gate / findings sections are now filled.
+
+Remediation re-verified: `./pw verify plan-marshall` → SUCCESS (16449 passed, 1
+skipped). A round-2 re-verification of the remediation was dispatched to the same
+sub-agent.
+
+### CI / PR review findings
+
+_Pending PR creation._
 
 ## Reviewer participation
 
