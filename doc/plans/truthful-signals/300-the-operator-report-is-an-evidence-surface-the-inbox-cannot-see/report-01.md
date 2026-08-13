@@ -1,6 +1,25 @@
 # Run report — 300-the-operator-report-is-an-evidence-surface-the-inbox-cannot-see (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** claude/operator-report-evidence-surface-qv6kyn (harness-assigned)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-13    **Branch:** claude/operator-report-evidence-surface-qv6kyn (harness-assigned)    **PR:** _pending_    **Outcome:** _in progress (plan split; D0 done, D1–D3 pending)_
+
+## Plan split (operator decision)
+
+Mid-run, the operator reversed the plan's original "no split" and directed a split. The seam was cut at
+its safest joint:
+
+- **This plan (300)** is narrowed to **Phase 1 — the space**: D0 (gate, done), D1 (banded allocation
+  contract with reserved gaps + "reads X"/"destroys X" ordering keys), D2 (resolve the order-9
+  collision), D3 (collision check). It reserves the terminal slot the follow-up needs.
+- **New plan (302)** — `doc/plans/truthful-signals/302-the-terminal-report-is-a-machine-readable-emission-the-inbox-drains.md`
+  — owns **Phases 2 & 3 (the emission + the payload)**, former D4–D8: the dedicated terminal step, its
+  orchestrator-only composition, the report↔inbox delta, the machine-readable facts, and the
+  drain-completeness check. 302 serializes after 300 (it needs 300's reserved slot).
+
+Rationale for the seam: the space is a genuinely separable foundation, whereas the emission and its
+facts payload were kept together in 302 — a terminal step emitting prose at the right time, or facts at
+the wrong time, is exactly the half-fix the original "no split" rationale warned against. 300's plan.md
+was narrowed (title, Goal, Deliverables, Out-of-scope, Expected surface, Claim labels, Verification,
+Notes) and 302 authored in the same plan shape.
 
 ## Skills loaded
 
@@ -141,4 +160,11 @@ _(pending)_
 
 ## Residue
 
-_(pending)_
+- **300 D1–D3 not yet executed in this run.** D0 (the gate) is derived and recorded; D1 (banded
+  contract), D2 (collision fix), D3 (collision check) remain. The load-bearing order is preserved: D3
+  must be SEEN to fire on the live order-9 collision (`architecture-refresh` / `finalize-step-security-audit`)
+  before D2 resolves it.
+- **302 authored, not executed.** The follow-up plan is committed to the epic directory as a single
+  plan file, ready to be picked up as its own run after 300 lands.
+- No PR opened this run — the split restructuring landed on the branch; the 300 deliverables (D1–D3) are
+  the next work, and 302 is a separate future run.

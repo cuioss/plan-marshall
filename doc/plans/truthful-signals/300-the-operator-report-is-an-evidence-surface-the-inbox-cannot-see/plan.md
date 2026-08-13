@@ -17,10 +17,19 @@
 >
 > This block is part of the plan, not part of the template. It survives into every copy.
 
-# The plan's terminal report — one emission, at the end, in a slot that exists
+# The ordering space is an accreted flat integer, not a banded contract with reserved gaps
 
 **Epic:** truthful-signals
 **Branch prefix:** feature
+
+> **Split into two plans (operator decision, reversing the original "no split").** This plan is now
+> **Phase 1 — the space** only: the banded allocation contract with reserved gaps, the resolved
+> same-phase collision, and the compose-time collision check (**D0–D3**). ⭐ **The reserved terminal slot
+> this contract creates is filled by plan [`302`](../302-the-terminal-report-is-a-machine-readable-emission-the-inbox-drains.md)**,
+> which owns **the emission and the payload** — the dedicated terminal step, its orchestrator-only
+> composition, the report↔inbox delta, the machine-readable facts, and the drain-completeness check
+> (former **D4–D8**). The two plans describe one seam; 302 serializes after this one, because its
+> terminal step needs the slot this plan reserves.
 
 ## Problem
 
@@ -32,6 +41,13 @@
 | **What** | The inbox gets narrative; the operator report gets per-step outcomes, totals, repository state. **They are not the same facts.** |
 | **When** | The landing is emitted at `order: 991` — **three steps and two producers before the run ends.** |
 | **Where** | `998 → 999 → 1000` is contiguous. **There is no slot for a terminal step.** |
+
+> **Scope after the split.** The Problem describes the whole seam; the two plans divide it. **This plan
+> owns the "Where" row and § C** — the ordering space has no slot, collides, and has no contract.
+> **Plan `302` owns the "What" and "When" rows and §§ A, B** — the channel gap and the non-terminal
+> emission — plus § E. § D (ordering alone cannot fix it) is the shared bridge: this plan adds the
+> "reads X"/"destroys X" ordering keys § D calls for; 302 applies them. The full seam is kept here so
+> each plan reads against the same evidence.
 
 ### A. The channel gap is systematic, and it is cross-repository
 
@@ -115,19 +131,25 @@ different sampling points** — the later step populates what the earlier one co
 
 ## Goal
 
-The terminal report is **one emission, at the end, in a slot that exists**, carrying machine-readable
-facts; the ordering space has a banded allocation contract with reserved gaps and a collision check that
-fails; and no step silently overwrites state a later step reads.
+The finalize ordering space has a **banded allocation contract with reserved gaps** — reserving an
+integer terminal slot after the last reporting step and before `archive-plan`, and reserving ranges for
+project-local and third-party steps versus the shared bundle — **and a collision check that fails** on
+two same-phase steps sharing an order; the live same-phase collision is resolved; and the ordering key
+can express **"reads X"** and **"destroys X"** as declared facts. ⭐ **The terminal emission that occupies
+the reserved slot, and the machine-readable payload it carries, are plan `302`'s** — this plan builds the
+space they need.
 
 ## Deliverables
 
-⚠ **Nine deliverables — far past the split guard, BY EXPLICIT OPERATOR DECISION ("no split").** ⭐ The
-rationale is recorded rather than assumed: **these were three specs describing one seam from three ends,
-and splitting a seam is precisely how this codebase produces half-fixes.** A previous change fixed
-write-before-merge and left write-before-terminus. A renumber without a contract would re-accrete. A
-landing carrying more facts, emitted at the same wrong time, still cannot carry the ones produced after
-it. ⚠ **The honest risk of one plan is a long run with many loop-backs. Sized deliberately, not
-overlooked.**
+⚠ **Four deliverables (D0–D3) — Phase 1 only.** ⭐ The original plan carried nine across three phases as
+one landing, on the rationale that **splitting a seam is how this codebase produces half-fixes.** By
+operator decision that "no split" was reversed and the seam was cut at its **safest joint**: the space
+(this plan) is a genuinely separable foundation, while **the emission and its facts payload stay together
+in plan `302`** — because a terminal step emitting prose at the right time, or facts at the wrong time,
+is exactly the half-fix the original rationale warned against. The renumber-without-a-contract and
+write-before-terminus risks it named are answered *within this plan* (D1's contract, D2/D3's collision
+work); the "cannot carry facts produced after it" risk is answered *within 302* (its emission and
+payload are one deliverable-set).
 
 ⛔ **INTERNAL ORDER IS LOAD-BEARING: D3 must FIRE on the live collision BEFORE D2 fixes it.**
 
@@ -140,8 +162,9 @@ overlooked.**
    *Done when:* the population is derived and both semantics are answered **from the composer's source**.
    ⛔ **Read the composer — do not infer from output.**
    ⚠ Enumerate consumer repositories' declarations too; this tree is not the only one writing the key.
-   ⛔ **Also confirm whether the plan's source identifier is available at COMPOSE time** — D5 depends on
-   it, and if it is only available at runtime, D5's shape changes and observability gets *harder*.
+   ⛔ **Also confirm whether the plan's source identifier is available at COMPOSE time** — plan `302`'s
+   orchestrator-only deliverable depends on it, and if it is only available at runtime, that deliverable's
+   shape changes and observability gets *harder*. (Recorded here because D0 reads the composer anyway.)
 2. **D1 — A banded allocation contract with RESERVED gaps.** State the bands, their meaning, and which
    ranges are **reserved for project-local and third-party steps** versus **owned by the shared
    bundle**.
@@ -159,48 +182,21 @@ overlooked.**
    ⭐ **Extend the existing step-discovery test rather than adding a competing checker** — a new checker
    would be yet another restatement of the pipeline order.
 
-### Phase 2 — the emission
+### Phases 2 & 3 — the emission and the payload → split to plan `302`
 
-5. **D4 — A dedicated terminal step, in a slot D1 created.**
-   *Done when:* the emission is the last thing that happens before the archive step.
-   ⛔ **The archive step stays last.** ⚠ **Do NOT relocate the currently-emitting step wholesale** — its
-   other work is legitimately mid-band; **only the emission moves.** ⭐ **Separating the two is the
-   point**: relocating a whole step past what it needed is how the read-direction defect was created.
-6. **D5 — The step exists ONLY under an orchestrator.**
-   *Done when:* a non-orchestrated plan composes the step **out**, as an **observable compose-time
-   decision** — ⛔ **never a silent runtime no-op.**
-   ⭐ **The existing detection verb is the single sanctioned seam.** ⛔ **No second detector, no new
-   persisted field** — that skill's contract says so, and a second producer over one field is a defect
-   this epic has already shipped a plan for.
-
-### Phase 3 — the payload
-
-7. **D6 — Derive the report↔inbox DELTA, in both directions.**
-   *Done when:* the set difference is derived **over at least three archived plans** — one run's delta is
-   a sample — and **every item is classified MECHANISABLE or NARRATIVE-ONLY**.
-   ⛔ **The set difference IS the payload specification.**
-   ⭐ **The seven known report-only findings are the non-empty control: if the derived delta lacks them,
-   D6 is wrong.**
-   ⛔ **At least one known item may not be mechanisable at all** — the false-merge report arrived as
-   operator narrative, not as a step fact. **Say so rather than forcing it.**
-8. **D7 — The terminal emission carries the facts, machine-readable.** Consume the existing typed facts
-   map.
-   *Done when:* the emission carries typed facts, not prose.
-   ⭐ **The schema already exists with both-direction guards — this is a ROUTING gap, not a modelling
-   problem.** ⛔ **Do not re-narrate facts into prose**; the plan that built that map found precisely
-   that prose step records are not facts. ⚠ **Verify the report actually renders from that map**; if it
-   renders from something else, D7's source changes.
-9. **D8 — A drain-completeness check, and retire the workaround.** After a drain reports zero, the
-   orchestrator must be able to establish nothing material is outstanding.
-   *Done when:* the check exists, is **verified to FAIL on a pre-fix archived plan** where the delta is
-   known non-empty, and the report **states explicitly whether the manual paste is retired — naming any
-   residue that is irreducibly narrative and therefore correctly keeps it.**
-   ⛔ **A completeness check that passes on a known-incomplete input is the vacuous guard this project
-   counts at n≥5.**
-   ⭐⭐ **The operator is the oracle: this is done when a paste stops yielding anything new.**
+The former D4–D8 (a dedicated terminal step in the slot D1 reserves; the step existing only under an
+orchestrator; the report↔inbox delta; the machine-readable facts payload; and the drain-completeness
+check) are now owned by
+[`302-the-terminal-report-is-a-machine-readable-emission-the-inbox-drains.md`](../302-the-terminal-report-is-a-machine-readable-emission-the-inbox-drains.md).
+⛔ **This plan does NOT build the terminal step or route facts** — it only **reserves the slot** (D1's
+banded contract) and the declared-fact ordering keys ("reads X" / "destroys X") that 302 relies on. 302
+serializes after this plan.
 
 ## Out of scope
 
+- **The terminal emission and its machine-readable payload.** ⛔ **Plan `302` owns them** — the dedicated
+  terminal step, its orchestrator-only composition, the report↔inbox delta, the facts routing, and the
+  drain-completeness check. This plan builds only the space (the slot and the ordering keys) they need.
 - **Fixing the totals' sampling point itself.** A sibling plan owns it. ⭐ **This plan removes the
   *reason* for partiality at the landing**; it does not fix the sampling defect. **Serialize against it.**
 - **Renumbering consumer repositories' declarations.** ⛔ **It is NOT ESTABLISHED whether any consumer
@@ -215,16 +211,23 @@ overlooked.**
 ## Expected surface
 
 - Every finalize workflow and standards document's frontmatter carrying an `order`, plus the
-  project-local step skills under `.claude/skills/`.
+  project-local step skills under `.claude/skills/` — the population D1's contract renumbers into bands
+  and D2 de-collides.
 - `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/_manifest_core.py` — the
-  default step list.
-- `marketplace/bundles/plan-marshall/skills/marshall-orchestrator/scripts/orchestrator.py` — the
-  detection and inbox-write verbs.
-- `marketplace/bundles/plan-marshall/skills/manage-status/**` — the typed facts map.
-- A new finalize step document plus the dispatch table; the standards document where the emission lives
-  today; the inbox envelope standard; the orchestrator's analyze workflow (D8); the extension-api
-  documentation where `order` is described for third-party authors.
-- `test/plan-marshall/phase-6-finalize/**`.
+  default step list (`DEFAULT_PHASE_6_STEPS`, kept in lock-step with frontmatter order).
+- `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/_manifest_validation.py` —
+  the frontmatter-order resolver and ascending-order assertion (`_sort_steps_by_frontmatter_order`,
+  `check_emitted_steps_ascending_order`).
+- The **banded allocation contract** standards document (new), plus the extension-api documentation where
+  `order` is described for third-party authors
+  (`extension-api/standards/ext-point-finalize-step.md`) — extended with the reserved bands and the
+  "reads X"/"destroys X" declared-fact keys.
+- `test/plan-marshall/phase-6-finalize/test_finalize_orchestration_routing.py` — the existing
+  step-discovery test D3 extends with the collision check (⭐ **extend it, do not add a competing
+  checker**).
+- ⛔ **The emission/payload surfaces** — the orchestrator's detection/inbox-write verbs, `manage-status`'s
+  typed facts map, the new terminal step document + dispatch table, the inbox envelope standard, and the
+  orchestrator's analyze workflow — **belong to plan `302`, not here.**
 
 ## Claim labels
 
@@ -232,14 +235,13 @@ overlooked.**
 |---|---|---|
 | The order declarations, the saturated terminal region, and the same-phase collision | HYPOTHESIS | ⛔ **re-derive every one.** A first attempt at this asserted a free terminal slot from four steps it had read, and **a full sweep refuted it within the hour** ⇒ ⭐ **a list produced by looking is a SAMPLE, not an enumeration — knowing the archetype does not protect against it; only running the enumeration does** |
 | The archive step runs last because it moves the plan directory out from under later readers | HYPOTHESIS | that step's own source — **reachable and cheap** |
-| Seven findings existed only in the operator report | HYPOTHESIS | ⛔ **run reports under `.plan/`, not reachable here.** ⭐ **But the fact this plan needs — that a paste carried what the inbox did not — is established by the act of pasting**, independently of any technical claim in it |
-| The cross-repository corroboration | HYPOTHESIS | ⛔ **second-hand and unverifiable from this checkout.** Same note as above applies |
 | The space is per-phase | HYPOTHESIS | ⛔ **strongly suggested by one cross-phase duplicate pair, and stated NOWHERE.** If it is global, that pair **is** a collision and D2 grows |
 | The composer's tie-break for equal orders | HYPOTHESIS | ⛔ **NOT ESTABLISHED — deliberately not claimed.** The colliding pair may be deterministic (discovery order, name) or not. ⚠ **Do not report "undefined order" as an impact until the composer is read** |
 | Any consumer project pins an order D1 would break | HYPOTHESIS | ⛔ **NOT ESTABLISHED. Consumer repositories were not read** |
-| The detection verb suffices to gate composition at compose time | HYPOTHESIS | **D0's compose-time check** — D5's shape depends on it |
-| The retrospective unconditionally rebinds the session it measures | HYPOTHESIS | that step's first action, **by symbol** — ⛔ **checkable from source, and the most self-contained claim here** |
-| The typed facts map exists with both-direction guards | HYPOTHESIS | the status skill — ⭐ **if true, D7 is routing, not modelling** |
+
+The emission/payload claims — the seven report-only findings, the cross-repository corroboration, the
+compose-time orchestration signal, the typed facts map's both-direction guards, and the retrospective's
+session rebind — moved to plan `302` with the deliverables that turn on them.
 
 An asserted **absence** is verified exactly as an asserted presence, and is the higher-risk half.
 Every count above is a **lead** — re-derive it at the moment of the claim.
@@ -248,23 +250,32 @@ Every count above is a **lead** — re-derive it at the moment of the claim.
 
 - ⛔ **D3 must be SEEN to fire on the live collision before D2 fixes it.** This is the one ordering
   constraint in the plan that cannot be recovered later: once D2 lands, the fixture is gone.
-- ⛔ **D8 must be SEEN to fail on a known-incomplete input.** A completeness check that only ever passes
-  is the vacuous guard this plan exists to stop shipping.
 - ⛔ **D1's contract is text-whose-value-is-what-a-reader-does**, so it gets a **cold read**: give the
   Step 6 verification sub-agent the new contract with no other context and ask where a third-party step
   that must run after the merge but before the archive should be numbered. **If it cannot answer, the
   bands have no usable gaps** — which is the defect restated.
-- **D6's delta must include the known control items.** A derived delta that misses them is measuring the
-  wrong thing, however clean it looks.
+- ⛔ **The reserved terminal slot is D1's deliverable, not 302's.** Verify D1 leaves an integer slot free
+  after the last reporting step and before `archive-plan` — plan 302's terminal step occupies it, so a
+  band with no gap there blocks 302 before it starts.
+- ⚠ **Cross-epic:** D1 must not contradict the post-run band contract (`code-intelligence-substrate`
+  plan 050): a `post_run_review: true` step sits after the merge gate and declares `mutates_source:
+  false`. **Cite that contract; do not restate or alter it.**
 - Python, documentation, and test changes are expected, so the build gate takes its full path.
 
 ## Notes
 
-- ⚠ **Cross-epic: another epic owns the post-run band contract** — whether a source-mutating step may be
-  post-run. ⛔ **A banded allocation contract must not contradict it. Align before implementing D1.**
-- ⚠ **A terminal emission IS a termination signal by construction**, which substantially overlaps a
-  sibling plan's inbox-protocol work and reduces the need for an amend verb. **Re-evaluate both after
-  this lands.**
+- ⛔ **Split serialization:** plan `302` (the emission + payload) needs the terminal slot D1 reserves and
+  the "reads X"/"destroys X" ordering keys D1 adds. **302 serializes after this plan.** D0 of 302 stops
+  and reports blocked if this plan has not landed.
+- ⚠ **Cross-epic: the post-run band contract is owned by `code-intelligence-substrate` plan 050**
+  (landed as PR #1175) — whether a source-mutating step may be post-run: a `post_run_review: true` step
+  sits **after** the merge gate (`default:branch-cleanup`, order 70) and MUST declare `mutates_source:
+  false`; the two facts are mutually exclusive. ⛔ **The banded allocation contract must layer reserved
+  gaps on top of this and CITE it — it must not restate or alter the P1/P2 discriminator or the
+  mutual-exclusion rule.** The contract text lives in `source-edit-pushability.md` and
+  `ext-point-finalize-step.md` § "Implementor Frontmatter".
+- ⚠ **The terminal emission is a termination signal by construction** — that overlap with the sibling
+  inbox-protocol work (amend/supersede, plan 250) is **plan 302's** concern, not this plan's.
 - ⛔ **Do not go looking for the orchestrator spec, the archived plans, the run reports, the drained
   messages, or the other repository's report.** They live under `.plan/` or outside this repository, and
   are absent from this clone. Everything this plan needs is stated above; where the evidence is
