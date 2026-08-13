@@ -1,6 +1,6 @@
 # Run report — 350-change-type-is-one-word-for-two-different-scopes (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** claude/change-type-scopes-j6mbc6    **PR:** TBD    **Outcome:** in progress
+**Date (UTC):** 2026-08-13    **Branch:** claude/change-type-scopes-j6mbc6    **PR:** [#1221](https://github.com/cuioss/plan-marshall/pull/1221)    **Outcome:** completed (merge armed; landing delegated to the merge queue)
 
 ## Skills loaded
 
@@ -171,24 +171,92 @@ post-fix). No other stale statements, no undeclared collateral, no remaining liv
 compose invocation, and the retrospective audit's `Rule … fired` parse is unaffected by the added log
 line — all confirmed by the sub-agent.
 
-**CI / PR review:** _pending PR creation._
+**CI / PR review** (PR #1221, head `879ce52`): all checks green or skipped — `verify / conclusion`
+**success** (the required context), `verify / verify` success, `verify / gate` success,
+`review / review` success, `dependency-review` success, `generate-check` success; `Sourcery review`
+and `auto-merge` skipped. `mergeable_state: clean`. No inline review threads (`get_review_comments`
+empty). No actionable review finding was raised: `cuioss-review-bot` reported "PR contains tests, No
+security concerns identified, No major issues detected" — nothing to disposition. `coderabbitai` and
+`sourcery-ai` posted only rate-limit notices (see Reviewer participation), which raise no finding.
+Nothing to fix or reply to; every comment surface read (`get_comments`, `get_reviews`,
+`get_review_comments`).
 
 ## Reviewer participation
 
-_pending_
+Expected population **derived from configuration** — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(cross-named by `.github/workflows/pr-agent.yml`): `cuioss-review-bot` (pr-agent.md), `coderabbitai`
+(coderabbit.md), `sourcery-ai` (sourcery.md). Each verdict is derived from the stored comment/review
+bodies on PR #1221, not from a check state:
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Issue-comment "PR Reviewer Guide 🔍 — PR contains tests, No security concerns identified, No major issues detected" (comment `5286078713`); complements the green `review / review` check |
+| `coderabbitai` | `rate-limited` | Issue-comment "Review limit reached … you've reached your PR review limit. Next review available in: 30 minutes" (comment `5286069900`) — engaged but did not review this diff |
+| `sourcery-ai` | `rate-limited` | Review-summary body "you have reached your weekly rate limit of 500000 diff characters" (review `4931350747`); its `Sourcery review` check is `skipped` |
+
+**Coverage: 1 of 3.** The Step 8 condition-4 shortfall disclosure fired: "Review coverage: 1 of 3 —
+`cuioss-review-bot` reviewed with no findings; `coderabbitai` rate-limited (window reopens ~30 min);
+`sourcery-ai` rate-limited (weekly diff-character quota)." Per the contract this is a **disclosure,
+not a block**: rate limits are routine and outside our control, so the merge proceeds on 1-of-3
+coverage with the shortfall stated.
 
 ## Cost
 
-_pending_
+- **Tokens:** not available to the agent in this session — the Claude Code cloud harness does not
+  surface a token count to the running agent.
+- **Wall-clock:** not instrumented for this resumed run. Anchoring timestamps from the PR/check-run
+  metadata: PR #1221 created `2026-08-13T20:32:52Z`; CI (`verify / verify`) concluded
+  `2026-08-13T20:44:07Z` (source: PR and check-run timestamps).
+- **Population:** these figures count one Claude Code cloud session's activity as the harness records
+  it. ⛔ NOT comparable to a plan-marshall `metrics.toon` total, which counts an orchestrator-plus-agent
+  dispatch tree under plan-marshall's per-task billing boundary that a single interactive cloud session
+  does not share.
 
 ## Contract check (Step 9)
 
-_pending_
+GitHub access path: **GitHub MCP server** (the cloud path; no `gh` CLI reachable in-session). Branch
+form: **harness-assigned** `claude/change-type-scopes-j6mbc6`, kept as-is per the cloud-session rule
+(not a run-created `fix/` branch). A cloud run owes **no** `/sync-plugin-cache` (machine-local build
+step, not a debt this lane records).
+
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — `cloud-plan-lane` (this run); the earlier run loaded `ref-code-quality`, `plugin-script-architecture`, `python-core` (named above), all via the bundle-path route |
+| 2 Branch | Done — `claude/change-type-scopes-j6mbc6` present on `origin`; harness-assigned form kept |
+| 3 Plan directory | Done — `doc/plans/truthful-signals/350-…/plan.md` exists and opens with the first-instruction block (re-verified at HEAD) |
+| 4 Implement | Done — D0–D4 + staleness sweep; commits carry the `Co-Authored-By: Claude` trailer |
+| 4 Per-commit gate | Done — `*.py`-touching commits gated clean (§ Build gate) |
+| 4 Pushed | Done — no unpushed commit remains after this report commit |
+| 5 Build gate | Done — Python changed → full `./pw verify` **SUCCESS** (§ Build gate) |
+| 6 Verification sub-agent | Done — 2 findings, both fixed (§ Findings) |
+| 7 PR cycle | Done — PR #1221; no actionable comment; every reviewer dispositioned (§ Reviewer participation); all three comment surfaces read |
+| 8 Merge gate | Conditions 1–3 met (clean/green on head `879ce52`, no open comment, this report is the last pre-merge commit); condition-4 shortfall disclosed (1-of-3); auto-merge armed SQUASH immediately after this commit pushes. Landing delegated to the merge queue (§ Residue) |
+| 8 Bridge | No status/bookkeeping write outside this plan's directory; report carries PR # and per-deliverable outcome |
+| 9 This check | Recorded here |
+| 9 What have we learned | Recorded below |
+
+No step reported as not done.
 
 ## What have we learned (Step 9)
 
-_pending_
+**None proposed.** This run resumed a prior session at the Step 7/8 boundary: implementation, the
+build gate, and the verification sub-agent were already complete and PR #1221 already existed. The
+resume path, the three-surface comment read, the config-derived reviewer-population step, and the
+merge gate each executed exactly as written, and every step's artifact was producible from this fresh
+clone — no ambiguity in practice, no command that failed in the environment, no uncaught failure
+mode. With no run-produced evidence of a contract gap, there is nothing to propose; a speculative edit
+would violate the contract's "a proposal names what happened" rule.
 
 ## Residue
 
-_pending_
+- **Merge landing.** Auto-merge armed (SQUASH) on the clean/green PR #1221; on this merge-queue repo
+  that enqueues immediately and locks the branch, so the report was committed **before** arming. The
+  squash-merge SHA does not exist until the queue lands the PR — it is reported to the operator, not
+  embedded here. Where the session cannot self-confirm `state: MERGED`, the landing is delegated to
+  the merge queue / orchestrator collect — a completed outcome, not partial (§ Step 8).
+- **Rate-limited reviewers.** `coderabbitai` and `sourcery-ai` did not review this diff (quota). No
+  re-request is warranted: `cuioss-review-bot` reviewed with no findings, CI is green, and the diff is
+  a scoped reconciliation with full red-first test coverage. Left as disclosed, not blocked.
+- **Sibling plan.** The manifest cross-check that failed to notice this narrowing remains owned by a
+  sibling plan (cited, not merged; § Out of scope).
