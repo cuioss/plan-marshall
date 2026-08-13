@@ -74,7 +74,7 @@ Both paths named. A path-traversal finding is exactly the security audit's remit
 
 - **Docstring contradiction (verified against source, then fixed).** `_self_review_patterns.py` carried the comment *"``twelve fields``, ``5 rules``, ``nine checks`` are matched"* while `_CARDINALITY_NOUNS` was `operations?|fields?|steps?|rules?|commands?` — so `nine checks` was **not** matched. The count-prose detector's own documentation was itself an unverified count claim contradicted by its own code.
 - **Widening — DERIVED, not guessed.** A first-party scan of the detector's actual domain (510 skill `SKILL.md` + `standards/*.md` files, `scratchpad/derive_nouns.py`) showed the "N-<word>" following-word distribution is overwhelmingly **non-structural** (units `px`/`char`/`s`/`min`, prepositions/filler `of`/`and`/`or`/`is`, and "a single X" usages) — which is precisely why widening to "any noun" is wrong and the set must stay curated. `check` is added because it is (a) the plan's cited evidence, (b) a genuine stale-able structural-cardinality noun present in real contract sources (`phase-1-init/SKILL.md:857` — *"The two checks are ordered…"* goes stale if a third is added), and (c) the same kind of countable contract element as the existing five. The set stays **closed at six**: `operation, field, step, rule, command, check`. Adding `check` makes the `nine checks` claim TRUE — resolving the contradiction the right way ("widen the existing one and say so") rather than deleting the claim.
-- Consumer sites updated in lock-step so no restatement drifts: the pattern comment (`_self_review_patterns.py`), the `_detect_count_prose` docstring (`_self_review_detectors.py`), and Detection Rule 14 (`ext-self-review-plan-marshall/SKILL.md`).
+- Consumer sites updated in lock-step, across **four** restatement kinds: the pattern comment (`_self_review_patterns.py`), the `_detect_count_prose` docstring (`_self_review_detectors.py`), Detection Rule 14 (`ext-self-review-plan-marshall/SKILL.md`), and — caught by the verification sub-agent, one level out — the **Check 11** cognitive-review instruction that consumes the `count_prose` surface (`phase-6-finalize/workflow/pre-submission-self-review.md:301`), which enumerated the referent noun set as the old five. That fourth site is the exact beyond-diff-consumer drift this plan is about: the widening added `check` to the detector but not initially to the reviewer instruction that re-counts the referent, so a surfaced `nine checks` would have pointed the reviewer at a list omitting `check`. Fixed.
 
 Commit: _see Deliverables → commits below._
 
@@ -104,7 +104,14 @@ Two cases added to `TestDetectCountProse` (`test_self_review.py`):
 
 ### Verification sub-agent (Step 6)
 
-_pending — dispatched after the build gate is green._
+An independent read-only sub-agent verified the committed diff against the plan, swept beyond the diff for stale noun-set restatements, and performed the plan's mandated cold read.
+
+- **One real finding, fixed:** the stale **Check 11** consumer at `phase-6-finalize/workflow/pre-submission-self-review.md:301` (see D2 above). Disposition: **fixed** (commit adds `check` to the enumeration). This was a genuine miss — the in-skill restatements were updated but the downstream reviewer instruction was not — and it is precisely the beyond-diff-consumer archetype the plan targets.
+- **Cold read — documentation and code AGREE within the skill directory.** From the three in-skill doc sites alone the sub-agent derived: matches `(digit|one..twenty)` immediately before `operation(s)/field(s)/step(s)/rule(s)/command(s)/check(s)` (e.g. `twelve fields`, `5 rules`, `nine checks`, `two checks`); does not match `version 3`, `5 deliverables`, `3 modules`, `5 checkpoints`. That matches the regex exactly. So the fix did **not** reproduce the docstring-vs-code defect inside the skill — the disagreement surfaced only at the Check 11 consumer one level out, now fixed.
+- **All other categories clean** (named by the sub-agent): the regex and both new tests correct by inspection; the count_prose N15 schema is noun-agnostic and unaffected; no pre-existing `TestDetectCountProse` case contradicts the widening; no undeclared code collateral.
+- **Stated non-verifiable-from-diff (honest bound):** D0's corpus counts and D1's manifest line anchors are analysis from evidence outside the clone; the D3 mutation harness lives in scratch (not committed) — the sub-agent confirmed D3 discrimination by regex inspection instead.
+
+Re-verification: the single finding was a one-line documentation enumeration; the fix is self-evidently complete (the enumeration now contains all six nouns the regex matches), and a repo-wide sweep for the five-noun enumeration confirmed no other consumer site remained stale. The corrected state is re-checked against the code in the cold-read section above.
 
 ### Routed out (recorded, deliberately not absorbed)
 
