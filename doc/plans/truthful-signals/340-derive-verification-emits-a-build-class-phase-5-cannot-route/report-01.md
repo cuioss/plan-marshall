@@ -182,8 +182,32 @@ one low-severity code edge:
    build-gate / findings sections are now filled.
 
 Remediation re-verified: `./pw verify plan-marshall` → SUCCESS (16449 passed, 1
-skipped). A round-2 re-verification of the remediation was dispatched to the same
-sub-agent.
+skipped).
+
+### Pre-PR verification sub-agent (round 2 — verify remediation) — 2 findings
+
+Round 2 confirmed C2/C3/phase-6 fully remediated and the three code deliverables
+still PASS, and found two more documentation gaps:
+
+6. **[fixed]** `manage-execution-manifest/SKILL.md:569` — the round-1 rewrite
+   introduced an imprecise qualifier ("every other verb whose `verify:{verb}`
+   generalization **resolves** routes"). Resolvability does not gate routing — a
+   custom/unknown verb routes to `verify:{verb}` even when unresolvable and then
+   fails loud at the gate. Reworded to the actual predicate. (commit `a272be5`)
+   *This was a defect introduced during round-1 remediation — exactly what the
+   re-dispatch discipline exists to catch.*
+7. **[fixed]** `phase-4-plan/SKILL.md:786` (pre-existing, missed in round 1) —
+   still asserted the retired universal "all orchestrator commands are
+   mapped/appended/removed from the task" contract (false for the carve-out) and
+   named retired fixed step-IDs (`quality_check` / `build_verify` /
+   `coverage_check`). Updated to the live `verify:{canonical}` names and the two
+   kept-with-task kinds. (commit `a272be5`)
+
+Round 2's second tree-wide sweep confirmed no OTHER consumer of the retired
+universal contract remains (in-function docstring, `_manifest_rules.py` comment,
+`decision-rules.md` all verified accurate). Doc fixes re-verified:
+`./pw quality-gate plan-marshall` → clean (mypy/ruff/SPDX). A round-3 closing
+confirmation of the two wording fixes was dispatched.
 
 ### CI / PR review findings
 
