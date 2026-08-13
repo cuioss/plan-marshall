@@ -13,7 +13,8 @@ A. Layer-D ``main_dirty_files`` invariant — capture a clean baseline at
    file between N and N+1, then run ``phase_handshake verify --phase
    {N} --strict`` and assert it fails with
    ``main_checkout_dirtied_during_plan``. Reverting and re-running
-   yields a clean verify. ``.plan/`` paths are filtered.
+   yields a clean verify. Untracked ``.plan/`` paths are filtered; a
+   tracked ``.plan/`` file is retained as a real leak.
 C. ``sync-plugin-cache`` staleness guard — synthetic ``__pycache__``
    files created with fresh mtimes do NOT trip the guard; touching a
    tracked source file DOES.

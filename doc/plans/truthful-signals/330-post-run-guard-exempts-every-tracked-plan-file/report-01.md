@@ -168,7 +168,29 @@ proposal.
 
 ## Findings
 
-_Pending the verification sub-agent (Step 6) and PR review._
+**Verification sub-agent (Step 6, `general-purpose`, read-only).** Verdict: all six deliverables
+D0–D5 satisfied as specified; D0 classification independently confirmed (the two retrospective checks
+observe a *committed* diff so a trackedness predicate would there introduce false positives; the
+path-attribution helper is docstring-only; an independent sweep for a 7th `startswith('.plan/')`
+prefix-drop found none); D1 is a genuine single shared predicate; no undeclared collateral. It
+surfaced four stale-restatement findings — each a doc/comment that still asserted the old drop-all
+behavior and is now false. All four **accepted and fixed** (a false restatement is exactly the defect
+this truthful-signals epic targets):
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| 1 | `workflow-integration-git/standards/worktree-handling.md:220` § "Filter Rule: `.plan/` Paths Are Excluded" | HIGH — a dedicated section (header + body) asserting the old unconditional drop-all; the same file's § "What Layer D Detects" was updated but this section was missed, leaving the standard self-contradictory | **fixed** — header → "Excluded Only When Untracked"; body rewritten to the trackedness rule (commit `<pending>`) |
+| 2 | `test/plan-marshall/phase-6-finalize/test_post_run_review_ordering.py:557` | LOW — a per-test docstring stating the predicate is "dirty AND tracked AND outside .plan/" | **fixed** — corrected to "dirty AND tracked; `.plan/` exempt only when untracked" |
+| 3 | `plan-marshall/scripts/_handshake_store.py:25`, `_handshake_commands.py:17` | LOW — bare "sorted, `.plan/`-filtered" shorthand, not updated in lock-step with the parallel `phase-handshake.md:127` table | **fixed** — both now describe the trackedness-keyed exemption |
+| 4 | `test/plan-marshall/plan-marshall/test_phase_handshake_worktree_assertion.py:502`, `test_worktree_contract_e2e.py:16` | LOW — one-line scenario summaries implying drop-all | **fixed** — both now say "untracked `.plan/` filtered; a tracked `.plan/` file retained as a leak" |
+
+No finding was rejected. The sub-agent also noted the report's tail sections were `_pending_` mid-run
+(expected — the PR-review/Step-9 sections fill downstream). Post-fix re-sweep for
+`.plan/`-filtered / "Paths Are Excluded" / "dirty AND tracked AND outside" / removed symbols
+(`filter_tracked_source`, `_PLAN_STATE_PREFIX` outside the shared module): clean. Quality gate and the
+affected tests re-run green after the fixes.
+
+_CI / PR-review findings: pending (filled at Step 7)._
 
 ## Reviewer participation
 

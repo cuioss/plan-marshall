@@ -499,7 +499,8 @@ def test_cli_strict_exits_zero_when_worktree_resolves(
 #   (b) baseline subset of live      → strict verify fails with payload
 #       listing the offending paths
 #   (c) ``use_worktree=false`` plan  → invariant gated off (no error)
-#   (d) ``.plan/`` paths in live set → filtered, NOT a drift signal
+#   (d) untracked ``.plan/`` paths in live set → filtered, NOT a drift signal
+#       (a tracked ``.plan/`` file is retained as a leak — see e2e / shared suite)
 #   (e) baseline-equal live set      → proper-superset rule yields no error
 # =============================================================================
 

@@ -217,11 +217,11 @@ When `phase_handshake verify --phase {N} --strict` fails with `error: main_check
 
 The proper-superset rule means the operator does not need to *clean* pre-existing dirty paths — only the **newly-dirty** paths must be addressed before the boundary will advance. This keeps the recovery loop scoped to the actual leak rather than demanding a fully-clean main checkout that may carry unrelated dirty state from before the plan started.
 
-### Filter Rule: `.plan/` Paths Are Excluded
+### Filter Rule: `.plan/` Paths Are Excluded Only When Untracked
 
-The invariant filters paths beginning with `.plan/` out of both the capture and the comparison. The plan-marshall `.plan/` directory holds plan metadata, status files, lessons aggregate state, etc. During phases 1-4 these resolve to the main checkout's `.plan/local/` via the uniform cwd walk-up (cwd is main); the lessons corpus stays main-only throughout. Dirtying `.plan/` is part of normal phase-boundary bookkeeping.
+The invariant's `.plan/` exemption is keyed on git **trackedness**, not on the path prefix (the shared `_plan_state_exemption.partition_plan_state_exemption` predicate, applied identically at capture and verify time). The plan-marshall `.plan/` directory holds mostly UNTRACKED runtime state — plan metadata, status files, lessons-aggregate working state — which during phases 1-4 resolves to the main checkout's `.plan/local/` via the uniform cwd walk-up (cwd is main); dirtying that untracked state is normal phase-boundary bookkeeping and is filtered out of both the capture and the comparison. But a number of files under `.plan/` are git-**tracked** (`marshal.json`, every `project-architecture/**/enriched.json` descriptor); a dirtied tracked `.plan/` file is a real leak into the main checkout and is retained, exactly like tracked source outside `.plan/`. Exempting on the bare prefix would hide those tracked writes, so trackedness is the discriminator.
 
-A user-side hook (the original lesson's proposal) would need a complex allow-list of `.plan/`, `.plan/local/`, `.plan/temp/` etc. patterns to avoid false positives. The handshake-driven approach uses a single canonical filter applied identically at capture and verify time, eliminating the allow-list-drift class of bug entirely.
+A user-side hook (the original lesson's proposal) would need a complex allow-list of `.plan/`, `.plan/local/`, `.plan/temp/` etc. patterns to avoid false positives. The handshake-driven approach uses a single canonical trackedness predicate applied identically at capture and verify time, eliminating the allow-list-drift class of bug entirely.
 
 ### Baseline-Equal Paths Are Not Drift
 

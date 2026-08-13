@@ -554,8 +554,9 @@ def test_cli_publishes_examined_population(committed_repo: Path):
 def test_untracked_source_file_is_not_reported(committed_repo: Path):
     """A brand-new untracked file is not an offender — the predicate is TRACKED.
 
-    The predicate is "dirty AND tracked AND outside .plan/". This pins the
-    tracked conjunct independently of the ``.plan/`` conjunct that (h) pins.
+    The predicate is "dirty AND tracked" (a ``.plan/`` path is exempt only when
+    untracked). This pins the tracked conjunct for a NON-``.plan/`` path,
+    independently of the untracked-``.plan/`` conjunct that (h) pins.
     """
     # Arrange — a new file that was never added to the index.
     _write(committed_repo, 'marketplace/bundles/demo/scratch.md', 'scratch\n')
