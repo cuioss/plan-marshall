@@ -57,19 +57,49 @@ The four residue verbs remain reachable unchanged — the facade is purely addit
 
 ## Deliverables
 
-- **D1 — LSP-shaped facade + mapping table:** (in progress)
-- **D2 — capability-report verb (`capabilities`):** (in progress)
-- **D3 — vacuous-consumer guard (refine feasibility):** (in progress)
-- **D4 — search measurement contract (`--ignore-case` + `file_count`):** (in progress)
-- **D5 — documentation:** (in progress)
+- **D1 — LSP-shaped facade + mapping table:** DONE. New `lsp` subcommand group in
+  `architecture.py` (`hover`→`module`, `references`→`impact`, `workspace-symbol`→`find`,
+  `definition`→`resolve`); handlers `cmd_lsp_*` in `_cmd_client_handlers.py` (pure dispatch,
+  answer unchanged). Residue verbs (`path`/`impact`/`find`/`which-module`) untouched. Per-verb
+  mapping table in `client-api.md` § "LSP-shaped query facade". Commit 0d12e4b. Tests:
+  `test_lsp_facade.py` (facade == underlying verb; residue reachable).
+- **D2 — capability-report verb (`capabilities`):** DONE. `cmd_capabilities` reports
+  module_edges / path_attribution / content_search, each `not_derivable`/`derivable` (+
+  `derived_count`) or `available`/`unavailable`; read from producers that actually ran, per-call
+  (uncached), envelope-scoped (`project_dir`). Commit 0d12e4b. Tests: `test_capabilities.py`
+  (cannot-derive vs derived-nothing vs derived-N; envelope-scoping).
+- **D3 — vacuous-consumer guard (refine feasibility):** DONE. `refine-workflow-detail.md`
+  Feasibility Check now gates dependency-direction reasoning on graph `resolver_count`:
+  `resolver_count: 0` → `FEASIBILITY: UNDERIVABLE`, never a silent clean pass. Commit 0d12e4b.
+  Negative-control test `test_feasibility_underivable_guard.py` asserts the two empty graphs are
+  classified oppositely.
+- **D4 — search measurement contract (`--ignore-case` + `file_count`):** DONE. `search --content`
+  gains `--ignore-case` (composes with `--literal`; metacharacter pattern matched verbatim AND
+  case-insensitively); `file_count` (distinct paths) added alongside `count` (rows); regex-mode
+  `(?i)` documented. Commit 0d12e4b. Tests added to `test_search_content.py`.
+- **D5 — documentation:** DONE. concepts/`code-intelligence.adoc` (LSP query model + capability
+  report), developer/`lsp-query-facade.adoc` (new, verb mapping) + README registration,
+  user/`code-search.adoc` (--ignore-case, file_count, capabilities, LSP vocab), `SKILL.md` +
+  `client-api.md` (contract + Canonical invocations). Commit 6126013.
 
 ## Build gate
 
-(pending)
+`git diff --name-only origin/main...HEAD -- '*.py'` → non-empty (manage-architecture scripts +
+tests). `./pw quality-gate` clean (`issues[0]`, plugin-doctor marketplace-wide). Full `./pw verify`
+first failed test-compile on two mypy `no-any-return` in the new test helpers; fixed (`bool(...)`
+wrap and a `dict`-annotated local). `./pw test-compile` → `Success: no issues found in 727 source
+files`. Final full `./pw verify` re-run recorded below.
 
 ## Findings
 
-(pending — verification sub-agent, CI, PR review)
+- **Verification sub-agent — cold read (D5, plan-mandated):** un-primed agent read the facade docs
+  (client-api.md § facade, SKILL.md, lsp-query-facade.adoc, code-intelligence.adoc) and answered
+  which verbs it believed were renamed/removed. Verdict: **NONE — all prior verbs remain reachable
+  under their own names**, and no document misled it toward a rename reading. This is the correct
+  reading the plan's D5 verification requires — the facade documentation PASSED the cold read.
+- **Build (test-compile):** 2 mypy `no-any-return` findings in `test_feasibility_underivable_guard.py`
+  and `test_capabilities.py` — FIXED (source: local build).
+- Deliverable-verification sub-agent + CI + PR review: recorded below as they arrive.
 
 ## Reviewer participation
 

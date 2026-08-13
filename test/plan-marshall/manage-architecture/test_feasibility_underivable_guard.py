@@ -90,7 +90,7 @@ def _dependency_direction_derivable(graph_result: dict) -> bool:
     in phase-2-refine's Feasibility Check: the check a consumer performs BEFORE
     reading the edges.
     """
-    return graph_result['resolver_count'] > 0
+    return bool(graph_result['resolver_count'] > 0)
 
 
 def test_zero_resolver_graph_is_underivable_not_a_clean_pass(monkeypatch):

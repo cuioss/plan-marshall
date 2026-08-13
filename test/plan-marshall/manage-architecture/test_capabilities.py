@@ -109,11 +109,13 @@ def _module(name: str, **extra) -> dict:
 
 
 def _capabilities(tmpdir: str) -> dict:
-    return cmd_capabilities(Namespace(project_dir=tmpdir))
+    result: dict = cmd_capabilities(Namespace(project_dir=tmpdir))
+    return result
 
 
 def _cap(result: dict, name: str) -> dict:
-    return next(entry for entry in result['capabilities'] if entry['capability'] == name)
+    entry: dict = next(item for item in result['capabilities'] if item['capability'] == name)
+    return entry
 
 
 def test_empty_envelope_reports_no_capabilities_not_false_ones():
