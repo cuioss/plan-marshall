@@ -1,6 +1,6 @@
 # Run report — 170-finalize-dispatch-evidence-is-missing (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** `claude/finalize-dispatch-evidence-hgcl9s` (harness-assigned; kept as-is)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-13    **Branch:** `claude/finalize-dispatch-evidence-hgcl9s` (harness-assigned; kept as-is)    **PR:** [#1225](https://github.com/cuioss/plan-marshall/pull/1225)    **Outcome:** completed (conditions 1–3 met, 1-of-3 review shortfall disclosed, auto-merge armed; landing delegated to the merge queue)
 
 This plan owns the **detector** (the execution-context dispatch audit) and the **per-task
 artifact emitter**. The dispatch-line EMISSION is out of scope (owned by a sibling plan).
@@ -165,28 +165,105 @@ No finding was rejected. All actionable findings fixed; the quality gate re-ran 
 
 ### CI
 
-_Pending — populated after the PR's checks report._
+`verify / gate`, `dependency-review`, `review / review`, `generate-check` concluded **success** on
+the head SHA `9b4be92`; `verify / verify` (the heavy build carrying the required `verify /
+conclusion`) was still **in_progress** at the merge gate. No self-wake is available in this session,
+so — per the lane — auto-merge was armed while `verify` runs; the merge queue is the enforcer and
+admits the PR only when the ruleset's required contexts pass. No CI failure observed.
 
 ### PR review
 
-_Pending — populated after the automated reviewers report._
+No actionable review comment. All three comment surfaces (`get_comments`, `get_reviews`,
+`get_review_comments`) were read before the merge gate; inline review threads: none. `cuioss-review-bot`
+posted a clean review (tests present, no security concerns, no major issues) — nothing to fix or reply
+to. `coderabbitai` and `sourcery-ai` posted only rate-limit notices. Disposition: nothing actionable;
+the shortfall is disclosed (Reviewer participation, below).
 
 ## Reviewer participation
 
-_Pending — populated after the PR review cycle._
+Expected reviewer population derived from configuration — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc:
+**M = 3** — `coderabbitai` (coderabbit.md:27), `cuioss-review-bot` (pr-agent.md:55), `sourcery-ai`
+(sourcery.md:25). Verdicts derived from the stored comment bodies (not check states):
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Posted a review summary over the diff — "PR Reviewer Guide: 🧪 PR contains tests · 🔒 No security concerns identified · ⚡ No major issues detected" (issue-comment 5286488438). Clean; no findings to handle. |
+| `coderabbitai` | `rate-limited` | Published only a quota notice, no review: "Review limit reached … Next review available in: 107 minutes" (issue-comment 5286479074). |
+| `sourcery-ai` | `rate-limited` | Published only a quota notice, no review: "you have reached your weekly rate limit of 500000 diff characters" (review 4931660348). Its `Sourcery review` check concluded `skipped`. |
+
+**Coverage: 1 of 3.** **Step-8 shortfall disclosure (fired — disclosure, not a block):** *Review
+coverage: 1 of 3 — `cuioss-review-bot` reviewed (tests present, no security concerns, no major issues);
+`coderabbitai` rate-limited (next window ~107 min); `sourcery-ai` rate-limited (weekly diff-character
+quota).* Rate limits are routine and outside our control; per the lane this changes only what the run
+says, not whether it merges. Auto-merge armed exactly as full coverage would be.
 
 ## Cost
 
-_Pending._
+- **Tokens:** not available to the agent as a reliable figure in this session.
+- **Wall-clock:** single interactive Claude Code cloud session (see PR #1225 timestamps for the finalize
+  window).
+- **Population:** this one cloud session's usage as the harness counts it. ⛔ **NOT comparable** to a
+  plan-marshall `metrics.toon` total (which counts the orchestrator-plus-agent dispatch tree under a
+  per-task billing boundary this single interactive session does not share). No comparable number is
+  presented.
 
 ## Contract check (Step 9)
 
-_Pending._
+Re-read the `cloud-plan-lane` skill; each step checked against what happened and its on-disk artifact:
+
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **done** — `cloud-plan-lane`, `ref-code-quality`, `plugin-script-architecture`, `python-core`, `pytest-testing`, loaded by bundle path (plugin absent, as the lane anticipates). |
+| 2 Branch on `origin` | **done** — harness-assigned `claude/finalize-dispatch-evidence-hgcl9s`, pushed before any work; kept as-is. |
+| 3 Plan directory | **done** — `…/170-…/plan.md` exists and opens with the first-instruction block (present on receipt; no repair needed). |
+| 4 Implement | **done** — commits `251c96d`,`c52b795`,`77611b2`,`d38ce99`,`9b4be92` + this final report commit; each carries the `Co-Authored-By: Claude` trailer, no "Generated with" footer. |
+| 4 Per-commit gate | **done** — every `*.py`-touching commit was preceded by a clean `./pw quality-gate` (`total_issues: 0` across ruff/mypy/SPDX/plugin-doctor). |
+| 4 Pushed | **done** — this final report commit is the last; no unpushed commit remains. |
+| 5 Build gate | **done** — Python changed → `./pw verify` SUCCESS (19621 passed, 0 failed). Later doc-only commits took the no-build path, validated by `./pw quality-gate`. |
+| 6 Verification sub-agent | **done** — dispatched read-only; all five deliverables MET; four stale-claim findings fixed (`d38ce99`), D2/D1 disclosures accepted. Findings + dispositions above. |
+| 7 PR cycle | **done** — PR #1225 (no `skip-bot-review`: the diff is code — `*.py` + skills/bundles). Every comment dispositioned; all three comment surfaces read. |
+| 8 Merge gate | conditions 1–3 met (required `verify` deferred to the queue via auto-merge; no open comments; report finalized as the last pre-merge commit), 1-of-3 shortfall disclosed, auto-merge armed (SQUASH). Landing delegated to the merge queue (no self-wake in this session — arm-and-hand-off is a completed outcome per the lane). |
+| 8 Bridge | **done** — no status/bookkeeping write under `doc/plans/` outside this plan's own directory; no shared lane doc touched. The report carries the PR number and per-deliverable outcome for the orchestrator's collect. |
+| 9 This check | **done** — recorded here. |
+| 9 What have we learned | **done** — below. |
+
+GitHub access path used: **GitHub MCP server**. Branch form: **harness-assigned**. No `/sync-plugin-cache`
+is owed (machine-local build step, not a debt a cloud run records).
 
 ## What have we learned (Step 9)
 
-_Pending._
+**No `cloud-plan-lane` contract change proposed.** The contract executed cleanly end to end: skill-by-path
+loading, the harness-assigned branch pushed before any work, the conditional build gate (Python → full
+`verify`; docs-only → quality-gate), the pre-PR verification sub-agent (whose beyond-diff stale-claim
+sweep earned its keep — it caught four real stale docs the diff-scoped checks missed), the three-surface
+comment read, and the disclose-not-block shortfall rule all behaved as written. No step was ambiguous in
+practice and no step's artifact failed to produce as written. The one environmental friction —
+`UV_HTTP_TIMEOUT` needed raising and `python3 -m pytest` is not on the bare PATH (use `uv run pytest`) —
+is already documented in the lane. A speculative edit is not a proposal, so none is made.
+
+**Observation for the operator (plan-authoring, not a lane-contract change).** Plan 170's central premise
+— "the shape-violation check's second surface has *no producer at all*" — was **false at HEAD**: the
+sibling `truthful-signals/280` (PR #1200) landed first and wired Surface-B emission into the resolve
+seam. The plan anticipated exactly this risk (it labelled the audit-file location a HYPOTHESIS and told
+the run to *settle the prior question in the clone*), so the run settled it from source and reported the
+shift rather than papering over it. Two consequences worth the operator's eye: (a) the "detector" the
+plan assumed existed was **LLM-only prose**, so the plan's deliverables (a fail-able, testable detector)
+required **building one from scratch** — larger than "fix the detector"; and (b) the plan's D2 named a
+*roster qualifier* mechanism, but the token-record mechanism the run used is what the plan's own claim
+table cites as ground truth and better honors the programme's anti-"hand-maintained mirror" rule. Both
+are recorded as disclosed, justified decisions; neither is a lane-contract gap.
 
 ## Residue
 
-_Pending._
+- **Finalize resolves still don't pass `--workflow`.** Surface B stays empty for every finalize dispatch,
+  so finalize's `shape_violation` reports `not_evaluated` (honestly). Migrating those resolves to the
+  seam is the **sibling emission plan's** job (out of this plan's scope); when it lands, D1's
+  `shape_violation` becomes evaluable and D3's channel-completeness will *show* the emission fix working
+  (its stated purpose).
+- **Per-task ARTIFACT emission cannot be made deterministically complete** — it is LLM-hand-emitted and
+  empty-diff-suppressed by design, so D4 took the population-statement route (the plan's second option).
+  A future emitter that drives `[ARTIFACT]` from the shared task-close path (analogous to the dispatch
+  seam) would let the population reach N == M reliably; not owned here.
+- **Three sibling docs** (`effort-roles.md`, `call-graph.md` ×2) carried "LLM aspects" labels the
+  relabel made imprecise; fixed in this run (`d38ce99`). No further known stale sites.
