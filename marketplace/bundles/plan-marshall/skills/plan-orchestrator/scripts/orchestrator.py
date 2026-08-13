@@ -54,14 +54,19 @@ operation groups against the main-anchored orchestrator store
   evidence, and the population it was derived from, plus the floor over the
   participating rows and the sample instant. An unreadable or disagreeing
   observation resolves to ``indeterminate`` and never to ``not_ready``.
-- ``inbox {write,validate,list,archive,detect}`` — the epic's plan-writable
-  OUTBOX and its orchestrator-side drain: append one
-  ``inbox/{sender_id}-{NNN}.md`` message, validate an existing message against
-  the envelope schema, enumerate the queued messages with their validation
-  verdicts, retire a consumed message to ``inbox/archive/``, or classify a
-  plan's ``source_id`` pointer as orchestrated. Backed by
-  :mod:`_orchestrator_inbox`; the write boundary is enforced by construction
-  there (no caller-supplied output path exists).
+- ``inbox {write,amend,supersede,close-stream,validate,list,archive,
+  migrate-archive,detect}`` — the epic's plan-writable OUTBOX and its
+  orchestrator-side drain: append one ``inbox/{sender_id}-{NNN}.md`` message,
+  correct a filed message body in place (``amend`` — preserves ``created``,
+  stamps a monotonic ``revision``), retire a message in favour of a successor
+  (``supersede`` — tombstone-style), mark a sender's stream ended
+  (``close-stream``), validate an existing message against the envelope schema,
+  enumerate the queued messages with their validation verdicts and lifecycle,
+  retire a consumed message to ``inbox/archive/{sender}/``, fold a flat archive
+  into that per-sender layout (``migrate-archive``), or classify a plan's
+  ``source_id`` pointer as orchestrated. Backed by :mod:`_orchestrator_inbox`;
+  the write boundary is enforced by construction there (no caller-supplied
+  output path exists).
 
 The ``kind=orchestrator`` ``status.json`` schema is owned by
 ``manage-status/standards/status-lifecycle.md``; ``status.json`` is created
@@ -92,9 +97,13 @@ from _orchestrator_inbox import (
     RUNNING_STATUS,
     SENDER_TYPES,
     InboxCounts,
+    cmd_inbox_amend,
     cmd_inbox_archive,
+    cmd_inbox_close_stream,
     cmd_inbox_detect,
     cmd_inbox_list,
+    cmd_inbox_migrate_archive,
+    cmd_inbox_supersede,
     cmd_inbox_validate,
     cmd_inbox_write,
     inbox_counts,
@@ -2510,16 +2519,18 @@ def _add_cleanup_group(subparsers: Any) -> None:
 def _add_inbox_group(subparsers: Any) -> None:
     """Register the ``inbox`` verb group.
 
-    Sub-verbs: ``write``, ``validate``, ``list``, ``archive``, ``detect``. The
+    Sub-verbs: ``write``, ``amend``, ``supersede``, ``close-stream``,
+    ``validate``, ``list``, ``archive``, ``migrate-archive``, ``detect``. The
     handlers live in :mod:`_orchestrator_inbox`; this function only wires argv
     to them. Note what the surface deliberately does NOT expose: no output
-    path, no sequence number, and no inbox directory — the write target is
-    derived from ``--slug`` and ``--sender-id`` alone, and the drain verbs take
-    a bare message filename, which is what makes the ledger write-boundary
+    path, no sequence number, and no inbox directory — the write and correction
+    targets are derived from ``--slug`` plus ``--sender-id`` / a bare
+    ``--message`` filename alone, which is what makes the ledger write-boundary
     carve-out enforced by construction. ``archive --as-name`` does not widen
-    that carve-out: it is still a bare filename joined onto ``inbox/archive/``,
-    never a caller-supplied path, and it is additionally sender-constrained, so
-    the archived name's sender provenance is preserved.
+    that carve-out: it is still a bare filename joined onto
+    ``inbox/archive/{sender}/``, never a caller-supplied path, and it is
+    additionally sender-constrained, so the archived name's sender provenance is
+    preserved.
     """
     inbox = subparsers.add_parser(
         'inbox',
@@ -2570,6 +2581,72 @@ def _add_inbox_group(subparsers: Any) -> None:
     )
     write.set_defaults(handler=cmd_inbox_write)
 
+    amend = actions.add_parser(
+        'amend',
+        help='Correct a filed message body in place, preserving created, '
+        'stamping amended + a monotonic revision.',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(amend)
+    amend.add_argument(
+        '--message',
+        required=True,
+        metavar='NAME',
+        help='Bare message filename inside the epic inbox/ directory.',
+    )
+    amend.add_argument(
+        '--payload-file',
+        required=True,
+        help='Path to the staged markdown correction body (never inline text).',
+    )
+    amend.set_defaults(handler=cmd_inbox_amend)
+
+    supersede = actions.add_parser(
+        'supersede',
+        help='Retire a filed message in favour of a named successor '
+        '(tombstone-style: stays resolvable, stops presenting as live).',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(supersede)
+    supersede.add_argument(
+        '--message',
+        required=True,
+        metavar='NAME',
+        help='Bare message filename to retire, inside the epic inbox/ directory.',
+    )
+    supersede.add_argument(
+        '--by',
+        required=True,
+        metavar='NAME',
+        help="Bare successor message filename; must resolve in the epic inbox/ "
+        'or inbox/archive/.',
+    )
+    supersede.set_defaults(handler=cmd_inbox_supersede)
+
+    close_stream = actions.add_parser(
+        'close-stream',
+        help="File a terminal lifecycle=stream-end marker declaring the sender's "
+        'stream ended.',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(close_stream)
+    close_stream.add_argument(
+        '--sender-type',
+        default='plan',
+        help=f'Sender class: one of {sorted(SENDER_TYPES)} (default: plan).',
+    )
+    close_stream.add_argument(
+        '--sender-id',
+        required=True,
+        help="Sender identifier whose stream is ending; the marker's sender segment.",
+    )
+    close_stream.add_argument(
+        '--reason',
+        default=None,
+        help='Optional closing note; a default sentence is used when omitted.',
+    )
+    close_stream.set_defaults(handler=cmd_inbox_close_stream)
+
     validate = actions.add_parser(
         'validate',
         help='Validate one existing inbox message against the envelope schema.',
@@ -2616,6 +2693,15 @@ def _add_inbox_group(subparsers: Any) -> None:
         ),
     )
     archive_message.set_defaults(handler=cmd_inbox_archive)
+
+    migrate_archive = actions.add_parser(
+        'migrate-archive',
+        help='Fold a flat inbox/archive/ into per-sender subdirectories, '
+        'reporting the count moved per sender.',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(migrate_archive)
+    migrate_archive.set_defaults(handler=cmd_inbox_migrate_archive)
 
     detect = actions.add_parser(
         'detect',
