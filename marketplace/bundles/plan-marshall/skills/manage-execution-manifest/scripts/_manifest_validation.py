@@ -752,9 +752,24 @@ def check_emitted_steps_resolvable(
     ``phase_6.steps``, resolving each via :func:`_check_step_resolvable`. Returns
     ``None`` when every step resolves. On the first unresolvable step returns a
     dict carrying ``phase`` (``phase_5`` / ``phase_6``), the emitted ``step_id``,
-    the original ``marshal_key`` (the marshal.json key the author wrote, falling
-    back to the emitted id on the CSV-fallback path), and an actionable
-    ``message`` naming both the offending marshal.json key and the phase.
+    the original ``marshal_key``, and an actionable ``message``.
+
+    **The message names the step's PROVENANCE**, because a step id in the emitted
+    list has two possible origins and they send a reader to different files:
+
+    - **marshal.json-authored** — the id appears in the phase's marshal.json step
+      map (``key_map``). The message names the author's original key and points at
+      marshal.json.
+    - **routed / derived** — the id is in the emitted list but NOT in the map, so
+      it was appended by the execution_tier COMMAND routing pass
+      (``_route_task_verification_commands``) from a task's ``verification.commands``
+      entry, i.e. a command ``architecture derive-verification`` emitted. The
+      message says so and points at the emitting build verb — without this the
+      failure reads as a marshal.json defect and the reader hunts a key that does
+      not exist (the diagnosability gap that let one defect be filed five times).
+
+    The CSV-fallback compose path (no marshal step map) cannot distinguish the two,
+    so it reports the emitted id itself.
     """
     for phase, steps, marshal_map in (
         ('phase_5', phase_5_steps, marshal_phase_5_map),
@@ -766,14 +781,53 @@ def check_emitted_steps_resolvable(
                 continue
             verdict = _check_step_resolvable(step, phase)
             if not verdict.get('resolvable'):
-                marshal_key = key_map.get(step, step)
+                base_reason = verdict.get('message', 'no resolvable source')
+                origin_key = key_map.get(step)
+                if origin_key is not None:
+                    # marshal.json-authored step — name the author's original key.
+                    return {
+                        'phase': phase,
+                        'step_id': step,
+                        'marshal_key': origin_key,
+                        'message': (
+                            f'{phase} step `{origin_key}` in marshal.json is '
+                            f'unresolvable: {base_reason}'
+                        ),
+                    }
+                if marshal_map is not None:
+                    # A step present in the emitted list but absent from the
+                    # marshal.json step map was not authored there. Only phase_5
+                    # has a routing path that injects such a step: the
+                    # execution_tier COMMAND routing pass appends it from a derived
+                    # `verification.commands` entry (a command
+                    # ``architecture derive-verification`` emitted), so name that
+                    # origin and the emitting tool. phase_6 has no such path
+                    # (finalize steps are authored or composer-injected built-ins),
+                    # so it gets a neutral not-in-marshal.json note rather than a
+                    # false derive-verification attribution.
+                    if phase == 'phase_5':
+                        origin_note = (
+                            'This step was appended by execution_tier COMMAND routing '
+                            'from a derived `verification.commands` entry (architecture '
+                            'derive-verification) — it is NOT authored in marshal.json'
+                        )
+                    else:
+                        origin_note = 'This step is not authored in marshal.json (composer-injected)'
+                    return {
+                        'phase': phase,
+                        'step_id': step,
+                        'marshal_key': step,
+                        'message': f'{phase} step `{step}` is unresolvable: {base_reason}. {origin_note}',
+                    }
+                # CSV-fallback compose path (no marshal step map): the emitted id is
+                # the best identifier available.
                 return {
                     'phase': phase,
                     'step_id': step,
-                    'marshal_key': marshal_key,
+                    'marshal_key': step,
                     'message': (
-                        f'{phase} step `{marshal_key}` in marshal.json is unresolvable: '
-                        f'{verdict.get("message", "no resolvable source")}'
+                        f'{phase} step `{step}` in marshal.json is unresolvable: '
+                        f'{base_reason}'
                     ),
                 }
     return None

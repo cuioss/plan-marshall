@@ -1181,9 +1181,15 @@ def _route_task_verification_commands(
       logged per routed verb), append (de-duped) to
       ``body['phase_5']['verification_steps']``, and drop the command from
       the task's ``verification.commands`` — no leaf ever runs an
-      orchestrator-tier command inline. Only the defensive raw-shell /
-      non-``plan-marshall:build-`` fall-through (verb unparseable) leaves
-      an orchestrator-tier command in place.
+      orchestrator-tier command inline. Two fall-throughs leave an
+      orchestrator-tier command in place instead of routing it: the defensive
+      raw-shell / non-``plan-marshall:build-`` case (verb unparseable), and a
+      verb that is a KNOWN canonical build command with no phase-5 verify gate
+      (``compile`` / ``test-compile`` — the build-phase canonicals the deriver
+      legitimately emits, whose ``verify:{verb}`` generalization does not
+      resolve). Routing the latter would append an unresolvable step and fail
+      the whole compose (``unresolvable_step``); keeping it with the task is the
+      per_task fallback the leaf re-resolves live.
     - ``per_task`` → set ``verification.bash_timeout_seconds`` on the task
       (overwriting any prior value so re-compose is deterministic). When
       multiple ``per_task`` commands share a task, the maximum
@@ -1203,6 +1209,11 @@ def _route_task_verification_commands(
     otherwise already have been rewritten, silently dropping the original
     verification command from disk.
     """
+    # The canonical build-command vocabulary registry — the single source of
+    # truth the build-phase-canonical carve-out below derives from (never a
+    # hand-listed copy of ``{compile, test-compile}``).
+    from extension_base import ALL_CANONICAL_COMMANDS
+
     tasks_dir = get_plan_dir(plan_id) / 'tasks'
     if not tasks_dir.is_dir():
         return 0, []
@@ -1251,6 +1262,32 @@ def _route_task_verification_commands(
                 verb, _ = parsed
                 step_id = _verb_to_phase_5_step(verb)
                 if step_id is None:
+                    candidate = f'verify:{verb}'
+                    # A build-phase canonical the deriver legitimately emits
+                    # (``compile`` / ``test-compile``) is a registered canonical
+                    # command with NO phase-5 verify gate, so its
+                    # ``verify:{verb}`` generalization does not resolve. Routing
+                    # it would append an unresolvable step and fail the WHOLE
+                    # compose (``unresolvable_step``) — the derive-verification →
+                    # compose routing mismatch this guard closes. Keep such a
+                    # command with the task (the per_task fallback the leaf
+                    # re-resolves live) rather than routing it to a nonexistent
+                    # gate. Restricted to KNOWN canonical commands so a genuinely
+                    # custom / typo'd verb still routes and fails loud, as before.
+                    if verb in ALL_CANONICAL_COMMANDS and not _check_step_resolvable(
+                        candidate, 'phase_5'
+                    ).get('resolvable'):
+                        _emit_decision_log(
+                            plan_id,
+                            '(plan-marshall:manage-execution-manifest:compose) '
+                            'execution_tier routing — orchestrator-tier build verb '
+                            f'{verb!r} (from a derived verification command) is a '
+                            'canonical build command with no phase-5 verify gate; '
+                            'kept with the task rather than routed to the '
+                            f'unresolvable step {candidate!r}',
+                        )
+                        kept_commands.append(raw)
+                        continue
                     # Non-canonical verb (e.g. a custom build target) on an
                     # orchestrator-tier command: route to the generalized bare
                     # ``verify:{verb}`` step ID (boundary-normalization
@@ -1258,7 +1295,7 @@ def _route_task_verification_commands(
                     # runs an orchestrator-tier command inline. Name the routed
                     # verb in the decision log — the canonical map did not
                     # cover it, and a silent route would be unobservable.
-                    step_id = f'verify:{verb}'
+                    step_id = candidate
                     _emit_decision_log(
                         plan_id,
                         '(plan-marshall:manage-execution-manifest:compose) '
