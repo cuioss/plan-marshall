@@ -243,20 +243,96 @@ met in code, not merely claimed; out-of-scope respected (no producer touched).
 
 ## Reviewer participation
 
-_pending_
+Population **derived from configuration** — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(`coderabbit.md` → `coderabbitai`; `pr-agent.md` → `cuioss-review-bot`; `sourcery.md` →
+`sourcery-ai`), cross-named by `.github/workflows/pr-agent.yml`. Verdicts read from the stored comment
+bodies on PR #1224:
+
+| Reviewer (`author_login`) | Verdict | Body evidence |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Posted "PR Reviewer Guide 🔍 — PR contains tests, No security concerns identified, No major issues detected" (issue-comment surface). A review artifact against the diff with an explicit no-issues finding. |
+| `coderabbitai` | `rate-limited` | Posted only "Review limit reached — you've reached your PR review limit, so we couldn't start this review" (issue-comment surface). Engaged but did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Posted only "you have reached your weekly rate limit of 500000 diff characters" (review-summary surface). Engaged but did not review this diff. |
+
+**Coverage: 1 of 3.** `cuioss-review-bot` reviewed (clean); `coderabbitai` rate-limited (window
+reopens shortly); `sourcery-ai` rate-limited (weekly quota). All three comment surfaces were read
+(`get_comments`, `get_reviews`, `get_review_comments`); the inline-thread surface was empty. **No
+actionable review comment exists** — the sole review found no issues, and the other two published only
+refusal notices. The § Step 8 condition-4 shortfall disclosure fired: **"Review coverage: 1 of 3 —
+`cuioss-review-bot` reviewed (no issues); `coderabbitai` rate-limited; `sourcery-ai` rate-limited."**
+Per the lane, a rate-limit shortfall is a disclosure, not a block, and blocking on a bot's quota is
+explicitly the wrong direction — so the aborted attempts are recorded as `rate-limited` (never counted
+as coverage), disclosed, and the merge proceeds. The change was independently verified by the local
+`./pw verify` (16457 tests) and the pre-PR verification sub-agent, so the confidence floor does not
+rest on the rate-limited bots.
 
 ## Cost
 
-_pending_
+- **Tokens:** not available to the agent in this session — a single interactive Claude Code cloud
+  session exposes no token counter to the running agent, so no figure is stated rather than a guess.
+- **Wall-clock:** approximately one working session (first commit `ffda76f` establishing the plan
+  directory through the merge-gate arm; PR #1224 opened at 2026-08-13T21:01:40Z). Source: git commit
+  times + the PR creation timestamp. Two full `./pw` builds (quality-gate ×4, one full verify at
+  ~362s) dominate the wall-clock.
+- **Population:** this single Claude Code cloud session's own activity. ⛔ **NOT comparable to a
+  plan-marshall `metrics.toon` total**, which counts an orchestrator-plus-agent dispatch tree under
+  plan-marshall's per-task billing boundary that a single interactive session does not share. The two
+  cannot be made comparable, so no parity figure is presented.
 
 ## Contract check (Step 9)
 
-_pending_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — `cloud-plan-lane`, `ref-code-quality`, `plugin-script-architecture`, `python-core`, `pytest-testing` (named above). |
+| 2 Branch | Done — harness-assigned `claude/build-time-oracle-ledger-hxatuk` kept as-is; pushed to `origin` before any work. |
+| 3 Plan directory | Done — `doc/plans/truthful-signals/220-build-ledger-is-the-build-time-oracle/plan.md` exists and opens with the first-instruction block. |
+| 4 Implement | Done — 6 commits carry the `Co-Authored-By: Claude` trailer; deliverables addressed. |
+| 4 Per-commit gate | Done — each `*.py`-touching commit preceded by a clean `./pw quality-gate`; the era-stamp commit was a string-literal swap (a change class that cannot regress ruff/mypy/SPDX), verified by the era tests. |
+| 4 Pushed | Done — no unpushed commit remains. |
+| 5 Build gate | Done — Python changed, full `./pw verify plan-marshall` SUCCESS (quality-gate + test-compile 588 files + module-tests 16457 passed). |
+| 6 Verification sub-agent | Done — PASS with one minor finding (fixed + test-locked) and three observations (2 accepted, 1 rejected-with-reason). The fix was additive, contained to the audit skill, and covered by the full suite + a new reconciliation test, so a full re-dispatch was judged disproportionate; the fix was re-verified via the audit test suite (533 passed) and the quality gate. |
+| 7 PR cycle | Done — PR #1224; all three comment surfaces read; no actionable comment; reviewer participation recorded above. |
+| 8 Merge gate | Conditions 1–3 met (condition 1 via the queue: `verify / gate` was `in_progress` at arm time, and on this merge-queue repo the queue is the required-green enforcer). Auto-merge armed; coverage shortfall disclosed (condition 4). Recorded as arm-and-hand-off — see § Residue and the operator note. |
+| 8 Bridge | No status/bookkeeping write landed outside this plan's own directory; the report carries the PR number and per-deliverable outcome. |
+| 9 This check | This section. |
+| GitHub access path | GitHub MCP server (the cloud path). |
+| Branch form | Harness-assigned `claude/*` (kept), per the lane. |
+| Plugin-cache sync | Not owed — a cloud run never performs or owes `/sync-plugin-cache` (a local dev refresh of the `plan-retrospective` bundle is a local-developer concern, recorded for a local dev). |
 
 ## What have we learned (Step 9)
 
-_pending_
+**One contract-change proposal, recorded for operator approval (not self-shipped — headless run).**
+
+*Evidence from this run:* this plan changed the semantics of an `audit-archived-plan-retrospectives`
+check (`sequence-and-build-minimality`), which per that skill's convention requires bumping the
+check's `CHECK_ERA` stamp — normally resolved from the `PR-PENDING` sentinel by
+`project:finalize-step-era-stamp-fill`. **That finalize step does not fire in the standalone
+`doc/plans/` lane**, so the run had to (a) recognize the era-stamp obligation at all, and (b) resolve
+the sentinel by invoking `era_stamp_fill.py` manually after create-pr, committing it before the merge
+gate. The `cloud-plan-lane` contract says nothing about either obligation, so a future lane run that
+touches an audit check could silently ship a stale era stamp or a `PR-PENDING` sentinel to `main`.
+
+*Proposed edit:* add a short note to `cloud-plan-lane` (Step 4 or Step 8) — "if the change alters an
+`audit-archived-plan-retrospectives` check's semantics, bump its `CHECK_ERA` to the `PR-PENDING`
+sentinel and resolve it by running `era_stamp_fill.py run --pr-number {N} --worktree-path .` manually
+after create-pr, committed before the merge gate (the finalize step that normally does this does not
+fire in this lane)." Scope is narrow (only plans touching the audit checks), so this is a small,
+targeted addition — presented for the operator to accept and ship as its own `chore(cloud-plan-lane)`
+PR, per Step 9. Not self-approved.
 
 ## Residue
 
-_pending_
+- **The landing is delegated (arm-and-hand-off).** `verify / gate` (the required check) was
+  `in_progress` at the merge gate, and this cloud session has no reliable self-wake to block until the
+  queue lands the PR. Per § Step 8, the run is **completed with the landing delegated**: conditions
+  1–3 met, auto-merge armed, the queue is the required-green enforcer, and the orchestrator's collect
+  reads `state: MERGED` from the PR merge event. `./pw verify` passed locally (16457 tests), so
+  confidence that `verify / gate` will go green is high; if it does not, the queue refuses the merge
+  rather than landing a red PR.
+- **Notify the sibling epic** (the one measuring our own runs; the audit corpus is what it reads) when
+  this lands — recorded for the orchestrator; a cloud run has no channel to another epic.
+- **Local `/sync-plugin-cache`** is owed to a local developer for the `plan-retrospective` bundle edit
+  (not owed by this cloud run).
+- **Contract-change proposal** (above) awaits operator approval; ship as a separate `chore/` PR if
+  accepted.
