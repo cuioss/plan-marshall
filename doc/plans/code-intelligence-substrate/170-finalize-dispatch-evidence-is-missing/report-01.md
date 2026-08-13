@@ -135,11 +135,45 @@ reference doc; fixed in `77611b2` and re-verified green.)
 
 ## Findings
 
-_Pending._
+### Verification sub-agent (Step 6)
+
+An independent read-only sub-agent verified the diff against `plan.md`. **Verdict: all five
+deliverables MET; no undeclared collateral change; the out-of-scope boundary respected
+(`_cmd_effort.py` and the dispatch-line seam untouched — confirmed absent from `git diff
+--name-only`).** It ran the full `test/plan-marshall/plan-retrospective/` suite (675 pass, 0 fail).
+
+Findings, each with disposition:
+
+- **Stale internal cross-reference — FIXED (`d38ce99`).** `execution-context-dispatch-audit.md`'s
+  cross-reference footer still called the aspect an "LLM-driven retrospective aspect", contradicting
+  the file's own rewritten opening. Genuinely stale (introduced by this change's rewrite). Reworded.
+- **Three imprecise "LLM aspects" labels in sibling docs — FIXED (`d38ce99`).**
+  `plan-marshall/standards/effort-roles.md`, `ref-workflow-architecture/standards/call-graph.md`
+  (two sites) called the retrospective set "8 LLM aspects"; after this change one of the eight is a
+  deterministic script, so the label is imprecise. Relabelled to "analytical aspects" (count
+  unchanged). The sub-agent classed these as outside the plan's declared surface, but they are the
+  misleading-signal defect the lane's beyond-diff sweep exists to catch, so they were fixed.
+- **D2 mechanism deviation — ACCEPTED, not a gap.** The sub-agent confirmed the token-record
+  mechanism (vs the plan's literal "roster qualifier") satisfies D2's "Done when" and is
+  outcome-equivalent, honoring the programme's anti-"hand-maintained mirror" principle. Disclosed in
+  Deliverables/D2.
+- **D1 premise shift — ACCEPTED, disclosed.** The sub-agent independently confirmed the plan's
+  "nothing writes Surface B" premise is false at HEAD (sibling PR #1200 wired the seam) and that the
+  detector is correct regardless. Disclosed in Deliverables/D1.
+
+No finding was rejected. All actionable findings fixed; the quality gate re-ran clean after the fixes.
+
+### CI
+
+_Pending — populated after the PR's checks report._
+
+### PR review
+
+_Pending — populated after the automated reviewers report._
 
 ## Reviewer participation
 
-_Pending._
+_Pending — populated after the PR review cycle._
 
 ## Cost
 
