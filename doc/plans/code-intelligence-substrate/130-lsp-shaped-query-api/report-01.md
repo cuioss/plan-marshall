@@ -1,6 +1,6 @@
 # Run report — 130-lsp-shaped-query-api (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** claude/lsp-shaped-query-api-6p2esn (harness-assigned, kept as-is)    **PR:** (pending)    **Outcome:** in-progress
+**Date (UTC):** 2026-08-13    **Branch:** claude/lsp-shaped-query-api-6p2esn (harness-assigned, kept as-is)    **PR:** [#1207](https://github.com/cuioss/plan-marshall/pull/1207)    **Outcome:** completed (auto-merge armed; landing delegated to the merge queue — this session cannot self-wake to confirm, per § Cloud session affordances)
 
 ## Skills loaded
 
@@ -116,24 +116,88 @@ is also clean (`issues[0]`, `broken-relative-link: 0`, `scan_manage_invocation: 
     envelope-scoping test exercises directly. Recorded as the available proxy; a true
     revoked-Grep/Glob leaf cannot be synthesised in this session.
   - *Caveat: suite not run by the agent* — now closed: the full `./pw verify` ran to SUCCESS (above).
-- **CI + PR review:** recorded below as they arrive.
+- **CI (PR #1207):** `verify / conclusion`, `verify / verify`, `verify / gate`, `review / review`,
+  `dependency-review`, `generate-check` all concluded **success**; `mergeable_state: clean` on the
+  first pushed head. (`Sourcery review` and `auto-merge` checks report `skipped`.)
+- **PR review — cuioss-review-bot (`cuioss-review-bot`):** ONE actionable finding — *Unhandled
+  Exception in `cmd_capabilities`*: `get_module_graph` / `resolve_path_attribution` /
+  `load_module_derived` ran outside the `try/except` wrapping `iter_modules`, so an unexpected
+  downstream exception would crash rather than return a structured error. **FIXED** — wrapped the
+  whole evaluation in one error boundary + added a raising-downstream test (commit 8469daf). No
+  thread reply posted: fixing the finding is the visible disposition, and a reply to a bot summary
+  would be noise.
+- **PR review — coderabbitai:** posted only a rate-limit notice ("Review limit reached; next review
+  in 101 minutes") — no review of this diff. Verdict `rate-limited`.
+- **PR review — sourcery-ai:** posted only a rate-limit notice ("weekly rate limit of 500000 diff
+  characters") — no review of this diff. Verdict `rate-limited`.
+- Inline review-thread surface (`get_review_comments`): empty (0 threads).
 
 ## Reviewer participation
 
-(pending)
+Expected reviewer population derived from configuration — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(cross-named by `.github/workflows/pr-agent.yml`): `coderabbitai`, `sourcery-ai`, `cuioss-review-bot`.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Published a "PR Reviewer Guide" review-summary body carrying one actionable finding (the `cmd_capabilities` unhandled-exception). |
+| `coderabbitai` | `rate-limited` | Published only a "Review limit reached — next review available in 101 minutes" notice in place of a review. |
+| `sourcery-ai` | `rate-limited` | Published only a "reached your weekly rate limit of 500000 diff characters" review body in place of a review. |
+
+**Coverage: 1 of 3 reviewed.** The § Step 8 shortfall disclosure fired (see Contract check) — the
+two rate-limited reviewers are routine external quota exhaustion, disclosed and not blocked.
 
 ## Cost
 
-(pending)
+- **Tokens:** not available to the agent in this session (the Claude Code cloud harness does not
+  expose a per-session token counter to the running agent). The two verification sub-agents self-
+  reported `subagent_tokens` of ~84.4k (cold read) and ~145.4k (deliverable review); the main-loop
+  total is not surfaced.
+- **Wall-clock:** ~single interactive session on 2026-08-13; the two full `./pw verify` runs took
+  ~336s each (reported by the build), plus one initial toolchain bootstrap.
+- **Population:** this single Claude Code cloud session's own activity. ⛔ NOT comparable to a
+  plan-marshall `metrics.toon` total — that counts the orchestrator-plus-agent dispatch tree under
+  plan-marshall's per-task billing boundary, which a single interactive cloud session does not share.
+  The figures above cannot be reconciled to a `metrics.toon` total and are not presented as such.
 
 ## Contract check (Step 9)
 
-(pending)
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | DONE — named in § Skills loaded (read via bundle path; plugin not needed). |
+| 2 Branch | DONE — harness-assigned `claude/lsp-shaped-query-api-6p2esn`, present on `origin`, kept as-is. |
+| 3 Plan directory | DONE — `130-lsp-shaped-query-api/plan.md` exists (prefix preserved) and opens with the first-instruction block. |
+| 4 Implement | DONE — six commits, all carrying the `Co-Authored-By: Claude` trailer; deliverables addressed. |
+| 4 Per-commit gate | DONE — every `*.py`-touching commit preceded by a clean `./pw quality-gate` (ruff/mypy/SPDX) + scoped tests. |
+| 4 Pushed | DONE — every commit pushed; no unpushed commit remains. |
+| 5 Build gate | DONE — Python changed → full `./pw verify` = SUCCESS (19480 passed). |
+| 6 Verification sub-agent | DONE — deliverable review (essentially clean; 3 minor doc findings fixed) + plan-mandated cold read (no verb read as renamed). Dispositions in § Findings. |
+| 7 PR cycle | DONE — PR #1207; every comment dispositioned (1 finding fixed; 2 reviewers rate-limited). |
+| 8 Merge gate | DONE — conditions 1–3 met, shortfall disclosed, auto-merge armed (SQUASH). Landing delegated to the merge queue: this cloud session's self-wake tools (`subscribe_pr_activity`) are approval-gated, so it cannot block-to-confirm `MERGED`; recorded as completed-with-landing-delegated, not partial. |
+| 8 Bridge | DONE — no status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; the report carries the PR number and per-deliverable outcome. |
+| 9 This check | DONE — this section. |
+| 9 What have we learned | DONE — see below. |
+
+GitHub access path: **GitHub MCP server** (cloud session). Branch form: **harness-assigned**. No
+`/sync-plugin-cache` owed (machine-local step; a cloud run never performs or records it).
 
 ## What have we learned (Step 9)
 
-(pending)
+**No contract change proposed.** This run exercised the lane end to end and every step's artifact was
+producible as written. The one point of friction — the cloud session's `subscribe_pr_activity` being
+approval-gated so the run cannot self-confirm the merge — is already the exact case the contract
+covers under § Cloud session affordances and § Step 8 ("arm-and-hand-off is a completed run"). The
+contract's guidance matched the observed environment; the run followed it without ambiguity. Nothing
+in this execution produced evidence of a gap, an unproducible artifact, or a command that failed as
+written, so there is no evidence-backed amendment to propose.
 
 ## Residue
 
-(pending)
+- **Landing confirmation.** Auto-merge is armed on PR #1207 with the merge queue holding until the
+  final head's `verify` greens. This session cannot self-wake to read back `state: MERGED`; the
+  orchestrator's collect step reads the landing from the PR merge event. If a human is watching, the
+  PR page shows the queue state directly.
+- **D2-in-a-real-leaf.** The plan asks D2 be verified inside a dispatched leaf with revoked Grep/Glob;
+  a true such leaf cannot be synthesised in this session. The two-project-dir envelope-scoping test is
+  the recorded proxy, justified in § Findings (the substrate's answer is a function of `project_dir` +
+  producers, not of harness tool grants).
