@@ -4,12 +4,17 @@
 
 ## Skills loaded
 
+- `cloud-plan-lane` (`.claude/skills/cloud-plan-lane/SKILL.md`) — loaded **FIRST**, as the governing
+  working contract for this `doc/plans/` run.
 - `plan-marshall:ref-code-quality` (via bundle path)
 - `pm-plugin-development:plugin-script-architecture` (via bundle path)
 - `plan-marshall:persona-implementer` (via bundle path — production-code work identity)
 - `pm-dev-python:python-core` (via bundle path — Python production code)
 - `pm-dev-python:pytest-testing` (via bundle path — Python tests)
-- `pm-plugin-development:plugin-architecture` — to be loaded before SKILL.md prose edits
+
+`pm-plugin-development:plugin-architecture` was **not** separately loaded: the `SKILL.md` edits were
+contract-prose restatements governed by the documentation standards, and structural compliance was
+validated by the quality gate's plugin-doctor pass rather than by a pre-load.
 
 ## Deliverables
 
@@ -222,10 +227,13 @@ passed) and all fixes since are prose/comment/test-scaffold only (no runtime beh
 success, `review / review` success; `auto-merge` and `Sourcery review` checks skipped (expected).
 `mergeable_state: clean`. No CI finding.
 
-**PR review.** No actionable review comment on any surface (issue comments, review summaries, inline
-threads all read). Dispositions: `cuioss-review-bot` posted "No major issues detected / No security
-concerns / PR contains tests" — nothing to address; `coderabbitai` and `sourcery-ai` posted only
-rate-limit notices — no review content to act on. Inline review threads: none.
+**PR review.** Dispositions across all surfaces (issue comments, review summaries, inline threads):
+- `cuioss-review-bot` — "No major issues detected / No security concerns / PR contains tests"; nothing to address.
+- `coderabbitai` — after its window reopened, one actionable inline comment on `report-01.md:12`: the
+  `Skills loaded` list omitted `cloud-plan-lane` (the loaded governing contract). **Fixed** — added as the
+  first entry, plus a truthful note that `plugin-architecture` was not separately loaded. Replied on the
+  thread. Its walkthrough rated the PR "Mergeability Score: Minimal" with this as the only remaining item.
+- `sourcery-ai` — rate-limit notice only; no review content to act on.
 
 ## Reviewer participation
 
@@ -237,14 +245,14 @@ Expected reviewer population **derived from configuration** — the `author_logi
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
 | `cuioss-review-bot` | `reviewed` | Published a "PR Reviewer Guide 🔍" review artifact over the diff: "🧪 PR contains tests · 🔒 No security concerns identified · ⚡ No major issues detected" — an explicit nothing-to-report over this diff (issue-comment #5284248810; `review / review` check success). |
-| `coderabbitai` | `rate-limited` | Published only a refusal notice ("Review limit reached … Next review available in: 74 minutes"), not a review (issue-comment #5284240965). |
+| `coderabbitai` | `reviewed` | Its rate-limit window reopened; it ran a full review on head `94d9462` (walkthrough + "Mergeability Score: Minimal") and posted ONE actionable inline comment — the run report's `Skills loaded` list omitted `cloud-plan-lane`. **Addressed** (added as the first entry, with a note on `plugin-architecture`). |
 | `sourcery-ai` | `rate-limited` | Published only a refusal notice ("you have reached your weekly rate limit of 500000 diff characters"), not a review (review #4929898432; `Sourcery review` check skipped). |
 
-**Coverage: 1 of 3 reviewed.** The § Step 8 condition-4 shortfall disclosure fired: coverage is 1-of-3
-— `cuioss-review-bot` reviewed (no issues); `coderabbitai` rate-limited (window reopens ~74 min);
-`sourcery-ai` rate-limited (weekly quota). Per the lane this is a disclosure, not a merge block — rate
-limits are routine and outside our control — so the run discloses the shortfall and arms auto-merge on
-the same conditions full coverage would.
+**Coverage: 2 of 3 reviewed.** The § Step 8 condition-4 shortfall disclosure fired: coverage is 2-of-3
+— `cuioss-review-bot` reviewed (no issues); `coderabbitai` reviewed (one minor report-doc comment,
+fixed); `sourcery-ai` rate-limited (weekly quota). Per the lane this is a disclosure, not a merge block
+— the single rate limit is routine and outside our control — so the run discloses the shortfall and
+arms auto-merge on the same conditions full coverage would.
 
 ## Cost
 
