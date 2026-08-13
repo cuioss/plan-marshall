@@ -51,7 +51,7 @@ so the steps below rely on them instead of each run re-deriving them.
 | Affordance | In a cloud session |
 |---|---|
 | **GitHub access** | The **GitHub MCP server** only. There is **no `gh` CLI**, and Bash cannot reach `api.github.com` (egress-blocked — direct calls return `403`). Every `gh` spelling in this contract has an MCP equivalent (mapping below). |
-| **Self-wake / polling** | `send_later` and `subscribe_pr_activity` may be **approval-gated** ("requires approval"), and Bash cannot poll GitHub. A run therefore **cannot** reliably block-until-green and re-check inside the session — Step 8's arm-and-hand-off completion exists for exactly this. The GitHub *read* surface (`pull_request_read`) is **not** gated, though, so a session that stays active may instead drive the cycle by manual read-polling on re-entry (§ Step 8, "Manual read-polling"). |
+| **Self-wake / polling** | `send_later` and `subscribe_pr_activity` may be **approval-gated** ("requires approval") **or absent entirely** — an observed run had both return "No such tool available" because the `claude-code-remote` MCP server was not connected, not merely gated. Either way, and because Bash cannot poll GitHub, a run **cannot** reliably block-until-green and re-check inside the session — Step 8's arm-and-hand-off completion exists for exactly this. The GitHub *read* surface (`pull_request_read`) is **not** gated, though, so a session that stays active may instead drive the cycle by manual read-polling on re-entry (§ Step 8, "Manual read-polling"). |
 | **Ruleset-config API** | **Not reachable** — the MCP server exposes no branch-protection / ruleset tool, and direct API access is `403`. Read required-ness from `mergeStateStatus` (GitHub applying the ruleset for you), never from a ruleset-config call — § Step 8 condition 1. |
 | **Auto-merge arming** | On this merge-queue repo, arming auto-merge while the required checks are green **queues the PR at once** and locks the branch — § Step 8's one-way-door rule. |
 | **Local build** | The build gate triggers on `*.py` only; the merge queue's `merge_group` run verifies docs-only changes before they land — § Step 5. |
@@ -769,14 +769,27 @@ armed-and-delegated (below), not failed.
 **When the session cannot self-confirm the landing, arm-and-hand-off is a completed run — not a partial
 one.** Confirming `state: MERGED` assumes the run can wait for the queue to land the PR and re-check. A
 cloud session often cannot: the self-wake tools (`send_later`, `subscribe_pr_activity`) may be
-approval-gated and Bash cannot poll GitHub (§ Cloud session affordances), so there is no way to
-block-until-landed inside the session. When that is the case, the run has finished once it has (a) met
+approval-gated **or absent entirely**, and Bash cannot poll GitHub (§ Cloud session affordances), so
+there is no way to block-until-landed inside the session. When that is the case, the run has finished once it has (a) met
 conditions 1–3, (b) armed auto-merge, and (c) handed the `MERGED` confirmation to the orchestrator's
 collect step, which reads it from the PR merge event. Record the outcome as **completed with the
 landing delegated** — not `partial`, and not a failure. A run that armed a green PR into the queue and
 merely could not self-wake to watch it has done everything the lane asks; reading its own inability to
 watch the queue as a failed run is the mistake this paragraph prevents. (A run that *can* self-confirm
 still does — this is not licence to assert a merge that was never read back.)
+
+**When there is no self-wake AND a required check is still `in_progress` at the gate, arm anyway — the
+merge queue is the enforcer, not this session.** Condition 1's "BLOCKED → wait" assumes the run can
+wait for the required check to conclude; a run with no self-wake cannot, and holding the arm until green
+would strand a fully-ready PR indefinitely with no one to land it. On this merge-queue repo the queue
+admits a PR only when the ruleset's required contexts pass and re-verifies on `merge_group`, so arming
+auto-merge while the required build is still running does **not** merge a red PR — it defers the
+required-green gate to the queue, exactly as arming does when the PR is already green (§ Cloud session
+affordances, "Auto-merge arming"). The one ordering that stays non-negotiable: conditions 2–3 must be
+met and the report committed as the last pre-merge commit **before** arming (§ Step 8 condition 3),
+because arming locks the branch the instant the checks go green. Record it as arm-and-hand-off, noting
+the required check's in-progress state at arm time; an observed run armed with `verify` still running,
+and the queue landed the PR cleanly once `verify / conclusion` went green.
 
 **Manual read-polling is the in-session alternative to arm-and-hand-off while the session stays
 active.** "No way to block-until-landed" forbids a *blocking wait* — never `sleep` on GitHub in Bash
