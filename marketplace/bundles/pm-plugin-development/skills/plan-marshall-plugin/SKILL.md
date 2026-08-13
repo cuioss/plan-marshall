@@ -21,7 +21,7 @@ Domain extension providing plugin development skill registration and module disc
 
 **Constraints:**
 - Extension must implement `get_skill_domains()` from `ExtensionBase`
-- Axis-C edge derivation is opted into by multiple inheritance (`Extension(ExtensionBase, DerivationResolverBase)`); `derive_edges()` must stay a pure function of its arguments — no filesystem access, no subprocess
+- Axis-C edge derivation and Axis-D path attribution are opted into by multiple inheritance (`Extension(ExtensionBase, DerivationResolverBase, PathAttributionBase)`); `derive_edges()` must stay a pure function of its arguments — no filesystem access, no subprocess — and `claim_paths()` stays stateless, declaring static ownership rather than scanning the tree
 - Domain identity must match the bundle name convention (plan-marshall-plugin-dev)
 - Profile-based skill organization must align with plugin.json registration
 - Module discovery must detect marketplace.json to avoid conflicts with pm-dev-python
@@ -92,6 +92,37 @@ Configuration in `extension.py` implements the Extension API contract:
 | `provides_retrospective_aspects()` | A | Returns the `wrapper-tangle` retrospective aspect (scans plan-marshall CI-wrapper sources for tangled gh/glab + local-git mutations) |
 | `derivation_resolver_id()` | C | Returns the stable provenance id `markdown`, stamped onto every edge this resolver produces |
 | `derive_edges()` | C | Pure join over `component_refs` yielding `(from, to)` module pairs from the four markdown reference kinds (`script`, `skill`, `path`, `implements`). `import` entries belong to the sibling python resolver. Unresolved targets, unknown endpoints, and self-edges are suppressed and reported as aggregated `notes[]` entries — one per category with a count and a bounded sample |
+| `path_attributor_id()` | D | Returns the stable provenance id `pm-plugin-development`, stamped onto the project-local artifact claim |
+| `claim_paths()` | D | Claims the whole `.claude` project-local tree for the `pm-plugin-development` module (see § Project-Local Artifact Ownership) |
+
+## Project-Local Artifact Ownership
+
+The plugin-development domain owns the `.claude` project-local tree through the
+Axis-D path-attribution seam. The tree holds Claude Code plugin artifacts — the
+project-local skills under `.claude/skills`, the slash commands under
+`.claude/commands`, and the `.claude/settings.json` harness configuration — and
+this domain is the one that understands that content (it owns the plugin doctor,
+the marketplace inventory, and the plugin architecture standards). **Owner = who
+understands the content.**
+
+The claim is the **bare `.claude` root prefix**, so every path beneath the tree
+resolves to `pm-plugin-development` uniformly — `.claude/skills/**`,
+`.claude/commands/**`, `.claude/settings.json`, and any subtree added later. An
+enumerated subtree list would claim only today's population and silently miss the
+next one, which is the inconsistency the claim exists to end.
+
+This is a **deliberate ownership ruling**, not a refactor side effect.
+`.claude/skills` previously resolved to the `plan-marshall` module, but that was a
+re-homing of a legacy inline prefix map — explicitly not a fresh ruling, with the
+plugin-development question deferred. This attributor settles it, and
+`plan-marshall` correspondingly keeps only `.plan` (its own runtime-state tree). A
+consumer project has no `pm-plugin-development` module, so the module-existence
+guard drops the claim there — exactly as it already dropped the former
+`plan-marshall` claim, so no consumer-project behaviour changes.
+
+See [`plan-marshall:extension-api` `ext-point-path-attribution.md`](../../../plan-marshall/skills/extension-api/standards/ext-point-path-attribution.md)
+for the contract and [`code-intelligence.adoc`](../../../../../doc/concepts/code-intelligence.adoc)
+for the substrate view.
 
 ## Integration
 

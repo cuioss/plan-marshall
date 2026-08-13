@@ -6,7 +6,7 @@
 
 A **path attributor** answers one question: which module owns this path. It contributes `(path_prefix, module_name)` claims that become the ownership map behind `which-module`'s rung-3 resolution and behind `resolve_module_for_path`, the helper the change-footprint classifiers call once per changed path.
 
-Path attribution is an extension point rather than core logic because there is no domain-neutral way to derive it. The `plan-marshall` bundle knows that `.plan/**` and `.claude/skills/**` are its own; a documentation bundle knows what `doc/**` is; a build bundle knows which tree its production sources live in. Each is domain knowledge owned by the bundle that already understands that tree. Core owns the merge, the provenance, and the resolution order; it owns none of the claims.
+Path attribution is an extension point rather than core logic because there is no domain-neutral way to derive it. The `plan-marshall` bundle knows that `.plan/**` is its own runtime-state tree; the `pm-plugin-development` bundle knows that the `.claude/**` project-local tree is Claude Code plugin content it understands; a documentation bundle knows what `doc/**` is; a build bundle knows which tree its production sources live in. Each is domain knowledge owned by the bundle that already understands that tree. Core owns the merge, the provenance, and the resolution order; it owns none of the claims.
 
 **Ownership is not build routing.** Axis-D answers "which module *owns* this path". Axis-B (`classify_globs` / `classify_build_class`, see [extension-contract.md](extension-contract.md) § BuildExtensionBase Methods) answers "what build does a changed file *trigger*". The two vocabularies are deliberately separate: a path may be owned by a module that triggers no build, and a `build_map` route is a `(pattern, role)` fnmatch glob while a path claim is a literal directory prefix. Neither table feeds the other.
 
@@ -14,7 +14,7 @@ Path attribution is an extension point rather than core logic because there is n
 
 `PathAttributionBase` is a **standalone ABC declared alongside** `ExtensionBase`, `BuildExtensionBase` and `DerivationResolverBase` in `extension_base.py`, opted into by multiple inheritance. It is deliberately NOT either of two nearby designs:
 
-- **NOT a face on `ExtensionBase` or `BuildExtensionBase`.** The legitimate implementor population straddles both hierarchies. `build-pyproject` knows that `marketplace/bundles/*.py` is its production surface (Axis-B); `pm-documents` knows what `doc/**` is (Axis-A); the `plan-marshall` bundle knows that `.plan/**` and `.claude/skills/**` are its own (Axis-A). Declaring the capability as a face on either existing ABC would structurally exclude the other side — the containment failure [ADR-013](../../../../../../doc/adr/013-A_capability_spanning_both_extension_hierarchies_lives_in_a_sibling_ABC_not_a_face_on_either.adoc) names as invisible at the declaration site.
+- **NOT a face on `ExtensionBase` or `BuildExtensionBase`.** The legitimate implementor population straddles both hierarchies. `build-pyproject` knows that `marketplace/bundles/*.py` is its production surface (Axis-B); `pm-documents` knows what `doc/**` is (Axis-A); the `plan-marshall` bundle knows that `.plan/**` is its own and `pm-plugin-development` knows the `.claude/**` project-local tree (both Axis-A). Declaring the capability as a face on either existing ABC would structurally exclude the other side — the containment failure [ADR-013](../../../../../../doc/adr/013-A_capability_spanning_both_extension_hierarchies_lives_in_a_sibling_ABC_not_a_face_on_either.adoc) names as invisible at the declaration site.
 - **NOT a face on `DerivationResolverBase`.** Axis-C answers "which modules depend on which". "Which module owns this path" is a different question with a different return type, and bolting it on would give one ABC two unrelated contracts.
 
 The resolution is a fourth axis. `PathAttributionBase` inherits from none of the other three and is inherited by none, so an implementor from **either** hierarchy opts in by multiple inheritance:
@@ -49,7 +49,7 @@ class Extension(ExtensionBase, PathAttributionBase):
 
     def claim_paths(self) -> tuple[list[tuple[str, str]], list[str]]:
         """Return ``(claims, notes)`` — ``(path_prefix, module_name)`` pairs plus suppression notes."""
-        return [('.claude/skills', 'plan-marshall'), ('.plan', 'plan-marshall')], []
+        return [('.plan', 'plan-marshall')], []
 ```
 
 | Method | Default | Contract |
@@ -135,15 +135,15 @@ The trailing-separator half is the **nest-inside guard**. Normalizing the candid
 
 | Attributor | Id | Owner | Claims |
 |------------|-----|-------|--------|
-| Plan Marshall core tree | `plan-marshall` | `plan-marshall-plugin` (`Extension(ExtensionBase, PathAttributionBase)`) | `.claude/skills → plan-marshall`, `.plan → plan-marshall`. The first is the re-homed form of the project-local prefix map that previously lived inline in `manage-architecture`; the owner is carried over unchanged. The second closes the `module: null` answer every `.plan/` script path previously received. |
+| Plan Marshall runtime-state tree | `plan-marshall` | `plan-marshall-plugin` (`Extension(ExtensionBase, PathAttributionBase)`) | `.plan → plan-marshall`. Core's own runtime-state tree — the executor, `marshal.json`, and every plan-scoped script — closing the `module: null` answer every `.plan/` path previously received. The prefix is the bare root segment so containment covers the whole subtree. |
+| Project-local artifact tree | `pm-plugin-development` | `pm-plugin-development` `plan-marshall-plugin` (`Extension(ExtensionBase, DerivationResolverBase, PathAttributionBase)`) | `.claude → pm-plugin-development`. The whole project-local `.claude` tree — skills, commands, and `settings.json` alike — owned by the domain that understands Claude Code plugin artifacts. The bare-root prefix covers every subtree uniformly, so a sibling that once resolved to `null` (`.claude/commands`) now resolves alongside `.claude/skills`. This is the deliberate ownership ruling the `plan-marshall` `.claude/skills` re-homing had left open. |
 | Documentation corpus | `documentation` | `pm-documents` `plan-marshall-plugin` (`Extension(ExtensionBase, PathAttributionBase, DerivationResolverBase)`) | `doc → documentation`, `README.md → documentation`, `CONTRIBUTING.md → documentation`. The doc tree and its repo-root prose siblings. The agent-instruction files `CLAUDE.md`/`AGENTS.md` are per-file excluded — they are not prose documentation. Claiming the whole `doc` prefix means every file beneath it, `.adoc` and `.svg` alike, resolves to `documentation`. |
 
 **Out of scope for this contract's current implementations** — named so the table reads as the complete shipped set rather than an open-ended promise:
 
-- **Whether `.claude/skills/**` belongs to `pm-plugin-development`** rather than to `plan-marshall` — the re-homing preserved the existing owner and is not a fresh ownership ruling.
 - **Build-side attributors** — no `BuildExtensionBase` subclass ships a claim yet, though the discovery collector already spans that hierarchy.
 
-Neither requires a change to this contract.
+This does not require a change to this contract.
 
 ## Related Specifications
 

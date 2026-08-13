@@ -5,10 +5,13 @@
 
 Before this claim existed, every ``.plan/`` path answered ``module: null`` — the
 tree that holds the executor, ``marshal.json`` and every plan-scoped script was
-owned by nothing. ``plan-marshall-plugin`` now declares ``('.plan',
-'plan-marshall')`` from ``claim_paths()``, alongside the re-homed
-``.claude/skills`` entry, so both claims arrive through ONE mechanism — there is
-no second declaration surface and no core-side hardcoded fallback.
+owned by nothing. ``plan-marshall-plugin`` declares ``('.plan', 'plan-marshall')``
+from ``claim_paths()`` — its SOLE claim — through the ONE Axis-D mechanism, with
+no second declaration surface and no core-side hardcoded fallback. The ``.claude``
+project-local tree, once carried here as a re-homed ``.claude/skills`` claim, now
+belongs to ``pm-plugin-development`` (the domain that understands Claude Code
+plugin artifacts); see that bundle's attributor and
+``test/pm-plugin-development/plan-marshall-plugin/test_path_attribution.py``.
 
 Covered:
 
@@ -19,6 +22,9 @@ Covered:
   characters but does not nest inside ``.plan``, so it resolves through no claim.
 - A project with no ``plan-marshall`` module still answers ``null`` — the
   module-existence guard.
+- ``plan-marshall`` now ships ONLY the ``.plan`` claim; the ``.claude`` tree moved
+  to ``pm-plugin-development``, so ``.claude/skills`` is no longer a
+  ``plan-marshall`` claim.
 - The behaviour change at the single ``module: null`` consumer is pinned here
   rather than asserted in prose: a finding whose ``file_path`` is under
   ``.plan/**`` used to fall through ``triage.md``'s null branch to the project's
@@ -83,6 +89,41 @@ def _seed_project_without_plan_marshall(tmpdir: str) -> None:
             'name': 'app',
             'paths': {'module': 'app', 'sources': ['app/src'], 'tests': ['app/test']},
             'files': {'source': ['app/src/main.py']},
+        },
+    }
+    seed_project(tmpdir, modules)
+
+
+def _seed_meta_project(tmpdir: str) -> None:
+    """Seed a meta-project with BOTH ``plan-marshall`` and ``pm-plugin-development``.
+
+    The root ``default`` module is deliberately omitted (as in
+    :func:`_seed_plan_marshall_project`) so an uncovered path resolves to ``None``
+    rather than to a length-0 root fallback — that is what lets the ``.github``
+    negative-control assertion below distinguish "unclaimed" from "root-owned". Each
+    module's paths are ordinary bundle trees, so neither the exact-inventory rung nor
+    the sources/tests containment rung can claim a ``.claude/**`` or ``.github/**``
+    path; only the Axis-D seam (rung 3) can, which is the whole point for these
+    never-inventoried dotfile trees.
+    """
+    modules = {
+        'plan-marshall': {
+            'name': 'plan-marshall',
+            'paths': {
+                'module': 'marketplace/bundles/plan-marshall',
+                'sources': ['marketplace/bundles/plan-marshall/skills'],
+                'tests': ['test/plan-marshall'],
+            },
+            'files': {},
+        },
+        'pm-plugin-development': {
+            'name': 'pm-plugin-development',
+            'paths': {
+                'module': 'marketplace/bundles/pm-plugin-development',
+                'sources': ['marketplace/bundles/pm-plugin-development/skills'],
+                'tests': ['test/pm-plugin-development'],
+            },
+            'files': {},
         },
     }
     seed_project(tmpdir, modules)
@@ -176,21 +217,90 @@ def test_project_without_plan_marshall_module_still_answers_null():
         assert result['module'] is None
 
 
-def test_both_shipped_claims_arrive_through_the_same_seam():
-    """One mechanism, two claims — no second declaration surface.
+# =============================================================================
+# The .claude tree resolves to pm-plugin-development through the which-module
+# reader — the founding inconsistency, closed end-to-end
+# =============================================================================
 
-    Asserting both entries resolve through ``claim_paths()`` is what would catch a
-    regression that re-introduced a core-side hardcoded fallback for either one.
+
+def test_which_module_resolves_every_claude_subtree_to_pm_plugin_development():
+    """skills, commands, AND settings all resolve to the one owner at the reader.
+
+    Before the move, ``.claude/skills`` resolved to a module while its siblings
+    ``.claude/commands`` and ``.claude/settings.json`` resolved to ``null`` — one
+    tree, two answers. The bare-root ``.claude`` claim now covers all three uniformly.
     """
-    claims, _reports = _load_shipped_claims()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_meta_project(tmpdir)
+
+        for path in (
+            '.claude/skills/cloud-plan-lane/SKILL.md',
+            '.claude/commands/some-command.md',
+            '.claude/settings.json',
+        ):
+            result = cmd_which_module(Namespace(project_dir=tmpdir, path=path))
+            assert result['status'] == 'success'
+            assert result['module'] == 'pm-plugin-development', path
+
+
+def test_which_module_null_on_uncovered_path_carries_attributor_count():
+    """D4 at the reader: an unclaimed dotfile path answers ``null`` but names the count.
+
+    ``.github/**`` is never inventoried and no attributor claims it, so the reader
+    answers ``module: null`` — but with ``attributor_count > 0``, marking it a real
+    "the capability ran and found no owner" answer rather than a coverage gap. That is
+    the residue a caller branches on instead of falling back to a whole-tree scan.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_meta_project(tmpdir)
+
+        result = cmd_which_module(Namespace(project_dir=tmpdir, path='.github/workflows/verify.yml'))
+
+        assert result['status'] == 'success'
+        assert result['module'] is None
+        # Covered, no matches: the attribution capability ran (N attributors), none claimed it.
+        assert result['attributor_count'] > 0
+        assert 'pm-plugin-development' in result['attributors']
+
+
+def test_plan_marshall_ships_only_the_plan_claim():
+    """``plan-marshall``'s sole claim is ``.plan`` — the ``.claude`` tree has moved.
+
+    Merged against a known-module set of just ``plan-marshall``, the live
+    attributor population yields exactly the ``.plan`` claim: ``pm-plugin-development``'s
+    ``.claude`` claim is dropped by the module-existence guard (its module is absent
+    from the set), and no ``.claude/skills`` entry survives from ``plan-marshall``
+    itself. Asserting the claim resolves through ``claim_paths()`` is what would catch
+    a regression that re-introduced a core-side hardcoded fallback.
+    """
+    claims, _reports = _load_shipped_claims(['plan-marshall'])
 
     prefixes = sorted(claim['prefix'] for claim in claims)
-    assert prefixes == ['.claude/skills', '.plan']
+    assert prefixes == ['.plan']
     assert {claim['module'] for claim in claims} == {'plan-marshall'}
     assert all(claim['producers'] == ['plan-marshall'] for claim in claims)
+    # The re-homed entry is gone — ``plan-marshall`` no longer owns any ``.claude`` path.
+    assert not any(claim['prefix'].startswith('.claude') for claim in claims)
 
 
-def _load_shipped_claims():
+def test_claude_tree_moved_to_pm_plugin_development():
+    """The ``.claude`` tree now arrives from ``pm-plugin-development``, not ``plan-marshall``.
+
+    Merged against a set that includes ``pm-plugin-development``, the live population
+    yields a single ``.claude`` claim owned by that module and produced by its
+    attributor id — the deliberate ownership move, verified through the same one seam.
+    """
+    claims, _reports = _load_shipped_claims(['plan-marshall', 'pm-plugin-development'])
+
+    claude_claims = [claim for claim in claims if claim['prefix'] == '.claude']
+    assert len(claude_claims) == 1
+    assert claude_claims[0]['module'] == 'pm-plugin-development'
+    assert claude_claims[0]['producers'] == ['pm-plugin-development']
+    # ``.plan`` still belongs to ``plan-marshall`` — the move did not disturb it.
+    assert {'.plan', '.claude'} <= {claim['prefix'] for claim in claims}
+
+
+def _load_shipped_claims(module_names):
     """Merge the live attributor population against a known-module set."""
     discover, merge, _lookup = _architecture_core._load_path_attribution_seam()
-    return merge(discover(), ['plan-marshall'])
+    return merge(discover(), module_names)

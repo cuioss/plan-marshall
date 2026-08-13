@@ -9,7 +9,7 @@ symlink/dotfile policy, determinism, and the per-category cap behaviour of the
 post-processor (which mutates the ``modules`` dict in-place — every such test
 inspects the resulting ``files`` block on the module dict), plus the
 ``which-module`` / ``resolve_module_for_path`` containment fallback that
-resolves ``paths.tests`` paths and project-local ``.claude/skills/**`` paths to
+resolves ``paths.tests`` paths and the project-local ``.claude/**`` tree to
 their owning module (closes lesson 2026-07-09-04-001).
 """
 
@@ -627,30 +627,35 @@ def test_is_marketplace_bundle_module_rejects_non_bundle_path():
 # not surfaced as an exact ``files``-inventory hit (the crawled ``test``
 # category elides to a sample) must still resolve to its owning module via the
 # ``paths.sources ∪ paths.tests`` containment fallback, and the meta-project's
-# project-local ``.claude/skills/**`` tree must map to ``plan-marshall`` rather
-# than resolving to ``null`` / the root ``default`` module. Both path→module
-# surfaces (``cmd_which_module`` and the sibling ``resolve_module_for_path``)
-# are asserted to agree.
+# project-local ``.claude/**`` tree must map to its owning module rather than
+# resolving to ``null`` / the root ``default`` module. Both path→module surfaces
+# (``cmd_which_module`` and the sibling ``resolve_module_for_path``) are asserted
+# to agree.
 #
-# The ``.claude/skills`` answer now comes from the Axis-D path-attribution seam
-# (rung 3 of the ladder): ``plan-marshall-plugin`` declares the claim through
-# ``PathAttributionBase.claim_paths()``, core discovers the attributors and merges
-# their claims. The hardcoded ``_PROJECT_LOCAL_PREFIX_MAP`` that previously
-# produced this answer is retired — the OWNER is unchanged, the MECHANISM is not.
-# See ``extension-api/standards/ext-point-path-attribution.md``.
+# The ``.claude`` answer comes from the Axis-D path-attribution seam (rung 3 of
+# the ladder): ``pm-plugin-development``'s ``plan-marshall-plugin`` declares the
+# claim through ``PathAttributionBase.claim_paths()``, core discovers the
+# attributors and merges their claims. The whole ``.claude`` tree — skills,
+# commands, and settings alike — is owned by ``pm-plugin-development`` via the
+# bare-root prefix; the former ``.claude/skills → plan-marshall`` claim (itself a
+# re-homing of a retired hardcoded prefix map) has moved to the domain that
+# understands Claude Code plugin artifacts. See
+# ``extension-api/standards/ext-point-path-attribution.md``.
 
 _TEST_PATH = 'test/plan-marshall/tools-script-executor/test_generate_executor_behavior.py'
 _CLAUDE_SKILLS_PATH = '.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py'
 
 
 def _seed_containment_project(tmpdir: str) -> None:
-    """Seed a ``plan-marshall`` module (with ``paths.sources`` + ``paths.tests``)
-    and a project-root ``default`` module.
+    """Seed a ``plan-marshall`` module, a ``pm-plugin-development`` module, and a
+    project-root ``default`` module.
 
-    The ``test/plan-marshall/**`` file is deliberately absent from the
-    ``plan-marshall`` module's ``files`` inventory so resolution must come from
-    the ``paths.tests`` containment fallback — reproducing the production
-    elision case where the crawled ``test`` category is sampled, not exhaustive.
+    ``pm-plugin-development`` is present so its ``.claude`` Axis-D claim survives
+    the merge's known-module filter — that is the module every ``.claude/**`` path
+    now resolves to. The ``test/plan-marshall/**`` file is deliberately absent from
+    the ``plan-marshall`` module's ``files`` inventory so resolution must come from
+    the ``paths.tests`` containment fallback — reproducing the production elision
+    case where the crawled ``test`` category is sampled, not exhaustive.
     """
     modules = {
         'plan-marshall': {
@@ -667,6 +672,15 @@ def _seed_containment_project(tmpdir: str) -> None:
             'files': {
                 'skill': ['marketplace/bundles/plan-marshall/skills/manage-architecture/SKILL.md'],
             },
+        },
+        'pm-plugin-development': {
+            'name': 'pm-plugin-development',
+            'paths': {
+                'module': 'marketplace/bundles/pm-plugin-development',
+                'sources': ['marketplace/bundles/pm-plugin-development/skills'],
+                'tests': ['test/pm-plugin-development'],
+            },
+            'files': {},
         },
         'default': {
             'name': 'default',
@@ -692,11 +706,12 @@ def test_which_module_resolves_test_path_via_paths_tests():
 
 
 def test_which_module_resolves_claude_skills_path_through_the_attribution_seam():
-    """A project-local ``.claude/skills/**`` path resolves to ``plan-marshall``
+    """A project-local ``.claude/skills/**`` path resolves to ``pm-plugin-development``
     through the Axis-D path-attribution seam rather than ``None``.
 
-    The claim is contributed by ``plan-marshall-plugin``'s ``claim_paths()`` and
-    merged by core — not read from a hardcoded prefix map.
+    The claim is the bare ``.claude`` root contributed by ``pm-plugin-development``'s
+    ``claim_paths()`` and merged by core — not read from a hardcoded prefix map, and
+    no longer owned by ``plan-marshall``.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_containment_project(tmpdir)
@@ -704,49 +719,55 @@ def test_which_module_resolves_claude_skills_path_through_the_attribution_seam()
         result = cmd_which_module(Namespace(project_dir=tmpdir, path=_CLAUDE_SKILLS_PATH))
 
         assert result['status'] == 'success'
-        assert result['module'] == 'plan-marshall'
+        assert result['module'] == 'pm-plugin-development'
 
 
 def test_resolve_module_for_path_agrees_with_which_module():
-    """The sibling ``resolve_module_for_path`` reader resolves both the
-    ``paths.tests`` containment case and the ``.claude/skills`` attribution claim
-    to ``plan-marshall`` — the two path→module surfaces agree.
+    """The sibling ``resolve_module_for_path`` reader resolves the ``paths.tests``
+    containment case to ``plan-marshall`` and the ``.claude`` attribution claim to
+    ``pm-plugin-development`` — the two path→module surfaces agree.
 
-    This is the invariant that must survive the seam swap: both call sites reach
-    rung 3 through the same helper, so a change that moved only one of them would
-    surface here.
+    This is the invariant that must survive the ownership move: both call sites
+    reach rung 3 through the same helper, so a change that moved only one of them
+    would surface here.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_containment_project(tmpdir)
 
         assert resolve_module_for_path(_TEST_PATH, tmpdir) == 'plan-marshall'
-        assert resolve_module_for_path(_CLAUDE_SKILLS_PATH, tmpdir) == 'plan-marshall'
+        assert resolve_module_for_path(_CLAUDE_SKILLS_PATH, tmpdir) == 'pm-plugin-development'
 
 
 def test_attribution_seam_falls_through_when_the_claimed_module_is_absent():
-    """A project with no ``plan-marshall`` module answers ``None`` for a claimed
-    path — the module-existence guard the retired prefix map applied at
+    """A project with no ``pm-plugin-development`` module answers ``None`` for a
+    ``.claude`` path — the module-existence guard the retired prefix map applied at
     resolution time, now enforced by the merge's known-module filter.
 
     Without it, a consumer project that installed the bundle but has no
-    ``plan-marshall`` module would receive an owner it does not contain.
+    ``pm-plugin-development`` module would receive an owner it does not contain.
+    This is the same inert-in-a-consumer-project behaviour the former
+    ``plan-marshall`` claim already had, so the ownership move changes nothing here.
     """
     owner = _architecture_core.project_local_module_for_path(_CLAUDE_SKILLS_PATH, ['default'])
 
     assert owner is None
 
 
-def test_attribution_seam_does_not_over_match_a_sibling_prefix():
-    """``.claude/settings.json`` sits beside the claimed ``.claude/skills`` tree
-    but does not nest inside it, so it resolves to no claim.
+def test_bare_claude_claim_covers_the_former_unclaimed_sibling():
+    """The founding inconsistency is closed at the seam: ``.claude/settings.json`` —
+    once a sibling of ``.claude/skills`` that resolved to nothing — now resolves to
+    ``pm-plugin-development`` under the bare ``.claude`` root claim. One tree, one answer.
 
-    The nest-inside guard is what separates prefix containment from a bare string
-    ``startswith``; a sibling that merely shares the leading characters must not
-    be swept into the claim.
+    The nest-inside guard still separates prefix containment from a bare string
+    ``startswith``: ``.claudex`` shares the leading characters but does not nest
+    inside ``.claude``, so it resolves to no claim.
     """
-    owner = _architecture_core.project_local_module_for_path('.claude/settings.json', ['plan-marshall'])
-
-    assert owner is None
+    known = ['pm-plugin-development']
+    assert (
+        _architecture_core.project_local_module_for_path('.claude/settings.json', known)
+        == 'pm-plugin-development'
+    )
+    assert _architecture_core.project_local_module_for_path('.claudex/thing', known) is None
 
 
 def test_attribution_seam_memoizes_the_merged_claim_set():
