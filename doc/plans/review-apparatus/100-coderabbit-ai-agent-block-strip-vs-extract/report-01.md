@@ -209,7 +209,7 @@ comment bodies across all three surfaces (`get_reviews`, `get_comments`, `get_re
 
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
-| `coderabbitai` | `reviewed` | Filed 5 actionable review comments + a walkthrough over the diff (review bodies `4929585930`/`4929588560`, inline threads on `report-01.md`). All 5 addressed. |
+| `coderabbitai` | `reviewed` | Reviewed the diff at head `d4d09f8` and filed 5 actionable comments + a walkthrough (review bodies `4929585930`/`4929588560`, inline threads on `report-01.md`). All 5 addressed in `ff27679`; CodeRabbit then **auto-resolved all three inline threads** ("✅ Addressed in commit ff27679") and confirmed CR-2 sufficient (*"The revised D2 basis is sufficient"*). Its *incremental* re-review of the follow-up commit was then rate-limited ("Review limit reached — next review in ~98 min", OSS PR-review limit) — this affects only the re-review of the docs-only follow-up, **not** the substance review, which completed. |
 | `cuioss-review-bot` | `reviewed` | Posted its `## PR Reviewer Guide 🔍` issue comment with clean assertions — "No relevant tests", "No security concerns identified", "No major issues detected" — i.e. participated with no findings. |
 | `sourcery-ai` | `rate-limited` | Published **only** a refusal in place of a review: *"you have reached your weekly rate limit of 500000 diff characters."* Matches `sourcery.md`'s `refusal_patterns` (`reached your weekly rate limit of`), `rate_limit_class: hard_quota` (weekly quota — not awaitable on a useful timescale). |
 
@@ -218,22 +218,71 @@ The § Step 8 shortfall disclosure **fires** — see the merge gate below.
 
 ## Cost
 
-- **Tokens:** not available to the agent in this session.
-- **Wall-clock:** _to be recorded at run end._
+- **Tokens:** not available to the agent in this session — stated plainly rather than estimated.
+- **Wall-clock:** ≈35 min (source: run event timestamps — first commit `fb5eabe` pushed ~16:52 UTC,
+  PR #1212 created 16:53:08 UTC, review cycle 16:59–17:16 UTC, report finalized ~17:22 UTC).
 - **Population:** this single Claude Code cloud session's usage. ⚠ NOT comparable to a plan-marshall
   `metrics.toon` total, which counts an orchestrator-plus-agent dispatch tree under a different
   billing boundary this interactive session does not share.
 
 ## Contract check (Step 9)
 
-_Completed at Step 9 (final pre-merge commit)._
+Per-step verdict against the `cloud-plan-lane` contract, re-read at close:
+
+| Step | Verdict | Evidence |
+|---|---|---|
+| 1 Skills loaded | ✅ | `cloud-plan-lane` (first action) + `plan-marshall:ref-code-quality`; named in "Skills loaded". |
+| 2 Branch | ✅ | `claude/coderabbit-block-strip-extract-woxl2i` exists on `origin` — harness-assigned, kept as-is (§ cloud-session rule). |
+| 3 Plan directory | ✅ | `doc/plans/review-apparatus/100-coderabbit-ai-agent-block-strip-vs-extract/plan.md` exists and opens with the first-instruction block (present on arrival — no repair needed). |
+| 4 Implement | ✅ | Deliverables addressed; every commit carries the `Co-Authored-By: Claude` trailer and no "Generated with Claude Code" footer. |
+| 4 Per-commit gate | ✅ (n/a) | No commit touched `*.py`, so the `*.py`-only quality gate was owed on none of them. Recorded, not skipped. |
+| 4 Pushed | ✅ | No unpushed commit remains (verified `git status -sb` clean, no `ahead`). |
+| 5 Build gate | ✅ | `git diff --name-only origin/main...HEAD -- '*.py'` empty → local build skipped (correct); CI `verify / conclusion` **success** on the head, recorded in Build gate. |
+| 6 Verification sub-agent | ✅ | Part A cold read (coderabbit.md, later extended to sourcery.md per CR-5) + Part B deliverable check + Part C sweep; C1/C2 recorded and rejected with reason. |
+| 7 PR cycle | ✅ | PR #1212; all 5 CodeRabbit comments dispositioned (each fixed; CR-2 also replied); 3 inline threads resolved and bot-confirmed. |
+| 8 Merge gate | ✅ | Conditions 1–3 met; auto-merge (SQUASH) armed as the action immediately following this report commit. Coverage shortfall disclosed (condition 4). |
+| 8 Bridge | ✅ | No status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; the report carries the PR number and per-deliverable outcome for collect. |
+| 9 This check | ✅ | This table. |
+| 9 What have we learned | ✅ | Recorded below. |
+
+**GitHub access path:** the GitHub MCP server (the cloud path) — it disconnected once mid-run and
+reconnected; no `gh` CLI was used or available. **Branch form:** harness-assigned `claude/*`, kept.
+**No `/sync-plugin-cache` owed** — a cloud run neither performs nor records it (machine-local build
+step), even though the diff touches `marketplace/bundles/`.
 
 ## What have we learned (Step 9)
 
-_Completed at Step 9._
+**No contract change proposed.** This run exercised the `cloud-plan-lane` contract end to end and
+every step produced its artifact as written. The frictions it surfaced were each already covered:
+
+- **Two reviewers rate-limited** (Sourcery weekly-quota; CodeRabbit OSS PR-review limit on the
+  *incremental* re-review). The lane's condition-4 coverage disclosure and the three-verdict
+  participation taxonomy (`reviewed`/`rate-limited`/`silent`, verdict-from-the-bodies) handled this
+  precisely — CodeRabbit classified `reviewed` because it published review artifacts against the diff,
+  with the incremental rate-limit noted separately. No taxonomy gap.
+- **CodeRabbit's inline-post failure** folded two comments into the *review summary body* rather than
+  inline threads. The lane's insistence on reading **all three** comment surfaces (`get_reviews` in
+  particular) is exactly what surfaced them — reading only `get_review_comments` would have missed
+  CR-4/CR-5. This run is positive evidence for that existing rule, not a gap.
+- **Editing the committed `plan.md` in response to a review comment** (CR-4 flagged a genuine
+  post-D0 staleness in the plan's own claim-label). The lane's Step 3 explicitly sanctions only the
+  first-instruction-block repair, and is otherwise silent on editing the plan. I treated it under the
+  general Step 7 rule ("handle every comment: fix it, or reply") since the moved `plan.md` is a
+  committed artifact subject to the same documentation standards. This was a small judgement call, not
+  an ambiguity that blocked or misled — the existing "fix or reply" guidance was sufficient, so it does
+  not rise to a proposed change.
+
+A run that examined the contract and found nothing worth changing is a different fact from one that
+never looked — this is the former. The operator is reachable this run; nothing here required
+escalation because no change is proposed.
 
 ## Residue
 
 - D2 is a **proposal in this report**, not an action: the config lives in `cuioss/coderabbit` and is
   out of this run's scope. If the operator accepts the verdict, retiring `enable_prompt_for_ai_agents`
   permanently (and closing any standing watch) is a follow-up in that repository.
+- This report-finalize commit (and the auto-merge arming that follows) will **not** receive a fresh
+  automated review: CodeRabbit is rate-limited on the incremental re-review (~98 min) and Sourcery on
+  its weekly quota. This is accepted and disclosed — the *substance* (the `coderabbit.md`/`sourcery.md`
+  standards change) was reviewed at head `d4d09f8` and its follow-up fixes bot-confirmed; the
+  finalize commit is report-only. The merge queue's `merge_group` run still verifies before landing.
