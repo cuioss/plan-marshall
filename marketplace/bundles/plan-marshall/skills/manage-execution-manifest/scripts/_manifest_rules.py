@@ -896,10 +896,16 @@ def _apply_unresolved_ask_provider_drop(
 # coverage / module-tests). This map is the canonical FAST PATH only: for
 # orchestrator-tier commands, verbs not in this map generalize to the bare
 # ``verify:{verb}`` step ID at the composer's routing pass
-# (``_route_task_verification_commands``), so no orchestrator-tier build
-# command is ever left in a task's ``verification.commands`` for a leaf to
-# run inline. Only per-task-tier and unparseable (raw-shell /
-# non-``plan-marshall:build-``) commands stay with the consumer.
+# (``_route_task_verification_commands``), so most orchestrator-tier build
+# commands are hoisted rather than left in a task's ``verification.commands``
+# for a leaf to run inline. THREE kinds stay with the consumer instead:
+# per-task-tier commands, unparseable (raw-shell / non-``plan-marshall:build-``)
+# commands, and — the build-phase-canonical carve-out — a verb that is a KNOWN
+# canonical build command (``compile`` / ``test-compile``) with no phase-5
+# verify gate, whose ``verify:{verb}`` generalization would not resolve. Routing
+# that last kind would append an unresolvable step and fail the whole compose,
+# so the routing pass keeps it with the task (see
+# ``_route_task_verification_commands``).
 #
 # The step IDs are BARE (no ``default:`` prefix) per the boundary-
 # normalization contract: the candidate lists are stripped to bare names at
