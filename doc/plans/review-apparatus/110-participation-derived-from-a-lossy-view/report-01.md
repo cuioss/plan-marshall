@@ -163,7 +163,41 @@ test file changed.
 
 ## Findings
 
-_pending — verification sub-agent + CI + PR review._
+### Verification sub-agent (Step 6)
+
+An independent `general-purpose` sub-agent verified the diff against the plan (read-only). It read the
+production code **cold** before consulting the report's conclusions and **independently confirmed the
+entire D0 refutation** — no gaps, no live defect:
+
+1. **Both defects genuinely refuted at HEAD.** Participation (`participated`/`stale_participation` loop,
+   `github_pr.py:917–951`) never touches `existing_comment_keys`; the dedup is consulted only at the
+   finding-storage site (`:1062`). `_reviewed_at_merge_candidate` is a pure, idempotent SHA comparison.
+   `branch-cleanup.md` feeds the producer's currency-anchored set. `_has_update_movement` is absent from
+   the tree (grep-clean) — replaced, nothing to port.
+2. **The mandated cold read.** Its verbatim answer: participation is decided **in CODE, not in a reader's
+   interpretation of a standards document** — evidence shapes are registry *data* consumed by code, the
+   currency test is a code predicate, the quorum re-tests membership in code. "The enforcement HAS moved
+   to code (it moved with #1141)." This is the plan's central success criterion, met.
+3. **The D3(a) test is correct and discriminating** — asserts both observables on one fetch, uses the
+   existing `skipped_duplicate` counter, and would fail if participation were re-coupled to the dedup.
+4. **D3(b),(c),(d) genuinely covered** by the named pre-existing tests (each confirmed to exist and
+   assert what the report claims). One path clarification (not a gap): the taxonomy sweep lives at
+   `test/plan-marshall/automatic-review/test_bot_participation_contract.py`; the report cited it by
+   basename.
+5. **No production change, no stale claims** — `git diff --name-status` is exactly the rename + report +
+   test; the report's factual claims (pr-agent sole `requires_update`, 3 registered bots, 3 refusal
+   patterns, no production `[0]` reader) all match the tree.
+6. **The report does not overstate** — it credits the production fix to #1141 and frames this run as
+   adding a test.
+
+**Disposition: no findings to fix.** The two items the agent flagged as un-verifiable from code alone —
+the empirical `./pw verify` result and #1141's specific squash SHA / MERGED status — were verified
+directly by this run (build: `=== verify: SUCCESS ===`; #1141 MERGED squash `50f67ed`, read from plan
+010's `report-01.md`). No re-dispatch needed.
+
+### CI / PR review
+
+_pending — populated after the PR review cycle._
 
 ## Reviewer participation
 
