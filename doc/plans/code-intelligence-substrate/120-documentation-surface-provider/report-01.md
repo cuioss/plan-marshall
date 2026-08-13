@@ -1,6 +1,6 @@
 # Run report — 120-documentation-surface-provider (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** `claude/documentation-surface-provider-u1d4fg` (harness-assigned)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-13    **Branch:** `claude/documentation-surface-provider-u1d4fg` (harness-assigned)    **PR:** [#1201](https://github.com/cuioss/plan-marshall/pull/1201)    **Outcome:** completed (landing delegated — see Merge gate)
 
 ## Skills loaded
 - `cloud-plan-lane` (working contract; loaded first).
@@ -64,17 +64,61 @@ All five implemented. Verified against the live crawl (in-process, mirroring the
 - A single-rowed claimed path (a repo-root prose doc the doc module does not itself inventory) is left intact, so no claimed file vanishes.
 - The only behavioural change is: a `doc/**` path that previously returned two rows (`default` + `documentation`) now returns one (`documentation`). No consumer was found that depends on the doubled doc row; the doubling was the defect this plan removes.
 
+**PR review — cuioss-review-bot security finding (path traversal / host-file read).** `_resolve_one` in `doc_references.py`: a cross-document reference whose target escapes `project_root` (e.g. `xref:../../../../etc/passwd#x[]`) fell through the `except ValueError` branch without returning, reaching `resolved_path.exists()` and `.read_text()` on a HOST path outside the repository — both a probe and an arbitrary host-file read, and a false "resolved" for an escaping target. *Disposition: fixed* (`a37f1d8`) — the branch now returns `(module, False)` before any filesystem access; two regression tests cover the fail-closed path (escaping target that exists outside the root, with/without anchor) and the end-to-end unresolved report. Replied on the PR thread confirming the fix.
+
 ## Reviewer participation
-_Pending._
+
+Expected reviewer population derived from the automatic-review registry (`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{coderabbit,sourcery,pr-agent}.md` `author_login`), cross-named by `.github/workflows/pr-agent.yml`:
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Posted a "PR Reviewer Guide" with a security finding (path traversal in `_resolve_one`) against the diff — a real review artifact. Fixed and replied. |
+| `coderabbitai` | `rate-limited` | Posted only "Review limit reached … Next review available in: 49 minutes" — engaged but did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Posted only "you have reached your weekly rate limit of 500000 diff characters" in place of a review. |
+
+**Coverage: 1 of 3.** The § Step 8 shortfall disclosure fires — see Contract check / Merge gate. Rate limits are routine and outside our control; the merge is not blocked on them, but the shortfall is stated explicitly.
 
 ## Cost
-_Pending._
+- **Tokens:** not available to the agent in this session — the harness does not surface a per-run token count to the model.
+- **Wall-clock:** the run spanned roughly one working session (UTC 2026-08-13, ~08:00 onward); the two `./pw verify` runs were ~7 min each and the CI `verify` a comparable duration.
+- **Population:** this single Claude Code cloud session's usage as the harness counts it. ⛔ NOT comparable to a plan-marshall `metrics.toon` total, which counts an orchestrator-plus-agent dispatch tree under plan-marshall's per-task billing boundary that a single interactive cloud session does not share. No comparable figure is available, stated plainly rather than presenting a non-comparable number.
 
 ## Contract check (Step 9)
-_Pending._
+
+| Step | Verdict | Evidence |
+|---|---|---|
+| 1 Skills loaded | done | Named in § Skills loaded; bundle-path reads (plugin not installed in this cloud session). |
+| 2 Branch | done | Harness-assigned `claude/documentation-surface-provider-u1d4fg` kept as-is; pushed to `origin` before any work. |
+| 3 Plan directory | done | `doc/plans/code-intelligence-substrate/120-documentation-surface-provider/plan.md` exists and opens with the first-instruction block. |
+| 4 Implement | done | Commits carry the `Co-Authored-By: Claude` trailer; all deliverables addressed. |
+| 4 Per-commit gate | done | Every `*.py` commit was preceded by a clean `./pw quality-gate` (ruff `All checks passed`, mypy `Success: no issues`, SPDX passed). |
+| 4 Pushed | done | No unpushed commit remains; each commit pushed immediately. |
+| 5 Build gate | done | `*.py` changed → `./pw verify` → `verify: SUCCESS`, 19370 passed / 14 skipped (recorded in § Build gate). |
+| 6 Verification sub-agent | done | Two passes; findings + dispositions in § Findings; re-verification clean. |
+| 7 PR cycle | done | PR #1201 opened (no `skip-bot-review` — the diff touches skills/bundles, so it is reviewed as code); all comments dispositioned (§ Findings, § Reviewer participation). |
+| 8 Merge gate | see § Merge gate | Conditions 1–3 met after CI green on the final head; auto-merge armed; landing delegated to the orchestrator's collect (this cloud session cannot self-wake — `subscribe_pr_activity` is approval-gated). |
+| 8 Bridge | done | No status/ledger write outside this plan's own directory; the report carries the PR number and per-deliverable outcome. |
+| 9 This check | done | This table. |
+| 9 What have we learned | done | Below. |
+
+GitHub access path: **GitHub MCP server** (cloud session). Branch form: **harness-assigned** `claude/*`. A `/sync-plugin-cache` is **not owed** — it is a machine-local build step a cloud run never performs or records (per the lane's Scope and precedence).
+
+## Merge gate (Step 8)
+
+- **Condition 1** (required contexts green on the head SHA): the required `verify` check must conclude success on the final head; on this merge-queue repo, arming auto-merge defers required-ness to the queue.
+- **Condition 2** (every comment handled): the one actionable comment (cuioss-review-bot security finding) was fixed and replied to; the two rate-limit notices are not actionable.
+- **Condition 3** (report finalized and pushed): this report is the last pre-merge commit.
+- **Condition 4** (review-coverage shortfall — a DISCLOSURE, not a block): **Review coverage: 1 of 3 — `cuioss-review-bot` reviewed (one security finding, fixed); `coderabbitai` rate-limited (window reopens in ~49 min); `sourcery-ai` rate-limited (weekly diff-character quota).** Rate limits are routine and outside our control; the merge is not held for them, but the shortfall is stated.
+
+The squash-merge commit SHA does not exist until the queue lands the PR, so it is reported to the operator from the PR merge event rather than embedded here.
 
 ## What have we learned (Step 9)
-_Pending._
+
+**No contract change proposed.** The `cloud-plan-lane` contract held end-to-end for a large, five-deliverable plan whose premise the clone refuted: its re-derivation mandate (claim-label table) is exactly what surfaced the "no `documentation` module" reality before any code was written; the reachable-operator escalation clause let a genuinely load-bearing design fork (make the module real vs. minimal seam-only) be settled by the operator rather than guessed; the pre-PR verification sub-agent caught a real stale-roster defect the implementer missed; and the merge-gate's disclose-don't-block rule for a review shortfall matched the rate-limited-reviewer reality precisely. Nothing in the contract was ambiguous in practice, produced an unobtainable artifact, or named a step that did not work in this environment. A run that examined the contract and found nothing to change is a different fact from one that never looked — this run looked.
 
 ## Residue
-_Pending._
+
+- **Landing confirmation** is delegated to the orchestrator's collect step (this cloud session cannot self-wake to watch the queue). The operator receives the `state: MERGED` / merge-commit read from the PR merge event.
+- **A local `/sync-plugin-cache`** is owed on a developer machine before the edited `marketplace/bundles/` behaviour takes effect in an installed plugin cache (a local-developer concern, not a debt this cloud run performs).
+- **D4 residual gap** (documented, not a defect): a heading under a non-default AsciiDoc `:idprefix:` is not resolved by the reference engine's anchor forms — under-reporting, never a false dangling report.
+- **Optional consistency item declined:** `extension-architecture.adoc`'s one-line Axis-D example omits the new documentation claim (pre-existing, illustrative, outside D5's scoped files).
