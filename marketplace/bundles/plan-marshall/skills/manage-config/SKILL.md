@@ -1190,8 +1190,11 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config effort resolve-target \
-  [--role ROLE] [--phase PHASE] [--default]
+  [--role ROLE] [--phase PHASE] [--default] \
+  [--workflow WORKFLOW] [--plan-id PLAN_ID] [--caller CALLER]
 ```
+
+`--workflow`/`--plan-id`/`--caller` are the dispatch-emission context: supply `--workflow` and the resolver emits the `[DISPATCH]` work-log line and the paired decision-log resolution record from this seam, per firing (see `ref-workflow-architecture` dispatch-logging.md). A resolve with no `--workflow` is a pure query and emits nothing. `--caller` defaults to `plan-marshall:manage-config`; `--plan-id none` (or omitted) routes the emission to the global log.
 
 `--role orchestrator` (bare) or `--role orchestrator.{analyze|decompose|reader}` resolves against the sibling `orchestrator.effort` block instead of a `plan.<phase>` entry: `orchestrator.effort.{surface}` → `orchestrator.effort.default` (or the bare-string shorthand) → `plan.effort` → `inherit`, then CLAMPED to `orchestrator.effort.max` when set. The `reader` surface's resolved level is what the *dispatch site* composes into the read-only `execution-context-reader-{level}` variant (untrusted-text ingestion runs under the reader variant, not the write-capable one) — `resolve-target` itself still returns the plain `execution-context-{level}` target name.
 

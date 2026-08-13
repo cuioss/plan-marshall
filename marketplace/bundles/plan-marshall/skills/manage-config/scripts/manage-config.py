@@ -491,6 +491,33 @@ def main() -> int:
         action='store_true',
         help='Resolve via `plan.effort` (no role/phase lookup).',
     )
+    effort_resolve_target.add_argument(
+        '--workflow',
+        help=(
+            'Bundle-prefixed workflow-doc notation the dispatched subagent loads '
+            '(e.g. plan-marshall:phase-5-execute/SKILL.md). Supplying it marks this '
+            'resolve as backing a real dispatch: the resolver then emits the canonical '
+            '[DISPATCH] work-log line AND the decision-log resolution record from this '
+            'one seam, per firing — so a re-fire that re-resolves re-emits, closing the '
+            'per-role hand-written blind spot. Omit it for a pure resolve query.'
+        ),
+    )
+    effort_resolve_target.add_argument(
+        '--plan-id',
+        help=(
+            "Plan the dispatch is bound to (or 'none' / omitted for a standalone "
+            'dispatch, which routes the seam emission to the global log). Used only '
+            'for the --workflow-gated seam emission.'
+        ),
+    )
+    effort_resolve_target.add_argument(
+        '--caller',
+        help=(
+            'Bundle-prefixed notation of the calling skill, used verbatim as the '
+            '[DISPATCH] caller prefix (defaults to plan-marshall:manage-config, the '
+            'seam itself). Used only for the --workflow-gated seam emission.'
+        ),
+    )
     effort_apply_preset = effort_sub.add_parser(
         'apply-preset',
         help='Write per-phase effort attributes from a named preset',

@@ -50,6 +50,8 @@ from _config_core import (
     success_exit,
 )
 from effort_presets import EffortPresets
+from marketplace_paths import names_real_plan
+from plan_logging import log_entry
 
 # Allowed-effort-levels enum, kept in lock-step with effort-levels.md.
 ALLOWED_LEVELS = (
@@ -444,6 +446,78 @@ def cmd_effort(args) -> dict:
     return success_exit(payload)
 
 
+def _emit_dispatch_records(
+    *,
+    role: str | None,
+    level: str,
+    target: str,
+    workflow: str,
+    plan_id: str | None,
+    caller: str | None,
+) -> None:
+    """Emit the two dispatch-audit evidence records from the resolution seam.
+
+    This is the single dispatch-emission point. Emitting HERE — inside
+    ``resolve-target``, the one script call every execution-context dispatch
+    makes to compute its target — rather than from a hand-written per-role
+    ``manage-logging work`` step in a workflow doc is what makes the record
+    survive a re-fire: every firing resolves its target, so every firing emits,
+    PER FIRING rather than once per role. A re-fire that reuses the same
+    envelope (same role/level/target) still calls the resolver and therefore
+    still emits.
+
+    Both audit surfaces are written from THIS one seam, so they necessarily
+    carry the SAME emitter — the corroboration limit the dispatch audit records
+    in its own standard: their mutual agreement proves the seam ran, never that
+    a dispatch actually rode the canonical envelope or completed.
+
+    - Surface B (``decision.log``): the ``effort resolve-target`` resolution
+      record — the intent side of the audit's pairing rule.
+    - Surface A (``work.log``): the ``[DISPATCH]`` line — the observable side,
+      carrying the five literal audit fields (``target``, ``level``, ``role``,
+      ``workflow``, ``plan_id``) specified in the dispatch-logging standard.
+
+    Best-effort: :func:`plan_logging.log_entry` swallows every error, so a
+    logging failure never turns a successful resolve into a failed one.
+
+    Args:
+        role: The resolved role-key (the resolver payload's ``role`` field).
+        level: The resolved effort level.
+        target: The resolved ``execution-context[-{level}]`` variant.
+        workflow: The bundle-prefixed workflow-doc notation the subagent loads.
+        plan_id: The plan the dispatch is bound to, or ``None`` / a non-plan
+            sentinel for a standalone dispatch (routes to the global log).
+        caller: The calling skill's notation for the ``[DISPATCH]`` caller
+            prefix; defaults to the seam's own notation when absent.
+    """
+    dispatch_caller = caller or 'plan-marshall:manage-config'
+    plan_display = plan_id if plan_id else 'none'
+    role_display = role if role else 'default'
+    # Route a real plan id to its plan-scoped log. The NO_PLAN sentinel or an
+    # absent id maps to None, and log_entry writes the dated global log. A
+    # literal ``--plan-id none`` is truthy and non-sentinel, so it passes
+    # through and reaches the same global log via get_log_path's no-such-plan
+    # fallthrough — the standalone dispatch still lands in the global log either way.
+    route_plan_id = plan_id if names_real_plan(plan_id) else None
+
+    # Surface B — decision-log resolution record (intent side of the pairing).
+    log_entry(
+        'decision',
+        route_plan_id,
+        'INFO',
+        f'(plan-marshall:manage-config) effort resolve-target '
+        f'role={role_display} -> target={target} level={level}',
+    )
+    # Surface A — work-log [DISPATCH] line (observable side of the pairing).
+    log_entry(
+        'work',
+        route_plan_id,
+        'INFO',
+        f'[DISPATCH] ({dispatch_caller}) target={target} level={level} '
+        f'role={role_display} workflow={workflow} plan_id={plan_display}',
+    )
+
+
 def cmd_effort_resolve_target(args) -> dict:
     """Handle ``effort resolve-target --role <name>`` subcommand.
 
@@ -451,6 +525,12 @@ def cmd_effort_resolve_target(args) -> dict:
     name ``execution-context-{level}`` (or the canonical ``execution-context``
     when the level is ``inherit``). Collapses the per-dispatch-site
     "level -> target name" recipe into one call.
+
+    When ``--workflow`` is supplied the resolver ALSO emits the two dispatch-audit
+    evidence records (decision-log resolution + work-log ``[DISPATCH]`` line) from
+    this seam — see :func:`_emit_dispatch_records`. The ``--workflow`` flag is the
+    signal that this resolve backs a real dispatch (a bare ``resolve-target``
+    query carries no workflow and stays a pure read, byte-identical to before).
     """
     read_result = cmd_effort(args)
     if read_result.get('status') != 'success':
@@ -458,6 +538,31 @@ def cmd_effort_resolve_target(args) -> dict:
 
     level = read_result.get('level', 'inherit')
     target = _compute_target(level)
+
+    # Seam emission: fire the audit records when this resolve backs a dispatch
+    # (signalled by --workflow). A resolve that errored above never reaches here,
+    # so a failed resolution never emits a spurious dispatch record.
+    workflow = getattr(args, 'workflow', None)
+    if workflow:
+        # The emitted role is the ROLE-KEY the caller resolved against — the
+        # `--role` argument, or the `--phase` when `--role` is absent — per the
+        # dispatch-logging standard's field semantics. This is the caller's
+        # single-level role-key (`verification-feedback`, `phase-5-execute`),
+        # NOT the resolver's dotted `group.subkey` payload role, so the emitted
+        # `role=` field matches the form the audit already pairs and rosters on.
+        emission_role = (
+            getattr(args, 'role', None)
+            or getattr(args, 'phase', None)
+            or read_result.get('role')
+        )
+        _emit_dispatch_records(
+            role=emission_role,
+            level=level,
+            target=target,
+            workflow=workflow,
+            plan_id=getattr(args, 'plan_id', None),
+            caller=getattr(args, 'caller', None),
+        )
 
     payload: dict = {
         'role': read_result.get('role'),
