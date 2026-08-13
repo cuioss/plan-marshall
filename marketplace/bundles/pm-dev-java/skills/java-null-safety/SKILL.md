@@ -39,6 +39,8 @@ This provides rules for:
 - `@NullMarked` package-level configuration with `package-info.java` syntax
 - Core annotations (`@NullMarked`, `@Nullable`, `@NonNull`)
 - API return type guidelines (non-null default, Optional, never `@Nullable` returns)
+- Null-safety by position — returns, fields, parameters, and record components, with reasons
+- Records and null-safety — component nullability, compact constructors, defaulting
 - Required imports
 
 ### Step 2: Load Implementation Patterns (As Needed)
@@ -62,7 +64,9 @@ This provides rules for:
 |------|----------|
 | Package default | Always add `@NullMarked` to `package-info.java` |
 | Return types | Never use `@Nullable` — use `Optional<T>` instead |
-| Parameters | Use `@Nullable` sparingly; prefer method overloads |
+| Fields | `@Nullable T` for nullable fields; never `Optional<T>` |
+| Parameters | `@Nullable T` (sparingly) or a method overload; never `Optional<T>` |
+| Record components | `@Nullable T` for nullable components; never `Optional<T>` |
 | API boundaries | `Objects.requireNonNull()` for defensive checks |
 | Collections | `List<@Nullable String>` for nullable elements |
 
@@ -79,6 +83,7 @@ Replace `${YEAR}`, `${PACKAGE}`, and `${PACKAGE_DESCRIPTION}` with actual values
 
 - Package has `@NullMarked` in `package-info.java`
 - No `@Nullable` used for return types (use `Optional` instead)
+- No `Optional<T>` used for fields, parameters, or record components (use `@Nullable T`)
 - Nullable parameters documented and justified
 - Defensive null checks at API boundaries
 - Unit tests verify non-null contracts (see `pm-dev-java:junit-core` skill)

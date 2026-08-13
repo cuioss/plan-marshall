@@ -72,6 +72,43 @@ String processToken(TokenType type, String token) {
 }
 ```
 
+### From an if/else chain over a closed constant set
+
+An `if`/`else` (or `else if`) chain that tests one value against a **closed set of constants** — ending
+in a trailing `throw` for "none matched" — is a switch in disguise. Convert it, and model the closed
+set as an **enum** so the switch is exhaustive:
+
+```java
+// Before - sequential equality checks over three string constants, ending in a throw
+String label(String kind) {
+    if (kind.equals("jwt")) {
+        return "JSON Web Token";
+    } else if (kind.equals("oauth2")) {
+        return "OAuth 2.0";
+    } else if (kind.equals("legacy")) {
+        return "Legacy";
+    }
+    throw new IllegalArgumentException("Unknown kind: " + kind);
+}
+
+// After - the closed set is an enum; the switch is exhaustive and the trailing throw disappears
+enum TokenKind { JWT, OAUTH2, LEGACY }
+
+String label(TokenKind kind) {
+    return switch (kind) {
+        case JWT    -> "JSON Web Token";
+        case OAUTH2 -> "OAuth 2.0";
+        case LEGACY -> "Legacy";
+    };
+}
+```
+
+Modeling the set as an enum is the valuable half: an exhaustive switch over an enum needs no `default`
+and no trailing `throw`, because the compiler already knows every constant is covered — and adding a
+constant later turns the now-missing case into a **compile error** rather than a runtime exception.
+(When the constants must remain `String` — an external wire format, say — a `switch` expression over
+the string still beats the chain, but keep a `default -> throw` for the genuinely open input.)
+
 ## Pattern Matching for instanceof (Java 16)
 
 ```java
