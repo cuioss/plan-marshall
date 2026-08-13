@@ -423,6 +423,14 @@ name to scope to one module, e.g. `./pw verify plan-marshall`.
 
 Give every `./pw` call a Bash timeout of at least **600000 ms (10 minutes)**.
 
+Also export **`UV_HTTP_TIMEOUT=600`** (or higher) on every `./pw` call in a cloud session. The wrapper
+fetches its Python toolchain and dependencies through the direct PyPI path, and `uv`'s default per-request
+HTTP timeout (30 s) is too short for the large wheels here — an observed run's first two build attempts
+failed with `uv` HTTP timeouts until the value was raised. This is distinct from the Bash timeout above:
+that one bounds the whole call, while `UV_HTTP_TIMEOUT` bounds each individual dependency fetch inside it.
+A `uv` HTTP timeout is an environmental fetch failure, not a build failure — do not read it as the gate
+failing.
+
 **Read the output, not the exit code.** The build can report a green summary while failing. How you
 read "clean" depends on the path: the **executor** path emits a TOON result — confirm the reported
 `status` and open the `log_file` it names to confirm `total_issues: 0` **and an empty `errors[]`** (the
