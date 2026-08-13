@@ -34,13 +34,21 @@ caller derives them afresh, not that only one document carries them:
    tracked edit is still pushable, so the defect this detects is reachable only
    after the gate. Broadening the check to every step would fire on the normal
    pre-gate working state.
-2. **Path predicate — dirty AND tracked AND outside ``.plan/``.** Every finalize
-   step legitimately writes under ``.plan/`` (status, logs, findings, metrics),
-   so a bare non-empty ``git status --porcelain`` test would fire on every
-   post-run step. The predicate is therefore two filters composed:
-   ``--untracked-files=no`` (git itself drops untracked paths, so a new,
-   unstaged file is not an offender) plus an explicit ``.plan/`` prefix
-   exclusion. What survives both is a dirty TRACKED source path.
+2. **Path predicate — dirty AND tracked; ``.plan/`` exempt ONLY when untracked.**
+   Every finalize step legitimately writes plan STATE under ``.plan/`` (status,
+   logs, findings, metrics), and those writes are *untracked* — but a number of
+   files under ``.plan/`` ARE git-tracked (``marshal.json``, every
+   ``project-architecture/**/enriched.json`` descriptor). ``--untracked-files=no``
+   drops the untracked plan state (git itself excludes it), and the shared
+   ``.plan/`` exemption
+   (:func:`_plan_state_exemption.partition_plan_state_exemption`) is keyed on
+   git TRACKEDNESS rather than on the path prefix: a *tracked* ``.plan/`` file
+   left dirty after the merge gate is an unpushable tracked edit and is reported
+   like any other tracked source. Exempting the whole ``.plan/`` prefix — the
+   earlier behaviour — hid exactly those tracked writes (an architecture-enrich
+   write is the recurring case), which is the defect this guard now closes. The
+   SAME shared predicate backs the layer-D main-checkout drift capture in
+   ``plan-marshall/scripts/_invariants.py`` so the two guards cannot diverge.
 3. **Failure action — loud, legible, NON-blocking.** ``phase-6-finalize``
    documents the post-run band as advisory and never blocking, so a hard failure
    would contradict it. This script therefore NEVER fails: ``clean: false`` is a
@@ -55,11 +63,17 @@ Return shape (CLI emits TOON; programmatic callers consume
     step_id: <the step whose return triggered the check>
     project_dir: <the tree that was actually observed>
     clean: true|false
-    offending_paths[N]: [<dirty tracked paths outside .plan/>]
+    considered_paths[N]: [<every dirty tracked path observed, pre-exemption>]
+    exempted_paths[N]: [<untracked .plan/ paths dropped as plan state>]
+    offending_paths[N]: [<dirty tracked source, tracked .plan/ files included>]
 
-``project_dir`` is echoed because WHICH tree was observed is the one fact that
-distinguishes a real ``clean: true`` from the vacuous one a worktree-aimed run
-would produce; without it a log line cannot tell the two apart.
+``considered_paths`` is the population the verdict was drawn from, so a
+``clean: true`` that names the paths it examined is distinguishable from a
+looked-at-nothing pass. ``exempted_paths`` names what was dropped and (by the
+predicate) why: an untracked ``.plan/`` plan-state write. ``project_dir`` is
+echoed because WHICH tree was observed is the one fact that distinguishes a real
+``clean: true`` from the vacuous one a worktree-aimed run would produce; without
+it a log line cannot tell the two apart.
 
 ``clean: true`` with an empty ``offending_paths[]`` is the expected outcome. A
 git failure (the directory is not a repository, git is unavailable) returns
@@ -83,12 +97,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from _plan_state_exemption import partition_plan_state_exemption
 from toon_parser import serialize_toon
-
-#: Path prefix whose dirty entries are NEVER offenders. Every finalize step
-#: writes plan state under ``.plan/``; those writes are the normal mode of
-#: operation, not an unpushable source edit.
-_PLAN_STATE_PREFIX: str = '.plan/'
 
 #: Porcelain status letters that introduce a second (original) path field in
 #: ``-z`` output: rename and copy. Both sides are reported, because either one
@@ -135,25 +145,19 @@ def parse_porcelain_z(payload: str) -> list[str]:
     return paths
 
 
-def filter_tracked_source(paths: list[str]) -> list[str]:
-    """Reduce decoded porcelain paths to the offending tracked-source set.
-
-    Args:
-        paths: Repo-relative paths decoded from a tracked-only porcelain run.
-
-    Returns:
-        The sorted, de-duplicated subset that lies outside ``.plan/``. Empty
-        means the step left no unpushable tracked edit.
-    """
-    return sorted({path for path in paths if path and not path.startswith(_PLAN_STATE_PREFIX)})
-
-
-def check_tracked_source(project_dir: Path) -> tuple[bool, list[str], str | None]:
-    """Observe real working-tree state and report dirty tracked source paths.
+def _observe_dirty_source(
+    project_dir: Path,
+) -> tuple[bool, list[str], list[str], list[str], str | None]:
+    """Observe real working-tree state and split it via the shared exemption.
 
     Runs the single tracked-only ``git status`` observation against
-    ``project_dir`` and applies the two-filter path predicate documented in the
-    module docstring.
+    ``project_dir``, decodes it, and applies the shared trackedness-based
+    ``.plan/`` exemption
+    (:func:`_plan_state_exemption.partition_plan_state_exemption`). Because the
+    observation is ``--untracked-files=no``, git has already dropped every
+    untracked path, so the exemption's untracked-``.plan/`` arm normally finds
+    nothing here — its job at this site is to KEEP the tracked ``.plan/`` files
+    the old prefix filter wrongly dropped.
 
     Args:
         project_dir: Working tree to observe. The predicate is general, but the
@@ -161,11 +165,14 @@ def check_tracked_source(project_dir: Path) -> tuple[bool, list[str], str | None
             CHECKOUT — see the module docstring for why the worktree is wrong.
 
     Returns:
-        A ``(clean, offending_paths, error)`` triple. ``clean`` is ``True`` when
-        no dirty tracked path outside ``.plan/`` was observed. ``error`` is
-        ``None`` on a successful observation and carries the git failure detail
-        otherwise, in which case ``clean`` is ``True`` and ``offending_paths``
-        is empty — an unusable observation never manufactures an offender.
+        A ``(clean, offenders, exempted, considered, error)`` tuple.
+        ``considered`` is every dirty tracked path observed (the population the
+        verdict is drawn from); ``exempted`` is the untracked ``.plan/`` subset
+        dropped as plan state; ``offenders`` is the retained dirty-source set
+        (tracked ``.plan/`` files included). ``clean`` is ``True`` when
+        ``offenders`` is empty. On a git failure ``error`` carries the detail and
+        ``clean`` is ``True`` with empty lists — an unusable observation never
+        manufactures an offender.
     """
     try:
         completed = subprocess.run(
@@ -184,26 +191,41 @@ def check_tracked_source(project_dir: Path) -> tuple[bool, list[str], str | None
             check=False,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        return True, [], f'git status failed: {exc}'
+        return True, [], [], [], f'git status failed: {exc}'
 
     if completed.returncode != 0:
         detail = completed.stderr.strip() or f'git exited {completed.returncode}'
-        return True, [], f'git status failed: {detail}'
+        return True, [], [], [], f'git status failed: {detail}'
 
-    offenders = filter_tracked_source(parse_porcelain_z(completed.stdout))
-    return not offenders, offenders, None
+    considered = sorted(set(parse_porcelain_z(completed.stdout)))
+    offenders, exempted = partition_plan_state_exemption(considered, project_dir)
+    return not offenders, offenders, exempted, considered, None
+
+
+def check_tracked_source(project_dir: Path) -> tuple[bool, list[str], str | None]:
+    """Programmatic 3-tuple view of :func:`_observe_dirty_source`.
+
+    Returns ``(clean, offending_paths, error)`` — the back-compatible shape the
+    item-5f caller and the ordering guard consume. The examined population
+    (``considered`` / ``exempted``) rides the CLI TOON payload instead; see
+    :func:`cmd_check`.
+    """
+    clean, offenders, _exempted, _considered, error = _observe_dirty_source(project_dir)
+    return clean, offenders, error
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    """CLI wrapper around :func:`check_tracked_source` — emits TOON, returns 0."""
+    """CLI wrapper around :func:`_observe_dirty_source` — emits TOON, returns 0."""
     project_dir = Path(args.project_dir).expanduser()
-    clean, offenders, error = check_tracked_source(project_dir)
+    clean, offenders, exempted, considered, error = _observe_dirty_source(project_dir)
 
     payload: dict[str, object] = {
         'status': 'error' if error else 'success',
         'step_id': args.step_id,
         'project_dir': str(project_dir),
         'clean': clean,
+        'considered_paths': considered,
+        'exempted_paths': exempted,
         'offending_paths': offenders,
     }
     if error:
@@ -216,9 +238,11 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the argparse parser with a single ``check`` subcommand."""
     parser = argparse.ArgumentParser(
         description=(
-            'Report dirty TRACKED source paths outside .plan/ left behind by a '
-            'post_run_review finalize step. Advisory and non-blocking — the '
-            'verdict rides the TOON payload and the exit code is always 0.'
+            'Report dirty TRACKED paths (source, or a tracked .plan/ config/'
+            'descriptor) left behind by a post_run_review finalize step. The '
+            '.plan/ exemption is keyed on git trackedness, not the path prefix. '
+            'Advisory and non-blocking — the verdict rides the TOON payload and '
+            'the exit code is always 0.'
         ),
         allow_abbrev=False,
     )
@@ -226,7 +250,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     check_parser = sub.add_parser(
         'check',
-        help='Observe a working tree for dirty tracked source outside .plan/',
+        help='Observe a working tree for dirty tracked source (tracked .plan/ files included)',
         allow_abbrev=False,
     )
     check_parser.add_argument(
@@ -263,4 +287,4 @@ if __name__ == '__main__':
     sys.exit(main())
 
 
-__all__ = ['check_tracked_source', 'filter_tracked_source', 'parse_porcelain_z']
+__all__ = ['check_tracked_source', 'parse_porcelain_z']

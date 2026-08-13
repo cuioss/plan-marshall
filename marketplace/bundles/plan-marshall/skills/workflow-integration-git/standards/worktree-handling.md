@@ -165,7 +165,7 @@ The chosen approach is host-agnostic and lives on the same code surface as the e
 
 ### What Layer D Detects
 
-The **`main_dirty_files`** invariant captures the set of paths reported by `git status --porcelain` against the main checkout, filtered to exclude `.plan/` artifacts (which legitimately live in the main checkout). The set is persisted on every phase boundary inside `handshakes.toon`.
+The **`main_dirty_files`** invariant captures the set of paths reported by `git status --porcelain` against the main checkout, with the `.plan/` exemption keyed on git trackedness (the shared `_plan_state_exemption.partition_plan_state_exemption` predicate): UNTRACKED `.plan/` plan-state artifacts (which legitimately live in the main checkout) are dropped, while a dirtied *tracked* `.plan/` file (`marshal.json`, a `project-architecture` descriptor) is retained as a real leak. The set is persisted on every phase boundary inside `handshakes.toon`.
 
 The **`main_dirty_drift`** check (invoked at verify time, not via the registry) compares the live capture against the captured baseline using **proper-superset semantics**: drift fires when
 

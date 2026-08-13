@@ -677,13 +677,17 @@ def test_layer_d_main_checkout_plan_is_gated_off(
 def test_layer_d_dot_plan_paths_are_filtered_and_do_not_trip(
     monkeypatch: pytest.MonkeyPatch, git_worktree: Path, plan_context,
 ) -> None:
-    """(d) ``.plan/`` artifacts in main MUST be filtered before drift check.
+    """(d) UNTRACKED ``.plan/`` artifacts in main MUST be filtered before drift check.
 
     Drives the real ``_capture_main_dirty_files`` (which calls
-    :func:`_filter_main_dirty_paths`) by stubbing ``git_dirty_files`` and
-    confirming the captured list is empty even though git reports
-    ``.plan/`` paths as dirty. Then verify must produce ``status: ok``
-    because the filter strips the would-be drift.
+    :func:`_filter_main_dirty_paths`) by stubbing ``git_dirty_files`` with
+    untracked plan-state paths (runtime logs / temp scratch) and confirming the
+    captured list is empty even though git reports them as dirty — the shared
+    exemption drops them because they are NOT git-tracked. Then verify must
+    produce ``status: ok`` because the filter strips the would-be drift. (A
+    dirtied *tracked* ``.plan/`` file — ``marshal.json``, a descriptor — is a
+    real leak and is retained; that trackedness split is covered in
+    ``test_worktree_contract_e2e.py`` and the shared-module suite.)
 
     Verified at ``4-plan`` so the filter logic is genuinely exercised rather
     than short-circuited by the phase-5 relaxation.
@@ -716,7 +720,7 @@ def test_layer_d_dot_plan_paths_are_filtered_and_do_not_trip(
     result = cmds.cmd_verify(_ns(plan_id=plan_id, phase='4-plan'))
 
     assert result['status'] == 'ok', (
-        '``.plan/`` paths must be filtered before the drift check fires, '
+        'untracked ``.plan/`` paths must be filtered before the drift check fires, '
         f'got {result}'
     )
 

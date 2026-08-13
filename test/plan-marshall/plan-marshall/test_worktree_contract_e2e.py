@@ -28,6 +28,7 @@ contamination (per project memory note on test isolation).
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -94,24 +95,56 @@ def test_a_main_dirty_drift_diff_clean_returns_empty(tmp_path: Path) -> None:
     assert inv._main_dirty_drift_diff(baseline, []) == []
 
 
-def test_a_main_dirty_filter_excludes_dot_plan_paths() -> None:
-    """``.plan/`` artifacts in main MUST NOT trip the invariant.
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    """Run one git command against ``repo`` with a pinned, hermetic identity."""
+    return subprocess.run(
+        [
+            'git',
+            '-C',
+            str(repo),
+            '-c',
+            'user.name=Test',
+            '-c',
+            'user.email=test@example.invalid',
+            '-c',
+            'commit.gpgsign=false',
+            *args,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
 
-    The capture filter (``_filter_main_dirty_paths``) drops anything
-    starting with ``.plan/`` so plan-state writes during a worktree-routed
-    plan don't trigger drift. Tracked source files outside ``.plan/`` are
-    preserved.
+
+def test_a_main_dirty_filter_excludes_untracked_plan_paths(tmp_path: Path) -> None:
+    """UNTRACKED ``.plan/`` artifacts MUST NOT trip the invariant; tracked ones DO.
+
+    The capture filter (``_filter_main_dirty_paths``) delegates to the shared
+    trackedness exemption: an UNTRACKED ``.plan/`` path (ordinary plan-state
+    bookkeeping — logs, build results) is dropped, but a git-TRACKED ``.plan/``
+    file (``marshal.json``) is a real main-checkout leak and is retained, exactly
+    like tracked source outside ``.plan/``.
     """
-    raw = [
-        '.plan/local/plans/some-plan/work/log',
-        '.plan/local/plans/other-plan/build-results/default/python-2026-01-01-000000.log',
-        'marketplace/bundles/foo/README.md',
-        'src/main.py',
-    ]
-    filtered = inv._filter_main_dirty_paths(raw)
+    repo = tmp_path / 'main-checkout'
+    repo.mkdir()
+    _git(repo, 'init', '--initial-branch=main')
+    (repo / '.plan').mkdir()
+    (repo / '.plan' / 'marshal.json').write_text('{"schema": 1}\n', encoding='utf-8')
+    (repo / 'README.md').write_text('# repo\n', encoding='utf-8')
+    _git(repo, 'add', '-f', '.plan/marshal.json', 'README.md')
+    _git(repo, 'commit', '-m', 'chore: seed')
 
-    assert '.plan/local/plans/some-plan/work/log' not in filtered
-    assert '.plan/local/plans/other-plan/build-results/default/python-2026-01-01-000000.log' not in filtered
+    raw = [
+        '.plan/local/plans/some-plan/work.log',  # untracked → dropped
+        '.plan/marshal.json',                    # tracked   → retained
+        'marketplace/bundles/foo/README.md',     # non-.plan → retained
+        'src/main.py',                           # non-.plan → retained
+    ]
+    filtered = inv._filter_main_dirty_paths(raw, repo)
+
+    assert '.plan/local/plans/some-plan/work.log' not in filtered
+    assert '.plan/marshal.json' in filtered
     assert 'marketplace/bundles/foo/README.md' in filtered
     assert 'src/main.py' in filtered
 

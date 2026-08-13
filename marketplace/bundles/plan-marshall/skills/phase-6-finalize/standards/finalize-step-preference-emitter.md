@@ -220,12 +220,13 @@ This branch emits NO `kind: landing` message. The one landing an orchestrated fi
 owes its epic is `lessons-capture`'s, emitted unconditionally there; a second one from here
 would put two landings on one run.
 
-This branch writes only under `.plan/`, so the step's `mutates_source: false` fact is unchanged
-and the step never reaches the dispatcher's commit instrumentation at all — item 5f reads the
-declared `mutates_source` fact first and skips (a)-(d). The declaration is not trusted blind:
-this step also declares `post_run_review: true`, so item 5f's sub-item (0) observes the MAIN
-CHECKOUT on return (the worktree is gone by this order) and reports any dirty TRACKED path
-outside `.plan/` as a non-blocking WARNING plus a recorded finding.
+This branch writes only UNTRACKED plan state under `.plan/` (lessons, follow-up artifacts), so the
+step's `mutates_source: false` fact is unchanged and the step never reaches the dispatcher's commit
+instrumentation at all — item 5f reads the declared `mutates_source` fact first and skips (a)-(d).
+The declaration is not trusted blind: this step also declares `post_run_review: true`, so item 5f's
+sub-item (0) observes the MAIN CHECKOUT on return (the worktree is gone by this order) and reports
+any dirty TRACKED path — source, or a tracked `.plan/` config/descriptor, the exemption being keyed
+on git trackedness rather than the path prefix — as a non-blocking WARNING plus a recorded finding.
 
 ##### Non-orchestrated filing (`orchestrated: false`)
 
