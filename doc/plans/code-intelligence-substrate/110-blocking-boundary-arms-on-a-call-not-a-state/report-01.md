@@ -1,6 +1,17 @@
 # Run report — 110-blocking-boundary-arms-on-a-call-not-a-state (run 01)
 
-**Date (UTC):** 2026-08-12    **Branch:** `claude/blocking-boundary-arms-call-jqwzo9` (harness-assigned)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-13    **Branch:** `claude/blocking-boundary-arms-call-jqwzo9` (harness-assigned)    **PR:** [#1199](https://github.com/cuioss/plan-marshall/pull/1199)    **Outcome:** completed — all three deliverables landed on the branch, CI green, PR review cycle handled, auto-merge armed at the merge gate
+
+## Outcome per deliverable
+
+- **D1** — completed: source-side derivation established the finalize-phase handshake row is universally
+  absent (no emitter), so D2 is a correctness fix; population counts blocked-on-corpus (unreachable, as
+  the plan expects) and reported as such.
+- **D2** — completed: the blocking-findings gate is armed by a state at two firing sites (pre-merge
+  `findings-check`, completion-boundary `assert_finalize_findings_clean`), both consumers covered,
+  negative controls fail pre-fix, positive controls admit clean plans.
+- **D3** — completed: `qgate resolve-evidenced` resolves only evidenced-fix findings and leaves
+  unevidenced ones pending; wired into the self-review delta round; both directions asserted.
 
 ## Skills loaded
 
@@ -155,26 +166,109 @@ Two minor observations the sub-agent raised were **not acted on** with reasons: 
 `--reason` help text lists `normal_completion` as an example value — a latent bypass token, but no
 production caller passes it, so it is left as-is (out of this plan's scope).
 
-Re-verification (pass 2) after the fixes was dispatched; its result is recorded in the Contract check.
+Re-verification (pass 2) found one surviving stale claim — the `BlockingFindingsPresent` docstring's first
+guarded-boundary bullet still asserted the never-emitted `capture --phase 6-finalize` arming — plus a
+minor comment residue. Both **fixed** (commit `09229c4`). Pass 3 confirmed **CLEAN**: all stale claims
+resolved, both consumers covered, archive-gate scoping sound (no completion path slips through).
 
-CI / PR-review findings: recorded after the review cycle (§ below).
+**CI / PR-review findings (CodeRabbit, 4 actionable — all fixed in `f043254`):**
+
+1. `_findings_core.py` `resolve_qgate_findings_by_evidence` ignored the `update_jsonl` result — a failed
+   write would report the finding in `resolved` while it stayed `pending` (a fail-open). **Fixed** — the
+   result is checked; a failed write reports the finding as still-pending. New test covers it. (Real
+   correctness defect in my own code.)
+2. `branch-cleanup.md` restated the actionable-type list inline (drift risk vs `_ACTIONABLE_FINDING_TYPES`).
+   **Fixed** — replaced my new inline list with a reference to the authoritative set. (The pre-existing
+   `SKILL.md` classification paragraph already names `_invariants.py` and keeps its inline list for the
+   classification it introduces — replied on-thread, left as-is.)
+3. `SKILL.md` / `phase-handshake.md` non-blocking resolution list omitted `rejected`. **Fixed** — added
+   `rejected` to both (pre-existing inconsistency; the pending query excludes every non-pending resolution).
+4. `worktree-handling.md` — my earlier fix miscategorized the finalize `findings-check` as a `capture` /
+   `verify --strict` layer-D drift checkpoint; it gates pending findings, not main-checkout drift.
+   **Fixed** — removed it from the layer-D example and clarified it is a separate mechanism. (Real defect
+   in my own earlier fix.)
+
+All 4 CodeRabbit threads were replied-to and resolved. CI on every head SHA has been `verify / conclusion`
+green (the required check).
 
 ## Reviewer participation
 
-_recorded after the review cycle_
+Expected reviewer population, derived from the `author_login` of each
+`automatic-review/standards/{bot_kind}.md` registry doc (cross-named by `.github/workflows/pr-agent.yml`):
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `coderabbitai` | `reviewed` | Walkthrough comment + review summary "Actionable comments posted: 4" + 4 inline review-thread findings against the diff; all 4 handled and resolved. |
+| `cuioss-review-bot` (pr-agent) | `reviewed` | Issue comment "PR Reviewer Guide 🔍 — PR contains tests; No security concerns identified; No major issues detected." Reviewed the diff, no findings. |
+| `sourcery-ai` | `rate-limited` | Review body: "you have reached your weekly rate limit of 500000 diff characters." Engaged but did not review this diff. |
+
+**Coverage: 2 of 3 reviewed** (`coderabbitai`, `cuioss-review-bot`); `sourcery-ai` rate-limited (weekly
+quota, outside our control). The § Step 8 shortfall disclosure fired: proceeding on 2-of-3, Sourcery's
+absence is a quota limit, not a blocker.
 
 ## Cost
 
-_pending_
+- **Tokens:** not available to the agent in this session — this interactive Claude Code cloud session
+  exposes no token counter to the agent. Stated plainly rather than estimated.
+- **Wall-clock:** the run spanned roughly the interval from the first commit
+  (`12dfbfe`, plan-directory move) to the merge-gate arming; each `./pw verify` took ~6 minutes and each
+  PR CI cycle's `verify / verify` ~11 minutes, and the run drove three verification sub-agent passes.
+- **Population:** this single Claude Code cloud session's usage. ⛔ **NOT comparable** to a plan-marshall
+  `metrics.toon` total — that counts the orchestrator-plus-agent dispatch tree under plan-marshall's own
+  per-task billing boundary, which a single interactive cloud session does not share. No comparable
+  figure is available, so none is presented.
 
 ## Contract check (Step 9)
 
-_pending_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — named in § Skills loaded (read from bundle paths; plugin absent, as the lane anticipates). |
+| 2 Branch | Done — `claude/blocking-boundary-arms-call-jqwzo9` on `origin`; **harness-assigned** `claude/*` form, kept as-is. |
+| 3 Plan directory | Done — `doc/plans/code-intelligence-substrate/110-blocking-boundary-arms-on-a-call-not-a-state/plan.md` exists and opens with the first-instruction block. |
+| 4 Implement | Done — every commit carries the `Co-Authored-By: Claude` trailer; D1/D2/D3 addressed. |
+| 4 Per-commit gate | Done — every `*.py`-touching commit was preceded by a clean `./pw quality-gate` (ruff `All checks passed!`, mypy `Success: no issues`, `SPDX-header check passed`, plugin-doctor clean). |
+| 4 Pushed | Done — no unpushed commit; pushed after every commit. |
+| 5 Build gate | Done — `git diff origin/main...HEAD` includes `*.py` → `./pw verify` → **SUCCESS** (19351 passed, 14 pre-existing skips). |
+| 6 Verification sub-agent | Done — 3 passes (`general-purpose`); all findings + dispositions in § Findings; final verdict CLEAN. |
+| 7 PR cycle | Done — PR **#1199**; all 4 CodeRabbit comments fixed, replied, and resolved; reviewer participation recorded. |
+| 8 Merge gate | Conditions 1–3 met; shortfall (2-of-3) disclosed; auto-merge armed once CI green on the report commit (see § below). |
+| 8 Bridge | Done — no status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; the report carries the PR number and per-deliverable outcome. |
+| 9 This check | Done — appended here. |
+| 9 What have we learned | Done — one contract-change proposal recorded below (awaiting operator approval; not shipped in this PR). |
+
+**GitHub access path:** the **GitHub MCP server** (the cloud path). **Branch form:** harness-assigned
+`claude/*`. A `/sync-plugin-cache` is **never owed** by a cloud run — it is a machine-local build step
+(reads the git-ignored `target/`, writes `~/.claude/`), not a debt this run records.
 
 ## What have we learned (Step 9)
 
-_pending_
+**One contract-change proposal, from this run's own evidence.** The `./pw` build (quality-gate and
+verify) failed on its first two attempts with `uv` HTTP timeouts fetching dependencies (`pytest`, `uv`
+itself) through the direct, non-proxied PyPI path — the default `UV_HTTP_TIMEOUT` of 30 s was too short
+for the large wheels on this session's network. Every `./pw` invocation only succeeded with
+`UV_HTTP_TIMEOUT=600`. The cloud-plan-lane § "Build gate" gives every `./pw` call a 10-minute *Bash*
+timeout but says nothing about `uv`'s own per-request HTTP timeout, so a first-time runner hits this and
+may misread it as a build failure.
+
+- **Proposed edit:** add a one-line note to `cloud-plan-lane` § "Build gate" that a fresh cloud session
+  should export `UV_HTTP_TIMEOUT=600` (or higher) for `./pw` calls, because the default 30 s times out
+  fetching large wheels through the direct PyPI path.
+- **Status:** recorded for the operator; **not shipped in this PR** (a contract amendment ships as its own
+  `chore/` branch on approval, per Step 9). Never self-approved.
+
+No other contract gap surfaced: the branch/PR/merge cycle, the verification-dispatch loop, and the
+report contract all executed as written.
 
 ## Residue
 
-_pending_
+- **D3 producer scope (accepted).** `qgate resolve-evidenced` resolves *any* pending Q-Gate finding of
+  the phase whose `file_path` is in the evidence set, not only self-review's own. In the common case
+  (self-review runs before the wait region) only self-review findings are pending, so this does not
+  over-reach; in a wait-region-originated loop-back it could touch another producer's finding whose file
+  the fix touched, which is self-corrected by that producer's re-fetch (re-detect → reopen). Left
+  unscoped by design; both verification passes accepted it.
+- **Sourcery review deferred** (weekly rate limit). A re-request when its quota resets would add a third
+  reviewer's coverage but is not blocking (disclosed at the merge gate).
+- **`--reason normal_completion` help-text token** (CodeRabbit-adjacent observation): a latent bypass
+  value in `manage-status.py`'s `--reason` help, but no production caller passes it; out of this plan's
+  scope, noted for a future cleanup.
