@@ -274,8 +274,12 @@ def _resolve_one(
     try:
         rel = resolved_path.relative_to(project_root).as_posix()
     except ValueError:
-        # Target escapes the repository root — treat as an unresolved external.
-        rel = target
+        # Target escapes the repository root — it is not a repo-relative doc
+        # reference. FAIL CLOSED: report it unresolved and return BEFORE any
+        # filesystem access, so the engine never probes ``.exists()`` or reads
+        # ``.read_text()`` on a host path outside ``project_root`` (a reference
+        # such as ``xref:../../../../etc/passwd#x[]`` must never touch the host).
+        return _map_target_to_module(target), False
     target_module = _map_target_to_module(rel)
 
     if not resolved_path.exists():

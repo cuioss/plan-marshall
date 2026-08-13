@@ -192,3 +192,35 @@ def test_target_bundle_mapping_marketplace_and_doc(tmp_path):
 
 def test_absent_doc_dir_yields_empty(tmp_path):
     assert build_doc_component_refs(str(tmp_path), 'doc') == []
+
+
+def test_reference_escaping_repo_root_fails_closed(tmp_path):
+    # A reference whose target escapes the repository root must be reported
+    # unresolved WITHOUT the engine reading the host file. Proof: the escaping
+    # target FILE EXISTS on disk (outside the repo root) — the pre-fix code would
+    # have resolved (or read) it, so a False verdict proves the fail-closed early
+    # return fired BEFORE the .exists()/.read_text() host access.
+    repo_root = tmp_path / 'repo'
+    ref_file = repo_root / 'doc' / 'a.adoc'
+    ref_file.parent.mkdir(parents=True)
+    ref_file.write_text('x', encoding='utf-8')
+    outside = tmp_path / 'secret.adoc'  # sibling of repo_root — outside the root
+    outside.write_text('= Secret\n\n== A Heading\n', encoding='utf-8')
+
+    # No anchor: the pre-fix code would have returned resolved=True (file exists).
+    _module, resolved = _doc_refs._resolve_one(
+        ref_file, repo_root.resolve(), '../../secret.adoc', '', set(), {}
+    )
+    assert resolved is False
+    # With an anchor that DOES exist in the outside file: the pre-fix code would
+    # have read it and resolved the anchor; fail-closed reports False regardless.
+    _module, resolved = _doc_refs._resolve_one(
+        ref_file, repo_root.resolve(), '../../secret.adoc', 'a-heading', set(), {}
+    )
+    assert resolved is False
+
+
+def test_escaping_reference_reported_unresolved_end_to_end(tmp_path):
+    _write(tmp_path, 'doc/a.adoc', 'xref:../../../../etc/passwd[escape]\n')
+    refs = build_doc_component_refs(str(tmp_path), 'doc')
+    assert refs and all(r['resolved'] is False for r in refs)
