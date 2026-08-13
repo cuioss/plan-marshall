@@ -104,6 +104,12 @@ def test_explicit_anchors_extracted_case_insensitively():
     assert 'md-id' in anchors
 
 
+def test_inline_macro_and_block_attribute_anchors():
+    anchors = extract_anchors('anchor:inline-id[] text\n[id="block-id"]\n== A Heading\n')
+    assert 'inline-id' in anchors
+    assert 'block-id' in anchors
+
+
 # --------------------------------------------------------------------------- #
 # build_doc_component_refs — resolution over a real temp tree
 # --------------------------------------------------------------------------- #

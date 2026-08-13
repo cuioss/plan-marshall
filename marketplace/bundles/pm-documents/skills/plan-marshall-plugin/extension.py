@@ -222,9 +222,12 @@ class Extension(ExtensionBase, PathAttributionBase, DerivationResolverBase):
                 found_doc_dir = doc_dir_name
                 break
 
-        # Fall back to a root-level README.adoc (a doc-only project shape).
+        # Fall back to a root-level README.adoc (a doc-only project shape). The
+        # module still roots at ``doc`` — never ``.`` — so the reference engine and
+        # the crawl walk the (possibly-absent, hence empty) ``doc`` tree rather than
+        # rglob-ing the whole project root.
         if not found_doc_dir and (root / 'README.adoc').exists():
-            found_doc_dir = 'doc' if (root / 'doc').is_dir() else '.'
+            found_doc_dir = 'doc'
 
         if not found_doc_dir:
             return []

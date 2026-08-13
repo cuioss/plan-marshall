@@ -125,16 +125,25 @@ def extract_anchors(text: str) -> set[str]:
     referenced by (see :func:`_heading_anchor_forms`):
 
     - ``[[id]]`` and ``[#id]`` explicit AsciiDoc block anchors;
+    - ``anchor:id[]`` inline anchor macros and ``[id="id"]`` block-attribute ids;
     - ``{#id}`` / ``<a name="id">`` explicit Markdown anchors;
     - AsciiDoc section titles (``== Heading``) and Markdown ATX headings
       (``## Heading``), each contributing their AsciiDoc auto-id, GitHub slug, and
       raw-title forms.
+
+    The explicit-form set is intentionally broad rather than exhaustive: matching
+    can only add anchors, so a form this list misses under-reports (a valid
+    reference resolves anyway when the target also carries a heading or another
+    recognised anchor), never over-reports. A heading under a non-default
+    ``:idprefix:`` is the residual gap and is not resolved here.
     """
     anchors: set[str] = set()
     for line in text.splitlines():
         for explicit in (
             re.findall(r'\[\[([^\],]+)', line)
             + re.findall(r'\[#([^\]]+)\]', line)
+            + re.findall(r'anchor:([^\[\s]+)\[', line)
+            + re.findall(r'\[id=["\']?([\w:.-]+)', line)
             + re.findall(r'\{#([^\}]+)\}', line)
             + re.findall(r'<a\s+name="([^"]+)"', line)
         ):
