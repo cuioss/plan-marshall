@@ -173,36 +173,40 @@ def cmd_capabilities(args: argparse.Namespace) -> dict[str, Any]:
     0`` (producers ran and found nothing); ``derivable`` with ``derived_count: N``
     (producers ran and found N).
     """
+    # The whole capability evaluation runs under one error boundary, so a failure
+    # in any downstream reader (a corrupt descriptor, an unexpected resolver or
+    # attributor error) returns a structured error payload rather than crashing —
+    # the same fail-closed contract every other handler in this file honours.
     try:
         module_names = iter_modules(args.project_dir)
+
+        # Edge derivation (graph / path / neighbors / impact) — read the resolver
+        # provenance the graph family itself computes, so the capability report
+        # and the verbs it describes can never disagree.
+        graph_result = get_module_graph(args.project_dir)
+        resolvers = graph_result.get('resolvers', [])
+        resolver_count = graph_result.get('resolver_count', 0)
+        edge_count = graph_result.get('graph', {}).get('edge_count', 0)
+
+        # Path attribution (which-module rung 3). The probe path is immaterial: an
+        # attributor reports whether it RAN regardless of whether it claims the path.
+        _owner, attributor_reports = resolve_path_attribution('__capability_probe__', module_names)
+        attributor_count = len(attributor_reports)
+
+        # Content search / file inventory (files / find / search). Available iff the
+        # crawl produced at least one module carrying a non-empty inventory.
+        modules_inventoried = 0
+        for name in module_names:
+            try:
+                derived = load_module_derived(name, args.project_dir)
+            except DataNotFoundError:
+                continue
+            if derived.get('files'):
+                modules_inventoried += 1
     except DataNotFoundError:
         return require_project_meta_result(args.project_dir)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
-
-    # Edge derivation (graph / path / neighbors / impact) — read the resolver
-    # provenance the graph family itself computes, so the capability report and
-    # the verbs it describes can never disagree.
-    graph_result = get_module_graph(args.project_dir)
-    resolvers = graph_result.get('resolvers', [])
-    resolver_count = graph_result.get('resolver_count', 0)
-    edge_count = graph_result.get('graph', {}).get('edge_count', 0)
-
-    # Path attribution (which-module rung 3). The probe path is immaterial: an
-    # attributor reports whether it RAN regardless of whether it claims the path.
-    _owner, attributor_reports = resolve_path_attribution('__capability_probe__', module_names)
-    attributor_count = len(attributor_reports)
-
-    # Content search / file inventory (files / find / search). Available iff the
-    # crawl produced at least one module carrying a non-empty inventory.
-    modules_inventoried = 0
-    for name in module_names:
-        try:
-            derived = load_module_derived(name, args.project_dir)
-        except DataNotFoundError:
-            continue
-        if derived.get('files'):
-            modules_inventoried += 1
 
     return {
         'status': 'success',

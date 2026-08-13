@@ -233,6 +233,30 @@ def test_content_search_unavailable_when_no_inventory():
         assert cs['modules_inventoried'] == 0
 
 
+def test_downstream_exception_returns_structured_error_not_a_crash(monkeypatch):
+    """An unexpected exception from a downstream reader yields a structured error.
+
+    ``cmd_capabilities`` runs its whole evaluation under one error boundary, so a
+    failure in ``get_module_graph`` / ``resolve_path_attribution`` returns
+    ``{'status': 'error', ...}`` rather than propagating an uncaught exception —
+    the same fail-closed contract the other handlers in the file honour. Here the
+    attributor discovery raises a non-ImportError, which reaches the handler
+    directly through ``resolve_path_attribution``.
+    """
+
+    def _boom():
+        raise RuntimeError('attributor discovery blew up')
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed(tmpdir, {'err-a': _module('err-a')})
+        monkeypatch.setattr(extension_discovery, 'discover_path_attributors', _boom)
+
+        result = _capabilities(tmpdir)
+
+        assert result['status'] == 'error'
+        assert 'capabilities' not in result
+
+
 def test_report_is_envelope_scoped_to_project_dir():
     """The same call against two envelopes answers for each independently.
 
