@@ -369,16 +369,20 @@ manage-config ext-defaults set-default --key my_setting --value fallback
 Manage per-phase effort levels stored under each `plan.<phase>.effort`
 attribute (with `plan.effort` as the plan-wide fallback) in
 `.plan/marshal.json`, plus the sibling `orchestrator.effort` block (NOT a
-`plan.<phase>` entry — see [Noun: orchestrator](#noun-orchestrator)). `read` /
-`resolve-target` are pure resolvers; `apply-preset` completely overwrites the
-per-phase effort configuration from a named preset; `set` is the surgical
-per-scope writer covering `plan.<phase>.<role>`, the plan-wide scalar, and the
-`orchestrator[...]` scopes.
+`plan.<phase>` entry — see [Noun: orchestrator](#noun-orchestrator)). `read` is a
+pure resolver and `resolve-target` never mutates config, but `resolve-target`
+ALSO emits the dispatch-audit records (the `[DISPATCH]` work-log line and the
+paired decision-log resolution record) from the resolution seam when passed the
+dispatch context (`--workflow`) — see the `resolve-target` row below and
+[`ref-workflow-architecture` dispatch-logging.md](../../ref-workflow-architecture/standards/dispatch-logging.md).
+`apply-preset` completely overwrites the per-phase effort configuration from a
+named preset; `set` is the surgical per-scope writer covering
+`plan.<phase>.<role>`, the plan-wide scalar, and the `orchestrator[...]` scopes.
 
 | Verb | Parameters | Description |
 |------|-----------|-------------|
 | `read` | `--phase` and/or `--role` (or `--default`) | Resolve the level keyword. For a `plan.<phase>` role: walks `plan.<phase>.effort.<subkey>` -> `plan.<phase>.effort.default` -> `plan.effort` -> `inherit`. For `--role orchestrator` or `--role orchestrator.{analyze\|decompose\|reader}`: walks the sibling `orchestrator.effort.{surface}` -> `orchestrator.effort.default` (or the bare-string shorthand) -> `plan.effort` -> `inherit`, then CLAMPS the result to `orchestrator.effort.max` (unset `max` = no-op) |
-| `resolve-target` | same as `read` | Resolve + compute the dispatched-variant target name (`execution-context-{level}` or canonical). For `--role orchestrator.reader`, the resolved level is what the *dispatch site* composes into the read-only `execution-context-reader-{level}` variant — `resolve-target` itself still returns the plain `execution-context-{level}` name. |
+| `resolve-target` | `read`'s params, plus the dispatch-emission context `[--workflow]` `[--plan-id]` `[--caller]` | Resolve + compute the dispatched-variant target name (`execution-context-{level}` or canonical). When `--workflow` is supplied the resolver emits the `[DISPATCH]` work-log line and the paired decision-log resolution record from the seam, per firing (a resolve with no `--workflow` is a pure query and emits nothing); `--caller` defaults to `plan-marshall:manage-config`; `--plan-id none`/omitted routes the emission to the global log. For `--role orchestrator.reader`, the resolved level is what the *dispatch site* composes into the read-only `execution-context-reader-{level}` variant — `resolve-target` itself still returns the plain `execution-context-{level}` name. |
 | `apply-preset` | `--preset` | **Completely overwrite** the per-phase effort configuration with a named preset (see `effort_presets.py` for per-preset values). Does not touch `orchestrator.effort`. |
 | `set` | `--scope`, `--level` | Surgical per-scope writer — see [Verb: set](#verb-set) below |
 | `identify` | (none) | Classify the on-disk effort config as a named preset: `current` (matches a preset), `previous-ladder` (matches a pre-respread shape — offer a re-apply), `custom`, or `not_configured`. Read-only; the deterministic recognition the wizard's `Current: …` line prints — see [Verb: identify](#verb-identify) below |

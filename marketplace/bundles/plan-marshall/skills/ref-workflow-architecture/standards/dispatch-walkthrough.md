@@ -34,9 +34,13 @@ The simplest case: a phase whose role key is flat (`phase-2-refine`), one dispat
 - workflow = `plan-marshall:phase-2-refine/SKILL.md`
 - skills = `[plan-marshall:manage-architecture, plan-marshall:manage-references, plan-marshall:manage-plan-documents]`
 
+The resolve carries the dispatch context, so the seam emits the `[DISPATCH]` work-log line and the paired decision-log resolution record itself — no separate logging step (per [`dispatch-logging.md`](dispatch-logging.md) § "Emission contract"):
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --role phase-2-refine
+  effort resolve-target --role phase-2-refine \
+  --workflow plan-marshall:phase-2-refine/SKILL.md --plan-id lesson-2026-05-11-foo \
+  --caller plan-marshall:plan-marshall
 ```
 
 Returns:
@@ -47,12 +51,10 @@ level: level-3
 target: execution-context-level-3
 ```
 
-**Post-resolve dispatch log** (between resolve and dispatch, per [`dispatch-logging.md`](dispatch-logging.md) § "Emission contract"):
+**Dispatch log emitted by that resolve** (a side-effect of the resolve, not a separate step; re-emitted on every re-fire that re-resolves):
 
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id lesson-2026-05-11-foo --level INFO \
-  --message "[DISPATCH] (plan-marshall:plan-marshall) target=execution-context-level-3 level=level-3 role=phase-2-refine workflow=plan-marshall:phase-2-refine/SKILL.md plan_id=lesson-2026-05-11-foo"
+```text
+[DISPATCH] (plan-marshall:plan-marshall) target=execution-context-level-3 level=level-3 role=phase-2-refine workflow=plan-marshall:phase-2-refine/SKILL.md plan_id=lesson-2026-05-11-foo
 ```
 
 **Step 4 (orchestrator constructs prompt body):**
@@ -318,7 +320,7 @@ See [`../../extension-api/standards/dispatch-granularity.md`](../../extension-ap
 ## Cross-references
 
 - The dispatch contract (prompt-body fields, mandatory rules) — [`agents.md`](agents.md)
-- The standardized `[DISPATCH]` work-log emission inserted between resolve and dispatch in Example A above — [`dispatch-logging.md`](dispatch-logging.md)
+- The standardized `[DISPATCH]` work-log emission — a side-effect of the resolve in Example A above, emitted by the `effort resolve-target` seam per firing — [`dispatch-logging.md`](dispatch-logging.md)
 - Granularity heuristics (why dispatch vs script vs inline) — [`../../extension-api/standards/dispatch-granularity.md`](../../extension-api/standards/dispatch-granularity.md)
 - The triage smart-grouping algorithm — [`../../plan-marshall/workflow/triage.md`](../../plan-marshall/workflow/triage.md)
 - Workflow-doc implementor contract — [`../../extension-api/standards/ext-point-execution-context-workflow.md`](../../extension-api/standards/ext-point-execution-context-workflow.md)

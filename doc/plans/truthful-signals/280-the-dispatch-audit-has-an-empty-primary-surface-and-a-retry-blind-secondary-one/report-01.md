@@ -138,12 +138,52 @@ and whole-tree pytest.** Read from the build output, not the exit code.
 
 ## Findings
 
-- **Verification sub-agent (Step 6):** _pending._
+Each finding is recorded per instance with source, description, and disposition.
+
+**Verification sub-agent (Step 6) — verdicts.** D1 PASS on every sub-property (emit only on
+`--workflow`; only after a successful resolve; best-effort/never-raises; bare role-key not the dotted
+payload role; CLI args present; five-field shape byte-compatible). D2 PASS on the cold read (a
+cold reader lands on "the seam ran / self-consistent," not "complete"). D3(a–d) covered; D3(e)
+deferral confirmed as the correct reading of the emitter-only boundary. No undeclared collateral
+change.
+
+Beyond-diff stale-claim sweep — **three real stale claims found, all fixed in this run**:
+
+- **GAP A — `ref-workflow-architecture/standards/dispatch-walkthrough.md` Example A (+ cross-ref).**
+  The "canonical worked-example trace" showed the old resolve-without-`--workflow` → hand-written
+  `manage-logging work "[DISPATCH]"` step → dispatch, i.e. the exact pattern the diff's own
+  `dispatch-logging.md` anti-pattern now forbids. Disposition: **FIXED** — migrated Example A to the
+  seam form (resolve carries the dispatch context; the `[DISPATCH]` line is shown as a side-effect of
+  the resolve) and reworded the L323 cross-reference.
+- **GAP B — `dispatch-logging.md` cross-reference line.** Still described the emission as "between
+  resolve and dispatch," contradicting the body I rewrote. Disposition: **FIXED** — reworded to "a
+  side-effect of the resolve seam (not a separate step)."
+- **GAP C — `manage-config/standards/api-reference.md` (effort prose + `resolve-target` params
+  row).** Called `read`/`resolve-target` "pure resolvers" and the params "same as `read`."
+  Disposition: **FIXED** — qualified to "`resolve-target` never mutates config but ALSO emits the
+  dispatch-audit records from the seam when passed `--workflow`," and listed the three new args in the
+  params cell.
+
+- **Minor (sub-agent observation) — routing comment precision in `_cmd_effort.py`.** The comment
+  over-stated that the literal `--plan-id none` maps to `None`; in fact it passes through
+  (`names_real_plan('none')` is True) and reaches the global log via `get_log_path`'s no-such-plan
+  fallthrough — observable behaviour unchanged. Disposition: **FIXED** — comment tightened; no logic
+  change.
+
+- **Cross-plan coordination note (NOT a gap against this plan; recorded for the detector plan).** The
+  seam writes Surface B as `(plan-marshall:manage-config) effort resolve-target role=X -> target=Y
+  level=Z`, whereas the audit standard's illustrative example rows still show the older
+  `effort resolve-target --role phase-2-refine` CLI-flag form. The audit's Surface-B *description* is
+  loose enough to match, and detector parsing is out of scope here; plan
+  `code-intelligence-substrate/290` (which owns the detector) will need to parse the emitter's actual
+  format. Also: `shape_violation` becomes near-unreachable now that both surfaces emit atomically from
+  one seam — the corroboration-limit paragraph (D2) already frames this.
+
 - **D0 enumeration sub-agent:** its findings are the D0 deliverable above; no defect against this
   plan's own diff.
 - **Token-mismatch (M3):** real, single instance, disposition = reported-not-fixed (detector-side,
   owned by plan 290). Rejected here on ownership-boundary grounds, recorded with full evidence.
-- **CI / PR review:** _pending._
+- **CI / PR review:** _pending (filled after the PR is opened)._
 
 ## Reviewer participation
 

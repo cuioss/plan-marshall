@@ -493,8 +493,11 @@ def _emit_dispatch_records(
     dispatch_caller = caller or 'plan-marshall:manage-config'
     plan_display = plan_id if plan_id else 'none'
     role_display = role if role else 'default'
-    # Route to a plan-scoped log only for a real plan id; the sentinel / absent
-    # id routes to the dated global log (log_entry maps None -> global).
+    # Route a real plan id to its plan-scoped log. The NO_PLAN sentinel or an
+    # absent id maps to None, and log_entry writes the dated global log. A
+    # literal ``--plan-id none`` is truthy and non-sentinel, so it passes
+    # through and reaches the same global log via get_log_path's no-such-plan
+    # fallthrough — the standalone dispatch still lands in the global log either way.
     route_plan_id = plan_id if names_real_plan(plan_id) else None
 
     # Surface B — decision-log resolution record (intent side of the pairing).
