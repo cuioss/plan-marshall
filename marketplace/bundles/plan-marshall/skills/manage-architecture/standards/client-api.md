@@ -1389,7 +1389,10 @@ capabilities[3]{capability,status,producer_count,derived_count,modules_inventori
 Each entry also carries a `verbs` list naming the verbs it governs
 (`module_edges` → `graph` / `path` / `neighbors` / `impact`; `path_attribution`
 → `which-module`; `content_search` → `files` / `find` / `search`) and, for the
-two derivation capabilities, a `producers` list of the ids that ran.
+two derivation capabilities, a `producers` list of the ids that ran. Those two
+per-entry **list** fields are elided from the flat tabular examples above (a
+row-per-entry TOON table cannot nest a list inside a cell); the real payload
+carries them on every entry.
 
 **Use cases**:
 
