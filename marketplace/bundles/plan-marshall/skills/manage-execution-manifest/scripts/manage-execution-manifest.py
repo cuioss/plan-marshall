@@ -12,7 +12,7 @@ Output: TOON format for API responses
 
 Usage:
     python3 manage-execution-manifest.py compose --plan-id EXAMPLE-PLAN \\
-        --change-type bug_fix --track simple --scope-estimate surgical
+        --plan-change-type bug_fix --track simple --scope-estimate surgical
     python3 manage-execution-manifest.py read --plan-id EXAMPLE-PLAN
     python3 manage-execution-manifest.py validate --plan-id EXAMPLE-PLAN
 """
@@ -67,6 +67,7 @@ from _manifest_core import (
 from _manifest_decide import (
     _decide,  # noqa: F401
     _read_recipe_source,  # noqa: F401
+    _read_settled_change_type,  # noqa: F401
     _read_task_queue_active,  # noqa: F401
     _split_csv,  # noqa: F401
 )
@@ -1769,6 +1770,55 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'message': f'Invalid track: {args.track!r}. Must be one of {list(VALID_TRACKS)}',
         }
 
+    # ── change_type scope reconciliation (PLAN scope vs DELIVERABLE scope) ──────
+    # ``--plan-change-type`` (dest ``change_type``) is the caller-supplied change
+    # type. phase-4-plan historically sourced it FIRST-DELIVERABLE-WINS, so a
+    # deliverable's local kind — the DELIVERABLE scope — was passed as the plan's
+    # change type and silently narrowed verification for the WHOLE plan. The plan's
+    # own settled classification lives at ``status.metadata.change_type`` — the PLAN
+    # scope, written at high confidence by ``manage-status:change-type-heuristic`` and
+    # read back by planning-lane routing and the classification gate. The composer
+    # makes PLAN-wide decisions, so the settled classification is authoritative here:
+    # when it exists it MUST agree with the supplied value, otherwise compose REFUSES
+    # — naming BOTH values and BOTH scopes — rather than silently accepting a
+    # narrowing. When NO settled classification exists the supplied value stands alone,
+    # so an unclassified plan still composes. See standards/decision-rules.md
+    # § "change_type scope reconciliation".
+    supplied_change_type = args.change_type
+    settled_change_type = _read_settled_change_type(plan_id)
+    if settled_change_type is not None and settled_change_type != supplied_change_type:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'change_type_scope_conflict',
+            'message': (
+                f"change_type scope conflict: the plan's settled classification "
+                f"(status.metadata.change_type — the PLAN scope) is {settled_change_type!r}, "
+                f"but compose was supplied --plan-change-type {supplied_change_type!r} "
+                f"(a DELIVERABLE-scoped value). The settled plan classification is "
+                f"authoritative — a deliverable's local change type must not narrow "
+                f"verification for the whole plan. Re-run compose with "
+                f"--plan-change-type {settled_change_type} (or correct "
+                f"status.metadata.change_type if the settled classification is itself wrong)."
+            ),
+            'settled_change_type': settled_change_type,
+            'supplied_change_type': supplied_change_type,
+        }
+    # The narrowing decision's INPUT, recorded so it can be audited afterward: when a
+    # settled classification exists the PLAN scope drives every change-type-gated
+    # decision below; otherwise the caller-supplied value (the DELIVERABLE-scoped
+    # fallback) does. This closes the gap where a run's own logs disagreed about which
+    # change type narrowed the plan and nothing noticed.
+    effective_change_type = settled_change_type if settled_change_type is not None else supplied_change_type
+    change_type_scope = 'settled' if settled_change_type is not None else 'supplied'
+    _emit_decision_log(
+        plan_id,
+        '(plan-marshall:manage-execution-manifest:compose) change_type reconciliation — '
+        f'used {effective_change_type!r} from the {change_type_scope} scope '
+        f'(supplied --plan-change-type={supplied_change_type!r}, '
+        f'settled status.metadata.change_type={settled_change_type!r})',
+    )
+
     raw_commit_and_push = getattr(args, 'commit_and_push', None)
     if raw_commit_and_push is None:
         commit_and_push = True
@@ -1871,7 +1921,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # both resolved above; it runs after the three candidate-narrowing pre-filters
     # and before the six-row matrix per standards/decision-rules.md.
     phase_6_candidates, simplify_omitted = _apply_simplify_inactive(
-        phase_6_candidates, args.change_type, affected_files_count
+        phase_6_candidates, effective_change_type, affected_files_count
     )
 
     # Pre-filter 4b (security_class_inactive) is NOT the symmetric peer of
@@ -1971,7 +2021,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # the caller emits one [STATUS] line per record below and surfaces the list in
     # the compose result. The matrix DECISIONS are unchanged — only observability.
     body, rule, decide_dropped = _decide(
-        change_type=args.change_type,
+        change_type=effective_change_type,
         track=args.track,
         scope_estimate=args.scope_estimate,
         recipe_key=recipe_key,
@@ -2345,7 +2395,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     elif pre_push_quality_gate_decision == 'unknown':
         _log_pre_push_quality_gate_kept_unknown(plan_id, pre_push_quality_gate_reason)
     if simplify_omitted:
-        _log_prefilter_omitted(plan_id, 'finalize-step-simplify', args.change_type, affected_files_count)
+        _log_prefilter_omitted(plan_id, 'finalize-step-simplify', effective_change_type, affected_files_count)
     _log_dropped_records(plan_id, 'security_class_inactive', security_class_omitted, target=' from phase_6.steps')
     for dropped_step in scope_gated_dropped:
         _log_scope_gated_finalize_subtraction(plan_id, args.scope_estimate, dropped_step)
@@ -2395,6 +2445,14 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'file': MANIFEST_FILENAME,
         'created': True,
         'manifest_version': MANIFEST_VERSION,
+        # change_type scope record (D3): which scope drove the change-type-gated
+        # narrowing — 'settled' (the authoritative PLAN classification from
+        # status.metadata.change_type) or 'supplied' (the caller-supplied
+        # DELIVERABLE-scoped value, used only when no settled classification exists).
+        'change_type_scope': change_type_scope,
+        'effective_change_type': effective_change_type,
+        'settled_change_type': settled_change_type,
+        'supplied_change_type': supplied_change_type,
         'phase_5': {
             'early_terminate': body['phase_5']['early_terminate'],
             'verification_steps_count': len(body['phase_5']['verification_steps']),
@@ -2704,7 +2762,21 @@ def _build_parser() -> argparse.ArgumentParser:
 
     compose_parser = subparsers.add_parser('compose', help='Compose and write execution.toon', allow_abbrev=False)
     add_plan_id_arg(compose_parser)
-    compose_parser.add_argument('--change-type', required=True, help='Change type (one of VALID_CHANGE_TYPES)')
+    # ``--plan-change-type`` (dest kept as ``change_type`` for the in-process
+    # Namespace callers) is the PLAN-scoped change type the composer reconciles
+    # against the plan's settled classification (status.metadata.change_type). The
+    # flag was renamed from ``--change-type`` so a caller cannot pass a DELIVERABLE's
+    # local kind believing it is the plan's classification — the two scopes are named
+    # apart. cmd_compose refuses a supplied value that contradicts the settled one.
+    compose_parser.add_argument(
+        '--plan-change-type',
+        dest='change_type',
+        required=True,
+        help=(
+            "The plan's change type (one of VALID_CHANGE_TYPES). Reconciled against the "
+            'settled status.metadata.change_type; a contradicting value is refused.'
+        ),
+    )
     compose_parser.add_argument('--track', required=True, help='Outline track: simple|complex')
     compose_parser.add_argument(
         '--scope-estimate', required=True, help='scope_estimate (none|surgical|single_module|multi_module|broad)'

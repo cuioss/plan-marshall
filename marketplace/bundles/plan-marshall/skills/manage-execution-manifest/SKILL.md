@@ -94,7 +94,7 @@ Compose and write the execution manifest from inputs gathered at the end of phas
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
   compose \
   --plan-id {plan_id} \
-  --change-type {change_type} \
+  --plan-change-type {change_type} \
   --track {simple|complex} \
   --scope-estimate {none|surgical|single_module|multi_module|broad} \
   [--recipe-key {recipe_key}] \
@@ -107,7 +107,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 **Parameters**:
 - `--plan-id` (required): Plan identifier (kebab-case)
-- `--change-type` (required): `analysis|feature|enhancement|bug_fix|tech_debt|verification`
+- `--plan-change-type` (required): `analysis|feature|enhancement|bug_fix|tech_debt|verification`. This is the PLAN-scoped change type — a distinct scope from a deliverable's local `change_type`. The composer reconciles it against the plan's **settled classification** at `status.metadata.change_type`: when a settled classification exists, the supplied value MUST agree with it, otherwise compose returns `change_type_scope_conflict` (naming both values) rather than silently narrowing the whole plan on a deliverable-scoped value. When no settled classification exists, the supplied value stands alone. The flag was renamed from `--change-type` so a caller cannot pass a deliverable's kind where the plan's classification is meant. See [decision-rules.md](standards/decision-rules.md) § "change_type scope reconciliation".
 - `--track` (required): `simple|complex` — outline track from phase-3-outline
 - `--scope-estimate` (required): `none|surgical|single_module|multi_module|broad` — from solution outline metadata (deliverable 2)
 - `--recipe-key` (optional override): Forces the `recipe` rule. When omitted, the composer reads the provenance itself from `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`), so lesson- and recipe-derived plans select the `recipe` rule without the caller forwarding this flag.
@@ -124,6 +124,10 @@ plan_id: EXAMPLE-PLAN
 file: execution.toon
 created: true
 manifest_version: 1
+change_type_scope: settled
+effective_change_type: bug_fix
+settled_change_type: bug_fix
+supplied_change_type: bug_fix
 phase_5:
   early_terminate: false
   verification_steps_count: 2
@@ -158,6 +162,8 @@ lane_warnings[0]:
 ```
 
 Every field that can name more than one dropped step is a `{step, reason}` **record list**, not a boolean — `commit_push_dropped`, `decision_matrix_dropped`, `security_class_omitted`, `unresolved_ask_provider_dropped`, `lane_dropped`, and the two `scope_gated_finalize_*` lists. A boolean cannot say *which* step went or *why*, and each such field pairs with one `[STATUS]` `decision.log` line per record. **Not every multi-step field has reached that shape yet.** `ceremony_finalize_forced_out`, `scope_gated_finalize_dropped`, `scope_gated_finalize_immune`, and `unresolved_ask_provider_dropped` are still emitted as bare step-id lists: each reports *which* steps went but not *why*, and in some cases (`ceremony_finalize_forced_out`) a per-entry reason is available upstream and discarded by the compose-result projection. Treat `cmd_compose`'s return dict in [`scripts/manage-execution-manifest.py`](scripts/manage-execution-manifest.py) as the authority on each field's actual shape rather than inferring it from this paragraph. `pre_push_quality_gate_omitted` and `simplify_omitted` stay booleans because each names one fixed step; `build_verdict_decision` carries the build verdict verbatim (`build` / `not_necessary` / `unknown`) so an `unknown` verdict — which KEEPS the gate — is distinguishable from a `build` one. The full convention is normative in [`standards/decision-rules.md`](standards/decision-rules.md) § "Every subtraction is reported".
+
+**change_type scope record.** `change_type_scope` names which scope drove every change-type-gated decision this compose made: `settled` when the plan's authoritative classification at `status.metadata.change_type` was present and used, or `supplied` when no settled classification existed and the caller-supplied `--plan-change-type` value stood alone. `effective_change_type` is the value actually consumed by the decision matrix and pre-filters; `settled_change_type` and `supplied_change_type` carry the two candidate inputs (either may be `null`/absent). This makes the narrowing auditable after the fact — a run can no longer disagree with itself about which change type narrowed the plan. A supplied value that contradicts a present settled classification never reaches this output: compose returns `change_type_scope_conflict` instead. See [decision-rules.md](standards/decision-rules.md) § "change_type scope reconciliation".
 
 #### Compose-time step-resolution gate
 
@@ -421,7 +427,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `compose` | `--plan-id --change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count]` | Compose and write execution.toon (`--phase-5-steps`/`--phase-6-steps` are fallback-only — `marshal.json` is the authoritative candidate source) |
+| `compose` | `--plan-id --plan-change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count]` | Compose and write execution.toon (`--phase-5-steps`/`--phase-6-steps` are fallback-only — `marshal.json` is the authoritative candidate source; `--plan-change-type` is reconciled against the settled `status.metadata.change_type`) |
 | `read` | `--plan-id` | Read manifest as TOON |
 | `lanes preview` | `--plan-id [--phase-6-steps]` | Resolve the minimal/standard/full phase-6 step sets + cost sums in one TOON (the posture-dialogue projection) |
 | `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome {executed\|skipped\|error} [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon |
@@ -440,7 +446,8 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 |------------|-------|
 | `invalid_plan_id` | plan_id format invalid |
 | `file_not_found` | execution.toon doesn't exist (read/validate) |
-| `invalid_change_type` | --change-type not in the valid enum |
+| `invalid_change_type` | --plan-change-type not in the valid enum |
+| `change_type_scope_conflict` | `compose` — the supplied `--plan-change-type` (a DELIVERABLE-scoped value) contradicts the plan's settled classification at `status.metadata.change_type` (the PLAN scope). Fail-loud; names BOTH values (`settled_change_type`, `supplied_change_type`); writes no manifest. A plan with NO settled classification never trips this — the supplied value stands alone |
 | `invalid_scope_estimate` | --scope-estimate not in the valid enum |
 | `invalid_track` | --track not `simple` or `complex` |
 | `invalid_phase` | `record-step` --phase not `5-execute` or `6-finalize` |
@@ -467,7 +474,7 @@ section by name (e.g., "see `manage-execution-manifest` Canonical invocations �
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest compose \
   --plan-id PLAN_ID \
-  --change-type {analysis|feature|enhancement|bug_fix|tech_debt|verification} \
+  --plan-change-type {analysis|feature|enhancement|bug_fix|tech_debt|verification} \
   --track {simple|complex} \
   --scope-estimate {none|surgical|single_module|multi_module|broad} \
   [--recipe-key KEY] [--affected-files-count N] \

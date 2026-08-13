@@ -8,7 +8,7 @@ This standard codifies the decision matrix used by `manage-execution-manifest co
 
 | Input | Source | Type |
 |-------|--------|------|
-| `change_type` | `solution_outline.md` deliverable metadata | enum: `analysis|feature|enhancement|bug_fix|tech_debt|verification` |
+| `change_type` (effective) | reconciled from the supplied `--plan-change-type` and the settled `status.metadata.change_type` (see [change_type scope reconciliation](#change_type-scope-reconciliation)) | enum: `analysis|feature|enhancement|bug_fix|tech_debt|verification` |
 | `track` | `phase-3-outline` | enum: `simple|complex` |
 | `scope_estimate` | `solution_outline.md` solution-level metadata (deliverable 2) | enum: `none|surgical|single_module|multi_module|broad` |
 | `recipe_key` | `--recipe-key` argument when supplied, else read by the composer from `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`) | string or absent |
@@ -30,6 +30,23 @@ This standard codifies the decision matrix used by `manage-execution-manifest co
 The authoritative record of the touched footprint is `live_footprint` — derived on demand from the worktree (`{base}...HEAD` ∪ porcelain). Any decision that needs the *real* footprint MUST read `live_footprint`, never a declared-surface count. This is exactly why `security_class_inactive` drops its step only when `affected_files_count == 0` **AND** the live footprint is resolvable-and-empty, and why the retrospective footprint checks (`check-manifest-consistency`, `check-routing-decisions`) evaluate against the realized diff rather than the declaration.
 
 A gate MAY consult a declared-surface input as a **pre-filter hint** — a cheap, pre-worktree signal available before the footprint is resolvable — but it MUST NOT treat the declaration as ground truth for what changed. Re-deriving the footprint independently inside each consumer is **not** the remedy: that multiplies the source of truth, which is the failure mode one level up. There is one record — `live_footprint` — and one declaration — the affected-files inputs; a consumer picks the one its decision actually needs and never mistakes the second for the first.
+
+### change_type scope reconciliation
+
+`change_type` is meaningful at **two different scopes**, and one word carried both:
+
+- **PLAN scope** — the plan's single, settled classification at `status.metadata.change_type`, written at high confidence by `manage-status:change-type-heuristic` during outline and read back by planning-lane routing and the classification-validation gate. This is the scope the composer needs, because every change-type-gated decision below (Rule 1's `early_terminate`, Rule 4's tests-only shape, the `surgical_{bug_fix,tech_debt}` rows, and the `simplify_inactive` pre-filter) is a **plan-wide** decision.
+- **DELIVERABLE scope** — a single deliverable's local kind, one per deliverable in `solution_outline.md`. `phase-4-plan` historically forwarded the **first** deliverable's `change_type` into `compose`, so a plan opening with a read-only discovery deliverable forwarded `verification` however much production code its later deliverables mutated — silently narrowing verification for the whole plan.
+
+The composer reconciles the two before any row or pre-filter runs. The supplied `--plan-change-type` value is validated against the enum, then compared to the settled classification:
+
+- **Settled classification present and it disagrees with the supplied value** → compose refuses with `change_type_scope_conflict`, naming BOTH values (`settled_change_type`, `supplied_change_type`) so the caller need not guess which side is wrong. No manifest is written. The settled classification is **authoritative** — a deliverable's local kind must never override the plan's settled classification.
+- **Settled classification present and it agrees** → the settled (PLAN) value drives every decision below.
+- **No settled classification** (an unclassified plan, or a `status.json` with no `change_type`) → the supplied value stands alone, so the plan still composes. This is the control that keeps the reconciliation from blocking every unclassified plan.
+
+The value actually consumed by the rows and pre-filters is the **effective** change type: the settled classification when present, else the supplied value. The compose result records `change_type_scope` (`settled` | `supplied`), `effective_change_type`, `settled_change_type`, and `supplied_change_type`, and a `decision.log` line names the scope and value used — so the narrowing decision carries its input and can be audited afterward.
+
+The canonical caller (`phase-4-plan` Step 7b) forwards the settled classification when one exists, falling back to the first deliverable's `change_type` only for an unclassified plan; the reconciliation is the guard that catches any caller that forwards the wrong scope.
 
 ## Phase-aware step source
 
