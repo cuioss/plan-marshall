@@ -890,7 +890,7 @@ This is the sanctioned content-search path for a dispatched leaf whose `Grep` /
 the PreToolUse enforcement hook.
 
 ```bash
-architecture.py search --content --pattern P [--category CATEGORY] [--literal]
+architecture.py search --content --pattern P [--category CATEGORY] [--literal] [--ignore-case]
 ```
 
 **Options**:
@@ -901,6 +901,20 @@ architecture.py search --content --pattern P [--category CATEGORY] [--literal]
 | `--pattern` | Yes | — | Pattern matched against each file's body. A Python regex by default; a fixed string under `--literal`. |
 | `--category` | No | (all) | Restrict search to one category. Same vocabulary and same unrecognised-name error as the [`files`](#files) verb's `--category` option. |
 | `--literal` | No | `false` | Match `--pattern` verbatim (`re.escape`) instead of compiling it as a regex. |
+| `--ignore-case` | No | `false` | Case-insensitive matching (`re.IGNORECASE`). **Composes with `--literal`** — see "Case-insensitivity" below. |
+
+**Case-insensitivity — the one combination `--literal` could not express.** In regex
+mode an inline `(?i)` marker already case-folds a pattern, and it keeps working. But
+under `--literal` the pattern is run through `re.escape` before compiling, which turns
+an inline `(?i)` into the six *literal* characters `(?i)` — so a verbatim,
+metacharacter-bearing pattern had no way to also be matched case-insensitively. The
+`--ignore-case` flag adds `re.IGNORECASE` on an axis orthogonal to `--literal`: one
+flag escapes the pattern, the other case-folds the match, so the two **compose**. A
+pattern such as `$(ID); RM -RF` can now be matched verbatim (metacharacters as data)
+AND case-insensitively against a body containing `$(id); rm -rf`. Both the regex-mode
+`(?i)` path and the `--ignore-case` flag are valid; `--ignore-case` is simply the only
+one that also works under `--literal`. The echoed `ignore_case` boolean names which
+population the match set was computed over, exactly as `literal` does.
 
 **Pattern semantics**: the pattern is compiled with `re.compile`, so regex
 metacharacters are active by default. `--literal` escapes the pattern first,
