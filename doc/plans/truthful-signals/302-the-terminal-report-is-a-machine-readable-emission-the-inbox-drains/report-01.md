@@ -63,15 +63,24 @@ The landing body carries a fenced `landing-facts` block (`schema=landing-facts/1
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` verdict: **Python changed** (composer, orchestrator scripts, tests) → the full path applies. `./pw verify` (quality-gate + full test suite) — result recorded below once it completes. `./pw quality-gate` already GREEN (mypy 396 files clean, ruff clean, SPDX clean, plugin-doctor 0 issues). Targeted test run: the three touched dirs (phase-6-finalize, plan-orchestrator, manage-execution-manifest) — 2048 passed + the plan-302 tests green after the subtraction-visibility registration and the gate return-shape reshape.
+`git diff --name-only origin/main...HEAD -- '*.py'` verdict: **Python changed** (composer, orchestrator scripts, tests) → the full path applies. **`./pw verify` — GREEN: 19526 passed, 14 skipped, `verify: SUCCESS`** (quality-gate: mypy 396 files clean, ruff clean, SPDX clean, plugin-doctor 0 issues; test-compile clean; full suite). `UV_HTTP_TIMEOUT=600` was exported on every `./pw` call per the lane contract. One iteration was required: an earlier full run surfaced a single failure — a pinned description-drift test (`test_config_defaults.py::test_lessons_capture_matches_clarified_request_string`) that hardcoded the OLD lessons-capture description with the removed carve-out — fixed and re-verified green.
 
 ## Findings
 
-(pending — verification sub-agent, CI, PR review)
+All findings fixed; none deferred or rejected. Sources:
+
+- **Verification sub-agent (Task, general-purpose, read-only), first pass:** 4 findings.
+  1. (fixed) CI-breaking pinned description-drift test (`test_config_defaults.py`) hardcoding the old lessons-capture description — a test fixture encoding the retired value. The same defect the build gate independently caught.
+  2. (fixed) `phase-6-finalize/SKILL.md` item 4b intro still referenced the removed orchestration carve-out (stale prose in a dispatcher instruction).
+  3. (fixed) `lessons-capture.md` Branch C described the removed carve-out and a now-impossible orchestrated-zero-signal path.
+  4. (fixed) stale comment in `test_finalize_orchestration_routing.py` attributing the landing to lessons-capture.
+- **Verification sub-agent, re-verification pass:** confirmed all four resolved; surfaced 1 residual — `SKILL.md` a0 line 750 "All three consumers" undercount vs the "four steps" statement (fixed by clarifying emit-landing is composed out on the non-orchestrated path). Also correctly flagged a frozen prior-plan run report (`doc/plans/review-apparatus/080-.../report-01.md`) as out of scope (dated execution record, exempt per CLAUDE.md).
+- **Sub-agent also confirmed** all six deliverables implemented as specified, and noted one coverage limitation (no end-to-end integration test composing a real orchestrated plan through the discovery seed and executing emit-landing's inline body — asserted structurally via dispatch-table/ordering/collision tests instead). Recorded as residue.
+- **CI / PR review:** pending (post-PR).
 
 ## Reviewer participation
 
-(pending)
+Expected reviewer population derived from the bot registry `author_login` fields (`automatic-review/standards/{coderabbit,pr-agent,sourcery}.md`): **`coderabbitai`, `cuioss-review-bot`, `sourcery-ai`** (3 reviewers). Per-reviewer verdicts pending the PR review cycle.
 
 ## Cost
 
