@@ -40,7 +40,7 @@ All five implemented. Verified against the live crawl (in-process, mirroring the
 - **D5 — documentation.** `doc/concepts/code-intelligence.adoc` (attribution-model addition: doc-corpus ownership + precedence); pm-documents `plan-marshall-plugin/SKILL.md` (doc-surface ownership + search + reference-resolution contract); `ext-point-path-attribution.md` § Current implementations (the `documentation` attributor row; reconciled the now-resolved `doc/resources/**.svg` out-of-scope note).
 
 ## Build gate
-`git diff --name-only origin/main...HEAD` touches `*.py` (pm-documents extension + engine, manage-architecture handlers, tests) → `./pw verify` required. Result recorded in the Contract check once the full run completes.
+`git diff --name-only origin/main...HEAD` touches `*.py` (pm-documents extension + engine, manage-architecture handlers, tests) → `./pw verify` required. **Result: `verify: SUCCESS`** — `19370 passed, 14 skipped` (7m02s); full-scope mypy (production 396 + test 721 files), ruff, SPDX headers, plugin-doctor (marketplace-wide), and whole-tree pytest all clean. A prior full `module-tests` run surfaced 5 failures (the retired-idiom guard on `doc_references.py`, and 4 resolver-roster assertions); both were fixed and the re-run is clean.
 
 ## Findings
 
