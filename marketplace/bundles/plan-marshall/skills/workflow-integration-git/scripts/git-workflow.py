@@ -1953,7 +1953,8 @@ Examples:
                 'name': 'branch-sync-state',
                 'help': (
                     "Report push parity of the plan's feature branch vs its origin "
-                    'tracking ref (ahead | synced | no_remote); read-only, no fetch'
+                    'tracking ref (ahead | synced | remote_absent_landed | '
+                    'remote_absent_unverified); read-only, no fetch'
                 ),
                 'handler': cmd_branch_sync_state,
                 'args': [

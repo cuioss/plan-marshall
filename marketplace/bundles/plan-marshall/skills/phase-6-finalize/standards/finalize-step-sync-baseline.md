@@ -90,7 +90,7 @@ Apply the following rules in order; the first match wins:
 
 - `classification == no_overlap` → `{decision} = auto_proceed` (regardless of threshold, except `never` which already short-circuited above).
 - `classification == overlap_no_content_conflict` AND `auto_reconcilable == true` AND `{threshold} == auto_resolvable` → `{decision} = auto_proceed`.
-- `classification == overlap_no_content_conflict` AND (`auto_reconcilable == false` OR `{threshold} == no_overlap_only`) → `{decision} = needs_user`.
+- `classification == overlap_no_content_conflict` AND (`auto_reconcilable == false` OR `{threshold} == no_overlap_only`) → `{decision} = needs_user` (the threshold opts out even for an auto-reconcilable overlap — `auto_reconcilable` is a non-mutating capability signal, so an `overlap_no_content_conflict` always reports `auto_reconcilable == true`; the probe never performs the reconcile itself, that is `worktree-rebase-to`'s job).
 - `classification == overlap_with_content_conflict` → `{decision} = needs_user` (genuine conflict requiring human resolution).
 
 Log the classifier decision for grep-ability and retrospective audit:
