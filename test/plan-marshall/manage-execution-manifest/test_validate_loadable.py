@@ -605,10 +605,10 @@ class TestResolveStepOrderVerdict:
     """The tri-state resolver distinguishes ORDERLESS from UNRESOLVABLE."""
 
     def test_resolved_builtin_returns_order_and_resolved_verdict(self):
-        assert _mem._resolve_step_order_verdict('push') == (10, _mem._ORDER_RESOLVED)
+        assert _mem._resolve_step_order_verdict('push') == (11, _mem._ORDER_RESOLVED)
 
     def test_resolved_builtin_accepts_default_prefix(self):
-        assert _mem._resolve_step_order_verdict('default:push') == (10, _mem._ORDER_RESOLVED)
+        assert _mem._resolve_step_order_verdict('default:push') == (11, _mem._ORDER_RESOLVED)
 
     def test_resolved_project_step(self):
         order, verdict = _mem._resolve_step_order_verdict('project:finalize-step-deploy-target')
