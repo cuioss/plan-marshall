@@ -1124,10 +1124,19 @@ def test_capture_main_dirty_files_exempts_untracked_plan_state(
     )
 
 
-def test_capture_main_dirty_files_only_dot_plan_paths_returns_empty_list(
-    monkeypatch: pytest.MonkeyPatch,
+def test_capture_main_dirty_files_only_untracked_dot_plan_paths_returns_empty_list(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Only ``.plan/`` paths dirty → empty list after filter."""
+    """Only UNTRACKED ``.plan/`` paths dirty → empty list after filter.
+
+    A tracked ``.plan/`` file would be RETAINED (see
+    ``test_capture_main_dirty_files_reports_tracked_plan_state``); the exemption
+    is trackedness-based, so ``_repo_root`` is stubbed to a controlled repo where
+    the two dirty paths are genuinely untracked, rather than relying on the
+    ambient checkout's tracked-``.plan/`` set.
+    """
+    repo = _repo_with_committed_plan_file(tmp_path)
+    monkeypatch.setattr(inv, '_repo_root', lambda: repo)
     monkeypatch.setattr(
         inv,
         'git_dirty_files',

@@ -184,11 +184,24 @@ this truthful-signals epic targets):
 | 3 | `plan-marshall/scripts/_handshake_store.py:25`, `_handshake_commands.py:17` | LOW — bare "sorted, `.plan/`-filtered" shorthand, not updated in lock-step with the parallel `phase-handshake.md:127` table | **fixed** — both now describe the trackedness-keyed exemption |
 | 4 | `test/plan-marshall/plan-marshall/test_phase_handshake_worktree_assertion.py:502`, `test_worktree_contract_e2e.py:16` | LOW — one-line scenario summaries implying drop-all | **fixed** — both now say "untracked `.plan/` filtered; a tracked `.plan/` file retained as a leak" |
 
-No finding was rejected. The sub-agent also noted the report's tail sections were `_pending_` mid-run
-(expected — the PR-review/Step-9 sections fill downstream). Post-fix re-sweep for
-`.plan/`-filtered / "Paths Are Excluded" / "dirty AND tracked AND outside" / removed symbols
-(`filter_tracked_source`, `_PLAN_STATE_PREFIX` outside the shared module): clean. Quality gate and the
-affected tests re-run green after the fixes.
+No finding was rejected.
+
+**Re-verification round (same sub-agent, resumed).** After fixing 1–4 the agent re-verified and ran a
+SECOND independent beyond-diff sweep — warranted because finding #1 showed a whole section can slip a
+first sweep. It confirmed all four fixes truthful and surfaced **two more** stale restatements I had
+missed; both accepted and fixed:
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| 5 | `phase-6-finalize/workflow/lessons-capture.md:24` | "reports any dirty TRACKED path **outside `.plan/`**" — the same stale pattern already fixed in the sibling `finalize-step-preference-emitter.md`, missed here | **fixed** — mirrored the preference-emitter wording ("source, or a tracked `.plan/` config/descriptor, keyed on trackedness"); also clarified the step writes only UNTRACKED plan state |
+| 6 | `test/plan-marshall/plan-marshall/test_invariants.py` `test_capture_main_dirty_files_only_dot_plan_paths_returns_empty_list` | LOW — docstring "Only `.plan/` paths dirty → empty" generalizes the old drop-all; the test also relied implicitly on the ambient checkout's tracked-`.plan/` set | **fixed** — renamed to `..._only_untracked_dot_plan_paths_...`, docstring corrected, and made robust by stubbing `_repo_root` to a controlled repo |
+
+Post-fix third sweep (my own) for `(TRACKED) (path/source) outside .plan/` / `only .plan/ → empty` /
+`.plan/`-filtered / removed symbols: **clean** — every surviving "outside `.plan/`" occurrence is a
+*correct* description of the non-`.plan/` tracked-source case (the (g) control) or an explicit
+contrast against tracked `.plan/`, not a stale drop-all claim. Quality gate green after each fix round;
+`./pw verify` green before this round (19515 passed) and the fixes since are prose/comment/test-scaffold
+only (no runtime behavior change).
 
 _CI / PR-review findings: pending (filled at Step 7)._
 
