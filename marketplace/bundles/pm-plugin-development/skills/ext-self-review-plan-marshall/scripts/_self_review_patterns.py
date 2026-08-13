@@ -166,9 +166,20 @@ _NUMBER_WORDS = (
     'one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|'
     'thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty'
 )
-_CARDINALITY_NOUNS = 'operations?|fields?|steps?|rules?|commands?'
-# Number (digit or word) directly before a cardinality noun: ``twelve fields``,
-# ``5 rules``, ``nine checks`` are matched; a digit not adjacent to a noun is not.
+# The closed set of cardinality nouns a stale count-claim is watched against.
+# It is a CURATED set, not "any noun": the corpus of count-prose across skill
+# contract sources is dominated by non-structural followers (units — ``80 px``,
+# ``2000 chars``, ``900 s``; prepositions/filler — ``3 of``, ``one is``), so
+# matching every noun after a number would be almost all noise. Each member here
+# names a countable *structural element of a skill contract* that goes stale when
+# the contract gains or loses one: ``check`` is included alongside the original
+# five because a skill enumerating its own checks (``the two checks are ordered``)
+# is exactly the stale-able cardinality claim this detector exists to catch.
+_CARDINALITY_NOUNS = 'operations?|fields?|steps?|rules?|commands?|checks?'
+# Number (digit or word) directly before one of those nouns matches: ``twelve
+# fields``, ``5 rules``, ``nine checks`` all match. A number not adjacent to a
+# noun (``version 3``), or adjacent to a noun OUTSIDE the set (``5 deliverables``,
+# ``3 modules``), does not match.
 _COUNT_PROSE = re.compile(
     rf'(?i)\b(?:\d+|{_NUMBER_WORDS})\s+(?:{_CARDINALITY_NOUNS})\b'
 )
