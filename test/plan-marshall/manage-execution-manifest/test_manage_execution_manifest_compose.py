@@ -1309,8 +1309,8 @@ def test_compose_sorts_phase_6_steps_by_frontmatter_order(plan_context):
 
 def test_compose_places_settle_steps_before_push_and_wait_steps_after(plan_context):
     """D3 mutation-settling reorder: the composer's ``_sort_steps_by_frontmatter_order``
-    places every local-settleable HEAD-changing step (order < 10) BEFORE
-    ``default:push`` (order 10) and every post-push WAIT step (order > 10) AFTER
+    places every local-settleable HEAD-changing step (order < 11) BEFORE
+    ``default:push`` (order 11) and every post-push WAIT step (order > 11) AFTER
     it — the settle → push once → wait contract expressed purely via step-doc
     ``order:`` frontmatter. Pins the D3 move of ``architecture-refresh`` from the
     post-push region (order 25) into the pre-push settle band (order 9).
@@ -1319,16 +1319,16 @@ def test_compose_places_settle_steps_before_push_and_wait_steps_after(plan_conte
     # ahead of the other settle steps — the composer must re-sort by resolved
     # frontmatter order so the barrier holds regardless of candidate-list order.
     scrambled = [
-        'push',  # order 10 (the single push barrier)
-        'ci-verify',  # wait (> 10)
-        'sonar-roundtrip',  # wait (> 10)
-        'architecture-refresh',  # settle (order 9) — the D3 move
+        'push',  # order 11 (the single push barrier)
+        'ci-verify',  # wait (> 11)
+        'sonar-roundtrip',  # wait (> 11)
+        'architecture-refresh',  # settle (order 10, de-collided; last in band) — the D3 move
         'finalize-step-security-audit',  # settle (order 9)
         'finalize-step-simplify',  # settle (order 8)
         'pre-push-quality-gate',  # settle (order 5)
         'finalize-step-sync-baseline',  # settle (order 3)
-        'create-pr',  # wait (> 10)
-        'automatic-review',  # wait (> 10)
+        'create-pr',  # wait (> 11)
+        'automatic-review',  # wait (> 11)
         'branch-cleanup',  # merge (order 70)
     ]
     # ``pre-push-quality-gate`` is order-band-3 settle, but it is also governed by
@@ -1370,8 +1370,8 @@ def test_compose_places_settle_steps_before_push_and_wait_steps_after(plan_conte
         'architecture-refresh',
     ):
         assert steps.index(settle) < push_idx, f'{settle!r} must sort before push; got {steps!r}'
-    # architecture-refresh (order 9) now sits in the settle band, not the
-    # post-push region it occupied at order 25.
+    # architecture-refresh (order 10, last in the settle band) sits in the settle
+    # band, not the post-push region it occupied at order 25.
     assert steps.index('architecture-refresh') < push_idx
     # Every post-push WAIT step sorts AFTER the single push.
     for wait in ('create-pr', 'ci-verify', 'automatic-review', 'sonar-roundtrip'):

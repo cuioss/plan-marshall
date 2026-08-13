@@ -4,7 +4,7 @@ lane:
   cost_size: S
 name: default:architecture-refresh
 description: Refresh architecture descriptors in the pre-push settle stage — tier-0 deterministic discover + diff-driven commit, tier-1 LLM re-enrichment
-order: 9
+order: 10
 default_on: true
 presets: []
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step

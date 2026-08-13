@@ -248,19 +248,20 @@ def test_steps_sort_real_resolver_places_architecture_refresh_before_push_preser
     """D3 real-resolver: steps-sort re-materializes the mutation-settling reorder.
 
     Uses the GENUINE ``_resolve_step_order`` (no monkeypatch) so the actual
-    phase-6 step-doc frontmatter drives the sort: ``default:architecture-refresh``
-    (order 9) and ``default:finalize-step-security-audit`` (order 9) sort into the
-    pre-push settle band BEFORE ``default:push`` (order 10), while the WAIT steps
-    (``ci-verify`` / ``sonar-roundtrip``, order > 10) sort after it. Each step's
+    phase-6 step-doc frontmatter drives the sort: ``default:finalize-step-security-audit``
+    (order 9) and ``default:architecture-refresh`` (order 10, de-collided by D2 and
+    ordered last in the settle band) sort into the pre-push settle band BEFORE
+    ``default:push`` (order 11), while the WAIT steps (``ci-verify`` / ``sonar-roundtrip``,
+    order > 11) sort after it. Each step's
     ``lane`` value is preserved byte-identically (steps-sort reorders keys only),
     and a second run is a zero-diff no-op (idempotent under the steward invariant).
     """
     # Scrambled input: push and the wait steps ahead of the settle steps.
     scrambled = {
-        'default:push': {'lane': 'minimal'},  # order 10 — the single push barrier
-        'default:ci-verify': {'lane': 'minimal'},  # wait (> 10)
-        'default:sonar-roundtrip': {'lane': 'full'},  # wait (> 10)
-        'default:architecture-refresh': {'lane': 'minimal'},  # settle (order 9) — D3 move
+        'default:push': {'lane': 'minimal'},  # order 11 — the single push barrier
+        'default:ci-verify': {'lane': 'minimal'},  # wait (> 11)
+        'default:sonar-roundtrip': {'lane': 'full'},  # wait (> 11)
+        'default:architecture-refresh': {'lane': 'minimal'},  # settle (order 10, D3 move; last in band)
         'default:finalize-step-security-audit': {'lane': 'full'},  # settle (order 9)
     }
     create_marshal_json(plan_context.fixture_dir, _finalize_config(scrambled))
@@ -271,10 +272,10 @@ def test_steps_sort_real_resolver_places_architecture_refresh_before_push_preser
     assert result['reordered'] is True
     after = result['after']
     push_idx = after.index('default:push')
-    # Settle steps (order < 10) sort before the single push.
+    # Settle steps (order < 11) sort before the single push.
     assert after.index('default:architecture-refresh') < push_idx
     assert after.index('default:finalize-step-security-audit') < push_idx
-    # WAIT steps (order > 10) sort after the push.
+    # WAIT steps (order > 11) sort after the push.
     for wait in ('default:ci-verify', 'default:sonar-roundtrip'):
         assert after.index(wait) > push_idx
 

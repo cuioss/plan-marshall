@@ -888,7 +888,7 @@ def test_find_implementors_built_in_push_record():
     assert 'default:push' in by_name, 'default:push must be a discovered built-in step'
     push = by_name['default:push']
     assert push['source'] == 'built-in'
-    assert push['order'] == 10
+    assert push['order'] == 11
     assert push['default_on'] is True
     # push ships in every named preset (the local/standard/full ladder)
     assert set(push['presets']) == {'local', 'standard', 'full'}

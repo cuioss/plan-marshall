@@ -158,12 +158,51 @@ the actual path is `plan-orchestrator/…` (plan 120 renamed it). Working agains
 - Quality gate: `ruff` all-passed, `mypy` clean (580 files), SPDX passed. Full `./pw verify plan-marshall`
   test run in progress at commit time.
 
-### D2 / D3 — collision fix + check
+### D3 — collision check that FAILS (verified to fire before D2)
 
-**Status: pending (next).** The load-bearing order is preserved: D3 (extend
-`test_finalize_orchestration_routing.py` with the order-uniqueness check) must be SEEN to fire on the
-live `order: 9` collision (`architecture-refresh` / `finalize-step-security-audit`) before D2 resolves
-it.
+**Status: implemented and SEEN to fire on the live collision, then pass after D2.**
+
+`test_finalize_orchestration_routing.py::TestNoTwoFinalizeStepsShareAnOrder` extends the existing
+step-discovery test (not a competing checker) with an order-uniqueness assertion over
+`find_implementors(_EXT_POINT)`, plus an anti-vacuity guard.
+
+- **Fired on the live collision (before D2):** run captured —
+  `FAILED test_no_two_steps_share_an_order … {9: ['default:architecture-refresh',
+  'default:finalize-step-security-audit']}` (anti-vacuity `test_discovery_is_non_empty` PASSED). This is
+  the one ordering constraint that cannot be recovered once D2 lands; the evidence is preserved here.
+- **Passes after D2:** re-run → `2 passed`.
+
+### D2 — resolve the live same-phase collision (intended order established first)
+
+**Status: implemented — and the collision was masking a real ordering bug.**
+
+Establishing the intended order (the plan's explicit requirement — "do not assume the observed order was
+correct") uncovered that the accidental resolution was **wrong**: `phase-6-finalize/SKILL.md` documents
+that `architecture-refresh` (derived-state) "**sorts LAST in the settle band so the descriptor refresh
+captures the code-mutating settle edits**." But both steps shared `order: 9`, and the composer's stable
+sort broke the tie by list position seeded from `find_implementors`'s `(order, name)` sort — alphabetical
+— which put `architecture-refresh` **before** `finalize-step-security-audit`. So architecture-refresh was
+snapshotting the tree **before** security-audit's hardening edits — the exact opposite of its documented
+purpose. The collision hid this.
+
+**Resolution (deliberate, not a blind split):** `finalize-step-security-audit` keeps `order: 9` (it
+mutates source); `architecture-refresh` moves `9 → 10` so it sorts **last** in the settle band, after
+every mutating settle step — matching its documented intent. Because both must precede the single `push`
+barrier and only one integer sat between `simplify` (8) and `push` (10), `push` moved `10 → 11` to open
+the slot. Final settle tail: `simplify (8) < security-audit (9) < architecture-refresh (10) < push (11)`.
+
+**Restatement sweep** (push `10→11`, architecture-refresh `9→10`, security-audit `9` unchanged): ext-point
+table (rows reordered), phase-6 SKILL.md settle/push/wait bands, `pre-push-quality-gate.md`,
+`finalize-step-sync-baseline.md`, and the affected tests — including hard assertions in
+`test_validate_loadable.py` (×3), `test_cmd_skill_resolution.py`, `test_extension_discovery.py`, the
+`_PUSH_ORDER` constant in `test_finalize_step_plugin_doctor.py`, and the seed-order assertions in
+`test_config_defaults.py` (which flipped to `security-audit` before `architecture-refresh` — the fixed
+behavior).
+
+**Note on the D0 cross-phase pair:** D0 recorded the cross-phase order-10 pair as `canonical_verify` (10,
+phase-5) / `push` (10, phase-6). D2 moved `push` to 11, so that specific coincidence no longer holds — but
+the point it illustrated (the ext-point is the phase discriminator, so two phases may share an order
+without colliding) stands and is now enforced by the D3 collision check.
 
 ## Build gate
 

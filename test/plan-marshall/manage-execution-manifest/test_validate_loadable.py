@@ -335,8 +335,8 @@ class TestArrayAuthorityContract:
 
     def test_builtin_step_order_resolves_from_standards_frontmatter(self):
         """Built-in step order is read from its standards/workflow doc frontmatter."""
-        assert _mem._resolve_step_order('push') == 10
-        assert _mem._resolve_step_order('default:push') == 10
+        assert _mem._resolve_step_order('push') == 11
+        assert _mem._resolve_step_order('default:push') == 11
         assert _mem._resolve_step_order('create-pr') == 20
 
     def test_all_path_reports_only_loadability_not_order(self, plan_context):
@@ -639,7 +639,7 @@ class TestResolveStepOrderVerdict:
     def test_resolve_step_order_is_the_order_only_projection(self):
         # The legacy accessor keeps its int|None contract for the sort and the
         # seed-path check.
-        assert _mem._resolve_step_order('push') == 10
+        assert _mem._resolve_step_order('push') == 11
         assert _mem._resolve_step_order('ghost-step-that-does-not-exist') is None
         assert _mem._resolve_step_order('plan-marshall:plan-retrospective') is None
 

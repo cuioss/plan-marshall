@@ -232,9 +232,9 @@ Every step doc that declares the finalize-step interface. Built-in steps live un
 | `project:finalize-step-plugin-doctor` | project | 6 | false | `[]` |
 | `default:pre-submission-self-review` | built-in | 7 | true | `[]` |
 | `default:finalize-step-simplify` | built-in | 8 | true | `[full]` |
-| `default:architecture-refresh` | built-in | 9 | true | `[]` |
 | `default:finalize-step-security-audit` | built-in | 9 | true | `[]` |
-| `default:push` | built-in | 10 | true | `[local, standard, full]` |
+| `default:architecture-refresh` | built-in | 10 | true | `[]` |
+| `default:push` | built-in | 11 | true | `[local, standard, full]` |
 | `default:create-pr` | built-in | 20 | true | `[standard, full]` |
 | `project:finalize-step-era-stamp-fill` | project | 21 | false | `[]` |
 | `default:ci-verify` | built-in | 22 | true | `[standard, full]` |

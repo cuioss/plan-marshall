@@ -35,9 +35,9 @@ _PLANNING_DOCS = (
     _REPO_ROOT / 'marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md',
 )
 
-# default:push resolves to order 10 in the phase-6-finalize seed; the
+# default:push resolves to order 11 in the phase-6-finalize seed; the
 # wrapper MUST gate before it.
-_PUSH_ORDER = 10
+_PUSH_ORDER = 11
 
 
 def _read_frontmatter_order(skill_md: Path) -> int:
@@ -206,7 +206,7 @@ class TestRuleRunningScopeableGate:
 
 
 class TestGateOrderingBeforePush:
-    """The wrapper is ordered before default:push (order 10)."""
+    """The wrapper is ordered before default:push (order 11)."""
 
     def test_order_strictly_precedes_push(self):
         order = _read_frontmatter_order(_WRAPPER_SKILL_MD)

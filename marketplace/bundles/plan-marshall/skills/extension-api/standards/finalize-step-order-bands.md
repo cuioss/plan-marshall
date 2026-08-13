@@ -34,7 +34,7 @@ boundaries below track it.
 
 | Band | Range | Owner of the range | Meaning |
 |------|-------|--------------------|---------|
-| **Settle** (pre-merge) | 1–69 | Shared bundle anchors on the tens (10, 20, 30, 40, 62); project-local / third-party insert in the interior gaps | Steps that prepare, gate quality, review, mutate source, push, open the PR, and run CI — everything before the merge gate. A `mutates_source: true` step MUST live here (its edit is only pushable while the branch is open). |
+| **Settle** (pre-merge) | 1–69 | The pre-push settle steps pack the low integers (2–11); the post-push majors anchor on a coarse grid (`create-pr` 20, `ci-verify` 22, `automatic-review` 30, `sonar-roundtrip` 40, `adr-propose` 62); project-local / third-party insert in the interior gaps | Steps that prepare, gate quality, review, mutate source, push, open the PR, and run CI — everything before the merge gate. A `mutates_source: true` step MUST live here (its edit is only pushable while the branch is open). The pre-push cluster is dense by necessity (eight settle steps below `push`); the guaranteed insertion room is in the major-step gaps above it. |
 | **Merge gate** | 70 | Shared bundle (fixed) | `default:branch-cleanup` — the partition. Not a member of any insertable band. |
 | **Post-merge operational** | 71–899 | project-local / third-party | Post-merge steps that **act** (deploy, cache-sync) but are not backward-looking reports. They fail the post-run band's P1 predicate, so they are ordered here rather than in the post-run band. Each MUST still declare `mutates_source` explicitly (it sits at/after the merge gate). |
 | **Post-run review** | 900–999 | Shared bundle + project-local / third-party | `post_run_review: true` backward-looking reports — the band `code-intelligence-substrate` plan 050 owns. Every member MUST declare `mutates_source: false`. Existing members cluster at 990–999; **900–989 is reserved insertion room.** |
@@ -45,9 +45,12 @@ boundaries below track it.
 numbers and leaves the interior free, so a third-party or project-local step always has a slot to claim
 without renumbering a neighbour:
 
-- **Settle** — shared steps sit on the tens; the units and teens between them (e.g. 1–2, 11–19, 23–29,
-  41–61, 63–69) are open. Existing project-local steps already use this room (`finalize-step-lessons-housekeeping`
-  4, `finalize-step-plugin-doctor` 6, `finalize-step-era-stamp-fill` 21).
+- **Settle** — the pre-push cluster occupies the low integers (`push` at 11 sits just above it); the
+  gaps between the post-push majors (12–19, 23–29, 31–39, 41–61, 63–69) are open. Existing project-local
+  steps already use the low room (`finalize-step-lessons-housekeeping` 4, `finalize-step-plugin-doctor` 6,
+  `finalize-step-era-stamp-fill` 21). The pre-push sub-cluster itself is dense (eight steps below `push`):
+  a new pre-push step that cannot fit is what the reserved major-step gaps and, if ever needed, a
+  deliberate re-space of the sub-cluster are for.
 - **Post-merge operational (71–899)** — almost entirely open; existing members sit at 81 and 85.
 - **Post-run review (900–999)** — 900–989 is open insertion room below the existing 990–999 cluster.
 - **Terminal emission (1000–1099)** — reserved for the one terminal emission; 1001–1099 stays open for a
