@@ -1,13 +1,16 @@
 # Aspect: Execution-context Dispatch Audit
 
-This aspect audits dispatch discipline in **both directions**:
+This aspect is **deterministic**: the `check-dispatch-audit` script (`scripts/check-dispatch-audit.py`) reads the plan's evidence and emits fact blocks; this document is the interpretation guide the LLM applies to those facts. The script never judges; this doc never runs code.
 
-1. **Dispatch that happened rode the canonical envelope** — every execution-context spawn observed in a completed plan's `logs/work.log` rode the canonical `plan-marshall:execution-context-{level}` envelope — never `Task: general-purpose`, never an inline ad-hoc subagent dispatched outside the dispatcher.
-2. **Dispatch that should have happened did** — every finalize/execute step the SKILL classifies as DISPATCHED that was marked terminal (`outcome=done`) carries matching `[DISPATCH]` work-log evidence; a step marked done with zero dispatch evidence is the inverse-coverage failure (inline execution where dispatch was required).
+The audit consumes the standardized `[DISPATCH]` work-log lines specified in [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) as its primary evidence. It emits three fact blocks, **each publishing the size of the population it evaluated so a zero is legible** — a check that returns zero from an empty population reports `not_evaluated` with its reason, never a bare `0` a reader could mistake for evaluated-clean:
 
-The audit consumes the standardized `[DISPATCH]` work-log lines specified in [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) as its primary evidence, pairs them with the matching `effort resolve-target` decision-log entries so every spawn is traceable from intent (role-key) through resolution (target/level) to invocation, and cross-references the SKILL's own dispatched/inline classification against the `phase_steps["6-finalize"]` outcome records to assert coverage. The inverse-coverage check is the deterministic structural guard the originating request asked for, anchored on the deterministic `[DISPATCH]` line shape so the pairing is mechanical.
+1. **`shape_violation` — did dispatch that RESOLVED get LOGGED?** Pairs the decision-log `effort resolve-target` records (Surface B — the resolve/intent side) against the `[DISPATCH]` work-log lines (Surface A — the observable side). Surface B is the left-hand side of the pairing, so when Surface B is empty the check is `not_evaluated`; a role whose resolve count exceeds its dispatch-line count is a `shape_violation`.
+2. **`dispatch_coverage` — did dispatch that SHOULD have happened, happen?** Each terminal finalize step (`status.metadata.phase_steps["6-finalize"]`) is classified by its **token record** — the second, independent evidence source — into `dispatched` (non-zero `execution_log[]` `total_tokens`), `ran_inline` (a measured zero), or `no_evidence` (no token row). A step **token-proven to have dispatched** whose `[DISPATCH]` line is nonetheless absent is a `missing_dispatch_emission` — an instrumentation finding against the DISPATCHER, never a "ran inline where dispatch was required" discipline finding against the step. A conditionally-dispatching step that legitimately ran inline carries a measured-zero token record and lands in `ran_inline`, so the token evidence *is* the population-derived qualifier and no hand-maintained roster annotation is introduced.
+3. **`channel_completeness` — how trustworthy is the dispatch channel itself?** Publishes the `[DISPATCH]`-line count against the `[STEP] Completed` count and the token-proven dispatched-step count, and downgrades the audit's own `confidence` when the channel is sparse. A detector that consumes voluntarily-emitted evidence can only ever report a lower bound; this makes that shortfall visible rather than letting a sparse channel silently weaken every verdict.
 
-**Conditional**: always runs; emits zero findings when the plan's dispatch trail is clean.
+Two further deterministic checks preserve the aspect's original surface: `envelope_violation` (a `[DISPATCH]` line whose `target=` is not an execution-context envelope) and `generic_subagent_violation` (a raw `Task: general-purpose` in the work log).
+
+**Conditional**: always runs. A clean trail emits populated counts with zero findings; an empty evidence surface reports `not_evaluated` / `no_evidence` with its reason.
 
 ## Purpose
 
@@ -25,7 +28,7 @@ This rule has two authoritative anchors in [`../../persona-plan-marshall-agent/s
 
 The audit is the mechanical observable for both rules: it consumes the standardized `[DISPATCH]` emissions and emits one finding per spawn that fails to ride the canonical envelope.
 
-The aspect also owns the **inverse** of this discipline: a step the SKILL classifies as DISPATCHED that was nevertheless executed inline (marked `outcome=done` with no `[DISPATCH]` emission) is the recurring "ran phase-5/6 inline instead of dispatching execution-context subagents" defect. Keeping both directions in one aspect — rather than splitting the inverse-coverage check into a separate finalize completion-boundary assertion — is the deliberate design choice: the inverse check consumes the same two evidence surfaces (`work.log` + `decision.log`) this aspect already reads, plus the `phase_steps["6-finalize"]` outcome records, so one owner holds all of dispatch discipline. The design rationale (aspect-11 category vs finalize completion-boundary assertion) is resolved in favour of the retrospective aspect for exactly this reason.
+The aspect also owns **coverage** — whether dispatch that should have happened, happened — but it asserts this from **evidence**, never by trusting a hand-maintained roster. Rather than flagging every DISPATCHED-classified step marked terminal with no `[DISPATCH]` line as "ran inline where dispatch was required" (a finding that mis-attributed in both directions), it reads each terminal finalize step's **token record** and classifies it `dispatched` / `ran_inline` / `no_evidence`. A step token-proven to have dispatched whose `[DISPATCH]` line is missing is an instrumentation gap in the dispatcher (`missing_dispatch_emission`); a step that ran inline — whether a rostered-inline step or a conditionally-dispatching one that legitimately did not dispatch — carries a measured-zero record and raises nothing. The token record is the population-derived qualifier, so no dispatched/inline roster is consulted and no hand-maintained mirror is introduced.
 
 ## Inputs
 
@@ -38,91 +41,90 @@ Two detection surfaces, read together so every spawn is pinned to both its inten
 
 The audit also reads `logs/work.log` for raw `Task: general-purpose` text patterns. A `Task: general-purpose` mention anywhere in the work log (outside markdown documentation or escaped literals) is direct evidence of a generic-subagent spawn and is emitted as a finding regardless of whether a paired `[DISPATCH]` line exists.
 
-Two additional surfaces support the inverse-coverage check (`dispatch_coverage_violation`):
+Two additional surfaces support the coverage check (`dispatch_coverage`):
 
-- **Surface C — `status.metadata.phase_steps["6-finalize"]` outcome records**: the per-step terminal-outcome map written by `manage-status mark-step-done`. Each step carries an `outcome` (`done` / `skipped` / `failed` / `loop_back`). Read via `manage-status read --plan-id {plan_id}`. A step marked `outcome=done` (or otherwise terminal) is the assertion target for the inverse-coverage check.
-- **Surface D — the SKILL's dispatched/inline classification (the dispatched-step roster)**: the authoritative dispatched-vs-inline classification in [`../../phase-6-finalize/SKILL.md`](../../phase-6-finalize/SKILL.md) § "Dispatched workflows vs inline steps" (finalize steps) and the execute-phase dispatch in [`../../plan-marshall/workflow/execution.md`](../../plan-marshall/workflow/execution.md) § "Execute Phase" (the phase-5-execute envelope). This classification is the roster of steps that MUST carry a `[DISPATCH]` line when marked terminal.
+- **Surface C — `status.metadata.phase_steps["6-finalize"]` outcome records**: the per-step terminal-outcome map written by `manage-status mark-step-done`. Each step carries an `outcome` (`done` / `skipped` / `failed` / `loop_back`). A step present here reached a terminal outcome and is a member of the coverage population.
+- **Surface E — `execution.toon` `execution_log[]` per-step token records**: `record-step` writes one row per finalize step — dispatched OR inline — carrying `step_id`, `phase`, and `total_tokens`. A **non-zero** `total_tokens` is written only when the step ran as a dispatched Task agent; an inline step records a measured `0`. This is the **second, independent evidence source** the coverage check consults before ever concluding a step ran inline — the completion line (`[STEP] … Completed step:`) fires for inline steps too and so is a completion witness, never a dispatch discriminator. The dispatched/inline *classification roster* (`phase-6-finalize/SKILL.md` § "Dispatched workflows vs inline steps") is therefore **not** consulted by the detector: the token record is the population-derived qualifier, which avoids a hand-maintained mirror of a derived set (the archetype the programme forbids). A conditionally-dispatching step that legitimately ran inline shows a measured-zero record and lands in `ran_inline` by construction, closing the false-positive direction.
 
 ## Detection Logic
 
-The audit emits **one finding per violation** across four checks. Each finding is `severity: error` — there is no warning tier because the underlying rule is a hard rule. The first three categories check that dispatch that DID happen rode the canonical envelope; the fourth (`dispatch_coverage_violation`) checks the inverse — that dispatch that SHOULD have happened did.
+The audit emits findings across the categories below, and **publishes the evaluated population beside every count** so a zero is legible. Each finding is `severity: error` — the underlying rules are hard rules — and `missing_dispatch_emission` is attributed to the dispatcher, not the step.
 
 | Category | Failure mode | Detection signal |
 |----------|--------------|------------------|
-| `shape_violation` | A spawn happened but no matching `[DISPATCH]` line was emitted | A `(plan-marshall:manage-config)` `effort resolve-target` entry exists in `decision.log` for a given `role` value but no subsequent `[DISPATCH]` line carrying the same `role` appears in `work.log` within the same plan run |
-| `envelope_violation` | A `[DISPATCH]` line carries a `target` value that is NOT `execution-context` or `execution-context-{level}` | Parse the `target=` field; any value outside the set `{execution-context, execution-context-level-1, execution-context-level-2, execution-context-level-3, execution-context-level-4, execution-context-level-5, execution-context-level-6, execution-context-level-7}` is a finding |
-| `generic_subagent_violation` | Direct `Task: general-purpose` invocation observed in the work log | Literal `Task: general-purpose` substring appears in `logs/work.log` outside fenced code blocks and outside `[ANTI-PATTERN]` annotations |
-| `dispatch_coverage_violation` | A finalize/execute step the SKILL classifies as DISPATCHED was marked `outcome=done` (or otherwise terminal) on `status.metadata.phase_steps["6-finalize"]` with zero matching `[DISPATCH]` work-log evidence | For each step the dispatched/inline classification (Surface D — `phase-6-finalize/SKILL.md` § "Dispatched workflows vs inline steps" and the execute-phase dispatch in `execution.md`) marks DISPATCHED, confirm at least one `[DISPATCH]` line in `work.log` (Surface A) carries the step's role/workflow within the same plan run. A step whose `phase_steps["6-finalize"]` record (Surface C) shows a terminal `outcome` with no such `[DISPATCH]` line is a finding — the step ran inline where dispatch was required |
+| `shape_violation` | A resolve happened but no matching `[DISPATCH]` line was emitted | For a given `role`, the count of `effort resolve-target` records (Surface B) exceeds the count of `[DISPATCH]` lines carrying that `role` (Surface A). **When Surface B is empty the check reports `not_evaluated` with its reason — never a bare `0`.** |
+| `missing_dispatch_emission` | A step token-PROVEN to have dispatched emitted no `[DISPATCH]` line | The count of finalize steps with a non-zero `execution_log[]` token record (Surface E) exceeds the count of `[DISPATCH]` lines carrying the finalize dispatcher caller. The shortfall is an instrumentation gap in the DISPATCHER, never a discipline finding against any step (a floor — a re-fire adds lines but not steps). |
+| `envelope_violation` | A `[DISPATCH]` line carries a `target` that is NOT an execution-context envelope | Parse `target=`; any value outside `{execution-context, execution-context-level-1 … execution-context-level-7}` is a finding. |
+| `generic_subagent_violation` | Direct `Task: general-purpose` invocation in the work log | Literal `Task: general-purpose` substring appears in `logs/work.log`. |
 
-### Pairing rule
+### Three-state coverage (replaces the old `dispatch_coverage_violation`)
 
-A `decision.log` `effort resolve-target` entry and a `work.log` `[DISPATCH]` line pair when:
+The former `dispatch_coverage_violation` — "a DISPATCHED-classified step marked terminal with no `[DISPATCH]` line ran inline where dispatch was required" — is **removed**: it mis-attributed in both directions. A dispatched-but-unlogged step was read as a discipline violation against the *step* when the real fault is an instrumentation gap in the *dispatcher*; and a conditionally-dispatching step that legitimately ran inline was read as a coverage violation on essentially every plan of a common change type. In its place, `dispatch_coverage` classifies each terminal finalize step (Surface C) by its Surface E token record into `dispatched` (non-zero tokens), `ran_inline` (a measured zero), or `no_evidence` (no token row at all — reported honestly, never as "ran inline"), publishes the population, and raises only `missing_dispatch_emission`, attributed to the dispatcher.
 
-1. The `role` value matches verbatim (e.g., both name `phase-2-refine` or both name `verification-feedback`).
-2. The decision-log entry's timestamp precedes the dispatch-log entry's timestamp (same plan run).
+### Pairing rule (shape_violation)
 
-When more than one resolve happens for the same role in a single run (legitimate — e.g., retries, multiple per-iteration dispatches), each resolve is paired with the next chronologically-following `[DISPATCH]` line carrying the same role. An unmatched resolve at end of pairing is a `shape_violation`.
+Each `role`'s `effort resolve-target` records (Surface B) are paired against the `[DISPATCH]` lines carrying the same `role` (Surface A) as a per-role multiset: a resolve count exceeding the dispatch count for a role is a `shape_violation` naming the shortfall. The population is the total Surface B record count, **derived from the log rather than a literal**; an empty population is `not_evaluated`, never `0`.
 
 ## Finding Shape
 
-```toon
-aspect: execution-context-dispatch-audit
-severity: error
-category: {shape_violation|envelope_violation|generic_subagent_violation|dispatch_coverage_violation}
-file: {relative path — "logs/work.log", "logs/decision.log", or "status.json"}
-line: {1-based line number}
-snippet: "{trimmed line content, max 200 chars}"
-message: "{Concrete description of the violation}"
-```
+Each finding carries `severity`, `category`, and `message`. Message text per category:
 
-`message` text per category:
-
-- `shape_violation` → `"Resolve for role={role} at decision.log:{line} has no matching [DISPATCH] emission in work.log"`
+- `shape_violation` → `"{n} resolve record(s) for role={role} in decision.log have no matching [DISPATCH] emission in work.log (resolved={r}, dispatched={d})"`
+- `missing_dispatch_emission` → `"{k} finalize step(s) recorded non-zero token attribution (proof of a dispatched envelope) but only {j} [DISPATCH] line(s) carry the finalize dispatcher caller — {k−j} dispatch emission(s) missing. Instrumentation gap in the DISPATCHER, not an inline-execution (discipline) violation against any step."`
 - `envelope_violation` → `"[DISPATCH] line carries target={target} — not an execution-context envelope"`
-- `generic_subagent_violation` → `"Direct Task: general-purpose invocation at work.log:{line}"`
-- `dispatch_coverage_violation` → `"Step {step} classified DISPATCHED reached a terminal outcome ({outcome}) at phase_steps with no matching [DISPATCH] emission in work.log"`
-
-For a `dispatch_coverage_violation`, `file` is `status.json` (the `phase_steps` record source) and `snippet` is the trimmed `phase_steps["6-finalize"][{step}]` outcome record.
+- `generic_subagent_violation` → `"Direct Task: general-purpose invocation in work.log: {line}"`
 
 ## Output TOON Schema
 
+The `check-dispatch-audit` script emits this shape. Every count sits beside the population it was computed over.
+
 ```toon
-aspect: execution-context-dispatch-audit
 status: success
+aspect: execution-context-dispatch-audit
 plan_id: {plan_id}
+summary: "{one-line human summary}"
+shape_violation:
+  status: {evaluated|not_evaluated}
+  evaluated_population: N        # Surface B resolve-record count (the left-hand side)
+  violations: N
+  reason: "…"                    # present only when not_evaluated
+dispatch_coverage:
+  evaluated_population: N        # terminal finalize steps (Surface C)
+  dispatched: N                  # non-zero token record (Surface E)
+  ran_inline: N                  # measured-zero token record
+  no_evidence: N                 # no token row at all
+  missing_dispatch_emission: N
+channel_completeness:
+  dispatch_line_count: N
+  completion_count: N            # [STEP] … Completed step: lines
+  dispatched_step_count: N
+  ratio: N|null                  # dispatch_line_count / completion_count
+  confidence: {none|low|nominal}
+findings[N]{severity,category,message}:
+  …
 counts:
   total: N
   by_category:
     shape_violation: N
+    missing_dispatch_emission: N
     envelope_violation: N
     generic_subagent_violation: N
-    dispatch_coverage_violation: N
-findings[N]{category,file,line,snippet,severity,message}:
-  shape_violation,logs/decision.log,42,"(plan-marshall:manage-config) effort resolve-target --role phase-2-refine","error","Resolve for role=phase-2-refine at decision.log:42 has no matching [DISPATCH] emission in work.log"
-  envelope_violation,logs/work.log,87,"[DISPATCH] (plan-marshall:plan-marshall) target=general-purpose level=... role=phase-3-outline ...","error","[DISPATCH] line carries target=general-purpose — not an execution-context envelope"
-  generic_subagent_violation,logs/work.log,103,"Task: general-purpose","error","Direct Task: general-purpose invocation at work.log:103"
-  dispatch_coverage_violation,status.json,0,"phase_steps[6-finalize][plugin-doctor]: outcome=done","error","Step plugin-doctor classified DISPATCHED reached a terminal outcome (done) at phase_steps with no matching [DISPATCH] emission in work.log"
 ```
-
-The structural shape mirrors the neighbouring `direct-gh-glab-usage` aspect's output schema so downstream consumers (`compile-report`, lessons-proposal LLM pass) parse both with the same grammar.
 
 ## LLM Interpretation Rules
 
 - Every finding MUST surface in the final report verbatim — the compiler does not reorder, group, or truncate them.
-- A non-zero `counts.total` always produces at least one lessons-proposal entry (see [`../references/lessons-proposal.md`](../references/lessons-proposal.md)) categorized as `bug`, since each finding represents a hard-rule violation.
-- `generic_subagent_violation` findings are the highest-priority remediation target — they indicate a `Task: general-purpose` spawn slipped past the dispatcher entirely. Propose these as blocking lessons (require fix before plan close) in user-invocable mode.
-- `envelope_violation` findings indicate the caller emitted a `[DISPATCH]` line but routed it through the wrong target — typically a copy-paste mistake or a hand-rolled subagent that bypassed `effort resolve-target`. Propose these as `bug` lessons targeting the calling skill.
-- `shape_violation` findings indicate the caller resolved a target but never emitted the canonical `[DISPATCH]` line — usually a missing instrumentation step in a workflow doc. Propose these as `improvement` lessons targeting the calling workflow file.
-- `dispatch_coverage_violation` findings indicate a step classified DISPATCHED was executed inline (reached a terminal outcome — `done`, `skipped`, `failed`, or `loop_back` — with no `[DISPATCH]` evidence) — the "ran the work inline instead of dispatching the execution-context subagent" defect. Propose these as `bug` lessons targeting the inlining caller (the orchestrator/skill that drove the step), since the inline execution bypassed the canonical envelope's enforcement contract.
+- **A `shape_violation.status: not_evaluated` is NOT a clean verdict.** It means the check evaluated nothing (Surface B empty), so it neither confirms nor denies dispatch-shape discipline. Report it as `not_evaluated` with its population and reason; do not read it as "clean".
+- **A sparse channel downgrades confidence, and the confidence must be surfaced.** When `channel_completeness.confidence` is `none` or `low`, every dispatch-discipline verdict the audit renders is a lower bound — say so. A `none` confidence means the audit saw no `[DISPATCH]` evidence at all despite completions or token-proven dispatches.
+- A non-zero `counts.total` produces at least one lessons-proposal entry (see [`../references/lessons-proposal.md`](../references/lessons-proposal.md)).
+- `generic_subagent_violation` findings are the highest-priority remediation target — a `Task: general-purpose` spawn slipped past the dispatcher entirely. Propose these as blocking lessons in user-invocable mode.
+- `envelope_violation` findings indicate a `[DISPATCH]` line routed through the wrong target. Propose these as `bug` lessons targeting the calling skill.
+- `shape_violation` findings indicate a resolve that never emitted its canonical `[DISPATCH]` line — usually a missing instrumentation step. Propose these as `improvement` lessons targeting the calling workflow file.
+- `missing_dispatch_emission` findings indicate a step **token-proven to have dispatched** whose `[DISPATCH]` line is absent — an instrumentation gap in the **dispatcher**, not an inline-execution violation against the step. Propose these as `bug` lessons targeting the dispatch seam / dispatcher, never the step. Do NOT re-derive "ran inline where dispatch was required" from a `ran_inline` or `no_evidence` classification: those are the mis-attribution this detector was corrected to stop making.
 
 ## Persistence
 
-After synthesizing the TOON fragment per the shape documented above, the orchestrator writes the fragment to `work/fragment-execution-context-dispatch-audit.toon` via the `Write` tool and registers it with the bundle:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments add \
-  --plan-id {plan_id} --aspect execution-context-dispatch-audit --fragment-file work/fragment-execution-context-dispatch-audit.toon
-```
+The aspect is script-backed: run `check-dispatch-audit` and pipe its stdout to the fragment file, then register it (see [`../SKILL.md`](../SKILL.md) § "Aspect 11 (execution-context-dispatch-audit)" for the canonical capture pattern). The orchestrator does not hand-synthesize this fragment.
 
 `compile-report run --fragments-file` consumes the assembled bundle in Step 4 of [`../SKILL.md`](../SKILL.md). The bundle file is auto-deleted on successful report write; on failure it is retained for debugging.
 
