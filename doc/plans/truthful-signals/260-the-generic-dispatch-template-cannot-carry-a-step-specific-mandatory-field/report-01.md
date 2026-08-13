@@ -1,6 +1,6 @@
 # Run report — the-generic-dispatch-template-cannot-carry-a-step-specific-mandatory-field (run 01)
 
-**Date (UTC):** 2026-08-12    **Branch:** `claude/generic-dispatch-template-field-615qbt` (harness-assigned)    **PR:** _pending_    **Outcome:** completed
+**Date (UTC):** 2026-08-12 → 2026-08-13    **Branch:** `claude/generic-dispatch-template-field-615qbt` (harness-assigned)    **PR:** [#1197](https://github.com/cuioss/plan-marshall/pull/1197)    **Outcome:** completed (landing delegated — see Contract check)
 
 ## Skills loaded
 
@@ -88,7 +88,9 @@ Each red-first observation was produced by an actual edit-run-revert cycle in th
 | 5 | sub-agent | `ext-point-dynamic-level-executor.md:159` states categorically "Every dispatch site … dispatches … with the 5-field prompt body" — reads as over-broad given the extension slot | **deferred** — a pre-existing simplification in a doc outside this plan's deliverables (it governs the dynamic-level executor agent, not the finalize dispatch); the change did not newly falsify it. Recorded as residue, not fixed here, to hold scope |
 | 6 | sub-agent | D3 "seen red first" is documented in this report, not reproducible from the committed diff | **rejected (no change)** — inherent to a process observation; the permanent `test_orphan_detection_fires_on_an_injected_divergence` / `test_undeclared_detection_fires_on_an_injected_divergence` tests ARE the committed proof the guard fires in both directions, and the sub-agent re-ran them to confirm |
 
-- **CI / PR review findings:** _recorded below as they arrive._
+- **PR review — `cuioss-review-bot` (fixed):** flagged a real regex over-fit in the new test — `_FIELD_LINE` used `(?:\[\d*\])?`, matching a digit index (`skills[2]:`) but not a placeholder (`skills[N]:`), so `skills[N]:` silently failed to normalize to `skills`, contradicting the field-key comment. Broadened the bracket class to `[^\]]*` and added a regression test (`test_field_parser_strips_any_bracketed_skills_index`), confirmed red-first on the old pattern. Commit `ab1247d`; replied on the PR thread. No behaviour change on the real docs (they use `skills: []` / `skills[2]:`).
+- **CI:** `verify / conclusion` concluded **success** on head `091135e`; re-triggered on `ab1247d` after the review fix.
+- **`coderabbitai` / `sourcery-ai`:** posted only rate-limit notices, no findings (see Reviewer participation).
 
 ## Reviewer participation
 
@@ -96,25 +98,43 @@ Expected reviewer population derived from configuration — the `author_login` o
 
 | Reviewer (`author_login`) | Verdict (`reviewed` / `rate-limited` / `silent`) | Body evidence / reason |
 |---|---|---|
-| `cuioss-review-bot` | _pending_ | _pending_ |
-| `coderabbitai` | _pending_ | _pending_ |
-| `sourcery-ai` | _pending_ | _pending_ |
+| `cuioss-review-bot` | `reviewed` | Published a "PR Reviewer Guide" review body against the diff with one finding (the `_FIELD_LINE` regex over-fit), now fixed. |
+| `coderabbitai` | `rate-limited` | Published only a "Review limit reached — next review available in 29 minutes" notice; no review of this diff. |
+| `sourcery-ai` | `rate-limited` | Published only "you have reached your weekly rate limit of 500000 diff characters"; no review of this diff. |
 
-Coverage: _pending_. Step 8 shortfall disclosure: _pending_.
+Coverage: **1 of 3** reviewed. **Step 8 shortfall disclosure (fired):** "Review coverage 1 of 3 — `cuioss-review-bot` reviewed (finding fixed); `coderabbitai` rate-limited (window reopens ~29 min); `sourcery-ai` rate-limited (weekly quota)." Per Step 8 condition 4 this is a **disclosure, not a block** — rate limits are routine and outside our control, so the run proceeds to arm on partial coverage having said so.
 
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
-- **Wall-clock:** run started ~14:00 UTC (approx); build gate ≈7 min of it. Source: this single cloud session's activity.
+- **Wall-clock:** active work was roughly 30–40 min (implementation + gates + PR cycle); the calendar span was ~9 h because the session idled between turns (PR opened 2026-08-12 22:13 UTC; review-fix CI re-triggered 2026-08-13 07:18 UTC). The `verify` CI run itself takes ~12–13 min. Source: PR/commit/CI timestamps.
 - **Population:** this single Claude Code cloud session's usage. NOT comparable to a plan-marshall `metrics.toon` total, which counts the orchestrator-plus-agent dispatch tree under plan-marshall's per-task billing boundary — a boundary this interactive session does not share.
 
 ## Contract check (Step 9)
 
-_Filled at Step 9 (final pre-merge commit)._
+| Step | Verdict | Evidence |
+|---|---|---|
+| 1 Skills loaded | done | Named under "Skills loaded" — loaded by bundle path (plugin not installed) |
+| 2 Branch | done | Harness-assigned `claude/generic-dispatch-template-field-615qbt` on `origin`; kept as-is per the contract; pushed before any edit |
+| 3 Plan directory | done | `doc/plans/truthful-signals/260-…/plan.md` exists and opens with the first-instruction block (present on the handed plan — no repair needed) |
+| 4 Implement | done | Commits carry the `Co-Authored-By: Claude` trailer; D0–D3 addressed |
+| 4 Per-commit gate | done | Every `*.py`-touching commit (`cec4ccd`, `929ffa4`, `ab1247d`) preceded by a clean `./pw quality-gate` (`total_issues: 0`, empty `errors[]`) |
+| 4 Pushed | done | No unpushed commit; each commit pushed immediately |
+| 5 Build gate | done | Python changed → `./pw verify` path: quality-gate `total_issues: 0` whole-tree + `module-tests plan-marshall` 16262 passed / 1 pre-existing skip / 0 failed |
+| 6 Verification sub-agent | done | Findings + dispositions in § Findings (3 fixed, 2 rejected-with-reason, 1 deferred) |
+| 7 PR cycle | done | PR #1197; the one review finding (`cuioss-review-bot` regex) fixed and replied; rate-limit notices need no action |
+| 8 Merge gate | conditions 1–3 met; auto-merge armed — landing delegated | Condition 1 (required `verify / conclusion` green) enforced by GitHub's auto-merge before it queues; condition 2 (comments handled); condition 3 (this report pushed as the last pre-merge commit); condition 4 shortfall disclosed (1-of-3). Session cannot self-confirm `MERGED` (self-wake tools approval-gated) → arm-and-hand-off per § Cloud session affordances |
+| 8 Bridge | done | No status/bookkeeping write outside this plan's own directory; report carries PR number + per-deliverable outcome |
+| 9 This check | done | This table |
+| 9 What have we learned | done | Below |
+
+**GitHub access path:** the GitHub MCP server (the cloud path). **Branch form:** harness-assigned `claude/*`. **`/sync-plugin-cache`:** not owed — a cloud run neither performs nor owes it (machine-local build step).
 
 ## What have we learned (Step 9)
 
-_Filled at Step 9._
+**No contract change proposed.** The run exercised the contract end to end and every gate behaved as written: reading skills by bundle path (plugin absent), the conditional `./pw` build gate, the independent pre-PR sub-agent, the three comment surfaces (the `cuioss-review-bot` finding arrived in the review-body/issue-comment surface, exactly where the contract says to look), and the Step 8 shortfall disclosure on 1-of-3 coverage.
+
+One friction was observed but is **already covered** by the contract, so it is recorded rather than proposed: the self-wake tools (`subscribe_pr_activity`, `send_later`) are approval-gated in this session, and `verify` runs ~13 min — longer than one turn — so the run could not "observe green, then arm" within a single turn. The contract already anticipates this with both **arm-and-hand-off** and **manual read-polling on re-entry** (§ Cloud session affordances / Step 8), and re-entry did occur (wall-clock advanced ~9 h between turns), so the mechanism held. A proposal would need evidence that a genuinely headless, never-re-entered run with gated self-wake *and* long CI cannot complete — which this run (operator-reachable, re-entered) did not produce. Per the "evidence, not speculation" rule, no change is proposed.
 
 ## Residue
 
