@@ -747,7 +747,7 @@ FOR each step_id in manifest.phase_6.steps:
               work --plan-id {plan_id} --level WARNING \
               --message "[VERIFY] (plan-marshall:phase-6-finalize:lessons-capture) Unrecognised orchestrator pointer {source_id} - the plan looks orchestrated but its id segment was not recognised, so no inbox message will be written"
 
-         The WARNING changes the SILENCE, not the branch: the verdict stays `orchestrated: false` and the run proceeds down the non-orchestrated path exactly as before. All three consumers (`default:lessons-capture`, `plan-marshall:plan-retrospective` Step 5b, and `default:finalize-step-preference-emitter` Step 4) keep receiving `orchestrated` and `epic` unchanged — `detection` is read here and is not added to their runtime inputs. Emit the WARNING for `unrecognised_id` only: `orchestrated` and `not_orchestrator_pointer` are the ordinary paths and stay quiet.
+         The WARNING changes the SILENCE, not the branch: the verdict stays `orchestrated: false` and the run proceeds down the non-orchestrated path exactly as before. The three lesson-emitting consumers (`default:lessons-capture`, `plan-marshall:plan-retrospective` Step 5b, and `default:finalize-step-preference-emitter` Step 4) keep receiving `orchestrated` and `epic` unchanged — `detection` is read here and is not added to their runtime inputs. The fourth consumer, `default:emit-landing`, is not among them on this path: an `orchestrated: false` verdict means the compose gate dropped it, so it is absent from a non-orchestrated plan and receives nothing. Emit the WARNING for `unrecognised_id` only: `orchestrated` and `not_orchestrator_pointer` are the ordinary paths and stay quiet.
 
       a. Compute three signal counts:
 
