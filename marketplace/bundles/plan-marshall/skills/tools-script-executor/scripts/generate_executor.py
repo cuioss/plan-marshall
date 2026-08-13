@@ -386,8 +386,14 @@ def discover_scripts_fallback(base_path: Path) -> dict[str, str]:
 
             # Find the main script (usually {skill_name}.py or similar)
             for script_file in scripts_dir.glob('*.py'):
-                # Skip __init__.py and test files
-                if script_file.name.startswith('_') or 'test' in script_file.name.lower():
+                # Skip private modules and test files. Test files are matched
+                # PRECISELY by the ``test_`` prefix / ``_test`` suffix convention:
+                # a bare ``'test' in name`` substring also drops legitimate
+                # entrypoints whose name merely CONTAINS ``test`` (``latest.py``,
+                # ``attestation.py``, ``contest.py``), silently stripping real
+                # scripts from the fallback-discovered map.
+                stem = script_file.stem
+                if script_file.name.startswith('_') or stem.startswith('test_') or stem.endswith('_test'):
                     continue
 
                 # Use three-part notation: bundle:skill:script
@@ -1600,16 +1606,24 @@ def verify_executor(base_path: Path | None = None) -> tuple[bool, int]:
         print(f'Error: Logging module not found: {logging_module}', file=sys.stderr)
         return False, 0
 
-    # Try to import and validate using importlib.util for hyphenated filename
+    # Try to import and validate using importlib.util for hyphenated filename.
+    # The executor path is passed as an argv token (read via ``sys.argv[1]``),
+    # NOT interpolated into the ``-c`` source — a checkout path containing a
+    # quote or backslash would otherwise break the generated program.
     try:
-        import_code = f"""
+        import_code = """
 import importlib.util
-spec = importlib.util.spec_from_file_location('executor', '{real_executor}')
+import sys
+spec = importlib.util.spec_from_file_location('executor', sys.argv[1])
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 print(len(module.SCRIPTS))
 """
-        result = subprocess.run(['python3', '-c', import_code.strip()], capture_output=True, text=True)
+        result = subprocess.run(
+            ['python3', '-c', import_code.strip(), str(real_executor)],
+            capture_output=True,
+            text=True,
+        )
         if result.returncode != 0:
             print(f'Error validating executor: {result.stderr}', file=sys.stderr)
             return False, 0
@@ -1621,18 +1635,23 @@ print(len(module.SCRIPTS))
         print(f'Error validating executor: {e}', file=sys.stderr)
         return False, 0
 
-    # Verify logging module (include shared module dirs for transitive imports)
+    # Verify logging module (include shared module dirs for transitive imports).
+    # Every directory is passed as an argv token and inserted onto sys.path by
+    # the probe, so a path containing a quote or backslash cannot corrupt the
+    # ``-c`` source. argv order mirrors the previous interpolation: the shared
+    # dirs first, then the logging dir last (so the logging dir lands first on
+    # sys.path).
     shared_dirs = get_shared_module_dirs(base_path)
-    path_inserts = '; '.join(f"sys.path.insert(0, '{d}')" for d in shared_dirs)
-    if path_inserts:
-        path_inserts += '; '
+    probe = (
+        'import sys\n'
+        'for _p in sys.argv[1:]:\n'
+        '    sys.path.insert(0, _p)\n'
+        'from plan_logging import log_script_execution\n'
+        "print('OK')\n"
+    )
     try:
         result = subprocess.run(
-            [
-                'python3',
-                '-c',
-                f"import sys; {path_inserts}sys.path.insert(0, '{logging_scripts_dir}'); from plan_logging import log_script_execution; print('OK')",
-            ],
+            ['python3', '-c', probe, *(str(d) for d in shared_dirs), str(logging_scripts_dir)],
             capture_output=True,
             text=True,
         )
@@ -1658,15 +1677,23 @@ def get_executor_mappings() -> dict[str, str]:
     """
     try:
         real_executor = executor_path()
-        import_code = f"""
+        # The executor path is passed via argv (``sys.argv[1]``), never
+        # interpolated into the ``-c`` source, so a checkout path carrying a
+        # quote or backslash cannot break the generated program.
+        import_code = """
 import importlib.util
 import json
-spec = importlib.util.spec_from_file_location('executor', '{real_executor}')
+import sys
+spec = importlib.util.spec_from_file_location('executor', sys.argv[1])
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 print(json.dumps(module.SCRIPTS))
 """
-        result = subprocess.run(['python3', '-c', import_code.strip()], capture_output=True, text=True)
+        result = subprocess.run(
+            ['python3', '-c', import_code.strip(), str(real_executor)],
+            capture_output=True,
+            text=True,
+        )
         if result.returncode != 0:
             return {}
 
@@ -1926,7 +1953,14 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     print('Discovering marketplace scripts...')
     try:
         mappings = discover_scripts(base_path)
-    except Exception as e:
+    except (Exception, SystemExit) as e:
+        # discover_scripts signals "inventory unavailable" via sys.exit(2) — a
+        # SystemExit, which is a BaseException, NOT an Exception — so a bare
+        # ``except Exception`` never reached the glob fallback for exactly the
+        # failure the fallback exists to cover. Catch SystemExit alongside
+        # Exception so an inventory-not-found (or inventory-scan-failure) falls
+        # back to glob discovery instead of aborting the whole regeneration.
+        # The sibling reader cmd_drift already catches SystemExit here.
         print(f'Falling back to glob discovery: {e}', file=sys.stderr)
         mappings = discover_scripts_fallback(base_path)
 
