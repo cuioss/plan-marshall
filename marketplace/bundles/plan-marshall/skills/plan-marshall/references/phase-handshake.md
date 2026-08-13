@@ -84,7 +84,7 @@ Scope limits:
 
 ### `findings-check`
 
-Read-only single-invariant gate. Evaluates ONLY the `pending_findings_blocking_count` invariant (via [resolution rule](#pending_findings_blocking_count-resolution)) for `phase` and writes **no** handshake row. Unlike `capture` it never runs `capture_all`, so `phase_steps_complete` is never evaluated — the verb cannot short-circuit on `phase_steps_incomplete`. It exists for the intra-finalize boundaries, where the downstream finalize steps (`branch-cleanup`, `record-metrics`, `archive-plan`) have not run yet so the composite `capture` gate would always fail on `phase_steps_incomplete` before ever evaluating the blocking-findings invariant.
+Read-only single-invariant gate. Evaluates ONLY the `pending_findings_blocking_count` invariant (via [resolution rule](#pending_findings_blocking_count-resolution)) for `phase` and writes **no** handshake row. Unlike `capture` it never runs `capture_all`, so `phase_steps_complete` is never evaluated — the verb cannot short-circuit on `phase_steps_incomplete`. It exists for the pre-merge finalize gate (`branch-cleanup` § "Pre-merge blocking-findings store gate"), where the downstream finalize steps (`record-metrics`, `archive-plan`) have not run yet so the composite `capture` gate would always fail on `phase_steps_incomplete` before ever evaluating the blocking-findings invariant.
 
 On a clean count:
 
@@ -95,9 +95,9 @@ phase: 6-finalize
 blocking_count: 0
 ```
 
-On a pending blocking-type finding the verb returns the **same** structured error payload `capture` emits for `blocking_findings_present` (`blocking_count`, `blocking_types`, `per_type`, `message`), so the intra-finalize callers branch on an interchangeable envelope. There is no `--strict` flag — the verdict is carried entirely in the TOON `status` field, and a `status: error` payload still exits 0 (mirroring the `capture` exit convention the callers already handle).
+On a pending blocking-type finding the verb returns the **same** structured error payload `capture` emits for `blocking_findings_present` (`blocking_count`, `blocking_types`, `per_type`, `message`), so the pre-merge `findings-check` caller and the composite `capture` gate present an interchangeable envelope. There is no `--strict` flag — the verdict is carried entirely in the TOON `status` field, and a `status: error` payload still exits 0 (mirroring the `capture` exit convention the callers already handle).
 
-**Fails closed on an unevaluable invariant.** When the underlying blocking-count query cannot run (executor unreachable / partial query failure, surfaced as a `None` count), the verb returns `status: error, error: query_failed` rather than `status: success`. As a gate verb its sole output is the go/no-go verdict, so it cannot fail open: an unevaluable invariant must halt the intra-finalize boundary, not silently advance it to `branch-cleanup`. (The composite `capture` records the same `None` as an empty column for retrospective analysis — acceptable there because `capture`'s gate is the `BlockingFindingsPresent` raise, not the return value.) The callers treat `query_failed` as a halt-and-retry environmental failure (no findings to triage, no loop-back).
+**Fails closed on an unevaluable invariant.** When the underlying blocking-count query cannot run (executor unreachable / partial query failure, surfaced as a `None` count), the verb returns `status: error, error: query_failed` rather than `status: success`. As a gate verb its sole output is the go/no-go verdict, so it cannot fail open: an unevaluable invariant must halt the merge, not silently proceed past the pre-merge gate in `branch-cleanup`. (The composite `capture` records the same `None` as an empty column for retrospective analysis — acceptable there because `capture`'s gate is the `BlockingFindingsPresent` raise, not the return value.) The caller treats `query_failed` as a halt-and-retry environmental failure (no findings to triage, no loop-back).
 
 ### `list` / `clear`
 
@@ -215,7 +215,7 @@ The blocking-finding invariant uses a **fixed, hardcoded** actionable-vs-knowled
 
 1. The actionable finding-type set is the hardcoded constant in `_invariants.py`; no `marshal.json` read occurs. Knowledge types are never counted.
 2. For each actionable type `T`, query the count of `pending` findings via `manage-findings list --plan-id X --type T --resolution pending` and sum the per-type `filtered_count` values. The `qgate` actionable entry is routed through the aggregated per-phase qgate query (see [qgate aggregation contract](../../ref-workflow-architecture/standards/findings-pipeline.md#qgate-aggregation-contract)).
-3. The resolutions counted as **resolved** (and therefore non-blocking) are: `fixed`, `suppressed`, `accepted`, `taken_into_account`. Only `pending` contributes to the count.
+3. The resolutions counted as **resolved** (and therefore non-blocking) are: `fixed`, `suppressed`, `accepted`, `taken_into_account`, `rejected` (the pending query filters `--resolution pending`, so every non-`pending` resolution — `rejected` included — is structurally non-blocking). Only `pending` contributes to the count.
 4. The companion `pending_findings_by_type` row captures the count for **every** known type — independent of the actionable set — so retrospective analysis sees the full queue regardless of which types gate the boundary.
 
 **Capture-time behavior:**
@@ -245,11 +245,14 @@ message: "pending_findings_blocking_count failed for phase '6-finalize': ..."
 
 | Boundary | Where the blocking-findings check fires |
 |---|---|
-| `5-execute → 6-finalize` | `manage-status transition --completed 5-execute` inlines `phase_handshake verify --phase 5-execute --strict`. On drift the transition returns the drift TOON, refuses to advance state, and exits 1 — mirroring the standalone strict-verify exit semantics. |
-| `automated-review → branch-cleanup` (intra-finalize) | the `phase-6-finalize` orchestrator re-issues `phase_handshake findings-check --phase 6-finalize` between the two finalize sub-steps |
-| `sonar-roundtrip → next` (intra-finalize) | same — the orchestrator re-issues `findings-check` between sub-steps |
+| finalize merge (pre-merge) | `phase-6-finalize/standards/branch-cleanup.md` § "Pre-merge blocking-findings store gate" issues `phase_handshake findings-check --phase 6-finalize` before the merge. A pending actionable finding returns `blocking_findings_present` (`status: error`, exit 0 — parse the TOON status), and the merge is blocked; `query_failed` blocks fail-closed. |
+| finalize completion | `manage-status transition --completed 6-finalize` and a normal-completion `manage-status archive` call `_invariants.assert_finalize_findings_clean`, which evaluates this same invariant at `6-finalize` and refuses to mark the plan complete while an actionable finding is pending. |
 
-The two intra-finalize boundaries use the single-invariant `findings-check` verb rather than the composite `capture`: mid-pipeline, the downstream finalize steps have not run yet, so a composite `capture` would short-circuit on `phase_steps_incomplete` before it ever evaluated the blocking-findings invariant — leaving the gate inoperative. `findings-check` evaluates only `pending_findings_blocking_count`, so it cannot short-circuit and the mid-pipeline gate works as intended. The `5-execute → 6-finalize` boundary keeps the composite verify because at phase completion `phase_steps_complete` is satisfiable.
+Both firing sites evaluate the **single** blocking-findings invariant (via `findings-check` or `assert_finalize_findings_clean`) rather than the composite `capture`: mid-finalize the downstream steps have not all run, so a composite `capture` would short-circuit on `phase_steps_incomplete` before it ever reached the blocking-findings invariant — leaving the gate inoperative. The single-invariant path evaluates only `pending_findings_blocking_count`, so it cannot short-circuit.
+
+**The arming condition is a state, not a call.** The blocking-findings raise fires ONLY on a `capture`/`findings-check` carrying `--phase 6-finalize`. Historically no orchestration step issued one — a `phase_handshake capture --phase 6-finalize` was never emitted, and the intra-finalize `findings-check` re-issue this table once claimed was never wired — so the finalize-phase gate was inert fleet-wide: a plan could complete or merge with actionable findings still `pending`, and *"the gate never ran"* was indistinguishable from *"the gate passed"*. The two firing sites above close that: the pre-merge `findings-check` is a call issued at a fixed point in `branch-cleanup`, and the completion boundary asserts the clean STATE unconditionally (armed by *reaching* the boundary), so a missing call is no longer a silent pass.
+
+**The `5-execute → 6-finalize` transition is NOT a blocking-findings firing site.** `manage-status transition --completed 5-execute` inlines `phase_handshake verify --phase 5-execute --strict`, which detects *drift* on the captured `5-execute` row (including drift on the `pending_findings_blocking_count` column) and refuses to advance on drift. It does **not** raise `blocking_findings_present`: that raise fires only at `phase == '6-finalize'`, and the self-review findings the finalize gate exists to catch are filed *during* finalize, after this boundary. The blocking-findings gate therefore lives at the two finalize sites above, not at finalize entry.
 
 Every other capture point (phases `1-init` through `5-execute`, plus finalize sub-steps not listed above) reads the row but does **not** raise — captures persist with the integer count for retrospective analysis. The blocking decision is *strictly* opt-in per the boundary set.
 

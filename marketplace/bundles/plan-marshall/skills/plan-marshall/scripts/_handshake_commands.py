@@ -626,14 +626,14 @@ def cmd_findings_check(args: Any) -> dict[str, Any]:
     blocking finding the underlying invariant raises
     :class:`BlockingFindingsPresent`, which this handler translates into the
     SAME ``{status: error, error: blocking_findings_present, ...}`` payload
-    shape ``cmd_capture`` returns, so the two intra-finalize callers branch on
-    an identical envelope.
+    shape ``cmd_capture`` returns, so the pre-merge ``findings-check`` caller and
+    the composite ``capture`` gate branch on an identical envelope.
 
     **Fails closed on an unevaluable invariant.**
     :func:`_capture_pending_findings_blocking_count` returns ``None`` when a
     per-type query could not run (executor unreachable / partial query
     failure). For a gate verb that is NOT a benign "not applicable" — returning
-    ``status: success`` would let the intra-finalize boundary advance to
+    ``status: success`` would let the merge proceed past the pre-merge gate in
     ``branch-cleanup`` without proof that no blocking findings remain. This
     handler therefore translates ``None`` into a distinct
     ``{status: error, error: query_failed, ...}`` envelope so the caller halts
@@ -666,8 +666,8 @@ def cmd_findings_check(args: Any) -> dict[str, Any]:
     if blocking_count is None:
         # Fail closed: a partial query failure means the blocking-findings
         # invariant could not be evaluated. Returning success here would let the
-        # intra-finalize gate advance without proof that no blocking findings
-        # remain. Surface a distinct query_failed error so the caller halts.
+        # merge proceed past the pre-merge gate without proof that no blocking
+        # findings remain. Surface a distinct query_failed error so the caller halts.
         return {
             'status': 'error',
             'error': 'query_failed',

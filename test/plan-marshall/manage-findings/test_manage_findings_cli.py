@@ -245,6 +245,52 @@ def test_main_qgate_resolve(plan_context, monkeypatch, capsys):
     assert data['resolution'] == 'taken_into_account'
 
 
+def _seed_qgate_with_file(plan_id, phase, title, file_path):
+    """Seed one q-gate finding carrying a file_path via the cmd handler."""
+    return _mod.cmd_qgate_add(
+        Namespace(
+            plan_id=plan_id,
+            phase=phase,
+            source='qgate',
+            type='bug',
+            title=title,
+            detail='d',
+            file_path=file_path,
+            component=None,
+            severity=None,
+            iteration=None,
+            rule=None,
+            raw_input=None,
+            raw_input_max_bytes=_mod.DEFAULT_RAW_INPUT_MAX_BYTES,
+        )
+    )
+
+
+def test_main_qgate_resolve_evidenced_changed_path_shape(plan_context, monkeypatch, capsys):
+    """The verb's value proposition IS the repeatable ``--changed-path`` input
+    shape — its first boundary test drives that exact shape through the CLI entry
+    point. A file in the set is resolved `fixed`; one outside it stays `pending`."""
+    _seed_qgate_with_file('mf-cli-ev', '6-finalize', 'defect at src/hit.py:1', 'src/hit.py')
+    _seed_qgate_with_file('mf-cli-ev', '6-finalize', 'defect at src/miss.py:1', 'src/miss.py')
+
+    code, out = _run_main(
+        monkeypatch,
+        capsys,
+        [
+            'qgate', 'resolve-evidenced', '--plan-id', 'mf-cli-ev', '--phase', '6-finalize',
+            '--changed-path', 'src/hit.py', '--changed-path', 'src/other.py',
+            '--evidence-sha', 'abc123',
+        ],
+    )
+    assert code == 0
+    data = parse_toon(out)
+    assert data['status'] == 'success'
+    resolved_files = {e['file_path'] for e in data['resolved']}
+    left_files = {e['file_path'] for e in data['left_pending']}
+    assert resolved_files == {'src/hit.py'}
+    assert left_files == {'src/miss.py'}
+
+
 def test_main_qgate_clear(plan_context, monkeypatch, capsys):
     """``qgate clear`` removes every pending finding for the phase."""
     _run_main(

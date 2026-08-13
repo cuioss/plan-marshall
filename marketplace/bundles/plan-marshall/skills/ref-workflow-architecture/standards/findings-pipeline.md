@@ -47,12 +47,12 @@ The plan-marshall findings pipeline routes every quality signal — PR review co
 │                          │  pending_findings_           │                   │
 │                          │   blocking_count             │                   │
 │                          │                              │                   │
-│                          │  Guarded boundary:           │                   │
-│                          │   6-finalize entry  +        │                   │
-│                          │   intra-finalize re-issues   │                   │
-│                          │   (automatic-review →        │                   │
-│                          │    branch-cleanup;           │                   │
-│                          │    sonar-roundtrip → next)   │                   │
+│                          │  Guarded boundaries:         │                   │
+│                          │   pre-merge findings-check   │                   │
+│                          │   + completion state assert  │                   │
+│                          │   (branch-cleanup merge;     │                   │
+│                          │    transition / archive      │                   │
+│                          │    complete 6-finalize)      │                   │
 │                          │                              │                   │
 │                          │  Raises BlockingFindings-    │                   │
 │                          │   Present when any           │                   │
@@ -114,7 +114,7 @@ The **`pr-comment-overflow` finding** files when the consumer's 900 s triage bud
 
 The pipeline is structurally enforced: producers can never bypass the store (no inline-JSON batch surfaces remain in LLM-callable scope), consumers can never bypass the per-domain decision-grounding knowledge (every triage decision loads `ext-triage-{domain}`), and boundaries can never be crossed with unresolved blocking findings (the invariant raises `BlockingFindingsPresent`).
 
-The pipeline is the canonical finding store for all plan-marshall phases. The two boundary areas most likely to need wiring in a fresh installation are qgate aggregation and intra-finalize re-capture; see plan `findings-pipeline-blocking-fixes` for tracked follow-up work, and the diagram above for the current wiring state.
+The pipeline is the canonical finding store for all plan-marshall phases. The finalize blocking-finding gate is wired at two sites — the pre-merge `phase_handshake findings-check --phase 6-finalize` in `branch-cleanup`, and the completion-boundary `assert_finalize_findings_clean` state assertion in the lifecycle verbs (see the § "Guarded boundaries" table below and the diagram above); qgate aggregation is the other boundary area a fresh installation checks.
 
 ## Producers
 
@@ -244,11 +244,12 @@ This is **not** a naive "any pending finding blocks" rule: knowledge types are e
 
 | Boundary | How the gate fires |
 |---|---|
-| `5-execute → 6-finalize` | `phase_handshake capture --phase 6-finalize` issued by the Phase Entry Protocol on entry to `6-finalize` |
-| `plan-marshall:automatic-review → branch-cleanup` (intra-finalize) | `automatic-review/SKILL.md` re-issues `phase_handshake capture --phase 6-finalize` between the consumer dispatch loop and `mark-step-done` |
-| `sonar-roundtrip → next` (intra-finalize) | `sonar-roundtrip.md` re-issues `phase_handshake capture --phase 6-finalize` between the consumer dispatch loop and `mark-step-done` |
+| finalize merge (pre-merge) | `phase-6-finalize/standards/branch-cleanup.md` § "Pre-merge blocking-findings store gate" issues `phase_handshake findings-check --phase 6-finalize` before the merge. A pending actionable finding returns `blocking_findings_present` and the merge is blocked (fail-closed on `query_failed`). |
+| finalize completion | `manage-status transition --completed 6-finalize` and a normal-completion `manage-status archive` call `_invariants.assert_finalize_findings_clean` — a STATE assertion, armed by reaching the completion boundary — which refuses to mark the plan complete while an actionable finding is pending. |
 
 Every other phase capture reads the `pending_findings_blocking_count` row passively (so retrospective analysis sees the queue at every boundary) but does NOT raise.
+
+**The gate is armed by a state, not a call.** The raise fires only on a `capture` / `findings-check` carrying `--phase 6-finalize`. No orchestration step ever issued one — the `phase_handshake capture --phase 6-finalize` this table once attributed to the Phase Entry Protocol was never emitted, and the intra-finalize re-issues attributed to `automatic-review` / `sonar-roundtrip` were never wired — so the finalize gate was inert fleet-wide: a plan could complete or merge with actionable findings still `pending`. The two firing sites above (a fixed pre-merge `findings-check` call, and an unconditional completion-boundary state assertion) close that gap. The `5-execute → 6-finalize` transition is **not** a firing site — it inlines `phase_handshake verify --phase 5-execute --strict`, which detects drift on the captured row but does not raise `blocking_findings_present` (that raise fires only at `phase == '6-finalize'`, and the self-review findings the gate catches are filed *during* finalize, after this boundary).
 
 ### qgate aggregation contract
 

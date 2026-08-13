@@ -660,6 +660,25 @@ Then proceed to **Merge PR (if not yet merged)** below, where the **Merge routin
 
 Every mechanism that can authorize advancing a tree past a merge gate is enumerated in § "Merge-Authorization Roster" above, and this barrier is the single site at which they are checked. The `automatic-review` force-done hatch is recorded there as ALREADY HEAD-bound — via that step's own `head_dependent: true` declaration — which is why it needs no grant of its own here.
 
+#### Pre-merge blocking-findings store gate
+
+Before the provider re-fetch below, assert the finding **store** is clean. This is the store-side gate line 655 names — the read-only single-invariant `phase_handshake findings-check`, evaluated over every actionable finding type at the finalize phase (the hardcoded `_ACTIONABLE_FINDING_TYPES` set in `_invariants.py` — see [`../../plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md) § `pending_findings_blocking_count` resolution; not restated here so the doc cannot drift from the authoritative set). It re-reads the store; the provider re-fetch below re-reads the provider for comments never fetched. The two are complementary and both run before the merge.
+
+Wiring this call HERE is deliberate: the blocking-findings gate raises only when a `findings-check` / `capture` carrying `--phase 6-finalize` is issued, and no finalize step issued one, so the store-side gate had been inert on the merge path (a plan could merge with actionable findings still `pending`). This call is that missing issuance.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake \
+  findings-check --plan-id {plan_id} --phase 6-finalize
+```
+
+`findings-check` writes NO handshake row (see [`../../plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md) § `findings-check`) and, like the other finalize gates, carries its verdict in the TOON `status` field while still exiting 0 — so **parse `status`, never the exit code**:
+
+- `status: success` with `blocking_count: 0` → the store is clean; proceed to the barrier knob read below.
+- `status: error, error: blocking_findings_present` (carrying `blocking_count`, `blocking_types`, `per_type`) → an actionable finding is still `pending`. The merge is BLOCKED. Route the pending finding(s) through the same `verification-feedback` triage / loop-back the wait-region findings use, then re-enter finalize; do NOT merge.
+- `status: error, error: query_failed` → the count could not be evaluated (executor unreachable / partial query failure). The gate **fails closed**: take the § "UNKNOWN disposition — blocked, and never authorizable" below. A merge NEVER proceeds on an unevaluable store gate.
+
+This gate is the fail-closed pre-merge complement to the lifecycle completion boundary's `assert_finalize_findings_clean` state assertion (`manage-status transition --completed 6-finalize` / `archive`): the completion boundary catches a plan that reached completion without this gate having run, and this gate catches the pending findings BEFORE the merge rather than after.
+
 #### Read the barrier knob and the bot participation lists
 
 Read `pre_merge_comment_barrier` off the `default:branch-cleanup` step's param object — the same one-stop `step-params get` `params` object resolved in the **Conflict-Severity Classifier** section above (re-issue the call if the value was not retained):
