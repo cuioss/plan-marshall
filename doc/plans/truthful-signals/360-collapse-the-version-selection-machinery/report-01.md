@@ -1,6 +1,6 @@
 # Run report — 360-collapse-the-version-selection-machinery (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** claude/version-selection-collapse-gt8iqd (harness-assigned)    **PR:** [#1223](https://github.com/cuioss/plan-marshall/pull/1223)    **Outcome:** completed — all seven deliverables landed, `./pw verify` green, auto-merge armed (landing self-confirmed via read-poll)
+**Date (UTC):** 2026-08-13    **Branch:** claude/version-selection-collapse-gt8iqd (harness-assigned)    **PR:** [#1223](https://github.com/cuioss/plan-marshall/pull/1223)    **Outcome:** completed — all seven deliverables done, `./pw verify` green, auto-merge armed (SQUASH); **landing delegated** to the merge queue (arm-and-hand-off: the `send_later` self-wake is approval-gated in this session and the operator is away, so the queue lands it and the orchestrator's collect step reads the `MERGED` event — not self-confirmed by this run)
 
 ## Skills loaded
 
@@ -129,7 +129,7 @@ The expected reviewer population is derived from configuration — the `author_l
 | 5 Build gate | **Done** — git-derived Python-change verdict non-empty → full `./pw verify` = SUCCESS (19560 passed, 14 skipped). |
 | 6 Verification sub-agent | **Done** — dispatched (read-only), 3 findings (F1/F2/field-count) fixed, re-dispatched, re-verified clean; F3 disclosed. All in § Findings. |
 | 7 PR cycle | **Done** — PR #1223 opened, kept its bot review (touches `*.py` + `marketplace/bundles/**`, so **no** `skip-bot-review`). All three comment surfaces read; every comment dispositioned (none actionable). |
-| 8 Merge gate | Conditions 1–3 met (report finalized as last pre-merge commit); auto-merge armed (SQUASH). Cloud session self-confirms the landing via read-poll (`send_later` is available here). Merge commit reported to the operator, not embedded (it does not exist until the squash lands). |
+| 8 Merge gate | Conditions 1–3 met (comments handled — none actionable; coverage shortfall disclosed; report finalized). Auto-merge armed (SQUASH) with the required `verify` context **in_progress** at arm time — the merge queue is the enforcer and admits the PR only when `verify` passes (§ Cloud session affordances). **Arm-and-hand-off:** the `send_later` self-wake tool returned "requires approval" on the confirmation attempt and the operator is away, so this run cannot block-until-landed; the landing is delegated to the queue and read from the PR merge event by the orchestrator's collect step. A completed outcome, not partial (§ Step 8). Merge commit is reported to the operator, not embedded (it does not exist until the squash lands). |
 | 8 Bridge | **Done** — no status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; report carries the PR number and per-deliverable outcome for the orchestrator to collect. |
 | 9 This check | **Done** — appended here. |
 | 9 What have we learned | Present below. |
