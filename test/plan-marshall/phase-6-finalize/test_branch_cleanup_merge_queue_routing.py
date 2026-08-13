@@ -947,9 +947,12 @@ def test_every_use_merge_queue_consumption_site_is_observable():
     """(4a) Each ``use_merge_queue`` read carries a mandatory observability line.
 
     The two sides are counted independently — reads on one side, observability
-    markers on the other — and compared. Adding a fifth consumption site without
-    its decision-log line fails here; so does deleting an observability block
-    from an existing site.
+    markers on the other — and compared. Adding a consumption site without its
+    decision-log line fails here; so does deleting an observability block from an
+    existing site. Neither side is pinned to a cardinality literal, deliberately:
+    a hardcoded count would have to be hand-edited every time a site is added,
+    and an equality between two independently-derived counts catches the defect
+    without one.
     """
     text = _read(_BRANCH_CLEANUP)
     reads = _USE_MERGE_QUEUE_READ_RE.findall(text)

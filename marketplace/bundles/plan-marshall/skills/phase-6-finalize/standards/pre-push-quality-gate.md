@@ -315,7 +315,7 @@ earn (`test-compile` and `module-tests` still ran on this path, so "tests green"
 Size it the same way as the module-tests variant — against its worst-case placeholder expansion, not
 its literal form — and it stays inside the same `display_detail` ceiling.
 
-The persisted `head_at_completion` field is consumed by phase-6-finalize Step 3's resumable re-entry check: when the worktree HEAD has advanced past `{sha}` (typically because `automated-review` or `sonar-roundtrip` opened a loop-back fix-task that produced a new commit), the dispatcher re-fires this gate against the newer HEAD. See § "Verdict-input surface — deliberately undeclared" below for why the verdict-currency classifier never narrows that re-fire for THIS gate.
+The persisted `head_at_completion` field is consumed by phase-6-finalize Step 3's resumable re-entry check: when the worktree HEAD has advanced past `{sha}` (typically because `automated-review` or `sonar-roundtrip` opened a loop-back fix-task that produced a new commit), the dispatcher re-fires this gate against the newer HEAD. See § "Verdict-input surface — deliberately undeclared" above for why the verdict-currency classifier never narrows that re-fire for THIS gate.
 
 **Branch B — at least one bundle's quality-gate failed OR the whole-tree quality-gate failed OR test-compile failed OR the module-tests gate failed**:
 

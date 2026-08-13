@@ -2566,8 +2566,15 @@ def summarize_refires(
     ``execution_log[]`` is an ordered append log with one row per ``record-step``
     invocation, so a step that fired seven times carries seven rows. The re-fire
     count is therefore ``max(0, firings - 1)`` per step: the first ``executed``
-    row is the firing the pipeline owes, and every later one is a re-fire driven
-    by the HEAD-advance re-entry check.
+    row is the firing the pipeline owes, and every later one is an EXTRA firing.
+
+    ``refires`` counts extra firings, NOT re-stales, and this function does not
+    separate the causes. At least four produce a second ``executed`` row: the
+    dispatcher's HEAD-advance re-entry check re-firing a re-staled verdict, a
+    ``loop_back`` record re-firing the step on the next entry, a retry after a
+    ``failed`` record, and the ``push`` barrier's parity-driven re-fire plus its
+    explicit post-PR re-invocation. Attributing the whole count to one cause is
+    the confident-but-untrue framing this verb exists to replace.
 
     ``skipped`` rows are reported alongside but never counted as firings — a
     skip is precisely the outcome a preserved verdict produces, so folding it in

@@ -429,9 +429,14 @@ def test_real_resolver_reads_a_declared_surface_off_the_live_population():
 
     Every ``classify_step`` test above patches ``resolve_verdict_inputs``, so none
     of them exercises the discovery lookup or the ``canonicalize_step_key``
-    matching that bridges discovery's ``default:``-prefixed name to the bare key
-    the dispatcher holds. A rename or an alias change there would break the
-    feature silently while every patched test stayed green.
+    matching that bridges discovery's name to the key the dispatcher holds. A
+    rename or an alias change there would break the feature silently while every
+    patched test stayed green.
+
+    This test covers whichever prefix forms the live declaring population happens
+    to carry; the sibling ``push`` test below covers the ``default:``-prefixed
+    bridge unconditionally, since discovery names that step ``default:push`` while
+    the dispatcher holds the bare key.
     """
     declared = _declared_surfaces()
     assert declared, 'no finalize step declares verdict_inputs'

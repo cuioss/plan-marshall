@@ -67,6 +67,8 @@ The `use_merge_queue` opt-in (see the `default:branch-cleanup` param table above
 * *GitHub* — the platform merge queue, configured as a `merge_queue` rule in a repository ruleset on the default branch. `pr merge-queue` engages it via `gh pr merge --auto`.
 * *GitLab* — a *merge train* (a Premium/Ultimate-tier feature enabled per-project). `pr merge-queue` performs a real merge-train enqueue via `POST /projects/:id/merge_trains/merge_requests/:iid`.
 
+Enabling it also changes what finalize does *before* the merge: the *local pre-merge rebase and force-push are skipped entirely*, and the pre-merge CI wait is downgraded to a single non-blocking snapshot. Both are redundant once a queue is in use — the platform rebases the branch onto the latest base, re-tests it, and refuses a still-red result — and performing them locally is not free. A rebase that actually replays rewrites every commit SHA on the branch, which invalidates every quality verdict finalize already recorded against the pre-rebase HEAD and makes the pipeline re-run those gates from scratch. With the queue enabled, finalize takes the branch as it stands, gates on a cheap CI snapshot, and enqueues.
+
 ==== Provisioning via `/marshall-steward`
 
 Rather than hand-configuring the platform, use the steward's *Merge Queue* provisioning step (first-run wizard Step 13.5, or Configuration → Merge Queue in the maintenance menu). It follows a *probe → ask → configure-or-refuse* pattern and is idempotent (a re-run against an already-configured project surfaces nothing and mutates nothing):

@@ -13,6 +13,9 @@ presets: []
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 mutates_source: true
 head_dependent: true
+verdict_inputs:
+  - '.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py'
+  - 'test/plan-marshall/audit-archived-plan-retrospectives/test_audit.py'
 ---
 
 # Finalize Step — Era-Stamp Fill (project-local)
@@ -61,6 +64,29 @@ The declaration IS the membership marker the dispatcher's re-entry check reads (
 § "Implementor Frontmatter"). Re-firing is safe and cheap: the fill is a clean no-op when no sentinel
 is present. Capture `git rev-parse HEAD` immediately before the terminal `mark-step-done` call and
 forward it via `--head-at-completion {sha}` on the `done` outcome (Step 4).
+
+### Verdict-input surface
+
+The paired `verdict_inputs` declaration names that surface **by full path, both files, and nothing
+else**:
+
+- `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`
+- `test/plan-marshall/audit-archived-plan-retrospectives/test_audit.py`
+
+It is a superset by construction rather than by survey, which is what makes it admissible where the
+other head-dependent gates' surfaces are not (see
+[verdict-currency.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/verdict-currency.md)
+§ "The classification"). The verdict this step records is a *property of exactly those two files* —
+that neither carries an unresolved `PR-PENDING` token — and the step reads nothing else to compute
+it: Step 3 rewrites precisely this pair in lock-step, and the commit at Step 4 stages precisely this
+pair. A HEAD advance touching neither file therefore cannot introduce or restore a sentinel in them,
+so the recorded verdict still holds and the dispatcher preserves it instead of re-firing. Every other
+advance, and every uncertainty, re-fires as before.
+
+The globs are exact paths rather than patterns on purpose. A pattern such as `*audit.py` would also
+match `marketplace/bundles/plan-marshall/skills/manage-build-server/scripts/_marshalld_audit.py`,
+which this step neither reads nor writes — widening the surface costs unnecessary re-fires, and a
+surface derived from the step's own two staged paths cannot drift from them silently.
 
 ## Ordering
 

@@ -94,8 +94,11 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:verdict_currency 
 ```
 
 It returns `verdict: preserved` when the **tree difference** between the recorded SHA
-and the live HEAD touches none of the declared paths, and `verdict: invalidated`
-otherwise. The dispatcher consumes it at the one branch where the SHAs already differ.
+and the live HEAD touches none of the declared paths — and on one further path, equal
+SHAs, which needs no declaration; it returns `verdict: invalidated` on everything else,
+including every uncertainty. The exact reachability is stated once under § "Fail-closed,
+structurally" below and not restated here. The dispatcher consumes it at the one branch
+where the SHAs already differ.
 
 **Why the rule is a purity argument, not a heuristic.** A step's verdict is a function
 of the content of its declared inputs. When that content is byte-identical between the
@@ -126,14 +129,27 @@ guidance.
 
 **A declaration is admissible only when it is a SUPERSET of what the step reads — and some
 steps have no such subset.** The bar is not "name the paths the step obviously cares about";
-it is "name a set the step's verdict provably cannot depend on the complement of". A step
-whose body executes something open-ended — this repository's own pytest suite is the clearest
-case, since its tests assert over the real `doc/` and `.github/` trees and the root agentfile
-— has no proper subset of the tree that satisfies the bar, and MUST declare nothing.
-Declaring a whole-tree surface there would be an inert lever wearing the shape of a real one.
-`default:pre-push-quality-gate` is exactly that case, and its refusal is recorded at
-[`pre-push-quality-gate.md`](pre-push-quality-gate.md) § "Verdict-input surface —
-deliberately undeclared" rather than left as an unexplained absence.
+it is "name a set the step's verdict provably cannot depend on the complement of". The
+distinction that decides it is what the step's body *does*:
+
+- **A verdict that is a property of NAMED FILES is trivially declarable**, and its surface is a
+  superset by construction rather than by survey. `project:finalize-step-era-stamp-fill` is the
+  worked positive case: it asserts that two files — named by full path in its own doc, and the
+  same pair it stages — carry no unresolved sentinel, and it reads nothing else to decide that.
+- **A verdict produced by a body that executes something OPEN-ENDED over the repository has no
+  sound subset at all.** Two shapes recur, and both are disqualifying: a test suite that asserts
+  against the real tree (this repository's own pytest reads `doc/**`, `.github/**` and the root
+  agentfile), and a scan whose inputs are discovered rather than fixed — a link-target resolver
+  anchored at the repository root can be turned red by renaming *any* file, so its input set is
+  underivable ahead of time even though it is perfectly derivable at run time. A whole-tree
+  declaration in either case would be an inert lever wearing the shape of a real one.
+
+`default:pre-push-quality-gate` (first shape) and `project:finalize-step-plugin-doctor` (both
+shapes) are the two worked negative cases, and each refusal is recorded in that step's own doc —
+[`pre-push-quality-gate.md`](pre-push-quality-gate.md) § "Verdict-input surface — deliberately
+undeclared" and the corresponding section in `finalize-step-plugin-doctor` — rather than left as
+an unexplained absence. The vocabulary is deliberately static globs; admitting a *derived* surface
+would make the second shape declarable, and is not attempted here.
 
 **A preserved verdict keeps its original anchor.** The dispatcher does NOT re-stamp
 `head_at_completion` to the live HEAD on a preserved skip. Re-stamping would make the
