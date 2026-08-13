@@ -578,58 +578,46 @@ The glob patterns above resolve a script path across a single *unknown* version
 segment. `select_live_version_dir` (in
 `script-shared/scripts/marketplace_bundles.py`) is the version-*aware* counterpart
 used inside scripts that must pick ONE version dir when several coexist in the
-plugin cache. It is the **single function that decides liveness and ordering**:
-every call site — `find_bundles`, `resolve_bundle_path`, `collect_script_dirs`, and
-the executor preflight's own version-dir helpers — supplies only its own
-*eligibility* predicate (manifest present / requested subpath present / `skills/`
-present) and delegates the decision. `resolve_bundle_path` therefore contributes
-only "this version dir carries the requested subpath", then falls back to the
-non-versioned (marketplace) layout when no version dir qualifies.
+plugin cache. It is the **single function that decides version-dir ordering**:
+every call site — `find_bundles`, `resolve_bundle_path`, and `collect_script_dirs`
+— supplies only its own *eligibility* predicate (manifest present / requested
+subpath present / `skills/` present) and delegates the decision. `resolve_bundle_path`
+therefore contributes only "this version dir carries the requested subpath", then
+falls back to the non-versioned (marketplace) layout when no version dir qualifies.
 
-The selector's policy: `_version_sort_key` remains the single ordering key
-underneath it (parsing each version-dir name into a comparable integer tuple,
-`0.1.1069` → `(0, 1, 1069)`); a `.orphaned_at` mark disqualifies a candidate
-**except** on the retention-pinned newest-on-disk dir, whose mark is ignored
-outright; and when every eligible dir is marked, the newest eligible dir is
-returned with a diagnosable stderr line.
+The selector's policy is **numerically-newest-eligible wins**: `_version_sort_key`
+parses each version-dir name into a comparable integer tuple (`0.1.1069` →
+`(0, 1, 1069)`), and among the dirs satisfying the caller's eligibility predicate
+the highest-sorting one is returned. When no dir is eligible the result is `None` —
+a loud failure the caller must handle, never a silent resolution to the wrong
+version.
 
-**Only the marker's existence is consulted — never its content.** Every clause of
-that policy turns on whether `.orphaned_at` is PRESENT; nothing reads, parses, or
-compares what is inside it. This is a binding invariant, not an incidental property
-of the current implementation, because the field has a foreign co-producer: Claude
-Code's own plugin GC writes the same filename with a raw epoch-ms payload, while our
-writer (`generate_executor._mark_superseded_version_dirs`) writes ISO-8601 UTC. Two
-producers write one field in two encodings, so a content-dependent rule would bind
-the selector to a format this repository does not own and cannot version. The marker
-is a boolean flag whose payload is deliberately opaque, and the encoding split is
-inert precisely because of that.
+**The plugin-cache `.orphaned_at` marker is not consulted.** The field has a
+foreign co-producer — Claude Code's own plugin GC writes the same filename on its
+own schedule — so it is a variable this repository neither owns nor can version, and
+no resolver-time decision turns on it. Newest-wins needs no currency signal from the
+marker: a sync only ever adds a *newer* version dir, so the newest already is the
+current one, and pruning the superseded dirs is the `marshall-steward`
+`cache_retention sweep`'s union-keep job (see
+[`manage-config` data-model.md](../manage-config/standards/data-model.md) §
+"Plugin-cache retention semantics"), not a resolver's.
 
-**Two sanctioned existence-read sites implement the invariant, not one.**
-`marketplace_bundles._partition_version_dirs` is the selector's read site, and the
-`.orphaned_at` predicate inside `generate_executor._CLAUDE_RESOLVER_TEMPLATE` is the
-mirrored read site substituted verbatim into the generated `.plan/execute-script.py`
-(the runtime resolver described further down this section). Both read existence only,
-and both state the invariant in their own docstring. They are not a self-synchronising
-pair: the template is a deliberate policy duplicate whose docstring requires that any
-change to the selector's policy be mirrored into it, so this prose, the selector, and
-the template are three parties a policy change has to be carried to explicitly.
-
-Selecting the live newest — rather than the lexically-first `iterdir` result — is
-load-bearing: a stale older version dir (e.g. `1.0.0` alongside `1.0.10`) would
-otherwise shadow the current one on the cross-skill import path. Routing every leg
-through one selector additionally closes the *predicate-divergence* class, where a
-marker-aware leg and a marker-blind leg resolved to different version dirs and the
-generated executor ended up internally version-split; the executor-staleness check
-surfaces the on-disk condition via `_detect_multi_version_pollution`, and
-`generate_executor`'s Guard 4 refuses at write time to emit an executor whose paths
-span more than one version dir per bundle.
+Selecting the newest eligible dir — rather than the lexically-first `iterdir`
+result — is load-bearing: a stale older version dir (e.g. `1.0.0` alongside
+`1.0.10`) would otherwise shadow the current one on the cross-skill import path.
+Routing every leg through the one selector makes the mappings leg and the
+import-path legs agree by construction, so no on-disk state can produce an
+internally version-split executor; `generate_executor`'s Guard 4 additionally
+refuses at write time to emit an executor whose paths span more than one version
+dir per bundle.
 
 The executor's own embedded runtime resolver (`_resolve_notation_by_target`, the
 `SCRIPTS`-miss fallback substituted into the generated file) carries a deliberate,
-docstring-marked **duplicate** of that policy: the generated executor is
-bootstrap-free and must resolve notations before any marketplace module is
+docstring-marked **duplicate** of that newest-wins policy: the generated executor
+is bootstrap-free and must resolve notations before any marketplace module is
 importable, so it cannot import the selector. The duplicate is minimal, consumes
-the same on-disk input set, and is pinned equivalent by test.
+the same on-disk input set (also ignoring the marker), and is pinned equivalent by
+test.
 
 > **Worked example — pre-merge source-edit contract.** Documenting this version-aware
 > resolution in its governing skill is a worked example of the

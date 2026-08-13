@@ -22,7 +22,8 @@ def _create_bundle(base: Path, name: str, version: str | None = None, orphaned: 
     """Helper to create a bundle directory with plugin.json.
 
     When ``orphaned`` is set, a ``.orphaned_at`` marker file is placed in the
-    bundle directory so cache-scanning helpers skip it.
+    bundle directory — the selector ignores it, so these fixtures prove the
+    marker no longer changes which version dir is chosen.
     """
     if version:
         bundle_dir = base / name / version
@@ -53,9 +54,9 @@ def _create_full_version_dir(base: Path, name: str, version: str, orphaned: bool
 def _bare_version_dir(base: Path, name: str, version: str) -> Path:
     """Create a version dir that satisfies NO leg's eligibility predicate.
 
-    Used to make the retention-pinned (newest-on-disk) dir ineligible, which is
-    the only state in which a mark on an older dir is still honoured — and the
-    only state in which the all-marked degraded fallback is reachable.
+    Used to make the newest-on-disk dir ineligible, so selection must fall
+    through to the newest ELIGIBLE (lower-versioned) dir — the shape that proves
+    eligibility, not the marker, drives the choice.
     """
     version_dir = base / name / version
     version_dir.mkdir(parents=True)
@@ -88,82 +89,36 @@ class TestFindBundles:
         new = _create_bundle(tmp_path, 'bundle-a', '1.0.10')
         assert find_bundles(tmp_path) == [new]
 
-    def test_mark_on_the_retention_pinned_newest_does_not_suppress_it(self, tmp_path, capsys):
-        # The newest-on-disk dir is retention-pinned, so its .orphaned_at marker is
-        # ignored outright: a mark is written once and nothing clears it when
-        # pruning later promotes that dir to newest, so honouring it there would
-        # let a stale marker suppress the current version.
+    def test_mark_on_the_newest_dir_is_ignored(self, tmp_path, capsys):
+        # The .orphaned_at marker is never consulted: the newest eligible dir is
+        # selected whether or not it carries a mark, and no stderr is emitted.
         _create_bundle(tmp_path, 'bundle-a', '1.0.0')
-        pinned = _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
+        newest = _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
 
-        assert find_bundles(tmp_path) == [pinned]
-        assert capsys.readouterr().err == '', 'a resolvable live dir must not emit a degradation log'
+        assert find_bundles(tmp_path) == [newest]
+        assert capsys.readouterr().err == '', 'marker-free selection must emit no stderr'
 
-    def test_mark_on_a_non_pinned_dir_is_honoured(self, tmp_path):
-        # A mark still disqualifies any dir that is NOT the retention pin. The
-        # newest-on-disk dir here carries no plugin.json, so it is ineligible and
-        # the marked 1.0.10 falls through to the live 1.0.0.
-        live = _create_bundle(tmp_path, 'bundle-a', '1.0.0')
-        _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
-        _bare_version_dir(tmp_path, 'bundle-a', '1.0.20')
-
-        assert find_bundles(tmp_path) == [live]
-
-    def test_all_eligible_versions_orphaned_degraded_fallback(self, tmp_path, capsys):
-        # Tier 3: every ELIGIBLE version dir is orphaned (reachable only when the
-        # retention pin itself is ineligible — here 1.0.20 carries no plugin.json).
-        # The degraded fallback returns the newest eligible dir regardless of the
-        # marker, so the bundle is never contribute-zero, and a stderr log line
-        # names the bundle.
+    def test_all_marked_still_selects_newest_eligible_without_warning(self, tmp_path, capsys):
+        # Every eligible dir marked (the observed saturated state) resolves to the
+        # newest eligible dir with NO degraded/saturation stderr — the marker is
+        # simply ignored, so there is no saturation state to warn about. The bare
+        # 1.0.20 dir makes the newest-on-disk ineligible, the only shape in which
+        # the retired degraded fallback used to fire.
         _create_bundle(tmp_path, 'bundle-a', '1.0.0', orphaned=True)
         newest_eligible = _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
         _bare_version_dir(tmp_path, 'bundle-a', '1.0.20')
 
         assert find_bundles(tmp_path) == [newest_eligible]
-        stderr = capsys.readouterr().err
-        assert 'DEGRADED' in stderr
-        assert 'bundle-a' in stderr
+        assert capsys.readouterr().err == '', 'marker-free selection must never emit a degraded warning'
 
-    def test_degraded_fallback_log_names_the_saturation_condition(self, tmp_path, capsys):
-        # ADR-009: the degraded state must be diagnosable, not routine noise. The
-        # log names the saturation condition (how many eligible dirs are marked,
-        # how many are live) and the selected fallback, so a permanently-degraded
-        # steady state reads as a defect.
-        _create_bundle(tmp_path, 'bundle-a', '1.0.0', orphaned=True)
-        _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
-        _bare_version_dir(tmp_path, 'bundle-a', '1.0.20')
-
-        find_bundles(tmp_path)
-        stderr = capsys.readouterr().err
-
-        assert 'saturation' in stderr
-        assert '.orphaned_at' in stderr
-        assert 'all 2 eligible version dir(s)' in stderr
-        assert '0 are live' in stderr
-        assert '1.0.10' in stderr
-
-    def test_degraded_fallback_log_names_its_remedy(self, tmp_path, capsys):
-        # The log points at the retention verb that clears the saturation, so the
-        # operator is not left to infer the remedy.
-        _create_bundle(tmp_path, 'bundle-a', '1.0.0', orphaned=True)
-        _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
-        _bare_version_dir(tmp_path, 'bundle-a', '1.0.20')
-
-        find_bundles(tmp_path)
-        stderr = capsys.readouterr().err
-
-        assert 'cache-retention-sweep' in stderr
-        assert 'plan-marshall:marshall-steward:cache_retention sweep' in stderr
-
-    def test_highest_version_wins_is_unchanged_by_the_diagnosable_log(self, tmp_path, capsys):
-        # Highest-version-wins resolution must be preserved exactly: an unmarked
-        # newest dir is selected and emits no degradation log. Making the
-        # saturation log diagnosable changed the message, never the precedence.
+    def test_highest_version_wins_emits_no_stderr(self, tmp_path, capsys):
+        # Highest-version-wins resolution: an unmarked newest dir is selected and
+        # nothing is emitted to stderr.
         _create_bundle(tmp_path, 'bundle-a', '1.0.0')
         newest = _create_bundle(tmp_path, 'bundle-a', '1.0.10')
 
         assert find_bundles(tmp_path) == [newest]
-        assert capsys.readouterr().err == '', 'a resolvable live dir must not emit a degradation log'
+        assert capsys.readouterr().err == '', 'a resolvable dir must not emit any stderr'
 
     def test_non_versioned_bundle_starting_with_digits(self, tmp_path):
         # A non-versioned bundle whose name starts with digits (e.g. '1.0-my-bundle')
@@ -175,38 +130,35 @@ class TestFindBundles:
 
 
 class TestSelectLiveVersionDir:
-    """Direct coverage of the one function that decides liveness and ordering."""
+    """Direct coverage of the one function that decides version-dir ordering."""
 
     @staticmethod
     def _eligible(version_dir: Path) -> bool:
         return (version_dir / '.claude-plugin' / 'plugin.json').is_file()
 
-    def test_tier_1_none_marked_selects_newest(self, tmp_path):
+    def test_none_marked_selects_newest(self, tmp_path):
         _create_bundle(tmp_path, 'bundle-a', '1.0.0')
         newest = _create_bundle(tmp_path, 'bundle-a', '1.0.10')
 
         assert select_live_version_dir(tmp_path / 'bundle-a', self._eligible) == newest
 
-    def test_tier_2_marked_non_pinned_falls_through_to_an_older_live_dir(self, tmp_path):
-        live = _create_bundle(tmp_path, 'bundle-a', '1.0.0')
-        _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
-        _bare_version_dir(tmp_path, 'bundle-a', '1.0.20')
-
-        assert select_live_version_dir(tmp_path / 'bundle-a', self._eligible) == live
-
-    def test_tier_3_all_eligible_marked_returns_newest_eligible(self, tmp_path, capsys):
+    def test_all_marked_selects_newest_eligible_without_warning(self, tmp_path, capsys):
+        # The marker is ignored: every eligible dir marked still resolves to the
+        # newest eligible one, with no degraded/saturation stderr. The bare 1.0.20
+        # makes the newest-on-disk ineligible — the only shape the retired
+        # degraded fallback used to fire in.
         _create_bundle(tmp_path, 'bundle-a', '1.0.0', orphaned=True)
         newest_eligible = _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
         _bare_version_dir(tmp_path, 'bundle-a', '1.0.20')
 
         assert select_live_version_dir(tmp_path / 'bundle-a', self._eligible) == newest_eligible
-        assert 'DEGRADED' in capsys.readouterr().err
+        assert capsys.readouterr().err == ''
 
-    def test_mark_on_the_retention_pin_is_ignored(self, tmp_path, capsys):
+    def test_mark_on_the_newest_dir_is_ignored(self, tmp_path, capsys):
         _create_bundle(tmp_path, 'bundle-a', '1.0.0')
-        pinned = _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
+        newest = _create_bundle(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
 
-        assert select_live_version_dir(tmp_path / 'bundle-a', self._eligible) == pinned
+        assert select_live_version_dir(tmp_path / 'bundle-a', self._eligible) == newest
         assert capsys.readouterr().err == ''
 
     def test_no_eligible_candidate_returns_none(self, tmp_path):
@@ -219,11 +171,12 @@ class TestSelectLiveVersionDir:
 
 
 class TestLegAgreement:
-    """All three legs must resolve to the SAME version dir in every marker state.
+    """All three legs must resolve to the SAME version dir.
 
-    Predicate divergence between the marker-aware and marker-blind legs is what
-    produced an internally version-split executor; one selector makes the legs
-    agree by construction, and these cases pin that agreement.
+    A single selector (newest-eligible wins) makes find_bundles,
+    resolve_bundle_path and collect_script_dirs agree by construction; these
+    cases pin that agreement, including when a foreign ``.orphaned_at`` mark is
+    present — it is ignored identically by every leg.
     """
 
     @staticmethod
@@ -244,7 +197,7 @@ class TestLegAgreement:
         assert self._versions(tmp_path) == ('1.0.10', '1.0.10', '1.0.10')
 
     def test_newest_marked(self, tmp_path):
-        # The marked newest dir is the retention pin, so every leg keeps it.
+        # The mark on the newest dir is ignored, so every leg keeps it.
         _create_full_version_dir(tmp_path, 'bundle-a', '1.0.0')
         _create_full_version_dir(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
 
@@ -256,14 +209,16 @@ class TestLegAgreement:
 
         assert self._versions(tmp_path) == ('1.0.10', '1.0.10', '1.0.10')
 
-    def test_older_marked_with_an_ineligible_pin(self, tmp_path):
-        # The pin (1.0.20) satisfies no leg's eligibility predicate, so the mark on
-        # 1.0.10 is honoured and every leg falls through to 1.0.0 together.
+    def test_ineligible_newest_falls_through_to_newest_eligible(self, tmp_path):
+        # The newest-on-disk 1.0.20 satisfies no leg's eligibility predicate, so
+        # every leg selects the newest ELIGIBLE dir — 1.0.10 — and its
+        # .orphaned_at mark is ignored (eligibility, not the marker, drives the
+        # choice).
         _create_full_version_dir(tmp_path, 'bundle-a', '1.0.0')
         _create_full_version_dir(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
         _bare_version_dir(tmp_path, 'bundle-a', '1.0.20')
 
-        assert self._versions(tmp_path) == ('1.0.0', '1.0.0', '1.0.0')
+        assert self._versions(tmp_path) == ('1.0.10', '1.0.10', '1.0.10')
 
 
 class TestExtractBundleName:
@@ -314,28 +269,22 @@ class TestResolveBundlePath:
         result = resolve_bundle_path(tmp_path, 'plan-marshall', 'skills/foo/bar.py')
         assert result == new
 
-    def test_mark_on_the_retention_pinned_newest_does_not_suppress_it(self, tmp_path):
-        # Marker-aware peer of TestFindBundles' case: the newest dir carrying the
-        # subpath is the retention pin, so its mark is ignored.
+    def test_mark_on_the_newest_dir_carrying_the_subpath_is_ignored(self, tmp_path):
+        # The newest dir carrying the subpath is selected regardless of a mark.
         _create_full_version_dir(tmp_path, 'bundle-a', '1.0.0')
-        pinned = _create_full_version_dir(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
+        newest = _create_full_version_dir(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
 
-        assert resolve_bundle_path(tmp_path, 'bundle-a', SUBPATH) == pinned / SUBPATH
+        assert resolve_bundle_path(tmp_path, 'bundle-a', SUBPATH) == newest / SUBPATH
 
-    def test_mark_on_a_non_pinned_dir_is_honoured(self, tmp_path):
-        live = _create_full_version_dir(tmp_path, 'bundle-a', '1.0.0')
-        _create_full_version_dir(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
-        _bare_version_dir(tmp_path, 'bundle-a', '1.0.20')
-
-        assert resolve_bundle_path(tmp_path, 'bundle-a', SUBPATH) == live / SUBPATH
-
-    def test_all_eligible_marked_falls_back_to_newest_carrying_the_subpath(self, tmp_path, capsys):
+    def test_all_eligible_marked_resolves_to_newest_carrying_the_subpath(self, tmp_path, capsys):
+        # Marker ignored: even with every eligible dir marked, the newest dir
+        # carrying the subpath resolves, with no degraded stderr.
         _create_full_version_dir(tmp_path, 'bundle-a', '1.0.0', orphaned=True)
         newest_eligible = _create_full_version_dir(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
         _bare_version_dir(tmp_path, 'bundle-a', '1.0.20')
 
         assert resolve_bundle_path(tmp_path, 'bundle-a', SUBPATH) == newest_eligible / SUBPATH
-        assert 'DEGRADED' in capsys.readouterr().err
+        assert capsys.readouterr().err == ''
 
 
 class TestCollectScriptDirs:
@@ -400,33 +349,25 @@ class TestCollectScriptDirs:
         assert str(new_sub) in result
         assert str(old_sub) not in result
 
-    def test_mark_on_the_retention_pinned_newest_does_not_suppress_it(self, tmp_path):
-        # Marker-aware peer of TestFindBundles' case: the newest dir carrying a
-        # skills/ tree is the retention pin, so its mark is ignored.
+    def test_mark_on_the_newest_dir_with_a_skills_tree_is_ignored(self, tmp_path):
+        # The newest dir carrying a skills/ tree is scanned regardless of a mark.
         old = _create_full_version_dir(tmp_path, 'bundle-a', '1.0.0')
-        pinned = _create_full_version_dir(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
+        newest = _create_full_version_dir(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
 
         result = collect_script_dirs(tmp_path)
-        assert str(pinned / 'skills' / 'skill-x' / 'scripts') in result
+        assert str(newest / 'skills' / 'skill-x' / 'scripts') in result
         assert str(old / 'skills' / 'skill-x' / 'scripts') not in result
 
-    def test_mark_on_a_non_pinned_dir_is_honoured(self, tmp_path):
-        live = _create_full_version_dir(tmp_path, 'bundle-a', '1.0.0')
-        marked = _create_full_version_dir(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
-        _bare_version_dir(tmp_path, 'bundle-a', '1.0.20')
-
-        result = collect_script_dirs(tmp_path)
-        assert str(live / 'skills' / 'skill-x' / 'scripts') in result
-        assert str(marked / 'skills' / 'skill-x' / 'scripts') not in result
-
-    def test_all_eligible_marked_falls_back_to_newest_with_a_skills_tree(self, tmp_path, capsys):
+    def test_all_eligible_marked_scans_newest_with_a_skills_tree(self, tmp_path, capsys):
+        # Marker ignored: even with every eligible dir marked, only the newest
+        # dir with a skills/ tree is scanned, with no degraded stderr.
         _create_full_version_dir(tmp_path, 'bundle-a', '1.0.0', orphaned=True)
         newest_eligible = _create_full_version_dir(tmp_path, 'bundle-a', '1.0.10', orphaned=True)
         _bare_version_dir(tmp_path, 'bundle-a', '1.0.20')
 
         result = collect_script_dirs(tmp_path)
         assert str(newest_eligible / 'skills' / 'skill-x' / 'scripts') in result
-        assert 'DEGRADED' in capsys.readouterr().err
+        assert capsys.readouterr().err == ''
 
 
 class TestResolveBundlesRoot:

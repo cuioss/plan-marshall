@@ -139,11 +139,10 @@ def find_bundles(base_path: Path, bundle_filter: set[str] | None = None) -> list
     Exemption note — this resolver is intentionally NOT the versioned-cache
     ``script-shared::find_bundles``: it rglobs ``.claude-plugin/plugin.json`` over
     the *source* ``marketplace/bundles`` tree, where each bundle is a single
-    unversioned directory. It carries no version-dir detection, no ``.orphaned_at``
-    marker handling, and no three-tier precedence, so it does NOT share the
-    all-versions-orphaned contribute-zero bug fixed in ``script-shared::find_bundles``
-    (there are no version dirs to orphan, hence nothing to degrade-fallback for). It
-    is therefore left structurally unchanged. No behavior change.
+    unversioned directory. It needs no version-dir selection at all — there are no
+    plugin-cache version dirs to choose among — so it carries none of the
+    newest-eligible ordering ``script-shared::find_bundles`` applies. It is left
+    structurally unchanged. No behavior change.
     """
     bundles = []
     for plugin_json in base_path.rglob('.claude-plugin/plugin.json'):

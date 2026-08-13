@@ -144,9 +144,7 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 from marketplace_bundles import (  # noqa: E402, I001
     build_pythonpath,
     collect_script_dirs,
-    live_version_dirs,
     resolve_bundle_path,
-    select_live_version_dir,
 )
 from marketplace_paths import get_base_path as _shared_get_base_path  # noqa: E402, I001
 from file_ops import get_base_dir as _get_plan_base_dir  # noqa: E402, I001
@@ -482,41 +480,24 @@ def _resolve_notation_by_target(notation: str) -> str | None:
 
     Walks ``~/.claude/plugins/cache/plan-marshall/*/skills/{skill}/scripts/{script}.py``,
     collects EVERY version dir that carries the candidate script, and returns the
-    LIVE one under the same liveness-and-ordering policy the generation-time
-    selector applies: a ``.orphaned_at`` mark disqualifies a candidate EXCEPT on
-    the newest-on-disk (retention-pinned) version dir, whose mark is ignored
-    outright; the numerically-newest surviving candidate wins; and when every
-    candidate is marked, the newest candidate overall is returned.  Selecting the
-    live newest (rather than the first ``iterdir`` match) stops a stale version
-    dir left on disk from shadowing the current scripts.  When the currently-
-    pinned version dir is pruned, a later invocation re-resolves at runtime to the
-    newest surviving version dir.  The ``bundle`` component of the notation is not
-    used for path construction (the Claude plugin cache is a flat, single-bundle
-    install) but may be useful for logging.
+    NUMERICALLY-NEWEST one.  Selecting the newest (rather than the first
+    ``iterdir`` match) stops a stale older version dir left on disk from shadowing
+    the current scripts.  When the currently-selected version dir is pruned, a
+    later invocation re-resolves at runtime to the newest surviving version dir
+    carrying the script.  The ``bundle`` component of the notation is not used for
+    path construction (the Claude plugin cache is a flat, single-bundle install)
+    but may be useful for logging.
 
-    DELIBERATE POLICY DUPLICATE — tracked authority:
-    ``marketplace_bundles.select_live_version_dir``.  This body is substituted
-    verbatim into the generated executor, which is bootstrap-free by construction:
-    it must resolve notations BEFORE any marketplace module is importable, so it
-    cannot import the selector without recreating the chicken-and-egg the executor
-    exists to break.  Both sides consume the same input set — the on-disk version
-    dirs and their ``.orphaned_at`` markers — so the copy is behaviourally
-    identical rather than approximate, and no manifest pin is needed on either
-    side.  This is the single sanctioned copy: any change to the selector's policy
-    MUST be mirrored here, and a test pins the two to the same verdict in every
-    marker state.
-
-    EXISTENCE-ONLY MARKER INVARIANT — binding at this site, not merely inherited.
-    The ``.orphaned_at`` predicate below consults only whether the marker is
-    PRESENT; its content is never read, parsed, or compared here.  The field has a
-    foreign co-producer — Claude Code's own plugin GC writes the same filename with
-    a raw epoch-ms payload, while ``_mark_superseded_version_dirs`` writes ISO-8601
-    UTC — so a content-dependent rule would bind the resolver to a format this
-    repository does not own and cannot version.  This site declares the invariant
-    itself rather than pointing at the selector, because this is the location the
-    mirroring mandate above makes a policy change land on: a mirrored change that
-    arrived without the invariant restated here would have nothing local to check
-    it against.
+    The plugin-cache ``.orphaned_at`` marker is NOT consulted.  The field has a
+    foreign co-producer — Claude Code's own plugin GC writes the same filename on
+    its own schedule — so it is a variable this repository neither owns nor can
+    version, and newest-wins needs no currency signal from it: a sync only ever
+    adds a *newer* version dir.  This agrees with
+    ``marketplace_bundles.select_live_version_dir`` by construction (both return
+    the newest eligible dir), but the resolver reaches that agreement on its own
+    terms rather than by importing the selector: the generated executor is
+    bootstrap-free and must resolve notations BEFORE any marketplace module is
+    importable, so the newest-wins body is duplicated here deliberately.
 
     Args:
         notation: Three-part notation ``{bundle}:{skill}:{script}``.
@@ -544,19 +525,13 @@ def _resolve_notation_by_target(notation: str) -> str | None:
         version_dirs = [d for d in cache_root.iterdir() if d.is_dir() and not d.name.startswith('.')]
         if not version_dirs:
             return None
-        pinned = max(version_dirs, key=lambda d: _version_key(d.name))
         candidates = []
         for version_dir in version_dirs:
             candidate = version_dir / 'skills' / skill / 'scripts' / f'{script}.py'
             if candidate.is_file():
                 candidates.append((version_dir, candidate))
         if candidates:
-            live = [
-                pair
-                for pair in candidates
-                if pair[0] == pinned or not (pair[0] / '.orphaned_at').exists()
-            ]
-            _dir, selected = max(live or candidates, key=lambda pair: _version_key(pair[0].name))
+            _dir, selected = max(candidates, key=lambda pair: _version_key(pair[0].name))
             return str(selected.resolve())
     except (OSError, ValueError, RuntimeError):
         pass
@@ -2212,197 +2187,8 @@ def cmd_cleanup(args: argparse.Namespace) -> dict:
     return {'status': 'success', 'deleted': deleted}
 
 
-def _carries_skills_tree(version_dir: Path) -> bool:
-    """Eligibility predicate: this version dir carries a ``skills/`` tree.
-
-    The ONLY thing this module contributes to the version-dir decision. Liveness
-    (the ``.orphaned_at`` marker semantics) and ordering belong to
-    ``marketplace_bundles.select_live_version_dir`` / ``live_version_dirs``, so
-    ``_detect_multi_version_pollution``, ``_retention_pinned_versions`` and
-    ``_mark_superseded_version_dirs`` agree with the resolvers by construction.
-    """
-    return (version_dir / 'skills').is_dir()
-
-
-def _live_version_dirs(bundle_dir: Path) -> list[Path]:
-    """Return the LIVE version dirs directly under ``bundle_dir``.
-
-    A thin view over the shared policy: the version dirs carrying a ``skills/``
-    tree that ``marketplace_bundles.live_version_dirs`` treats as live — unmarked,
-    or the retention-pinned newest-on-disk dir whose ``.orphaned_at`` mark is
-    ignored outright. Shared by :func:`_detect_multi_version_pollution` (which
-    counts them) and :func:`_mark_superseded_version_dirs` (which marks every
-    non-newest, non-pinned one). Returns ``[]`` on an unreadable ``bundle_dir``.
-    """
-    return live_version_dirs(bundle_dir, _carries_skills_tree)
-
-
-def _retention_pinned_versions(base_path: Path | None, bundle_dir: Path) -> set[str]:
-    """Return the version names the retention policy pins for ``bundle_dir``.
-
-    A pinned version MUST NEVER be marked ``.orphaned_at``. The pins mirror THREE
-    OF THE FOUR *dir-naming* arms of the ``marshall-steward``
-    ``cache_retention sweep`` keep-union — the arms that name one specific
-    directory rather than applying a threshold to all of them: the newest dir on
-    disk (what the resolver selects), the version named by ``marshal.json``'s
-    ``system.provisioned_version``, and the version named by the installed
-    ``dist-manifest.json``. The fourth dir-naming arm — the version dir the sweep
-    is itself executing from — is deliberately NOT mirrored: self-deletion is the
-    sweep's own hazard, not the marker-writer's. The union's remaining two arms
-    (newest-``N``, younger-than-``D``-days) are thresholds and pin nothing.
-
-    The label is ``dir-naming``, not ``non-count``: the ``younger-than-D-days``
-    arm is an age threshold rather than a count, so "non-count" would admit it
-    and yield a third arity for the same phrase. The canonical statement of the
-    keep-union and of this pin-vs-keep-set distinction lives in
-    ``manage-config/standards/data-model.md`` § "Plugin-cache retention
-    semantics"; this docstring must agree with it member-for-member.
-
-    Pinning these is what makes marker saturation structurally impossible: the dir
-    the resolver selects is pinned unconditionally, so at least one live version
-    dir always survives per bundle. Without the pin, a run whose newest dir was
-    already marked promotes an OLDER dir to "newest live" and marks the rest, and
-    the cascade converges on zero live dirs — which renders
-    :func:`_detect_multi_version_pollution` vacuous and forces
-    ``marketplace_bundles.find_bundles`` into its degraded all-orphaned fallback.
-    The disk arm is read from ``select_live_version_dir`` itself rather than
-    re-derived here, so the pin names exactly the dir the resolvers select.
-
-    Args:
-        base_path: The resolved bundles/cache root, or ``None``.
-        bundle_dir: The bundle whose version dirs are being partitioned.
-
-    Returns:
-        The set of pinned version-directory names (possibly empty).
-    """
-    pinned: set[str] = set()
-    selected = select_live_version_dir(bundle_dir, _carries_skills_tree)
-    if selected is not None:
-        pinned.add(selected.name)
-    provisioned = read_marshal_provisioned_version()
-    if provisioned and provisioned != 'unknown':
-        pinned.add(provisioned)
-    manifest_version = str(read_installed_manifest(base_path).get('version', '') or '')
-    if manifest_version:
-        pinned.add(manifest_version)
-    return pinned
-
-
-def _detect_multi_version_pollution(base_path: Path | None) -> list[str]:
-    """Return the bundle names exposing more than one LIVE version dir on disk.
-
-    In the plugin-cache layout a bundle resolves as
-    ``{base}/{bundle}/{version}/skills/``. A bundle carrying MORE THAN ONE
-    version dir (each with a ``skills/`` tree) pollutes PYTHONPATH with multiple
-    versions of the same scripts — the exact condition ``collect_script_dirs``'
-    newest-only selection guards against at discovery time. Surfacing the
-    on-disk pollution lets the preflight regenerate the executor (which then
-    embeds only the newest version's paths). Returns the sorted list of polluted
-    bundle names (empty when the tree is clean or ``base_path`` is unresolved).
-
-    A version dir carrying the ``.orphaned_at`` deferral marker is EXCLUDED from
-    the count: it is a superseded dir already offered to the ``marshall-steward``
-    ``cache-retention-sweep`` sub-step, so it is not live pollution. This is what
-    makes the pollution signal CLEAR after a prior preflight marked the
-    superseded dirs — the second consecutive preflight sees exactly one live
-    (unmarked) version dir per bundle and reports ``executor_action: fresh``
-    instead of regenerating on every run.
-
-    The count cannot be rendered vacuous by marker saturation, and the guarantee
-    is now structural rather than merely procedural: the shared selector ignores a
-    ``.orphaned_at`` mark on the retention-pinned dir outright (see
-    ``marketplace_bundles.select_live_version_dir``), so that dir stays live even
-    if a legacy pass marked it, and every bundle with a version dir on disk
-    contributes at least one. :func:`_mark_superseded_version_dirs` additionally
-    never writes a mark onto a pinned version (see
-    :func:`_retention_pinned_versions`).
-    """
-    if base_path is None or not base_path.is_dir():
-        return []
-    polluted: list[str] = []
-    try:
-        for bundle_dir in base_path.iterdir():
-            if not bundle_dir.is_dir() or bundle_dir.name.startswith('.'):
-                continue
-            if len(_live_version_dirs(bundle_dir)) > 1:
-                polluted.append(bundle_dir.name)
-    except OSError:
-        pass
-    return sorted(polluted)
-
-
-def _mark_superseded_version_dirs(base_path: Path | None, polluted_bundles: list[str]) -> None:
-    """Mark the superseded (non-pinned) version dirs of each polluted bundle.
-
-    For every polluted bundle, stamp every live version dir with the
-    ``.orphaned_at`` deferral marker EXCEPT the versions the retention policy pins
-    (see :func:`_retention_pinned_versions`: the dir the shared selector resolves
-    to — which ``collect_script_dirs`` embeds after a regen — plus the
-    ``marshal.json``-provisioned and the manifest-named versions). Pinning is what
-    makes marker saturation structurally impossible;
-    without it the marker converges on "every dir marked, none live", which
-    renders the pollution detector vacuous and forces
-    ``marketplace_bundles.find_bundles`` permanently into its degraded
-    all-orphaned fallback.
-
-    This does NOT delete anything: the actual removal defers to the
-    ``marshall-steward`` ``cache-retention-sweep`` sub-step (the union-keep
-    ``cache_retention sweep`` verb), sidestepping the check-then-``rmtree``
-    TOCTOU / delete-live-dir hazard (a superseded dir may still be on a running
-    process's PYTHONPATH). That sweep applies the same pins independently, so a
-    marked dir is never removed merely because it carries the marker — the marker
-    is advisory there, never a keep-or-delete oracle. Marking is what clears the
-    pollution signal for the NEXT preflight — a marked dir is excluded by
-    ``_detect_multi_version_pollution``, so the following run sees one live
-    version dir per bundle and no longer regenerates.
-
-    The marker content is a fresh ISO-8601 UTC timestamp. The write is idempotent
-    by construction — an already-marked dir is not live (the shared liveness view
-    excludes marked dirs) unless it is pinned, and a pinned dir is never marked,
-    so the clock is never reset on a dir that was already marked.
-
-    **``.orphaned_at`` has a second, foreign producer — this repository does not
-    own the field exclusively.** Claude Code's own plugin GC writes the same
-    filename into the same version dirs with a raw epoch-ms payload, so TWO
-    producers write ONE field in TWO encodings and either encoding may be found on
-    any dir. Three consequences follow, and this writer changes none of them:
-
-    1. Our encoding stays ISO-8601 UTC. It is deliberately not converted to
-       epoch-ms to match the co-producer.
-    2. No file under ``~/.claude/plugins/cache/`` is normalised or rewritten by us.
-       A foreign-written epoch-ms marker is left exactly as found.
-    3. The split is inert because BOTH sanctioned readers consult the marker's
-       EXISTENCE only, never its content. There are two, and each states the
-       invariant at its own site rather than deferring to the other:
-       ``marketplace_bundles._partition_version_dirs`` (the selector) and the
-       ``.orphaned_at`` predicate inside :data:`_CLAUDE_RESOLVER_TEMPLATE`, which is
-       substituted verbatim into the generated ``.plan/execute-script.py``. The
-       template is a deliberate policy duplicate of the selector — its docstring
-       mandates mirroring — so the invariant has to hold at both, and a change to
-       either must be carried to the other by hand.
-    """
-    if base_path is None:
-        return
-    marker_ts = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
-    for bundle_name in polluted_bundles:
-        bundle_dir = base_path / bundle_name
-        if not bundle_dir.is_dir():
-            continue
-        live_dirs = _live_version_dirs(bundle_dir)
-        if len(live_dirs) <= 1:
-            continue
-        pinned = _retention_pinned_versions(base_path, bundle_dir)
-        for version_dir in live_dirs:
-            if version_dir.name in pinned:
-                continue
-            try:
-                (version_dir / '.orphaned_at').write_text(marker_ts, encoding='utf-8')
-            except OSError:
-                continue
-
-
 def cmd_preflight(args: argparse.Namespace) -> dict:
-    """Deterministic executor / config staleness + multi-version pollution check.
+    """Deterministic executor / config staleness check.
 
     Compares the executor's embedded ``MARSHALL_VERSION`` and
     ``marshal.json``'s ``system.provisioned_version`` against the installed
@@ -2428,20 +2214,13 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
       surfaced in the return's ``warning`` field). The verdict never claims a
       freshness it cannot prove.
 
-    - **Multi-version PYTHONPATH pollution is safe derived state too.** When
-      more than one LIVE version dir per bundle is discoverable in the
-      plugin-cache context the verb regenerates the executor in place (reported
-      through ``executor_action: regenerated``) — the regenerated executor
-      embeds only the newest version's paths (``collect_script_dirs``'
-      newest-only selection), so a stale version dir left on disk can no longer
-      shadow the current scripts. The regen is skipped when version-staleness
-      already regenerated in the same run. It then marks the superseded
-      (non-newest, non-retention-pinned) version dirs with the ``.orphaned_at``
-      deferral marker so the NEXT preflight sees exactly one live version dir per
-      bundle and reports ``fresh`` (no regenerated-every-run loop); the actual
-      removal defers to the ``marshall-steward`` ``cache-retention-sweep``
-      sub-step rather than an immediate ``rmtree`` (which would race a live
-      process's PYTHONPATH).
+    Multiple plugin-cache version dirs no longer trigger a preflight
+    regeneration or any marker write: the executor resolves bundle script paths
+    at run time (``_resolve_notation_by_target`` and the shared
+    ``select_live_version_dir`` both pick the numerically-newest version dir), so
+    a stale version dir left on disk can never shadow the current scripts and
+    there is nothing for the preflight to contain. Pruning the superseded dirs is
+    the ``marshall-steward`` ``cache_retention sweep``'s union-keep job.
 
     A fresh install with no manifest resolves ``installed_version`` to the
     ``unknown`` sentinel, so the verb fails closed and reports
@@ -2488,34 +2267,6 @@ def cmd_preflight(args: argparse.Namespace) -> dict:
         executor_action = 'regenerated'
         # Re-read the freshly stamped version so the report reflects the regen.
         executor_version = read_executor_version()
-
-    # Multi-version PYTHONPATH pollution → safe in-place regeneration. Regenerating
-    # re-embeds only the newest version dir's paths (collect_script_dirs' newest-only
-    # selection), so an older version dir left on disk can no longer shadow the
-    # current scripts. Skip the redundant regen when staleness already regenerated.
-    polluted_bundles = _detect_multi_version_pollution(base_path)
-    if polluted_bundles:
-        # Regenerate the executor once so it embeds only the newest version's
-        # paths. Skip the redundant regen when version-staleness already
-        # regenerated in the same run.
-        if executor_action != 'regenerated':
-            regen = cmd_generate(args)
-            if regen.get('status') != 'success':
-                return {
-                    'status': 'error',
-                    'error': f'preflight pollution regeneration failed: {regen.get("error", "unknown error")}',
-                }
-            executor_action = 'regenerated'
-            # Re-read the freshly stamped version so the report reflects the regen.
-            executor_version = read_executor_version()
-        # Mark the superseded (non-newest, non-retention-pinned) version dirs with
-        # the deferral marker so the NEXT preflight sees one live version dir per
-        # bundle and does not regenerate again. This fires whenever pollution is
-        # detected — including when version-staleness already regenerated above —
-        # so the pollution signal always clears rather than re-triggering a regen
-        # on every run. Removal defers to the marshall-steward
-        # cache-retention-sweep sub-step.
-        _mark_superseded_version_dirs(base_path, polluted_bundles)
 
     # Config-seed staleness → advisory only (marshal.json is never auto-mutated).
     marshal_status = 'fresh'

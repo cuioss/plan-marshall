@@ -1555,10 +1555,6 @@ def test_preflight_fails_closed_on_unresolvable_manifest(outside_repo_dir, monke
     monkeypatch.setenv('PLAN_BASE_DIR', str(outside_repo_dir / '.plan'))
     (outside_repo_dir / '.plan').mkdir()
     monkeypatch.chdir(outside_repo_dir)
-    # Isolate the orthogonal multi-version-pollution scan (which reads the real
-    # plugin-cache tree) so this fail-closed case stays hermetic.
-    monkeypatch.setattr(module, '_detect_multi_version_pollution', lambda *a, **k: [])
-
     result = module.cmd_preflight(_preflight_args())
 
     assert set(result.keys()) == _PREFLIGHT_FIELDS, f'preflight must return exactly the seven fields, got {set(result)}'
@@ -1598,10 +1594,6 @@ def test_preflight_reports_executor_fresh_when_embedded_not_older(tmp_path, monk
     (plan_dir / 'execute-script.py').write_text("MARSHALL_VERSION = '0.1.99'\n", encoding='utf-8')
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
     monkeypatch.chdir(tmp_path)
-    # Isolate the orthogonal multi-version-pollution scan (which reads the real
-    # plugin-cache tree) so this version-staleness case stays hermetic.
-    monkeypatch.setattr(module, '_detect_multi_version_pollution', lambda *a, **k: [])
-
     result = module.cmd_preflight(_preflight_args())
 
     assert result['status'] == 'success'
@@ -1632,10 +1624,6 @@ def test_preflight_reports_marshal_stale_advisory_without_mutation(tmp_path, mon
     marshal.write_text(json.dumps(marshal_body), encoding='utf-8')
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
     monkeypatch.chdir(tmp_path)
-    # Isolate the orthogonal multi-version-pollution scan (which reads the real
-    # plugin-cache tree) so this config-staleness case stays hermetic.
-    monkeypatch.setattr(module, '_detect_multi_version_pollution', lambda *a, **k: [])
-
     result = module.cmd_preflight(_preflight_args())
 
     assert result['status'] == 'success'
@@ -1665,10 +1653,6 @@ def test_preflight_int_tuple_version_compare_avoids_lexical_bug(tmp_path, monkey
     marshal.write_text(json.dumps({'system': {'provisioned_version': '0.1.9'}}), encoding='utf-8')
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
     monkeypatch.chdir(tmp_path)
-    # Isolate the orthogonal multi-version-pollution scan (which reads the real
-    # plugin-cache tree) so this int-tuple compare case stays hermetic.
-    monkeypatch.setattr(module, '_detect_multi_version_pollution', lambda *a, **k: [])
-
     result = module.cmd_preflight(_preflight_args())
 
     assert result['marshal_status'] == 'stale', '0.1.9 < 0.1.10 under int-tuple compare must be stale'
@@ -1744,91 +1728,6 @@ def test_preflight_surfaces_error_when_regeneration_fails(tmp_path, monkeypatch)
     assert 'discovery failed' in result['error']
 
 
-def test_preflight_marks_superseded_version_dirs_and_clears_pollution(tmp_path, monkeypatch):
-    """Deferred-prune: a pollution-triggered regen marks every superseded
-    (non-newest) version dir with the orphan-GC ``.orphaned_at`` deferral marker
-    (never an immediate ``rmtree``), so a SECOND consecutive preflight sees one
-    live version dir per bundle and reports ``executor_action: fresh`` — closing
-    the regenerated-every-run loop where the pollution survived its own remedy.
-    """
-    module = load_module()
-
-    # Seed a plugin-cache-shaped bundles root: one bundle with TWO version dirs
-    # (each carrying a skills/ tree) → multi-version PYTHONPATH pollution.
-    bundles_root = tmp_path / 'cache'
-    for version in ('0.1.100', '0.1.200'):
-        skills = bundles_root / 'plan-marshall' / version / 'skills' / 'some-skill' / 'scripts'
-        skills.mkdir(parents=True)
-        (skills / 'foo.py').write_text('# foo\n')
-
-    # Manifest carries NO executor_changed_at, so the executor stays fresh and the
-    # ONLY regen driver is the pollution path (isolating the behavior under test).
-    manifest = tmp_path / 'dist-manifest.json'
-    manifest.write_text('{"version": "0.1.200"}', encoding='utf-8')
-    monkeypatch.setenv('PM_DIST_MANIFEST', str(manifest))
-
-    plan_dir = tmp_path / '.plan'
-    plan_dir.mkdir()
-    (plan_dir / 'execute-script.py').write_text("MARSHALL_VERSION = '0.1.200'\n", encoding='utf-8')
-    monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
-    monkeypatch.chdir(tmp_path)
-
-    # base_path resolves to the seeded cache tree; cmd_generate is stubbed (its
-    # full discovery pipeline is covered elsewhere) so the pollution regen branch
-    # is isolated to the marking behavior under test.
-    monkeypatch.setattr(module, 'get_base_path', lambda *a, **k: bundles_root)
-    monkeypatch.setattr(module, 'cmd_generate', lambda args: {'status': 'success'})
-
-    superseded = bundles_root / 'plan-marshall' / '0.1.100'
-    newest = bundles_root / 'plan-marshall' / '0.1.200'
-
-    # First preflight: pollution detected → regenerated, and the superseded
-    # (older) version dir now carries the .orphaned_at deferral marker while the
-    # newest stays live (unmarked).
-    first = module.cmd_preflight(_preflight_args())
-    assert first['status'] == 'success'
-    assert first['executor_action'] == 'regenerated', 'multi-version pollution must trigger a regen'
-    assert (superseded / '.orphaned_at').is_file(), 'the superseded version dir must be marked orphaned'
-    assert not (newest / '.orphaned_at').exists(), 'the newest version dir must stay live (unmarked)'
-
-    # Both version dirs still exist on disk — marking defers removal to the
-    # orphan GC, it never rmtree's the superseded dir out from under a live
-    # process's PYTHONPATH.
-    assert superseded.is_dir() and newest.is_dir(), 'deferred prune must NOT delete the superseded dir'
-
-    # Second consecutive preflight, nothing else changed: the marked dir is
-    # excluded from the pollution count, so exactly one live version dir remains
-    # → no repeat regen.
-    second = module.cmd_preflight(_preflight_args())
-    assert second['status'] == 'success'
-    assert second['executor_action'] == 'fresh', (
-        'the pollution signal must clear on the second run — no regenerated-every-run loop'
-    )
-
-
-def test_detect_multi_version_pollution_excludes_marked_dirs(tmp_path):
-    """_detect_multi_version_pollution excludes ``.orphaned_at``-marked version
-    dirs: a bundle with one live dir and one marked-superseded dir is NOT
-    reported as polluted (the marked dir is deferred-GC state, not live
-    pollution)."""
-    module = load_module()
-
-    bundles_root = tmp_path / 'cache'
-    live = bundles_root / 'plan-marshall' / '0.1.200' / 'skills' / 's' / 'scripts'
-    live.mkdir(parents=True)
-    marked = bundles_root / 'plan-marshall' / '0.1.100' / 'skills' / 's' / 'scripts'
-    marked.mkdir(parents=True)
-    (bundles_root / 'plan-marshall' / '0.1.100' / '.orphaned_at').write_text('2026-01-01T00:00:00Z')
-
-    assert module._detect_multi_version_pollution(bundles_root) == [], (
-        'a bundle with one live dir and one marked-superseded dir must not be reported polluted'
-    )
-
-    # Sanity: two LIVE (unmarked) dirs ARE reported polluted.
-    (bundles_root / 'plan-marshall' / '0.1.100' / '.orphaned_at').unlink()
-    assert module._detect_multi_version_pollution(bundles_root) == ['plan-marshall']
-
-
 def test_cmd_generate_returns_error_when_base_path_unresolvable(tmp_path):
     """cmd_generate returns a structured error (not an unhandled exception)
     when the marketplace base path cannot be resolved."""
@@ -1901,80 +1800,6 @@ def test_preflight_help_listed_in_top_level_help():
 # test/plan-marshall/script-shared/test_marketplace_bundles.py TestFindBundles
 # (test_multi_version_selects_newest / test_orphaned_version_skipped /
 # test_all_orphaned_contributes_nothing).
-
-
-def _add_versioned_cache_bundle(
-    bundles_root: Path, bundle_name: str, current_version: str, stale_version: str
-) -> None:
-    """Add a plugin-cache-shaped bundle with a current and an orphaned stale version dir.
-
-    Both version dirs carry the same skill/script (``foo.py``) plus their own
-    ``.claude-plugin/plugin.json`` (plugin-cache layout, where each version dir is
-    a self-contained bundle). The stale dir sorts AFTER the current one and is
-    marked with a ``.orphaned_at`` file, so it would shadow the current dir in the
-    last-write-wins discovery merge unless find_bundles skips orphaned dirs.
-    """
-    for version, orphaned in ((current_version, False), (stale_version, True)):
-        version_dir = bundles_root / bundle_name / version
-        plugin_dir = version_dir / '.claude-plugin'
-        plugin_dir.mkdir(parents=True)
-        (plugin_dir / 'plugin.json').write_text(
-            f'{{"name": "{bundle_name}", "version": "{version}", "description": "fixture"}}\n'
-        )
-        scripts = version_dir / 'skills' / 'stale-skill' / 'scripts'
-        scripts.mkdir(parents=True)
-        (scripts / 'foo.py').write_text('"""Sentinel script for orphaned-cache drift regression."""\n')
-        if orphaned:
-            (version_dir / '.orphaned_at').write_text('2026-01-01T00:00:00Z')
-
-
-def test_orphaned_non_pinned_cache_version_dir_never_overwrites_current_mappings(tmp_path, monkeypatch):
-    """A stale/orphaned NON-PINNED cache version dir must not shadow the mappings.
-
-    Integration regression for the drift false-positive: an orphaned version dir
-    that sorts after the current one ('1.0.10' > '1.0.0') must be skipped by
-    find_bundles, so every discovered notation->path mapping resolves under the
-    current (non-orphaned) version dir only and drift reports no stale overwrite.
-
-    The fixture adds a bare '1.0.20' dir carrying no plugin.json so the newest dir
-    ON DISK is ineligible: ``select_live_version_dir`` ignores a mark only on the
-    retention-pinned newest-on-disk dir, and honouring the mark on 1.0.10 is the
-    behaviour under test here. Without that third dir the marked 1.0.10 IS the pin
-    and legitimately wins — a different case, covered in test_marketplace_bundles.
-
-    The anchor is supplied via ``PM_MARKETPLACE_ROOT`` (``use_flag=False``), NOT
-    the ``--marketplace-root`` flag. This is load-bearing for the consumer angle:
-    ``generate_executor.discover_scripts`` spawns ``scan-marketplace-inventory``
-    as a subprocess (which has no ``--marketplace-root`` flag). Only the env-var
-    anchor is inherited by that subprocess, so it discovers the versioned fixture
-    through the real ``find_bundles`` chain. Under the ``--marketplace-root``
-    flag the env var is popped, the inventory subprocess loses the anchor,
-    cwd-walk-up cannot reach the ``tmp_path``-nested fake tree, and discovery
-    silently degrades to the version-unaware glob fallback — which never sees the
-    ``bundle/<version>/skills`` layout at all, so the orphaned-overwrite defect
-    this test guards would never be exercised.
-    """
-    fake_ws = _build_fake_marketplace(tmp_path)
-    bundles_root = fake_ws / 'marketplace' / 'bundles'
-    _add_versioned_cache_bundle(bundles_root, 'stale-cache-bundle', '1.0.0', '1.0.10')
-    # Newest ON DISK, but eligible for no leg (no plugin.json, no skills/): this
-    # makes 1.0.10 non-pinned, so its .orphaned_at mark is honoured.
-    (bundles_root / 'stale-cache-bundle' / '1.0.20').mkdir(parents=True)
-
-    mappings = _generate_with_anchor(tmp_path, fake_ws, use_flag=False, monkeypatch=monkeypatch)
-
-    notation = 'stale-cache-bundle:stale-skill:foo'
-    assert notation in mappings, f'Expected {notation!r} discovered; got {sorted(mappings)[:10]}...'
-
-    resolved = mappings[notation]
-    current_prefix = str(bundles_root / 'stale-cache-bundle' / '1.0.0') + os.sep
-    stale_prefix = str(bundles_root / 'stale-cache-bundle' / '1.0.10') + os.sep
-    assert resolved.startswith(current_prefix), (
-        f'{notation} must resolve under the current version dir {current_prefix}, got {resolved}'
-    )
-    assert not resolved.startswith(stale_prefix), (
-        f'{notation} leaked to the orphaned stale version dir {stale_prefix}: {resolved}'
-    )
 
 
 # ============================================================================
@@ -2488,87 +2313,6 @@ def test_guard4_detects_split_under_version_shaped_ancestor_directory(tmp_path, 
         'the ancestor directory must never be reported as a version dir'
     )
     assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing executor must survive the refusal'
-
-
-# ============================================================================
-# The embedded runtime resolver tracks select_live_version_dir
-# ============================================================================
-# _CLAUDE_RESOLVER_TEMPLATE is substituted verbatim into the generated executor,
-# which is bootstrap-free and therefore CANNOT import the selector. Its copy of
-# the liveness-and-ordering policy is the single sanctioned duplicate, and these
-# cases are what make it safe: over an identical on-disk fixture the embedded
-# resolver and select_live_version_dir must choose the SAME version dir in every
-# marker state.
-
-
-def _mark_cache_version(home: Path, version: str) -> None:
-    """Stamp ``.orphaned_at`` on a fake plugin-cache version dir."""
-    version_dir = home / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / version
-    (version_dir / '.orphaned_at').write_text('2026-01-01T00:00:00Z')
-
-
-def _selector_choice(home: Path, skill: str, script: str) -> Path:
-    """The version dir select_live_version_dir picks over the same fixture."""
-    module = load_module()
-    cache_root = home / '.claude' / 'plugins' / 'cache' / 'plan-marshall'
-    selected = module.select_live_version_dir(
-        cache_root, lambda d: (d / 'skills' / skill / 'scripts' / f'{script}.py').is_file()
-    )
-    assert selected is not None, 'fixture must offer at least one eligible version dir'
-    return Path(selected)
-
-
-def _assert_resolver_agrees_with_selector(home: Path, monkeypatch) -> None:
-    monkeypatch.setattr(Path, 'home', lambda: home)
-    expected = _selector_choice(home, 'manage-files', 'manage-files')
-
-    resolve = _load_claude_resolver()
-    result = resolve('plan-marshall:manage-files:manage-files')
-
-    assert result is not None, 'the embedded resolver must resolve the fixture notation'
-    assert Path(result).parents[3] == expected.resolve(), (
-        f'embedded resolver chose {Path(result).parents[3]}, selector chose {expected.resolve()}'
-    )
-
-
-def test_embedded_resolver_agrees_with_selector_none_marked(tmp_path, monkeypatch):
-    home = tmp_path / 'home'
-    _make_cache_script(home, '0.1.100', 'manage-files', 'manage-files')
-    _make_cache_script(home, '0.1.200', 'manage-files', 'manage-files')
-
-    _assert_resolver_agrees_with_selector(home, monkeypatch)
-
-
-def test_embedded_resolver_agrees_with_selector_newest_marked(tmp_path, monkeypatch):
-    # The marked newest dir is the retention pin, so BOTH sides keep it.
-    home = tmp_path / 'home'
-    _make_cache_script(home, '0.1.100', 'manage-files', 'manage-files')
-    _make_cache_script(home, '0.1.200', 'manage-files', 'manage-files')
-    _mark_cache_version(home, '0.1.200')
-
-    _assert_resolver_agrees_with_selector(home, monkeypatch)
-
-
-def test_embedded_resolver_agrees_with_selector_all_marked(tmp_path, monkeypatch):
-    home = tmp_path / 'home'
-    _make_cache_script(home, '0.1.100', 'manage-files', 'manage-files')
-    _make_cache_script(home, '0.1.200', 'manage-files', 'manage-files')
-    _mark_cache_version(home, '0.1.100')
-    _mark_cache_version(home, '0.1.200')
-
-    _assert_resolver_agrees_with_selector(home, monkeypatch)
-
-
-def test_embedded_resolver_agrees_with_selector_marked_non_pinned(tmp_path, monkeypatch):
-    # The pin (0.1.300) carries no candidate script, so the mark on 0.1.200 is
-    # honoured — the one state in which a mark still moves the verdict.
-    home = tmp_path / 'home'
-    _make_cache_script(home, '0.1.100', 'manage-files', 'manage-files')
-    _make_cache_script(home, '0.1.200', 'manage-files', 'manage-files')
-    _make_cache_script(home, '0.1.300', 'other-skill', 'other')
-    _mark_cache_version(home, '0.1.200')
-
-    _assert_resolver_agrees_with_selector(home, monkeypatch)
 
 
 # ============================================================================
