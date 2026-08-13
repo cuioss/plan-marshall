@@ -906,7 +906,7 @@ def _read_plan_source_id(plan_id: str) -> str | None:
 
 def _apply_terminal_emission_orchestration_gate(
     phase_6_candidates: list[str], plan_id: str
-) -> tuple[list[str], str | None]:
+) -> tuple[list[str], list[dict[str, str]]]:
     """Compose the terminal-emission step OUT of a NON-orchestrated plan.
 
     ``default:emit-landing`` writes the run's ``kind: landing`` message to the
@@ -924,14 +924,16 @@ def _apply_terminal_emission_orchestration_gate(
     that writes nowhere.
 
     The gate is a no-op when ``emit-landing`` is already absent from the candidate
-    list. Returns ``(kept, reason)`` — the filtered list, and the drop reason (or
-    ``None`` when the step was kept or was already absent).
+    list. Returns ``(kept, dropped_records)`` — the filtered list, and the shared
+    ``{step, reason}`` subtraction-record list (one record when the step was
+    dropped, empty when it was kept or was already absent), so the drop is reported
+    through the same convention every other narrowing site uses.
     """
     present = any(
         canonicalize_step_key(step) == _TERMINAL_EMISSION_STEP for step in phase_6_candidates
     )
     if not present:
-        return phase_6_candidates, None
+        return phase_6_candidates, []
 
     source_id = _read_plan_source_id(plan_id)
     try:
@@ -940,22 +942,31 @@ def _apply_terminal_emission_orchestration_gate(
         # The single detector is unavailable in this environment; fail toward the
         # non-orchestrated default and drop the step rather than seed an emission
         # that may write nowhere.
-        return (
-            [s for s in phase_6_candidates if canonicalize_step_key(s) != _TERMINAL_EMISSION_STEP],
-            'orchestration detector unavailable; dropping terminal emission (fails toward non-orchestrated)',
-        )
+        kept = [
+            s for s in phase_6_candidates if canonicalize_step_key(s) != _TERMINAL_EMISSION_STEP
+        ]
+        return kept, [
+            {
+                'step': _TERMINAL_EMISSION_STEP,
+                'reason': 'orchestration detector unavailable; dropping terminal emission '
+                '(fails toward non-orchestrated)',
+            }
+        ]
 
     verdict = classify_source_id(source_id or '')
     if verdict.orchestrated:
-        return phase_6_candidates, None
+        return phase_6_candidates, []
 
     kept = [
         s for s in phase_6_candidates if canonicalize_step_key(s) != _TERMINAL_EMISSION_STEP
     ]
-    return (
-        kept,
-        f'plan is not orchestrated (detection={verdict.detection}); no epic inbox to write a landing to',
-    )
+    return kept, [
+        {
+            'step': _TERMINAL_EMISSION_STEP,
+            'reason': f'plan is not orchestrated (detection={verdict.detection}); '
+            'no epic inbox to write a landing to',
+        }
+    ]
 
 
 def _log_scope_gated_finalize_subtraction(plan_id: str, scope_estimate: str, dropped_step: str) -> None:
@@ -1944,13 +1955,13 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # the candidate-narrowing stage so it only ever narrows the candidate list.
     (
         phase_6_candidates,
-        terminal_emission_dropped_reason,
+        terminal_emission_dropped,
     ) = _apply_terminal_emission_orchestration_gate(phase_6_candidates, plan_id)
-    if terminal_emission_dropped_reason is not None:
+    if terminal_emission_dropped:
         _log_dropped_records(
             plan_id,
             'terminal_emission_orchestration_gate',
-            [{'step': _TERMINAL_EMISSION_STEP, 'reason': terminal_emission_dropped_reason}],
+            terminal_emission_dropped,
             target=' from phase_6.steps',
         )
 
@@ -2404,9 +2415,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'scope_gated_finalize_dropped': scope_gated_dropped,
         'scope_gated_finalize_immune': scope_gated_immune,
         'unresolved_ask_provider_dropped': unresolved_ask_dropped,
-        'terminal_emission_dropped': (
-            [_TERMINAL_EMISSION_STEP] if terminal_emission_dropped_reason is not None else []
-        ),
+        'terminal_emission_dropped': [record['step'] for record in terminal_emission_dropped],
         'ceremony_finalize_gates': ceremony_finalize_gates,
         'ceremony_finalize_forced_in': [c['step'] for c in ceremony_forced_in],
         'ceremony_finalize_forced_out': [c['step'] for c in ceremony_forced_out],

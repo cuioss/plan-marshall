@@ -299,6 +299,16 @@ def _run_lane_resolution(monkeypatch) -> SiteRun:
     return SiteRun(before, kept, 'records', records)
 
 
+def _run_terminal_emission_orchestration_gate(monkeypatch) -> SiteRun:
+    # A non-orchestrated plan (no source_id pointer) drops the terminal emission
+    # step. The single sanctioned detector then classifies the empty pointer as
+    # not-orchestrated and the gate reports the drop as a {step, reason} record.
+    monkeypatch.setattr(_mem, '_read_plan_source_id', lambda _plan_id: None)
+    before = ['emit-landing', 'archive-plan']
+    kept, records = _mem._apply_terminal_emission_orchestration_gate(list(before), 'a-plan')
+    return SiteRun(before, kept, 'records', records)
+
+
 #: Every derived ``_apply_*`` site, mapped to a callable that drives it into a
 #: FIRING drop. This table is the one hand-maintained artifact in the module —
 #: and its incompleteness is loud, not silent: ``test_every_derived_site_is_covered``
@@ -315,6 +325,7 @@ _SITE_INVOCATIONS = {
     '_apply_canonical_verify_inactive': _run_canonical_verify_inactive,
     '_apply_domain_seeded_step_resolvability': _run_domain_seeded_step_resolvability,
     '_apply_lane_resolution': _run_lane_resolution,
+    '_apply_terminal_emission_orchestration_gate': _run_terminal_emission_orchestration_gate,
 }
 
 

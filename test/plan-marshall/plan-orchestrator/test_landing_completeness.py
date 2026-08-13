@@ -45,7 +45,7 @@ LANDING_FACTS_SCHEMA = _inbox.LANDING_FACTS_SCHEMA
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-orchestrator', 'orchestrator.py')
 
 _PLAN_MARSHALL = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
-_PAYLOAD_SPEC = _PLAN_MARSHALL / 'plan-orchestrator' / 'standards' / 'landing-payload-spec.md'
+_PAYLOAD_SPEC: Path = _PLAN_MARSHALL / 'plan-orchestrator' / 'standards' / 'landing-payload-spec.md'
 
 EPIC = 'completeness-epic'
 SENDER = 'completeness-plan'
@@ -248,4 +248,4 @@ class TestPayloadSpecDoc:
     def test_spec_states_the_empirical_sample_was_not_taken(self):
         text = self._text()
 
-        assert 'absent from a fresh clone' in text
+        assert 'The empirical sample was not' in text

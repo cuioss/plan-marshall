@@ -90,36 +90,37 @@ class TestGateFunction:
             plan_context.plan_dir_for(plan_id), source='orchestrator', source_id=_ORCHESTRATED_POINTER
         )
 
-        kept, reason = _apply_gate(_candidates(), plan_id)
+        kept, dropped = _apply_gate(_candidates(), plan_id)
 
         assert _TERMINAL_EMISSION_STEP in kept
-        assert reason is None
+        assert dropped == []
 
     def test_non_orchestrated_plan_drops_the_terminal_step_with_a_reason(self, plan_context):
         plan_id = 'gate-non-orchestrated'
         _write_request(plan_context.plan_dir_for(plan_id), source='description', source_id='none')
 
-        kept, reason = _apply_gate(_candidates(), plan_id)
+        kept, dropped = _apply_gate(_candidates(), plan_id)
 
         # The step is ABSENT ...
         assert _TERMINAL_EMISSION_STEP not in kept
         # ... its neighbours survive (the gate narrows, never rewrites) ...
         assert 'record-metrics' in kept
         assert 'archive-plan' in kept
-        # ... and the drop names WHY (observable), citing the detector's verdict.
-        assert reason is not None
-        assert 'not orchestrated' in reason
-        assert 'detection=' in reason
+        # ... and the drop is reported as a {step, reason} record naming WHY.
+        assert len(dropped) == 1
+        assert dropped[0]['step'] == _TERMINAL_EMISSION_STEP
+        assert 'not orchestrated' in dropped[0]['reason']
+        assert 'detection=' in dropped[0]['reason']
 
     def test_gate_is_a_no_op_when_the_step_is_absent(self, plan_context):
         plan_id = 'gate-absent'
         _write_request(plan_context.plan_dir_for(plan_id), source='description', source_id='none')
 
         candidates = ['record-metrics', 'archive-plan']
-        kept, reason = _apply_gate(candidates, plan_id)
+        kept, dropped = _apply_gate(candidates, plan_id)
 
         assert kept == candidates
-        assert reason is None
+        assert dropped == []
 
 
 # =============================================================================

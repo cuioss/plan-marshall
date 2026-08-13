@@ -217,8 +217,8 @@ payload bodies exactly as they are for lesson bodies. The envelope schema, the `
 the header-field table live in the standard cross-referenced above; do not restate them here.
 
 This branch emits NO `kind: landing` message. The one landing an orchestrated finalize run
-owes its epic is `lessons-capture`'s, emitted unconditionally there; a second one from here
-would put two landings on one run.
+owes its epic is the dedicated `emit-landing` terminal step's (`order: 1000`), emitted
+unconditionally there; a second one from here would put two landings on one run.
 
 This branch writes only under `.plan/`, so the step's `mutates_source: false` fact is unchanged
 and the step never reaches the dispatcher's commit instrumentation at all — item 5f reads the
