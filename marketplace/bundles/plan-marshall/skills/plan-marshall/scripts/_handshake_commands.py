@@ -14,7 +14,9 @@ generic invariant registry in :mod:`_invariants`:
    :func:`_check_main_dirty_drift` (verify-time, in this module) — layer-D
    enforcement that detects free-form filesystem leaks into the main
    checkout during a worktree-routed plan. The capture records the
-   sorted, ``.plan/``-filtered dirty-path set; the verify check raises
+   sorted dirty-path set with the ``.plan/`` exemption keyed on git
+   trackedness (untracked plan state dropped, a tracked ``.plan/`` file
+   retained as a leak); the verify check raises
    :class:`_invariants.MainCheckoutDirtiedDuringPlan` when the live set
    is a *proper superset* of the captured baseline AND ``use_worktree==true``.
    Surfaces as ``error: main_checkout_dirtied_during_plan`` (under

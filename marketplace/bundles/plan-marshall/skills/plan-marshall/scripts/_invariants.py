@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from _git_helpers import git_dirty_count, git_dirty_files, git_head
+from _plan_state_exemption import partition_plan_state_exemption
 from constants import QGATE_PHASES
 from file_ops import get_base_dir, get_marshal_path
 from marketplace_paths import find_marketplace_path
@@ -455,27 +456,37 @@ def _capture_main_dirty(_plan_id: str, _metadata: dict[str, Any], _phase: str) -
     return git_dirty_count(_repo_root())
 
 
-def _filter_main_dirty_paths(paths: list[str]) -> list[str]:
-    """Filter ``paths`` to exclude entries that legitimately live in the main
-    checkout regardless of worktree state.
+def _filter_main_dirty_paths(paths: list[str], tree: str | Path) -> list[str]:
+    """Filter ``paths`` to the main-checkout dirty set that counts as drift.
 
-    The single filter rule: drop every path that begins with ``.plan/``.
-    The plan-marshall ``.plan/`` directory holds plan metadata, status
-    files, lessons, lessons-aggregate working state, etc. During phases 1-4
-    these resolve to the main checkout's ``.plan/local/`` via the uniform
-    cwd walk-up (cwd is main; ADR-002), so dirtying ``.plan/`` is part of
-    normal phase-boundary bookkeeping and MUST NOT trip the layer-D drift
-    invariant.
+    Delegates to the SHARED ``.plan/`` exemption
+    (:func:`_plan_state_exemption.partition_plan_state_exemption`), which the
+    post-run source guard also uses, so the two guards apply ONE rule rather than
+    two copies of it — two copies is how the second guard stayed live after the
+    first was noticed.
 
-    Operates on the porcelain-string set (sorted, deduplicated) returned by
-    :func:`_git_helpers.git_dirty_files`; preserves sort order so callers
-    can diff successive captures with set semantics.
+    A ``.plan/`` path is dropped ONLY when it is NOT git-tracked in ``tree``. The
+    ``.plan/`` directory holds untracked runtime state (status, logs, lessons)
+    whose churn during a worktree-routed plan is normal phase-boundary
+    bookkeeping and MUST NOT trip the invariant — but it ALSO holds git-tracked
+    files (``marshal.json``, the architecture descriptors), and a dirtied tracked
+    one IS a real leak into the main checkout that must be reported. A path
+    outside ``.plan/`` is kept unchanged.
+
+    Args:
+        paths: The porcelain-string set from :func:`_git_helpers.git_dirty_files`.
+        tree: The main-checkout root ``paths`` were observed against, used to
+            resolve trackedness.
+
+    Returns:
+        The retained (drift-relevant) subset, sorted and de-duplicated.
     """
-    return [p for p in paths if not p.startswith('.plan/')]
+    retained, _exempted = partition_plan_state_exemption(paths, tree)
+    return retained
 
 
 def _capture_main_dirty_files(_plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
-    """Sorted list of main-checkout dirty paths, filtered to exclude ``.plan/``.
+    """Sorted list of main-checkout dirty paths, filtered to exclude UNTRACKED ``.plan/``.
 
     Layer-D enforcement capture (paired with :func:`_verify_main_dirty_drift`
     which is invoked at verify time, not via the registry — drift detection
@@ -485,7 +496,10 @@ def _capture_main_dirty_files(_plan_id: str, _metadata: dict[str, Any], _phase: 
     Returns ``None`` when the dirty-file probe fails (not a git repository
     or git invocation error) so the calling capture's "not applicable"
     contract leaves the column empty in stored rows. Otherwise returns the
-    sorted, ``.plan/``-filtered list — callers persist the list verbatim
+    sorted, exemption-filtered list — the ``.plan/`` exemption drops only
+    UNTRACKED plan state and retains a dirtied *tracked* ``.plan/`` file
+    (``marshal.json``, a descriptor) as a real leak (see
+    :func:`_filter_main_dirty_paths`). Callers persist the list verbatim
     via the TOON list field on the handshake row.
 
     The capture is keyed on ``main_dirty_files`` and complements the
@@ -499,10 +513,11 @@ def _capture_main_dirty_files(_plan_id: str, _metadata: dict[str, Any], _phase: 
     ``workflow-integration-git/standards/worktree-handling.md`` § layer D
     for the operator-facing recovery loop.
     """
-    raw = git_dirty_files(_repo_root())
+    repo = _repo_root()
+    raw = git_dirty_files(repo)
     if raw is None:
         return None
-    return _filter_main_dirty_paths(raw)
+    return _filter_main_dirty_paths(raw, repo)
 
 
 def _main_dirty_drift_diff(baseline: list[str], observed: list[str]) -> list[str]:

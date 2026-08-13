@@ -63,13 +63,19 @@ step return — against **real worktree state** in a real throwaway git reposito
 
 (g) A dirty TRACKED path outside ``.plan/`` is reported as an offender
     (**positive control** — the check can fail, and fails for the right reason).
-(h) A dirty path under ``.plan/`` alone is NOT an offender (**negative control**
-    — matched to (g), since every finalize step writes plan state under
-    ``.plan/`` and a bare porcelain non-empty test would fire on all of them).
+(g2) A dirty TRACKED path UNDER ``.plan/`` (``marshal.json``, an architecture
+    descriptor) is ALSO reported — the exemption is keyed on git trackedness, not
+    on the ``.plan/`` prefix, so a tracked plan-config write left dirty after the
+    merge gate is as unpushable as any other tracked source.
+(h) A dirty UNTRACKED path under ``.plan/`` is NOT an offender (**negative
+    control** — matched to (g2): the ordinary plan-state writes every finalize
+    step makes (status, logs, findings) are untracked, so reporting them would
+    fire the guard on every post-run step).
 
-The two controls are matched deliberately: (g) alone would pass for a guard that
-simply reports every dirty path, and (h) alone would pass for a guard that
-reports nothing at all. Only the pair pins the predicate.
+The controls are matched deliberately: (g)/(g2) alone would pass for a guard that
+reports every dirty path, and (h) alone would pass for a guard that exempts the
+whole ``.plan/`` prefix — which is the defect. Only the set pins the trackedness
+predicate.
 
 **The population is derived from discovery, never hardcoded**, so a step added
 later is covered automatically. This module deliberately asserts **no cardinality
@@ -357,9 +363,15 @@ def test_every_member_declares_mutates_source_explicitly():
 #: unpushable and therefore the thing the guard exists to name.
 _TRACKED_SOURCE = 'marketplace/bundles/demo/skills/demo/SKILL.md'
 
-#: A tracked path under ``.plan/`` — the shape every finalize step legitimately
-#: writes, and therefore the thing the guard must NOT name.
-_PLAN_STATE = '.plan/local/status.json'
+#: A git-TRACKED path under ``.plan/`` — the shape of ``marshal.json`` and the
+#: architecture descriptors. A dirty tracked ``.plan/`` file is an unpushable
+#: tracked edit, so the guard MUST name it (the exemption is trackedness-based).
+_TRACKED_PLAN_STATE = '.plan/local/status.json'
+
+#: An UNTRACKED path under ``.plan/`` — the shape of the ordinary plan-state
+#: writes every finalize step makes (status, logs, findings). Untracked, so the
+#: guard must NOT name it: the matched negative control.
+_UNTRACKED_PLAN_STATE = '.plan/local/logs/work.log'
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
@@ -403,18 +415,18 @@ def committed_repo(tmp_path: Path) -> Path:
     """A real git repository with one tracked source file and one tracked ``.plan/`` file.
 
     Both files are committed, so the worktree starts clean and any dirt a test
-    introduces is unambiguously that test's own. ``.plan/`` is force-added
-    because an ambient global ``core.excludesFile`` could otherwise keep it
-    untracked, which would silently turn the negative control into a
-    tracked-vs-untracked test instead of the ``.plan/``-exclusion test it is
-    meant to be.
+    introduces is unambiguously that test's own. The ``.plan/`` file is
+    force-added because an ambient global ``core.excludesFile`` could otherwise
+    keep it untracked — which would silently turn the tracked ``.plan/`` control
+    into an untracked one. The untracked negative control writes its own,
+    separately, so it does NOT go through this add.
     """
     repo = tmp_path / 'worktree'
     repo.mkdir()
     _git(repo, 'init', '--initial-branch=main')
     _write(repo, _TRACKED_SOURCE, '# demo skill\n')
-    _write(repo, _PLAN_STATE, '{"phase": "6-finalize"}\n')
-    _git(repo, 'add', '-f', _TRACKED_SOURCE, _PLAN_STATE)
+    _write(repo, _TRACKED_PLAN_STATE, '{"phase": "6-finalize"}\n')
+    _git(repo, 'add', '-f', _TRACKED_SOURCE, _TRACKED_PLAN_STATE)
     _git(repo, 'commit', '-m', 'chore: seed worktree')
     return repo
 
@@ -459,15 +471,17 @@ def test_dirty_tracked_source_is_reported(committed_repo: Path):
     assert offenders == [_TRACKED_SOURCE]
 
 
-def test_dirty_plan_state_alone_is_not_reported(committed_repo: Path):
-    """(h) NEGATIVE CONTROL — a dirty ``.plan/`` path alone is not an offender.
+def test_dirty_untracked_plan_state_is_not_reported(committed_repo: Path):
+    """(h) NEGATIVE CONTROL — a dirty UNTRACKED ``.plan/`` path is not an offender.
 
-    Matched to the positive control above: every finalize step writes plan
-    state, so a guard that reported this would fire on every post-run step and
-    be switched off within a run.
+    Matched to the tracked ``.plan/`` positive control below: the ordinary
+    plan-state writes every finalize step makes (status, logs, findings) are
+    untracked, so a guard that reported them would fire on every post-run step
+    and be switched off within a run. The exemption drops them because they are
+    untracked — NOT because of the ``.plan/`` prefix.
     """
-    # Arrange — the ordinary plan-state write every finalize step makes.
-    _write(committed_repo, _PLAN_STATE, '{"phase": "6-finalize", "step": "done"}\n')
+    # Arrange — the ordinary untracked plan-state write every finalize step makes.
+    _write(committed_repo, _UNTRACKED_PLAN_STATE, 'work-log line\n')
 
     # Act
     clean, offenders, error = check_tracked_source(committed_repo)
@@ -475,18 +489,74 @@ def test_dirty_plan_state_alone_is_not_reported(committed_repo: Path):
     # Assert
     assert error is None
     assert clean is True, (
-        'A .plan/ write was reported as an unpushable source edit. .plan/ is '
-        'plan state, not source; reporting it would make the guard fire on '
-        f'every post-run-review step. Reported: {offenders}'
+        'An UNTRACKED .plan/ write was reported as an unpushable source edit. '
+        'Untracked plan state is not tracked source; reporting it would make the '
+        f'guard fire on every post-run-review step. Reported: {offenders}'
     )
     assert offenders == []
+
+
+def test_dirty_tracked_plan_state_is_reported(committed_repo: Path):
+    """(D5a POSITIVE CONTROL) A dirty TRACKED ``.plan/`` file IS reported.
+
+    ``.plan/`` holds git-TRACKED files too — ``marshal.json`` and every
+    architecture descriptor. A finalize step that leaves one dirty after the
+    merge gate has an unpushable tracked edit, exactly like any other tracked
+    source. The guard must name it; a bare ``.plan/`` prefix exemption hides it,
+    which is the defect this plan closes. Seen RED before the fix (the prefix
+    filter drops it), GREEN after (the exemption is trackedness-based).
+    """
+    # Arrange — an enrich-style write leaves a TRACKED .plan/ file dirty.
+    _write(committed_repo, _TRACKED_PLAN_STATE, '{"phase": "6-finalize", "leaked": true}\n')
+
+    # Act
+    clean, offenders, error = check_tracked_source(committed_repo)
+
+    # Assert
+    assert error is None
+    assert clean is False, (
+        'A dirty TRACKED .plan/ file was reported clean. The prefix exemption '
+        'hid a tracked unpushable edit — the exact false-clean signal this guard '
+        'must not emit.'
+    )
+    assert offenders == [_TRACKED_PLAN_STATE]
+
+
+def test_cli_publishes_examined_population(committed_repo: Path):
+    """(D5d) The CLI publishes the population it examined.
+
+    A ``clean`` verdict that names the paths it considered is distinguishable
+    from a looked-at-nothing pass. Seen RED before the fix (no such field is
+    emitted), GREEN after.
+    """
+    # Arrange — one dirty tracked source path, so the considered set is non-empty.
+    _write(committed_repo, _TRACKED_SOURCE, '# demo skill\n\nEdited.\n')
+    script = get_script_path('plan-marshall', 'phase-6-finalize', 'post_run_source_guard.py')
+
+    # Act
+    result = run_script(
+        script,
+        'check',
+        '--step-id',
+        'default:lessons-capture',
+        '--project-dir',
+        str(committed_repo),
+    )
+
+    # Assert
+    payload = result.toon()
+    assert payload.get('considered_paths'), (
+        'The guard published no non-empty considered-population field, so a '
+        f'clean pass cannot be told from a looked-at-nothing one. Payload: {payload}'
+    )
 
 
 def test_untracked_source_file_is_not_reported(committed_repo: Path):
     """A brand-new untracked file is not an offender — the predicate is TRACKED.
 
-    The predicate is "dirty AND tracked AND outside .plan/". This pins the
-    tracked conjunct independently of the ``.plan/`` conjunct that (h) pins.
+    The predicate is "dirty AND tracked" (a ``.plan/`` path is exempt only when
+    untracked). This pins the tracked conjunct for a NON-``.plan/`` path,
+    independently of the untracked-``.plan/`` conjunct that (h) pins.
     """
     # Arrange — a new file that was never added to the index.
     _write(committed_repo, 'marketplace/bundles/demo/scratch.md', 'scratch\n')
@@ -500,15 +570,22 @@ def test_untracked_source_file_is_not_reported(committed_repo: Path):
     assert offenders == []
 
 
-def test_both_dirty_reports_only_the_tracked_source_path(committed_repo: Path):
-    """The two controls composed: the ``.plan/`` write is filtered, the source write is not.
+def test_mixed_dirty_reports_tracked_paths_and_exempts_untracked_plan_state(
+    committed_repo: Path,
+):
+    """All three cases composed: untracked ``.plan/`` exempt, tracked paths reported.
 
-    Run separately, (g) and (h) each leave open the possibility that the guard
-    keys on "the worktree is dirty" rather than on WHICH path is dirty. Dirtying
-    both at once and asserting the exact reported set closes that.
+    Run separately the controls leave open the possibility that the guard keys on
+    "the worktree is dirty" rather than on WHICH path is dirty AND whether it is
+    tracked. Dirtying an untracked ``.plan/`` write, a tracked ``.plan/`` file,
+    and a tracked source file at once, then asserting the exact reported set,
+    closes that: the untracked plan-state write is dropped while BOTH tracked
+    paths are named.
     """
-    # Arrange — the realistic post-run-band shape: plan state plus a stray edit.
-    _write(committed_repo, _PLAN_STATE, '{"phase": "6-finalize", "step": "done"}\n')
+    # Arrange — the realistic post-run-band shape: ordinary (untracked) plan
+    # state, plus a tracked config write and a stray tracked source edit.
+    _write(committed_repo, _UNTRACKED_PLAN_STATE, 'work-log line\n')
+    _write(committed_repo, _TRACKED_PLAN_STATE, '{"phase": "6-finalize", "step": "done"}\n')
     _write(committed_repo, _TRACKED_SOURCE, '# demo skill\n\nEdited post-merge.\n')
 
     # Act
@@ -517,7 +594,7 @@ def test_both_dirty_reports_only_the_tracked_source_path(committed_repo: Path):
     # Assert
     assert error is None
     assert clean is False
-    assert offenders == [_TRACKED_SOURCE]
+    assert offenders == sorted([_TRACKED_PLAN_STATE, _TRACKED_SOURCE])
 
 
 def test_renamed_tracked_source_reports_both_sides(committed_repo: Path):
