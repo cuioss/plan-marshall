@@ -12,6 +12,10 @@ presets:
   - local
   - standard
   - full
+records_facts:
+  - total_tokens
+  - total_wall_seconds
+  - any_phase_missing_end_time
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
@@ -30,7 +34,7 @@ This document carries NO step-activation logic. Activation is controlled by the 
 
 This step performs three sequenced `manage-metrics` invocations — `end-phase`, `enrich`, `generate` — and emits the `mark-step-done` handshake. The `generate` invocation reconciles all six canonical phases explicitly and returns an `end_time`-presence check over them; when a phase is missing that marker, the step also surfaces the gap as a `[WARN]` work-log line (see `## Surface Missing end_time Boundary Markers`). All three writes MUST land on the live plan directory; the consolidated finalize output (step outcomes, end-state verification, and plan-complete summary) is rendered by the dedicated template in `standards/output-template.md`.
 
-**CRITICAL**: `default:record-metrics` MUST be the LAST token-accounting step in the pipeline — it runs AFTER all token-consuming finalize steps (`plan-marshall:plan-retrospective`, `project:finalize-step-lessons-housekeeping`) and BEFORE the read-only `default:finalize-step-print-phase-breakdown` / `default:archive-plan` tail. This ordering is what lets `end-phase` fold the token spend of every dispatched finalize step — including retrospective and lessons-housekeeping — into the closed `6-finalize` phase row: those steps persist their `<usage>` totals to `work/metrics-accumulator-6-finalize.toon` before this step runs, so `end-phase`'s accumulator read captures the full phase total. All three metrics commands (`end-phase`, `enrich`, `generate`) write inside `.plan/plans/{plan_id}/` — `end-phase` updates `work/metrics.toon`, `enrich` supplements the same TOON with JSONL session tokens, and `generate` renders `metrics.md`. All three writes MUST land on the live (pre-archive) plan directory: `default:archive-plan` then moves that directory to `.plan/archived-plans/{date}-{plan_id}/`, so if archive ran first the live directory would no longer exist and any of the three commands would recreate it as a post-archive orphan.
+**CRITICAL**: `default:record-metrics` MUST be the LAST token-accounting step in the pipeline — it runs AFTER all token-consuming finalize steps (`plan-marshall:plan-retrospective`, `project:finalize-step-lessons-housekeeping`) and BEFORE the read-only `default:finalize-step-print-phase-breakdown` / `default:emit-landing` / `default:archive-plan` tail (the inline `emit-landing` terminal emission reads this step's recorded facts, so it must run after this step closes the ledger). This ordering is what lets `end-phase` fold the token spend of every dispatched finalize step — including retrospective and lessons-housekeeping — into the closed `6-finalize` phase row: those steps persist their `<usage>` totals to `work/metrics-accumulator-6-finalize.toon` before this step runs, so `end-phase`'s accumulator read captures the full phase total. All three metrics commands (`end-phase`, `enrich`, `generate`) write inside `.plan/plans/{plan_id}/` — `end-phase` updates `work/metrics.toon`, `enrich` supplements the same TOON with JSONL session tokens, and `generate` renders `metrics.md`. All three writes MUST land on the live (pre-archive) plan directory: `default:archive-plan` then moves that directory to `.plan/archived-plans/{date}-{plan_id}/`, so if archive ran first the live directory would no longer exist and any of the three commands would recreate it as a post-archive orphan.
 
 ## Record Phase End for 6-Finalize
 
@@ -131,8 +135,13 @@ Pass a `--display-detail` value alongside `--outcome done` so the output-templat
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step record-metrics --outcome done \
-  --display-detail "{total_wall_formatted} / {total_tokens_formatted} tokens"
+  --display-detail "{total_wall_formatted} / {total_tokens_formatted} tokens" \
+  --fact total_tokens={total_tokens} \
+  --fact total_wall_seconds={total_wall_seconds} \
+  --fact any_phase_missing_end_time={any_phase_missing_end_time}
 ```
+
+**Structured facts (`records_facts`)**: the three `--fact` flags persist the run's token total, wall-clock, and end-time-gap flag as typed per-step facts (the raw integer/bool values captured from `generate`, not the `_formatted` display variants). This is a ROUTING fix, not new modelling: the values are already computed for the `display_detail` and the output contract above — wiring them as facts lets the `default:emit-landing` terminal step (`order: 1000`) carry the token totals into the epic landing as machine-readable data rather than re-parsing a prose row. The consumer question each key earns: `total_tokens` — *"what did this run cost?"* (the token-total-disagreement finding the landing must make drainable); `total_wall_seconds` — *"how long did it take?"*; `any_phase_missing_end_time` — *"is the token total a floor because a phase boundary was dropped?"*. All three keys are recorded at this single `--outcome done` call site, satisfying the `records_facts` both-direction contract.
 
 The `{total_wall_formatted}` and `{total_tokens_formatted}` placeholders are populated from the fields captured in `## Generate Final Metrics Report` above. Use the formatted variants — never the raw `{total_wall_seconds}s / {total_tokens} tokens` template, which produces the unformatted `6381s / 599089 tokens` row that the central formatter exists to replace.
 

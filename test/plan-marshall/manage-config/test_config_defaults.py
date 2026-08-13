@@ -3789,20 +3789,20 @@ class TestFinalizeStepDescriptionDrift:
         """``default:lessons-capture`` MUST equal the clarified-request
         string verbatim — the exact wording is part of the request
         contract and downstream consumers may grep for the substring
-        ``skipped when the run is not orchestrated and qgate_findings=0``
-        to detect the Signal Gate behavior advertised here.
+        ``skipped when qgate_findings=0`` to detect the Signal Gate behavior
+        advertised here.
 
-        The not-orchestrated conjunct is load-bearing, not decoration: the
-        dispatcher's short-circuit (``phase-6-finalize/SKILL.md`` item 4b.b)
-        carries an orchestration carve-out, so an orchestrated run is
-        dispatched even at three zero signals. A description advertising the
-        three-zero skip unconditionally would misstate the gate."""
+        Plan 302 moved the landing emission to the dedicated ``emit-landing``
+        terminal step and removed lessons-capture's zero-signal orchestration
+        carve-out (``phase-6-finalize/SKILL.md`` item 4b.b): the three-zero
+        skip now fires REGARDLESS of orchestration, so the description
+        advertises it unconditionally. The former ``not orchestrated and``
+        conjunct encoded the removed carve-out and would now misstate the gate."""
         descriptions = _discovered_descriptions()
         expected = (
             'Capture lessons from triage findings and PR-review '
-            'escalations (skipped when the run is not orchestrated and '
-            'qgate_findings=0, pr_comments_promoted=0, and '
-            'script_failure_clusters=0)'
+            'escalations (skipped when qgate_findings=0, '
+            'pr_comments_promoted=0, and script_failure_clusters=0)'
         )
         assert descriptions['default:lessons-capture'] == expected, (
             "the discovered description for 'default:lessons-capture' "

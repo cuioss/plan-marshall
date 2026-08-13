@@ -47,13 +47,13 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 In orchestration context — a plan launched from an epic's staged plan spec — the three-gate policy and the global-store write below are **not applicable at all**, at any write-site. The plan makes zero `manage-lessons add` calls from any finalize step and routes every emitted item to its epic's `inbox/` OUTBOX instead. Classification is deferred to the orchestrator-side pickup, because only the orchestrator holds the cross-plan context that judgement needs.
 
-The write-site set is **three**. The dispatcher enumerates the same three members at [`../SKILL.md`](../SKILL.md) Step 3 item 4b.a0, which carries the matching "MUST be added to this list" obligation for the runtime-input forwarding — a new write-site must be added in BOTH places:
+The **lesson** write-site set is **three**. The dispatcher forwards the same orchestration verdict to these three plus the `emit-landing` terminal step — which writes the run's one `kind: landing` message rather than lesson-shaped output — at [`../SKILL.md`](../SKILL.md) Step 3 item 4b.a0 (four epic-inbox writers in all), and that item carries the matching "MUST be added to this list" obligation for the runtime-input forwarding. A new lesson write-site must be added in BOTH places:
 
 | Write-site | Orchestrated branch |
 |------------|---------------------|
-| [`../workflow/lessons-capture.md`](../workflow/lessons-capture.md) § "Orchestration branch" | Zero `manage-lessons add`, zero `architecture enrich`; one `kind: landing` message per run plus one `kind: candidate-lesson` per candidate. |
+| [`../workflow/lessons-capture.md`](../workflow/lessons-capture.md) § "Orchestration branch" | Zero `manage-lessons add`, zero `architecture enrich`; one `kind: candidate-lesson` message per candidate. (The run's one `kind: landing` message is the `emit-landing` terminal step's, not this step's.) |
 | [`../../plan-retrospective/SKILL.md`](../../plan-retrospective/SKILL.md) Step 5b | Zero `manage-lessons add`; Step 5a dedup and the `already_closed` deletion path do not run; every proposal rides as one `kind: candidate-lesson` message. |
-| [`finalize-step-preference-emitter.md`](finalize-step-preference-emitter.md) Step 4 § "Orchestration branch" | Zero `manage-lessons add`; each owed `architecture enrich` hint rides as one `kind: candidate-lesson` message. No `kind: landing` message — the one landing per run is `lessons-capture`'s. |
+| [`finalize-step-preference-emitter.md`](finalize-step-preference-emitter.md) Step 4 § "Orchestration branch" | Zero `manage-lessons add`; each owed `architecture enrich` hint rides as one `kind: candidate-lesson` message. No `kind: landing` message — the one landing per run is the dedicated `emit-landing` terminal step's. |
 
 The envelope schema is owned by [`../../plan-orchestrator/standards/inbox-envelope.md`](../../plan-orchestrator/standards/inbox-envelope.md) and the branch mechanics by the three documents above; neither is restated here.
 

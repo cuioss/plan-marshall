@@ -94,7 +94,7 @@ The payload is free markdown; the kind tells the orchestrator-side pickup how to
 
 | `kind` | Payload contract |
 |--------|------------------|
-| `landing` | The plan's landing narrative: what shipped, the PR reference, and any residue the epic should track. Exactly one per orchestrated finalize run, emitted unconditionally — including when the plan produced no lesson-bearing signals. |
+| `landing` | The plan's landing, carrying the run's facts as a machine-readable `landing-facts` block (what shipped, the PR reference, per-step outcomes and typed facts, token totals) plus an optional narrative `## Residue` section for the irreducibly-narrative half. The payload BODY contract — the required fact keys and the report↔inbox delta they close — is owned by [`landing-payload-spec.md`](landing-payload-spec.md); this table owns only the `kind`. Exactly one per orchestrated finalize run, emitted unconditionally by the `emit-landing` terminal step — including when the plan produced no lesson-bearing signals. |
 | `finding` | One observation the plan surfaced that the epic should know about but that is not itself a lesson. |
 | `candidate-lesson` | One proposed lesson body, in the same `key=value` + markdown-body shape the lessons corpus uses, so the orchestrator-side pickup can lift it into `manage-lessons` with zero transcoding. The plan performs no global-vs-epic classification — only the orchestrator holds the cross-plan context that judgement needs. |
 
@@ -148,5 +148,6 @@ The state checks (8–11) run AFTER the base checks (1–7), so the base rejecti
 ## Related
 
 - [`persona-plan-orchestrator/standards/orchestration-model.md`](../../persona-plan-orchestrator/standards/orchestration-model.md) — § Ledger Write-Boundary, the contract that sanctions this channel
-- [`../SKILL.md`](../SKILL.md) § Canonical invocations — the `inbox write` / `inbox validate` / `inbox list` / `inbox archive` / `inbox detect` argument surfaces
+- [`../SKILL.md`](../SKILL.md) § Canonical invocations — the `inbox write` / `inbox validate` / `inbox list` / `inbox archive` / `inbox detect` / `inbox landing-check` argument surfaces
+- [`landing-payload-spec.md`](landing-payload-spec.md) — the machine-readable `landing` payload body contract (required fact keys, the report↔inbox delta)
 - [`manage-lessons/standards/file-format.md`](../../manage-lessons/standards/file-format.md) — the lesson body shape a `candidate-lesson` payload carries

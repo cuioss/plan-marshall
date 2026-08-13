@@ -229,17 +229,25 @@ class TestZeroGlobalStoreWritesLessonsCapture:
     def test_orchestrated_branch_uses_the_inbox_write_verb(self):
         assert _INBOX_WRITE.search(self._branch()) is not None
 
-    def test_orchestrated_branch_covers_landing_and_candidate_lesson(self):
+    def test_orchestrated_branch_emits_candidate_lessons_only(self):
+        """Plan 302 D1: the landing moved to the dedicated emit-landing step.
+
+        lessons-capture's orchestrated branch keeps the candidate-lesson stream but
+        no longer emits the ``kind: landing`` message — a landing from here too
+        would put two landings on one run.
+        """
         branch = self._branch()
 
-        assert 'kind: landing' in branch
         assert 'kind: candidate-lesson' in branch
+        assert 'emits **NO `kind: landing` message**' in branch
+        assert 'emit-landing' in branch
 
-    def test_orchestrated_branch_emits_one_landing_unconditionally(self):
+    def test_orchestrated_branch_no_longer_emits_the_landing(self):
+        """The landing is unconditional, but it is emit-landing's, not this step's."""
         branch = self._branch()
 
-        assert 'unconditionally' in branch
-        assert 'zero signals' in branch
+        # The one landing an orchestrated run owes is now the terminal step's.
+        assert 'The one landing an orchestrated finalize run owes its epic is emitted by the dedicated `emit-landing`' in branch
 
     def test_orchestrated_branch_performs_no_classification(self):
         assert 'no** global-vs-epic classification' in self._branch()
@@ -344,8 +352,8 @@ class TestZeroGlobalStoreWritesPreferenceEmitter:
         assert '--kind candidate-lesson' in self._branch()
 
     def test_orchestrated_branch_emits_no_landing_message(self):
-        # The one landing per orchestrated run is lessons-capture's; a second one
-        # from here would put two landings on a single run.
+        # The one landing per orchestrated run is the emit-landing terminal step's;
+        # a second one from here would put two landings on a single run.
         assert 'emits NO `kind: landing` message' in self._branch()
 
     def test_declaration_leaves_the_non_orchestrated_path_unchanged(self):
@@ -555,14 +563,23 @@ class TestShortCircuitCarveOut:
     def test_resolution_is_documented_as_running_before_the_short_circuit(self):
         assert 'runs BEFORE the three-zero short-circuit' in self._item_4b()
 
-    def test_short_circuit_is_stated_as_not_firing_when_orchestrated(self):
+    def test_short_circuit_fires_regardless_of_orchestration(self):
+        """Plan 302 D1: the carve-out that dispatched lessons-capture at
+        zero-signals-orchestrated to emit the landing is removed — the landing is
+        the dedicated emit-landing step's now, so the short-circuit fires on zero
+        signals whether or not the run is orchestrated."""
         item = self._item_4b()
 
-        assert 'the three-zero short-circuit does NOT fire' in item
-        assert 'owes its epic a `kind: landing` message' in item
+        assert 'fires on zero signals **regardless of orchestration**' in item
+        assert 'no longer carries an orchestration carve-out' in item
+        assert '`default:emit-landing` terminal step' in item
 
-    def test_short_circuit_condition_is_gated_on_not_orchestrated(self):
-        assert 'When `orchestrated == false AND signal_1_count == 0' in self._item_4b()
+    def test_short_circuit_condition_is_not_gated_on_orchestration(self):
+        item = self._item_4b()
+
+        assert 'When `signal_1_count == 0 AND signal_2_count == 0 AND signal_3_count == 0`' in item
+        # The old orchestrated-gated condition is gone.
+        assert 'orchestrated == false AND signal_1_count' not in item
 
     def test_both_runtime_inputs_appear_in_the_forwarded_block(self):
         item = self._item_4b()
@@ -576,6 +593,8 @@ class TestShortCircuitCarveOut:
         assert 'default:lessons-capture' in item
         assert 'plan-marshall:plan-retrospective' in item
         assert 'default:finalize-step-preference-emitter' in item
+        # Plan 302 D1: the terminal emission step is the fourth epic-inbox write-site.
+        assert 'default:emit-landing' in item
         assert 'MUST be added to this list' in item
 
     def test_body_declares_both_runtime_inputs(self):

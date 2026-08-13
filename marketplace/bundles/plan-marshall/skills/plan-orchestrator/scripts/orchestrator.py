@@ -101,6 +101,7 @@ from _orchestrator_inbox import (
     cmd_inbox_archive,
     cmd_inbox_close_stream,
     cmd_inbox_detect,
+    cmd_inbox_landing_check,
     cmd_inbox_list,
     cmd_inbox_migrate_archive,
     cmd_inbox_supersede,
@@ -2714,6 +2715,21 @@ def _add_inbox_group(subparsers: Any) -> None:
         help="The request.md source_id value recorded by phase-1-init.",
     )
     detect.set_defaults(handler=cmd_inbox_detect)
+
+    landing_check = actions.add_parser(
+        'landing-check',
+        help='Report whether a landing message carries the required '
+        'machine-readable facts (the drain-completeness check).',
+        allow_abbrev=False,
+    )
+    _add_slug_arg(landing_check)
+    landing_check.add_argument(
+        '--message',
+        required=True,
+        metavar='NAME',
+        help='Bare landing message filename inside the epic inbox/ directory.',
+    )
+    landing_check.set_defaults(handler=cmd_inbox_landing_check)
 
 
 @safe_main

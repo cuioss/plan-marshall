@@ -94,6 +94,20 @@ The drain semantics — enumeration order, the report-never-skip rule for a malf
 
 **Under inbox scan the landing narrative comes from the message payload rather than from an operator paste — and that changes the SOURCE, never the obligation.** The Step 2 verify-against-ground-truth contract applies unchanged and undiluted: the message is a **lead, not a fact**. The PR number, the merge state, and the deliverable set are corroborated against git and the read-side `plan-marshall:tools-integration-ci:ci` abstraction BEFORE `landings/PLAN-NN.md` is written, BEFORE the `queue --transition ... --status shipped` call at item 2, and BEFORE the three `queue --set-row` stamps at item 3. A claim the corroboration contradicts or cannot settle is recorded as an unverified lead (a watch), exactly as for a paste.
 
+**Under inbox scan, run the drain-completeness check on the landing message FIRST** — this is the check that lets the orchestrator establish, after a zero-drain, that nothing material is outstanding:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox landing-check \
+  --slug {slug} --message {name}
+```
+
+Read `complete` and `missing_keys` from the TOON. A `landing` message carries a machine-readable `landing-facts` block specified by [`../standards/landing-payload-spec.md`](../standards/landing-payload-spec.md); the check reports whether that block is present and carries every required fact key.
+
+- **`complete: true`** — the landing transmitted its whole mechanisable delta. Reconcile normally (items 1–7). A run whose landings are ALL complete has drained everything the report↔inbox delta could mechanise, so a subsequent operator paste yields nothing new from that plan — which is the drain-completeness this check establishes.
+- **`complete: false`** — the landing carried only narrative, or a stale/partial facts block (a PRE-FIX landing has no block at all, so `missing_keys` names the whole required set). Record it as an Open Defect in `epic.md` naming `{name}` and the `missing_keys`, and log the disposition through the same `manage-logging decision --store orchestrator` line Step 5b uses, so the incompleteness is VISIBLE rather than reconciled-as-if-complete. The landing is STILL reconciled below — an incomplete landing is drained and its facts used as far as they go; the defect records that a manual paste from that plan may still surface something the inbox did not.
+
+`complete: false` is a VERDICT, never a fault: the verb stays `status: success` and never aborts the drain. This check is what turns "the queue is empty" into "nothing material is outstanding" — the two are the same only when every drained landing was complete.
+
 1. Write the landing report to `landings/PLAN-NN.md`, instantiated from [`templates/landing-analysis.md`](../templates/landing-analysis.md) via the Write tool: deliverable fidelity vs spec, metrics/anomalies, routing/merge behavior, reconciliation actions.
 2. Mark the plan shipped in the machine authority:
 
@@ -189,6 +203,7 @@ messages_scanned: {N}
 messages_archived: {N}
 messages_invalid: {N}
 messages_archive_failed: {N}
+landings_incomplete: {N}
 drained[D]{message,kind,disposition}:
   orchestration-inbox-channel-001.md,landing,reconciled
   orchestration-inbox-channel-002.md,candidate-lesson,promoted
@@ -207,7 +222,7 @@ resume_anchor: "{next action}"
 The block carries a singular half and a plural half, and `mode` says which half is live:
 
 - **Single-item modes** (`paste` / `on_disk` / `cross_repo`) — `granularity`, `plan`, and `landing_report` carry the analysis result exactly as before (`plan` and `landing_report` carry `-` for the observation granularity). The drain fields carry `0` and `drained[]` is empty.
-- **Inbox scan** (`inbox_scan`) — the singular fields `granularity`, `plan`, and `landing_report` carry `-`, and the per-message outcomes ride `drained[]`. `messages_scanned` counts every enumerated message, `messages_archived` counts those consumed and retired, `messages_invalid` counts those reported invalid and deliberately left un-archived, and `messages_archive_failed` counts those whose disposition was persisted but whose archival was refused (item 4a). `messages_archived + messages_invalid + messages_archive_failed == messages_scanned` at a clean exit; a gap means a message was neither consumed nor recorded as a defect, and the epic ledger carries the discrepancy as an open defect. Each `drained[]` row's `disposition` is the recorded Step 5b disposition (`promoted` / `folded` / `staged` / `discarded`), `reconciled` for a landing, `observed` for a finding absorbed by Step 5, `invalid` for an unprocessed message, or `archive_failed` for a processed message whose archival was refused.
+- **Inbox scan** (`inbox_scan`) — the singular fields `granularity`, `plan`, and `landing_report` carry `-`, and the per-message outcomes ride `drained[]`. `messages_scanned` counts every enumerated message, `messages_archived` counts those consumed and retired, `messages_invalid` counts those reported invalid and deliberately left un-archived, and `messages_archive_failed` counts those whose disposition was persisted but whose archival was refused (item 4a). `landings_incomplete` counts the `kind: landing` messages the drain-completeness check (Step 4) reported `complete: false` — the landings that carried only narrative or a partial facts block, each recorded as an Open Defect. A zero-drain with `landings_incomplete: 0` is what establishes that nothing material is outstanding; a non-zero value names exactly the plans whose manual paste may still surface something the inbox did not. `messages_archived + messages_invalid + messages_archive_failed == messages_scanned` at a clean exit; a gap means a message was neither consumed nor recorded as a defect, and the epic ledger carries the discrepancy as an open defect. Each `drained[]` row's `disposition` is the recorded Step 5b disposition (`promoted` / `folded` / `staged` / `discarded`), `reconciled` for a landing, `observed` for a finding absorbed by Step 5, `invalid` for an unprocessed message, or `archive_failed` for a processed message whose archival was refused.
 
 This is a clean break, not a shim: there is one Output block, and a consumer reads `mode` to know which half to trust.
 

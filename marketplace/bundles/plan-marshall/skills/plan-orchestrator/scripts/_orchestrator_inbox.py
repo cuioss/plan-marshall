@@ -790,6 +790,103 @@ def classify_source_id(source_id: str) -> SourceIdClassification:
     return SourceIdClassification(False, None, None, 'not_orchestrator_pointer')
 
 
+# =============================================================================
+# Landing payload completeness (drain-completeness check)
+# =============================================================================
+
+#: The ``landing`` payload's fenced-block language tag and its schema marker. The
+#: schema rides the block as a required key so an unrecognised payload version is
+#: fail-closed exactly as ``envelope_version`` is (see
+#: ``standards/landing-payload-spec.md``).
+LANDING_FACTS_FENCE = 'landing-facts'
+LANDING_FACTS_SCHEMA = 'landing-facts/1'
+
+#: The required machine-readable fact keys a COMPLETE landing carries — the
+#: mechanisable half of the report<->inbox delta the payload spec derives. A
+#: landing missing any one is INCOMPLETE, and the drain records the gap rather
+#: than reconciling as if the inbox had drained everything material. The set is
+#: the single source of truth the producer (``emit-landing.md``) and this
+#: validator share; it is NOT re-listed in prose elsewhere — the spec doc points
+#: here.
+LANDING_REQUIRED_KEYS: tuple[str, ...] = (
+    'schema',
+    'plan_id',
+    'pr',
+    'merge_state',
+    'deliverables_total',
+    'deliverables_done',
+    'total_tokens',
+    'steps',
+)
+
+#: Matches the first ``landing-facts`` fenced block in a payload body. DOTALL so
+#: the body spans lines; non-greedy so it stops at the first closing fence.
+_LANDING_FENCE_RE = re.compile(
+    r'^```' + LANDING_FACTS_FENCE + r'[ \t]*\n(?P<body>.*?)\n```[ \t]*$',
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def parse_landing_facts(payload_body: str) -> dict[str, str] | None:
+    """Extract the ``landing-facts`` fenced block from a landing body as a dict.
+
+    Returns the ``key=value`` pairs of the first ``landing-facts`` fenced block, or
+    ``None`` when the body carries NO such block at all — the pre-fix, prose-only
+    landing. The distinction is load-bearing: ``None`` (no block) is what
+    :func:`check_landing_completeness` maps to "every required key missing", so a
+    narrative-only landing is reported incomplete rather than silently accepted.
+
+    The parse is lenient about the block's CONTENT (blank lines, ``#`` comment
+    lines, and lines with no ``=`` are skipped) because completeness is judged by
+    the required-key check, not by parse strictness; it is strict only about the
+    block's PRESENCE.
+    """
+    match = _LANDING_FENCE_RE.search(payload_body or '')
+    if match is None:
+        return None
+    facts: dict[str, str] = {}
+    for line in match.group('body').splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#') or '=' not in stripped:
+            continue
+        key, _, value = stripped.partition('=')
+        key = key.strip()
+        if key:
+            facts[key] = value.strip()
+    return facts
+
+
+def check_landing_completeness(payload_body: str) -> tuple[bool, list[str]]:
+    """Return ``(complete, missing_keys)`` for a landing payload body.
+
+    A landing is COMPLETE when it carries a ``landing-facts`` block whose ``schema``
+    is :data:`LANDING_FACTS_SCHEMA` and which supplies every key in
+    :data:`LANDING_REQUIRED_KEYS` with a non-empty value. Otherwise it is
+    INCOMPLETE and ``missing_keys`` names why:
+
+    - No block at all (a prose-only landing) -> every required key is missing. This
+      is the case the drain-completeness check exists to catch: a landing carrying
+      only narrative transmits none of the mechanisable delta, so the operator
+      paste keeps surfacing what the inbox never saw.
+    - Block present but ``schema`` != :data:`LANDING_FACTS_SCHEMA` -> ``['schema']``,
+      fail-closed like the envelope's ``unknown_envelope_version`` — a mismatched
+      payload version is never best-effort-accepted.
+    - Block present with the right schema but missing (or empty) required keys ->
+      exactly those keys.
+
+    A check that PASSED on a prose-only landing would be the vacuous guard this one
+    exists to replace; the no-block branch is what keeps it non-vacuous, and it is
+    pinned by a test that feeds a pre-fix prose landing and asserts the failure.
+    """
+    facts = parse_landing_facts(payload_body)
+    if facts is None:
+        return False, list(LANDING_REQUIRED_KEYS)
+    if facts.get('schema') != LANDING_FACTS_SCHEMA:
+        return False, ['schema']
+    missing = [key for key in LANDING_REQUIRED_KEYS if not facts.get(key)]
+    return (not missing), missing
+
+
 def cmd_inbox_write(args: Any) -> dict[str, Any]:
     """Append one message to the epic's inbox.
 
@@ -1649,4 +1746,59 @@ def cmd_inbox_detect(args: Any) -> dict[str, Any]:
         'epic': verdict.epic or '',
         'plan_spec': verdict.plan_spec or '',
         'detection': verdict.detection,
+    }
+
+
+def cmd_inbox_landing_check(args: Any) -> dict[str, Any]:
+    """Validate a landing message's payload completeness against the required facts.
+
+    Resolves ``--message`` inside the epic's ``inbox/`` (queued or archived, via
+    :func:`resolve_message_path`), splits the envelope, and runs
+    :func:`check_landing_completeness` over the payload body. The drain
+    (``analyze.md`` Step 4) runs this as it reconciles a ``landing`` message, so a
+    landing that carried only narrative — transmitting none of the mechanisable
+    report<->inbox delta — is recorded as an incompleteness rather than reconciled
+    as if the inbox had drained everything material. That is what lets the
+    orchestrator establish, after a drain reports zero, that nothing material is
+    outstanding.
+
+    ``complete: false`` is a VERDICT, not a fault: the verb stays ``status:
+    success`` and rides the completeness on the payload, so a drain is never
+    aborted by an incomplete landing — it is recorded and surfaced.
+    """
+    invalid = _validate_identifier(args.slug)
+    if invalid:
+        return _error('invalid_slug', invalid, slug=args.slug)
+    name = args.message
+    if not _is_bare_filename(name):
+        return _error(
+            'invalid_message_name',
+            f'--message must be a bare filename inside inbox/, got: {name}',
+            slug=args.slug,
+        )
+    path, location = resolve_message_path(_inbox_dir(args.slug), name)
+    if location == 'missing':
+        return _error(
+            'file_not_found', f'inbox message not found: {path}', slug=args.slug
+        )
+    try:
+        text = path.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError) as exc:
+        return _error(
+            'unreadable',
+            f'inbox message {name} could not be read: {exc}',
+            slug=args.slug,
+            message_name=name,
+        )
+    _, body = _split_message(text)
+    complete, missing = check_landing_completeness(body)
+    return {
+        'status': 'success',
+        'operation': 'inbox-landing-check',
+        'slug': args.slug,
+        'store': ORCHESTRATOR_STORE,
+        'message': name,
+        'location': location,
+        'complete': complete,
+        'missing_keys': missing,
     }
