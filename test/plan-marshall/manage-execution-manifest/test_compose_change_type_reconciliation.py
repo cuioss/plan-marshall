@@ -154,6 +154,21 @@ def test_status_without_change_type_key_still_composes(plan_context):
     assert result['change_type_scope'] == 'supplied'
 
 
+def test_malformed_status_json_degrades_to_no_settled(plan_context):
+    """A corrupt status.json must not crash compose — it degrades to 'no settled classification'.
+
+    The reconciliation read is fail-closed toward composing on the supplied value: an unreadable
+    settled classification is treated as absent, not as a hard error.
+    """
+    plan_id = 'reconcile-malformed-status'
+    plan_dir = plan_context.plan_dir_for(plan_id)
+    (plan_dir / 'status.json').write_text('{not valid json', encoding='utf-8')
+    result = cmd_compose(_compose_ns(plan_id, 'feature'))
+    assert result is not None
+    assert result['status'] == 'success'
+    assert result['change_type_scope'] == 'supplied'
+
+
 # =============================================================================
 # D4(d) / D3 — the narrowing decision names its scope, and carries its input.
 # =============================================================================
