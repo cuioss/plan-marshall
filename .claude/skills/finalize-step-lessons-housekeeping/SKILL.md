@@ -41,10 +41,10 @@ Accepts the standard finalize-step arguments:
 - `--plan-id` — plan identifier (required, used to read the plan outcome and to scope decision-log entries)
 - `--iteration` — finalize iteration counter (accepted for contract compliance, no effect)
 
-This step edits tracked source (its Step 4b promotions write governing-skill docs), so it declares `mutates_source: true` and MUST run in the **pre-merge settle band** (`order < 10`):
+This step edits tracked source (its Step 4b promotions write governing-skill docs), so it declares `mutates_source: true` and MUST run in the **pre-merge settle band** (`order < 11`):
 
 - **before `default:pre-push-quality-gate` (5)** — so its promotion edits are linted in the same finalize run that wrote them, rather than surfacing as a lint failure on a later plan.
-- **before `default:push` (10) and `default:branch-cleanup` (70)** — so those edits are pushable onto the still-open feature branch and covered by the PR's CI run and review.
+- **before `default:push` (11) and `default:branch-cleanup` (70)** — so those edits are pushable onto the still-open feature branch and covered by the PR's CI run and review.
 
 This settle-band constraint **supersedes** the former requirement to run after `plan-marshall:plan-retrospective` (order 995): pushability of source edits outranks reading a retrospective artifact that this step already treats as best-effort. See [marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/source-edit-pushability.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/source-edit-pushability.md) for the governing contract.
 
@@ -75,8 +75,8 @@ The canonical phase-6-finalize chain (resolved by each step's `order:` frontmatt
 default:finalize-step-sync-baseline             (3)
 project:finalize-step-lessons-housekeeping      (4)    <-- this step
 default:pre-push-quality-gate                   (5)
-...                                             (settle band, order < 10)
-default:push                                    (10)
+...                                             (settle band, order < 11)
+default:push                                    (11)
 ```
 
 The step runs inside the pre-merge settle band, so its promotion edits are linted by `default:pre-push-quality-gate` and shipped by the single `default:push` barrier. The step itself issues **no tree-mutating git call** — it reads HEAD (Steps 2 and 7) but never stages, commits, or pushes — and invents no push path: the dispatcher's commit instrumentation (phase-6-finalize Step 3 item 5f) commits every settle-band mutating step's edits onto the feature branch before the barrier runs.

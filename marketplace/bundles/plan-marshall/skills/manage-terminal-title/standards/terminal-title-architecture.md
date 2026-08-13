@@ -722,8 +722,9 @@ with cwd at the **main checkout**. `_plan_is_live` resolves plan directories
 relative to the process cwd, so a sweep fired from inside a worktree would resolve
 none of the main checkout's live plan dirs and would classify **every other live
 plan's binding as archived**, GC'ing bindings that are still in use. The
-`archive-plan` caller satisfies this structurally: it runs at `order: 1000`, after
-`default:branch-cleanup` has removed the worktree, so cwd is already main.
+`archive-plan` caller satisfies this structurally: it runs at `order: 1100` (the
+terminus), after `default:branch-cleanup` has removed the worktree, so cwd is
+already main.
 
 ### Output Channels
 

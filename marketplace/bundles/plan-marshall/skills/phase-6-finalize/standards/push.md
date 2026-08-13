@@ -4,7 +4,7 @@ lane:
   cost_size: XS
 name: default:push
 description: Push the converged branch
-order: 10
+order: 11
 mutates_source: false
 default_on: true
 presets:

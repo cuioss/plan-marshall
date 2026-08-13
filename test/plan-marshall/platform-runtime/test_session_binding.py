@@ -349,7 +349,7 @@ class TestMainAnchoredSweep:
     ``_plan_is_live`` resolves plan directories relative to the process cwd, so
     the same cache yields a completely different stale set depending on where the
     sweep is fired from. The ``default:archive-plan`` caller satisfies the
-    invariant structurally (it runs at ``order: 1000``, after
+    invariant structurally (it runs at ``order: 1100``, after
     ``default:branch-cleanup`` removed the worktree, so cwd is main). These two
     tests pin both halves so a future caller relocated to a worktree-cwd site
     fails loudly here instead of silently GC'ing live bindings.

@@ -823,3 +823,59 @@ class TestDefaultPhase6StepsMatchesDiscovery:
             'second, competing statement of the pipeline order. Resolved '
             f'(step, order) pairs as written: {resolved}'
         )
+
+
+class TestNoTwoFinalizeStepsShareAnOrder:
+    """The collision rule (plan 300 D3): no two same-ext-point finalize steps share an `order`.
+
+    The finalize-step ext-point is the phase discriminator — `find_implementors(_EXT_POINT)`
+    returns finalize steps only, and the composer sorts exactly that one population — so a
+    collision is two steps in that population sharing an order. A cross-phase coincidence (a
+    phase-5 verify-step order equal to a phase-6 finalize-step order) is NOT a collision and is
+    invisible here, because the phase-5 doc declares a different ext-point and never enters this
+    population.
+
+    A collision is a defect because the composer's sort resolves equal orders only by an
+    UNDECLARED tie-break: `_sort_steps_by_frontmatter_order` is a stable sort, so two equal-order
+    steps keep their input list position (the `DEFAULT_PHASE_6_STEPS` sequence for defaults, the
+    on-disk keyed-map order for a configured plan). The ascending-order assertion
+    (`check_emitted_steps_ascending_order`) treats equal orders as non-decreasing and so does NOT
+    catch a collision — this check is what closes that gap. The population is derived from
+    `find_implementors`, so a step added later is covered with no edit here. Contract:
+    extension-api/standards/finalize-step-order-bands.md § "The collision rule".
+    """
+
+    def _orders_by_name(self) -> list[tuple[int, str]]:
+        return [
+            (record['order'], record['name'])
+            for record in find_implementors(_EXT_POINT)
+            if isinstance(record.get('order'), int)
+        ]
+
+    def test_discovery_is_non_empty(self):
+        """Anti-vacuity: the collision assertion below is over the discovered population.
+
+        A discovery that resolved to nothing would make the no-collision assertion trivially
+        true, so emptiness is rejected on its own first.
+        """
+        assert self._orders_by_name(), (
+            f'find_implementors({_EXT_POINT!r}) resolved no order-bearing finalize steps, so '
+            'the collision check below would be vacuous.'
+        )
+
+    def test_no_two_steps_share_an_order(self):
+        by_order: dict[int, list[str]] = {}
+        for order, name in self._orders_by_name():
+            by_order.setdefault(order, []).append(name)
+        collisions = {
+            order: sorted(names) for order, names in by_order.items() if len(names) > 1
+        }
+
+        assert not collisions, (
+            'Two or more finalize steps share an `order`. The composer sort '
+            '(`_sort_steps_by_frontmatter_order`) is stable, so it would resolve them only by '
+            'their input list position — an undeclared, emergent tie-break the banded allocation '
+            'contract forbids. Give each colliding step a distinct order from its band\'s reserved '
+            f'gaps. Colliding orders: {collisions}. See '
+            'extension-api/standards/finalize-step-order-bands.md § "The collision rule".'
+        )

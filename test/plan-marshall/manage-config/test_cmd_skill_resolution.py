@@ -512,7 +512,7 @@ def test_list_finalize_steps_ordered_ascending_by_order(tmp_path):
     project) merged and sorted by ``(order, name)``. The ordering invariant is the
     global ascending order, NOT a "built-ins before project steps" partition —
     project steps interleave by their declared order (e.g. plugin-doctor at order
-    6 precedes default:push at order 10).
+    6 precedes default:push at order 11).
     """
     steps = _run_discovery_in_cwd(tmp_path)
 
@@ -579,10 +579,10 @@ def test_list_finalize_steps_builtins_have_order(tmp_path):
     steps = _run_discovery_in_cwd(tmp_path)
 
     by_name = {s['name']: s for s in steps if s['source'] == 'built-in'}
-    assert by_name['default:push']['order'] == 10
+    assert by_name['default:push']['order'] == 11
     assert by_name['default:create-pr']['order'] == 20
     assert by_name['plan-marshall:automatic-review']['order'] == 30
-    assert by_name['default:archive-plan']['order'] == 1000
+    assert by_name['default:archive-plan']['order'] == 1100
     assert by_name['default:record-metrics']['order'] == 998
 
 

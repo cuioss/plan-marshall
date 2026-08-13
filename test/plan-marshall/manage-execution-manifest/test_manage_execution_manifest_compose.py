@@ -1260,7 +1260,7 @@ def test_compose_default_phase_6_steps_when_csv_omitted(plan_context):
 # cmd_compose never re-sorted the marshal.json ``phase_6.steps`` map by
 # frontmatter order, so ``manage-config sync-defaults`` back-filling a missing
 # default-on step by APPENDING it landed the new step after ``archive-plan``
-# (order 1000) regardless of its own order. cmd_compose now sorts the FINAL
+# (terminus order 1100) regardless of its own order. cmd_compose now sorts the FINAL
 # ``phase_6.steps`` by resolved frontmatter order before persistence, so
 # ``archive-plan`` sorts last among order-resolvable steps automatically.
 # =============================================================================
@@ -1271,19 +1271,19 @@ def test_compose_sorts_phase_6_steps_by_frontmatter_order(plan_context):
     step emits the lower-order step first in the composed manifest.
 
     Reproduces the live bug: ``finalize-step-preference-emitter`` (order 992) was
-    appended AFTER ``archive-plan`` (order 1000) by ``manage-config
+    appended AFTER ``archive-plan`` (terminus order 1100) by ``manage-config
     sync-defaults``. cmd_compose now sorts ``phase_6.steps`` by resolved
     frontmatter order, so the preference-emitter is emitted strictly before
     ``archive-plan``, which sorts last among order-resolvable steps.
     """
-    # Bug-reproducing candidate order: archive-plan (order 1000) precedes the
+    # Bug-reproducing candidate order: archive-plan (terminus order 1100) precedes the
     # lower-order preference-emitter (order 992) — exactly the layout
     # sync-defaults produced by appending the back-filled default-on step.
     candidates = [
         'push',
         'create-pr',
         'lessons-capture',
-        'archive-plan',  # order 1000
+        'archive-plan',  # order 1100 (terminus)
         'finalize-step-preference-emitter',  # order 992 — appended AFTER archive-plan
     ]
     result = cmd_compose(
@@ -1303,32 +1303,33 @@ def test_compose_sorts_phase_6_steps_by_frontmatter_order(plan_context):
     # The composer sorted by frontmatter order: the low-order step now precedes
     # archive-plan even though the input placed it after.
     assert steps.index('finalize-step-preference-emitter') < steps.index('archive-plan')
-    # archive-plan (order 1000, the highest) sorts last among order-resolvable steps.
+    # archive-plan (order 1100, the highest/terminus) sorts last among order-resolvable steps.
     assert steps[-1] == 'archive-plan'
 
 
 def test_compose_places_settle_steps_before_push_and_wait_steps_after(plan_context):
     """D3 mutation-settling reorder: the composer's ``_sort_steps_by_frontmatter_order``
-    places every local-settleable HEAD-changing step (order < 10) BEFORE
-    ``default:push`` (order 10) and every post-push WAIT step (order > 10) AFTER
+    places every local-settleable HEAD-changing step (order < 11) BEFORE
+    ``default:push`` (order 11) and every post-push WAIT step (order > 11) AFTER
     it — the settle → push once → wait contract expressed purely via step-doc
     ``order:`` frontmatter. Pins the D3 move of ``architecture-refresh`` from the
-    post-push region (order 25) into the pre-push settle band (order 9).
+    post-push region (order 25) into the pre-push settle band (order 10, after
+    plan 300 D2's de-collision).
     """
     # Deliberately SCRAMBLED input: push first, wait steps and architecture-refresh
     # ahead of the other settle steps — the composer must re-sort by resolved
     # frontmatter order so the barrier holds regardless of candidate-list order.
     scrambled = [
-        'push',  # order 10 (the single push barrier)
-        'ci-verify',  # wait (> 10)
-        'sonar-roundtrip',  # wait (> 10)
-        'architecture-refresh',  # settle (order 9) — the D3 move
+        'push',  # order 11 (the single push barrier)
+        'ci-verify',  # wait (> 11)
+        'sonar-roundtrip',  # wait (> 11)
+        'architecture-refresh',  # settle (order 10, de-collided; last in band) — the D3 move
         'finalize-step-security-audit',  # settle (order 9)
         'finalize-step-simplify',  # settle (order 8)
         'pre-push-quality-gate',  # settle (order 5)
         'finalize-step-sync-baseline',  # settle (order 3)
-        'create-pr',  # wait (> 10)
-        'automatic-review',  # wait (> 10)
+        'create-pr',  # wait (> 11)
+        'automatic-review',  # wait (> 11)
         'branch-cleanup',  # merge (order 70)
     ]
     # ``pre-push-quality-gate`` is order-band-3 settle, but it is also governed by
@@ -1370,8 +1371,8 @@ def test_compose_places_settle_steps_before_push_and_wait_steps_after(plan_conte
         'architecture-refresh',
     ):
         assert steps.index(settle) < push_idx, f'{settle!r} must sort before push; got {steps!r}'
-    # architecture-refresh (order 9) now sits in the settle band, not the
-    # post-push region it occupied at order 25.
+    # architecture-refresh (order 10, last in the settle band) sits in the settle
+    # band, not the post-push region it occupied at order 25.
     assert steps.index('architecture-refresh') < push_idx
     # Every post-push WAIT step sorts AFTER the single push.
     for wait in ('create-pr', 'ci-verify', 'automatic-review', 'sonar-roundtrip'):
@@ -4712,7 +4713,7 @@ def test_lanes_preview_applies_the_composer_ordering_authority(plan_context, mon
         assert result['lanes'][posture]['phase_6_steps'] == _mem._sort_steps_by_frontmatter_order(kept)
 
     # Concretely, for the full posture the sort places the order-resolvable steps
-    # ascending — deploy-target (81) before archive-plan (1000) — where the
+    # ascending — deploy-target (81) before archive-plan (1100) — where the
     # candidate list had archive-plan second.
     full_steps = result['lanes']['full']['phase_6_steps']
     assert full_steps.index('project:finalize-step-deploy-target') < full_steps.index('archive-plan')
@@ -4793,7 +4794,7 @@ def test_compose_minimal_profile_prunes_phase_6_to_floor(plan_context, monkeypat
     assert result is not None
     assert result['execution_profile'] == 'minimal'
     manifest = read_manifest(plan_id)
-    # The D1 sort choke-point places archive-plan (order 1000) terminal among
+    # The D1 sort choke-point places archive-plan (order 1100) terminal among
     # the order-resolvable steps, so it now trails deploy-target.
     assert manifest['phase_6']['steps'] == ['push', 'project:finalize-step-deploy-target', 'archive-plan']
     assert _dropped_steps(result['lane_dropped']) == {

@@ -106,7 +106,7 @@ def _params_for(steps_map: dict, step_id: str):
 # (least ➜ most coverage) put ``plan-marshall:plan-retrospective`` (order=995)
 # before ``default:record-metrics`` (998 — the LAST token-accounting step, after
 # retrospective folds its token spend into the phase row) before
-# ``default:archive-plan`` (1000). Derived from the discovery query (no
+# ``default:archive-plan`` (1100, the terminus). Derived from the discovery query (no
 # hand-maintained literal) so a future ``order`` / ``presets`` frontmatter change
 # is reflected automatically.
 _FULL_SORTED: list[str] = FinalizeStepPresets.get('full')
@@ -361,7 +361,7 @@ def test_apply_preset_persists_steps_in_ascending_frontmatter_order(plan_context
     The persisted ``plan.phase-6-finalize.steps`` must be ascending by resolved
     frontmatter ``order``, which places ``plan-marshall:plan-retrospective``
     (order=995) before ``default:record-metrics`` (998) before
-    ``default:archive-plan`` (1000). The discovery-driven preset membership is
+    ``default:archive-plan`` (1100, the terminus). The discovery-driven preset membership is
     already order-sorted, so the persisted ids equal ``get('full')`` — this test
     independently re-resolves the persisted ids' orders to prove ascendance.
     """
@@ -381,7 +381,7 @@ def test_apply_preset_persists_steps_in_ascending_frontmatter_order(plan_context
         f'persisted phase-6-finalize.steps are not ascending by order: {orders}'
     )
     # Concretely: plan-retrospective (995) precedes record-metrics (998),
-    # which precedes archive-plan (1000) — record-metrics is the last
+    # which precedes archive-plan (1100, the terminus) — record-metrics is the last
     # token-accounting step, after retrospective and before the read-only tail.
     assert persisted_ids.index('plan-marshall:plan-retrospective') < persisted_ids.index(
         'default:record-metrics'

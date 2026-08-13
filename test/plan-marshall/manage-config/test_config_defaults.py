@@ -1501,28 +1501,30 @@ def test_built_in_finalize_steps_places_simplify_before_push():
     """default:finalize-step-simplify sits BEFORE default:push in the discovered seed.
 
     simplify is a mutates_source step (order 8) and push is the pure barrier
-    (order 10), so simplify precedes push. The canonical head order is
+    (order 11), so simplify precedes push. The canonical head order is
     default:finalize-step-sync-baseline (index 0, order 3 — the early baseline
     rebase that runs before the local quality gates),
     default:pre-push-quality-gate (index 1, order 5),
     default:pre-submission-self-review (index 2, order 7 — the default-on
     built-in structural self-review that runs between the pre-push quality gate
     and the simplify pass), default:finalize-step-simplify (index 3, order 8),
-    then the two order-9 settle steps in ``(order, name)`` tie-break order:
-    default:architecture-refresh (index 4, order 9 — the D3 move from the
-    post-push region into the pre-push settle band) sorts ahead of
-    default:finalize-step-security-audit (index 5, order 9) because
-    ``architecture-refresh`` < ``finalize-step-security-audit`` by name; then
-    default:push (index 6, order 10) — matching the plain `order:` values (no
-    special placement invariant). The seed is discovered via find_implementors,
-    not a constant.
+    then the two former order-9 settle steps, now de-collided by plan 300 D2:
+    default:finalize-step-security-audit (index 4, order 9, mutates source) runs
+    ahead of default:architecture-refresh (index 5, order 10 — the D3 move into the
+    pre-push settle band, ordered LAST in that band so its descriptor refresh
+    captures the code-mutating settle edits). D2 fixed the order here: the two
+    shared order 9 and the accidental alphabetical tie-break ran architecture-refresh
+    FIRST, contradicting its documented "sorts last" intent — security-audit's
+    hardening edits went uncaptured. Then default:push (index 6, order 11) — matching
+    the plain `order:` values. The seed is discovered via find_implementors, not a
+    constant.
     """
     steps = _discovered_seed_step_ids()
 
     # presence and relative head order (self-review order 7 nests between the
-    # pre-push quality gate (5) and simplify (8); the two order-9 settle steps
-    # architecture-refresh and security-audit sit between simplify (8) and
-    # push (10), name-ordered within the order-9 tie)
+    # pre-push quality gate (5) and simplify (8); the two former order-9 settle
+    # steps security-audit (9) and architecture-refresh (10, de-collided by D2 and
+    # ordered LAST in the settle band) sit between simplify (8) and push (11))
     assert 'default:finalize-step-simplify' in steps, (
         'default:finalize-step-simplify must be discovered into the default-on seed'
     )
@@ -1530,12 +1532,17 @@ def test_built_in_finalize_steps_places_simplify_before_push():
     assert steps[1] == 'default:pre-push-quality-gate'
     assert steps[2] == 'default:pre-submission-self-review'
     assert steps[3] == 'default:finalize-step-simplify'
-    assert steps[4] == 'default:architecture-refresh'
-    assert steps[5] == 'default:finalize-step-security-audit'
+    assert steps[4] == 'default:finalize-step-security-audit'
+    assert steps[5] == 'default:architecture-refresh'
     assert steps[6] == 'default:push'
-    # The D3 settle-before-push invariant: architecture-refresh (order 9) sits
-    # in the pre-push settle band, ahead of the push barrier.
+    # The D3 settle-before-push invariant: architecture-refresh (order 10, last in
+    # the settle band after the mutating steps) sits ahead of the push barrier.
     assert steps.index('default:architecture-refresh') < steps.index('default:push')
+    # D2 intended order: the derived-state refresh runs AFTER the source-mutating
+    # security-audit, so its descriptor snapshot captures the hardening edits.
+    assert steps.index('default:finalize-step-security-audit') < steps.index(
+        'default:architecture-refresh'
+    )
 
 
 def test_built_in_finalize_step_descriptions_includes_finalize_step_simplify():
@@ -1556,7 +1563,7 @@ def test_built_in_finalize_steps_orders_simplify_then_push():
     """Canonical order: simplify before push.
 
     simplify is a mutates_source step (order 8) and push is the pure barrier
-    (order 10), so the canonical chain is simplify < push.
+    (order 11), so the canonical chain is simplify < push.
     """
     steps = _discovered_seed_step_ids()
 
@@ -3647,8 +3654,9 @@ class TestCiVerifyRegistration:
     classifies failures BEFORE ``automatic-review`` consumes PR-comment
     findings, so it must sit immediately after ``default:create-pr`` and
     immediately before ``plan-marshall:automatic-review``. After the D3
-    mutation-settling reorder, ``architecture-refresh`` (order 9) lives in
-    the pre-push settle band — NOT between ``ci-verify`` and
+    mutation-settling reorder (and plan 300 D2's de-collision),
+    ``architecture-refresh`` (order 10) lives in the pre-push settle band —
+    NOT between ``ci-verify`` and
     ``automatic-review`` — so the post-push tail is the contiguous chain
     ``create-pr → ci-verify → automatic-review``."""
 
@@ -3657,9 +3665,9 @@ class TestCiVerifyRegistration:
         immediately after ``'default:create-pr'`` — the canonical position
         declared by ``standards/ci-verify.md`` § Placement (order 22, between
         create-pr at 20 and automatic-review at 30). The seed is discovered via
-        find_implementors, not a constant. After the D3 reorder,
-        ``architecture-refresh`` moved to order 9 (the pre-push settle band), so
-        it no longer sits between ``ci-verify`` and ``automatic-review``: the
+        find_implementors, not a constant. After the D3 reorder (and D2's
+        de-collision), ``architecture-refresh`` moved to order 10 (the pre-push
+        settle band), so it no longer sits between ``ci-verify`` and ``automatic-review``: the
         canonical tail is now the contiguous ``ci-verify → automatic-review``."""
         steps = _discovered_default_on_seed_step_ids()
         assert 'default:ci-verify' in steps, (
@@ -3679,11 +3687,11 @@ class TestCiVerifyRegistration:
         )
         assert automated_review_idx == ci_verify_idx + 1, (
             "'plan-marshall:automatic-review' must sit immediately after "
-            "'default:ci-verify' — architecture-refresh (order 9) moved to the "
+            "'default:ci-verify' — architecture-refresh (order 10) moved to the "
             "pre-push settle band and is no longer between them"
         )
         assert architecture_refresh_idx < push_idx, (
-            "'default:architecture-refresh' (order 9) now sits in the pre-push "
+            "'default:architecture-refresh' (order 10) now sits in the pre-push "
             "settle band, ahead of the push barrier"
         )
 

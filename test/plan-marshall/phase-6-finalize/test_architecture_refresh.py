@@ -875,10 +875,12 @@ class TestCrossReferences:
     def test_standard_frontmatter_declares_order(self, standard_text: str):
         """Frontmatter `order:` makes the manifest composer sort deterministically."""
         # The D3 mutation-settling reorder moved architecture-refresh from the
-        # post-push region (order 25) into the pre-push settle band (order 9), so
-        # its local HEAD-changing refresh settles BEFORE the single push barrier
-        # (order 10). Pin `order: 9` to detect accidental edits.
-        assert 'order: 9' in standard_text
+        # post-push region (order 25) into the pre-push settle band; plan 300 D2
+        # then de-collided it from finalize-step-security-audit (they shared 9) by
+        # giving it order 10, so this derived-state refresh sorts LAST in the settle
+        # band (after the mutating steps) and still settles BEFORE the single push
+        # barrier (order 11). Pin `order: 10` to detect accidental edits.
+        assert 'order: 10' in standard_text
 
     def test_standard_frontmatter_declares_default_on_true(
         self,

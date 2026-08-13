@@ -274,10 +274,11 @@ EXECUTION_LOG_KEY = 'execution_log'
 # ``lessons-capture`` (991) and ``record-metrics`` (998) sit after the merge gate
 # ``branch-cleanup`` (70) because they declare ``post_run_review: true``: they
 # report on the finished run and read evidence only the gate produces.
-# ``archive-plan`` (1000) is ordered last for an unrelated reason and declares no
-# ``post_run_review`` fact — an archival move explicitly fails the P1
+# ``archive-plan`` (1100, the terminus) is ordered last for an unrelated reason and
+# declares no ``post_run_review`` fact — an archival move explicitly fails the P1
 # backward-looking-output predicate. It runs last because it moves the plan
-# directory out from under every later reader.
+# directory out from under every later reader. The reserved terminal-emission band
+# (1000-1099) sits below it — see extension-api/standards/finalize-step-order-bands.md.
 DEFAULT_PHASE_5_STEPS = ('verify:quality-gate', 'verify:module-tests')
 DEFAULT_PHASE_6_STEPS = (
     'finalize-step-simplify',

@@ -274,7 +274,7 @@ class TestArrayAuthorityContract:
         cmd_compose(_compose_ns('vl-order-ok'))
         manifest = _mem.read_manifest('vl-order-ok')
         assert manifest is not None
-        # Built-in steps in ascending order (push=10, create-pr=20)
+        # Built-in steps in ascending order (push=11, create-pr=20)
         # followed by project steps in ascending order (81, 85).
         manifest['phase_6']['steps'] = [
             'push',
@@ -335,8 +335,8 @@ class TestArrayAuthorityContract:
 
     def test_builtin_step_order_resolves_from_standards_frontmatter(self):
         """Built-in step order is read from its standards/workflow doc frontmatter."""
-        assert _mem._resolve_step_order('push') == 10
-        assert _mem._resolve_step_order('default:push') == 10
+        assert _mem._resolve_step_order('push') == 11
+        assert _mem._resolve_step_order('default:push') == 11
         assert _mem._resolve_step_order('create-pr') == 20
 
     def test_all_path_reports_only_loadability_not_order(self, plan_context):
@@ -605,10 +605,10 @@ class TestResolveStepOrderVerdict:
     """The tri-state resolver distinguishes ORDERLESS from UNRESOLVABLE."""
 
     def test_resolved_builtin_returns_order_and_resolved_verdict(self):
-        assert _mem._resolve_step_order_verdict('push') == (10, _mem._ORDER_RESOLVED)
+        assert _mem._resolve_step_order_verdict('push') == (11, _mem._ORDER_RESOLVED)
 
     def test_resolved_builtin_accepts_default_prefix(self):
-        assert _mem._resolve_step_order_verdict('default:push') == (10, _mem._ORDER_RESOLVED)
+        assert _mem._resolve_step_order_verdict('default:push') == (11, _mem._ORDER_RESOLVED)
 
     def test_resolved_project_step(self):
         order, verdict = _mem._resolve_step_order_verdict('project:finalize-step-deploy-target')
@@ -639,7 +639,7 @@ class TestResolveStepOrderVerdict:
     def test_resolve_step_order_is_the_order_only_projection(self):
         # The legacy accessor keeps its int|None contract for the sort and the
         # seed-path check.
-        assert _mem._resolve_step_order('push') == 10
+        assert _mem._resolve_step_order('push') == 11
         assert _mem._resolve_step_order('ghost-step-that-does-not-exist') is None
         assert _mem._resolve_step_order('plan-marshall:plan-retrospective') is None
 
