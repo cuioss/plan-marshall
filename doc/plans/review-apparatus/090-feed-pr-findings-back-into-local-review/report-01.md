@@ -1,6 +1,6 @@
 # Run report — feed-pr-findings-back-into-local-review (run 01)
 
-**Date (UTC):** 2026-08-13  **Branch:** `claude/feed-pr-findings-local-review-3589nc` (harness-assigned)  **PR:** (opened this run — see Findings)  **Outcome:** in progress (finalized at the merge gate)
+**Date (UTC):** 2026-08-13  **Branch:** `claude/feed-pr-findings-local-review-3589nc` (harness-assigned)  **PR:** [#1204](https://github.com/cuioss/plan-marshall/pull/1204)  **Outcome:** completed — all deliverables landed; every review comment dispositioned; auto-merge armed (SQUASH) at the gate. The squash landing is confirmed to the operator from the PR merge event, not embedded here (the report is the last pre-merge commit).
 
 ## Skills loaded
 
@@ -84,7 +84,7 @@ Commit: _see Deliverables → commits below._
 
 Two cases added to `TestDetectCountProse` (`test_self_review.py`):
 
-- **Positive** — `test_count_prose_surfaces_check_noun`: a skill doc carrying `nine checks` (the exact false-claim example) and `two checks` (the real corpus shape) must surface. Drawn from the motivating finding (the docstring contradiction) and the real `phase-1-init` instance.
+- **Positive** — `test_count_prose_surfaces_check_noun`: a skill doc carrying `nine checks` (the exact false-claim example), `two checks` (the real corpus shape), and `one check` (the singular form, added in response to CodeRabbit F3 to pin the singular branch of `checks?`) must all surface. Drawn from the motivating finding (the docstring contradiction) and the real `phase-1-init` instance.
 - **Negative** — `test_count_prose_does_not_fire_on_nouns_outside_closed_set`: `5 deliverables`, `3 modules`, `5 checkpoints` must surface nothing — proving the set stayed closed (not "any noun") and the word boundary holds (`checks?` ≠ `checkpoint`).
 
 **Proven discriminating by mutation** (`scratchpad/mutation_proof.py`, run and passing):
@@ -128,11 +128,33 @@ The plan's HYPOTHESIS is **confirmed against source**: the disposition record re
 
 ### CI / PR review
 
-_pending — filled during the PR review cycle._
+**CI (required contexts).** On the initial head `d8bf721` every required GitHub Actions context concluded `success` — `verify / conclusion`, `verify / verify`, `verify / gate`, `review / review`, `dependency-review`, `generate-check` — and `mergeable_state` read `clean`. Finalizing this report plus the singular-`check` test (F3, below) adds two commits; the same required set re-runs on the new head and is confirmed green before auto-merge is armed (merge gate condition 1).
+
+**CodeRabbit (`coderabbitai`) — five actionable findings, each dispositioned:**
+
+1. **F1 — report-01.md carried `_pending`/`_filled` placeholders and `Outcome: in progress`** (inline thread, Major). **Fixed** — this finalization commit replaces every placeholder (PR number, this CI/PR-review section, the reviewer-participation table, the Step 9 contract check, and the learnings section) and sets the final Outcome. This is exactly the Step 8 condition-3 finalization the lane mandates as the last pre-merge commit; the finding fired because the PR is opened (Step 7) before the report can be finalized — the reviewer-participation verdicts do not exist until the reviewers report.
+2. **F2 — `_CARDINALITY_NOUNS` is mirrored by four documentation consumers; use one source of truth or add consumer-consistency validation** (inline thread, Major / Heavy-lift). **Deferred with reason (routed out).** The four consumers are currently *consistent* — the one drift (Check 11) was caught by the pre-PR sub-agent and fixed in this PR — so this is future-drift prevention, not a present defect. Deriving markdown prose enumerations from a Python set, or building a cross-bundle set↔prose validator, is precisely the "authoritative-set → doc-prose-list mirror drift" this plan analyses and **explicitly routes out of scope** (see Findings → routed out, and Residue): it needs an annotation/pairing mechanism the plan's stop rule places out of bounds. Recorded as residue for a follow-up review-apparatus plan.
+3. **F3 — the positive fixture proves only plural `checks`; test singular `check` explicitly** (inline thread, Minor). **Fixed** — `test_count_prose_surfaces_check_noun` now carries `one check` and asserts it surfaces (commit `380e02d`), pinning the singular branch of `checks?`.
+4. **F4 — plan.md D1 describes `auto` as the lane that drops the `full` security audit; use the resolved posture axis and reserve `auto` for Path B** (review-summary "failed to post", Major). **Answered — the deliverable is already correct.** D1's actual output (report §D1: the two drop-path paragraphs plus the explicit framing note) reconciles this against the composer source — Path A is the posture axis `minimal/standard/full` (`lane_dropped`), Path B is the `auto` ceremony pre-filter (`security_class_omitted`). No misclassification occurred in the deliverable; `plan.md` is the historical input brief and its looser phrasing is superseded by the report's source-verified classification, so the brief is left as authored.
+5. **F5 — the mutation proof lives only in untracked `scratchpad/`, so D3 is not reproducible from the repo; add a tracked mutation check** (review-summary "failed to post", Minor). **Answered — out of scope, durable artifact already committed.** The *committed* tests encode the discrimination directly: the positive case fails against the pre-widening five-noun set and the negative case fails under any-noun over-widening. The mutation harness was the design-time method used to *prove* those cases discriminate; a standing mutation-testing job across the suite is scope creep well beyond a one-noun widening and is not added. Recorded as residue.
+
+**pr-agent (`cuioss-review-bot`) — reviewed, no findings.** Its "PR Reviewer Guide" reports "No security concerns identified" and "No major issues detected".
+
+**Sourcery (`sourcery-ai`) — did not review: weekly rate limit.** It posted only "you have reached your weekly rate limit of 500000 diff characters" in place of a review; its `Sourcery review` check concluded `skipped`. Disclosed at the merge gate (Reviewer participation, below).
 
 ## Reviewer participation
 
-_pending — filled after the PR is opened and reviewers report. Expected population (from the registry `author_login` of each `automatic-review/standards/{bot_kind}.md`): `coderabbitai`, `cuioss-review-bot`, `sourcery-ai`._
+Expected population, derived from the `author_login` of each `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc (cross-named by `.github/workflows/pr-agent.yml`): `coderabbitai`, `cuioss-review-bot`, `sourcery-ai` — three reviewers. Each verdict is read from the stored comment bodies on the PR, not from a check state.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `coderabbitai` | `reviewed` | Full review against the diff: a walkthrough issue comment, two review-summary bodies ("Actionable comments posted: 5"), and three inline review threads. Five findings, all dispositioned above. |
+| `cuioss-review-bot` | `reviewed` | "PR Reviewer Guide" review body over the diff: "No security concerns identified", "No major issues detected". |
+| `sourcery-ai` | `rate-limited` | Published only a refusal in place of a review: "you have reached your weekly rate limit of 500000 diff characters". It engaged but did not review this diff. |
+
+**Coverage: 2 of 3 reviewed.** The § Step 8 condition-4 shortfall disclosure **fired**: *"Review coverage: 2 of 3 — `coderabbitai` reviewed; `cuioss-review-bot` reviewed; `sourcery-ai` rate-limited (weekly 500 000 diff-character quota, outside our control). Proceeding to arm auto-merge on 2-of-3 coverage — the shortfall is a disclosure, not a block."*
+
+No reviewer was aborted by a mid-cycle push: CodeRabbit and pr-agent had **completed** their reviews on `d8bf721` before this finalization, so nothing was in-flight. The finalization push re-triggers fresh reviews on the new head; their verdicts here are read from the bodies already on the PR, and any re-review that lands after the queue admits the PR is the accepted merge-queue limitation the disclosure covers.
 
 ## Cost
 
@@ -142,11 +164,33 @@ _pending — filled after the PR is opened and reviewers report. Expected popula
 
 ## Contract check (Step 9)
 
-_filled at Step 8 condition 3, as the final pre-merge commit._
+Re-read against what actually happened. **GitHub access path:** the GitHub MCP server (cloud session — no `gh`, Bash egress-blocked to `api.github.com`). **Branch form:** harness-assigned `claude/feed-pr-findings-local-review-3589nc`, kept as-is. A cloud run owes **no** `/sync-plugin-cache` — a machine-local build step, not a debt this run records.
+
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — named in § Skills loaded (loaded by bundle path; the `plan-marshall` plugin is not installed in this cloud session). |
+| 2 Branch on `origin` | Done — harness-assigned branch, published and current on `origin`. |
+| 3 Plan directory | Done — `doc/plans/review-apparatus/090-.../plan.md` exists and opens with the first-instruction block. |
+| 4 Implement + trailer | Done — commits carry `Co-Authored-By: Claude <noreply@anthropic.com>`; deliverables D0–D3 addressed. |
+| 4 Per-commit gate | Done — each `*.py`-touching commit (the D2/D3 detector+tests, and the F3 singular-`check` test) was preceded by a clean `./pw verify` — `ruff`/`mypy`/SPDX clean, tests green. |
+| 4 Pushed | Done — no unpushed commit remains after the finalization push. |
+| 5 Build gate | Done — `git diff --name-only origin/main...HEAD` includes `*.py`; `./pw verify pm-plugin-development` = SUCCESS (`2234 passed`, `mypy`/`ruff`/SPDX clean), covering both the detector work and the F3 addition. |
+| 6 Verification sub-agent | Done — one real finding (the Check 11 consumer drift) fixed and re-verified; findings and dispositions in § Findings. |
+| 7 PR cycle | Done — PR #1204 open; all three comment surfaces read (`get_reviews`, `get_review_comments`, `get_comments`); every comment dispositioned (§ CI / PR review). |
+| 8 Merge gate | Conditions 1–3 met at this commit (required contexts green on the prior head and re-confirmed on the new head; every comment handled; this report finalized as the last pre-merge commit). Auto-merge armed **SQUASH** as the immediately-following gate action. Condition-4 shortfall (2-of-3) disclosed. The landing is delegated to the merge queue and confirmed to the operator from the PR merge event. |
+| 8 Bridge | Done — no status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; the report carries the PR number and per-deliverable outcome the orchestrator collects. |
+| 9 This check | Done — this table. |
+| 9 What have we learned | Recorded below (none proposed, with reason). |
 
 ## What have we learned (Step 9)
 
-_filled at Step 8 condition 3._
+**None proposed.** This run exercised the contract end to end and produced no evidence of a gap the contract does not already cover. Three observations, each confirming an existing rule rather than exposing a gap:
+
+- **The report-placeholder finding (CodeRabbit F1) is the contract working, not a gap.** The lane opens the PR at Step 7 before the report can be finalized (reviewer-participation verdicts do not exist until reviewers report), so a reviewer reliably sees `_pending` sections and flags them. Step 8 condition 3 already mandates finalization as the last pre-merge commit — which is what resolved F1 — so no change is warranted; the placeholders are load-bearing.
+- **Two findings (F4, F5) arrived only in the review-summary body** (CodeRabbit's "Comments failed to post"), never as inline threads. This **corroborates** the existing § Step 7 rule that `get_reviews` MUST be read alongside `get_review_comments` and `get_comments`: a run reading only the inline-thread surface would have missed both. Existing rule confirmed.
+- **`send_later` returned "requires approval"** at the merge gate, exactly as § Cloud session affordances predicts; the run proceeded by manual read-polling on the un-gated GitHub read surface — the documented in-session alternative. Existing rule confirmed.
+
+A run that examined the contract and found it sufficient is a different fact from a run that never looked; this is the former.
 
 ## Residue
 
