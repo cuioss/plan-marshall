@@ -1,6 +1,6 @@
 # Run report — 160-empty-skill-resolution-indistinguishable-from-minimal (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** claude/empty-skill-resolution-h67nvw    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-13    **Branch:** claude/empty-skill-resolution-h67nvw    **PR:** [#1220](https://github.com/cuioss/plan-marshall/pull/1220)    **Outcome:** completed (auto-merge armed; landing delegated to the merge queue)
 
 ## Skills loaded
 
@@ -157,23 +157,96 @@ Findings 1–3 are three instances of one defect kind (old two-state model resta
 instance. After fixes, `./pw quality-gate plan-marshall` re-ran clean (mypy 278 files, ruff, SPDX);
 the fixes are comment/docstring/table-wording only — no logic or test behavior changed.
 
-**CI findings:** _pending PR._
+**CI findings:** none. `verify / gate`, `review / review`, `dependency-review`, `generate-check` all
+green; `verify / verify` (the required build) in progress at report-finalization time (the merge queue
+re-verifies on `merge_group` before landing).
 
-**PR review findings:** _pending PR._
+**PR review findings:** none actionable. `cuioss-review-bot` reported "No major issues detected"; the
+other two reviewers were rate-limited (see § Reviewer participation). No inline review threads.
 
 ## Reviewer participation
 
 Expected reviewer population, derived from configuration — the `author_login` of each
 `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
-(cross-named by `.github/workflows/pr-agent.yml`):
+(cross-named by `.github/workflows/pr-agent.yml`). All three comment surfaces were read
+(`get_comments`, `get_reviews`, `get_review_comments`):
 
-| Reviewer (`author_login`) | Verdict (`reviewed` / `rate-limited` / `silent`) | Body evidence / reason |
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
-| `cuioss-review-bot` (pr-agent) | _pending PR_ | — |
-| `coderabbitai` (coderabbit) | _pending PR_ | — |
-| `sourcery-ai` (sourcery) | _pending PR_ | — |
+| `cuioss-review-bot` (pr-agent) | `reviewed` | Posted "PR Reviewer Guide" (issue comment): "PR contains tests", "No security concerns identified", "No major issues detected" — a review artifact over the diff with an explicit nothing-to-report verdict. `review / review` check green. |
+| `coderabbitai` (coderabbit) | `rate-limited` | Posted only "Review limit reached … Next review available in: 40 minutes" (issue comment). Engaged but did not review this diff. |
+| `sourcery-ai` (sourcery) | `rate-limited` | Posted only a review-summary body "you have reached your weekly rate limit of 500000 diff characters". `Sourcery review` check `skipped`. |
 
-Coverage: _pending PR_ (of 3).
+`get_review_comments` (inline threads): empty. No actionable finding from any reviewer; no comment
+required a fix or a reply.
+
+**Coverage: 1 of 3** (`cuioss-review-bot` reviewed; `coderabbitai` and `sourcery-ai` rate-limited).
+The § Step 8 condition-4 shortfall disclosure fired: *"Review coverage: 1 of 3 — cuioss-review-bot
+reviewed (no issues); coderabbitai rate-limited (window reopens ~40 min); sourcery-ai rate-limited
+(weekly diff-character quota)."* Disclosed, not blocked — rate limits are routine and outside our
+control; conditions 1–3 are the only gates on the merge.
+
+## Cost
+
+- **Tokens:** not available to the agent in this session (the harness does not expose a token count to
+  the running agent). Stated plainly rather than estimated.
+- **Wall-clock:** run start ≈ 2026-08-13 19:57 UTC (first action) to report finalization ≈ 2026-08-13
+  20:24 UTC — roughly 27 minutes, dominated by one `./pw verify plan-marshall` (~8 min) plus toolchain
+  bootstrap and two verification-sub-agent passes.
+- **Population:** this single Claude Code cloud session's usage. ⛔ **NOT comparable** to a
+  plan-marshall `metrics.toon` total, which counts an orchestrator-plus-agent dispatch tree under
+  plan-marshall's own per-task billing boundary that a single interactive cloud session does not share.
+
+## Contract check (Step 9)
+
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — five skills named in § Skills loaded, read by bundle path. |
+| 2 Branch | Done — harness-assigned `claude/empty-skill-resolution-h67nvw`, pushed to `origin` before any work (branch was absent from the remote on arrival). |
+| 3 Plan directory | Done — `doc/plans/code-intelligence-substrate/160-empty-skill-resolution-indistinguishable-from-minimal/plan.md` exists via `git mv`; opens with the first-instruction block (verified present, no repair needed). |
+| 4 Implement | Done — deliverables addressed; commits carry the `Co-Authored-By: Claude` trailer, no "Generated with Claude Code" footer. |
+| 4 Per-commit gate | Done — every `*.py`-touching commit preceded by a clean gate: the fix commit by `./pw verify plan-marshall` (green), the comment-fix commit by `./pw quality-gate plan-marshall` (ruff/mypy/SPDX clean). |
+| 4 Pushed | Done — no unpushed commit (each commit pushed immediately; deliverable paths staged explicitly, never `git add -A`; no `uv.lock` churn). |
+| 5 Build gate | Done — Python footprint present (`_cmd_client_query.py`, `_cmd_enrich.py`, two test files); `./pw verify plan-marshall` SUCCESS (16446 passed, 1 skipped). |
+| 6 Verification sub-agent | Done — dispatched, 6 findings; 4 fixed, 2 rejected out-of-scope; re-dispatched, confirmed clean. All in § Findings. |
+| 7 PR cycle | Done — PR #1220 created (no `skip-bot-review`: touches code + skills); all three comment surfaces read; every comment dispositioned (no actionable findings). |
+| 8 Merge gate | Report finalized + committed as the last pre-merge commit; coverage shortfall disclosed (1-of-3); auto-merge armed. Landing self-confirmed or handed to the orchestrator collect — see Residue. |
+| 8 Bridge | Done — no status/bookkeeping write outside this plan's own directory; the report carries the PR number and per-deliverable outcome. |
+| 9 This check | This table. |
+| 9 What have we learned | One proposal recorded below (awaiting operator). |
+
+**GitHub access path:** GitHub MCP server (the cloud path). **Branch form:** harness-assigned
+`claude/*` (kept as-is per the contract). No `/sync-plugin-cache` owed (machine-local build step, not a
+cloud-run debt).
+
+## What have we learned (Step 9)
+
+**Proposed contract change (awaiting operator — not self-approved, not shipped):** the build-gate
+section (§ Step 5) documents `./pw verify` for the whole-branch gate, but the plan lane also requires
+observing the D4-style "empty-case assertion verified to FAIL before the fix." Running a single test
+file for that observation is not covered: `./pw module-tests` takes a bundle, not a file path, and
+`pytest` is not on the session interpreter. The path that worked this run was
+`UV_PYTHON=3.12 UV_HTTP_TIMEOUT=600 uv run pytest <file>` — same interpreter pin and HTTP timeout as
+`./pw`, but scoped to one file, completing in seconds instead of an 8-minute suite. **Evidence:** this
+run used exactly that to observe the pre-fix `AssertionError: []` and the post-fix green without a full
+suite run. **Proposed edit:** add a one-line note to the cloud-plan-lane § Step 5 (or Step 6) naming
+`uv run pytest <file>` (with the two env vars) as the targeted-test path for pre-fix-failure
+observation, distinct from the full `./pw verify` gate. Per Step 9 this is presented, not applied — it
+would ship as its own `chore(cloud-plan-lane)` PR on operator approval, never inside this plan's PR.
+
+## Residue
+
+- **Landing:** auto-merge armed on PR #1220. Whether the session self-confirmed `state: MERGED` or
+  handed the landing to the orchestrator's collect step is recorded at the end of this report / to the
+  operator (the merge commit SHA does not exist until the queue lands the PR, so it is reported outside
+  this pre-merge report body).
+- **Out-of-scope, deliberately deferred (sub-agent findings 5–6):** (a) `_cmd_client_render.py` renders
+  per-profile skill *counts*, so a declared-minimal and an undeclared-empty profile both render as
+  `0 skills` — the render surface does not reflect the new distinction; (b) a contradictory
+  `{"defaults":[x], "minimal": true}` is treated as populated by the guard but emptied by phase-4-plan
+  Step 5. Both are outside this plan's scope (the plan scoped the distinction to the allocation guard);
+  recorded here so they are not re-derived. Neither is a defect in the shipped change.
+- **Contract-change proposal** above awaits operator disposition.
 
 ## Cost
 
