@@ -96,6 +96,18 @@ file touched. That path is narrow and the file changes almost never, which is ex
 declared rather than argued away: the superset bar asks what *could* change the answer, not what
 usually does.
 
+**This document is deliberately NOT in the surface, and the line is principled rather than
+pragmatic.** A declaration names what determines the **truth of the recorded claim**, not what
+determines the step's future behaviour. `era_stamp_fill.py` is in because it defines what
+"unresolved" *means*, so changing it can make an already-recorded verdict false. This SKILL.md
+governs procedure — which paths get staged, how the detail line reads, which branch runs — so
+editing it changes what the step does on its NEXT run and cannot falsify a verdict already recorded
+about the tree. The same line is why the classifier, the discovery machinery, and the Python runtime
+are not declared either: without it the surface regresses to "everything the process touches", which
+is the inert whole-tree declaration this mechanism exists to avoid. See
+[verdict-currency.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/verdict-currency.md)
+§ "The classification" for the rule; it is stated there once and applied here.
+
 The globs are exact paths rather than patterns on purpose. A pattern such as `*audit.py` would also
 match `marketplace/bundles/plan-marshall/skills/manage-build-server/scripts/_marshalld_audit.py`,
 which this step neither reads nor writes — widening the surface costs unnecessary re-fires, and a

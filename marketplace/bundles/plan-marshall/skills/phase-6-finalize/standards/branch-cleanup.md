@@ -120,7 +120,7 @@ Each row leads with its backticked `{kind}` token and carries four machine-check
 
 - `barrier-ask-override` — head_bound: yes — bound_via: grant — authorizes: review-barrier-gap — site: § Pre-Merge Review-Completeness Barrier, `{barrier_mode} == ask` → "Merge anyway (record reason)". Granted at the live HEAD alongside the existing WARNING decision-log line, and checked by the barrier before any blocked path proceeds.
 - `pre-merge-consent` — head_bound: yes — bound_via: grant — authorizes: merge-action — site: § Pre-Merge Confirmation Gate → "Yes, merge" (`{merge_consent} = explicit_yes`). Granted at the live HEAD so a re-rebase between consent and merge — the release-before-wait / re-acquire path — lapses the consent instead of silently carrying it onto a different tree.
-- `red-ci-override` — head_bound: yes — bound_via: grant — authorizes: red-ci-gate — site: § Rebase Branch onto Base, the immediate-merge authoritative CI gate → "Merge anyway — override red CI". Granted at the live HEAD before the override proceeds.
+- `red-ci-override` — head_bound: yes — bound_via: grant — authorizes: red-ci-gate — site: § "CI gate before the merge", its immediate-merge (`use_merge_queue == false`) authoritative arm → "Merge anyway — override red CI". Granted at the live HEAD before the override proceeds. The merge-queue arm has no such grant and needs none: its snapshot is non-authoritative and never blocks, so there is nothing to override.
 - `rereview-timeout-override` — head_bound: yes — bound_via: grant — authorizes: rereview-timeout — site: [`branch-cleanup-rereview.md`](branch-cleanup-rereview.md) § "On re-review timeout (trigger A)" — BOTH the `re_review_on_timeout: proceed` policy branch and the `ask` → "Merge anyway — proceed unreviewed" selection. Granted at the re-resolved `{head_sha}`.
 - `automatic-review-force-done` — head_bound: yes — bound_via: head_dependent — authorizes: find-step-completion — site: [`automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § "Force-done with an explicit recorded reason". Bound by that step's own `head_dependent: true` declaration and its persisted `--head-at-completion`, and the barrier re-derives participation from the provider rather than trusting the record — so it needs no grant of its own.
 - `final_merge_without_asking` — head_bound: n/a — bound_via: out_of_class — authorizes: merge-action — site: the `default:branch-cleanup` step param. Standing config that authorizes a *policy* rather than a specific tree, so it falls outside the HEAD-bound class and is recorded here rather than granted.
@@ -284,7 +284,7 @@ Determine planned actions based on PR state **and on `use_merge_queue`** — a p
 ```text
 AskUserQuestion:
   questions:
-    - question: "{Rebase the feature branch onto {base_branch} and run CI? | Check CI before enqueueing to the merge queue?} (Merge will be confirmed separately.)"
+    - question: "{Rebase the feature branch onto {base_branch} and run CI? (if state == open AND use_merge_queue == false) | Check CI before enqueueing to the merge queue? (if state == open AND use_merge_queue == true) | Clean up the local branch for the already-merged PR? (if state == merged)} (Merge will be confirmed separately when one is still planned.)"
       header: "Branch Cleanup — Pre-rebase"
       description: |
         **PR**: {pr_url} ({state})
@@ -379,7 +379,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 Parse the returned TOON and branch on `status`:
 
-- `status: success` (including `action: noop` when the branch was already at the base, or `action: rebased` when the rebase produced a new history) → continue to force-push-with-lease below.
+- `status: success` (including `action: noop` when the branch was already at the base, or `action: rebased` when the rebase produced a new history) → capture the payload's `upstream_commit_count` as **`{rebase_upstream_commit_count}`** — a distinct name from the `{upstream_commit_count}` the later classifier re-run binds, so the two cannot be confused at the fact sites that consume them (see § "Mark Step Complete" Branch A) — then continue to force-push-with-lease below.
 - `status: conflict` → ABORT cleanup with a fatal error. The rebase is left in progress with conflict markers so the user can inspect or abort manually. The classifier's merge-tree probe is best-effort — overlapping renames and a few other rare cases produce a clean probe but a real-rebase conflict. Log the returned `conflicts[]` file list and the conflict state:
 
   ```bash
@@ -475,7 +475,7 @@ The disposition of a red gate depends on WHICH path produced it — the two path
 Log the pre-merge preparation, naming what actually ran so a skipped rebase is not reported as a performed one:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: {rebased onto origin/{base_branch}, force-pushed with lease | pre-merge rebase skipped (merge-queue path)}, CI gated"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: {rebased onto origin/{base_branch}, force-pushed with lease (if action == rebased) | already current with origin/{base_branch}, force-pushed with lease (if action == noop) | pre-merge rebase skipped (merge-queue path)}, CI gated"
 ```
 
 ### Re-review the rebased HEAD (trigger A)
@@ -1166,7 +1166,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 The routing itself:
 
 - **`use_merge_queue == false`** (default) → issue the immediate `pr safe-merge` call below. The plan merges the PR itself under the widened mutex.
-- **`use_merge_queue == true`** → route the merge through the platform merge queue via the `pr merge-queue` verb INSTEAD of `pr safe-merge`, so the platform re-tests-and-merges against the latest base and serializes a truly-external commit the session-scoped mutex cannot. The widened D4 mutex still guards the pre-enqueue rebase/force-push window; the two mechanisms compose. The enqueue takes no `--strategy` or `--delete-branch` flag — unchanged: the platform merges queued PRs with the method configured on the queue itself, GitHub rejects `--delete-branch` when a merge queue is enabled, and the platform auto-deletes the head branch after the queue merge. The queue's configured method is no longer an independent knob, though — `repo merge-queue enable` provisions and reconciles it from `pr_merge_strategy`, and the mismatch warn below catches residual drift. All engagement is routed through the `ci` abstraction — NEVER a direct `gh`/`glab` call.
+- **`use_merge_queue == true`** → route the merge through the platform merge queue via the `pr merge-queue` verb INSTEAD of `pr safe-merge`, so the platform rebases, re-tests and merges against the latest base and serializes a truly-external commit the session-scoped mutex cannot. The widened D4 mutex still guards the window up to and including the enqueue; the two mechanisms compose. It is NOT guarding a rebase or force-push on this path — § "Rebase Branch onto Base" routes both away precisely because the queue performs them. The enqueue takes no `--strategy` or `--delete-branch` flag — unchanged: the platform merges queued PRs with the method configured on the queue itself, GitHub rejects `--delete-branch` when a merge queue is enabled, and the platform auto-deletes the head branch after the queue merge. The queue's configured method is no longer an independent knob, though — `repo merge-queue enable` provisions and reconciles it from `pr_merge_strategy`, and the mismatch warn below catches residual drift. All engagement is routed through the `ci` abstraction — NEVER a direct `gh`/`glab` call.
 
   **Merge-method mismatch warn (best-effort, advisory)** — BEFORE the enqueue, probe the queue's configured merge method and warn when it disagrees with the configured `pr_merge_strategy`:
 
@@ -1609,7 +1609,7 @@ The `loop_back` call site in the pre-merge comment barrier is deliberately untou
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
   {--fact action={action} (if use_merge_queue == false)} \
-  {--fact upstream_commit_count={upstream_commit_count} (if use_merge_queue == false)} \
+  {--fact upstream_commit_count={rebase_upstream_commit_count} (if use_merge_queue == false)} \
   --fact merge_mechanism={merge_mechanism} \
   --fact work_performed=true \
   --display-detail "{rendered_detail}"
@@ -1617,7 +1617,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 The two rebase facts carry the same `{… (if …)}` conditional form the rest of this document uses for a per-path payload, because they are **conditional, not optional-by-taste**: they are recorded iff this run reached the rebase, which per § "Rebase Branch onto Base" it does iff `use_merge_queue == false`. On the `true` path no rebase ran, so both lines are omitted entirely — omission is the honest signal the fact table above requires, and interpolating a placeholder that has no value would fabricate one.
 
-**`upstream_commit_count` has two distinct bindings; this one is the rebase payload's.** The pre-merge gate's mandatory classifier re-run (§ "Re-run the classifier against the current head") also parses a field of that name and interpolates it into the operator prompt, on BOTH paths. The two are not interchangeable: the fact recorded here is the count the `worktree-rebase-to` payload reported for the replay this step performed, so it exists only where that replay did. A classifier-sourced count is an observation of `origin/{base_branch}`, not a record of work this step did, and MUST NOT be substituted here to fill the gap.
+**`upstream_commit_count` has two distinct bindings, so the fact site uses a DISTINCT placeholder.** The pre-merge gate's mandatory classifier re-run (§ "Re-run the classifier against the current head") also parses a field of that name and interpolates it into the operator prompt, on BOTH paths — and it runs LATER, so `{upstream_commit_count}` is bound to the classifier's value by the time an executor reaches this block. The two are not interchangeable: the fact recorded here is the count the `worktree-rebase-to` payload reported for the replay this step performed, so it exists only where that replay did, while a classifier-sourced count is an observation of `origin/{base_branch}` rather than a record of work this step did. Capturing the rebase payload's value as `{rebase_upstream_commit_count}` when § "Rebase Branch onto Base" parses its return is what keeps the two apart structurally; a prose prohibition alone would leave the executor interpolating the wrong binding by name. The recorded FACT key stays `upstream_commit_count` — only the template variable differs.
 
 Render `{rendered_detail}` as `"{rebase_clause}, {merge_clause}, cleanup complete"`, composing the two clauses independently: the rebase clause comes from `action` (or from its absence) and the merge clause from `merge_mechanism`. Both axes must be rendered as clauses rather than interpolated raw — a single-axis form such as `merged via {merge_mechanism}` reads as "this step merged it via the queue" and so claims for the queue path a merge this step never performed:
 
@@ -1671,7 +1671,7 @@ This branch reaches the same rebase-or-skip routing and the same merge Branch A 
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
   {--fact action={action} (if use_merge_queue == false)} \
-  {--fact upstream_commit_count={upstream_commit_count} (if use_merge_queue == false)} \
+  {--fact upstream_commit_count={rebase_upstream_commit_count} (if use_merge_queue == false)} \
   --fact merge_mechanism={merge_mechanism} \
   --fact work_performed=true \
   --display-detail "merged under {kind}, gap recorded"

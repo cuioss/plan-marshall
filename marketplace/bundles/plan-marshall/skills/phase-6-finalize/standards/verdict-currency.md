@@ -135,21 +135,37 @@ distinction that decides it is what the step's body *does*:
 - **A verdict that is a property of NAMED FILES is trivially declarable**, and its surface is a
   superset by construction rather than by survey. `project:finalize-step-era-stamp-fill` is the
   worked positive case: it asserts that two files — named by full path in its own doc, and the
-  same pair it stages — carry no unresolved sentinel, and it reads nothing else to decide that.
+  same pair it stages — carry no unresolved sentinel. Its declaration names a third path, the
+  executor whose matcher DEFINES "unresolved", because that is the one other tracked file whose
+  change could make the recorded claim false. Which is the general rule for a declaration:
+  **name what determines the TRUTH of the recorded claim, not what determines the step's future
+  behaviour.** A step's own procedural doc — its staging list, its detail wording — governs what
+  it does next time and cannot falsify a verdict already recorded about the tree, so it stays
+  out; a file that redefines what the verdict *means* stays in.
 - **A verdict produced by a body that executes something OPEN-ENDED over the repository has no
-  sound subset at all.** Two shapes recur, and both are disqualifying: a test suite that asserts
-  against the real tree (this repository's own pytest reads `doc/**`, `.github/**` and the root
-  agentfile), and a scan whose inputs are discovered rather than fixed — a link-target resolver
-  anchored at the repository root can be turned red by renaming *any* file, so its input set is
-  underivable ahead of time even though it is perfectly derivable at run time. A whole-tree
-  declaration in either case would be an inert lever wearing the shape of a real one.
+  sound subset at all.** Three shapes recur, and each is independently disqualifying:
+  1. **A test suite that asserts against the real tree** — this repository's own pytest reads
+     `doc/**`, `.github/**`, and the root agentfile.
+  2. **A scan whose inputs are DISCOVERED rather than fixed** — a relative-link checker stats
+     every link target it finds, within a repository-root containment boundary, so renaming
+     *any* file can turn it red. Its input set is perfectly derivable at run time and
+     underivable ahead of time, which is exactly what a static glob cannot express.
+  3. **A whole-repo walk** — an analyzer that enumerates files by walking from the repository
+     root has the whole tree as its input set by construction.
 
-`default:pre-push-quality-gate` (first shape) and `project:finalize-step-plugin-doctor` (both
-shapes) are the two worked negative cases, and each refusal is recorded in that step's own doc —
-[`pre-push-quality-gate.md`](pre-push-quality-gate.md) § "Verdict-input surface — deliberately
-undeclared" and the corresponding section in `finalize-step-plugin-doctor` — rather than left as
-an unexplained absence. The vocabulary is deliberately static globs; admitting a *derived* surface
-would make the second shape declarable, and is not attempted here.
+  A whole-tree declaration in any of these cases would be an inert lever wearing the shape of a
+  real one.
+
+The two worked negative cases each exhibit more than one shape, and each refusal is recorded in
+that step's own doc rather than left as an unexplained absence:
+
+| Step | Shapes | Refusal recorded at |
+|---|---|---|
+| `default:pre-push-quality-gate` | 1 (its module-tests arm runs the pytest suite), and 2 + 3 transitively (its whole-tree arm invokes the marketplace-wide doctor pass) | [`pre-push-quality-gate.md`](pre-push-quality-gate.md) § "Verdict-input surface — deliberately undeclared" |
+| `project:finalize-step-plugin-doctor` | 2 (`broken-relative-link`) and 3 (the agentfile analyzers) | that step's own § "Verdict-input surface — deliberately undeclared" |
+
+The vocabulary is deliberately static globs; admitting a *derived* surface — a command whose
+output is the path set — would make shape 2 declarable, and is not attempted here.
 
 **A preserved verdict keeps its original anchor.** The dispatcher does NOT re-stamp
 `head_at_completion` to the live HEAD on a preserved skip. Re-stamping would make the
