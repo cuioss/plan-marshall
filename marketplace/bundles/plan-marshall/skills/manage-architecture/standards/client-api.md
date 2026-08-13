@@ -541,7 +541,6 @@ npm,python3 .plan/execute-script.py plan-marshall:build-npm:npm run --command-ar
 | `find` | Glob inventory search (PATH) | Cross-module path matches |
 | `search` | Content inventory search (BODY) | Cross-module file hits with `match_count` and `file_count`, plus `files_scanned` / `unreadable[]`; `--ignore-case` composes with `--literal` |
 | `capabilities` | Envelope capability report | Per-capability `derivable`/`not_derivable` (module edges, path attribution, content search) |
-| `lsp hover` / `references` / `workspace-symbol` / `definition` | LSP-shaped facade over `module` / `impact` / `find` / `resolve` | The underlying verb's answer, unchanged (additive — nothing renamed) |
 | `diff-modules` | Snapshot diff | `added`/`removed`/`changed`/`unchanged` module buckets |
 | `descriptor-regression-check` | Commit-gate regression predicate | `regressive` (bool) + `violations` list |
 
@@ -1403,52 +1402,6 @@ carries them on every entry.
   empty graph as a clean dependency-direction pass (see
   [`phase-2-refine:refine-workflow-detail.md`](../../phase-2-refine/standards/refine-workflow-detail.md)
   § "Feasibility Check").
-
----
-
-## LSP-shaped query facade
-
-An **additive** facade lets a consumer address the query surface in the
-vocabulary editors, agents and tooling already speak — `hover`, `references`,
-`workspace/symbol`, `definition` — **without renaming a single existing verb**.
-Each `lsp` subcommand is a thin dispatch to the verb it maps onto and returns
-that verb's answer unchanged. The existing verbs keep their own names; the facade
-only adds LSP vocabulary over them.
-
-```bash
-architecture.py lsp hover --module MODULE
-architecture.py lsp references --module MODULE
-architecture.py lsp workspace-symbol --query QUERY [--category CATEGORY]
-architecture.py lsp definition --command COMMAND [--module MODULE]
-```
-
-**Per-verb mapping** — the facade dispatch, plus the conceptual LSP neighbour of
-every queryable verb. The mapping is deliberately **not one-to-one**, and the
-residue is large: LSP is `(uri, position)`-oriented with no module node and no
-transitive traversal, so the four traversal/inventory verbs have no standard LSP
-method and stay reachable as `workspace/executeCommand` residue under their own
-names. Some of them (`impact`, `find`) are reachable BOTH ways — via the facade
-AND via their own name — which is exactly what "not one-to-one" means.
-
-| LSP method | `lsp` facade verb | dispatches to | note |
-|------------|-------------------|---------------|------|
-| `textDocument/hover` | `lsp hover --module M` | [`module`](#module) | module info = hover-over-a-symbol |
-| `textDocument/references` | `lsp references --module M` | [`impact`](#impact) | reverse-dependency closure = find-all-references |
-| `textDocument/definition` | `lsp definition --command C` | [`resolve`](#resolve) | command → executable = go-to-definition |
-| `workspace/symbol` | `lsp workspace-symbol --query Q` | [`find`](#find) | query-string path search across the workspace |
-| `workspace/executeCommand` | *(residue — own names)* | [`path`](#path), [`impact`](#impact), [`find`](#find), [`which-module`](#which-module), [`graph`](#graph), [`neighbors`](#neighbors) | no standard LSP method — reachable by their own names |
-| *(no facade verb yet)* | — | [`capabilities`](#capabilities) | the LSP `initialize` → `ServerCapabilities` analogue |
-
-> **Nothing here is renamed or removed.** Every verb named in the "own names"
-> column answers exactly as it did before the facade existed. `lsp references` is
-> an *additional* way to reach `impact`, not a replacement for it. A reader who
-> concludes any verb was renamed has misread the facade — it is purely additive.
-
-The facade answer is byte-for-byte the underlying verb's answer, so every field
-contract documented for `module` / `impact` / `find` / `resolve` above holds
-verbatim under the corresponding `lsp` verb. This is what lets a downstream
-language-server adapter be a thin protocol translation rather than a second query
-engine.
 
 ---
 

@@ -178,41 +178,6 @@ So a `count: 0` over a large `files_scanned` — *and clean coverage metadata* �
 
 The coverage qualifier is not decoration. `files_scanned > 0` says some files were opened; it says nothing about the ones that were not. A non-empty `unreadable[]` means a file that might hold the match was never scanned, and `truncated: true` / a non-empty `elided[]` means inventory entries never reached the scanner at all. A zero result carrying any of those is a *coverage gap*, not an absence — the same distinction the table above draws, one level up. The full conjunction a caller must check before treating a zero as an answer is contracted once in link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md[`client-api.md`] § `search`.
 
-== The query vocabulary: an LSP-shaped facade
-
-The readers above grew a vocabulary invented here — `graph`, `path`, `neighbors`, `impact`, `find`, `which-module`, `module`. Most of those concepts already have names in a vocabulary that editors, agents and tooling speak: `hover`, `references`, `workspace/symbol`, `definition`. So the substrate grew an *additive facade* that answers in that vocabulary, without renaming a single existing verb.
-
-The facade is the point, and so is what it is *not*. It is not a rename: every verb keeps its own name and its own answer shape, and each `lsp` verb is a thin dispatch that returns the underlying verb's answer unchanged. `lsp references` is an *additional* door onto `impact`, not a replacement for it.
-
-The mapping is deliberately not one-to-one, and the residue is large. LSP is `(uri, position)`-oriented — it has no module node and no transitive traversal — so the four traversal/inventory verbs (`path`, `impact`, `find`, `which-module`) have no standard LSP method and stay reachable as `workspace/executeCommand` residue under their own names. Some of them are reachable *both* ways at once, which is exactly what "not one-to-one" means.
-
-[cols="1,1,2", options="header"]
-|===
-| LSP method | Facade verb | Dispatches to
-
-| `textDocument/hover`
-| `lsp hover`
-| `module` — module info is what hovering over a symbol yields
-
-| `textDocument/references`
-| `lsp references`
-| `impact` — reverse-dependency closure is find-all-references
-
-| `textDocument/definition`
-| `lsp definition`
-| `resolve` — a command resolved to its executable is go-to-definition
-
-| `workspace/symbol`
-| `lsp workspace-symbol`
-| `find` — a query-string search across the workspace inventory
-
-| `workspace/executeCommand`
-| _(residue — own names)_
-| `path`, `impact`, `find`, `which-module`, `graph`, `neighbors` — no standard LSP method
-|===
-
-The value of the facade is not that it renames anything; it is that a downstream language-server adapter over this substrate becomes a thin protocol translation rather than a second query engine, because the substrate already speaks definition / references / hover.
-
 == Asking what is answerable: the capability report
 
 Every reader above draws the same distinction in its own way — `resolver_count` for the graph family, `attributor_count` for `which-module`, `files_scanned` for content search — between *no producer ran* and *a producer ran and found nothing*. The `capabilities` verb lifts that distinction to the whole query surface at once: it reports, for the envelope executing the call, whether module edges are derivable, whether path attribution is derivable, and whether content search is available.
@@ -247,6 +212,5 @@ Finally, the seam derives edges only for module sets that Tier 0 discovered. A r
 * link:../../marketplace/bundles/plan-marshall/skills/build-maven/SKILL.md[`build-maven/SKILL.md`] — the Axis-B coordinate join, re-homed from `manage-architecture` onto the seam.
 * link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md[`client-api.md`] — the `graph` / `path` / `neighbors` / `impact` response contracts that carry `resolvers[]` and `resolver_count`, plus the `search` contract with its `match_count` / `files_scanned` / `unreadable[]` fields and every edge case.
 * xref:../user/code-search.adoc[User Guide › Code Search] — the operator-facing side of the content reader: `find` versus `search --content`, the invocations, and how to act on what comes back.
-* xref:../developer/lsp-query-facade.adoc[Developer Guide › LSP Query Facade] — the verb-by-verb mapping for the LSP-shaped facade, where the wiring lives, and how to add a facade verb.
 * link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/architecture-persistence.md[`architecture-persistence.md`] — the persisted module-graph format, including the `{from, to, producers[]}` edge shape.
 * xref:../adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc[ADR-009] — the fail-closed reporting discipline the provenance contract applies to edge derivation.

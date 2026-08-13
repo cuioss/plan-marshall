@@ -197,10 +197,6 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture c
 
 It reports each capability as `derivable` / `not_derivable` (module edges, path attribution) or `available` / `unavailable` (content search), so an empty answer from a *missing producer* is never mistaken for a real *found nothing*. The report is computed fresh for the executing project directory and is never cached across dispatches — so it is correct inside a dispatched subagent, not only in the main session.
 
-== The same verbs, in LSP vocabulary
-
-If you (or a tool) prefer to address the query surface the way an editor does, an *additive* `lsp` facade speaks LSP vocabulary over the existing verbs: `lsp hover` (→ `module`), `lsp references` (→ `impact`), `lsp workspace-symbol` (→ `find`), `lsp definition` (→ `resolve`). Nothing was renamed — every verb still answers under its own name, and `lsp references` is simply an additional way to reach `impact`. See xref:../concepts/code-intelligence.adoc[Concepts › Code Intelligence] for the model and the per-verb mapping.
-
 == Why this verb exists
 
 A subagent dispatched to do a piece of work does not always get the same tool set the main session has. Its `Grep` and `Glob` tools may be unavailable, and the xref:enforcement-hook.adoc[enforcement hook] refuses Bash file-search programs inside a plan context. Before this verb existed, an agent in that position had no sanctioned way to answer "which file contains X" and had to hand the question back as a coverage gap.
