@@ -1,0 +1,80 @@
+= LSP Query Facade — Verb Mapping
+:nofooter:
+:toc: left
+:toclevels: 2
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
+
+The architecture query surface (`architecture.py`) exposes an *additive* LSP-shaped facade over its existing verbs. This page is the developer's map: which LSP method dispatches to which verb, where the wiring lives, and how to extend it. The authoritative field contract for every verb is link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md[`client-api.md`]; the conceptual model is xref:../concepts/code-intelligence.adoc#_the_query_vocabulary_an_lsp_shaped_facade[Concepts › Code Intelligence].
+
+[IMPORTANT]
+====
+*The facade renames nothing.* Every existing verb keeps its own name and answer shape. An `lsp` verb is a thin dispatch that returns the underlying verb's answer byte-for-byte; it is an *additional* entry point, never a replacement. A call site using `impact` is unaffected by the existence of `lsp references`.
+====
+
+== Verb-by-verb mapping
+
+[cols="1,1,1,2", options="header"]
+|===
+| LSP method | Facade verb | Dispatches to | Why the mapping
+
+| `textDocument/hover`
+| `lsp hover --module M`
+| `module`
+| Module info is what hovering over a symbol yields.
+
+| `textDocument/references`
+| `lsp references --module M`
+| `impact`
+| The reverse-dependency closure is find-all-references.
+
+| `textDocument/definition`
+| `lsp definition --command C [--module M]`
+| `resolve`
+| A command resolved to its concrete executable is go-to-definition.
+
+| `workspace/symbol`
+| `lsp workspace-symbol --query Q [--category C]`
+| `find`
+| A query-string search across the workspace inventory.
+
+| `workspace/executeCommand`
+| _(residue — own names)_
+| `path`, `impact`, `find`, `which-module`, `graph`, `neighbors`
+| No standard LSP method: LSP is `(uri, position)`-oriented, with no module node and no transitive traversal. These stay reachable under their own names.
+|===
+
+The mapping is deliberately *not* one-to-one. `impact` and `find` appear in both the facade column and the residue row: they are reachable via the facade AND via their own names. That is the intended shape — the facade adds vocabulary, the residue preserves the traversal verbs LSP cannot express.
+
+== Where the wiring lives
+
+[cols="1,2", options="header"]
+|===
+| Location | Role
+
+| `scripts/architecture.py`
+| Argparse surface. The `lsp` parent subparser and its four sub-subcommands (`hover`, `references`, `workspace-symbol`, `definition`) are declared here, and the `elif args.command == 'lsp'` branch routes to the `lsp_handlers` map — the same parent/sub-subcommand shape `enrich` uses.
+
+| `scripts/_cmd_client_handlers.py`
+| The `cmd_lsp_*` handlers. Each builds the argparse `Namespace` the target handler expects and calls it, returning the result unchanged. The `capabilities` reader (`cmd_capabilities`) also lives here.
+
+| `scripts/_cmd_client.py`
+| Re-exports every `cmd_*` name so `architecture.py` imports one facade module.
+|===
+
+== Adding a facade verb
+
+. Add a sub-subparser under the `lsp` parent in `architecture.py`, taking the arguments the target verb needs.
+. Add a `cmd_lsp_<method>` handler in `_cmd_client_handlers.py` that constructs the target handler's `Namespace` and returns its result unchanged.
+. Register the handler in the `lsp_handlers` map in `architecture.py` and re-export it from `_cmd_client.py`.
+. Document the mapping row in link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md[`client-api.md`] § "LSP-shaped query facade", this table, and the `manage-architecture` SKILL.md Canonical invocations.
+. Add an equality test (facade output == target verb output over the same fixture) to `test/plan-marshall/manage-architecture/test_lsp_facade.py`.
+
+Keep the handler a pure dispatch. The facade's value is that the answer is identical to the underlying verb's, which is what lets a protocol adapter over this surface be a thin translation rather than a second query engine.
+
+== Related
+
+* xref:../concepts/code-intelligence.adoc[Concepts › Code Intelligence] — the query-vocabulary model and the capability report.
+* link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md[`client-api.md`] — the authoritative field contract for every verb and the facade.
+* xref:../user/code-search.adoc[User Guide › Code Search] — the operator-facing side of the query surface.

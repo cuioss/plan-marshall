@@ -539,7 +539,9 @@ npm,python3 .plan/execute-script.py plan-marshall:build-npm:npm run --command-ar
 | `files` | Module file inventory | Categorised paths, optionally filtered by `--category` |
 | `which-module` | Reverse path lookup | Owning module for a given path |
 | `find` | Glob inventory search (PATH) | Cross-module path matches |
-| `search` | Content inventory search (BODY) | Cross-module file hits with `match_count`, plus `files_scanned` / `unreadable[]` |
+| `search` | Content inventory search (BODY) | Cross-module file hits with `match_count` and `file_count`, plus `files_scanned` / `unreadable[]`; `--ignore-case` composes with `--literal` |
+| `capabilities` | Envelope capability report | Per-capability `derivable`/`not_derivable` (module edges, path attribution, content search) |
+| `lsp hover` / `references` / `workspace-symbol` / `definition` | LSP-shaped facade over `module` / `impact` / `find` / `resolve` | The underlying verb's answer, unchanged (additive — nothing renamed) |
 | `diff-modules` | Snapshot diff | `added`/`removed`/`changed`/`unchanged` module buckets |
 | `descriptor-regression-check` | Commit-gate regression predicate | `regressive` (bool) + `violations` list |
 
@@ -988,8 +990,10 @@ never *"not in the tree"*.
 status: success
 pattern: HARNESS_BASH_CEILING
 literal: false
+ignore_case: false
 category: null
 count: 2
+file_count: 2
 results[2]{module,category,path,match_count}:
   plan-marshall,script,marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_cmd_client.py,1
   plan-marshall,script,marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_cmd_client_build.py,3
@@ -999,14 +1003,24 @@ truncated: false
 elided[0]:
 ```
 
+Here `count` (rows) and `file_count` (distinct paths) coincide because each hit
+is a different file. They **diverge** when one physical file is inventoried by
+more than one module (an unclaimed cross-module duplicate `search` leaves intact):
+that file is one row per attributing module, so `count` exceeds `file_count`. A
+caller asking "how many files contain this?" reads `file_count`; a caller ranking
+module-attributed hits reads the `results` rows. Both populations are named so
+neither is left implicit.
+
 **Output** (TOON, genuinely-absent token — a trustworthy negative):
 
 ```toon
 status: success
 pattern: NO_SUCH_TOKEN
 literal: false
+ignore_case: false
 category: null
 count: 0
+file_count: 0
 results[0]:
 files_scanned: 4215
 unreadable[0]:
@@ -1023,8 +1037,10 @@ were opened and none contained the token.
 status: success
 pattern: TOKEN
 literal: true
+ignore_case: false
 category: source
 count: 1
+file_count: 1
 results[1]{module,category,path,match_count}:
   pkg,source,pkg/good.py,1
 files_scanned: 1
@@ -1041,6 +1057,7 @@ status: error
 error: invalid_pattern
 pattern: "[unclosed"
 literal: false
+ignore_case: false
 message: "unterminated character set at position 0"
 ```
 
@@ -1063,6 +1080,17 @@ message: "unterminated character set at position 0"
   counted in `files_scanned`.
 - No `mode` field is echoed in the response: `--content` is the only mode today,
   so a `mode: content` key would be constant-valued and therefore vacuous.
+- `--ignore-case`: adds `re.IGNORECASE` and **composes with `--literal`**, so a
+  metacharacter-bearing pattern can be matched verbatim AND case-insensitively at
+  once — the one combination the inline `(?i)` regex marker cannot express under
+  `--literal` (`re.escape` neutralises it). Regex-mode `(?i)` still works; it is
+  the only case-fold available in regex mode *without* the flag. The echoed
+  `ignore_case` boolean names which population the match set was computed over.
+- `count` versus `file_count`: `count` is result ROWS (one per
+  `module`/`category`/`path` hit), `file_count` is DISTINCT paths. They diverge
+  only for an unclaimed cross-module duplicate (one file inventoried by two
+  modules → two rows, one file). Read `file_count` for "how many files contain
+  this?".
 - Anchored pattern (`^` / `$`): matches per LINE, not per file — the compile
   carries `re.MULTILINE`. A pattern anchored with `^` finds hits on any line, and
   `match_count` counts every such line rather than stopping at the first.
@@ -1294,6 +1322,130 @@ is absent, returns the standard `require_project_meta` error envelope.
   blanked) is never auto-committed onto a plan's PR
 - Defense-in-depth backstop independent of the `api_discover` source fix:
   even a future source regression is refused at the commit boundary
+
+---
+
+### capabilities
+
+Report which query capabilities the substrate can answer **right now, in the
+envelope this call is executing in** — closing the *cannot-derive versus
+derived-nothing* ambiguity for the query surface as a whole, the same way
+`resolver_count` closes it per-verb for the graph family and `attributor_count`
+for `which-module`.
+
+```bash
+architecture.py capabilities
+```
+
+Three binding properties, each from a recorded failure:
+
+- **Actual grant, not the declaration.** Every `status` is read from a producer
+  that RAN and REPORTED — a discovered derivation resolver that returned an edge
+  set (or errored), a discovered path attributor that returned claims, a crawl
+  that yielded an inventory. A registered-but-unrun producer never promises a
+  capability here.
+- **Uncached, recomputed per call.** The answer is derived fresh on every
+  invocation from the executing `--project-dir`; nothing is memoised across
+  calls, so a capability present on one dispatch is never assumed present on the
+  next. "Probe once then branch" is exactly the unsound fallback this refuses to
+  enable.
+- **Envelope-scoped.** The answer is for the executing envelope only. Run in the
+  orchestrator and run in a dispatched leaf, it answers for each independently.
+
+Each capability entry carries `status` plus the producer evidence, so three
+states stay distinct:
+
+| Entry shape | Meaning |
+|-------------|---------|
+| `status: not_derivable`, `producer_count: 0` | **No producer ran.** An absence of capability, not an empty finding. |
+| `status: derivable`, `derived_count: 0` | A producer ran and found nothing — a real, positive answer. |
+| `status: derivable`, `derived_count: N` | A producer ran and derived N. |
+
+The `content_search` entry uses `available` / `unavailable` (a crawl either
+produced an inventory or did not) with a `modules_inventoried` count.
+
+**Output** (TOON, a project with a Maven resolver and an inventory):
+
+```toon
+status: success
+project_dir: .
+capabilities[3]{capability,status,producer_count,derived_count,modules_inventoried}:
+  module_edges,derivable,1,7,
+  path_attribution,derivable,1,,
+  content_search,available,,,42
+```
+
+**Output** (TOON, a greenfield envelope — nothing answerable, truthfully):
+
+```toon
+status: success
+project_dir: .
+capabilities[3]{capability,status,producer_count,derived_count,modules_inventoried}:
+  module_edges,not_derivable,0,0,
+  path_attribution,not_derivable,0,,
+  content_search,unavailable,,,0
+```
+
+Each entry also carries a `verbs` list naming the verbs it governs
+(`module_edges` → `graph` / `path` / `neighbors` / `impact`; `path_attribution`
+→ `which-module`; `content_search` → `files` / `find` / `search`) and, for the
+two derivation capabilities, a `producers` list of the ids that ran.
+
+**Use cases**:
+
+- A dispatched leaf asking "can I answer graph / path-ownership / content
+  questions in *this* envelope?" before it relies on one — the report is
+  correct in a leaf, not only in the orchestrator.
+- The refine feasibility check reading `module_edges.status` to avoid treating an
+  empty graph as a clean dependency-direction pass (see
+  [`phase-2-refine:refine-workflow-detail.md`](../../phase-2-refine/standards/refine-workflow-detail.md)
+  § "Feasibility Check").
+
+---
+
+## LSP-shaped query facade
+
+An **additive** facade lets a consumer address the query surface in the
+vocabulary editors, agents and tooling already speak — `hover`, `references`,
+`workspace/symbol`, `definition` — **without renaming a single existing verb**.
+Each `lsp` subcommand is a thin dispatch to the verb it maps onto and returns
+that verb's answer unchanged. The existing verbs keep their own names; the facade
+only adds LSP vocabulary over them.
+
+```bash
+architecture.py lsp hover --module MODULE
+architecture.py lsp references --module MODULE
+architecture.py lsp workspace-symbol --query QUERY [--category CATEGORY]
+architecture.py lsp definition --command COMMAND [--module MODULE]
+```
+
+**Per-verb mapping** — the facade dispatch, plus the conceptual LSP neighbour of
+every queryable verb. The mapping is deliberately **not one-to-one**, and the
+residue is large: LSP is `(uri, position)`-oriented with no module node and no
+transitive traversal, so the four traversal/inventory verbs have no standard LSP
+method and stay reachable as `workspace/executeCommand` residue under their own
+names. Some of them (`impact`, `find`) are reachable BOTH ways — via the facade
+AND via their own name — which is exactly what "not one-to-one" means.
+
+| LSP method | `lsp` facade verb | dispatches to | note |
+|------------|-------------------|---------------|------|
+| `textDocument/hover` | `lsp hover --module M` | [`module`](#module) | module info = hover-over-a-symbol |
+| `textDocument/references` | `lsp references --module M` | [`impact`](#impact) | reverse-dependency closure = find-all-references |
+| `textDocument/definition` | `lsp definition --command C` | [`resolve`](#resolve) | command → executable = go-to-definition |
+| `workspace/symbol` | `lsp workspace-symbol --query Q` | [`find`](#find) | query-string path search across the workspace |
+| `workspace/executeCommand` | *(residue — own names)* | [`path`](#path), [`impact`](#impact), [`find`](#find), [`which-module`](#which-module), [`graph`](#graph), [`neighbors`](#neighbors) | no standard LSP method — reachable by their own names |
+| *(no facade verb yet)* | — | [`capabilities`](#capabilities) | the LSP `initialize` → `ServerCapabilities` analogue |
+
+> **Nothing here is renamed or removed.** Every verb named in the "own names"
+> column answers exactly as it did before the facade existed. `lsp references` is
+> an *additional* way to reach `impact`, not a replacement for it. A reader who
+> concludes any verb was renamed has misread the facade — it is purely additive.
+
+The facade answer is byte-for-byte the underlying verb's answer, so every field
+contract documented for `module` / `impact` / `find` / `resolve` above holds
+verbatim under the corresponding `lsp` verb. This is what lets a downstream
+language-server adapter be a thin protocol translation rather than a second query
+engine.
 
 ---
 
