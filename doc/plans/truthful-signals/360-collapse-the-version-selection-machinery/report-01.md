@@ -87,11 +87,24 @@ The `git diff --name-only origin/main...HEAD -- '*.py'` verdict is **non-empty**
 
 ## Findings
 
-_(pending)_
+Per instance, with source and disposition.
+
+**Pre-PR verification sub-agent (independent `general-purpose` dispatch, read-only):**
+
+- **F1 — stale pollution-detector reference (real defect, the class this epic targets).** `tools-script-executor/SKILL.md` § "generate_executor — preflight" (Canonical invocations, ~line 765) still named the **deleted** `_detect_multi_version_pollution` and described the removed "EITHER of two independent triggers" pollution regeneration path. I had swept the "Version-aware bundle-path resolution" section of the same file but missed this second section. **Disposition: fixed** — rewritten to state only version-staleness regenerates, and that multiple version dirs no longer trigger regen/marker-write. Re-verified clean.
+- **F2 — stale test comment referencing a deleted symbol.** `test_generate_executor.py` (~line 1759, in `test_preflight_subcommand_registered_and_emits_toon`) carried a comment referencing `_detect_multi_version_pollution` and the monkeypatch stubs this PR removed. Comment-only (test still passed). **Disposition: fixed** — rewritten to describe cache-first HOME isolation only. Re-verified clean.
+- **F3 — D6(a) literal-spec deviation (disclosed, accepted).** The plan's D6(a) headline ("an executor generated against a version still resolves after that version is deleted", seen red first) was found to be **already true pre-fix** — the runtime resolver (`resolve_notation`) predates this plan and already existence-guards the baked path + falls through to a runtime glob. So the deletion-survival test `test_resolver_survives_deletion_of_generation_time_version` is green both pre- and post-fix; the red-first evidence for D6(a) is supplied instead by the marker-ignoring test `test_resolver_ignores_orphan_mark_and_selects_newest_carrying_the_script`. **Disposition: accepted and recorded** (the report and this Findings section state it outright). The agent confirmed it is a transparent re-interpretation forced by the tree moving under the spec, NOT a "delete the guard to pass" move. The practical consequence — D1 removed *marker consultation* from an already-runtime resolver, rather than *adding* runtime resolution — is stated here so it is not overstated.
+- **Pre-existing field-count observation (out-of-scope, fixed as declared incidental).** `plan-marshall/SKILL.md:108` said the preflight has a "six-field TOON contract" while the verb returns **seven** fields (confirmed against `_PREFLIGHT_FIELDS` and the preflight docstring). Not introduced by this change. **Disposition: fixed** (one-word correction in a file this PR already edits, declared here and in the commit body) rather than left as a known-false claim; re-verified against the actual return.
+
+**CI:** recorded after the PR's `verify` run concludes (see Reviewer participation / merge gate below).
 
 ## Reviewer participation
 
-_(pending)_
+The expected reviewer population is derived from configuration — the `author_login` of each `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc (cross-named by `.github/workflows/pr-agent.yml`) — not transcribed here. Populated after the PR opens and the automated reviewers report (both the review-summary and inline-thread surfaces).
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| _(pending PR)_ | | |
 
 ## Cost
 
