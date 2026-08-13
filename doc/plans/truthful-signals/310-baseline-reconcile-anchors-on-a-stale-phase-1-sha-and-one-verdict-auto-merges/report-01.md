@@ -52,12 +52,27 @@ The surface: `_cmd_baseline_reconcile.py` (the resolver, upstream/in-flight list
 
 After restoring the fix, all 121 scoped tests pass (one intermediate tmp_path-collision fix in the barrier-mapping test), and the whole-tree suite is green.
 
-_Verification sub-agent findings + dispositions: pending (recorded when the agent completes)._
-_CI + PR-review findings: pending._
+**Verification sub-agent (independent, read-only) — 1 finding, fixed.**
+
+- **Real finding — `git-workflow.py` CLI `--help` still advertised the removed `no_remote` state** (the module docstring and SKILL.md were updated, but the second copy in the live argparse `help=` registration was missed). Same truthful-signals defect class the plan fixes. **Fixed** in commit `51e4c55` (help now lists `remote_absent_landed`/`remote_absent_unverified`); self-verified by grep (no `no_remote` state token survives anywhere in the bundle except the unrelated legitimate probe skip-reason `_cmd_baseline_reconcile.py:386`) and a re-run of the marketplace-wide `quality-gate`. A full re-dispatch was judged disproportionate for a mechanical doc-string fix already fully characterised by the agent and identical in form to the already-verified docstring/SKILL edits.
+- **Consistency nit (not a defect) — `finalize-step-sync-baseline.md`** omitted the "`auto_reconcilable` is always true for `overlap_no_content_conflict`" note that `branch-cleanup.md` carries. **Fixed** in `51e4c55` for parity (the rule already yielded correct results).
+- **Everything else verified clean by the agent**, each with evidence: all six deliverables satisfied from code+tests; `auto_reconciled`/`merge_failure_paths`/`baseline_drift_reconcile_failed` are zero-occurrence in the bundle; the surviving `merge_commit_sha` hits are the legitimate `references.merge_commit_sha` landing field; no stale "focused reconcile"/"performs a merge"/"init-time SHA anchor" prose survives. The only item not verifiable from the diff alone was D0's run-report enumeration — its code-state evidence is confirmed clean, and the enumeration itself is § Deliverables D0 above in this committed report.
+
+**CI + PR review.** No actionable review comment was produced on any of the three surfaces (issue comments, review summaries, inline threads) — both external review bots returned quota refusals rather than findings, and the repo's own `review / review` workflow concluded green with no comments. So there was **nothing to fix or reply to**; the independent pre-PR verification (above) is the substantive code review for this change, and its one finding was fixed.
+
+CI check-runs on head `51e4c55`: `verify / gate` success, `review / review` success, `dependency-review` success, `generate-check` success, `Sourcery review` skipped, `auto-merge` skipped; `verify / verify` was the required build check. See § Contract check for its terminal state at hand-off.
 
 ## Reviewer participation
 
-_Pending — recorded from the stored comment bodies after the PR review cycle. Population derived from `automatic-review/standards/{bot_kind}.md` `author_login` values, cross-named by `.github/workflows/pr-agent.yml`._
+Population derived from configuration — the `author_login` of each `automatic-review/standards/{bot_kind}.md` registry doc (`coderabbit.md`, `sourcery.md`, `pr-agent.md`); not transcribed.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Issue-comment body "PR Reviewer Guide 🔍" on head `51e4c55`: "PR contains tests", "No security concerns identified", "No major issues detected" — an explicit clean review over the diff. No findings, nothing to action. |
+| `coderabbitai` | `rate-limited` | Issue comment: "Review limit reached … you've reached your PR review limit … Next review available in: 105 minutes." Engaged but did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Review-summary body: "you have reached your weekly rate limit of 500000 diff characters." Engaged but did not review this diff. |
+
+**Coverage: 1 of 3** registry reviewers produced a review body — the repo's own `cuioss-review-bot` reviewed clean; `coderabbitai` and `sourcery-ai` are both rate-limited. The § Step 8 shortfall disclosure **fired** (see below). This is disclosed, not blocked — rate limits are routine and outside our control. Substantive review was additionally performed by the independent pre-PR verification sub-agent (which found and drove the fix of one real defect); it is not a registry reviewer, so it does not count toward the N-of-M.
 
 ## Cost
 
@@ -67,12 +82,31 @@ _Pending — recorded from the stored comment bodies after the PR review cycle. 
 
 ## Contract check (Step 9)
 
-_Recorded at Step 8 condition 3 (last pre-merge commit)._
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — named in § Skills loaded (read by bundle path; plugin notation not relied on). |
+| 2 Branch | Done — harness-assigned `claude/baseline-reconcile-anchors-stale-q9exzm` kept as-is (recorded as **harness-assigned**), pushed to origin before any work. |
+| 3 Plan directory | Done — `…/310-…/plan.md` exists via `git mv`; it opens with the first-instruction block (verified before the move). |
+| 4 Implement | Done — commits carry the `Co-Authored-By: Claude` trailer; deliverables D0–D5 addressed. |
+| 4 Per-commit gate | Done — every `*.py`-touching commit was preceded by a clean `./pw quality-gate` (`issues[0]`, coverage COMPLETE). |
+| 4 Pushed | Done — no unpushed commit remains. |
+| 5 Build gate | Done — Python-change verdict positive; full path taken; `quality-gate` clean + whole-tree `module-tests` 19463 passed / 0 failed. |
+| 6 Verification sub-agent | Done — one finding, fixed (`git-workflow.py` CLI help); dispositions in § Findings. |
+| 7 PR cycle | Done — PR #1206; all three comment surfaces read; no actionable comment (2 rate-limit notices + 1 clean review guide). |
+| 8 Merge gate | Conditions 2 (comments handled), 3 (this report is the last pre-merge commit), and 4 (shortfall disclosed) **met**. Condition 1 (required `verify / verify`) was **in_progress** when this report was committed. Auto-merge (SQUASH) is armed the moment `verify` concludes green; the repo's **merge queue is the final enforcer** of the required-green gate, so arming defers required-ness to the queue. See § Residue / the closing status for the arm outcome and the landing. GitHub access path: **GitHub MCP server**. Branch form: **harness-assigned**. |
+| 8 Bridge | Done — no status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; the report carries the PR number and per-deliverable outcome. |
+| 9 This check | Done — this table. |
+| 9 What have we learned | Below — a contract-change proposal, presented to the operator, not self-applied. |
+
+A cloud run **never owes** a `/sync-plugin-cache` (machine-local build step) — none performed or recorded.
 
 ## What have we learned (Step 9)
 
-_Recorded at Step 8 condition 3._
+**Proposal (evidence from THIS run) — the lane's post-PR self-wake affordances were not merely approval-gated here; they were absent.** Both `subscribe_pr_activity` and `send_later` returned **"No such tool available"** in this cloud session — the `claude-code-remote` MCP server was not connected at all. The § "Cloud session affordances" table describes these as tools that "may be **approval-gated**", and the "Manual read-polling" paragraph assumes the session "stays active" or is "re-entered by any means". Neither held: there was no wakeup mechanism, and a turn cannot wait out an ~8-minute `verify` build (foreground `sleep` is blocked; Bash cannot poll GitHub). The consequence: when the agent reaches the merge gate with the required check still `in_progress`, it can neither block-until-green nor schedule a re-check — so a fully-ready PR can stall at the gate.
+
+Proposed contract clarification (to present, not self-apply): the lane should name the **"no self-wake at all"** case distinctly from "approval-gated", and state the intended completion for it — either (a) arm auto-merge with the required check still `in_progress`, explicitly relying on the merge queue to enforce the required-green gate before the actual merge (the queue already does this), recorded as arm-and-hand-off; or (b) end at "PR open, required check pending, landing delegated to the orchestrator's collect", recorded as a **complete** outcome rather than partial. Today the letter of condition 1 ("BLOCKED → wait") and the arm-and-hand-off text ("armed a **green** PR") together leave this exact situation without a sanctioned terminal action. **Operator decision recorded in the closing status.**
 
 ## Residue
 
-_Recorded at Step 8._
+- **The arm-once-green step is the only remaining action.** Everything else is complete and pushed. `verify / verify` is expected green (the identical whole-tree suite passed locally, 19463/0). The closing status records whether this session armed auto-merge (verify concluded green in-session) or handed the arm/landing off.
+- No code, test, or doc residue — all deliverables landed in commits on this branch.
