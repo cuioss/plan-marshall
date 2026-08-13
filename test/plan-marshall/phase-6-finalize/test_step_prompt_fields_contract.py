@@ -91,9 +91,11 @@ _CONTROL_STEP = 'default:finalize-step-simplify'
 #: A dispatch block opens at a ``prompt: |`` scalar header.
 _PROMPT_START = re.compile(r'^(\s*)prompt:\s*\|\s*$')
 
-#: One top-level prompt-body field key. ``skills[N]:`` normalizes to ``skills``.
+#: One top-level prompt-body field key. A bracketed index is stripped so the key
+#: normalizes to its bare name — a digit index (``skills[2]:``) OR a placeholder
+#: (``skills[N]:``, as the generic templates write it) both reduce to ``skills``.
 #: A list item (``- item``) never matches — it does not start with a word char.
-_FIELD_LINE = re.compile(r'^(\s*)([A-Za-z_][A-Za-z0-9_]*)(?:\[\d*\])?:')
+_FIELD_LINE = re.compile(r'^(\s*)([A-Za-z_][A-Za-z0-9_]*)(?:\[[^\]]*\])?:')
 
 #: A fenced-code delimiter ends a prompt block (the block lives inside a ```text
 #: fence and its scalar bodies never open a nested fence).
@@ -517,3 +519,20 @@ def test_block_parser_isolates_two_adjacent_dispatches():
     assert len(blocks) == 2, f'Expected two isolated prompt blocks, got {len(blocks)}'
     assert _block_prompt_fields(blocks[0]) - _CONTRACT_FIELDS == set()
     assert _block_prompt_fields(blocks[1]) - _CONTRACT_FIELDS == {'candidates'}
+
+
+def test_field_parser_strips_any_bracketed_skills_index():
+    """Regression pin (cuioss-review-bot, PR #1197): the field regex must strip
+    ANY bracketed index — a digit ``[2]`` OR a placeholder ``[N]`` (the form the
+    generic templates write) — so the header normalizes to ``skills`` instead of
+    silently dropping the field. A ``\\d*``-only index matched ``[2]`` but not
+    ``[N]``, contradicting the documented behaviour and passing only because
+    ``skills`` is a contract field the step-specific subtraction discards anyway.
+    """
+    for header in ('skills[N]', 'skills[2]', 'skills[]', 'skills'):
+        block = f'    name: s\n    {header}:\n    - x\n    WORKTREE: .'
+        fields = _block_prompt_fields(block)
+        assert 'skills' in fields, (
+            f'`{header}:` did not normalize to the `skills` field; parsed '
+            f'{sorted(fields)}. A bracketed index of any form must be stripped.'
+        )
