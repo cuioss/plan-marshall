@@ -468,14 +468,20 @@ Give it, at minimum:
   see it — an observed run had to re-dispatch a second time to catch two such statements in bundle
   docs the diff never opened. **Sweep the changed value's consumers by kind, not by a single
   phrasing.** One value is restated in several distinct forms — a prose restatement, a schema field or
-  its placeholder, a worked example, a cross-document reference — and a sweep that greps for the way
-  the primary claim happens to be phrased finds the restatement that reads like it and silently misses
-  the rest. An observed run's single value change (a `SKILL.md`-only path widened to a
-  `SKILL.md`-plus-`standards/*.md` set) had three stale consumers of three different kinds — an
-  echo-field enumeration, a check description, and a schema placeholder — and no single reviewer caught
-  all three: the phrase-oriented sub-agent sweep found the enumeration while the automated PR reviewer
-  found the description and the placeholder. So name the consumer kinds a changed value can take and
-  sweep for each in turn, which surfaces the restatements by construction rather than by luck;
+  its placeholder, a worked example, a cross-document reference, a test fixture or stub that hardcodes
+  the value — and a sweep that greps for the way the primary claim happens to be phrased finds the
+  restatement that reads like it and silently misses the rest. An observed run's single value change (a
+  `SKILL.md`-only path widened to a `SKILL.md`-plus-`standards/*.md` set) had three stale consumers of
+  three different kinds — an echo-field enumeration, a check description, and a schema placeholder — and
+  no single reviewer caught all three: the phrase-oriented sub-agent sweep found the enumeration while
+  the automated PR reviewer found the description and the placeholder. A later run surfaced the
+  highest-risk kind of all: a **test stub/fixture that hardcodes the retired value and still passes**,
+  because it is driven by a synthetic double rather than the real code path (a `_StubAttributor`
+  encoding the old `(prefix, module)` claim), so neither the local build gate nor CI ever fails on it —
+  it survived two sub-agent sweeps and was caught only by a third that explicitly grepped `*.py`
+  fixtures. So the sweep covers **test fixtures and stubs (`*.py`), not only prose and docs**; name the
+  consumer kinds a changed value can take and sweep for each in turn, which surfaces the restatements by
+  construction rather than by luck;
 - the instruction to report every gap it finds with file and symbol, and to state explicitly when a
   deliverable cannot be verified from the diff alone rather than assuming it passed;
 - the instruction that a clean verdict must name what it checked, so an empty finding list is
