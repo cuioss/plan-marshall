@@ -398,9 +398,11 @@ expected_file	.plan/project-architecture/_project.json
 
 ## Data Sources
 
-`_project.json` lives at the top of `.plan/project-architecture/` and acts
-as the source of truth for the module index. Per-module files live under
-`.plan/project-architecture/{module}/{derived,enriched}.json`.
+`_project.json` lives at the top of `.plan/project-architecture/` and holds
+project identity plus the module index — a read-side pre-flight surface
+(per-module `description` + `generation` header), **not** the discovery
+gatekeeper (`iter_modules` crawls the live filesystem). Per-module files live
+under `.plan/project-architecture/{module}/{derived,enriched}.json`.
 
 | Command | Reads | Writes |
 |---------|-------|--------|

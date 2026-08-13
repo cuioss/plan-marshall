@@ -5,8 +5,10 @@
 Project architecture data lives under ``.plan/project-architecture/`` and is
 split into two kinds of file:
 
-- ``_project.json`` — top-level project metadata; the ``modules`` field is the
-  index of "which modules exist". Persisted on disk by ``discover``.
+- ``_project.json`` — top-level project metadata; the ``modules`` field is a
+  read-side index (per-module ``description`` + ``generation`` header), NOT the
+  discovery gatekeeper — ``iter_modules`` crawls the live worktree. Persisted on
+  disk by ``discover``.
 - ``{module}/enriched.json`` — LLM-curated fields for one module
   (responsibility, purpose, key_packages, skills_by_profile, …). Persisted on
   disk; expensive to regenerate.
@@ -445,7 +447,12 @@ def _write_json(path: Path, data: dict[str, Any]) -> None:
 
 
 def load_project_meta(project_dir: str = '.') -> dict[str, Any]:
-    """Load ``_project.json`` — the source of truth for module discovery.
+    """Load ``_project.json`` — project identity plus the read-side module index.
+
+    NOT the source of module discovery: ``iter_modules`` crawls the live worktree
+    (see :func:`crawl_all_modules`). ``_project.json``'s ``modules`` index is a
+    pre-flight surface (per-module ``description`` + ``generation`` header), not
+    the discovery gatekeeper.
 
     Raises:
         DataNotFoundError: If ``_project.json`` does not exist.
