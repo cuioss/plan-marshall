@@ -124,7 +124,14 @@ counts:
 
 ## Persistence
 
-The aspect is script-backed: run `check-dispatch-audit` and pipe its stdout to the fragment file, then register it (see [`../SKILL.md`](../SKILL.md) § "Aspect 11 (execution-context-dispatch-audit)" for the canonical capture pattern). The orchestrator does not hand-synthesize this fragment.
+The aspect is script-backed: run `check-dispatch-audit` and pipe its stdout to the fragment file, then register it. The orchestrator does not hand-synthesize this fragment.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-dispatch-audit \
+  run --plan-id {plan_id} --mode {live|archived} > work/fragment-execution-context-dispatch-audit.toon
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments add \
+  --plan-id {plan_id} --aspect execution-context-dispatch-audit --fragment-file work/fragment-execution-context-dispatch-audit.toon
+```
 
 `compile-report run --fragments-file` consumes the assembled bundle in Step 4 of [`../SKILL.md`](../SKILL.md). The bundle file is auto-deleted on successful report write; on failure it is retained for debugging.
 

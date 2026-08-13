@@ -253,14 +253,7 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
   add --plan-id {plan_id} --aspect {name} --fragment-file work/fragment-{aspect}.toon
 ```
 
-**Aspect 11 (execution-context-dispatch-audit)** — run the deterministic script with aspect name `execution-context-dispatch-audit`. The script emits the three fact blocks (shape / three-state coverage / channel completeness); the LLM synthesizes the judgement of those facts per [`standards/execution-context-dispatch-audit.md`](standards/execution-context-dispatch-audit.md) — the script never judges. It reads the plan's own `logs/`, `execution.toon`, and `status.json`, so it needs no footprint input:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-dispatch-audit \
-  run --plan-id {plan_id} --mode {live|archived} > work/fragment-execution-context-dispatch-audit.toon
-python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
-  add --plan-id {plan_id} --aspect execution-context-dispatch-audit --fragment-file work/fragment-execution-context-dispatch-audit.toon
-```
+**Aspect 11 (execution-context-dispatch-audit)** — a deterministic script-backed aspect run per the generic deterministic-aspect pattern above with the `check-dispatch-audit` script. It reads the plan's own `logs/`, `execution.toon`, and `status.json`, so it needs no footprint input. The concrete capture-and-register commands live in [`standards/execution-context-dispatch-audit.md`](standards/execution-context-dispatch-audit.md) § "Persistence" (SKILL.md dispatches the aspect and delegates its registration to that document). The script emits the three fact blocks (shape / three-state coverage / channel completeness); the LLM synthesizes the judgement of those facts per that same document — the script never judges.
 
 **Aspect 12 (manifest-decisions, conditional)** — when `execution.toon` exists in the plan directory, run the deterministic script pattern with aspect name `manifest-decisions`:
 
