@@ -248,7 +248,7 @@ Phase transitions are guarded by a registry of **invariants** captured at every 
 | `pending_findings_by_type` | per-type breakdown of pending findings (passive — never raises) | identical (passive) |
 | `pending_findings_blocking_count` | sum of pending counts across the hardcoded ACTIONABLE finding-type set | raises `BlockingFindingsPresent` when the count is non-zero at a guarded boundary — the capture / findings-check refuses, gating the boundary |
 
-The actionable-vs-knowledge classification is a **fixed, hardcoded** rule in `plan-marshall/scripts/_invariants.py` — not per-phase configuration, no `marshal.json` key, no wizard seed. ACTIONABLE types (`build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `qgate`, `pr-comment`) block when pending at a guarded boundary; KNOWLEDGE types (`insight`, `tip`, `best-practice`, `improvement`) never block. See [`references/phase-handshake.md`](references/phase-handshake.md) § `pending_findings_blocking_count` resolution for the full rule.
+The actionable-vs-knowledge classification is a **fixed, hardcoded** rule in `plan-marshall/scripts/_invariants.py` (`_ACTIONABLE_FINDING_TYPES`) — not per-phase configuration, no `marshal.json` key, no wizard seed. ACTIONABLE types block when pending at a guarded boundary; KNOWLEDGE types never block. The two sets are enumerated once, authoritatively, in [`references/phase-handshake.md`](references/phase-handshake.md) § `pending_findings_blocking_count` resolution — not restated here, so this doc cannot drift from `_invariants.py` when a type is added.
 
 **Guarded boundaries** (the points where the blocking-finding gate refuses to advance):
 
