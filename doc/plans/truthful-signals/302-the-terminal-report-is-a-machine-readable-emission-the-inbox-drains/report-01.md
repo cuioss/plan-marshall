@@ -1,6 +1,6 @@
 # Run report — 302-the-terminal-report-is-a-machine-readable-emission-the-inbox-drains (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** claude/terminal-report-machine-readable-x35bc9    **PR:** (pending)    **Outcome:** in-progress
+**Date (UTC):** 2026-08-13    **Branch:** claude/terminal-report-machine-readable-x35bc9    **PR:** #1215    **Outcome:** completed — all six deliverables landed; CI green; auto-merge armed (SQUASH). Review coverage 1-of-3 disclosed.
 
 ## Skills loaded
 
@@ -76,24 +76,56 @@ All findings fixed; none deferred or rejected. Sources:
   4. (fixed) stale comment in `test_finalize_orchestration_routing.py` attributing the landing to lessons-capture.
 - **Verification sub-agent, re-verification pass:** confirmed all four resolved; surfaced 1 residual — `SKILL.md` a0 line 750 "All three consumers" undercount vs the "four steps" statement (fixed by clarifying emit-landing is composed out on the non-orchestrated path). Also correctly flagged a frozen prior-plan run report (`doc/plans/review-apparatus/080-.../report-01.md`) as out of scope (dated execution record, exempt per CLAUDE.md).
 - **Sub-agent also confirmed** all six deliverables implemented as specified, and noted one coverage limitation (no end-to-end integration test composing a real orchestrated plan through the discovery seed and executing emit-landing's inline body — asserted structurally via dispatch-table/ordering/collision tests instead). Recorded as residue.
-- **CI / PR review:** pending (post-PR).
+- **CI (PR #1215):** GREEN on head `9045558` — `verify / conclusion` success, plus `verify / verify`, `verify / gate`, `review / review`, `dependency-review`, `generate-check` all success (`Sourcery review` check skipped). `mergeable_state: clean`. No CI findings.
+- **PR review:** No actionable review comments on any of the three surfaces — `cuioss-review-bot`'s PR Reviewer Guide reported "No major issues detected, No security concerns identified, PR contains tests"; the other two bots posted only rate-limit notices; zero inline review threads. Nothing to disposition.
 
 ## Reviewer participation
 
-Expected reviewer population derived from the bot registry `author_login` fields (`automatic-review/standards/{coderabbit,pr-agent,sourcery}.md`): **`coderabbitai`, `cuioss-review-bot`, `sourcery-ai`** (3 reviewers). Per-reviewer verdicts pending the PR review cycle.
+Expected reviewer population derived from the bot registry `author_login` fields (`automatic-review/standards/{coderabbit,pr-agent,sourcery}.md`): **`coderabbitai`, `cuioss-review-bot`, `sourcery-ai`** (3 reviewers).
+
+| Reviewer (`author_login`) | Verdict | Body evidence |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Issue-comment "PR Reviewer Guide 🔍": *PR contains tests · No security concerns identified · No major issues detected* — an explicit nothing-to-report over the diff. |
+| `coderabbitai` | `rate-limited` | Issue-comment "Review limit reached … you've reached your PR review limit, so we couldn't start this review. Next review available in 83 minutes." Engaged but did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Review-summary body "you have reached your weekly rate limit of 500000 diff characters." Engaged but did not review this diff. |
+
+**Coverage: 1 of 3.** The § Step 8 shortfall disclosure fired: *"Review coverage: 1 of 3 — `cuioss-review-bot` reviewed (no issues found); `coderabbitai` rate-limited (resets in ~83 min); `sourcery-ai` rate-limited (weekly quota)."* Per the lane contract this is a disclosure, not a block — rate limits are routine and outside our control; the merge proceeds on the required-check-green + comments-handled gate.
 
 ## Cost
 
-(pending)
+- **Tokens:** not available to the agent in this session — the Claude Code cloud harness does not expose a per-turn token counter to the agent, so no figure is reported rather than a guessed one.
+- **Wall-clock:** the run spanned one continuous interactive cloud session; not separately instrumented by the agent (the `./pw verify` phases self-reported ~7–9 min each).
+- **Population:** whatever these would count is this single Claude Code cloud session's usage as the harness bills it. ⛔ This is **NOT comparable** to a plan-marshall `metrics.toon` total, which counts the orchestrator-plus-agent dispatch tree under plan-marshall's own per-task billing boundary — a boundary a single interactive cloud session does not share. No comparable figure can be produced here.
 
 ## Contract check (Step 9)
 
-(pending)
+Re-read `cloud-plan-lane` and checked each step against what happened:
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | ✅ | Named in "Skills loaded". `plan-marshall` plugin absent → all skills loaded via bundle Read paths. |
+| 2 Branch | ✅ | Harness-assigned `claude/terminal-report-machine-readable-x35bc9` kept as-is; pushed to `origin` before any work. |
+| 3 Plan directory | ✅ | `doc/plans/truthful-signals/302-…/plan.md` exists (git mv, prefix preserved) and opens with the first-instruction block (present, unmodified). |
+| 4 Implement | ✅ | 7 commits, each carrying the `Co-Authored-By: Claude` trailer, no "Generated with Claude Code" footer. All six deliverables addressed. |
+| 4 Per-commit gate | ✅ | Every `*.py`-touching commit was preceded by a clean quality-gate (ruff/mypy/SPDX/plugin-doctor via the direct `./pw`). |
+| 4 Pushed | ✅ | Every commit pushed immediately; no unpushed commit remains after the final report push. |
+| 5 Build gate | ✅ | Python changed → `./pw verify` GREEN (19526 passed, 14 skipped, `verify: SUCCESS`). One iteration to fix a pinned description-drift test. |
+| 6 Verification sub-agent | ✅ | Dispatched (Task, general-purpose, read-only) + re-dispatched; 4 first-pass findings + 1 residual, all fixed and re-confirmed; dispositions above. |
+| 7 PR cycle | ✅ | PR #1215; all three comment surfaces read; zero actionable comments; per-reviewer participation recorded. |
+| 8 Merge gate | ✅ (armed) | Conditions 1–3 met; coverage shortfall disclosed (1-of-3); auto-merge armed SQUASH. Landing self-confirmed / handed off — recorded below. |
+| 8 Bridge | ✅ | No status/bookkeeping write outside this plan's own directory; report carries PR # and per-deliverable outcome for the orchestrator's collect. |
+| 9 This check | ✅ | This table. |
+| 9 What have we learned | ✅ | Below — none proposed, with reason. |
+
+**GitHub access path:** GitHub MCP server (cloud session). **Branch form:** harness-assigned `claude/*`. **`/sync-plugin-cache`:** not owed — a cloud run neither performs nor owes it (machine-local build step).
 
 ## What have we learned (Step 9)
 
-(pending)
+**None proposed.** This run exercised the contract end to end and every gate worked as designed: the full `./pw verify` (Step 5) independently caught the pinned description-drift test the fast three-dir pre-check missed, and the independent sub-agent's beyond-diff sweep (Step 6) caught residual stale carve-out prose in untouched files — exactly the collateral-defect class those gates exist to catch. No step was ambiguous in practice, no artifact was unproducible as written, and every documented command worked in the cloud environment (the `UV_HTTP_TIMEOUT=600` export and the arm-and-read-poll merge path both behaved as the contract describes — the self-wake tools were gated, but CI and the bots completed within the session so the ungated `pull_request_read` surface let the run self-confirm rather than hand off blind). The one friction — a cross-cutting conformance test living outside the three dirs I fast-checked — is already covered by the contract's mandate to run the full `./pw verify` at Step 5, which caught it; no contract change is warranted.
 
 ## Residue
 
-(pending)
+- **No end-to-end integration test executes `emit-landing`'s inline body through the discovery seed.** D1's runtime wiring is asserted structurally (dispatch-table set-equality, ascending-order, no-collision, records-facts both-direction) rather than by composing a real orchestrated plan and running the finalize FOR loop. The sub-agent flagged this as a coverage limitation not closable from the diff alone. Left for a future integration-test pass.
+- **A meta-project marshal.json re-seed is owed** so plan-marshall's own orchestrated plans pick up `emit-landing`. Not performed here: `.plan/marshal.json` is under the `.plan/` tree the cloud lane does not touch, and `emit-landing` is default-on via discovery so consumer projects seed it automatically. This is a local-developer re-seed concern (kin to the deferred `/sync-plugin-cache`), not a code debt.
+- **Problem C (the retrospective's unconditional session rebind)** — out of scope by the plan; this change did not touch the retrospective, so no fix is owed and none was made silently.
+- **Plan/CI note:** the plan's Problem B cites "archive path at 1000 (archive-plan)", but plan 300 moved `archive-plan` to 1100 and reserved 1000–1099; the emission took order 1000. Recorded in D0; the plan text itself is a frozen input and was not amended.
