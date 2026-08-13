@@ -73,10 +73,57 @@ use.**
 
 The `.plan/`-only claims are cited, not merged, per the plan's Notes.
 
-### D1 — reconciliation (see § below): in progress
-### D2 — name the scopes apart (flag rename): in progress
-### D3 — record which scope the narrowing used: in progress
-### D4 — tests, each seen red first: in progress
+### D1 — Composition reconciles against the plan's settled classification — DONE
+
+Commit `ba766bf`. New read-side helper `_read_settled_change_type(plan_id)`
+(`_manifest_decide.py`, mirroring `_read_recipe_source` — best-effort degrade to `None` on a
+missing/malformed `status.json`). In `cmd_compose` (`manage-execution-manifest.py`), after input
+validation: `settled_change_type = _read_settled_change_type(plan_id)`; if present and it differs
+from the supplied value, return `error: change_type_scope_conflict` whose message names **both**
+values and **both** scopes, plus `settled_change_type` / `supplied_change_type` fields. No manifest
+is written on refusal. Verified by reading the actual refusal message in the test output.
+
+### D2 — Name the two scopes apart (flag rename) — DONE
+
+Commit `ba766bf`. The compose flag `--change-type` → `--plan-change-type` (dest kept as `change_type`
+to avoid churning 22 test-namespace files; the CLI spelling is genuinely renamed). Verified as a
+**rename, not an alias**: `test_old_change_type_flag_is_rejected` confirms `--change-type` now exits
+non-zero (argparse rejects it); `test_new_plan_change_type_flag_is_accepted` confirms the new
+spelling. In `cmd_compose` the two scopes are distinct locals: `supplied_change_type` (the flag,
+deliverable-scoped) vs `settled_change_type` (the plan-scoped read). Updated the SKILL.md canonical
+block, command table, parameter list, and error table; `decision-rules.md` Inputs row + a new
+"change_type scope reconciliation" section; and phase-4-plan Step 7b.
+
+### D3 — The narrowing decision records which scope it used — DONE
+
+Commit `ba766bf`. `effective_change_type` = settled-when-present else supplied — consumed by every
+change-type-gated decision (`_decide`, `simplify_inactive`). The compose result carries
+`change_type_scope` (`settled` | `supplied`), `effective_change_type`, `settled_change_type`,
+`supplied_change_type`, and a `decision.log` line names the scope and value used.
+
+### D4 — Tests, each verified to FAIL pre-fix — DONE
+
+Commit `ba766bf`. New file `test_compose_change_type_reconciliation.py` (8 tests): (a) refusal
+naming both; (b) matching pair passes, records `settled`; (c) **control** — no settled classification
+still composes, records `supplied` (plus a status-without-change_type variant); (d) narrowing records
+its scope + input; the reconciliation decision-log line; and the flag rename (new accepted, old
+rejected). **Red-first confirmed**: with only the two source files stashed to pre-fix, all 8 failed
+for the right reasons (no reconciliation → no refusal; no `change_type_scope` key; old flag still
+required). After restore, all 8 pass.
+
+### Post-implementation staleness sweep — DONE
+
+Commit `c638b26`. The fix made the `security_class_inactive` gate's "no change_type leg" rationale
+stale (it was justified by the old FIRST-DELIVERABLE-WINS forwarding). Refreshed the rationale in the
+main-script comment, `_manifest_rules.py` docstring, `finalize-step-security-audit.md`, and two test
+comments to the surviving reason: change_type — even reconciled to the settled classification — is
+orthogonal to the security surface.
+
+## The ⚠ decision (continued)
+
+The full text of the "should the flag remain caller-supplied" decision is in the section above; the
+resolution shipped as reconcile-and-refuse with the flag kept (renamed), plus phase-4 forwarding the
+settled value so the guard fires only on a genuinely wrong caller.
 
 ## The ⚠ decision — should the flag remain caller-supplied?
 
@@ -92,7 +139,14 @@ plan. The flag remains the sole source only when no settled classification exist
 
 ## Build gate
 
-_pending_
+`git diff --name-only origin/main...HEAD -- '*.py'` is non-empty (the compose script, the decide
+helper, the rules helper, and three test files changed), so the gate takes its full path. Ran the
+full `./pw verify` (all three sub-steps) — **`=== verify: SUCCESS ===`**: mypy(production) clean
+(398 files), ruff `All checks passed!`, SPDX passed, plugin-doctor `total_issues: 0` across all 36
+rules (including `scan_manage_invocation`, `canonical-enum-choices-drift`, `broken-relative-link`,
+`analyze_argument_naming`), mypy(test) clean (734 files), and module-tests **19613 passed, 14
+skipped**. A follow-up `./pw quality-gate` after the staleness-fix commit was also clean.
+`UV_HTTP_TIMEOUT=600` set on every `./pw` call. No `uv.lock` churn (staged paths explicitly).
 
 ## Findings
 
