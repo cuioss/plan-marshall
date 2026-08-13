@@ -87,8 +87,10 @@ The four residue verbs remain reachable unchanged — the facade is purely addit
 `git diff --name-only origin/main...HEAD -- '*.py'` → non-empty (manage-architecture scripts +
 tests). `./pw quality-gate` clean (`issues[0]`, plugin-doctor marketplace-wide). Full `./pw verify`
 first failed test-compile on two mypy `no-any-return` in the new test helpers; fixed (`bool(...)`
-wrap and a `dict`-annotated local). `./pw test-compile` → `Success: no issues found in 727 source
-files`. Final full `./pw verify` re-run recorded below.
+wrap and a `dict`-annotated local). Re-run full `./pw verify` → **`verify: SUCCESS` — 19480 passed,
+14 skipped in 336s**, coverage COMPLETE (mypy production+test, ruff, SPDX, plugin-doctor
+marketplace-wide, whole-tree pytest). A final `./pw quality-gate` over the doc-fix commit (0df29ed)
+is also clean (`issues[0]`, `broken-relative-link: 0`, `scan_manage_invocation: 0`).
 
 ## Findings
 
@@ -98,8 +100,23 @@ files`. Final full `./pw verify` re-run recorded below.
   under their own names**, and no document misled it toward a rename reading. This is the correct
   reading the plan's D5 verification requires — the facade documentation PASSED the cold read.
 - **Build (test-compile):** 2 mypy `no-any-return` findings in `test_feasibility_underivable_guard.py`
-  and `test_capabilities.py` — FIXED (source: local build).
-- Deliverable-verification sub-agent + CI + PR review: recorded below as they arrive.
+  and `test_capabilities.py` — FIXED (source: local build), commit 8159710.
+- **Verification sub-agent — deliverable review:** verdict *essentially clean, no correctness
+  defects*. All five deliverables verified as implemented-as-specified with tests. Findings:
+  - *Finding 1 (LOW, stale synopsis):* `persona-plan-marshall-agent/…/tool-usage-patterns.md` search
+    synopsis omitted `[--ignore-case]` — **FIXED** (commit 0df29ed).
+  - *Finding 2 (INFO, partial hint):* `agent-behavior-rules.md` content-lookup hint named `--literal`
+    but not `--ignore-case` — **FIXED** (commit 0df29ed).
+  - *Doc-fidelity note:* `capabilities` TOON examples elide the per-entry `verbs`/`producers` list
+    fields — **FIXED** by an explicit elision note (commit 0df29ed).
+  - *Caveat: D2-in-a-real-leaf.* The plan asks D2 be verified inside a dispatched leaf. The
+    substrate's answer is a pure function of `project_dir` + the producers that ran, not of the
+    leaf's harness tool grants (it is a filesystem-reading Python script), so orchestrator-vs-leaf
+    divergence reduces to `project_dir` divergence — which `test_capabilities.py`'s two-project-dir
+    envelope-scoping test exercises directly. Recorded as the available proxy; a true
+    revoked-Grep/Glob leaf cannot be synthesised in this session.
+  - *Caveat: suite not run by the agent* — now closed: the full `./pw verify` ran to SUCCESS (above).
+- **CI + PR review:** recorded below as they arrive.
 
 ## Reviewer participation
 
