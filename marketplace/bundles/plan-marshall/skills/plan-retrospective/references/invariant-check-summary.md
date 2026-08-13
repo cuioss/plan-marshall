@@ -14,7 +14,7 @@ From `INVARIANTS` registry:
 | `worktree_dirty` | worktree plans | Worktree dirty-file count |
 | `task_state_hash` | always | Stable SHA of task graph reduced form |
 | `qgate_open_count` | always | Open Q-Gate findings count per phase |
-| `config_hash` | always | Stable SHA of phase config |
+| `config_hash` | always | Stable SHA of the `plan` config section of `marshal.json` (phase-independent) |
 | `phase_steps_complete` | always | SHA of required-steps list OR failure |
 
 ## Inputs

@@ -130,7 +130,7 @@ Defined in `_invariants.py` as `(name, applies_fn, capture_fn)` tuples. The para
 | `references_valid` | always | SHA256 of `{present, top_level_is_dict, required_field_set}` from `manage-references read` | `blocking_at_every_boundary` | references.json deleted, corrupted to non-dict, or missing a required key (`branch`, `base_branch`) |
 | `task_state_hash` | always | SHA256 of sorted `(number, status, step_outcomes, depends_on)` from `manage-tasks list` | `blocking_at_every_boundary` | tasks silently mutated |
 | `qgate_open_count` | always | `filtered_count` from `manage-findings qgate list --resolution pending --phase P` | `blocking_at_every_boundary` | Q-Gate bypass |
-| `config_hash` | always | SHA256 of stable-key JSON of `manage-config plan phase-P get` output | `blocking_at_every_boundary` | config swapped mid-run |
+| `config_hash` | always | SHA256 of stable-key JSON of the `plan` section of `marshal.json` (phase-independent — the same config hashes the same at every boundary) | `blocking_at_every_boundary` | config swapped mid-run |
 | `unfinished_tasks_count` | always | union count from `manage-tasks loop-exit-guard` (`pending_count + in_progress_count`) | `blocking_at_every_boundary` | premature transition with fix tasks still pending OR a mid-flight task abandoned by a previous dispatch |
 | `phase_steps_complete` | always (no-op when phase has no declaration) | See [resolution rule](#phase_steps_complete-resolution) | `blocking_at_every_boundary` | silently skipped intra-phase steps |
 | `task_graph_valid` | always | adjacency graph from `manage-tasks read` (cycle / dangling detection) | `blocking_at_every_boundary` | broken task graph blocking transition |

@@ -241,6 +241,19 @@ class TestDetectDrift:
         # config_hash held steady → no drift entry for it.
         assert not any(d['invariant'] == 'config_hash' for d in drift)
 
+    def test_config_hash_change_is_drift(self):
+        # D2(b) control at the cross-phase detector level: config_hash is NOT in
+        # ``detect_drift``'s excluded set, so a genuine config change between
+        # phases still surfaces a drift signal. This is the regression lock that
+        # stops the phase-independence fix from later degrading into silencing —
+        # if a future change added config_hash to the excluded set, this fails.
+        phase_map = {
+            '1-init': {'config_hash': 'cfg-a', 'main_sha': 'abc'},
+            '6-finalize': {'config_hash': 'cfg-b', 'main_sha': 'abc'},
+        }
+        drift = _si.detect_drift(phase_map)
+        assert any(d['invariant'] == 'config_hash' for d in drift)
+
     def test_excluded_invariants_never_drift(self):
         phase_map = {
             '1-init': {'main_dirty': '0', 'qgate_open_count': '0', 'unfinished_tasks_count': '5'},
