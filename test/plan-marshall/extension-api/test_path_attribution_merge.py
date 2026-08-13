@@ -52,7 +52,7 @@ _merge = load_script_module(
 )
 
 # The known-module universe every test validates claim modules against.
-_MODULES = {'plan-marshall', 'documentation', 'other'}
+_MODULES = {'plan-marshall', 'pm-plugin-development', 'documentation', 'other'}
 
 
 class _StubAttributor:
@@ -639,13 +639,16 @@ def test_lookup_claim_still_rejects_a_sibling_after_normalization():
 
 
 def test_lookup_claim_consumes_the_merge_output_end_to_end():
-    # Arrange — the two claims the seam ships, produced by the real merge
-    attributor = _StubAttributor(
-        claims=[('.claude/skills', 'plan-marshall'), ('.plan', 'plan-marshall')]
-    )
-    claims, _ = _merge_with(('plan-marshall', attributor))
+    # Arrange — the shipped claims, produced by the real merge over the two real
+    # attributors: pm-plugin-development owns the bare-root ``.claude`` tree, and
+    # plan-marshall owns ``.plan``.
+    pm_dev = _StubAttributor(claims=[('.claude', 'pm-plugin-development')])
+    plan_marshall = _StubAttributor(claims=[('.plan', 'plan-marshall')])
+    claims, _ = _merge_with(('pm-plugin-development', pm_dev), ('plan-marshall', plan_marshall))
 
-    # Act / Assert — merge output feeds the matcher without reshaping
+    # Act / Assert — merge output feeds the matcher without reshaping. The bare-root
+    # ``.claude`` claim covers every subtree, so a former-sibling settings path
+    # resolves alongside a skills path rather than answering a confident None.
     assert _merge.lookup_claim('.plan/execute-script.py', claims) == 'plan-marshall'
-    assert _merge.lookup_claim('.claude/skills/foo/SKILL.md', claims) == 'plan-marshall'
-    assert _merge.lookup_claim('.claude/settings.json', claims) is None
+    assert _merge.lookup_claim('.claude/skills/foo/SKILL.md', claims) == 'pm-plugin-development'
+    assert _merge.lookup_claim('.claude/settings.json', claims) == 'pm-plugin-development'
