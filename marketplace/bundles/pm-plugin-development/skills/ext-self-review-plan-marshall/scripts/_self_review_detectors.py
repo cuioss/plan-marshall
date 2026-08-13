@@ -1045,8 +1045,9 @@ def _detect_count_prose(
     For each modified file nested inside a skill directory (reuse
     ``_find_skill_dir``), scan every contract source of that skill for
     count-prose — a digit OR an English number word immediately adjacent to one
-    of the cardinality nouns (``operation``, ``field``, ``step``, ``rule``,
-    ``command``). The contract sources are resolved through the SAME
+    of the closed set of cardinality nouns (``operation``, ``field``, ``step``,
+    ``rule``, ``command``, ``check``). The contract sources are resolved through
+    the SAME
     :func:`_collect_skill_contract_sources` resolver the contract-source
     detector uses — ``SKILL.md`` PLUS every ``standards/*.md`` in the skill
     directory — so a stale count living in a ``standards/*.md`` doc is surfaced,

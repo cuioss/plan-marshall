@@ -1554,6 +1554,48 @@ class TestDetectCountProse:
         for entry in out:
             assert entry['file'] == 'marketplace/bundles/b1/skills/my-skill/SKILL.md'
 
+    def test_count_prose_surfaces_check_noun(self, tmp_path: Path):
+        # POSITIVE (D2 widening): ``check`` is a cardinality noun. This is the
+        # exact example the pattern's own comment claimed was matched
+        # (``nine checks``) while ``checks`` was absent from the noun set — the
+        # docstring contradiction this plan fixes. FAILS against the pre-widening
+        # five-noun set (``checks`` unmatched), so it proves the widening, not
+        # merely the plumbing. ``the two checks`` mirrors the real corpus
+        # instance (phase-1-init/SKILL.md) that motivated the addition.
+        body = (
+            '---\n'
+            'name: my-skill\n'
+            '---\n'
+            '# My Skill\n'
+            'The pass applies nine checks over the parsed input.\n'
+            'The two checks are ordered: primary first.\n'
+        )
+        project = self._build_skill(tmp_path, body)
+        rel = 'marketplace/bundles/b1/skills/my-skill/scripts/mod.py'
+        out = _detect_count_prose([rel], project)
+        texts = [e['text'] for e in out]
+        assert any('nine checks' in t for t in texts)
+        assert any('two checks' in t for t in texts)
+
+    def test_count_prose_does_not_fire_on_nouns_outside_closed_set(self, tmp_path: Path):
+        # NEGATIVE (D2 widening discipline): the noun set is CLOSED and curated,
+        # not "any noun". A number adjacent to a structural-looking noun OUTSIDE
+        # the set (``deliverables``, ``modules``) must NOT surface — this FAILS
+        # the moment the predicate is mutated to match any noun, which is the
+        # over-widening the stop rule forbids. ``5 checkpoints`` additionally
+        # pins the word-boundary: ``checks?`` must not match inside ``checkpoint``.
+        body = (
+            '---\n'
+            'name: my-skill\n'
+            '---\n'
+            '# My Skill\n'
+            'Ship 5 deliverables and 3 modules with 5 checkpoints this cycle.\n'
+        )
+        project = self._build_skill(tmp_path, body)
+        rel = 'marketplace/bundles/b1/skills/my-skill/scripts/mod.py'
+        out = _detect_count_prose([rel], project)
+        assert out == []
+
     def test_digit_not_adjacent_to_cardinality_noun_surfaces_nothing(self, tmp_path: Path):
         body = (
             '---\n'
