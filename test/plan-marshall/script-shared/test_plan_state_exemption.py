@@ -149,13 +149,17 @@ def test_partition_sorts_and_dedupes(tmp_path: Path) -> None:
     assert exempted == []
 
 
-def test_partition_fails_closed_when_tree_is_not_a_repo(tmp_path: Path) -> None:
+def test_partition_fails_closed_when_tree_is_not_a_repo(outside_repo_dir: Path) -> None:
     """A ``.plan/`` candidate against a non-repo tree is RETAINED, never exempted.
 
     An unusable trackedness observation must not manufacture a silent exemption —
-    the guards exist to surface possibly-unpushable tracked edits.
+    the guards exist to surface possibly-unpushable tracked edits. The tree must
+    be genuinely outside any git repository: under ``./pw`` ``tmp_path`` is rooted
+    INSIDE this repo (``build.py`` sets ``--basetemp`` there), so a ``tmp_path``
+    subdir would resolve the enclosing plan-marshall repo rather than failing —
+    hence ``outside_repo_dir``.
     """
-    not_a_repo = tmp_path / 'plain'
+    not_a_repo = outside_repo_dir / 'plain'
     not_a_repo.mkdir()
     retained, exempted = pse.partition_plan_state_exemption(
         ['.plan/marshal.json', '.plan/local/work.log'], not_a_repo
@@ -177,7 +181,10 @@ def test_tracked_plan_paths_returns_tracked_set(tmp_path: Path) -> None:
     assert tracked == {'.plan/marshal.json'}
 
 
-def test_tracked_plan_paths_none_when_not_a_repo(tmp_path: Path) -> None:
-    plain = tmp_path / 'plain'
+def test_tracked_plan_paths_none_when_not_a_repo(outside_repo_dir: Path) -> None:
+    # ``outside_repo_dir`` (not ``tmp_path``) because under ``./pw`` ``tmp_path``
+    # is inside this repo, so ``git -C`` there resolves the enclosing repo instead
+    # of failing.
+    plain = outside_repo_dir / 'plain'
     plain.mkdir()
     assert pse.tracked_plan_paths(plain) is None
