@@ -1,6 +1,6 @@
 # Run report — 280 dispatch-audit-emitter (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** `claude/dispatch-audit-surfaces-rc5j18` (harness-assigned; kept as-is)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-13    **Branch:** `claude/dispatch-audit-surfaces-rc5j18` (harness-assigned; kept as-is)    **PR:** [#1200](https://github.com/cuioss/plan-marshall/pull/1200)    **Outcome:** _in progress (review cycle)_
 
 This plan owns the **emitter** only (dispatch-record emission). Every detector-side
 change is out of scope per the plan's ownership block (owned by the four
@@ -188,13 +188,17 @@ Beyond-diff stale-claim sweep — **three real stale claims found, all fixed in 
 ## Reviewer participation
 
 Expected reviewer population derived from configuration
-(`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` `author_login`,
-cross-named by `.github/workflows/pr-agent.yml`) — _to be filled after the PR is opened and reviews
-land._
+(`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` `author_login`):
+**M = 3** — `coderabbitai` (coderabbit.md), `cuioss-review-bot` (pr-agent.md), `sourcery-ai`
+(sourcery.md). Verdicts derived from stored comment bodies (not check states):
 
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
-| _pending_ | | |
+| `coderabbitai` | _pending_ | Initial status: "Review rate limited" (CodeRabbit status context) — confirm from bodies |
+| `cuioss-review-bot` | _pending_ | `review / review` check in progress at PR open |
+| `sourcery-ai` | _pending_ | `Sourcery review` check concluded `skipped` at PR open |
+
+_Verdicts + N-of-M coverage + Step-8 shortfall disclosure filled after reviews land._
 
 ## Cost
 
