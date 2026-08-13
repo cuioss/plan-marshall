@@ -51,7 +51,7 @@ SHAPE_6 = _ppt.SHAPE_6_DIVERGENCE_NO_GC
 # ---------------------------------------------------------------------------
 # Fixture builder — a HEALTHY observation, with overrides per test.
 # ---------------------------------------------------------------------------
-def _obs(**overrides) -> StoreObservation:
+def _obs(**overrides):
     base = {
         'executor_version': '0.1.200',
         'install_path_version': '0.1.200',
@@ -64,7 +64,7 @@ def _obs(**overrides) -> StoreObservation:
     return StoreObservation(**base)
 
 
-def _verdict(obs: StoreObservation):
+def _verdict(obs):
     """Double-sample against an identical second sample (the agreeing case)."""
     return evaluate(obs, obs, sampling_instant='2026-08-13T00:00:00Z')
 
