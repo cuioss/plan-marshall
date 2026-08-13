@@ -1569,6 +1569,7 @@ class TestDetectCountProse:
             '# My Skill\n'
             'The pass applies nine checks over the parsed input.\n'
             'The two checks are ordered: primary first.\n'
+            'The pass applies one check before it reports results.\n'
         )
         project = self._build_skill(tmp_path, body)
         rel = 'marketplace/bundles/b1/skills/my-skill/scripts/mod.py'
@@ -1576,6 +1577,9 @@ class TestDetectCountProse:
         texts = [e['text'] for e in out]
         assert any('nine checks' in t for t in texts)
         assert any('two checks' in t for t in texts)
+        # Singular ``check`` must surface too: ``checks?`` matches the singular
+        # form, so a plural-only regression (dropping the ``s?``) is caught here.
+        assert any('one check' in t for t in texts)
 
     def test_count_prose_does_not_fire_on_nouns_outside_closed_set(self, tmp_path: Path):
         # NEGATIVE (D2 widening discipline): the noun set is CLOSED and curated,
