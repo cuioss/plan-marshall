@@ -54,16 +54,17 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 
 `manage-plan-documents`' only top-level choices are `{list-types, request}` — the request read is the `request` noun's `read` sub-verb, NOT a top-level `read` (and there is no `references` noun).
 
-This step runs as a Task dispatch under the `post-run-review` sub-key — the dispatcher derives that sub-key from this doc's `post_run_review: true` frontmatter fact rather than from a hand-maintained step list, so the ordering obligation and the dispatch role read from one source (resolved via `manage-config effort resolve-target --phase phase-6-finalize --role post-run-review`) — with a 5-minute (300 s) per-agent timeout budget enforced by the SKILL.md Step 3 dispatch loop. The dispatcher emits the standardized `[DISPATCH]` work-log line at the call site — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) for the canonical emission contract. The `post-run-review` sub-key bundles lessons-capture with retrospective — both workflows look back at the full plan history and ride the same level. On timeout the dispatcher records `outcome=failed` with `display_detail="timed out after 300s"` and continues — lessons capture is advisory and never blocks the rest of the pipeline.
+This step runs as a Task dispatch under the `post-run-review` sub-key — the dispatcher derives that sub-key from this doc's `post_run_review: true` frontmatter fact rather than from a hand-maintained step list, so the ordering obligation and the dispatch role read from one source (resolved via `manage-config effort resolve-target --phase phase-6-finalize --role post-run-review`) — with a 5-minute (300 s) per-agent timeout budget enforced by the SKILL.md Step 3 dispatch loop. The dispatcher's resolve carries the dispatch context, so the resolution seam emits the standardized `[DISPATCH]` work-log line (and its paired decision-log record) at the resolve call site — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) for the canonical emission contract. The `post-run-review` sub-key bundles lessons-capture with retrospective — both workflows look back at the full plan history and ride the same level. On timeout the dispatcher records `outcome=failed` with `display_detail="timed out after 300s"` and continues — lessons capture is advisory and never blocks the rest of the pipeline.
 
-### `[DISPATCH]` log line (emitted by the dispatcher)
+### `[DISPATCH]` record (emitted by the dispatcher's resolve seam)
 
-The phase-6-finalize SKILL.md dispatcher emits the line below immediately before invoking this workflow:
+The phase-6-finalize SKILL.md dispatcher resolves this step's target with the dispatch context, so the resolution seam emits the standardized `[DISPATCH]` work-log line (and its paired decision-log resolution record) itself — there is no separate `manage-logging` step. For this step the resolve carries `--role post-run-review` and this workflow doc, producing `role=post-run-review workflow=plan-marshall:phase-6-finalize/workflow/lessons-capture.md`:
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role=post-run-review workflow=plan-marshall:phase-6-finalize/workflow/lessons-capture.md plan_id={plan_id}"
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  effort resolve-target --phase phase-6-finalize --role post-run-review \
+  --workflow plan-marshall:phase-6-finalize/workflow/lessons-capture.md \
+  --plan-id {plan_id} --caller plan-marshall:phase-6-finalize
 ```
 
 ## Execution
