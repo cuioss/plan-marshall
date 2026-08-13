@@ -1653,7 +1653,7 @@ def test_cli_compose_then_read_roundtrip(plan_context):
         'compose',
         '--plan-id',
         'cli-rt',
-        '--change-type',
+        '--plan-change-type',
         'feature',
         '--track',
         'complex',
@@ -1679,7 +1679,7 @@ def test_cli_compose_invalid_change_type_emits_toon_error(plan_context):
         'compose',
         '--plan-id',
         'cli-bad',
-        '--change-type',
+        '--plan-change-type',
         'nonsense',
         '--track',
         'simple',
@@ -1700,7 +1700,7 @@ def test_cli_compose_with_all_optional_flags_roundtrips(plan_context):
         'compose',
         '--plan-id',
         'cli-allflags',
-        '--change-type',
+        '--plan-change-type',
         'tech_debt',
         '--track',
         'simple',
@@ -1728,7 +1728,7 @@ def test_cli_compose_commit_and_push_false_omits_commit_push(plan_context):
         'compose',
         '--plan-id',
         'cli-cap-false',
-        '--change-type',
+        '--plan-change-type',
         'feature',
         '--track',
         'complex',
@@ -2647,9 +2647,9 @@ def test_simplify_inactive_no_decision_log_on_kept_branch(plan_context):
 # shares no helper, and it reads NO change_type. It drops a security-class step
 # only when affected_files_count == 0 AND the live footprint is empty — the
 # genuine no-change-surface case. Everything else keeps the sweep, because
-# change_type is an outline-time semantic label the composer's caller forwards
-# from the FIRST deliverable, so a plan opening with a read-only discovery
-# deliverable reports 'verification' however much production code it mutates.
+# change_type — even reconciled to the plan's settled classification — is
+# orthogonal to the security surface: a bug_fix or feature plan can equally touch
+# security-sensitive code, so the sweep gates on the change surface, not the type.
 #
 # The live footprint is stubbed per test so the assertions do not depend on
 # ambient worktree state.

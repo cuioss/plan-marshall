@@ -480,7 +480,7 @@ def test_cli_record_step_roundtrip(plan_context):
         'compose',
         '--plan-id',
         'cli-rec',
-        '--change-type',
+        '--plan-change-type',
         'feature',
         '--track',
         'complex',

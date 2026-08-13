@@ -681,7 +681,7 @@ This step runs after Step 7 (execution order) and before Step 8 (Q-Gate). It MUS
 **Idempotent firm-signal re-compose (execution-profile lane resolution).** This Step 7b compose is the **second** of the two composes in the lane lifecycle (§4.5 of the lane-selection design): `phase-1-init` runs the FIRST, provisional compose at posture-decision time, and this end-of-phase-4 compose re-runs the SAME idempotent projection with the now-firm `change_type` / `affected_files` signals. The chosen posture and the `minimal` / `full` shapes were fixed at init and do NOT change here; the only thing this re-compose can move is `standard`'s footprint-gated prunes (e.g. `sonar-roundtrip` flips back on when the firm `affected_files` reveals a code delta the init guess missed). That is `standard` self-correcting in the safe, more-validation direction, so it is **logged (with any cost delta), never re-prompted** — there is no second posture dialogue at phase-4. The composer reads the posture from `status.metadata.execution_profile` (written by the init dialogue) and resolves each finalize element's `lane:` block under it; see [`manage-execution-manifest/standards/decision-rules.md`](../manage-execution-manifest/standards/decision-rules.md) § "Execution-profile lane resolution" for the resolution rules and the twice-compose timing.
 
 **Inputs**:
-- `change_type` — read from solution outline metadata (use the first deliverable's `change_type` when the outline has more than one; the plan-level summary in `solution_outline.md` Summary block also surfaces it).
+- `change_type` — the PLAN's settled classification, forwarded as `--plan-change-type`. Read it from `status.metadata.change_type` (the value `manage-status:change-type-heuristic` settled during phase-3-outline — see the read block below), NOT from a deliverable's local `change_type`. A plan's `change_type` is one word at two scopes: the plan's single settled classification (this value) and each deliverable's local kind in the outline. The composer reconciles the two and **refuses** (`change_type_scope_conflict`) if what you forward contradicts the settled classification, so forwarding the first deliverable's kind over a settled classification is now a hard error, not a silent narrowing. Only when the plan has **no** settled classification (`status.metadata.change_type` unset) fall back to the first deliverable's `change_type` from the solution outline — an unclassified plan still composes on that value.
 - `track` — read from `manage-references get --field track` (`simple` or `complex`).
 - `scope_estimate` — read from `manage-references get --field scope_estimate` (deliverables 2 / 3 wire this in earlier in the plan lifecycle).
 - `recipe_key` — OPTIONAL override only. The composer reads `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`) on its own, so lesson- and recipe-derived plans select the `recipe` rule even when this flag is omitted. Pass `--recipe-key` only to force a recipe rule that status metadata does not already imply.
@@ -691,6 +691,15 @@ This step runs after Step 7 (execution order) and before Step 8 (Q-Gate). It MUS
 - `commit_and_push` — read via the bash call below, from the `commit_and_push` field; omit `--commit-and-push` on `compose` when the field is absent (defaults to `true`).
 
 **Read manifest inputs** (run before compose; do NOT skip or improvise alternative reads):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --get --field change_type
+```
+
+Parse `value` as `{change_type}` — the plan's settled classification. Forward it as
+`--plan-change-type`. When the field is absent (an unclassified plan), fall back to the first
+deliverable's `change_type` from the solution outline (see the Inputs note above).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
@@ -734,7 +743,7 @@ Parse `value` as `{commit_and_push}` — omit `--commit-and-push` on `compose` w
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
   compose \
   --plan-id {plan_id} \
-  --change-type {change_type} \
+  --plan-change-type {change_type} \
   --track {simple|complex} \
   --scope-estimate {scope_estimate} \
   [--recipe-key {recipe_key}] \
