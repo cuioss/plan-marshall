@@ -150,7 +150,28 @@ skipped**. A follow-up `./pw quality-gate` after the staleness-fix commit was al
 
 ## Findings
 
-_pending — verification sub-agent, CI, PR review_
+**Pre-PR verification sub-agent** (independent `general-purpose` agent, read-only). Verdict: all five
+deliverables IMPLEMENTED-AS-SPECIFIED. Two findings:
+
+1. **Stale restatement — `decision-rules.md` `security_class_inactive` §** (source: verification
+   sub-agent). The section still asserted the pre-fix first-deliverable-wins forwarding as
+   present-tense fact ("the value the composer receives is **not plan-wide** … forwards the **first**
+   deliverable's label … forwards `verification`"), contradicting the same file's own new
+   reconciliation section and the three sibling comment rewrites. The markdown emphasis (`**first**`)
+   split the words past my first grep sweep. **Disposition: fixed** (commit `2abb824`) — rewritten to
+   the orthogonal-to-security-surface rationale.
+2. **Minor coverage gap — no malformed-`status.json` test** (source: verification sub-agent). The
+   reconciliation read degrades to "no settled classification" on a corrupt `status.json`, but only
+   the missing-key case had a test. **Disposition: fixed** (commit `2abb824`) — added
+   `test_malformed_status_json_degrades_to_no_settled`.
+
+The sub-agent's D4 "cannot verify observed-red from the diff" caveat was against an earlier report
+revision; the observed red-first run is now recorded in the D4 section above (all 8 red pre-fix, green
+post-fix). No other stale statements, no undeclared collateral, no remaining live `--change-type`
+compose invocation, and the retrospective audit's `Rule … fired` parse is unaffected by the added log
+line — all confirmed by the sub-agent.
+
+**CI / PR review:** _pending PR creation._
 
 ## Reviewer participation
 
