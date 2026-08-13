@@ -1313,7 +1313,8 @@ def test_compose_places_settle_steps_before_push_and_wait_steps_after(plan_conte
     ``default:push`` (order 11) and every post-push WAIT step (order > 11) AFTER
     it — the settle → push once → wait contract expressed purely via step-doc
     ``order:`` frontmatter. Pins the D3 move of ``architecture-refresh`` from the
-    post-push region (order 25) into the pre-push settle band (order 9).
+    post-push region (order 25) into the pre-push settle band (order 10, after
+    plan 300 D2's de-collision).
     """
     # Deliberately SCRAMBLED input: push first, wait steps and architecture-refresh
     # ahead of the other settle steps — the composer must re-sort by resolved

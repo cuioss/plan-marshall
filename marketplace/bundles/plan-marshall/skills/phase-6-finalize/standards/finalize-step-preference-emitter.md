@@ -78,13 +78,13 @@ at the merge gate's re-review barrier, which are only determined at or after
 and — preserving the dependency the settle-band placement encoded — AFTER
 `lessons-capture` (991), so the plan's finding dispositions are settled before
 they are read. It still runs BEFORE `record-metrics` (998) and `archive-plan`
-(1000) — the latter moves the plan directory out from under the
+(1100) — the latter moves the plan directory out from under the
 `manage-findings` read — so the plan's findings remain readable in place when it
 runs. The governing constraint is
 [source-edit-pushability.md](source-edit-pushability.md), cross-referenced here
 rather than restated.
 
-An early (`order: < 10`) slot is explicitly REJECTED for the same reason it
+An early (`order: < 11`) slot is explicitly REJECTED for the same reason it
 always was: that early there is nothing to promote, because the finding
 dispositions this step reads do not yet exist at the start of finalize.
 

@@ -274,7 +274,7 @@ class TestArrayAuthorityContract:
         cmd_compose(_compose_ns('vl-order-ok'))
         manifest = _mem.read_manifest('vl-order-ok')
         assert manifest is not None
-        # Built-in steps in ascending order (push=10, create-pr=20)
+        # Built-in steps in ascending order (push=11, create-pr=20)
         # followed by project steps in ascending order (81, 85).
         manifest['phase_6']['steps'] = [
             'push',

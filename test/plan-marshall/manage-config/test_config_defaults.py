@@ -1501,7 +1501,7 @@ def test_built_in_finalize_steps_places_simplify_before_push():
     """default:finalize-step-simplify sits BEFORE default:push in the discovered seed.
 
     simplify is a mutates_source step (order 8) and push is the pure barrier
-    (order 10), so simplify precedes push. The canonical head order is
+    (order 11), so simplify precedes push. The canonical head order is
     default:finalize-step-sync-baseline (index 0, order 3 — the early baseline
     rebase that runs before the local quality gates),
     default:pre-push-quality-gate (index 1, order 5),
@@ -3654,8 +3654,9 @@ class TestCiVerifyRegistration:
     classifies failures BEFORE ``automatic-review`` consumes PR-comment
     findings, so it must sit immediately after ``default:create-pr`` and
     immediately before ``plan-marshall:automatic-review``. After the D3
-    mutation-settling reorder, ``architecture-refresh`` (order 9) lives in
-    the pre-push settle band — NOT between ``ci-verify`` and
+    mutation-settling reorder (and plan 300 D2's de-collision),
+    ``architecture-refresh`` (order 10) lives in the pre-push settle band —
+    NOT between ``ci-verify`` and
     ``automatic-review`` — so the post-push tail is the contiguous chain
     ``create-pr → ci-verify → automatic-review``."""
 
@@ -3664,9 +3665,9 @@ class TestCiVerifyRegistration:
         immediately after ``'default:create-pr'`` — the canonical position
         declared by ``standards/ci-verify.md`` § Placement (order 22, between
         create-pr at 20 and automatic-review at 30). The seed is discovered via
-        find_implementors, not a constant. After the D3 reorder,
-        ``architecture-refresh`` moved to order 9 (the pre-push settle band), so
-        it no longer sits between ``ci-verify`` and ``automatic-review``: the
+        find_implementors, not a constant. After the D3 reorder (and D2's
+        de-collision), ``architecture-refresh`` moved to order 10 (the pre-push
+        settle band), so it no longer sits between ``ci-verify`` and ``automatic-review``: the
         canonical tail is now the contiguous ``ci-verify → automatic-review``."""
         steps = _discovered_default_on_seed_step_ids()
         assert 'default:ci-verify' in steps, (
@@ -3686,11 +3687,11 @@ class TestCiVerifyRegistration:
         )
         assert automated_review_idx == ci_verify_idx + 1, (
             "'plan-marshall:automatic-review' must sit immediately after "
-            "'default:ci-verify' — architecture-refresh (order 9) moved to the "
+            "'default:ci-verify' — architecture-refresh (order 10) moved to the "
             "pre-push settle band and is no longer between them"
         )
         assert architecture_refresh_idx < push_idx, (
-            "'default:architecture-refresh' (order 9) now sits in the pre-push "
+            "'default:architecture-refresh' (order 10) now sits in the pre-push "
             "settle band, ahead of the push barrier"
         )
 

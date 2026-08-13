@@ -210,7 +210,50 @@ _(pending)_
 
 ## Findings
 
-_(pending)_
+### Build gate (whole-tree `./pw verify`)
+
+Green: **19459 passed, 14 skipped**, `verify: SUCCESS`. Scope confirmed the quality gate (ruff/mypy/SPDX),
+`plugin-doctor [marketplace-wide]` (`test_real_marketplace_quality_gate_has_zero_findings` PASSED — the
+new band doc, `reads`/`destroys` frontmatter, and relative links pass plugin-doctor), and whole-tree
+pytest. One earlier iteration surfaced 3 failures (two `_resolve_step_order_verdict('push')` pins and the
+`architecture-refresh` frontmatter-order pin) — fixed in commit `08e8da6`.
+
+### Pre-PR verification sub-agent
+
+Verdict: D0–D3 functionally complete and correct; the intended-order claim (architecture-refresh sorts
+last) verified against `phase-6-finalize/SKILL.md`; the reserved terminal slot (1000–1099, empty)
+verified real; band doc links resolve; no undeclared collateral. **One accepted finding: the D2
+restatement sweep was incomplete** — 11 stale order restatements survived in files the renumber made
+false (build-passing, since they were docstrings/comments/prose, but the exact "renumber leaves a false
+statement behind" defect this epic targets).
+
+**Disposition — all 11 fixed** (commit below):
+
+| Stale statement | File | Fix |
+|---|---|---|
+| `push` order 10 → 11 | `.claude/skills/finalize-step-lessons-housekeeping/SKILL.md` (×2: lines 47, 79) | 11 |
+| settle `order < 10` → `< 11` | `.claude/skills/finalize-step-lessons-housekeeping/SKILL.md` (×2: 44, 78) | `< 11` |
+| `archive-plan` (1000) → 1100 | `finalize-step-preference-emitter.md:81` | 1100 |
+| early `order: < 10` → `< 11` | `finalize-step-preference-emitter.md:87` | `< 11` |
+| `push` order 10 → 11 (self-contradicting docstring) | `test_config_defaults.py:1504` | 11 |
+| `architecture-refresh` (order 9) → 10 (×4) | `test_config_defaults.py` (TestCiVerifyRegistration: 3657, 3668, 3689, 3693) | 10 |
+| `architecture-refresh` settle band (order 9) → 10 | `test_manage_execution_manifest_compose.py:1316` | 10 |
+| `push=10` → 11 (comment) | `test_validate_loadable.py:277` | 11 |
+
+**Correctly excluded (verified self-contained monkeypatch fixtures, arbitrary orders — not reality
+claims):** `test_cmd_quality_phases.py` `_discover_steps_for_phase` stubs (push 10 / archive 1000);
+`test_steps_sort.py` `_FAKE_ORDER` table (archive-plan=50 there — clearly arbitrary).
+
+**Left as pre-existing, out of this plan's scope (NOT caused by the D2 renumber):**
+`test_manage_execution_manifest_validate.py` `_ORDER_RESOLVABLE_CANDIDATES` comments
+`architecture-refresh # order 25` (real 10) and `finalize-step-preference-emitter # order 61` (real 992)
+— both were already wrong before this change; the fixture uses the real resolver + sorts, so the comments
+are cosmetic and the list is not order-asserted. Flagged here for a future cleanup rather than reordered
+now (a fixture reorder is out of D2's scope and risks the test's permutation logic).
+
+### CI / PR review
+
+_(pending — recorded after the PR review cycle)_
 
 ## Reviewer participation
 
