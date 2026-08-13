@@ -215,7 +215,7 @@ The blocking-finding invariant uses a **fixed, hardcoded** actionable-vs-knowled
 
 1. The actionable finding-type set is the hardcoded constant in `_invariants.py`; no `marshal.json` read occurs. Knowledge types are never counted.
 2. For each actionable type `T`, query the count of `pending` findings via `manage-findings list --plan-id X --type T --resolution pending` and sum the per-type `filtered_count` values. The `qgate` actionable entry is routed through the aggregated per-phase qgate query (see [qgate aggregation contract](../../ref-workflow-architecture/standards/findings-pipeline.md#qgate-aggregation-contract)).
-3. The resolutions counted as **resolved** (and therefore non-blocking) are: `fixed`, `suppressed`, `accepted`, `taken_into_account`. Only `pending` contributes to the count.
+3. The resolutions counted as **resolved** (and therefore non-blocking) are: `fixed`, `suppressed`, `accepted`, `taken_into_account`, `rejected` (the pending query filters `--resolution pending`, so every non-`pending` resolution — `rejected` included — is structurally non-blocking). Only `pending` contributes to the count.
 4. The companion `pending_findings_by_type` row captures the count for **every** known type — independent of the actionable set — so retrospective analysis sees the full queue regardless of which types gate the boundary.
 
 **Capture-time behavior:**

@@ -203,7 +203,7 @@ Layer D operates at **per-phase-boundary** granularity rather than per-tool-call
 - **Recovery is identical either way** — the operator must revert the leaked main-checkout changes (or move them into the worktree branch) before the boundary advances. Per-tool-call detection would surface the leak earlier but would not change the recovery steps.
 - **Filesystem-based detection works across hosts**, while a tool-call hook would not. Granularity is the cost; portability is the benefit.
 
-Plans that need finer-grained enforcement can run `phase_handshake capture` / `verify --strict` at intra-phase checkpoints (the `phase-6-finalize` merge boundary does this via `phase_handshake findings-check --phase 6-finalize` in `branch-cleanup` before the merge), but the core contract remains per-phase.
+Plans that need finer-grained enforcement can run `phase_handshake capture` / `verify --strict` at intra-phase checkpoints, but the core contract remains per-phase. (The finalize blocking-findings gate is a *separate* mechanism — `phase_handshake findings-check --phase 6-finalize` in `branch-cleanup` — that gates pending findings, not the main-checkout drift this layer-D contract covers; it is not a `capture`/`verify --strict` checkpoint.)
 
 ### Recovery Loop
 

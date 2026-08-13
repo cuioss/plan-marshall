@@ -662,7 +662,7 @@ Every mechanism that can authorize advancing a tree past a merge gate is enumera
 
 #### Pre-merge blocking-findings store gate
 
-Before the provider re-fetch below, assert the finding **store** is clean. This is the store-side gate line 655 names — the read-only single-invariant `phase_handshake findings-check`, evaluated over every actionable finding type (`build-error`, `test-failure`, `lint-issue`, `sonar-issue`, `qgate`, `pr-comment`) at the finalize phase. It re-reads the store; the provider re-fetch below re-reads the provider for comments never fetched. The two are complementary and both run before the merge.
+Before the provider re-fetch below, assert the finding **store** is clean. This is the store-side gate line 655 names — the read-only single-invariant `phase_handshake findings-check`, evaluated over every actionable finding type at the finalize phase (the hardcoded `_ACTIONABLE_FINDING_TYPES` set in `_invariants.py` — see [`../../plan-marshall/references/phase-handshake.md`](../../plan-marshall/references/phase-handshake.md) § `pending_findings_blocking_count` resolution; not restated here so the doc cannot drift from the authoritative set). It re-reads the store; the provider re-fetch below re-reads the provider for comments never fetched. The two are complementary and both run before the merge.
 
 Wiring this call HERE is deliberate: the blocking-findings gate raises only when a `findings-check` / `capture` carrying `--phase 6-finalize` is issued, and no finalize step issued one, so the store-side gate had been inert on the merge path (a plan could merge with actionable findings still `pending`). This call is that missing issuance.
 

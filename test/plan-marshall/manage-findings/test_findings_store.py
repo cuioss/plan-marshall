@@ -1032,6 +1032,28 @@ def test_resolve_evidenced_invalid_phase_errors(plan_context):
     assert 'phase' in result['message'].lower()
 
 
+def test_resolve_evidenced_failed_write_reported_as_pending_not_resolved(plan_context, monkeypatch):
+    """A finding whose file matches the evidence but whose persistence WRITE fails
+    is reported as still `pending`, never as `resolved` — claiming a resolution the
+    store never recorded is the fail-open this evidence gate exists to prevent."""
+    pid = 'ev-resolve-write-fail'
+    r = add_qgate_finding(
+        pid, '6-finalize', 'qgate', 'bug', 'defect at src/z.py:1', 'Detail',
+        file_path='src/z.py',
+    )
+    # Simulate the record vanishing between the read and the update write.
+    monkeypatch.setattr(_findings_core, 'update_jsonl', lambda *a, **k: False)
+
+    result = resolve_qgate_findings_by_evidence(pid, '6-finalize', ['src/z.py'])
+
+    assert result['status'] == 'success'
+    assert result['resolved'] == [], (
+        'A failed write must not be reported as a resolution — the finding is '
+        'still pending.'
+    )
+    assert [e['hash_id'] for e in result['left_pending']] == [r['hash_id']]
+
+
 def test_clear_qgate_findings(plan_context):
     """Test clearing all Q-Gate findings for a phase."""
     add_qgate_finding(

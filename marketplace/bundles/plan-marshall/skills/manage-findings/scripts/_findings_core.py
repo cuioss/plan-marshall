@@ -829,7 +829,7 @@ def resolve_qgate_findings_by_evidence(
         file_path = record.get('file_path')
         entry = {'hash_id': str(record.get('hash_id', '')), 'file_path': str(file_path or '')}
         if file_path and file_path in changed:
-            update_jsonl(
+            updated = update_jsonl(
                 path,
                 record['hash_id'],
                 {
@@ -838,7 +838,13 @@ def resolve_qgate_findings_by_evidence(
                     'resolution_detail': f'evidenced by landed change {detail_sha} touching {file_path}',
                 },
             )
-            resolved.append(entry)
+            # Only claim ``fixed`` when the write actually took. A failed
+            # ``update_jsonl`` (the record vanished between the read above and this
+            # write) leaves the finding ``pending`` — reporting it in ``resolved``
+            # would tell the caller a resolution the store never recorded, the
+            # fail-open this evidence gate exists to prevent. Report it as still
+            # pending instead.
+            (resolved if updated else left_pending).append(entry)
         else:
             left_pending.append(entry)
 

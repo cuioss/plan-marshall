@@ -257,7 +257,7 @@ The actionable-vs-knowledge classification is a **fixed, hardcoded** rule in `pl
 
 The `5-execute → 6-finalize` transition is **not** a blocking-finding firing site: it inlines `phase_handshake verify --phase 5-execute --strict`, which detects drift on the captured `5-execute` row but does not raise `BlockingFindingsPresent` (that raise fires only at `phase == '6-finalize'`, and the self-review findings the gate catches are filed *during* finalize). Every other capture point captures the rows passively for retrospective analysis without blocking the transition.
 
-The resolutions counted as **resolved** (and therefore non-blocking) are: `fixed`, `suppressed`, `accepted`, `taken_into_account`. Only `pending` contributes to the count.
+The resolutions counted as **resolved** (and therefore non-blocking) are: `fixed`, `suppressed`, `accepted`, `taken_into_account`, `rejected` (the pending query filters `--resolution pending`, so every non-`pending` resolution is structurally non-blocking). Only `pending` contributes to the count.
 
 ## Canonical invocations
 
