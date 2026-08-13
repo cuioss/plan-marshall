@@ -960,6 +960,62 @@ def _iter_all_parsers(root):
                 yield from _iter_all_parsers(sub)
 
 
+def _root_router_option_strings(parser) -> set[str]:
+    """Return the option strings declared on the ROOT ``parser`` itself.
+
+    These are the top-level "router" flags — declared before the subparsers and
+    therefore accepted by argparse only AHEAD of the subcommand. A caller who
+    places one AFTER the verb triggers an ``unrecognized arguments`` rejection
+    that names the flag but not the reason it was refused. The help action and
+    the subparsers action are excluded — neither is a router flag.
+    """
+    import argparse
+
+    options: set[str] = set()
+    for action in getattr(parser, '_actions', []):
+        if isinstance(action, (argparse._HelpAction, argparse._SubParsersAction)):
+            continue
+        options.update(getattr(action, 'option_strings', ()) or ())
+    return options
+
+
+def _augment_misplaced_router_flag(message: str, router_flags: set[str], prog: str) -> str:
+    """Append a positional-fix note when an ``unrecognized arguments`` error names a router flag.
+
+    argparse rejects a top-level router flag placed after the subcommand with
+    ``unrecognized arguments: --flag ...`` — a message that names the flag but
+    reads as "this flag does not exist", sending the caller to search an
+    argparse table the flag is (correctly) absent from at that level. When any
+    unrecognized token is in fact a declared root-level router flag, append a
+    note stating the flag EXISTS and belongs before the verb, so the caller
+    moves it rather than hunting for a flag that is right there. The remedy is
+    the note itself — the ordering is not something the caller should have to
+    read documentation to discover.
+
+    Returns ``message`` unchanged when the error is not an
+    ``unrecognized arguments`` failure or names no known router flag, so a
+    genuinely-unknown flag still gets argparse's default rejection.
+    """
+    prefix = 'unrecognized arguments: '
+    if not message.startswith(prefix):
+        return message
+    misplaced: list[str] = []
+    for token in message[len(prefix) :].split():
+        name = token.split('=', 1)[0]
+        if name in router_flags and name not in misplaced:
+            misplaced.append(name)
+    if not misplaced:
+        return message
+    named = ', '.join(misplaced)
+    example = f'{prog} {misplaced[0]} VALUE <subcommand> ...'
+    return (
+        f'{message}\n'
+        f'note: {named} is a top-level flag and belongs BEFORE the subcommand (verb), '
+        f'not after it. The flag exists — it is only in the wrong position. '
+        f'Move it ahead of the verb, e.g. `{example}`.'
+    )
+
+
 def parse_args_with_toon_errors(parser):
     """Run ``parser.parse_args()`` and translate validator failures into TOON.
 
@@ -984,6 +1040,12 @@ def parse_args_with_toon_errors(parser):
 
     parsers = list(_iter_all_parsers(parser))
     originals = {id(p): p.error for p in parsers}
+    # Top-level router flags (declared on the root parser, ahead of the
+    # subparsers) and the root program name — used to turn an "unrecognized
+    # arguments: --flag" rejection of a misplaced router flag into a message
+    # that names the fix instead of the flag alone.
+    router_flags = _root_router_option_strings(parser)
+    root_prog = parser.prog
 
     def make_toon_error(orig):
         def toon_error(message: str):
@@ -1009,8 +1071,12 @@ def parse_args_with_toon_errors(parser):
                         )
                     )
                     sys.exit(0)
-            # Not an identifier-validator failure: defer to argparse default.
-            orig(message)
+            # Not an identifier-validator failure. Before deferring to argparse's
+            # default rejection, name a misplaced top-level router flag: a root
+            # flag placed after the verb is rejected as "unrecognized arguments",
+            # a message that hides the fact that the flag exists and merely sits
+            # in the wrong position.
+            orig(_augment_misplaced_router_flag(message, router_flags, root_prog))
 
         return toon_error
 
