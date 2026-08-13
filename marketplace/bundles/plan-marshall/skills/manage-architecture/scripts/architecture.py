@@ -273,6 +273,73 @@ def main() -> int:
         action='store_true',
         help='Treat --pattern as a literal string (re.escape) instead of a regex',
     )
+    search_parser.add_argument(
+        '--ignore-case',
+        dest='ignore_case',
+        action='store_true',
+        help='Case-insensitive matching (re.IGNORECASE). Composes with --literal, so a '
+        'pattern carrying regex metacharacters can be matched verbatim AND '
+        'case-insensitively at once — the combination --literal cannot express through '
+        'an inline (?i) marker (re.escape neutralises it).',
+    )
+
+    # capabilities - Report answerable query capabilities in the executing envelope
+    subparsers.add_parser(
+        'capabilities',
+        help=(
+            'Report which query capabilities are answerable right now in the executing '
+            'envelope (module edges, path attribution, content search), distinguishing '
+            'cannot-derive from derived-nothing'
+        ),
+        allow_abbrev=False,
+    )
+
+    # =========================================================================
+    # LSP-shaped facade (additive vocabulary over existing verbs)
+    # =========================================================================
+
+    lsp_parser = subparsers.add_parser(
+        'lsp',
+        help=(
+            'LSP-shaped facade: address the query surface in editor/agent vocabulary '
+            '(hover, references, workspace-symbol, definition) over the existing verbs'
+        ),
+        allow_abbrev=False,
+    )
+    lsp_subparsers = lsp_parser.add_subparsers(dest='lsp_method', required=True)
+
+    # lsp hover -> module (textDocument/hover)
+    lsp_hover_parser = lsp_subparsers.add_parser(
+        'hover', help='textDocument/hover → module info (facade over `module`)', allow_abbrev=False
+    )
+    add_module_arg(lsp_hover_parser, required=False)
+    lsp_hover_parser.add_argument('--full', action='store_true', help='Include all module fields')
+
+    # lsp references -> impact (textDocument/references)
+    lsp_references_parser = lsp_subparsers.add_parser(
+        'references',
+        help='textDocument/references → reverse-dependency closure (facade over `impact`)',
+        allow_abbrev=False,
+    )
+    add_module_arg(lsp_references_parser)
+
+    # lsp workspace-symbol -> find (workspace/symbol)
+    lsp_ws_parser = lsp_subparsers.add_parser(
+        'workspace-symbol',
+        help='workspace/symbol → inventory path search (facade over `find`)',
+        allow_abbrev=False,
+    )
+    lsp_ws_parser.add_argument('--query', required=True, help='Symbol query (a `find --pattern` glob)')
+    lsp_ws_parser.add_argument('--category', help='Restrict search to a single category')
+
+    # lsp definition -> resolve (textDocument/definition)
+    lsp_def_parser = lsp_subparsers.add_parser(
+        'definition',
+        help='textDocument/definition → command→executable (facade over `resolve`)',
+        allow_abbrev=False,
+    )
+    lsp_def_parser.add_argument('--command', required=True, help='Command name to resolve')
+    add_module_arg(lsp_def_parser, required=False)
 
     # diff-modules - Diff per-module derived.json files against a pre-snapshot
     diff_modules_parser = subparsers.add_parser(
@@ -448,6 +515,7 @@ def main() -> int:
 
     # Import command handlers
     from _cmd_client import (
+        cmd_capabilities,
         cmd_commands,
         cmd_derive_verification,
         cmd_descriptor_regression_check,
@@ -457,6 +525,10 @@ def main() -> int:
         cmd_graph,
         cmd_impact,
         cmd_info,
+        cmd_lsp_definition,
+        cmd_lsp_hover,
+        cmd_lsp_references,
+        cmd_lsp_workspace_symbol,
         cmd_module,
         cmd_modules,
         cmd_neighbors,
@@ -512,6 +584,7 @@ def main() -> int:
         'which-module': cmd_which_module,
         'find': cmd_find,
         'search': cmd_search,
+        'capabilities': cmd_capabilities,
         'diff-modules': cmd_diff_modules,
         'descriptor-regression-check': cmd_descriptor_regression_check,
     }
@@ -530,6 +603,14 @@ def main() -> int:
             'all': cmd_enrich_all,
         }
         handler = enrich_handlers.get(args.enrich_command)
+    elif args.command == 'lsp':
+        lsp_handlers = {
+            'hover': cmd_lsp_hover,
+            'references': cmd_lsp_references,
+            'workspace-symbol': cmd_lsp_workspace_symbol,
+            'definition': cmd_lsp_definition,
+        }
+        handler = lsp_handlers.get(args.lsp_method)
     else:
         handler = handlers.get(args.command)
 

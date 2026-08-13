@@ -73,6 +73,13 @@ _UNTRACKED_TOKEN = 'UNTRACKED_TOKEN'
 # A string of shell metacharacters: a VALID regex (so it compiles either way)
 # that matches nothing as a regex, and matches verbatim under ``--literal``.
 _METACHAR_PATTERN = '$(id); rm -rf'
+# The SAME metacharacter string, upper-cased. Matching it against the lower-cased
+# body under ``--literal`` requires case-folding — the one combination the pre-D4
+# surface could not express, because ``re.escape`` neutralises an inline ``(?i)``.
+_METACHAR_PATTERN_UPPER = '$(ID); RM -RF'
+# Token written into the one doubly-attributed file, so count (rows) and
+# file_count (distinct paths) diverge observably.
+_DUP_TOKEN = 'DUP_TOKEN'
 # Never written into any fixture file.
 _ABSENT_TOKEN = 'NO_SUCH_TOKEN_ANYWHERE'
 # Starts lines 2 and 3 of ``pkg/anchored.py`` — never line 1, so a ``^``-anchored
@@ -169,12 +176,45 @@ def _seed_unreadable_project(tmpdir: str) -> None:
     seed_project(tmpdir, modules)
 
 
-def _search(tmpdir: str, pattern: str, *, category: str | None = None, literal: bool = False) -> dict:
+def _search(
+    tmpdir: str,
+    pattern: str,
+    *,
+    category: str | None = None,
+    literal: bool = False,
+    ignore_case: bool = False,
+) -> dict:
     """Invoke ``cmd_search`` with the argparse namespace the CLI would build."""
     result: dict = cmd_search(
-        Namespace(project_dir=tmpdir, pattern=pattern, category=category, literal=literal, content=True)
+        Namespace(
+            project_dir=tmpdir,
+            pattern=pattern,
+            category=category,
+            literal=literal,
+            ignore_case=ignore_case,
+            content=True,
+        )
     )
     return result
+
+
+def _seed_doubly_attributed_file(tmpdir: str) -> None:
+    """Seed ONE physical file inventoried by TWO modules under no ownership claim.
+
+    ``shared/dup.py`` sits in neither module's directory and is listed in both
+    modules' explicit ``files`` inventories. With no Axis-D attributor registered
+    in a bare tmp project, ``_collapse_claimed_duplicate_rows`` has no owner to
+    collapse onto, so the reader emits a ROW PER module — exactly the unclaimed
+    cross-module duplicate that makes ``count`` (rows) diverge from ``file_count``
+    (distinct paths).
+    """
+    project = Path(tmpdir)
+    _write(project / 'shared' / 'dup.py', f'{_DUP_TOKEN} = 1\n')
+    modules = {
+        'mod-a': {'name': 'mod-a', 'paths': {'module': 'mod-a'}, 'files': {'source': ['shared/dup.py']}},
+        'mod-b': {'name': 'mod-b', 'paths': {'module': 'mod-b'}, 'files': {'source': ['shared/dup.py']}},
+    }
+    seed_project(tmpdir, modules)
 
 
 def test_body_hit_is_found_by_search_and_missed_by_find():
@@ -494,3 +534,133 @@ def test_cli_search_with_content_returns_the_body_hit():
         data = accepted.toon()
         assert data['status'] == 'success'
         assert int(data['count']) == 1
+
+
+# =============================================================================
+# D4 — case-insensitivity that composes with verbatim matching, and the
+# row-versus-file count population made explicit.
+# =============================================================================
+
+
+def test_ignore_case_composes_with_literal_on_a_metacharacter_pattern():
+    """The previously-impossible combination: verbatim AND case-insensitive at once.
+
+    ``_METACHAR_PATTERN_UPPER`` carries regex metacharacters (``$``, ``(``, ``)``,
+    ``;``) AND upper-case letters. Under ``--literal`` the metacharacters are
+    escaped so they match the body's literal ``$(id); rm -rf`` — but only if the
+    case is also folded, which is what ``--ignore-case`` adds. The ``--literal``-
+    only control is the proof this was unreachable before: ``re.escape`` turns an
+    inline ``(?i)`` into six literal characters, so verbatim-and-case-insensitive
+    had no expression at all.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_crawled_project(tmpdir)
+
+        both = _search(tmpdir, _METACHAR_PATTERN_UPPER, literal=True, ignore_case=True)
+        assert both['status'] == 'success'
+        assert both['literal'] is True
+        assert both['ignore_case'] is True
+        assert both['count'] == 1
+        assert both['results'][0]['path'] == 'pkg/meta.py'
+
+        # Control: verbatim but case-SENSITIVE — the upper-cased pattern no longer
+        # matches the lower-cased body. This is the combination that had no
+        # expression before --ignore-case existed.
+        literal_only = _search(tmpdir, _METACHAR_PATTERN_UPPER, literal=True, ignore_case=False)
+        assert literal_only['status'] == 'success'
+        assert literal_only['ignore_case'] is False
+        assert literal_only['count'] == 0
+
+
+def test_ignore_case_flag_and_inline_marker_both_work_in_regex_mode():
+    """Regex mode already honoured an inline ``(?i)``; ``--ignore-case`` is the flag form.
+
+    Both paths reach the same body hit (``_BODY_ONLY_TOKEN`` is upper-case,
+    queried lower-case). The case-SENSITIVE control proves the fixture would
+    otherwise miss, so neither green arm is an accident of the token being present
+    in some other casing.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_crawled_project(tmpdir)
+
+        lower = _BODY_ONLY_TOKEN.lower()
+
+        via_flag = _search(tmpdir, lower, ignore_case=True)
+        assert via_flag['status'] == 'success'
+        assert via_flag['count'] == 1
+        assert via_flag['results'][0]['path'] == 'pkg/alpha.py'
+
+        # The inline (?i) marker is the regex-mode path that already existed and
+        # keeps working — documented behaviour, pinned here.
+        via_inline = _search(tmpdir, f'(?i){lower}')
+        assert via_inline['status'] == 'success'
+        assert via_inline['count'] == 1
+        assert via_inline['results'][0]['path'] == 'pkg/alpha.py'
+
+        # Control: case-sensitive, the lower-cased query misses the upper-cased body.
+        sensitive = _search(tmpdir, lower)
+        assert sensitive['status'] == 'success'
+        assert sensitive['count'] == 0
+
+
+def test_ignore_case_is_echoed_on_success_and_error():
+    """The ``ignore_case`` boolean rides every response, as ``literal`` does.
+
+    A caller must be able to read which population the match set was computed
+    over — including on the ``invalid_pattern`` error path, where the escape /
+    fold axes still describe how the (failed) compile was attempted.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_crawled_project(tmpdir)
+
+        ok = _search(tmpdir, _BODY_ONLY_TOKEN, ignore_case=True)
+        assert ok['ignore_case'] is True
+
+        off = _search(tmpdir, _BODY_ONLY_TOKEN)
+        assert off['ignore_case'] is False
+
+        bad = _search(tmpdir, '[unclosed', ignore_case=True)
+        assert bad['status'] == 'error'
+        assert bad['error'] == 'invalid_pattern'
+        assert bad['ignore_case'] is True
+
+
+def test_count_is_rows_and_file_count_is_distinct_files():
+    """``count`` counts result ROWS; ``file_count`` counts distinct PATHS.
+
+    One physical file inventoried by two modules is an unclaimed cross-module
+    duplicate: the reader emits a row per module (``count: 2``) while the file
+    itself is one (``file_count: 1``). Naming both is what makes the population
+    explicit — a caller asking "how many files contain this?" reads
+    ``file_count``, never the row count.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_doubly_attributed_file(tmpdir)
+
+        result = _search(tmpdir, _DUP_TOKEN)
+
+        assert result['status'] == 'success'
+        # Two rows — one per attributing module — over a single physical file.
+        assert result['count'] == 2
+        assert {entry['module'] for entry in result['results']} == {'mod-a', 'mod-b'}
+        assert {entry['path'] for entry in result['results']} == {'shared/dup.py'}
+        # The discriminating field: the distinct-file population, which the row
+        # count over-states here.
+        assert result['file_count'] == 1
+
+
+def test_file_count_equals_count_when_no_duplicate_attribution():
+    """With no cross-module duplicate, ``file_count`` and ``count`` agree.
+
+    The paired control for the divergence test above: it keeps ``file_count``
+    from reading as "always less than count" — the two are equal in the ordinary
+    single-attribution case.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_crawled_project(tmpdir)
+
+        result = _search(tmpdir, _TRIPLE_TOKEN)
+
+        assert result['status'] == 'success'
+        assert result['count'] == 1
+        assert result['file_count'] == 1

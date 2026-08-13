@@ -58,6 +58,9 @@ Omitting `--content` is rejected before anything runs, rather than quietly defau
 | `--literal`
 | Treat `--pattern` as a fixed string instead of a regex. Use this whenever the text you are looking for contains regex or shell metacharacters.
 
+| `--ignore-case`
+| Case-insensitive matching. Composes with `--literal` — see <<case>>.
+
 | `--category C`
 | Restrict the search to one file category (`source`, `test`, `doc`, `script`, `standard`, and the rest of the inventory vocabulary). Narrows both what is searched and what is reported.
 |===
@@ -69,6 +72,19 @@ Omitting `--content` is rejected before anything runs, rather than quietly defau
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   search --content --literal --pattern "load_derived_data" --category source
 ----
+
+[#case]
+=== Case-insensitive matching, even under `--literal`
+
+`--ignore-case` folds case for the whole pattern. In plain regex mode you could already do this with an inline `(?i)` marker, and that still works — but `(?i)` is defeated by `--literal`, because `--literal` escapes the pattern before compiling it and the escape turns `(?i)` into six ordinary characters. So the one thing you could not previously ask for was *"match this metacharacter-bearing string verbatim AND ignore case"*. `--ignore-case` is exactly that, and it composes with `--literal`:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
+  search --content --literal --ignore-case --pattern '$(ID); RM -RF'
+----
+
+That matches a body containing `$(id); rm -rf` — the metacharacters are treated as data (because of `--literal`) and the letters are case-folded (because of `--ignore-case`). The response echoes `ignore_case` so you can see which population the result was computed over, exactly as it echoes `literal`.
 
 [#anchors]
 === Anchors match lines, and the flavour is Python
@@ -99,8 +115,10 @@ What you get back is a healthy-looking `count` and an inflated `match_count` ove
 status: success
 pattern: HARNESS_BASH_CEILING
 literal: false
+ignore_case: false
 category: null
 count: 2
+file_count: 2
 results[2]{module,category,path,match_count}:
   plan-marshall,script,.../manage-architecture/scripts/_cmd_client.py,1
   plan-marshall,script,.../manage-architecture/scripts/_cmd_client_build.py,3
@@ -115,7 +133,10 @@ elided[0]:
 | Field | How to read it
 
 | `count`
-| How many files matched. Never read this on its own — see `files_scanned`.
+| How many result ROWS matched — one per module that attributes a matching file. Never read this on its own — see `files_scanned`.
+
+| `file_count`
+| How many DISTINCT files matched. Equal to `count` unless one physical file is inventoried by two modules (then it is one file, two rows). This is the number to quote for "how many files contain this?".
 
 | `results[].module` / `.category` / `.path`
 | Where the hit is, already attributed to the owning module and file category. No second lookup needed.
@@ -164,6 +185,21 @@ Even a well-populated negative has a boundary. The search covers the *crawled in
 So the honest reading of a well-populated `count: 0` is *"not in any inventoried file"*, which is a narrower claim than *"not in the tree"*. If the thing you are looking for could plausibly live in a workflow file, a local setting, or a plan log, this verb will not see it and will not pretend otherwise.
 
 Two things it *does* cover that are easy to assume otherwise: untracked-but-not-ignored files are searched (the walk is gitignore-aware rather than driven by what git tracks), and the verb works outside a git worktree.
+
+== Asking what the substrate can answer here
+
+A zero result from `search` is only trustworthy if the search actually ran. The same question applies one level up: *can this envelope answer graph, ownership, or content questions at all?* The `capabilities` verb answers it for the envelope you are in right now:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture capabilities
+----
+
+It reports each capability as `derivable` / `not_derivable` (module edges, path attribution) or `available` / `unavailable` (content search), so an empty answer from a *missing producer* is never mistaken for a real *found nothing*. The report is computed fresh for the executing project directory and is never cached across dispatches — so it is correct inside a dispatched subagent, not only in the main session.
+
+== The same verbs, in LSP vocabulary
+
+If you (or a tool) prefer to address the query surface the way an editor does, an *additive* `lsp` facade speaks LSP vocabulary over the existing verbs: `lsp hover` (→ `module`), `lsp references` (→ `impact`), `lsp workspace-symbol` (→ `find`), `lsp definition` (→ `resolve`). Nothing was renamed — every verb still answers under its own name, and `lsp references` is simply an additional way to reach `impact`. See xref:../concepts/code-intelligence.adoc[Concepts › Code Intelligence] for the model and the per-verb mapping.
 
 == Why this verb exists
 

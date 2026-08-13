@@ -490,6 +490,13 @@ Emit a `MODULE_MAPPING: {CLEAR|NEEDS_CLARIFICATION}` finding containing the requ
 
 Validate that the request respects module boundaries (`arch_context.modules[].purpose`), follows dependency direction (`architecture graph` output), aligns with existing extension points (`internal_dependencies`), and fits the project technologies (`arch_context.technologies`). Flag concerns such as runtime-context changes inside a library module, reverse dependency flows, or missing framework features as `FEASIBILITY: CONCERN` with the architectural constraint that was violated.
 
+**Underivable guard — do NOT reason over dependency direction on an unqualified empty graph.** The dependency-direction half of this check reasons over `architecture graph` edges, and that reasoning **cannot fire at zero edges**: an edgeless graph carries no dependency-direction signal at all. But an empty edge set has two opposite meanings, and the graph output tells them apart through its `resolver_count` (see [`manage-architecture:standards/client-api.md`](../../manage-architecture/standards/client-api.md) § "Resolver provenance"):
+
+- `resolver_count: 0` — **no derivation resolver ran.** Dependency direction is **UNDERIVABLE**, not "clean". Emit `FEASIBILITY: UNDERIVABLE — dependency direction not assessable (no derivation resolver active)` for the dependency-direction sub-check, so an absent capability is never silently recorded as a passed feasibility gate. The other sub-checks (module boundaries, extension points, technologies) still run — they do not depend on the edge set.
+- `resolver_count: N` (N ≥ 1) with empty edges — **N resolvers ran and found no edges.** This is a real, positive answer: the candidate modules genuinely have no dependency edges between them, and dependency direction imposes no constraint. A clean feasibility pass on dependency direction is correct here.
+
+The whole-surface form of this discriminator is the `capabilities` verb (`architecture capabilities` → the `module_edges` entry's `status`), which reports `not_derivable` versus `derivable` directly. Either read is acceptable; what is **not** acceptable is treating an empty graph as a clean dependency-direction pass without first reading which of the two empties it is.
+
 ### Scope Size Estimation
 
 Derive `scope_estimate` from the `module_mapping` produced earlier in this step. The value is a single enum drawn from `none | surgical | single_module | multi_module | broad`. The same enum is consumed by `manage-solution-outline` (see `manage-solution-outline:standards/solution-outline-standard.md` § Solution Metadata) and by the surgical Q-Gate bypass in `phase-3-outline`, so the derivation rules below must be applied verbatim — no synonyms, no intermediate vocabulary.

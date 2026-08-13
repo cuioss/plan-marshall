@@ -59,7 +59,7 @@ content = Read(file_path="/path/to/file")
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search \
-  --content --pattern P [--category CATEGORY] [--literal]
+  --content --pattern P [--category CATEGORY] [--literal] [--ignore-case]
 ```
 
 Hits carry `module`, `category`, `path`, and `match_count`, and the response never carries matching line text — rank by `match_count` and spend a `Read` on the few files that matter. `count: 0` always rides with the coverage fields, so a negative is never bare — but check all of them, not just the count: a zero is trustworthy only under the canonical complete-coverage rule. Any non-clean coverage field means files that might contain the match were never scanned, so the honest outcome is a coverage gap rather than "absent". Reach for this before `Grep`, and *especially* when the runtime denies `Grep` to a dispatched leaf. Do NOT restate the response contract or the payload / inventory-scope boundaries here — see [`manage-architecture/standards/client-api.md`](../../manage-architecture/standards/client-api.md) § search, the single source of truth.

@@ -137,6 +137,106 @@ def cmd_graph(args: argparse.Namespace) -> dict[str, Any]:
         return {'status': 'error', 'error': str(e)}
 
 
+def cmd_capabilities(args: argparse.Namespace) -> dict[str, Any]:
+    """CLI handler for the ``capabilities`` reader.
+
+    Reports which query capabilities the architecture substrate can answer RIGHT
+    NOW, in the envelope this call is executing in, given the resolvers and
+    attributors that actually ran — never what is merely registered or declared.
+    Its whole purpose is to close the *cannot-derive versus derived-nothing*
+    ambiguity for the query surface as a whole, the same distinction the ``graph``
+    family draws per-verb through ``resolver_count`` and ``which-module`` draws
+    through ``attributor_count``.
+
+    Three binding properties, each from a recorded failure the deliverable exists
+    to close:
+
+    * **Actual grant, not the declaration.** Every ``status`` below is read from a
+      producer that RAN and REPORTED — a discovered ``DerivationResolverBase``
+      that returned an edge set (or errored), a discovered ``PathAttributionBase``
+      that returned claims, a crawl that yielded an inventory. A registered-but-
+      unrun producer contributes nothing here; the report never promises a
+      capability on the strength of a declaration alone.
+    * **Uncached, recomputed per call.** The answer is derived fresh on every
+      invocation from ``args.project_dir``. Nothing is memoised across calls, so a
+      capability present on one dispatch is never assumed present on the next —
+      "probe once then branch" is exactly the unsound fallback this verb refuses
+      to enable.
+    * **Envelope-scoped.** The answer is for the executing envelope's
+      ``project_dir`` only. Run in the orchestrator and run in a dispatched leaf,
+      it answers for each independently; it never reports the orchestrator's state
+      to a leaf.
+
+    Each capability entry carries ``status`` plus the producer evidence, so the
+    three states stay distinct: ``not_derivable`` (``producer_count: 0`` — no
+    producer ran, an absence of capability); ``derivable`` with ``derived_count:
+    0`` (producers ran and found nothing); ``derivable`` with ``derived_count: N``
+    (producers ran and found N).
+    """
+    # The whole capability evaluation runs under one error boundary, so a failure
+    # in any downstream reader (a corrupt descriptor, an unexpected resolver or
+    # attributor error) returns a structured error payload rather than crashing —
+    # the same fail-closed contract every other handler in this file honours.
+    try:
+        module_names = iter_modules(args.project_dir)
+
+        # Edge derivation (graph / path / neighbors / impact) — read the resolver
+        # provenance the graph family itself computes, so the capability report
+        # and the verbs it describes can never disagree.
+        graph_result = get_module_graph(args.project_dir)
+        resolvers = graph_result.get('resolvers', [])
+        resolver_count = graph_result.get('resolver_count', 0)
+        edge_count = graph_result.get('graph', {}).get('edge_count', 0)
+
+        # Path attribution (which-module rung 3). The probe path is immaterial: an
+        # attributor reports whether it RAN regardless of whether it claims the path.
+        _owner, attributor_reports = resolve_path_attribution('__capability_probe__', module_names)
+        attributor_count = len(attributor_reports)
+
+        # Content search / file inventory (files / find / search). Available iff the
+        # crawl produced at least one module carrying a non-empty inventory.
+        modules_inventoried = 0
+        for name in module_names:
+            try:
+                derived = load_module_derived(name, args.project_dir)
+            except DataNotFoundError:
+                continue
+            if derived.get('files'):
+                modules_inventoried += 1
+    except DataNotFoundError:
+        return require_project_meta_result(args.project_dir)
+    except Exception as e:
+        return {'status': 'error', 'error': str(e)}
+
+    return {
+        'status': 'success',
+        'project_dir': args.project_dir,
+        'capabilities': [
+            {
+                'capability': 'module_edges',
+                'verbs': ['graph', 'path', 'neighbors', 'impact'],
+                'status': 'derivable' if resolver_count else 'not_derivable',
+                'producers': [report['id'] for report in resolvers],
+                'producer_count': resolver_count,
+                'derived_count': edge_count,
+            },
+            {
+                'capability': 'path_attribution',
+                'verbs': ['which-module'],
+                'status': 'derivable' if attributor_count else 'not_derivable',
+                'producers': [report['id'] for report in attributor_reports],
+                'producer_count': attributor_count,
+            },
+            {
+                'capability': 'content_search',
+                'verbs': ['files', 'find', 'search'],
+                'status': 'available' if modules_inventoried else 'unavailable',
+                'modules_inventoried': modules_inventoried,
+            },
+        ],
+    }
+
+
 def cmd_module(args: argparse.Namespace) -> Any:
     """CLI handler for module command.
 
@@ -543,6 +643,87 @@ def cmd_impact(args: argparse.Namespace) -> dict[str, Any]:
         return error_result_module_not_found(args.module, modules)
     except Exception as e:
         return {'status': 'error', 'error': str(e)}
+
+
+# =============================================================================
+# LSP-shaped facade (D1)
+# =============================================================================
+#
+# An ADDITIVE facade that lets a consumer address the query surface in the
+# vocabulary editors, agents and tooling already speak — definition, references,
+# hover, workspace/symbol — without renaming a single existing verb. Each handler
+# is a thin dispatch to the verb it maps onto; the underlying verb keeps its own
+# name and answer shape. The mapping is deliberately NOT one-to-one: the four
+# traversal/inventory verbs (path, impact, find, which-module) have no standard
+# LSP method — LSP is (uri, position)-oriented with no module node and no
+# transitive traversal — so they stay reachable as workspace/executeCommand
+# residue under their own names, and some (impact, find) are ALSO reachable via
+# the facade below. See standards/client-api.md § "LSP-shaped query facade" for
+# the per-verb mapping table.
+
+
+def cmd_lsp_hover(args: argparse.Namespace) -> Any:
+    """LSP facade — ``textDocument/hover`` → the ``module`` reader.
+
+    Hovering over a symbol yields its description; hovering over a module yields
+    its responsibility, purpose, packages and commands — the ``module`` verb's
+    answer, returned unchanged. ``module`` / ``derived-module`` keep their own
+    names; this only adds the LSP vocabulary over them.
+    """
+    return cmd_module(
+        argparse.Namespace(
+            project_dir=args.project_dir,
+            module=getattr(args, 'module', None),
+            full=getattr(args, 'full', False),
+            budget=getattr(args, 'budget', None),
+        )
+    )
+
+
+def cmd_lsp_references(args: argparse.Namespace) -> dict[str, Any]:
+    """LSP facade — ``textDocument/references`` → the ``impact`` reader.
+
+    Find-all-references answers "what refers to this?"; ``impact`` answers "what
+    transitively depends on this module?" — the reverse-dependency closure,
+    returned unchanged (resolver provenance included). LSP references is neither
+    transitive nor module-scoped, so ``impact`` also keeps its own name as a
+    workspace/executeCommand residue verb.
+    """
+    return cmd_impact(argparse.Namespace(project_dir=args.project_dir, module=args.module))
+
+
+def cmd_lsp_workspace_symbol(args: argparse.Namespace) -> dict[str, Any]:
+    """LSP facade — ``workspace/symbol`` → the ``find`` reader.
+
+    ``workspace/symbol`` takes a query string and returns matching symbols across
+    the workspace; ``find`` takes a glob and returns matching inventory paths
+    across every module — the same query-string shape, returned unchanged. The LSP
+    ``--query`` is the ``find`` ``--pattern``. ``find`` keeps its own name as a
+    residue verb.
+    """
+    return cmd_find(
+        argparse.Namespace(
+            project_dir=args.project_dir,
+            pattern=args.query,
+            category=getattr(args, 'category', None),
+        )
+    )
+
+
+def cmd_lsp_definition(args: argparse.Namespace) -> dict[str, Any]:
+    """LSP facade — ``textDocument/definition`` → the ``resolve`` reader.
+
+    Go-to-definition resolves a reference to the thing it names; ``resolve`` maps
+    a command name to the concrete executable it stands for — the same "resolve
+    this name to its definition" shape, returned unchanged.
+    """
+    return cmd_resolve(
+        argparse.Namespace(
+            project_dir=args.project_dir,
+            resolve_command=args.command,
+            module=getattr(args, 'module', None),
+        )
+    )
 
 
 # =============================================================================
@@ -1004,6 +1185,30 @@ def cmd_search(args: argparse.Namespace) -> dict[str, Any]:
     to compile returns ``status: error, error: invalid_pattern`` carrying the
     compile message — required boundary handling on untrusted caller input.
 
+    ``--ignore-case`` adds ``re.IGNORECASE`` to the compile, and it **composes
+    with** ``--literal``: the two flags are set on orthogonal axes (one escapes
+    the pattern, the other case-folds the match), so a pattern carrying regex
+    metacharacters can be matched verbatim AND case-insensitively at once. That
+    combination is the one a caller previously could not express — in regex mode
+    an inline ``(?i)`` marker case-folds a metacharacter pattern, but under
+    ``--literal`` ``re.escape`` neutralises that marker into the six literal
+    characters ``(?i)`` , so verbatim-and-case-insensitive was unreachable. Both
+    the inline-``(?i)`` regex-mode path and the new ``--ignore-case`` flag remain
+    valid; ``--ignore-case`` is simply the only one that also works under
+    ``--literal``. The echoed ``ignore_case`` boolean names which population the
+    match set was computed over, exactly as ``literal`` does.
+
+    **The count's population is explicit.** ``count`` is the number of result
+    ROWS — one per ``(module, category, path)`` hit — so a single physical file
+    inventoried by two modules (an unclaimed cross-module duplicate that
+    :func:`_collapse_claimed_duplicate_rows` leaves intact, because no Axis-D
+    claim owns it) contributes two rows and a ``count`` of 2. ``file_count`` is
+    the number of DISTINCT paths in ``results``, so that same file counts once.
+    A caller asking "how many files contain this?" reads ``file_count``; a caller
+    ranking module-attributed hits reads the ``results`` rows. Neither is wrong —
+    they answer different questions, and both are named so the population is never
+    left implicit (the row-versus-file recurrence closed here).
+
     The compile carries ``re.MULTILINE``, so ``^`` and ``$`` anchor to
     line-start / line-end — the semantics ``grep``, ``ripgrep`` and the harness
     ``Grep`` tool all give them, and therefore the semantics a caller writing
@@ -1046,19 +1251,22 @@ def cmd_search(args: argparse.Namespace) -> dict[str, Any]:
     """
     pattern = args.pattern
     literal = bool(getattr(args, 'literal', False))
+    ignore_case = bool(getattr(args, 'ignore_case', False))
     category_filter = getattr(args, 'category', None)
 
     if category_filter and category_filter not in FILE_CATEGORIES:
         return _unknown_category_result(category_filter)
 
+    flags = re.MULTILINE | (re.IGNORECASE if ignore_case else 0)
     try:
-        compiled = re.compile(re.escape(pattern) if literal else pattern, re.MULTILINE)
+        compiled = re.compile(re.escape(pattern) if literal else pattern, flags)
     except re.error as e:
         return {
             'status': 'error',
             'error': 'invalid_pattern',
             'pattern': pattern,
             'literal': literal,
+            'ignore_case': ignore_case,
             'message': str(e),
         }
 
@@ -1109,8 +1317,10 @@ def cmd_search(args: argparse.Namespace) -> dict[str, Any]:
         'status': 'success',
         'pattern': pattern,
         'literal': literal,
+        'ignore_case': ignore_case,
         'category': category_filter,
         'count': len(results),
+        'file_count': len({row['path'] for row in results}),
         'results': results,
         'files_scanned': files_scanned,
         'unreadable': unreadable,

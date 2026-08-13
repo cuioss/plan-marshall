@@ -43,6 +43,8 @@ scope: hybrid
 | `derive-verification` | [resolve-command](standards/resolve-command.md) | Derive the deterministic verification command set for a changed-artifact list (single build_map consumer) |
 | `files`, `which-module`, `find`, `search` | [client-api](standards/client-api.md) | Files-inventory readers (categorised paths, reverse lookup over a four-rung ladder ending in the Axis-D path-attribution seam, then the two search verbs: `find` is a **path glob** that never opens a file, `search --content` is the **file-content** reader) |
 | `graph`, `path`, `neighbors`, `impact` | [client-api](standards/client-api.md) | Dependency graph queries (full graph, shortest path, n-hop neighborhood, reverse-dep closure) |
+| `capabilities` | [client-api](standards/client-api.md) | Envelope capability report — which query capabilities are answerable right now (module edges, path attribution, content search), distinguishing cannot-derive from derived-nothing |
+| `lsp hover`, `lsp references`, `lsp workspace-symbol`, `lsp definition` | [client-api](standards/client-api.md) | **Additive** LSP-shaped facade over `module` / `impact` / `find` / `resolve` — addresses the query surface in editor/agent vocabulary; renames nothing (see client-api § "LSP-shaped query facade") |
 | `overview` | [client-api](standards/client-api.md) | Token-bounded markdown summary of the project architecture |
 | `diff-modules` | [client-api](standards/client-api.md) | Drift detection vs a pre-snapshot (added/removed/changed/unchanged buckets) |
 
@@ -509,7 +511,7 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture f
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture search \
-  --content --pattern PATTERN [--category CATEGORY] [--literal]
+  --content --pattern PATTERN [--category CATEGORY] [--literal] [--ignore-case]
 ```
 
 Searches inventoried file **bodies** and reports the module-attributed files containing `--pattern`. This is the sanctioned content-search path for a dispatched leaf whose `Grep` / `Glob` tools are unavailable and whose Bash file-search commands are refused by the PreToolUse enforcement hook.
@@ -518,7 +520,34 @@ Searches inventoried file **bodies** and reports the module-attributed files con
 
 `--pattern` is a Python regex by default; `--literal` matches it verbatim (`re.escape`), which is what makes a pattern full of shell metacharacters safe and exact. No caller input ever reaches a shell. A pattern that fails to compile returns `status: error, error: invalid_pattern` carrying the compile message.
 
+`--ignore-case` adds `re.IGNORECASE` and **composes with `--literal`**: a metacharacter-bearing pattern can be matched verbatim AND case-insensitively at once — the one combination the inline `(?i)` regex marker cannot express under `--literal` (`re.escape` neutralises it). Regex-mode `(?i)` still works. The echoed `ignore_case` boolean names the population the match set was computed over.
+
 `--category` takes the same vocabulary and the same unknown-category semantics as the `files` verb above.
+
+The result carries both `count` (result ROWS — one per `module`/`category`/`path` hit) and `file_count` (DISTINCT paths); they diverge only for an unclaimed cross-module duplicate. Read `file_count` for "how many files contain this?".
+
+### capabilities
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture capabilities
+```
+
+Reports which query capabilities are answerable **right now, in the executing envelope** — `module_edges` (graph/path/neighbors/impact), `path_attribution` (which-module), and `content_search` (files/find/search) — each distinguishing *cannot-derive* (no producer ran) from *derived-nothing*. Read from producers that actually ran (never the declaration), recomputed per call (never cached across dispatches), and scoped to the executing `--project-dir`. See [client-api.md](standards/client-api.md) § capabilities for the full contract.
+
+### lsp
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture lsp hover \
+  --module MODULE [--full]
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture lsp references \
+  --module MODULE
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture lsp workspace-symbol \
+  --query QUERY [--category CATEGORY]
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture lsp definition \
+  --command COMMAND [--module MODULE]
+```
+
+The **additive** LSP-shaped facade: `lsp hover` → `module`, `lsp references` → `impact`, `lsp workspace-symbol` → `find`, `lsp definition` → `resolve`. Each returns the underlying verb's answer unchanged — the facade adds LSP vocabulary over the existing verbs and **renames nothing**; the four traversal/inventory residue verbs (`path`, `impact`, `find`, `which-module`) stay reachable under their own names. See [client-api.md](standards/client-api.md) § "LSP-shaped query facade" for the per-verb mapping table.
 
 **Anchors are per line**: the pattern is compiled with `re.MULTILINE`, so `^` matches at the start of every LINE and `$` at the end of every line — the same semantics `grep`, `ripgrep`, and the harness `Grep` tool give them. An anchored sweep such as `--pattern '^Skill: plan-marshall:manage-files'` therefore finds a directive on any line of a file, not only one starting at byte 0, and `match_count` counts every such line. The engine is Python `re`, not POSIX: write `\s` for whitespace, never a POSIX bracket class like `[[:space:]]` — Python still compiles that (as a nested set, emitting a `FutureWarning` on stderr) and it then silently over-matches, so the failure arrives as spurious hits rather than as an error or a zero.
 
