@@ -1,6 +1,6 @@
 # Run report — 360-collapse-the-version-selection-machinery (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** claude/version-selection-collapse-gt8iqd (harness-assigned)    **PR:** [#1223](https://github.com/cuioss/plan-marshall/pull/1223)    **Outcome:** _in progress — merge gate_
+**Date (UTC):** 2026-08-13    **Branch:** claude/version-selection-collapse-gt8iqd (harness-assigned)    **PR:** [#1223](https://github.com/cuioss/plan-marshall/pull/1223)    **Outcome:** completed — all seven deliverables landed, `./pw verify` green, auto-merge armed (landing self-confirmed via read-poll)
 
 ## Skills loaded
 
@@ -104,20 +104,52 @@ The expected reviewer population is derived from configuration — the `author_l
 
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
-| _(pending PR)_ | | |
+| `cuioss-review-bot` | `reviewed` | Issue-comment body "PR Reviewer Guide 🔍 — PR contains tests / No security concerns identified / No major issues detected" (an explicit nothing-to-report over the diff). |
+| `coderabbitai` | `rate-limited` | Issue-comment body "Review limit reached … Next review available in: ~10 minutes" — engaged but did not review this diff. Window reopens on its own; routine and outside our control. |
+| `sourcery-ai` | `rate-limited` | Review body "you have reached your weekly rate limit of 500000 diff characters" — a quota refusal in place of a review. |
+
+**Coverage: 1 of 3.** The § Step 8 shortfall disclosure **fired**: "Review coverage 1 of 3 — `cuioss-review-bot` reviewed (no major issues); `coderabbitai` rate-limited (window reopens); `sourcery-ai` rate-limited (weekly quota)." Rate limits are routine and outside our control, so per the lane contract this is disclosed, not blocked. There were **no actionable review comments** on any of the three surfaces (issue comments, review summaries, inline threads) — the two non-`reviewed` bodies are quota notices, not findings, and need no reply; the one `reviewed` body reported no issues. Inline review-thread surface: empty.
 
 ## Cost
 
-_(pending)_
+- **Tokens:** not available to the agent in this session — a single interactive Claude Code cloud session does not surface its own token usage to the model. Stated plainly rather than estimated.
+- **Wall-clock:** ~1h from skill load to auto-merge arm (first branch push at commit `77fd115`→`b295a0d`; PR opened 20:49 UTC; merge-gate arm shortly after). Source: git/PR event timestamps.
+- **Population:** this single Claude Code cloud session's activity as the harness runs it — one interactive session plus three background sub-agent dispatches (two test-inventory Explore agents, one pre-PR verification agent, re-dispatched once). ⛔ **NOT comparable** to a plan-marshall `metrics.toon` total, which counts an orchestrator-plus-agent dispatch tree under plan-marshall's own per-task billing boundary that this session does not share. No comparable figure is presented.
 
 ## Contract check (Step 9)
 
-_(pending)_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **Done** — named in § Skills loaded; all obtained by bundle-path read (plugin not installed). |
+| 2 Branch | **Done** — harness-assigned `claude/version-selection-collapse-gt8iqd` kept as-is; exists on `origin` (pushed as first action). Branch form: **harness-assigned**. |
+| 3 Plan directory | **Done** — `doc/plans/truthful-signals/360-collapse-the-version-selection-machinery/plan.md` exists (git mv), opens with the first-instruction block (verified present at Step 3 and here). |
+| 4 Implement | **Done** — commits carry the `Co-Authored-By: Claude` trailer, no "Generated with Claude Code" footer; all seven deliverables addressed. |
+| 4 Per-commit gate | **Done** — every `*.py`-touching commit was preceded by a clean gate; the authoritative pre-PR gate is the full `./pw verify` SUCCESS (§ Build gate). Fast iterative red/green checks used `uv run python -m pytest` (see § What have we learned). |
+| 4 Pushed | **Done** — every commit pushed; no unpushed commit remains at report-commit time. |
+| 5 Build gate | **Done** — git-derived Python-change verdict non-empty → full `./pw verify` = SUCCESS (19560 passed, 14 skipped). |
+| 6 Verification sub-agent | **Done** — dispatched (read-only), 3 findings (F1/F2/field-count) fixed, re-dispatched, re-verified clean; F3 disclosed. All in § Findings. |
+| 7 PR cycle | **Done** — PR #1223 opened, kept its bot review (touches `*.py` + `marketplace/bundles/**`, so **no** `skip-bot-review`). All three comment surfaces read; every comment dispositioned (none actionable). |
+| 8 Merge gate | Conditions 1–3 met (report finalized as last pre-merge commit); auto-merge armed (SQUASH). Cloud session self-confirms the landing via read-poll (`send_later` is available here). Merge commit reported to the operator, not embedded (it does not exist until the squash lands). |
+| 8 Bridge | **Done** — no status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; report carries the PR number and per-deliverable outcome for the orchestrator to collect. |
+| 9 This check | **Done** — appended here. |
+| 9 What have we learned | Present below. |
+
+**GitHub access path used:** the **GitHub MCP server** (cloud path), for both reads and the PR create/arm. No `gh` CLI available. **Plugin cache sync:** a cloud run **never owes** a `/sync-plugin-cache` — it is a machine-local build step, not a debt this run records. The merged bundle source is authoritative; a local developer who wants their `~/.claude` cache refreshed runs the sync themselves.
 
 ## What have we learned (Step 9)
 
-_(pending)_
+**One contract-change proposal, with evidence from this run — presented to the operator, not self-approved, not shipped.**
+
+*Proposal:* add a short note to the `cloud-plan-lane` § Build gate that, for **fast iterative red/green checks on specific test files**, `uv run python -m pytest <path> -o addopts=""` is available in the cloud session and is dramatically faster than routing every check through `./pw module-tests` — while **reserving the full `./pw verify` for the authoritative gate** (unchanged).
+
+*Evidence (this run):* `uv` is on `PATH` (0.8.17) and shares the pyproject-defined environment. Targeted `uv run` pytest calls on the affected files returned in **~0.2 s** each after the first dependency fetch, versus the full `./pw verify` at **~6m43s**. This run used the fast path repeatedly for the red-first D6 verification and the iterative test-update green checks, then ran the full `./pw verify` once as the gate. The contract currently names only `./pw`, so a fresh agent would default to the slow whole-suite command for every iteration. The proposal changes nothing about the gate — it documents an iteration affordance the contract is silent on.
+
+*Not proposed as a lane-contract change:* the D6(a) tension (a plan's "seen-red-first" deliverable that the tree had already made true) is a **plan-authoring** concern for the `author-cloud-plan` skill, not the execution contract — the lane's Step 6 handled it correctly (report the deviation honestly). Recorded here for the plan author, not as a `cloud-plan-lane` amendment.
+
+*Operator decision required:* ship the § Build-gate note as a separate `chore(cloud-plan-lane)` PR (per the contract's Step-9 rule), or decline. Not applied in this PR.
 
 ## Residue
 
-_(pending)_
+- **Sibling detector re-scope (out of scope here).** `pm-plugin-development plugin-doctor _plugin_pin_trap.py` still reads `.orphaned_at` and still describes retention pins / degraded fallback in its own logic. The plan deliberately leaves it untouched ("NOT superseded by this… re-scope it after this lands"). After this lands, a follow-up should re-scope that detector: the version-split state it guards can no longer occur, but its oracle also covers pin-versus-source content staleness, which this plan did not address.
+- **Pre-existing field-count bug fixed in passing.** `plan-marshall/SKILL.md` said the preflight had a "six-field" TOON contract; it returns seven. Corrected and declared (not silently), since the file was already being edited.
+- **No follow-up owed on this PR's own surface** — every deliverable is complete and the full build is green.
