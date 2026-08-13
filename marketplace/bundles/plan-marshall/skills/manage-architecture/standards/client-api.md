@@ -377,8 +377,8 @@ key_packages[1]{name,description}:
 oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/pipeline,JWT validation pipeline
 
 packages[2]{name,path,has_package_info}:
-de.cuioss.sheriff.oauth.core,src/main/java/de/cuioss/sheriff/oauth/core,true
-de.cuioss.sheriff.oauth.core.util,src/main/java/de/cuioss/sheriff/oauth/core/util,false
+de.cuioss.sheriff.oauth.core,oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core,true
+de.cuioss.sheriff.oauth.core.util,oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/util,false
 
 key_dependencies[2]:
   - de.cuioss:cui-java-tools
