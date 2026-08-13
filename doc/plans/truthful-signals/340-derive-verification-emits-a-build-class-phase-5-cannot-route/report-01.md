@@ -73,13 +73,82 @@ build-phase canonicals). Per the plan's out-of-scope note ("If D0 finds [the cla
 is legitimate and the router is wrong], say so and re-scope"), this is the re-scope
 case. Decision escalated to the operator (see § Findings / this run's residue).
 
-### D1–D4
+### Scope decision (operator-approved re-scope)
 
-_Pending the scope decision._
+D0 found the emitted verbs legitimate and the router mismatched. Escalated to the
+operator via `AskUserQuestion` (interactive session, plan's flagged re-scope case).
+**Question:** which fix direction — router fix + provenance / emitter constraint
+(plan as written) / provenance only. **Operator answer: "Router fix + provenance".**
+So the plan's D1/D2 (constrain the emitter) are superseded by an equivalent-intent
+router fix that preserves the legitimate `compile`/`test-compile` per-task checks;
+D3 (provenance) and D4 (matched-pair tests) are unchanged in intent.
+
+### R — Router fix (supersedes D1/D2, operator-approved)
+
+`manage-execution-manifest.py::_route_task_verification_commands`: an
+orchestrator-tier command whose verb is a KNOWN canonical build command
+(`ALL_CANONICAL_COMMANDS`, imported from `extension_base` — derived from the
+vocabulary registry, **not** a hand-listed `{compile, test-compile}`) with no
+resolvable `verify:{verb}` gate (`_check_step_resolvable(candidate, 'phase_5')`)
+is kept with the task (per_task fallback) instead of routed to a nonexistent gate.
+Restricted to known canonicals so a custom/typo'd verb still routes and fails loud.
+Emits a provenance decision-log line naming the verb and the absent gate.
+*Verification:* new tests `test_compile_kept_with_task_not_routed`,
+`test_test_compile_kept_with_task_not_routed`, `test_mixed_task_composes_without_unresolvable_step`
+— all seen to fail pre-fix, pass post-fix. Commit `2430747`.
+
+### D3 — Compose-error provenance
+
+`_manifest_validation.py::check_emitted_steps_resolvable`: the `unresolvable_step`
+error now distinguishes a marshal.json-authored step (named by the author's key,
+"in marshal.json") from a routed/derived step (present in the emitted list, absent
+from the marshal step map → "appended by execution_tier COMMAND routing from a
+derived `verification.commands` entry (architecture derive-verification) — NOT
+authored in marshal.json"). CSV-fallback (marshal_map None) keeps the emitted-id
+wording. *Verification:* `test_routed_step_error_names_routing_origin` reads the
+actual error string (fails pre-fix — the old message falsely said "in marshal.json"),
+`test_marshal_authored_step_error_names_marshal_json` control. Commit `2430747`.
+
+### D4 — Matched control pair (each seen to fail pre-fix)
+
+Empirically confirmed by a stash-out pre-fix run of the target test file:
+- **Unroutable (fail pre-fix → pass post-fix):** `test_compile_kept_with_task_not_routed`
+  (`mutated==1` pre-fix), `test_test_compile_kept_with_task_not_routed`,
+  `test_mixed_task_composes_without_unresolvable_step` (pre-fix phase_5 was
+  `['verify:compile', 'verify:module-tests']` — the literal unroutable step),
+  `test_routed_step_error_names_routing_origin` (D3).
+- **Routable / over-broad guards (pass pre+post):** `test_module_tests_still_routes`,
+  `test_custom_verb_still_routes_and_fails_loud`, `test_marshal_authored_step_error_names_marshal_json`.
+
+Note on "each seen to fail pre-fix": that clause was written for the emitter-constraint
+direction where both halves would fail. Under the router-fix direction the routable
+half is an over-broad-fix guard that correctly passes pre+post (it cannot fail pre-fix
+without breaking existing correct routing); the unroutable half and D3 are the meaningful
+"seen to fail pre-fix" cases, and all four were observed to fail pre-fix.
+
+### Documentation kept in lock-step
+
+- `manage-execution-manifest.py` router docstring — the two→three fall-throughs.
+- `_manifest_rules.py` `_VERB_TO_PHASE_5_STEP` comment — the build-phase-canonical carve-out.
+- `manage-execution-manifest/standards/decision-rules.md` § routing predicate — the carve-out.
 
 ## Build gate
 
-_Pending._
+`git diff --name-only origin/main...HEAD -- '*.py'` verdict: **Python changed**
+(`manage-execution-manifest.py`, `_manifest_validation.py`, `_manifest_rules.py`,
+and the test file). Full path taken.
+
+- **Targeted pre-fix run** (behavioral files stashed to HEAD):
+  `./pw module-tests plan-marshall/manage-execution-manifest/test_compose_execution_tier.py`
+  → 4 failed, 39 passed — the 4 failures are exactly the new unroutable + D3 tests
+  (empirical D0 reproduction / D4 "seen to fail pre-fix").
+- **Targeted post-fix run** (fix restored): same command → **43 passed**.
+- **Full `./pw verify plan-marshall`** (`UV_HTTP_TIMEOUT=600`): **`=== verify: SUCCESS ===`**
+  — `16448 passed, 1 skipped in 482.22s`; coverage line confirms all sub-steps ran:
+  mypy(production) 278 files, ruff, SPDX headers, mypy(test) 588 files, module-tests.
+
+No `uv.lock` churn (checked `git status` before staging; staged the 5 deliverable
+paths explicitly, never `git add -A`).
 
 ## Findings
 
