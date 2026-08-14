@@ -1,6 +1,6 @@
 # Run report — 180-finalize-dispatch-manifest-observability (run 01)
 
-**Date (UTC):** 2026-08-14    **Branch:** `claude/finalize-dispatch-manifest-observability-nrxcwr` (harness-assigned; kept as-is)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-14    **Branch:** `claude/finalize-dispatch-manifest-observability-nrxcwr` (harness-assigned; kept as-is)    **PR:** [#1232](https://github.com/cuioss/plan-marshall/pull/1232)    **Outcome:** completed (conditions 1–3 met, 1-of-3 review shortfall disclosed, auto-merge armed; landing delegated to the merge queue)
 
 ## Skills loaded
 
@@ -8,7 +8,12 @@
 - `plan-marshall:ref-code-quality` (read by bundle path).
 - `pm-plugin-development:plugin-script-architecture` (read by bundle path).
 
-_Additional domain skills loaded as the surface is confirmed (Python production/tests, plugin-architecture, workflow-architecture)._
+The plan's surface is `phase-6-finalize`/`manage-status` scripts + workflow docs + tests. The
+implementation worked directly against the concrete source (`_cmd_effort.py`, `_cmd_mark_step.py`, the
+finalize `SKILL.md`, the roster doc, and the tests) whose contracts the two always-load skills govern;
+no additional bundle skill needed loading beyond reading those source files directly. Both plugin
+notations were unavailable (plugin cache absent, as the lane anticipates) and were read by bundle
+path.
 
 GitHub access path: **GitHub MCP server** (cloud session). Branch form: **harness-assigned** `claude/*`.
 
@@ -178,28 +183,111 @@ and coordinate" constraint).
 
 ### CI
 
-_Pending — recorded after the PR CI concludes._
+On the report-finalize head, `verify / gate`, `review / review`, `dependency-review`, and
+`generate-check` concluded **success**; `verify / verify` (the heavy build carrying the required
+`verify / conclusion`) was **in_progress** at the merge gate. No self-wake is available in this cloud
+session, so — per the lane — auto-merge was armed while `verify` runs; the merge queue admits the PR
+only when the ruleset's required contexts pass, and re-verifies on `merge_group`. The full `./pw
+verify` ran green locally over the identical tree (19638 passed). No CI failure observed.
 
 ### PR review
 
-_Pending — recorded after the review cycle._
+No actionable review comment. All three comment surfaces were read before the merge gate
+(`get_comments`, `get_reviews`, `get_review_comments`); inline review threads: **none**.
+`cuioss-review-bot` posted a clean review ("PR contains tests · No security concerns identified · No
+major issues detected") — nothing to fix or reply to. `coderabbitai` and `sourcery-ai` posted only
+rate-limit notices. Disposition: nothing actionable; the coverage shortfall is disclosed below.
 
 ## Reviewer participation
 
-_Pending._
+Expected reviewer population derived from configuration — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc:
+**M = 3** — `coderabbitai` (coderabbit.md:27), `cuioss-review-bot` (pr-agent.md:55), `sourcery-ai`
+(sourcery.md:25). Verdicts derived from the stored comment bodies (not check states):
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Posted a review over the diff — "PR Reviewer Guide 🔍 · 🧪 PR contains tests · 🔒 No security concerns identified · ⚡ No major issues detected" (issue-comment 5295894580). Clean; no findings to handle. |
+| `coderabbitai` | `rate-limited` | Published only a quota notice, no review: "Review limit reached … Next review available in: 74 minutes" (issue-comment 5295887831). |
+| `sourcery-ai` | `rate-limited` | Published only a quota notice, no review: "you have reached your weekly rate limit of 500000 diff characters" (review 4939402503). Its `Sourcery review` check concluded `skipped`. |
+
+**Coverage: 1 of 3.** **Step-8 shortfall disclosure (fired — disclosure, not a block):** *Review
+coverage: 1 of 3 — `cuioss-review-bot` reviewed (tests present, no security concerns, no major
+issues); `coderabbitai` rate-limited (next window ~74 min); `sourcery-ai` rate-limited (weekly
+diff-character quota).* Rate limits are routine and outside our control; per the lane this changes
+only what the run says, not whether it merges. Auto-merge armed exactly as full coverage would be.
 
 ## Cost
 
-_Pending._
+- **Tokens:** not available to the agent as a reliable figure in this session.
+- **Wall-clock:** single interactive Claude Code cloud session (see PR #1232 timestamps for the
+  finalize window; `./pw verify` alone was ~525 s).
+- **Population:** this one cloud session's usage as the harness counts it. ⛔ **NOT comparable** to a
+  plan-marshall `metrics.toon` total (which counts the orchestrator-plus-agent dispatch tree under a
+  per-task billing boundary this single interactive session does not share). No comparable number is
+  presented.
 
 ## Contract check (Step 9)
 
-_Pending._
+Re-read the `cloud-plan-lane` skill; each step checked against what happened and its on-disk artifact:
+
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **done** — `cloud-plan-lane`, `ref-code-quality`, `plugin-script-architecture` loaded by bundle path (plugin absent, as the lane anticipates). Domain skills read as the surface was confirmed. |
+| 2 Branch on `origin` | **done** — harness-assigned `claude/finalize-dispatch-manifest-observability-nrxcwr`, pushed before any work; kept as-is. |
+| 3 Plan directory | **done** — `…/180-…/plan.md` exists and opens with the first-instruction block (present on receipt; no repair needed). |
+| 4 Implement | **done** — commits `b8c03e3`,`23c7df8`,`e9e3259`,`0ee7375`,`a906bad`,`d5af83f`,`c9b48e8`,`7de83e6` (+ this final report commit); each carries the `Co-Authored-By: Claude` trailer, no "Generated with" footer. |
+| 4 Per-commit gate | **done** — every `*.py`-touching commit was preceded by a clean `./pw quality-gate` (`issues[0]`, `coverage: COMPLETE`). |
+| 4 Pushed | **done** — this final report commit is the last; no unpushed commit remains. |
+| 5 Build gate | **done** — Python changed → full `./pw verify` SUCCESS (19638 passed, 0 failed); coverage COMPLETE including `test-compile` (the one intermediate failure it caught was fixed and re-verified). |
+| 6 Verification sub-agent | **done** — dispatched read-only; all live deliverables MET and refutations sound; six findings fixed (`c9b48e8`) and a re-dispatch confirmed clean. Findings + dispositions above. |
+| 7 PR cycle | **done** — PR #1232 (no `skip-bot-review`: the diff is code — `*.py` + skills/bundles). Every comment dispositioned; all three comment surfaces read. |
+| 8 Merge gate | conditions 1–3 met (required `verify` deferred to the queue via auto-merge; no open comments; report finalized as the last pre-merge commit), 1-of-3 shortfall disclosed, auto-merge armed (SQUASH). Landing delegated to the merge queue (no self-wake in this session — arm-and-hand-off is a completed outcome per the lane). |
+| 8 Bridge | **done** — no status/bookkeeping write under `doc/plans/` outside this plan's own directory; no shared lane doc touched. The report carries the PR number and per-deliverable outcome for the orchestrator's collect. |
+| 9 This check | **done** — recorded here. |
+| 9 What have we learned | **done** — below. |
+
+GitHub access path used: **GitHub MCP server**. Branch form: **harness-assigned**. No
+`/sync-plugin-cache` is owed (machine-local build step, not a debt a cloud run records). A local
+executor sync IS owed on the developer machine after this lands, since the diff edits
+`marketplace/bundles/**` (recorded here per the lane's Plugin-Cache-Sync carve-out).
 
 ## What have we learned (Step 9)
 
-_Pending._
+**No `cloud-plan-lane` contract change proposed.** The contract executed cleanly end to end:
+skill-by-path loading, the harness-assigned branch pushed before any work, the conditional build gate
+(Python → full `verify`), the pre-PR verification sub-agent (whose beyond-diff stale-claim sweep
+earned its keep — it caught six real stale claims/gaps the diff-scoped checks missed, including one
+in-diff correctness contradiction), the three-surface comment read, and the disclose-not-block
+shortfall rule all behaved as written. The `test-compile` warning the lane documents was hit exactly
+as described (a `load_script_module`-`Any` returned from a `-> dict` test helper) and fixed. No step
+was ambiguous in practice and no step's artifact failed to produce as written. A speculative edit is
+not a proposal, so none is made.
+
+**Observation for the operator (plan-authoring, not a lane-contract change).** Plan 180 was heavily
+**version-stale**: three of its six deliverables (D4, D5, D3-peer) were already resolved at HEAD by
+sibling/subsequent work, and its central live pieces (D2/D3) were the emission-side migration plan
+170's own report Residue had named as owed. The plan anticipated exactly this (D1 is a GATE that
+"confirms or refutes each defect at its own site", and every claim carried a "confirm the current
+shape, not the filed one" instruction), so the run re-grounded each defect from source and reported
+the refutations with evidence rather than implementing against a stale brief. This is the intended
+behaviour of a retrospective-derived plan, not a defect — but it is worth the operator's eye that the
+plan's realized scope (D2+D3+D6 + a de-pin) was materially smaller than its six-deliverable framing,
+and that the split-guard "proceed unsplit" verdict held up: D2/D3/D6 genuinely shared one surface
+(the dispatch/step emission seams and their tests) and would have raced had they been split.
 
 ## Residue
 
-_Pending._
+- **`[STEP] … Executing step:` start marker is still hand-written prose** (SKILL.md item 2), not
+  fused. D3 fused only the COMPLETION marker (the plan's target — the "handshake and log line are two
+  obligations" defect is about completion). The start marker is already loop-driven (item 2 fires
+  every iteration), so it is structurally covered; fusing it too would be a symmetric follow-up but is
+  out of this plan's scope and carries the same cross-phase / audit-`completion_count` blast-radius
+  question D3 resolved by phase-scoping.
+- **`coderabbitai` / `sourcery-ai` reviews did not run** (both rate-limited). If a full-coverage
+  review is wanted, a re-request after their windows reopen (~74 min for coderabbit; weekly for
+  sourcery) would exercise them against this diff — not owed by the lane (disclose-not-block), noted
+  for completeness.
+- **Local executor sync owed on the developer machine** after this lands (the diff edits
+  `marketplace/bundles/**`); a cloud run neither performs nor owes `/sync-plugin-cache`, but the local
+  developer sync is real.
