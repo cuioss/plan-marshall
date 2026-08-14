@@ -126,6 +126,13 @@ collapsed at the first `:` and lowercased, and the module is the finding's
 `module` attribution (falling back to `component`, then `default`). Count how
 many times each tuple recurs within the plan.
 
+**Before counting, EXCLUDE any finding that is not authorship-admissible** per
+[`disposition-to-hint-routing.md`](disposition-to-hint-routing.md) § "(e)
+Authorship admissibility": a `pr-comment` finding without a recognized reviewer
+`bot_kind` is the pipeline's own control traffic — not preference evidence — and
+must not seed a recurrence. (The `bot_kind` field is on the finding record;
+`manage-findings list` surfaces it.)
+
 ### Step 2: Read the per-plan promotion threshold knob
 
 Read the live `preference_min_recurrence` knob value exactly as
@@ -141,9 +148,13 @@ Read `params.preference_min_recurrence` from the returned TOON (default `2`).
 ### Step 3: Threshold-gate and skip-clean
 
 Keep only the tuples whose within-plan recurrence count is at least
-`preference_min_recurrence`. When NO tuple clears the threshold (the common
-case), skip-clean: mark the step done with a `no patterns promoted` detail and
-return — no artifact filed, no error.
+`preference_min_recurrence`. Then DROP any surviving tuple whose module resolves
+to the `default` fallback bucket (no concrete `module` and no `component`): per
+[`disposition-to-hint-routing.md`](disposition-to-hint-routing.md) § "(d)
+Attribution gate" an unattributed recurrence is never promoted, even when it
+clears the threshold. When NO tuple remains (the common case), skip-clean: mark
+the step done with a `no patterns promoted` detail and return — no artifact
+filed, no error.
 
 ### Step 4: Generalize the cleared patterns and file the owed hints
 

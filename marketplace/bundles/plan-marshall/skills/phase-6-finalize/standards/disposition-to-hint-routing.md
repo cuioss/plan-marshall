@@ -41,22 +41,25 @@ generalized — only a recurrence that cleared its surface's threshold gate.
 ## (b) Routing rule
 
 Generalized hints are routed to the EXISTING `architecture enrich` sink — there
-is no new store. The recurrence's module attribution selects the verb:
+is no new store. **Only a MODULE-ATTRIBUTED recurrence is promotable**; an
+UNATTRIBUTED recurrence is not (see § "(d) Attribution gate").
 
-- **Module-attributed pattern** (the recurrence carries a concrete module) →
+- **Module-attributed pattern** (the recurrence carries a concrete `module`, or a
+  `component` that resolves to one) → route to that concrete module, selecting the
+  verb by the disposition's generalized shape in § (a):
 
   ```bash
+  # suppressed → best-practice
   python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
     enrich best-practice --module {module} --practice "{generalized practice}"
-  ```
-
-- **Cross-cutting pattern** (the recurrence spans modules or carries no concrete
-  module attribution) →
-
-  ```bash
+  # accepted / taken_into_account → insight
   python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
-    enrich insight --module default --insight "{generalized insight}"
+    enrich insight --module {module} --insight "{generalized insight}"
   ```
+
+- **Unattributed pattern** (the recurrence carries no concrete `module` and no
+  `component`, so it collapses to the `default` fallback bucket) → **NOT
+  PROMOTED.** File no owed hint for it — see § "(d) Attribution gate".
 
 Both verbs write into the existing `enriched.json` `best_practices[]` /
 `insights[]` schema, which surfaces automatically through `get-module-context`
@@ -72,6 +75,52 @@ the durable preference framed in the project's voice — is persisted. The raw
 disposition corpus stays in `artifacts/findings/*.jsonl` (the auditor) or behind
 the `manage-findings` query (the emitter); it is never copied into the hint
 store.
+
+## (d) Attribution gate — the unattributed `default` bucket is not promotable
+
+The `default` bucket is the sink a finding collapses into when it carries no
+concrete `module` and no `component`. It is NOT a genuine cross-cutting
+judgement: the aggregation keys on a single module value and cannot detect a
+recurrence that genuinely spans several modules, so `default` only ever means
+*unattributed*, never *cross-cutting*. Promoting an unattributed recurrence would
+route an unverified hint to the widest possible blast radius — the least
+attributable evidence landing in the most general slot.
+
+Therefore an unattributed recurrence (its module resolves to `default`) is
+**counted but never promoted**. Both surfaces enforce this:
+
+- the **cross-plan auditor** drops `default`-bucket tuples from its candidate rows
+  in `cross_preference_pattern` and reports the tally as
+  `unattributed_excluded_count`;
+- the **per-plan emitter** discards `default`-bucket tuples at its threshold gate
+  before it files any owed hint.
+
+This gate is independent of the threshold: a `default`-bucket tuple is dropped
+even when it clears the recurrence count.
+
+## (e) Authorship admissibility — a self-authored comment is not preference evidence
+
+A finding contributes to a preference recurrence only when it is not the
+pipeline's own control traffic. A `pr-comment` finding is admissible ONLY when it
+is positively attributed to a recognized external reviewer bot — i.e. it carries a
+non-empty `bot_kind` (the registry-derived reviewer identity the ingest verb
+stamps from the comment author login). A `pr-comment` with no `bot_kind` cannot be
+told apart from the pipeline's own posted comments: the ingest verb records the
+pipeline's own PR comments (a review-trigger comment, a description-restore) with
+`bot_kind` absent, exactly as it records an unattributed human comment. Admitting
+one would let the pipeline's own control traffic become evidence about the
+pipeline's preferences — a SELF-REINFORCING artifact that grows with pipeline
+chattiness, not with operator judgement.
+
+There is no self-login signal on the finding (the comment-preparation verb stamps
+no marker), so this gate fails CLOSED on positive external attribution rather than
+trying to recognize "self" directly. Non-comment findings (lint/sonar/bug/…) carry
+no author and are never pipeline-authored PR chatter — they are unaffected, and
+their tool-disposition recurrences remain the primary preference signal.
+
+Both surfaces apply this before a recurrence is counted: the cross-plan auditor
+structurally in `cross_preference_pattern`; the per-plan emitter by excluding
+`pr-comment` findings without a `bot_kind` when it aggregates dispositions.
 
 ## Threshold gate is surface-owned
 
