@@ -59,11 +59,34 @@ Per the plan ("If unreachable, DROP this deliverable rather than 'fixing' a path
 
 ## Deliverables
 
-(Filled in as each lands.)
+| # | Deliverable | Status | What changed |
+|---|---|---|---|
+| D0 | Gate: confirm/re-count | **done** | Findings confirmed by symbol; prefix-strip deliverable deleted; D6 dropped (see D0 section above). Mutates nothing. |
+| D1 | Guard the destructive wipe | **done** | New shared `marketplace/targets/fs_safety.py` (`is_within` + `safe_rmtree`) — the sibling `_safe_rmtree` extracted, not re-implemented. `opencode/emitter.py` now imports it (no duplicate). `claude/emitter.py::emit_bundle_verbatim` refuses a destination inside the source tree (`is_within(dest_root, bundle_dir.parent)`) and wraps the wipe in `safe_rmtree`. Docstring's false "gitignored ⇒ safe" argument corrected. |
+| D2 | Make the non-pruning emitter prune | **done** | `opencode/emitter.py::_prune_stale_outputs` removes `skill/`,`agent/`,`command/` outputs not written this run — stale skill dirs via the guarded `safe_rmtree` (never re-introducing the sibling's containment hazard). Full-regeneration only (scoped `--bundles` emits share flat agent/command namespaces and cannot attribute a leftover to a bundle safely; the normal build and drift checks are full regenerations). |
+| D3 | Anchor the frontmatter fence | **done** | `opencode/frontmatter.py::parse_frontmatter` now anchors the closing fence on a newline-delimited `\n---\n` (matching the sibling `variant_emitter.parse_frontmatter`), with the sibling's trailing-`---`-at-EOF tolerance. A `---`-containing value no longer truncates the block. |
+| D4 | Guard the JSON read | **done** | `claude/equality_check.py`: new `CorruptEmittedPluginJsonError` raised by `_read_emitted_plugin_json` on a bad emitted file; `run_equality_check` catches it and returns the documented "re-run emit" diagnostic instead of a traceback. A corrupt *source* plugin.json still raises (a genuine, different error). |
+| D5 | Key the cache on content | **done** | `claude/variant_emitter.py::_load_mapping` now keys the `lru_cache` on `(path, st_mtime_ns)` via `_load_mapping_cached`, so an in-place edit misses the cache and is re-read. Cites the same archetype as `plan-marshall:script-shared` `argparse_surface.py` (content-digest key, not path alone). |
+| D6 | De-dup diff layers | **DROPPED** | Double-count confirmed in code (C1) but unreachable in practice — see D0 § D6. No code added. |
+| D7 | Tests, each FAIL-first | **done** | See below. |
+
+### D7 — tests, each verified FAIL-first
+
+Every bug test was run against the pre-fix code (production files `git stash`-reverted to HEAD, tests kept) and seen **red**, then green with the fixes restored. The matched control for the wipe guard has both halves.
+
+| Test | File | Pre-fix (red) evidence |
+|---|---|---|
+| `test_emit_bundle_verbatim_refuses_output_inside_source_tree` (D1 negative control) | `test/marketplace/targets/claude/test_emitter.py` | pre-fix: no refusal, source destroyed |
+| `test_emit_bundle_verbatim_legitimate_output_still_wipes` (D1 positive control) | same | passes pre- and post-fix by design (guard must not break legit emits) |
+| `test_is_within_*` / `test_safe_rmtree_*` (shared helper) | `test/marketplace/targets/test_fs_safety.py` | unit coverage incl. prefix-sibling boundary + refuse-outside negative control |
+| `test_emit_bundles_prunes_removed_skill` / `_removed_agent` (D2) | `test/marketplace/targets/opencode/test_emitter.py` | pre-fix: stale emitted dir/file lingers |
+| `test_value_containing_triple_dash_does_not_truncate` (D3) | `test/marketplace/targets/opencode/test_frontmatter.py` | pre-fix: `description` truncated at `---`, `tools` dropped |
+| `test_corrupt_emitted_plugin_json_returns_diagnostic` (D4) | `test/marketplace/targets/claude/test_equality_check.py` | pre-fix: raises `json.JSONDecodeError` |
+| `test_load_mapping_rereads_after_in_place_change` (D5) | `test/marketplace/targets/claude/test_variant_emission.py` | pre-fix: path-cached, stale, not re-read |
 
 ## Build gate
 
-(Pending — Python changes expected, so `./pw verify` takes its full path.)
+`git diff --name-only origin/main...HEAD -- '*.py'` is non-empty (five production modules + one new module + test files), so `./pw verify` takes its full path (quality-gate + test-compile + module-tests). Result recorded at close.
 
 ## Findings
 
