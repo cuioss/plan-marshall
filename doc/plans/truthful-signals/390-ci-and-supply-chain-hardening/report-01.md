@@ -1,6 +1,6 @@
 # Run report — 390-ci-and-supply-chain-hardening (run 01)
 
-**Date (UTC):** 2026-08-14    **Branch:** `claude/ci-supply-chain-hardening-9xmggr`    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-14    **Branch:** `claude/ci-supply-chain-hardening-9xmggr`    **PR:** [#1230](https://github.com/cuioss/plan-marshall/pull/1230)    **Outcome:** completed — auto-merge armed, landing delegated to the merge queue
 
 ## Skills loaded
 
@@ -163,7 +163,24 @@ not a defect in a deliverable.
 
 ## Reviewer participation
 
-_Recorded in the review cycle (Step 7), from the stored comment bodies._
+Expected population derived from the registry (`author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`): `coderabbitai`,
+`cuioss-review-bot`, `sourcery-ai`. Verdicts from the stored comment/review bodies (all three surfaces
+read: `get_comments`, `get_reviews`, `get_review_comments`):
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Posted "PR Reviewer Guide 🔍 — No security concerns identified, No major issues detected, PR contains tests"; the `review / review` check concluded `success`. No findings to action. |
+| `coderabbitai` | `rate-limited` | Posted only "Review limit reached … you've reached your PR review limit, so we couldn't start this review. Next review available in: 16 minutes." No review of the diff. |
+| `sourcery-ai` | `rate-limited` | Posted only a review body "you have reached your weekly rate limit of 500000 diff characters"; `Sourcery review` check `skipped`. No review of the diff. |
+
+**Coverage: 1 of 3.** Inline review threads: none (`get_review_comments` totalCount 0). No actionable review
+comment exists (one clean review + two rate-limit notices), so nothing needed a fix or a thread reply.
+
+**Step 8 condition-4 shortfall disclosure fired** (to the operator, and here): "Review coverage: 1 of 3 —
+`cuioss-review-bot` reviewed (no issues); `coderabbitai` rate-limited (window reopens ~16 min); `sourcery-ai`
+rate-limited (weekly quota)." Per the contract this is disclosed, not blocked on — rate limits are routine
+and outside our control.
 
 ## Cost
 
@@ -177,14 +194,53 @@ _Recorded in the review cycle (Step 7), from the stored comment bodies._
 
 ## Contract check (Step 9)
 
-_Written as the last pre-merge commit (Step 8 condition 3)._
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — named above (core two + persona-security-expert; two standards). |
+| 2 Branch | Done — harness-assigned `claude/ci-supply-chain-hardening-9xmggr`, pushed to `origin` before any edit. **Branch form: harness-assigned** (kept as-is per the lane). |
+| 3 Plan directory | Done — `plan.md` exists under the plan dir and opens with the first-instruction block (present in the handed file; no repair needed). |
+| 4 Implement | Done — 11 commits, each carrying the `Co-Authored-By: Claude` trailer; every deliverable addressed. |
+| 4 Per-commit gate | Done — the only `*.py`-touching commits (D6 `pw`, D9 test) were preceded by the full `./pw verify` (a superset of the quality gate), read clean before commit. Non-`*.py` commits correctly ran no gate. |
+| 4 Pushed | Done — every commit pushed; no unpushed commit before arming. |
+| 5 Build gate | Done — `git diff --name-only origin/main...HEAD -- '*.py'` = `pw`, `test/default/test_workflow_lint.py` → Python footprint present → `./pw verify` run, green (19624 passed / 0 failed). |
+| 6 Verification sub-agent | Done — one independent `general-purpose` agent; findings + dispositions recorded (one low-severity doc-sketch item FIXED). |
+| 7 PR cycle | Done — PR #1230; all three comment surfaces read; every comment dispositioned (none actionable). |
+| 8 Merge gate | Conditions 2 (comments handled) and 3 (report finalized as last pre-merge commit) met; condition 1 (`verify`) `in_progress` at the gate → **armed anyway per the no-self-wake exception** (`subscribe_pr_activity` is approval-gated here), the merge queue is the enforcer. Condition-4 shortfall disclosed (1 of 3). |
+| 8 Bridge | No status/bookkeeping write under `doc/plans/` outside this plan's own directory; the report carries the PR number and per-deliverable outcome for the orchestrator's collect. The `doc/refactor/` edit is a declared deliverable-adjacent consistency fix, not a bridge/status write. |
+| 9 This check | Appended here. |
+| 9 What have we learned | Recorded below. |
+
+**GitHub access path:** the GitHub MCP server (cloud). **`/sync-plugin-cache`:** not owed (cloud run; and this
+run edited no `marketplace/bundles/` behavioural surface beyond the automatic-review registry read — no bundle
+edit was made at all).
 
 ## What have we learned (Step 9)
 
-_Written as the last pre-merge commit (Step 8 condition 3)._
+**None proposed.** Every contract step's artifact was producible as written, and every command worked in the
+actual cloud environment. Two frictions arose, and both were already handled *by the contract as written*:
+
+1. **`subscribe_pr_activity` is approval-gated** in this session — exactly the case the contract's Cloud-session
+   affordances anticipate. The run drove the review cycle by the (ungated) read surface and completed via
+   arm-and-hand-off, as the contract prescribes. No gap.
+2. **The plan's "verify D5 on this plan's own PR" fixture is degenerate on a `claude/*` branch** (not in the
+   push allowlist → only `pull_request` fires → a single run regardless of the concurrency block). This is a
+   *plan-authoring* matter, not a lane-contract one, and the contract already handles it correctly via its
+   disclose-don't-fake rule: the run disclosed the limitation rather than fabricating the observation. Worth
+   a note for `author-cloud-plan` (a push-trigger-dependent verification cannot be self-observed on a cloud
+   run's `claude/*` PR), but it is **not** a change to `cloud-plan-lane`.
+
+The quiet-window caution the plan named was live this run (sibling plan 380 / PR #1229 was mid-flight and
+landed at 15:32); the run checked the window before arming and confirmed it clear. That the plan carried the
+caution and the run acted on it is the plan+contract working as intended, not a contract gap.
 
 ## Residue
 
-- D4 is left as three recorded proposals (ruleset unreachable + operator deferred). If the operator later
-  supplies the ruleset facts, the recommended options above can be actioned in a follow-up.
-- D7: security-mailbox monitoring confirmation is owed to the operator.
+- **D4 — three open points** (ruleset unreachable + operator instructed "do not decide now — report as open
+  point"). If the operator later supplies the ruleset facts, the recommended options in §D4 can be actioned in
+  a follow-up (CODEOWNERS only enforces with a paired ruleset rule; the generator check must be made
+  always-reporting before it can be required; verify's grants need the reusable workflow's actual needs).
+- **D7 — owed:** confirming `contact@cuioss.de` is monitored is an operator action, outside this run.
+- **D5 — runtime single-run observation** is deferred: it cannot be exercised on this `claude/*` PR; the next
+  `feature/`/`fix/`/`chore/` PR after this lands will show one verify run per push.
+- **D6 — optional:** an upstream bug report to pyprojectx (the `irm` splice is in upstream `main`) is available
+  operator follow-up, not part of this run.
