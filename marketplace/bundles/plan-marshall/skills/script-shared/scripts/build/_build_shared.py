@@ -261,8 +261,9 @@ def cmd_discover_common(args, discover_fn: Callable) -> int:
 # ---------------------------------------------------------------------------
 
 # The three per-type finding stores a build run writes to. A green build run
-# terminalizes every pending finding of these types via the reconciliation
-# path below — see ``_reconcile_pending_build_findings``.
+# reconciles them via the path below (see ``_reconcile_pending_build_findings``):
+# build-error / lint-issue clear on any green build, while test-failure clears
+# only when the run actually executed tests (a non-zero executed-test count).
 BUILD_FINDING_TYPES: tuple[str, ...] = ('build-error', 'test-failure', 'lint-issue')
 
 
