@@ -22,12 +22,13 @@ These tests pin the closure invariant and the count-free rewrite:
     resolve-target`` lookup it resolves under — the roster's resolver-lookup
     completeness invariant.
 (e) Every dispatch branch in ``SKILL.md`` § "Step 3: Execute Step Pipeline"
-    carries a **concrete** ``[DISPATCH]`` bash block: no ``Task:`` spawn is
-    unpaired, and no citation of the emission contract satisfies the obligation
-    with prose alone. The sweep is scoped to that one section — the section
-    that holds every dispatch branch the document has — so a
-    ``dispatch-logging.md`` reference in unrelated prose (a cross-reference
-    table, say) is not misread as an unbacked emit site.
+    emits its ``[DISPATCH]`` line from the **resolve seam**, not by hand: every
+    ``Task:`` spawn is preceded by an ``effort resolve-target … --workflow`` call
+    (the resolve that emits the line per firing, so a re-fire that re-resolves
+    re-emits), and NO hand-written ``--message "[DISPATCH] …"`` step survives (it
+    would double-emit and reintroduce the per-role blind spot the seam closes).
+    The sweep is scoped to that one section — the section that holds every dispatch
+    branch the document has.
 (f) Every step doc in this plan's own touched population that **self-classifies**
     (asserts "This step is \\*\\*inline\\*\\*" / "\\*\\*dispatched\\*\\*" in its own
     body) agrees with the roster: an inline-asserting doc's step appears under
@@ -43,9 +44,10 @@ set equality with no normalisation heuristics.
 
 The (d), (e) and (f) populations are **derived, never hardcoded**: (d) iterates
 the rows the roster parser finds under ``## Dispatched steps``, (e) iterates the
-``Task:`` spawns and emission-contract citations found in that ``SKILL.md``
-section, and (f) reads each step doc's OWN self-classification sentence rather
-than asserting a ``default:architecture-refresh`` literal. A
+``Task:`` spawns found in that ``SKILL.md`` section (pairing each with its seam
+resolve) rather than a hardcoded emit-site list, and (f) reads each step doc's OWN
+self-classification sentence rather than asserting a ``default:architecture-refresh``
+literal. A
 hardcoded roster or emit-site list would pass vacuously the moment a row or a
 dispatch branch is added, which is precisely the drift these tests exist to
 catch — and an ``assert 'default:architecture-refresh' in inline`` literal would
@@ -136,27 +138,32 @@ _COUNT_CLAIM_PATTERNS = (
 #: "no ``--role``" note, so the bare form is a legitimate declaration.
 _RESOLVER_LOOKUP = re.compile(r'`phase-6-finalize(?:\s+--role\s+[\w-]+)?`')
 
-#: The concrete emission: the actual ``--message "[DISPATCH] …"`` bash argument.
-#: A prose reference to the emission contract does NOT match.
-_CONCRETE_DISPATCH_EMIT = re.compile(r'--message\s+"\[DISPATCH\]')
+#: A seam-emitting resolve. The ``[DISPATCH]`` line is a side effect of
+#: ``effort resolve-target`` when the caller passes ``--workflow`` (the resolve
+#: seam — ``dispatch-logging.md`` § Placement contract), emitted per firing so the
+#: record survives a re-fire that re-resolves. A bare resolve WITHOUT
+#: ``--workflow`` is a pure query and emits nothing, so BOTH tokens are required
+#: for a spawn to count as paired.
+_SEAM_RESOLVE = re.compile(r'effort resolve-target\b')
+_WORKFLOW_FLAG = re.compile(r'--workflow\b')
+
+#: A hand-written ``[DISPATCH]`` emit — the FORBIDDEN pre-seam shape. Now that the
+#: resolve seam emits the line, a hand-written ``manage-logging work "[DISPATCH]"``
+#: step double-emits AND, placed once per role, reintroduces the per-role blind
+#: spot the seam closes. No dispatch branch may carry one.
+_HAND_WRITTEN_DISPATCH_EMIT = re.compile(r'--message\s+"\[DISPATCH\]')
 
 #: A dispatch branch's ``Task:`` spawn line. ``MULTILINE`` so the same pattern
 #: anchors per-line both when matched line-by-line and when swept over the whole
 #: document by the vacuity guard.
 _TASK_SPAWN = re.compile(r'^\s*Task:\s+plan-marshall:', re.MULTILINE)
 
-#: A citation of the emission contract marks an emit site.
-_EMISSION_CONTRACT_CITATION = re.compile(r'dispatch-logging\.md')
-
-#: How far back from a ``Task:`` spawn the paired concrete emit may sit. The
-#: widest real gap is the project/skill branch (~16 lines: the emit block, the
-#: indivisible-pair paragraph, and the item-(3) preamble); 25 leaves headroom
-#: while staying far below the ~300-line distance between distinct branches, so
-#: one branch's emit can never satisfy another branch's spawn.
+#: How far back from a ``Task:`` spawn the paired seam resolve may sit. The widest
+#: real gap is the project/skill branch (~18 lines: the multi-line resolve block,
+#: the resolver-lookup paragraph, and the item-(2) preamble); 25 leaves headroom
+#: while staying far below the ~300-line distance between distinct branches, so one
+#: branch's resolve can never satisfy another branch's spawn.
 _EMIT_LOOKBACK_LINES = 25
-
-#: How far after an emission-contract citation the concrete block may sit.
-_EMIT_LOOKAHEAD_LINES = 15
 
 #: (f) The bounded step-doc population for the cross-document consistency check:
 #: the step docs this plan's deliverable 1 and deliverable 2 touch, plus
@@ -338,40 +345,39 @@ def _head_dependent_region() -> str:
     return region
 
 
-def _spawns_missing_concrete_emit(text: str) -> list[str]:
-    """Return every ``Task:`` spawn not preceded by a concrete ``[DISPATCH]`` emit.
+def _spawns_missing_seam_resolve(text: str) -> list[str]:
+    """Return every ``Task:`` spawn not preceded by a ``--workflow`` seam resolve.
 
     The population is derived from the spawn sites present in ``text``; nothing
-    about how many dispatch branches exist is assumed.
+    about how many dispatch branches exist is assumed. A spawn is paired when an
+    ``effort resolve-target`` call carrying ``--workflow`` sits within the lookback
+    window before it — that resolve is the seam that emitted the ``[DISPATCH]``
+    line and its paired decision-log record for this firing. A spawn under a bare
+    (no ``--workflow``) resolve leaves no dispatch record.
     """
     lines = text.splitlines()
     unpaired: list[str] = []
     for index, line in enumerate(lines):
         if not _TASK_SPAWN.match(line):
             continue
-        window = lines[max(0, index - _EMIT_LOOKBACK_LINES) : index]
-        if not any(_CONCRETE_DISPATCH_EMIT.search(prior) for prior in window):
+        window = '\n'.join(lines[max(0, index - _EMIT_LOOKBACK_LINES) : index])
+        if not (_SEAM_RESOLVE.search(window) and _WORKFLOW_FLAG.search(window)):
             unpaired.append(f'line {index + 1}: {line.strip()!r}')
     return unpaired
 
 
-def _prose_only_emit_sites(text: str) -> list[str]:
-    """Return every emission-contract citation unbacked by a concrete bash block.
+def _hand_written_dispatch_emits(text: str) -> list[str]:
+    """Return every hand-written ``[DISPATCH]`` emit line — the forbidden shape.
 
-    An emit site that cites ``dispatch-logging.md`` but carries no
-    ``--message "[DISPATCH] …"`` block within the following window satisfies the
-    emission obligation with prose alone — the exact pre-fix shape of the
-    wait-region unified-triage hook.
+    Once the resolve seam emits the ``[DISPATCH]`` line, a hand-written
+    ``manage-logging work "[DISPATCH]"`` step double-emits and, placed once per
+    role, reintroduces the per-role blind spot the seam exists to close.
     """
-    lines = text.splitlines()
-    prose_only: list[str] = []
-    for index, line in enumerate(lines):
-        if not _EMISSION_CONTRACT_CITATION.search(line):
-            continue
-        window = lines[index : index + _EMIT_LOOKAHEAD_LINES + 1]
-        if not any(_CONCRETE_DISPATCH_EMIT.search(nxt) for nxt in window):
-            prose_only.append(f'line {index + 1}: {line.strip()!r}')
-    return prose_only
+    return [
+        f'line {index + 1}: {line.strip()!r}'
+        for index, line in enumerate(text.splitlines())
+        if _HAND_WRITTEN_DISPATCH_EMIT.search(line)
+    ]
 
 
 def _frontmatter_name(text: str) -> str | None:
@@ -639,39 +645,39 @@ def test_roster_row_population_matches_the_closure_parser():
 # ---------------------------------------------------------------------------
 
 
-def test_every_task_spawn_is_paired_with_a_concrete_dispatch_emit():
-    # The `[DISPATCH]` write and the `Task:` spawn are one indivisible pair: a
-    # spawn with no preceding concrete emit is a contract violation.
+def test_every_task_spawn_is_preceded_by_a_seam_resolve():
+    # The `[DISPATCH]` emission rides the resolve seam: every `Task:` spawn must be
+    # preceded by an `effort resolve-target … --workflow` call, which emits the line
+    # per firing. A spawn under a bare (no --workflow) resolve carries no dispatch
+    # record — the seam resolve and the spawn are one indivisible pair.
     text = _dispatch_branch_scoped_skill_text()
     assert _TASK_SPAWN.search(text), (
         'No `Task:` spawn found in the SKILL.md '
         f'"{_SKILL_STEP3_HEADING}" section — the assertion would be vacuous'
     )
 
-    unpaired = _spawns_missing_concrete_emit(text)
+    unpaired = _spawns_missing_seam_resolve(text)
 
     assert not unpaired, (
-        f'`Task:` spawn(s) in phase-6-finalize/SKILL.md with no preceding concrete '
-        f'`--message "[DISPATCH] …"` block — the emit and the spawn are one '
-        f'indivisible pair: {unpaired}'
+        f'`Task:` spawn(s) in phase-6-finalize/SKILL.md with no preceding '
+        f'`effort resolve-target … --workflow` seam call — the seam emission and the '
+        f'spawn are one indivisible pair, and a spawn under a bare (no --workflow) '
+        f'resolve leaves no [DISPATCH] record: {unpaired}'
     )
 
 
-def test_no_dispatch_emit_site_is_prose_only():
-    # Every citation of the emission contract must be backed by a concrete bash
-    # block; prose alone does not discharge the emission obligation.
+def test_no_hand_written_dispatch_emit_survives():
+    # The resolve seam owns the `[DISPATCH]` emission; a hand-written
+    # `manage-logging work "[DISPATCH]"` step double-emits and reintroduces the
+    # per-role blind spot the seam closes. No dispatch branch may carry one.
     text = _dispatch_branch_scoped_skill_text()
-    assert _EMISSION_CONTRACT_CITATION.search(text), (
-        'No emission-contract citation found in the SKILL.md '
-        f'"{_SKILL_STEP3_HEADING}" section — assertion vacuous'
-    )
 
-    prose_only = _prose_only_emit_sites(text)
+    hand_written = _hand_written_dispatch_emits(text)
 
-    assert not prose_only, (
-        f'Emission-contract citation(s) in phase-6-finalize/SKILL.md unbacked by a '
-        f'concrete `--message "[DISPATCH] …"` block — no dispatch branch may satisfy '
-        f'the emission obligation with prose alone: {prose_only}'
+    assert not hand_written, (
+        f'Hand-written `--message "[DISPATCH] …"` emit(s) in phase-6-finalize/SKILL.md '
+        f'Step 3 — the resolve seam owns the emission now, so a hand-written line '
+        f'double-emits and reintroduces the per-role blind spot: {hand_written}'
     )
 
 
@@ -710,52 +716,49 @@ def test_resolver_lookup_detector_fires_on_the_pre_fix_row():
         )
 
 
-def test_concrete_emit_detectors_fire_on_the_pre_fix_prose_only_site():
-    # Mutation guard: reproduce the pre-fix wait-region unified-triage hook — an
-    # emission-contract citation followed straight by the `Task:` spawn, with no
-    # concrete bash block anywhere between them.
+def test_seam_resolve_detectors_fire_on_the_pre_fix_shape():
+    # Mutation guard: reproduce the pre-fix dispatch branch — a BARE resolve (no
+    # --workflow), a hand-written `[DISPATCH]` emit, then the `Task:` spawn.
     pre_fix = '\n'.join(
         [
-            '      (1) Resolve the level-bound target under the role:',
-            '      (2) Emit the standardized `[DISPATCH]` work-log line (see',
-            '          [`dispatch-logging.md`](../x/dispatch-logging.md) § Emission contract).',
-            '      (3) Dispatch ONE `verification-feedback` envelope:',
-            '          ```text',
-            '          Task: plan-marshall:{target}',
-            '            prompt: |',
-            '              name: wait-region-unified-triage',
-            '          ```',
-        ]
-    )
-
-    assert _prose_only_emit_sites(pre_fix), (
-        'Prose-only detector failed to flag the known pre-fix emit site'
-    )
-    assert _spawns_missing_concrete_emit(pre_fix), (
-        'Unpaired-spawn detector failed to flag the known pre-fix `Task:` spawn'
-    )
-
-    # Positive control — the post-fix shape clears BOTH detectors, so neither is
-    # unconditionally positive.
-    post_fix = '\n'.join(
-        [
-            '      (2) Emit the standardized `[DISPATCH]` work-log line (see',
-            '          [`dispatch-logging.md`](../x/dispatch-logging.md) § Emission contract).',
-            '          ```bash',
+            '      (1) Resolve the level-bound target via the resolver:',
+            '          python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \\',
+            '            effort resolve-target --phase phase-6-finalize [--role <subkey>]',
+            '      (2) Emit the standardized `[DISPATCH]` work-log line:',
             '          python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \\',
             '            work --plan-id {plan_id} --level INFO \\',
-            '            --message "[DISPATCH] (plan-marshall:phase-6-finalize) '
-            'target={target} role=verification-feedback plan_id={plan_id}"',
-            '          ```',
-            '      (3) Dispatch ONE `verification-feedback` envelope:',
-            '          ```text',
+            '            --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} '
+            'level={level} role={role} workflow={workflow} plan_id={plan_id}"',
+            '      (3) Dispatch:',
             '          Task: plan-marshall:{target}',
-            '          ```',
         ]
     )
 
-    assert not _prose_only_emit_sites(post_fix)
-    assert not _spawns_missing_concrete_emit(post_fix)
+    assert _spawns_missing_seam_resolve(pre_fix), (
+        'Seam-resolve detector failed to flag a `Task:` spawn preceded only by a '
+        'bare resolve (no --workflow) — the pre-fix shape'
+    )
+    assert _hand_written_dispatch_emits(pre_fix), (
+        'Hand-written-emit detector failed to flag the known pre-fix `[DISPATCH]` line'
+    )
+
+    # Positive control — the post-fix shape (a --workflow resolve, no hand-written
+    # emit, then the spawn) clears BOTH detectors, so neither is unconditionally
+    # positive.
+    post_fix = '\n'.join(
+        [
+            '      (1) Resolve the target, passing the dispatch context so the seam emits:',
+            '          python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \\',
+            '            effort resolve-target --phase phase-6-finalize [--role <subkey>] \\',
+            '            --workflow plan-marshall:phase-6-finalize/workflow/{name}.md \\',
+            '            --plan-id {plan_id} --caller plan-marshall:phase-6-finalize',
+            '      (2) Dispatch:',
+            '          Task: plan-marshall:{target}',
+        ]
+    )
+
+    assert not _spawns_missing_seam_resolve(post_fix)
+    assert not _hand_written_dispatch_emits(post_fix)
 
 
 # ---------------------------------------------------------------------------

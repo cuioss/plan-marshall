@@ -583,24 +583,18 @@ For each step reference:
 
 `plan-marshall:automatic-review` and `sonar-roundtrip` are the two wait-region producers, each **FIND-only**: gated on its own `_ci_barrier` arm (the per-signal precondition — `review` / `sonar` arm respectively), the step fetches its provider's feedback and files `pr-comment` / `sonar-issue` findings to the store, then marks done. Neither step dispatches its own triage any more. The per-finding LLM triage runs ONCE at the dispatcher level as the **Wait-region unified triage** (§ item 7c below), a single `verification-feedback` dispatch with `producer=finalize-feedback` over the union of both producers' pending findings. The outer FIND wrappers resolve under `phase-6-finalize.default` since each body is now pure script execution (fetch + file), no sub-dispatch.
 
-**Dispatch pattern** — resolve the target via the role resolver. Pass `--phase phase-6-finalize` for every dispatched step; add `--role <subkey>` only when the step has its own sub-key in the table above:
+**Dispatch pattern** — resolve the target via the role resolver, passing the dispatch context so the **resolve seam** emits the standardized `[DISPATCH]` work-log line and its paired decision-log resolution record itself (see [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract). Pass `--phase phase-6-finalize` for every dispatched step; add `--role <subkey>` only when the step has its own sub-key in the table above; and pass `--workflow {workflow-doc-from-table}`, `--plan-id {plan_id}`, and `--caller plan-marshall:phase-6-finalize` so the seam emits the record under the finalize caller, per firing:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-6-finalize [--role <subkey>]
+  effort resolve-target --phase phase-6-finalize [--role <subkey>] \
+  --workflow {workflow-doc-from-table} --plan-id {plan_id} \
+  --caller plan-marshall:phase-6-finalize
 ```
 
-Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch below; the same seam call has already written the `[DISPATCH]` work-log line — its `role=` field carries the resolved role-key, or `phase-6-finalize` when no `--role` was passed — and its paired decision-log resolution record.
 
-Emit the standardized post-resolve dispatch log line — see [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Substitute `{role}` with `default` when no `--role` flag was passed, otherwise the explicit sub-key value:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role={role} workflow={workflow-doc-from-table} plan_id={plan_id}"
-```
-
-**The emit and the spawn are ONE indivisible pair.** The `[DISPATCH]` write above and the `Task:` spawn below are two halves of a single action, not an instruction followed by an optional adjacent one — the same pairing item 5c states for its metrics row. Spawning the step without having written the line is a **contract violation**, not a cosmetic omission: the work-log then carries no record that the dispatch happened, so the dispatch-audit chain cannot attribute the step's cost, its target, or its role. Never emit the line after the spawn, and never skip it because the dispatch "obviously" happened.
+**The resolve-with-context and the spawn are ONE indivisible pair.** The seam emission rides the resolve above; the `Task:` spawn below is its other half. Do NOT hand-write a separate `[DISPATCH]` line (that reintroduces the per-role blind spot the seam closes and double-emits), and never spawn under a `target` resolved by a bare query that carried no `--workflow` — the work-log would then carry no record that the dispatch happened, so the dispatch-audit chain could not attribute the step's cost, its target, or its role. Every firing re-resolves, so every firing re-emits; there is no separate logging step for a re-dispatch to skip.
 
 Dispatch:
 
@@ -903,12 +897,18 @@ FOR each step_id in manifest.phase_6.steps:
 
        **Role-aware dispatch** (applies to all five built-in agent-suitable steps):
 
-       (1) Resolve the level-bound target via the resolver:
+       (1) Resolve the level-bound target via the resolver, passing the dispatch
+           context so the resolve seam emits the `[DISPATCH]` work-log line and its
+           paired decision-log resolution record per firing (see
+           [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md)
+           § Emission contract) — do NOT hand-write a separate `[DISPATCH]` line:
            ```
            target = python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-             effort resolve-target --phase phase-6-finalize [--role <subkey>]
+             effort resolve-target --phase phase-6-finalize [--role <subkey>] \
+             --workflow plan-marshall:phase-6-finalize/workflow/{name}.md \
+             --plan-id {plan_id} --caller plan-marshall:phase-6-finalize
            ```text
-           Returns `execution-context-{level}` (variant), or canonical `execution-context` for `inherit`/empty.
+           Returns `execution-context-{level}` (variant), or canonical `execution-context` for `inherit`/empty; the same call has already emitted the finalize `[DISPATCH]` record.
        (2) Dispatch via `Task(subagent_type: plan-marshall:<target>, …)` with prompt body `name`, `plan_id`, `skills[]`, `workflow: plan-marshall:phase-6-finalize/workflow/{name}.md`, `WORKTREE`.
 
        Per-step workflow docs and resolver lookups:
@@ -960,10 +960,19 @@ FOR each step_id in manifest.phase_6.steps:
        `execution-context-{level}` dispatcher exactly like an agent-suitable
        built-in, wrapped with the resolved per-agent timeout:
 
-       (1) Resolve the level-bound target via the resolver:
+       (1) Resolve the level-bound target via the resolver, passing the dispatch
+           context so the **resolve seam** emits the standardized `[DISPATCH]`
+           work-log line and its paired decision-log resolution record itself — see
+           [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md)
+           § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; each
+           re-fire re-runs the resolve, so the record is re-emitted per firing (the
+           per-role blind spot the hand-written line left is exactly what the seam
+           closes):
            ```
            target = python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-             effort resolve-target --phase phase-6-finalize [--role <subkey>]
+             effort resolve-target --phase phase-6-finalize [--role <subkey>] \
+             --workflow {step's own SKILL.md notation} --plan-id {plan_id} \
+             --caller plan-marshall:phase-6-finalize
            ```text
            Use the step's own resolver lookup as declared on its row in
            [`standards/dispatch-inline-split.md`](standards/dispatch-inline-split.md)
@@ -971,26 +980,11 @@ FOR each step_id in manifest.phase_6.steps:
            authoritative per-step source for the `--phase` value, the `--role`
            sub-key (or its documented absence), and any `producer` runtime input.
            Read the lookup off the step's row; do not generalise one step's role to
-           the rest of the dispatched class.
-       (2) Emit the standardized `[DISPATCH]` work-log line (see
-           [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md)
-           § Emission contract). Substitute `{role}` with `default` when no `--role`
-           flag was passed, otherwise the explicit sub-key value:
-           ```bash
-           python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-             work --plan-id {plan_id} --level INFO \
-             --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role={role} workflow={step's own SKILL.md notation} plan_id={plan_id}"
-           ```
-           **This emit and the item-(3) spawn are ONE indivisible pair.** The
-           `[DISPATCH]` write and the `Task:` spawn are two halves of a single
-           action, not an instruction followed by an optional adjacent one — the
-           same pairing item 5c states for its metrics row. Spawning the step
-           without having written the line is a **contract violation**, not a
-           cosmetic omission: the work-log then carries no record that the
-           dispatch happened, so the dispatch-audit chain cannot attribute the
-           step's cost, its target, or its role. Never emit the line after the
-           spawn, and never skip it because the dispatch "obviously" happened.
-       (3) Dispatch via the Task tool. The workflow doc for a dispatched project/skill
+           the rest of the dispatched class. The same seam call writes the
+           `[DISPATCH]` work-log line — its `role=` field carries the resolved
+           role-key, or `phase-6-finalize` when no `--role` was passed — and its
+           paired decision-log resolution record, so no separate emit step follows.
+       (2) Dispatch via the Task tool. The workflow doc for a dispatched project/skill
            step is the project skill's own SKILL.md (e.g.
            `project:finalize-step-plugin-doctor/SKILL.md`):
            ```text
@@ -1405,19 +1399,15 @@ FOR each step_id in manifest.phase_6.steps:
 
       Fire this hook when the just-completed step is the LATER of the two producers present in `manifest.phase_6.steps` (canonically `default:sonar-roundtrip`, which the manifest orders after `plan-marshall:automatic-review`) AND every wait-region producer that IS in the manifest has recorded a terminal `done` outcome on `status.metadata.phase_steps["6-finalize"]`. When only one of the two producers is in the manifest, that one is the "later" producer and the union query naturally covers only its finding-type.
 
-      (1) Resolve the level-bound target under the `verification-feedback` role:
+      (1) Resolve the level-bound target under the `verification-feedback` role, passing the dispatch context so the **resolve seam** emits the standardized `[DISPATCH]` work-log line and its paired decision-log resolution record itself — see [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; each re-fire of this hook re-runs the resolve, so the record is re-emitted per firing:
           ```bash
           python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-            effort resolve-target --phase phase-6-finalize --role verification-feedback
+            effort resolve-target --phase phase-6-finalize --role verification-feedback \
+            --workflow plan-marshall:plan-marshall/workflow/verification-feedback.md \
+            --plan-id {plan_id} --caller plan-marshall:phase-6-finalize
           ```
-      (2) Emit the standardized `[DISPATCH]` work-log line (see [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract). This hook's `role` is `verification-feedback` and its `workflow` is the unified-triage workflow doc:
-          ```bash
-          python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-            work --plan-id {plan_id} --level INFO \
-            --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role=verification-feedback workflow=plan-marshall:plan-marshall/workflow/verification-feedback.md plan_id={plan_id}"
-          ```
-          The emit and the item-(3) `Task:` spawn below are ONE indivisible pair, exactly as at the two dispatch-branch emit sites: dispatching this hook without first writing the line is a contract violation, not a cosmetic omission.
-      (3) Dispatch ONE `verification-feedback` envelope with `producer=finalize-feedback` over the union — by reference (the subagent issues its own union `manage-findings list` as its first workflow step):
+          Extract the `target` field from the TOON output; the same seam call has already written the `[DISPATCH]` work-log line and its paired decision-log resolution record, so no separate emit step follows.
+      (2) Dispatch ONE `verification-feedback` envelope with `producer=finalize-feedback` over the union — by reference (the subagent issues its own union `manage-findings list` as its first workflow step):
           ```text
           Task: plan-marshall:{target}
             prompt: |

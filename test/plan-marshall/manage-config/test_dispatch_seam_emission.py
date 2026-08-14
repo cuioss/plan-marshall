@@ -133,6 +133,47 @@ def test_role_fired_n_times_produces_n_records(plan_context):
 
 
 # =============================================================================
+# (plan-180 D2) The FINALIZE dispatch rides the seam: N spawns emit N lines under
+# the finalize caller. Finalize previously HAND-WROTE the [DISPATCH] line once per
+# role, so a re-fire that reused the envelope logged once; migrating its resolves
+# to the seam makes every finalize firing re-emit. This pins the N>1 per-spawn
+# property specifically for the finalize dispatch path.
+# =============================================================================
+
+
+def test_finalize_dispatch_emits_one_line_per_spawn(plan_context):
+    _seed_marshal(plan_context)
+    _init_plan(plan_context, 'finalize-per-spawn')
+
+    finalize_caller = 'plan-marshall:phase-6-finalize'
+    finalize_workflow = 'plan-marshall:phase-6-finalize/workflow/create-pr.md'
+    for _ in range(3):
+        result = run_script(
+            SCRIPT_PATH,
+            'effort',
+            'resolve-target',
+            '--phase',
+            'phase-6-finalize',
+            '--workflow',
+            finalize_workflow,
+            '--plan-id',
+            'finalize-per-spawn',
+            '--caller',
+            finalize_caller,
+        )
+        assert result.returncode == 0, result.stderr
+
+    lines = _dispatch_lines('finalize-per-spawn')
+    # N > 1: three spawns, three lines — the property that fails against the
+    # pre-migration finalize emission (hand-written once per role).
+    assert len(lines) == 3, f'three finalize spawns must emit three lines, got {lines}'
+    assert all(line.startswith(f'[DISPATCH] ({finalize_caller})') for line in lines), (
+        f'every finalize [DISPATCH] line must carry the finalize caller so the '
+        f'audit counts it under phase-6-finalize, got {lines}'
+    )
+
+
+# =============================================================================
 # (D3d) Population non-empty AND emission set == envelope (resolve) set.
 # =============================================================================
 
