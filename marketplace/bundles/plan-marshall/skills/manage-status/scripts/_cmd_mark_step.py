@@ -76,9 +76,16 @@ from typing import Any
 
 from _status_core import require_status, write_status
 from _step_key_canonical import canonicalize_step_key
+from plan_logging import log_entry
 
 VALID_OUTCOMES = ('done', 'skipped', 'loop_back', 'failed')
 VALID_LOOP_BACK_TARGETS = ('5-execute', '6-finalize')
+
+#: The phase whose dispatcher consumes the ``[STEP] … Completed step:`` marker and
+#: whose Step-3 loop the fused completion emission below serves. Scoping the
+#: emission to this phase keeps the marker's population — and the dispatch audit's
+#: completion_count — byte-identical for every other phase, which never used it.
+_COMPLETION_MARKER_PHASE = '6-finalize'
 
 #: The ext-point whose implementors declare the ``head_dependent`` fact.
 _FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
@@ -170,6 +177,41 @@ def _with_warning(result: dict[str, Any], warning: str | None) -> dict[str, Any]
     if warning:
         result['warning'] = warning
     return result
+
+
+def _emit_completion_marker(plan_id: str, phase: str, step: str, suppress: bool) -> None:
+    """Emit the ``[STEP] … Completed step:`` work-log line from the handshake write.
+
+    Recording a finalize step's terminal outcome and emitting its completion line
+    used to be TWO obligations: this ``mark-step-done`` write PLUS a separate,
+    hand-written ``manage-logging work "[STEP] …"`` step in the phase-6-finalize
+    dispatcher prose. A step could satisfy the handshake and still leave no
+    operational-log trace, because the prose instruction was easy to skip and
+    nothing read the log back to confirm it — the invariant and the log line could
+    drift, and only ever toward silence. Fusing the emission to the write makes
+    them ONE action: the line now rides every terminal recording, so the two
+    records can no longer diverge.
+
+    Scoped to the finalize phase — the only phase whose dispatcher emits, and whose
+    dispatch audit consumes, this marker — so the emission surface (and that
+    audit's completion_count) is unchanged for every other phase: a phase-5
+    ``mark-step-done`` writes no such line, exactly as before.
+
+    ``suppress`` (``--no-completion-log``) is passed ONLY by a call that RE-STAMPS
+    an already-completed step (the item-5f ``head_at_completion`` re-stamp, the
+    item-7a merge-anyway resolution), so the line is emitted exactly once per step
+    rather than once per ``mark-step-done`` call. A first terminal recording never
+    passes it. Best-effort: :func:`plan_logging.log_entry` swallows every error, so
+    a logging failure never turns a successful record into a failed one.
+    """
+    if suppress or phase != _COMPLETION_MARKER_PHASE:
+        return
+    log_entry(
+        'work',
+        plan_id,
+        'INFO',
+        f'[STEP] (plan-marshall:phase-{phase}) Completed step: {step}',
+    )
 
 
 def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
@@ -373,6 +415,9 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
             _extend_firing_history(existing, new_entry)
             phase_entry[step] = new_entry
             write_status(args.plan_id, status)
+            _emit_completion_marker(
+                args.plan_id, phase, step, getattr(args, 'no_completion_log', False)
+            )
             return _with_warning(
                 {
                     'status': 'success',
@@ -428,6 +473,9 @@ def cmd_mark_step_done(args: argparse.Namespace) -> dict | None:
     _extend_firing_history(existing, new_entry)
     phase_entry[step] = new_entry
     write_status(args.plan_id, status)
+    _emit_completion_marker(
+        args.plan_id, phase, step, getattr(args, 'no_completion_log', False)
+    )
 
     return _with_warning(
         {
