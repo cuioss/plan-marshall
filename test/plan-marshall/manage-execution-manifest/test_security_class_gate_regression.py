@@ -11,13 +11,14 @@ incident turned on, at the boundary an operator actually observes.
 
 **The incident.** ``finalize-step-security-audit`` was silently dropped from a
 large multi-file code change. The old ``security_audit_inactive`` pre-filter
-gated on ``change_type ∉ {feature, bug_fix, tech_debt, enhancement}``, and
-``change_type`` reaches the composer from ``solution_outline.md`` deliverable
-metadata — FIRST DELIVERABLE WINS (``phase-4-plan/SKILL.md`` § Step 7b Inputs).
-A plan opening with a read-only discovery deliverable therefore forwards
-``verification`` however much production code its later deliverables mutate, and
-the proactive security sweep vanished. Nothing user-visible said so: the drop was
-reported only into ``decision.log``, which no phase reads back.
+gated on ``change_type ∉ {feature, bug_fix, tech_debt, enhancement}``, and at the
+time ``change_type`` reached the composer FIRST-DELIVERABLE-WINS from
+``solution_outline.md`` deliverable metadata (since reconciled against the plan's
+settled classification — see plan 350). A plan opening with a read-only discovery
+deliverable therefore forwarded ``verification`` however much production code its
+later deliverables mutated, and the proactive security sweep vanished. Nothing
+user-visible said so: the drop was reported only into ``decision.log``, which no
+phase reads back.
 
 The fix removes the change-type leg entirely (the gate fails toward INCLUSION),
 evaluates the remaining zero-surface leg against BOTH the declared and the live

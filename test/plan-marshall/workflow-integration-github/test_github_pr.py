@@ -168,6 +168,54 @@ def test_second_fetch_dedupes_all_bot_kinds(plan_context, monkeypatch):
     assert len(query_findings(plan_id, finding_type='pr-comment')['findings']) == len(_COMMENTS)
 
 
+def test_a_deduped_comment_is_still_credited_as_participating(plan_context, monkeypatch):
+    """A bot deduped on STORAGE is still credited as participating — the decoupling regression.
+
+    The defect this plan is named after: ``fetch_findings`` once derived participation
+    from the SAME set the storage dedup emptied, so a re-fetch that deduped a bot's
+    already-stored comment emptied ``participated_bots`` — and the pre-merge barrier
+    (``branch-cleanup.md``) fed exactly that set to the participation predicate, reading
+    a proven reviewer as ``absent``. The fix derives participation from the raw comment
+    scan (unioned with the currency ledger for ``participation_requires_update`` bots)
+    BEFORE and INDEPENDENT of the storage dedup.
+
+    This pins the decoupling with BOTH observables on ONE fetch: on a re-fetch at an
+    unchanged HEAD every comment is dropped by the storage dedup — the existing
+    ``count_skipped_duplicate`` counter, asserted against rather than instrumented anew —
+    YET every participating bot stays credited, byte-identically to the first fetch.
+    Re-coupling participation to the dedup (deriving it from the stored/deduped set)
+    empties ``participated_bots`` on the second fetch and fails this test. It covers a
+    ``participation_requires_update`` bot (pr-agent, credited via the SHA-current currency
+    arm since the head does not move) alongside the presence-credited bots, so the guard
+    holds across both participation shapes.
+    """
+    plan_id = 'gh-pr-dedup-decoupled'
+    # A fixed head SHA across both fetches: the requires_update bot stays SHA-current on
+    # the re-fetch, so the ONLY thing that changes between the two fetches is that every
+    # comment is now already stored and therefore deduped.
+    _patch_provider(monkeypatch, _COMMENTS)
+
+    first = _run_fetch(150, plan_id)
+    assert first['status'] == 'success'
+    assert first['count_skipped_duplicate'] == 0
+    # Every bot with a comment in a declared publish shape is credited: coderabbit and
+    # sourcery by presence of a declared evidence kind, pr-agent by the first-observation
+    # currency arm at the resolvable head. (The human comment resolves to no bot_kind.)
+    first_bots = [e['bot_kind'] for e in first['participated_bots']]
+    assert first_bots == ['coderabbit', 'pr-agent', 'sourcery']
+
+    # Re-fetch the IDENTICAL comments at the SAME head. Every comment is already stored,
+    # so the storage dedup drops all of them...
+    second = _run_fetch(150, plan_id)
+    assert second['status'] == 'success'
+    assert second['count_skipped_duplicate'] == len(_COMMENTS)
+    assert second['count_stored'] == 0
+    # ...and yet participation is UNCHANGED — the dedup did not empty participated_bots.
+    # This is the decoupling: a storage-hygiene drop can no longer flip a merge verdict.
+    assert second['participated_bots'] == first['participated_bots']
+    assert second['producer_mismatch_hash_id'] is None
+
+
 def test_same_comment_id_distinct_bots_not_collided(plan_context, monkeypatch):
     """Two bots reusing the same numeric comment_id stay distinct across fetches.
 

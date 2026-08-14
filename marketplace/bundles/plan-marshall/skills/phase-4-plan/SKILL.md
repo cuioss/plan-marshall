@@ -311,10 +311,13 @@ For each deliverable D:
       4v. Add depends on all other tasks from this deliverable
     ELSE:
       2. Extract skills: module.skills_by_profile.{P}
-         IF skills_by_profile is empty/missing OR skills_by_profile.{P} is empty/missing:
-           - Log WARNING: "(plan-marshall:phase-4-plan) Module {D.module} has empty skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate."
+         IF skills_by_profile.{P} is present AND declared minimal (skills_by_profile.{P}.minimal == true):
+           - Set task.skills = [] — a DELIBERATELY-minimal profile carries no domain skills by design.
+           - Do NOT log a gap warning and do NOT record a finding: the empty is declared, not unresolved.
+         ELSE IF skills_by_profile is empty/missing OR skills_by_profile.{P} is empty/missing:
+           - Log WARNING: "(plan-marshall:phase-4-plan) Module {D.module} has an UNRESOLVED (undeclared-empty) skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate, or declare the profile deliberately minimal with \"minimal\": true."
            - Set task.skills = [] (continue with empty skills rather than erroring)
-           - Record a Q-Gate triage finding via `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add --plan-id {plan_id} --phase 4-plan --source qgate --type triage --title "Missing skills_by_profile: {D.module}.{P}" --detail "Module {D.module} has empty skills_by_profile.{P} — task created with skills: []. Run architecture enrichment to populate the missing profile."` so phase-5-execute and phase-6-finalize can surface the gap.
+           - Record a Q-Gate triage finding via `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add --plan-id {plan_id} --phase 4-plan --source qgate --type triage --title "Unresolved skills_by_profile: {D.module}.{P}" --detail "Module {D.module} has an undeclared-empty skills_by_profile.{P} — task created with skills: []. Run architecture enrichment to populate, or declare the profile deliberately minimal (\"minimal\": true) to silence this as intentional."` so phase-5-execute and phase-6-finalize can surface the gap.
          ELSE:
            - Load all `defaults` directly into task.skills
            - For each `optional`, evaluate its `description` against deliverable context
@@ -678,7 +681,7 @@ This step runs after Step 7 (execution order) and before Step 8 (Q-Gate). It MUS
 **Idempotent firm-signal re-compose (execution-profile lane resolution).** This Step 7b compose is the **second** of the two composes in the lane lifecycle (§4.5 of the lane-selection design): `phase-1-init` runs the FIRST, provisional compose at posture-decision time, and this end-of-phase-4 compose re-runs the SAME idempotent projection with the now-firm `change_type` / `affected_files` signals. The chosen posture and the `minimal` / `full` shapes were fixed at init and do NOT change here; the only thing this re-compose can move is `standard`'s footprint-gated prunes (e.g. `sonar-roundtrip` flips back on when the firm `affected_files` reveals a code delta the init guess missed). That is `standard` self-correcting in the safe, more-validation direction, so it is **logged (with any cost delta), never re-prompted** — there is no second posture dialogue at phase-4. The composer reads the posture from `status.metadata.execution_profile` (written by the init dialogue) and resolves each finalize element's `lane:` block under it; see [`manage-execution-manifest/standards/decision-rules.md`](../manage-execution-manifest/standards/decision-rules.md) § "Execution-profile lane resolution" for the resolution rules and the twice-compose timing.
 
 **Inputs**:
-- `change_type` — read from solution outline metadata (use the first deliverable's `change_type` when the outline has more than one; the plan-level summary in `solution_outline.md` Summary block also surfaces it).
+- `change_type` — the PLAN's settled classification, forwarded as `--plan-change-type`. Read it from `status.metadata.change_type` (the value `manage-status:change-type-heuristic` settled during phase-3-outline — see the read block below), NOT from a deliverable's local `change_type`. A plan's `change_type` is one word at two scopes: the plan's single settled classification (this value) and each deliverable's local kind in the outline. The composer reconciles the two and **refuses** (`change_type_scope_conflict`) if what you forward contradicts the settled classification, so forwarding the first deliverable's kind over a settled classification is now a hard error, not a silent narrowing. Only when the plan has **no** settled classification (`status.metadata.change_type` unset) fall back to the first deliverable's `change_type` from the solution outline — an unclassified plan still composes on that value.
 - `track` — read from `manage-references get --field track` (`simple` or `complex`).
 - `scope_estimate` — read from `manage-references get --field scope_estimate` (deliverables 2 / 3 wire this in earlier in the plan lifecycle).
 - `recipe_key` — OPTIONAL override only. The composer reads `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`) on its own, so lesson- and recipe-derived plans select the `recipe` rule even when this flag is omitted. Pass `--recipe-key` only to force a recipe rule that status metadata does not already imply.
@@ -688,6 +691,15 @@ This step runs after Step 7 (execution order) and before Step 8 (Q-Gate). It MUS
 - `commit_and_push` — read via the bash call below, from the `commit_and_push` field; omit `--commit-and-push` on `compose` when the field is absent (defaults to `true`).
 
 **Read manifest inputs** (run before compose; do NOT skip or improvise alternative reads):
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} --get --field change_type
+```
+
+Parse `value` as `{change_type}` — the plan's settled classification. Forward it as
+`--plan-change-type`. When the field is absent (an unclassified plan), fall back to the first
+deliverable's `change_type` from the solution outline (see the Inputs note above).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-references:manage-references get \
@@ -731,7 +743,7 @@ Parse `value` as `{commit_and_push}` — omit `--commit-and-push` on `compose` w
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
   compose \
   --plan-id {plan_id} \
-  --change-type {change_type} \
+  --plan-change-type {change_type} \
   --track {simple|complex} \
   --scope-estimate {scope_estimate} \
   [--recipe-key {recipe_key}] \
@@ -783,7 +795,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 The composer's `decision.log` entry (one per applied rule) provides the audit trail; the manifest itself stays lean and diffable. The six-row matrix is documented in `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md`.
 
-**Per-task verification routing (data-driven)**: After the six-row matrix runs, the composer performs an `execution_tier` routing pass over every `TASK-*.json` in the plan. For each `verification.commands` entry, the composer subprocesses `architecture resolve` to obtain the four-field augmented TOON (`bash_timeout_seconds`, `exceeds_bash_ceiling`, `execution_tier`, `hint`) and branches: `orchestrator` commands are mapped to their canonical phase-5 step ID — emitted as **bare** names per the boundary-normalization contract (`quality-gate → quality_check`, `verify`/`module-tests → build_verify`, `coverage → coverage_check`) so no stray `default:`-prefixed ID is appended alongside the bare names the matrix already produced — appended to `phase_5.verification_steps` (de-duped), and removed from the task's verification list; `per_task` commands stay per-task and the task's `verification.bash_timeout_seconds` field is set to the maximum measured timeout across surviving commands. Non-build / unresolvable executables pass through unchanged. The routing is data-driven — no hardcoded "long-running" command list — and the authoritative source is `architecture resolve` per the "Structured queries first" hard rule. The composer derives each canonical-verify step's matrix role from the trailing canonical segment of its `default:verify:{canonical}` ID (rather than a per-canonical role-file), then applies the generic footprint pre-filter that drops any footprint-gated whole-tree canonical (`integration` / `e2e`) the live footprint does not exercise. See `manage-execution-manifest/standards/decision-rules.md § execution_tier Routing`, § "Role derivation for canonical-verify steps", and § "Generic footprint pre-filter" for the full contracts, and `manage-architecture/standards/resolve-command.md` for the failure mode that motivated the routing.
+**Per-task verification routing (data-driven)**: After the six-row matrix runs, the composer performs an `execution_tier` routing pass over every `TASK-*.json` in the plan. For each `verification.commands` entry, the composer subprocesses `architecture resolve` to obtain the four-field augmented TOON (`bash_timeout_seconds`, `exceeds_bash_ceiling`, `execution_tier`, `hint`) and branches: `orchestrator` commands are mapped to their canonical phase-5 step ID — emitted as **bare** `verify:{canonical}` names per the boundary-normalization contract (`quality-gate → verify:quality-gate`, `verify`/`module-tests → verify:module-tests`, `coverage → verify:coverage`) so no stray `default:`-prefixed ID is appended alongside the bare names the matrix already produced — appended to `phase_5.verification_steps` (de-duped), and removed from the task's verification list; `per_task` commands stay per-task and the task's `verification.bash_timeout_seconds` field is set to the maximum measured timeout across surviving commands. Non-build / unresolvable executables pass through unchanged. **Two kinds of `orchestrator`-tier command are kept with the task instead of being routed**: an unparseable raw-shell / non-`plan-marshall:build-` command, and a known canonical build verb with no phase-5 verify gate (`compile` / `test-compile` — the build-phase-canonical carve-out, which would otherwise append an unresolvable `verify:{verb}` step and fail the whole compose). The routing is data-driven — no hardcoded "long-running" command list — and the authoritative source is `architecture resolve` per the "Structured queries first" hard rule. The composer derives each canonical-verify step's matrix role from the trailing canonical segment of its `default:verify:{canonical}` ID (rather than a per-canonical role-file), then applies the generic footprint pre-filter that drops any footprint-gated whole-tree canonical (`integration` / `e2e`) the live footprint does not exercise. See `manage-execution-manifest/standards/decision-rules.md § execution_tier Routing`, § "Role derivation for canonical-verify steps", and § "Generic footprint pre-filter" for the full contracts, and `manage-architecture/standards/resolve-command.md` for the failure mode that motivated the routing.
 
 ### Step 8: Q-Gate Verification Checks
 
@@ -1137,7 +1149,8 @@ Skills are resolved from architecture based on `module` + `profile`:
 | Multiple profiles | Create one task per profile, each with its own resolved skills |
 | `verification` profile | Skip architecture query — no skills needed, use verification commands as steps |
 | Module not in architecture | Error - module must exist in project architecture |
-| Profile not in module | Log WARNING, set `task.skills = []`, record a Q-Gate triage finding with the architecture-enrichment recommendation in `--detail`, then continue. See Step 5 for the canonical procedure. |
+| Profile present but empty, declared minimal (`skills_by_profile.{P}.minimal == true`) | Set `task.skills = []` and continue — a deliberate empty; NO warning, NO finding. |
+| Profile empty or absent, NOT declared minimal | Log WARNING, set `task.skills = []`, record a Q-Gate triage finding with the architecture-enrichment recommendation in `--detail`, then continue. See Step 5 for the canonical procedure. |
 
 ## Error Handling
 
@@ -1155,11 +1168,13 @@ If `deliverable.module` is not found in architecture:
 
 ### Profile Not in Module
 
-If a profile from `deliverable.profiles` is not in `module.skills_by_profile`, this is NOT plan-blocking. Follow Step 5's canonical procedure:
+If a profile from `deliverable.profiles` is empty or absent in `module.skills_by_profile`, this is NOT plan-blocking. First distinguish the two states — a deliberately-minimal profile declares itself, an unresolved one does not:
 
-- Log WARNING: `(plan-marshall:phase-4-plan) Module {D.module} has empty skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate.`
-- Set `task.skills = []` and continue creating the task.
-- Record a Q-Gate triage finding via `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add --plan-id {plan_id} --phase 4-plan --source qgate --type triage --title {title} --detail {detail}`, with the architecture-enrichment recommendation inlined in `--detail`, so phase-5-execute and phase-6-finalize can surface the gap.
+- **Declared minimal** (`skills_by_profile.{P}.minimal == true`): set `task.skills = []` and continue. Do NOT log a warning and do NOT record a finding — the empty is intentional, not a gap.
+- **Undeclared empty / absent**: follow Step 5's canonical procedure:
+  - Log WARNING: `(plan-marshall:phase-4-plan) Module {D.module} has an UNRESOLVED (undeclared-empty) skills_by_profile.{P} — task will have no domain skills. Run architecture enrichment to populate, or declare the profile deliberately minimal with "minimal": true.`
+  - Set `task.skills = []` and continue creating the task.
+  - Record a Q-Gate triage finding via `python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings qgate add --plan-id {plan_id} --phase 4-plan --source qgate --type triage --title {title} --detail {detail}`, with the architecture-enrichment recommendation inlined in `--detail`, so phase-5-execute and phase-6-finalize can surface the gap.
 
 ### Ambiguous Deliverable
 

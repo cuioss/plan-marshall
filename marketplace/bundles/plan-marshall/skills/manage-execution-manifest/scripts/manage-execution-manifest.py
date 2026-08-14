@@ -12,7 +12,7 @@ Output: TOON format for API responses
 
 Usage:
     python3 manage-execution-manifest.py compose --plan-id EXAMPLE-PLAN \\
-        --change-type bug_fix --track simple --scope-estimate surgical
+        --plan-change-type bug_fix --track simple --scope-estimate surgical
     python3 manage-execution-manifest.py read --plan-id EXAMPLE-PLAN
     python3 manage-execution-manifest.py validate --plan-id EXAMPLE-PLAN
 """
@@ -67,6 +67,7 @@ from _manifest_core import (
 from _manifest_decide import (
     _decide,  # noqa: F401
     _read_recipe_source,  # noqa: F401
+    _read_settled_change_type,  # noqa: F401
     _read_task_queue_active,  # noqa: F401
     _split_csv,  # noqa: F401
 )
@@ -1180,9 +1181,15 @@ def _route_task_verification_commands(
       logged per routed verb), append (de-duped) to
       ``body['phase_5']['verification_steps']``, and drop the command from
       the task's ``verification.commands`` — no leaf ever runs an
-      orchestrator-tier command inline. Only the defensive raw-shell /
-      non-``plan-marshall:build-`` fall-through (verb unparseable) leaves
-      an orchestrator-tier command in place.
+      orchestrator-tier command inline. Two fall-throughs leave an
+      orchestrator-tier command in place instead of routing it: the defensive
+      raw-shell / non-``plan-marshall:build-`` case (verb unparseable), and a
+      verb that is a KNOWN canonical build command with no phase-5 verify gate
+      (``compile`` / ``test-compile`` — the build-phase canonicals the deriver
+      legitimately emits, whose ``verify:{verb}`` generalization does not
+      resolve). Routing the latter would append an unresolvable step and fail
+      the whole compose (``unresolvable_step``); keeping it with the task is the
+      per_task fallback the leaf re-resolves live.
     - ``per_task`` → set ``verification.bash_timeout_seconds`` on the task
       (overwriting any prior value so re-compose is deterministic). When
       multiple ``per_task`` commands share a task, the maximum
@@ -1202,6 +1209,11 @@ def _route_task_verification_commands(
     otherwise already have been rewritten, silently dropping the original
     verification command from disk.
     """
+    # The canonical build-command vocabulary registry — the single source of
+    # truth the build-phase-canonical carve-out below derives from (never a
+    # hand-listed copy of ``{compile, test-compile}``).
+    from extension_base import ALL_CANONICAL_COMMANDS
+
     tasks_dir = get_plan_dir(plan_id) / 'tasks'
     if not tasks_dir.is_dir():
         return 0, []
@@ -1250,6 +1262,32 @@ def _route_task_verification_commands(
                 verb, _ = parsed
                 step_id = _verb_to_phase_5_step(verb)
                 if step_id is None:
+                    candidate = f'verify:{verb}'
+                    # A build-phase canonical the deriver legitimately emits
+                    # (``compile`` / ``test-compile``) is a registered canonical
+                    # command with NO phase-5 verify gate, so its
+                    # ``verify:{verb}`` generalization does not resolve. Routing
+                    # it would append an unresolvable step and fail the WHOLE
+                    # compose (``unresolvable_step``) — the derive-verification →
+                    # compose routing mismatch this guard closes. Keep such a
+                    # command with the task (the per_task fallback the leaf
+                    # re-resolves live) rather than routing it to a nonexistent
+                    # gate. Restricted to KNOWN canonical commands so a genuinely
+                    # custom / typo'd verb still routes and fails loud, as before.
+                    if verb in ALL_CANONICAL_COMMANDS and not _check_step_resolvable(
+                        candidate, 'phase_5'
+                    ).get('resolvable'):
+                        _emit_decision_log(
+                            plan_id,
+                            '(plan-marshall:manage-execution-manifest:compose) '
+                            'execution_tier routing — orchestrator-tier build verb '
+                            f'{verb!r} (from a derived verification command) is a '
+                            'canonical build command with no phase-5 verify gate; '
+                            'kept with the task rather than routed to the '
+                            f'unresolvable step {candidate!r}',
+                        )
+                        kept_commands.append(raw)
+                        continue
                     # Non-canonical verb (e.g. a custom build target) on an
                     # orchestrator-tier command: route to the generalized bare
                     # ``verify:{verb}`` step ID (boundary-normalization
@@ -1257,7 +1295,7 @@ def _route_task_verification_commands(
                     # runs an orchestrator-tier command inline. Name the routed
                     # verb in the decision log — the canonical map did not
                     # cover it, and a silent route would be unobservable.
-                    step_id = f'verify:{verb}'
+                    step_id = candidate
                     _emit_decision_log(
                         plan_id,
                         '(plan-marshall:manage-execution-manifest:compose) '
@@ -1769,6 +1807,55 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
             'message': f'Invalid track: {args.track!r}. Must be one of {list(VALID_TRACKS)}',
         }
 
+    # ── change_type scope reconciliation (PLAN scope vs DELIVERABLE scope) ──────
+    # ``--plan-change-type`` (dest ``change_type``) is the caller-supplied change
+    # type. phase-4-plan historically sourced it FIRST-DELIVERABLE-WINS, so a
+    # deliverable's local kind — the DELIVERABLE scope — was passed as the plan's
+    # change type and silently narrowed verification for the WHOLE plan. The plan's
+    # own settled classification lives at ``status.metadata.change_type`` — the PLAN
+    # scope, written at high confidence by ``manage-status:change-type-heuristic`` and
+    # read back by planning-lane routing and the classification gate. The composer
+    # makes PLAN-wide decisions, so the settled classification is authoritative here:
+    # when it exists it MUST agree with the supplied value, otherwise compose REFUSES
+    # — naming BOTH values and BOTH scopes — rather than silently accepting a
+    # narrowing. When NO settled classification exists the supplied value stands alone,
+    # so an unclassified plan still composes. See standards/decision-rules.md
+    # § "change_type scope reconciliation".
+    supplied_change_type = args.change_type
+    settled_change_type = _read_settled_change_type(plan_id)
+    if settled_change_type is not None and settled_change_type != supplied_change_type:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'change_type_scope_conflict',
+            'message': (
+                f"change_type scope conflict: the plan's settled classification "
+                f"(status.metadata.change_type — the PLAN scope) is {settled_change_type!r}, "
+                f"but compose was supplied --plan-change-type {supplied_change_type!r} "
+                f"(a DELIVERABLE-scoped value). The settled plan classification is "
+                f"authoritative — a deliverable's local change type must not narrow "
+                f"verification for the whole plan. Re-run compose with "
+                f"--plan-change-type {settled_change_type} (or correct "
+                f"status.metadata.change_type if the settled classification is itself wrong)."
+            ),
+            'settled_change_type': settled_change_type,
+            'supplied_change_type': supplied_change_type,
+        }
+    # The narrowing decision's INPUT, recorded so it can be audited afterward: when a
+    # settled classification exists the PLAN scope drives every change-type-gated
+    # decision below; otherwise the caller-supplied value (the DELIVERABLE-scoped
+    # fallback) does. This closes the gap where a run's own logs disagreed about which
+    # change type narrowed the plan and nothing noticed.
+    effective_change_type = settled_change_type if settled_change_type is not None else supplied_change_type
+    change_type_scope = 'settled' if settled_change_type is not None else 'supplied'
+    _emit_decision_log(
+        plan_id,
+        '(plan-marshall:manage-execution-manifest:compose) change_type reconciliation — '
+        f'used {effective_change_type!r} from the {change_type_scope} scope '
+        f'(supplied --plan-change-type={supplied_change_type!r}, '
+        f'settled status.metadata.change_type={settled_change_type!r})',
+    )
+
     raw_commit_and_push = getattr(args, 'commit_and_push', None)
     if raw_commit_and_push is None:
         commit_and_push = True
@@ -1871,18 +1958,18 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # both resolved above; it runs after the three candidate-narrowing pre-filters
     # and before the six-row matrix per standards/decision-rules.md.
     phase_6_candidates, simplify_omitted = _apply_simplify_inactive(
-        phase_6_candidates, args.change_type, affected_files_count
+        phase_6_candidates, effective_change_type, affected_files_count
     )
 
     # Pre-filter 4b (security_class_inactive) is NOT the symmetric peer of
     # simplify_inactive. It shares no helper and no gate: the change-type leg is
-    # absent entirely, because ``change_type`` is a semantic outline-time label the
-    # caller selects FIRST-DELIVERABLE-WINS, so a plan opening with a read-only
-    # discovery deliverable forwards ``verification`` however much production code
-    # its later deliverables mutate. A security sweep must never be removed on that
-    # evidence, so the gate FAILS TOWARD INCLUSION and keeps only the zero-surface
-    # leg — now evaluated against the declared AND the live change surface. The
-    # protected population is derived from each candidate's frontmatter
+    # absent entirely, because ``change_type`` — even reconciled to the plan's settled
+    # classification (see the change_type scope reconciliation above) — is orthogonal
+    # to the security surface. A ``bug_fix`` or ``feature`` plan can equally touch
+    # security-sensitive code, so a security sweep must gate on the change SURFACE, not
+    # on the plan's change type. The gate therefore FAILS TOWARD INCLUSION and keeps
+    # only the zero-surface leg — evaluated against the declared AND the live change
+    # surface. The protected population is derived from each candidate's frontmatter
     # ``persona: persona-security-expert``, never from a step-id literal. See
     # standards/decision-rules.md § Pre-Filter: security_class_inactive.
     #
@@ -1971,7 +2058,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # the caller emits one [STATUS] line per record below and surfaces the list in
     # the compose result. The matrix DECISIONS are unchanged — only observability.
     body, rule, decide_dropped = _decide(
-        change_type=args.change_type,
+        change_type=effective_change_type,
         track=args.track,
         scope_estimate=args.scope_estimate,
         recipe_key=recipe_key,
@@ -2345,7 +2432,7 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     elif pre_push_quality_gate_decision == 'unknown':
         _log_pre_push_quality_gate_kept_unknown(plan_id, pre_push_quality_gate_reason)
     if simplify_omitted:
-        _log_prefilter_omitted(plan_id, 'finalize-step-simplify', args.change_type, affected_files_count)
+        _log_prefilter_omitted(plan_id, 'finalize-step-simplify', effective_change_type, affected_files_count)
     _log_dropped_records(plan_id, 'security_class_inactive', security_class_omitted, target=' from phase_6.steps')
     for dropped_step in scope_gated_dropped:
         _log_scope_gated_finalize_subtraction(plan_id, args.scope_estimate, dropped_step)
@@ -2395,6 +2482,14 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
         'file': MANIFEST_FILENAME,
         'created': True,
         'manifest_version': MANIFEST_VERSION,
+        # change_type scope record (D3): which scope drove the change-type-gated
+        # narrowing — 'settled' (the authoritative PLAN classification from
+        # status.metadata.change_type) or 'supplied' (the caller-supplied
+        # DELIVERABLE-scoped value, used only when no settled classification exists).
+        'change_type_scope': change_type_scope,
+        'effective_change_type': effective_change_type,
+        'settled_change_type': settled_change_type,
+        'supplied_change_type': supplied_change_type,
         'phase_5': {
             'early_terminate': body['phase_5']['early_terminate'],
             'verification_steps_count': len(body['phase_5']['verification_steps']),
@@ -2704,7 +2799,21 @@ def _build_parser() -> argparse.ArgumentParser:
 
     compose_parser = subparsers.add_parser('compose', help='Compose and write execution.toon', allow_abbrev=False)
     add_plan_id_arg(compose_parser)
-    compose_parser.add_argument('--change-type', required=True, help='Change type (one of VALID_CHANGE_TYPES)')
+    # ``--plan-change-type`` (dest kept as ``change_type`` for the in-process
+    # Namespace callers) is the PLAN-scoped change type the composer reconciles
+    # against the plan's settled classification (status.metadata.change_type). The
+    # flag was renamed from ``--change-type`` so a caller cannot pass a DELIVERABLE's
+    # local kind believing it is the plan's classification — the two scopes are named
+    # apart. cmd_compose refuses a supplied value that contradicts the settled one.
+    compose_parser.add_argument(
+        '--plan-change-type',
+        dest='change_type',
+        required=True,
+        help=(
+            "The plan's change type (one of VALID_CHANGE_TYPES). Reconciled against the "
+            'settled status.metadata.change_type; a contradicting value is refused.'
+        ),
+    )
     compose_parser.add_argument('--track', required=True, help='Outline track: simple|complex')
     compose_parser.add_argument(
         '--scope-estimate', required=True, help='scope_estimate (none|surgical|single_module|multi_module|broad)'

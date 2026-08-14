@@ -16,7 +16,7 @@ The compiler must emit exactly these sections in this order:
 4. Log Analysis — renders the `log_analysis` aspect fragment as counts, slowest scripts, and top error tags.
 5. Phase Dispatch Boundaries — conditional. Emit only when the `dispatch_boundaries` fragment carries at least one phase entry reporting `present: true`. Renders a per-phase table plus the full fragment data.
 6. Invariant Outcomes — renders the `invariant_summary` aspect fragment as a per-phase table plus a drift block.
-7. Plan Efficiency — renders the `plan_efficiency` aspect fragment as totals plus ratios plus a per-phase breakdown.
+7. Plan Efficiency — renders the `plan_efficiency` aspect fragment as totals (including `total_build_seconds`, the ledger-derived total build time — a floor when suspect builds were seen) plus ratios plus a per-phase breakdown.
 8. LLM-to-Script Opportunities — renders the `llm_to_script_opportunities` aspect fragment as a candidate list.
 9. Logging Gaps — renders the `logging_gap_analysis` aspect fragment as expected-vs-actual numbers and gap items.
 10. Script Failure Analysis — conditional. Emit only when `log_analysis.counts.errors_script > 0`. Renders the `script_failure_analysis` aspect fragment.

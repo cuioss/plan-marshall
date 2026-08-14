@@ -44,6 +44,7 @@ from _footprint_resolver import (
     read_captured_footprint,
     resolve_merge_commit_footprint,
 )
+from _ledger_core import read_entries
 from _references_core import (
     compute_plan_branch_diff,
     resolve_base_ref,
@@ -119,6 +120,58 @@ _GLOBAL_LOG_FIXTURE_LEAK_RE = re.compile(
     r'\bfake-[a-z0-9-]*bundle\b|\bidem-bundle\b|\braising-bundle\b|\borphan-md-[a-z0-9-]+\b',
     re.IGNORECASE,
 )
+
+
+# A ledger row carries the bare execution-time ``plan_id``; an archived plan dir
+# is named ``{YYYY-MM-DD}-{plan_id}``, so the date prefix is stripped when the
+# plan key is derived from an archived path. A live plan_id has no prefix.
+_LEDGER_DATE_PREFIX_RE = re.compile(r'^\d{4}-\d{2}-\d{2}-')
+
+
+def summarize_build_ledger(plan_key: str) -> dict[str, Any]:
+    """Sum this plan's build time from the change-ledger — the build-time ORACLE.
+
+    Reads the single append-only change-ledger
+    (``<tracked-config>/work/change-ledger.jsonl``), keeps this plan's
+    ``kind=build`` rows (matched on the bare ``plan_id``), and returns the plan's
+    total build seconds plus the pass/error/timeout/killed status ratio. Because
+    the ledger records ``command`` per build system and is written in every phase,
+    the total spans EVERY build system and EVERY phase — not just the pyproject
+    builds a plan happened to log.
+
+    SUSPECT-ZERO rule: a row whose ``duration_seconds`` is ``0`` / absent /
+    non-numeric is counted in ``suspect_count`` and is NOT summed into
+    ``total_build_seconds`` — never averaged in as a fabricated zero. When
+    ``suspect_count > 0`` the total is a FLOOR. ``killed`` is counted SEPARATELY
+    from ``error`` (an infrastructure kill is not a red build). Best-effort: a
+    plan with no ledger rows returns an all-zero block (``build_count: 0``), which
+    the reader treats as "unavailable", never as "no builds ran".
+    """
+    status_keys = ('success', 'error', 'timeout', 'killed', 'unknown')
+    status_counts = dict.fromkeys(status_keys, 0)
+    total = 0.0
+    build_count = 0
+    suspect_count = 0
+    for entry in read_entries():
+        if entry.get('kind') != 'build' or entry.get('plan_id') != plan_key:
+            continue
+        build_count += 1
+        status = entry.get('status')
+        status_counts[status if status in status_counts else 'unknown'] += 1
+        dur = entry.get('duration_seconds')
+        if isinstance(dur, bool) or not isinstance(dur, (int, float)) or dur <= 0:
+            suspect_count += 1
+        else:
+            total += float(dur)
+    return {
+        'total_build_seconds': round(total, 3),
+        'build_count': build_count,
+        'suspect_count': suspect_count,
+        'pass': status_counts['success'],
+        'error': status_counts['error'],
+        'timeout': status_counts['timeout'],
+        'killed': status_counts['killed'],
+    }
 
 
 def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
@@ -1105,10 +1158,20 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
 
+    # Build time from the change-ledger (the build-time ORACLE): the total spans
+    # every build system and every phase, with the pass/error/timeout/killed ratio
+    # (killed SEPARATE) and the suspect-zero rule applied. The plan_efficiency
+    # aspect READS `total_build_seconds` from this block into its `totals`.
+    plan_ledger_key = _LEDGER_DATE_PREFIX_RE.sub(
+        '', args.plan_id or Path(args.archived_plan_path or '').name
+    )
+    build_time = summarize_build_ledger(plan_ledger_key)
+
     return {
         'status': 'success',
         'aspect': 'log_analysis',
         'plan_id': args.plan_id or Path(args.archived_plan_path or '').name,
+        'build_time': build_time,
         'counts': {
             'work_entries': len(work),
             'decision_entries': len(decision),

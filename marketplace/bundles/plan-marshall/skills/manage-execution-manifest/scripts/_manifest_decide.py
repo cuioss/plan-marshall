@@ -335,3 +335,42 @@ def _read_recipe_source(plan_id: str) -> str | None:
     return None
 
 
+def _read_settled_change_type(plan_id: str) -> str | None:
+    """Resolve the plan's SETTLED change-type classification from status metadata.
+
+    ``status.metadata.change_type`` is the plan's single, plan-wide change-type
+    classification — the PLAN scope. It is written by
+    ``manage-status:change-type-heuristic`` (and its LLM fallback) at high
+    confidence during outline, and read back by planning-lane routing and the
+    classification-validation gate. It is a distinct scope from the caller-supplied
+    ``compose`` flag, which carries a DELIVERABLE's local change type; the composer
+    reconciles the two (see :func:`cmd_compose`) so a deliverable's kind can no
+    longer silently narrow verification for the whole plan.
+
+    The read mirrors :func:`_read_recipe_source` exactly — same best-effort
+    degrade-to-``None`` on a missing or malformed ``status.json`` — because a
+    reconciliation must never crash compose on an unreadable status file; an
+    unreadable settled classification is treated as "no settled classification",
+    which composes with the supplied value alone (the no-settled control path).
+
+    Returns the trimmed classification string, or ``None`` when ``status.json`` is
+    absent, malformed, or its metadata carries no ``change_type``.
+    """
+    status_path = get_plan_dir(plan_id) / FILE_STATUS
+    if not status_path.exists():
+        return None
+    try:
+        status = read_json(status_path, default={})
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(status, dict):
+        return None
+    metadata = status.get('metadata', {})
+    if not isinstance(metadata, dict):
+        return None
+    value = metadata.get('change_type')
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
