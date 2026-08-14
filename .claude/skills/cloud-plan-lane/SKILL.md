@@ -432,6 +432,17 @@ as a type annotation — legal at runtime, but `mypy` rejects a variable used as
 locally under the narrower calls and red on CI's `test-compile`. Run the full `./pw verify` (scope it
 to a bundle if you must, but keep all three sub-steps).
 
+**For fast iterative red/green checks on specific test files, `uv run` is far faster than `./pw` — but
+it is NOT the gate.** `uv` is on `PATH` in a cloud session and resolves the same pyproject-defined
+environment `./pw` uses, so `uv run python -m pytest <path> -o addopts=""` runs a targeted subset in
+about a second (after the first dependency fetch) instead of routing every check through
+`./pw module-tests` (whole-suite, minutes). Use it to iterate — confirming a test goes red before a fix
+and green after, or re-checking one file you just edited — and reserve the full `./pw verify` for the
+authoritative gate before the PR (nothing about the gate changes). The `-o addopts=""` clears the repo's
+default pytest options (coverage, `--durations`) for a clean single-file run; it alters nothing the gate
+checks. An observed run drove the red-first test verification and every incremental test-update check
+this way — order-of-seconds each — then ran `./pw verify` once, unchanged, as the gate.
+
 Give every `./pw` call a Bash timeout of at least **600000 ms (10 minutes)**.
 
 Also export **`UV_HTTP_TIMEOUT=600`** (or higher) on every `./pw` call in a cloud session. The wrapper
