@@ -115,6 +115,12 @@ checks for a PR template and proceeds gracefully when none exists, so the absenc
 _The verification sub-agent (Step 6), CI, and PR review are pending; findings and dispositions are
 recorded below as they arrive._
 
+- **D1 (injection), self-verified against a metacharacter-bearing ref (plan's required check):** a local
+  reproduction confirmed the value cannot escape the variable. With the malicious ref
+  `v1.0"; touch <marker>; echo "pwned` passed via `env:` and referenced as `"${REF_NAME}"` (the D1 form),
+  the injected `touch` did **not** fire and `dist_tag` held the full literal string. With the old spliced
+  form (`dist_tag="<value>"` — the value substituted into the script source), the injected `touch` **did**
+  fire. The env-passing fix closes the surface; verified beyond reading the YAML, per the plan.
 - **D6 (supply chain), self-verified:** the identical `irm`-splice bug is present in pyprojectx **upstream
   main** (verified via WebFetch of the upstream `pw.py`). There is therefore no fixed upstream release to
   regenerate from, so the plan's "prefer regenerating over hand-patching" resolves to a minimal hand-patch
