@@ -421,6 +421,19 @@ Both commands run from the repository root:
 Narrower calls when you need them: `./pw module-tests` (tests only), `./pw compile`. Append a bundle
 name to scope to one module, e.g. `./pw verify plan-marshall`.
 
+**Running one test file to watch it fail first.** None of the `./pw` sub-commands runs a *single*
+test file — they are the whole suite or a whole module — and `pytest` is not on the session
+interpreter. When a new test warrants the red-before-green check (observe it fail before the fix
+exists, so a vacuous test cannot pass silently), run that one file through `uv` with the same
+interpreter pin `./pw` uses, from the repository root:
+
+```bash
+UV_PYTHON=3.12 UV_HTTP_TIMEOUT=600 uv run pytest {path/to/test_file.py}
+```
+
+This runs in seconds against one file instead of the whole `verify` suite, and never substitutes for
+the Step 5 gate — the full `./pw verify` still runs over the branch diff before the PR.
+
 **Gate on the full `./pw verify` — the narrower calls do not add up to it.** `./pw verify` is exactly
 three sub-steps: **quality-gate** (`ruff`/`mypy` over `*.py` sources, SPDX, plugin-doctor),
 **test-compile** (`mypy` over the whole `test/` tree), and **module-tests** (`pytest`). Only
