@@ -4,10 +4,15 @@ Standards for testing Python scripts in the marketplace. Tests use **Python stdl
 
 ## Quick Start
 
+Run the suite through the canonical build command (pytest under the hood), never
+by executing a test file as a script:
+
 ```bash
-python3 test/run-tests.py                                          # all tests
-python3 test/run-tests.py test/planning/                           # directory
-python3 test/run-tests.py test/planning/plan-files/test_parse_plan.py  # single file
+# All tests
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests"
+
+# A single bundle
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests plan-marshall"
 ```
 
 ## Directory Structure
@@ -252,9 +257,10 @@ def test_create_references():
 
 ### How It Works
 
-1. **Via `test/run-tests.py`**: Creates `.plan/temp/test-fixture/{timestamp}` once, passes to all tests via `TEST_FIXTURE_DIR` and `PLAN_BASE_DIR` env vars, cleans up after all tests complete.
-
-2. **Standalone execution**: Each `PlanTestContext` creates its own timestamped directory in `.plan/temp/test-fixture/standalone-{timestamp}` and cleans up when exiting the context.
+Each `PlanTestContext` creates its own timestamped directory in
+`.plan/temp/test-fixture/standalone-{timestamp}` and cleans up when exiting the
+context. (A `TEST_FIXTURE_DIR` env var, when set, overrides the location; nothing
+in the suite sets it by default.)
 
 ### PlanTestContext Attributes
 
@@ -316,9 +322,8 @@ The test infrastructure mirrors the executor's PYTHONPATH setup, enabling direct
 
 ### How It Works
 
-1. **`test/run-tests.py`** builds PYTHONPATH from all `marketplace/bundles/*/skills/*/scripts/` directories
-2. **`test/conftest.py`** adds the same directories to `sys.path` on import
-3. Scripts can use direct imports without sys.path manipulation
+1. **`test/conftest.py`** builds PYTHONPATH from all `marketplace/bundles/*/skills/*/scripts/` directories and adds them to `sys.path` on import
+2. Scripts can use direct imports without sys.path manipulation
 
 ### Using Cross-Skill Imports
 
@@ -441,7 +446,7 @@ with PlanTestContext(plan_id='EXAMPLE-PLAN') as ctx:
 
 ### `conftest.get_test_fixture_dir()`
 
-Get the test fixture directory. Uses `TEST_FIXTURE_DIR` env var when run via `test/run-tests.py`, otherwise creates a standalone directory.
+Get the test fixture directory. Honours a `TEST_FIXTURE_DIR` env var when one is set, otherwise creates a standalone directory under `.plan/temp/test-fixture/`.
 
 ## Test Modularization (400+ Lines)
 
@@ -507,5 +512,5 @@ Before marking tests as complete:
 - Edge case tests with assertions
 - All tests have at least one `assert` statement
 - Fixtures are in `fixtures/` directory
-- Tests pass: `python3 test/run-tests.py test/{bundle}/{skill}/`
+- Tests pass: `python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests {bundle}"`
 - Test files >400 lines are modularized by command

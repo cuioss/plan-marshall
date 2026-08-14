@@ -7,17 +7,10 @@ shared contract documented in build-api-reference.md. Ensures the unified
 API is actually consistent across Maven, Gradle, npm, and Python.
 """
 
-import sys
+import importlib.util
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
-
-# Mock runtime-only modules before importing configs
-sys.modules.setdefault('plan_logging', MagicMock(log_entry=MagicMock()))
-sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_value=300), timeout_set=MagicMock()))
-
-import importlib.util  # noqa: E402
 
 _BUNDLES_DIR = Path(__file__).parent.parent.parent.parent / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
 

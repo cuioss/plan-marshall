@@ -261,8 +261,9 @@ def cmd_discover_common(args, discover_fn: Callable) -> int:
 # ---------------------------------------------------------------------------
 
 # The three per-type finding stores a build run writes to. A green build run
-# terminalizes every pending finding of these types via the reconciliation
-# path below — see ``_reconcile_pending_build_findings``.
+# reconciles them via the path below (see ``_reconcile_pending_build_findings``):
+# build-error / lint-issue clear on any green build, while test-failure clears
+# only when the run actually executed tests (a non-zero executed-test count).
 BUILD_FINDING_TYPES: tuple[str, ...] = ('build-error', 'test-failure', 'lint-issue')
 
 
@@ -426,26 +427,51 @@ def _record_producer_mismatch(
     return None
 
 
-def _reconcile_pending_build_findings(plan_id: str, command_str: str) -> int:
-    """Terminalize every pending build finding when the build run is green.
+def _reconcile_pending_build_findings(plan_id: str, command_str: str, tests_run: int) -> int:
+    """Terminalize pending build findings when the build run is green.
 
     A prior failing run appends ``build-error`` / ``test-failure`` /
     ``lint-issue`` findings to the per-type store. When the build subsequently
     succeeds, those findings are stale — the failure they recorded has been
-    fixed — yet nothing resolves them, leaving the Q-Gate store dirty. This
-    helper bulk-resolves every pending finding of the three build types to
-    ``fixed`` in a single call, stamping the resolution detail with the
-    green command that cleared them.
+    fixed — yet nothing resolves them, leaving the Q-Gate store dirty.
 
-    Returns the count of findings resolved (0 when none were pending).
+    A ``test-failure`` finding is different in kind from the other two: ONLY a
+    run that actually executed tests proves a recorded test failure is gone. A
+    green build that ran zero tests — a ``compile``, a lint-only gate, or a test
+    command that collected nothing — proves the code compiles and lints, but it
+    tested nothing, so it must NOT clear a stale ``test-failure`` finding.
+    Clearing one on a zero-test build is the exact false-green this guard
+    exists to stop: a command that tested nothing would otherwise destroy a
+    true, already-recorded test-failure signal.
+
+    So ``build-error`` / ``lint-issue`` clear on any green build, while
+    ``test-failure`` clears only when ``tests_run > 0``. The executed-test count
+    is stamped into the resolution detail so the population the clearing
+    decision was made on is PUBLISHED, never left implicit.
+
+    Args:
+        plan_id: The plan owning the finding store.
+        command_str: The green command that cleared the findings.
+        tests_run: The number of tests this run executed (0 when the run parsed
+            no test summary — a non-test command or a zero-collection run).
+
+    Returns:
+        The count of findings resolved (0 when none were pending).
     """
     from _findings_core import resolve_findings_by_type
 
+    # build-error / lint-issue clear on any green build; test-failure requires
+    # evidence that tests actually ran. Derived from BUILD_FINDING_TYPES so the
+    # canonical set stays the single source of truth for what a build reconciles.
+    clearable_types = [t for t in BUILD_FINDING_TYPES if t != 'test-failure']
+    if tests_run > 0:
+        clearable_types.append('test-failure')
+
     reconcile_result = resolve_findings_by_type(
         plan_id=plan_id,
-        finding_types=BUILD_FINDING_TYPES,
+        finding_types=tuple(clearable_types),
         to_resolution='fixed',
-        detail=f'auto-resolved by green build: {command_str}',
+        detail=f'auto-resolved by green build ({tests_run} test(s) executed): {command_str}',
     )
     if reconcile_result.get('status') == 'success':
         return int(reconcile_result.get('resolved_count', 0))
@@ -715,14 +741,30 @@ def cmd_run_common(
             test_summary = None
 
         if test_summary is None or test_summary.failed == 0:
-            # Genuine success — terminalize any pending build findings from a
-            # prior failing run: the build is now green, so build-error /
-            # test-failure / lint-issue findings are stale and must be
-            # bulk-resolved before returning. A plan-less build owns no finding
-            # store and reconciles nothing, exactly as before.
+            # The executed-test count is the evidence that authorises clearing a
+            # test-failure finding. A run that parsed no test summary
+            # (``test_summary is None`` — a non-test command, or a test command
+            # that collected nothing) executed zero tests, so a stale
+            # test-failure finding must survive it. The count is published on the
+            # emitted result as ``tests_run`` (the same field the ``parse`` verb
+            # emits) so the clearing decision's population is never implicit.
+            tests_run = test_summary.total if test_summary is not None else 0
+            print(
+                f'[EXEC] green build: {tests_run} test(s) executed'
+                + ('' if tests_run > 0 else ' — test-failure findings retained (this run tested nothing)'),
+                file=sys.stderr,
+            )
+
+            # Terminalize pending build findings from a prior failing run: the
+            # build is now green. build-error / lint-issue clear unconditionally;
+            # test-failure clears only with executed-test evidence (see
+            # _reconcile_pending_build_findings). A plan-less build owns no
+            # finding store and reconciles nothing, exactly as before.
             if names_real_plan(plan_id):
                 try:
-                    _reconcile_pending_build_findings(plan_id=plan_id, command_str=command_str)
+                    _reconcile_pending_build_findings(
+                        plan_id=plan_id, command_str=command_str, tests_run=tests_run
+                    )
                 except Exception as e:
                     print(f"[WARNING] Failed to reconcile pending build findings: {e}", file=sys.stderr)
 
@@ -731,6 +773,7 @@ def cmd_run_common(
                 log_file=log_file,
                 command=command_str,
                 exit_code=result['exit_code'],
+                tests_run=tests_run,
             )
             # Fail-closed guard: never emit an untruthful success (success over a
             # non-zero exit code) from the run choke point.

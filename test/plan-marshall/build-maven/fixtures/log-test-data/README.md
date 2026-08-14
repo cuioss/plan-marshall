@@ -17,9 +17,9 @@ Test fixtures derived from real build executions and research for testing parser
 
 | Project | Build System | Location |
 |---------|--------------|----------|
-| mrlonis-spring-boot-monorepo | Gradle | `/Users/oliver/git/other-test-projects/mrlonis-spring-boot-monorepo` |
-| sample-monorepo | npm/TypeScript | `/Users/oliver/git/other-test-projects/sample-monorepo` |
-| cui-http | Maven | `/Users/oliver/git/cui-http` |
+| mrlonis-spring-boot-monorepo | Gradle | `/home/dev/git/other-test-projects/mrlonis-spring-boot-monorepo` |
+| sample-monorepo | npm/TypeScript | `/home/dev/git/other-test-projects/sample-monorepo` |
+| cui-http | Maven | `/home/dev/git/cui-http` |
 
 ## Test Files
 
