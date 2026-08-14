@@ -299,19 +299,38 @@ def _assemble(frontmatter_lines: list[str], body: str) -> str:
     return f'---\n{block}\n---\n{body}'
 
 
-@lru_cache(maxsize=8)
 def _load_mapping(mapping_path: Path) -> dict:
-    """Cache parsed ``mapping.json`` content keyed by absolute path.
+    """Load and parse ``mapping.json``, cached on path AND modification time.
 
     Variant emission iterates per-agent and per-level; without caching, this
     file is re-read and re-parsed for every level of every role-eligible
-    agent. The cache is keyed by ``Path`` (which is hashable). Use
-    ``_load_mapping.cache_clear()`` between distinct mapping files in tests.
+    agent. Keying the cache on the **path alone** is the stale-cache-as-evidence
+    defect: a mapping edited in place at the same path would be answered from
+    the cache and never re-read, so the per-effort guard would decide against a
+    stale ``supports_effort`` set. The key therefore folds in ``st_mtime_ns`` so
+    an in-place content change misses the cache and is re-read. (Same archetype
+    as the content-digest surface cache in ``plan-marshall:script-shared``
+    ``argparse_surface.py``, which keys on ``(notation, content_hash(file))``
+    rather than the path alone.)
+
     Returns ``{}`` when the file is missing or malformed so the caller's
     conservative refuse-emit path is preserved.
     """
-    if not mapping_path.exists():
+    try:
+        mtime_ns = mapping_path.stat().st_mtime_ns
+    except OSError:
         return {}
+    return _load_mapping_cached(mapping_path, mtime_ns)
+
+
+@lru_cache(maxsize=8)
+def _load_mapping_cached(mapping_path: Path, _mtime_ns: int) -> dict:
+    """Parse ``mapping.json`` for one ``(path, mtime)`` cache key.
+
+    ``_mtime_ns`` participates in the cache key only — a file changed in
+    place gets a new mtime and so misses the cache. The read fails closed to
+    ``{}`` on an OS or JSON error, preserving the caller's refuse-emit path.
+    """
     try:
         parsed: dict = json.loads(mapping_path.read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError):

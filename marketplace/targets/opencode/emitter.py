@@ -28,6 +28,7 @@ import shutil
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 
+from marketplace.targets.fs_safety import safe_rmtree
 from marketplace.targets.opencode.frontmatter import (
     OPENCODE_MODEL_PREFIX,
     UnmappedFrontmatterError,
@@ -122,23 +123,50 @@ def _read_plugin_json(bundle_dir: Path) -> dict:
     return parsed
 
 
-def _safe_rmtree(path: Path, output_dir: Path) -> None:
-    """Remove ``path`` only when it is contained within ``output_dir``."""
-    resolved = path.resolve()
-    resolved_output = output_dir.resolve()
-    sentinel = str(resolved_output) + '/'
-    if not str(resolved).startswith(sentinel) and resolved != resolved_output:
-        raise ValueError(f'Refusing to delete {resolved}: not within output directory {resolved_output}')
-    shutil.rmtree(path)
-
-
 def _copy_verbatim(src: Path, dst: Path, *, output_dir: Path, written: list[Path]) -> None:
     if dst.exists():
-        _safe_rmtree(dst, output_dir)
+        safe_rmtree(dst, output_dir)
     shutil.copytree(src, dst, ignore=shutil.ignore_patterns(*EXCLUDED_DIR_NAMES))
     for f in dst.rglob('*'):
         if f.is_file():
             written.append(f)
+
+
+def _prune_stale_outputs(output_dir: Path, written: list[Path]) -> None:
+    """Remove ``skill/``, ``agent/``, ``command/`` outputs left over from a prior emit.
+
+    The per-component emit only creates directories and overwrites files in
+    place, so a skill, agent, or command *removed from source* leaves its
+    previously-emitted output behind and the tree drifts past source. This
+    sweeps the three output subtrees and removes anything not (re)written this
+    run: a fully-stale ``skill/{bundle}-{skill}/`` directory is removed via
+    :func:`safe_rmtree` (a guarded wipe — it never solves this emitter's drift
+    by giving it the sibling emitter's containment hazard), and stale
+    ``agent/*.md`` / ``command/*.md`` files are unlinked.
+
+    Called only on a **full** regeneration (all bundles). A scoped emit
+    (``--bundles`` subset) shares the flat ``agent/`` and ``command/``
+    namespaces across bundles and cannot attribute a leftover file to a
+    specific bundle from its name alone, so pruning a subset would risk
+    deleting a non-emitted bundle's output; the normal build and the
+    drift checks both run full regenerations.
+    """
+    written_set = {p.resolve() for p in written}
+
+    skill_root = output_dir / 'skill'
+    if skill_root.is_dir():
+        for skill_dir in sorted(p for p in skill_root.iterdir() if p.is_dir()):
+            files = [f for f in skill_dir.rglob('*') if f.is_file()]
+            if not any(f.resolve() in written_set for f in files):
+                safe_rmtree(skill_dir, output_dir)
+
+    for subdir in ('agent', 'command'):
+        comp_root = output_dir / subdir
+        if not comp_root.is_dir():
+            continue
+        for md in sorted(comp_root.glob('*.md')):
+            if md.resolve() not in written_set:
+                md.unlink()
 
 
 def _emit_skill(
@@ -465,6 +493,11 @@ def emit_bundles(
 
         for command_md in _resolve_md_components(bundle_dir, plugin_config, 'commands', 'commands'):
             _emit_command(bundle_name, command_md, output_dir, rules, transform_body, written)
+
+    # Prune stale outputs so a component removed from source leaves no emitted
+    # artifact behind. Full regenerations only (see _prune_stale_outputs).
+    if bundle_list is None:
+        _prune_stale_outputs(output_dir, written)
 
     written.append(_generate_opencode_json(output_dir, agent_index))
     return written

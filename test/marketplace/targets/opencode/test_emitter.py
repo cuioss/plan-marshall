@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -164,6 +165,59 @@ def test_unknown_agent_tool_raises_unmapped_tool(tmp_path: Path, opencode_config
 def test_verbatim_skill_subdirs_constant_exposed():
     """The constant must enumerate the four canonical skill subdirs."""
     assert set(VERBATIM_SKILL_SUBDIRS) == {'standards', 'references', 'templates', 'scripts'}
+
+
+# =============================================================================
+# Stale-output pruning (D2)
+# =============================================================================
+#
+# The per-component emit only creates directories and overwrites in place, so a
+# skill/agent/command removed from source used to leave its emitted output
+# behind and the tree drifted past source. A full re-emit now prunes stale
+# outputs.
+
+
+def test_emit_bundles_prunes_removed_skill(fixture_bundle: Path, tmp_path: Path, opencode_config_dir: Path):
+    """A skill removed from source leaves no emitted directory behind after a
+    full re-emit.
+    """
+    out = tmp_path / 'out'
+    emit_bundles(fixture_bundle, out, opencode_config_dir)
+    assert (out / 'skill' / 'demo-demo-skill' / 'SKILL.md').is_file()
+
+    # Remove the skill from source and drop it from the bundle manifest.
+    shutil.rmtree(fixture_bundle / 'demo' / 'skills' / 'demo-skill')
+    plugin_path = fixture_bundle / 'demo' / '.claude-plugin' / 'plugin.json'
+    doc = json.loads(plugin_path.read_text(encoding='utf-8'))
+    doc['skills'] = []
+    plugin_path.write_text(json.dumps(doc, indent=2) + '\n', encoding='utf-8')
+
+    emit_bundles(fixture_bundle, out, opencode_config_dir)
+
+    assert not (out / 'skill' / 'demo-demo-skill').exists()
+    # A surviving component is untouched by the prune.
+    assert (out / 'agent' / 'demo-agent.md').is_file()
+
+
+def test_emit_bundles_prunes_removed_agent(fixture_bundle: Path, tmp_path: Path, opencode_config_dir: Path):
+    """An agent removed from source leaves no emitted file behind after a full
+    re-emit.
+    """
+    out = tmp_path / 'out'
+    emit_bundles(fixture_bundle, out, opencode_config_dir)
+    assert (out / 'agent' / 'demo-agent.md').is_file()
+
+    (fixture_bundle / 'demo' / 'agents' / 'demo-agent.md').unlink()
+    plugin_path = fixture_bundle / 'demo' / '.claude-plugin' / 'plugin.json'
+    doc = json.loads(plugin_path.read_text(encoding='utf-8'))
+    doc['agents'] = []
+    plugin_path.write_text(json.dumps(doc, indent=2) + '\n', encoding='utf-8')
+
+    emit_bundles(fixture_bundle, out, opencode_config_dir)
+
+    assert not (out / 'agent' / 'demo-agent.md').exists()
+    # The surviving skill is untouched by the prune.
+    assert (out / 'skill' / 'demo-demo-skill' / 'SKILL.md').is_file()
 
 
 # =============================================================================
