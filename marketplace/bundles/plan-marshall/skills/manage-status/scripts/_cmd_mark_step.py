@@ -198,10 +198,12 @@ def _emit_completion_marker(plan_id: str, phase: str, step: str, suppress: bool)
     ``mark-step-done`` writes no such line, exactly as before.
 
     ``suppress`` (``--no-completion-log``) is passed ONLY by a call that RE-STAMPS
-    an already-completed step (the item-5f ``head_at_completion`` re-stamp, the
-    item-7a merge-anyway resolution), so the line is emitted exactly once per step
-    rather than once per ``mark-step-done`` call. A first terminal recording never
-    passes it. Best-effort: :func:`plan_logging.log_entry` swallows every error, so
+    an already-emitted step outcome — the item-5f ``head_at_completion`` re-stamp —
+    so the line is emitted exactly once per step rather than once per
+    ``mark-step-done`` call. A FIRST terminal recording never passes it: the item-7a
+    merge-anyway resolution is the escalate-ask step's first and only terminal
+    write, so it MUST emit and does NOT carry the flag. Best-effort:
+    :func:`plan_logging.log_entry` swallows every error, so
     a logging failure never turns a successful record into a failed one.
     """
     if suppress or phase != _COMPLETION_MARKER_PHASE:

@@ -88,11 +88,13 @@ MANIFEST_FILENAME = 'execution.toon'
 STATUS_FILENAME = 'status.json'
 FINALIZE_PHASE = '6-finalize'
 
-#: The finalize dispatcher's caller prefix. Every finalize ``[DISPATCH]`` line is
-#: emitted by the phase-6-finalize dispatcher under this caller (the hand-written
-#: "indivisible pair" in ``phase-6-finalize/SKILL.md`` Step 3). Counting lines by
-#: this caller scopes the ``missing_dispatch_emission`` comparison to finalize
-#: without pulling in phase-5 dispatches that share the work log.
+#: The finalize dispatcher's caller prefix. Every finalize ``[DISPATCH]`` line
+#: carries this caller because each finalize dispatch resolves its target with
+#: ``--caller plan-marshall:phase-6-finalize``, and the ``effort resolve-target``
+#: resolve seam emits the line under that caller as a per-firing side effect (see
+#: ``phase-6-finalize/SKILL.md`` Step 3). Counting lines by this caller scopes the
+#: ``missing_dispatch_emission`` comparison to finalize without pulling in phase-5
+#: dispatches that share the work log.
 FINALIZE_DISPATCH_CALLER = 'plan-marshall:phase-6-finalize'
 
 #: A ``[DISPATCH] (caller) …`` spawn line. The caller paren is required — a bare
@@ -107,9 +109,10 @@ _DISPATCH_LINE_RE = re.compile(r'\[DISPATCH\]\s*\((?P<caller>[^)]*)\)')
 _RESOLVE_LINE_RE = re.compile(r'\beffort resolve-target\b')
 _RESOLVE_ROLE_RE = re.compile(r'\brole=(?P<eq>\S+)|--role\s+(?P<flag>\S+)')
 
-#: The dispatcher-emitted per-step completion line. Fires for BOTH dispatched and
-#: inline steps, so it is a *completion* witness, never a *dispatch* witness — it
-#: is the D3 denominator, never a D2 discriminator.
+#: The per-step completion line, emitted by ``manage-status mark-step-done`` as a
+#: side effect of every finalize terminal write (``_emit_completion_marker``).
+#: Fires for BOTH dispatched and inline steps, so it is a *completion* witness,
+#: never a *dispatch* witness — it is the D3 denominator, never a D2 discriminator.
 _STEP_COMPLETED_RE = re.compile(r'\[STEP\].*?Completed step:\s*(?P<step>\S+)')
 
 #: A direct ``Task: general-purpose`` spawn in the work log — a generic subagent

@@ -274,7 +274,7 @@ value: feature
 
 ### mark-step-done
 
-Record the outcome of a phase step inside `status.metadata.phase_steps`. Phase skills use this to persist intra-phase progress (e.g., discovery, drift-detection) so that resuming a phase can skip completed steps. Outcomes are `done`, `skipped`, `loop_back`, or `failed`. An optional `--display-detail` one-line string is persisted alongside the outcome so downstream renderers (phase-6-finalize vertical-steps block, etc.) can surface user-facing step summaries. Loop-back outcomes carry a mandatory `--loop-back-target` granularity classifier (see "Loop-back target classification" below).
+Record the outcome of a phase step inside `status.metadata.phase_steps`. Phase skills use this to persist intra-phase progress (e.g., discovery, drift-detection) so that resuming a phase can skip completed steps. Outcomes are `done`, `skipped`, `loop_back`, or `failed`. An optional `--display-detail` one-line string is persisted alongside the outcome so downstream renderers (phase-6-finalize vertical-steps block, etc.) can surface user-facing step summaries. Loop-back outcomes carry a mandatory `--loop-back-target` granularity classifier (see "Loop-back target classification" below). For a `6-finalize` step the terminal write ALSO emits a fused `[STEP] … Completed step:` work-log line as a side effect (see "Fused completion emission" below).
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
@@ -286,6 +286,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   [--head-at-completion <sha>] \
   [--loop-back-target {5-execute|6-finalize}] \
   [--fact KEY=VALUE]... \
+  [--no-completion-log] \
   [--force]
 ```
 
@@ -298,6 +299,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 - `--head-at-completion` (REQUIRED when `--outcome=done` on a step declaring `head_dependent: true`, optional otherwise): Git SHA captured at step completion. Persisted alongside outcome and consulted by resumable phase dispatchers (e.g., phase-6-finalize `pre-push-quality-gate`) to detect HEAD advancement. Omitting it on a head-dependent `done` is refused with `missing_head_at_completion` and nothing is written.
 - `--loop-back-target` (REQUIRED when `--outcome=loop_back`, FORBIDDEN otherwise): Loop-back target phase. Must be one of `5-execute` (full phase rollback for fix-task-required dispositions) or `6-finalize` (inline replay for inline-fixable dispositions). See "Loop-back target classification" below.
 - `--fact` (optional, repeatable): Record one structured `KEY=VALUE` per-step fact. See "Structured step facts" below.
+- `--no-completion-log` (optional): Suppress the fused `[STEP] … Completed step:` work-log line this call would otherwise emit for a `6-finalize` step (see "Fused completion emission" below). Pass it ONLY on a call that RE-STAMPS an already-emitted step outcome — the phase-6-finalize item-5f `head_at_completion` re-stamp — so the completion line is emitted exactly once per step. A first terminal recording never passes it.
 - `--force` (optional): Overwrite an existing differing outcome
 
 **Structured step facts**:
@@ -327,6 +329,10 @@ The refusal exists because the recorded SHA carries two independent loads, and a
 **How head-dependence is derived**: through the finalize-step registry's OWN discovery path — `find_implementors()` for the population and `extension_discovery._read_frontmatter_fields` for the fact — so no second frontmatter parser exists to drift from the one the dispatcher and the derivation guard already read. Both the discovered step name and the supplied `--step` are canonicalized before comparison, because discovery names a built-in step `default:{bare}` while callers write the bare canonical key.
 
 **Derivation scope and the warning branch**: the check runs only on `--outcome done`, so no other outcome pays the discovery cost. A step that is simply ABSENT from the finalize-step population resolves to *not head-dependent* and raises nothing — this command records steps for every phase, and a phase-5 step legitimately matches no finalize-step implementor. When the derivation machinery cannot run AT ALL (discovery unavailable, or it discovers no implementors), the record IS written and carries a `warning` field naming the unresolved derivation: an unresolvable derivation must not manufacture an unsubstantiated refusal, but must not pass silently either. The `warning` key is omitted entirely when no warning applies, so the ordinary record keeps its historical shape.
+
+**Fused completion emission**:
+
+For a `6-finalize` step, the terminal write emits a `[STEP] (plan-marshall:phase-6-finalize) Completed step: {step}` work-log line as a side effect of the write (`_cmd_mark_step.py::_emit_completion_marker`). This fuses the operational-log completion marker to the handshake: recording a finalize step's outcome and emitting its completion line are ONE action, so the step-completion invariant and the log line cannot diverge. The emission is scoped to the `6-finalize` phase — every other phase's `mark-step-done` writes no such line, so the marker's population (and the dispatch audit's `completion_count`) is unchanged for them. It rides only a real write: an idempotent no-change re-call emits nothing. `--no-completion-log` suppresses it on the one call that re-stamps an already-emitted outcome (the phase-6-finalize item-5f `head_at_completion` re-stamp), so the line is emitted exactly once per step; a first terminal recording never passes the flag.
 
 **Storage shape**:
 
