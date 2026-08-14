@@ -1,6 +1,6 @@
 # Run report — 370-multi-target-generator-edge-paths (run 01)
 
-**Date (UTC):** 2026-08-14    **Branch:** `claude/multi-target-generator-edge-paths-7yae0m`    **PR:** (pending)    **Outcome:** in progress
+**Date (UTC):** 2026-08-14    **Branch:** `claude/multi-target-generator-edge-paths-7yae0m`    **PR:** [#1228](https://github.com/cuioss/plan-marshall/pull/1228)    **Outcome:** in progress
 
 ## Skills loaded
 
@@ -98,12 +98,20 @@ Two **informational** observations (the agent flagged both as NOT plan violation
 
 | # | Observation | Disposition |
 |---|---|---|
-| 1 | D2 pruned at whole-skill-dir granularity, so a verbatim sub-dir (`references/`, `standards/`, …) removed from a *surviving* skill was not pruned — a residual drift finer than D2's component-granularity Done-when. | **Fixed.** `_prune_stale_outputs` reworked to file granularity (unlink non-written files + remove emptied dirs). This directly serves the plan's Goal ("emitted output cannot drift past source") and uses D2's own sanctioned "track written paths and prune leftovers" approach. New test `test_emit_bundles_prunes_removed_skill_subdir`, verified red against the prior whole-dir prune. |
+| 1 | D2 pruned at whole-skill-dir granularity, so a verbatim sub-dir (`references/`, `standards/`, …) removed from a *surviving* skill was not pruned — a residual drift finer than D2's component-granularity Done-when. | **Fixed.** `_prune_stale_outputs` reworked to file granularity (unlink non-written files + remove emptied dirs). This directly serves the plan's Goal ("emitted output cannot drift past source") and uses D2's own sanctioned "track written paths and prune leftovers" approach. New test `test_emit_bundles_prunes_removed_skill_subdir`, verified red against the prior whole-dir prune. **A focused re-verification of this change returned CLEAN** (all three prune cases correct, `opencode.json` untouched, empty-dir cleanup safe, full-regeneration-only preserved, no new hazard). |
 | 2 | D5 keys on `st_mtime_ns` rather than a content hash — carries the usual two-writes-in-one-tick mtime blind spot. | **Accepted, no change.** The plan explicitly sanctions "path plus modification time, **or** clear the cache" — mtime is one of the two named options. The blind spot is irrelevant to the real single-process generation flow, and the D5 test bumps mtime explicitly (as a real edit does), so it is deterministic. |
 
 ## Reviewer participation
 
-(Recorded after the PR review cycle.)
+Expected population derived from `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` (`author_login`), cross-named by `.github/workflows/pr-agent.yml`: **`cuioss-review-bot`** (pr-agent), **`coderabbitai`** (coderabbit), **`sourcery-ai`** (sourcery). M = 3.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | _pending_ | (recorded after the review cycle) |
+| `coderabbitai` | _pending_ | (recorded after the review cycle) |
+| `sourcery-ai` | _pending_ | (recorded after the review cycle) |
+
+(Coverage N-of-M and the Step 8 shortfall disclosure recorded at close.)
 
 ## Cost
 
