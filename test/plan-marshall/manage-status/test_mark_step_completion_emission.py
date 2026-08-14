@@ -68,7 +68,9 @@ def _mark(
     no_completion_log: bool = False,
     force: bool = False,
 ) -> dict:
-    return cmd_mark_step_done(
+    # cmd_mark_step_done is Any (loaded via load_script_module), so bind its result
+    # to a typed local before returning — a bare return trips mypy's no-any-return.
+    result: dict = cmd_mark_step_done(
         Namespace(
             plan_id=plan_id,
             phase=phase,
@@ -82,6 +84,7 @@ def _mark(
             no_completion_log=no_completion_log,
         )
     )
+    return result
 
 
 def _completion_lines(plan_id: str) -> list[str]:
