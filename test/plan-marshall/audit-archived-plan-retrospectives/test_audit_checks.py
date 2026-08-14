@@ -6098,6 +6098,35 @@ class TestPreferenceAuthorshipFilter:
         assert result['candidate_count'] == 1
         assert result['rows'][0]['finding_class'] == 'unused import'
 
+    def test_human_reviewer_pr_comment_without_bot_kind_is_excluded(self, tmp_path: Path):
+        # CHARACTERIZATION of a deliberate fail-closed consequence: an external
+        # HUMAN reviewer's pr-comment carries an author login but no bot_kind, and
+        # is INDISTINGUISHABLE on the finding from the pipeline's own posted
+        # comment (both bot_kind-absent, both author-bearing). With no self-login
+        # signal available, the gate admits ONLY positively bot-attributed
+        # comments, so a human pr-comment is excluded too. This is intended, not a
+        # bug — human PR comments carry per-comment-unique title signatures and
+        # essentially never recur into a durable preference anyway, while the
+        # feature's real value (tool-disposition recurrences) is untouched.
+        all_inputs = [
+            _write_preference_plan(
+                tmp_path, f'human-{i}',
+                [{
+                    'type': 'pr-comment',
+                    'title': 'Consider a guard clause',
+                    'resolution': 'taken_into_account',
+                    'module': 'python',
+                    'author': 'some-human-reviewer',
+                }],
+            )
+            for i in range(3)
+        ]
+
+        result = audit.cross_preference_pattern(all_inputs)
+
+        assert result['candidate_count'] == 0
+        assert result['rows'] == []
+
 
 class TestPreferenceUnattributedBucketNotPromoted:
     """D2 — a recurrence collapsing to the ``default`` fallback bucket is the

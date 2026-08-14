@@ -2164,8 +2164,9 @@ def _preference_module(obj: dict[str, Any]) -> str:
     """Return the finding's module attribution for preference aggregation.
 
     Prefers the explicit `module` field, falls back to `component`, then to the
-    cross-cutting `default` bucket. Cross-cutting patterns (no concrete module)
-    route via `--module default` per the shared routing contract.
+    `default` UNATTRIBUTED bucket. Per D2 (see `cross_preference_pattern`), a tuple
+    landing in the `default` bucket is counted but never promoted — it is not a
+    cross-cutting judgement and no longer routes anywhere.
     """
     for key in ("module", "component"):
         value = obj.get(key)

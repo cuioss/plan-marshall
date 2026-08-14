@@ -161,13 +161,13 @@ filed, no error.
 For each cleared tuple, generalize the disposition recurrence into a hint string
 following the shared contract in
 [`disposition-to-hint-routing.md`](disposition-to-hint-routing.md) for the
-generalization rule, the intended routing targets
-(`architecture enrich best-practice --module {module}` for module-attributed
-patterns, `architecture enrich insight --module default` for cross-cutting
-patterns), and the "generalize, do not log raw dispositions" privacy invariant.
-This step MUST NOT restate those rules inline — the shared contract is the single
-source of truth (the meta-only cross-plan auditor's Step 4c references the same
-contract).
+generalization rule, the routing target
+(`architecture enrich {best-practice|insight} --module {module}` to the tuple's
+concrete module — Step 3 already dropped every unattributed `default`-bucket
+tuple, so no tuple routes to the `default` bucket), and the "generalize, do not
+log raw dispositions" privacy invariant. This step MUST NOT restate those rules
+inline — the shared contract is the single source of truth (the meta-only
+cross-plan auditor's Step 4c references the same contract).
 
 **Do NOT call `architecture enrich` from this step.** It is `post_run_review: true`
 and runs after the merge gate, where the enrich write would put tracked source

@@ -55,7 +55,21 @@ See Findings / Build gate. Tests target `cross_preference_pattern`; each suppres
 
 ## Findings
 
-_pending_
+### Pre-PR verification sub-agent (Step 6) — `general-purpose`, read-only
+
+The sub-agent read the plan, the full diff, report-01.md, `audit.py`, the test diff, the three edited docs, and swept the whole tree for stale statements. It confirmed all four deliverables implemented and test-covered, D1/D2 visibly separate, and no out-of-scope collateral (no `workflow-integration-github` / `tools-integration-ci` code touched). It independently re-confirmed D0 (store git-tracked via `.gitignore` exception; 0 self-minted hints). It surfaced 3 stale-claim gaps and 2 correctness observations:
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| 1 | `audit-archived-plan-retrospectives/SKILL.md` Step 4c | Still listed routing target `architecture enrich insight --module default` for cross-cutting rows — false after D2 | **FIXED** — updated Step 4c to state surfaced rows are authorship+attribution gated and route only to concrete modules |
+| 2 | `finalize-step-preference-emitter.md` Step 4 | Still named `--module default` for cross-cutting patterns — self-contradictory with the just-edited Step 3 | **FIXED** — routing target reworded; Step 3 already drops default-bucket tuples |
+| 3 | `audit.py` `_preference_module` docstring | Still said cross-cutting `default` bucket routes via `--module default` — false after D2 | **FIXED** — docstring rewritten to the counted-but-never-promoted semantics |
+| 4 | `_preference_admissible` (D1) | Also suppresses genuine external-human reviewer pr-comments (no `bot_kind`), broader than the plan's literal "keep external humans" wording | **ACCEPTED (deliberate)** — there is no self-login signal on a finding to tell an external human from the pipeline-self (both `bot_kind`-absent, both author-bearing); admitting author-bearing comments would re-open the exact hole. Recorded as a fail-closed divergence in D1, and now pinned by an explicit characterization test `test_human_reviewer_pr_comment_without_bot_kind_is_excluded` so the behavior is a tested invariant, not silent |
+| 5 | `default` sentinel overloading | `default` is both the unattributed-fallback sentinel AND the alias for the real project-root module, so D2 would also suppress a recurrence genuinely attributed to `module: "default"` | **ACCEPTED / RESIDUE** — a pre-existing system-wide convention (the fallback sentinel, the retired routing target, and the enriched store's cross-cutting bucket ALL use the literal `default`); the plan explicitly frames `default` as the unattributed sink, and D0 confirms the store's `default/` holds cross-cutting project-wide hints, so suppressing them is D2's intended behavior. Re-architecting the sentinel is a system-wide change beyond this plan; see Residue |
+
+All three stale-claim fixes shipped in a follow-up commit; the D3 negative controls (bot-attributed pr-comment, module-attributed tool finding) genuinely still promote, so the filter does not suppress both halves.
+
+_CI / PR-review findings appended after the PR opens._
 
 ## Reviewer participation
 
