@@ -6127,6 +6127,33 @@ class TestPreferenceAuthorshipFilter:
         assert result['candidate_count'] == 0
         assert result['rows'] == []
 
+    def test_unrecognized_bot_kind_pr_comment_is_excluded(self, tmp_path: Path):
+        # The gate admits a pr-comment ONLY when its bot_kind is a RECOGNIZED
+        # reviewer identity. `add_finding` validates bot_kind at write time, but the
+        # auditor reads archived JSONL directly, so a legacy / de-registered /
+        # hand-edited record carrying an unrecognized bot_kind (here `sonarcloud`,
+        # never a registered reviewer bot) must NOT slip through and seed a
+        # preference. Validation is against the live registry-derived set.
+        all_inputs = [
+            _write_preference_plan(
+                tmp_path, f'bogus-{i}',
+                [{
+                    'type': 'pr-comment',
+                    'title': 'Spurious claim',
+                    'resolution': 'taken_into_account',
+                    'module': 'python',
+                    'author': 'sonarcloud',
+                    'bot_kind': 'sonarcloud',
+                }],
+            )
+            for i in range(3)
+        ]
+
+        result = audit.cross_preference_pattern(all_inputs)
+
+        assert result['candidate_count'] == 0
+        assert result['rows'] == []
+
 
 class TestPreferenceUnattributedBucketNotPromoted:
     """D2 — a recurrence collapsing to the ``default`` fallback bucket is the

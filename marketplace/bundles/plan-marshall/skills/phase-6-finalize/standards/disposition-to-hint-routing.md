@@ -103,14 +103,18 @@ even when it clears the recurrence count.
 A finding contributes to a preference recurrence only when it is not the
 pipeline's own control traffic. A `pr-comment` finding is admissible ONLY when it
 is positively attributed to a recognized external reviewer bot — i.e. it carries a
-non-empty `bot_kind` (the registry-derived reviewer identity the ingest verb
-stamps from the comment author login). A `pr-comment` with no `bot_kind` cannot be
-told apart from the pipeline's own posted comments: the ingest verb records the
-pipeline's own PR comments (a review-trigger comment, a description-restore) with
-`bot_kind` absent, exactly as it records an unattributed human comment. Admitting
-one would let the pipeline's own control traffic become evidence about the
-pipeline's preferences — a SELF-REINFORCING artifact that grows with pipeline
-chattiness, not with operator judgement.
+`bot_kind` that is a **recognized reviewer identity**, validated against the
+registry-derived set (the ingest verb stamps `bot_kind` from the comment author
+login and `add_finding` validates it at write time; the auditor re-validates
+archived records against the live registry, since it reads JSONL directly rather
+than through that write-time check). A `pr-comment` with no `bot_kind` — or one
+whose `bot_kind` is not a recognized reviewer identity — cannot be told apart from
+the pipeline's own posted comments: the ingest verb records the pipeline's own PR
+comments (a review-trigger comment, a description-restore) with `bot_kind` absent,
+exactly as it records an unattributed human comment. Admitting one would let the
+pipeline's own control traffic become evidence about the pipeline's preferences —
+a SELF-REINFORCING artifact that grows with pipeline chattiness, not with operator
+judgement.
 
 There is no self-login signal on the finding (the comment-preparation verb stamps
 no marker), so this gate fails CLOSED on positive external attribution rather than
