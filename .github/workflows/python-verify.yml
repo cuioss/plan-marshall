@@ -8,6 +8,25 @@ on:
   merge_group:
     types: [checks_requested]
 
+concurrency:
+  # Collapse the duplicate verify runs a single push to a working branch would
+  # otherwise produce. A push to feature/*, fix/*, chore/* fires BOTH the push
+  # trigger and the pull_request (synchronize) trigger, running the full suite
+  # twice per push. Keying the group on the branch identity — the PR head ref
+  # for a pull_request event, else the pushed ref name — puts both events for the
+  # same branch in one concurrency group.
+  #
+  # cancel-in-progress is scoped to the pull_request event only, never push, so
+  # the run that produces the required `verify / conclusion` check (the
+  # pull_request run — see CLAUDE.md § Branch Naming) is NEVER cancelled by a
+  # competing push run. The pull_request run entering the group cancels an
+  # in-progress push run (the common ordering — the duplicate is dropped); a push
+  # run entering while the pull_request run is in progress queues instead of
+  # cancelling it. A merge_group run keys on its own unique queue ref, so it lands
+  # in a group by itself and the merge queue's re-verification is never cancelled.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
   pull-requests: read

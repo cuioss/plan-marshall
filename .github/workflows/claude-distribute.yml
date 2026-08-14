@@ -11,8 +11,14 @@ on:
     tags:
       - 'v*'
 
+# Default the workflow token to read-only. Every write in this workflow goes
+# through the separate cui-release-bot app token (steps.release-token.outputs.token):
+# the orphan-branch publish (peaceiris/actions-gh-pages personal_token) and the
+# dist-tag push (ad-m/github-push-action github_token) both use it, and the tag is
+# created locally before that push. The default GITHUB_TOKEN therefore needs only
+# read; no step requires a per-step write grant.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   publish:
@@ -72,25 +78,31 @@ jobs:
           echo "Computed deterministic version: ${version}"
 
       - name: Fetch previous dist-manifest from dist branch tip
+        env:
+          BRANCH_NAME: ${{ matrix.branch_name }}
         run: |
           set -uo pipefail
-          if git fetch origin "${{ matrix.branch_name }}" 2>/dev/null; then
-            if git cat-file -e "origin/${{ matrix.branch_name }}:dist-manifest.json" 2>/dev/null; then
-              git show "origin/${{ matrix.branch_name }}:dist-manifest.json" > previous-dist-manifest.json
-              echo "Fetched previous dist-manifest from origin/${{ matrix.branch_name }} tip"
+          if git fetch origin "${BRANCH_NAME}" 2>/dev/null; then
+            if git cat-file -e "origin/${BRANCH_NAME}:dist-manifest.json" 2>/dev/null; then
+              git show "origin/${BRANCH_NAME}:dist-manifest.json" > previous-dist-manifest.json
+              echo "Fetched previous dist-manifest from origin/${BRANCH_NAME} tip"
             else
-              echo "No dist-manifest.json on origin/${{ matrix.branch_name }} — first publish for this target"
+              echo "No dist-manifest.json on origin/${BRANCH_NAME} — first publish for this target"
             fi
           else
-            echo "Branch ${{ matrix.branch_name }} does not exist yet — first publish for this target"
+            echo "Branch ${BRANCH_NAME} does not exist yet — first publish for this target"
           fi
 
       - name: Regenerate target directory
+        env:
+          GENERATOR_TARGET_FLAG: ${{ matrix.generator_target_flag }}
+          PUBLISH_DIR: ${{ matrix.publish_dir }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           python3 marketplace/targets/generate.py \
-            --target ${{ matrix.generator_target_flag }} \
-            --output ${{ matrix.publish_dir }} \
-            --version "${{ steps.version.outputs.version }}" \
+            --target "${GENERATOR_TARGET_FLAG}" \
+            --output "${PUBLISH_DIR}" \
+            --version "${VERSION}" \
             --previous-manifest previous-dist-manifest.json
 
       - name: Publish to orphan branch (cui-release-bot identity)
@@ -107,15 +119,26 @@ jobs:
 
       - name: Create dist tag (release flow only)
         if: startsWith(github.ref, 'refs/tags/v')
+        # Pass every context value in through env and reference it as a quoted
+        # shell variable. github.ref_name is attacker-influenceable (a ref name
+        # can carry shell metacharacters); interpolating it directly into this
+        # run: block would be a template-injection surface. The matrix values are
+        # trusted, but they are passed the same way so no context expression is
+        # ever spliced into the shell.
+        env:
+          DIST_TAG_PREFIX: ${{ matrix.dist_tag_prefix }}
+          REF_NAME: ${{ github.ref_name }}
+          BRANCH_NAME: ${{ matrix.branch_name }}
+          TARGET_NAME: ${{ matrix.target_name }}
         run: |
           set -euo pipefail
-          dist_tag="${{ matrix.dist_tag_prefix }}/${{ github.ref_name }}"
+          dist_tag="${DIST_TAG_PREFIX}/${REF_NAME}"
           git config user.name 'cui-release-bot'
           git config user.email 'cui-release-bot@cuioss.de'
-          git fetch origin ${{ matrix.branch_name }}
+          git fetch origin "${BRANCH_NAME}"
           git tag -a "${dist_tag}" \
-            -m "Distribution for ${{ matrix.target_name }} ${{ github.ref_name }}" \
-            origin/${{ matrix.branch_name }}
+            -m "Distribution for ${TARGET_NAME} ${REF_NAME}" \
+            "origin/${BRANCH_NAME}"
 
       - name: Push dist tag (release flow only)
         if: startsWith(github.ref, 'refs/tags/v')
