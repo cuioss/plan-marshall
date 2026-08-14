@@ -2152,6 +2152,14 @@ def _preference_disposition(obj: dict[str, Any]) -> str | None:
     return res if res in _PREFERENCE_DISPOSITIONS else None
 
 
+# The literal module bucket a finding with no concrete `module`/`component`
+# attribution collapses into. It is the UNATTRIBUTED sink, shared with the
+# routing contract's `--module default` cross-cutting target — and, per D2 of the
+# `truthful-signals` "pipeline-echo" plan, NOT a promotable preference bucket (see
+# `cross_preference_pattern`).
+_UNATTRIBUTED_MODULE = "default"
+
+
 def _preference_module(obj: dict[str, Any]) -> str:
     """Return the finding's module attribution for preference aggregation.
 
@@ -2163,7 +2171,37 @@ def _preference_module(obj: dict[str, Any]) -> str:
         value = obj.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
-    return "default"
+    return _UNATTRIBUTED_MODULE
+
+
+def _preference_admissible(obj: dict[str, Any]) -> bool:
+    """Return False for a finding that must not seed a preference recurrence.
+
+    Authorship gate (D1 of the `truthful-signals` "the-pipeline-talks-to-itself"
+    plan). A `pr-comment` finding contributes to preference learning ONLY when it
+    is positively attributed to a recognized external reviewer bot — i.e. it
+    carries a non-empty `bot_kind` (one of the registry-derived reviewer identities
+    the ingest verb stamps from the comment author login).
+
+    A `pr-comment` with no `bot_kind` cannot be told apart from the pipeline's own
+    posted comments: the ingest verb records the pipeline's own PR comments (a
+    review-trigger comment, a description-restore) with `bot_kind` absent, exactly
+    as it records an unattributed human comment. Admitting such a comment would let
+    the pipeline's own control traffic become evidence about the pipeline's
+    preferences — a SELF-REINFORCING measurement artifact that grows with pipeline
+    chattiness rather than with operator judgement. There is no self-login signal on
+    the finding to identify "self" directly (the comment-preparation verb stamps no
+    marker), so this gate fails CLOSED on positive external attribution instead of
+    trying to recognize self.
+
+    Non-comment findings (lint/sonar/bug/test-failure/…) carry no author and are
+    never pipeline-authored PR chatter; they are unaffected — their tool-disposition
+    recurrences are exactly the signal preference learning exists to capture.
+    """
+    if obj.get("type") == "pr-comment":
+        bot_kind = obj.get("bot_kind")
+        return isinstance(bot_kind, str) and bool(bot_kind.strip())
+    return True
 
 
 def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
@@ -2185,6 +2223,10 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         seen_in_plan: set[tuple[str, str, str]] = set()
         for jsonl in findings_dir.glob("*.jsonl"):
             for obj in read_jsonl(jsonl):
+                # D1 authorship gate: a pipeline-self-authored comment cannot seed
+                # a preference (see `_preference_admissible`).
+                if not _preference_admissible(obj):
+                    continue
                 disposition = _preference_disposition(obj)
                 if disposition is None:
                     continue
