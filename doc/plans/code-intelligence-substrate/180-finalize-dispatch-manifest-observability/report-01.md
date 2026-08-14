@@ -148,7 +148,41 @@ by binding the result to a typed local (`a906bad`) and re-verified green.
 
 ## Findings
 
-_Pending._
+### Verification sub-agent (Step 6)
+
+An independent read-only sub-agent verified the diff against `plan.md`. **Verdict: D2/D3/D6
+implemented as specified and correctly tested; the D4/D5/D3-peer refutations are sound from source.**
+It surfaced one in-diff correctness contradiction and five beyond-diff stale-claim / doc-gap findings
+that the first-pass sweep had not recorded; all six were fixed (commit `c9b48e8`), and a **re-dispatch
+confirmed all six cleanly resolved with no new contradiction or stale claim** (the F2/F3 audit edit
+verified comment-only).
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| F1 | sub-agent, in-diff, **correctness** | `_cmd_mark_step.py` docstring + `manage-status.py` `--help` named the item-7a merge-anyway resolution as a `--no-completion-log` carrier, contradicting SKILL.md (item-5f is the only carrier; item-7a is the escalate-ask step's first/only terminal write and MUST emit). An implementer following `--help` would silence the only completion line for an escalate-ask-merged step. | **FIXED** (`c9b48e8`) — both script docs corrected to agree with SKILL.md; re-verified. |
+| F2 | sub-agent, beyond-diff | `check-dispatch-audit.py:91` comment called the finalize `[DISPATCH]` line hand-written by the dispatcher — false after D2 (rides the resolve seam). | **FIXED** (`c9b48e8`) — comment corrected; audit logic + tests untouched. |
+| F3 | sub-agent, beyond-diff | `check-dispatch-audit.py:110` comment called the `[STEP]` line "dispatcher-emitted" — false after D3 (emitted by `mark-step-done`). | **FIXED** (`c9b48e8`) — comment corrected (comment-only). |
+| F4 | sub-agent, beyond-diff | `dispatch-inline-split.md:15` said the `[DISPATCH]` emission is "fused to the dispatch branch" — false after D2 (resolve seam). | **FIXED** (`c9b48e8`). |
+| F5 | sub-agent, doc gap | `manage-status/SKILL.md` did not document the new `--no-completion-log` flag or the finalize `[STEP]` emission side-effect. | **FIXED** (`c9b48e8`) — added to usage block, parameter list, and a new "Fused completion emission" subsection. |
+| F6 | sub-agent, beyond-diff | `dispatch-walkthrough.md` item-7c example showed the pre-seam bare resolve for the dispatch D2 migrated. | **FIXED** (`c9b48e8`) — aligned to the canonical seam form. |
+| nit | re-verify | `manage-status.py` `--help` missing a possessive apostrophe ("step first" → "step's first"). | **FIXED** (user-facing `--help` polish). |
+
+**Out-of-scope boundary honored:** the fix to the two `check-dispatch-audit.py` comments (F2/F3) is
+comment-only — the dispatch audit's logic and its tests, owned by the sibling plan (170, landed as
+#1225), are byte-identical. Correcting a comment MY emission change falsified is the lane's
+stale-claim discipline, not a change to the audit surface.
+
+No sub-agent finding was rejected. No undeclared collateral change (the `effort resolve-target` seam
+itself was not touched, honoring the plan's "if recording requires touching effort resolution, stop
+and coordinate" constraint).
+
+### CI
+
+_Pending — recorded after the PR CI concludes._
+
+### PR review
+
+_Pending — recorded after the review cycle._
 
 ## Reviewer participation
 

@@ -433,7 +433,7 @@ def main() -> int:
             'phase-6-finalize item-5f head_at_completion re-stamp — so the completion line '
             'is emitted exactly once per step rather than once per mark-step-done call. A '
             'first terminal recording never passes it (the item-7a merge-anyway resolution '
-            'is the escalate-ask step first and only terminal write, so it MUST emit).'
+            "is the escalate-ask step's first and only terminal write, so it MUST emit)."
         ),
     )
     mark_step_parser.set_defaults(func=cmd_mark_step_done)
