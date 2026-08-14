@@ -49,7 +49,9 @@ See Findings / Build gate. Tests target `cross_preference_pattern`; each suppres
 
 ## Build gate
 
-_pending_
+`git diff --name-only origin/main...HEAD -- '*.py'` → `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` and `test/plan-marshall/audit-archived-plan-retrospectives/test_audit_checks.py` — **Python changed, full path taken.**
+
+`./pw verify` → **SUCCESS**: `19639 passed, 14 skipped in 379.29s`. All three sub-steps ran: quality-gate (ruff/mypy-production 399 files/SPDX/plugin-doctor marketplace-wide), test-compile (mypy-test 734 files), module-tests (whole-tree pytest). The marketplace `test_real_marketplace_quality_gate_has_zero_findings` passed, so the doc edits introduced no plugin-doctor findings. Per-commit `./pw quality-gate` ran clean before each of the two `*.py` commits.
 
 ## Findings
 
