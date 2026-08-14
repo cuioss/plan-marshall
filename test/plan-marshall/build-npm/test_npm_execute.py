@@ -5,14 +5,7 @@
 Tests the npm execution config, npm/npx detection, and factory-generated functions.
 """
 
-import sys
-from unittest.mock import MagicMock
-
 from conftest import load_script_module
-
-sys.modules.setdefault('plan_logging', MagicMock(log_entry=MagicMock()))
-sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_value=120), timeout_set=MagicMock()))
-
 
 _npm_execute_mod = load_script_module('plan-marshall', 'build-npm', '_npm_execute.py', '_npm_execute')
 

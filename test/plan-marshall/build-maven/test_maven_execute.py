@@ -5,14 +5,7 @@
 Tests the Maven execution config and factory-generated functions.
 """
 
-import sys
-from unittest.mock import MagicMock
-
 from conftest import load_script_module
-
-sys.modules.setdefault('plan_logging', MagicMock(log_entry=MagicMock()))
-sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_value=300), timeout_set=MagicMock()))
-
 
 _maven_execute_mod = load_script_module('plan-marshall', 'build-maven', '_maven_execute.py', '_maven_execute')
 
