@@ -7,4 +7,4 @@ npm ERR! 404 Note that you can also install from a
 npm ERR! 404 tarball, folder, http url, or git url.
 
 npm ERR! A complete log of this run can be found in:
-npm ERR!     /Users/dev/.npm/_logs/2026-01-06T14_35_00_000Z-debug.log
+npm ERR!     /home/dev/.npm/_logs/2026-01-06T14_35_00_000Z-debug.log

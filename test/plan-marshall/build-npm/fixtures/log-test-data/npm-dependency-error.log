@@ -21,7 +21,7 @@ npm ERR! Fix the upstream dependency conflict, or retry
 npm ERR! this command with --force or --legacy-peer-deps
 npm ERR! to accept an incorrect (and potentially broken) dependency resolution.
 npm ERR!
-npm ERR! See /Users/dev/.npm/eresolve-report.txt for a full report.
+npm ERR! See /home/dev/.npm/eresolve-report.txt for a full report.
 
 npm ERR! A complete log of this run can be found in:
-npm ERR!     /Users/dev/.npm/_logs/2026-01-06T14_30_00_000Z-debug.log
+npm ERR!     /home/dev/.npm/_logs/2026-01-06T14_30_00_000Z-debug.log

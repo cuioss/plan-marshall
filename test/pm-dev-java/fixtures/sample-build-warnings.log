@@ -6,9 +6,9 @@
 [INFO]
 [INFO] --- maven-compiler-plugin:3.11.0:compile (default-compile) @ cui-java-tools ---
 [INFO] Changes detected - recompiling the module!
-[INFO] Compiling 25 source files to /Users/oliver/project/target/classes
-[WARNING] /Users/oliver/project/src/main/java/de/cuioss/tools/TokenValidator.java:[25,8] unused import java.util.Optional
-[WARNING] /Users/oliver/project/src/main/java/de/cuioss/tools/UserService.java:[15,5] redundant cast to java.lang.String
+[INFO] Compiling 25 source files to /home/dev/project/target/classes
+[WARNING] /home/dev/project/src/main/java/de/cuioss/tools/TokenValidator.java:[25,8] unused import java.util.Optional
+[WARNING] /home/dev/project/src/main/java/de/cuioss/tools/UserService.java:[15,5] redundant cast to java.lang.String
 [INFO] ------------------------------------------------------------------------
 [INFO] BUILD SUCCESS
 [INFO] ------------------------------------------------------------------------
