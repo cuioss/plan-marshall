@@ -481,14 +481,28 @@ import pytest  # noqa: E402
 
 
 def pytest_collection_modifyitems(items):
-    """Fail the whole session if any collected test opts out via ``allow_pollution``.
+    """Lock the ``allow_pollution`` escape hatch shut, and scope the pollution
+    guard to the tests that drive real credential/plan state.
 
-    The ``allow_pollution`` marker stays registered in ``pyproject.toml`` and is
-    still honoured by ``_pollution_guard``, ``_plan_base_dir_sandbox`` and
-    ``_credentials_dir_sandbox`` — but no test in this suite is permitted to
-    carry it. Locking the escape hatch shut at collection time means a new
-    opt-out is rejected as a session-level error with the offending nodeids,
-    instead of silently disarming the isolation guards for that test.
+    **allow_pollution lock.** The ``allow_pollution`` marker stays registered in
+    ``pyproject.toml`` and is still honoured by ``_pollution_guard``,
+    ``_plan_base_dir_sandbox`` and ``_credentials_dir_sandbox`` — but no test in
+    this suite is permitted to carry it. Locking the escape hatch shut at
+    collection time means a new opt-out is rejected as a session-level error with
+    the offending nodeids, instead of silently disarming the isolation guards for
+    that test.
+
+    **Guard scoping (D5).** ``_pollution_guard`` takes a real-path snapshot before
+    AND after every test it runs on, reading the developer's real
+    ``~/.plan-marshall/credentials/`` listing and the tracked ``.plan/local/``
+    tree. Because the autouse sandboxes already make a real-tree write
+    structurally impossible, that snapshot is a BACKSTOP that only needs to verify
+    the redirect held for the tests that actually drive credential/plan state.
+    Auto-apply the ``touches_real_state`` marker to every test that requests the
+    ``plan_context`` fixture (the canonical plan-state fixture); the guard reads
+    that marker and runs its snapshot only for marked tests. A credential/plan
+    test that reaches real state without ``plan_context`` opts in by carrying the
+    marker explicitly. Every other (pure-logic) test skips the snapshot.
     """
     opted_out = [item.nodeid for item in items if item.get_closest_marker('allow_pollution')]
     if opted_out:
@@ -499,6 +513,10 @@ def pytest_collection_modifyitems(items):
             + '\n\nIsolate the test via the autouse sandboxes (plan_context / '
             'PlanContext / monkeypatch) instead of opting out of them.'
         )
+
+    for item in items:
+        if 'plan_context' in getattr(item, 'fixturenames', ()):
+            item.add_marker('touches_real_state')
 
 
 #: Opt-in flag for the reference-platform ``skipped == 0`` gate. The gate is
@@ -708,8 +726,25 @@ def _pollution_guard(request):
     the real tracked ``.plan/`` tree can opt out with the shared
     ``@pytest.mark.allow_pollution`` marker (the same marker the autouse
     ``_plan_base_dir_sandbox`` honours — no second marker is introduced).
+
+    **Scoped (D5).** The snapshot runs only for tests that drive real
+    credential/plan state — those carrying ``touches_real_state`` (auto-applied to
+    every ``plan_context`` user by :func:`pytest_collection_modifyitems`, or set
+    explicitly). The autouse sandboxes make a real-tree write structurally
+    impossible for every test, so this guard is a backstop that only needs to
+    verify the redirect held for the state-driving subset; a pure-logic test
+    never touches the watched paths, so its before/after snapshot — which reads
+    the developer's real credentials-directory listing — is pure cost and is
+    skipped.
     """
     if request.node.get_closest_marker('allow_pollution'):
+        yield
+        return
+
+    if not request.node.get_closest_marker('touches_real_state'):
+        # Not a credential/plan-state-driving test: the autouse sandboxes already
+        # make a real-tree leak structurally impossible, so the snapshot has
+        # nothing to verify. Skip it (see pytest_collection_modifyitems / D5).
         yield
         return
 
