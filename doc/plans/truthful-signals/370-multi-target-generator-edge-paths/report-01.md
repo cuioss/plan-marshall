@@ -1,6 +1,6 @@
 # Run report — 370-multi-target-generator-edge-paths (run 01)
 
-**Date (UTC):** 2026-08-14    **Branch:** `claude/multi-target-generator-edge-paths-7yae0m`    **PR:** [#1228](https://github.com/cuioss/plan-marshall/pull/1228)    **Outcome:** in progress
+**Date (UTC):** 2026-08-14    **Branch:** `claude/multi-target-generator-edge-paths-7yae0m`    **PR:** [#1228](https://github.com/cuioss/plan-marshall/pull/1228)    **Outcome:** completed — auto-merge armed, landing delegated to the merge queue (merge commit recorded to the operator, not embedded here)
 
 ## Skills loaded
 
@@ -107,11 +107,48 @@ Expected population derived from `marketplace/bundles/plan-marshall/skills/autom
 
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
-| `cuioss-review-bot` | _pending_ | (recorded after the review cycle) |
-| `coderabbitai` | _pending_ | (recorded after the review cycle) |
-| `sourcery-ai` | _pending_ | (recorded after the review cycle) |
+| `cuioss-review-bot` | **reviewed** | Filed the "PR Reviewer Guide 🔍" review-summary comment against the diff: "PR contains tests", "No security concerns identified", "No major issues detected". No findings to action. |
+| `coderabbitai` | **rate-limited** | Published only a refusal notice: "Review limit reached … you've reached your PR review limit, so we couldn't start this review. Next review available in: 67 minutes." Engaged but did not review this diff. |
+| `sourcery-ai` | **rate-limited** | Published only a refusal notice (review body): "you have reached your weekly rate limit of 500000 diff characters." Engaged but did not review this diff. |
 
-(Coverage N-of-M and the Step 8 shortfall disclosure recorded at close.)
+**Coverage: 1 of 3.** All three comment surfaces were read (`get_comments`, `get_reviews`, `get_review_comments`); inline review threads = 0. The one reviewer that reviewed found nothing to fix, so there are no actionable review comments.
+
+**Step 8 shortfall disclosure (fired):** "Review coverage: 1 of 3 — `cuioss-review-bot` reviewed (no findings); `coderabbitai` rate-limited (window reopens in ~67 min); `sourcery-ai` rate-limited (weekly diff-character quota)." Per the contract, rate limits are routine and NOT a merge block — the shortfall is disclosed, not waited on.
+
+## Cost
+
+- **Tokens:** not available to the agent in this session (the Claude Code cloud harness does not surface a per-session token count to the running agent).
+- **Wall-clock:** ≈ single continuous session; PR #1228 opened at 2026-08-14T14:25Z (source: PR `created_at`). Two full `./pw verify` runs dominated (~8–9 min each) plus two verification sub-agent dispatches.
+- **Population:** this single Claude Code cloud session's own work. ⛔ NOT comparable to a plan-marshall `metrics.toon` total — that counts an orchestrator-plus-agent dispatch tree under plan-marshall's per-task billing boundary, which this single interactive cloud session does not share. No comparable figure is presented.
+
+## Contract check (Step 9)
+
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **done** — named in "Skills loaded"; all obtained by bundle path. |
+| 2 Branch | **done** — harness-assigned `claude/multi-target-generator-edge-paths-7yae0m`, kept as-is (cloud session), pushed to `origin` before any edit. |
+| 3 Plan directory | **done** — `doc/plans/truthful-signals/370-multi-target-generator-edge-paths/plan.md` exists and opens with the first-instruction block (present, not repaired). |
+| 4 Implement | **done** — commits carry the `Co-Authored-By: Claude` trailer; deliverables addressed. |
+| 4 Per-commit gate | **done** — every `*.py`-touching commit was preceded by a clean gate; the full `./pw verify` ran green over the branch (executor path unavailable in the fresh clone, so the direct `./pw` path was used and its tool lines read clean). |
+| 4 Pushed | **done** — no unpushed commit; pushed after each commit. |
+| 5 Build gate | **done** — `git diff --name-only origin/main...HEAD -- '*.py'` non-empty; `./pw verify` = SUCCESS (19632 passed, 14 skipped) across quality-gate + test-compile + module-tests. |
+| 6 Verification sub-agent | **done** — PASS with two informational observations; observation 1 fixed and re-verified CLEAN; observation 2 accepted with reason. |
+| 7 PR cycle | **done** — PR #1228; all three comment surfaces read; no actionable comment (one reviewer clean, two rate-limited). |
+| 8 Merge gate | conditions 1–3 assessed; auto-merge arming recorded to the operator (see close). GitHub access path: **GitHub MCP server**. Branch form: **harness-assigned**. |
+| 8 Bridge | **done** — no status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; the report carries the PR number and per-deliverable outcome. |
+| 9 This check | **done** — this table. |
+| 9 What have we learned | see below. |
+
+A cloud run owes no `/sync-plugin-cache` — it is a machine-local build step, not a debt this run records.
+
+## What have we learned (Step 9)
+
+**None proposed.** Every step of the contract executed as written and produced its named artifact. The one place the run met friction — the first `./pw verify` exceeding the 10-minute Bash timeout and moving to the background, and `uv` needing `UV_HTTP_TIMEOUT` raised — is already documented in the contract (§ Step 5: give ≥600000 ms and export `UV_HTTP_TIMEOUT=600`), so the contract already anticipated it and no change is warranted. The FAIL-first requirement was met without direct pytest by reverting production via `git stash` and re-running a `tempfile`-based harness against the real production functions, which the contract's Step 6/D7 wording already accommodates. No ambiguity, missing artifact, or environment mismatch surfaced that the contract does not already cover.
+
+## Residue
+
+- **Rate-limited reviewers** (`coderabbitai`, `sourcery-ai`) did not review this diff. Their windows reopen (coderabbit ~67 min; sourcery weekly). Not blocking; disclosed above. If a re-review is desired, push a trivial commit or comment `@coderabbitai review` after the window reopens.
+- Nothing else open. D6 dropped with evidence; observation 2 (mtime vs content-hash) accepted with reason.
 
 ## Cost
 
