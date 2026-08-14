@@ -69,6 +69,8 @@ The sub-agent read the plan, the full diff, report-01.md, `audit.py`, the test d
 
 All three stale-claim fixes shipped in a follow-up commit; the D3 negative controls (bot-attributed pr-comment, module-attributed tool finding) genuinely still promote, so the filter does not suppress both halves.
 
+**Re-verification (Step 6, second pass) — CLEAN.** The sub-agent re-checked the two fix commits: all three stale sites corrected with no residual `--module default` routing instruction and no new stale claim; the reworded D2 rationale comments accurate; the characterization test genuine (non-vacuous); all four docs (shared contract §§ (b)(d)(e), emitter doc Steps 1/3/4, auditor SKILL.md Step 4c, check doc) mutually consistent; and the D1/D2 executable logic byte-identical to the first-pass approval (the fix commits are doc/comment/test-only). It also confirmed the two remaining `--module default` hits (`phase-6-finalize/workflow/lessons-capture.md:142`, `standards/lessons-integration.md:94`) belong to the lessons-capture knowledge-routing subsystem — a deliberate LLM cross-cutting classification, correctly out of D2's scope.
+
 _CI / PR-review findings appended after the PR opens._
 
 ## Reviewer participation
