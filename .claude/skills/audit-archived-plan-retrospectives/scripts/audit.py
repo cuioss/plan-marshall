@@ -2238,17 +2238,31 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         for key in seen_in_plan:
             tuple_to_plans[key].add(inputs.plan_id)
 
-    candidates: list[dict[str, Any]] = [
-        {
-            "module": module,
-            "finding_class": finding_class,
-            "disposition": disposition,
-            "occurrence_count": len(plans),
-            "plan_ids": sorted(plans),
-        }
-        for (module, finding_class, disposition), plans in tuple_to_plans.items()
-        if len(plans) >= threshold
-    ]
+    candidates: list[dict[str, Any]] = []
+    unattributed_excluded = 0
+    for (module, finding_class, disposition), plans in tuple_to_plans.items():
+        if len(plans) < threshold:
+            continue
+        if module == _UNATTRIBUTED_MODULE:
+            # D2 unattributed-bucket gate: the `default` bucket is the sink for
+            # UNATTRIBUTED recurrences (no module, no component), not a genuine
+            # cross-cutting judgement — the aggregation keys on a single module
+            # value and cannot detect a spans-modules pattern, so `default` only
+            # ever means unattributed. Promoting it would route an unverified hint
+            # to the widest blast radius (the shared contract's
+            # `enrich insight --module default` target). Count it for visibility;
+            # never surface it as a promotable candidate.
+            unattributed_excluded += 1
+            continue
+        candidates.append(
+            {
+                "module": module,
+                "finding_class": finding_class,
+                "disposition": disposition,
+                "occurrence_count": len(plans),
+                "plan_ids": sorted(plans),
+            }
+        )
     candidates.sort(
         key=lambda r: (
             -int(r["occurrence_count"]),
@@ -2260,6 +2274,7 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     return {
         "threshold": threshold,
         "candidate_count": len(candidates),
+        "unattributed_excluded_count": unattributed_excluded,
         "rows": candidates,
     }
 
@@ -5248,6 +5263,10 @@ def emit_preference_pattern_block(result: dict[str, Any]) -> str:
         "status: success",
         f"threshold: {result['threshold']}",
         f"candidate_count: {result['candidate_count']}",
+        # D2: unattributed (`default`-bucket) recurrences that cleared the
+        # threshold but were declined promotion — surfaced so the decision is
+        # visible rather than a silent drop.
+        f"unattributed_excluded_count: {result.get('unattributed_excluded_count', 0)}",
         f"genuine_signal_count: {genuine_signal_count}",
         f"rows[{len(rows)}]{{module,finding_class,disposition,occurrence_count,plan_ids,severity}}:",
     ]

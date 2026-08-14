@@ -5900,6 +5900,9 @@ class TestCrossPreferencePattern:
         assert result['rows'][0]['module'] == 'cli'
 
     def test_no_module_or_component_buckets_to_default(self, tmp_path: Path):
+        # A finding with no module and no component still buckets to `default` —
+        # but per D2 the `default` bucket is the UNATTRIBUTED sink and is NOT
+        # promotable. The tuple is counted for visibility, never surfaced.
         all_inputs = [
             _write_preference_plan(
                 tmp_path, f'd-{i}',
@@ -5910,9 +5913,9 @@ class TestCrossPreferencePattern:
 
         result = audit.cross_preference_pattern(all_inputs)
 
-        assert result['candidate_count'] == 1
-        assert result['rows'][0]['module'] == 'default'
-        assert result['rows'][0]['disposition'] == 'taken_into_account'
+        assert result['candidate_count'] == 0
+        assert result['rows'] == []
+        assert result['unattributed_excluded_count'] == 1
 
     def test_duplicate_tuple_within_plan_counts_once(self, tmp_path: Path):
         # one plan repeats the tuple; two others carry it once → 3 distinct plans.
@@ -6096,6 +6099,57 @@ class TestPreferenceAuthorshipFilter:
         assert result['rows'][0]['finding_class'] == 'unused import'
 
 
+class TestPreferenceUnattributedBucketNotPromoted:
+    """D2 — a recurrence collapsing to the ``default`` fallback bucket is the
+    UNATTRIBUTED sink (no module, no component), not a genuine cross-cutting
+    judgement, and is NOT promotable. Promoting it would route an unverified hint
+    to the widest blast radius (``enrich insight --module default``). This gate is
+    SEPARATE from D1's authorship filter: it fires on ATTRIBUTION, not authorship —
+    the fixtures here use non-comment findings so D1 never touches them.
+    """
+
+    def test_default_bucket_tuple_not_promoted_but_counted(self, tmp_path: Path):
+        # A non-comment finding (untouched by D1) with no module/component recurs
+        # across 3 plans → the `default` bucket. Pre-fix it promotes; D2 excludes
+        # it from candidates and records it in unattributed_excluded_count.
+        all_inputs = [
+            _write_preference_plan(
+                tmp_path, f'u-{i}',
+                [{'type': 'lint-issue', 'title': 'Broad rule', 'resolution': 'suppressed'}],
+            )
+            for i in range(3)
+        ]
+
+        result = audit.cross_preference_pattern(all_inputs)
+
+        assert result['candidate_count'] == 0
+        assert result['rows'] == []
+        assert result['unattributed_excluded_count'] == 1
+
+    def test_module_attributed_survives_alongside_default(self, tmp_path: Path):
+        # NEGATIVE CONTROL, mixed corpus: each plan carries a default-bucket tuple
+        # AND a module-attributed tuple. Pre-fix: candidate_count == 2. Post-fix:
+        # only the module-attributed tuple survives; the unattributed one is
+        # counted-and-dropped. A gate that suppressed both would break the feature.
+        all_inputs = [
+            _write_preference_plan(
+                tmp_path, f'm-{i}',
+                [
+                    {'type': 'lint-issue', 'title': 'Broad rule', 'resolution': 'suppressed'},
+                    {'type': 'lint-issue', 'title': 'Scoped rule', 'resolution': 'suppressed', 'module': 'python'},
+                ],
+            )
+            for i in range(3)
+        ]
+
+        result = audit.cross_preference_pattern(all_inputs)
+
+        assert result['candidate_count'] == 1
+        assert result['rows'][0]['module'] == 'python'
+        assert result['rows'][0]['finding_class'] == 'scoped rule'
+        assert result['unattributed_excluded_count'] == 1
+
+
 class TestPreferencePatternThresholdAlias:
     """The threshold is the centralized THRESHOLDS constant, not a hard-coded
     literal."""
@@ -6191,6 +6245,20 @@ class TestEmitPreferencePatternBlock:
         assert 'candidate_count: 0' in block
         assert 'genuine_signal_count: 0' in block
         assert 'rows[0]{module,finding_class,disposition,occurrence_count,plan_ids,severity}:' in block
+
+    def test_block_reports_unattributed_excluded_count(self):
+        # D2 — the count of unattributed (default-bucket) recurrences the detector
+        # declined to promote is surfaced so the decision is visible, not silent.
+        result = {
+            'threshold': 3,
+            'candidate_count': 0,
+            'unattributed_excluded_count': 2,
+            'rows': [],
+        }
+
+        block = audit.emit_preference_pattern_block(result)
+
+        assert 'unattributed_excluded_count: 2' in block
 
 # =============================================================================
 # D9 — check_metrics / cross_token_trend POSITIVE-PATH backfill
