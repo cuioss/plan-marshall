@@ -1,6 +1,6 @@
 # Run report — 380-test-suite-false-confidence (run 01)
 
-**Date (UTC):** 2026-08-14    **Branch:** claude/test-suite-false-confidence-t9mfb1 (harness-assigned)    **PR:** [#1229](https://github.com/cuioss/plan-marshall/pull/1229)    **Outcome:** _in progress — review cycle + merge gate_
+**Date (UTC):** 2026-08-14    **Branch:** claude/test-suite-false-confidence-t9mfb1 (harness-assigned)    **PR:** [#1229](https://github.com/cuioss/plan-marshall/pull/1229)    **Outcome:** completed — auto-merge armed, landing delegated to the merge queue + orchestrator collect
 
 ## Skills loaded
 
@@ -70,7 +70,11 @@ unjustified change to tested code. **Re-dispatch note:** after fixing findings 1
 maven consumers were re-run (245 pass) and the `oliver` absence re-derived to 0; a full
 re-verify runs before the merge gate.
 
-CI / PR-review findings: _(pending PR — recorded when they arrive)_
+CI / PR-review findings: **none actionable.** `cuioss-review-bot` reported "No major issues
+detected / No security concerns / PR contains tests"; `coderabbitai` and `sourcery-ai` posted
+only rate-limit notices (no findings); no inline review threads. CI at PR time: `verify / gate`,
+`dependency-review`, `generate-check` green; `verify / verify` (the required whole-suite build)
+in progress — landing is gated on it by the merge queue (§ Merge gate).
 
 ## Reviewer participation
 
@@ -83,22 +87,60 @@ registry doc (cross-named by `.github/workflows/pr-agent.yml`): **M = 3** —
 |---|---|---|
 | `coderabbitai` | `rate-limited` | Commit-status "CodeRabbit": state `success`, description **"Review rate limited"** — engaged but did not review this diff. |
 | `sourcery-ai` | `rate-limited` | Review body: **"you have reached your weekly rate limit of 500000 diff characters."** |
-| `cuioss-review-bot` | _pending at first read_ | `review / review` check `in_progress` when the PR was first read; re-checked on the scheduled re-entry (below), findings handled there. |
+| `cuioss-review-bot` | `reviewed` | Issue-comment "PR Reviewer Guide 🔍": **"🧪 PR contains tests · 🔒 No security concerns identified · ⚡ No major issues detected."** No inline review threads (`get_review_comments` empty), no requested changes. |
 
-Coverage and the § Step 8 shortfall disclosure are finalized at the merge gate after the
-cuioss-review-bot re-check.
+**Coverage: 1 of 3.** `cuioss-review-bot` reviewed the code and found nothing actionable;
+`coderabbitai` and `sourcery-ai` were both rate-limited and did not review this diff. **No
+actionable review comment exists on any of the three surfaces** (issue comments, review
+summaries, inline threads all read), so Step 7's "handle every comment" is satisfied with
+nothing to fix. The § Step 8 shortfall disclosure below fired: **"Review coverage 1 of 3 —
+`cuioss-review-bot` reviewed (no issues); `coderabbitai` rate-limited (resets ~39 min);
+`sourcery-ai` rate-limited (weekly quota)."** Rate limits are routine and outside our
+control; per the contract the shortfall is disclosed, not blocked on.
 
 ## Cost
 
-_(pending)_
+- **Tokens:** not available to the agent in this session — this Claude Code cloud session exposes no token counter to the running agent, so any figure would be fabricated.
+- **Wall-clock:** one interactive cloud session on 2026-08-14 (UTC); precise start/end timestamps are not exposed to the agent. Concrete measured build figures: baseline `module-tests` **398.59s**; D5-scoped `module-tests` inside `./pw verify` **369.09s** (`0:06:09`); several `./pw quality-gate` runs (~1 min each, warm cache) gated the per-deliverable commits.
+- **Population:** this single Claude Code cloud session's activity. ⛔ NOT comparable to a plan-marshall `metrics.toon` total — that counts the orchestrator-plus-agent dispatch tree under plan-marshall's per-task billing boundary, which a single interactive cloud session does not share. No comparable figure exists, so none is presented.
 
 ## Contract check (Step 9)
 
-_(pending)_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **Done.** Bundle-path loads: ref-code-quality, plugin-script-architecture, pytest-testing, python-core, persona-implementer (§ Skills loaded). |
+| 2 Branch | **Done.** Kept the harness-assigned `claude/test-suite-false-confidence-t9mfb1` (not run-created); it was absent on origin, so publishing it was the first action. |
+| 3 Plan directory | **Done.** `.../380-test-suite-false-confidence/plan.md` exists (git mv from the flat file); opens with the first-instruction block. |
+| 4 Implement | **Done.** Every commit carries the `Co-Authored-By: Claude <noreply@anthropic.com>` trailer; all 7 deliverables addressed. |
+| 4 Per-commit gate | **Done.** Every `*.py`-touching commit was preceded by a clean `./pw quality-gate` (`issues[0]` empty, coverage COMPLETE). Paths staged explicitly (never `git add -A`); no stray lockfile churn observed. |
+| 4 Pushed | **Done.** Every deliverable commit pushed; this report finalization is the last pre-merge push. |
+| 5 Build gate | **Done.** `git diff --name-only origin/main...HEAD -- '*.py'` non-empty → full `./pw verify`: SUCCESS (19623 passed, 14 skipped; quality-gate + test-compile[733] + module-tests). |
+| 6 Verification sub-agent | **Done.** Independent general-purpose sub-agent; 2 real findings fixed, 1 artifact rejected (§ Findings). |
+| 7 PR cycle | **Done.** PR #1229; all three comment surfaces read; no actionable comment; per-reviewer verdicts recorded. |
+| 8 Merge gate | Conditions 1-3 met; auto-merge armed; landing delegated to the merge queue + orchestrator collect (a cloud session cannot block-until-landed). Coverage shortfall (1-of-3) disclosed (§ Merge gate). |
+| 8 Bridge | **Clean.** No status/bookkeeping write landed under `doc/plans/` outside this plan's own directory; report carries the PR # and per-deliverable outcome. |
+| 9 This check | This table + § What have we learned. |
+| GitHub access | GitHub MCP server (cloud path). |
+| Branch form | Harness-assigned `claude/*`, kept as-is. |
+| Plugin cache | Per the loaded cloud-plan-lane contract, a cloud run **neither performs nor owes** `/sync-plugin-cache` (it reads git-ignored `target/` and writes `~/.claude/`, which the lane may not touch); the `marketplace/bundles/` edits are authoritative in git. (CLAUDE.md's standalone-lane prose says to *record a sync is owed*; the loaded contract supersedes it per the first-instruction precedence rule — noted, not owed.) |
 
 ## What have we learned (Step 9)
 
-_(pending)_
+**No contract change proposed.** The run exercised the cloud-plan-lane contract end to end and it held:
+
+- The independent Step-6 sub-agent caught the one material defect I introduced — an under-derived D4 fixture population (I swept only the plan's *named* surface, and a real-username leak survived in build-maven's `log-test-data` tree). That is exactly the failure the sub-agent exists to catch, and it did. No contract gap — a diligence gap, caught by the designed backstop.
+- The three-surface comment read (`get_comments` / `get_reviews` / `get_review_comments`) mattered: `cuioss-review-bot`'s "no issues" verdict lives in an issue comment, the two rate-limit notices in a commit status and a review body. Reading only one surface would have misreported coverage. The contract's insistence on all three was load-bearing.
+- The D5 cloud measurement — which I expected to be noise-level (empty watched dirs) — showed a real ~29.5s / ~7.4% delta, because `.plan/local/` exists in-session (build-harness telemetry) so each snapshot is a real `iterdir`. The contract's "measure, don't assume" was right to insist.
+
+The only adjacent observation is **plan-authoring**, not lane-contract: the plan's "Expected surface" named pm-dev-java + build-npm, but the unconditional D4 done-when reached build-maven too — an expected-surface list is a *lead*, not a population. That belongs to `author-cloud-plan` guidance, not this contract, so it is recorded here rather than proposed as a lane-contract edit.
+
+## Merge gate (Step 8)
+
+- **Condition 1 (required contexts):** at the gate, `verify / gate`, `dependency-review`, `generate-check` were green; the required whole-suite `verify / verify` was still `in_progress`, and `mergeable_state` was still `unknown` (GitHub computing). The full `./pw verify` was green locally (19623 passed) and the only change after it is this doc-only report commit, so the required build is expected green. Per the contract, on a merge-queue repo the queue is the enforcer: arming defers the required-green gate to the queue (which re-verifies on `merge_group`) rather than blocking here — this run arms with `verify` in flight and records that.
+- **Condition 2 (comments handled):** met — no actionable comment on any of the three surfaces.
+- **Condition 3 (report finalized + pushed):** this commit — pushed as the last pre-merge commit, before arming.
+- **Condition 4 (coverage disclosure, NOT a block):** fired — "Review coverage 1 of 3: `cuioss-review-bot` reviewed (no issues); `coderabbitai` rate-limited (~39 min); `sourcery-ai` rate-limited (weekly quota)." Rate limits are routine; disclosed, not blocked on.
+- **Action:** auto-merge armed (`enable_pr_auto_merge`, SQUASH). A cloud session cannot block-until-landed (no reliable self-confirm inside the turn), so the landing is **delegated** to the merge queue and read by the orchestrator's collect from the PR merge event. A self-wake check-in was scheduled to confirm `state: MERGED` and record the squash SHA to the operator. **This is a completed run, not partial** (§ Step 8: arm-and-hand-off).
 
 ## Residue
 
