@@ -51,7 +51,7 @@ Skill: plan-marshall:persona-plan-marshall-agent
 
 ## Dispatch shape: 9 aspects iterate inside one envelope
 
-This workflow dispatches under `--phase phase-6-finalize --role post-run-review` as **one** `execution-context-{level}` envelope. The `post-run-review` sub-key bundles retrospective with lessons-capture — both workflows look back at the full plan history and ride the same level. The 8 LLM analytical aspects (metrics, decision/work logs, references vs deliverables, deliverable vs lesson alignment, scope-deviation footprint, behavioural observations, execution-context dispatch audit, chat-history aspect when `--session-id` is present, lesson-quality audit) iterate **in-context inside that single envelope** — the orchestrator never spawns N × envelope per aspect. Bundling matches granularity Heuristic 2 (steps share context): every aspect reads the same plan artefacts, runs the same skill loads, and contributes to the same final retrospective document. Per-aspect dispatch would pay 8× envelope cost with no parallelism payoff. See [`../extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 3.
+This workflow dispatches under `--phase phase-6-finalize --role post-run-review` as **one** `execution-context-{level}` envelope. The `post-run-review` sub-key bundles retrospective with lessons-capture — both workflows look back at the full plan history and ride the same level. The 8 in-context analytical aspects (metrics, decision/work logs, references vs deliverables, deliverable vs lesson alignment, scope-deviation footprint, behavioural observations, execution-context dispatch audit — deterministic facts judged in-context, chat-history aspect when `--session-id` is present, lesson-quality audit) iterate **in-context inside that single envelope** — the orchestrator never spawns N × envelope per aspect. Bundling matches granularity Heuristic 2 (steps share context): every aspect reads the same plan artefacts, runs the same skill loads, and contributes to the same final retrospective document. Per-aspect dispatch would pay 8× envelope cost with no parallelism payoff. See [`../extension-api/standards/dispatch-granularity.md`](../extension-api/standards/dispatch-granularity.md) § 3.
 
 ## Input Contract
 
@@ -187,13 +187,13 @@ For each aspect below, produce a TOON fragment on disk at `work/fragment-{aspect
 | 8 | Script failure analysis | `script-failure-analysis` | `references/script-failure-analysis.md` |
 | 9 | Permission prompt analysis | (LLM on description or session) | `references/permission-prompt-analysis.md` |
 | 10 | Direct gh/glab usage (Surfaces A+B: plan logs + plan diff) | `direct-gh-glab-usage` | `references/direct-gh-glab-usage.md` |
-| 11 | Execution-context dispatch audit (both directions: spawns rode the envelope AND DISPATCHED steps were dispatched) | (LLM on logs + dispatch decisions + phase_steps) | `standards/execution-context-dispatch-audit.md` |
+| 11 | Execution-context dispatch audit (deterministic facts: shape / three-state coverage / channel completeness) | `check-dispatch-audit` | `standards/execution-context-dispatch-audit.md` |
 | 12 | Manifest decisions (conditional) | `check-manifest-consistency` | `standards/manifest-crosscheck.md` |
 | 13 | Routing decisions (conditional) | `check-routing-decisions` | `references/routing-decision-verification.md` |
 | 14 | Chat history (conditional) | (LLM on session transcript) | `references/chat-history-analysis.md` |
 | 15 | Lessons proposal | (LLM on compiled fragments) | `references/lessons-proposal.md` |
 
-The Execution-context dispatch audit (aspect 11) consumes the `[DISPATCH]` work-log lines emitted by every dispatch site per [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) — that standard is the authoritative source for the line shape, and this aspect is its enforcement consumer. The aspect asserts dispatch discipline in **both directions**: that every spawn that DID happen rode the canonical `execution-context-{level}` envelope, AND that every finalize/execute step classified DISPATCHED actually WAS dispatched. The inverse-coverage half (`dispatch_coverage_violation` category) cross-references the SKILL's own dispatched/inline classification against the `status.metadata.phase_steps["6-finalize"]` outcome records — a step marked done with zero matching `[DISPATCH]` evidence is flagged as inline-where-dispatch-was-required. Report readers tracing an audit finding back to its evidence land in `dispatch-logging.md` § "Emission contract" for the canonical log-line format.
+The Execution-context dispatch audit (aspect 11) is a **deterministic** aspect: the `check-dispatch-audit` script consumes the `[DISPATCH]` work-log lines emitted by every dispatch site per [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) — the authoritative source for the line shape — and emits three fact blocks, each publishing the size of the population it evaluated so a zero is legible. `shape_violation` pairs the decision-log `effort resolve-target` records (Surface B, the resolve/intent side) against the `[DISPATCH]` work-log lines (Surface A, the observable side); when Surface B is empty it reports `not_evaluated` with its reason rather than a bare `0`. `dispatch_coverage` classifies each terminal finalize step (`status.metadata.phase_steps["6-finalize"]`) by its **token record** — the second, independent evidence source — into `dispatched` / `ran_inline` / `no_evidence`, and reports a step token-proven to have dispatched with no `[DISPATCH]` line as `missing_dispatch_emission` (an instrumentation finding against the DISPATCHER), never as a discipline finding against the step. `channel_completeness` publishes the dispatch-line count against the completion count and downgrades the audit's own `confidence` when the channel is sparse. The reference doc `standards/execution-context-dispatch-audit.md` guides the LLM's *judgement* of these facts; the script never judges. Report readers tracing a finding back to its evidence land in `dispatch-logging.md` § "Emission contract" for the canonical log-line format.
 
 > **Coverage contract**: the Artifact-consistency aspect (aspect 1) is the *declared-vs-achieved coverage* comparison — declared in-scope files (`Affected files:`) vs the plan's actual footprint — which is the deterministic item-coverage half of the *thoroughness* dial, graded to the FLOOR. The footprint is resolved through the shared footprint resolver: live worktree diff (`{base}...HEAD` ∪ porcelain) when one is on disk, else the persisted realized-footprint capture, a merge-commit fallback, then the legacy `references.modified_files` key for pre-ledger archives. See the two-dial scope × thoroughness contract (ladders, grade-to-the-floor rule, coupling constraint) in [`../persona-plan-marshall-agent/standards/thoroughness.md`](../persona-plan-marshall-agent/standards/thoroughness.md).
 
@@ -233,7 +233,7 @@ The fixed aspect table above is domain-invariant — it runs for every plan. Dom
 
 **Per-aspect capture pattern**:
 
-**Deterministic aspects (1-3, 8, and 10, script-backed)** — pipe the script's stdout to the fragment file, then register it:
+**Deterministic aspects (1-3, 8, 10, and 11, script-backed)** — pipe the script's stdout to the fragment file, then register it:
 
 The `script-failure-analysis` script (aspect 8) consumes the plan's `script-execution.log` directly and classifies non-zero-exit calls by stderr signature (`invalid choice:` → `invented_subcommand`; `the following arguments are required:` → `missing_required_flag`; `unrecognized arguments:` → `invented_flag`; non-argparse exit-1 → `script_internal_error`). The TOON fragment carries deduped `findings[]` and seed `lessons[]` for downstream classification; the orchestrator does NOT inject LLM judgement at this point. See `references/script-failure-analysis.md` for the finding shape; the LLM aspects that follow may augment the script-emitted findings with source-component tracing.
 
@@ -246,12 +246,14 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragmen
   add --plan-id {plan_id} --aspect {name} --fragment-file work/fragment-{aspect}.toon
 ```
 
-**LLM aspects (4-7, 9, 11, and 14)** — load the aspect reference via `Read`, produce the TOON fragment body per the reference's schema, emit it with the `Write` tool to `work/fragment-{aspect}.toon`, then register:
+**LLM aspects (4-7, 9, and 14)** — load the aspect reference via `Read`, produce the TOON fragment body per the reference's schema, emit it with the `Write` tool to `work/fragment-{aspect}.toon`, then register:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-retrospective:collect-fragments \
   add --plan-id {plan_id} --aspect {name} --fragment-file work/fragment-{aspect}.toon
 ```
+
+**Aspect 11 (execution-context-dispatch-audit)** — a deterministic script-backed aspect run per the generic deterministic-aspect pattern above with the `check-dispatch-audit` script. It reads the plan's own `logs/`, `execution.toon`, and `status.json`, so it needs no footprint input. The concrete capture-and-register commands live in [`standards/execution-context-dispatch-audit.md`](standards/execution-context-dispatch-audit.md) § "Persistence" (SKILL.md dispatches the aspect and delegates its registration to that document). The script emits the three fact blocks (shape / three-state coverage / channel completeness); the LLM synthesizes the judgement of those facts per that same document — the script never judges.
 
 **Aspect 12 (manifest-decisions, conditional)** — when `execution.toon` exists in the plan directory, run the deterministic script pattern with aspect name `manifest-decisions`:
 
@@ -457,7 +459,7 @@ display_detail: "<{aspects_dispatched} aspects, {lessons_recorded} lessons recor
 
 ## Canonical invocations
 
-The canonical argparse surface for the eleven entry-point scripts this skill registers (thirteen invocation forms — `collect-fragments` carries three sub-verbs). The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation". The single-aspect scripts share the same `run` flag surface; `collect-fragments` carries the `init` / `add` / `finalize` sub-verbs.
+The canonical argparse surface for the twelve entry-point scripts this skill registers (fourteen invocation forms — `collect-fragments` carries three sub-verbs). The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation". The single-aspect scripts share the same `run` flag surface; `collect-fragments` carries the `init` / `add` / `finalize` sub-verbs.
 
 ### extract-chat-signal — run
 
@@ -485,6 +487,13 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-routing-d
 ```
 
 `--diff-file` carries the realized footprint (one path per line) that the prune-predicate re-evaluation tests; absent → the footprint is recovered through the shared resolver (realized-footprint capture → merge-commit → legacy key), and only a still-unresolvable footprint SKIPs the mis-prune checks.
+
+### check-dispatch-audit — run
+
+```bash
+python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-dispatch-audit run \
+  --mode {live,archived} [--plan-id PLAN_ID] [--archived-plan-path ARCHIVED_PLAN_PATH]
+```
 
 ### script-failure-analysis — run
 

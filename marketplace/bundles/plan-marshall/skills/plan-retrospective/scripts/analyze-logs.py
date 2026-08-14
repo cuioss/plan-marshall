@@ -573,6 +573,56 @@ def detect_outcome_for_diffed_tasks(
     return {'tasks_with_diff_no_outcome': missing}
 
 
+def artifact_emission_population(
+    work_log_lines: list[str], plan_dir: Path
+) -> dict[str, Any]:
+    """Publish per-task ARTIFACT emission as a POPULATION, not a non-zero floor.
+
+    Per-task ``[ARTIFACT] (plan-marshall:phase-5-execute:{N}) Wrote {path}`` lines
+    are hand-emitted at task completion, one per changed file, and a completed
+    task with an empty diff emits none by design. A count-based guard
+    (``artifact_entries == 0``) is therefore a FLOOR: it fires only when the whole
+    plan emitted zero and is satisfied by any single artifact even when most
+    completed tasks emitted nothing. That partiality reads to a consumer as "few
+    artifacts produced" when the real signal may be "emission was bypassed" — a
+    count-based detector cannot guard a per-item emission defect.
+
+    This states BOTH numbers instead — ``N of M completed tasks emitted >= 1
+    [ARTIFACT] line`` — so a consumer cannot read a partial count as a total.
+    ``M`` (``completed_tasks``) is the completed-task population (task files with
+    ``status: done``); ``N`` (``tasks_with_artifacts``) is the subset carrying at
+    least one per-task artifact line. Tasks are keyed by their numeric id so the
+    ``TASK-007`` file matches an ``…:7)`` caller regardless of zero-padding.
+    """
+    done_task_nums: set[int] = set()
+    tasks_dir = plan_dir / 'tasks'
+    if tasks_dir.exists():
+        for task_path in sorted(tasks_dir.glob('TASK-*.json')):
+            try:
+                task_data = json.loads(task_path.read_text(encoding='utf-8'))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if task_data.get('status') != 'done':
+                continue
+            num_match = re.search(r'TASK-(\d+)', task_path.stem)
+            if num_match:
+                done_task_nums.add(int(num_match.group(1)))
+
+    artifact_task_nums: set[int] = set()
+    for line in work_log_lines:
+        match = _ARTIFACT_TASK_RE.search(line)
+        if match:
+            artifact_task_nums.add(int(match.group(1)))
+
+    emitted = done_task_nums & artifact_task_nums
+    missing = sorted(done_task_nums - artifact_task_nums)
+    return {
+        'completed_tasks': len(done_task_nums),
+        'tasks_with_artifacts': len(emitted),
+        'tasks_without_artifacts': [f'TASK-{num:03d}' for num in missing],
+    }
+
+
 # Dispatch-boundary row schema, consumed from the producer's declared contract.
 #
 # SOURCE OF TRUTH is `manage-metrics` `standards/data-format.md` § Per-Dispatch
@@ -1013,6 +1063,35 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
 
+    # Per-task ARTIFACT emission as a POPULATION statement (D4). The plan-level
+    # ``artifact_entries == 0`` floor above cannot see per-task partiality — it is
+    # satisfied by a single artifact even when most completed tasks emitted none.
+    # Stating ``N of M completed tasks emitted`` makes that partiality legible so a
+    # consumer cannot read a partial count as a total. The population is ALWAYS
+    # published (below); the WARNING fires only for unambiguous partiality —
+    # ``0 < N < M`` — where the per-task emitting path is demonstrably in use yet
+    # incomplete. ``N == 0`` is left to the plan-level floor and the published
+    # population (a plan may simply not use per-task emission), and ``N == M`` is
+    # complete. The finding always carries both numbers, never a bare non-zero
+    # assertion.
+    artifact_emission = artifact_emission_population(work, plan_dir)
+    if 0 < artifact_emission['tasks_with_artifacts'] < artifact_emission['completed_tasks']:
+        missing_count = (
+            artifact_emission['completed_tasks'] - artifact_emission['tasks_with_artifacts']
+        )
+        findings.append(
+            {
+                'severity': 'warning',
+                'message': (
+                    f'ARTIFACT_EMISSION_PARTIAL: {artifact_emission["tasks_with_artifacts"]} of '
+                    f'{artifact_emission["completed_tasks"]} completed task(s) emitted >= 1 '
+                    f'[ARTIFACT] line ({missing_count} emitted none). A completed task with an '
+                    'empty diff legitimately emits nothing; a broad gap indicates the emitting '
+                    'path was bypassed. See logging-gap-analysis.md § ARTIFACT_EMISSION.'
+                ),
+            }
+        )
+
     # Phase-5 logging-gap fact extractors (lesson 2026-05-08-14-001).
     # Pure counting/pairing — judgement lives in the LLM rules.
     voluntary_checkpoint_polling = detect_voluntary_checkpoint_polling(work)
@@ -1103,6 +1182,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             'warnings_script': script_levels['WARNING'],
             'artifact_entries': artifact_entries,
         },
+        'artifact_emission': artifact_emission,
         'phases_seen': extract_phases(work + decision),
         'script_duration_p50_ms': round(percentile(duration_values, 50.0), 3),
         'script_duration_p95_ms': round(percentile(duration_values, 95.0), 3),

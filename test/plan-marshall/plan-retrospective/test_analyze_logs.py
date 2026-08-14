@@ -1558,6 +1558,89 @@ class TestDetectVoluntaryCheckpointPolling:
         assert result['candidate_line_numbers'] == [1, 4]
 
 
+class TestArtifactEmissionPopulation:
+    """D4 — per-task ARTIFACT emission published as an N-of-M population.
+
+    A count-based floor (``artifact_entries == 0``) cannot guard a per-item
+    emission defect: it is satisfied by any single artifact even when most
+    completed tasks emitted none. These tests pin the population statement that
+    makes that partiality legible.
+    """
+
+    def _setup(self, tmp_path, monkeypatch, *, done_tasks, artifact_task_nums, plan_id):
+        plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch, plan_id=plan_id)
+        tasks_dir = plan_dir / 'tasks'
+        for existing in tasks_dir.glob('TASK-*.json'):
+            existing.unlink()
+        for num in done_tasks:
+            (tasks_dir / f'TASK-{num:03d}.json').write_text(
+                json.dumps({'number': num, 'deliverable': 1, 'status': 'done'}),
+                encoding='utf-8',
+            )
+        lines = [
+            '[2026-04-17T10:00:00Z] [INFO] [aaaaaa] [STATUS] '
+            '(plan-marshall:phase-1-init) Starting'
+        ]
+        for num in artifact_task_nums:
+            lines.append(
+                f'[2026-04-17T10:0{num}:00Z] [INFO] [bbbbbb] [ARTIFACT] '
+                f'(plan-marshall:phase-5-execute:{num}) Wrote src/f{num}.py'
+            )
+        (plan_dir / 'logs' / 'work.log').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+        return plan_id, plan_dir
+
+    def test_partial_emission_reported_as_population(self, tmp_path, monkeypatch):
+        # 3 completed tasks, only task 1 emitted a per-task [ARTIFACT] line.
+        plan_id, _ = self._setup(
+            tmp_path, monkeypatch, done_tasks=[1, 2, 3], artifact_task_nums=[1],
+            plan_id='retro-artifact-partial',
+        )
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+
+        emission = data['artifact_emission']
+        assert int(emission['completed_tasks']) == 3
+        assert int(emission['tasks_with_artifacts']) == 1
+        # The bare non-zero floor is SATISFIED (>= 1 artifact), yet partiality is
+        # surfaced — the exact defect D4 closes.
+        assert int(data['counts']['artifact_entries']) >= 1
+        findings = data.get('findings') or []
+        assert any('ARTIFACT_EMISSION_PARTIAL' in f.get('message', '') for f in findings), findings
+
+    def test_complete_emission_raises_no_partial_finding(self, tmp_path, monkeypatch):
+        plan_id, _ = self._setup(
+            tmp_path, monkeypatch, done_tasks=[1, 2], artifact_task_nums=[1, 2],
+            plan_id='retro-artifact-complete',
+        )
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+
+        emission = data['artifact_emission']
+        assert int(emission['completed_tasks']) == 2
+        assert int(emission['tasks_with_artifacts']) == 2
+        findings = data.get('findings') or []
+        assert not any('ARTIFACT_EMISSION_PARTIAL' in f.get('message', '') for f in findings), findings
+
+    def test_population_always_published_even_with_no_per_task_emission(self, tmp_path, monkeypatch):
+        # Population is published even at N == 0 so a consumer reads N-of-M
+        # rather than inferring a total from a floor; no partiality finding at 0.
+        plan_id, _ = self._setup(
+            tmp_path, monkeypatch, done_tasks=[1, 2], artifact_task_nums=[],
+            plan_id='retro-artifact-none',
+        )
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+
+        emission = data['artifact_emission']
+        assert int(emission['completed_tasks']) == 2
+        assert int(emission['tasks_with_artifacts']) == 0
+        findings = data.get('findings') or []
+        assert not any('ARTIFACT_EMISSION_PARTIAL' in f.get('message', '') for f in findings), findings
+
+
 # ---------------------------------------------------------------------------
 # D3 — build time from the change-ledger (the build-time oracle)
 # ---------------------------------------------------------------------------
