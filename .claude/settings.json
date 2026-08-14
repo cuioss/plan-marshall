@@ -23,7 +23,9 @@
       "Skill(finalize-step-sync-plugin-cache)",
       "Skill(sync-plugin-cache)",
       "Skill(sync-plugin-cache:*)",
-      "Write(.plan/**)"
+      "Write(.plan/**)",
+      "mcp__github",
+      "mcp__Claude_Code_Remote"
     ],
     "deny": [],
     "ask": []
