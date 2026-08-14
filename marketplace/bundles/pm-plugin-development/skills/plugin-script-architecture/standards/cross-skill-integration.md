@@ -334,8 +334,7 @@ The test infrastructure mirrors the executor's PYTHONPATH setup.
 
 ### How It Works
 
-1. **`test/run-tests.py`**: Builds PYTHONPATH from all script directories, passes to subprocess environment
-2. **`test/conftest.py`**: Adds same directories to `sys.path` on import
+1. **`test/conftest.py`**: Builds PYTHONPATH from all script directories and adds them to `sys.path` on import; the `run_script` helper passes it to subprocess environments
 
 ### Test File Pattern
 

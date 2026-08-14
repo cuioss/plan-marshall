@@ -26,8 +26,8 @@ from conftest import run_script
 def cleanup_project_files(fixture_dir: Path) -> None:
     """Remove all project files from fixture directory to ensure test isolation.
 
-    When tests run via run-tests.py, they share a fixture directory.
-    This function ensures clean state before each test.
+    Tests sharing a fixture directory need clean state before each test; this
+    function provides it.
     """
     # Remove root build files
     for filename in ['pom.xml', 'package.json', 'build.gradle', 'build.gradle.kts']:
