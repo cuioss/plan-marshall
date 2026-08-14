@@ -53,32 +53,26 @@ class EmptyPlanContext:
 
     def __init__(self):
         self.fixture_dir = None
-        self._original_plan_base_dir = None
-        self._original_plan_dir_name = None
         self._is_standalone = False
+        # One MonkeyPatch owns PLAN_BASE_DIR / PLAN_DIR_NAME; reverted atomically
+        # by undo() in __exit__ (matches PlanContext and the autouse sandbox).
+        self._mp = None
 
     def __enter__(self):
         self.fixture_dir = get_test_fixture_dir()
         self._is_standalone = 'TEST_FIXTURE_DIR' not in os.environ
 
-        self._original_plan_base_dir = os.environ.get('PLAN_BASE_DIR')
-        self._original_plan_dir_name = os.environ.get('PLAN_DIR_NAME')
-        os.environ['PLAN_BASE_DIR'] = str(self.fixture_dir)
-        os.environ['PLAN_DIR_NAME'] = '.plan'
+        self._mp = pytest.MonkeyPatch()
+        self._mp.setenv('PLAN_BASE_DIR', str(self.fixture_dir))
+        self._mp.setenv('PLAN_DIR_NAME', '.plan')
         # Create plans directory but NOT the plan subdirectory
         (self.fixture_dir / 'plans').mkdir(parents=True, exist_ok=True)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._original_plan_base_dir is None:
-            os.environ.pop('PLAN_BASE_DIR', None)
-        else:
-            os.environ['PLAN_BASE_DIR'] = self._original_plan_base_dir
-
-        if self._original_plan_dir_name is None:
-            os.environ.pop('PLAN_DIR_NAME', None)
-        else:
-            os.environ['PLAN_DIR_NAME'] = self._original_plan_dir_name
+        if self._mp is not None:
+            self._mp.undo()
+            self._mp = None
 
         # Only cleanup if running standalone
         if self._is_standalone and self.fixture_dir and self.fixture_dir.exists():

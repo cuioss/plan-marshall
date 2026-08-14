@@ -1257,8 +1257,9 @@ def get_test_fixture_dir() -> Path:
     """
     Get the test fixture directory.
 
-    When run via test/run-tests.py, uses the TEST_FIXTURE_DIR environment variable.
-    When run standalone, creates a directory in .plan/temp/test-fixture/.
+    Honours a TEST_FIXTURE_DIR environment variable when one is set (nothing in
+    the suite sets it by default); otherwise creates a standalone directory in
+    .plan/temp/test-fixture/.
 
     Returns:
         Path to the test fixture directory
@@ -1280,9 +1281,11 @@ class PlanContext:
     """
     Context manager for tests that need PLAN_BASE_DIR.
 
-    Uses centralized test fixture directory instead of system temp.
-    When run via test/run-tests.py, the fixture directory is managed
-    by the runner and cleaned up automatically after all tests.
+    Uses a centralized test fixture directory under .plan/temp/test-fixture/
+    instead of system temp, created and cleaned up by the context itself.
+    PLAN_BASE_DIR, PLAN_DIR_NAME, and the _config_core paths are redirected via a
+    MonkeyPatch instance and reverted atomically on exit — the same
+    auto-reverting mechanism the autouse _plan_base_dir_sandbox fixture uses.
 
     Usage:
         with PlanContext(plan_id='my-plan') as ctx:
@@ -1298,10 +1301,6 @@ class PlanContext:
 
     __test__ = False  # Not a test class - prevent pytest collection warning
 
-    # Sentinel used to distinguish "attribute was missing" from "attribute was None"
-    # in the _config_core save/restore book-keeping.
-    _MISSING = object()
-
     def __init__(self, plan_id: str = 'test-plan'):
         """
         Initialize the test context.
@@ -1312,13 +1311,11 @@ class PlanContext:
         self.plan_id = plan_id
         self.fixture_dir: Path | None = None
         self.plan_dir: Path | None = None
-        self._original_plan_base_dir: str | None = None
-        self._original_plan_dir_name: str | None = None
         self._is_standalone: bool = False
-        # Book-keeping for _config_core attribute restoration. Populated in
-        # __enter__ so the module stays lazily imported.
-        self._config_core_module: Any = None
-        self._config_core_saved: dict[str, Any] = {}
+        # One MonkeyPatch owns every global this context redirects (PLAN_BASE_DIR,
+        # PLAN_DIR_NAME, and the _config_core paths). Populated in __enter__ so the
+        # module stays lazily imported; reverted atomically by undo() in __exit__.
+        self._mp: pytest.MonkeyPatch | None = None
 
     def __enter__(self) -> 'PlanContext':
         """Set up the test context."""
@@ -1329,48 +1326,33 @@ class PlanContext:
         self.plan_dir = self.fixture_dir / 'plans' / self.plan_id
         self.plan_dir.mkdir(parents=True, exist_ok=True)
 
-        # Set PLAN_BASE_DIR and PLAN_DIR_NAME environment variables
-        self._original_plan_base_dir = os.environ.get('PLAN_BASE_DIR')
-        self._original_plan_dir_name = os.environ.get('PLAN_DIR_NAME')
-        os.environ['PLAN_BASE_DIR'] = str(self.fixture_dir)
-        os.environ['PLAN_DIR_NAME'] = PLAN_DIR_NAME
-
-        # Redirect _config_core module-level paths so in-process callers
+        # Redirect PLAN_BASE_DIR / PLAN_DIR_NAME and the _config_core module-level
+        # paths so in-process callers (and subprocesses that inherit the env)
         # resolve against the fixture tree instead of the real repo-local
-        # .plan/local/. Imported lazily to avoid top-level import cycles
-        # during test bootstrap. Save originals for restoration in __exit__.
+        # .plan/local/. A single MonkeyPatch instance owns all of them and reverts
+        # them atomically in __exit__ — no manual save/restore. _config_core is
+        # imported lazily to avoid a top-level import cycle during test bootstrap.
         import _config_core
 
-        self._config_core_module = _config_core
-        overrides = {
-            'PLAN_BASE_DIR': self.fixture_dir,
-            'MARSHAL_PATH': self.fixture_dir / 'marshal.json',
-            'RUN_CONFIG_PATH': self.fixture_dir / 'run-configuration.json',
-        }
-        for attr, new_value in overrides.items():
-            self._config_core_saved[attr] = getattr(_config_core, attr, self._MISSING)
-            setattr(_config_core, attr, new_value)
+        self._mp = pytest.MonkeyPatch()
+        self._mp.setenv('PLAN_BASE_DIR', str(self.fixture_dir))
+        self._mp.setenv('PLAN_DIR_NAME', PLAN_DIR_NAME)
+        self._mp.setattr(_config_core, 'PLAN_BASE_DIR', self.fixture_dir)
+        self._mp.setattr(_config_core, 'MARSHAL_PATH', self.fixture_dir / 'marshal.json')
+        self._mp.setattr(_config_core, 'RUN_CONFIG_PATH', self.fixture_dir / 'run-configuration.json')
 
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Clean up the test context."""
-        # Restore _config_core attributes first so any teardown code that
-        # touches it sees the original values.
-        if self._config_core_module is not None:
-            for attr, saved in self._config_core_saved.items():
-                if saved is self._MISSING:
-                    try:
-                        delattr(self._config_core_module, attr)
-                    except AttributeError:
-                        pass
-                else:
-                    setattr(self._config_core_module, attr, saved)
-            self._config_core_saved = {}
-            self._config_core_module = None
+        # Revert PLAN_BASE_DIR / PLAN_DIR_NAME and the _config_core attributes in
+        # one atomic step, BEFORE the filesystem cleanup below, so any teardown
+        # path that resolves those globals sees the original values.
+        if self._mp is not None:
+            self._mp.undo()
+            self._mp = None
 
-        # Clean up the plan_dir to ensure test isolation
-        # (when via runner, fixture_dir is shared but each test should get fresh plan_dir)
+        # Clean up the plan_dir to ensure test isolation.
         if self.plan_dir and self.plan_dir.exists():
             shutil.rmtree(self.plan_dir, ignore_errors=True)
 
@@ -1391,19 +1373,7 @@ class PlanContext:
                 if dirpath.exists():
                     shutil.rmtree(dirpath, ignore_errors=True)
 
-        # Restore original PLAN_BASE_DIR
-        if self._original_plan_base_dir is None:
-            os.environ.pop('PLAN_BASE_DIR', None)
-        else:
-            os.environ['PLAN_BASE_DIR'] = self._original_plan_base_dir
-
-        # Restore original PLAN_DIR_NAME
-        if self._original_plan_dir_name is None:
-            os.environ.pop('PLAN_DIR_NAME', None)
-        else:
-            os.environ['PLAN_DIR_NAME'] = self._original_plan_dir_name
-
-        # Only cleanup fixture_dir if running standalone (not via run-tests.py)
+        # Only cleanup fixture_dir if running standalone.
         if self._is_standalone and self.fixture_dir and self.fixture_dir.exists():
             shutil.rmtree(self.fixture_dir, ignore_errors=True)
 
@@ -1578,6 +1548,9 @@ class BuildContext:
         self.plan_dir: Path | None = None
         self._initial_modules = modules
         self._initial_module_details = module_details
+        # One MonkeyPatch owns PLAN_BASE_DIR for this context; reverted atomically
+        # by undo() in __exit__.
+        self._mp: pytest.MonkeyPatch | None = None
 
     def __enter__(self) -> 'BuildContext':
         """Set up the test context."""
@@ -1589,9 +1562,12 @@ class BuildContext:
         # file_ops.get_base_dir() honours PLAN_BASE_DIR and falls back the
         # tracked config dir to the same value — so marshal.json (staged at
         # {temp_dir}/.plan/marshal.json) and runtime state both land inside
-        # the fixture tree, not the project-local <root>/.plan/local/.
-        self._original_plan_base_dir = os.environ.get('PLAN_BASE_DIR')
-        os.environ['PLAN_BASE_DIR'] = str(self.plan_dir)
+        # the fixture tree, not the project-local <root>/.plan/local/. A
+        # MonkeyPatch instance owns the env var and reverts it atomically in
+        # __exit__ (the same mechanism the autouse sandbox uses), so an exception
+        # before __exit__ cannot leave PLAN_BASE_DIR pointing at the torn-down dir.
+        self._mp = pytest.MonkeyPatch()
+        self._mp.setenv('PLAN_BASE_DIR', str(self.plan_dir))
 
         # Create initial marshal.json
         create_marshal_json(self.temp_dir)
@@ -1606,10 +1582,9 @@ class BuildContext:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Clean up the test context."""
-        if getattr(self, '_original_plan_base_dir', None) is None:
-            os.environ.pop('PLAN_BASE_DIR', None)
-        else:
-            os.environ['PLAN_BASE_DIR'] = self._original_plan_base_dir
+        if self._mp is not None:
+            self._mp.undo()
+            self._mp = None
         if self.temp_dir and self.temp_dir.exists():
             shutil.rmtree(self.temp_dir, ignore_errors=True)
 
