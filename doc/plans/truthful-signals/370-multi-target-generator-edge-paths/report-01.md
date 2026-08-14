@@ -63,7 +63,7 @@ Per the plan ("If unreachable, DROP this deliverable rather than 'fixing' a path
 |---|---|---|---|
 | D0 | Gate: confirm/re-count | **done** | Findings confirmed by symbol; prefix-strip deliverable deleted; D6 dropped (see D0 section above). Mutates nothing. |
 | D1 | Guard the destructive wipe | **done** | New shared `marketplace/targets/fs_safety.py` (`is_within` + `safe_rmtree`) — the sibling `_safe_rmtree` extracted, not re-implemented. `opencode/emitter.py` now imports it (no duplicate). `claude/emitter.py::emit_bundle_verbatim` refuses a destination inside the source tree (`is_within(dest_root, bundle_dir.parent)`) and wraps the wipe in `safe_rmtree`. Docstring's false "gitignored ⇒ safe" argument corrected. |
-| D2 | Make the non-pruning emitter prune | **done** | `opencode/emitter.py::_prune_stale_outputs` removes `skill/`,`agent/`,`command/` outputs not written this run — stale skill dirs via the guarded `safe_rmtree` (never re-introducing the sibling's containment hazard). Full-regeneration only (scoped `--bundles` emits share flat agent/command namespaces and cannot attribute a leftover to a bundle safely; the normal build and drift checks are full regenerations). |
+| D2 | Make the non-pruning emitter prune | **done** | `opencode/emitter.py::_prune_stale_outputs` unlinks every emitted `skill/`,`agent/`,`command/` file not written this run and removes the directories left empty (deepest first) — **file granularity**, so it prunes a whole removed component AND a verbatim sub-directory removed from a *surviving* skill. No broad `rmtree`, so no containment hazard is re-introduced. Full-regeneration only (scoped `--bundles` emits share flat agent/command namespaces and cannot attribute a leftover to a bundle safely; the normal build and drift checks are full regenerations). |
 | D3 | Anchor the frontmatter fence | **done** | `opencode/frontmatter.py::parse_frontmatter` now anchors the closing fence on a newline-delimited `\n---\n` (matching the sibling `variant_emitter.parse_frontmatter`), with the sibling's trailing-`---`-at-EOF tolerance. A `---`-containing value no longer truncates the block. |
 | D4 | Guard the JSON read | **done** | `claude/equality_check.py`: new `CorruptEmittedPluginJsonError` raised by `_read_emitted_plugin_json` on a bad emitted file; `run_equality_check` catches it and returns the documented "re-run emit" diagnostic instead of a traceback. A corrupt *source* plugin.json still raises (a genuine, different error). |
 | D5 | Key the cache on content | **done** | `claude/variant_emitter.py::_load_mapping` now keys the `lru_cache` on `(path, st_mtime_ns)` via `_load_mapping_cached`, so an in-place edit misses the cache and is re-read. Cites the same archetype as `plan-marshall:script-shared` `argparse_surface.py` (content-digest key, not path alone). |
@@ -90,7 +90,16 @@ Every bug test was run against the pre-fix code (production files `git stash`-re
 
 ## Findings
 
-(Verification sub-agent / CI / PR review findings recorded here as they arrive.)
+### Pre-PR verification sub-agent (independent, read-only)
+
+**Verdict: PASS** — all in-scope deliverables implemented as specified; the D6 drop was independently re-confirmed against the real pipeline (`target.py::generate` writes files + regenerates the manifest from one source, so the C1 double-count state is unreachable); the beyond-diff sweep was clean (no surviving `_safe_rmtree`, no `_load_mapping.cache_clear()`, no stale "gitignored ⇒ safe" prose, no test stub pinning old behavior); out-of-scope respected (no `marketplace/bundles/**` edits, no second containment helper, no prefix-strip restatement). The agent also empirically re-derived FAIL-first for D3 and D5 by reverting those two files.
+
+Two **informational** observations (the agent flagged both as NOT plan violations):
+
+| # | Observation | Disposition |
+|---|---|---|
+| 1 | D2 pruned at whole-skill-dir granularity, so a verbatim sub-dir (`references/`, `standards/`, …) removed from a *surviving* skill was not pruned — a residual drift finer than D2's component-granularity Done-when. | **Fixed.** `_prune_stale_outputs` reworked to file granularity (unlink non-written files + remove emptied dirs). This directly serves the plan's Goal ("emitted output cannot drift past source") and uses D2's own sanctioned "track written paths and prune leftovers" approach. New test `test_emit_bundles_prunes_removed_skill_subdir`, verified red against the prior whole-dir prune. |
+| 2 | D5 keys on `st_mtime_ns` rather than a content hash — carries the usual two-writes-in-one-tick mtime blind spot. | **Accepted, no change.** The plan explicitly sanctions "path plus modification time, **or** clear the cache" — mtime is one of the two named options. The blind spot is irrelevant to the real single-process generation flow, and the D5 test bumps mtime explicitly (as a real edit does), so it is deterministic. |
 
 ## Reviewer participation
 

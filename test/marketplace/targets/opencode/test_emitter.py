@@ -220,6 +220,26 @@ def test_emit_bundles_prunes_removed_agent(fixture_bundle: Path, tmp_path: Path,
     assert (out / 'skill' / 'demo-demo-skill' / 'SKILL.md').is_file()
 
 
+def test_emit_bundles_prunes_removed_skill_subdir(fixture_bundle: Path, tmp_path: Path, opencode_config_dir: Path):
+    """A verbatim sub-directory removed from a SURVIVING skill's source is pruned
+    from the emitted skill — output does not drift past source at sub-directory
+    granularity either (a whole-skill-dir sweep would miss this).
+    """
+    out = tmp_path / 'out'
+    emit_bundles(fixture_bundle, out, opencode_config_dir)
+    assert (out / 'skill' / 'demo-demo-skill' / 'standards' / 'rule.md').is_file()
+
+    # Remove ONLY the standards/ subdir from the (surviving) skill's source.
+    shutil.rmtree(fixture_bundle / 'demo' / 'skills' / 'demo-skill' / 'standards')
+
+    emit_bundles(fixture_bundle, out, opencode_config_dir)
+
+    assert not (out / 'skill' / 'demo-demo-skill' / 'standards').exists()
+    # The skill itself and its other content survive.
+    assert (out / 'skill' / 'demo-demo-skill' / 'SKILL.md').is_file()
+    assert (out / 'skill' / 'demo-demo-skill' / 'templates' / 't.md').is_file()
+
+
 # =============================================================================
 # Component-reference traversal containment
 # =============================================================================

@@ -136,13 +136,16 @@ def _prune_stale_outputs(output_dir: Path, written: list[Path]) -> None:
     """Remove ``skill/``, ``agent/``, ``command/`` outputs left over from a prior emit.
 
     The per-component emit only creates directories and overwrites files in
-    place, so a skill, agent, or command *removed from source* leaves its
-    previously-emitted output behind and the tree drifts past source. This
-    sweeps the three output subtrees and removes anything not (re)written this
-    run: a fully-stale ``skill/{bundle}-{skill}/`` directory is removed via
-    :func:`safe_rmtree` (a guarded wipe — it never solves this emitter's drift
-    by giving it the sibling emitter's containment hazard), and stale
-    ``agent/*.md`` / ``command/*.md`` files are unlinked.
+    place, so anything *removed from source* — a whole skill, a single agent or
+    command, or one verbatim sub-directory (``standards/``, ``references/``, …)
+    of a surviving skill — leaves its previously-emitted output behind and the
+    tree drifts past source. This tracks every path written this run and prunes
+    the leftovers at **file** granularity: any emitted file under the three
+    output subtrees that was not (re)written this run is unlinked, then the
+    directories left empty are removed (deepest first). File-granularity is
+    what closes the surviving-skill sub-directory case that a whole-``skill``-dir
+    sweep would miss. No broad ``rmtree`` is used, so this never re-introduces
+    the sibling emitter's containment hazard.
 
     Called only on a **full** regeneration (all bundles). A scoped emit
     (``--bundles`` subset) shares the flat ``agent/`` and ``command/``
@@ -153,20 +156,23 @@ def _prune_stale_outputs(output_dir: Path, written: list[Path]) -> None:
     """
     written_set = {p.resolve() for p in written}
 
-    skill_root = output_dir / 'skill'
-    if skill_root.is_dir():
-        for skill_dir in sorted(p for p in skill_root.iterdir() if p.is_dir()):
-            files = [f for f in skill_dir.rglob('*') if f.is_file()]
-            if not any(f.resolve() in written_set for f in files):
-                safe_rmtree(skill_dir, output_dir)
-
-    for subdir in ('agent', 'command'):
-        comp_root = output_dir / subdir
-        if not comp_root.is_dir():
+    for subdir in ('skill', 'agent', 'command'):
+        root = output_dir / subdir
+        if not root.is_dir():
             continue
-        for md in sorted(comp_root.glob('*.md')):
-            if md.resolve() not in written_set:
-                md.unlink()
+        # Unlink every emitted file not (re)written this run.
+        for path in sorted(root.rglob('*')):
+            if path.is_file() and path.resolve() not in written_set:
+                path.unlink()
+        # Remove directories left empty by the unlinks, deepest first so a
+        # parent is considered only after its emptied children are gone.
+        for directory in sorted(
+            (p for p in root.rglob('*') if p.is_dir()),
+            key=lambda p: len(p.parts),
+            reverse=True,
+        ):
+            if not any(directory.iterdir()):
+                directory.rmdir()
 
 
 def _emit_skill(
