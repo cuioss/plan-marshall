@@ -17,6 +17,10 @@ Instead, use one of these private channels:
 You should receive an acknowledgement within a few business days. Please allow
 the maintainers a reasonable coordination window before any public disclosure.
 
+This channel is for security vulnerabilities only. For commercial or
+competing-use licensing, use the private licensing form linked from
+[LICENSE.md](LICENSE.md) (the same form the GitHub "New issue" chooser offers).
+
 ## Scope
 
 Plan Marshall ships development standards, workflow skills, and Python
