@@ -2153,10 +2153,10 @@ def _preference_disposition(obj: dict[str, Any]) -> str | None:
 
 
 # The literal module bucket a finding with no concrete `module`/`component`
-# attribution collapses into. It is the UNATTRIBUTED sink, shared with the
-# routing contract's `--module default` cross-cutting target — and, per D2 of the
+# attribution collapses into. It is the UNATTRIBUTED sink — and, per D2 of the
 # `truthful-signals` "pipeline-echo" plan, NOT a promotable preference bucket (see
-# `cross_preference_pattern`).
+# `cross_preference_pattern` and disposition-to-hint-routing.md § (d), which
+# retires the former `--module default` cross-cutting routing target).
 _UNATTRIBUTED_MODULE = "default"
 
 
@@ -2250,9 +2250,9 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
             # cross-cutting judgement — the aggregation keys on a single module
             # value and cannot detect a spans-modules pattern, so `default` only
             # ever means unattributed. Promoting it would route an unverified hint
-            # to the widest blast radius (the shared contract's
-            # `enrich insight --module default` target). Count it for visibility;
-            # never surface it as a promotable candidate.
+            # to the widest blast radius — the `default` sink the shared contract
+            # now declines to promote (disposition-to-hint-routing.md § (d)). Count
+            # it for visibility; never surface it as a promotable candidate.
             unattributed_excluded += 1
             continue
         candidates.append(

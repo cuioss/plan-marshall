@@ -6132,7 +6132,7 @@ class TestPreferenceUnattributedBucketNotPromoted:
     """D2 — a recurrence collapsing to the ``default`` fallback bucket is the
     UNATTRIBUTED sink (no module, no component), not a genuine cross-cutting
     judgement, and is NOT promotable. Promoting it would route an unverified hint
-    to the widest blast radius (``enrich insight --module default``). This gate is
+    to the widest blast radius — the unattributed ``default`` sink. This gate is
     SEPARATE from D1's authorship filter: it fires on ATTRIBUTION, not authorship —
     the fixtures here use non-comment findings so D1 never touches them.
     """
