@@ -81,20 +81,58 @@ CodeRabbit posted a full review; `cuioss-review-bot` reported no concerns; `sour
 
 ## Reviewer participation
 
-_pending_
+Expected reviewer population derived from the `author_login` of each `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc (cross-named by `.github/workflows/pr-agent.yml`): `coderabbitai` (coderabbit), `cuioss-review-bot` (pr-agent), `sourcery-ai` (sourcery). M = 3.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `coderabbitai` | `reviewed` | Full review: walkthrough issue-comment + 3 actionable inline review-thread comments (bot_kind registry validation, population count, D0 provenance framing). All 3 fixed, replied on-thread, and resolved. Re-review of the fix head 380d514 auto-triggered. |
+| `cuioss-review-bot` | `reviewed` | Review-guide issue-comment over the diff: "🧪 PR contains tests · 🔒 No security concerns identified · ⚡ No major issues detected." A published review artifact against the diff with nothing to report. |
+| `sourcery-ai` | `rate-limited` | Published only a refusal in place of a review: "you have reached your weekly rate limit of 500000 diff characters." Engaged but did not review this diff; its `Sourcery review` check reports `skipped`. |
+
+**Coverage: 2 of 3 reviewed** (`coderabbitai`, `cuioss-review-bot`); 1 `rate-limited` (`sourcery-ai`, weekly quota). The § Step 8 shortfall disclosure fires (see Merge gate) — merge proceeds on 2-of-3 with the shortfall stated in words, per the disclose-not-block rule.
 
 ## Cost
 
-_pending_
+- **Tokens:** not available to the agent in this session — a single interactive Claude Code cloud session does not surface a token total to the agent. Stated plainly rather than estimated.
+- **Wall-clock:** run start ≈ 2026-08-14T15:xx UTC (branch push) → merge-gate ≈ 2026-08-14T18:3x UTC; ~3h elapsed, the bulk of it three `./pw verify`/`quality-gate` passes (~6 min each) plus waiting on CI + bot review windows.
+- **Population:** this one Claude Code cloud session's usage. ⛔ NOT comparable to a plan-marshall `metrics.toon` total, which counts the orchestrator-plus-agent dispatch tree under plan-marshall's per-task billing boundary — a boundary a single interactive cloud session does not share. The figures above are therefore not presented as parity with any `metrics.toon` number.
 
 ## Contract check (Step 9)
 
-_pending_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | DONE — 5 skills, named above (all via bundle path; plugin not installed). |
+| 2 Branch | DONE — harness-assigned `claude/pipeline-self-communication-e33yu6`, kept as-is; present on `origin` (pushed before any edit). |
+| 3 Plan directory | DONE — `410-.../plan.md` exists, opens with the first-instruction block (present on arrival, not repaired). |
+| 4 Implement | DONE — commits carry the trailer; deliverables addressed. |
+| 4 Per-commit gate | DONE — every `*.py` commit preceded by a clean `./pw quality-gate` (ruff/mypy/SPDX/plugin-doctor). |
+| 4 Pushed | DONE — no unpushed commit; branch pushed after every commit. |
+| 5 Build gate | DONE — Python changed → full `./pw verify` green twice (19639, then 19641 after registry validation). |
+| 6 Verification sub-agent | DONE — 2 passes; 3 stale-claim findings fixed, 2 observations dispositioned, re-verified clean. |
+| 7 PR cycle | DONE — PR #1231; all 3 CodeRabbit comments fixed + replied + resolved; reviewer participation recorded. |
+| 8 Merge gate | see Merge gate section below. |
+| 9 This check | DONE — appended here. |
+| GitHub access path | GitHub MCP server (cloud path). |
+| Branch form | harness-assigned. |
+| `/sync-plugin-cache` | NOT owed — machine-local build step; a cloud run neither performs nor owes it (bundle source is authoritative). |
 
 ## What have we learned (Step 9)
 
-_pending_
+**None proposed.** The cloud-plan-lane contract executed end-to-end exactly as written and every step produced its artifact in this environment: the `*.py`-keyed build gate, the `uv run pytest` red-first checks, the two-pass verification sub-agent, the three-surface review read (`get_reviews` surfaced the Sourcery rate-limit refusal and the CodeRabbit summary; `get_review_comments` surfaced the three inline findings; `get_comments` surfaced the walkthrough and the pr-agent guide — all three were necessary, matching the contract's warning), the registry-derived reviewer population, and the disclose-not-block shortfall rule. No step was ambiguous, unproducible, or unnecessary in practice, so there is no run-produced evidence for a contract change; a speculative one is explicitly not a proposal.
+
+One authoring note that is NOT a lane-contract change: this plan's Notes told the run the D0 corpus lives under git-ignored `.plan/` and is unreachable, but `.gitignore` exempts `.plan/project-architecture/`, so the store WAS reachable and D0 became a real look. That is a plan-authoring observation (about this plan's framing), not a defect in the cloud-plan-lane contract, so it is recorded here rather than proposed as a contract amendment.
+
+## Merge gate (Step 8)
+
+- **Condition 1 — required contexts green on the head.** On the initial head the required `verify / conclusion` concluded `success` and `mergeable_state` was `clean`. Each fix push re-triggers `verify`; the merge queue is the final enforcer (it admits only when the ruleset's required contexts pass and re-verifies on `merge_group`), so arming defers required-green to the queue. Non-required contexts (`Sourcery review` skipped; the bots' advisory comments) do not block and are disclosed here.
+- **Condition 2 — every PR comment handled.** The 3 CodeRabbit inline findings were fixed, replied on-thread, and resolved. The 2 issue-comments (CodeRabbit walkthrough, pr-agent review-guide) are informational. The fix-head re-review was awaited before arming so no new comment was left unhandled.
+- **Condition 3 — report finalized and pushed as the last pre-merge commit**, before arming (a queued branch rejects further pushes).
+- **Condition 4 — review-coverage shortfall DISCLOSED (disclose, not block).** **Review coverage: 2 of 3** — `coderabbitai` reviewed (3 findings, all fixed); `cuioss-review-bot` reviewed (no concerns); `sourcery-ai` **rate-limited** (weekly 500 000-diff-character quota, window reopens on its own). Per the disclose-not-block rule, the merge proceeds on 2-of-3 with the shortfall stated in words; the gate is not held for the rate-limited reviewer.
+
+Auto-merge armed with `SQUASH`; the merge queue lands it once the required `verify` on the final head goes green. Landing confirmation is recorded to the operator (the merge SHA does not exist until the queue lands) — not embedded in this pre-merge report.
 
 ## Residue
 
-_pending_
+- **`default` sentinel overloading (from verification observation 5).** The literal `default` is both the unattributed-fallback sentinel in `_preference_module` AND the alias for the real project-root module (confirmed in `manage-architecture` `--module default` resolution and `test_cmd_resolve.py`). D2's `module == "default"` gate therefore also suppresses a recurrence genuinely attributed to `module: "default"`. This is a pre-existing system-wide convention (the fallback sentinel, the retired routing target, and the enriched store's cross-cutting bucket all use the literal `default`), and the plan frames `default` as the unattributed sink; in practice the store's `default/` holds cross-cutting project-wide hints, so suppressing them is D2's intended behavior. Re-architecting the sentinel (a distinct non-module unattributed marker threaded through `_preference_module`, the routing contract, and the enriched store) is a separate, system-wide change beyond this plan — candidate for a follow-up plan if the root-module-preference case ever proves real.
+- **Unmeasurable historical corpus pollution (D0).** The store retains no finding→hint provenance, so a definitive count of past self-minted hints is unrecoverable here. The text-scan proxy found none, and the fix is self-limiting, so no repair is owed — but if a future need arises, it is a machine-local operation with different tooling (this lane cannot mutate `.plan/`).
+- **Local plugin-cache sync (informational).** This change edits `marketplace/bundles/**`; per `CLAUDE.md` a developer machine would `/sync-plugin-cache` after such an edit. A cloud run neither performs nor owes this (the merged bundle source is authoritative); noted only so a local developer picking up the merged change knows a local cache refresh is a local concern.
