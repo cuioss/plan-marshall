@@ -29,14 +29,16 @@ These tests pin the closure invariant and the count-free rewrite:
     would double-emit and reintroduce the per-role blind spot the seam closes).
     The sweep is scoped to that one section — the section that holds every dispatch
     branch the document has.
-(f) Every step doc in this plan's own touched population that **self-classifies**
-    (asserts "This step is \\*\\*inline\\*\\*" / "\\*\\*dispatched\\*\\*" in its own
-    body) agrees with the roster: an inline-asserting doc's step appears under
-    ``## Inline steps`` and NOT under ``## Dispatched steps``, and vice versa.
-    This is the cross-document consistency check — the roster and the executor
-    doc are two sources that can disagree, and ``default:architecture-refresh``
-    is the case that did: its executor doc asserted inline while the roster
-    classified it dispatched.
+(f) Every step doc in the finalize-step registry that **self-classifies** (asserts
+    "This step is \\*\\*inline\\*\\*" / "\\*\\*dispatched\\*\\*" in its own body)
+    agrees with the roster: an inline-asserting doc's step appears under
+    ``## Inline steps`` and NOT under ``## Dispatched steps``, and vice versa. This
+    is the cross-document **correctness** check — closure/disjointness (a)-(b) prove
+    each step carries exactly one classification, never that the classification is
+    RIGHT, because they never read the step's own doc. The roster and the executor
+    doc are two sources that can disagree, and ``default:architecture-refresh`` is
+    the case that did: its executor doc asserted inline while the roster classified
+    it dispatched.
 
 Steps are named in the roster by their exact registry key (``default:`` /
 ``project:`` / ``bundle:skill`` prefix included), so the comparison is a plain
@@ -46,8 +48,9 @@ The (d), (e) and (f) populations are **derived, never hardcoded**: (d) iterates
 the rows the roster parser finds under ``## Dispatched steps``, (e) iterates the
 ``Task:`` spawns found in that ``SKILL.md`` section (pairing each with its seam
 resolve) rather than a hardcoded emit-site list, and (f) reads each step doc's OWN
-self-classification sentence rather than asserting a ``default:architecture-refresh``
-literal. A
+self-classification sentence over a population DISCOVERED from the finalize-step
+registry (``find_implementors``) rather than a pinned file list or a
+``default:architecture-refresh`` literal. A
 hardcoded roster or emit-site list would pass vacuously the moment a row or a
 dispatch branch is added, which is precisely the drift these tests exist to
 catch — and an ``assert 'default:architecture-refresh' in inline`` literal would
@@ -55,22 +58,27 @@ pass vacuously the instant the pair is fixed, detecting nothing else ever again.
 Each detector carries a mutation guard asserting it fires on the exact
 pre-fix shape, so a regex typo cannot make it vacuously green.
 
-(f)'s **file** population is deliberately bounded to the step docs this plan
-itself mutates (deliverable 1's and deliverable 2's affected step docs, plus
-``standards/architecture-refresh.md``) — it is NOT the general roster-vs-step-doc
-mismatch population, which is owned by the sibling epic
-``code-intelligence-substrate`` PLAN-121 (D5b/D5c) and spans every registered
-step. Widening (f) to all registered steps would duplicate that sibling's
-surface; the bounding is a scope decision, not an oversight.
+(f)'s population is the WHOLE finalize-step registry, DERIVED from
+``find_implementors`` — not a hardcoded file list. Every registered step's own
+authoritative doc is read for a self-classification sentence, so a step that gains
+one is covered for free and a doc that moves is followed by the registry rather
+than dropping out of a pinned tuple. Only ``architecture-refresh.md``
+self-classifies today, so it is the only step the correctness check currently
+compares — a property of the docs, not a bound on the check. Closing this with a
+second hand-written pin (a per-step ``assert '…' in inline`` literal) is exactly the
+hand-maintained-mirror-of-a-derived-set archetype these tests exist to prevent, so
+the population is discovered, never enumerated.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 from _dispatch_roster import parse_roster, parse_roster_rows, section_lines
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
+from extension_discovery import find_implementors
 
 _SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'phase-6-finalize'
 _ROSTER_DOC = _SKILL_DIR / 'standards' / 'dispatch-inline-split.md'
@@ -165,26 +173,16 @@ _TASK_SPAWN = re.compile(r'^\s*Task:\s+plan-marshall:', re.MULTILINE)
 #: branch's resolve can never satisfy another branch's spawn.
 _EMIT_LOOKBACK_LINES = 25
 
-#: (f) The bounded step-doc population for the cross-document consistency check:
-#: the step docs this plan's deliverable 1 and deliverable 2 touch, plus
-#: ``standards/architecture-refresh.md``. Repo-relative so ``.claude/skills/``
-#: project steps sit in the same list as the bundle-resident ones. Bounded on
-#: purpose — the all-registered-steps population belongs to the sibling epic's
-#: PLAN-121 (D5b/D5c); see the module docstring.
-_D5E_STEP_DOC_PATHS = (
-    'marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/architecture-refresh.md',
-    'marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/pre-push-quality-gate.md',
-    'marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/ci-verify.md',
-    'marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/finalize-step-simplify.md',
-    'marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/'
-    'finalize-step-security-audit.md',
-    'marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/'
-    'pre-submission-self-review.md',
-    'marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/sonar-roundtrip.md',
-    'marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md',
-    '.claude/skills/finalize-step-plugin-doctor/SKILL.md',
-    '.claude/skills/finalize-step-era-stamp-fill/SKILL.md',
-)
+#: (f) The cross-document consistency population is DERIVED from the finalize-step
+#: registry, never a pinned file list. Every implementor of this ext-point is a
+#: registered finalize step whose OWN authoritative doc is discovered here; the
+#: check reads each doc's self-classification and compares it to the roster, so a
+#: step that gains (or loses) a self-classification sentence — or whose doc moves —
+#: is followed by the registry rather than going stale in a hardcoded list. A
+#: hardcoded mirror of the registry is exactly the drift archetype these tests
+#: exist to prevent, so the population is discovered through the same
+#: ``find_implementors`` path the dispatcher and the head-dependence derivation use.
+_FINALIZE_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
 
 #: A step doc's own classification claim. The wording is the canonical
 #: self-classification sentence (``architecture-refresh.md`` § "This step is
@@ -192,8 +190,10 @@ _D5E_STEP_DOC_PATHS = (
 #: *classification assertion* from narrative uses of the words — "This step runs
 #: as inline orchestration …" (``sonar-roundtrip.md``, ``automatic-review``) and
 #: "the dispatched prompt loads …" (``finalize-step-simplify.md``) are prose
-#: about HOW the step behaves, not a roster classification, and reading them as
-#: claims would drag this bounded check into the sibling epic's population.
+#: about HOW the step behaves, not a roster classification. That distinction
+#: matters more now the population is the whole registry: only a doc making an
+#: explicit **bold** self-classification contributes a claim, so narrative prose in
+#: any discovered doc is never misread as a disagreement with the roster.
 _SELF_CLASSIFICATION = re.compile(r'\bThis step is \*\*(inline|dispatched)\*\*')
 
 #: A step doc's frontmatter ``name:`` value. Searched inside the frontmatter
@@ -406,29 +406,40 @@ def _registry_key(frontmatter_name: str, registered: set[str]) -> str | None:
     return None
 
 
-def _step_doc_claims() -> list[tuple[str, str, str]]:
-    """Return ``(rel_path, registry_key, claim)`` for self-classifying step docs.
+def _finalize_step_doc_paths() -> list[Path]:
+    """Return the doc :class:`Path` of every discovered finalize-step implementor.
 
-    Iterates the bounded (f) population and reads each doc's OWN classification
-    sentence. Docs that make no classification claim contribute nothing — the
-    check is about *disagreement* between two sources, so a doc that asserts
-    nothing cannot disagree with the roster.
+    The population is the finalize-step registry, discovered through the same
+    ``find_implementors`` path the dispatcher and the head-dependence derivation
+    use — never a hardcoded file list — so a step added, removed, or relocated is
+    followed automatically rather than going stale in a pinned tuple here.
+    """
+    return [Path(str(record['path'])) for record in find_implementors(_FINALIZE_STEP_EXT_POINT)]
+
+
+def _step_doc_claims() -> list[tuple[str, str, str]]:
+    """Return ``(doc_path, registry_key, claim)`` for self-classifying step docs.
+
+    Iterates the registry-DERIVED (f) population and reads each doc's OWN
+    classification sentence. Docs that make no classification claim contribute
+    nothing — the check is about *disagreement* between two sources, so a doc that
+    asserts nothing cannot disagree with the roster.
     """
     registered = _registered_steps()
     claims: list[tuple[str, str, str]] = []
-    for rel in _D5E_STEP_DOC_PATHS:
-        text = (PROJECT_ROOT / rel).read_text(encoding='utf-8')
+    for path in _finalize_step_doc_paths():
+        text = path.read_text(encoding='utf-8')
         match = _SELF_CLASSIFICATION.search(text)
         if not match:
             continue
         name = _frontmatter_name(text)
-        assert name, f'{rel} self-classifies but declares no frontmatter `name:`'
+        assert name, f'{path} self-classifies but declares no frontmatter `name:`'
         key = _registry_key(name, registered)
         assert key, (
-            f'{rel} declares frontmatter name {name!r}, which resolves to no '
+            f'{path} declares frontmatter name {name!r}, which resolves to no '
             f'registered finalize-step key'
         )
-        claims.append((rel, key, match.group(1)))
+        claims.append((str(path), key, match.group(1)))
     return claims
 
 
@@ -766,15 +777,20 @@ def test_seam_resolve_detectors_fire_on_the_pre_fix_shape():
 # ---------------------------------------------------------------------------
 
 
-def test_d5e_population_step_docs_all_exist():
-    # Guards the bounded population against silent shrinkage: a renamed or moved
-    # step doc would otherwise drop out of the sweep unnoticed and take its
-    # classification claim with it.
-    missing = [rel for rel in _D5E_STEP_DOC_PATHS if not (PROJECT_ROOT / rel).exists()]
+def test_finalize_step_registry_population_is_non_empty_and_readable():
+    # Guards the DERIVED population: find_implementors must discover finalize-step
+    # docs, and every discovered doc must exist on disk — a discovery that returns
+    # nothing (or a phantom path) would make the cross-document sweep vacuous, and
+    # there is no hardcoded list to notice the shrinkage.
+    paths = _finalize_step_doc_paths()
 
+    assert paths, (
+        'find_implementors discovered no finalize-step docs — the cross-document '
+        'consistency sweep would be vacuous'
+    )
+    missing = [str(path) for path in paths if not path.exists()]
     assert not missing, (
-        f'Step doc(s) in the cross-document consistency population no longer exist — '
-        f'update _D5E_STEP_DOC_PATHS in the same change that moves them: {missing}'
+        f'Discovered finalize-step doc(s) do not exist on disk: {missing}'
     )
 
 
