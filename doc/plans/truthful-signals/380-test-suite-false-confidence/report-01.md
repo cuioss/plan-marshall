@@ -1,6 +1,6 @@
 # Run report — 380-test-suite-false-confidence (run 01)
 
-**Date (UTC):** 2026-08-14    **Branch:** claude/test-suite-false-confidence-t9mfb1 (harness-assigned)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-14    **Branch:** claude/test-suite-false-confidence-t9mfb1 (harness-assigned)    **PR:** [#1229](https://github.com/cuioss/plan-marshall/pull/1229)    **Outcome:** _in progress — review cycle + merge gate_
 
 ## Skills loaded
 
@@ -74,7 +74,19 @@ CI / PR-review findings: _(pending PR — recorded when they arrive)_
 
 ## Reviewer participation
 
-_(pending PR)_
+Expected reviewer population, derived from the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`
+registry doc (cross-named by `.github/workflows/pr-agent.yml`): **M = 3** —
+`cuioss-review-bot` (pr-agent), `coderabbitai` (coderabbit), `sourcery-ai` (sourcery).
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `coderabbitai` | `rate-limited` | Commit-status "CodeRabbit": state `success`, description **"Review rate limited"** — engaged but did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Review body: **"you have reached your weekly rate limit of 500000 diff characters."** |
+| `cuioss-review-bot` | _pending at first read_ | `review / review` check `in_progress` when the PR was first read; re-checked on the scheduled re-entry (below), findings handled there. |
+
+Coverage and the § Step 8 shortfall disclosure are finalized at the merge gate after the
+cuioss-review-bot re-check.
 
 ## Cost
 
