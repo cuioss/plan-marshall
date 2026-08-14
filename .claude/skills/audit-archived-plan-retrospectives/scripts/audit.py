@@ -2152,18 +2152,103 @@ def _preference_disposition(obj: dict[str, Any]) -> str | None:
     return res if res in _PREFERENCE_DISPOSITIONS else None
 
 
+# The literal module bucket a finding with no concrete `module`/`component`
+# attribution collapses into. It is the UNATTRIBUTED sink — and, per D2 of the
+# `truthful-signals` "pipeline-echo" plan, NOT a promotable preference bucket (see
+# `cross_preference_pattern` and disposition-to-hint-routing.md § (d), which
+# retires the former `--module default` cross-cutting routing target).
+_UNATTRIBUTED_MODULE = "default"
+
+
 def _preference_module(obj: dict[str, Any]) -> str:
     """Return the finding's module attribution for preference aggregation.
 
     Prefers the explicit `module` field, falls back to `component`, then to the
-    cross-cutting `default` bucket. Cross-cutting patterns (no concrete module)
-    route via `--module default` per the shared routing contract.
+    `default` UNATTRIBUTED bucket. Per D2 (see `cross_preference_pattern`), a tuple
+    landing in the `default` bucket is counted but never promoted — it is not a
+    cross-cutting judgement and no longer routes anywhere.
     """
     for key in ("module", "component"):
         value = obj.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
-    return "default"
+    return _UNATTRIBUTED_MODULE
+
+
+def _recognized_bot_kinds() -> frozenset[str] | None:
+    """Return the live registry-derived recognized reviewer `bot_kind` set, or None.
+
+    The authorship gate admits a `pr-comment` only when it is attributed to a
+    RECOGNIZED reviewer bot. `add_finding` validates `bot_kind` against this set at
+    WRITE time, but the auditor reads archived JSONL DIRECTLY — an archived (legacy,
+    de-registered, or hand-edited) record could carry a `bot_kind` that is not a
+    real reviewer identity — so the gate re-derives the set from the live
+    `automatic-review` registry here rather than trusting an arbitrary stored
+    string. Mirrors `_load_routing_logic`'s marketplace-import pattern: repo root is
+    `__file__`'s 4th parent (`scripts/ → skill/ → skills/ → .claude/ → repo`).
+
+    Returns None when the marketplace tree or the registry module cannot be loaded
+    — the caller then degrades to a presence-only check rather than over-excluding
+    every bot-attributed comment (the pipeline-self coverage, which keys on an
+    ABSENT `bot_kind`, is unaffected either way).
+    """
+    parents = Path(__file__).resolve().parents
+    if len(parents) < 5:
+        return None
+    scripts_dir = (
+        parents[4]
+        / "marketplace" / "bundles" / "plan-marshall" / "skills"
+        / "automatic-review" / "scripts"
+    )
+    if not scripts_dir.is_dir():
+        return None
+    path_str = str(scripts_dir)
+    if path_str not in sys.path:
+        sys.path.insert(0, path_str)
+    try:
+        import bot_registry  # noqa: PLC0415
+
+        return frozenset(str(k) for k in bot_registry.bot_kinds())
+    except Exception:  # noqa: BLE001 — any import/parse failure degrades to presence-only
+        return None
+
+
+def _preference_admissible(
+    obj: dict[str, Any], recognized_bot_kinds: frozenset[str] | None
+) -> bool:
+    """Return False for a finding that must not seed a preference recurrence.
+
+    Authorship gate (D1 of the `truthful-signals` "the-pipeline-talks-to-itself"
+    plan). A `pr-comment` finding contributes to preference learning ONLY when it
+    is positively attributed to a recognized external reviewer bot — i.e. it
+    carries a `bot_kind` that is one of the registry-derived reviewer identities
+    (`recognized_bot_kinds`) the ingest verb stamps from the comment author login.
+
+    A `pr-comment` with no `bot_kind` — or a `bot_kind` that is not a recognized
+    reviewer identity — cannot be told apart from the pipeline's own posted
+    comments: the ingest verb records the pipeline's own PR comments (a
+    review-trigger comment, a description-restore) with `bot_kind` absent, exactly
+    as it records an unattributed human comment. Admitting such a comment would let
+    the pipeline's own control traffic become evidence about the pipeline's
+    preferences — a SELF-REINFORCING measurement artifact that grows with pipeline
+    chattiness rather than with operator judgement. There is no self-login signal on
+    the finding to identify "self" directly (the comment-preparation verb stamps no
+    marker), so this gate fails CLOSED on positive external attribution instead of
+    trying to recognize self. When the registry cannot be loaded
+    (`recognized_bot_kinds is None`) the gate degrades to a presence-only check.
+
+    Non-comment findings (lint/sonar/bug/test-failure/…) carry no author and are
+    never pipeline-authored PR chatter; they are unaffected — their tool-disposition
+    recurrences are exactly the signal preference learning exists to capture.
+    """
+    if obj.get("type") == "pr-comment":
+        bot_kind = obj.get("bot_kind")
+        if not (isinstance(bot_kind, str) and bot_kind.strip()):
+            return False
+        if recognized_bot_kinds is None:
+            return True
+        return bot_kind.strip() in recognized_bot_kinds
+    return True
 
 
 def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
@@ -2177,6 +2262,9 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     threshold-gates at `THRESHOLDS["preference_disposition_occurrences"]`.
     """
     threshold = THRESHOLDS["preference_disposition_occurrences"]
+    # Resolve the recognized reviewer-bot set ONCE for the whole corpus walk (the
+    # authorship gate validates archived `bot_kind` values against it).
+    recognized_bot_kinds = _recognized_bot_kinds()
     tuple_to_plans: dict[tuple[str, str, str], set[str]] = defaultdict(set)
     for inputs in all_inputs:
         findings_dir = inputs.plan_dir / "artifacts" / "findings"
@@ -2185,6 +2273,11 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         seen_in_plan: set[tuple[str, str, str]] = set()
         for jsonl in findings_dir.glob("*.jsonl"):
             for obj in read_jsonl(jsonl):
+                # D1 authorship gate: a pipeline-self-authored comment (or one with
+                # an unrecognized bot_kind) cannot seed a preference (see
+                # `_preference_admissible`).
+                if not _preference_admissible(obj, recognized_bot_kinds):
+                    continue
                 disposition = _preference_disposition(obj)
                 if disposition is None:
                     continue
@@ -2196,17 +2289,31 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         for key in seen_in_plan:
             tuple_to_plans[key].add(inputs.plan_id)
 
-    candidates: list[dict[str, Any]] = [
-        {
-            "module": module,
-            "finding_class": finding_class,
-            "disposition": disposition,
-            "occurrence_count": len(plans),
-            "plan_ids": sorted(plans),
-        }
-        for (module, finding_class, disposition), plans in tuple_to_plans.items()
-        if len(plans) >= threshold
-    ]
+    candidates: list[dict[str, Any]] = []
+    unattributed_excluded = 0
+    for (module, finding_class, disposition), plans in tuple_to_plans.items():
+        if len(plans) < threshold:
+            continue
+        if module == _UNATTRIBUTED_MODULE:
+            # D2 unattributed-bucket gate: the `default` bucket is the sink for
+            # UNATTRIBUTED recurrences (no module, no component), not a genuine
+            # cross-cutting judgement — the aggregation keys on a single module
+            # value and cannot detect a spans-modules pattern, so `default` only
+            # ever means unattributed. Promoting it would route an unverified hint
+            # to the widest blast radius — the `default` sink the shared contract
+            # now declines to promote (disposition-to-hint-routing.md § (d)). Count
+            # it for visibility; never surface it as a promotable candidate.
+            unattributed_excluded += 1
+            continue
+        candidates.append(
+            {
+                "module": module,
+                "finding_class": finding_class,
+                "disposition": disposition,
+                "occurrence_count": len(plans),
+                "plan_ids": sorted(plans),
+            }
+        )
     candidates.sort(
         key=lambda r: (
             -int(r["occurrence_count"]),
@@ -2218,6 +2325,7 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     return {
         "threshold": threshold,
         "candidate_count": len(candidates),
+        "unattributed_excluded_count": unattributed_excluded,
         "rows": candidates,
     }
 
@@ -5206,6 +5314,10 @@ def emit_preference_pattern_block(result: dict[str, Any]) -> str:
         "status: success",
         f"threshold: {result['threshold']}",
         f"candidate_count: {result['candidate_count']}",
+        # D2: unattributed (`default`-bucket) recurrences that cleared the
+        # threshold but were declined promotion — surfaced so the decision is
+        # visible rather than a silent drop.
+        f"unattributed_excluded_count: {result.get('unattributed_excluded_count', 0)}",
         f"genuine_signal_count: {genuine_signal_count}",
         f"rows[{len(rows)}]{{module,finding_class,disposition,occurrence_count,plan_ids,severity}}:",
     ]

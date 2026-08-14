@@ -432,17 +432,21 @@ check".
 
 The `preference-pattern-detector` check surfaces recurring user gate-dispositions
 as `(module, finding-class, disposition)` candidate rows. Because the check
-THRESHOLD-gates every surfaced row via its `THRESHOLDS` script constant, this
-step routes EVERY surfaced row — there is no further gating in the body.
+THRESHOLD-gates every surfaced row via its `THRESHOLDS` script constant — and, in
+the script, also drops self-authored comments (authorship gate) and unattributed
+`default`-bucket tuples (attribution gate) — every SURFACED row is a promotable,
+module-attributed candidate, so this step routes EVERY surfaced row with no
+further gating in the body.
 
 For each surfaced row, generalize the disposition recurrence into a hint string
 and route it to `architecture enrich`, following the shared contract in
 [`phase-6-finalize/standards/disposition-to-hint-routing.md`](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/disposition-to-hint-routing.md)
-for the generalization rule, the routing targets
-(`architecture enrich best-practice` for module-attributed rows,
-`architecture enrich insight --module default` for cross-cutting rows), and the
-"generalize, do not log raw dispositions" privacy invariant. This step MUST NOT
-restate those rules inline — the shared contract is the single source of truth.
+for the generalization rule, the routing target
+(`architecture enrich {best-practice|insight} --module {module}` to the row's
+concrete module — the `default` bucket is never surfaced, so no row routes there),
+and the "generalize, do not log raw dispositions" privacy invariant. This step
+MUST NOT restate those rules inline — the shared contract is the single source of
+truth.
 
 This is the auditor's richer corpus-wide preference-learning path; the
 consumer-available `default:finalize-step-preference-emitter` is the cheap

@@ -126,6 +126,13 @@ collapsed at the first `:` and lowercased, and the module is the finding's
 `module` attribution (falling back to `component`, then `default`). Count how
 many times each tuple recurs within the plan.
 
+**Before counting, EXCLUDE any finding that is not authorship-admissible** per
+[`disposition-to-hint-routing.md`](disposition-to-hint-routing.md) § "(e)
+Authorship admissibility": a `pr-comment` finding without a recognized reviewer
+`bot_kind` is the pipeline's own control traffic — not preference evidence — and
+must not seed a recurrence. (The `bot_kind` field is on the finding record;
+`manage-findings list` surfaces it.)
+
 ### Step 2: Read the per-plan promotion threshold knob
 
 Read the live `preference_min_recurrence` knob value exactly as
@@ -141,22 +148,26 @@ Read `params.preference_min_recurrence` from the returned TOON (default `2`).
 ### Step 3: Threshold-gate and skip-clean
 
 Keep only the tuples whose within-plan recurrence count is at least
-`preference_min_recurrence`. When NO tuple clears the threshold (the common
-case), skip-clean: mark the step done with a `no patterns promoted` detail and
-return — no artifact filed, no error.
+`preference_min_recurrence`. Then DROP any surviving tuple whose module resolves
+to the `default` fallback bucket (no concrete `module` and no `component`): per
+[`disposition-to-hint-routing.md`](disposition-to-hint-routing.md) § "(d)
+Attribution gate" an unattributed recurrence is never promoted, even when it
+clears the threshold. When NO tuple remains (the common case), skip-clean: mark
+the step done with a `no patterns promoted` detail and return — no artifact
+filed, no error.
 
 ### Step 4: Generalize the cleared patterns and file the owed hints
 
 For each cleared tuple, generalize the disposition recurrence into a hint string
 following the shared contract in
 [`disposition-to-hint-routing.md`](disposition-to-hint-routing.md) for the
-generalization rule, the intended routing targets
-(`architecture enrich best-practice --module {module}` for module-attributed
-patterns, `architecture enrich insight --module default` for cross-cutting
-patterns), and the "generalize, do not log raw dispositions" privacy invariant.
-This step MUST NOT restate those rules inline — the shared contract is the single
-source of truth (the meta-only cross-plan auditor's Step 4c references the same
-contract).
+generalization rule, the routing target
+(`architecture enrich {best-practice|insight} --module {module}` to the tuple's
+concrete module — Step 3 already dropped every unattributed `default`-bucket
+tuple, so no tuple routes to the `default` bucket), and the "generalize, do not
+log raw dispositions" privacy invariant. This step MUST NOT restate those rules
+inline — the shared contract is the single source of truth (the meta-only
+cross-plan auditor's Step 4c references the same contract).
 
 **Do NOT call `architecture enrich` from this step.** It is `post_run_review: true`
 and runs after the merge gate, where the enrich write would put tracked source
