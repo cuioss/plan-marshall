@@ -46,10 +46,12 @@ No `uv.lock` / generated-file churn resulted (verified `git status --porcelain` 
 ## D4 — ruleset gate: decisions/proposals
 
 The branch-protection ruleset is not visible from inside the repository, and the ruleset-config API is
-unreachable on the cloud MCP path (403). The operator was asked (AskUserQuestion) and deferred all three
-items ("Not sure — record a proposal"). Per the plan (⚠ "If the answer cannot be obtained in this run,
-RECORD A PROPOSAL … do not change the permissions blind"), **no ruleset-dependent code change was made.**
-Each item, with options and consequences:
+unreachable on the cloud MCP path (403). The operator was asked twice (AskUserQuestion): first deferring
+("Not sure — record a proposal"), then, when the concrete options were presented, explicitly instructing
+**"do not decide now — report as open point"** for all three items. Per the plan (⚠ "If the answer cannot
+be obtained in this run, RECORD A PROPOSAL … do not change the permissions blind") and the operator's
+instruction, **no ruleset-dependent code change was made; all three remain OPEN POINTS for a later
+operator decision.** Each item, with options and consequences:
 
 ### D4.1 — Would a code-owners file enforce anything?
 
@@ -112,8 +114,41 @@ checks for a PR template and proceeds gracefully when none exists, so the absenc
 
 ## Findings
 
-_The verification sub-agent (Step 6), CI, and PR review are pending; findings and dispositions are
-recorded below as they arrive._
+### Pre-PR verification sub-agent (Step 6)
+
+An independent `general-purpose` sub-agent verified the branch against the plan (read the actual files,
+ran the D9 tests via importlib, swept the whole tree for stale claims). Verdict: **D1, D2, D3, D6, D7,
+D9 fully VERIFIED; D4 and D8 verified as decisions with no blind code artifacts; D5 verified as a sound
+static design.** Its beyond-diff stale-claim sweep was otherwise clean (no doc restates claude-distribute's
+old `contents: write`, no fixture hardcodes the old `pw` line / old licensing URL / old permissions).
+
+Per-instance findings and dispositions:
+
+1. **D5 verification method — runtime single-run not observable from the diff** (sub-agent, verification
+   caveat, not a defect). Confirming "one push → one verify run" needs a live run; the diff cannot show it.
+   *Disposition:* accepted as a known limitation. The static design is verified safe (below); the runtime
+   observation is deferred to a real `feature/`/`fix/`/`chore/` PR.
+2. **D5 own-PR fixture is degenerate** (sub-agent, verification caveat). This branch is
+   `claude/ci-supply-chain-hardening-9xmggr`; `claude/*` is not in the push allowlist, so only the
+   `pull_request` trigger ever fires for it — a single verify run regardless of the concurrency block. The
+   plan's "verify D5 on this plan's own PR" fixture therefore cannot exercise the dedup (which only occurs
+   for `feature/*`/`fix/*`/`chore/*`). *Disposition:* accepted and disclosed; the report does not claim to
+   have observed the dedup. The dedup is verified by static design analysis instead (group keyed per-branch;
+   `cancel-in-progress` true only for `pull_request`, so a push run never cancels a PR run and the required
+   `verify / conclusion` check is never lost).
+3. **Stale illustrative sketch in `doc/refactor/02-verification-protocol.md`** (sub-agent, low severity).
+   An illustrative YAML sketch of `opencode-generate-check.yml` (L330–352) omitted a `permissions:` block —
+   accurate before D2, now divergent from the real file. *Disposition:* **FIXED** — added
+   `permissions: contents: read` to the sketch to match the D2 change (this epic is about not leaving
+   misleading signals). The sketch's *other* pre-existing divergences (unpinned `actions/checkout@v4` /
+   `setup-python@v5` vs the real pinned SHAs) were deliberately **left unchanged** — action-pinning is a
+   separate concern outside this plan's scope; re-pinning an illustrative sketch would be scope creep.
+4. **D1 runtime metacharacter execution — CANNOT-VERIFY-FROM-DIFF** (sub-agent). The mechanism is provably
+   safe by inspection (env-var delivery, quoted expansion). *Disposition:* covered by the local injection
+   reproduction recorded above (safe form does not fire; old spliced form does).
+
+No sub-agent finding required a re-dispatch: the only actionable item (#3) was a doc consistency touch,
+not a defect in a deliverable.
 
 - **D1 (injection), self-verified against a metacharacter-bearing ref (plan's required check):** a local
   reproduction confirmed the value cannot escape the variable. With the malicious ref

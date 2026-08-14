@@ -336,6 +336,9 @@ on:
       - 'marketplace/bundles/**'
       - 'marketplace/targets/**'
 
+permissions:
+  contents: read
+
 jobs:
   generate-check:
     runs-on: ubuntu-latest
