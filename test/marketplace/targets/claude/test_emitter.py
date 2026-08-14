@@ -196,6 +196,52 @@ def test_emit_bundle_verbatim_does_not_touch_sibling_bundles(tmp_path: Path):
     assert (out_dir / 'a' / 'agents' / 'a-agent.md').is_file()
 
 
+# =============================================================================
+# Wipe-guard matched control (D1)
+# =============================================================================
+#
+# ``emit_bundle_verbatim`` wipes ``output_dir/{bundle}`` before copying. A
+# mistyped ``output_dir`` pointing at a tree containing the bundle source would
+# make ``dest_root`` the source bundle itself, so the wipe destroys real source.
+# The guard refuses a destination inside the source tree. The control has BOTH
+# halves — refusing the source-overlap case must NOT break legitimate emits.
+
+
+def test_emit_bundle_verbatim_refuses_output_inside_source_tree(fixture_marketplace: Path):
+    """Negative half: an ``output_dir`` pointing INTO the source tree is refused,
+    and the source it would have wiped survives untouched.
+    """
+    bundle_dir = fixture_marketplace / 'demo'
+    source_skill = bundle_dir / 'skills' / 'demo-skill' / 'SKILL.md'
+    source_bytes = source_skill.read_bytes()
+
+    # output_dir == the source marketplace root, so dest_root == the bundle's
+    # own source directory.
+    with pytest.raises(ValueError, match='source tree'):
+        emit_bundle_verbatim(bundle_dir, fixture_marketplace)
+
+    # The refusal happened BEFORE any deletion — the source is intact.
+    assert source_skill.read_bytes() == source_bytes
+    assert (bundle_dir / '.claude-plugin' / 'plugin.json').is_file()
+
+
+def test_emit_bundle_verbatim_legitimate_output_still_wipes(fixture_marketplace: Path, tmp_path: Path):
+    """Positive half: a legitimate ``output_dir`` distinct from the source tree
+    still wipes stale content and emits — the guard does not refuse everything.
+    """
+    bundle_dir = fixture_marketplace / 'demo'
+    out_dir = tmp_path / 'out'
+    stale = out_dir / 'demo' / 'agents' / 'removed-agent.md'
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    stale.write_text('stale', encoding='utf-8')
+
+    written = emit_bundle_verbatim(bundle_dir, out_dir)
+
+    assert not stale.exists()  # the stale artifact was wiped
+    assert (out_dir / 'demo' / 'agents' / 'demo-agent.md').is_file()  # fresh emit
+    assert written  # a non-empty emit occurred
+
+
 def test_emit_marker_fingerprint_non_empty_for_real_worktree(tmp_path: Path):
     """Regression test for the sentinel writer's repo_root resolution.
 

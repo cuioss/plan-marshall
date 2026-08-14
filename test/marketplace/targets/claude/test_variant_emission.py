@@ -23,6 +23,7 @@ The contract pinned here:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -522,3 +523,50 @@ def test_discover_components_expands_role_agents(tmp_path: Path):
     assert './agents/role-agent-level-1.md' not in agents
     # Sorted output
     assert agents == sorted(agents)
+
+
+# =============================================================================
+# Mapping cache keyed on content, not path (D5)
+# =============================================================================
+
+
+def test_load_mapping_rereads_after_in_place_change(tmp_path: Path):
+    """A mapping.json modified IN PLACE at the SAME path is re-read, not answered
+    from a stale path-keyed cache.
+
+    Verified by mutating the file and confirming the guard's ANSWER changes
+    (per D5's verification note), not by inspecting the cache key. The distinct
+    mtimes model a real edit — every in-place edit advances mtime — so the test
+    is deterministic rather than dependent on filesystem timestamp granularity.
+    A path-only cache would answer the second call from the first read and the
+    guard would still say ``False``.
+    """
+    path = tmp_path / 'mapping.json'
+
+    # v1: opus does NOT advertise xhigh.
+    path.write_text(
+        json.dumps(
+            {
+                'tool_permissions': {},
+                'model_map': {'opus': {'id': 'claude-opus', 'supports_effort': ['medium', 'high']}},
+            }
+        ),
+        encoding='utf-8',
+    )
+    os.utime(path, (1_000_000_000, 1_000_000_000))
+    assert supports_effort('opus', 'xhigh', path) is False
+
+    # v2: same path, opus now advertises xhigh — with an advanced mtime.
+    path.write_text(
+        json.dumps(
+            {
+                'tool_permissions': {},
+                'model_map': {
+                    'opus': {'id': 'claude-opus', 'supports_effort': ['medium', 'high', 'xhigh']}
+                },
+            }
+        ),
+        encoding='utf-8',
+    )
+    os.utime(path, (2_000_000_000, 2_000_000_000))
+    assert supports_effort('opus', 'xhigh', path) is True

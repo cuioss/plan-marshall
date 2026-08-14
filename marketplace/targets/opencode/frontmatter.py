@@ -109,14 +109,26 @@ def parse_frontmatter(content: str) -> tuple[dict[str, str], str]:
     list-valued fields (``tools``, ``keywords``) are flattened to a
     comma-separated string so callers do not need to special-case YAML
     list parsing. Returns ``({}, content)`` when no frontmatter is found.
+
+    The closing fence is matched on a **newline-delimited** ``\\n---\\n``
+    (matching the sibling ``variant_emitter.parse_frontmatter``), not a raw
+    ``---`` substring. A raw-substring search ends the block at the first
+    three-hyphen run *inside a value* — a ``description`` containing ``---``
+    would truncate the block and silently drop every later field. Anchoring
+    on a whole ``---`` line closes the block only at a real fence.
     """
-    if not content.startswith('---'):
+    if not content.startswith('---\n'):
         return {}, content
-    end = content.find('---', 3)
-    if end == -1:
+    end = content.find('\n---\n', 4)
+    if end != -1:
+        fm_text = content[4:end].strip()
+        body = content[end + len('\n---\n'):].lstrip('\n')
+    elif content.endswith('\n---'):
+        # Tolerate a closing fence at end-of-file with no trailing newline.
+        fm_text = content[4:len(content) - len('\n---')].strip()
+        body = ''
+    else:
         return {}, content
-    fm_text = content[3:end].strip()
-    body = content[end + 3:].lstrip('\n')
 
     fm: dict[str, str] = {}
     current_key = ''
