@@ -169,7 +169,22 @@ No finding was rejected. All actionable findings fixed; the quality gate re-ran 
 the head SHA `9b4be92`; `verify / verify` (the heavy build carrying the required `verify /
 conclusion`) was still **in_progress** at the merge gate. No self-wake is available in this session,
 so — per the lane — auto-merge was armed while `verify` runs; the merge queue is the enforcer and
-admits the PR only when the ruleset's required contexts pass. No CI failure observed.
+admits the PR only when the ruleset's required contexts pass. On the report-finalize head `da659fc`
+that build then concluded: `verify / verify` **success** and `verify / conclusion` **success**. No CI
+failure observed.
+
+**Mid-flight base advance + conflict resolution (post-arm).** After auto-merge was armed, `main`
+advanced (`f29e5ce` → `8620ab0`) as sibling plans landed, turning the PR `dirty`. Per the PR-state-notice
+contract this run owns the resolution: `origin/main` was merged into the branch. One conflict — an
+**append conflict** in `test/plan-marshall/plan-retrospective/test_analyze_logs.py` where both sides added
+*different, non-overlapping* content at end-of-file: this PR's `TestArtifactEmissionPopulation` (D4) and
+the landed sibling `truthful-signals/220`'s `TestBuildTimeFromLedger` (its build-time-from-ledger tests).
+Resolved by **keeping both** (no name collision; shared imports already present). `analyze-logs.py` itself
+auto-merged cleanly — the sibling's `build_time` block and this PR's `artifact_emission` block coexist.
+Re-gated locally: `uv run pytest` on both plan-retrospective detector modules — **88 passed**, exercising
+the merged script end-to-end on both paths. Merge commit `a61f31b` pushed; auto-merge stayed armed;
+`mergeable_state` cleared `dirty` → `blocked` (waiting on the required checks to re-run against the merge
+head). The heavy full-suite re-validation is CI's required `verify / verify`, which auto-merge gates on.
 
 ### PR review
 
