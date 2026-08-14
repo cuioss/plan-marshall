@@ -1,32 +1,36 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Per-step completion-emission detector for the phase-6-finalize dispatch loop.
+"""The finalize completion marker is FUSED to the mark-step-done handshake.
 
-``phase-6-finalize/SKILL.md`` item 7 states the pairing contract: recording a
-step's terminal outcome and emitting its
-``[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}`` line are
-ONE indivisible pair. The contract is easy to state and easy to bypass — every
-loop path that records an outcome and then LEAVES the iteration (a Signal-Gate
-``CONTINUE``, the post-dispatch-guard ``HALT``, the per-agent-timeout
-``continue``) skips past item 7, so the line is emitted at that site or never at
-all. Each such bypass silently removes one step from per-step completion
-coverage while the happy path stays green.
+``phase-6-finalize/SKILL.md`` used to pair every terminal ``mark-step-done`` with a
+separately hand-written ``[STEP] … Completed step:`` emit — a convention the loop
+enforced site by site, and one that could drift toward silence: the step-completion
+invariant is satisfied by the handshake ALONE, so a step could record its outcome
+and leave no operational-log trace. The completion line is now emitted by
+``mark-step-done`` itself (``_cmd_mark_step.py::_emit_completion_marker``, scoped to
+the ``6-finalize`` phase), so recording a step's outcome and emitting its line are
+ONE action that cannot diverge.
 
-This detector derives its population from the document:
+This detector derives its population from the document — the Step-3 FOR-loop body,
+split into its numbered item blocks (``1.``, ``4b.``, ``5d.``, ``7a.`` …) — and
+pins the fusion's two structural invariants:
 
-* Split the Step-3 FOR-loop body into its numbered item blocks (``1.``, ``4b.``,
-  ``5d.``, ``7a.``, …) — the loop's own structure, not a hand-listed set.
-* Keep the blocks that record a terminal outcome (a ``manage-status
-  mark-step-done`` invocation carrying ``--phase 6-finalize``) AND then leave the
-  iteration (``CONTINUE``/``HALT`` the FOR loop, or continue to the next step).
-  A block that records an outcome and falls through reaches item 7's emission, so
-  it is correctly not in the population.
-* Require each block in that population to carry either the completion emission
-  or an explicit **named exemption**. The exemption marker is read from the
-  document — this file hardcodes no exempt-block list.
+* **No hand-written completion emit survives.** A reintroduced
+  ``--message "[STEP] … Completed step:"`` in the loop is the drift-prone
+  per-handler pattern this deliverable removed; the fusion owns the emission.
+* **No terminal-exit block suppresses the fused emission.** A block that records a
+  terminal outcome AND then leaves the iteration (a Signal-Gate ``CONTINUE``, the
+  dispatch-timeout ``continue``, the 5d ``HALT``) reaches the fused emission
+  through its ``mark-step-done`` write — UNLESS it carries ``--no-completion-log``,
+  which would make it record, leave, and emit nothing: the exact silent gap the
+  fusion closes. ``--no-completion-log`` is legitimate ONLY on the item-5f
+  ``head_at_completion`` re-stamp, which FALLS THROUGH to item 6/7 rather than
+  leaving the iteration, so it is never in the terminal-exit population.
 
-The non-degeneracy anchor pins that the enumeration finds the known bypass sites,
-and the bites-check pins that a block with neither an emission nor an exemption
-is flagged — without them a segmentation typo would make the sweep vacuous.
+The non-degeneracy anchor pins that the enumeration still finds the known
+record-then-leave sites and that the suppression flag is actually present (on the
+fall-through re-stamp); the mutation guards pin that both detectors fire on their
+regression shapes. Without them a segmentation typo or a dead regex would make the
+sweeps vacuous.
 
 The heading-bounded walk is the shared one in ``test/_shared/_dispatch_roster.py``
 (``section_lines``); this file adds no private copy.
@@ -60,22 +64,23 @@ _ITEM_MARKER_RE = re.compile(r'^\s{0,6}(?P<item>\d+[a-z]?)\.\s')
 #: A terminal-outcome recording for this phase.
 _MARK_STEP_DONE_RE = re.compile(r'mark-step-done\b[\s\S]{0,300}?--phase\s+6-finalize\b')
 
-#: The completion emission the pairing contract requires.
-_COMPLETION_EMISSION_RE = re.compile(
-    r'\[STEP\]\s*\(plan-marshall:phase-6-finalize\)\s*Completed step:'
-)
-
-#: The explicit, named exemption a block may carry instead of the emission. The
-#: marker is the contract surface — the exempt SET is whatever the document marks,
-#: never a list maintained here.
-_NAMED_EXEMPTION_RE = re.compile(r'\*\*Named exemption\b')
-
 #: A block leaves the iteration when it hands control away rather than falling
-#: through to item 7.
+#: through to item 6/7.
 _LEAVES_ITERATION_RE = re.compile(
     r'\b(?:CONTINUE|HALT)\s+the\s+FOR\s+loop|continue\s+the\s+FOR\s+loop'
     r'|[Cc]ontinue\s+to\s+the\s+next\s+step\s+in\s+the\s+loop',
 )
+
+#: A hand-written completion emit — the FORBIDDEN pre-fusion shape. Now that
+#: ``mark-step-done`` emits the line, a hand-written one is the per-handler
+#: convention the fusion replaced (and would double-emit).
+_HAND_WRITTEN_COMPLETION_RE = re.compile(r'--message\s+"\[STEP\][^"]*Completed step:')
+
+#: The suppression flag. It belongs ONLY on the item-5f re-stamp (a fall-through
+#: block); on a record-then-leave block it silences the step. Matched only when it
+#: sits on an actual ``mark-step-done`` command span (below), never on a prose
+#: MENTION of the flag — items 7 and 7a legitimately discuss it in prose.
+_NO_COMPLETION_LOG_RE = re.compile(r'--no-completion-log\b')
 
 
 def _skill_text() -> str:
@@ -115,18 +120,62 @@ def _terminal_exit_blocks(blocks: dict[str, str]) -> dict[str, str]:
     }
 
 
-def _unpaired_blocks(blocks: dict[str, str]) -> list[str]:
-    """Return the item markers whose block has neither an emission nor an exemption."""
+def _hand_written_completion_emits(text: str) -> list[str]:
+    """Return every hand-written ``[STEP] … Completed step:`` emit line."""
+    return [
+        f'{index + 1}: {line.strip()!r}'
+        for index, line in enumerate(text.splitlines())
+        if _HAND_WRITTEN_COMPLETION_RE.search(line)
+    ]
+
+
+def _block_suppresses_via_mark_step_done(block: str) -> bool:
+    """Whether the block passes ``--no-completion-log`` to a mark-step-done command.
+
+    Distinguishes an actual flag on an invocation from a prose MENTION of the flag
+    by requiring it to sit inside a ``mark-step-done`` command span — the
+    invocation line plus its backslash-continued argument lines — carrying
+    ``--phase 6-finalize``. Items 7 and 7a legitimately discuss the flag in prose;
+    only a real command usage silences a step.
+    """
+    lines = block.splitlines()
+    for index, line in enumerate(lines):
+        if 'mark-step-done' not in line:
+            continue
+        span = [line]
+        cursor = index
+        while lines[cursor].rstrip().endswith('\\') and cursor + 1 < len(lines):
+            cursor += 1
+            span.append(lines[cursor])
+        span_text = '\n'.join(span)
+        if '--phase 6-finalize' in span_text and _NO_COMPLETION_LOG_RE.search(span_text):
+            return True
+    return False
+
+
+def _blocks_using_the_suppression_flag(blocks: dict[str, str]) -> list[str]:
+    """Return item markers whose block passes ``--no-completion-log`` on a command."""
+    return sorted(
+        item for item, block in blocks.items() if _block_suppresses_via_mark_step_done(block)
+    )
+
+
+def _terminal_exits_suppressing_emission(blocks: dict[str, str]) -> list[str]:
+    """Return terminal-exit item markers whose command carries ``--no-completion-log``.
+
+    A block that records a terminal outcome, leaves the iteration, AND passes the
+    suppression flag to that recording records-and-leaves with no completion line —
+    the silent gap the fusion exists to close.
+    """
     return sorted(
         item
         for item, block in _terminal_exit_blocks(blocks).items()
-        if not _COMPLETION_EMISSION_RE.search(block)
-        and not _NAMED_EXEMPTION_RE.search(block)
+        if _block_suppresses_via_mark_step_done(block)
     )
 
 
 class TestPopulationIsNonDegenerate:
-    """A collapsed enumeration would make the sweep below vacuously green."""
+    """A collapsed enumeration or a dead regex would make the sweeps vacuous."""
 
     def test_loop_body_splits_into_item_blocks(self):
         blocks = _item_blocks(_loop_body(_skill_text()))
@@ -134,11 +183,10 @@ class TestPopulationIsNonDegenerate:
         assert blocks, 'The Step-3 FOR-loop body split into zero item blocks'
 
     def test_enumeration_finds_the_known_bypass_sites(self):
-        # Anchors: the post-dispatch-guard HALT (item 5d), the dispatch-timeout
-        # path (item 5, which records outcome=failed and CONTINUEs without
-        # reaching item 7), and the two Signal-Gate skips (items 4b and 4c) are
-        # the known record-then-leave sites. An enumeration that no longer sees
-        # them is not enumerating the loop.
+        # The two Signal-Gate skips (4b, 4c), the dispatch-timeout path (item 5,
+        # which records outcome=failed and continues without reaching item 7), and
+        # the post-dispatch-guard HALT (5d) are the known record-then-leave sites.
+        # An enumeration that no longer sees them is not enumerating the loop.
         terminal_exit = _terminal_exit_blocks(_item_blocks(_loop_body(_skill_text())))
 
         for item in ('4b', '4c', '5', '5d'):
@@ -148,90 +196,107 @@ class TestPopulationIsNonDegenerate:
                 f'would silently skip it'
             )
 
-    def test_document_carries_at_least_one_named_exemption(self):
-        # The exemption set is read from the document; if the marker regex stopped
-        # matching, every exempt block would report as unpaired and the sweep's
-        # green/red signal would stop meaning anything.
-        assert _NAMED_EXEMPTION_RE.search(_skill_text()), (
-            'No named exemption marker found in phase-6-finalize/SKILL.md — the '
-            'exemption half of the contract is unreadable'
+    def test_re_stamp_uses_the_suppression_flag_and_is_not_a_terminal_exit(self):
+        # The suppression flag must be present on a real command (or the suppress
+        # detector is dead), and it must live ONLY on a block that FALLS THROUGH —
+        # the item-5f head_at_completion re-stamp — never on a record-then-leave one.
+        blocks = _item_blocks(_loop_body(_skill_text()))
+        carriers = _blocks_using_the_suppression_flag(blocks)
+        assert carriers, (
+            'No --no-completion-log passed to a mark-step-done command in the Step-3 '
+            'loop: either the re-stamp lost its suppression flag or the command-span '
+            'detector went dead — the suppress sweep below would be vacuous'
+        )
+        # Every carrier falls through (records but does not leave the iteration), so
+        # none is in the terminal-exit population.
+        assert _terminal_exits_suppressing_emission(blocks) == [], (
+            f'A record-then-leave block passes --no-completion-log to its recording: '
+            f'{carriers}. The flag belongs only on the fall-through item-5f re-stamp.'
         )
 
 
-class TestEveryTerminalExitSiteEmitsOrIsExempt:
-    """The pairing contract holds on every record-then-leave path."""
+class TestFusionInvariants:
+    """The completion line rides the handshake write, and nothing silences it."""
 
-    def test_no_terminal_exit_block_is_unpaired(self):
-        unpaired = _unpaired_blocks(_item_blocks(_loop_body(_skill_text())))
+    def test_no_hand_written_completion_emit_survives(self):
+        hand_written = _hand_written_completion_emits(_loop_body(_skill_text()))
 
-        assert not unpaired, (
-            f'Item block(s) {unpaired} record a terminal step outcome and then leave '
-            f'the iteration WITHOUT emitting the `[STEP] (plan-marshall:phase-6-finalize) '
-            f'Completed step:` line and WITHOUT carrying a named exemption. Each such '
-            f'block silently drops one step from per-step completion coverage — the '
-            f'retrospective reads the step as never having run.'
+        assert not hand_written, (
+            f'Hand-written `[STEP] … Completed step:` emit(s) in the phase-6-finalize '
+            f'Step-3 loop: {hand_written}. The completion line is fused to '
+            f'mark-step-done now; a hand-written one is the per-handler drift pattern '
+            f'this deliverable removed, and it double-emits.'
+        )
+
+    def test_no_terminal_exit_block_suppresses_the_fused_emission(self):
+        suppressed = _terminal_exits_suppressing_emission(
+            _item_blocks(_loop_body(_skill_text()))
+        )
+
+        assert not suppressed, (
+            f'Item block(s) {suppressed} record a terminal step outcome, leave the '
+            f'iteration, AND carry --no-completion-log — they record-and-leave with no '
+            f'completion line, the exact silent gap the fusion closes. --no-completion-log '
+            f'is legitimate only on the fall-through item-5f re-stamp.'
         )
 
 
-class TestDetectorBites:
-    """Mutation guards — the sweep must fail on the pre-fix shape."""
+class TestDetectorsBite:
+    """Mutation guards — the sweeps must fire on their regression shapes."""
 
-    def test_unpaired_block_is_flagged(self):
-        pre_fix = _item_blocks(
+    def test_hand_written_emit_detector_fires(self):
+        pre_fix = (
             '  4b. Lessons-capture Signal Gate:\n'
-            '      - Mark the step done with outcome=skipped:\n'
-            '        python3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
-            'mark-step-done \\\n'
-            '          --plan-id {plan_id} --phase 6-finalize --step lessons-capture '
-            '--outcome skipped\n'
-            '      - CONTINUE the FOR loop (skip item 5 dispatch entirely for this step).\n'
+            '      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \\\n'
+            '        work --plan-id {plan_id} --level INFO --message "[STEP] '
+            '(plan-marshall:phase-6-finalize) Completed step: {step_ref}"\n'
         )
 
-        assert '4b' in _terminal_exit_blocks(pre_fix), (
-            'The record-then-leave classifier failed to see the known pre-fix '
-            'Signal-Gate skip — the sweep would be vacuous'
+        assert _hand_written_completion_emits(pre_fix), (
+            'Hand-written-emit detector failed to flag the known pre-fusion emit line '
+            '— the fusion sweep would be vacuous'
         )
-        assert _unpaired_blocks(pre_fix) == ['4b'], (
-            'The sweep failed to flag a block that records a terminal outcome and '
-            'leaves the iteration with neither an emission nor an exemption'
+        # The fused-emission prose (no --message "[STEP] …") must NOT match.
+        post_fix = (
+            '      The `outcome=skipped` recording above already emitted this step\'s\n'
+            '      `[STEP] … Completed step:` line: `mark-step-done` fuses that line.\n'
         )
+        assert not _hand_written_completion_emits(post_fix)
 
-    def test_emission_and_exemption_each_clear_a_block(self):
-        recorded = (
-            '  9z. Synthetic item:\n'
+    def test_suppress_on_terminal_exit_detector_fires(self):
+        # A synthetic block that records, suppresses, AND leaves the iteration — the
+        # silent-gap regression the suppress sweep exists to catch.
+        offending = _item_blocks(
+            '  9z. Synthetic record-then-leave with suppression:\n'
             '      python3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
-            'mark-step-done --plan-id {plan_id} --phase 6-finalize --outcome failed\n'
+            'mark-step-done \\\n'
+            '        --plan-id {plan_id} --phase 6-finalize --step x --outcome failed '
+            '--no-completion-log\n'
             '      HALT the FOR loop.\n'
         )
-
-        emitting = _item_blocks(
-            recorded.replace(
-                '      HALT the FOR loop.\n',
-                '      --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: '
-                '{step_ref}"\n      HALT the FOR loop.\n',
-            )
-        )
-        exempting = _item_blocks(
-            recorded.replace(
-                '      HALT the FOR loop.\n',
-                '      **Named exemption — the emission already fired upstream.**\n'
-                '      HALT the FOR loop.\n',
-            )
+        assert _terminal_exits_suppressing_emission(offending) == ['9z'], (
+            'Suppress-on-terminal-exit detector failed to flag a record-then-leave '
+            'block carrying --no-completion-log'
         )
 
-        assert _unpaired_blocks(_item_blocks(recorded)) == ['9z']
-        assert _unpaired_blocks(emitting) == []
-        assert _unpaired_blocks(exempting) == []
-
-    def test_a_block_that_falls_through_is_not_in_the_population(self):
-        # Recording an outcome without leaving the iteration reaches item 7's
-        # emission, so it must NOT be demanded to emit for itself — otherwise the
-        # sweep would force a double emission.
-        falls_through = _item_blocks(
-            '  5f. Commit instrumentation:\n'
+        # The same block WITHOUT the flag reaches the fused emission — not flagged.
+        clean = _item_blocks(
+            '  9z. Synthetic record-then-leave (fused emission fires):\n'
             '      python3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
-            'mark-step-done --plan-id {plan_id} --phase 6-finalize --outcome done\n'
+            'mark-step-done \\\n'
+            '        --plan-id {plan_id} --phase 6-finalize --step x --outcome failed\n'
+            '      HALT the FOR loop.\n'
         )
+        assert _terminal_exits_suppressing_emission(clean) == []
 
-        assert _terminal_exit_blocks(falls_through) == {}
-        assert _unpaired_blocks(falls_through) == []
+        # A fall-through re-stamp carrying the flag is NOT a terminal-exit, so it is
+        # never flagged — the item-5f shape.
+        fall_through = _item_blocks(
+            '  5f. Re-stamp head_at_completion (falls through to item 6):\n'
+            '      python3 .plan/execute-script.py plan-marshall:manage-status:manage-status '
+            'mark-step-done \\\n'
+            '        --plan-id {plan_id} --phase 6-finalize --step x --outcome done '
+            '--head-at-completion {sha} --no-completion-log\n'
+            '      proceed to item 6.\n'
+        )
+        assert _terminal_exits_suppressing_emission(fall_through) == []

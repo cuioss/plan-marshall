@@ -583,24 +583,18 @@ For each step reference:
 
 `plan-marshall:automatic-review` and `sonar-roundtrip` are the two wait-region producers, each **FIND-only**: gated on its own `_ci_barrier` arm (the per-signal precondition — `review` / `sonar` arm respectively), the step fetches its provider's feedback and files `pr-comment` / `sonar-issue` findings to the store, then marks done. Neither step dispatches its own triage any more. The per-finding LLM triage runs ONCE at the dispatcher level as the **Wait-region unified triage** (§ item 7c below), a single `verification-feedback` dispatch with `producer=finalize-feedback` over the union of both producers' pending findings. The outer FIND wrappers resolve under `phase-6-finalize.default` since each body is now pure script execution (fetch + file), no sub-dispatch.
 
-**Dispatch pattern** — resolve the target via the role resolver. Pass `--phase phase-6-finalize` for every dispatched step; add `--role <subkey>` only when the step has its own sub-key in the table above:
+**Dispatch pattern** — resolve the target via the role resolver, passing the dispatch context so the **resolve seam** emits the standardized `[DISPATCH]` work-log line and its paired decision-log resolution record itself (see [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract). Pass `--phase phase-6-finalize` for every dispatched step; add `--role <subkey>` only when the step has its own sub-key in the table above; and pass `--workflow {workflow-doc-from-table}`, `--plan-id {plan_id}`, and `--caller plan-marshall:phase-6-finalize` so the seam emits the record under the finalize caller, per firing:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-6-finalize [--role <subkey>]
+  effort resolve-target --phase phase-6-finalize [--role <subkey>] \
+  --workflow {workflow-doc-from-table} --plan-id {plan_id} \
+  --caller plan-marshall:phase-6-finalize
 ```
 
-Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch below; the same seam call has already written the `[DISPATCH]` work-log line — its `role=` field carries the resolved role-key, or `phase-6-finalize` when no `--role` was passed — and its paired decision-log resolution record.
 
-Emit the standardized post-resolve dispatch log line — see [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Substitute `{role}` with `default` when no `--role` flag was passed, otherwise the explicit sub-key value:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role={role} workflow={workflow-doc-from-table} plan_id={plan_id}"
-```
-
-**The emit and the spawn are ONE indivisible pair.** The `[DISPATCH]` write above and the `Task:` spawn below are two halves of a single action, not an instruction followed by an optional adjacent one — the same pairing item 5c states for its metrics row. Spawning the step without having written the line is a **contract violation**, not a cosmetic omission: the work-log then carries no record that the dispatch happened, so the dispatch-audit chain cannot attribute the step's cost, its target, or its role. Never emit the line after the spawn, and never skip it because the dispatch "obviously" happened.
+**The resolve-with-context and the spawn are ONE indivisible pair.** The seam emission rides the resolve above; the `Task:` spawn below is its other half. Do NOT hand-write a separate `[DISPATCH]` line (that reintroduces the per-role blind spot the seam closes and double-emits), and never spawn under a `target` resolved by a bare query that carried no `--workflow` — the work-log would then carry no record that the dispatch happened, so the dispatch-audit chain could not attribute the step's cost, its target, or its role. Every firing re-resolves, so every firing re-emits; there is no separate logging step for a re-dispatch to skip.
 
 Dispatch:
 
@@ -691,15 +685,15 @@ FOR each step_id in manifest.phase_6.steps:
            - IF no record OR any other value: dispatch normally
      Log skip/retry/re-fire decisions at INFO level so the work.log reflects the re-entry path.
 
-     **Named exemption — a re-entry SKIP intentionally emits NO completion line.** Every SKIP
-     branch above (the HEAD-dependent `head_at_completion == live HEAD` skip, the `push`
-     parity-driven `state == "synced"` skip, and the general `outcome == "done"` skip) is exempt
-     from the item-7 pairing, because a SKIP records NO outcome — it observes a terminal record
-     an EARLIER entry already wrote, and that entry already emitted the step's
-     `[STEP] ... Completed step:` line. The pairing binds a step's outcome RECORDING to its
-     completion emission; with no recording there is nothing to pair, and emitting here would
-     double-count the step as completed once per re-entry. The INFO skip-decision line above is
-     the audit record for this path.
+     **A re-entry SKIP emits NO completion line — structurally.** Every SKIP branch above (the
+     HEAD-dependent `head_at_completion == live HEAD` skip, the `push` parity-driven
+     `state == "synced"` skip, and the general `outcome == "done"` skip) calls NO `mark-step-done`
+     — it reads a terminal record already on `status.metadata.phase_steps`, whose `mark-step-done`
+     write already emitted the step's `[STEP] … Completed step:` line (the fused emission — see
+     item 7). Because the completion line rides the handshake write and a SKIP performs no write, a
+     SKIP produces no line by construction: it cannot double-count the step
+     once per re-entry, and there is no adjacent emit step to suppress. The INFO skip-decision line
+     above is the audit record for this path.
 
      **HEAD-dependent step set**: membership is the derived `head_dependent: true` frontmatter fact — see § "Special case — HEAD-dependent steps" above for the single authoritative statement and the governing discriminator; do NOT re-list or count the members here. A loop-back commit (typically produced by `plan-marshall:automatic-review` or `sonar-roundtrip` opening a fix task that produces a new commit) advances HEAD past the previously-validated SHA, and a stale `done` record on any head-dependent step would produce a false-clean result on re-entry. The same `head_at_completion` comparison applies to every member. The `push` step is NOT head-dependent — it is a pure push barrier whose re-entry skip/re-fire decision is parity-driven, not done-record-driven: the item-1 push-specific branch consults `branch-sync-state` (`ahead` → re-fire; `synced` and the ref-absent `remote_absent_*` verdicts → skip) instead of a HEAD-comparison, and the dispatcher additionally re-invokes it explicitly after a post-PR `mutates_source` step commits (item 5f § "Post-PR re-push") as the fast path. Every other step whose authoritative doc declares no `head_dependent` fact is likewise not head-dependent — their effect is captured by side-effect (a created PR, recorded lessons, regenerated `target/claude/` from the post-merge source tree) and is idempotent against HEAD advances; the general rule above applies to them. Note that head-dependence is **orthogonal to the dispatched/inline split** — do NOT infer non-head-dependence from a step's presence on the [`standards/dispatch-inline-split.md`](standards/dispatch-inline-split.md) § "Inline steps" roster. Some steps on that roster declare `head_dependent: true` and some do not, so resolve each step's own frontmatter fact rather than inferring from its roster placement. CI completion is resolved as a separate dispatcher-side precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so a HEAD advance also invalidates the precondition cache.
 
@@ -814,14 +808,10 @@ FOR each step_id in manifest.phase_6.steps:
                 decision --plan-id {plan_id} --level INFO \
                 --message "(plan-marshall:phase-6-finalize:lessons-capture) Signal Gate skip — all three signals zero (qgate=0, plan-marshall:automatic-review=0, script-failures=0)"
 
-            - Emit the step-completion line — the `outcome=skipped` recording above and this
-              emission are ONE indivisible pair (see item 7). A Signal-Gate skip settles the
-              step's outcome, so it owes the same completion line as a dispatched run:
-
-              python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-                work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}"
-
-            - CONTINUE the FOR loop (skip item 5 dispatch entirely for this step).
+            - CONTINUE the FOR loop (skip item 5 dispatch entirely for this step). The
+              `outcome=skipped` recording above already emitted this step's
+              `[STEP] … Completed step:` line: `mark-step-done` fuses that line to the
+              handshake write (see item 7), so no separate emit step is owed here.
 
       c. Forward gate counts and orchestration context on dispatch (reached only when at least one signal is non-zero — item b skipped the step otherwise):
 
@@ -879,14 +869,10 @@ FOR each step_id in manifest.phase_6.steps:
                 decision --plan-id {plan_id} --level INFO \
                 --message "(plan-marshall:phase-6-finalize:adr-propose) Signal Gate skip — no decision-shape signal (compatibility=0, decision-log=0)"
 
-            - Emit the step-completion line — the `outcome=skipped` recording above and this
-              emission are ONE indivisible pair (see item 7). A Signal-Gate skip settles the
-              step's outcome, so it owes the same completion line as a dispatched run:
-
-              python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-                work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}"
-
-            - CONTINUE the FOR loop (skip item 5 dispatch entirely for this step).
+            - CONTINUE the FOR loop (skip item 5 dispatch entirely for this step). The
+              `outcome=skipped` recording above already emitted this step's
+              `[STEP] … Completed step:` line: `mark-step-done` fuses that line to the
+              handshake write (see item 7), so no separate emit step is owed here.
 
       c. Forward gate count on dispatch (when the signal is non-zero):
 
@@ -903,12 +889,18 @@ FOR each step_id in manifest.phase_6.steps:
 
        **Role-aware dispatch** (applies to all five built-in agent-suitable steps):
 
-       (1) Resolve the level-bound target via the resolver:
+       (1) Resolve the level-bound target via the resolver, passing the dispatch
+           context so the resolve seam emits the `[DISPATCH]` work-log line and its
+           paired decision-log resolution record per firing (see
+           [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md)
+           § Emission contract) — do NOT hand-write a separate `[DISPATCH]` line:
            ```
            target = python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-             effort resolve-target --phase phase-6-finalize [--role <subkey>]
+             effort resolve-target --phase phase-6-finalize [--role <subkey>] \
+             --workflow plan-marshall:phase-6-finalize/workflow/{name}.md \
+             --plan-id {plan_id} --caller plan-marshall:phase-6-finalize
            ```text
-           Returns `execution-context-{level}` (variant), or canonical `execution-context` for `inherit`/empty.
+           Returns `execution-context-{level}` (variant), or canonical `execution-context` for `inherit`/empty; the same call has already emitted the finalize `[DISPATCH]` record.
        (2) Dispatch via `Task(subagent_type: plan-marshall:<target>, …)` with prompt body `name`, `plan_id`, `skills[]`, `workflow: plan-marshall:phase-6-finalize/workflow/{name}.md`, `WORKTREE`.
 
        Per-step workflow docs and resolver lookups:
@@ -934,12 +926,10 @@ FOR each step_id in manifest.phase_6.steps:
             python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
               --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome failed \
               --display-detail "timed out after {budget}s"
-         c. Emit the step-completion line — the (b) `outcome=failed` recording and this
-            emission are ONE indivisible pair (see item 7). The timeout path leaves the
-            iteration without reaching item 7, so the line is emitted here or not at all:
-            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-              work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}"
-         d. Continue to the next step in the loop — DO NOT abort the pipeline.
+         c. Continue to the next step in the loop — DO NOT abort the pipeline. The (b)
+            `outcome=failed` recording already emitted this step's `[STEP] … Completed step:`
+            line (`mark-step-done` fuses the line to the handshake write — see item 7), so a
+            timed-out step leaves a completion trace even though it never reaches item 7.
 
      - BUILT-IN (inline-only — every `default:` step classified under
        [`standards/dispatch-inline-split.md`](standards/dispatch-inline-split.md) § "Inline steps",
@@ -960,10 +950,19 @@ FOR each step_id in manifest.phase_6.steps:
        `execution-context-{level}` dispatcher exactly like an agent-suitable
        built-in, wrapped with the resolved per-agent timeout:
 
-       (1) Resolve the level-bound target via the resolver:
+       (1) Resolve the level-bound target via the resolver, passing the dispatch
+           context so the **resolve seam** emits the standardized `[DISPATCH]`
+           work-log line and its paired decision-log resolution record itself — see
+           [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md)
+           § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; each
+           re-fire re-runs the resolve, so the record is re-emitted per firing (the
+           per-role blind spot the hand-written line left is exactly what the seam
+           closes):
            ```
            target = python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-             effort resolve-target --phase phase-6-finalize [--role <subkey>]
+             effort resolve-target --phase phase-6-finalize [--role <subkey>] \
+             --workflow {step's own SKILL.md notation} --plan-id {plan_id} \
+             --caller plan-marshall:phase-6-finalize
            ```text
            Use the step's own resolver lookup as declared on its row in
            [`standards/dispatch-inline-split.md`](standards/dispatch-inline-split.md)
@@ -971,26 +970,11 @@ FOR each step_id in manifest.phase_6.steps:
            authoritative per-step source for the `--phase` value, the `--role`
            sub-key (or its documented absence), and any `producer` runtime input.
            Read the lookup off the step's row; do not generalise one step's role to
-           the rest of the dispatched class.
-       (2) Emit the standardized `[DISPATCH]` work-log line (see
-           [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md)
-           § Emission contract). Substitute `{role}` with `default` when no `--role`
-           flag was passed, otherwise the explicit sub-key value:
-           ```bash
-           python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-             work --plan-id {plan_id} --level INFO \
-             --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role={role} workflow={step's own SKILL.md notation} plan_id={plan_id}"
-           ```
-           **This emit and the item-(3) spawn are ONE indivisible pair.** The
-           `[DISPATCH]` write and the `Task:` spawn are two halves of a single
-           action, not an instruction followed by an optional adjacent one — the
-           same pairing item 5c states for its metrics row. Spawning the step
-           without having written the line is a **contract violation**, not a
-           cosmetic omission: the work-log then carries no record that the
-           dispatch happened, so the dispatch-audit chain cannot attribute the
-           step's cost, its target, or its role. Never emit the line after the
-           spawn, and never skip it because the dispatch "obviously" happened.
-       (3) Dispatch via the Task tool. The workflow doc for a dispatched project/skill
+           the rest of the dispatched class. The same seam call writes the
+           `[DISPATCH]` work-log line — its `role=` field carries the resolved
+           role-key, or `phase-6-finalize` when no `--role` was passed — and its
+           paired decision-log resolution record, so no separate emit step follows.
+       (2) Dispatch via the Task tool. The workflow doc for a dispatched project/skill
            step is the project skill's own SKILL.md (e.g.
            `project:finalize-step-plugin-doctor/SKILL.md`):
            ```text
@@ -1107,14 +1091,11 @@ FOR each step_id in manifest.phase_6.steps:
            python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
              work --plan-id {plan_id} --level ERROR \
              --message "[ERROR] (plan-marshall:phase-6-finalize) Step {step_ref} returned without recording a terminal outcome — post-dispatch guard recorded failed and halted; resumable re-entry will retry the step"
-        c. Emit the step-completion line, THEN HALT the FOR loop (return control to the
-           orchestrator). Do NOT proceed to item 6/7 for this step. The emission comes first
-           because the (a) `outcome=failed` recording and this line are ONE indivisible pair
-           (see item 7), and the halt bypasses item 7 — so the line is emitted here or not at
-           all, and a failed step that never appears as completed is invisible to per-step
-           completion coverage:
-           python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-             work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}"
+        c. HALT the FOR loop (return control to the orchestrator). Do NOT proceed to item 6/7
+           for this step. The (a) `outcome=failed` recording already emitted this step's
+           `[STEP] … Completed step:` line — `mark-step-done` fuses the line to the handshake
+           write (see item 7) — so even though the halt bypasses item 7, a failed step that
+           never reached item 7 still appears in per-step completion coverage.
 
   5e. Record per-step execution outcome to the manifest (mirror of the phase-5-execute Step 8c record-step call):
       Append one execution-log row to the manifest so per-step finalize execution metadata is loggable per-plan deterministically — this is the consuming side of the `record-step` contract published by `manage-execution-manifest` (its Producers table names `phase-6-finalize` as a `record-step` producer). The call fires per dispatched finalize step return, mirroring the 5b accumulate-agent-usage call so the per-step execution log and the per-phase token accumulator stay aligned. Unlike 5b/5c/5d, this row is recorded for EVERY finalize step — dispatched OR inline — so a skipped or inline step still lands an `execution_log` row (with zero token attribution for inline steps that carry no `<usage>` tag):
@@ -1204,8 +1185,18 @@ FOR each step_id in manifest.phase_6.steps:
           python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
             --plan-id {plan_id} --phase 6-finalize --step {step_id} --outcome done \
             --head-at-completion {new_commit_sha} \
-            --display-detail "{the step's own display_detail, preserved}"
+            --display-detail "{the step's own display_detail, preserved}" \
+            --no-completion-log
           ```
+
+          `--no-completion-log` is REQUIRED on this re-stamp: the step's leaf already
+          recorded its terminal `done` (with the pre-commit SHA), and that recording
+          emitted the step's `[STEP] … Completed step:` line — the fused emission
+          `mark-step-done` now owns (see item 7). This call only REVISES
+          `head_at_completion`, so re-emitting the line would double-count the step as
+          completed; the flag suppresses the second emit while still persisting the
+          corrected SHA. It is the ONE re-stamp path in this document, and the only
+          finalize `mark-step-done` call that carries the flag.
 
           This re-stamp is a no-op for a `mutates_source: true` step that is NOT head-dependent — skip it whenever the step's own `head_dependent` fact is absent or false. Resolve that fact per step rather than inferring it from any example: `mutates_source` and `head_dependent` are independent facts, and the pairing that makes the re-stamp load-bearing is a step declaring BOTH.
 
@@ -1233,34 +1224,38 @@ FOR each step_id in manifest.phase_6.steps:
   6. Capture archive result (only when step_id == "archive-plan"):
      Record the returned `archive_path` into model context alongside the pre-archive snapshot — it is consumed by Step 4 (Render Final Output Template).
 
-  7. Log step completion:
-     python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-       work --plan-id {plan_id} --level INFO --message "[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}"
+  7. Step completion is recorded by the handshake — no separate log step:
+     There is no hand-written `[STEP] … Completed step:` emit in this loop. **The completion line is
+     FUSED to the handshake: `manage-status mark-step-done` emits it as a side effect of every
+     terminal write for a `6-finalize` step** (`_cmd_mark_step.py::_emit_completion_marker`), so
+     recording a step's terminal outcome and emitting its completion line are ONE action. The
+     step-completion invariant (the handshake) and the operational-log line cannot diverge: a single
+     write produces both, so a step cannot satisfy the invariant while leaving no trace in the
+     operational log.
 
-     **Recording a step's terminal outcome and emitting its completion line are ONE indivisible pair.**
-     The `mark-step-done` write (whatever its `--outcome`: `done` / `skipped` / `loop_back` / `failed`)
-     and the `[STEP] (plan-marshall:phase-6-finalize) Completed step: {step_ref}` line above are two
-     halves of a single action, exactly as the `[DISPATCH]` write and the `Task:` spawn are one pair.
-     Recording the outcome without emitting the line is a **contract violation**, not a cosmetic
-     omission: the work-log then carries no record that the step settled, so per-step completion
-     coverage cannot be reconstructed and the retrospective reads the step as never having run.
-     The pairing holds on EVERY path a step's outcome is recorded on — not only this happy path:
-     the item-4b.b and item-4c.b Signal-Gate skips (`outcome=skipped`, then CONTINUE), the
-     item-5 dispatch-timeout path (`outcome=failed`, then CONTINUE to the next step), and the
-     item-5d.c post-dispatch-guard halt (`outcome=failed`, then HALT) each emit the line at their
-     own recording site, and the item-1 re-entry SKIP and item-7a continuation hook each carry a
-     named exemption. Emit the line immediately after the recording call, never before it, and
-     never omit it because the step "obviously" completed.
+     **Because the emission rides the write, the pairing holds on EVERY path a step's outcome is
+     recorded on — structurally, not by convention.** The item-4b.b / item-4c.b Signal-Gate skips
+     (`outcome=skipped`), the item-5 dispatch-timeout path (`outcome=failed`), the item-5d.c
+     post-dispatch-guard halt (`outcome=failed`), and a dispatched leaf's own terminal
+     `mark-step-done` each emit the completion line from the write itself, with no adjacent emit
+     step to forget. Two paths deliberately produce NO line, and both are correct by construction:
+     the item-1 re-entry SKIP records nothing (the step is already terminal on
+     `status.metadata.phase_steps`, its completion line emitted when that record was written), and
+     the item-7a `defer` branch records nothing (the step did not settle, so it owes no
+     completion). The ONLY call carrying `--no-completion-log` is the item-5f `head_at_completion`
+     re-stamp, which revises an already-emitted `done` and must not emit twice.
 
   7a. Escalate-ask continuation hook (consult the dispatched step's return status):
 
-      **Named exemption — this hook's terminal recordings emit NO completion line of their own.**
-      Item 7a runs AFTER item 7, so the `[STEP] ... Completed step:` line for this
-      iteration's `{step_ref}` has already been emitted by the time any branch below
-      records an outcome. The "Merge anyway" branch's `mark-step-done --outcome done`
-      is a post-emission resolution of an already-completed iteration, not a new
-      terminal site, and emitting again here would double-count the step as completed.
-      The `defer` branch records nothing at all by design.
+      **Completion emission on this hook is fully structural — no exemption needed.**
+      A `plan-marshall:automatic-review` step that returns `status: escalate_ask` recorded NO
+      terminal outcome in its leaf (the item-5d `escalate_ask` carve-out), so nothing has emitted
+      a completion line for this iteration yet. The "Merge anyway" branch's
+      `mark-step-done --outcome done` below is therefore the step's FIRST and ONLY terminal
+      recording, and the fused emission (item 7) writes its `[STEP] … Completed step:` line exactly
+      once — do NOT pass `--no-completion-log` there. The `defer` branch records nothing at all by
+      design, so it emits nothing — correct, because a deferred step did not settle and owes no
+      completion.
 
       When the dispatched `plan-marshall:automatic-review` step returns `status: escalate_ask`, the leaf has returned an escalation envelope rather than firing an `AskUserQuestion` itself (a dispatched leaf cannot own the prompt — see the leaf/dispatch-topology contract in `ref-workflow-architecture/standards/agents.md`). The dispatcher owns the consumption. Four escalation reasons reach this hook, discriminated by the return TOON's `reason` field, and the hook handles them **identically at the AskUserQuestion layer** — the only difference is which policy knob (if any) is consulted first:
 
@@ -1405,19 +1400,15 @@ FOR each step_id in manifest.phase_6.steps:
 
       Fire this hook when the just-completed step is the LATER of the two producers present in `manifest.phase_6.steps` (canonically `default:sonar-roundtrip`, which the manifest orders after `plan-marshall:automatic-review`) AND every wait-region producer that IS in the manifest has recorded a terminal `done` outcome on `status.metadata.phase_steps["6-finalize"]`. When only one of the two producers is in the manifest, that one is the "later" producer and the union query naturally covers only its finding-type.
 
-      (1) Resolve the level-bound target under the `verification-feedback` role:
+      (1) Resolve the level-bound target under the `verification-feedback` role, passing the dispatch context so the **resolve seam** emits the standardized `[DISPATCH]` work-log line and its paired decision-log resolution record itself — see [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; each re-fire of this hook re-runs the resolve, so the record is re-emitted per firing:
           ```bash
           python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-            effort resolve-target --phase phase-6-finalize --role verification-feedback
+            effort resolve-target --phase phase-6-finalize --role verification-feedback \
+            --workflow plan-marshall:plan-marshall/workflow/verification-feedback.md \
+            --plan-id {plan_id} --caller plan-marshall:phase-6-finalize
           ```
-      (2) Emit the standardized `[DISPATCH]` work-log line (see [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract). This hook's `role` is `verification-feedback` and its `workflow` is the unified-triage workflow doc:
-          ```bash
-          python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-            work --plan-id {plan_id} --level INFO \
-            --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role=verification-feedback workflow=plan-marshall:plan-marshall/workflow/verification-feedback.md plan_id={plan_id}"
-          ```
-          The emit and the item-(3) `Task:` spawn below are ONE indivisible pair, exactly as at the two dispatch-branch emit sites: dispatching this hook without first writing the line is a contract violation, not a cosmetic omission.
-      (3) Dispatch ONE `verification-feedback` envelope with `producer=finalize-feedback` over the union — by reference (the subagent issues its own union `manage-findings list` as its first workflow step):
+          Extract the `target` field from the TOON output; the same seam call has already written the `[DISPATCH]` work-log line and its paired decision-log resolution record, so no separate emit step follows.
+      (2) Dispatch ONE `verification-feedback` envelope with `producer=finalize-feedback` over the union — by reference (the subagent issues its own union `manage-findings list` as its first workflow step):
           ```text
           Task: plan-marshall:{target}
             prompt: |
