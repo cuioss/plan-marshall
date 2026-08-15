@@ -530,6 +530,43 @@ Then:
   dismissed finding is still evidence.
 - Every finding, accepted or rejected, goes in the run report (§ Report).
 
+**A fix is a change, so it gets the same beyond-diff sweep the original change got.** The sweep above
+is written against the diff under review; by the second round the diff under review is largely the
+*previous round's fixes*, and the sweep that matters is over what those fixes made false elsewhere. So
+before re-dispatching, list the claims your fix changed — the value, the ordering, the count, the
+mechanism it renamed — and sweep each one's restatements the same way: by **consumer kind** (naming
+each kind a changed value can take — prose, docs, tests, `*.py` fixtures and stubs — and sweeping for
+each in turn, per the sub-agent instruction above), exactly as you did for the original change.
+
+The two obligations below are part of that same per-round sweep, not a separate pass done once at
+the end. Both are checked **before every re-dispatch and again before the merge gate**.
+
+**The run report is part of that surface.** A findings table recording a disposition the artifacts
+contradict — a row saying "fixed at all four sites" when one still carries the old claim — is the same
+defect as a stale doc, and it is the one a re-dispatch is *least* likely to catch, because the
+verifier reads the code rather than the record. Re-read your own dispositions against the artifacts
+before declaring a round closed.
+
+**So is the PR description — and it is the surface most likely to be missed.** Every sweep you run
+treats *the repository* as the thing being checked, and the description lives outside it: written once
+at PR-creation time, never re-read, and yet the one restatement most reviewers actually read. Re-read
+it against the tree and update stale claims, on the same cadence as the report. One observed
+description reached the merge gate carrying four false statements — a control-flow ordering the code
+no longer had, two test counts that had moved twice since, and "none rejected" on a PR with two
+reasoned rejections — none of which any verification round could have caught, because none of them
+reads the description.
+
+**Figures that move between rounds are re-derived at the moment of the claim, never carried forward.**
+Test totals, character budgets, population counts: each round's fixes change them, and a number copied
+from an earlier round is stale by construction. Re-derive it (collect the tests, measure the string,
+re-run the query) every time you state it, and say which unit you are stating — a count of test
+*functions* and a count of *collected cases* are different numbers, and a reader who runs the suite
+sees only the second.
+
+These three exist because one run paid for them: across four verification rounds, each round's fixes
+landed at the site the finding named and not at the sites restating the same claim — twice in the run
+report's own findings table.
+
 ## GitHub access
 
 Use whichever of these two paths is actually available in the running session, and say in the report
