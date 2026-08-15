@@ -162,6 +162,48 @@ def test_parents_index_is_flagged(tmp_path):
     assert findings[0]['details']['parent_chain_depth'] == 3
 
 
+def test_mixed_chain_and_index_compose(tmp_path):
+    """A `.parent` chain feeding `parents[N]` counts as their sum.
+
+    Measuring only the pure spellings would leave the mixed form as an escape
+    from the rule's own count.
+    """
+    _write(
+        tmp_path,
+        'test_mixed.py',
+        """
+        from pathlib import Path
+
+        ROOT = Path(__file__).parent.parents[2]
+
+        def test_x():
+            assert ROOT
+        """,
+    )
+
+    findings = analyze_test_module_preamble(tmp_path)
+
+    assert len(findings) == 1
+    assert findings[0]['details']['parent_chain_depth'] == 3
+
+
+def test_negative_and_non_constant_index_are_not_flagged(tmp_path):
+    """A negative or computed `parents[...]` index is not a directory count."""
+    _write(
+        tmp_path,
+        'test_dynamic.py',
+        """
+        from pathlib import Path
+
+        def test_x(n=3):
+            assert Path(__file__).resolve().parents[n]
+            assert Path(__file__).resolve().parents[-1]
+        """,
+    )
+
+    assert analyze_test_module_preamble(tmp_path) == []
+
+
 def test_shallow_parents_index_is_not_flagged(tmp_path):
     """`parents[2]` is below the threshold, matching the `.parent.parent` case."""
     _write(

@@ -167,7 +167,7 @@ Flag hand-rolled import preambles that resolve a module by the test file's own l
    - a `.parent` chain (`Path(__file__).parent.parent.parent`). Only the outermost `.parent` attribute of a chain is reported, so one chain yields one finding rather than one per link.
    - an indexed `parents[N]` access (`Path(__file__).resolve().parents[3]`).
 
-   Path-preserving calls between the two — `.resolve()`, `.absolute()`, `.expanduser()` — do not break the chain, since they return an equivalent path.
+   Path-preserving calls between the two — `.resolve()`, `.absolute()`, `.expanduser()` — do not break the chain, since they return an equivalent path. The two spellings **compose**: `Path(__file__).parent.parents[2]` counts 3. A `parents[...]` index that is negative or not a literal integer is not a directory count and is not flagged.
 
    **Both spellings are measured on the same scale deliberately.** They are the same idiom with the same brittleness, and covering only one would make the rule's own count gameable: a module could clear its finding by respelling `.parent.parent.parent` as `parents[3]` while changing nothing. That matters because the flip from `warning` to `error` is conditioned on the count reaching zero.
 

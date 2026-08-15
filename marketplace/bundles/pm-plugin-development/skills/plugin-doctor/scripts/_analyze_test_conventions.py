@@ -769,10 +769,16 @@ def _parents_index_depth(node: ast.AST) -> int:
     value = node.value
     if not isinstance(value, ast.Attribute) or value.attr != 'parents':
         return 0
-    if not _is_path_dunder_file(value.value):
-        return 0
     index = node.slice
-    if isinstance(index, ast.Constant) and isinstance(index.value, int):
+    if not isinstance(index, ast.Constant) or not isinstance(index.value, int) or index.value < 1:
+        return 0
+    receiver = value.value
+    # The two spellings compose: `Path(__file__).parent.parents[3]` counts 4.
+    # Measuring only the pure forms would leave the mixed one as an escape.
+    chain_depth = _parent_chain_depth(receiver)
+    if chain_depth:
+        return chain_depth + index.value
+    if _is_path_dunder_file(receiver):
         return index.value
     return 0
 
