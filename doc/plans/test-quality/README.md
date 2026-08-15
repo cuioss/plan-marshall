@@ -155,16 +155,16 @@ PYTHONPATH=marketplace/bundles/pm-plugin-development/skills/plugin-doctor/script
 
 `{path}` is `test/` for a whole-tree sweep, or one directory for a per-directory count. The whole-tree
 **rule-firing** sweep that plan `080` diffs before and after is the sibling subcommand `quality-gate`
-— same `PYTHONPATH` prefix, and it takes no `--test-root`:
+— same `PYTHONPATH`, and it takes no `--test-root` (it rejects the flag):
 
 ```bash
-PYTHONPATH=<the same five directories> python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py quality-gate
+PYTHONPATH=marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts:marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts:marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts:marketplace/bundles/plan-marshall/skills/script-shared/scripts:marketplace/bundles/plan-marshall/skills/ref-toon-format/scripts python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py quality-gate
 ```
 
-This writes nothing anywhere, so the working tree stays clean and there is nothing to stage. It is
-the same `PYTHONPATH` assembly `test/conftest.py::_setup_marketplace_pythonpath` performs in-process
-for pytest — spelled out as one literal path list rather than derived by a glob, so it stays a
-single command with no shell substitution. The five
+This writes nothing anywhere, so the working tree stays clean and there is nothing to stage. It is a
+five-directory subset of the `PYTHONPATH` that `test/conftest.py::_setup_marketplace_pythonpath`
+assembles in-process for pytest by globbing every scripts directory — spelled out literally rather
+than derived, so it stays a single command with no shell substitution. The five
 directories are a lead like any other — if the import chain has grown a sixth, the `ModuleNotFoundError`
 names it, so add it and say so in the report. If the command cannot be made to run at all, the
 measurement is genuinely **unavailable**: report it as such rather than substituting a weaker check.
@@ -196,7 +196,7 @@ The floor is a target, not a licence.
 
 | Plan | Surface | May run concurrently with |
 |---|---|---|
-| `010` | `marketplace/bundles/pm-dev-python/skills/pytest-testing/**`, `marketplace/bundles/plan-marshall/skills/persona-module-tester/**`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**`, `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` and the one new module it adds beside them | `020` only |
+| `010` | `marketplace/bundles/pm-dev-python/skills/pytest-testing/**`, `marketplace/bundles/plan-marshall/skills/persona-module-tester/**`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**`, `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` (including the `rule4.py` it adds), `test/pm-plugin-development/plugin-doctor/_fixtures.py` | `020` only |
 | `020` | `test/conftest.py`, `test/_shared/**`, `test/README.md`, and the ≤10 modules it converts as proof-of-use | `010` only |
 | `030`–`080` | one disjoint slice of `test/` each, listed in the plan | each other, once `010` **and** `020` have landed |
 
@@ -247,7 +247,8 @@ reduction plan restates them:
   there. The neighbouring directory belongs to a concurrently-running sibling.
 
 One narrow carve-out, because two plans would otherwise collide: plan `010` owns
-`test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` — the modules that already
-test this scope's three rules — plus the one new module it adds beside them (it ships the tests for
+`test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` — the three modules that
+already test this scope's rules plus the `rule4.py` it adds — and the `_fixtures.py` corpus entries
+that make its new rules fire (it ships the tests for
 the rules it adds). Plan `080` owns the rest of `test/pm-plugin-development/**` and excludes those
 modules explicitly.

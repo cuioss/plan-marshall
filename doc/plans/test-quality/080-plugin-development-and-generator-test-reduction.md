@@ -36,8 +36,8 @@
 >
 > ⚠️ **One narrow exclusion, because plan `010` owns it.** Plan `010` ships the tests for the four new
 > `test-conventions` doctor rules it adds, and owns the three modules that already test that scope —
-> `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule1.py`, `rule2.py` and `rule3.py`
-> — plus whatever new module it adds beside them. **Do not touch those modules.** Everything else under
+> `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py`, which after `010` lands
+> means `rule1.py` through `rule4.py`. **Do not touch those modules.** Everything else under
 > `test/pm-plugin-development/` is yours.
 
 ## Problem
@@ -92,9 +92,13 @@ property.
    deliverable, not the rename: a module that asserts a finding **count** rather than the **rule
    codes** that fired is asserting something weaker than the scaffold already offers, and converting
    it strengthens the assertion while shortening the module.
+   **You inherit four extra corpus entries.** Plan `010` — which lands before this one — adds one
+   `FIXTURE_CORPUS` entry per new `test-conventions` rule to this same `_fixtures.py`. They rename
+   with the file and must keep firing afterwards; D3's invariant check is what proves they did.
    *Done when:* the rename is complete with every importer updated, every `test_analyze_*.py` module
-   that runs an analyzer does so through the scaffold, and the report lists the modules converted and
-   the ones that legitimately could not be, with the reason.
+   that runs an analyzer does so through the scaffold, plan `010`'s four corpus entries still fire
+   after the rename, and the report lists the modules converted and the ones that legitimately could
+   not be, with the reason.
 
 2. **D2 — Split every module over the budget** — the module budget landed by plan `010`, split by
    behaviour cluster into `test_{unit}_{cluster}.py`. The slice's known over-budget modules include
@@ -188,8 +192,8 @@ property.
 
 Exactly these paths, and nothing else:
 
-- `test/pm-plugin-development/**` — **excluding** `plugin-doctor/test_test_conventions_rule*.py` and any
-  new test-conventions module plan `010` adds beside them
+- `test/pm-plugin-development/**` — **excluding** `plugin-doctor/test_test_conventions_rule*.py`
+  (`rule1.py` through `rule4.py` once `010` has landed)
 - `test/marketplace/**`
 - `test/sync-plugin-cache/`, `test/finalize-step-deploy-target/`,
   `test/finalize-step-sync-plugin-cache/`
@@ -208,7 +212,7 @@ Exactly these paths, and nothing else:
 | `test/conftest.py`'s `collect_ignore` hard-codes paths to four real-tree smoke modules in this slice | OBSERVED | `test/conftest.py`'s `collect_ignore` list |
 | Some `test_analyze_*.py` modules still run analyzers by hand rather than through `assert_analyzer_findings` | HYPOTHESIS — **gating for D1; it decides the deliverable's size** | Per module in `plugin-doctor/`, record whether it imports `assert_analyzer_findings`. If nearly all already do, D1 is a rename and D2 is the plan's real work — say so and rebalance rather than manufacturing conversions. |
 | No module outside `plugin-doctor/` imports its `_fixtures` module by bare name | HYPOTHESIS — **asserted absence; the rename's blast radius depends on it** | `grep -rln 'from _fixtures import\|import _fixtures' test` |
-| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the three deliberate exclusions. An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
+| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry other than `plan-marshall/` itself (which the first two clauses already decompose) appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the three deliberate exclusions. An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
 
 ## Verification

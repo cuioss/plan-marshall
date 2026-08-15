@@ -176,18 +176,32 @@ check rather than against a reviewer's memory.
    *test prose*, not in the doctor's own provenance table, which is where they belong. Do not resolve
    that by dropping the citation.
 
-   ⚠️ **Satisfy the zero-match invariant from your OWN module, not from `_fixtures.py`.**
+   ⚠️ **The zero-match invariant will fail this plan's own build gate unless you feed it.**
    `registered_rule_ids()` globs the analyzer modules, so the four new rules become registered the
    moment D5's emitter lands, and `test_zero_match_suite_coverage.py` then requires
-   `registered − fired − EXEMPT == ∅` — **`./pw verify`, this plan's own armed build gate, fails until
-   they fire.** The three existing test-conventions rules satisfy that through `FIXTURE_CORPUS`
-   entries in `test/pm-plugin-development/plugin-doctor/_fixtures.py`, but **that file belongs to plan
-   `080`, which renames it** — editing it here is a direct collision with a plan that may be running
-   concurrently. Use the `record_fired(...)` escape hatch instead: it exists for exactly this case
-   ("rule IDs that fired in a test that the static corpus cannot drive"), `test_analyze_crossfile.py`
-   already uses it, and calling it from your own `rule4.py` keeps the two surfaces disjoint. **Do not
-   add an `EXEMPT_RULE_IDS` entry** — that would register four rules and then declare them exempt from
-   having to fire, which is the defect the invariant exists to catch.
+   `registered − fired − EXEMPT == ∅`. Until they fire, **`./pw verify` — this plan's armed build gate
+   — is red.**
+
+   Add one **`FIXTURE_CORPUS` entry per new rule** in
+   `test/pm-plugin-development/plugin-doctor/_fixtures.py`, exactly as the three existing
+   test-conventions rules do. That file is therefore in this plan's Expected surface. Two things make
+   this the right route rather than the `record_fired(...)` escape hatch that also lives there:
+
+   * **`FIXTURE_CORPUS` is process-independent; `record_fired` is not.** `fired_rule_ids()` executes
+     `build_fixture_corpus()` itself, in whichever process the meta-test runs in, so a corpus entry
+     always fires. `record_fired` populates a module-level `_EXTRA_FIRED` set, and the canonical gate
+     runs under `pytest-xdist` (`-n auto --dist=loadgroup`), so a rule recorded in one worker can be
+     invisible to a meta-test collected in another. The cross-file precedent is not a
+     counter-example: `fired_rule_ids()` re-derives those ids independently from
+     `crossfile_verified_findings()` precisely "so the meta-test never depends on test ordering" —
+     `record_fired` is belt-and-braces there, not the mechanism.
+   * **There is no collision with plan `080`, which renames that file.** `080` may not start until
+     this plan has **landed on `main`** — every reduction plan gates on it — so the two are
+     sequential, not concurrent. `080` D1 inherits a `_fixtures.py` already carrying four
+     test-conventions entries and renames it with them intact.
+
+   **Do not add an `EXEMPT_RULE_IDS` entry** — that would register four rules and then excuse them
+   from ever firing, which is the defect the invariant exists to catch.
 
    Landing four `warning` rules into this scope **falsifies two blanket statements in the standards
    doc it lands in**: `doctor-test-conventions.md` currently opens its § Rules with "All three rules
@@ -268,8 +282,12 @@ check rather than against a reviewer's memory.
 - `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/SKILL.md` — Workflow 10 and the
   rule-index list (D5)
 - `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule4.py` — D5 (new)
+- `test/pm-plugin-development/plugin-doctor/_fixtures.py` — D5 (one `FIXTURE_CORPUS` entry per new
+  rule, so the zero-match invariant is satisfied; plan `080` renames this file later, after this
+  plan has landed)
 
-Nothing under `test/` other than that one new module. Nothing under `test/conftest.py` or
+Nothing under `test/` other than that one new module and the `_fixtures.py` corpus entries that make
+its rules fire. Nothing under `test/conftest.py` or
 `test/_shared/`.
 
 ## Claim labels
