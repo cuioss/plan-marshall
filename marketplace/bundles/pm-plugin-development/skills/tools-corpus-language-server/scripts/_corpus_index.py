@@ -13,11 +13,14 @@ logic below exists precisely so that the index needs no change to serve a
 coordinate-oriented surface.
 
 **Why residency is the whole design.** Building the index costs ~1.9 s and is
-paid *per process*, while every query against a warm index answers in under
-5 ms. A surface that forks a process per request is therefore a ~2 s-per-request
-surface no matter which protocol it speaks. :class:`CorpusIndex` is built once
-and reused for the life of the server, which is what makes the substrate
-interactive at all.
+paid *per process*, while a warm index answers cheaply: ``definition`` and
+``hover`` in microseconds, and ``references`` in under 5 ms once the citing
+components' file lists are cached (the first call on a heavily-referenced
+component pays a one-off directory walk — ~20 ms at 443 inbound edges). A
+surface that forks a process per request is therefore a ~2 s-per-request
+surface no matter which protocol it speaks, and it never gets to amortise
+that walk either. :class:`CorpusIndex` is built once and reused for the life
+of the server, which is what makes the substrate interactive at all.
 
 Stdlib only.
 """
@@ -59,10 +62,12 @@ class Location:
 class Reference:
     """One inbound edge, with the provenance verdict for its recorded site.
 
-    ``verified`` distinguishes *we re-read the cited line and the notation is
-    there* from *the index cited a line we could not confirm*. An unverified
+    ``verified`` distinguishes *we re-read the cited line and it carries the
+    target* from *the index cited a line we could not confirm*. An unverified
     site is still reported — suppressing it would trade a wrong location for a
-    missing one — but it is never presented as exact.
+    missing one — but it is never presented as exact. What counts as carrying
+    the target is per :func:`expected_tokens`, because an edge's surface form is
+    not always the notation.
     """
 
     source_notation: str
@@ -98,6 +103,29 @@ def notation_at(line_text: str, character: int) -> str | None:
     return best
 
 
+def expected_tokens(notation: str) -> list[str]:
+    """Return the surface forms a citing line may legitimately carry for ``notation``.
+
+    ⚠ An edge's *surface form* is not always the notation. Only ``script`` and
+    ``skill`` edges are written as ``bundle:skill[:script]`` in the citing line —
+    a ``path`` edge appears as a relative path (``../manage-architecture/...``)
+    and an ``import`` edge as a bare module name (``from extension_base import``).
+    Verifying against the notation alone therefore marks every ``path`` and
+    ``import`` edge unverified regardless of whether its site is correct, which
+    makes the flag noise rather than signal.
+
+    So a site is confirmed when the line carries **either** the full notation
+    **or** the target's discriminating final segment — the script name for a
+    three-part notation, the skill name for a two-part one — which is the form
+    every edge kind has in common.
+    """
+    tokens = [notation]
+    tail = notation.rsplit(':', 1)[-1]
+    if tail and tail != notation:
+        tokens.append(tail)
+    return tokens
+
+
 def _context_line(dep: Dependency) -> int | None:
     """Extract the 1-based line number from a dependency's ``context`` field.
 
@@ -120,6 +148,7 @@ class CorpusIndex:
         self.base_path = base_path
         self.index = build_dependency_index(base_path)
         self._line_cache: dict[Path, list[str]] = {}
+        self._candidate_cache: dict[Path, list[Path]] = {}
 
     # -- component lookup ---------------------------------------------------
 
@@ -200,22 +229,36 @@ class CorpusIndex:
             return Location(path=owner.file_path, line=0), False
 
         zero_based = line_no - 1
+        tokens = expected_tokens(notation)
         for candidate in self._candidate_files(owner.file_path):
             lines = self._lines(candidate)
-            if 0 <= zero_based < len(lines) and notation in lines[zero_based]:
+            if 0 <= zero_based < len(lines) and any(token in lines[zero_based] for token in tokens):
                 return Location(path=candidate, line=zero_based), True
 
         # Cited, but unconfirmable — reported against the owner, flagged as such.
         return Location(path=owner.file_path, line=zero_based), False
 
     def _candidate_files(self, owner_file: Path) -> list[Path]:
-        """The owner's own file first, then the sub-documents it may cite from."""
+        """The owner's own file first, then the sub-documents it may cite from.
+
+        ⚠ **Cached per owner, because this is called once per reverse edge.** The
+        directory walk is the dominant cost of :meth:`references` — a component
+        with 443 inbound edges walked the same skill directory 443 times, which
+        made a "warm index" answer take ~125 ms and, worse, made it take the same
+        ~125 ms on every repeat call. Residency is the whole justification for
+        this surface, so a per-edge filesystem walk that never warms up defeats
+        the design rather than merely slowing it.
+        """
+        cached = self._candidate_cache.get(owner_file)
+        if cached is not None:
+            return cached
         candidates = [owner_file]
         skill_dir = owner_file.parent
         if skill_dir.is_dir():
             for sub in sorted(skill_dir.rglob('*')):
                 if sub.is_file() and sub.suffix in SUBDOC_SUFFIXES and sub != owner_file:
                     candidates.append(sub)
+        self._candidate_cache[owner_file] = candidates
         return candidates
 
     def _lines(self, path: Path) -> list[str]:

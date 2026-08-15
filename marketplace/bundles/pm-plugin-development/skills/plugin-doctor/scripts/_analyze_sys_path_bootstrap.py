@@ -35,7 +35,9 @@ Allowlist categories
    ``.plan/execute-script.py`` exists (the executor generator, the
    marshall-steward wizard scripts, the permission-fix wizard step and the
    permission chain it imports, the platform-runtime router and its Claude
-   runtime). These have no executor-provided ``PYTHONPATH`` to rely on.
+   runtime, and the corpus language server, which an LSP client spawns
+   directly from the ``lspServers`` manifest declaration). These have no
+   executor-provided ``PYTHONPATH`` to rely on.
 2. **Functional lazy-imports** — functions that add a specific skill's scripts
    directory on demand to import an optional cross-skill module, degrading
    gracefully when it is absent (build-parser loading, build-map derivation,
@@ -96,6 +98,9 @@ _ALLOWLIST: frozenset[str] = frozenset(
         'plan-marshall/skills/marshall-steward/scripts/determine_mode.py',
         'plan-marshall/skills/marshall-steward/scripts/gitignore_setup.py',
         'plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py',
+        # Spawned directly by an LSP client from the `lspServers` manifest
+        # declaration, so no executor and no injected PYTHONPATH.
+        'pm-plugin-development/skills/tools-corpus-language-server/scripts/corpus_lsp.py',
         'plan-marshall/skills/tools-permission-doctor/scripts/permission_common.py',
         'plan-marshall/skills/tools-permission-doctor/scripts/permission_doctor.py',
         'plan-marshall/skills/platform-runtime/scripts/platform_runtime.py',

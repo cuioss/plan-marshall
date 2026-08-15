@@ -196,3 +196,46 @@ class TestConfiguredProjectAnswers:
         first = corpus.index
         assert first is not None
         assert corpus.index is first
+
+
+class TestUnconfiguredTreeDrivesTheWholeChain:
+    """The composition, not just its pieces.
+
+    The no-op tests above hand `build_server` a stipulated `{'enabled': False}`.
+    That covers the server's behaviour given a disabled config, but not the claim
+    the plan actually makes — that an *unconfigured project* produces that
+    behaviour. These drive the full chain: tree → `find_project_root` →
+    `read_corpus_config` → `build_server` → `initialize`.
+    """
+
+    def test_tree_without_marshal_yields_no_capabilities(self, tmp_path: Path) -> None:
+        root = _project(tmp_path, None)
+        project_root = corpus_lsp.find_project_root(root)
+        config = corpus_lsp.read_corpus_config(project_root)
+        rpc, corpus = corpus_lsp.build_server(project_root, config)
+        response = rpc.handle({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
+        assert response is not None
+        assert response['result']['capabilities'] == {}
+        assert corpus.enabled is False
+        assert corpus.index is None
+
+    def test_tree_with_disabled_marshal_yields_no_capabilities(self, tmp_path: Path) -> None:
+        root = _project(tmp_path, {'code_intelligence': {'corpus_language_server': {'enabled': False}}})
+        project_root = corpus_lsp.find_project_root(root)
+        config = corpus_lsp.read_corpus_config(project_root)
+        rpc, corpus = corpus_lsp.build_server(project_root, config)
+        response = rpc.handle({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
+        assert response is not None
+        assert response['result']['capabilities'] == {}
+        assert corpus.index is None
+
+    def test_enabled_tree_drives_the_same_chain_to_a_working_server(self, tmp_path: Path) -> None:
+        """So an empty result above is a real opt-out, not a broken chain."""
+        root = _project(tmp_path, ENABLED)
+        project_root = corpus_lsp.find_project_root(root)
+        config = corpus_lsp.read_corpus_config(project_root)
+        rpc, corpus = corpus_lsp.build_server(project_root, config)
+        response = rpc.handle({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
+        assert response is not None
+        assert response['result']['capabilities']['definitionProvider'] is True
+        assert corpus.enabled is True

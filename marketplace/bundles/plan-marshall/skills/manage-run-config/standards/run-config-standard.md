@@ -207,6 +207,10 @@ The `language_servers` section binds a language to its locally-installed languag
 
 The section is optional. An absent language, or one with `enabled: false`, is treated by `lsp-client` as *not configured*: the client degrades to the `Read` / `Edit` path, so a project that never configures a server loses nothing.
 
+### A sibling surface lives elsewhere, deliberately
+
+This section binds a language to a **locally-installed third-party** server, which is why it is machine-local. A repository-shipped server has no such per-machine variance, so the opt-in switches for presentation surfaces over the intelligence substrates live in the version-controlled `code_intelligence` section of `marshal.json` instead — see [`manage-config` data-model.md](../../manage-config/standards/data-model.md) § "Section: code_intelligence" and [`tools-corpus-language-server`](../../../../pm-plugin-development/skills/tools-corpus-language-server/SKILL.md). The two stores are siblings, not alternatives: neither reads the other, and configuring one has no effect on the other.
+
 ### Two consumers, one switch
 
 The binding now has a **second** consumer with a very different cost profile, and enabling one enables both:

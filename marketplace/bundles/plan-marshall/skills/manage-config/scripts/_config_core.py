@@ -130,8 +130,9 @@ def load_config() -> dict:
 # ``build`` (build infrastructure), then lists the remaining top-level keys
 # alphabetically. ``extension_defaults`` precedes both as the extension-seeded
 # defaults block. ``credentials_config`` (the non-secret per-provider config
-# block written by manage-providers) takes its alphabetical slot among the
-# trailing keys — between ``build`` and ``project``.
+# block written by manage-providers) and ``code_intelligence`` (the opt-in
+# switches for presentation surfaces over the intelligence substrates) each take
+# their alphabetical slot among the trailing keys that follow ``build``.
 CANONICAL_TOP_LEVEL_KEY_ORDER = [
     'extension_defaults',
     'plan',

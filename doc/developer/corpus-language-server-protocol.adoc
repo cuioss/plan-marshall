@@ -14,7 +14,7 @@ The full option analysis, with the measurements and the re-verified external res
 
 == The question
 
-The skill corpus already carried real cross-file reference intelligence — five edge types over 306 components, with line-level provenance — and nothing reached it. The question was not how to build that intelligence but *what surface should present it*, and specifically whether an editor protocol was appropriate at all when this repository's consumers are predominantly agents rather than humans in an editor.
+The skill corpus already carried real cross-file reference intelligence — five edge types over roughly 300 components, with line-level provenance — and nothing reached it. The question was not how to build that intelligence but *what surface should present it*, and specifically whether an editor protocol was appropriate at all when this repository's consumers are predominantly agents rather than humans in an editor.
 
 == What decided it
 
@@ -38,6 +38,9 @@ The skill corpus already carried real cross-file reference intelligence — five
 
 | Whole-graph cycle detection, warm index
 | ≈ 4.0 ms
+
+| Provenance-verified `references`, warm index, per-component file lists cached
+| < 5 ms (≈ 20 ms on the first call for the most-referenced component measured, at 443 inbound edges)
 |===
 
 Effectively the entire cost is index construction, and it is paid per process. This eliminates the one-shot shape outright rather than merely disfavouring it: a surface that forks per request is a two-second surface whichever protocol it speaks. Any acceptable answer had to be resident, and a language server is resident by construction.

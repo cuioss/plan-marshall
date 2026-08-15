@@ -32,12 +32,13 @@ component-discovery rule changes to serve this surface.
 **Constraints:**
 - Strictly comply with all rules from persona-plan-marshall-agent, especially tool usage and workflow step discipline.
 - All CLI output uses TOON format (see `plan-marshall:ref-toon-format`).
-- The entry-point script (`corpus_lsp.py`) is invoked only through `python3 .plan/execute-script.py` with the 3-part notation.
+- The CLI verbs (`preflight`, `query`) are invoked only through `python3 .plan/execute-script.py` with the 3-part notation.
+- Do **not** run `serve` through the executor — see "How `serve` is launched" below. It is spawned by an LSP client, not by a verb call.
 
 ## Why the server is resident
 
 Building the index costs about **1.9 s**, and that cost is paid **per process**.
-A warm index answers every verb in **under 5 ms**. A surface that forks a process
+A warm index then answers cheaply — though not uniformly, so it is worth stating precisely: `definition` and `hover` answer in microseconds. `references` pays a one-off directory walk the first time a citing component is seen (up to ~20 ms on the most-referenced component measured, 443 inbound edges) and answers in under 5 ms thereafter, because that walk is cached for the life of the server. A surface that forks a process
 per request is therefore a ~2 s-per-request surface no matter which protocol it
 speaks, and a resident server is the only shape in which this substrate is
 interactive at all — it pays the build once at `initialize`.
@@ -105,11 +106,18 @@ to the sub-document. Following it naively sends an editor to that line number in
 `SKILL.md` — a different file, usually a blank or unrelated line.
 
 So every reference site is re-read before it is reported: the owner's file first,
-then its sub-documents, for a line that actually contains the notation.
+then its sub-documents, for a line that actually carries the target.
+
+⚠ **What counts as "carries the target" is not the notation alone.** Only `script` and `skill`
+edges are written as `bundle:skill[:script]` in the citing line — a `path` edge appears as a
+relative path, an `import` edge as a bare module name. Matching on the notation alone would mark
+every `path` and `import` edge unverified regardless of whether its site was correct, so a site is
+confirmed when its line carries **either** the full notation **or** the target's discriminating
+final segment (the script name for a three-part notation, the skill name for a two-part one).
 
 | `verified` | Meaning |
 |---|---|
-| `true` | The cited line was re-read and contains the notation — an exact location. |
+| `true` | The cited line was re-read and carries the target — an exact location. |
 | `false` | The site could not be confirmed (a non-positional frontmatter edge, or a line that no longer matches). Reported against the owner's file, and **never presented as exact**. |
 
 ## Diagnostics are deliberately absent
@@ -121,6 +129,44 @@ overwhelmingly false positives (documentation placeholders, foreign namespaces
 such as build-command and Maven coordinates, and verb-suffixed notations whose
 skill exists). Advertising a diagnostic provider before that precision work lands
 would ship confident-wrong squiggles at the corpus's most visible surface.
+
+## How `serve` is launched
+
+⛔ **`serve` must NOT be run through `.plan/execute-script.py`.** The executor dispatches every script
+with `subprocess.run(..., capture_output=True, text=True)`, and both of those are fatal for a language
+server:
+
+- `capture_output=True` buffers the child's stdout until it **exits**, so a client waiting on the
+  `initialize` response blocks forever. LSP is bidirectional and streaming.
+- `text=True` applies universal-newline translation, rewriting the LSP header terminator `\r\n\r\n`
+  as `\n\n` and corrupting the frame.
+
+A language server is spawned by its **client**, not by a verb call. This bundle declares it in
+`plugin.json` under `lspServers`, so an LSP client starts it directly:
+
+```json
+"lspServers": {
+  "skill-corpus": {
+    "command": "python3",
+    "args": ["${CLAUDE_PLUGIN_ROOT}/skills/tools-corpus-language-server/scripts/corpus_lsp.py", "serve"],
+    "extensionToLanguage": { ".md": "markdown" },
+    "diagnostics": false
+  }
+}
+```
+
+⭐ **That declaration is what gives the surface a consumer.** A plugin-declared server is started
+automatically when the plugin is enabled and is consumed by the agent itself — which is also precisely
+why the opt-in switch cannot live in the manifest, and lives in `marshal.json` instead (above).
+
+`diagnostics: false` is set explicitly rather than left to the default (`true`), because the server
+advertises no diagnostic provider while D3 is gated; declaring it false keeps the manifest honest
+about what the server offers.
+
+Because a client spawns the script **without** the executor, there is no injected `PYTHONPATH`. The
+script therefore bootstraps its own `sys.path` from its location up to the bundles root — the
+"pre-executor entry point" case the `sys-path-bootstrap` allowlist sanctions. It is layout-derived
+rather than hardcoded, so it resolves identically in the source tree and in a deployed plugin cache.
 
 ## Scripts
 
@@ -155,14 +201,8 @@ python3 .plan/execute-script.py pm-plugin-development:tools-corpus-language-serv
   [--project-path PROJECT_PATH]
 ```
 
-### serve
-
-```bash
-python3 .plan/execute-script.py pm-plugin-development:tools-corpus-language-server:corpus_lsp serve \
-  [--project-path PROJECT_PATH]
-```
-
-`serve` speaks JSON-RPC on stdio and does not emit TOON.
+`serve` is deliberately **absent** from this section: it is not an executor verb. See
+"How `serve` is launched" above.
 
 ## Related Skills
 

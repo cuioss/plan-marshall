@@ -8,7 +8,9 @@ Answers ``textDocument/definition``, ``textDocument/references`` and
 edited.
 
 **Why a resident server rather than a one-shot verb.** Index construction costs
-~1.9 s and is paid per process; a warm index answers every verb in under 5 ms.
+~1.9 s and is paid per process; a warm index answers `definition` and `hover` in
+microseconds and `references` in under 5 ms once its per-component file lists are
+cached.
 A resident server pays that cost once at ``initialize``, which is the only shape
 in which this substrate is interactive at all.
 
@@ -39,9 +41,52 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from _corpus_index import CorpusIndex, notation_at
-from _corpus_lsp_protocol import LspServer, active_capabilities
-from file_ops import output_toon, safe_main
+
+def _bootstrap_sys_path() -> None:
+    """Put the sibling skills' ``scripts/`` directories on ``sys.path``.
+
+    ⭐ **This script has two callers with different environments, and only one of
+    them is the executor.** Run as an executor verb it needs nothing: the
+    executor injects a ``PYTHONPATH`` covering every skill's ``scripts/``
+    directory. But the ``serve`` verb is spawned **directly by an LSP client**
+    from the plugin manifest's ``lspServers`` declaration — no executor, and
+    therefore no ``PYTHONPATH`` — which is exactly the "pre-executor entry point"
+    case the ``sys-path-bootstrap`` allowlist sanctions.
+
+    Resolution walks up from this file to the bundles root (the ancestor holding
+    sibling bundle directories, each with a ``.claude-plugin/plugin.json``), so
+    it is layout-derived rather than hardcoded and works identically in the
+    source tree and in a deployed plugin cache, where bundles are likewise
+    siblings. Inserts are idempotent and additive, so running under the executor
+    as well is harmless.
+    """
+    here = Path(__file__).resolve()
+    bundles_root: Path | None = None
+    for ancestor in here.parents:
+        if (ancestor / 'pm-plugin-development' / '.claude-plugin' / 'plugin.json').is_file():
+            bundles_root = ancestor
+            break
+    if bundles_root is None:
+        return  # executor-provided PYTHONPATH is the only route; imports below decide
+    needed = [
+        bundles_root / 'pm-plugin-development' / 'skills' / 'tools-marketplace-inventory' / 'scripts',
+        bundles_root / 'plan-marshall' / 'skills' / 'tools-file-ops' / 'scripts',
+        bundles_root / 'plan-marshall' / 'skills' / 'ref-toon-format' / 'scripts',
+        bundles_root / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts',
+        bundles_root / 'plan-marshall' / 'skills' / 'manage-logging' / 'scripts',
+        bundles_root / 'plan-marshall' / 'skills' / 'manage-run-config' / 'scripts',
+    ]
+    for directory in needed:
+        resolved = str(directory)
+        if directory.is_dir() and resolved not in sys.path:
+            sys.path.insert(0, resolved)
+
+
+_bootstrap_sys_path()
+
+from _corpus_index import CorpusIndex, notation_at  # noqa: E402
+from _corpus_lsp_protocol import LspServer, active_capabilities  # noqa: E402
+from file_ops import output_toon, safe_main  # noqa: E402
 
 # Coverage-contract states, mirroring the `lsp-client` skill's vocabulary so a
 # consumer reads one contract across both surfaces.

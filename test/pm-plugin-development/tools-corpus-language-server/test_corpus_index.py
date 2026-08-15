@@ -54,6 +54,12 @@ def build_corpus(root: Path) -> Path:
         base / 'beta' / 'skills' / 'caller' / 'workflow' / 'step.md',
         '# Step\n\nfiller\nfiller\nRun `alpha:target-skill:target_script` here.\n',
     )
+    # A relative-path edge: its citing line carries a PATH, never the notation.
+    _write(
+        base / 'beta' / 'skills' / 'path-citer' / 'SKILL.md',
+        '---\nname: path-citer\ndescription: Cites the target by relative path\n---\n\n'
+        '# Path citer\n\nSee [target](../../../alpha/skills/target-skill/SKILL.md).\n',
+    )
     return base
 
 
@@ -114,9 +120,10 @@ class TestReferences:
         index = corpus_index.CorpusIndex(build_corpus(tmp_path))
         verified = [r for r in index.references('alpha:target-skill') if r.verified]
         assert verified, 'expected at least one provenance-verified reference'
+        tokens = corpus_index.expected_tokens('alpha:target-skill')
         for ref in verified:
             line_text = ref.location.path.read_text(encoding='utf-8').split('\n')[ref.location.line]
-            assert 'alpha:target-skill' in line_text
+            assert any(token in line_text for token in tokens)
 
     def test_subdocument_edge_resolves_to_the_subdocument_not_the_owner(self, tmp_path: Path) -> None:
         """The index attributes a sub-doc edge to the owning skill.
@@ -163,3 +170,84 @@ class TestStats:
         assert stats['components'] >= 3
         assert stats['forward_edges'] >= 1
         assert stats['base_path'] == str(base)
+
+
+class TestExpectedTokens:
+    """An edge's surface form is not always the notation — see `expected_tokens`."""
+
+    def test_three_part_notation_yields_the_script_name(self) -> None:
+        assert corpus_index.expected_tokens('a:b:c') == ['a:b:c', 'c']
+
+    def test_two_part_notation_yields_the_skill_name(self) -> None:
+        assert corpus_index.expected_tokens('a:b') == ['a:b', 'b']
+
+    def test_colonless_token_yields_only_itself(self) -> None:
+        assert corpus_index.expected_tokens('bare') == ['bare']
+
+
+class TestNonNotationSurfaceFormsVerify:
+    """A path edge's line carries a path, so notation-only matching would fail it.
+
+    Verifying against the notation alone marked every ``path`` and ``import``
+    edge unverified regardless of correctness, turning the flag into noise. These
+    pin the behaviour that fixed it.
+    """
+
+    def test_relative_path_edge_verifies(self, tmp_path: Path) -> None:
+        index = corpus_index.CorpusIndex(build_corpus(tmp_path))
+        path_refs = [
+            ref
+            for ref in index.references('alpha:target-skill')
+            if ref.dep_type == 'path' and ref.source_notation == 'beta:path-citer'
+        ]
+        assert path_refs, 'expected a relative-path edge from the path-citer skill'
+        assert any(ref.verified for ref in path_refs)
+
+    def test_the_verified_line_carries_no_notation_at_all(self, tmp_path: Path) -> None:
+        """Guards against the test passing for the wrong reason."""
+        index = corpus_index.CorpusIndex(build_corpus(tmp_path))
+        for ref in index.references('alpha:target-skill'):
+            if ref.dep_type != 'path' or ref.source_notation != 'beta:path-citer' or not ref.verified:
+                continue
+            line = ref.location.path.read_text(encoding='utf-8').split('\n')[ref.location.line]
+            assert 'alpha:target-skill' not in line
+            assert 'target-skill' in line
+            return
+        raise AssertionError('no verified path edge found')
+
+
+class TestCandidateFilesAreCached:
+    """Residency must actually amortise the directory walk.
+
+    `resolve_reference_site` runs once per reverse edge, so an uncached walk made
+    `references()` re-scan the same skill directory once per edge — measured at
+    ~125 ms for a 443-edge component, and unchanged on repeat calls. A surface
+    whose whole justification is residency must not have a hot path that never
+    warms up.
+    """
+
+    def test_repeat_calls_reuse_the_walk(self, tmp_path: Path) -> None:
+        index = corpus_index.CorpusIndex(build_corpus(tmp_path))
+        index.references('alpha:target-skill')
+        cached_after_first = dict(index._candidate_cache)
+        assert cached_after_first, 'the first call must populate the candidate cache'
+
+        index.references('alpha:target-skill')
+        assert index._candidate_cache == cached_after_first
+
+    def test_walk_runs_once_per_owner_not_once_per_edge(self, tmp_path: Path) -> None:
+        index = corpus_index.CorpusIndex(build_corpus(tmp_path))
+        calls: list[Path] = []
+        original = index._candidate_files
+
+        def counting(owner_file: Path) -> list[Path]:
+            calls.append(owner_file)
+            return original(owner_file)
+
+        index._candidate_files = counting  # type: ignore[method-assign]
+        index.references('alpha:target-skill')
+        index.references('alpha:target-skill:target_script')
+
+        # Called once per edge, but each distinct owner is walked only once.
+        walked = {owner for owner in calls if index._candidate_cache.get(owner) is not None}
+        assert len(walked) < len(calls), 'repeat owners must be served from the cache'

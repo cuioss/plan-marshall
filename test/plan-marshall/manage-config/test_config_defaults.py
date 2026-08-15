@@ -1264,6 +1264,28 @@ def test_orchestrator_in_canonical_top_level_key_order():
     )
 
 
+def test_code_intelligence_in_canonical_top_level_key_order():
+    """'code_intelligence' must have a canonical slot, between 'build' and 'credentials_config'.
+
+    Without a slot it is preserved but appended as an *unrecognized* stray key
+    (see ``unrecognized_top_level_keys``), which is the signal an operator is
+    meant to act on — not the resting state of a section the tooling owns.
+    """
+    order = _config_core_mod.CANONICAL_TOP_LEVEL_KEY_ORDER
+
+    assert 'code_intelligence' in order, "'code_intelligence' must be in the canonical top-level key order"
+    assert order.index('build') < order.index('code_intelligence') < order.index('credentials_config'), (
+        "'code_intelligence' must sit between 'build' and 'credentials_config' in canonical order"
+    )
+
+
+def test_code_intelligence_is_not_reported_as_unrecognized():
+    """A config carrying the section must order cleanly, with nothing appended as stray."""
+    config = {'plan': {}, 'code_intelligence': {'corpus_language_server': {'enabled': True}}}
+
+    assert _config_core_mod.unrecognized_top_level_keys(config) == []
+
+
 def test_orchestrator_get_returns_auto_emit_default_false(plan_context):
     """`orchestrator get --field auto_emit` returns False from the merged default on a fresh marshal.json."""
     _cmd_init_mod.cmd_init(Namespace(force=False))
