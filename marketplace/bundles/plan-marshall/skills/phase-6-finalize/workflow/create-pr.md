@@ -210,6 +210,26 @@ empty heading. Fix the draft and re-invoke; do not proceed with a body carrying 
 > § "Participation is not review quality" for the parity obligation and § "Failure taxonomy" for the
 > members themselves.
 
+> ⭐ **Advance disclosure — a size-capped reviewer is knowable HERE, not at the merge gate.** One
+> member of that taxonomy, `refused_structural`, is the only one predictable before any review is
+> requested: it fires when the diff exceeds a ceiling the reviewer DECLARES, and a diff's size is
+> first measurable at exactly this step. The exclusion also recurs **by size rather than by chance** —
+> the ceiling is fixed, so every PR over it gets no review from that reviewer, predictably and
+> forever. A run whose footprint is large MAY consult the disclosure surface here and note the
+> expected gap in the PR body, rather than meeting it as an unexplained non-participation at the
+> pre-merge barrier, where the remaining options (split the PR, accept a coverage gap, disable the
+> reviewer) are all far more expensive:
+>
+> ```bash
+> python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness size-caps
+> ```
+>
+> ⚠ **This is a DISCLOSURE, never a gate.** It takes no plan and reads no PR — the answer is registry
+> data — so it neither blocks PR creation nor predicts a refusal for this particular diff; it reports
+> only which reviewers carry a ceiling at all, and whether that ceiling's value is recoverable. See
+> [`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md)
+> § "Advance disclosure — a size ceiling is knowable before the review is requested".
+
 #### Step 3.5: Resolve the PR title from the persisted status field
 
 Ground the PR title against the deterministic source authored at phase-2-refine Step 13 and persisted to `status.metadata.pr_title` — mirroring the `{base_branch}` grounding bind above. Do NOT improvise a title from `request.md` or the commit log:

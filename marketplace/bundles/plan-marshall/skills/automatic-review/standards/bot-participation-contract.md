@@ -329,7 +329,7 @@ successful reviews as refusals. The two lists answer different questions and mus
 
 A bot whose `refusal_patterns[]` is empty has no observed refusal shape; its non-participation
 resolves to one of the non-refusal members — `participated_stale`, `in_progress`, `not_triggered`, or
-`absent` — rather than to any of the three refusal members. This is the fail-closed default: a refusal
+`absent` — rather than to any of the four refusal members. This is the fail-closed default: a refusal
 is only ever claimed on positive evidence.
 
 ### A refusal resolves by CAUSE first, then ONE-TO-ONE by `rate_limit_class`
@@ -448,7 +448,8 @@ A bot's registry doc declares three independent marker surfaces that each drive 
 outcome (drop or branch). They are easy to confuse because all three are literal-substring lists read
 by the same producer, but each drives a different outcome and none is a superset of another. (The
 `refusal_size_patterns` overlay from § "Two axes" is deliberately NOT one of these three: it drives no
-comment-level outcome — it only *labels* a refusal's cause — and it is by design a subset of
+comment-level outcome — it labels a refusal's CAUSE, which selects the `refused_structural`
+member rather than dropping or keeping a comment — and it is by design a subset of
 `refusal_patterns`, so the no-superset property here is scoped to these three comment-level surfaces.)
 
 | Marker surface | Match semantics | Outcome |
@@ -521,7 +522,7 @@ its population published:
 
 - **The reviewed-at-all predicate** — a reviewer reviewed the diff iff its taxonomy state is
   `participated` or `participated_but_empty`: a proven publish shape against the merge candidate. Every
-  other state — the three refusals, `absent`, `not_triggered`, `in_progress`, `participated_stale`,
+  other state — the four refusals, `absent`, `not_triggered`, `in_progress`, `participated_stale`,
   `declined` — is a non-review, so it can be neither a deficit baseline nor a meaningful finding count.
   `participated_but_empty` (reviewed, found nothing) counts as a review with a count of zero; it is
   **never** collapsed into "did not review".

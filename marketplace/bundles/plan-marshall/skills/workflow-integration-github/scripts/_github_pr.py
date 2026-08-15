@@ -174,8 +174,9 @@ def _is_refusal_notice(body: str, bot_kind: str | None = None) -> bool:
 
     **A refusal is positive evidence of NON-participation, never noise.** Callers
     MUST branch on it — surfacing the refusing bot so the completeness / quorum
-    layer sees ``refused_awaitable`` / ``refused_hard`` / ``refused_unknown`` —
-    rather than drop it.
+    layer sees a refusal member (``refused_structural`` when the cause is a diff-size
+    ceiling, otherwise ``refused_awaitable`` / ``refused_hard`` / ``refused_unknown``
+    by the bot's ``rate_limit_class``) — rather than drop it.
     Dropping it is precisely what let a PR whose every required reviewer refused
     report a clean, complete review with substantively zero review coverage.
     """
@@ -248,7 +249,17 @@ def refusal_size_cap(body: str, bot_kind: str | None = None) -> str:
             continue
         if match is None:
             continue
-        captured = (match.group(1) if match.groups() else match.group(0)).strip()
+        # ``match.groups()`` is TRUTHY for a one-tuple holding ``None`` — a pattern whose
+        # first group sits in a branch that did not participate (``limit of (?:[0-9]+)|(x)``)
+        # matches, reports groups, and yields ``None``. Taking ``.strip()`` on that raises
+        # an AttributeError out of the producer's whole return path, which is precisely the
+        # failure the docstring above promises cannot happen: the ``re.error`` guard covers
+        # a pattern that will not COMPILE, not one that compiles and captures nothing.
+        # Fall back to the whole match, and treat a genuinely empty capture as no figure.
+        captured = match.group(1) if match.groups() and match.group(1) else match.group(0)
+        captured = captured.strip()
+        if not captured:
+            continue
         # Commas are stripped because the cap crosses a COMMA-SEPARATED CLI boundary
         # (``--refusal-size-caps "bot:cap"``), where a thousands separator would split
         # one record into two malformed ones. Removing it also leaves a figure that

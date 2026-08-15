@@ -289,7 +289,8 @@ DEFICIT_UNASSESSABLE = 'unassessable'  # no baseline reviewer reviewed the diff 
 # reader of ``display_detail`` can tell *reviewed-and-clean* from *nobody-reviewed*
 # at a glance — the distinction a bare comment count collapses. Grouped so the label
 # answers the reader's question ("did anyone review?") rather than exposing every
-# internal state name; the three refusal members share one ``refused`` bucket.
+# internal state name; the three TEMPORAL refusal members share one ``refused`` bucket,
+# while the structural one takes its own (see below).
 _STATE_SUMMARY_BUCKETS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ('reviewed', (STATE_PARTICIPATED,)),
     ('empty', (STATE_PARTICIPATED_BUT_EMPTY,)),
@@ -755,7 +756,7 @@ def check_completeness(
         ``bot_states`` spans required ∪ optional and assigns exactly one state per
         bot. ``unproven_bots`` is the subset whose state leaves participation
         unproven — the members of ``_UNPROVEN_STATES`` (``absent`` /
-        ``in_progress`` / any of the three refusal members / ``participated_stale`` /
+        ``in_progress`` / any of the four refusal members / ``participated_stale`` /
         ``declined`` / ``not_triggered``);
         ``pending_bots`` is the subset carrying an untriaged finding. Both span
         required ∪ optional for visibility, but only the REQUIRED subset gates
@@ -788,6 +789,16 @@ def check_completeness(
 
     causes_in = dict(refused_causes or {})
     caps_in = dict(refusal_size_caps or {})
+    # A cap is only ever produced for a SIZE refusal, so a bot carrying a cap but no
+    # cause means the cause overlay was lost in transport — the two travel as separate
+    # CLI flags, and the barrier's contract lets either default to empty independently
+    # when a producer field is absent or malformed. Recovering the cause from the cap is
+    # the fail-CLOSED direction: without it the bot silently resolves to a TEMPORAL
+    # member and gets offered a wait for a diff-size ceiling, which is the exact
+    # non-option this member exists to remove. The reverse is never inferred — a cause
+    # without a cap is an ordinary unknown-cap refusal, not evidence of anything.
+    for bot in caps_in:
+        causes_in.setdefault(bot, CAUSE_SIZE)
 
     bot_states: list[dict[str, str]] = []
     pending_bots: list[str] = []
@@ -882,7 +893,8 @@ def check_completeness(
         # invite a reader to think each was measured separately. Empty when no size
         # refusal occurred or the diff could not be measured — UNKNOWN, never zero.
         'measured_diff_size': measured_diff_size,
-        # The CAUSE axis per refusing bot (size vs quota) — advisory, names the remedy.
+        # The CAUSE axis per refusing bot with the ceiling its notice stated. Names the
+        # remedy; state-determining for ``size``, advisory for every other value.
         'refusal_causes': refusal_causes_out,
     }
 
@@ -1253,7 +1265,7 @@ def cmd_deficit(args: argparse.Namespace) -> int:
 def _add_bot_observation_flags(sub: argparse.ArgumentParser) -> None:
     """Add the observation flags shared by the ``check`` and ``deficit`` subcommands.
 
-    ``--plan-id`` plus the six list flags and the PR-wide ``--not-triggered`` bool —
+    ``--plan-id`` plus the eight list flags and the PR-wide ``--not-triggered`` bool —
     the classifier's whole input surface. Factored so the two subcommands cannot
     drift in flag name, ``nargs``, or ``const`` (a drift would silently change how an
     empty list parses on one command but not the other).
@@ -1319,9 +1331,11 @@ def _add_bot_observation_flags(sub: argparse.ArgumentParser) -> None:
         default='',
         help=(
             'Comma-separated review-bot kinds observed publishing a refusal '
-            'notice. Supply only the observation — the refusal is split ONE-TO-ONE '
-            "into refused_awaitable / refused_hard / refused_unknown from each bot's "
-            'registry three-valued rate_limit_class, never by the caller. May be '
+            'notice. Supply only the observation — the member is assigned here, never '
+            'by the caller: a size cause (from --refused-causes) gives '
+            'refused_structural, and every other refusal splits ONE-TO-ONE into '
+            "refused_awaitable / refused_hard / refused_unknown from each bot's "
+            'registry three-valued rate_limit_class. May be '
             'supplied bare (no value), which reads as the empty list.'
         ),
     )

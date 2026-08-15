@@ -91,6 +91,7 @@ from typing import Any
 import bot_registry
 import github_ops as _github
 from _github_pr import (
+    REFUSAL_CAUSE_SIZE,
     RESOLVE_THREAD_MUTATION,
     THREAD_REPLY_MUTATION,
     _is_refusal_notice,
@@ -805,9 +806,11 @@ def cmd_fetch_findings(args):
     recognized through ``_github_pr._is_refusal_notice`` (the bot's registry
     ``refusal_patterns`` OR the structural last-resort recognizer). This is the
     producer-side refusal channel the completeness / quorum layer consumes as
-    ``--refused-bots``, so it can classify the bot as ``refused_awaitable`` /
-    ``refused_hard`` / ``refused_unknown`` (the one-to-one split of the bot's
-    three-valued ``rate_limit_class``) instead of inferring absence from silence.
+    ``--refused-bots``, so it can classify the bot into a refusal member —
+    ``refused_structural`` when the observed cause is a diff-size ceiling, otherwise
+    the one-to-one split of the bot's three-valued ``rate_limit_class`` into
+    ``refused_awaitable`` / ``refused_hard`` / ``refused_unknown`` — instead of
+    inferring absence from silence.
     A refusing comment
     is excluded from ``participated_bots`` — a refusal is positive evidence the bot
     did NOT review — and files no finding, so it never reaches operator triage. A
@@ -1027,8 +1030,9 @@ def cmd_fetch_findings(args):
         # a drop-as-noise: the comment files no finding (a refusal is a signal
         # about the review, not feedback about the code, so it must never reach
         # operator triage), but the refusing bot is SURFACED in ``refused_bots`` so
-        # the completeness / quorum layer classifies it as refused_awaitable /
-        # refused_hard / refused_unknown rather than inferring absence from silence.
+        # the completeness / quorum layer classifies it into a refusal member —
+        # refused_structural for a diff-size ceiling, else refused_awaitable /
+        # refused_hard / refused_unknown — rather than inferring absence from silence.
         # Checked BEFORE
         # the noise filter so a refusal can never be swallowed by a shared ignore
         # regex on its way past. An unregistered login's refusal is still
@@ -1162,7 +1166,13 @@ def cmd_fetch_findings(args):
     # measurement is what turns the gap from asserted into auditable — but it is a
     # provider round-trip, so it is gated on the rare branch that needs it rather
     # than paid on every fetch. An unmeasurable diff stays '' (UNKNOWN), never 0.
-    measured_diff_size = measure_diff_size(args.pr_number) if refused_size_caps else ''
+    #
+    # Gated on the CAUSE, never on ``refused_size_caps``. Those two come apart exactly
+    # where the measurement matters most: a size refusal whose notice states no figure
+    # extracts no cap, so gating on the cap would leave the operator with NEITHER
+    # number in the one case the feature exists to prevent — an unquantified gap.
+    saw_size_refusal = any(cause == REFUSAL_CAUSE_SIZE for cause in refused_causes.values())
+    measured_diff_size = measure_diff_size(args.pr_number) if saw_size_refusal else ''
 
     qgate_hash: str | None = None
     qgate_persist_failure: dict[str, str] | None = None

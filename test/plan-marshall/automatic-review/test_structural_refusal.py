@@ -57,6 +57,10 @@ _AR_SKILL = SCRIPTS_DIR.parent / 'SKILL.md'
 _BRANCH_CLEANUP = (
     SCRIPTS_DIR.parent.parent / 'phase-6-finalize' / 'standards' / 'branch-cleanup.md'
 )
+#: The dispatcher that actually FIRES the operator prompt (item 7a). The leaf only
+#: returns an envelope, so this file — not the leaf's — is where a wrong remedy set
+#: reaches a human.
+_FINALIZE_SKILL = SCRIPTS_DIR.parent.parent / 'phase-6-finalize' / 'SKILL.md'
 
 
 def _state_of(result: dict, bot: str) -> str:
@@ -406,8 +410,17 @@ class TestSizeRefusalClassifiesStructural:
 
 #: Phrasings that offer a WAIT as an operator option. Matched case-insensitively
 #: against the rendered remedy text.
+#:
+#: Covers the plan's own list of EQUIVALENTS, not just the literal "wait": a remedy set
+#: that swapped "Wait another 3600s" for "Retry later" or "Back off and try again" would
+#: reproduce the non-option under a different name, and a regex that only knew the one
+#: spelling would report clean on it.
 _WAIT_OFFER = re.compile(
-    r'"?\s*wait\s+(another|for|until)\b|\bawait\s+(the\s+)?(window|reset|limit)\b',
+    r'"?\s*wait\s+(another|for|until)\b'
+    r'|\bawait\s+(the\s+)?(window|reset|limit)\b'
+    r'|\bretry\s+(later|in\b|after\b)'
+    r'|\btry\s+again\b'
+    r'|\bback\s*off\b',
     re.IGNORECASE,
 )
 
@@ -496,13 +509,19 @@ class TestNoAwaitOnTheStructuralBranch:
         assert cause_branch < class_branch < awaitable_branch
 
     def test_the_structural_recovery_branch_neither_awaits_nor_generates(self):
-        """Branch 0 claims no window, awaits nothing, and generates no event."""
+        """Branch 0 claims no window, awaits nothing, and generates no event.
+
+        All three negations asserted separately. An earlier form said
+        ``'do NOT await' in branch or 'Do NOT' in branch``, whose second disjunct
+        matches any ``Do NOT`` sentence at all — so the test would have passed on a
+        branch that forbade something entirely unrelated and awaited freely.
+        """
         skill = _AR_SKILL.read_text(encoding='utf-8')
         branch = _section(skill, r'Branch 0')
-        assert 'do NOT await' in branch or 'Do NOT' in branch
-        assert not _WAIT_OFFER.search(branch), (
-            f'the structural recovery branch offers a wait:\n{branch}'
-        )
+        lowered = ' '.join(branch.lower().split())
+        assert 'do not claim a window' in lowered
+        assert 'do not await' in lowered
+        assert 'do not generate an event' in lowered
 
     def test_the_contract_forbids_an_await_on_the_member(self):
         """The taxonomy's own row names the remedy set and excludes awaiting."""
@@ -514,6 +533,54 @@ class TestNoAwaitOnTheStructuralBranch:
         assert 'never await' in structural.lower()
         for remedy in ('split', 'accept', 'disable'):
             assert remedy in structural.lower(), f'{remedy} missing from the remedy set'
+
+    def test_the_orchestrator_hook_knows_the_structural_reason(self):
+        """⛔ The hook that actually FIRES the prompt must know this reason exists.
+
+        The leaf returns an envelope; `phase-6-finalize` item 7a renders it. A run that
+        fixed only the leaf's payload would leave the operator-visible prompt untouched —
+        the non-option surviving one hop downstream of every file the fix edited. That is
+        not hypothetical: item 7a enumerated exactly four reasons and hard-coded "the
+        same three options" for all of them, so a `refusal_structural` envelope arrived
+        as an unknown fifth reason whose three real remedies mapped to no branch at all.
+        """
+        hook = _FINALIZE_SKILL.read_text(encoding='utf-8')
+        assert 'refusal_structural' in hook, (
+            'phase-6-finalize item 7a does not name refusal_structural — the prompt the '
+            'operator actually sees is rendered here, so the fix is incomplete without it'
+        )
+
+    def test_the_orchestrator_hook_does_not_offer_a_wait_for_the_structural_reason(self):
+        """Its branch table must carry no wait, under any of the equivalent spellings.
+
+        Scoped to the structural branch table rather than the whole document: the four
+        TEMPORAL reasons legitimately offer "Wait another {timeout_seconds}s", so a
+        document-wide sweep would be permanently red and prove nothing.
+        """
+        hook = _FINALIZE_SKILL.read_text(encoding='utf-8')
+        start = hook.index('reason: refusal_structural` — its OWN branch table')
+        table = hook[start:start + 2600]
+        assert not _WAIT_OFFER.search(table), (
+            f'the orchestrator hook offers a wait on the structural branch — the very '
+            f'non-option this member exists to remove:\n{table[:600]}'
+        )
+
+    def test_the_orchestrator_hook_offers_the_three_real_remedies(self):
+        """Asserting only the absence of a wait would pass on an empty branch table."""
+        hook = _FINALIZE_SKILL.read_text(encoding='utf-8')
+        start = hook.index('reason: refusal_structural` — its OWN branch table')
+        table = hook[start:start + 2600].lower()
+        assert 'split' in table
+        assert 'accept the coverage gap' in table
+        assert 'disable this reviewer' in table
+
+    def test_the_orchestrator_hook_names_both_audit_figures(self):
+        """The operator accepting a gap must be shown the cap AND the measured size."""
+        hook = _FINALIZE_SKILL.read_text(encoding='utf-8')
+        start = hook.index('reason: refusal_structural` — its OWN branch table')
+        table = hook[start:start + 2600]
+        assert 'cap' in table
+        assert 'measured_diff_size' in table
 
     def test_the_barrier_names_the_structural_remedy(self):
         """branch-cleanup renders the member's remedy, not "the bot did not review".
@@ -664,6 +731,44 @@ class TestTheCapIsRecorded:
         )
         assert result.returncode == 0
         assert 'measured_diff_size' not in result.stdout
+
+    def test_a_cap_arriving_without_its_cause_still_resolves_structural(self, plan_context):
+        """⛔ Fail-CLOSED recovery: a lost cause overlay must not un-structure the member.
+
+        The cause and the cap cross the CLI as two SEPARATE flags, and the barrier's
+        contract lets either default to empty independently when a producer field is
+        absent or malformed. A cap is only ever produced for a size refusal, so a cap
+        with no cause means the cause was lost in transport — and without recovery the
+        bot silently falls back to a TEMPORAL member and is offered a wait for a
+        diff-size ceiling, which is the exact non-option this member removes.
+        """
+        plan_id = 'struct-cap-without-cause'
+        plan_context.plan_dir_for(plan_id)
+        result = rc.check_completeness(
+            plan_id, ['sourcery'],
+            refused_bots=['sourcery'],
+            refusal_size_caps={'sourcery': '4242 diff characters'},
+        )
+        assert _state_of(result, 'sourcery') == rc.STATE_REFUSED_STRUCTURAL
+        assert result['refusal_causes'] == [
+            {'bot_kind': 'sourcery', 'cause': 'size', 'cap': '4242 diff characters'}
+        ]
+
+    def test_a_cause_without_a_cap_is_never_inferred_backwards(self, plan_context):
+        """The recovery is one-directional. A cause with no cap is an ordinary unknown.
+
+        Inferring in the other direction would invent a cap, which is precisely what the
+        unknown-cap discipline exists to prevent.
+        """
+        plan_id = 'struct-cause-without-cap'
+        plan_context.plan_dir_for(plan_id)
+        result = rc.check_completeness(
+            plan_id, ['sourcery'],
+            refused_bots=['sourcery'],
+            refused_causes={'sourcery': 'quota'},
+        )
+        assert _state_of(result, 'sourcery') == rc.STATE_REFUSED_HARD
+        assert result['refusal_causes'][0]['cap'] == ''
 
     def test_the_measurement_carries_its_unit(self, plan_context):
         """The unit rides INSIDE the value, because it is not the reviewer's unit.
@@ -816,6 +921,37 @@ class TestCapExtraction:
             seam.bot_registry, 'refusal_size_cap_patterns', lambda _bot: ['([unclosed']
         )
         assert seam.refusal_size_cap('review limit of 10 things', 'sourcery') == ''
+
+    def test_a_non_participating_group_does_not_crash_the_producer(self, monkeypatch):
+        """⛔ A pattern whose first group sits in an unmatched branch must not raise.
+
+        ``match.groups()`` is TRUTHY for a one-tuple holding ``None``, so a pattern like
+        ``limit of (?:[0-9]+)|(other)`` matches, reports groups, and yields ``None`` —
+        and ``None.strip()`` raises an ``AttributeError`` straight out of
+        ``cmd_fetch_findings``, killing the producer's whole return path. The
+        ``re.error`` guard above does NOT cover this: that pattern compiles fine.
+
+        This is the exact failure the function's docstring promises cannot happen, so it
+        is pinned rather than left to the docstring.
+        """
+        seam = self._seam()
+        monkeypatch.setattr(
+            seam.bot_registry,
+            'refusal_size_cap_patterns',
+            lambda _bot: [r'review limit of (?:[0-9]+)|(nevermatches)'],
+        )
+        # Falls back to the whole match rather than raising.
+        assert seam.refusal_size_cap('review limit of 4242 chars', 'sourcery') == (
+            'review limit of 4242'
+        )
+
+    def test_a_pattern_capturing_only_whitespace_yields_unknown(self, monkeypatch):
+        """An empty capture is no figure, not an empty-string cap."""
+        seam = self._seam()
+        monkeypatch.setattr(
+            seam.bot_registry, 'refusal_size_cap_patterns', lambda _bot: [r'limit of(\s*)']
+        )
+        assert seam.refusal_size_cap('review limit of 4242 chars', 'sourcery') == ''
 
 
 class TestDiffMeasurement:

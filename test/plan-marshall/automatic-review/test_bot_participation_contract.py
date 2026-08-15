@@ -102,10 +102,12 @@ _PROVENANCE_STATES = ('never_asked', 'migrated', 'answered')
 # published nothing, and each carries a remedy opposite to ``absent``'s escalation
 # (re-trigger the stale review / trigger the review at all). ``declined`` sits among
 # the independent observations: like a refusal, it says the bot engaged and would
-# not review this commit, so it is not a refinement of ``absent``. The three refusal
-# members (``refused_awaitable`` / ``refused_hard`` / ``refused_unknown``) are the
+# not review this commit, so it is not a refinement of ``absent``. Of the FOUR refusal
+# members, three (``refused_awaitable`` / ``refused_hard`` / ``refused_unknown``) are the
 # one-to-one split of the bot's three-valued ``rate_limit_class`` and are likewise
-# independent observations. This tuple's LENGTH is load-bearing — the closure-count
+# independent observations; ``refused_structural`` refines that branch on the orthogonal
+# CAUSE axis, and is checked FIRST because a per-bot class cannot separate two causes one
+# bot refuses under. This tuple's LENGTH is load-bearing — the closure-count
 # check below reads the contract's own prose count back as an integer and compares it
 # against ``len`` here, which is what stops a member reaching the classifier and the
 # table while the prose still claims fewer.

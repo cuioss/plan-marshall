@@ -465,7 +465,9 @@ class TestStateTaxonomy:
     def test_refusal_of_unknown_class_is_its_own_state_not_hard(self, plan_context):
         """An ``unknown`` rate-limit class resolves to ``refused_unknown``, never ``refused_hard``.
 
-        The three-valued ``rate_limit_class`` splits ONE-TO-ONE into three refusal
+        For a refusal whose cause is not ``size`` (a ``size`` cause resolves the
+        structural member ahead of this axis — see ``test_structural_refusal.py``), the
+        three-valued ``rate_limit_class`` splits ONE-TO-ONE into three refusal
         members: ``awaitable_window`` -> ``refused_awaitable``, ``hard_quota`` ->
         ``refused_hard``, ``unknown`` -> ``refused_unknown``. A binary
         ``== 'awaitable_window'`` test collapsed ``unknown`` into ``refused_hard``,
@@ -2067,7 +2069,7 @@ class TestDeficitSignal:
 
 
 # =============================================================================
-# The refusal CAUSE overlay (size vs quota) — orthogonal to awaitability, advisory
+# The refusal CAUSE overlay (size vs quota) — state-determining for size, else advisory
 # =============================================================================
 
 
