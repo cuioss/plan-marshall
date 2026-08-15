@@ -538,6 +538,31 @@ mechanism it renamed — and sweep each one's restatements the same way: by **co
 each kind a changed value can take — prose, docs, tests, `*.py` fixtures and stubs — and sweeping for
 each in turn, per the sub-agent instruction above), exactly as you did for the original change.
 
+**Sweep the previous round's fixes as a first-class surface, not only the original change.** A
+"round" here is one iteration of this step's dispatch → fix → re-dispatch loop, within a single run —
+not a prior PR and not a previous execution of the plan. By round N the highest-risk text is what
+round N−1 *wrote*: a docstring, a table row, or a decision record added to explain a fix, which is
+young, unreviewed, and not yet on anyone's list of consumers to grep for. So before re-dispatching:
+
+- List the files the previous round edited, and re-read each against the current design —
+  **especially any prose it added**, which no reviewer has yet seen.
+- Where the fix amended a shared or governing document, check every sibling surface that cites it. A
+  cross-surface record made true for the surface you fixed can be made false for the one you did not.
+
+⛔ **This is not the paragraph above it restated, and reading it as one is how the defect survives.**
+That one says *sweep what your fix made false elsewhere in the tree*; this one says *the fix's own new
+text is itself a surface, and the next fix will invalidate it.* One run leaked this exact class four
+rounds running while obeying the paragraph above:
+
+| Round | What leaked |
+|---|---|
+| 1→2 | Round 1 wrote a docstring describing the marker it introduced; round 2 replaced the marker without re-reading it, leaving a module's own return contract describing a field that no longer existed. |
+| 2→3 | Round 2 rewrote one test's docstring to disclaim an invariant and left the neighbouring assertion **in the same file** encoding it. |
+| 3→4 | Round 3 amended a governing ADR and did not check the sibling extension axis citing it, making that record false for a surface the fix never touched. |
+
+Each round swept the surface the *original* change touched and missed the surface the *previous
+round's fix* touched.
+
 The two obligations below are part of that same per-round sweep, not a separate pass done once at
 the end. Both are checked **before every re-dispatch and again before the merge gate**.
 
