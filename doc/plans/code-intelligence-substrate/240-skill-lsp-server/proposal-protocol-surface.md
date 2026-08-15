@@ -1,9 +1,11 @@
 # Proposal — which protocol surface should expose the skill corpus's reference intelligence?
 
-This is the **written proposal** deliverable D0(b) of [`plan.md`](plan.md) requires. It is
-decision-shaped and deliberately **undecided**: it lays out the options, what each costs and buys,
-and the consumer and measurement evidence that bears on the choice. ⛔ **The operator decides.** The
-run that wrote this had no authority to choose, and implemented no protocol.
+This is the **written proposal** deliverable D0(b) of [`plan.md`](plan.md) requires. Its analysis —
+everything up to § "Decision" — is written **undecided**: it lays out the options, what each costs and
+buys, and the consumer and measurement evidence that bears on the choice. ⛔ **The operator decides,
+and did**; the run that wrote this had no authority to choose. What the operator settled, and what the
+run then built on that instruction, is recorded in § "Decision (operator, this run)" at the end — kept
+separate from the analysis so the two are never read as one voice.
 
 Read it with [`report-01.md`](report-01.md), which records how each figure below was obtained.
 
@@ -269,13 +271,18 @@ should precede building any surface, given that zero adoption has already cost t
 build-and-remove cycle; and how much appetite there is for the `.md` extension-collision risk that
 Option A carries on Claude Code.
 
-## What this run did NOT do
+## What this analysis, on its own, settles — and what it does not
 
-⛔ No protocol was chosen and none was implemented. D2 (the surface), D4 (configuration), and D5's
-developer page all wait on this decision — D5's developer page in particular is required to *record*
-the decision and its rationale, which cannot be written before there is one.
+⛔ **Nothing above chooses.** Read to this point, the proposal leaves the fork open: D2 (the surface),
+D4 (configuration), and D5's developer page all wait on a decision this run had no authority to make.
+D5's developer page in particular is required to *record* the decision and its rationale, which cannot
+be written before there is one.
 
-⛔ D3 (live diagnostics) is separately and independently blocked. Its hard gate — the
+That decision was subsequently taken **by the operator** and is recorded at the end of this document;
+the work it authorised shipped in the same branch. This section states the position as of the analysis
+alone, which is what makes the separation legible.
+
+⛔ D3 (live diagnostics) is blocked independently of the fork, and remains unimplemented. Its hard gate — the
 validator-precision plan [`230-validate-precision`](../230-validate-precision.md) — has not been
 executed. Measured on this clone, the validator reports **380 unresolved edges of 5 301**, of which
 **370 (97.4 %)** are demonstrable false positives:
