@@ -77,15 +77,21 @@ Commit `032e3e7`.
 - **Declared on ONE step — `project:finalize-step-era-stamp-fill`.** Two earlier candidates were
   declared and then withdrawn on evidence; see the D1 addendum.
 
-**The fail-toward-re-running direction is structural, not advisory.** `preserved` is reachable only
-past a resolution gate — the step doc resolved AND the step declares `head_dependent: true` — and past
-that gate on exactly two paths, each of which *proves* the recorded tree is still in force: the SHAs
-are equal (byte-identical trees, decided without consulting any declaration), or a non-empty
-declaration's globs match no path in the tree difference. Every other path returns `invalidated` with
-a `reason` naming the uncertainty: absent declaration on a genuinely advanced HEAD, unresolvable step
-doc, unavailable discovery machinery, absent recorded SHA, unresolvable live HEAD, or a tree diff git
-could not compute. Each branch is pinned by its own test, individually — an aggregate "it usually
-re-fires" assertion could pass while one branch leaked a skip.
+**The fail-toward-re-running direction is structural, not advisory.** `preserved` is returned on
+exactly two paths, each of which *proves* the recorded tree is still in force. **The SHAs are equal** —
+byte-identical trees, decided FIRST, before any resolution, so the answer consults no declaration, no
+head-dependence fact and no discovery call and holds even when none of them can be resolved. Or **a
+resolved, head-dependent step's non-empty declaration matches no changed path**. Every other path
+returns `invalidated` with a `reason` naming the uncertainty: absent declaration on a genuinely
+advanced HEAD, unresolvable step doc, unavailable discovery machinery, absent recorded SHA,
+unresolvable live HEAD, or a tree diff git could not compute. Each branch is pinned by its own test,
+individually — an aggregate "it usually re-fires" assertion could pass while one branch leaked a skip.
+
+The equal-SHA ordering is a PR-review correction, not the original design: the code resolved the
+declaration first, so an unmoved HEAD answered `invalidated` whenever discovery hiccupped — a re-fire
+manufactured by a broken lookup rather than by any change to the tree, and a direct contradiction of
+the module's own promise that this path "consults none". Two regression tests pin it: one makes the
+resolver raise if it is consulted at all, the other drives the resolver's real failure mode.
 
 **D1 addendum — two candidate surfaces were declared and then withdrawn on evidence, and that is the
 most useful finding in this deliverable.** The plan labels the premise D1 rests on as *GENUINELY
@@ -148,7 +154,7 @@ diff range only grows.
 record verdicts about the *pushed* HEAD, so any advance that reaches the remote re-stales them
 regardless of which paths moved. They are deliberately left undeclared.
 
-Tests: `test/plan-marshall/phase-6-finalize/test_verdict_currency.py` (30 test functions, 34
+Tests: `test/plan-marshall/phase-6-finalize/test_verdict_currency.py` (35 test functions, 39
 collected cases — one is parametrised over five glob shapes) — the pure
 classifier, the glob convention, each fail-closed branch independently, `resolve_changed_paths`
 against a real temporary git repository (including revert-cancellation and the unresolvable-SHA
@@ -197,8 +203,10 @@ instrument to the thing it measures), and `total_tokens` is a **floor** — `rec
 `<usage>` triple only for dispatched steps and inline steps record zeros by contract — with a
 `token_population` field stating which rows the figure was summed over.
 
-Tests: `test/plan-marshall/manage-execution-manifest/test_refire_report.py` (14 test functions, 14
-collected cases). Across both files pytest collects **48** new cases.
+Tests: `test/plan-marshall/manage-execution-manifest/test_refire_report.py` (16 test functions, 20
+collected cases — one is parametrised over five junk metric shapes). Across both files pytest
+collects **59** new cases. These figures move with every review round; they are re-derived by
+collection at the moment of the claim, never carried forward.
 
 ### D4 — A before/after measurement on a real finalize — **NOT DONE**
 
@@ -364,9 +372,51 @@ and the interpreter are inputs by the same argument, and the surface would regre
 whole-tree declaration the mechanism exists to avoid. The line drawn is truth-of-the-claim versus
 future-behaviour, stated at the step and in the governing standard.
 
+### From the verification sub-agent (round 4)
+
+Round 4 **failed on its first launch** — the subagent hit a weekly usage limit and terminated after
+confirming HEAD, producing no findings. That is an *absent* verification, not a clean one, and it is
+recorded as such rather than counted. It was relaunched and completed. All fixes landed in `e08a95b`
+(the overlapping PR-review fixes) and `79f26cb`.
+
+Its most valuable output was not a finding but a **prediction**: it observed that the working tree
+was dirty mid-review (the in-flight PR-review fixes), reconstructed what committing them would do,
+and stated that `report-01.md`'s reachability paragraph and test counts would become the next
+un-propagated restatement *by construction*. They did. Both are corrected below.
+
+| # | Finding | Disposition |
+|---|---|---|
+| I1 | The ext-point row ended by claiming it "points there rather than maintaining a second copy" while, 200 words earlier, enumerating all three shapes inline. It *was* the second copy — and it had **already diverged**, missing the containment-boundary qualifier that round 3's H5 added to the owner. The exact defect H5 fixed, one document over | **Fixed** — the inline enumeration is deleted; only the pointer remains, and the row now names *why* it keeps no copy |
+| I2 | `finalize-step-plugin-doctor` cited "the ext-point" as naming the whole-repo-walk shape, so the pointer chain ran through the copy rather than the owner — and would have dangled once I1 was fixed | **Fixed** — retargeted at `verdict-currency.md` |
+| I3 | The same file's § Purpose enumerated the doctor roster without the markdown-mirror rules, while its refusal section asserted `broken-relative-link` is in that roster — two enumerations in one file disagreeing | **Fixed** — the roster list now includes them and is explicitly labelled illustrative, with `cmd_quality_gate` named as the definition |
+| I4 | The attribution table asserted `pre-push-quality-gate` exhibits shape 2, but the refusal section it cites as evidence recorded only shapes 1 and 3. The table asserted a shape its own evidence pointer did not carry | **Fixed** — the pre-push refusal now records the inherited `broken-relative-link` disqualifier explicitly, so table and source agree |
+| I5 | The attribution table is a hand-maintained enumeration in a document that says of its *other* table "derived from declared frontmatter facts, not hand-maintained" — and it was already one shape stale (I4). A refusal is a judgement about a step's body, not a frontmatter fact, so it cannot be derived | **Fixed as far as it can be** — the table is now explicitly labelled ILLUSTRATIVE, not closed, and three new guards pin what *is* derivable: every tabled step exists as a discovered implementor, carries the refusal section the row cites, and does not also declare a surface. The residual — a third refusing step never reaching the table — is disclosed rather than papered over |
+| I6 | `automatic-review/SKILL.md`'s `re_review_on_branch_cleanup` knob described itself as gating a re-review "after branch-cleanup rebases and force-pushes", phrased as if that always happens. Same class as F17/G13, in a file no earlier sweep reached | **Fixed** |
+| I7 | The `[STATUS]` alternation's third arm carried no `(if …)` guard while its siblings did, and the pre-rebase prompt's `header` was stale on the `state == merged` arm round 3 added | **Fixed** — both now carry explicit per-arm conditions |
+| I8 | `report-01.md`'s reachability paragraph and both test counts — the predicted recurrence | **Fixed**, and the counts now carry a note that they are re-derived by collection at the moment of the claim rather than carried forward |
+
+**Confirmed by round 4, not merely asserted:** the eleven-member head-dependent population with its
+orders; exactly one declarer with three globs, all three existing on disk; five reachability sites in
+agreement; three `refires` sites in agreement; seven rebase-conditionality sites all correct; the
+`{rebase_upstream_commit_count}` binding and both consumption sites; every relative link in all twelve
+changed `.md` files resolving on disk; and both test-count units at that commit.
+
+**Stated limits:** round 4 could not run pytest (not installed in its environment) or `./pw`, so its
+count figures are static-analysis counts and it verified no build result. Those are covered by this
+run's own three clean `./pw verify` passes.
+
 ### From CI and PR review
 
-_Pending — recorded at Step 8 condition 3._
+PR **#1235**. Five findings from `coderabbitai`, three accepted and two rejected with reasons; the
+full dispositions are posted on the PR as a single comment rather than split across threads.
+
+| # | Finding | Disposition |
+|---|---|---|
+| J1 | Equal-SHA short-circuit ordered after declaration resolution, contradicting the module's own "consults none" promise | **Fixed** in `e08a95b` — see the D1 note above |
+| J2 | `summarize_refires` metric coercion did not follow the tolerance its own docstring claimed: one non-numeric metric in append-only TOON history would raise and deny the whole plan's report | **Fixed** in `e08a95b` — `_refire_metric` coerces to `0`; tests cover five junk shapes plus the case that a bad metric must not suppress a good row |
+| J3 | The `use_merge_queue` observability guard compared only totals, so a deleted marker could be masked by a duplicate elsewhere | **Fixed** in `e08a95b` — injective per-site pairing. This one mattered: that guard had already reported green over a site it could not see (F15), so the compensating-error shape was not hypothetical |
+| J4 | `_cmd_quality_phases.py` duplicates `ci_base.MERGE_QUEUE_ELIGIBLE_STATES` as literals | **Rejected — pre-existing and out of scope.** The finding is correct but the file is untouched by this diff; the comment anchored beside an edited documentation row. This plan changes how often gates run and never what they check, and a constants refactor of the config-validation path is a different subsystem. Worth filing separately |
+| J5 | Reword D1 in `plan.md` to define invalidation in terms of resolved `verdict_inputs` | **Rejected — the substance is right and already implemented, but `plan.md` is the input brief.** Editing it after the fact to match what was built would erase the fact that the brief's simplified framing was refined by evidence, which is one of this run's more useful outputs. The refinement is recorded in `verdict-currency.md`, the ext-point row, and this report's D1 addendum |
 
 ## Reviewer participation
 
