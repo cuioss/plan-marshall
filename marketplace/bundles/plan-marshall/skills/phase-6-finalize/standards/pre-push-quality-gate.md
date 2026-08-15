@@ -73,6 +73,44 @@ The local-gate-vs-CI parity population these properties defend is **derived, not
 over an empty population is indistinguishable from perfect parity, which is the confident-but-empty
 signal this gate exists to prevent.
 
+## A gate states what its green does not evaluate
+
+The two properties above make this gate honest about **coverage** — whether it checked everything it
+set out to. They say nothing about a third question, and it is the one a COMPLETE verdict most needs
+answered: *what can these checks never see, however wide their scope?*
+
+The distinction is load-bearing, and the two axes must not be collapsed:
+
+| | Cured by | Reported as |
+|---|---|---|
+| **Coverage boundary** — a dimension the run could not fully check | re-running it at full scope | the PARTIAL verdict, naming the degraded dimension |
+| **Structural scope limit** — a defect class the analysis cannot reach at all | nothing. Not a wider sweep, not another round, not a re-run | a per-analysis block on **both** the COMPLETE and PARTIAL verdicts |
+
+**The defect is not that a gate is narrow — it is that a narrow gate's green reads as whole-tree
+assurance.** Each analysis this gate runs decides one specific question and is silent on the rest:
+mypy decides type *consistency*, so a binary read of a three-valued observable type-checks exactly as
+the correct three-way read does; ruff matches the rule families that are enabled, so a family absent
+from the select list is an un-asked question rather than a clean answer; plugin-doctor lints document
+*shape*, so it cannot check whether a documented remedy is reachable or whether a prose claim is true;
+pytest executes the tests that exist, so it cannot tell "correct" from "never exercised". Those are
+precisely the classes an external reviewer keeps finding on a diff whose every in-house gate is green.
+
+The limits therefore ride the verdict itself rather than living in documentation a reader of the
+output never sees. `_gate_coverage.structural_limits` derives them **from the dimensions the run
+actually recorded**, so a gate that analysed less states fewer limits, and the registry is keyed by
+analysis kind (`_gate_coverage.dimension_stem` strips the per-run scope suffix). A dimension with no
+registered limit renders as an explicit **UNKNOWN** rather than being omitted: omitting it would make
+the block read as exhaustive over a run that included an analysis nobody characterised, which is the
+same absence-read-as-coverage defect in miniature.
+
+This is the build-gate arm of a rule that binds every in-house gate. Its self-review counterpart is
+[`../workflow/pre-submission-self-review.md`](../workflow/pre-submission-self-review.md) § "A clean
+verdict carries the structural limit of the analysis"; the participation guard's counterpart is the
+`proves: participation_only` field that
+[`../../automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md)
+§ "Participation is not review quality" already requires. **A gate whose green is scope-limited says
+so in its verdict** — read each gate's own limit there rather than from a copy here.
+
 ## Exit-code convention for `manage-*` script calls
 
 Every `manage-*` script call in this document carries the following exit-code contract unless a step explicitly states otherwise:

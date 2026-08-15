@@ -103,6 +103,7 @@ since_ref: {sha, or empty when the round was not delta-scoped}
 surface_scope: delta | full
 files_in_scope: N
 scope_statement: {human-readable statement of the scope this round searched — the file set an absence/residual claim it produces must publish}
+structural_limit: {human-readable statement of what this analysis CLASS cannot evaluate at all — the orthogonal boundary widening the file set does not cure; published on every surface, clean ones especially}
 counts:
   by_family:
     structural: {sum of the in_total structural lists}
