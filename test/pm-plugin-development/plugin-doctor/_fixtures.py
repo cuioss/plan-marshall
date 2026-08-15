@@ -1029,6 +1029,44 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
         files={},
     )
 
+    # --- Test-conventions house-style rules (warning severity) --------------
+
+    corpus['test-module-line-budget'] = FixtureSpec(
+        analyzer=lambda root: _atc.analyze_test_module_line_budget(root / 'test'),
+        files={
+            'test/foo/test_over_budget.py': (
+                'def test_x():\n    assert True\n' + '# filler\n' * (_atc.TEST_MODULE_LINE_BUDGET + 1)
+            ),
+        },
+    )
+    corpus['test-helper-module-misnamed'] = FixtureSpec(
+        analyzer=lambda root: _atc.analyze_test_helper_module_misnamed(root / 'test'),
+        files={'test/foo/test_only_helpers.py': 'def build_thing():\n    return {}\n'},
+    )
+    corpus['test-module-preamble-boilerplate'] = FixtureSpec(
+        analyzer=lambda root: _atc.analyze_test_module_preamble(root / 'test'),
+        files={
+            'test/foo/test_preamble.py': (
+                'from pathlib import Path\n'
+                '\n'
+                'ROOT = Path(__file__).parent.parent.parent\n'
+                '\n'
+                'def test_x():\n'
+                '    assert ROOT\n'
+            ),
+        },
+    )
+    corpus['test-docstring-historical-prose'] = FixtureSpec(
+        analyzer=lambda root: _atc.analyze_test_docstring_prose(root / 'test'),
+        files={
+            'test/foo/test_prose.py': (
+                'def test_x():\n'
+                '    """Pins the fallback (closes lesson 2026-07-09-04-001)."""\n'
+                '    assert True\n'
+            ),
+        },
+    )
+
     # --- Component cluster (analyze_component over a crafted component) ------
     # Agent-frontmatter / agent-rule fixtures.
 

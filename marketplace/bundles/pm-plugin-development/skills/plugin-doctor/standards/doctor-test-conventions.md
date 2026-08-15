@@ -1,6 +1,6 @@
 # Doctor Test Conventions Workflow
 
-Test-tree conventions enforced as build-failing rules across the `test/` directory of any plan-marshall consumer. Activated by `scope=test-conventions`.
+Test-tree conventions enforced across the `test/` directory of any plan-marshall consumer. Activated by `scope=test-conventions`. Three rules are build-failing (`error`); four report structural house-style violations at `warning` — see the Severity Summary.
 
 ## Parameters
 
@@ -10,7 +10,12 @@ Test-tree conventions enforced as build-failing rules across the `test/` directo
 
 ## Rules
 
-All three rules emit findings with `severity: error`. The doctor runner exits non-zero when any error finding is recorded.
+The scope carries rules at two severities, and the split is deliberate:
+
+- **`severity: error`** — `unique-fixture-basenames`, `subprocess-pythonpath`, `identifier-validator-corpus`. The doctor runner exits non-zero when any error finding is recorded.
+- **`severity: warning`** — `test-module-line-budget`, `test-helper-module-misnamed`, `test-module-preamble-boilerplate`, `test-docstring-historical-prose`. These report their counts without failing the caller.
+
+The warning rules ship at that severity because the tree violates all four at scale today. A build-failing rule landed over a non-compliant tree fails every subsequent build until the tree complies — which would block the very work that would make it comply. `status` is therefore derived from **error-severity findings only**; see the Severity Summary for the per-rule table and the condition under which the warning rules are flipped to `error`.
 
 ### unique-fixture-basenames
 
@@ -102,6 +107,100 @@ Validate that every registered identifier validator's regex round-trips every ou
 | `regex_constant` | string | Module-level constant name to extract via AST |
 | `list_command` | string | Full executor command that produces the corpus (TOON output) |
 
+### test-module-line-budget
+
+**Anchor**: `#test-module-line-budget`
+
+Flag a collected test module over the 400-line budget.
+
+**Detection**:
+
+1. Enumerate every `*.py` under `--test-root` matching pytest's collection patterns (`test_*.py` / `*_test.py`).
+2. Count the module's lines.
+3. Flag any module over `TEST_MODULE_LINE_BUDGET` (400).
+
+**Violation message format**:
+
+```text
+{file_path}: test module is {n} lines, over the 400-line budget (by {n-400}) — split by behaviour cluster into test_{unit}_{cluster}.py, not in arbitrary halves.
+```
+
+The message carries the module's own line count and the budget, so the overage is readable without re-measuring.
+
+**Suggested remediation**: Split by behaviour cluster into `test_{unit}_{cluster}.py` — one nameable subject per module. Do not split in arbitrary halves: that leaves one subject spread across two files and neither module describable, so the next author cannot tell which half a new test belongs in.
+
+**Why**: The budget is derived from the corpus rather than invented — the median module measures ~327 lines, so 400 sits above the median and describes the tree's own compliant majority. It replaces a `~200` figure that roughly three quarters of the corpus violated and that no guard ever enforced; a rule the tree violates at that rate is a number readers learn to ignore. The authoring standard is `plan-marshall:persona-module-tester` § "Module Budget: 400 lines".
+
+### test-helper-module-misnamed
+
+**Anchor**: `#test-helper-module-misnamed`
+
+Flag a module that matches pytest's collection patterns but declares no test.
+
+**Detection**:
+
+1. Enumerate every `*.py` under `--test-root` matching `test_*.py` / `*_test.py`.
+2. Parse with `ast.parse`.
+3. Flag any module declaring neither a function whose name starts with `test` nor a class whose name starts with `Test`.
+
+**Violation message format**:
+
+```text
+{file_path}: module '{basename}' matches pytest's collection patterns but declares no test function or Test* class — it is collected, contributes nothing, and is invisible in the run; rename to _<domain>_fixtures.py.
+```
+
+**Suggested remediation**: Rename to `_{domain}_fixtures.py`, outside the collection patterns, and update every importer.
+
+**Why**: Such a module is collected by pytest, contributes zero tests, and reports nothing — it reads as covered while asserting nothing. The naming convention that keeps helpers out of collection is `plan-marshall:persona-module-tester` § "Test Helper Module Organization"; this rule catches the case where a helper was given a collected name.
+
+### test-module-preamble-boilerplate
+
+**Anchor**: `#test-module-preamble-boilerplate`
+
+Flag hand-rolled import preambles that resolve a module by the test file's own location.
+
+**Detection**:
+
+1. Parse every `*.py` under `--test-root` with `ast.parse`.
+2. Flag any `spec_from_file_location` call (matched as an attribute access or a bare name, so both import forms are caught).
+3. Flag any `Path(__file__)` followed by a `.parent` chain of depth **three or more**. Only the outermost `.parent` attribute of a chain is reported, so one chain yields one finding rather than one per link.
+
+**Violation message format**:
+
+```text
+{file_path}:{lineno}: hand-rolled spec_from_file_location preamble — use conftest.load_script_module(bundle, skill, filename), which resolves by identity instead of by the test file's own location.
+{file_path}:{lineno}: Path(__file__) followed by a {depth}-deep .parent chain — use conftest.get_scripts_dir(bundle, skill); a directory-counting chain breaks the moment the test module moves.
+```
+
+**Suggested remediation**: Replace with the `conftest` helpers `load_script_module(bundle, skill, filename)` or `get_scripts_dir(bundle, skill)`, which resolve by `(bundle, skill, script)` identity.
+
+**Why**: Both shapes hard-code the test module's position in the directory tree. Moving the file — which the line-budget rule above actively encourages — silently breaks the resolution, and the failure surfaces as an import error far from its cause. Resolution by identity survives the move.
+
+### test-docstring-historical-prose
+
+**Anchor**: `#test-docstring-historical-prose`
+
+Flag a docstring or comment under the test tree citing a lesson id, a PR reference, or a plan/deliverable id.
+
+**Detection**:
+
+1. Parse every `*.py` under `--test-root` with `ast.parse`.
+2. Collect the prose segments — module, class, and function **docstrings** (via `ast.get_docstring`), plus every `#` **comment** (via `tokenize`).
+3. Match each segment against the citation patterns. The lesson-id and `plan-marshall#NNNN` matchers are **imported from** `_analyze_lesson_id_in_skill_prose` and `_analyze_incident_reference_in_docs` rather than restated — one textual shape, one matcher. Two shapes those analyzers do not carry are defined locally: `PR #NNN` / `pull request #NNN`, and plan/deliverable ids (`TASK-NNN`, `deliverable D<n>`, ``plan `slug` ``).
+4. Emit at most one finding per segment; `details.kind` names which citation shape fired.
+
+**The prose-vs-data restriction is the rule's structural discriminator, not an optimisation.** The scan deliberately never reaches string literals used as data. The same textual shapes appear far more often as test *data* — a lesson id fed to the validator under test is the corpus the test exists to check — and flagging those would make the rule unusable. Measured over this tree at authoring time: 283 pattern hits in docstrings and comments, against 861 occurrences of the same shapes as string-literal data that the AST scoping correctly leaves alone.
+
+**Violation message format**:
+
+```text
+{file_path}:{lineno}: historical citation '{matched}' in test prose — a docstring states the invariant in the present tense, not the incident that produced the test.
+```
+
+**Suggested remediation**: Rewrite the docstring to state the invariant in the present tense. Where the invariant is genuinely non-obvious, a second paragraph explains *why it is load-bearing* — which stays true after the next refactor, unlike the citation. See `plan-marshall:persona-module-tester` § "Test Docstring Content" for a worked before/after.
+
+**Why**: This is `CLAUDE.md` § Documentation Standards ("No version history", "Current state only") applied to a tree those standards were never scoped over. It is the same rule the `no-historical-prose-in-skills`, `no-incident-references`, and `no-lesson-id-in-skill-prose` rules already enforce across `marketplace/bundles/**` — this rule extends the identical detection to `test/`, where nothing previously enforced it. A citation reasons from something the reader cannot see: it costs context on every read and teaches the reader to reason from a PR number instead of from the mechanism in front of them.
+
 ## Rule 3 — Validator Registry
 
 The empty-row template below is the default. Add new rows when authoring identifier validators that should be regex-vs-corpus checked.
@@ -119,5 +218,13 @@ When the registry is empty, the rule reports zero findings and exits 0. The rule
 | `#unique-fixture-basenames` | error | exit ≠ 0 on violation |
 | `#subprocess-pythonpath` | error | exit ≠ 0 on violation |
 | `#identifier-validator-corpus` | error | exit ≠ 0 on violation |
+| `#test-module-line-budget` | warning | reported; does not affect exit code |
+| `#test-helper-module-misnamed` | warning | reported; does not affect exit code |
+| `#test-module-preamble-boilerplate` | warning | reported; does not affect exit code |
+| `#test-docstring-historical-prose` | warning | reported; does not affect exit code |
 
-All three rules ship with build-failing severity matching the existing doctor rule infrastructure. Suppression is not provided — the violations correspond to recurring failure modes documented in lessons learned.
+The three `error` rules ship with build-failing severity matching the existing doctor rule infrastructure. Suppression is not provided for them — the violations correspond to recurring failure modes documented in lessons learned.
+
+The four `warning` rules report without failing the caller: `status` is derived from error-severity findings only, so `warning_count` can be non-zero while `status: pass`. They ship at `warning` because the tree violates all four at scale, and a build-failing rule landed over a non-compliant tree fails every subsequent build until the tree complies — blocking the very work that would make it comply. **The flip to `error` is a follow-up conditioned on the per-rule violation counts reaching zero**, not a permanent classification.
+
+This scope is **not** part of the `quality-gate` subcommand; it runs on demand via `doctor-marketplace.py test-conventions --test-root {path}`.
