@@ -9,22 +9,29 @@ on:
     types: [checks_requested]
 
 concurrency:
-  # Collapse the duplicate verify runs a single push to a working branch would
-  # otherwise produce. A push to feature/*, fix/*, chore/* fires BOTH the push
-  # trigger and the pull_request (synchronize) trigger, running the full suite
-  # twice per push. Keying the group on the branch identity — the PR head ref
-  # for a pull_request event, else the pushed ref name — puts both events for the
-  # same branch in one concurrency group.
+  # Keyed on the event class AND the branch identity, so the push run and the
+  # pull_request run for the same branch land in SEPARATE groups and can never
+  # cancel one another.
   #
-  # cancel-in-progress is scoped to the pull_request event only, never push, so
-  # the run that produces the required `verify / conclusion` check (the
-  # pull_request run — see CLAUDE.md § Branch Naming) is NEVER cancelled by a
-  # competing push run. The pull_request run entering the group cancels an
-  # in-progress push run (the common ordering — the duplicate is dropped); a push
-  # run entering while the pull_request run is in progress queues instead of
-  # cancelling it. A merge_group run keys on its own unique queue ref, so it lands
-  # in a group by itself and the merge queue's re-verification is never cancelled.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  # Collapsing the push/pull_request pair is the reusable workflow's `gate` job's
+  # responsibility, not concurrency's: a push whose commit is already covered by
+  # an open PR makes the gate skip the heavy verify and report
+  # `verify / conclusion` green in seconds, so a single push to a working branch
+  # still produces exactly one full verify run. Sharing one concurrency group
+  # across both events raced that gate — the gate needs a few seconds to reach
+  # its decision, and a pull_request run entering the shared group inside that
+  # window cancelled it mid-flight. The always-reporting `conclusion` job then
+  # hard-fails on a cancelled gate (correctly, by its own contract: a cancelled
+  # gate must never be masked as a skip), planting a RED `verify / conclusion`
+  # check on the pull request's own head SHA. Separate groups remove the race.
+  #
+  # What concurrency still buys is collapsing STALE runs *within* one event
+  # class. cancel-in-progress stays scoped to pull_request, so a new push to a
+  # PR cancels that PR's previous, now-obsolete verify run — the ~10 minute
+  # saving that matters — while push runs are never cancelled. A merge_group run
+  # keys on its own unique queue ref and lands in a group by itself, so the merge
+  # queue's re-verification is never cancelled.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
