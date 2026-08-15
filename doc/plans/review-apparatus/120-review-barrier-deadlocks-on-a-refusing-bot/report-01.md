@@ -405,6 +405,12 @@ case(s) and nothing else:
 | F79 | ⛔ **The mutation-testing heading read "seven mutations" against a NINE-row table, and the D2 deliverable row read "7 mutations" — the FOURTH instance, in a second table.** Found only because F78 prompted a sweep for the same shape elsewhere; the two earlier fixes had each treated it as a one-off in the build-gate sentence rather than as a pattern | **FIXED** in both places — re-derived by counting rows A–I. ⚠ The PR body already said "nine mutations", so the report and the PR contradicted each other and the report was the wrong one |
 | F78 | ⛔ **The build-gate run count read "eight" against a NINE-row table — the third instance of one defect** (F64 said "six" against seven rows; F72 said the count "is now eight", re-derived). Each fix restated a literal that the next two rows invalidated, so the count was correct only until the table grew again. The recurring cause is that the sentence carries a number the table already contains | **FIXED** — re-derived by counting the rows at this moment: **ten**, including the merged-tree gate added in this same edit. ⚠ The fix is the same shape as the two that failed, so it will go stale the same way if a row is ever added without re-counting. The durable repair is not to state a count beside a table at all; that is a documentation-standards change beyond this plan's scope and is not made here |
 
+### From the operator
+
+| # | Finding | Disposition |
+|---|---|---|
+| F80 | ⛔ **I reported `cuioss-review-bot`'s silence as PR-Agent-specific with "cause not determined", on one query and no control.** The operator asked whether that was really the case. It was — but the framing was wrong: a positive control proved the query honest, and a second workflow proved the absence belonged to the **event**, not the bot. **A single negative query, uncontrolled, was presented as a diagnosis** | **FIXED** — participation row rewritten with the controlled evidence; the `silent` verdict was recoverable rather than terminal, and the documented `/review` trigger was posted. ⚠ The contract's own participation rule says the verdict comes from the bodies; it says nothing about deriving the *reason*, which is what decided whether a remedy existed. That gap is Proposal 3 below |
+
 ### From CI
 
 **None.** Read back from the PR's own check runs at head `601abf1`: `verify / gate`,
@@ -435,9 +441,49 @@ declare.
 |---|---|---|
 | `sourcery-ai` | `rate-limited` | `get_reviews`, review `4944046456`: *"Sorry @cuioss-oliver, your pull request is larger than the review limit of 150000 diff characters"*. A **structural** refusal — the ceiling is a property of the diff, so it does not reopen. ⚠ Its `Sourcery review` **check run concluded `skipped`**, which as a check state is not a verdict and would have read as "nothing to see"; the body is the evidence |
 | `coderabbitai` | `rate-limited` | `get_comments`, comment `5302742537`: *"Review limit reached … you've reached your PR review limit, so we couldn't start this review. **Next review available in:** **56 minutes**"*. A **temporal** refusal, current-head-bound — the body names base `622f4484` and head `601abf11` |
-| `cuioss-review-bot` | `silent` | No artifact on any of the three surfaces, and no `review / review` check on the head. `actions_list` for `pr-agent.yml` filtered to this branch returns `total_count: 0`, so the workflow produced **no run** — despite triggering on `pull_request: [opened, …]` and none of its documented skip rules applying (no `skip-bot-review` label, not a fork, not a bot author). Cause not determined within this run; recorded as an unexplained silence, not waved through |
+| `cuioss-review-bot` | `silent`, then recovered — see below | No artifact on any of the three surfaces, and no `review / review` check. **The PR-open event dispatched no workflow at all** — see the diagnosis below. Recovered by the documented on-demand trigger |
 
-**Coverage: 0 of 3.** No reviewer reviewed this diff.
+#### `cuioss-review-bot`: the open event dispatched nothing, and only this bot could not recover
+
+My first diagnosis of this row was **wrong in its framing**, and only got corrected because the
+operator challenged it. I had recorded it as PR-Agent-specific with the cause undetermined. It is
+neither.
+
+**The claim was verified with a positive control first.** `actions_list` for `pr-agent.yml` filtered
+to this branch returns `total_count: 0`; the same call against PR #1240's branch returns
+`total_count: 1` (run `31887806994`, conclusion `success`), so the filter reports real absence rather
+than failing silently.
+
+**The absence is not PR-Agent's.** `python-verify.yml` also subscribes to `pull_request`, and on this
+branch it has exactly two runs — `31890971355` at head `601abf1` (14:49:16Z) and `31891858490` at head
+`ffde442` (15:08:09Z). Both are later pushes. **Neither is the PR-open event at 14:46:14Z**, whose head
+was `d6b6d8d`. So the `opened` event dispatched **no workflow at all**.
+
+**Only PR-Agent stayed dead, and for a documented reason.** `python-verify.yml` also listens to
+`synchronize`, so the 14:49 push gave it a second chance. `pr-agent.yml` listens to `opened` /
+`reopened` / `ready_for_review` / `issue_comment` and **deliberately not** `synchronize` — its own
+comment block records that `synchronize` was added in #1048 and reverted the same day, because
+PR-Agent's runner gates that action behind two settings that default off, producing a red check and no
+review. That choice is sound; its consequence is that a missed `opened` cannot be recovered by
+pushing.
+
+The root cause of the dropped dispatch is **not determined** — the workflow file is present on the
+branch, Actions demonstrably works on the branch, no documented skip rule applies, and a job-level
+`if:` skip would have produced a run with conclusion `skipped` rather than no run at all. It reads as
+a provider-side dispatch miss.
+
+⭐ **A guard-skip and a non-dispatch are different facts that look identical from the comment
+surfaces.** Both leave a reviewer `silent`; only the second is recoverable. Distinguishing them needed
+the Actions API, which the participation rule does not mention — the verdict came from the bodies as
+required, but the *reason* did not, and the reason is what decided the remedy.
+
+**Recovery.** `pr-agent.md` declares `trigger_comment: "/review"`, and the workflow subscribes to
+`issue_comment: [created]`. Because this bot was never rate-limited — it simply never got the event —
+the trigger was posted rather than the gap accepted.
+
+**Coverage: 0 of 3 at the time of the disclosure**, with `cuioss-review-bot` recovered by on-demand
+trigger afterwards. Sourcery stays structurally refused whatever happens; CodeRabbit's window reopens
+~15:45Z.
 
 **The § Step 8 condition-4 shortfall disclosure is made here, and restated to the operator in words at
 the merge gate, before auto-merge is armed.** It states: coverage **0 of 3**; `sourcery-ai`
@@ -501,9 +547,12 @@ nor records one (§ Scope and precedence), even though this branch edits `market
 
 ## What have we learned (Step 9)
 
-**Two contract changes are proposed, both from evidence this run produced. Neither is applied** — the
+**Three contract changes are proposed, all from evidence this run produced. None is applied** — the
 contract forbids self-approving a change to the contract that governs the run. Each would ship as a
 separate `chore/` PR on operator approval, never in this plan's diff.
+
+⭐ Proposal 3 is the one that changed this run's own outcome, and it was found only because the
+operator challenged a row I had already written and committed.
 
 ### Proposal 1 — the `rate-limited` verdict cannot say whether the shortfall clears
 
@@ -534,6 +583,30 @@ required reconciling "both" against a three-row table to know how many calls to 
 **Proposed edit.** Change both "both" occurrences to "all three". Purely a consistency repair — the
 normative rule is already correct and unambiguous three lines away.
 
+### Proposal 3 — a `silent` verdict is treated as terminal, but one kind of silence is recoverable
+
+**Evidence from this run.** § Step 7 defines `silent` as "published **nothing at all**", instructs
+that the reason be stated "when one is known", and says an unexplained silence "is recorded as such".
+It then routes every non-`reviewed` verdict into the same condition-4 disclosure. That treats all
+silence as equivalent — and this run shows it is not.
+
+`cuioss-review-bot` was silent because its **`opened` event dispatched no workflow**. That is
+recoverable in one comment: the registry declares `trigger_comment: "/review"` and the workflow
+subscribes to `issue_comment`. Had this run followed the contract literally — record the verdict from
+the bodies, disclose the shortfall, arm — it would have merged at 0-of-3 with a reviewer that was
+available the whole time. It did not merge that way only because the operator questioned the row.
+
+The gap is precise: the verdict is correctly derived from the bodies, but the **reason** cannot be —
+the bodies are empty, which is what `silent` means. Distinguishing a rate limit (not recoverable) from
+a guard-skip (not recoverable) from a non-dispatch (**recoverable**) needs the Actions API, which the
+contract never mentions.
+
+**Proposed edit.** On a `silent` verdict, require one Actions-API check for a workflow run on the head
+branch, and split the outcome: **no run at all** → post the registry's `trigger_comment` and re-read
+before disclosing; **a run that concluded `skipped` or failed** → record it and disclose. Keep the
+disclose-not-block rule unchanged — this adds a cheap recovery attempt before the disclosure, never a
+gate.
+
 ### What was examined and found sound
 
 The three-surface rule earned itself on this PR: `get_reviews` carried the sourcery refusal,
@@ -545,8 +618,8 @@ surface would have recorded the wrong population verdicts. The exit-code warning
 
 | Item | Where it should go next |
 |---|---|
-| **Contract Proposals 1 and 2 above** | Awaiting operator decision. On approval, one `chore/cloud-plan-lane` PR touching only the skill |
-| **`cuioss-review-bot`'s silence is unexplained** | `pr-agent.yml` triggers on `pull_request: opened` and no documented skip rule applied, yet `actions_list` reports no workflow run on this branch. Worth a look at whether the reusable workflow's job-level `if:` guard or the PR's creation path suppresses the trigger — this run had no way to read the guard's evaluation |
+| **Contract Proposals 1, 2 and 3 above** | Awaiting operator decision. On approval, one `chore/cloud-plan-lane` PR touching only the skill |
+| **The dropped `opened` dispatch** | Diagnosed as far as this run can reach: the event fired no workflow, and only `pr-agent.yml` could not recover because it alone declines `synchronize`. The provider-side cause is unreachable from here. Worth watching whether it recurs — if it does, the cheap mitigation is that a lane run posts the documented `/review` trigger whenever a reviewer is `silent` with no workflow run, since that case is recoverable and a rate limit is not |
 | **`coderabbitai`'s window reopens ~15:45Z** | A `@coderabbitai review` comment could obtain the review this PR never got. Not attempted: arming auto-merge locks the branch and the queue is expected to land the PR before the window opens. If the operator wants review coverage on this change, the reachable route is a follow-up read of the merged commit, not this PR |
 | **Two findings deferred out-of-scope** | Recorded with reasons in **Findings**; both are pre-existing and neither is touched by this diff |
 | **Local `/sync-plugin-cache`** | ⛔ **Not owed by this run.** Noted only because this branch edits `marketplace/bundles/`: a developer working locally after the merge syncs their own cache, which is a machine-local concern and not a debt this run tracks |
