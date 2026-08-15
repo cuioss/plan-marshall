@@ -89,10 +89,23 @@ and the answer are recorded here because a conversation event is not a committed
 > **Operator:** "i tend to a + d. but elaborate on c" → then, after the elaboration: "do „b) also
 > implement D2/D4 under an A+D decision this run"
 
-⭐ **E5 is what makes A + D coherent rather than contradictory.** D exists to prevent a third
+⭐ **E5 was what made A + D look coherent rather than contradictory.** D exists to prevent a third
 zero-adoption surface after the `130`→`135` build-and-remove cycle; on Claude Code a plugin-declared
-server is consumed by the agent automatically, so *declaring* it creates the first consumer instead of
-waiting for one. The two halves partially collapse into one step here.
+server is consumed by the agent automatically, so *declaring* it would create the first consumer
+instead of waiting for one.
+
+⚠ **That reasoning did not survive implementation, and the operator was asked a second time.** Round-2
+verification established that a client binds the extension when the **plugin** is enabled — earlier
+than any configuration this surface reads — so a shipped declaration would let `pm-plugin-development`
+take `.md` from an operator's own Markdown server and answer nothing in its place while unconfigured.
+That is the exact failure the proposal's own E5 caveat named, and it violates D4. Escalated:
+
+> **Operator:** chose "Drop the declaration, document it" over shipping it with a stated trade-off.
+
+So the bundle ships **no** `lspServers` declaration; `SKILL.md` and the user page document the block
+for an operator to add. ⛔ **The consequence is stated rather than softened: the surface has no
+automatic consumer.** `query` is reachable without a client; the editor surface is one documented
+copy-paste away.
 
 The deepened Option C analysis (`24cb133`) is a finding in its own right: C's degradation contract is
 genuinely reusable, but its **store** is a direction error — a machine-local binding for a
@@ -211,7 +224,7 @@ Per instance.
 | 4 | Sub-agent | `references()` was **not** a warm-index lookup: the per-owner directory walk ran once per reverse edge, uncached — ~125 ms for a 443-edge component, and **unchanged on repeat**, so residency bought it nothing | **Fixed** — walk cached per owner; repeat 125 ms → 2.6 ms |
 | 5 | Sub-agent | Four sites claimed "a warm index answers **every verb** in under 5 ms" — false for `references` | **Fixed at all four** (`SKILL.md`, `_corpus_index.py`, `corpus_lsp.py`, concepts page) — restated with the ~20 ms first-call cost named, and a row added to the developer table |
 | 6 | Sub-agent | ⛔ `serve` invoked as `SKILL.md` canonically documented it **cannot work**: the executor dispatches with `capture_output=True` (buffers until exit) and `text=True` (rewrites `\r\n\r\n` as `\n\n`) | **Fixed** — `serve` removed from Canonical invocations, § "How `serve` is launched" added, and a subprocess test now asserts CRLF framing survives a real pipe |
-| 7 | Sub-agent | ⛔ No `lspServers` declaration existed, so the surface had **zero consumers** — the exact condition D's half of the decision exists to prevent, with three passages describing a manifest state that did not exist | **Fixed** — bundle declares the server; script bootstraps its own `sys.path` (allowlisted as a pre-executor entry point); handshake verified with no `PYTHONPATH` |
+| 7 | Sub-agent | ⛔ No `lspServers` declaration existed, so the surface had **zero consumers** — the exact condition D's half of the decision exists to prevent, with three passages describing a manifest state that did not exist | **Superseded by #23** — the declaration was added, then found to bind `.md` on plugin-enable and removed by operator decision; it is now **documented, not shipped**. The `sys.path` bootstrap from that fix stands and is load-bearing (allowlisted; handshake verified with no `PYTHONPATH`, including from the generated `target/claude/` tree) — an operator-added declaration needs it |
 | 8 | Sub-agent | The RPC-level no-op tests built an unconfigured tree and then discarded it, stipulating `{'enabled': False}` — the composition the plan asks to be *verified* was untested | **Fixed** — three full-chain tests added |
 | 9 | Sub-agent | `report-01.md` did not exist; the proposal's two links to it were dangling and D0(a)'s method was unverifiable | **Fixed** — this report |
 | 10 | Sub-agent | The proposal's opening said the run "implemented no protocol", contradicted by the appended Decision section | **Fixed** — opening reconciled |
@@ -225,10 +238,25 @@ Per instance.
 | 18 | Sub-agent | The `language_servers` docs gained no back-reference to the new sibling config surface (cross-referencing was one-directional) | **Fixed** — § "A sibling surface lives elsewhere, deliberately" added |
 | 19 | Sub-agent | `CLAUDE.md` component counts ("157 registered components (153 skills…)") are drifted; re-derived from git, `origin/main` carries **155** `SKILL.md` files and this branch **156** | **DEFERRED, not fixed** — the drift is **pre-existing and larger than the doc suggests**: against 156 skills + 2 agents + 2 commands the true total is **160**, not the 157 claimed and correcting it requires settling what "components" counts, which is a separate question this plan does not own. Recorded so it is visible rather than silently inherited |
 | 20 | Sub-agent (noted, not a defect) | No `manage-config` verb writes the new section; the user page instructs hand-editing, unlike every other marshal.json section | **Accepted as-is** — D4 requires the path be *documented*, not scripted. Recorded as an asymmetry for a future plan |
+| 22 | Sub-agent (round 2) | ⛔ **BLOCKING** — the multi-target generator silently dropped `lspServers`: `PASSTHROUGH_FIELDS` is an allowlist, the emitter excludes the source manifest, and the equality check compares regenerated against emitted (both missing the key). The declared server never reached the deployed artifact, and every gate stayed green | **Fixed** — key added to the allowlist; the test fixture now carries a non-component top-level key (without one the existing passthrough test passed **vacuously**) and two tests pin the round-trip |
+| 23 | Sub-agent (round 2) | ⛔ **HIGH** — the user page promised the surface "will not displace a server you already rely on unless you switch it on". False: the manifest binds `.md` on **plugin**-enable, while the `marshal.json` switch is read afterwards and governs only whether the server *answers* | **Escalated to the operator, then fixed** — declaration dropped from the manifest and documented instead (see D0(b) above); the user page now states the cost of adding it rather than promising it away |
+| 24 | Sub-agent (round 2) | Findings 22 and 23 **masked each other** — with the manifest dropped at build, the collision could not occur, so fixing 22 is what made 23 live | **Recorded** — both resolved together, in that order |
+| 25 | Sub-agent (round 2) | Row 5's "fixed at all four sites" was itself wrong: a **fifth** site (the proposal's E3 section) still claimed single-digit-millisecond answers for every verb, and its table had no `references` row | **Fixed** — E3 corrected and annotated with the measured first-call cost |
+| 26 | Sub-agent (round 2) | The round-1 concepts fix replaced an **accurate** "400-fold" with an overstated "three orders of magnitude" — the sentence's own figures give ~380× | **Fixed** — restated as roughly 400-fold against the reference set |
+| 27 | Sub-agent (round 2) | The `sys-path-bootstrap` category name and finding text say "runs **before** the executor exists"; the corpus server runs **outside** it, not before it | **Fixed** — category name and finding text both widened |
+| 28 | Sub-agent (round 2) | The manifest passed no `--project-path`, so the server depended on the client's cwd; a cwd outside the project yields empty capabilities indistinguishable from a deliberate opt-out | **Fixed** — the documented block pins `--project-path ${CLAUDE_PROJECT_DIR}` |
+| 29 | Sub-agent (round 2) | The report's wall-clock (~2 h 15 min) was understated against its own commit timestamps | **Fixed** — restated as a ≥ 2 h 32 min lower bound, since the start instant was never recorded |
+| 30 | Sub-agent (round 2) | Row 19's skill count read as 156 + 1 = 157; re-derived, `origin/main` has 155 and this branch 156, and `CLAUDE.md`'s true total is 160, not 157 | **Fixed** — row 19 restated |
+| 31 | Sub-agent (round 2) | Contract check said "7 commits"; the count had moved | **Fixed** — the count is no longer restated, since it moves after the table is written |
 | 21 | CI | _(none at time of writing — see Contract check)_ | — |
 
-**Verification sub-agent, round 1 verdict: NOT READY**, on three substantive defects (#6 blocking, #4
-and #7 high) plus documentation gaps. All were fixed and a second round dispatched.
+**Round 1 verdict: NOT READY**, on three substantive defects (#6 blocking, #4 and #7 high) plus
+documentation gaps. All fixed, and a second round dispatched.
+
+**Round 2 verdict: NOT READY**, on one blocking (#22) and one high (#23). ⭐ Round 2 is the round that
+justifies the re-dispatch rule: #22 was *created by* round 1's own fix, invisible to every gate, and
+would have shipped a feature that did nothing in the deployed artifact. All round-2 findings are now
+fixed or escalated-and-resolved; the surface's honest consumer story changed as a result.
 
 ### The cold read (a required D5 verification)
 
@@ -339,11 +367,15 @@ run, on two different error classes. No amendment needed; it worked as written.
 - ⛔ **D3 remains unbuilt**, hard-gated on `230-validate-precision`. When that lands, the diagnostic
   capability is a small addition here: advertise the provider and stream the validator's set. The
   97.4 % false-positive measurement above is the baseline it must improve on.
-- ⚠ **The `lspServers` declaration is verified by handshake but not in a deployed plugin cache.** The
-  `sys.path` bootstrap is layout-derived and resolves in both the source tree and a sibling-bundle
-  cache layout, and was proven with no `PYTHONPATH` — but this clone has no `target/` or
-  `~/.claude/plugins/cache`, so the deployed path is reasoned, not observed. First local install
-  should confirm it.
+- ⚠ **The surface has no automatic consumer, by decision.** The `lspServers` block is documented in
+  `SKILL.md` and the user page but not shipped, so an editor reaches the server only after an operator
+  adds it. `query` is reachable without a client. The `sys.path` bootstrap it depends on **was**
+  observed in the deployed layout — round-2 verification drove a handshake from the generated
+  `target/claude/` tree with no `PYTHONPATH` — so that half is no longer merely reasoned.
+- ⚠ **The extension-collision behaviour itself is unverified against a running client.** "First
+  registered wins for a shared extension" comes from this run's web research, not from an offline
+  source or an observed client. It is the premise the whole #23 decision rests on; if a client instead
+  arbitrates some other way, that decision is worth revisiting.
 - ⚠ **`.md` extension collision** is a real risk the design mitigates by defaulting off; no client was
   observed arbitrating two Markdown servers.
 - **Finding 19** (`CLAUDE.md` component counts) is deferred and unowned — it predates this plan.

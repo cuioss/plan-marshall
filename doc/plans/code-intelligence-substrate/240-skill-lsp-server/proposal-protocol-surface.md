@@ -309,11 +309,21 @@ highest-visibility surface this epic has. The plan's hard gate is correctly plac
 ⭐ The proposal above was presented to the operator, who **decided A + D**: build the resident LSP
 server (A), sequenced with D's discipline that the surface must not ship without a consumer.
 
-⭐ **E5 is what makes that pairing coherent rather than contradictory.** D's whole point is to avoid a
-third zero-adoption surface after the `130`→`135` build-and-remove cycle. On Claude Code, a
-plugin-declared LSP server is consumed by the **agent**, automatically — so declaring the server
-*creates* its first consumer instead of waiting for one. A and D partially collapse into a single step
-on this platform rather than being sequential.
+⭐ **E5 was what made that pairing look coherent rather than contradictory.** D's whole point is to
+avoid a third zero-adoption surface after the `130`→`135` build-and-remove cycle. On Claude Code a
+plugin-declared LSP server is consumed by the **agent**, automatically — so declaring the server would
+*create* its first consumer instead of waiting for one, and A and D would partially collapse into a
+single step.
+
+⚠ **Implementation refuted that, and the operator re-decided.** A client binds the extension when the
+**plugin** is enabled, which is earlier than any configuration this surface reads — so a shipped
+declaration would let `pm-plugin-development` take `.md` from an operator's own Markdown server and,
+while unconfigured, answer nothing in its place. That is precisely the failure this proposal's own E5
+caveat named ("opt-in must be default-off **at the manifest level**, not merely a config flag the
+server reads after it has already claimed the extension"), and a static manifest cannot express a
+conditional binding. Put back to the operator, the resolution was to **document the declaration rather
+than ship it**. The surface therefore has no automatic consumer: the `query` verb is reachable without
+a client, and the editor surface is one documented copy-paste away.
 
 ⚠ **One tension the decision had to resolve.** A plugin-declared server **starts automatically when
 its plugin is enabled**, which is the opposite of D4's "strictly opt-in". Satisfying D4 therefore

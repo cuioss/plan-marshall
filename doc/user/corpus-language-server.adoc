@@ -78,16 +78,38 @@ To switch it off again, set `enabled` to `false` or delete the key. There is no 
 
 === Connecting an editor or agent
 
-You do not wire up the server yourself. The `pm-plugin-development` bundle declares it in its plugin manifest under `lspServers`, so an LSP client — Claude Code included — starts it automatically when the plugin is enabled, and reaches it for `.md` files.
+Turning on the switch above makes the server *willing* to answer. It does not connect an editor to it — that is a second, separate step, and it is deliberately yours to take.
 
-That is why the switch above exists at all: because the client starts the server regardless, the *server* is what checks whether you opted in, and answers nothing until you have. Enabling the plugin does not enable this surface.
+To wire up an LSP client, add a declaration of this shape to your own configuration:
 
-[NOTE]
+[source,json]
+----
+"lspServers": {
+  "skill-corpus": {
+    "command": "python3",
+    "args": [
+      "${CLAUDE_PLUGIN_ROOT}/skills/tools-corpus-language-server/scripts/corpus_lsp.py",
+      "serve",
+      "--project-path", "${CLAUDE_PROJECT_DIR}"
+    ],
+    "extensionToLanguage": { ".md": "markdown" },
+    "diagnostics": false
+  }
+}
+----
+
+[IMPORTANT]
 ====
-If you use another Markdown language server, note that a client gives one server per file extension: whichever registers `.md` first handles it, and the others never start. This surface is off by default partly for that reason — it will not displace a server you already rely on unless you switch it on.
+*Plan Marshall does not ship this declaration, on purpose — and you should know what adding it costs.*
+
+A client binds a file extension to a language server when the *plugin* is enabled, before any of this feature's own configuration is read. A client also gives one server per extension: whichever claims `.md` first handles it, and the others never start.
+
+So if Plan Marshall shipped the declaration, enabling this bundle for any of its other skills could quietly take `.md` away from a Markdown language server you already use. Adding it yourself is a deliberate choice, made knowing that: if you rely on another Markdown server, adding this block may displace it.
 ====
 
-For a scripted check without an editor, `query` answers the same three questions directly:
+Until you add it, nothing connects to the server and nothing is displaced. The `query` verb below stays available either way, and needs no client at all.
+
+Whether or not you wire up a client, `query` answers the same three questions directly:
 
 [source,bash]
 ----

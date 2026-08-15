@@ -70,7 +70,7 @@ The converse claim held. The mature "language server for agents" projects run th
 | A direction error. That store binds a language to a *locally-installed third-party binary*, which is why it is machine-local and git-ignored. This server ships with the repository, so its command is a constant every developer would have to enter identically. Its key is also a *language*, which a corpus is not, and its `enabled` switch is already overloaded — enabling a language there also switches on a whole-workspace harvest at every crawl. Its hosting model is explicitly short-lived-subprocess-per-call, which is the two-second shape again.
 
 | Doing nothing until a consumer exists
-| A serious option, given that the dependency verbs had zero adoption and that this epic has already built and removed one zero-adoption surface. It was not needed here for a specific reason: on Claude Code a plugin-declared language server *is* consumed automatically by the agent, so declaring the server creates its first consumer rather than waiting for one.
+| A serious option, given that the dependency verbs had zero adoption and that this epic has already built and removed one zero-adoption surface. It was initially set aside because on Claude Code a plugin-declared language server is consumed automatically by the agent, so declaring it would create the first consumer rather than waiting for one. ⚠ **That reasoning did not survive implementation**, and the outcome sits closer to this option than the decision anticipated — see "The declaration is documented, not shipped" below.
 |===
 
 What *was* taken from the `language_servers` design is its degradation contract — `not_configured` / `ready` / `ok` with a `provider_count` discriminator, so a caller can always distinguish "nothing ran" from "ran and found nothing". That vocabulary is reused verbatim; the store is not.
@@ -85,7 +85,17 @@ Version-controlled rather than machine-local is deliberate, and is the same argu
 
 == Two constraints the decision carries forward
 
-*Extension collision.* `extensionToLanguage` binds by file extension, and the documented behaviour when several enabled servers claim one extension is that the first registered wins and the others never start. A `.md` registration could therefore shadow a user's own Markdown server. This is the concrete reason opt-in must be default-off rather than a flag consulted after the extension is already claimed.
+*Extension collision.* `extensionToLanguage` binds by file extension, and the documented behaviour when several enabled servers claim one extension is that the first registered wins and the others never start. A `.md` registration could therefore shadow a user's own Markdown server. This is the concrete reason opt-in must be default-off rather than a flag consulted after the extension is already claimed — and, as the next section records, it is what decided that the declaration is not shipped at all.
+
+== The declaration is documented, not shipped
+
+⛔ The bundle manifest carries **no** `lspServers` declaration. The `SKILL.md` and the user page document the block; an operator adds it deliberately.
+
+This reverses the reasoning that set Option D aside, and the reversal is the most important thing on this page. A client binds an extension when the **plugin** is enabled, which is strictly earlier than any configuration this surface reads — so the `marshal.json` switch governs whether the server *answers*, never whether it *binds*. A shipped declaration would therefore mean that enabling `pm-plugin-development` for any of its other skills could take `.md` from an operator's own Markdown server and, while this surface was unconfigured, answer nothing in its place. That is a change to an unconfigured project's behaviour, which the opt-in requirement forbids outright.
+
+⚠ Both halves of that could not be had. The consequence is stated rather than softened: **the surface has no automatic consumer.** The `query` verb is reachable without a client, and the editor surface is one documented copy-paste away — a smaller adoption gap than shipping nothing, and a larger one than the decision assumed.
+
+⭐ Two findings from implementation are worth carrying forward, because neither was visible from the analysis. First, the two defects masked each other: the multi-target generator was silently dropping `lspServers` from the built artifact, so the collision could not occur and the declaration did nothing — fixing the generator is what made the trade-off real and forced this decision. Second, a static manifest cannot express a conditional binding, so "declare it and let the server decide" is not available on this platform at all.
 
 *Diagnostics stay withheld.* No diagnostic capability is advertised. The validator's unresolved set is presently about 97% false positives — documentation placeholders, foreign namespaces such as build-command and Maven coordinates, and notations whose third segment is a subcommand rather than a script. Advertising a diagnostic provider before that precision work lands would ship confidently wrong warnings at the substrate's most visible surface.
 

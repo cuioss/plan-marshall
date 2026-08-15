@@ -141,27 +141,43 @@ server:
 - `text=True` applies universal-newline translation, rewriting the LSP header terminator `\r\n\r\n`
   as `\n\n` and corrupting the frame.
 
-A language server is spawned by its **client**, not by a verb call. This bundle declares it in
-`plugin.json` under `lspServers`, so an LSP client starts it directly:
+A language server is spawned by its **client**, not by a verb call. An LSP client is pointed at it
+with a declaration of this shape:
 
 ```json
 "lspServers": {
   "skill-corpus": {
     "command": "python3",
-    "args": ["${CLAUDE_PLUGIN_ROOT}/skills/tools-corpus-language-server/scripts/corpus_lsp.py", "serve"],
+    "args": [
+      "${CLAUDE_PLUGIN_ROOT}/skills/tools-corpus-language-server/scripts/corpus_lsp.py",
+      "serve",
+      "--project-path", "${CLAUDE_PROJECT_DIR}"
+    ],
     "extensionToLanguage": { ".md": "markdown" },
     "diagnostics": false
   }
 }
 ```
 
-⭐ **That declaration is what gives the surface a consumer.** A plugin-declared server is started
-automatically when the plugin is enabled and is consumed by the agent itself — which is also precisely
-why the opt-in switch cannot live in the manifest, and lives in `marshal.json` instead (above).
+⛔ **This bundle deliberately does NOT ship that declaration**, and the reason is the one thing a
+static manifest cannot express. A plugin-declared server is started — and its extension claimed — the
+moment the **plugin** is enabled. The `marshal.json` switch is read by the server *afterwards*, so it
+governs whether the server **answers**, never whether it **binds**. Shipping the declaration would
+therefore mean that enabling this bundle for any of its other skills could take `.md` away from an
+operator's own Markdown language server, and — when this surface is unconfigured — answer nothing in
+its place. That is a change to an unconfigured project's behaviour, which this surface is required not
+to make.
 
-`diagnostics: false` is set explicitly rather than left to the default (`true`), because the server
-advertises no diagnostic provider while D3 is gated; declaring it false keeps the manifest honest
-about what the server offers.
+So the declaration is **documented rather than shipped**: an operator who wants the editor surface
+adds the block above to their own configuration, which is a deliberate act with a visible cost. The
+trade-off is real and is stated rather than hidden — without the declaration the surface has no
+automatic consumer, and the `query` verb below is the reachable path until an operator wires one.
+
+Two details in the block are load-bearing. `--project-path ${CLAUDE_PROJECT_DIR}` pins the workspace
+explicitly: without it the server resolves its project from the client's working directory, and a cwd
+outside the project yields empty capabilities that are indistinguishable from a deliberate opt-out.
+`diagnostics: false` is set rather than left to the default (`true`), because the server advertises no
+diagnostic provider while D3 is gated.
 
 Because a client spawns the script **without** the executor, there is no injected `PYTHONPATH`. The
 script therefore bootstraps its own `sys.path` from its location up to the bundles root — the

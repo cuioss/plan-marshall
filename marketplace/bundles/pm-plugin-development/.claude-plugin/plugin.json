@@ -19,21 +19,6 @@
   ],
   "agents": [],
   "commands": [],
-  "lspServers": {
-    "skill-corpus": {
-      "command": "python3",
-      "args": [
-        "${CLAUDE_PLUGIN_ROOT}/skills/tools-corpus-language-server/scripts/corpus_lsp.py",
-        "serve",
-        "--project-path",
-        "${CLAUDE_PROJECT_DIR}"
-      ],
-      "extensionToLanguage": {
-        ".md": "markdown"
-      },
-      "diagnostics": false
-    }
-  },
   "skills": [
     "./skills/ext-outline-workflow",
     "./skills/ext-self-review-plan-marshall",
