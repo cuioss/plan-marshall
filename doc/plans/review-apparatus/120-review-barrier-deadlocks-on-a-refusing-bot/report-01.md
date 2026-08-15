@@ -145,12 +145,26 @@ to undo for reviewed-vs-nobody-reviewed.
 `git diff --name-only origin/main...HEAD -- '*.py'` is **non-empty** (5 Python files: the classifier,
 the registry, the two producer modules, and three test modules), so the full gate applied.
 
-`./pw verify` — **SUCCESS**, run twice: once at `b7a7057` (19702 passed, 14 skipped) and again after
-the round-1 review fixes at `3131bdc` (**19731 passed, 14 skipped, 0 failed**, 11m27s). Read from the
-streamed tool output, not the exit code: `coverage: COMPLETE — … mypy(production) [399 files], ruff,
-SPDX headers, plugin-doctor [marketplace-wide], mypy(test) [737 files], module-tests [whole-tree
-pytest]`. `./pw quality-gate` additionally ran before every commit touching `*.py`, each reporting
-`Success: no issues found in 399 source files`, `All checks passed!`, and `SPDX-header check passed`.
+`./pw verify` ran four times. ⛔ **One of those runs exited 0 while FAILING** — see F37 — so the
+outcome below is read from the streamed output, never the exit code:
+
+| At | Result |
+|---|---|
+| `b7a7057` | SUCCESS — 19702 passed, 14 skipped |
+| `3131bdc` | SUCCESS — 19731 passed, 14 skipped, 0 failed (11m27s) |
+| `7adf802` | ⛔ **FAILED** — `verify: test-compile failed`, 2 mypy errors, **exit code 0** |
+| `97f7493` | SUCCESS — **19740 passed, 14 skipped, 0 failed** (10m00s), zero sub-step failure lines |
+
+Final run's coverage line: `COMPLETE — … mypy(production) [399 files], ruff [marketplace/bundles,
+test, .claude], SPDX headers, plugin-doctor [marketplace-wide], mypy(test) [737 files], module-tests
+[whole-tree pytest]`. `./pw quality-gate` additionally ran before every commit touching `*.py`, each
+reporting `Success: no issues found in 399 source files`, `All checks passed!`, and `SPDX-header check
+passed`.
+
+⚠ **The quality gate cannot substitute for the full verify here, and this run proved it.** The gate
+type-checks *production* only; the defect at `7adf802` was a test-only type error, visible to
+`test-compile`'s `mypy` over the 737-file test tree and to nothing else — not to the gate, and not to
+pytest, which ran the offending helpers without complaint.
 
 `git status --porcelain` was empty after both `verify` runs — **no `uv.lock` churn** reached a commit,
 and every commit staged explicit deliverable paths rather than `git add -A`.
@@ -174,6 +188,27 @@ One row per INSTANCE, never bundled.
 | F21 | Advance disclosure was **PARTIAL**: `size-caps` existed, was tested and documented, but **no workflow step routed a plan to it** — "where a plan can consult them" was satisfied only in the sense that a command existed | **FIXED** (`3131bdc`) — routed from `create-pr.md`, where a diff's size first becomes measurable |
 | F22 | A local `/sync-plugin-cache` is owed and must be recorded | **REJECTED.** The agent read `CLAUDE.md` without the lane carve-out. `cloud-plan-lane` § "Scope and precedence" states a cloud run **neither performs nor owes** a sync: it is a machine-local build step reading the git-ignored `target/` and writing `~/.claude/`, neither of which this run has or may touch |
 
+### From the pre-PR verification sub-agent — round 2
+
+⭐ **Round 2's headline finding is more serious than round 1's, and it is the same defect one layer
+further out.** This is the archetype the plan itself names as the epic's most frequent recurrence — *a
+fix for a defect that reproduces the defect's family* — and it recurred twice inside this single run.
+
+| # | Finding | Disposition |
+|---|---|---|
+| F25 | ⭐⭐ **The non-option survived at the DEFAULT surface.** `review_rate_window_await` defaults to `false`, so on the default configuration the leaf's Branch 0 never fires and the dispatcher's structural branch table is **unreachable code**. The prompt an operator actually gets is the **pre-merge barrier's** — untouched by rounds 0–1 — which offered **"Re-triage now → loop back into automatic-review triage"** as option 1, and whose own default mode (`fail_into_loopback`) takes that action **automatically with no prompt at all**. For a size-capped bot a loop-back re-reviews a diff of the same size, the bot re-refuses, and the barrier re-reaches the identical verdict. It escaped every check because it is spelled *"re-triage"*, not *"wait"* — my `_WAIT_OFFER` regex, already widened once for exactly this class of miss, returns `False` on both "re-triage" and "loop back" | **FIXED** (`7adf802`). The barrier derives `{structural_bots}` from `bot_states` it already reads; the loop-back arm is UNAVAILABLE under **both** modes — `ask` gets its own prompt (split / accept / disable, no re-triage, both audit figures named), and `fail_into_loopback` neither loops nor prompts but logs the remedies and defers. **Mutation-verified**: reintroducing the re-triage option fails exactly the two barrier tests |
+| F26 | ⭐ **A remedy I added looped forever.** My "Disable this reviewer for this PR" branch asserted the re-dispatch settles. It does not: the recovery arms on ANY registered bot with no `required_bots` filter and fires before the participation guard, so the operator choosing the one remedy that resolves the block lands back on the identical prompt | **FIXED** (`7adf802`) — recovery scoped to required bots, which is independently correct: an optional bot's silence cannot block, so escalating it asks a question nobody needs. The dispatcher branch now names the scoping its settling claim depends on, and a test asserts both halves |
+| F27 | ⭐ **My round-1 cap-recovery broke a documented invariant.** It lived only on `check`, so `check` reported `refused_structural` and `deficit` reported `refused_hard` in exactly the scenario the recovery exists for — the cross-command disagreement three documents forbid in as many words. My own agreement test structurally could not see it: it handed both commands the cause directly | **FIXED** (`7adf802`) — hoisted to `recover_causes_from_caps`, shared by both; `--refusal-size-caps` moved to the shared flag block. The test now parametrizes the **cap-only** case, the only one that can observe it. **Mutation-verified**: removing `deficit`'s recovery fails exactly that case and nothing else |
+| F28 | **My round-1 crash fix introduced a smaller defect.** Falling back to `group(0)` on an empty declared capture returned the prose `"review limit of"` as a cap — comma-free, so it survives the CLI transport and renders beside a real `measured_diff_size`, making an unaudited gap look audited | **FIXED** (`7adf802`) — a declared group that captured nothing yields UNKNOWN; the no-group convention still uses the whole match, pinned separately |
+| F29 | `_extract_rate_limit_eta` carries the identical `group(1) is None` bug under the identical false docstring promise | **DEFERRED — recorded, not fixed.** Out of this plan's declared surface, latent-only (no registered bot declares `rate_limit_eta_patterns`), and fixing it would widen the diff into a sibling function this plan does not own. Named here so it is a known debt rather than an unnoticed one |
+| F30–F36 | **Seven further stale statements**, including two that instructed the defect: the `review_rate_window_await` **`configurable:` knob description** (machine-read, plugin-doctor-linted) still described the pre-fix class-first order with no cause branch, and a field-contract line said item 7a *"can route them identically"* — the exact folding the structural member exists to prevent. Plus "four distinct escalations", "a fourth shape", two literal `'size'` comparisons, item 7a's recording-branch preamble, and an ambiguous "all three" in `pr-review-operations.md` | **ALL FIXED** (`7adf802`) |
+
+### From the build gate
+
+| # | Finding | Disposition |
+|---|---|---|
+| F37 | ⛔ **`./pw verify` exited 0 while reporting `verify: test-compile failed`.** Two of my new doc-slicing helpers declared `-> str` but returned `Any` — `get_script_path` is untyped, so the `Path` and its `read_text()` propagate as `Any` through the slice. **Nothing else catches this**: the quality gate type-checks production only, and pytest runs the helpers happily. This is precisely the failure mode the lane contract documents, and the reason it requires reading the output rather than the exit code — reading the exit code would have shipped a red gate as green | **FIXED** (`97f7493`) |
+
 ### From my own independent sweep (found before round 1 returned)
 
 | # | Finding | Disposition |
@@ -195,6 +230,8 @@ case(s) and nothing else:
 | E — fold the structural bucket into `refused` | 1, the summary-distinguishes check |
 | F — stop `deficit` reading the cause | 1, the two-commands-agree check |
 | G — decouple the disclosure from the registry | 1, the disclosure-derivation check |
+| H — reintroduce the barrier's "Re-triage now" option | 2, both barrier-prompt checks |
+| I — remove `deficit`'s cap-recovery | 1, and only the **cap-only** agreement case — the parametrization added precisely because the `cause` case cannot observe it |
 
 ### From CI
 
