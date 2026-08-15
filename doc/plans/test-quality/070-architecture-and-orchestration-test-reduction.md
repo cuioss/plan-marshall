@@ -52,7 +52,11 @@ Two of those doses are specific to this slice.
 The **build-system family** — `build-gradle`, `build-maven`, `build-npm`, `build-operations`,
 `build-pyproject`, `build-server` — tests six implementations of one extension contract, and the six
 directories stage that contract's fixtures independently.
-`test/plan-marshall/build_test_helpers.py` exists to serve them, sits at the tree's root level, and
+`test/plan-marshall/build_test_helpers.py` exists to serve that family, but reaches only **four** of
+the six: `build-gradle`, `build-maven`, `build-npm` and `build-pyproject` import it;
+`build-operations` and `build-server` do not reference it at all. So D1 is two jobs, not one —
+consolidating four directories that already share a surface, and onboarding two that never did.
+Re-derive the importer set before scoping the work. The helper sits at the tree's root level and
 carries no underscore prefix — so nothing marks it as non-collectable, the existing
 `unique-fixture-basenames` doctor rule does not inspect it, and its own module docstring records that
 loading it through `load_script_module` **re-registers `_build_execute_factory` in `sys.modules`**,
@@ -84,10 +88,24 @@ a `sys.modules` registration is named, prefixed, and documented where the hazard
    avoided altogether, **do not take that decision here**: it changes behaviour `conftest.py` reasons
    about, `conftest.py` is owned by plan `020`, and a concurrent change to both is exactly the
    collision this epic's partition exists to prevent. Record it as a proposal.
-   *Done when:* the file is renamed with every importer updated, the six `build-*` directories stage
-   the extension contract through it rather than independently, the `sys.modules` hazard is documented
-   at the fixture that causes it, and any avoidance of the re-registration is a recorded proposal
-   rather than a change.
+   **Rename `test/plan-marshall/discovery_test_helpers.py` to `_discovery_fixtures.py` in the same
+   deliverable.** It is the second unprefixed root-level helper, invisible to the same doctor rule for
+   the same reason, and its only two importers — `build-npm/test_npm_discover.py` and
+   `build-gradle/test_gradle_discover_modules.py` — are both in **this** plan's slice. Plan `060`
+   works in the tree it sits at the root of but explicitly does **not** own it, precisely because
+   renaming it from there would break two live imports here.
+
+   **One reference lives in a file this plan may not edit.** `test/conftest.py` names
+   `test/plan-marshall/build_test_helpers.py` **by path** in the `_routing_namespaces` docstring, as
+   part of its explanation of why the daemon-routing fixture patches closure `__globals__`. The rename
+   makes that path stale, and `conftest.py` is plan `020`'s surface. Do not edit it: **record the
+   stale reference as a proposal in the report**, naming the file, the symbol, and the corrected path,
+   exactly as you do for the re-registration question above. The `grep -rln 'build_test_helpers' test`
+   in the claim table will surface it — this is what to do when it does.
+   *Done when:* both files are renamed with every importer updated, the six `build-*` directories
+   stage the extension contract through the shared fixture rather than independently, the `sys.modules`
+   hazard is documented at the fixture that causes it, and both the re-registration question and the
+   stale `conftest.py` reference are recorded proposals rather than changes.
 
 2. **D2 — One plan-lifecycle staging fixture** — apply **B4** across the phase and lifecycle
    directories (`phase-1-init`, `phase-2-refine`, `phase-3-outline`, `phase-4-plan`, `execute-task`,
@@ -179,6 +197,8 @@ one rename, and nothing else:
 - `q-gate-validation-agent/`, `ref-workflow-architecture/`, `targets-claude/`
 - `test_lane_refactor_cleanup_sweep.py`, `test_plan_marshall_plugin_extension.py`
 - `build_test_helpers.py` → `_build_extension_fixtures.py` (rename, D1)
+- `discovery_test_helpers.py` → `_discovery_fixtures.py` (rename, D1 — both its importers are in this
+  slice, which is why plan `060` does not own it)
 
 ## Claim labels
 
@@ -189,7 +209,10 @@ one rename, and nothing else:
 | Loading `_build_execute_factory` through `load_script_module` re-registers it in `sys.modules`, and `conftest.py`'s `_neutralize_daemon_routing` works around that by patching closure `__globals__` dicts | OBSERVED | `test/conftest.py`'s `_routing_namespaces` docstring, which states both facts and why patching a module object is silently partial |
 | `test/plan-marshall/build-server/` is carved out of `_neutralize_daemon_routing` **by location** | OBSERVED | `test/conftest.py`'s `_DAEMON_ROUTING_CARVE_OUT` constant and the fixture that reads it |
 | The six `build-*` directories stage the extension contract independently rather than through a shared surface | HYPOTHESIS — **gating for D1 and D5** | Read the module preamble of one module per `build-*` directory and record which staging each uses. If they already share a surface, D1 is a rename plus a docstring change and D5's parametrization is the whole deliverable — say so. |
-| No module outside the six `build-*` directories imports `build_test_helpers` | HYPOTHESIS — **asserted absence; the rename's blast radius depends on it** | `grep -rln 'build_test_helpers' test` |
+| `build_test_helpers` is imported by exactly four `build-*` directories (`build-gradle`, `build-maven`, `build-npm`, `build-pyproject`) and by nothing outside this slice | OBSERVED | `grep -rln 'build_test_helpers' test` — note `test/conftest.py` names it **by path in a docstring**, which the same grep surfaces and which D1 handles as a recorded proposal, not an edit |
+| `discovery_test_helpers` is imported only by `build-npm/test_npm_discover.py` and `build-gradle/test_gradle_discover_modules.py`, both in this slice | OBSERVED | `grep -rln 'discovery_test_helpers' test` |
+| The phase and lifecycle directories each stage a plan directory by hand and **none shares that staging with another** | HYPOTHESIS — **asserted absence, the higher-risk half; it is D2's entire justification** | Read the staging preamble of one module per directory in the D2 group and record which helper, if any, each uses. If two already share one, D2 is an extension of that surface rather than a new one — say so rather than building a second. |
+| The partition holds — every directory under `test/plan-marshall/*/` and every top-level `test/` entry appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the two deliberate exclusions. A directory in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
 
 ## Verification
@@ -214,7 +237,24 @@ happen.
 
 **Executable.** `./pw verify` (the lane's build gate; this plan changes Python). Plus the
 `plugin-doctor test-conventions` scope over each directory in the slice, before and after, with the
-per-rule counts recorded.
+per-rule counts recorded. Invoke the **git-tracked** script — `.plan/execute-script.py` is
+git-ignored and absent from a fresh clone, so do not go looking for it:
+
+```bash
+python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py test-conventions --test-root {directory}
+```
+
+Confirm the argument spelling against that script's own `--help` before relying on it. If the doctor
+cannot be invoked, report the affected measurement **unavailable** rather than substituting a weaker
+check.
+
+**By reading — cold read, required for D5.** D5 rewrites text whose value is what a later reader takes
+from it, and the risk is not that too much history is removed but that the **invariant** is removed
+along with it. Dispatch the lane's pre-PR verification sub-agent with **five rewritten test modules and
+no other context** — not this plan, not the originals — and ask, for each of ten named tests: "What
+contract does this test pin, and why does it matter?" A test whose rewritten docstring cannot answer
+both has been over-stripped; restore the invariant (not the history) and re-read. Record the answers
+verbatim.
 
 **By reading.** After D5, read the parametrized build-contract table cold and confirm from its `ids=`
 list alone which of the six implementations each row exercises and which contract question it asks. A

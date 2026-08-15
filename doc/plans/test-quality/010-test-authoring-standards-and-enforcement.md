@@ -111,20 +111,36 @@ check rather than against a reviewer's memory.
    *Done when:* both skills carry the rule with its grounding and with a worked before/after example
    drawn from a real module in this tree, and neither states it as a style preference.
 
-4. **D4 — Write the arrange-placement, parametrization, and argument-construction rules** — into
-   `pm-dev-python:pytest-testing` § "Test Organization" (and the SKILL.md Quick Reference table).
-   Three rules, each stated with the threshold that triggers it: a literal repeated in **three or
-   more** tests in a module becomes a module constant; a setup sequence repeated in three or more
-   tests becomes a fixture; an object built in three or more tests becomes a factory with keyword
-   overrides. Two tests differing only in input and expected output are one
-   `@pytest.mark.parametrize` whose `ids=` carries what the docstrings said. Command arguments are
-   built through the shared real-parser helper, never as a hand-written `argparse.Namespace` — because
-   a hand-built namespace does not carry the parser's defaults, so a newly-added defaulted flag breaks
-   production while the suite stays green. Cross-reference
-   `persona-module-tester` § "Foundation utilities — tests against the CLI", which already states the
-   principle for the CLI layer; this is the same principle at the namespace layer.
-   *Done when:* all four rules are stated with their thresholds, the namespace rule names the
-   defaults-bypass as its reason, and the SKILL.md Quick Reference table has a row for each.
+4. **D4 — Write the arrange-placement, parametrization, argument-construction, test-budget and
+   assertion-layer rules** — into `pm-dev-python:pytest-testing` § "Test Organization" (and the
+   SKILL.md Quick Reference table). Six rules, each stated with the threshold that triggers it:
+   * a literal repeated in **three or more** tests in a module becomes a module constant;
+   * a setup sequence repeated in three or more tests becomes a fixture;
+   * an object built in three or more tests becomes a factory with keyword overrides;
+   * two tests differing only in input and expected output are one `@pytest.mark.parametrize` whose
+     `ids=` carries what the docstrings said;
+   * command arguments are built through the shared real-parser helper, never as a hand-written
+     `argparse.Namespace` — because a hand-built namespace does not carry the parser's defaults, so a
+     newly-added defaulted flag breaks production while the suite stays green. Cross-reference
+     `persona-module-tester` § "Foundation utilities — tests against the CLI", which already states
+     the principle for the CLI layer; this is the same principle at the namespace layer;
+   * a **test function body over ~15 lines, excluding its docstring**, is carrying arrange logic that
+     belongs in a fixture or a factory. State this as a **review trigger, not a build failure** —
+     genuine scenario tests legitimately exceed it, and D5 ships no rule for it precisely because a
+     mechanical line count cannot tell a scenario from a bloated unit.
+
+   Additionally, into **both** skills, the **one-layer-per-contract** rule: where an in-process test
+   and a subprocess test assert the same behaviour, the in-process test is authoritative and the
+   subprocess coverage collapses to a single per-script CLI-plumbing smoke that proves the entry point
+   wires up. State the two exceptions that keep it safe — do not collapse where the subprocess test is
+   the *only* coverage, and do not collapse where the subprocess boundary is itself the subject
+   (environment propagation, exit-code contracts, stdout/stderr separation) — and state that every
+   collapse must name the in-process test that now carries the contract. Plans `030`–`080` all inherit
+   this; without it in the skills, only the one plan that spells it out would apply it.
+   *Done when:* all six rules plus the one-layer-per-contract rule are stated with their thresholds,
+   the namespace rule names the defaults-bypass as its reason, the test-budget rule is explicitly a
+   review trigger rather than a gate, the one-layer rule names both exceptions, and the SKILL.md Quick
+   Reference table has a row for each.
 
 5. **D5 — Add the structural rules to the `plugin-doctor` `test-conventions` scope** — implement in
    `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`,
@@ -147,9 +163,25 @@ check rather than against a reviewer's memory.
    Ship the tests in `test/pm-plugin-development/plugin-doctor/test_analyze_test_conventions_budget.py`
    (a new module — this plan owns `test_analyze_test_conventions*.py` and nothing else under that
    directory), each rule with a positive fixture that fires it and a negative control that does not.
-   *Done when:* `python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace
-   test-conventions --test-root test/` emits findings for all four rule ids over the live tree, each
-   rule has a matched positive/negative test pair, and the run reports the per-rule finding counts.
+
+   Landing four `warning` rules into this scope **falsifies two blanket statements in the standards
+   doc it lands in**: `doctor-test-conventions.md` currently opens its § Rules with "All three rules
+   emit findings with `severity: error`" and closes its § Severity Summary with "All three rules ship
+   with build-failing severity … Suppression is not provided." Both become false the moment a
+   `warning` rule exists there. Correct them in the same change — a standards doc that contradicts its
+   own rule table is the misleading-signal defect this epic is about.
+   *Done when:* running the doctor's `test-conventions` scope over `test/` emits findings for all four
+   rule ids over the live tree, each rule has a matched positive/negative test pair, the two blanket
+   severity statements are corrected to match the shipped rule set, and the run reports the per-rule
+   finding counts.
+
+   > **Invoking the doctor in this lane.** The generated executor `.plan/execute-script.py` is
+   > **git-ignored and absent from a fresh clone** — do not go looking for it, and do not cite it as
+   > the way to run this. Call the git-tracked script directly from the repository root:
+   > `python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py test-conventions --test-root test/`.
+   > Confirm the argument spelling against that script's own `--help` before relying on it; if the
+   > script cannot be invoked directly, report the deliverable **blocked** rather than substituting a
+   > weaker check.
 
 6. **D6 — Record the two decisions this run may not take** — in the run report, as proposals for the
    operator, not as changes:
@@ -161,6 +193,12 @@ check rather than against a reviewer's memory.
      `parse_frontmatter`, the shared `toon_parser`, and the identifier validators registered in
      `doctor-test-conventions.md` § "Rule 3 — Validator Registry". Re-derive the list; report it with
      the count.
+
+     **This is the whole-tree list, and two later plans refine halves of it.** Plan `060` § D5 derives
+     the candidates in the runtime and script-substrate slice; plan `080` § D5 derives them in the
+     generator slice. Both run after this one and both seed from the same three examples. State that
+     relationship in the report and fix the table's column set here, so the operator receives one list
+     refined twice rather than three lists with no stated relationship.
    * **Flipping the D5 rules to `error`.** They ship at `warning` because the tree currently violates
      all four at scale, and a build-failing rule landed over a non-compliant tree fails every
      subsequent build until the reduction plans finish. Record what the per-rule violation counts are
@@ -220,11 +258,15 @@ Nothing under `test/` other than that one new module. Nothing under `test/confte
 
 **Executable.** `./pw verify` (the lane's build gate — this plan changes Python under
 `marketplace/bundles/`, so the gate is armed). Additionally run the doctor scope itself over the live
-tree and record the per-rule finding counts in the report:
-`python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace
-test-conventions --test-root test/`. A rule reporting **zero** findings over a tree the census says
-violates it is a broken detector, not a clean tree — treat a zero as a failure to investigate, not as
-a pass.
+tree and record the per-rule finding counts in the report, invoking the **git-tracked** script rather
+than the git-ignored executor (see the note under D5):
+
+```bash
+python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py test-conventions --test-root test/
+```
+
+A rule reporting **zero** findings over a tree the census says violates it is a broken detector, not a
+clean tree — treat a zero as a failure to investigate, not as a pass.
 
 **By reading — cold read, required.** D1 through D4 are text whose entire value is the behaviour they
 produce in a later author; "implemented as specified" cannot verify them. Dispatch the lane's pre-PR

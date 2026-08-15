@@ -46,12 +46,19 @@ rows, step orderings, lane overrides. Tables belong in parametrized cases, and a
 slice is written that way.
 
 `manage-config/test_config_defaults.py` is the exemplar. It runs to roughly 3,990 lines for about 202
-tests, and around 22 of those tests come in pairs of the shape
-`test_default_plan_finalize_includes_{knob}` and `test_get_default_config_includes_{knob}` — the two
-members asserting the same knob's default through the same `_params_for(steps, step_id)` accessor,
-one against `DEFAULT_PLAN_FINALIZE` and one against `get_default_config()`. That is one table of
-`(step_id, param, expected_default)` rows crossed with two accessors, written out longhand
-twenty-two times, each copy carrying its own multi-paragraph docstring.
+tests, and around 22 of those functions share the naming shape
+`test_default_plan_finalize_includes_{knob}` / `test_get_default_config_includes_{knob}`, each
+reaching its knob through the same `_params_for(steps, step_id)` accessor and each carrying its own
+multi-paragraph docstring.
+
+**They are not 11 clean pairs, and the distinction decides D1's shape.** The two prefixes cover
+different knob sets — roughly 7 functions carry the first, roughly 15 the second — and only **three**
+knobs (`admin_merge_on_stuck_state`, `auto_rebase_threshold`, `merge_queue_wait_budget_seconds`) are
+genuinely crossed against both accessors. Those three are the clean two-accessor collapse. The rest
+share the naming shape while several assert unrelated subjects (`project_block`,
+`orchestrator_block`, `cost_size_token_table`, `working_prefixes`) and belong in a
+single-accessor table or in no table at all. Every one of those counts is a lead — re-derive the
+membership and the crossing before collapsing anything, because the naming shape is not the evidence.
 
 `manage-execution-manifest/test_manage_execution_manifest_compose.py` is the slice's largest module at
 roughly 5,400 lines. Its own section comment names its subject as "table-driven cases — one per row of
@@ -77,10 +84,13 @@ concentrated there, and stopping early after the large modules leaves the slice 
 early after the small ones.
 
 1. **D1 — Parametrize the contract tables** — starting with
-   `manage-config/test_config_defaults.py`. Collapse the
-   `test_default_plan_finalize_includes_{knob}` / `test_get_default_config_includes_{knob}` family
-   into a single parametrized table of `(step_id, param_name, expected_default)` rows, exercised
-   against both accessors, with `ids=` carrying what the per-test names said. Apply the same
+   `manage-config/test_config_defaults.py`. First **derive the family's real membership**: which knobs
+   are crossed against both accessors (the clean two-accessor collapse), which appear under one
+   accessor only (a single-accessor table), and which merely share the naming shape while asserting an
+   unrelated subject (not a table row at all — leave them). Then collapse each group into a
+   parametrized table of `(step_id, param_name, expected_default)` rows with `ids=` carrying what the
+   per-test names said. Do **not** assume the naming shape implies a pair; the Problem section above
+   records that it does not. Apply the same
    collapse to `manage-execution-manifest/test_manage_execution_manifest_compose.py`'s
    decision-matrix rows and `test_decision_rules.py`. Where a test in such a family carries a genuine
    extra assertion the others do not — a "not a flat sibling anymore" negative, a nested-shape check —
@@ -121,8 +131,8 @@ early after the small ones.
 
 5. **D5 — Docstrings state the invariant, not its history** — apply **B3** across the slice. Strip
    plan ids, deliverable ids ("this plan, D1"), PR numbers, lesson ids, and superseded-behaviour
-   narration ("the hand-maintained constant was removed", "PR #716 removed the centralized …") from
-   test docstrings and comments. **Keep** the present-tense rationale that says why an invariant is
+   narration (a docstring recording that a constant "was removed", or naming the PR that removed it)
+   from test docstrings and comments. **Keep** the present-tense rationale that says why an invariant is
    load-bearing — that is what a docstring is for. Where stripping a docstring would lose a genuine
    piece of design rationale that belongs somewhere, put it in the module docstring once rather than
    in every function.
@@ -173,7 +183,10 @@ Exactly these directories under `test/plan-marshall/`, and nothing else:
 | Claim | Label | Confirm/refute artifact |
 |---|---|---|
 | The slice is ~53,800 lines across the six listed directories | HYPOTHESIS | Re-derive: `wc -l $(find test/plan-marshall/{manage-config,manage-execution-manifest,manage-run-config,manage-references,manage-solution-outline,marshall-steward} -name 'test_*.py')` |
-| `test_config_defaults.py` carries ~202 tests in ~3,990 lines, ~22 of them in the `_includes_{knob}` pair family | OBSERVED | the file itself; `grep -n '^def test_default_plan_finalize_includes_\|^def test_get_default_config_includes_' test/plan-marshall/manage-config/test_config_defaults.py` |
+| `test_config_defaults.py` carries ~202 tests in ~3,990 lines, ~22 of them sharing the `_includes_{knob}` naming shape | OBSERVED | the file itself; `grep -n '^def test_default_plan_finalize_includes_\|^def test_get_default_config_includes_' test/plan-marshall/manage-config/test_config_defaults.py` |
+| Only **three** knobs are crossed against both accessors; the rest of the `_includes_` family is unpaired, and several assert unrelated subjects | OBSERVED | Extract the knob suffix under each prefix **separately** and intersect the two sets — a single grep returning the count 22 does **not** establish pairing. The three are `admin_merge_on_stuck_state`, `auto_rebase_threshold`, `merge_queue_wait_budget_seconds`. Re-derive before D1; the collapse shape depends on it |
+| The partition holds — every directory under `test/plan-marshall/*/` and every top-level `test/` entry appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the two deliberate exclusions. A directory in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
+| Almost none of this slice is written as parametrized tables | HYPOTHESIS | `grep -rn '@pytest.mark.parametrize'` over the six directories, against their test-function count. Report the ratio — it is D1's baseline |
 | `test_config_defaults.py` opens with a private `_load_module` and a four-level `Path(__file__).parent` chain, loading seven modules under bespoke aliases | OBSERVED | the first ~105 lines of that file |
 | `test_manage_execution_manifest_compose.py` describes its own subject as table-driven and then writes each row longhand | OBSERVED | the file's "Decision Matrix Tests — table-driven cases" section comment and the functions under it |
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
@@ -193,10 +206,17 @@ Exactly these directories under `test/plan-marshall/`, and nothing else:
    yield is large. If the floor cannot be reached without violating (1) or (2), **report the shortfall
    and stop**. The floor is a target, not a licence.
 
-**Executable.** `./pw verify` (the lane's build gate; this plan changes Python). Plus
-`python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace
-test-conventions --test-root test/plan-marshall/manage-config` and the same for each of the other five
-directories, before and after, with the per-rule counts recorded.
+**Executable.** `./pw verify` (the lane's build gate; this plan changes Python). Plus the doctor's
+`test-conventions` scope over each of the six directories, before and after, with the per-rule counts
+recorded. Invoke the **git-tracked** script — `.plan/execute-script.py` is git-ignored and absent from
+a fresh clone, so do not go looking for it:
+
+```bash
+python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py test-conventions --test-root test/plan-marshall/manage-config
+```
+
+Confirm the argument spelling against that script's own `--help` before relying on it. If the doctor
+cannot be invoked, report the D5 measurement **unavailable** rather than substituting a weaker check.
 
 **By reading.** Pick the three largest parametrized tables D1 produced and read each `ids=` list cold:
 a reader who has never seen the pre-collapse functions must be able to say what each row asserts from

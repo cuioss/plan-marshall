@@ -96,10 +96,11 @@ almost all the value is.
    times in a module becomes a fixture. `manage-lessons/_lessons_helpers.py`,
    `manage-tasks/_helpers.py` and `plan-retrospective/_plan_retrospective_fixtures.py` already exist —
    extend them rather than adding a second module beside them, and rename `manage-tasks/_helpers.py`
-   to a domain-prefixed name, since the bare `_helpers.py` spelling is exactly what the existing
-   `unique-fixture-basenames` doctor rule forbids.
-   *Done when:* each directory has at most one fixture module, none is named with a bare generic
-   basename, and no module stages the same plan-directory shape inline in three or more tests.
+   to `manage-tasks/_manage_tasks_fixtures.py`, since the bare `_helpers.py` spelling is one of the
+   three basenames the existing `unique-fixture-basenames` doctor rule forbids **by name**.
+   *Done when:* each directory has at most one fixture module, `manage-tasks/_helpers.py` is renamed
+   with every importer updated, none of the slice's fixture modules carries a bare generic basename,
+   and no module stages the same plan-directory shape inline in three or more tests.
 
 4. **D4 — Split every remaining module over the budget** — after D1 and D3, split what is still over.
    The slice's known over-budget modules include `manage-metrics/test_manage_metrics.py` (~4,870),
@@ -170,6 +171,7 @@ nothing else:
 | `manage-tasks/_helpers.py` carries the bare generic basename the existing `unique-fixture-basenames` rule forbids | OBSERVED | the file path; `doctor-test-conventions.md` § `unique-fixture-basenames` detection step 2 |
 | Every assertion in `test_audit_checks.py` belongs to exactly one identifiable check, so the decomposition is a clean partition | HYPOTHESIS — **gating for D1; settle it before moving anything** | Map every one of the ~90 classes to its check before the first move, and record the map in the report. A class that spans two checks is the case that decides whether a module is duplicated or a check is split — decide it explicitly, do not let the first move settle it. |
 | No test in this slice depends on `test_audit_checks.py`'s module-level import side effects surviving the split | HYPOTHESIS — **asserted absence, the higher-risk half** | The module loads `audit.py` via `spec_from_file_location` and registers it in `sys.modules` under a fixed name at import time. Confirm what else in the tree reads that `sys.modules` entry before splitting the loader across modules; a split that leaves two modules racing to register the same name is a flaky green. |
+| The partition holds — every directory under `test/plan-marshall/*/` and every top-level `test/` entry appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the two deliberate exclusions. A directory in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
 
 ## Verification
@@ -191,7 +193,24 @@ nothing else:
 
 **Executable.** `./pw verify` (the lane's build gate; this plan changes Python). Plus the
 `plugin-doctor test-conventions` scope over each directory in the slice, before and after, with the
-per-rule counts recorded.
+per-rule counts recorded. Invoke the **git-tracked** script — `.plan/execute-script.py` is
+git-ignored and absent from a fresh clone, so do not go looking for it:
+
+```bash
+python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py test-conventions --test-root {directory}
+```
+
+Confirm the argument spelling against that script's own `--help` before relying on it. If the doctor
+cannot be invoked, report the affected measurement **unavailable** rather than substituting a weaker
+check.
+
+**By reading — cold read, required for D5.** D5 rewrites text whose value is what a later reader takes
+from it, and the risk is not that too much history is removed but that the **invariant** is removed
+along with it. Dispatch the lane's pre-PR verification sub-agent with **five rewritten test modules and
+no other context** — not this plan, not the originals — and ask, for each of ten named tests: "What
+contract does this test pin, and why does it matter?" A test whose rewritten docstring cannot answer
+both has been over-stripped; restore the invariant (not the history) and re-read. Record the answers
+verbatim.
 
 **By reading.** After D1, list the new module filenames beside the audit checks named in
 `.claude/skills/audit-archived-plan-retrospectives/SKILL.md`'s check inventory. A reader must be able

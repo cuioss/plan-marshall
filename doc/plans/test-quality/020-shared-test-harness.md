@@ -24,8 +24,8 @@
 
 > **Read first.** The epic's scoping brief — the corpus census and the ten house-style rules — is
 > `doc/plans/test-quality/README.md`, a git-tracked sibling present in your clone. Read it before D1.
-> This plan builds the harness that makes rules **B4**, **B5**, **B6**, **B7** and **B10** cheap to
-> follow; plan `010` writes those rules into the governing skills.
+> This plan builds the harness that makes rules **B4**, **B6**, **B7** and **B10** cheap to follow;
+> plan `010` writes those rules into the governing skills.
 
 ## Problem
 
@@ -48,8 +48,10 @@ gap.
 — `conftest.create_marshal_json(base_dir, skill_domains=None, extra=None)`,
 `test/plan-marshall/manage-config/test_helpers.py::create_marshal_json(fixture_dir, config=None)`,
 and `test/plan-marshall/phase-6-finalize/test_triage_extension.py::create_marshal_json(fixture_dir, config)`
-— against roughly 253 call sites. Which one a module gets depends on which it imported. Beyond it,
-eighty-odd modules inline a `plan.phase-6-finalize` config literal by hand.
+— against roughly 231 call sites in ~22 modules. Which one a module gets depends on which it imported.
+Beyond it, ninety-odd modules inline a `plan.phase-6-finalize` config literal by hand. Every figure in
+this paragraph is a lead — re-derive it (`grep -rn 'create_marshal_json(' test --include=*.py`, minus
+the three definitions).
 
 **Module preamble.** Around 197 modules still open with a raw `spec_from_file_location` block or a
 `Path(__file__).parent.parent.parent.parent` chain to locate the scripts directory, re-implementing
@@ -170,8 +172,8 @@ instead of six.
 - `test/plan-marshall/manage-config/test_helpers.py` → `_manage_config_fixtures.py` — D3 (rename)
 - `test/plan-marshall/phase-6-finalize/test_triage_extension.py` — D2 (remove the duplicate definition)
 - `test/test_shared_harness.py` — D5 (new; sibling of the existing `test_conftest_discipline.py`)
-- The ~23 importers of `test_helpers` and the ~253 call sites of `create_marshal_json` — D2, D3
-  (import-line updates only)
+- The ~23 importers of `test_helpers` and the ~231 call sites of `create_marshal_json` across ~22
+  modules — D2, D3 (import-line updates only; both counts are leads, re-derive them)
 - Up to ten modules across four or more subtrees — D6
 
 Nothing under `marketplace/bundles/**`. Nothing in `pyproject.toml`.

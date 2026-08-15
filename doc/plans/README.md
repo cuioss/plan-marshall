@@ -34,12 +34,13 @@ where an author picks it up.
 
 ## Layout
 
-One directory per orchestrator epic; one directory per plan inside it.
+One directory per epic — ledger-backed or standalone; one directory per plan inside it.
 
 ```text
 doc/plans/
 ├── README.md                        # this file
-├── cloud-bridge.md                  # create / sync / collect rule (all three epics)
+├── cloud-bridge.md                  # create / sync / collect rule (ledger-backed epics),
+│                                    # plus the standalone-epic carve-out
 ├── _template/
 │   └── plan.md                      # authoring template for a new plan
 ├── truthful-signals/
@@ -88,12 +89,16 @@ written against — the corpus census, the house style, and the dependency graph
 plans may run at the same time. An epic that carries its brief in git this way needs no ledger to be
 executable; the pattern generalises to any future epic authored the same way.
 
-The two halves cannot see each other — the orchestrator tree is git-ignored, and a cloud session's
-working state dies with its VM — so **git is the only shared medium**.
+For a ledger-backed epic the two halves cannot see each other — the orchestrator tree is git-ignored,
+and a cloud session's working state dies with its VM — so **git is the only shared medium**.
 [`cloud-bridge.md`](cloud-bridge.md) is the rule for authoring a plan here, running it, and
-collecting it back into the orchestrator. Read it before doing any of the three.
+collecting it back into the orchestrator. Read it before doing any of the three. For a **standalone**
+epic there is no orchestrator to collect back into, so only the first two apply; `cloud-bridge.md`
+§ "standalone epic" states which of its paths are inert and which still bind.
 
 **There is no status file.** The tree itself is the state: a flat `{NNN}-{plan-name}.md` is authored
 and waiting, a `{NNN}-{plan-name}/` directory means a run has started, a `report-NN.md` inside it
-names the PR, and a plan that has been collected is simply gone. Nothing has to be kept in sync,
+names the PR, and a plan that has been collected is simply gone. In a standalone epic nothing collects,
+so a landed plan's directory stays where it is, its report the durable record. Nothing has to be kept
+in sync,
 because nothing is stored twice.

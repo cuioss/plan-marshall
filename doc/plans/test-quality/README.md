@@ -44,17 +44,24 @@ anything you are about to act on. The commands are stated so re-derivation is me
 ### What the census does *not* say
 
 The corpus is **not** full of coverage-only tests. Tautological assertions number roughly two dozen
-tree-wide; bare `assert result is not None` appears ~192 times and is in almost every case followed by
-substantive assertions. Individually the tests are behavioural, they name real contracts, and several
-subtrees carry deliberate positive/negative control pairs. **The problem is not what the tests assert
-— it is how much text it takes them to assert it.** Any plan in this epic that deletes an assertion to
-hit a line target has failed, not succeeded.
+tree-wide (`grep -rn 'assert True\|assert 1 ==' test --include=test_*.py`); bare
+`assert result is not None` appears ~192 times
+(`grep -rn 'assert result is not None$' test --include=test_*.py | wc -l`) and is in almost every case
+followed by substantive assertions. Both figures are leads — re-derive them. Individually the tests
+are behavioural, they name real contracts, and several subtrees carry deliberate positive/negative
+control pairs. **The problem is not what the tests assert — it is how much text it takes them to
+assert it.** Any plan in this epic that deletes an assertion to hit a line target has failed, not
+succeeded.
 
 Two structural exceptions worth naming, because they are the shape a plan should look for:
 
-* `test/plan-marshall/manage-config/test_config_defaults.py` carries ~22 tests in
-  `test_default_plan_finalize_includes_{knob}` / `test_get_default_config_includes_{knob}` pairs that
-  assert the same default through the same accessor twice. That is one parametrized table.
+* `test/plan-marshall/manage-config/test_config_defaults.py` carries ~22 functions sharing the
+  `test_default_plan_finalize_includes_{knob}` / `test_get_default_config_includes_{knob}` naming
+  shape. **They are not 11 clean pairs** — the two prefixes cover different knob sets, and only three
+  knobs (`admin_merge_on_stuck_state`, `auto_rebase_threshold`,
+  `merge_queue_wait_budget_seconds`) are genuinely crossed against both accessors. Those three are the
+  collapse target; the remaining functions share the naming shape while several test unrelated
+  subjects. Re-derive the pairing before collapsing anything — the naming shape is not the evidence.
 * `test/plan-marshall/audit-archived-plan-retrospectives/test_audit_checks.py` is a single ~8,700-line
   module covering ~24 independent audit checks with ~90 test classes. That is ~24 modules.
 
@@ -165,7 +172,26 @@ duplication this epic exists to remove.
 `test/_shared/`, and `test/README.md`).
 
 **`030`–`080` are mutually parallel by construction.** Each owns a disjoint list of `test/`
-subdirectories, stated in its Expected surface. Three shared constraints keep it that way, and every
+subdirectories, stated in its Expected surface.
+
+⚠️ **The partition is a hand-written list, so every run re-derives it before acting on it.** The
+lists below were correct when authored and cover every directory then present, but a directory added
+to `test/plan-marshall/` between authoring and a run belongs to **no** plan and would be silently
+skipped, with nothing positioned to notice. Each reduction plan therefore carries this as a **gating,
+halting derivation**, run before its first deliverable:
+
+1. List every directory under `test/plan-marshall/*/` and every top-level entry under `test/`.
+2. Confirm each appears in **exactly one** of `030`–`080`'s Expected surface — allowing for the two
+   deliberate exclusions, `test/_shared/` (plan `020`'s) and `test/fixtures/` (holds no `.py`).
+3. A directory in **two** lists, or in **none**, is a partition defect: **halt and report it** rather
+   than claiming or skipping it unilaterally. A directory claimed by no plan is the dangerous case,
+   because it looks exactly like a clean run.
+
+Independently, the six slices' line totals must sum to the corpus total
+(`wc -l $(find test -name 'test_*.py')`); a sum that falls short means a gap, and one that exceeds it
+means an overlap.
+
+Three shared constraints keep the slices disjoint once the partition is confirmed, and every
 reduction plan restates them:
 
 * A reduction plan **never edits `test/conftest.py` or `test/_shared/**`**. If it needs a shared

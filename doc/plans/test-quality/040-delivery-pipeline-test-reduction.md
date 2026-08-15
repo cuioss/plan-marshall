@@ -45,7 +45,9 @@ These tests are **scenario tests**, not table tests. A single test in
 surface, drives a fetch, re-drives it, and asserts on dedup counters and participation sets across
 both rounds. That is legitimately more than fifteen lines of work, and parametrizing it would destroy
 it. The better modules in this slice already know this: `test_github_pr.py` shares one `_COMMENTS`
-corpus, one `_patch_provider` helper, and one `_run_fetch` driver across its ~50 tests.
+corpus, one `_patch_provider` helper, and one `_run_fetch` driver across its ~66 tests (a lead —
+re-derive with `grep -c '^def test_' test/plan-marshall/workflow-integration-github/test_github_pr.py`,
+and note the module also carries class-nested tests the module-level count misses).
 
 What the slice spends its lines on instead is **prose**. Test docstrings here routinely run eight to
 fifteen lines and are longer than the test bodies they document — and a large share of that text is
@@ -178,6 +180,7 @@ nothing else:
 | The slice carries historical narrative at scale in test prose | HYPOTHESIS | Re-derive over this slice only: `grep -rn 'once derived\|used to \|no longer\|the fix \|PR #[0-9]\|lesson-20\|this plan' ` across the Expected surface. Report the count; it is D1's baseline. |
 | Some subprocess `run_script` tests in this slice duplicate an in-process test in the same module | HYPOTHESIS — **gating for D3; settle it per module before collapsing anything** | Per module, list its `run_script` call sites beside its in-process tests and identify the pairs that assert the same behaviour. A collapse performed without that pairing is a deletion, not a collapse. |
 | No test in this slice is the *only* coverage of a subprocess-boundary contract that D3 would remove | HYPOTHESIS — **asserted absence, the higher-risk half** | For every candidate collapse, confirm the in-process test asserts the same contract, and name it in the report. If no in-process test does, the subprocess test stays. |
+| The partition holds — every directory under `test/plan-marshall/*/` and every top-level `test/` entry appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the two deliberate exclusions. A directory in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
 
 ## Verification
@@ -196,7 +199,16 @@ nothing else:
 
 **Executable.** `./pw verify` (the lane's build gate; this plan changes Python). Plus the
 `plugin-doctor test-conventions` scope over each directory in the slice, before and after, with the
-per-rule counts recorded.
+per-rule counts recorded. Invoke the **git-tracked** script — `.plan/execute-script.py` is
+git-ignored and absent from a fresh clone, so do not go looking for it:
+
+```bash
+python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py test-conventions --test-root {directory}
+```
+
+Confirm the argument spelling against that script's own `--help` before relying on it. If the doctor
+cannot be invoked, report the affected measurement **unavailable** rather than substituting a weaker
+check.
 
 **By reading — cold read, required for D1.** D1 rewrites text whose value is what a later reader takes
 from it, and the risk is not that too much is removed but that the *invariant* is removed along with

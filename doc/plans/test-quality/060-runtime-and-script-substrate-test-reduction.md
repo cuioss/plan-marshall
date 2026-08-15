@@ -105,14 +105,18 @@ Work the slice **largest module first**.
 
 3. **D3 — Normalise preambles and argument construction** — apply **B6** and **B7** across the slice:
    `conftest.load_script_module` / `get_scripts_dir` for every module preamble, `020`'s `parse_ns` for
-   every `argparse.Namespace`. Rename `test/plan-marshall/discovery_test_helpers.py` to
-   `_discovery_fixtures.py` — it is a helper module without the underscore prefix **B10** requires,
-   so nothing marks it as non-collectable and the existing `unique-fixture-basenames` rule cannot see
-   it. Where `parse_ns` cannot serve a call site, leave the hand-built namespace and **record the call
-   site in the report**.
+   every `argparse.Namespace`. Where `parse_ns` cannot serve a call site, leave the hand-built
+   namespace and **record the call site in the report**.
    *Done when:* no `spec_from_file_location` or deep `Path(__file__).parent` chain remains in the
-   slice, `discovery_test_helpers.py` is renamed with its importers updated, and every `parse_ns`
-   exception is listed with its script.
+   slice, and every `parse_ns` exception is listed with its script.
+
+   > **`test/plan-marshall/discovery_test_helpers.py` is NOT yours, despite sitting at the root of a
+   > tree this plan works in.** It is an unprefixed helper module and it does need renaming — but its
+   > only importers are `build-npm/test_npm_discover.py` and
+   > `build-gradle/test_gradle_discover_modules.py`, both of which are in **plan `070`'s** slice.
+   > Renaming it here would break two live imports in a concurrently-running sibling, which this plan's
+   > own Out of scope forbids. Plan `070` § D1 owns the rename, alongside its analogous
+   > `build_test_helpers.py` rename. Leave it alone.
 
 4. **D4 — Parametrize the tabular cases and strip history from prose** — apply **B5** and **B3**. This
    slice's tabular families are the permission-string matrices, the notation-shape tables, the
@@ -135,8 +139,14 @@ Work the slice **largest module first**.
    shared `toon_parser`, `argparse_surface`'s derivation, the path handling under `tools-file-ops`, and
    the validators registered in `doctor-test-conventions.md` § "Rule 3 — Validator Registry" — that is
    a starting point, **not** the list. Derive the list; do not copy it.
+   **Two sibling plans derive halves of the same list; coordinate rather than duplicate.** Plan `010`
+   § D6 derives the whole-tree candidate list and lands **before** this plan — read its report and
+   refine that list rather than starting from zero. Plan `080` § D5 derives the generator slice's
+   candidates and may run concurrently with this one. Use the column set plan `010` fixed, and state
+   in the report which rows are refinements of `010`'s and which are new, so the operator receives one
+   list refined twice rather than three unrelated tables.
    *Done when:* the report carries the derived table with one row per candidate and its example-row
-   count, and states the total.
+   count, states the total, and names its relationship to plan `010`'s whole-tree list.
 
 6. **D6 — Report the measured deltas** — per-directory and slice-total line counts before and after;
    collected test count before and after; coverage before and after for the bundle paths the slice
@@ -175,7 +185,9 @@ nothing else:
   `platform-runtime/`, `ref-toon-format/`, `script-shared/`, `tools-file-ops/`,
   `tools-input-validation/`, `tools-permission-doctor/`, `tools-permission-fix/`,
   `tools-script-executor/`, `untrusted-ingestion/`
-- `discovery_test_helpers.py` → `_discovery_fixtures.py` (rename, D3)
+
+`test/plan-marshall/discovery_test_helpers.py` is **not** in this plan's surface — plan `070` owns its
+rename, because plan `070` owns both of its importers (see the note under D3).
 
 ## Claim labels
 
@@ -183,10 +195,11 @@ nothing else:
 |---|---|---|
 | The slice is ~61,400 lines across the fourteen listed directories | HYPOTHESIS | Re-derive with `wc -l` over the Expected surface list |
 | `test_claude_runtime.py` is ~4,680 lines with ~40 test classes, and repeats the `_SESSION_CACHE_BASE` redirect per test in classes that could share a fixture | OBSERVED | the file; `grep -c '_SESSION_CACHE_BASE' test/plan-marshall/platform-runtime/test_claude_runtime.py test/plan-marshall/platform-runtime/test__claude_runtime_impl.py` |
-| `discovery_test_helpers.py` is a helper module without the underscore prefix, so the existing `unique-fixture-basenames` rule does not inspect it | OBSERVED | the file path; `doctor-test-conventions.md` § `unique-fixture-basenames` detection step 1, which enumerates only `_`-prefixed files |
+| `discovery_test_helpers.py`'s only importers are under `build-npm/` and `build-gradle/`, both in plan `070`'s slice — so its rename is `070`'s, not this plan's | OBSERVED | `grep -rln 'discovery_test_helpers' test`; cross-check the two directories against plan `070` § Expected surface |
 | `test/plan-marshall/script-shared/` carries matched positive/negative control pairs whose arms are evidence only in contrast | OBSERVED | the module docstrings of the daemon-routing and root-fs neutralization control modules under that directory |
 | This slice contains units whose contract is universal in the **B8** sense | HYPOTHESIS — **D5 exists to settle it** | Derive from the slice itself. If the derivation finds few or none, that is the finding — report it, and say so plainly rather than padding the table. |
 | No property-based test already exists anywhere in the tree | HYPOTHESIS — **asserted absence** | `grep -rn 'hypothesis\|@given\|strategies' test --include=*.py`. If one exists, D5's table starts from it rather than from zero. |
+| The partition holds — every directory under `test/plan-marshall/*/` and every top-level `test/` entry appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the two deliberate exclusions. A directory in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
 
 ## Verification
@@ -208,7 +221,24 @@ hoisted to too broad a scope shows up as an order-dependent failure, not as a co
 
 **Executable.** `./pw verify` (the lane's build gate; this plan changes Python). Plus the
 `plugin-doctor test-conventions` scope over each directory in the slice, before and after, with the
-per-rule counts recorded.
+per-rule counts recorded. Invoke the **git-tracked** script — `.plan/execute-script.py` is
+git-ignored and absent from a fresh clone, so do not go looking for it:
+
+```bash
+python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py test-conventions --test-root {directory}
+```
+
+Confirm the argument spelling against that script's own `--help` before relying on it. If the doctor
+cannot be invoked, report the affected measurement **unavailable** rather than substituting a weaker
+check.
+
+**By reading — cold read, required for D4.** D4 rewrites text whose value is what a later reader takes
+from it, and the risk is not that too much history is removed but that the **invariant** is removed
+along with it. Dispatch the lane's pre-PR verification sub-agent with **five rewritten test modules and
+no other context** — not this plan, not the originals — and ask, for each of ten named tests: "What
+contract does this test pin, and why does it matter?" A test whose rewritten docstring cannot answer
+both has been over-stripped; restore the invariant (not the history) and re-read. Record the answers
+verbatim.
 
 **By reading.** For every fixture D1 introduces, confirm from the fixture's own definition that it is
 explicitly requested rather than `autouse`, and that its scope is the narrowest that serves its

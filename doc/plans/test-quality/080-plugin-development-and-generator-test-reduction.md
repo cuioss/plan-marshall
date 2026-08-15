@@ -45,7 +45,9 @@ The plugin-development and generator slice — the plugin doctor, the marketplac
 dependency resolver, the self-review extension, the multi-target generator's Claude and OpenCode
 emitters, the plugin-cache sync, and the per-consumer-bundle plugin tests — carries roughly 58,900
 lines of `test_*.py`. `test/pm-plugin-development/plugin-doctor/` alone accounts for roughly 32,900 of
-them across about sixty modules.
+them across roughly 79 modules. Both figures are leads — re-derive them
+(`wc -l $(find test/pm-plugin-development/plugin-doctor -name 'test_*.py')`), because they size D1 and
+D2 directly.
 
 This slice is where the epic's target architecture **already exists**, which makes it the least
 uniform of the six and changes what "reduce" means here.
@@ -199,6 +201,7 @@ Exactly these paths, and nothing else:
 | `test/conftest.py`'s `collect_ignore` hard-codes paths to four real-tree smoke modules in this slice | OBSERVED | `test/conftest.py`'s `collect_ignore` list |
 | Some `test_analyze_*.py` modules still run analyzers by hand rather than through `assert_analyzer_findings` | HYPOTHESIS — **gating for D1; it decides the deliverable's size** | Per module in `plugin-doctor/`, record whether it imports `assert_analyzer_findings`. If nearly all already do, D1 is a rename and D2 is the plan's real work — say so and rebalance rather than manufacturing conversions. |
 | No module outside `plugin-doctor/` imports its `_fixtures` module by bare name | HYPOTHESIS — **asserted absence; the rename's blast radius depends on it** | `grep -rln 'from _fixtures import\|import _fixtures' test` |
+| The partition holds — every directory under `test/plan-marshall/*/` and every top-level `test/` entry appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the two deliberate exclusions. A directory in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
 
 ## Verification
@@ -213,16 +216,41 @@ Exactly these paths, and nothing else:
    violating (1) or (2), **report the shortfall and stop**.
 
 **A fourth check specific to this slice, and it outranks the line floor: the doctor must still catch
-what it caught.** Run `python3 .plan/execute-script.py
-pm-plugin-development:plugin-doctor:doctor-marketplace` over the full marketplace tree before the
-first commit and again before the PR, and diff the rule-id sets in the two outputs. They must be
-identical. This slice's tests **are** the evidence that the linter fires; a refactor that quietly
+what it caught.** Run the doctor over the full marketplace tree before the first commit and again
+before the PR, and diff the rule-id sets in the two outputs. They must be identical. Invoke the
+**git-tracked** script — the generated executor `.plan/execute-script.py` is git-ignored and absent
+from a fresh clone, so do not go looking for it:
+
+```bash
+python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py
+```
+
+Confirm the subcommand and argument spelling against that script's own `--help` before relying on it.
+If the doctor cannot be invoked at all, this check is **unavailable** and the plan reports that rather
+than proceeding as though it passed — it is the check that outranks the line floor. This slice's tests **are** the evidence that the linter fires; a refactor that quietly
 narrows what fires leaves every other slice's compliance unverifiable, and the suite-coverage
 meta-test alone will not show it if `EXEMPT_RULE_IDS` absorbed the loss.
 
 **Executable.** `./pw verify` (the lane's build gate; this plan changes Python). Plus the
 `plugin-doctor test-conventions` scope over each directory in the slice, before and after, with the
-per-rule counts recorded.
+per-rule counts recorded. Invoke the **git-tracked** script — `.plan/execute-script.py` is
+git-ignored and absent from a fresh clone, so do not go looking for it:
+
+```bash
+python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py test-conventions --test-root {directory}
+```
+
+Confirm the argument spelling against that script's own `--help` before relying on it. If the doctor
+cannot be invoked, report the affected measurement **unavailable** rather than substituting a weaker
+check.
+
+**By reading — cold read, required for D4.** D4 rewrites text whose value is what a later reader takes
+from it, and the risk is not that too much history is removed but that the **invariant** is removed
+along with it. Dispatch the lane's pre-PR verification sub-agent with **five rewritten test modules and
+no other context** — not this plan, not the originals — and ask, for each of ten named tests: "What
+contract does this test pin, and why does it matter?" A test whose rewritten docstring cannot answer
+both has been over-stripped; restore the invariant (not the history) and re-read. Record the answers
+verbatim.
 
 **By reading.** After D1, take three converted `test_analyze_*.py` modules and confirm from the module
 text alone that each asserts **which rule ids fired**, not merely a finding count. A conversion that
