@@ -169,8 +169,35 @@ For which resolvers consume the materialized field, see [`ext-point-derivation-r
 bundle:skill                    # Skill (e.g., plan-marshall:phase-1-init)
 bundle:skill:script             # Script (e.g., plan-marshall:manage-files:manage-files)
 bundle:agents:name              # Agent (e.g., plan-marshall:agents:execution-context)
-bundle:commands:name            # Command (e.g., plan-marshall:commands:tools-fix)
+bundle:commands:name            # Command (e.g., plan-marshall:commands:tools-sync-agents-file)
 ```
+
+### What counts as a reference
+
+The `script` detector scans for a bare three-part colon-separated token, which is **not unique to script notation**. Several token families share the shape while referencing no component, so each is recognised and deliberately **not** treated as a reference. Without these exclusions the unresolved set is dominated by findings that name nothing, which trains readers to ignore the whole category.
+
+| Not a reference | Example | Why |
+|-----------------|---------|-----|
+| Documentation placeholder | `bundle:skill:script`, `groupId:artifactId:scope` | Meta-syntactic segments documenting the notation *form*. Recognised via `NOTATION_PLACEHOLDER_SEGMENTS`, and applied to the `skill` detector too |
+| Canonical verification-step ID | `default:verify:quality-gate` | Names a build command. Mirrors `_CANONICAL_VERIFY_PREFIXES` in `plan-marshall:manage-config` |
+| Decision-log prefix | `(bundle:skill:step)` | The parenthesised prefix of a decision-log or `[STATUS]` message names the emitting step, not a script |
+| Build coordinate or task path | `de.cuioss:cui-java-tools:compile`, `:services:auth-service:build` | A three-part token preceded by `.` or `:` is a fragment of a longer token |
+| Sub-document path | `bundle:skill:references/x.md`, `bundle:skill:planning.md` | A three-part token followed by `/`, or by `.` plus a word character, addresses a document. A trailing **sentence** period is not treated this way |
+
+**Subcommands resolve rather than reporting unresolved.** A skill exposes one entry script named after the skill and dispatches its verbs as subcommands. Documentation names those verbs in the same three-part shape — `plan-marshall:manage-execution-manifest:compose` — so the reference is real and only the segment it lands on is a verb rather than a filename. Such a reference resolves to the entry script that owns the verb.
+
+This is a **deliberate non-detection**, not a blind spot: when the skill has no same-named entry script the notation stays unresolved, so a genuinely wrong invocation is still caught. Whether an invocation names an existing *subcommand* is enforced separately by the `manage-invocation-invalid` plugin-doctor rule.
+
+### Precision of `validate`
+
+`validate` findings are precise enough to act on for the **marketplace-bundle namespace**: a finding whose first segment is a bundle in the index names a component that genuinely does not exist. The precision fixture in `test/pm-plugin-development/tools-marketplace-inventory/test_resolve_dependencies.py` holds one instance of each excluded class plus one genuinely-broken reference and asserts **exactly one** finding, so a regression in any single class fails the suite.
+
+Two limits bound that claim, and both are properties of the analysis rather than of its scope:
+
+- **Findings outside the bundle namespace are not yet triaged.** A three-part token whose first segment names no indexed bundle — an npm script name, a time-format literal, a Gradle inter-project coordinate — is still reported. Nothing distinguishes these structurally from notation, so they are neither suppressed nor separated — suppressing them by bundle membership would silently drop a reference into a bundle that was deleted, which is the fail-open a gate must not take.
+- **Nested script modules are not components.** Component discovery globs `scripts/*.py`, so a module under `scripts/{subdir}/` (for example `script-shared/scripts/extension/extension_base.py`) can be imported but never resolved, and references to it report unresolved.
+
+Until both are addressed, `validation_result` is a **fail-closed report**, not a zero-tolerance gate: read the findings, do not wire `validation_result` to a build step that must stay green.
 
 ### Subcommands
 
