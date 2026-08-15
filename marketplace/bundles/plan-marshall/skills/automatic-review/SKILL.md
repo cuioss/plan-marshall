@@ -383,9 +383,11 @@ Decision-log, then return `status: escalate_ask` with `reason: refusal_structura
 below). ⛔ **Its `prompt_options[]` MUST NOT offer a wait.** The remedies are to split the diff, to
 accept the coverage gap, or to disable this reviewer for this PR; adding a wait option alongside them
 spends the operator's attention on the one action that cannot work. Carry `{cap}` — the
-ceiling the notice itself stated — so the operator deciding an acceptance can reconcile the gap
-against the real diff size rather than accepting an unquantified one. `{cap}` is `unknown` when the
-notice stated no figure; report it as unknown rather than substituting a default.
+ceiling the notice itself stated — and `{measured_diff_size}`, how big the refused diff actually was,
+so the operator deciding an acceptance reconciles the gap against a real figure rather than accepting
+an unquantified one. Either is `unknown` when unavailable; report it as unknown rather than
+substituting a default, and read the pair as an order-of-magnitude comparison, since the two carry
+different units by design.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -652,6 +654,8 @@ Then thread the four bot-keyed observation sets the predicate classifies from, p
    **`{refused_causes}`** — the CAUSE overlay: the `refused_causes[]` records from the same `github_pr fetch_findings` return, rendered as comma-separated `{bot_kind}:{cause}` pairs (`cause` in `size` / `quota`) and forwarded to `--refused-causes`. It names the *remedy* a refusal calls for and is reported back in `refusal_causes[]`. ⛔ **A `size` cause is STATE-DETERMINING, not advisory**: it resolves the bot to `refused_structural` whatever its `rate_limit_class` declares, because that field is per-BOT while a cause is per-REFUSAL and one bot can refuse for both at one class. Every other cause is advisory and leaves the awaitability split untouched. Sourcery is the motivating case: its per-PR size ceiling and its weekly quota are both `hard_quota` awaitability yet carry different causes, so the cause is the only signal that tells "split the PR" from "wait it out".
 
    **`{refusal_size_caps}`** — the CAP overlay: the `refused_size_caps[]` records from the same return, rendered as comma-separated `{bot_kind}:{cap}` pairs and forwarded to `--refusal-size-caps`. `cap` is the ceiling the bot's own refusal notice stated, reported back in `refusal_causes[]` so a recorded coverage gap can be reconciled against the diff that was actually refused rather than being asserted. Sparse by design — a quota refusal names no ceiling, and a size notice may state none — and an absent entry is reported as `unknown`, never defaulted.
+
+   **`{measured_diff_size}`** — the other half of that reconciliation: the `measured_diff_size` scalar from the same return, forwarded to `--measured-diff-size`. A cap without the size that hit it is a claim the reader must take on trust, so the producer measures the diff once — and **only** when a size refusal was actually seen, so the extra provider round-trip is never paid on the common path. It is a single value rather than a per-bot list because it is a property of the PR, identical for every reviewer that refused it. Its unit rides inside the value and is deliberately **not** the reviewer's unit (counting the reviewer's own unit exactly means downloading the whole patch, which is most expensive precisely on the oversized PRs where this fires), so the pair is an order-of-magnitude comparison, never an equality check. Empty when unmeasured — reported as unknown, never as `0`, which would read as an empty diff refused for being too big.
 4. **`{stale_participation_bots}`** — the `stale_participation_bots[]` records from the `github_pr fetch_findings` return of the "Producer: FIND" step, rendered as comma-separated `{bot_kind}:{evidence_kind}` pairs. This is the SAME evidence-typed form as `{participated_bots}` (item 1) and the exact shape the producer emits, so the producer's output forwards to `--stale-participation-bots` verbatim — the consumer flag is pair-form, and the classifier reads only the `bot_kind`. Each names a bot whose observed comment matched a declared `participation_evidence` publish shape but failed the `participation_requires_update` currency test. These resolve to `participated_stale` — blocking, because the review they prove predates this HEAD, but with a **re-review trigger** as the remedy rather than the escalation `absent` calls for. The producer has already subtracted the proven set, so a bot with one stale and one fresh comment never appears here. Today only `pr-agent` can reach this set — it is the sole bot declaring `participation_requires_update`.
 5. **`{not_triggered}`** — the PR-WIDE observable: whether any `pull_request`-event workflow run exists for this PR at all. This is the one input NOT threaded forward, because no step above observes it; read it here:
 
@@ -671,7 +675,8 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   --plan-id {plan_id} --required-bots "{required_bots}" --optional-bots "{optional_bots}" \
   --participated-bots "{participated_bots}" --in-progress-bots "{in_progress_bots}" \
   --refused-bots "{refused_bots}" --stale-participation-bots "{stale_participation_bots}" \
-  --refused-causes "{refused_causes}" --refusal-size-caps "{refusal_size_caps}"
+  --refused-causes "{refused_causes}" --refusal-size-caps "{refusal_size_caps}" \
+  --measured-diff-size "{measured_diff_size}"
 ```
 
 Append the bare `--not-triggered` flag to that call when and only when the item-5 read reported `has_pull_request_run: false`. It is a `store_true` bool with no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the eight list flags only. An item-5 read that was unreadable never reaches this call at all — it routes to the UNKNOWN verdict below before the predicate is invoked, so there is no third polarity to encode on the flag.
@@ -910,6 +915,7 @@ bot_kind: {the refusing bot}
 refusal_class: {awaitable_window | hard_quota | unknown}
 refusal_cause: size
 cap: {the ceiling the notice stated, or "unknown"}
+measured_diff_size: {how big the refused diff was, or "unknown"}
 pr_number: {pr_number}
 prompt_options[3]:
   - "Split the PR into diffs under the cap"
@@ -941,7 +947,7 @@ Field contract:
 - `head_sha`: present only on the `re_review_timeout` variant — the full worktree HEAD SHA the timed-out re-review was awaiting; the unreviewed commit the operator decision applies to. Omitted on the rate-window and structural variants (no HEAD advance is involved).
 - `timed_out`: `true` only for `rate_window_timeout` (a budget genuinely elapsed). `rate_window_not_awaitable`, `rate_window_exhausted`, and `refusal_structural` escalate WITHOUT awaiting, so they report `false` — reporting a timeout that never happened would misdescribe the escalation.
 - `bot_kind` / `refusal_class`: present on the rate-window and structural variants — which bot refused and under which class, so the operator sees whether the non-participation is awaitable at all.
-- `refusal_cause` / `cap`: present ONLY on the `refusal_structural` variant. `refusal_cause` is always `size` there (it is what selected the variant); `cap` is the ceiling the notice stated, or the literal `unknown`.
+- `refusal_cause` / `cap` / `measured_diff_size`: present ONLY on the `refusal_structural` variant. `refusal_cause` is always `size` there (it is what selected the variant); `cap` is the ceiling the notice stated and `measured_diff_size` is how big the refused diff was, each the literal `unknown` when unavailable. The pair is what makes an accepted gap auditable rather than asserted — and the two carry different units by design, so read them as an order-of-magnitude comparison, never as an equality check.
 - `timeout_seconds`: the exhausted budget — `re_review_await_timeout_seconds` for `re_review_timeout`, `review_rate_window_timeout_seconds` for the rate-window variants. ⛔ **Absent on `refusal_structural`**: nothing was awaited and nothing is awaitable, so carrying a budget would invite a consumer to render a wait option.
 - `prompt_options[]`: the three operator choices the orchestrator presents when `action: ask`. "Wait another {timeout_seconds}s" is realized by the orchestrator re-dispatching `plan-marshall:automatic-review` from scratch with a fresh budget (the harness cannot resume a spawned agent — see [phase-6-finalize SKILL.md](../phase-6-finalize/SKILL.md) Step 3). ⛔ **The `refusal_structural` variant's option set contains no wait**, and a consumer MUST NOT add one: its limit is a property of the diff, so waiting is an action guaranteed not to work. Present only when `action: ask`; omitted for `action: defer`.
 
@@ -961,8 +967,13 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   [--participated-bots [PARTICIPATED_BOTS]] [--in-progress-bots [IN_PROGRESS_BOTS]] \
   [--refused-bots [REFUSED_BOTS]] [--stale-participation-bots [STALE_PARTICIPATION_BOTS]] \
   [--declined-bots [DECLINED_BOTS]] [--not-triggered] [--triage-ran] \
-  [--refused-causes [REFUSED_CAUSES]] [--refusal-size-caps [REFUSAL_SIZE_CAPS]]
+  [--refused-causes [REFUSED_CAUSES]] [--refusal-size-caps [REFUSAL_SIZE_CAPS]] \
+  [--measured-diff-size MEASURED_DIFF_SIZE]
 ```
+
+`--measured-diff-size` is **not** a list flag: it takes a required value and is a single scalar, because
+it measures the PR rather than a bot. Omit it when unmeasured — the classifier then reports no
+`measured_diff_size` line at all, which reads as unknown rather than as a zero-sized diff.
 
 All nine list flags take an OPTIONAL value: each may be supplied bare (the flag with no value at
 all), which reads as the empty list — identical to omitting it. Callers interpolating a possibly-empty

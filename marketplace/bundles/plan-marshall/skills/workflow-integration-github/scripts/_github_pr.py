@@ -258,6 +258,45 @@ def refusal_size_cap(body: str, bot_kind: str | None = None) -> str:
     return ''
 
 
+def measure_diff_size(pr_number: int) -> str:
+    """Return this PR's measured diff size as ``"{n} changed lines"``, or ``''``.
+
+    The second half of an auditable coverage gap. A recorded cap says what the
+    reviewer's ceiling was; without the size of the diff that hit it, a reader can
+    only take the refusal's word for it. Recording both makes the gap checkable:
+    the operator accepting it can see how far over the line the PR actually was.
+
+    **The unit is stated in the value, and it is deliberately NOT the reviewer's
+    unit.** A provider's ceiling is expressed in whatever it counts — Sourcery's is
+    diff CHARACTERS — and counting those exactly means downloading the whole patch,
+    which is most expensive precisely on the oversized PRs where this fires. Changed
+    lines come from the PR's existing metadata for one cheap call. So the two figures
+    are an ORDER-OF-MAGNITUDE comparison, not an equality check, and carrying the unit
+    inside the string is what stops a reader treating "150000 diff characters" against
+    "1240 changed lines" as an exact reconciliation.
+
+    Returns ``''`` when the read fails, is unparseable, or reports no numbers —
+    UNKNOWN, never a zero. A zero would read as "an empty diff was refused for being
+    too big", which is a claim this function has no evidence for.
+    """
+    returncode, stdout, _stderr = github_ops.run_gh(
+        ['pr', 'view', str(pr_number), '--json', 'additions,deletions']
+    )
+    if returncode != 0 or not stdout.strip():
+        return ''
+    try:
+        payload = json.loads(stdout)
+    except (ValueError, TypeError):
+        return ''
+    if not isinstance(payload, dict):
+        return ''
+    additions = payload.get('additions')
+    deletions = payload.get('deletions')
+    if not isinstance(additions, int) or not isinstance(deletions, int):
+        return ''
+    return f'{additions + deletions} changed lines'
+
+
 def _extract_rate_limit_eta(body: str, bot_kind: str) -> str:
     """Return the reset ETA ``bot_kind`` stated in ``body``, or ``''`` when none.
 

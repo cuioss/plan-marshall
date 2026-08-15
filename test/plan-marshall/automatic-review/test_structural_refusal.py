@@ -621,6 +621,66 @@ class TestTheCapIsRecorded:
         assert result.returncode == 0
         assert 'sourcery,size,unknown' in result.stdout
 
+    def test_the_measured_diff_size_is_reported_beside_the_cap(self, plan_context):
+        """The OTHER half of an auditable gap.
+
+        A cap on its own says what the ceiling was; without the size that hit it the
+        reader can only take the refusal's word for how far over the PR actually was.
+        """
+        plan_id = 'struct-measured'
+        plan_context.plan_dir_for(plan_id)
+        result = rc.check_completeness(
+            plan_id, ['sourcery'],
+            refused_bots=['sourcery'],
+            refused_causes={'sourcery': 'size'},
+            refusal_size_caps={'sourcery': '4242 diff characters'},
+            measured_diff_size='9001 changed lines',
+        )
+        assert result['measured_diff_size'] == '9001 changed lines'
+        assert result['refusal_causes'][0]['cap'] == '4242 diff characters'
+
+    def test_the_cli_emits_the_measured_diff_size(self, plan_context):
+        plan_id = 'struct-measured-cli'
+        plan_context.plan_dir_for(plan_id)
+        result = run_script(
+            SCRIPT_PATH, 'check', '--plan-id', plan_id,
+            '--required-bots', 'sourcery', '--refused-bots', 'sourcery',
+            '--refused-causes', 'sourcery:size',
+            '--refusal-size-caps', 'sourcery:4242 diff characters',
+            '--measured-diff-size', '9001 changed lines',
+        )
+        assert result.returncode == 0
+        assert 'measured_diff_size: 9001 changed lines' in result.stdout
+        assert 'sourcery,size,4242 diff characters' in result.stdout
+
+    def test_an_unmeasured_diff_emits_no_size_line(self, plan_context):
+        """Absent rather than zero: ``0`` would read as an empty diff being refused."""
+        plan_id = 'struct-unmeasured'
+        plan_context.plan_dir_for(plan_id)
+        result = run_script(
+            SCRIPT_PATH, 'check', '--plan-id', plan_id,
+            '--required-bots', 'sourcery', '--refused-bots', 'sourcery',
+            '--refused-causes', 'sourcery:size',
+        )
+        assert result.returncode == 0
+        assert 'measured_diff_size' not in result.stdout
+
+    def test_the_measurement_carries_its_unit(self, plan_context):
+        """The unit rides INSIDE the value, because it is not the reviewer's unit.
+
+        A bare number next to a cap in ``diff characters`` invites a reader to treat
+        an order-of-magnitude comparison as an exact reconciliation.
+        """
+        plan_id = 'struct-measured-unit'
+        plan_context.plan_dir_for(plan_id)
+        result = rc.check_completeness(
+            plan_id, ['sourcery'],
+            refused_bots=['sourcery'],
+            refused_causes={'sourcery': 'size'},
+            measured_diff_size='9001 changed lines',
+        )
+        assert not result['measured_diff_size'].strip().isdigit()
+
 
 # ---------------------------------------------------------------------------
 # Advance disclosure — the ceiling is knowable before the review is requested
@@ -681,3 +741,125 @@ class TestAdvanceDisclosure:
         result = run_script(SCRIPT_PATH, 'size-caps')
         assert result.returncode == 0
         assert 'status: success' in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# The producer-side extraction seam
+# ---------------------------------------------------------------------------
+
+class TestCapExtraction:
+    """``_github_pr.refusal_size_cap`` — the seam that READS the cap off the notice.
+
+    Covered directly rather than only through the classifier, because everything
+    downstream is a passthrough: if this returns the wrong string, every consumer
+    faithfully reports the wrong cap and no other test notices.
+
+    ⛔ Every body here is SYNTHETIC. The real provider's figure is its own to change,
+    so pinning it would make this suite assert a number nobody re-derived — the plan
+    labels that figure a lead, not a fact.
+    """
+
+    @staticmethod
+    def _seam():
+        gh_scripts = get_script_path(
+            'plan-marshall', 'workflow-integration-github', 'github_pr.py'
+        ).parent
+        if str(gh_scripts) not in sys.path:
+            sys.path.insert(0, str(gh_scripts))
+        import github_ops  # noqa: F401 — import first; _github_pr closes a cycle with it
+        import _github_pr
+
+        return _github_pr
+
+    def test_the_stated_cap_is_read_off_the_notice(self):
+        seam = self._seam()
+        body = 'your pull request is larger than the review limit of 4242 diff characters.'
+        assert seam.refusal_size_cap(body, 'sourcery') == '4242 diff characters'
+
+    def test_a_thousands_separator_is_stripped(self):
+        """The value crosses a COMMA-separated CLI boundary, where a comma splits it.
+
+        Stripping also leaves a figure that compares directly against a measured size.
+        """
+        seam = self._seam()
+        body = 'your pull request is larger than the review limit of 4,242 diff characters.'
+        assert seam.refusal_size_cap(body, 'sourcery') == '4242 diff characters'
+        assert ',' not in seam.refusal_size_cap(body, 'sourcery')
+
+    def test_a_notice_stating_no_figure_yields_unknown(self):
+        seam = self._seam()
+        body = 'your pull request is larger than the review limit of our plan.'
+        assert seam.refusal_size_cap(body, 'sourcery') == ''
+
+    def test_a_quota_notice_yields_no_cap(self):
+        """A rate/budget notice names no DIFF ceiling, so reading one would invent it."""
+        seam = self._seam()
+        body = 'you have reached your weekly rate limit of 500000 diff characters.'
+        assert seam.refusal_size_cap(body, 'sourcery') == ''
+
+    def test_a_bot_declaring_no_cap_pattern_yields_unknown(self):
+        """Fail-closed: no declared pattern can never produce a confident figure."""
+        seam = self._seam()
+        for bot in bot_registry.bot_kinds():
+            if not bot_registry.refusal_size_cap_patterns(bot):
+                assert seam.refusal_size_cap('review limit of 10 things', bot) == ''
+
+    def test_an_empty_body_or_missing_bot_yields_unknown(self):
+        seam = self._seam()
+        assert seam.refusal_size_cap('', 'sourcery') == ''
+        assert seam.refusal_size_cap('review limit of 10 things', None) == ''
+
+    def test_a_malformed_registry_pattern_is_skipped_not_raised(self, monkeypatch):
+        """A bad registry edit must not break the producer's return path."""
+        seam = self._seam()
+        monkeypatch.setattr(
+            seam.bot_registry, 'refusal_size_cap_patterns', lambda _bot: ['([unclosed']
+        )
+        assert seam.refusal_size_cap('review limit of 10 things', 'sourcery') == ''
+
+
+class TestDiffMeasurement:
+    """``_github_pr.measure_diff_size`` — the other half, and its UNKNOWN discipline."""
+
+    @staticmethod
+    def _seam():
+        gh_scripts = get_script_path(
+            'plan-marshall', 'workflow-integration-github', 'github_pr.py'
+        ).parent
+        if str(gh_scripts) not in sys.path:
+            sys.path.insert(0, str(gh_scripts))
+        import github_ops  # noqa: F401
+        import _github_pr
+
+        return _github_pr
+
+    def test_the_measurement_sums_additions_and_deletions_with_its_unit(self, monkeypatch):
+        seam = self._seam()
+        monkeypatch.setattr(
+            seam.github_ops, 'run_gh',
+            lambda *_a, **_k: (0, '{"additions": 900, "deletions": 340}', ''),
+        )
+        assert seam.measure_diff_size(7) == '1240 changed lines'
+
+    @pytest.mark.parametrize(
+        'returncode, stdout',
+        [
+            (1, ''),                                   # the read failed
+            (0, ''),                                   # empty output
+            (0, 'not json'),                           # unparseable
+            (0, '[]'),                                 # wrong shape
+            (0, '{"additions": 900}'),                 # a field missing
+            (0, '{"additions": "900", "deletions": 1}'),  # a field non-numeric
+        ],
+    )
+    def test_an_unusable_read_is_unknown_never_zero(self, monkeypatch, returncode, stdout):
+        """⛔ ``0`` would read as an empty diff refused for being too big.
+
+        That is a claim the function has no evidence for, and it would make an
+        unmeasurable gap look audited against a number nobody observed.
+        """
+        seam = self._seam()
+        monkeypatch.setattr(
+            seam.github_ops, 'run_gh', lambda *_a, **_k: (returncode, stdout, 'err')
+        )
+        assert seam.measure_diff_size(7) == ''

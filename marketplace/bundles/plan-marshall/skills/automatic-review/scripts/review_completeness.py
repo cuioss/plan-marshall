@@ -112,7 +112,7 @@ state — the quorum is vacuously satisfied and ``participation_complete`` is
 ``true``.
 
 Usage:
-    review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--not-triggered] [--triage-ran] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]]
+    review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--not-triggered] [--triage-ran] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--measured-diff-size <s>]
     review_completeness.py deficit --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--not-triggered] [--refused-causes [<csv>]] [--min-deficit <n>]
     review_completeness.py size-caps
     review_completeness.py --help
@@ -159,6 +159,7 @@ Return TOON shape (check):
     unproven_bots[N]:                    # emitted only when non-empty
       - bot
     bot_states[N]{bot_kind,state}: ...   # one row per required ∪ optional bot
+    measured_diff_size: <how big the refused diff was>   # emitted only alongside a non-empty refusal_causes
     refusal_causes[N]{bot_kind,cause,cap}: ...  # emitted only when non-empty — the size/quota CAUSE axis per refusing bot, with the ceiling its notice stated (``unknown`` when it stated none)
 
 Return TOON shape (size-caps):
@@ -680,6 +681,7 @@ def check_completeness(
     not_triggered: bool = False,
     refused_causes: dict[str, str] | None = None,
     refusal_size_caps: dict[str, str] | None = None,
+    measured_diff_size: str = '',
 ) -> dict:
     """Classify each bot's PARTICIPATION against the plan's ``pr-comment`` findings store.
 
@@ -874,6 +876,12 @@ def check_completeness(
         # ``display_detail`` reader can tell reviewed-and-clean from nobody-reviewed.
         # ``''`` for an empty roster — nothing to distribute.
         'review_state_summary': compose_review_state_summary(bot_states),
+        # How big the refused diff actually was. Reported ALONGSIDE the caps rather
+        # than per-bot: it is a property of the PR, identical for every reviewer that
+        # refused it, so a per-bot column would repeat one measurement N times and
+        # invite a reader to think each was measured separately. Empty when no size
+        # refusal occurred or the diff could not be measured — UNKNOWN, never zero.
+        'measured_diff_size': measured_diff_size,
         # The CAUSE axis per refusing bot (size vs quota) — advisory, names the remedy.
         'refusal_causes': refusal_causes_out,
     }
@@ -987,7 +995,13 @@ def _emit_toon(payload: dict) -> None:
         print(f'bot_states[{len(states)}]{{bot_kind,state}}:')
         for record in states:
             print(f'  {record["bot_kind"]},{record["state"]}')
+    # Emitted immediately before the causes it qualifies, and only when a refusal cause
+    # was reported: a measured diff size standing alone would be a statistic about the
+    # PR with nothing to reconcile it against.
+    measured = payload.get('measured_diff_size', '')
     causes = payload.get('refusal_causes') or []
+    if causes and measured:
+        print(f'measured_diff_size: {measured}')
     if causes:
         print(f'refusal_causes[{len(causes)}]{{bot_kind,cause,cap}}:')
         for record in causes:
@@ -1201,6 +1215,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         not_triggered=args.not_triggered,
         refused_causes=obs['refused_causes'],
         refusal_size_caps=size_caps,
+        measured_diff_size=args.measured_diff_size,
     )
     _emit_toon(payload)
     return 0 if payload.get('status') == 'success' else 1
@@ -1430,6 +1445,21 @@ def main(argv: list[str] | None = None) -> int:
             'size notice may state none, and an absent entry is reported as an UNKNOWN '
             'cap rather than defaulted. May be supplied bare (no value), which reads '
             'as the empty list.'
+        ),
+    )
+    check_parser.add_argument(
+        '--measured-diff-size',
+        default='',
+        help=(
+            "How big the refused diff actually was, as github_pr fetch_findings' "
+            'measured_diff_size field (e.g. "1240 changed lines"). Reported alongside '
+            'the caps so an accepted coverage gap is AUDITABLE — a cap without the '
+            'size that hit it is a claim the reader must take on trust. A single '
+            'scalar, not a per-bot list: it is a property of the PR, identical for '
+            'every reviewer that refused it. Its unit rides inside the value and is '
+            "deliberately not the reviewer's unit, so the two figures are an "
+            'order-of-magnitude comparison rather than an equality check. Omit it (the '
+            'default) when unmeasured — reported as unknown, never as zero.'
         ),
     )
     check_parser.set_defaults(func=cmd_check)

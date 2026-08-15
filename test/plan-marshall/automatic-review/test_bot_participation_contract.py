@@ -786,6 +786,14 @@ _NON_LIST_FLAG_COVERAGE = {
         'member and gates nothing. Its CLI boundary, the cap column in refusal_causes[], '
         'and the unknown-cap rendering are owned by test_structural_refusal.py'
     ),
+    '--measured-diff-size': (
+        'the scalar PR-wide diff measurement — neither a --*-bots flag nor a pair-form '
+        'overlay, because it is a property of the PR rather than of a bot. It is the '
+        'other half of an auditable coverage gap (a cap without the size that hit it is '
+        'a claim taken on trust); it assigns no member and gates nothing. Its CLI '
+        'boundary and the unknown-when-unmeasured rendering are owned by '
+        'test_structural_refusal.py'
+    ),
 }
 
 _FAMILY_A = 'review_completeness check'
