@@ -46,7 +46,7 @@ def _init_plan(plan_context, plan_id: str) -> None:
 
 def _seed_marshal(plan_context) -> None:
     """Write a minimal initialized marshal.json so ``resolve-target`` resolves."""
-    from test_helpers import create_marshal_json
+    from _manage_config_fixtures import create_marshal_json
 
     create_marshal_json(plan_context.fixture_dir)
 

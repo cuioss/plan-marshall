@@ -17,7 +17,7 @@ from argparse import Namespace
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from test_helpers import (
+from _manage_config_fixtures import (
     SCRIPT_PATH,
     create_marshal_json,
     create_nested_marshal_json,

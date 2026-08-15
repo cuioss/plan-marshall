@@ -14,7 +14,7 @@ from argparse import Namespace
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from test_helpers import SCRIPT_PATH, create_marshal_json
+from _manage_config_fixtures import SCRIPT_PATH, create_marshal_json
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent

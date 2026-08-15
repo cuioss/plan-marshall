@@ -15,8 +15,8 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
-# conftest.py sets up PYTHONPATH; test_helpers seeds marshal.json fixtures.
-from test_helpers import create_marshal_json
+# conftest.py sets up PYTHONPATH; _manage_config_fixtures seeds marshal.json fixtures.
+from _manage_config_fixtures import create_marshal_json
 
 _SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent

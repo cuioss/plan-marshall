@@ -28,26 +28,20 @@ from pathlib import Path
 from _dep_detection import DependencyType
 from extension_base import NOTE_SAMPLE_LIMIT, DerivationResolverBase, ExtensionBase
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+from conftest import MARKETPLACE_ROOT
 
-EXTENSION_FILE = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'pm-plugin-development'
-    / 'skills'
-    / 'plan-marshall-plugin'
-    / 'extension.py'
-)
+# A domain bundle's ``extension.py`` sits at the SKILL ROOT, not under
+# ``scripts/``, so ``conftest.load_script_module`` — which resolves
+# ``{bundle}/skills/{skill}/scripts/{file}`` — cannot reach it. The path is
+# anchored on ``MARKETPLACE_ROOT`` rather than on ``Path(__file__).parent``
+# arithmetic, and the explicit spec load stays because every domain bundle ships
+# an ``extension.py`` sharing the module basename ``extension``: the distinct
+# module name is what avoids the cross-bundle ``import extension`` collision.
+EXTENSION_FILE = MARKETPLACE_ROOT / 'pm-plugin-development' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
 
 
 def _load_plugin_extension():
-    """Load the pm-plugin-development Extension by explicit file path.
-
-    Every domain bundle ships an ``extension.py`` sharing the module basename
-    ``extension``; loading via ``spec_from_file_location`` against the explicit
-    path avoids the cross-bundle ``import extension`` collision.
-    """
+    """Load the pm-plugin-development Extension under a distinct module name."""
     spec = importlib.util.spec_from_file_location('plugin_dev_extension', EXTENSION_FILE)
     assert spec is not None and spec.loader is not None, f'no import spec for {EXTENSION_FILE}'
     module = importlib.util.module_from_spec(spec)

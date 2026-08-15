@@ -22,7 +22,7 @@ from argparse import Namespace
 # so these underscore-prefixed sibling / cross-skill modules import bare.
 import _cmd_steps_sort
 import _manifest_validation
-from test_helpers import create_marshal_json
+from _manage_config_fixtures import create_marshal_json
 
 cmd_steps_sort = _cmd_steps_sort.cmd_steps_sort
 

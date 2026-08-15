@@ -17,17 +17,14 @@ so neither is a build-map config route.
 The four build skills (build-pyproject, build-maven, build-gradle, build-npm)
 each ship a ``BuildExtension`` subclass; each ``extension.py`` lives under the
 respective skill's ``scripts/`` directory and shares the module basename
-``extension``, so the class is loaded via ``importlib.util.spec_from_file_location``
-against the explicit file path to avoid the cross-skill module-name collision.
+``extension``, so the class is loaded under an explicit distinct module name to
+avoid the cross-skill module-name collision.
 
 The base-class default contract, the aggregator's longest-glob-wins overlap
 resolution, and the route deriver / completeness validator are covered separately
 in test/plan-marshall/script-shared/test_extension_base_classify_paths.py — this
 module covers only the concrete pyproject BuildExtension's claims.
 """
-
-import importlib.util
-from pathlib import Path
 
 import pytest
 
@@ -44,41 +41,20 @@ from extension_base import (
     route_matches,
 )
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-EXTENSION_FILE = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'build-pyproject'
-    / 'scripts'
-    / 'extension.py'
+from conftest import PROJECT_ROOT, get_scripts_dir, load_script_module
+
+EXTENSION_FILE = get_scripts_dir('plan-marshall', 'build-pyproject') / 'extension.py'
+
+# Every build skill ships an ``extension.py`` sharing the module basename
+# ``extension``, so the load is given an explicit distinct module name to avoid
+# the cross-skill collision. The module object is kept so tests can patch the
+# EXACT ``marketplace_paths`` object the extension bound at import time (a
+# sibling test's ``importlib.reload(marketplace_paths)`` can swap ``sys.modules``
+# out from under a separately-imported reference, so patching the extension's own
+# bound reference is the order-independent target).
+_EXTENSION_MODULE = load_script_module(
+    'plan-marshall', 'build-pyproject', 'extension.py', module_name='pyproject_build_extension'
 )
-
-
-def _load_pyproject_build_extension():
-    """Load the build-pyproject BuildExtension class by explicit file path.
-
-    Every build skill ships an ``extension.py`` sharing the module basename
-    ``extension``; loading via ``spec_from_file_location`` against the explicit
-    path avoids the cross-skill ``import extension`` collision.
-
-    Returns the loaded module so tests can patch the EXACT ``marketplace_paths``
-    object the extension bound at import time (a sibling test's
-    ``importlib.reload(marketplace_paths)`` can swap ``sys.modules`` out from
-    under a separately-imported reference, so patching the extension's own bound
-    reference is the order-independent target).
-    """
-    spec = importlib.util.spec_from_file_location(
-        'pyproject_build_extension', EXTENSION_FILE
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-_EXTENSION_MODULE = _load_pyproject_build_extension()
 BuildExtension = _EXTENSION_MODULE.BuildExtension
 
 # The live blocking instance that motivated the python-source-template route: the

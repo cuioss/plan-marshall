@@ -13,7 +13,7 @@ import json
 import shutil
 from pathlib import Path
 
-from test_helpers import SCRIPT_PATH
+from _manage_config_fixtures import SCRIPT_PATH
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import run_script

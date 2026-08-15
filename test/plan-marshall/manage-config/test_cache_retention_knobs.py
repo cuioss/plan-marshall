@@ -13,39 +13,46 @@ keys plus a rejected typo'd neighbour), and the numeric contract enforced by
 Tier 2 (direct import) tests.
 """
 
-import importlib.util
 import json
-import sys
 from argparse import Namespace
-from pathlib import Path
 
 import pytest
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from test_helpers import create_marshal_json
+from _manage_config_fixtures import create_marshal_json
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+from conftest import load_script_module, parse_ns
+
+_MANAGE_CONFIG = ('plan-marshall', 'manage-config')
+_SCRIPT = (*_MANAGE_CONFIG, 'manage-config.py')
+
+_config_defaults = load_script_module(*_MANAGE_CONFIG, '_config_defaults.py')
+_cmd_system_plan = load_script_module(*_MANAGE_CONFIG, '_cmd_system_plan.py')
+_cmd_sync_defaults = load_script_module(
+    *_MANAGE_CONFIG, '_cmd_sync_defaults.py', module_name='_cmd_sync_defaults_for_retention_test'
 )
 
 
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+def _retention_ns(verb: str, field: str | None = None, value: str | None = None) -> Namespace:
+    """Args for ``manage-config system retention {verb}``, from the script's parser.
+
+    The three-level verb tree (``system`` -> ``retention`` -> ``get``/``set``) is
+    resolved by the real parser, so the namespace matches what the CLI produces
+    rather than what this module remembers to set.
+    """
+    argv = ['system', 'retention', verb]
+    if field is not None:
+        argv += ['--field', field]
+    if value is not None:
+        argv += ['--value', str(value)]
+    ns: Namespace = parse_ns(*_SCRIPT, *argv)
+    return ns
 
 
-_config_defaults = _load_module('_config_defaults', '_config_defaults.py')
-_cmd_system_plan = _load_module('_cmd_system_plan', '_cmd_system_plan.py')
-_cmd_sync_defaults = _load_module('_cmd_sync_defaults_for_retention_test', '_cmd_sync_defaults.py')
+def _sync_defaults_ns() -> Namespace:
+    """Args for ``manage-config sync-defaults``, from the script's parser."""
+    ns: Namespace = parse_ns(*_SCRIPT, 'sync-defaults')
+    return ns
 
 cmd_system = _cmd_system_plan.cmd_system
 cmd_sync_defaults = _cmd_sync_defaults.cmd_sync_defaults
@@ -95,11 +102,11 @@ def test_retention_set_accepts_both_knobs(plan_context, field: str, value: str, 
     """`system retention set` accepts both knobs and round-trips through get."""
     create_marshal_json(plan_context.fixture_dir)
 
-    result = cmd_system(Namespace(sub_noun='retention', verb='set', field=field, value=value))
+    result = cmd_system(_retention_ns('set', field, value))
 
     assert result['status'] == 'success'
     assert result['value'] == expected
-    verify = cmd_system(Namespace(sub_noun='retention', verb='get'))
+    verify = cmd_system(_retention_ns('get'))
     assert verify['retention'][field] == expected
 
 
@@ -109,11 +116,11 @@ def test_retention_set_rejects_a_typod_neighbour(plan_context):
     create_marshal_json(plan_context.fixture_dir)
 
     result = cmd_system(
-        Namespace(sub_noun='retention', verb='set', field='plugin_cache_keep_version', value='5')
+        _retention_ns('set', 'plugin_cache_keep_version', '5')
     )
 
     assert result['status'] == 'error'
-    verify = cmd_system(Namespace(sub_noun='retention', verb='get'))
+    verify = cmd_system(_retention_ns('get'))
     assert 'plugin_cache_keep_version' not in verify['retention']
 
 
@@ -123,7 +130,7 @@ def test_retention_set_rejects_out_of_contract_values(plan_context, field: str, 
     persisting a keep-set the sweep cannot honour."""
     create_marshal_json(plan_context.fixture_dir)
 
-    result = cmd_system(Namespace(sub_noun='retention', verb='set', field=field, value=value))
+    result = cmd_system(_retention_ns('set', field, value))
 
     assert result['status'] == 'error'
     assert result['error_type'] == 'invalid_value'
@@ -196,12 +203,12 @@ def test_retention_set_accepts_no_plan_body_days(plan_context):
     create_marshal_json(plan_context.fixture_dir)
 
     result = cmd_system(
-        Namespace(sub_noun='retention', verb='set', field=_NO_PLAN_BODY_FIELD, value='14')
+        _retention_ns('set', _NO_PLAN_BODY_FIELD, '14')
     )
 
     assert result['status'] == 'success'
     assert result['value'] == 14
-    verify = cmd_system(Namespace(sub_noun='retention', verb='get'))
+    verify = cmd_system(_retention_ns('get'))
     assert verify['retention'][_NO_PLAN_BODY_FIELD] == 14
 
 
@@ -229,7 +236,7 @@ def test_sync_defaults_backfills_no_plan_body_days(plan_context):
         encoding='utf-8',
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_defaults_ns())
 
     assert result['status'] == 'success'
     merged = json.loads(marshal_path.read_text(encoding='utf-8'))['system']['retention']
@@ -268,12 +275,12 @@ def test_retention_set_accepts_build_results_days(plan_context):
     create_marshal_json(plan_context.fixture_dir)
 
     result = cmd_system(
-        Namespace(sub_noun='retention', verb='set', field=_BUILD_RESULTS_FIELD, value='21')
+        _retention_ns('set', _BUILD_RESULTS_FIELD, '21')
     )
 
     assert result['status'] == 'success'
     assert result['value'] == 21
-    verify = cmd_system(Namespace(sub_noun='retention', verb='get'))
+    verify = cmd_system(_retention_ns('get'))
     assert verify['retention'][_BUILD_RESULTS_FIELD] == 21
 
 
@@ -300,7 +307,7 @@ def test_sync_defaults_backfills_build_results_days(plan_context):
         encoding='utf-8',
     )
 
-    result = cmd_sync_defaults(Namespace(audit_plan_id=None))
+    result = cmd_sync_defaults(_sync_defaults_ns())
 
     assert result['status'] == 'success'
     merged = json.loads(marshal_path.read_text(encoding='utf-8'))['system']['retention']
