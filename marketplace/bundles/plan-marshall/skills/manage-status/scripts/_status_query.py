@@ -305,17 +305,40 @@ def cmd_title_token(args: argparse.Namespace) -> dict[str, Any] | None:
             }
         record: dict[str, Any] = {'owner': owner, 'state': state, 'set_at': now_utc_iso()}
 
+        # Whether this set CHANGES the stored value, decided inside the critical
+        # section against the freshly-read record (the same discipline the clear
+        # branch below applies). ``set_at`` is deliberately excluded from the
+        # comparison: it is refreshed on every call by construction, so including
+        # it would make every set "changed" and suppress nothing.
+        set_outcome: dict[str, Any] = {'changed': True}
+
         def _apply_set(current: dict[str, Any]) -> dict[str, Any]:
+            previous = current.get('title_token')
+            set_outcome['changed'] = not (
+                isinstance(previous, dict)
+                and previous.get('owner') == owner
+                and previous.get('state') == state
+            )
             current['title_token'] = record
             current['updated'] = now_utc_iso()
             return current
 
         rmw_json(get_status_path(args.plan_id), _apply_set)
-        log_entry('work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Title token: {state} (owner={owner})')
+        # Log only a value CHANGE. The PreToolUse:Bash render hook re-asserts the
+        # same (owner, state) pair on every build command, so an unconditional
+        # emission turned one bracket into a run of identical work-log lines
+        # carrying no new information. The write itself is never suppressed —
+        # ``set_at`` still refreshes, so the aged-token staleness predicate keeps
+        # seeing a live token across a long build.
+        if set_outcome['changed']:
+            log_entry(
+                'work', args.plan_id, 'INFO', f'[MANAGE-STATUS] Title token: {state} (owner={owner})'
+            )
         return {
             'status': 'success',
             'plan_id': args.plan_id,
             'title_token': record,
+            'changed': set_outcome['changed'],
         }
 
     # clear — owner-scoped. The arbitration decision is taken INSIDE the

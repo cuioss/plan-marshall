@@ -66,6 +66,8 @@ The step derives the plan's live footprint on demand from the worktree (via `com
 - **`changeset`** (default) — review the diff hunks of each modified file against the base SHA. The agent reasons about the lines the plan added or changed, not the file's pre-existing content.
 - **`artifact`** — review each modified file in full. Used when the plan rewrote files substantially and the surrounding context matters.
 
+**Two boundaries, both carried into the dispatched prompt.** The footprint `files` list bounds *which files* may be touched (both scopes); under `changeset` a second, **line-level** boundary bounds *which lines within them* — only the lines the plan added or changed. Stating the file boundary alone was the defect: a simplifier handed a file it may edit and no line boundary is invited to rewrite pre-existing lines the changeset never touched, which is precisely the surplus-diff the step exists to remove. The line boundary is what `changeset` and `artifact` actually differ by, so Step 3's prompt states it explicitly rather than leaving it implied by the word "hunks".
+
 ## HEAD-dependency
 
 `finalize-step-simplify` declares `head_dependent: true` in its frontmatter — that fact IS the membership declaration the dispatcher's re-entry check reads (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"). Because it applies edits directly to the worktree — which the dispatcher's commit instrumentation (`phase-6-finalize/SKILL.md` Step 3 item 5f) commits after the step records `done`, advancing HEAD — a loop-back fix task that advances HEAD past the recorded `head_at_completion` MUST re-fire this step so the simplification pass runs against the newer tree. Capture `git rev-parse HEAD` immediately before the terminal `mark-step-done` call and forward it via `--head-at-completion {sha}`.
@@ -133,7 +135,16 @@ Task: plan-marshall:{target}
       Review the plan's change surface for surplus structure and delete it.
       Scope: {scope} ({changeset} = diff hunks vs base SHA; {artifact} = each
       modified file in full). The files to review are the footprint `files`
-      list resolved in Step 1; never touch a file outside that list. Apply the
+      list resolved in Step 1; never touch a file outside that list.
+      Under {changeset} scope the boundary is LINE-level, not merely
+      file-level: within an in-scope file, only the lines this plan added or
+      changed are in scope. A line that is identical to its base-SHA content
+      is PRE-EXISTING and out of scope — do not delete, rewrite, or "tidy" it,
+      even when it exhibits one of the anti-patterns below. Opening a file to
+      change three lines is not licence to rewrite the other three hundred.
+      When a pre-existing line is genuinely worth changing, record it as a
+      finding instead of editing it. (Under {artifact} scope the whole file is
+      in scope, which is the entire difference between the two.) Apply the
       "minimum viable code" anti-patterns from ref-code-quality
       standards/code-organization.md #minimum-viable-code under the resolved
       simplicity posture "{simplicity_description}": delete unused parameters,

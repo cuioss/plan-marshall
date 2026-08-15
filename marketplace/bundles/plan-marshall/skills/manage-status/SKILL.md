@@ -82,6 +82,26 @@ JSON format for storage:
 | `in_progress` | Phase currently active |
 | `done` | Phase completed |
 
+### Title-token log emission is change-gated
+
+`title-token set` emits its `[MANAGE-STATUS] Title token: {state} (owner={owner})`
+work-log line **only when the set changes the stored value** — i.e. when the
+incoming `(owner, state)` pair differs from the pair already in
+`status.title_token`, or no record is stored. A re-assertion of the pair already
+present is a silent no-op on the log and reports `changed: false`.
+
+The gate exists because the `PreToolUse:Bash` render hook re-asserts
+`build-busy`/`build-hook` on **every** build command, so an unconditional
+emission turned one build bracket into a run of identical lines carrying no new
+information. `set_at` is excluded from the comparison by design: it is refreshed
+on every call, so comparing it would mark every set as changed and suppress
+nothing.
+
+**The gate suppresses the log line, never the write.** A suppressed set still
+refreshes `set_at`, so the aged-token staleness predicate keeps seeing a live
+token across a long build. This makes the `set` path symmetric with `clear`,
+which already logged only on an actual removal.
+
 ### Worktree Metadata Convention
 
 `status.metadata` is the canonical source of truth for whether a plan
@@ -1090,7 +1110,7 @@ Phase set, transition rules, and phase-to-skill routing are defined in [standard
 | `update-phase` | `--plan-id --phase --status` | Update specific phase status |
 | `progress` | `--plan-id` | Calculate progress percentage |
 | `metadata` | `--plan-id --get/--set --field [--value]` | Get/set metadata fields |
-| `title-token set` | `--plan-id --state {lock-waiting\|lock-owned\|build-busy} [--owner {build-hook\|merge-lock\|cli}]` | Write the `{owner, state, set_at}` record into `status.title_token`, replacing any existing record (last writer wins). `--owner` defaults to `cli`. No rendering — `manage-terminal-title` owns title composition + glyph/icon vocabulary. `build-busy` is the orchestration-busy state (🔨 icon-slot override). |
+| `title-token set` | `--plan-id --state {lock-waiting\|lock-owned\|build-busy} [--owner {build-hook\|merge-lock\|cli}]` | Write the `{owner, state, set_at}` record into `status.title_token`, replacing any existing record (last writer wins). `--owner` defaults to `cli`. No rendering — `manage-terminal-title` owns title composition + glyph/icon vocabulary. `build-busy` is the orchestration-busy state (🔨 icon-slot override). Returns `changed` — `false` when the set re-asserted the `(owner, state)` pair already stored, in which case the `[MANAGE-STATUS] Title token: …` work-log line is suppressed (see § "Title-token log emission is change-gated"). |
 | `title-token clear` | `--plan-id [--owner {build-hook\|merge-lock\|cli}]` | Remove the `status.title_token` record when `--owner` matches the recorded owner or the record is stale (>3600 s). A foreign-owned live record is left intact and reported as `cleared: false, reason: foreign_owner`. Idempotent — a no-op when already absent. |
 | `mark-step-done` | `--plan-id --phase --step --outcome [--display-detail] [--head-at-completion] [--loop-back-target] [--fact KEY=VALUE]... [--force]` | Record phase step outcome (+ optional display detail / HEAD SHA / loop-back target / repeatable structured `facts`) in `metadata.phase_steps` |
 | `assert-step-recorded` | `--plan-id --phase --step [--require-terminal]` | Read-only verdict: reports `recorded: true` iff a terminal `metadata.phase_steps[phase][step]` outcome exists. The phase-6-finalize post-dispatch guard. With `--require-terminal`, a near-miss orphan record under a different key returns `error: step_record_mismatched_key` (carrying `orphan_key`); a truly-absent record returns `error: step_record_missing`. Zero writes. |
