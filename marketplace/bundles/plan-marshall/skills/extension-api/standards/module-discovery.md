@@ -158,7 +158,7 @@ Each element is an object:
 | Field | Type | Description |
 |-------|------|-------------|
 | `target_bundle` | string | The referenced module's name, projected from whatever granularity the detecting analysis used |
-| `dep_type` | string | Reference kind: one of `script`, `skill`, `import`, `path`, `implements` |
+| `dep_type` | string | Reference kind: one of `script`, `skill`, `import`, `path`, `implements`, `lsp`. The first five come from the marketplace dependency-detection engine; `lsp` comes from the discovery-time language-server harvest and is present only when that harvest ran |
 | `resolved` | bool | `false` when the referenced target does not exist. Unresolved references are **stamped, not dropped**, so a resolver can suppress and report them rather than silently losing them |
 
 Entries are deduplicated on the `(target_bundle, dep_type, resolved)` triple, keeping the field proportional to the module count rather than to the raw reference count. A module with no outbound references carries an empty array, not a missing key.

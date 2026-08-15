@@ -73,27 +73,12 @@ class Extension(ExtensionBase, DerivationResolverBase):
             'skills_by_profile': {},
         }
 
-    def config_defaults(self, project_root: str) -> None:
-        """Seed the harvest's defaults into the shared extension-defaults surface.
-
-        The harvest defaults to **off**. It boots a language server and indexes
-        the workspace, which is a cost every crawl would otherwise pay whether or
-        not the project wants symbol-derived edges; a capability that expensive is
-        opted into, not out of.
-
-        No parallel configuration mechanism is introduced: these are ordinary
-        extension-default keys in ``.plan/marshal.json``, written through the
-        shared helper, which only sets a key that does not already exist and so
-        never overrides a user's choice.
-        """
-        try:
-            from _config_core import ext_defaults_set_default
-        except ImportError:
-            return
-
-        ext_defaults_set_default('pm_code_intelligence.lsp.enabled', 'false', project_root)
-        ext_defaults_set_default('pm_code_intelligence.lsp.python.server', 'pyright-langserver --stdio', project_root)
-        ext_defaults_set_default('pm_code_intelligence.lsp.timeout_seconds', '300', project_root)
+    # This bundle deliberately implements NO ``config_defaults``. The harvest is
+    # configured entirely by the shared machine-local ``language_servers`` binding
+    # that ``plan-marshall:lsp-client`` already reads, and a second key naming the
+    # same server for the same language would be exactly the parallel
+    # configuration surface that store exists to prevent. Off-by-default falls out
+    # of the same fact: the store is git-ignored, so a fresh clone has no binding.
 
     # =========================================================================
     # Axis-C: module-edge derivation (the language-server symbol join)
@@ -136,9 +121,10 @@ class Extension(ExtensionBase, DerivationResolverBase):
         suppressed: dict[str, list[str]] = {category: [] for category in SUPPRESSION_CATEGORIES}
         harvest_notes: list[str] = []
         seen_notes: set[str] = set()
+        saw_status = False
 
         for module_name, module_data in derived_by_name.items():
-            self._collect_harvest_notes(module_data, harvest_notes, seen_notes)
+            saw_status |= self._collect_harvest_notes(module_data, harvest_notes, seen_notes)
 
             for ref in module_data.get('component_refs') or []:
                 if ref.get('dep_type') != LSP_DEP_TYPE:
@@ -156,18 +142,35 @@ class Extension(ExtensionBase, DerivationResolverBase):
                 else:
                     edges.add((module_name, target))
 
+        if derived_by_name and not saw_status:
+            # No module carries a harvest record at all, which means no
+            # discovery-time harvest ran over this project. Reporting that is the
+            # difference between "the harvest found nothing" and "no harvest
+            # happened here" — without it, every project whose modules are
+            # discovered by an extension that does not materialize the field would
+            # get a confident `status: ok, edge_count: 0`.
+            harvest_notes.append(
+                'harvest-did-not-run: no module carries a harvest record, so no '
+                'discovery-time language-server harvest ran for this project'
+            )
+
         return sorted(edges), harvest_notes + self._aggregate_notes(suppressed)
 
     @staticmethod
-    def _collect_harvest_notes(module_data: dict, notes: list[str], seen: set[str]) -> None:
+    def _collect_harvest_notes(module_data: dict, notes: list[str], seen: set[str]) -> bool:
         """Fold one module's harvest record into the deduplicated note list.
 
         Every module carries the same workspace-wide record, so the notes are
         deduplicated on content rather than emitted once per module.
+
+        Returns:
+            Whether this module carried a harvest record at all — the caller uses
+            it to tell "the harvest ran and reported" from "nothing harvested
+            here", which are different answers.
         """
         status = module_data.get(HARVEST_STATUS_FIELD)
         if not isinstance(status, dict):
-            return
+            return False
 
         if not status.get('ran'):
             reason = status.get('reason') or 'unstated reason'
@@ -175,9 +178,10 @@ class Extension(ExtensionBase, DerivationResolverBase):
             if note not in seen:
                 seen.add(note)
                 notes.append(note)
-            return
+            return True
 
         for note in status.get('notes') or []:
             if note not in seen:
                 seen.add(note)
                 notes.append(note)
+        return True

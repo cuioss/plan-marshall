@@ -28,9 +28,12 @@ those. So the harvest runs in the discovery-time engine
 references into `derived.json`, and this bundle's resolver joins over them —
 the same shape the `python` import join already uses.
 
-A warm interactive client answering definition or rename queries at a cursor
-position is a **different lifecycle** and deliberately not built here. See
-`doc/concepts/code-intelligence.adoc` for the rationale.
+Answering definition or rename queries at a cursor position is a **different
+lifecycle**, and it already exists: `plan-marshall:lsp-client` does that for a
+leaf that opts in. This bundle is the batch counterpart, and it **reuses that
+client's session and its machine-local server binding** rather than shipping a
+second LSP client. See `doc/concepts/code-intelligence.adoc` for why the two
+lifecycles stay separate.
 
 ## Honest failure, never a silent zero
 
@@ -41,6 +44,18 @@ never collapsed into the same empty result.
 
 ## Configuration
 
-Off by default. The harvest is opt-in through the shared extension-defaults
-surface in `.plan/marshal.json`; this bundle ships no configuration mechanism of
-its own. See the bundle's `plan-marshall-plugin` skill for the keys.
+**This bundle ships no configuration of its own.** The harvest runs for a language
+exactly when that language has an enabled `language_servers` binding in the shared
+machine-local run-configuration store — the same binding `plan-marshall:lsp-client`
+reads, set with `run_config language-server set`.
+
+That store is git-ignored, so a fresh clone has no binding and the harvest is off
+by default. Enabling it trades Tier 0's subprocess-free crawl for the reference
+set, which is why it is opted into rather than out of.
+
+## Scope
+
+The harvest is materialized by `pm-plugin-development`'s module discovery, which
+covers **marketplace-bundle modules**. In a project whose modules come from another
+discovery extension, no module carries a harvest record and the resolver reports
+that it did not run — it does not report a confident zero.

@@ -34,7 +34,6 @@ Output:
 
 import argparse
 import json
-import shlex
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -590,71 +589,31 @@ def attach_lsp_references(project_root: Path, modules: list[dict]) -> None:
     the discovered module set: an endpoint that no module owns produces no edge,
     which cannot be decided before the modules exist.
 
-    Unlike :func:`build_component_refs`, this materialization IS gated — it boots
+    Unlike :func:`build_component_refs`, this materialization is gated — it boots
     a language server and indexes the workspace, a cost every crawl would
     otherwise pay whether or not the project wants symbol-derived edges. The gate
-    is an ordinary extension default in ``.plan/marshal.json`` (default ``false``),
-    read through the shared config helper rather than through a mechanism of this
-    engine's own.
+    is the SHARED machine-local ``language_servers`` binding that
+    ``plan-marshall:lsp-client`` already reads, not a switch of this engine's own:
+    a language with no enabled binding harvests nothing. That store is
+    git-ignored, so a fresh clone is off by default.
 
     Every module receives the harvest status under ``lsp_harvest`` — including
-    when the harvest is disabled or failed. That is deliberate: the ``lsp``
-    resolver reports the status as a note, so a server that never started stays
-    distinguishable from a workspace with genuinely no references.
+    when the language is unconfigured or the harvest failed. That is deliberate:
+    the ``lsp`` resolver reports the status as a note, so a server that never
+    started stays distinguishable from a workspace with genuinely no references.
     """
     try:
-        from lsp_harvest import HARVEST_STATUS_FIELD, build_lsp_component_refs
+        from lsp_harvest import HARVEST_STATUS_FIELD, build_lsp_component_refs, resolve_binding
     except ImportError:
         return
 
-    enabled, server_cmd, timeout_s = _read_lsp_config(str(project_root))
     module_paths = {module['name']: module['paths']['module'] for module in modules}
 
-    refs, status = build_lsp_component_refs(
-        project_root,
-        module_paths,
-        server_cmd=server_cmd,
-        enabled=enabled,
-        timeout_s=timeout_s,
-    )
+    refs, status = build_lsp_component_refs(project_root, module_paths, binding=resolve_binding())
 
     for module in modules:
         module['component_refs'] = module['component_refs'] + refs.get(module['name'], [])
         module[HARVEST_STATUS_FIELD] = status
-
-
-def _read_lsp_config(project_dir: str) -> tuple[bool, list[str], float]:
-    """Read the harvest's settings from the shared extension-defaults surface.
-
-    Falls back to the shipped defaults — disabled, pyright, a five-minute budget —
-    when the config surface is unavailable, so a crawl in an uninitialized project
-    behaves exactly as an opted-out one rather than erroring.
-    """
-    enabled = False
-    server = 'pyright-langserver --stdio'
-    timeout_s = 300.0
-
-    try:
-        from _config_core import ext_defaults_get
-    except ImportError:
-        return enabled, shlex.split(server), timeout_s
-
-    raw_enabled = ext_defaults_get('pm_code_intelligence.lsp.enabled', project_dir)
-    if raw_enabled is not None:
-        enabled = str(raw_enabled).strip().lower() in ('true', '1', 'yes', 'on')
-
-    raw_server = ext_defaults_get('pm_code_intelligence.lsp.python.server', project_dir)
-    if raw_server:
-        server = str(raw_server)
-
-    raw_timeout = ext_defaults_get('pm_code_intelligence.lsp.timeout_seconds', project_dir)
-    if raw_timeout:
-        try:
-            timeout_s = float(raw_timeout)
-        except (TypeError, ValueError):
-            pass
-
-    return enabled, shlex.split(server), timeout_s
 
 
 # =============================================================================

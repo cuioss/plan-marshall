@@ -246,8 +246,42 @@ def test_absent_server_reports_ran_false_with_a_stated_reason(tmp_path):
     assert outcome.references == []
 
 
+def _unlaunchable_server(tmp_path):
+    """An executable file that cannot actually be exec'd (bad interpreter).
+
+    Distinct from an ABSENT binary: `shutil.which` finds this one, so the run
+    gets past the absence check and fails at spawn instead — which is what
+    "fails to start" means as a mode separate from "is not installed".
+    """
+    launcher = tmp_path / 'broken-language-server'
+    launcher.write_text('#!/nonexistent/interpreter\n')
+    launcher.chmod(0o755)
+    return [str(launcher)]
+
+
+def test_server_that_cannot_be_launched_reports_ran_false(tmp_path):
+    """Mode 2: the binary is present and executable but the spawn fails."""
+    # Arrange
+    (tmp_path / 'x.py').write_text('import os\n')
+
+    # Act
+    outcome = harvest_workspace(
+        tmp_path, server_cmd=_unlaunchable_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0
+    )
+
+    # Assert
+    assert outcome.ran is False
+    assert outcome.reason.startswith('server-failed-to-start:')
+    assert outcome.references == []
+
+
 def test_server_that_exits_immediately_reports_ran_false(tmp_path):
-    """Mode 2: the binary exists but the session never completes."""
+    """A server that starts and then dies still never reports an empty success.
+
+    It resolves to the timeout reason rather than to a launch failure — the
+    process DID start — and the distinction that matters for the contract is
+    ran=False with a stated reason, which holds either way.
+    """
     # Arrange
     (tmp_path / 'x.py').write_text('import os\n')
 
@@ -255,13 +289,13 @@ def test_server_that_exits_immediately_reports_ran_false(tmp_path):
     outcome = harvest_workspace(
         tmp_path,
         server_cmd=[PYTHON, '-c', 'raise SystemExit(1)'],
-        timeout_s=20.0,
-        request_timeout_s=5.0,
+        timeout_s=10.0,
+        request_timeout_s=2.0,
     )
 
     # Assert
     assert outcome.ran is False
-    assert outcome.reason.startswith('server-failed-to-start:')
+    assert outcome.reason
     assert outcome.references == []
 
 
@@ -344,11 +378,12 @@ def test_every_failure_mode_states_a_distinct_reason(tmp_path):
     empty.mkdir()
     (empty / 'README.md').write_text('none\n')
 
-    # Act
+    # Act — one call per plan-named mode: absent, fails-to-start, times-out,
+    # and a workspace with nothing to scan.
     reasons = {
         harvest_workspace(sourced, server_cmd=['definitely-not-a-real-language-server-xyz']).reason,
         harvest_workspace(
-            sourced, server_cmd=[PYTHON, '-c', 'raise SystemExit(1)'], timeout_s=20.0, request_timeout_s=5.0
+            sourced, server_cmd=_unlaunchable_server(tmp_path), timeout_s=20.0, request_timeout_s=5.0
         ).reason,
         harvest_workspace(
             sourced,
@@ -413,15 +448,20 @@ def test_garbage_emitting_server_does_not_escape_as_an_exception(tmp_path):
 # =============================================================================
 
 
-def test_disabled_harvest_reports_disabled_and_runs_nothing(tmp_path):
-    """The default-off gate reports itself rather than silently producing zero."""
+def test_unconfigured_language_reports_itself_and_runs_nothing(tmp_path):
+    """No enabled binding is the off switch, and it states itself.
+
+    This is the whole configuration surface: an absent `language_servers` entry.
+    The store is machine-local and git-ignored, so a fresh clone lands here and
+    boots no server.
+    """
     # Act
-    refs, status = build_lsp_component_refs(tmp_path, {}, server_cmd=[PYTHON], enabled=False)
+    refs, status = build_lsp_component_refs(tmp_path, {}, binding=None)
 
     # Assert
     assert refs == {}
     assert status['ran'] is False
-    assert status['reason'].startswith('disabled:')
+    assert status['reason'].startswith('not-configured:')
 
 
 def test_failed_harvest_yields_no_refs_but_a_stated_status(tmp_path):
@@ -431,7 +471,7 @@ def test_failed_harvest_yields_no_refs_but_a_stated_status(tmp_path):
 
     # Act
     refs, status = build_lsp_component_refs(
-        tmp_path, {'alpha': '.'}, server_cmd=['definitely-not-a-real-language-server-xyz'], enabled=True
+        tmp_path, {'alpha': '.'}, binding={'command': ['definitely-not-a-real-language-server-xyz']}
     )
 
     # Assert
@@ -522,8 +562,7 @@ def test_end_to_end_materialization_produces_lsp_component_refs():
         refs, status = build_lsp_component_refs(
             root,
             {'alpha': 'alpha', 'beta': 'beta'},
-            server_cmd=['pyright-langserver', '--stdio'],
-            enabled=True,
+            binding={'command': ['pyright-langserver', '--stdio'], 'language_id': 'python'},
             timeout_s=120.0,
             request_timeout_s=30.0,
         )

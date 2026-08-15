@@ -59,11 +59,12 @@ Discovery is keyed on the `implements: plan-marshall:extension-api/standards/ext
 
 ### Bundles Implementing This Convention
 
-All 10 production bundles provide a `skills/plan-marshall-plugin/` directory:
+All 11 production bundles provide a `skills/plan-marshall-plugin/` directory:
 
 | Bundle | Domain | Description |
 |--------|--------|-------------|
 | `plan-marshall` | build, general-dev | Core infrastructure and multi-domain extension |
+| `pm-code-intelligence` | _(none)_ | Hosts the `lsp` derivation resolver; registers no skill domain |
 | `pm-dev-java` | java | Java/Maven development patterns and module discovery |
 | `pm-dev-java-cui` | java-cui | CUI-specific Java extensions (additive to pm-dev-java) |
 | `pm-dev-frontend` | javascript | JavaScript/frontend development standards |

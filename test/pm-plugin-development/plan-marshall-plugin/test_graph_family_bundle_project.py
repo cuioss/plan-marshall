@@ -60,7 +60,7 @@ _cmd_client = load_script_module(
 )
 
 EXPECTED_RESOLVER_IDS = ['documentation', 'lsp', 'markdown', 'maven', 'python']
-"""The shipped resolver roster: one Axis-B implementor and three Axis-A ones.
+"""The shipped resolver roster: one Axis-B implementor and four Axis-A ones.
 
 This literal is the module's SINGLE executable pin, and it is deliberate. It is
 consumed only by :func:`test_the_expected_resolver_roster_is_discovered` (which
@@ -80,7 +80,7 @@ assertion set.
 # materially larger refactor than the roster-duplication these constants sit
 # next to, so they remain literals and are asserted as membership, not equality.
 AXIS_B_RESOLVER_IDS = {'maven'}
-AXIS_A_RESOLVER_IDS = {'documentation', 'markdown', 'python'}
+AXIS_A_RESOLVER_IDS = {'documentation', 'lsp', 'markdown', 'python'}
 
 
 # =============================================================================

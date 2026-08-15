@@ -97,11 +97,12 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:validate ext
 
 ## Current Implementations
 
-All 10 production bundles ship a domain-bundle manifest under `skills/plan-marshall-plugin/`:
+All 11 production bundles ship a domain-bundle manifest under `skills/plan-marshall-plugin/`:
 
 | Bundle | Manifest Skill | Domain Key |
 |--------|----------------|------------|
 | plan-marshall | plan-marshall-plugin | build, general-dev |
+| pm-code-intelligence | plan-marshall-plugin | _(none — registers the `lsp` derivation resolver, not a skill domain)_ |
 | pm-dev-java | plan-marshall-plugin | java |
 | pm-dev-java-cui | plan-marshall-plugin | java-cui |
 | pm-dev-frontend | plan-marshall-plugin | javascript |

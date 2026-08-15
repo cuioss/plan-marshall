@@ -4,7 +4,7 @@ Guidelines for AI assistants working in the plan-marshall repository.
 
 ## What This Repository Is
 
-A **Claude Code Marketplace** with 10 bundles of skills, agents, and commands for CUI (Common User Interface) Open Source projects. Source format IS Claude Code native; every other target is an export derived from it. Multi-target distribution is implemented via `marketplace/targets/`, and the set of targets is whatever is registered in `TARGET_REGISTRY` (`marketplace/targets/__init__.py`) — the registry is the source of truth and is deliberately not restated here. Design history lives in `doc/refactor/`.
+A **Claude Code Marketplace** with 11 bundles of skills, agents, and commands for CUI (Common User Interface) Open Source projects. Source format IS Claude Code native; every other target is an export derived from it. Multi-target distribution is implemented via `marketplace/targets/`, and the set of targets is whatever is registered in `TARGET_REGISTRY` (`marketplace/targets/__init__.py`) — the registry is the source of truth and is deliberately not restated here. Design history lives in `doc/refactor/`.
 
 ## Quick Commands
 

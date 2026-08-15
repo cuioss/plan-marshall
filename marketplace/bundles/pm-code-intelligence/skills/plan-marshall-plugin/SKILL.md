@@ -42,24 +42,27 @@ All configuration is in `extension.py`, which implements two axes of the Extensi
 Axis-A (`ExtensionBase`):
 - `get_skill_domains()` - Returns `[]`; this bundle registers no skill domain
 - `applies_to_module()` - Always non-applicable, for the same reason
-- `config_defaults()` - Seeds the harvest defaults into `.plan/marshal.json` through the shared `ext_defaults_set_default` helper, which never overrides a user-set value
+- `config_defaults()` - **Not overridden.** The inherited no-op is deliberate; see § Configuration
 
 Axis-C (`DerivationResolverBase`, opted into by multiple inheritance):
 - `derivation_resolver_id()` - Returns the stable provenance id `lsp`, stamped onto every edge this resolver produces
 - `derive_edges()` - Pure join over the `component_refs` field discovery materializes, selecting only `lsp` entries. Reads the harvest's `lsp_harvest` status record and reports it, so a harvest that did not run is stated rather than collapsing into a zero-edge success. Unresolved targets, unknown endpoints, and self-edges are suppressed and reported as aggregated `notes[]` entries
 
-## Configuration keys
+## Configuration
 
-Seeded by `config_defaults()` under the shared extension-defaults surface. The
-harvest is **off by default** — it boots a language server and indexes the
-workspace, a cost every crawl would otherwise pay whether or not the project wants
-symbol-derived edges.
+**This bundle declares no configuration keys and implements no `config_defaults`.**
 
-| Key | Default | Meaning |
-|-----|---------|---------|
-| `pm_code_intelligence.lsp.enabled` | `false` | Whether the discovery-time harvest runs at all |
-| `pm_code_intelligence.lsp.python.server` | `pyright-langserver --stdio` | Server argv for the Python workspace |
-| `pm_code_intelligence.lsp.timeout_seconds` | `300` | Whole-harvest wall-clock budget |
+The harvest runs for a language exactly when that language has an enabled
+`language_servers` binding in the shared machine-local run-configuration store —
+the same binding [`plan-marshall:lsp-client`](../../../plan-marshall/skills/lsp-client/SKILL.md)
+reads, documented in
+[`run-config-standard.md`](../../../plan-marshall/skills/manage-run-config/standards/run-config-standard.md)
+and set with `run_config language-server set`.
+
+A second key naming the same server for the same language would be the parallel
+configuration surface that shared store exists to prevent. Off-by-default falls out
+of the same fact: the store is git-ignored, so a fresh clone has no binding and
+boots no server.
 
 ## Lifecycle
 
@@ -68,10 +71,18 @@ The language server runs **once at discovery time**, in
 persisted into `derived.json`. This resolver then joins over them on each graph
 query at no additional cost.
 
-The alternative — a warm server answering queries at a cursor position — is a
-different lifecycle and deliberately not built. A batch harvester and an
-interactive client cannot share one process model, and a component carrying both
-would ship neither. See `doc/concepts/code-intelligence.adoc`.
+Answering queries at a cursor position is a different lifecycle and already ships
+as `plan-marshall:lsp-client`. The harvest **reuses that client's session and
+transport** rather than implementing a second one; what it does not share is the
+process model, because a batch pass over a whole workspace and a single-position
+lookup have opposite cost profiles. See `doc/concepts/code-intelligence.adoc`.
+
+## Scope of the harvest
+
+The `lsp_harvest` record is materialized by `pm-plugin-development`'s module
+discovery, which covers marketplace-bundle modules. Where no module carries the
+record, `derive_edges()` reports that no harvest ran rather than returning a
+confident zero.
 
 ## Detection
 

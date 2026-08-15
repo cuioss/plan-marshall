@@ -5,58 +5,57 @@
 A language server resolves references with a real parser, which is knowledge no
 static join in this repository can derive. The protocol, however, is built for a
 long-lived editor session that amortizes index cost over thousands of queries,
-while this project's consumers are one-shot subprocesses. Booting a server per
-query is therefore not viable, and the resolution is to use the server as a
-**derivation-time producer** rather than as a query backend.
+while a derivation resolver is dispatched at graph-QUERY time, once per
+``graph`` / ``path`` / ``neighbors`` / ``impact`` call, and is contractually a
+pure function of its arguments — no subprocess, no filesystem access.
 
-That choice is forced by the Axis-C contract, not merely preferred: a derivation
-resolver is a pure function of its arguments — no subprocess, no filesystem
-access — and resolvers are dispatched at graph-QUERY time, once per
-``graph`` / ``path`` / ``neighbors`` / ``impact`` call. A server booted inside
-``derive_edges`` would pay its whole harvest on every one of those calls. So the
-harvest runs HERE, at discovery time, exactly as the marketplace
+So the harvest runs HERE, at discovery time, exactly as the marketplace
 dependency-detection engine behind ``build_component_refs`` does, and its output
-is persisted into ``derived.json`` for the resolver to join over.
+is persisted into ``derived.json`` for the ``lsp`` resolver to join over.
+
+**This module owns no LSP transport of its own.** The session, the JSON-RPC
+plumbing, and the machine-local server binding all belong to
+``plan-marshall:lsp-client``, which already ships them for the interactive
+lookup/edit path; this engine drives that same client in batch. Re-implementing
+the transport would put a second, silently diverging LSP client in one
+repository, and re-reading the server binary from a different config key would
+be exactly the parallel configuration surface the shared store exists to prevent.
 
 The harvest emits ``component_refs`` entries carrying :data:`DEP_TYPE_LSP`, plus
 a per-module :data:`HARVEST_STATUS_FIELD` record. That status record is what
 keeps a failed harvest from reading as a real answer: a server that is absent,
-fails to start, times out, or does not support the workspace produces
-``ran: False`` with a distinct stated reason, which the ``lsp`` resolver turns
-into a note. Without it a dead server and a genuinely edge-free workspace would
-both surface as ``status: ok, edge_count: 0`` — the confident-empty-answer this
-substrate exists to eliminate.
+fails to start, times out, or has no workspace to scan produces ``ran: False``
+with a distinct stated reason, which the resolver turns into a note. Without it a
+dead server and a genuinely edge-free workspace would both surface as
+``status: ok, edge_count: 0``.
 
 See ``plan-marshall:extension-api/standards/ext-point-derivation-resolver.md``
-for the resolver contract this engine feeds.
+for the resolver contract this engine feeds, and the ``language_servers`` section
+of ``plan-marshall:manage-run-config`` for the binding it reads.
 """
 
 from __future__ import annotations
 
 import ast
-import json
-import os
-import selectors
 import shutil
-import subprocess
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, Any
+from typing import Any
 
 DEP_TYPE_LSP = 'lsp'
 """The ``dep_type`` stamped on every reference this engine materializes.
 
 Sibling kinds (``script`` / ``skill`` / ``import`` / ``path`` / ``implements``)
-belong to the markdown and python resolvers. Keeping this kind distinct is what
-lets the ``lsp`` resolver join over its own references without competing for the
-import join's edges — where both derive the same pair, the core merge unions them
-into one edge carrying both producer ids.
+belong to the markdown, python, and documentation resolvers. Keeping this kind
+distinct is what lets the ``lsp`` resolver join over its own references without
+competing for the import join's edges — where both derive the same pair, the core
+merge unions them into one edge carrying both producer ids.
 """
 
 HARVEST_STATUS_FIELD = 'lsp_harvest'
-"""Module-dict field carrying ``{ran, reason, files_scanned, reference_count}``.
+"""Module-dict field carrying ``{ran, reason, notes, ...}``.
 
 Read by the ``lsp`` resolver so a harvest that did not run is reported rather
 than collapsing into a silent zero-edge success.
@@ -68,34 +67,38 @@ DEFAULT_TIMEOUT_S = 300.0
 DEFAULT_REQUEST_TIMEOUT_S = 15.0
 """Per-request budget. A single wedged request must not consume the whole run."""
 
-# --- Stated failure reasons (D3). One per lifecycle failure mode. --------------
+HARVEST_LANGUAGE = 'python'
+"""The language key looked up in the shared ``language_servers`` binding.
+
+One language, deliberately: the per-language parser cost is the real argument
+against chasing this tier broadly, so one language end-to-end is the deliverable
+and generalization follows evidence. Widening means a per-language
+position-enumeration strategy beside :func:`import_positions`, not just another
+binding.
+"""
+
+# --- Stated failure reasons. One per lifecycle failure mode. ------------------
 # Each is a distinct, human-readable prefix so a reader can tell WHICH mode
 # fired. None of them may ever be reported as a successful empty harvest.
-REASON_DISABLED = 'disabled: lsp harvest is not enabled for this project'
+REASON_NOT_CONFIGURED = (
+    'not-configured: no enabled language_servers binding for {language} in the run-configuration store'
+)
+REASON_CLIENT_UNAVAILABLE = 'client-unavailable: the plan-marshall lsp-client scripts could not be imported ({detail})'
 REASON_SERVER_ABSENT = 'server-absent: {binary} is not on PATH'
 REASON_SERVER_FAILED = 'server-failed-to-start: {binary} could not be launched ({detail})'
-REASON_SERVER_TIMEOUT = 'server-timeout: {binary} did not respond within {budget:.0f}s ({phase})'
+REASON_SERVER_TIMEOUT = 'server-timeout: {binary} did not respond within {budget:.0f}s ({detail})'
 REASON_WORKSPACE_UNSUPPORTED = 'workspace-unsupported: no {language} sources found under the project root'
-REASON_SERVER_GONE = 'server-failed-to-start: {binary} exited before completing the session ({phase})'
-
-
-class LspTimeout(RuntimeError):
-    """A read exceeded its budget."""
-
-
-class LspServerGone(RuntimeError):
-    """The server closed its stdout before answering."""
 
 
 @dataclass
 class HarvestOutcome:
     """The result of one harvest attempt.
 
-    ``ran`` is the load-bearing field. ``ran=False`` with an empty
-    ``references`` means the harvest could not be performed and ``reason`` says
-    why; ``ran=True`` with an empty ``references`` means the server ran and
-    genuinely found nothing. Those two states warrant opposite reactions, which
-    is precisely why they are never collapsed.
+    ``ran`` is the load-bearing field. ``ran=False`` with empty ``references``
+    means the harvest could not be performed and ``reason`` says why; ``ran=True``
+    with empty ``references`` means the server ran and genuinely found nothing.
+    Those two states warrant opposite reactions, which is why they are never
+    collapsed.
     """
 
     ran: bool
@@ -116,83 +119,16 @@ class HarvestOutcome:
         }
 
 
-# =============================================================================
-# Minimal stdio LSP client
-# =============================================================================
+def _load_lsp_client() -> Any:
+    """Import the shared lsp-client module, or raise ImportError.
 
-
-class LspClient:
-    """A minimal JSON-RPC-over-stdio client, sufficient to drive one batch.
-
-    Deliberately not a general client: it speaks only the handful of methods a
-    batch harvest needs, and every read carries a deadline so a wedged server
-    surfaces as a stated timeout rather than a hung crawl.
+    Deferred and guarded so discovery still works in an envelope that does not
+    carry the plan-marshall bundle on its path: an unavailable client degrades to
+    a stated no-harvest rather than failing the crawl.
     """
+    import lsp_client
 
-    def __init__(self, proc: subprocess.Popen, stdin: IO[bytes], stdout: IO[bytes]) -> None:
-        # The streams are passed explicitly rather than read off ``proc`` so the
-        # not-None narrowing happens once, at the launch site that knows both
-        # pipes were requested.
-        self._proc = proc
-        self._stdin = stdin
-        self._stdout = stdout
-        self._buf = bytearray()
-        self._id = 0
-        self._selector = selectors.DefaultSelector()
-        self._selector.register(stdout, selectors.EVENT_READ)
-
-    def _fill(self, deadline: float) -> None:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise LspTimeout
-        if not self._selector.select(timeout=remaining):
-            raise LspTimeout
-        chunk = os.read(self._stdout.fileno(), 65536)
-        if not chunk:
-            raise LspServerGone
-        self._buf.extend(chunk)
-
-    def _read_message(self, deadline: float) -> dict[str, Any]:
-        while True:
-            split = self._buf.find(b'\r\n\r\n')
-            if split == -1:
-                self._fill(deadline)
-                continue
-            header = self._buf[:split].decode('ascii', 'replace')
-            length = 0
-            for line in header.split('\r\n'):
-                if line.lower().startswith('content-length:'):
-                    length = int(line.split(':', 1)[1].strip())
-            body_start = split + 4
-            while len(self._buf) < body_start + length:
-                self._fill(deadline)
-            body = bytes(self._buf[body_start : body_start + length])
-            del self._buf[: body_start + length]
-            decoded = json.loads(body)
-            # A server sending a non-object payload is malformed; treat it as an
-            # empty message rather than letting an unexpected shape reach callers
-            # that index it.
-            return decoded if isinstance(decoded, dict) else {}
-
-    def _write(self, payload: dict) -> None:
-        body = json.dumps(payload).encode('utf-8')
-        self._stdin.write(b'Content-Length: %d\r\n\r\n%s' % (len(body), body))
-        self._stdin.flush()
-
-    def notify(self, method: str, params: dict) -> None:
-        """Send a notification (no reply expected)."""
-        self._write({'jsonrpc': '2.0', 'method': method, 'params': params})
-
-    def request(self, method: str, params: dict, timeout_s: float) -> Any:
-        """Send a request and return its ``result``, ignoring interleaved traffic."""
-        self._id += 1
-        request_id = self._id
-        self._write({'jsonrpc': '2.0', 'id': request_id, 'method': method, 'params': params})
-        deadline = time.monotonic() + timeout_s
-        while True:
-            message = self._read_message(deadline)
-            if message.get('id') == request_id:
-                return message.get('result')
+    return lsp_client
 
 
 # =============================================================================
@@ -213,9 +149,9 @@ def import_positions(source: str) -> list[tuple[int, int]]:
         source: The file's text.
 
     Returns:
-        Positions to query, in source order. A file that does not parse yields
-        no positions rather than raising — an unparseable file is reported by
-        the caller as a scanned-but-empty file, not as a harvest failure.
+        Positions to query, in source order. A file that does not parse yields no
+        positions rather than raising — an unparseable file is a scanned-but-empty
+        file, not a harvest failure.
     """
     try:
         tree = ast.parse(source)
@@ -267,25 +203,23 @@ def harvest_workspace(
     project_root: str | Path,
     *,
     server_cmd: list[str],
-    language: str = 'python',
+    language_id: str = HARVEST_LANGUAGE,
     suffix: str = '.py',
     timeout_s: float = DEFAULT_TIMEOUT_S,
     request_timeout_s: float = DEFAULT_REQUEST_TIMEOUT_S,
     file_budget: int | None = None,
 ) -> HarvestOutcome:
-    """Drive one language server over the workspace and harvest file references.
+    """Drive the shared LSP client over the workspace and harvest file references.
 
     Every lifecycle failure resolves to ``ran=False`` plus a distinct stated
-    reason (:data:`REASON_SERVER_ABSENT` and siblings) rather than to an empty
-    success. That is the whole point of the return shape: a caller must be able
-    to tell "no server ran" from "a server ran and found nothing" without
-    inspecting the reference list.
+    reason rather than to an empty success. That is the whole point of the return
+    shape: a caller must be able to tell "no server ran" from "a server ran and
+    found nothing" without inspecting the reference list.
 
     Args:
-        project_root: Workspace root handed to the server as its ``rootUri``.
-        server_cmd: Argv of the language server, e.g.
-            ``['pyright-langserver', '--stdio']``.
-        language: LSP ``languageId`` for opened documents.
+        project_root: Workspace root handed to the server as its root.
+        server_cmd: Language-server argv, from the shared binding.
+        language_id: LSP ``languageId`` for opened documents.
         suffix: File suffix selecting workspace sources.
         timeout_s: Whole-harvest wall-clock budget.
         request_timeout_s: Per-request budget.
@@ -300,30 +234,25 @@ def harvest_workspace(
     binary = server_cmd[0] if server_cmd else ''
     started = time.monotonic()
 
+    try:
+        client = _load_lsp_client()
+    except ImportError as exc:
+        return HarvestOutcome(ran=False, reason=REASON_CLIENT_UNAVAILABLE.format(detail=exc))
+
     if not binary or shutil.which(binary) is None:
         return HarvestOutcome(ran=False, reason=REASON_SERVER_ABSENT.format(binary=binary or '<unset>'))
 
     files = _candidate_files(root, suffix, file_budget)
     if not files:
-        return HarvestOutcome(ran=False, reason=REASON_WORKSPACE_UNSUPPORTED.format(language=language))
+        return HarvestOutcome(ran=False, reason=REASON_WORKSPACE_UNSUPPORTED.format(language=language_id))
 
     try:
-        proc = subprocess.Popen(
-            server_cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            cwd=str(root),
-        )
+        transport = client.StdioTransport(server_cmd, str(root))
     except OSError as exc:
         return HarvestOutcome(ran=False, reason=REASON_SERVER_FAILED.format(binary=binary, detail=exc))
 
-    if proc.stdin is None or proc.stdout is None:
-        proc.kill()
-        return HarvestOutcome(ran=False, reason=REASON_SERVER_FAILED.format(binary=binary, detail='no stdio pipes'))
-
     deadline = started + timeout_s
-    client = LspClient(proc, proc.stdin, proc.stdout)
+    session = client.LspSession(transport, str(root))
     references: set[tuple[str, str]] = set()
     notes: list[str] = []
     scanned = 0
@@ -331,17 +260,7 @@ def harvest_workspace(
     unresolved = 0
 
     try:
-        client.request(
-            'initialize',
-            {
-                'processId': os.getpid(),
-                'rootUri': root.as_uri(),
-                'workspaceFolders': [{'uri': root.as_uri(), 'name': root.name}],
-                'capabilities': {'textDocument': {'definition': {'linkSupport': True}}},
-            },
-            timeout_s=min(request_timeout_s * 4, max(deadline - time.monotonic(), 0.0)),
-        )
-        client.notify('initialized', {})
+        session.initialize(timeout=min(request_timeout_s * 4, max(deadline - time.monotonic(), 0.0)))
 
         for path in files:
             if time.monotonic() >= deadline:
@@ -361,55 +280,41 @@ def harvest_workspace(
             if not positions:
                 continue
 
-            uri = path.as_uri()
-            client.notify(
-                'textDocument/didOpen',
-                {'textDocument': {'uri': uri, 'languageId': language, 'version': 1, 'text': text}},
-            )
-            try:
-                for line, character in positions:
-                    budget = min(request_timeout_s, max(deadline - time.monotonic(), 0.0))
-                    if budget <= 0:
-                        break
-                    result = client.request(
-                        'textDocument/definition',
-                        {'textDocument': {'uri': uri}, 'position': {'line': line, 'character': character}},
-                        timeout_s=budget,
-                    )
-                    for target in _definition_targets(result):
-                        if target == path:
-                            continue
-                        if not _within(target, root):
-                            external += 1
-                            continue
-                        references.add((_rel(path, root), _rel(target, root)))
-                    if not result:
-                        unresolved += 1
-            finally:
-                client.notify('textDocument/didClose', {'textDocument': {'uri': uri}})
+            session.open(str(path))
+            for line, character in positions:
+                if time.monotonic() >= deadline:
+                    break
+                locations = session.definition(str(path), line, character)
+                if not locations:
+                    unresolved += 1
+                    continue
+                for target in _definition_targets(locations):
+                    if target == path:
+                        continue
+                    if not _within(target, root):
+                        external += 1
+                        continue
+                    references.add((_rel(path, root), _rel(target, root)))
 
-    except LspTimeout:
+    except client.LspError as exc:
+        # The shared transport reports a wedged server, a dead server, and a
+        # protocol error alike as LspError; none of them may escape into the
+        # crawl, and none may read as a successful empty harvest.
         return HarvestOutcome(
             ran=False,
-            reason=REASON_SERVER_TIMEOUT.format(binary=binary, budget=timeout_s, phase='harvest'),
+            reason=REASON_SERVER_TIMEOUT.format(binary=binary, budget=timeout_s, detail=exc),
             files_scanned=scanned,
             elapsed_s=time.monotonic() - started,
         )
-    except (LspServerGone, OSError, ValueError) as exc:
-        # A server that died mid-session surfaces three ways depending on timing:
-        # EOF on read (LspServerGone), BrokenPipeError on the next write (OSError),
-        # or unparseable output (ValueError, which JSONDecodeError subclasses).
-        # All three are the same event and must not escape into the crawl — an
-        # unhandled exception here would fail discovery outright rather than
-        # degrading to a stated no-harvest.
+    except OSError as exc:
         return HarvestOutcome(
             ran=False,
-            reason=REASON_SERVER_GONE.format(binary=binary, phase=f'harvest/{type(exc).__name__}'),
+            reason=REASON_SERVER_FAILED.format(binary=binary, detail=exc),
             files_scanned=scanned,
             elapsed_s=time.monotonic() - started,
         )
     finally:
-        _shutdown(client, proc)
+        transport.close()
 
     if external:
         notes.append(f'out-of-workspace: {external} reference(s) resolved outside the project root and own no module')
@@ -425,20 +330,32 @@ def harvest_workspace(
     )
 
 
-def _definition_targets(result: Any) -> list[Path]:
-    """Normalize the three shapes ``textDocument/definition`` may return."""
-    if not result:
-        return []
-    if isinstance(result, dict):
-        result = [result]
+def _definition_targets(locations: Iterable[Any]) -> list[Path]:
+    """Normalize the shapes ``textDocument/definition`` may return."""
     targets: list[Path] = []
-    for item in result:
+    for item in locations:
         if not isinstance(item, dict):
             continue
         uri = item.get('uri') or item.get('targetUri') or ''
-        if uri.startswith('file://'):
-            targets.append(Path(uri[len('file://') :]))
+        path = _path_from_uri(uri)
+        if path is not None:
+            targets.append(path)
     return targets
+
+
+def _path_from_uri(uri: str) -> Path | None:
+    """Convert a ``file://`` URI to a path, decoding percent-escapes.
+
+    The unquote is not optional: a workspace path containing a space arrives as
+    ``%20``, and a path left encoded fails the in-workspace test below, so every
+    reference in that workspace would be miscounted as out-of-workspace — a
+    stated but wrong reason.
+    """
+    if not uri.startswith('file://'):
+        return None
+    from urllib.parse import unquote, urlparse
+
+    return Path(unquote(urlparse(uri).path))
 
 
 def _within(path: Path, root: Path) -> bool:
@@ -449,29 +366,8 @@ def _rel(path: Path, root: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
-def _shutdown(client: LspClient, proc: subprocess.Popen) -> None:
-    """Close the session, escalating to a kill so no server outlives the crawl."""
-    try:
-        client.request('shutdown', {}, timeout_s=5.0)
-        client.notify('exit', {})
-    except (LspTimeout, LspServerGone, OSError, ValueError):
-        pass
-    try:
-        proc.wait(timeout=5.0)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait(timeout=5.0)
-    finally:
-        for stream in (proc.stdin, proc.stdout):
-            try:
-                if stream:
-                    stream.close()
-            except OSError:
-                pass
-
-
 # =============================================================================
-# The file-to-module lift (D2)
+# The file-to-module lift
 # =============================================================================
 
 
@@ -482,26 +378,26 @@ def lift_to_modules(
 ) -> tuple[list[tuple[str, str]], list[str]]:
     """Lift file-granular references to module-granular pairs.
 
-    Symbol references are file-granular; edges are module-granular. The lift
-    goes through the path-attribution seam — the ``attribute`` callable is that
-    seam's ``path -> owning module`` answer — because a resolver may not invent
-    an owner for a path.
+    Symbol references are file-granular; edges are module-granular. The lift goes
+    through the path-attribution seam — the ``attribute`` callable is that seam's
+    ``path -> owning module`` answer — because a resolver may not invent an owner
+    for a path.
 
-    An endpoint the seam cannot attribute produces **no edge and a note**, never
-    a guessed module. That is the rule the whole substrate turns on: a
-    confidently-labelled wrong edge is worse than a missing one, and this
-    function is capable of producing them at volume.
+    An endpoint the seam cannot attribute produces **no edge and a note**, never a
+    guessed module. That is the rule the whole substrate turns on: a
+    confidently-labelled wrong edge is worse than a missing one, and this function
+    is capable of producing them at volume.
 
     Args:
         file_references: ``(from_file, to_file)`` repo-relative pairs.
         attribute: Path-attribution seam lookup; returns ``None`` when no
             attributor claims the path.
-        known_modules: The discovered module set. An attributed name outside it
-            is dropped, since a resolver cannot invent a node.
+        known_modules: The discovered module set. An attributed name outside it is
+            dropped, since a resolver cannot invent a node.
 
     Returns:
-        ``(edges, notes)`` — sorted deduplicated module pairs, plus one
-        aggregated note per non-empty suppression category.
+        ``(edges, notes)`` — sorted deduplicated module pairs, plus one aggregated
+        note per non-empty suppression category.
     """
     known = set(known_modules)
     edges: set[tuple[str, str]] = set()
@@ -551,23 +447,47 @@ def aggregate_notes(suppressed: dict[str, list[str]], sample_size: int = 3) -> l
 # =============================================================================
 
 
+def resolve_binding(language: str = HARVEST_LANGUAGE) -> dict[str, Any] | None:
+    """Read the machine-local server binding from the shared run-config store.
+
+    Returns ``None`` when the language has no enabled binding — the section is
+    absent, the language is absent, the entry is disabled, or its command is
+    missing. All of those are the opt-out path.
+
+    This is the ONLY switch the harvest has. It ships no ``enabled`` key of its
+    own, because the shared binding already carries enabled/disabled semantics,
+    and a second switch naming the same server for the same language would be the
+    parallel configuration surface the shared store exists to prevent. It also
+    makes the harvest off-by-default for free: the store is machine-local and
+    git-ignored, so a fresh clone has no binding and runs no server.
+    """
+    try:
+        client = _load_lsp_client()
+    except ImportError:
+        return None
+    try:
+        binding = client.resolve_language_server(language)
+    except (OSError, ValueError, KeyError, TypeError):
+        # A malformed or unreadable store is an opt-out, not a crawl failure.
+        return None
+    return binding if isinstance(binding, dict) else None
+
+
 def build_lsp_component_refs(
     project_root: str | Path,
     module_paths: dict[str, str],
     *,
-    server_cmd: list[str],
-    enabled: bool,
+    binding: dict[str, Any] | None,
     **harvest_kwargs: Any,
 ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
     """Harvest the workspace and project references onto module granularity.
 
     Args:
         project_root: Project root.
-        module_paths: Module name → repo-relative module directory, used as the
-            attribution table when the path-attribution seam is unavailable.
-        server_cmd: Language-server argv.
-        enabled: Whether the harvest is switched on for this project. A disabled
-            harvest reports :data:`REASON_DISABLED` rather than running.
+        module_paths: Module name → repo-relative module directory, the
+            attribution table the lift resolves endpoints against.
+        binding: The resolved ``language_servers`` entry, or ``None`` to report
+            the language as not configured and run nothing.
         **harvest_kwargs: Forwarded to :func:`harvest_workspace`.
 
     Returns:
@@ -575,10 +495,18 @@ def build_lsp_component_refs(
         to its ``component_refs`` additions and ``status`` is the record every
         module carries under :data:`HARVEST_STATUS_FIELD`.
     """
-    if not enabled:
-        return {}, HarvestOutcome(ran=False, reason=REASON_DISABLED).as_status()
+    if not binding:
+        status = HarvestOutcome(
+            ran=False, reason=REASON_NOT_CONFIGURED.format(language=HARVEST_LANGUAGE)
+        ).as_status()
+        return {}, status
 
-    outcome = harvest_workspace(project_root, server_cmd=server_cmd, **harvest_kwargs)
+    outcome = harvest_workspace(
+        project_root,
+        server_cmd=list(binding.get('command') or []),
+        language_id=str(binding.get('language_id') or HARVEST_LANGUAGE),
+        **harvest_kwargs,
+    )
     if not outcome.ran:
         return {}, outcome.as_status()
 
@@ -602,8 +530,8 @@ def make_prefix_attributor(module_paths: dict[str, str]) -> Callable[[str], str 
     Longest-prefix rather than first-match: a nested module's directory is a
     strict extension of its parent's, so a shortest- or arbitrary-match lookup
     would attribute a nested module's files to the enclosing module and derive a
-    confidently wrong edge. Containment is segment-wise, so ``doc`` does not
-    claim ``docs/x``.
+    confidently wrong edge. Containment is segment-wise, so ``doc`` does not claim
+    ``docs/x``.
     """
     table = sorted(
         ((path.strip('/'), name) for name, path in module_paths.items()),

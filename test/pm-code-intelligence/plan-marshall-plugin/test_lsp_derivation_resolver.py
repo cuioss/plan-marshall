@@ -13,8 +13,8 @@ eliminate.
 """
 
 import importlib.util
-import sys
-import types
+
+from extension_base import ExtensionBase
 
 from conftest import MARKETPLACE_ROOT
 
@@ -173,13 +173,30 @@ def test_harvest_notes_propagate_from_the_engine():
     assert 'unattributable-endpoint: 2 suppressed [a -> b]' in notes
 
 
-def test_module_without_harvest_record_contributes_nothing():
-    """A module discovered by another extension carries no record and is skipped."""
-    # Arrange
-    derived = {'alpha': {'component_refs': []}}
+def test_project_with_no_harvest_record_anywhere_says_so():
+    """The silent-zero this resolver must never produce, in its widest form.
+
+    In a project whose modules are discovered by an extension that does not
+    materialize the harvest field, NO module carries a record. Returning a bare
+    empty edge list there would hand every consumer project a confident
+    `status: ok, edge_count: 0` that is really "no harvest happened here".
+    """
+    # Arrange — modules exist, but none carries a harvest record.
+    derived = {'alpha': {'component_refs': []}, 'beta': {'component_refs': []}}
 
     # Act
     edges, notes = _load_extension().derive_edges(derived, {})
+
+    # Assert
+    assert edges == []
+    assert len(notes) == 1
+    assert notes[0].startswith('harvest-did-not-run:')
+
+
+def test_empty_module_map_reports_nothing():
+    """No modules at all is core's null case, not a harvest failure to report."""
+    # Act
+    edges, notes = _load_extension().derive_edges({}, {})
 
     # Assert
     assert edges == []
@@ -202,51 +219,20 @@ def test_edges_are_sorted_and_deduplicated():
     assert edges == [('alpha', 'beta'), ('zeta', 'alpha')]
 
 
-def test_config_defaults_seed_the_harvest_off(monkeypatch):
-    """The harvest is opt-IN: the shipped default must be disabled.
+def test_bundle_ships_no_configuration_mechanism_of_its_own():
+    """D4's ⛔: no parallel config surface.
 
-    It boots a language server and indexes the workspace — a cost every crawl
-    would otherwise pay whether or not the project wants symbol-derived edges.
+    The harvest is switched on solely by the shared machine-local
+    `language_servers` binding that `plan-marshall:lsp-client` already reads. A
+    second key naming the same server for the same language would be exactly the
+    parallel store that surface exists to prevent, so this bundle must not
+    override `config_defaults` at all.
     """
-    # Arrange — a stand-in for the shared config surface, recording what is set.
-    written = {}
-    fake = types.ModuleType('_config_core')
-    fake.ext_defaults_set_default = lambda key, value, _root: written.setdefault(key, value)
-    monkeypatch.setitem(sys.modules, '_config_core', fake)
+    # Arrange / Act
+    extension_type = type(_load_extension())
 
-    # Act
-    _load_extension().config_defaults('/tmp/project')
-
-    # Assert
-    assert written['pm_code_intelligence.lsp.enabled'] == 'false'
-
-
-def test_config_defaults_use_the_shared_surface_not_a_parallel_mechanism(monkeypatch):
-    """Every setting is an ordinary extension default, written through the helper."""
-    # Arrange
-    written = {}
-    fake = types.ModuleType('_config_core')
-    fake.ext_defaults_set_default = lambda key, value, _root: written.setdefault(key, value)
-    monkeypatch.setitem(sys.modules, '_config_core', fake)
-
-    # Act
-    _load_extension().config_defaults('/tmp/project')
-
-    # Assert — namespaced keys only; no file of the bundle's own is written.
-    assert set(written) == {
-        'pm_code_intelligence.lsp.enabled',
-        'pm_code_intelligence.lsp.python.server',
-        'pm_code_intelligence.lsp.timeout_seconds',
-    }
-
-
-def test_config_defaults_is_a_noop_without_the_config_surface(monkeypatch):
-    """An uninitialized project must not fail extension loading."""
-    # Arrange
-    monkeypatch.setitem(sys.modules, '_config_core', None)
-
-    # Act / Assert — the guarded import degrades to doing nothing.
-    _load_extension().config_defaults('/tmp/project')
+    # Assert — the inherited no-op, not an override of its own.
+    assert extension_type.config_defaults is ExtensionBase.config_defaults
 
 
 def test_derive_edges_runs_no_subprocess_and_touches_no_disk(monkeypatch):
