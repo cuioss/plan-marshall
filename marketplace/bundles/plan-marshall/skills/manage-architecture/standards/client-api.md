@@ -95,10 +95,10 @@ The four graph-family verbs — [`graph`](#graph), [`path`](#path), [`neighbors`
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `resolvers` | list | One `{id, edge_count, status, notes[]}` record per **discovered** derivation resolver. `status` is `ok` or `error`; an errored resolver contributes zero edges without aborting the others. A resolver the machine-local `derivation_resolvers` binding switched off carries the extra key `dispatched: false` — it is reported rather than dropped, so "switched off here" stays distinguishable from "never registered", but it did NOT run and is excluded from `resolver_count`. The key's **absence** is the dispatched case. `notes[]` reports every condition that **suppressed** an edge (an ambiguous identity key, an unresolvable reference, a `configuration:` opt-out) — a resolver that drops an edge silently violates the contract. |
-| `resolver_count` | int | `len(resolvers)`. The discriminator below. |
+| `resolvers` | list | One `{id, edge_count, status, notes[]}` record per **discovered** derivation resolver. `status` is `ok`, `error`, or `not_dispatched`. An errored resolver contributes zero edges without aborting the others. A `not_dispatched` resolver was switched off by the machine-local `derivation_resolvers` binding: it is reported rather than dropped, so "switched off here" stays distinguishable from "never registered", but it did NOT run. `notes[]` reports every condition that **suppressed** an edge (an ambiguous identity key, an unresolvable reference, a `configuration:` opt-out) — a resolver that drops an edge silently violates the contract. |
+| `resolver_count` | int | The number of resolvers that **ran** — every record whose `status` is not `not_dispatched`. This is NOT `len(resolvers)` once the machine-local binding is used. The discriminator below. |
 
-**Resolver discovery is registry-wide, not project-scoped.** Every registered resolver runs and gets a row, whatever the project's technology, so most rows on any given project report `edge_count: 0` — a Maven reactor still carries an `npm` row, and an npm workspace still carries a `maven` one. `resolver_count` therefore counts the resolvers that **ran**, never the ones that **contributed**; do not read a row's presence as evidence that its ecosystem is present, nor its `edge_count: 0` as a defect.
+**Resolver discovery is registry-wide, not project-scoped.** Every discovered resolver gets a row, whatever the project's technology, so most rows on any given project report `edge_count: 0` — a Maven reactor still carries an `npm` row, and an npm workspace still carries a `maven` one. `resolver_count` counts the resolvers that **ran**, never the ones that **contributed**; do not read a row's presence as evidence that its ecosystem is present, nor its `edge_count: 0` as a defect. Every discovered resolver runs *unless* the machine-local `derivation_resolvers` binding switched it off, in which case its row carries `status: not_dispatched` and is excluded from the count — see [Configuration › Which derivation resolvers run](../../../../../../doc/user/configuration.adoc).
 
 The live roster is whatever `discover_derivation_resolvers()` returns, enumerated once in [ext-point-derivation-resolver.md](../../extension-api/standards/ext-point-derivation-resolver.md) § Current implementations. The examples below deliberately write `resolvers[N]` and `resolver_count: N` with a couple of representative rows rather than transcribing the roster: a literal count here would silently go stale the moment a resolver is added, with no test to catch it — which is exactly what happened to these examples once already.
 
@@ -194,7 +194,7 @@ path[3]:
 resolvers[N]{id,edge_count,status,notes}:
   maven,7,ok,[]
   npm,0,ok,[]
-  ... one row per REGISTERED resolver, id-sorted
+  ... one row per DISCOVERED resolver, id-sorted (status: ok | error | not_dispatched)
 resolver_count: N
 ```
 
@@ -209,7 +209,7 @@ path: null
 resolvers[N]{id,edge_count,status,notes}:
   maven,7,ok,[]
   npm,0,ok,[]
-  ... one row per REGISTERED resolver, id-sorted
+  ... one row per DISCOVERED resolver, id-sorted (status: ok | error | not_dispatched)
 resolver_count: N
 ```
 
@@ -252,7 +252,7 @@ neighbors[4]:
 resolvers[N]{id,edge_count,status,notes}:
   maven,7,ok,[]
   npm,0,ok,[]
-  ... one row per REGISTERED resolver, id-sorted
+  ... one row per DISCOVERED resolver, id-sorted (status: ok | error | not_dispatched)
 resolver_count: N
 ```
 
@@ -292,7 +292,7 @@ impact[3]:
 resolvers[N]{id,edge_count,status,notes}:
   maven,7,ok,[]
   npm,0,ok,[]
-  ... one row per REGISTERED resolver, id-sorted
+  ... one row per DISCOVERED resolver, id-sorted (status: ok | error | not_dispatched)
 resolver_count: N
 ```
 

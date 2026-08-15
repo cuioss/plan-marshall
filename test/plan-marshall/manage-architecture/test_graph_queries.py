@@ -363,13 +363,24 @@ def _split_provenance(result: dict) -> tuple[dict, list, int]:
 
 
 def _assert_provenance_self_consistent(resolvers: list, resolver_count: int) -> None:
-    """Every response's resolver_count must equal the length of its resolver report list.
+    """Every response's resolver_count must equal the number of reports that RAN.
 
     This is what keeps a zero-edge answer non-vacuous: the count is derived from
     the reports rather than asserted independently of them, so a response can
     never claim resolvers ran without naming them.
+
+    The count is NOT ``len(resolvers)``. A resolver the machine-local
+    ``derivation_resolvers`` binding switched off is still reported — so its
+    suppression stays visible — but it did not run, and it carries
+    ``status: not_dispatched`` to say so. Counting it would report an
+    edge-derivation capability the envelope does not have.
+
+    Every record carries the SAME key set regardless, which the second assertion
+    pins: the report list is serialized as a uniform TOON array, so encoding the
+    not-dispatched state as a ``status`` value rather than as an extra key is
+    what keeps the wire unambiguous.
     """
-    assert resolver_count == len(resolvers)
+    assert resolver_count == sum(1 for r in resolvers if r.get('status') != 'not_dispatched')
     for record in resolvers:
         assert set(record) == {'id', 'edge_count', 'status', 'notes'}
 

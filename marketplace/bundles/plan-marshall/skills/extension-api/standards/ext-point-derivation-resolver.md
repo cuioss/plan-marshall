@@ -136,14 +136,15 @@ The nearest thing to a conflict is duplicate **identity**, not duplicate value: 
 
 ## The anti-vacuity provenance property
 
-Every edge names its producers and every graph-family response names the resolvers that ran. The property this buys:
+Every edge names its producers and every graph-family response names the resolvers it discovered together with which of them actually ran. The property this buys:
 
 | Response | Meaning |
 |----------|---------|
 | `resolver_count: 0`, `edges: []` | **No resolver ran.** The empty graph is an absence of capability, not a finding. |
 | `resolver_count: N`, `edges: []` | **N resolvers ran and found nothing.** The empty graph is a real, positive answer. |
+| `resolver_count: 0`, `resolvers[]` non-empty | **Resolvers exist, but this machine switched them off.** Every record carries `status: not_dispatched` and a `configuration:` note — see [§ Which resolvers run](#which-resolvers-run-the-machine-local-activation-binding). |
 
-The two states MUST be distinguishable without inspecting the edge list. This is the same fail-closed reporting discipline [ADR-009](../../../../../../doc/adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc) establishes and that the `find` / `which-module` verbs already apply via their `truncated` / `elided` flags: a confident-looking answer must carry the evidence that makes it confident.
+The states MUST be distinguishable without inspecting the edge list. This is the same fail-closed reporting discipline [ADR-009](../../../../../../doc/adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc) establishes and that the `find` / `which-module` verbs already apply via their `truncated` / `elided` flags: a confident-looking answer must carry the evidence that makes it confident.
 
 Two obligations follow for implementors:
 
@@ -198,9 +199,9 @@ set — the zero-edge outcome this extension point exists to prevent, arriving a
 failure instead of a derivation one.
 
 **A disabled resolver is reported, not pruned — but it is not counted as having run.** It still
-appears in `resolvers[]` with `edge_count: 0`, a `configuration:` note, and the extra key
-`dispatched: false` (whose absence marks the ordinary dispatched case).
-`resolver_count` counts only `dispatched` records, so an envelope with every resolver switched off
+appears in `resolvers[]` with `edge_count: 0`, a `configuration:` note, and
+`status: not_dispatched` (the third `status` value beside `ok` and `error`).
+`resolver_count` counts every record whose status is not `not_dispatched`, so an envelope with every resolver switched off
 reports `resolver_count: 0` — which is the truth ("no resolver ran"), keeps the anti-vacuity
 discriminator's meaning intact, and stops `capabilities` from reporting `module_edges` as `derivable`
 on a registered-but-unrun producer. Dropping the record entirely would instead make "switched off by

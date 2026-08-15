@@ -53,6 +53,7 @@ from _cmd_client_build import (
 )
 from _cmd_client_query import (
     NEIGHBORS_DEPTH_CAP,
+    STATUS_NOT_DISPATCHED,
     _load_module_or_raise,
     count_dispatched,
     get_module_commands,
@@ -194,7 +195,9 @@ def cmd_capabilities(args: argparse.Namespace) -> dict[str, Any]:
         # this report refuses to report as a capability.
         resolver_count = graph_result.get('resolver_count', 0)
         dispatched_producers = [
-            report['id'] for report in resolvers if report.get('dispatched', True)
+            report['id']
+            for report in resolvers
+            if report.get('status') != STATUS_NOT_DISPATCHED
         ]
         edge_count = graph_result.get('graph', {}).get('edge_count', 0)
 

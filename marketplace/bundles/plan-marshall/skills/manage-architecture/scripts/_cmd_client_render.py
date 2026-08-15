@@ -20,6 +20,7 @@ from _architecture_core import (
     merge_module_data,
 )
 from _cmd_client_query import (
+    STATUS_NOT_DISPATCHED,
     _build_internal_deps_map,
     _load_module_or_raise,
 )
@@ -79,7 +80,8 @@ def _resolver_provenance_line(resolver_reports: list[dict[str, Any]]) -> str:
     crediting it would be the rendered form of the same false claim
     ``resolver_count`` excludes it to avoid. It is named separately instead, so a
     reader who wonders why the graph looks sparse is told the cause rather than
-    left to guess.
+    left to guess. Both branches use one wording for that cause, so the two
+    surfaces cannot drift into describing the same state differently.
     """
     if not resolver_reports:
         return '_Edge provenance: no derivation resolver is registered — no edges were derived._'
@@ -87,8 +89,10 @@ def _resolver_provenance_line(resolver_reports: list[dict[str, Any]]) -> str:
     def _ids(records: list[dict[str, Any]]) -> str:
         return ', '.join(sorted(str(rec.get('id', '')) for rec in records))
 
-    dispatched = [rec for rec in resolver_reports if rec.get('dispatched', True)]
-    withheld = [rec for rec in resolver_reports if not rec.get('dispatched', True)]
+    dispatched = [
+        rec for rec in resolver_reports if rec.get('status') != STATUS_NOT_DISPATCHED
+    ]
+    withheld = [rec for rec in resolver_reports if rec.get('status') == STATUS_NOT_DISPATCHED]
 
     if not dispatched:
         return (
@@ -98,7 +102,9 @@ def _resolver_provenance_line(resolver_reports: list[dict[str, Any]]) -> str:
 
     line = f'_Edge provenance: derived by {len(dispatched)} resolver(s) — {_ids(dispatched)}'
     if withheld:
-        line += f'; {len(withheld)} switched off by configuration — {_ids(withheld)}'
+        line += (
+            f'; {len(withheld)} switched off by the machine-local configuration — {_ids(withheld)}'
+        )
     return line + '._'
 
 

@@ -910,10 +910,18 @@ def cmd_derivation_resolver_list(args: argparse.Namespace) -> dict:
     """
     del args  # unused — fixed-shape verb
     try:
+        # ONE snapshot for the whole roster, and a per-entry guard: a single
+        # malformed entry costs that entry's state, never the whole listing, and
+        # it fails OPEN so a store problem can never render as "disabled". Same
+        # discipline as the graph seam's dispatch gate.
         section = read_derivation_resolvers_section()
-        resolvers = [
-            {'id': key, 'enabled': is_derivation_resolver_enabled(key)} for key in sorted(section)
-        ]
+        resolvers = []
+        for key in sorted(section):
+            try:
+                enabled = is_derivation_resolver_enabled(key, section)
+            except Exception:
+                enabled = DERIVATION_RESOLVER_ENABLED_DEFAULT
+            resolvers.append({'id': key, 'enabled': enabled})
         return {
             'status': 'success',
             'resolvers': resolvers,

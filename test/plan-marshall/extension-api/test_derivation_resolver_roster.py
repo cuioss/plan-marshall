@@ -34,7 +34,7 @@ is then stale, and patching it silently does nothing. These tests passed in
 isolation and failed in the full suite until the lookup was deferred.
 """
 
-import sys
+import importlib
 from argparse import Namespace
 
 import extension_api
@@ -43,8 +43,14 @@ import run_config
 
 
 def _live(module_name: str):
-    """Return the module object currently registered under *module_name*."""
-    return sys.modules[module_name]
+    """Return the module object currently registered under *module_name*.
+
+    ``import_module`` rather than a bare ``sys.modules`` lookup: it returns the
+    live object when one is registered, and imports it when this file is the
+    first to need it, so the helper works both in a full-suite sweep and when
+    the file is run alone.
+    """
+    return importlib.import_module(module_name)
 
 
 class _StubResolver:

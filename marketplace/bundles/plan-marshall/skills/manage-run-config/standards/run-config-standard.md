@@ -299,9 +299,15 @@ resolver dispatched, because the alternative is a store problem silently blankin
 ### A disabled resolver is reported, never silently dropped
 
 A resolver switched off here is still **discovered**; it is simply not dispatched, and it comes back
-on the per-resolver report with `edge_count: 0` and a `configuration:` note. Pruning it from the
-report instead would make "switched off by the operator" indistinguishable from "never registered",
-which is exactly the vacuity the seam's provenance contract exists to eliminate.
+on the per-resolver report with `edge_count: 0`, `status: not_dispatched`, and a `configuration:`
+note. Pruning it from the report instead would make "switched off by the operator" indistinguishable
+from "never registered", which is exactly the vacuity the seam's provenance contract exists to
+eliminate.
+
+It is **not** counted as having run: `resolver_count` excludes `not_dispatched` records, so disabling
+every resolver yields `resolver_count: 0` and a `capabilities` report of `module_edges:
+not_derivable`. That is accurate rather than alarming — the envelope genuinely cannot derive edges —
+and the non-empty `resolvers[]` is what tells the reader why.
 
 ### Precedence among resolvers is not expressible — and that is the design
 

@@ -31,6 +31,7 @@ Resolvers are injected by monkeypatching ``extension_discovery``, matching
 attribute lookup at every call.
 """
 
+import importlib
 import sys
 import tempfile
 
@@ -48,8 +49,13 @@ def _live(module_name: str):
     ``load_script_module``, which re-registers a FRESH object in ``sys.modules``,
     leaving a collection-time reference stale so that patching it silently does
     nothing.
+
+    ``import_module`` rather than a bare ``sys.modules`` lookup, because this
+    file may be the FIRST to need the module: a raw lookup raises ``KeyError``
+    when nothing has imported it yet, which is how this test behaves when run
+    alone rather than in a full-suite sweep.
     """
-    return sys.modules[module_name]
+    return importlib.import_module(module_name)
 
 _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
@@ -165,10 +171,8 @@ def test_unconfigured_resolvers_are_all_reported_as_having_run(plan_context, two
     assert reports['beta']['edge_count'] == 1
     assert reports['alpha']['notes'] == []
     assert reports['beta']['notes'] == []
-    # The merge only ever reports resolvers it CALLED, so it stamps no marker:
-    # the ABSENCE of ``dispatched`` is the dispatched case.
-    assert 'dispatched' not in reports['alpha']
-    assert 'dispatched' not in reports['beta']
+    assert reports['alpha']['status'] == 'ok'
+    assert reports['beta']['status'] == 'ok'
 
 
 def test_configuring_one_resolver_does_not_deactivate_the_others(plan_context, two_resolvers):
@@ -225,7 +229,7 @@ def test_disabling_every_resolver_yields_no_edges_and_a_zero_run_count(plan_cont
     # Both are still REPORTED — discovered, explained, but not run.
     assert len(result['resolvers']) == 2
     for report in result['resolvers']:
-        assert report['dispatched'] is False, report['id']
+        assert report['status'] == 'not_dispatched', report['id']
         assert report['notes'], report['id']
 
 
@@ -240,9 +244,8 @@ def test_resolver_count_excludes_only_the_disabled_ones(plan_context, two_resolv
     assert result['resolver_count'] == 1
     assert len(result['resolvers']) == 2
     reports = _report_by_id(result)
-    # Absent marker = dispatched; the explicit False marks the withheld one.
-    assert 'dispatched' not in reports['alpha']
-    assert reports['beta']['dispatched'] is False
+    assert reports['alpha']['status'] == 'ok'
+    assert reports['beta']['status'] == 'not_dispatched'
 
 
 def test_capabilities_reports_not_derivable_when_every_resolver_is_disabled(
@@ -297,7 +300,7 @@ def test_disabled_resolver_stays_on_the_report(plan_context, two_resolvers):
     reports = _report_by_id(result)
     assert set(reports) == {'alpha', 'beta'}
     assert reports['beta']['edge_count'] == 0
-    assert reports['beta']['status'] == 'ok'
+    assert reports['beta']['status'] == 'not_dispatched'
 
 
 def test_disabled_report_carries_a_configuration_note(plan_context, two_resolvers):
@@ -333,6 +336,50 @@ def test_report_order_is_stable_when_a_resolver_is_disabled(plan_context, two_re
     assert gated == baseline == ['alpha', 'beta']
 
 
+def test_every_report_carries_the_same_key_set(plan_context, two_resolvers):
+    """⛔ The report list stays a UNIFORM array, disabled resolvers included.
+
+    The not-dispatched state rides on ``status`` rather than on a separate
+    boolean precisely so this holds. The reports are serialized as a uniform
+    TOON array, whose header is the UNION of the records' keys: a key present on
+    only some records renders as an empty cell on the others, so a boolean would
+    print a resolver that DID run as ``dispatched: ""`` next to a sibling row
+    reading ``false`` — which reads as "not dispatched", inverting the very fact
+    the mechanism exists to carry. It would also float the column's position,
+    since the header takes first-occurrence key order over an id-sorted list.
+    """
+    run_config.cmd_derivation_resolver_set(_ns(resolver='beta', enabled=False, disabled=True))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_triple(tmpdir)
+        result = get_module_graph(tmpdir)
+
+    key_sets = {frozenset(report) for report in result['resolvers']}
+    assert len(key_sets) == 1, f'report records are not uniform: {key_sets}'
+    assert key_sets.pop() == {'id', 'edge_count', 'status', 'notes'}
+
+
+def test_an_errored_resolver_still_counts_as_having_run(plan_context, monkeypatch):
+    """``error`` is a resolver that ran and failed — a different fact from never called.
+
+    Only ``not_dispatched`` is excluded from ``resolver_count``; folding ``error``
+    in would report "no resolver ran" for an envelope where one ran and broke.
+    """
+
+    class _Raising(_StubResolver):
+        def derive_edges(self, derived_by_name, enriched_by_name):
+            raise RuntimeError('resolver exploded')
+
+    _register(monkeypatch, _Raising('alpha'))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_triple(tmpdir)
+        result = get_module_graph(tmpdir)
+
+    assert result['resolvers'][0]['status'] == 'error'
+    assert result['resolver_count'] == 1
+
+
 # =============================================================================
 # 3b. The rendered surface never credits a resolver that did not run
 # =============================================================================
@@ -351,7 +398,7 @@ def test_overview_footer_does_not_credit_a_disabled_resolver(plan_context, two_r
         rendered = _cmd_client.render_overview(tmpdir)
 
     assert 'derived by 1 resolver(s) — alpha' in rendered
-    assert 'switched off by configuration — beta' in rendered
+    assert 'switched off by the machine-local configuration — beta' in rendered
 
 
 def test_overview_footer_states_the_cause_when_every_resolver_is_disabled(
@@ -369,6 +416,65 @@ def test_overview_footer_states_the_cause_when_every_resolver_is_disabled(
     assert 'No edges were derived' in rendered
     # NOT the "no resolver is registered" wording — two ARE registered.
     assert 'no derivation resolver is registered' not in rendered
+
+
+# =============================================================================
+# 3c. The TOON wire — the shape an agent actually reads
+# =============================================================================
+
+
+def test_mixed_roster_serializes_as_a_uniform_toon_table(plan_context, two_resolvers):
+    """⛔ The wire must not encode "did not run" as an empty cell.
+
+    This is the property the ``status``-value design exists for, pinned against
+    the REAL serializer rather than against the Python dicts. TOON renders a
+    uniform array's header as the UNION of the records' keys, so a marker present
+    on only the withheld records would render the resolvers that DID run with an
+    empty cell in that column — and an empty cell beside a sibling reading
+    ``not_dispatched`` reads as "not dispatched", inverting the fact the marker
+    carries. The header order would drift too, since it follows first-occurrence
+    over an id-sorted list.
+
+    Encoding the state as a third ``status`` value keeps every record's key set
+    identical, so the table is four columns wide whatever the configuration is.
+    """
+    from toon_parser import serialize_toon
+
+    run_config.cmd_derivation_resolver_set(_ns(resolver='beta', enabled=False, disabled=True))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_triple(tmpdir)
+        result = get_module_graph(tmpdir)
+
+    rendered = serialize_toon({'resolvers': result['resolvers']})
+    header = next(line for line in rendered.splitlines() if line.startswith('resolvers['))
+
+    assert header.startswith('resolvers[2]{id,edge_count,status,notes}'), header
+    # No empty cell stands in for "dispatched".
+    assert ',,' not in rendered
+    assert 'not_dispatched' in rendered
+
+
+def test_toon_header_is_identical_configured_or_not(plan_context, two_resolvers):
+    """The column set does not move when the operator changes the binding.
+
+    An agent parsing by the documented header must not have to re-derive it per
+    call — which is what a presence-varying key would have forced.
+    """
+    from toon_parser import serialize_toon
+
+    def _header() -> str:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            _seed_triple(tmpdir)
+            result = get_module_graph(tmpdir)
+        rendered = serialize_toon({'resolvers': result['resolvers']})
+        return next(line for line in rendered.splitlines() if line.startswith('resolvers['))
+
+    unconfigured = _header()
+    run_config.cmd_derivation_resolver_set(_ns(resolver='alpha', enabled=False, disabled=True))
+    configured = _header()
+
+    assert unconfigured == configured
 
 
 # =============================================================================

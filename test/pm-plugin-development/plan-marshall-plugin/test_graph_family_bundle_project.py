@@ -195,11 +195,18 @@ def test_the_expected_resolver_roster_is_discovered():
 
 
 def test_resolver_count_matches_the_expected_roster():
-    """resolver_count is the anti-vacuity numerator carried on every response.
+    """The DISCOVERED roster is the size ``EXPECTED_RESOLVER_IDS`` pins.
 
     The expected size comes from ``EXPECTED_RESOLVER_IDS`` — the roster pinned
     and asserted above — rather than from a second literal that would have to be
     remembered and updated alongside it.
+
+    This is the discovered count, which is what this pipeline exercises: it calls
+    ``discover_derivation_resolvers`` directly, with no configuration gate in
+    front of it. A response's ``resolver_count`` is a different quantity — the
+    number that actually RAN, excluding any the machine-local binding switched
+    off — and is pinned in
+    ``test/plan-marshall/manage-architecture/test_derivation_resolver_configuration.py``.
     """
     assert len(_pipeline()['resolvers']) == len(EXPECTED_RESOLVER_IDS)
 

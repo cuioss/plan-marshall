@@ -603,13 +603,16 @@ The result additionally carries a top-level provenance pair:
 
 | Field | Description |
 |-------|-------------|
-| `resolvers` | One `{id, edge_count, status, notes[]}` record per resolver that ran. `status` is `ok` or `error`; an errored resolver contributes zero edges without aborting its siblings. `notes[]` reports each condition that **suppressed** an edge (an ambiguous identity key, an unresolvable reference). |
-| `resolver_count` | `len(resolvers)` — the zero-edge discriminator. |
+| `resolvers` | One `{id, edge_count, status, notes[]}` record per **discovered** derivation resolver. `status` is `ok`, `error`, or `not_dispatched`; an errored resolver contributes zero edges without aborting its siblings, and a `not_dispatched` one was switched off by the machine-local `derivation_resolvers` binding and never ran. `notes[]` reports each condition that **suppressed** an edge (an ambiguous identity key, an unresolvable reference, a `configuration:` opt-out). |
+| `resolver_count` | The number of resolvers that **ran** — every record whose `status` is not `not_dispatched`. Not `len(resolvers)`, which also counts the switched-off ones. The zero-edge discriminator. |
 
 **Zero-edge disambiguation**: `resolver_count: 0` with `edge_count: 0` means no
 resolver ran, so the empty graph is an absence of capability. `resolver_count: N`
 with `edge_count: 0` means N resolvers ran and found nothing — a real, positive
-answer. The two states MUST stay distinguishable without inspecting the edge
+answer. A third state is possible once the machine-local binding is used:
+`resolver_count: 0` with a NON-EMPTY `resolvers[]`, every record carrying
+`status: not_dispatched`, means resolvers exist here but this machine switched
+them off. The states MUST stay distinguishable without inspecting the edge
 list, the same fail-closed reporting discipline the `files` inventory applies via
 `truncated` / `elided`.
 

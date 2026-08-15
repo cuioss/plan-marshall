@@ -72,9 +72,9 @@ Three further joins run over cross-references rather than build declarations: Py
 
 [NOTE]
 ====
-That is six resolvers in total, and *you will see all six in every response* — one row each, whatever your project is built with. Resolver discovery is registry-wide, not project-scoped, so a Python project still carries an `npm` row and an npm workspace still carries a `maven` one, each reporting `edge_count: 0`.
+*You will see every discovered resolver in every response* — one row each, whatever your project is built with. Resolver discovery is registry-wide, not project-scoped, so a Python project still carries an `npm` row and an npm workspace still carries a `maven` one, each reporting `edge_count: 0`.
 
-A zero row is not a defect and not a sign that something is misconfigured; it means that resolver ran and had nothing to contribute here. What matters is `resolver_count` — see <<reading-an-empty-answer>>.
+A zero row is usually not a defect and not a sign that something is misconfigured: it normally means that resolver ran and had nothing to contribute here. Check the row's `status` to tell that apart from the two other reasons a row can be empty — `error` (it ran and failed) and `not_dispatched` (it never ran, because this machine switched it off; see xref:configuration.adoc#derivation-resolvers[Configuration › Which derivation resolvers run]). What matters overall is `resolver_count` — see <<reading-an-empty-answer>>.
 ====
 
 === Python specifics
@@ -107,7 +107,7 @@ If your Gradle build wires its modules together with `project(...)`, expect an e
 [[reading-an-empty-answer]]
 == Reading an empty answer
 
-An empty result has two very different meanings, and the response tells you which one you are looking at. Check `resolver_count` — which counts the resolvers that *ran*, never the ones that *contributed*:
+An empty result has several very different meanings, and the response tells you which one you are looking at. Check `resolver_count` — which counts the resolvers that *ran*, never the ones that *contributed*, and never the ones this machine switched off:
 
 [cols="1,3", options="header"]
 |===
@@ -118,9 +118,12 @@ An empty result has two very different meanings, and the response tells you whic
 
 | `resolver_count: N` with no edges
 | *N resolvers ran and found nothing.* This is a real answer: your modules genuinely declare no dependencies on each other.
+
+| `resolver_count: 0` but the `resolvers` list is *not* empty
+| *Resolvers exist here, but this machine switched them off.* Every row carries `status: not_dispatched`. Re-enable one through `/marshall-steward` → Configuration → Derivation Resolvers — see xref:configuration.adoc#derivation-resolvers[Configuration › Which derivation resolvers run].
 |===
 
-Never read a bare empty list as "my project has no internal dependencies". That is the second row's meaning, and only the count distinguishes it from the first.
+Never read a bare empty list as "my project has no internal dependencies". That is the second row's meaning, and only the count — read together with the `resolvers` list — distinguishes it from the other two.
 
 === Every edge says who found it
 

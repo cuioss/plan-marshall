@@ -632,7 +632,9 @@ Whether a language server runs:: The `lsp` resolver's harvest is additionally ga
 
 === Switching one off is visible, not silent
 
-A resolver you disable still appears on the per-resolver report a graph query returns, with an edge count of zero and a note saying it was discovered but not dispatched. That is deliberate: it keeps "switched off on this machine" distinguishable from "no such resolver is registered", so a graph that looks sparser than expected explains itself rather than leaving you guessing.
+A resolver you disable still appears on the per-resolver report a graph query returns, with an edge count of zero, `status: not_dispatched`, and a note saying it was discovered but not dispatched. That is deliberate: it keeps "switched off on this machine" distinguishable from "no such resolver is registered", so a graph that looks sparser than expected explains itself rather than leaving you guessing.
+
+It is not counted as having run, though — so if you switch off *every* resolver, expect `resolver_count: 0` and a `capabilities` report of `module_edges: not_derivable`. That is the honest answer rather than a fault: with nothing dispatched, this checkout genuinely cannot derive edges. The list of resolvers alongside the zero is what tells you the cause is configuration and not a missing install.
 
 The schema and the underlying commands are documented in link:../../marketplace/bundles/plan-marshall/skills/manage-run-config/standards/run-config-standard.md[`run-config-standard.md`] § Derivation-Resolvers Section; the seam itself in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-derivation-resolver.md[`ext-point-derivation-resolver.md`].
 

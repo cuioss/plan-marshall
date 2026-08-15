@@ -112,11 +112,16 @@ touched.
 `git diff --name-only origin/main...HEAD -- '*.py'` — **Python changes present** (13 production
 scripts + 5 test files), so the full gate applies.
 
-`./pw verify` was run over the whole branch diff, direct (no generated executor in this lane).
-Round 1 (pre-fix tree): **20091 passed, 14 skipped**, every dimension clean — `ruff … All checks
-passed!`, `mypy(production)` 405 files clean, `mypy(test)` 753 files clean, `SPDX-header check
-passed`, `plugin-doctor [marketplace-wide]` clean, `module-tests` 0 failed / 0 errors. Round 2 result
-after the verification fixes is recorded below in Findings.
+`./pw verify` was run over the whole branch diff, direct (no generated executor in this lane), once
+per verification round. Every dimension clean each time — `ruff … All checks passed!`,
+`mypy(production)` 405 files, `mypy(test)` 753 files, `SPDX-header check passed`,
+`plugin-doctor [marketplace-wide]`, `module-tests` 0 failed / 0 errors:
+
+| Round | Tree | Result |
+|---|---|---|
+| 1 | pre-fix | **20091 passed, 14 skipped** |
+| 2 | after the round-1 fixes | **20098 passed, 14 skipped** |
+| 3 | after the round-2 fixes | recorded at the merge gate |
 
 Lockfile churn: `./pw` rewrote `uv.lock` under the session interpreter. It was backed out with
 `git checkout -- uv.lock` and never staged; every commit stages named deliverable paths, never
@@ -141,7 +146,7 @@ Recorded per instance.
 | # | Source | Finding | Disposition |
 |---|---|---|---|
 | F1 | Sub-agent | **`capabilities` reported `module_edges: derivable` when every resolver was switched off.** `resolver_count` was `len(resolvers[])`, and disabled resolvers are deliberately kept in that list, so a fully-disabled envelope claimed a capability it did not have — violating the invariant `doc/concepts/code-intelligence.adoc` states outright ("a registered-but-unrun producer is never reported as a capability"). | **Fixed.** Withheld records carry `dispatched: false`; new `count_dispatched()` backs `resolver_count` at all four assignment sites; `capabilities` names only dispatched producers. Four new tests. |
-| F2 | Sub-agent | **`resolvers[]` was documented as "one record per resolver that ran"**, which the gate made false — the list now also holds resolvers that did not run. | **Fixed** at the two sites that describe the list's *contents* (`client-api.md`, `_derive_edges` docstring) and in the seam contract. The four handler docstrings describing `resolver_count`'s *meaning* were re-read and left alone: the count now excludes withheld resolvers, so "0 means no resolver ran" is true again by construction. That was the reason for this design. |
+| F2 | Sub-agent | **`resolvers[]` was documented as "one record per resolver that ran"**, which the gate made false — the list now also holds resolvers that did not run. | **Fixed, but round 1's fix was incomplete** — see R2-B1/B2/B3 below, which found three further statements the round-1 disposition had claimed covered. The four handler docstrings describing `resolver_count`'s *meaning* were re-read and correctly left alone: the count excludes withheld resolvers, so "0 means no resolver ran" is true by construction. That was the reason for this design. |
 | F2b | Sub-agent | `doc/concepts/code-intelligence.adoc`'s two-row discriminator table did not cover the new state. | **Fixed** — third row added (`resolver_count: 0` with a non-empty `resolvers[]` = "switched off on this machine"), and the "warrants opposite reactions" sentence extended to three. |
 | F3 | Sub-agent | **"the two Axis-C methods" survived in five places** after the ABC gained a third: `extension_base.py`'s own class docstring, `extension-contract.md`'s "The two methods below form the complete Axis-C contract", and the module docstrings of `build-maven` / `build-npm` / `build-pyproject` — every one of them in a file this diff had already edited. | **Fixed** at all five. The Axis-D counterparts (`PathAttributionBase`, genuinely still two) were checked individually and deliberately left unchanged. |
 | F4 | Sub-agent | **The ABC contract test was stale and had no coverage for the new method** — its docstring enumerated two defaults, `test_subclass_overriding_both_methods_is_accepted`, and no test asserted `DerivationResolverBase().derivation_file_patterns() == []`. | **Fixed** — docstring and test names corrected, the fixture supplies the third method, and `test_declared_file_patterns_default_to_empty` pins the ABC default a third-party resolver relies on. |

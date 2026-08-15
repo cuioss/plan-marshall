@@ -828,6 +828,22 @@ def _declared_dependencies(
     return None
 
 
+#: The third ``status`` value a resolver report can carry, beside ``ok`` and
+#: ``error``: the resolver was discovered and reported, but the machine-local
+#: ``derivation_resolvers`` binding kept it from running.
+#:
+#: Carried as a ``status`` VALUE rather than a separate ``dispatched`` boolean
+#: because the report list is serialized as a uniform TOON array. A key present
+#: on only some records is materialized as an empty cell on the others, so a
+#: boolean would render a resolver that DID run as ``dispatched: ""`` beside a
+#: sibling row reading ``false`` — which reads as "not dispatched", the exact
+#: inversion this whole mechanism exists to prevent. It would also float the
+#: column's position, since the TOON header takes first-occurrence key order
+#: over an id-sorted list. Every report already carries ``status``, so encoding
+#: the state there keeps the wire uniform and unambiguous.
+STATUS_NOT_DISPATCHED = 'not_dispatched'
+
+
 def count_dispatched(resolver_reports: list[dict[str, Any]]) -> int:
     """Count the resolvers that actually RAN, from their reports.
 
@@ -839,13 +855,11 @@ def count_dispatched(resolver_reports: list[dict[str, Any]]) -> int:
     run, and counting them would report an edge-derivation capability the
     envelope does not have.
 
-    A report with no ``dispatched`` key counts as dispatched. That keeps a
-    caller that merges reports from an older path (or a test fixture predating
-    the flag) reading as "ran" rather than silently deflating the count — the
-    conservative direction, since under-counting would turn a working envelope
-    into a false ``not_derivable``.
+    Only :data:`STATUS_NOT_DISPATCHED` excludes a report. Every other status —
+    including ``error`` — counts, because an errored resolver DID run; it ran
+    and failed, which is a different fact from never having been called.
     """
-    return sum(1 for report in resolver_reports if report.get('dispatched', True))
+    return sum(1 for report in resolver_reports if report.get('status') != STATUS_NOT_DISPATCHED)
 
 
 #: Note prefix marking a resolver the machine-local configuration switched off,
@@ -907,13 +921,12 @@ def _partition_configured_resolvers(
             {
                 'id': resolver_id,
                 'edge_count': 0,
-                'status': 'ok',
-                # NOT dispatched: it was discovered and reported, but never called.
-                # ``resolver_count`` counts dispatched resolvers only, so a fully
-                # disabled envelope still reads as "no resolver ran" — which is
-                # the truth, and what keeps ``capabilities`` from promising an
-                # edge-derivation capability the envelope does not have.
-                'dispatched': False,
+                # Discovered and reported, but never called. ``resolver_count``
+                # counts dispatched resolvers only, so a fully disabled envelope
+                # reads as "no resolver ran" — which is the truth, and what keeps
+                # ``capabilities`` from promising an edge-derivation capability
+                # the envelope does not have.
+                'status': STATUS_NOT_DISPATCHED,
                 'notes': [
                     f'{_DISABLED_NOTE_PREFIX}resolver disabled by the machine-local '
                     f'derivation_resolvers binding — it was discovered but not dispatched'
@@ -971,8 +984,8 @@ def _derive_edges(
         ``resolver_reports`` is one ``{'id', 'edge_count', 'status', 'notes'}``
         record per DISCOVERED resolver — an EMPTY list means no resolver was
         registered, which is what makes a zero-edge answer non-vacuous. A record
-        carrying ``dispatched: False`` was discovered and reported but not run
-        (the machine-local binding switched it off), so it is excluded from
+        carrying ``status: not_dispatched`` was discovered and reported but not
+        run (the machine-local binding switched it off), so it is excluded from
         ``resolver_count`` — see :func:`count_dispatched`.
     """
     try:
