@@ -1,6 +1,6 @@
 # Run report — 130-review-bots-catch-what-in-house-gates-cannot (run 01)
 
-**Date (UTC):** 2026-08-15    **Branch:** `claude/review-bots-catch-gates-gpb6oe`    **PR:** _(recorded below once opened)_    **Outcome:** completed
+**Date (UTC):** 2026-08-15    **Branch:** `claude/review-bots-catch-gates-gpb6oe`    **PR:** [#1239](https://github.com/cuioss/plan-marshall/pull/1239)    **Outcome:** completed
 
 ## Skills loaded
 
@@ -142,19 +142,25 @@ Recorded **per instance**. Source `sub-agent` = the independent pre-PR verificat
 
 ## Reviewer participation
 
-Population derived from configuration — the `author_login` of each `automatic-review/standards/{bot_kind}.md` registry doc — never transcribed:
+Population derived from configuration — the `author_login` of each `automatic-review/standards/{bot_kind}.md` registry doc — never transcribed. Verdicts read from the stored comment **bodies** across all three surfaces (`get_comments`, `get_reviews`, `get_review_comments`), never from a check state:
 
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
-| `coderabbitai` | _pending — PR not yet opened_ | — |
-| `cuioss-review-bot` | _pending_ | — |
-| `sourcery-ai` | _pending_ | — |
+| `cuioss-review-bot` | **reviewed** | Published its PR Reviewer Guide against the diff — *"PR contains tests / No security concerns identified / No major issues detected"*. A publish shape against this diff, so participation is proven; it filed no actionable finding. |
+| `coderabbitai` | **rate-limited** | *"Review limit reached … you've reached your PR review limit, so we couldn't start this review. Next review available in: 13 minutes."* Re-triggered once after the window elapsed; the retry returned *"Action not completed — Review rate limited"* with the window grown to 20 minutes. |
+| `sourcery-ai` | **rate-limited** | *"your pull request is larger than the review limit of 150000 diff characters."* A **size** refusal, not a quota one — it does not clear by waiting, so this reviewer is structurally unavailable for a diff this size. |
 
-Coverage and the § Step 8 shortfall disclosure are recorded in the closing section below, after the review cycle.
+**Coverage: 1 of 3.**
+
+**The § Step 8 shortfall disclosure fired**, and said: *Review coverage 1 of 3 — `cuioss-review-bot` reviewed and reported no major issues; `coderabbitai` rate-limited (quota; re-triggered once, refused again with a grown window); `sourcery-ai` rate-limited (diff-size ceiling, will not clear by waiting). Merging on 1-of-3.* Per the contract this is a disclosure and **not** a block: blocking would strand the landing behind a third party's quota.
+
+**One re-trigger, not more.** The contract says an aborted review is re-requested when its window permits rather than banked as coverage, so CodeRabbit was re-triggered once after its stated window elapsed. It refused again *and the window grew from 13 to 20 minutes* — an adaptive backoff. The contract also warns that a premature trigger burns a recovery attempt and resets the window, so the run stopped at one attempt rather than chasing a receding target.
+
+⭐ **This run is itself an instance of the plan's thesis.** The plan's Problem section says *"the proxy is weakest exactly when it is being leaned on hardest"*: a run reads self-review and the in-house gates as a proxy for review quality **precisely when a bot is unavailable**. On this PR — the largest and subtlest change in the epic, and the one that changes how review coverage is measured — two of three reviewers were unavailable and the third reported no major issues. The in-house evidence carrying the landing is the four-round verification agent (25 findings, three rounds of which found real defects), full CI, and a green `./pw verify`. That is exactly the evidence class D0 now forces to state its own limits, and exactly the situation D2 exists to make measurable.
 
 ## Cost
 
-- **Tokens:** not available to the agent in this session; the harness does not expose a usage figure to the running model. The four verification sub-agent dispatches reported their own totals (232k / 317k / 376k / round-four pending subagent tokens).
+- **Tokens:** not available to the agent in this session; the harness does not expose a usage figure to the running model. The four verification sub-agent dispatches reported their own totals: **232k / 317k / 376k / 423k** subagent tokens (1.35M across the four), over 84 / 36 / 32 / 34 tool calls.
 - **Wall-clock:** not separately instrumented; no run-start timestamp was recorded at Step 1, so any figure would be reconstructed rather than measured.
 - **Population:** what the sub-agent figures count is *those dispatches only* — not this session's main context. ⛔ **Not comparable to a plan-marshall `metrics.toon` total**, which counts an orchestrator-plus-agent dispatch tree under plan-marshall's own per-task billing boundary. A single interactive cloud session does not share that boundary, so the figures are not made comparable and no comparison is offered.
 
@@ -170,8 +176,8 @@ Coverage and the § Step 8 shortfall disclosure are recorded in the closing sect
 | 4 Pushed | **done** — pushed after every commit; no unpushed commit remains |
 | 5 Build gate | **done** — Python-change verdict positive; full `./pw verify` green |
 | 6 Verification sub-agent | **done** — four rounds; every finding dispositioned above |
-| 7 PR cycle | recorded below |
-| 8 Merge gate | recorded below |
+| 7 PR cycle | **done** — PR [#1239](https://github.com/cuioss/plan-marshall/pull/1239), no `skip-bot-review` (the diff touches `*.py`, `.claude/skills/**` and `marketplace/bundles/**`, and a skill is code). All three comment surfaces read: **zero actionable comments, zero inline threads**; every reviewer's participation dispositioned above |
+| 8 Merge gate | **done** — conditions 1–3 met, coverage shortfall disclosed, auto-merge armed. Condition 1: every required context green on head `2434192` (`verify / conclusion`, `verify / verify`, `verify / gate`, `review / review`, `dependency-review`, `generate-check`). Non-required and disclosed rather than blocking: `Sourcery review` concluded `skipped` on its size refusal |
 | 8 Bridge | **done** — no write under `doc/plans/` outside this plan's own directory |
 | 9 This check | **done** — this table |
 | 9 What have we learned | below |
