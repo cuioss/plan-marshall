@@ -124,7 +124,7 @@ per verification round. Every dimension clean each time — `ruff … All checks
 | 2 | after the round-1 fixes | **20098 passed, 14 skipped** |
 | 3 | after the round-2 fixes | **20102 passed, 14 skipped** |
 | 4 | after the round-3 fixes | **20103 passed, 14 skipped** |
-| 5 | after the round-4 fixes | recorded at the merge gate |
+| 5 | after the round-4 fixes | **20103 passed, 14 skipped** — the pre-PR gate |
 
 ⚠ **The wrapper exits 0 even when the gate fails**, and it did so **three times** this run — twice on
 an unused import left behind by my own edits, once on a relative link written at the wrong `../`
@@ -254,7 +254,39 @@ The sub-agent's closing note said the lane "records [a `/sync-plugin-cache`] as 
 
 ## Reviewer participation
 
-TBD — filled in after the PR review cycle.
+**Population derived from configuration**, not transcribed: the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(`coderabbit.md`, `pr-agent.md`, `sourcery.md`), cross-named by `.github/workflows/pr-agent.yml`.
+
+Every verdict below is read from the reviewer's own comment **body**, never from a check-run state —
+which would have been actively misleading here: Sourcery's check run concluded `skipped`, while its
+review body carries a stated refusal.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
+|---|---|---|---|
+| `cuioss-review-bot` | `reviewed` | — | Issue comment: "PR contains tests / No security concerns identified / No major issues detected" — a review artifact filed against the diff. |
+| `coderabbitai` | `rate-limited` | **yes** | "Review limit reached … you've reached your PR review limit, so we couldn't start this review. **Next review available in: 56 minutes**." Its first comment said "processing"; the same comment was later edited to this notice, so an early read would have recorded it as reviewing. |
+| `sourcery-ai` | `rate-limited` | **no** | "your pull request is larger than the **review limit of 150000 diff characters**." A property of this diff, not of the clock — the same request never succeeds at this size, so waiting is futile. |
+
+**Coverage: 1 of 3.** The § Step 8 shortfall disclosure fired before arming auto-merge, in these
+terms: *"Review coverage 1 of 3 — `cuioss-review-bot` reviewed with no issues; `coderabbitai`
+rate-limited, reopens in ~56 minutes; `sourcery-ai` rate-limited on a 150k diff-character size
+ceiling, does not reopen."*
+
+No `silent` verdict arose, so the recovery check (§ Step 7) did not fire. Both shortfalls are stated
+refusals with reasons in their bodies, not unexplained absences.
+
+⚠ **The `Reopens?` column is the operationally useful half here**, and it is why the two
+`rate-limited` verdicts must not be collapsed: `coderabbitai` is worth re-requesting (`@coderabbitai
+review`) once its window clears; `sourcery-ai` never will be, at this diff size. Rendering them
+identically would have told a reader to wait on both, or on neither.
+
+### The sibling PR (#1253)
+
+The contract-amendment PR drew a **full** review from `sourcery-ai` — small diff, no size ceiling —
+which filed one concrete grammar finding and two high-level suggestions. All three were accepted and
+fixed, and answered on the thread. `cuioss-review-bot` reviewed it clean. `coderabbitai` hit the same
+rate limit there (54 minutes).
 
 ## Cost
 
@@ -284,8 +316,8 @@ resumability rule — not a run-created prefixed branch.
 | 4 Pushed | ✅ | No unpushed commit at any point; `git status -sb` clean |
 | 5 Build gate | ✅ | Git-derived verdict recorded; five full `./pw verify` runs, the last green |
 | 6 Verification sub-agent | ✅ | Four rounds, each dispatched because the prior found a defect. All findings and dispositions above |
-| 7 PR cycle | Recorded at the merge gate |
-| 8 Merge gate | Recorded at the merge gate |
+| 7 PR cycle | ✅ | PR [#1252](https://github.com/cuioss/plan-marshall/pull/1252). All three comment surfaces read (`get_comments`, `get_reviews`, `get_review_comments`) — the `get_reviews` read was load-bearing: Sourcery's refusal appeared **only** there, and its check run said `skipped`. Zero open comments: the review bot filed no issues, and the two shortfalls are stated refusals, not requests. The participation table carries a verdict and a `Reopens?` value per reviewer |
+| 8 Merge gate | Conditions 1–3 met; the condition-4 shortfall disclosed as 1-of-3 before arming. Landing recorded below |
 | 8 Bridge | ✅ | No status or bookkeeping write outside this plan's own directory. `doc/concepts/code-intelligence.adoc`, `doc/user/*.adoc` and `doc/adr/014-*.adoc` are **declared deliverables** (D5) and its consumers, not records |
 | 9 This check | ✅ | This section |
 | 9 What have we learned | ✅ | Below |
@@ -295,9 +327,11 @@ resumability rule — not a run-created prefixed branch.
 **One contract change is proposed, and it is the run's clearest lesson.**
 
 The contract governing this run may not be self-amended, so it was presented to the operator via
-`AskUserQuestion`. **Operator decision: ship it**, as a separate `chore/` PR touching only the skill —
-kept out of this plan's PR so the two changes get their own review audiences, and carrying its bot
-review (a skill is code).
+`AskUserQuestion`. **Operator decision: ship it.** Shipped as
+[#1253](https://github.com/cuioss/plan-marshall/pull/1253) on `chore/cloud-plan-lane-sweep-previous-round`,
+touching only the skill — kept out of this plan's PR so the two changes get their own review
+audiences, and carrying its bot review (a skill is code). Sourcery reviewed it in full and filed three
+points; all three were accepted, fixed, and answered on the thread.
 
 ### Proposed: a fix's own sweep must include the artifacts the *previous* round's fix touched
 
