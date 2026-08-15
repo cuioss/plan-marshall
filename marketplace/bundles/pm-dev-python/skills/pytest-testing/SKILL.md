@@ -51,13 +51,13 @@ Activate when:
 - Script path discovery (dual-path pattern)
 - Fixture scope and autouse
 - Parametrization
-- Property-based and adversarial testing (Hypothesis)
+- Property-based and adversarial testing (Hypothesis), scoped by the universal-contract / literal-is-the-contract discriminator
 - Mocking (module state, functions)
 - Assertions (basic, exceptions, approximate)
 - Output capture (`capsys`, `capfd`)
 - Subprocess / script testing patterns (structured output, PYTHONPATH, error paths)
 - Event-loop and wall-clock CI liabilities (`asyncio.run` loop-close hangs, calendar time-bombs, `pytest-timeout` backstop)
-- Test organization (conftest, file structure)
+- Test organization (conftest, file structure, module and test budgets, docstring content, arrange placement, parametrization, real-parser argument construction, one-layer-per-contract)
 
 **Load Command**:
 ```text
@@ -71,9 +71,18 @@ Read standards/testing-pytest.md
 | File naming | `test_<module>.py` |
 | Function naming | `test_<behavior>` — descriptive of what is tested |
 | Structure | Arrange-Act-Assert (AAA) |
+| Module budget | 400 lines; over budget, split by behaviour cluster into `test_{unit}_{cluster}.py` |
+| Test budget | Body over ~15 lines (excluding docstring) → move arrange into a fixture or factory. **Review trigger, not a gate** |
+| Docstrings | State the invariant, present tense. No plan/deliverable id, PR number, lesson id, or superseded behaviour |
+| Repeated literal | Repeated in 3+ tests → module constant |
+| Repeated setup | Repeated in 3+ tests → fixture |
+| Repeated object build | Built in 3+ tests → factory with keyword overrides |
 | Isolation | `tmp_path` for files, `monkeypatch` for state, autouse `_restore_cwd` |
 | Fixtures | `conftest.py` for shared, function scope by default |
-| Parametrize | `@pytest.mark.parametrize` for input variations |
+| Parametrize | `@pytest.mark.parametrize` for input variations. Two tests differing only in input/expected are one parametrize whose `ids=` carries what the docstrings said |
+| Command arguments | Built through the shared real-parser helper — never a hand-written `argparse.Namespace` (which bypasses the parser's defaults) |
+| One layer per contract | In-process test is authoritative; subprocess collapses to one CLI-plumbing smoke. Exceptions: sole coverage, or the boundary itself is the subject |
+| Generated vs literal data | Generate where the contract is universal; exact literal where the literal *is* the contract |
 | Property-based / adversarial | Hypothesis `@given` / `strategies` / `@example` (third-party `hypothesis` dep — user-approval) |
 | Exceptions | `pytest.raises(ExcType, match="pattern")` |
 | Approximate | `pytest.approx(value, rel=tolerance)` |

@@ -70,15 +70,36 @@ Each production type (class, module, component) requires at least one dedicated 
 
 * Test naming: `{ProductionName}Test` or `{ProductionName}.test` (follow framework convention)
 * Test files in the same package/directory structure as production code (in test source root)
-* At least one test file per production file — split into multiple when exceeding ~200 lines
+* At least one test file per production file — split into multiple when the module exceeds the budget below
 
-### Splitting Large Test Files
+### Module Budget: 400 lines
 
-When a test file exceeds ~200 lines, split into focused groups:
+**A test module is budgeted at 400 lines.** A module over budget is split by *behaviour cluster* into
+`test_{unit}_{cluster}.py` — never in arbitrary halves, and never by line count alone.
 
-* `{Name}Test` — happy-path and core behavior
-* `{Name}EdgeCaseTest` — corner cases and error paths
-* `{Name}IntegrationTest` — integration scenarios
+The budget is derived from the corpus rather than invented: the median test module in this repository
+measures ~327 lines, so a 400-line budget sits above the median and describes the tree's own compliant
+majority instead of an aspiration no module meets.
+
+The budget is **enforced** — `pm-plugin-development:plugin-doctor`'s
+[`test-module-line-budget`](../../../../pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md#test-module-line-budget)
+rule reports every module over it. That enforcement is the difference between this budget and a
+number a reader learns to ignore.
+
+### Splitting by behaviour cluster
+
+Split on what the tests *assert*, so each resulting module has a nameable subject:
+
+* `test_{unit}_{cluster}.py` — one cluster per module, named for the behaviour it pins
+  (`test_resolver_fallbacks.py`, `test_resolver_validation.py`), not for its position in a
+  sequence (`test_resolver_part2.py`)
+* Typical clusters: core/happy-path behaviour, validation and error paths, edge cases, integration
+  scenarios
+* A cluster too small to name is not a cluster — leave it with its parent rather than manufacturing
+  a module
+
+An arbitrary halving splits one subject across two files and leaves neither module describable; the
+next author then cannot tell which half a new test belongs in.
 
 ### Grouping Related Tests
 
@@ -113,19 +134,101 @@ Test names should describe the expected behavior:
 * **Good**: `shouldRejectExpiredToken`, `shouldReturnEmptyListWhenNoResults`
 * **Bad**: `test1`, `testValidation`, `itWorks`
 
+## Test Docstring Content
+
+**A test docstring states the invariant, in the present tense.** It names the contract the test pins,
+as that contract stands today. A second paragraph is added only where the invariant is genuinely
+non-obvious, and it explains *why the invariant is load-bearing* — which is present-tense and survives
+the next edit.
+
+A test docstring does **not** narrate the incident that produced the test, and does not cite:
+
+* a plan id or a deliverable id
+* a PR or issue number
+* a lesson id
+* a superseded behaviour ("used to", "no longer", "the old behaviour", "previously")
+
+### Where this rule comes from
+
+This is not a new standard. It is `CLAUDE.md` § Documentation Standards — "No version history", "No
+timestamps", "Current state only" — applied to a tree those standards were never scoped over. It is
+the same rule that `pm-plugin-development:plugin-doctor` already enforces across
+`marketplace/bundles/**` through its `no-historical-prose-in-skills`, `no-incident-references`, and
+`no-lesson-id-in-skill-prose` rules. Over the test tree it is enforced by
+[`test-docstring-historical-prose`](../../../../pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md#test-docstring-historical-prose).
+
+The reasoning is the same in both trees: a citation reasons from something the reader cannot see. It
+costs context on every read and teaches the reader to reason from a PR number instead of from the
+mechanism in front of them. The history is recoverable from `git log` and from the plan record; the
+docstring's job is to say what the test pins *now*.
+
+### Worked example
+
+A real docstring from this repository, and its repair:
+
+**Before** — the invariant is present but buried behind a citation the reader cannot resolve:
+
+```text
+"""A ``test/**`` path absent from every ``files`` inventory resolves to its
+owning module through the ``paths.tests`` containment fallback — not the
+root ``default`` module and not ``None`` (closes lesson 2026-07-09-04-001)."""
+```
+
+**After** — same invariant, no citation, and the load-bearing reason stated in the present tense:
+
+```text
+"""A ``test/**`` path absent from every ``files`` inventory resolves to its
+owning module through the ``paths.tests`` containment fallback.
+
+The two wrong answers are the ones that look plausible: the root ``default``
+module (which would silently mis-attribute every uninventoried test path) and
+``None`` (which would drop the path from module resolution entirely)."""
+```
+
+The second paragraph earns its place because the invariant is non-obvious — it says why *these* two
+alternatives are the dangerous ones. That reason is true today and stays true; the lesson id was true
+only once.
+
+### What a docstring legitimately carries
+
+Rationale, when the invariant is non-obvious: which alternative behaviour would be wrong and why, what
+breaks if the contract is violated, which boundary the value sits on. All present-tense, all still
+accurate after the code is refactored.
+
 ## Test Data Principles
 
-### Generated Data
+Whether test data should be generated or written as an exact literal is decided by **what the contract
+is**, not by preference. Generated data and exact literals are each correct for a different class of
+contract, and using one where the other belongs produces a test that asserts nothing.
 
-Tests should use generated/random data to prove behavior works for any valid input:
+### The discriminator
+
+**Generated data where the contract is universal.** The behaviour under test is expressible as *"for
+all valid inputs, P holds"* — text and format parsers, identifier validators, path normalisers,
+round-trip encoders, comparators, sort and merge routines. Here a handful of hand-picked literals
+samples an input space the contract quantifies over, so a generator is the stronger assertion.
 
 * Use framework-specific generators (consult your language-specific testing skill for recommended libraries)
 * Generate values within valid ranges for the domain
 * Use meaningful variable names even for generated data
 
+**Exact literals where the literal is the contract.** The behaviour under test *is* a specific value —
+a seeded config knob's default, a canonical step id, a serialized field name, an argparse flag
+spelling, a documented exit code, a wire-format key. Here the literal is the whole assertion: a
+generator would replace the one value that matters with an arbitrary one and prove nothing. In this
+case a generator **is the defect, not the fix**.
+
+The question that settles any given case: *would this test still be meaningful if the value were
+different?* If yes, the contract is universal — generate. If no — if a different value means the
+production behaviour is wrong — the literal is the contract, so write it exactly.
+
 ### Forbidden Patterns
 
-* Arbitrary hardcoded literals like `"test"`, `"hello"`, `"John"` or magic numbers like `42`, `100` when the test would work equally well with any valid input (use generators instead)
+* Arbitrary hardcoded literals like `"test"`, `"hello"`, `"John"` or magic numbers like `42`, `100`
+  **when the contract is universal** — that is, when the test would work equally well with any valid
+  input, so the specific value carries no meaning (use generators instead). This does **not** apply to
+  a literal that *is* the contract under the discriminator above: a test asserting a seeded default,
+  a canonical id, or a flag spelling states that value exactly, and doing so is correct.
 * Shared mutable test state between tests
 * Test order dependencies
 
@@ -247,6 +350,32 @@ Integration tests must be separated from unit tests:
 * Separate by naming convention or directory structure per framework
 * CI/CD pipelines should be able to run each type independently
 
+## One Layer Per Contract
+
+**Where an in-process test and a subprocess test assert the same behaviour, the in-process test is
+authoritative.** The subprocess coverage collapses to a single per-script CLI-plumbing smoke that
+proves the entry point wires up — parses its arguments, reaches its main function, and returns its
+exit code.
+
+The subprocess layer's job is to prove the entry point *is wired*, not to re-assert the logic behind
+it. Asserting one contract at both layers doubles the runtime and the maintenance cost of every change
+to that contract, and the second assertion catches nothing the first did not.
+
+### Two exceptions, and they are what keep the rule safe
+
+1. **Do not collapse where the subprocess test is the only coverage.** If no in-process test asserts
+   the contract, the subprocess test *is* the coverage — collapsing it deletes the assertion. Write
+   the in-process test first, then collapse.
+2. **Do not collapse where the subprocess boundary is itself the subject.** Environment-variable
+   propagation, exit-code contracts, stdout/stderr separation, signal handling, and argv quoting are
+   properties *of* the boundary; only a subprocess test can assert them.
+
+### Every collapse names its replacement
+
+A collapse must name the in-process test that now carries the contract. Without that, a reviewer
+cannot distinguish a collapse (coverage preserved at a better layer) from a deletion (coverage gone) —
+and the two look identical in a diff that only removes lines.
+
 ## Enumerate Existing Test Consumers Before Changing a Default / Constant / Enum Value
 
 **Trigger**: A production change alters a contract value that tests assert against — a default value, a named constant, an enum member, a threshold, a magic literal baked into the public behavior. The hazard is asymmetric: the production change is one line, but an unknown number of existing tests pin the *old* value, and a green local run on the production module says nothing about the test files that assert the old default elsewhere in the tree. The failure surfaces only when the full suite runs — typically in CI, after the change is already pushed — and is then "fixed" in a follow-up remediation commit, splitting one logical change across two commits and leaving the first commit non-buildable in isolation.
@@ -292,9 +421,17 @@ Property-based testing complements example-based tests by generating many random
 
 ### When NOT to use property-based tests
 
+* **The literal is the contract** — the behaviour under test is one specific value (a seeded config
+  default, a canonical step id, a serialized field name, an argparse flag spelling). Generating over
+  the value replaces the assertion with an arbitrary one; write the literal exactly. See § "Test Data
+  Principles → The discriminator".
 * The behavior is inherently example-specific (UI rendering, specific business rules)
 * Generating valid inputs is harder than writing the test
 * The function has significant side effects that are hard to verify as properties
+
+Property-based testing is a **scoped** technique, not a default: it earns its place on the universal
+half of the discriminator and is actively wrong on the other half. Reach for it where the contract
+quantifies over inputs, and reach for exact examples everywhere else.
 
 ### Writing properties
 
@@ -342,7 +479,7 @@ Test doubles substitute real dependencies in unit tests. Choose the simplest dou
 
 | Anti-Pattern | Problem | Solution |
 |-------------|---------|----------|
-| Arbitrary hardcoded data | Tests prove nothing about general behavior | Use generated data (except for format-specific, boundary, or spec-defined values) |
+| Arbitrary hardcoded data **where the contract is universal** | A handful of literals samples an input space the contract quantifies over | Use generated data. Does not apply where the literal *is* the contract (a seeded default, canonical id, field name, flag spelling) — see § "Test Data Principles → The discriminator" |
 | Branching in tests | Non-deterministic coverage | One path per test |
 | Fixed delays | Slow and flaky | Polling/event-based waiting |
 | Shared mutable state | Order-dependent failures | Isolated test data |
