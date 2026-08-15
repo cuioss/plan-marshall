@@ -156,7 +156,7 @@ verification sub-agent (§ Step 6), **B** = `./pw verify`, **R** = the D4 readin
 | # | Src | Finding | Disposition |
 |---|---|---|---|
 | 1 | V | **`parse_ns`'s docstring asserted "The command body never runs on either path" — false for router scripts.** `platform_runtime.main()` resolves an operation, reads the marshal config, mutates `sys.path` and dispatches *before* any `parse_args`. Reproduced independently: `main()` emitted an `unknown_operation` error to stdout, then `parse_ns` raised. | **Fixed.** The docstring now states what is guaranteed (the handler the command line names never runs), names both breaking shapes, and steers those callers to the builder seam. `test_a_router_script_fails_loudly_rather_than_yielding_a_guess` pins it, so the caveat is checked rather than asserted. |
-| 2 | V | **`marketplace/bundles/pm-plugin-development/skills/plugin-script-architecture/standards/testing-standards.md` prescribes `test_helpers.py` for "Shared fixtures … No test functions"** (lines 461, 469, 478–479, including a worked directory example and a worked `from test_helpers` import). D5's whole-tree guard now makes that exact shape a failing build, and `test/README.md` says the opposite. An author following the standard produces a red suite. | **Recorded as a proposal, deliberately not fixed.** The file is under `marketplace/bundles/**`, which this plan's § Out of scope excludes and which plan `010` owns. See § What have we learned. |
+| 2 | V | **`marketplace/bundles/pm-plugin-development/skills/plugin-script-architecture/standards/testing-standards.md` prescribes `test_helpers.py` for "Shared fixtures … No test functions"** (lines 461, 469, 478–479, including a worked directory example and a worked `from test_helpers` import). D5's whole-tree guard now makes that exact shape a failing build, and `test/README.md` says the opposite. An author following the standard produces a red suite. | **Recorded as a proposal, deliberately not fixed.** Correctly out of scope here — but the ownership originally stated in this row (plan `010`) was **wrong**, and no plan in the epic owns that file. Corrected, with the evidence, in § What have we learned proposal 2. The standard itself is fixed in a follow-up `chore/` PR. |
 | 3 | V | Step 3's plan-file move left **eight dead links** to `020-shared-test-harness.md` in `doc/plans/test-quality/findings-test-corpus-review.md` (lines 72, 74, 76, 77, 303, 305, 307, 308). | **Fixed.** Repointed to `020-shared-test-harness/plan.md`. This was collateral from a lane-mandated move, not a record write, so repairing it does not breach the bridge rule. |
 | 4 | V | `_worktree_ns` built its namespace from **`git-workflow.py`'s** parser and fed it to `prepare_execute.run_prepare_execute` — a different script with its own parser. Faithful to the old hand-built namespace, but it borrows another script's defaults. | **Fixed.** Split into `_worktree_ns` / `_prepare_ns`, each using its own script's parser. |
 | 5 | V | The no-namespace error reported "main() returned without calling parse_args" even when the parser *had* been entered and `main()` caught the failure itself. | **Fixed.** `parser_entered` is now consulted on that branch. |
@@ -301,7 +301,7 @@ and concludes the churn must therefore be legitimate would commit it. Proposed e
 its **symptom** — a lone `uv.lock` in `git status` is backed out, whatever the cause — and cite the
 interpreter floor as one cause among others.
 
-**2 — Step 6's beyond-diff sweep enumerates restatements, but not prescriptions.**
+**2 — Step 6's beyond-diff sweep enumerates restatements, but not prescriptions — and finding one raises a second question the contract never asks.**
 The sweep's consumer kinds are all forms of a document *restating a value* the change made false. The
 verifier found a different kind here: `plugin-script-architecture/standards/testing-standards.md`
 *prescribes* `test_helpers.py` as the name for a fixture module with "No test functions" — the exact
@@ -309,6 +309,21 @@ shape D5's new guard now fails the build on. That is not a stale restatement; it
 the change makes impossible to comply with**, and an author following it produces a red suite. It
 matches no kind on the current list. Proposed edit: add a seventh kind — "a standard, rule, or
 template elsewhere that the change makes unfollowable".
+
+A second, sharper lesson came out of the same finding **after** this report was first written. Having
+identified the out-of-scope file, this run asserted that plan `010` owned it — inferred from the
+subject matter, without reading `010`'s scope declaration. The evidence says otherwise:
+
+* `010`'s Expected surface is `pytest-testing/**`, `persona-module-tester/**`, `plugin-doctor/**`.
+* `plugin-script-architecture` is a **sibling skill** in the same bundle, named nowhere in `010`.
+* `030`–`080` may not edit `marketplace/bundles/**` at all.
+* So **no plan in the epic owned it** — the trap had no owner.
+
+An unowned trap recorded as *owned elsewhere* reads as handled, which is worse than recording it as
+unowned, because nobody looks again. Proposed edit: when the sweep defers a finding to another owner,
+the contract should require that ownership be **read from the named owner's own scope declaration and
+cited**, never inferred from topic — the same evidence rule the lane already applies to merge state
+and reviewer participation.
 
 **3 — The bridge rule does not say who repairs the links Step 3's move breaks.**
 Step 3 mandates moving `{NNN}-{slug}.md` to `{NNN}-{slug}/plan.md`. Sibling documents under

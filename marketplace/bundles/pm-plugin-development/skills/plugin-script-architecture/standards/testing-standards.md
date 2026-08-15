@@ -458,15 +458,27 @@ Split large test files into focused modules:
 
 | Module | Purpose |
 |--------|---------|
-| `test_helpers.py` | Shared fixtures and helper functions (no test functions) |
+| `_{domain}_fixtures.py` | Shared fixtures and helper functions (no test functions) |
 | `test_cmd_{noun}.py` | Detailed tests for each command module |
 | `test_{script}.py` | Happy-path integration tests only |
+
+**A helper module MUST NOT be named `test_*.py`.** pytest collects any module matching its
+`python_files` pattern, so a helper under that name is imported, collects nothing, and is invisible in
+the run — a silent no-op rather than a loud failure. A whole-tree guard
+(`test/test_shared_harness.py`) fails the build on any collected module that declares zero tests, so a
+helper named `test_helpers.py` breaks the build.
+
+The name is `_{domain}_fixtures.py`: underscore-prefixed so it is not collected, and domain-prefixed
+because helper modules are imported by bare name and their basenames must therefore be unique
+tree-wide. `{domain}` is the skill or subject the fixtures serve — the manage-config suite's helpers
+live in `_manage_config_fixtures.py`. Never a nested `conftest.py`, and never a bare `_fixtures.py`
+or `_helpers.py`.
 
 ### Example Structure
 
 ```text
 test/{bundle}/{skill}/
-  test_helpers.py              # Shared fixtures
+  _{domain}_fixtures.py        # Shared fixtures
   test_cmd_init.py             # init command variants/corners
   test_cmd_skill_domains.py    # skill-domains variants/corners
   test_cmd_modules.py          # modules variants/corners
@@ -475,8 +487,8 @@ test/{bundle}/{skill}/
 
 ### Module Patterns (summary)
 
-- **`test_helpers.py`** — imports conftest helpers (`get_script_path`), exposes a module-level `SCRIPT_PATH` constant, and defines `create_fixture(fixture_dir, config)` and any other shared helpers. No test functions.
-- **`test_cmd_{noun}.py`** — imports `run_script`, `TestRunner`, `PlanTestContext` from conftest and `SCRIPT_PATH`, `create_fixture` from `test_helpers`. Contains detailed `test_{noun}_happy_path`, `test_{noun}_edge_case`, etc. The `__main__` block wires them into a `TestRunner`.
+- **`_{domain}_fixtures.py`** — imports conftest helpers (`get_script_path`), exposes a module-level `SCRIPT_PATH` constant, and defines `create_fixture(fixture_dir, config)` and any other shared helpers. No test functions.
+- **`test_cmd_{noun}.py`** — imports `run_script`, `TestRunner`, `PlanTestContext` from conftest and `SCRIPT_PATH`, `create_fixture` from `_{domain}_fixtures`. Contains detailed `test_{noun}_happy_path`, `test_{noun}_edge_case`, etc. The `__main__` block wires them into a `TestRunner`.
 - **Main test file** (`test_{script}.py`) — same imports, but contains only one happy-path test per command and acts as the monolithic CLI API contract test. Detailed variant and corner cases live in the per-command modules.
 
 ### Module Size Guidelines
