@@ -1004,14 +1004,18 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   [--participated-bots [PARTICIPATED_BOTS]] [--in-progress-bots [IN_PROGRESS_BOTS]] \
   [--refused-bots [REFUSED_BOTS]] [--stale-participation-bots [STALE_PARTICIPATION_BOTS]] \
   [--declined-bots [DECLINED_BOTS]] [--not-triggered] [--refused-causes [REFUSED_CAUSES]] \
-  [--min-deficit N]
+  [--refusal-size-caps [REFUSAL_SIZE_CAPS]] [--min-deficit N]
 ```
 
 The `deficit` subcommand takes the SAME observation flags as `check` (so the step forwards the sets it
-already gathered) plus `--min-deficit` (default 1). `--refused-causes` is among them deliberately: it
-changes no deficit verdict (no refusal member is a reviewed-at-all state), but the returned
-`reviewers[]` publishes a `state` column, and two commands naming different members for one bot's
-refusal would be a disagreement no reader of the output could adjudicate. It reports whether a REQUIRED reviewer produced
+already gathered) plus `--min-deficit` (default 1). `--refused-causes` **and `--refusal-size-caps`**
+are among them deliberately: neither changes a deficit verdict (no refusal member is a reviewed-at-all
+state), but the returned `reviewers[]` publishes a `state` column, and two commands naming different
+members for one bot's refusal would be a disagreement no reader of the output could adjudicate. ⛔ The
+cap flag is the load-bearing one: a cap arriving WITHOUT its cause drives the fail-closed cause
+recovery, so a caller that passes it to `check` but not `deficit` reproduces exactly the disagreement
+the pair exists to prevent — and that is the only scenario in which the two can diverge, so omitting it
+here would leave the invariant documented but unreachable. It reports whether a REQUIRED reviewer produced
 materially fewer findings than a reviewer that actually reviewed the SAME diff — a **reviewer-quality
 signal, never a merge verdict**. Its TOON carries `gates_merge: false` and `proves:
 reviewer_quality_only` in as many words, and the step MUST NOT gate the merge on it. The verdict is one

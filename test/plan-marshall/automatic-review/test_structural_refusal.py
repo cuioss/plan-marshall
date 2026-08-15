@@ -476,6 +476,27 @@ def _barrier_structural_prompt() -> str:
     return barrier[fence_start:fence_end]
 
 
+def _barrier_structural_section() -> str:
+    """The barrier's structural-refusal SECTION, anchored on its heading.
+
+    Anchored on the ``#####`` heading rather than the bare phrase, and sliced to the
+    next heading rather than a character count. The phrase alone is not unique — the
+    merge-authorization roster cross-references this section by name, and that
+    reference appears EARLIER in the file, so a phrase-anchored slice silently reads
+    the roster instead of the section it meant to check.
+    """
+    barrier: str = _BRANCH_CLEANUP.read_text(encoding='utf-8')
+    match = re.search(
+        r'^#{3,6}\s.*Structural refusal — the loop-back arm is UNAVAILABLE.*$',
+        barrier,
+        re.MULTILINE,
+    )
+    assert match, 'the barrier declares no structural-refusal section'
+    rest = barrier[match.end():]
+    nxt = re.search(r'^#{1,6}\s', rest, re.MULTILINE)
+    return rest[: nxt.start()] if nxt else rest
+
+
 def _barrier_structural_options() -> str:
     """Just the ``options:`` list of that prompt — what the operator can actually PICK.
 
@@ -720,6 +741,54 @@ class TestNoAwaitOnTheStructuralBranch:
         assert '{cap}' in block
         assert '{measured_diff_size}' in block
 
+    def test_the_two_blocked_paths_declare_a_precedence(self):
+        """⛔ Both blocks can hold at once, and they mandate OPPOSITE actions.
+
+        A PR with a structural refusal AND an unhandled comment satisfies the
+        participation-incomplete path (which forbids the loop-back) and the
+        pending-findings path (which mandates it). Before the structural member existed
+        the two were behaviourally identical, so the missing precedence was harmless;
+        it is now a contradiction, and a reader reaching either section first would act
+        on it.
+        """
+        section = _barrier_structural_section()
+        lowered = ' '.join(section.lower().split())
+        assert 'precedence' in lowered, (
+            'the structural sub-branch states no precedence against the pending-findings '
+            'path, which mandates the loop-back it forbids'
+        )
+        assert '{count} == 0' in section, (
+            'the structural disposition does not scope itself to the zero-pending case'
+        )
+
+    def test_the_structural_accept_branch_mints_an_authorization(self):
+        """An option labelled "record reason" must actually record something.
+
+        The dispatcher's accept branch stamps a step record, but the barrier re-derives
+        participation and re-checks authorization at its OWN resolved HEAD — and on the
+        default barrier mode it never re-asks. Without a grant minted at the hook, the
+        operator selects "Accept the coverage gap" and gets no merge, no second prompt,
+        and no record of what they accepted.
+        """
+        table = _hook_structural_table()
+        assert 'merge-authorization grant' in table
+        assert '--gap-class review-barrier-gap' in table
+        assert '--kind barrier-ask-override' in table
+
+    def test_the_deficit_invocation_block_documents_the_cap_flag(self):
+        """The documented `deficit` call must pass the flag that drives the recovery.
+
+        `--refusal-size-caps` is what makes a cap-without-cause resolve structurally. A
+        caller following a block that omits it passes the cap to `check` and not to
+        `deficit`, reproducing the exact cross-command disagreement the shared flag
+        exists to prevent — and plugin-doctor cannot catch it, because it validates
+        documented invocations against the parser, not the parser against the docs.
+        """
+        skill = _AR_SKILL.read_text(encoding='utf-8')
+        start = skill.index('### review_completeness — deficit')
+        block = skill[start:skill.index('```', skill.index('```bash', start) + 7)]
+        assert '--refusal-size-caps' in block
+
     def test_the_default_barrier_mode_does_not_loop_on_a_structural_refusal(self):
         """The HEADLESS path must not spin — it has no operator to ask.
 
@@ -728,9 +797,7 @@ class TestNoAwaitOnTheStructuralBranch:
         whose size never changes. The honest headless outcome is to terminate with an
         actionable message.
         """
-        barrier = _BRANCH_CLEANUP.read_text(encoding='utf-8')
-        start = barrier.index('Structural refusal — the loop-back arm is UNAVAILABLE')
-        section = barrier[start:start + 3000]
+        section = _barrier_structural_section()
         lowered = ' '.join(section.lower().split())
         assert 'do not loop back' in lowered
         assert 'fail_into_loopback' in section
