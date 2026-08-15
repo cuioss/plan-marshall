@@ -1007,7 +1007,7 @@ When `participation_complete: false`, the merge is blocked even if `{count} == 0
 
 This is an **authorizable** blocked path: § "Authorization check — the only admissible evidence on a blocked path" above has already run, and this disposition fires only when it returned `any_admissible: false` for `review-barrier-gap` — including when `any_authorized` was `true` under a ruling granted over some other gap.
 
-Branch on `{barrier_mode}` using the SAME two branches as the unhandled-comment block below — `fail_into_loopback` (default) loops back into `6-finalize` so `automatic-review` re-fires and re-awaits the unproven bot, and `ask` prompts the operator. Both branches carry the same merge-mutex release obligations documented there; only the recorded message differs:
+Branch on `{barrier_mode}` using the SAME two branches as the unhandled-comment block below — **unless a required bot resolved `refused_structural`, which carves out both branches; read § "Structural refusal — RE-TRIAGE is not a remedy" below FIRST** — `fail_into_loopback` (default) loops back into `6-finalize` so `automatic-review` re-fires and re-awaits the unproven bot, and `ask` prompts the operator. Both branches carry the same merge-mutex release obligations documented there; only the recorded message differs:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -1685,7 +1685,7 @@ This step declares the `records_facts` union `action`, `upstream_commit_count`, 
 
 Branch B carries one placeholder (`{base_branch}`) and is checked the same way. Branches C, D, and F carry none, so each is its own worst case; the longest of those three is Branch F at **59 chars**.
 
-The `loop_back` call site in the pre-merge comment barrier is deliberately untouched — it is not a `done` record and carries no fact obligation.
+Every `loop_back` call site in the pre-merge comment barrier is deliberately untouched — none is a `done` record, so none carries a fact obligation.
 
 **Branch A — PR mode (rebase + landed merge + cleanup)** (PR was rebased onto base, the merge **landed** and was corroborated, base branch pulled, feature branch deleted locally and on remote, worktree removed). Branch A is the **clean-barrier** payload: use it only when the pre-merge review barrier resolved via its clean path. When the merge proceeded past a reported gap under an authorization, emit **Branch E** instead. When the PR was enqueued but the queue merge never landed, emit **Branch F** instead — Branch A requires `{merge_landed} == true`. It is the only clean-path branch that reaches both the rebase and a landed merge, so it carries all four facts:
 

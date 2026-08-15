@@ -728,14 +728,18 @@ class TestNoAwaitOnTheStructuralBranch:
         assert 'accept the coverage gap' in options
         assert 'disable this reviewer' in options
 
-    def test_the_barriers_own_prompt_does_not_offer_a_loop_back(self):
-        """⛔ "Re-triage now" IS the loop-back, and for this member it cannot work.
+    def test_the_barriers_own_prompt_does_not_offer_a_retriage_remedy(self):
+        """⛔ "Re-triage now" re-requests the review, and for this member that cannot work.
 
-        A re-triage re-runs the review against a diff of the SAME SIZE, so the bot
-        re-refuses and the barrier re-reaches this verdict. That is an action the
-        operator can take that is guaranteed not to work — the plan's own definition of
-        a non-option — and it escapes a wait-worded sweep entirely because it is spelled
-        "re-triage" and "loop back" rather than "wait".
+        A re-triage asks the reviewer again against a diff of the SAME SIZE, so it
+        re-refuses and the barrier re-reaches this verdict — an action the operator can
+        take that is guaranteed not to work, the plan's own definition of a non-option.
+        It escapes a wait-worded sweep entirely because it is spelled "re-triage".
+
+        ⚠ Two senses of "loop-back" must stay apart here, which is why this test asserts
+        over the OPTION LIST only. The re-triage **remedy** is what must be absent; the
+        `loop_back` control-flow **record** is what the branch legitimately emits, and a
+        check written against the word rather than the sense would forbid it.
         """
         options = _barrier_structural_options()
         lowered = options.lower()
@@ -743,10 +747,14 @@ class TestNoAwaitOnTheStructuralBranch:
             f'the barrier prompt offers a wait:\n{options}'
         )
         assert 're-triage' not in lowered, (
-            'the structural prompt offers "Re-triage now" — the loop-back under a '
-            'friendlier name, and futile against an unchanged diff'
+            'the structural prompt offers "Re-triage now" — re-requesting a review that '
+            'is futile against an unchanged diff'
         )
-        assert 'loop back' not in lowered
+        assert 'loop back' not in lowered, (
+            'the structural OPTION LIST offers a loop-back as a remedy. The branch does '
+            'emit a loop_back RECORD, which is correct — but an operator must not be '
+            'handed re-running the review as a choice'
+        )
 
     def test_the_barriers_own_prompt_quantifies_the_gap(self):
         """Both audit figures are shown, so an accepted gap is a quantified one."""

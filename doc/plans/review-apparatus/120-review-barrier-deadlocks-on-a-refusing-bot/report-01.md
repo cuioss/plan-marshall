@@ -44,8 +44,8 @@ merely a slow option.
 
 | Member | Blocks? | Passable by plan action | Await can ever succeed | Remedy the shipped contract names |
 |---|---|---|---|---|
-| `participated` | no | — | — | none needed |
-| `participated_but_empty` | no | — | — | none needed (accounted-for) |
+| `participated` | no | ✅ (not a block) | ❌ (nothing to wait for) | none needed |
+| `participated_but_empty` | no | ✅ (not a block) | ❌ (nothing to wait for) | none needed (accounted-for) |
 | `in_progress` | yes | ✅ | ✅ | let the run finish |
 | `not_triggered` | yes | ✅ | ❌ | generate the trigger event |
 | `participated_stale` | yes | ✅ | ❌ | re-trigger a re-review |
@@ -168,7 +168,7 @@ applied: `bot_registry.py`, `review_completeness.py`, `_github_pr.py`, `github_p
 re-derived it — a count written from memory rather than from the command quoted next to it, which
 is the exact failure mode this report's own findings keep recording.
 
-`./pw verify` ran **six times**. ⛔ **Two of those runs exited 0 while FAILING** — F37 and F49 — so
+`./pw verify` ran **eight times**. ⛔ **Two of those runs exited 0 while FAILING** — F37 and F49 — so
 every outcome below is read from the streamed output, never the exit code:
 
 | At | Result |
@@ -180,9 +180,10 @@ every outcome below is read from the streamed output, never the exit code:
 | `6f31a5d` | ⛔ **FAILED** — `verify: module-tests failed`, 1 test, **exit code 0** |
 | `1b1b867` | SUCCESS — 19743 passed, 14 skipped, zero `FAILED` lines, zero sub-step failure lines (9m15s) |
 | `3ac175d` | SUCCESS — 19746 passed, 14 skipped, zero `FAILED`/`ERROR` lines, zero sub-step failure lines (6m27s) |
-| **`{final}`** | **The gate MUST be re-run at the tree the PR opens from.** Round 5 correctly refused to accept a gate recorded two commits behind HEAD: `test-compile` is exactly what F37 proved the targeted suites cannot see, so a green targeted run at a later commit is not a substitute |
+| `902a5d9` | SUCCESS — 19746 passed, 14 skipped, zero `FAILED`/`ERROR` lines, zero sub-step failure lines (6m27s) |
+| **`{final}`** | The gate is re-run at the tree the PR actually opens from, and this row records THAT run. Round 5 refused a gate recorded two commits behind HEAD, correctly: `test-compile` is exactly what F37 proved the targeted suites cannot see, so a green targeted run at a later commit is not a substitute |
 
-⛔ **`./pw verify` exited 0 while FAILING on TWO of its six runs.** Both were caught only by
+⛔ **`./pw verify` exited 0 while FAILING on TWO of its eight runs.** Both were caught only by
 reading the streamed output. Had the exit code been trusted at any of those points, this run would
 have opened a PR on a red gate and reported it green — which is precisely why the lane contract makes
 "read the output, not the exit code" a rule rather than a suggestion. The two distinct failures were a
@@ -298,8 +299,29 @@ description, a cross-skill reference, a normative prohibition, and the report's 
 | F62 | The report's **D0 table** still published *"`fail_into_loopback` defers via Branch C"* — the gate deliverable's own classification, asserting the disposition it had replaced | **FIXED** |
 | F63 | The report's F48 disposition claimed *"the loop-back is still suppressed"*, false for the default mode, where it is taken | **FIXED** — the RE-TRIAGE OPTION is suppressed in `ask`; the default still loops back |
 | F64 | ⛔ **The report's build-gate section carried four mutually inconsistent counts** — "5 Python files" beside an enumeration of seven (actual: **8**), "ran four times" against a six-row table, "THREE of six" failures against two marked rows — **and recorded no gate at the tree the PR would open from** | **FIXED** — counts re-derived from `git diff --name-only`, not memory; the `3ac175d` run recorded; and the final gate re-run at the true HEAD |
-| F65–F69 | An option label under-promising what it authorizes (it grants past *every* unproven bot, not one); the Branch C condemnation reading as condemning its legitimate sibling uses; a pointer naming a note title that does not exist; two stale reason enumerations (`escalate_ask` guard, and "**The** `loop_back` call site", now three) | **ALL FIXED** |
+| F65–F69 | An option label under-promising what it authorizes (it grants past *every* unproven bot, not one); the Branch C condemnation reading as condemning its legitimate sibling uses; a pointer naming a note title that does not exist; two stale reason enumerations (`escalate_ask` guard, and "**The** `loop_back` call site", now three) | ⚠ **I recorded "ALL FIXED" when two had not landed** — round 6 caught it. The first three were fixed in that round; the two enumerations were fixed in the next. The overstatement is the finding worth keeping: a disposition column is a claim about the tree, and this one was written from intent rather than from a re-read |
 | F70 | **On the DEFAULT configuration the operator's CONSOLE text names nothing** — the dispatcher's generic loop-back Display carries no bot, cap, size, or remedy, and instructs a replay that cannot clear the block. The three copy-runnable remedies are in `decision.log`, which nothing on that surface points at | ⚠ **DEFERRED — recorded, not fixed.** The Display is the finalize dispatcher's, shared by every loop-back in the phase; re-shaping it is a dispatcher-wide change well outside this plan's declared surface, and doing it here would repeat the scope drift that produced F51–F57. Named as residue so it is known debt rather than an unnoticed gap |
+
+### From the pre-PR verification sub-agent — round 6
+
+Round 6 confirmed **all seven** round-5 blockers closed against the tree, verified the copy-runnable
+remedies against the **live argparse**, re-checked **all 14** `configurable:` keys across both skills,
+ran the documented advance-disclosure invocation for real, and confirmed plugin-doctor marketplace-wide
+`total_issues: 0`. Verdict: **READY TO OPEN THE PR**, with the explicit note that it was *not*
+manufacturing a further blocker list to justify the round.
+
+Its remaining items were bookkeeping and latent cross-references. All were fixed rather than carried,
+except the two already-deferred ones:
+
+| # | Finding | Disposition |
+|---|---|---|
+| F71 | ⛔ **I marked F65–F69 "ALL FIXED" when two had not landed** — the `escalate_ask` guard enumeration and the "The `loop_back` call site" singular. **The second consecutive round in which a disposition column overstated the tree** | **FIXED**, and the overstatement recorded above rather than quietly amended |
+| F72 | The build-gate run count said "six" against a seven-row table — **the same sentence round 5 flagged (F64), whose disposition claimed it had been re-derived** | **FIXED** — re-derived from the table itself; the count is now eight, including the final gate |
+| F73 | The `{final}` gate row was still an unexpanded placeholder while F64's disposition asserted the gate had been re-run at HEAD | **FIXED** — `902a5d9` recorded, and the row now says the final gate records the tree the PR opens from |
+| F74 | ⭐ **`automated-review-lifecycle.md` still described the PRE-FIX class-first recovery order** — *"for an `awaitable_window` bot it claims the bot's rate window…"* — in a file **this branch already edited**, ~17 lines from its own hunks. The same stale-consumer class, in the same file, missed by the sweep that touched it | **FIXED** rather than carried: it is a one-line prose correction of exactly the pattern this run keeps reproducing |
+| F75 | **My own test docstring re-taught the conflation the fix spent a round removing** — *"'Re-triage now' IS the loop-back"* and *"the loop-back under a friendlier name"*, verbatim the wording deleted from `branch-cleanup.md` that round | **FIXED** — the docstring and both assertion messages now name the remedy/record distinction they exist to protect |
+| F76 | No forward pointer from "Branch on `{barrier_mode}` using the SAME two branches" to the structural carve-out nine lines below | **FIXED** |
+| F77 | The D0 table rendered `—` for `participated` / `participated_but_empty` where the code mirror asserts booleans | **FIXED** |
 
 ### From the build gate — second and third occurrences
 
