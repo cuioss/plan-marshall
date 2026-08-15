@@ -342,7 +342,7 @@ Extensions providing module discovery must:
 - Use snake_case for metadata fields (`artifact_id`, `group_id`)
 - Include `metadata.profiles` for build-system-specific profiles (Maven)
 - Use `packages` as object keyed by package name
-- Use technology-native dependency format (Maven: `groupId:artifactId:scope`, npm: `name:scope`)
+- Use the technology-native dependency format for the ecosystem — see § [Dependency Format](#dependency-format) for the per-ecosystem string shape and scope vocabulary
 - Include `commands` with resolved canonical command strings (not nested)
 - All paths project-relative (not absolute)
 - Populate `component_refs` **only** when the extension ships an Axis-C derivation resolver that joins over it. It is optional and extension-specific, never part of the shared required field set. When populated, every element must carry all three of `target_bundle`, `dep_type` (one of `script` / `skill` / `import` / `path` / `implements`), and `resolved`; unresolved references must be stamped `resolved: false` rather than dropped, and a module with no outbound references must carry an empty array rather than omit the key

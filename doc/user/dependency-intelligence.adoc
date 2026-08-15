@@ -68,7 +68,14 @@ Nothing here is opt-in. If your project is one of the ecosystems below, the grap
 | Each package's name against every package's `dependencies` and `devDependencies`, workspace members included.
 |===
 
-Two further joins run over cross-references rather than build declarations — Python `import` statements, and markdown / AsciiDoc cross-document references. Those need a crawled marketplace or documentation corpus, so an ordinary application project will not see them contribute. Your build-system join does not depend on them.
+Three further joins run over cross-references rather than build declarations: Python `import` statements, marketplace markdown references, and AsciiDoc cross-document references. Those need a crawled marketplace or documentation corpus, so an ordinary application project will not see them contribute. Your build-system join does not depend on them.
+
+[NOTE]
+====
+That is six resolvers in total, and *you will see all six in every response* — one row each, whatever your project is built with. Resolver discovery is registry-wide, not project-scoped, so a Python project still carries an `npm` row and an npm workspace still carries a `maven` one, each reporting `edge_count: 0`.
+
+A zero row is not a defect and not a sign that something is misconfigured; it means that resolver ran and had nothing to contribute here. What matters is `resolver_count` — see <<reading-an-empty-answer>>.
+====
 
 === Python specifics
 
@@ -97,9 +104,10 @@ Gradle modules are covered by the coordinate join, with one gap. A dependency de
 
 If your Gradle build wires its modules together with `project(...)`, expect an empty internal graph today.
 
+[[reading-an-empty-answer]]
 == Reading an empty answer
 
-An empty result has two very different meanings, and the response tells you which one you are looking at. Check `resolver_count`:
+An empty result has two very different meanings, and the response tells you which one you are looking at. Check `resolver_count` — which counts the resolvers that *ran*, never the ones that *contributed*:
 
 [cols="1,3", options="header"]
 |===

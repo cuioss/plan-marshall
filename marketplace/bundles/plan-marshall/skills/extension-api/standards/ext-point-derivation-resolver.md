@@ -76,14 +76,16 @@ There is **no new registry, no new scan surface, and no per-resolver glob**. A r
 
 **One registration site registers at most one resolver**, and the site differs by axis:
 
-| Axis | Registration site | Why |
-|------|-------------------|-----|
-| A | One per **bundle** | `discover_all_extensions()` resolves a single `extension.py` per bundle (the manifest skill's sibling). |
-| B | One per **build skill** | `discover_build_extensions()` walks build-skill `extension.py` files and keys each on its **skill** name, so one bundle can contribute several. |
+| Axis | Registration site | Open to | Resolution |
+|------|-------------------|---------|------------|
+| A | One per **bundle** | **Any bundle.** `discover_all_extensions()` scans every bundle directory. | The bundle's single `extension.py` — the manifest skill's sibling, located by the `implements:` archetype declaration. |
+| B | One per **build skill** | **`plan-marshall` only** (see below). | `get_build_extension_paths()` iterates the hard-coded `_BUILD_EXTENSION_SKILLS` tuple under `resolve_skills_root(Path(__file__))` and keys each on its **skill** name. Discovery is name-driven, not a tree scan. |
 
 The cardinality is structural, not a convention: `derivation_resolver_id()` returns a single string, so each registration site has exactly one resolver identity to stamp. Two derivations that must stay distinguishable in `producers[]` therefore have to live at two **sites** — two bundles on Axis-A, or two build skills on Axis-B.
 
-Do not read this as "one resolver per bundle". The `plan-marshall` bundle alone contributes three Axis-B resolvers — `maven`, `npm` and `pyproject` — from its `build-maven`, `build-npm` and `build-pyproject` skills, which is exactly what the per-skill keying is for: a build system's edge derivation belongs beside the rest of that build system's knowledge, not pooled into one resolver per bundle.
+Do not read this as "one resolver per bundle". The `plan-marshall` bundle alone contributes three Axis-B resolvers — `maven`, `npm` and `pyproject` — from its `build-maven`, `build-npm` and `build-pyproject` skills. That is what the per-skill keying is for: a build system's edge derivation belongs beside the rest of that build system's knowledge, not pooled into one resolver per bundle.
+
+⚠ **Axis-B registration is closed; Axis-A is open.** `_BUILD_EXTENSION_SKILLS` is a fixed tuple and the paths resolve under **`plan-marshall`'s own** skills root, so a third-party bundle cannot register an Axis-B resolver by shipping a build skill — adding one means editing that tuple in `extension_discovery.py`. A bundle outside `plan-marshall` that wants to contribute edges registers on **Axis-A** instead, by subclassing `DerivationResolverBase` alongside `ExtensionBase` on its own `extension.py`, which is exactly how `markdown`, `python` and `documentation` are registered.
 
 ### 3. Dispatch
 
@@ -178,9 +180,11 @@ Resolvers are shipped on both hierarchies — some opting in from Axis-A (`Exten
 | Python import join | `python` | A | `pm-dev-python` (`Extension(ExtensionBase, DerivationResolverBase)`) | Derives edges from AST-parsed Python imports, read out of the same `component_refs` field. Python-language knowledge belongs to the Python domain bundle rather than to a build-system bundle, which is why this resolver is Axis-A and not on `build-pyproject`. Same aggregated-notes discipline as the markdown resolver. |
 | Documentation cross-reference join | `documentation` | A | `pm-documents` (`Extension(ExtensionBase, PathAttributionBase, DerivationResolverBase)`) | Derives edges from the doc corpus's `xref:` / `link:` / `include::` / markdown-link references, read out of the same `component_refs` field (materialized by the bundle's `doc_references` engine). Scoped to documentation modules, so it does not re-derive the marketplace-bundle references the `markdown` resolver owns; where both see one reference the merge unions them into one edge carrying both producer ids. Its `unresolved-target` note is the dangling-reference / deleted-heading class only the documentation domain detects. Same aggregated-notes discipline as the markdown resolver. |
 
+**Each Axis-A resolver reads a pre-materialized field; none reads the filesystem.** The detection engine that produces `component_refs` parses files from disk, so it runs at module-discovery time. A resolver is a pure function of its arguments (see § 1 Declaration), which is why the engine cannot be called from `derive_edges`. No resolver imports another bundle's engine, so each registration stands alone — the roster creates no coupling between the owning bundles.
+
 **Why the markdown, python, and documentation joins are separate resolvers, not one.** All three are Axis-A, where the registration site is the bundle (see [§ 2 Discovery](#2-discovery)), so the split across `pm-plugin-development`, `pm-dev-python`, and `pm-documents` is what makes per-edge provenance — was this edge a marketplace markdown reference, a Python import, or a cross-document reference? — expressible at all. Collapsing them into one resolver would forfeit exactly that distinction.
 
-**Why `python` and `pyproject` are both registered, and both wanted.** They answer different questions over the same language. `python` (Axis-A, `pm-dev-python`) joins AST-parsed **import statements** — what the code actually reaches for — which is language knowledge. `pyproject` (Axis-B, `build-pyproject`) joins **declared distribution dependencies** — what the project says it depends on — which is build-system knowledge. The two disagree in both directions, and each disagreement is informative: a declared dependency nothing imports is a stale declaration, and an import with no declaration is a missing one. They also have different reach — `component_refs` is materialized only by the bundles that crawl a marketplace or doc corpus, so an ordinary Python consumer project gets its graph from `pyproject` alone. Per-edge provenance is what keeps the two distinguishable, which is why they are two bundles rather than one resolver.
+**Why `python` and `pyproject` are both registered, and both wanted.** They answer different questions over the same language. `python` (Axis-A, `pm-dev-python`) joins AST-parsed **import statements** — what the code actually reaches for — which is language knowledge. `pyproject` (Axis-B, `build-pyproject`) joins **declared distribution dependencies** — what the project says it depends on — which is build-system knowledge. The two disagree in both directions, and each disagreement is informative: a declared dependency nothing imports is a stale declaration, and an import with no declaration is a missing one. They also have different reach — `component_refs` is materialized only by the bundles that crawl a marketplace or doc corpus, so an ordinary Python consumer project gets its graph from `pyproject` alone. Per-edge provenance is what keeps the two distinguishable, which is why they are two registration sites — one Axis-A bundle and one Axis-B build skill — rather than one resolver.
 
 ### A name join must be build-system scoped
 
@@ -195,7 +199,9 @@ The second is the more serious: the first misreports a true edge, while the seco
 
 ### Neither name join falls back to the module name
 
-A module's `name` is directory-derived when no descriptor names the project (and is `default` for an unnamed root), so it is **not** an identity anything can depend on. Both name joins therefore read the published name from `metadata.name` and treat its absence as "publishes nothing" — such a module is never an edge **target**, though it remains a valid edge **source**, since it can still declare dependencies.
+A module's `name` is **not** an identity anything can depend on, and the two ecosystems reach that conclusion by different routes. For npm it is *sometimes* the published name: `_build_module` uses `package.json`'s `name` when there is one and falls back to the directory (or `default` at an unnamed root) when there is not, so the field cannot say which case it is in. For Python it is *never* the published name: `build_module_base` derives it from the directory (or `default` at the root) and never reads `[project] name` at all, so the module name and the distribution name are unrelated strings that merely often coincide.
+
+Both name joins therefore read the published name from `metadata.name` and treat its absence as "publishes nothing" — such a module is never an edge **target**, though it remains a valid edge **source**, since it can still declare dependencies.
 
 Falling back to the module name would invent a key the ecosystem never published, and could match an unrelated registry package that happens to share the directory's name. A fabricated edge is worse than the missing one it would paper over, which is the same reasoning the Maven join applies when it requires **both** `group_id` and `artifact_id` before admitting a coordinate.
 
@@ -207,7 +213,7 @@ Gradle needs no resolver of its own for the coordinate case. Its discovery publi
 
 One Gradle form does **not** join, and is recorded here rather than fixed: an inter-project dependency (`implementation project(':core')`) is rendered by `gradle dependencies` as `+--- project :core` and extracted as `project:core:compile`. The join reads the first two colon-separated parts, so the key becomes the literal `project:core`, which matches no module's published coordinate. A Gradle build whose modules depend on each other by the idiomatic `project(...)` form therefore derives no internal edges, while one that depends by full coordinate derives them correctly.
 
-**Each Axis-A resolver reads a pre-materialized field; none reads the filesystem.** The detection engine that produces `component_refs` parses files from disk, so it runs at module-discovery time. A resolver is a pure function of its arguments (see § 1 Declaration), which is why the engine cannot be called from `derive_edges`. No resolver imports another bundle's engine, so each registration stands alone — the roster creates no coupling between the owning bundles.
+Both halves are pinned by `test/plan-marshall/build-gradle/test_gradle_rides_the_maven_join.py`, which drives the real dependency parser into the real Maven resolver — so closing the limitation later fails a test rather than silently outdating this section.
 
 ## Related Specifications
 

@@ -93,12 +93,15 @@ Commit `37788dc`.
 
 ### D4 — tests
 
-**Done**, 47 new tests across three modules, all driven through the real discoverers:
+**Done**, 54 new tests across four modules (counts from `pytest --collect-only` at HEAD), all driven through
+the real discoverers:
 
-- `test/plan-marshall/build-pyproject/test_pyproject_derivation_resolver.py` (14)
-- `test/plan-marshall/build-npm/test_npm_derivation_resolver.py` (15)
+- `test/plan-marshall/build-pyproject/test_pyproject_derivation_resolver.py` (13)
+- `test/plan-marshall/build-npm/test_npm_derivation_resolver.py` (16)
 - `test/plan-marshall/manage-architecture/test_native_resolver_graph_impact.py` (18) — end-to-end through the
   real `graph` and `impact` verbs with the real resolver objects registered
+- `test/plan-marshall/build-gradle/test_gradle_rides_the_maven_join.py` (7) — added in the review pass to pin
+  D1's outcome (see finding N-F14)
 
 **Impact is asserted separately from edges**, as the plan requires. The impact assertions name the expected
 dependent sets (`sample_core` → `['default', 'sample_api', 'sample_cli']`; `@sample/core` →
@@ -144,20 +147,27 @@ Commit `fc73d6a`.
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` → **7 files**, so the gate applied.
+`git diff --name-only origin/main...HEAD -- '*.py'` → **10 files** at HEAD, so the gate applied.
 
-`./pw verify` (all three sub-steps) — **SUCCESS**:
+`./pw verify` (all three sub-steps) — **SUCCESS**. Figures below are from the **final** run, against the tree
+this report ships with:
 
 ```
 mypy(production)  Success: no issues found in 400 source files
 ruff              All checks passed!
 SPDX              SPDX-header check passed
 plugin-doctor     issues[0]
-mypy(test)        Success: no issues found in 739 source files
-module-tests      19709 passed, 14 skipped
+mypy(test)        Success: no issues found in 740 source files
+module-tests      19716 passed, 14 skipped
+coverage          COMPLETE — full scope
 ```
 
 The working tree was clean at the gate, so the diff saw all the work.
+
+The gate ran three times across this run (after the implementation commit, after the docs commit, and after
+the review-fix commit). The figures above are the last one; the earlier runs reported 19709 and 739
+respectively, before the Gradle pin test existed. Recording the final run rather than an earlier one matters
+because an earlier run's numbers do not cover the tree that ships.
 
 Two failures were caught by the gate and fixed before the docs commit — both worth recording because the
 narrower commands would have missed them:
@@ -171,9 +181,11 @@ narrower commands would have missed them:
 
 ## Findings
 
-Source: the pre-PR verification sub-agent (Step 6), dispatched read-only against the plan. It returned 18
-findings plus one non-finding. **17 fixed, 1 rejected.** One finding class it surfaced — a claim this diff
-itself falsified — was the most valuable result of the pass and would not have been caught by any gate.
+Two verification passes ran (Step 6 requires a re-dispatch after any real finding is fixed).
+
+**Pass 1** returned 18 findings plus one non-finding: **16 fixed, 2 rejected**. One finding class it surfaced
+— a claim this diff itself falsified — was the most valuable result of the pass and would not have been
+caught by any gate.
 
 The agent independently re-derived D1 rather than trusting the report, and empirically confirmed the
 impact/edge separability requirement by injecting a break into the reverse-index population only, observing
@@ -195,7 +207,7 @@ it. It also confirmed the four Out-of-scope bullets are clean.
 | F11 | `architecture-persistence.md` § Dependency Format — identical defect in a second owning standard | **Fixed** — same treatment. |
 | F12 | `test_npm_discover_modules.py` module-header roster `metadata: {type, description}` stale | **Fixed** — now `{name, description, version, scripts}`. |
 | F13 | Same header's `dependencies: ["npm:name:scope"]` wrong, and load-bearing — a double written from it would join every npm dependency on the literal key `npm` | **Fixed** — corrected to `["name:scope"]` with the scope vocabulary named. |
-| F14 | The Gradle claim shipped in three docs with zero test coverage | **Fixed** — new `test/plan-marshall/build-gradle/test_gradle_rides_the_maven_join.py` (7 tests) drives the real `_parse_dependencies_output` into the real Maven resolver, pinning both that the coordinate form yields an edge and that `project:core:compile` does not. The limitation is pinned as current behaviour, so closing it later fails the test and forces the three doc sites to be revisited. |
+| F14 | The Gradle claim shipped in the docs with zero test coverage | **Fixed** — new `test/plan-marshall/build-gradle/test_gradle_rides_the_maven_join.py` (7 tests) drives the real `_parse_dependencies_output` into the real Maven resolver, pinning both that the coordinate form yields an edge and that `project:core:compile` does not. The limitation is pinned as current behaviour, so closing it later fails the test and forces the documentation sites to be revisited. |
 | F15 | `client-api.md` worked examples show `resolver_count: 1` (pre-existing at four, widened to six here) | **Fixed** — all four examples updated to the real six-resolver roster, plus a normative note that discovery is registry-wide, so `resolver_count` counts resolvers that RAN, never ones that CONTRIBUTED. |
 | F16 | `code-intelligence.adoc` § Related linked only `build-maven/SKILL.md` while the body now introduces two more Axis-B joins | **Fixed** — both new skills linked. |
 | F17 | No back-link from `code-intelligence.adoc` to the new user page, though the sibling pattern has one | **Fixed** — added. |
@@ -208,6 +220,33 @@ agent verified this is **pre-existing** — 34 reproduce with the new e2e module
 and orphaning other modules' captured references. The new module follows the identical idiom used by 14
 sibling test files, and the canonical xdist run distributes per file, so it does not surface there. Not
 attributable to this change; see Residue.
+
+### Pass 2 — re-dispatch after the pass-1 fixes
+
+**Pass 2** verified each pass-1 fix against the code and swept the new surface the fixes themselves created.
+It confirmed all 16 fixes correct (one partial), and returned **16 new findings — all 16 fixed**. It also
+**independently re-derived every D0 row** by shallow-cloning the same two external repositories and driving
+the shipped discoverers, reproducing 8/11/11, 31/83/83, 1/0/0 and this repo's 12-module/29-edge full crawl.
+D0 is therefore confirmed by a second party, not merely asserted by the run that made the change.
+
+| # | Finding | Disposition |
+|---|---|---|
+| N1 | Report said "17 fixed, 1 rejected"; its own table showed 16 and 2 | **Fixed** — corrected, and pass structure made explicit. |
+| N2 | Report's build-gate file count (7) was the count at `37788dc`, not at HEAD (10) | **Fixed** — HEAD count recorded. |
+| N3 | The recorded `./pw verify` block predated the commit the same report described — `19709`/`739` are the pre-Gradle-test figures | **Fixed** — final-run figures recorded (`19716`/`740`), with a note that the gate ran three times and why only the last one counts. A real defect: the headline evidence did not cover the shipped tree. |
+| N4 | Per-module test counts wrong (14/15/18 claimed; 13/16/18 actual) | **Fixed** — re-derived via `pytest --collect-only`; total is now 54 across four modules. |
+| N5 | Gradle test docstring said "three documentation sites state the limitation"; only two did | **Fixed** — the three sites are now named explicitly, and `build-maven/SKILL.md` was made the third (see N8). |
+| N6 | Same overcount repeated twice in the report | **Fixed.** |
+| N7 | `code-intelligence.adoc` stated Gradle coverage with no caveat, while both sibling sites carried one | **Fixed** — caveat added at the altitude where a reader forms the belief. |
+| N8 | The § Related link called `build-maven/SKILL.md` "the resolver that covers Gradle too", but that file said nothing about Gradle | **Fixed** — added the Gradle paragraph to `build-maven/SKILL.md` § Axis-C, so the cross-reference now leads to the claim. Doc-only; the Maven derivation path is untouched. |
+| N9 | The new Axis-B registration row said discovery "walks build-skill `extension.py` files … one bundle can contribute several" — it iterates a **hard-coded tuple** under **`plan-marshall`'s own** skills root, so no other bundle can register an Axis-B resolver at all | **Fixed** — table now carries an "Open to" column and an explicit ⚠ stating Axis-B is closed and Axis-A is the route for a third-party bundle. The worst of the new findings: a contract third parties read had been made *more* wrong by the fix for F5. |
+| N10 | The three new `###` sections orphaned a roster-wide paragraph, which then read as part of § "Gradle rides the Maven join" | **Fixed** — paragraph moved back above the new sections. |
+| N11 | The no-fallback rationale was npm-shaped ("directory-derived *when no descriptor names the project*"); for Python the module name is **always** directory-derived and never reads `[project] name` | **Fixed** — the two ecosystems' routes are now stated separately. |
+| N12 | "…which is why they are two **bundles**" re-asserted bundle framing four paragraphs after the table retiring it | **Fixed** — "two registration sites — one Axis-A bundle and one Axis-B build skill". |
+| N13 | The ⭐ user page said "Two further joins" (there are three) and never explained registry-wide discovery, so a user seeing six rows had no way to reconcile them | **Fixed** — corrected to three, plus a NOTE stating all six rows always appear and a zero row is not a defect. |
+| N14 | Two `*.py` fixtures still hardcoded `lit:compile`, the exact retired npm scope F10/F11 corrected in the owning standards — both pass because they assert on `build_systems`, not the scope | **Fixed** — both corrected to `lit:runtime`. The docs-fixed-fixtures-missed pattern the sweep exists to catch. |
+| N15 | `client-api.md` § path and the `graph` verb describe edge direction oppositely (both correct in context) — pre-existing, and it contradicts what this plan's own e2e test pins | **Fixed** — an explicit ⚠ naming both orientations and why each is right, rather than changing either. |
+| N16 | `module-discovery.md` compliance checklist still enumerated "(Maven … npm …)" after the table above it grew to four ecosystems | **Fixed** — replaced with a reference to the table. |
 
 ### Gate findings (not from the sub-agent)
 

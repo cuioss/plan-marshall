@@ -178,6 +178,8 @@ architecture.py path SOURCE TARGET
 
 Edges are directed: there is an edge from `M` to `N` iff `N ∈ M.internal_dependencies`. The returned path therefore walks the "depends on" relation — each successor in the list is a direct dependency of its predecessor.
 
+⚠ **This is the opposite orientation to the one [`graph`](#graph) emits**, and both are deliberate. `path` walks *dependent → dependency*, which is what "how does A reach B" means. `graph`'s `edges[]` entries are emitted *dependency → dependent* (`{'from': dependency, 'to': dependent}`) because that is the orientation Kahn's algorithm needs to assign topological layers. The underlying relation is the same one read in two directions; do not carry a `from`/`to` reading from one verb to the other. [architecture-persistence.md](architecture-persistence.md) § "Module Graph Format" states the `graph` orientation normatively.
+
 **Output** (TOON):
 ```toon
 status: success

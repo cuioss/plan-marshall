@@ -49,7 +49,7 @@ Two resolvers now key on the ecosystem's own identity instead: `pyproject` joins
 
 A name join needs one thing a coordinate join gets for free — *scoping*. Only Maven and Gradle publish a coordinate, so a coordinate join is scoped by the shape of its key; a bare name is a key shape every ecosystem uses. Each name join therefore restricts itself to the modules its own build system discovered, at both ends. Without that, a mixed repository would both misattribute provenance (one ecosystem's resolver claiming the other's edges) and fabricate an edge between a Python distribution and an npm package that merely share a name.
 
-Gradle needed no resolver of its own: its discovery publishes the same coordinate pair Maven's does, so the `maven` join already covers it — a second reference implementation rather than a second implementor.
+Gradle needed no resolver of its own: its discovery publishes the same coordinate pair Maven's does, so the `maven` join already covers it — a second reference implementation rather than a second implementor. That coverage has one hole, verified and left in place: an inter-project dependency written the idiomatic way (`implementation project(':core')`) is extracted with a literal `project` segment, which matches no published coordinate, so a Gradle build wired that way derives no internal edges.
 
 === Why a third axis
 

@@ -159,8 +159,11 @@ def test_coordinate_declared_dependency_yields_an_edge():
 def test_inter_project_declared_dependency_yields_no_edge():
     """The recorded limitation. NOT a wish — a pin on current behaviour.
 
-    If a later change makes this edge derivable, this test fails and the three
-    documentation sites that state the limitation have to be revisited with it.
+    If a later change makes this edge derivable, this test fails and the sites
+    that state the limitation have to be revisited with it:
+    ``ext-point-derivation-resolver.md`` § "Gradle rides the Maven join",
+    ``build-maven/SKILL.md`` § "Module-edge derivation", and
+    ``doc/user/dependency-intelligence.adoc`` § "The Gradle limitation".
     """
     assert ('app', 'core') not in _edges()
 
