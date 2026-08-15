@@ -1,6 +1,6 @@
 # Doctor Test Conventions Workflow
 
-Test-tree conventions enforced across the `test/` directory of any plan-marshall consumer. Activated by `scope=test-conventions`. Three rules are build-failing (`error`); four report structural house-style violations at `warning` — see the Severity Summary.
+Test-tree conventions enforced across the `test/` directory of any plan-marshall consumer. Activated by `scope=test-conventions`. Four rules are build-failing (`error`); three report structural house-style violations at `warning` until their own violation counts reach zero — see the Severity Summary.
 
 ## Parameters
 
@@ -12,10 +12,12 @@ Test-tree conventions enforced across the `test/` directory of any plan-marshall
 
 The scope carries rules at two severities, and the split is deliberate:
 
-- **`severity: error`** — `unique-fixture-basenames`, `subprocess-pythonpath`, `identifier-validator-corpus`. The doctor runner exits non-zero when any error finding is recorded.
-- **`severity: warning`** — `test-module-line-budget`, `test-helper-module-misnamed`, `test-module-preamble-boilerplate`, `test-docstring-historical-prose`. These report their counts without failing the caller.
+- **`severity: error`** — `unique-fixture-basenames`, `subprocess-pythonpath`, `identifier-validator-corpus`, `test-helper-module-misnamed`. The doctor runner exits non-zero when any error finding is recorded.
+- **`severity: warning`** — `test-module-line-budget`, `test-module-preamble-boilerplate`, `test-docstring-historical-prose`. These report their counts without failing the caller.
 
-The warning rules ship at that severity because the tree violates all four at scale today. A build-failing rule landed over a non-compliant tree fails every subsequent build until the tree complies — which would block the very work that would make it comply. `status` is therefore derived from **error-severity findings only**; see the Severity Summary for the per-rule table and the condition under which the warning rules are flipped to `error`.
+The warning rules ship at that severity because the tree still violates them at scale. A build-failing rule landed over a non-compliant tree fails every subsequent build until the tree complies — which would block the very work that would make it comply. `status` is therefore derived from **error-severity findings only**.
+
+The severity is **per rule and conditional, not permanent**: each warning rule is flipped to `error` once its own violation count reaches zero. `test-helper-module-misnamed` is the first to have made that transition — its single violation was remediated exactly as the rule prescribes, so it now guards a clean tree rather than describing a non-compliant one.
 
 ### unique-fixture-basenames
 
@@ -227,12 +229,12 @@ When the registry is empty, the rule reports zero findings and exits 0. The rule
 | `#subprocess-pythonpath` | error | exit ≠ 0 on violation |
 | `#identifier-validator-corpus` | error | exit ≠ 0 on violation |
 | `#test-module-line-budget` | warning | reported; does not affect exit code |
-| `#test-helper-module-misnamed` | warning | reported; does not affect exit code |
+| `#test-helper-module-misnamed` | **error** | exit ≠ 0 on violation — count reached zero, so the rule now guards a clean tree |
 | `#test-module-preamble-boilerplate` | warning | reported; does not affect exit code |
 | `#test-docstring-historical-prose` | warning | reported; does not affect exit code |
 
-The three `error` rules ship with build-failing severity matching the existing doctor rule infrastructure. Suppression is not provided for them — the violations correspond to recurring failure modes documented in lessons learned.
+The four `error` rules ship with build-failing severity matching the existing doctor rule infrastructure. Suppression is not provided for them — the violations correspond to recurring failure modes documented in lessons learned.
 
-The four `warning` rules report without failing the caller: `status` is derived from error-severity findings only, so `warning_count` can be non-zero while `status: pass`. They ship at `warning` because the tree violates all four at scale, and a build-failing rule landed over a non-compliant tree fails every subsequent build until the tree complies — blocking the very work that would make it comply. **The flip to `error` is a follow-up conditioned on the per-rule violation counts reaching zero**, not a permanent classification.
+The three `warning` rules report without failing the caller: `status` is derived from error-severity findings only, so `warning_count` can be non-zero while `status: pass`. They ship at `warning` because the tree still violates them at scale, and a build-failing rule landed over a non-compliant tree fails every subsequent build until the tree complies — blocking the very work that would make it comply. **The flip to `error` is per rule and conditioned on that rule's own violation count reaching zero**, not a permanent classification — `test-helper-module-misnamed` has already made that transition.
 
 This scope is **not** part of the `quality-gate` subcommand; it runs on demand via `doctor-marketplace.py test-conventions --test-root {path}`.

@@ -141,7 +141,7 @@ class ManualConfigTest {
 2. **Use @AddBeanClasses** for beans not discovered automatically (producers, interceptors, decorators)
 3. **Use @ExcludeBeanClasses + @AddBeanClasses** to swap implementations with test doubles
 4. **Activate scopes explicitly** — Weld testing does not activate scopes by default
-5. **At least one test class per service** — split at ~200 lines
+5. **At least one test class per service** — split by behaviour cluster when the class exceeds the 400-line budget (`plan-marshall:persona-module-tester` § "Module Budget: 400 lines")
 6. **Use constructor injection** in production code — makes auto-discovery reliable
 7. **Avoid beans.xml in test resources** — use annotations for explicit, readable configuration
 

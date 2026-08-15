@@ -8,15 +8,23 @@ Hosts the rules documented in `standards/doctor-test-conventions.md`:
 - analyze_subprocess_pythonpath       -- Rule 2 (severity: error)
 - analyze_validator_regex_vs_corpus   -- Rule 3 (severity: error)
 - analyze_test_module_line_budget     -- Rule 4 (severity: warning)
-- analyze_test_helper_module_misnamed -- Rule 5 (severity: warning)
+- analyze_test_helper_module_misnamed -- Rule 5 (severity: error)
 - analyze_test_module_preamble        -- Rule 6 (severity: warning)
 - analyze_test_docstring_prose        -- Rule 7 (severity: warning)
 
 Rules 4-7 are the structural half of the house style stated in
-`plan-marshall:persona-module-tester` and `pm-dev-python:pytest-testing`. They
-ship at ``warning`` because the tree violates all four at scale today: a
-build-failing rule landed over a non-compliant tree would fail every
-subsequent build until the reduction work completes.
+`plan-marshall:persona-module-tester` and `pm-dev-python:pytest-testing`.
+
+Rules 4, 6 and 7 ship at ``warning`` because the tree still violates them at
+scale: a build-failing rule landed over a non-compliant tree would fail every
+subsequent build until the reduction work completes. Each is flipped to
+``error`` once its own violation count reaches zero.
+
+Rule 5 (``test-helper-module-misnamed``) has reached that point and ships at
+``error``. Its single violation was remediated exactly as the rule prescribes —
+a collected module carrying no test renamed to a ``_{domain}_fixtures.py``
+helper — so the rule now guards a clean tree rather than describing a
+non-compliant one.
 
 Each rule returns a list of finding dicts in the standard plugin-doctor shape
 (type, rule_id, file, line, severity, fixable, description, details).
@@ -38,8 +46,9 @@ from _analyze_lesson_id_in_skill_prose import _LESSON_BACKTICK_ID_RE, _LESSON_ID
 from _doctor_shared import Finding
 from _rule_registry import RuleDescriptor
 
-# Test-tree convention rules (cmd_test_conventions). Rules 1-3 are
-# build-failing; rules 4-7 report at warning severity.
+# Test-tree convention rules (cmd_test_conventions). Rules 1-3 and rule 5 are
+# build-failing; rules 4, 6 and 7 report at warning severity until their own
+# violation counts reach zero.
 RULE_DESCRIPTORS = [
     RuleDescriptor(rule_id='unique-fixture-basenames', severity='error', category='structural', scope='corpus-relational'),
     RuleDescriptor(rule_id='subprocess-pythonpath', severity='error', category='structural', scope='corpus-relational'),
@@ -50,7 +59,7 @@ RULE_DESCRIPTORS = [
         scope='corpus-relational',
     ),
     RuleDescriptor(rule_id='test-module-line-budget', severity='warning', category='structural', scope='file-local'),
-    RuleDescriptor(rule_id='test-helper-module-misnamed', severity='warning', category='structural', scope='file-local'),
+    RuleDescriptor(rule_id='test-helper-module-misnamed', severity='error', category='structural', scope='file-local'),
     RuleDescriptor(rule_id='test-module-preamble-boilerplate', severity='warning', category='structural', scope='file-local'),
     RuleDescriptor(rule_id='test-docstring-historical-prose', severity='warning', category='content', scope='file-local'),
 ]
@@ -625,7 +634,7 @@ def _build_helper_misnamed_finding(path: Path) -> dict:
         type='test-helper-module-misnamed',
         file=str(path),
         line=1,
-        severity='warning',
+        severity='error',
         fixable=False,
         rule_id='test-helper-module-misnamed',
         description=description,
