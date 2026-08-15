@@ -148,7 +148,8 @@ diff range only grows.
 record verdicts about the *pushed* HEAD, so any advance that reaches the remote re-stales them
 regardless of which paths moved. They are deliberately left undeclared.
 
-Tests: `test/plan-marshall/phase-6-finalize/test_verdict_currency.py` (30 tests) — the pure
+Tests: `test/plan-marshall/phase-6-finalize/test_verdict_currency.py` (30 test functions, 34
+collected cases — one is parametrised over five glob shapes) — the pure
 classifier, the glob convention, each fail-closed branch independently, `resolve_changed_paths`
 against a real temporary git repository (including revert-cancellation and the unresolvable-SHA
 case), and a declaration-conformance guard over the derived implementor population.
@@ -196,7 +197,8 @@ instrument to the thing it measures), and `total_tokens` is a **floor** — `rec
 `<usage>` triple only for dispatched steps and inline steps record zeros by contract — with a
 `token_population` field stating which rows the figure was summed over.
 
-Tests: `test/plan-marshall/manage-execution-manifest/test_refire_report.py` (14 tests).
+Tests: `test/plan-marshall/manage-execution-manifest/test_refire_report.py` (14 test functions, 14
+collected cases). Across both files pytest collects **48** new cases.
 
 ### D4 — A before/after measurement on a real finalize — **NOT DONE**
 
