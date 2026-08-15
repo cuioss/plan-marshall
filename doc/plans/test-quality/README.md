@@ -203,7 +203,7 @@ The floor is a target, not a licence.
 
 | Plan | Surface | May run concurrently with |
 |---|---|---|
-| `010` | `marketplace/bundles/pm-dev-python/skills/pytest-testing/**`, `marketplace/bundles/plan-marshall/skills/persona-module-tester/**`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**`, `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` (including the `rule4.py` it adds), `test/pm-plugin-development/plugin-doctor/_fixtures.py` | `020` only |
+| `010` | `marketplace/bundles/pm-dev-python/skills/pytest-testing/**`, `marketplace/bundles/plan-marshall/skills/persona-module-tester/**`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**`, `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` (including the `rule4.py` and `rule6.py` it adds), `test/pm-plugin-development/plugin-doctor/fixtures/test_conventions/rule*/`, `test/pm-plugin-development/plugin-doctor/test_doctor_marketplace_commands.py` (the `cmd_test_conventions` cases only), `test/pm-plugin-development/plugin-doctor/_fixtures.py` | `020` only |
 | `020` | `test/conftest.py`, `test/_shared/**`, `test/README.md`, and the ≤10 modules it converts as proof-of-use | `010` only |
 | `030`–`080` | one disjoint slice of `test/` each, listed in the plan | each other, once `010` **and** `020` have landed |
 
@@ -255,7 +255,8 @@ reduction plan restates them:
 
 One narrow carve-out, because two plans would otherwise collide: plan `010` owns
 `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` — the three modules that
-already test this scope's rules plus the `rule4.py` it adds — and the `_fixtures.py` corpus entries
-that make its new rules fire (it ships the tests for
-the rules it adds). Plan `080` owns the rest of `test/pm-plugin-development/**` and excludes those
-modules explicitly.
+already test this scope's rules plus the `rule4.py` and `rule6.py` it adds — their fixture directories
+under `fixtures/test_conventions/rule*/`, the `cmd_test_conventions` cases in
+`test_doctor_marketplace_commands.py`, and the `_fixtures.py` corpus entries that make its new rules
+fire (it ships the tests for the rules it adds). Plan `080` owns the rest of
+`test/pm-plugin-development/**` and excludes those modules explicitly.

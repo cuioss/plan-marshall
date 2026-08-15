@@ -34,18 +34,18 @@ No skill was unobtainable by both routes.
 `persona-module-tester/standards/testing-methodology.md`: § "Splitting Large Test Files" replaced by
 § "Module Budget: 400 lines" + § "Splitting by behaviour cluster". The `~200 lines` figure appears
 nowhere in the file. The derivation sentence names the median as its basis and cites the number
-**measured on this clone**, not the number written in the plan.
+**measured on this clone**, not the number written in the plan. The census below is re-derived at the tip; it counts this run's own added test modules, which is why the module and line totals sit just above the plan's leads.
 
 **Census re-derived** (the plan labels this HYPOTHESIS and requires re-derivation):
 
 | Measure | Plan's lead | Measured here |
 |---|---|---|
-| `test_*.py` modules | ~770 | **786** |
-| Total lines | ~377,000 | **384,224** |
-| Median module | ~323 | **326.5** |
+| `test_*.py` modules | ~770 | **788** |
+| Total lines | ~377,000 | **384,767** |
+| Median module | ~323 | **327** |
 | Modules > 400 lines | ~309 (40%) | **315 (40.1%)** |
-| Share of lines in > 400 modules | ~73% | **73.1%** (280,779) |
-| Modules > 200 lines | "~three quarters" | **588 (74.8%)** |
+| Share of lines in > 400 modules | ~73% | **73.0%** (280,779) |
+| Modules > 200 lines | "~three quarters" | **589 (74.7%)** |
 
 Every lead is confirmed. The standard states "~327 lines" as the median.
 
@@ -103,7 +103,7 @@ markdown-oriented exemptions (frontmatter, fenced blocks, `Source:` lines) that 
 |---|---|---|---|---|---|
 | `test-module-line-budget` | 315 | ✓ | ✓ | ✓ | `persona-module-tester` § "Module Budget: 400 lines" |
 | `test-helper-module-misnamed` | 1 | ✓ | ✓ | ✓ | `persona-module-tester` § "Test Helper Module Organization" |
-| `test-module-preamble-boilerplate` | 342 | ✓ | ✓ | ✓ | `conftest` helper contract (`load_script_module` / `get_scripts_dir`) |
+| `test-module-preamble-boilerplate` | 382 | ✓ | ✓ | ✓ | `conftest` helper contract (`load_script_module` / `get_scripts_dir`) |
 | `test-docstring-historical-prose` | 285 prose hits vs 876 legitimate data occurrences | ✓ | ✓ | ✓ | `CLAUDE.md` § Documentation Standards + the three `marketplace/bundles/**` prose rules |
 
 The citation-vs-D3 tension the plan flags is resolved as the plan directs: lesson ids remain permitted in
@@ -166,13 +166,13 @@ clean `./pw quality-gate`.
 **Doctor scope over the live tree**, using the epic README's verified invocation with `--test-root test/`:
 
 ```text
-status: fail   total_issues: 929   error_count: 17   warning_count: 912
+status: fail   total_issues: 969   error_count: 17   warning_count: 952
   unique-fixture-basenames,2
   subprocess-pythonpath,15
   identifier-validator-corpus,0
   test-module-line-budget,315
   test-helper-module-misnamed,1
-  test-module-preamble-boilerplate,342
+  test-module-preamble-boilerplate,382
   test-docstring-historical-prose,254
 ```
 
@@ -206,6 +206,12 @@ its registry is empty by design, which is its documented no-op behaviour and not
 | 20 | Re-verification (F1 residual, LOW) | § "2. Parameter Variants" says "Systematic exploration of the valid input space using generators" with no cross-reference. The re-verification judged it non-breaching (it defines a test *category*, and § 1 above it carries the discriminator) | **Fixed anyway** — cross-referenced, since the cost is one clause and it removes the last unqualified generator sentence in the file |
 | 21 | Re-verification (NEW-4, LOW) | `rule-catalog.md:29` links `#rule-pack-zero-match-rule-detector`; the real heading is `## Zero-match coverage (test-layer, not a runtime rule)`. Dead anchor | **Rejected — pre-existing, not this diff.** Introduced by an earlier commit and invisible to the shipped `broken-relative-link` rule, which checks files rather than fragments. Recorded in Residue rather than fixed, on the same reasoning as Finding 15 |
 | 22 | Re-verification (NEW-5, LOW) | The report's Build gate section recorded `20066 passed` from the pre-fix run, one commit stale after three tests were added | **Fixed** — both runs now recorded |
+| 23 | Final pass (M1, MEDIUM) | **A detection gap that made the rule's own metric gameable.** `test-module-preamble-boilerplate` matched only a `.parent` chain rooted *directly* at `Path(__file__)`, so it missed `Path(__file__).resolve().parents[N]` entirely — **40 occurrences across 38 files**, 32 of them invisible to the rule. This is substantive rather than cosmetic because the flip to `error` is conditioned on the count reaching zero: a reduction plan could respell `.parent.parent.parent` as `parents[3]` and drive the count down while changing nothing | **Fixed** — the detector now unwraps path-preserving calls (`.resolve()` / `.absolute()` / `.expanduser()`) and measures the indexed `parents[N]` spelling on the same scale, with three new tests. Live count 342 → **382**. The standards doc, rule-catalog and rule-provenance all state both spellings and say why |
+| 24 | Final pass (M2, MEDIUM) | **This run invented a helper that does not exist.** The D4 example prescribed `parse_args_for('manage-plan', [...])`, which appears nowhere in the repository — while plan `020` D1 charters `parse_ns(bundle, skill, script, *argv)`, the name `findings-test-corpus-review.md` and plans `030`–`080` all use. The epic README explicitly warns that `010` must not invent its own harness; an author following the shipped skill today has nothing to import, and once `020` lands the standard is actively wrong | **Fixed** — both the worked example and the Quick Reference row now use `parse_ns` with `020`'s chartered signature, and the surrounding prose describes what that helper does rather than assuming it |
+| 25 | Final pass (M3, LOW-MEDIUM) | **Every docstring finding reported the wrong line.** `_iter_prose_segments` anchored on the `def`/`class` line (or line 1 for a module docstring), so **0 of 149** docstring findings pointed at the citation. The rule exists to hand navigable sites to the reduction plans, and the documented message format reads as locating the citation | **Fixed** — findings now anchor on the docstring literal and offset to the matching line, with a test using a citation buried in a multi-line docstring |
+| 26 | Self-check during the final pass | **The new test module violated the budget this PR establishes.** `test_test_conventions_rule4.py` reached 447 lines — over the 400-line budget D1 sets, and it showed up as a real finding (line-budget count 315 → 316). Shipping it would have been precisely the self-contradiction this epic exists to remove | **Fixed by applying the standard to itself** — split by behaviour cluster per § "Splitting by behaviour cluster" into `test_test_conventions_rule4.py` (module-shape rules: line budget, misnamed helper — 128 lines) and `test_test_conventions_rule6.py` (module-content rules: preamble, prose — 347 lines), with a fixture README per module matching the sibling convention. Count back to **315**. Trimming to fit was rejected: the standard forbids arbitrary splitting, and gaming a line count is the same defect as Finding 23 |
+| 27 | Final pass (L1, LOW) | The epic README's `010` carve-out enumerates this plan's `test/` surface exhaustively, and this run also edited `test_doctor_marketplace_commands.py` and added fixture READMEs — nominally plan `080`'s | **Recorded, carve-out updated** — see below. The alternative (leaving it) risks a real collision with `080` |
+| 28 | Final pass (L3/L4, LOW) | Semantic edges with zero live impact: a `test_x = lambda` assignment or a star re-export is flagged though pytest does collect it; a `test`-prefixed function nested in another function is not flagged though pytest does not collect it; a module with a `SyntaxError` is silently skipped by rules 5–7 | **Documented, not changed** — all consistent with the rules as documented, live impact is nil (the single misnamed finding is a true positive), and each "fix" would trade a rarer false positive for a commoner false negative |
 | 15 | Verification sub-agent (F5, MEDIUM) | `pm-dev-java` carries the retired figures — `junit-core/standards/testing-junit-core.md:16` ("split into multiple at ~200 lines") and `junit-weld-testing/standards/weld-testing-autowired.md:144` ("split at ~200 lines") — plus unscoped generated-data statements at `junit-core/SKILL.md:31` and `testing-junit-core.md:8`. `testing-junit-core.md:3` explicitly defers to `persona-module-tester` for test organization, so it now contradicts the skill it defers to | **Rejected for this PR, escalated to the epic** — `pm-dev-java` is outside this plan's Expected surface, and D1/D2's "Done when" clauses are scoped to the named files. Editing another bundle here would be exactly the undeclared collateral change the verification pass exists to catch. This is a real defect and is recorded in Residue with file:line so it is actionable, not lost |
 
 **Cold-read verification (the plan's mandated by-reading check).** A sub-agent was given the two amended
@@ -317,7 +323,7 @@ that would fix it.
 |---|---|---|
 | `test-module-line-budget` | **315** | reaches 0 |
 | `test-helper-module-misnamed` | **1** | reaches 0 — nearest to flippable by a wide margin; the single violation is `test/plan-marshall/manage-config/test_helpers.py` |
-| `test-module-preamble-boilerplate` | **342** | reaches 0 |
+| `test-module-preamble-boilerplate` | **382** | reaches 0 |
 | `test-docstring-historical-prose` | **254** | reaches 0 |
 
 **The proposal:** flip each rule to `severity: error` as a follow-up, per-rule and independently, once its

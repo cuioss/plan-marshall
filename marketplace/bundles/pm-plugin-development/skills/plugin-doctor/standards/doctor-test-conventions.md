@@ -163,7 +163,13 @@ Flag hand-rolled import preambles that resolve a module by the test file's own l
 
 1. Parse every `*.py` under `--test-root` with `ast.parse`.
 2. Flag any `spec_from_file_location` call (matched as an attribute access or a bare name, so both import forms are caught).
-3. Flag any `Path(__file__)` followed by a `.parent` chain of depth **three or more**. Only the outermost `.parent` attribute of a chain is reported, so one chain yields one finding rather than one per link.
+3. Flag any `Path(__file__)` followed by a directory-counting hop of depth **three or more**, in either spelling:
+   - a `.parent` chain (`Path(__file__).parent.parent.parent`). Only the outermost `.parent` attribute of a chain is reported, so one chain yields one finding rather than one per link.
+   - an indexed `parents[N]` access (`Path(__file__).resolve().parents[3]`).
+
+   Path-preserving calls between the two — `.resolve()`, `.absolute()`, `.expanduser()` — do not break the chain, since they return an equivalent path.
+
+   **Both spellings are measured on the same scale deliberately.** They are the same idiom with the same brittleness, and covering only one would make the rule's own count gameable: a module could clear its finding by respelling `.parent.parent.parent` as `parents[3]` while changing nothing. That matters because the flip from `warning` to `error` is conditioned on the count reaching zero.
 
 **Violation message format**:
 

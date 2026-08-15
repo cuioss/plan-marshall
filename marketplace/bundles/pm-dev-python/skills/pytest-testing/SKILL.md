@@ -80,7 +80,7 @@ Read standards/testing-pytest.md
 | Isolation | `tmp_path` for files, `monkeypatch` for state, autouse `_restore_cwd` |
 | Fixtures | `conftest.py` for shared, function scope by default |
 | Parametrize | `@pytest.mark.parametrize` for input variations. Two tests differing only in input/expected are one parametrize whose `ids=` carries what the docstrings said |
-| Command arguments | Built through the shared real-parser helper — never a hand-written `argparse.Namespace` (which bypasses the parser's defaults) |
+| Command arguments | Built through the shared real-parser helper `parse_ns(bundle, skill, script, *argv)` — never a hand-written `argparse.Namespace` (which bypasses the parser's defaults) |
 | One layer per contract | In-process test is authoritative; subprocess collapses to one CLI-plumbing smoke. Exceptions: sole coverage, or the boundary itself is the subject |
 | Generated vs literal data | Generate where the contract is universal; exact literal where the literal *is* the contract |
 | Property-based / adversarial | Hypothesis `@given` / `strategies` / `@example` (third-party `hypothesis` dep — user-approval) |

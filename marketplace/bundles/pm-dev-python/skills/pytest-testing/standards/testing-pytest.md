@@ -505,12 +505,18 @@ green — the namespace already had every attribute the test knew to set, and no
 new one.
 
 ```python
+from conftest import parse_ns
+
 # Wrong — bypasses the parser, so the defaults under test are the test's own.
 args = argparse.Namespace(plan_id='p1', force=False)
 
 # Right — the real parser supplies every default, including ones added later.
-args = parse_args_for('manage-plan', ['--plan-id', 'p1'])
+args = parse_ns('plan-marshall', 'manage-plan', 'manage-plan.py', '--plan-id', 'p1')
 ```
+
+The shared helper is `parse_ns(bundle, skill, script, *argv)`, exported from `test/conftest.py`: it
+resolves the script, runs that script's own parser over `argv`, and returns the resulting namespace —
+so every default the parser declares is present, including ones added after the test was written.
 
 This is `plan-marshall:persona-module-tester` § "Foundation utilities — tests against the CLI" applied
 one layer lower: that section states the principle for the CLI entry point, and this is the same

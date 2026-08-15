@@ -673,7 +673,7 @@ def analyze_test_module_preamble(test_root: Path) -> list[dict]:
             if id(node) in nested:
                 # An inner link of a longer chain — the outermost node reports it.
                 continue
-            depth = _parent_chain_depth(node)
+            depth = _parent_chain_depth(node) or _parents_index_depth(node)
             if depth >= PARENT_CHAIN_MIN_DEPTH:
                 findings.append(_build_preamble_finding(path, node, 'parent_chain', depth=depth))
     findings.sort(key=lambda f: (f['file'], f.get('line', 0)))
@@ -724,18 +724,57 @@ def _parent_chain_depth(node: ast.AST) -> int:
     return depth
 
 
+#: Path methods that return an equivalent path and so do not break the chain.
+#: ``Path(__file__).resolve().parents[3]`` is the same directory-counting idiom
+#: as ``Path(__file__).parent.parent.parent`` and is flagged identically.
+_PATH_PASSTHROUGH_METHODS = frozenset({'resolve', 'absolute', 'expanduser'})
+
+
 def _is_path_dunder_file(node: ast.AST) -> bool:
-    """Return True for the ``Path(__file__)`` call node."""
-    if not isinstance(node, ast.Call):
+    """Return True for ``Path(__file__)``, through any path-preserving calls.
+
+    Unwraps ``.resolve()`` / ``.absolute()`` / ``.expanduser()`` first: those
+    return an equivalent path, so a chain rooted at one of them counts
+    directories exactly as a bare ``Path(__file__)`` chain does.
+    """
+    current = node
+    while (
+        isinstance(current, ast.Call)
+        and isinstance(current.func, ast.Attribute)
+        and current.func.attr in _PATH_PASSTHROUGH_METHODS
+    ):
+        current = current.func.value
+    if not isinstance(current, ast.Call):
         return False
-    func = node.func
+    func = current.func
     is_path = (isinstance(func, ast.Name) and func.id == 'Path') or (
         isinstance(func, ast.Attribute) and func.attr == 'Path'
     )
-    if not is_path or not node.args:
+    if not is_path or not current.args:
         return False
-    first = node.args[0]
+    first = current.args[0]
     return isinstance(first, ast.Name) and first.id == '__file__'
+
+
+def _parents_index_depth(node: ast.AST) -> int:
+    """Return N for ``Path(__file__)[…].parents[N]``, else 0.
+
+    ``parents[N]`` is the indexed spelling of an N-deep ``.parent`` chain and
+    carries the same brittleness, so it is measured on the same scale. Without
+    this the rule's count is gameable: respelling a flagged chain as
+    ``parents[N]`` would clear the finding while changing nothing.
+    """
+    if not isinstance(node, ast.Subscript):
+        return 0
+    value = node.value
+    if not isinstance(value, ast.Attribute) or value.attr != 'parents':
+        return 0
+    if not _is_path_dunder_file(value.value):
+        return 0
+    index = node.slice
+    if isinstance(index, ast.Constant) and isinstance(index.value, int):
+        return index.value
+    return 0
 
 
 def _build_preamble_finding(path: Path, node: ast.AST, kind: str, depth: int | None = None) -> dict:
@@ -798,7 +837,10 @@ def analyze_test_docstring_prose(test_root: Path) -> list[dict]:
             for kind, pattern in _HISTORICAL_PROSE_PATTERNS:
                 match = pattern.search(text)
                 if match:
-                    findings.append(_build_docstring_prose_finding(path, lineno, kind, match.group(0)))
+                    # Offset to the citation's own line, not the segment's first
+                    # line — the finding exists to be navigated to.
+                    hit_line = lineno + text[: match.start()].count('\n')
+                    findings.append(_build_docstring_prose_finding(path, hit_line, kind, match.group(0)))
                     break
     findings.sort(key=lambda f: (f['file'], f.get('line', 0)))
     return findings
@@ -819,8 +861,15 @@ def _iter_prose_segments(source: str, path: Path) -> list[tuple[int, str]]:
         if not isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
             continue
         docstring = ast.get_docstring(node, clean=False)
-        if docstring:
-            segments.append((getattr(node, 'lineno', 1), docstring))
+        if not docstring:
+            continue
+        # Anchor on the docstring literal itself, not the def/class line, so a
+        # citation deep in a long docstring reports a navigable location.
+        first_stmt = node.body[0] if node.body else None
+        lineno: int = getattr(node, 'lineno', 1)
+        if isinstance(first_stmt, ast.Expr):
+            lineno = first_stmt.value.lineno
+        segments.append((lineno, docstring))
     try:
         for token in tokenize.generate_tokens(io.StringIO(source).readline):
             if token.type == tokenize.COMMENT:
