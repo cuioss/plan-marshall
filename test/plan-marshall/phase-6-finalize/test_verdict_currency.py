@@ -40,6 +40,7 @@ Covered:
 from __future__ import annotations
 
 import importlib.util
+import re
 import shutil
 import subprocess
 import sys
@@ -518,3 +519,76 @@ def test_no_declared_glob_uses_recursive_double_star():
     for step, (globs, _head_dependent) in _declared_surfaces().items():
         for glob in globs:
             assert '**' not in glob, f'{step} declares a recursive glob {glob!r}'
+
+
+# ---------------------------------------------------------------------------
+# The refusal table's rows are bound to their evidence
+# ---------------------------------------------------------------------------
+
+_VERDICT_CURRENCY_DOC = (
+    Path(__file__).parent.parent.parent.parent
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'phase-6-finalize'
+    / 'standards'
+    / 'verdict-currency.md'
+)
+
+#: The heading each refusing step's own doc must carry.
+_REFUSAL_HEADING = 'Verdict-input surface — deliberately undeclared'
+
+
+def _tabled_refusals() -> list[str]:
+    """Derive the step ids named in verdict-currency.md's refusal table.
+
+    Parsed from the document rather than transcribed, so the guard tracks the
+    table instead of a second hand-maintained copy of it.
+    """
+    text = _VERDICT_CURRENCY_DOC.read_text(encoding='utf-8')
+    return [
+        m.group(1)
+        for m in re.finditer(r'^\|\s*`((?:default|project|plan-marshall):[^`]+)`\s*\|', text, re.MULTILINE)
+    ]
+
+
+def test_the_refusal_table_names_at_least_one_step():
+    """A guard over an empty table would be vacuously green."""
+    assert _tabled_refusals(), 'verdict-currency.md names no refusing step'
+
+
+def test_every_tabled_refusal_carries_its_section():
+    """Each row's cited evidence must actually exist in that step's own doc.
+
+    The table is illustrative and cannot be derived — a refusal is a judgement
+    about a step's body, not a frontmatter fact. What CAN be pinned is that every
+    row still points at a real section, so a deleted or renamed refusal fails here
+    rather than leaving the table asserting evidence that is gone.
+    """
+    records = {
+        str(record.get('name', '')): Path(str(record.get('path', '')))
+        for record in find_implementors(_EXT_POINT)
+    }
+
+    for step in _tabled_refusals():
+        assert step in records, (
+            f'verdict-currency.md tables a refusal for {step!r}, which is not a discovered '
+            'finalize-step implementor — the row names a step that does not exist.'
+        )
+        body = records[step].read_text(encoding='utf-8')
+        assert _REFUSAL_HEADING in body, (
+            f'{step} is tabled as a recorded refusal but its own doc carries no '
+            f'"{_REFUSAL_HEADING}" section. The table would then assert evidence that is not '
+            'there — the exact un-propagated-restatement defect it is meant to survive.'
+        )
+
+
+def test_no_tabled_refusal_also_declares_a_surface():
+    """A step cannot both refuse and declare — the two are mutually exclusive."""
+    declared = {canonicalize_step_key(name) for name in _declared_surfaces()}
+
+    for step in _tabled_refusals():
+        assert canonicalize_step_key(step) not in declared, (
+            f'{step} is tabled as refusing to declare a verdict surface, yet it declares one.'
+        )

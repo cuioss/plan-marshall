@@ -285,7 +285,7 @@ Determine planned actions based on PR state **and on `use_merge_queue`** — a p
 AskUserQuestion:
   questions:
     - question: "{Rebase the feature branch onto {base_branch} and run CI? (if state == open AND use_merge_queue == false) | Check CI before enqueueing to the merge queue? (if state == open AND use_merge_queue == true) | Clean up the local branch for the already-merged PR? (if state == merged)} (Merge will be confirmed separately when one is still planned.)"
-      header: "Branch Cleanup — Pre-rebase"
+      header: "{Branch Cleanup — Pre-rebase (if state == open AND use_merge_queue == false) | Branch Cleanup — Pre-enqueue (if state == open AND use_merge_queue == true) | Branch Cleanup — Local (if state == merged)}"
       description: |
         **PR**: {pr_url} ({state})
         **Branch**: {head_branch} → {base_branch}
@@ -475,7 +475,7 @@ The disposition of a red gate depends on WHICH path produced it — the two path
 Log the pre-merge preparation, naming what actually ran so a skipped rebase is not reported as a performed one:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: {rebased onto origin/{base_branch}, force-pushed with lease (if action == rebased) | already current with origin/{base_branch}, force-pushed with lease (if action == noop) | pre-merge rebase skipped (merge-queue path)}, CI gated"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: {rebased onto origin/{base_branch}, force-pushed with lease (if action == rebased) | already current with origin/{base_branch}, force-pushed with lease (if action == noop) | pre-merge rebase skipped (if use_merge_queue == true)}, CI gated"
 ```
 
 ### Re-review the rebased HEAD (trigger A)
