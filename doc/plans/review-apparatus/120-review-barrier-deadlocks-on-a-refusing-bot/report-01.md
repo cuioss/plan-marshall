@@ -411,6 +411,8 @@ case(s) and nothing else:
 |---|---|---|
 | F80 | ⛔ **I reported `cuioss-review-bot`'s silence as PR-Agent-specific with "cause not determined", on one query and no control.** The operator asked whether that was really the case. It was — but the framing was wrong: a positive control proved the query honest, and a second workflow proved the absence belonged to the **event**, not the bot. **A single negative query, uncontrolled, was presented as a diagnosis** | **FIXED** — participation row rewritten with the controlled evidence; the `silent` verdict was recoverable rather than terminal, and the documented `/review` trigger was posted. ⚠ The contract's own participation rule says the verdict comes from the bodies; it says nothing about deriving the *reason*, which is what decided whether a remedy existed. That gap is Proposal 3 below |
 
+| F81 | ⛔ **I believed the same uncontrolled negative a SECOND time, while writing up the first.** Verifying the `/review` recovery, I re-ran the head-branch-filtered `actions_list`, got `total_count: 0`, and was about to record "the on-demand path also failed" — 11 minutes after the run had already succeeded. A command-triggered run is attributed to the **default** branch, so that filter can never see it | **FIXED** — re-queried by `event: issue_comment`, which shows run `31892311464` (`success`, 15:17:47Z) and also a run at 14:46:43Z that the original diagnosis had missed. Proposal 3 amended to forbid the branch filter and to require a positive control before any negative is believed. ⚠ The recurrence is the finding: F80's lesson was *recorded* and not yet *applied* |
+
 ### From CI
 
 **None.** Read back from the PR's own check runs at head `601abf1`: `verify / gate`,
@@ -421,10 +423,14 @@ disposition.
 
 ### From PR review
 
-**None — and the reason is itself the finding.** No reviewer published a finding against this diff.
-Both reviewers that engaged published a refusal notice instead, and the third produced nothing. The
-per-reviewer evidence is in **Reviewer participation** below; the section is empty of findings
-because there were no reviews, not because reviews were clean.
+**None — from one review that ran, and two that were refused.** `cuioss-review-bot` reviewed the diff
+after the on-demand trigger and reported nothing to fix: *"PR contains tests"*, *"No security concerns
+identified"*, *"No major issues detected"* (comment `5302872296`). `get_review_comments` returns
+`totalCount: 0`, so it filed no inline findings either — there is nothing to disposition.
+
+⚠ **That is a clean result from 1 of 3 reviewers, not a clean result from the review apparatus.** The
+other two never read the diff: `sourcery-ai` structurally refused it, `coderabbitai` temporally.
+Per-reviewer evidence in **Reviewer participation** below.
 
 ## Reviewer participation
 
@@ -440,8 +446,8 @@ declare.
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
 | `sourcery-ai` | `rate-limited` | `get_reviews`, review `4944046456`: *"Sorry @cuioss-oliver, your pull request is larger than the review limit of 150000 diff characters"*. A **structural** refusal — the ceiling is a property of the diff, so it does not reopen. ⚠ Its `Sourcery review` **check run concluded `skipped`**, which as a check state is not a verdict and would have read as "nothing to see"; the body is the evidence |
-| `coderabbitai` | `rate-limited` | `get_comments`, comment `5302742537`: *"Review limit reached … you've reached your PR review limit, so we couldn't start this review. **Next review available in:** **56 minutes**"*. A **temporal** refusal, current-head-bound — the body names base `622f4484` and head `601abf11` |
-| `cuioss-review-bot` | `silent`, then recovered — see below | No artifact on any of the three surfaces, and no `review / review` check. **The PR-open event dispatched no workflow at all** — see the diagnosis below. Recovered by the documented on-demand trigger |
+| `coderabbitai` | `rate-limited` | `get_comments`, comment `5302742537`: *"Review limit reached … you've reached your PR review limit, so we couldn't start this review."* A **temporal** refusal, and demonstrably head-tracking: the body was rewritten at 15:19:19Z to name head `84b922c` and to count down from **56 minutes** to **27 minutes**. It re-attempts on each push and is still refused |
+| `cuioss-review-bot` | ✅ `reviewed` | `get_comments`, comment `5302872296` at 15:18:47Z — a **PR Reviewer Guide** over the diff reporting *"PR contains tests"*, *"No security concerns identified"*, *"No major issues detected"*. An explicit nothing-to-report over the diff, which the contract's verdict table counts as `reviewed`. **Silent at first, recovered by the documented `/review` trigger** — see the diagnosis below |
 
 #### `cuioss-review-bot`: the open event dispatched nothing, and only this bot could not recover
 
@@ -477,20 +483,47 @@ surfaces.** Both leave a reviewer `silent`; only the second is recoverable. Dist
 the Actions API, which the participation rule does not mention — the verdict came from the bodies as
 required, but the *reason* did not, and the reason is what decided the remedy.
 
-**Recovery.** `pr-agent.md` declares `trigger_comment: "/review"`, and the workflow subscribes to
-`issue_comment: [created]`. Because this bot was never rate-limited — it simply never got the event —
-the trigger was posted rather than the gap accepted.
+**Recovery, and it worked.** `pr-agent.md` declares `trigger_comment: "/review"`, and the workflow
+subscribes to `issue_comment: [created]`. Because this bot was never rate-limited — it simply never
+got the event — the trigger was posted rather than the gap accepted. Run `31892311464` fired at
+15:17:47Z and concluded `success`; the review published at 15:18:47Z, 63 seconds after the trigger
+comment. **The `silent` verdict was recoverable, and recovering it cost one comment.**
 
-**Coverage: 0 of 3 at the time of the disclosure**, with `cuioss-review-bot` recovered by on-demand
-trigger afterwards. Sourcery stays structurally refused whatever happens; CodeRabbit's window reopens
-~15:45Z.
+#### ⛔ The branch filter is the wrong instrument for a command-triggered run — twice
 
-**The § Step 8 condition-4 shortfall disclosure is made here, and restated to the operator in words at
-the merge gate, before auto-merge is armed.** It states: coverage **0 of 3**; `sourcery-ai`
-rate-limited on a **structural** size ceiling of 150000 diff characters, which waiting does not clear;
-`coderabbitai` rate-limited on a **temporal** window reopening in 56 minutes; `cuioss-review-bot`
-silent with no workflow run and no cause determined. Per the contract this is a **disclosure and not
-a block** — the shortfall changes what the run says, never whether it merges.
+A **command**-triggered workflow run is attributed to the repository's **default branch**, because
+`issue_comment` is not a pull-request event. So `actions_list` filtered to the PR's head branch cannot
+see it, and returns `total_count: 0` whether or not the run exists.
+
+That bit twice in this run, the second time **after** the first had already been recorded as a
+finding:
+
+1. The original diagnosis reported `total_count: 0` on a head-branch filter as "no workflow run",
+   when a pr-agent run **did** exist at 14:46:43Z — `issue_comment`, conclusion `skipped`, fired by
+   CodeRabbit's own comment and correctly skipped for not being a command.
+2. Verifying the `/review` recovery, the *same* head-branch filter again returned `total_count: 0` —
+   at a moment when the successful run was already 11 minutes old.
+
+Only dropping the branch filter and querying `event: issue_comment` showed it. **An uncontrolled
+negative was believed twice in one run, on the same instrument, the second time while actively
+writing up the first.**
+
+**Coverage: 1 of 3.** `cuioss-review-bot` reviewed with nothing to report. `sourcery-ai` stays
+structurally refused whatever happens — the ceiling is a property of the diff. `coderabbitai` remains
+temporally refused with ~27 minutes to go as of 15:19Z, and re-attempts on every push, so each push
+that keeps this PR open costs it another refused attempt.
+
+**The § Step 8 condition-4 shortfall disclosure was made twice, in words, to the operator, before
+auto-merge was armed.** First at coverage **0 of 3**, then again at **1 of 3** after the recovery:
+`cuioss-review-bot` reviewed with nothing to report; `sourcery-ai` rate-limited on a **structural**
+size ceiling of 150000 diff characters, which waiting does not clear; `coderabbitai` rate-limited on a
+**temporal** window with ~27 minutes remaining. Per the contract this is a **disclosure and not a
+block** — the shortfall changes what the run says, never whether it merges.
+
+⚠ **The disclosure was correct both times and still under-served the run.** Nothing in the contract
+turns a disclosed shortfall into an attempt to fix it, so the first disclosure would have been the
+end of it. One of the three gaps was recoverable in one comment, and it took an operator challenge to
+find that out — the substance of Proposal 3 below.
 
 ⭐ **This PR is a live instance of the defect it fixes, and of the fix's own distinction.** Two
 reviewers refused the same diff at the same moment under the two causes this change separates, with
@@ -537,7 +570,7 @@ kept as-is per § Step 2 — this run created no branch, so the closed prefix se
 | 4 Pushed | ✅ done | `git status -sb` reports no `ahead` |
 | 5 Build gate | ✅ done | Python-change verdict and ten `./pw verify` runs recorded in **Build gate** above, two of which exited 0 while failing |
 | 6 Verification sub-agent | ✅ done | Six rounds plus a closing cold read; findings F1–F79 recorded per instance with dispositions. Ranges, not a total, precisely because a restated count is what F78/F79 record going stale |
-| 7 PR cycle | ✅ done | PR **#1241**. All three comment surfaces read as three separate calls. Both stored bodies are refusal notices carrying no finding to fix, so each is dispositioned as a participation verdict rather than a comment; no open, unaddressed comment remains |
+| 7 PR cycle | ✅ done | PR **#1241**. All three comment surfaces read as three separate calls, and re-read after the `/review` recovery. One review with nothing to report, two refusal notices dispositioned as participation verdicts, zero inline threads; no open, unaddressed comment remains |
 | 8 Merge gate | ✅ conditions 1–3 met, armed | Condition 1: `mergeable_state: blocked` at the gate with `verify / verify` **`in_progress`** on head `601abf1` — armed anyway per § Step 8's no-self-wake carve-out, deferring the required-green gate to the merge queue. Condition 2: no open comment. Condition 3: this report is the last pre-merge commit. Condition 4 disclosure made — see **Reviewer participation** |
 | 8 Bridge | ✅ done | `git diff --name-only origin/main...HEAD -- doc/plans/` returns exactly this plan's `plan.md` and `report-01.md`. No ledger, no status file, no other plan's directory |
 | 9 This check | ✅ done | This table |
@@ -601,11 +634,24 @@ the bodies are empty, which is what `silent` means. Distinguishing a rate limit 
 a guard-skip (not recoverable) from a non-dispatch (**recoverable**) needs the Actions API, which the
 contract never mentions.
 
-**Proposed edit.** On a `silent` verdict, require one Actions-API check for a workflow run on the head
-branch, and split the outcome: **no run at all** → post the registry's `trigger_comment` and re-read
-before disclosing; **a run that concluded `skipped` or failed** → record it and disclose. Keep the
-disclose-not-block rule unchanged — this adds a cheap recovery attempt before the disclosure, never a
-gate.
+**Proposed edit.** On a `silent` verdict, require one Actions-API check for the reviewer's workflow,
+and split the outcome: **no run at all** → post the registry's `trigger_comment`, re-read the
+surfaces, and disclose the *result*; **a run that concluded `skipped` or failed** → record it and
+disclose. Keep the disclose-not-block rule unchanged — this adds a cheap recovery attempt before the
+disclosure, never a gate.
+
+⛔ **The edit must name the query, not just the API — and must forbid the head-branch filter.** A
+command-triggered run is attributed to the **default** branch, so a head-branch-filtered query returns
+`total_count: 0` whether or not the run exists. This run believed that false negative twice (above).
+Written loosely as "check the Actions API", the proposal reproduces the defect it fixes: the obvious
+query is the branch-filtered one, and it is the wrong one. The rule must state: query by `event`, not
+by branch, and **treat any negative as unverified until a positive control returns a known-present
+run**.
+
+⭐ That control requirement generalizes past this proposal, and is the more useful half of it. Every
+"nothing there" in this run that turned out to be false came from a filtered query believed without
+one; every one that held — the empty `get_review_comments`, the clean gate output — was read from a
+surface that also returns positives.
 
 ### What was examined and found sound
 
@@ -620,6 +666,6 @@ surface would have recorded the wrong population verdicts. The exit-code warning
 |---|---|
 | **Contract Proposals 1, 2 and 3 above** | Awaiting operator decision. On approval, one `chore/cloud-plan-lane` PR touching only the skill |
 | **The dropped `opened` dispatch** | Diagnosed as far as this run can reach: the event fired no workflow, and only `pr-agent.yml` could not recover because it alone declines `synchronize`. The provider-side cause is unreachable from here. Worth watching whether it recurs — if it does, the cheap mitigation is that a lane run posts the documented `/review` trigger whenever a reviewer is `silent` with no workflow run, since that case is recoverable and a rate limit is not |
-| **`coderabbitai`'s window reopens ~15:45Z** | A `@coderabbitai review` comment could obtain the review this PR never got. Not attempted: arming auto-merge locks the branch and the queue is expected to land the PR before the window opens. If the operator wants review coverage on this change, the reachable route is a follow-up read of the merged commit, not this PR |
+| **`coderabbitai`'s window reopens ~15:46Z** | It re-attempts on every push and is refused each time, so its countdown tracks this PR's head. Not awaited: the operator chose to recover PR-Agent and merge, and holding a ready PR behind a third-party quota is the direction the contract explicitly rejects. If a CodeRabbit read of this change is wanted, the route is a follow-up against the merged commit |
 | **Two findings deferred out-of-scope** | Recorded with reasons in **Findings**; both are pre-existing and neither is touched by this diff |
 | **Local `/sync-plugin-cache`** | ⛔ **Not owed by this run.** Noted only because this branch edits `marketplace/bundles/`: a developer working locally after the merge syncs their own cache, which is a machine-local concern and not a debt this run tracks |
