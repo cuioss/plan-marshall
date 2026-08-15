@@ -120,13 +120,17 @@ run over the same tree, and their **resolved-edge sets** were diffed.
 | | Resolved edges |
 |---|---:|
 | Pre-change detector | 4931 |
-| Current detector | 4937 |
+| Current detector | 4936 |
 | **Lost** (was resolved, now absent) | **0** |
 | Gained | 5 (the D2 retargets) |
 
-Zero losses across 4931 edges is the strongest available evidence that the guards
-removed only non-references. The 5 gains are exactly the subcommand references D2
-retargets onto their entry scripts.
+Zero losses across 4931 edges is strong evidence that the guards removed only
+non-references — **in one direction**. It is not evidence in the other: a row that
+was *unresolved* and wrongly *became resolved* is invisible to this diff by
+construction, which is exactly the defect the verification sub-agent found (round-2
+finding 1). Both directions are now covered — this diff for losses, and
+`TestExclusionsAreProvisional` / `TestMisspelledScriptSegmentIsNotASubcommand` for
+wrongful resolution.
 
 ### D1 — documentation placeholders are no longer references
 
@@ -331,7 +335,8 @@ recorded per instance above rather than bundled into "the plan was roughly right
 
 An independent read-only sub-agent verified the committed work against the plan.
 It reproduced every published figure exactly (baseline `306 / 5301 / 4921 / 380`,
-HEAD `306 / 4998 / 4937 / 61`, D0 table summing to 380, the residue split 34/27),
+HEAD `306 / 4998 / 4937 / 61` as committed at that revision, D0 table summing to
+380, the residue split 34/27),
 proved the D5 fixture **non-vacuous** by disabling each guard independently
 (each raises the fixture 1 → 2; all-off gives 6, corroborating the red-before-green
 claim), and confirmed the `from_notation` refutation and the D6 conditional
@@ -347,6 +352,17 @@ non-edit. It then found eight defects. All eight were accepted; none was rejecte
 | 6 | `doc/adr/002-…adoc:140` still stated the retired `plan-marshall:workflow-integration-git:merge_lock` in present tense — an **untouched file**, invisible to the marketplace-scoped validator and to the doc-corpus engine, and reached by an xref from the paragraph this run edited | **Stale claim beyond the diff** | **Fixed** |
 | 7 | `test_from_notation_command` asserted on `plan-marshall:commands:tools-fix`, the nonexistent command this run corrected elsewhere. It passed because `from_notation` is a pure parser, so neither the local gate nor CI could catch it | **Test fixture keeping a retired value alive** | **Fixed** — retargeted to a command that exists |
 | 8 | The D5 fixture omitted the sub-document-path arm, so a regression there failed only a unit test and not the exact-count assertion | **Test coverage** | **Fixed** — fixture now instantiates all six documented classes and still asserts exactly one finding |
+
+**Finding 8b — the same self-inflicted-noise defect recurred, and is recorded as a
+second instance rather than folded into the first.** Round 1's finding 8 was that
+this run's own documentation added unresolved rows by writing literal example
+notations. Fixing round-2 finding 1 required documenting the misspelling defect, and
+the fix wrote the defective notation literally — adding it straight back as a real
+finding (62 → 63). Caught by re-measuring rather than by review. The example is now
+described rather than spelled, and the count re-verified at **62 with zero rows
+attributable to this run's own docs**. Two instances of one defect is a pattern:
+*documenting a notation defect inside the corpus that detects notation defects
+requires typesetting the example, every time.*
 
 **Findings 2 and 3 changed the design, for the better.** Both were the same defect:
 an exclusion that fires on **shape alone** cannot distinguish a non-reference from a
