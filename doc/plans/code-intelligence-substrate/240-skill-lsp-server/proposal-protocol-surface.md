@@ -197,6 +197,45 @@ model: machine-local `language_servers` config in `run-configuration.json`, a `n
 - ⚠ Really a *configuration and packaging* answer rather than a protocol answer; it composes with A
   or B rather than competing with them.
 
+#### Option C examined against the code, not its prose
+
+The reusable part is real, and it is the **degradation contract**: `not_configured` / `unreachable` /
+`ok` as distinct states, `provider_count` as the discriminator that keeps *no server ran* separable
+from *ran and found nothing*, `fallback: read_edit`, `preflight` naming its healthy state `ready`
+rather than `ok` (a precondition is not an outcome), and the documented promise that *a project that
+never configures a server loses nothing*. That is most of D4, already designed and tested.
+
+⛔ **But the store itself is a direction error, not merely a costly one.** Every existing user of
+`language_servers` is a *client of a binary someone else installed*; the schema is literally the argv
+needed to spawn a third-party server on this machine. A surface shipped *by this repository* inverts
+that, and three schema assumptions break:
+
+1. **`command` is machine-specific because the binary is machine-installed.** A repo-shipped server's
+   command is identical for every developer, so a git-ignored machine-local store would make each one
+   hand-enter the same constant.
+2. **The key is a *language*** (`python`, `go`). A corpus is not a language. Keying it `markdown`
+   collides semantically with a real Markdown server — and on Claude Code, literally, on `.md`.
+3. **`enabled` is one switch per language, and it is already overloaded.** The run-config standard
+   itself warns that enabling a language also switches on a whole-workspace harvest at every crawl,
+   and concedes that a project wanting leaf lookup *without* the harvest "has no separate switch
+   today". A third consumer with a third cost profile worsens a known wart.
+
+⚠ **And the residency mismatch is in the code, not inferred from the prose.** `_session()` constructs
+`StdioTransport → LspSession → initialize()` per call; `_with_session` closes it afterwards;
+`preflight` spawns and immediately tears down. The skill states the model outright: *"There is no
+daemon, no socket, and no long-lived child — cold start is paid once per call."* So Option C's hosting
+model **is** the ~2 s-per-query shape of E3. It cannot be reused for residency; its core would be
+replaced and only the naming kept.
+
+⚠ One further coupling: plan [`220-resolver-configuration`](../220-resolver-configuration.md) has not
+executed, and the run-config standard records this section as *"the shared configuration surface the
+resolver-configuration work extends"*. This plan's own Notes forbid running concurrently with that
+surface.
+
+**So C is not a competitor to A — it is a sub-decision inside A: where does A's configuration live?**
+The answer this analysis reaches is *not this store* — while its degradation contract is worth copying
+verbatim.
+
 ### Option D — Do nothing yet, and create the consumer first
 
 Ship no surface. Given E2 — nothing consumes the intelligence at all — first make one existing
@@ -250,3 +289,32 @@ executed. Measured on this clone, the validator reports **380 unresolved edges o
 
 ⛔ **Streaming this set into an editor would ship roughly 370 confident-wrong diagnostics** at the
 highest-visibility surface this epic has. The plan's hard gate is correctly placed, and it is unmet.
+
+## Decision (operator, this run)
+
+⭐ The proposal above was presented to the operator, who **decided A + D**: build the resident LSP
+server (A), sequenced with D's discipline that the surface must not ship without a consumer.
+
+⭐ **E5 is what makes that pairing coherent rather than contradictory.** D's whole point is to avoid a
+third zero-adoption surface after the `130`→`135` build-and-remove cycle. On Claude Code, a
+plugin-declared LSP server is consumed by the **agent**, automatically — so declaring the server
+*creates* its first consumer instead of waiting for one. A and D partially collapse into a single step
+on this platform rather than being sequential.
+
+⚠ **One tension the decision had to resolve.** A plugin-declared server **starts automatically when
+its plugin is enabled**, which is the opposite of D4's "strictly opt-in". Satisfying D4 therefore
+required the opt-in to be enforced *inside* the server: it starts, reads its own configuration, and
+when not enabled advertises **no capabilities**, answers every request emptily, and never builds the
+index. The manifest cannot be the switch.
+
+Per Option C's analysis, the configuration went to the project's version-controlled
+`.plan/marshal.json` (`code_intelligence.corpus_language_server.enabled`) rather than to the
+machine-local `language_servers` store, while that store's degradation contract was reused verbatim.
+
+⛔ **D3 remains blocked and unimplemented** — its hard gate
+([`230-validate-precision`](../230-validate-precision.md)) has not executed, and no diagnostic
+capability is advertised. The 97.4 % false-positive measurement above is why.
+
+The decision and its rationale are recorded for the long term in
+`doc/developer/corpus-language-server-protocol.adoc`; this section records only that the choice was
+the operator's, not the run's.
