@@ -30,6 +30,8 @@ import importlib.util
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
 from conftest import get_script_path, run_script
 
 # Script path for subprocess (CLI plumbing) tests.
@@ -223,6 +225,40 @@ def test_malformed_rows_are_skipped_rather_than_crashing():
 
     assert [s['step_id'] for s in steps] == ['push']
     assert totals['steps'] == 1
+
+
+@pytest.mark.parametrize('junk', ['not-a-number', None, [], {}, '12x'])
+def test_non_numeric_metrics_contribute_zero_rather_than_raising(junk):
+    """Metric coercion follows the same tolerance the row filter already has.
+
+    ``execution_log[]`` is append-only history parsed back from TOON, so a legacy
+    or hand-edited row can carry a non-numeric metric. Letting that raise would
+    deny the whole plan's report over one bad row — a total outage of the
+    instrument where a diagnosable gap was intended. The row still counts as a
+    firing; only its unusable metric contributes ``0``.
+    """
+    rows = [_row('push', total_tokens=junk, tool_uses=junk, duration_ms=junk)]
+
+    steps, totals = summarize_refires(rows)
+
+    assert steps[0]['firings'] == 1
+    assert steps[0]['total_tokens'] == 0
+    assert steps[0]['tool_uses'] == 0
+    assert steps[0]['duration_ms'] == 0
+    assert totals['total_tokens'] == 0
+
+
+def test_a_bad_metric_does_not_suppress_a_good_row():
+    """The bad row is tolerated WITHOUT losing the rest of the report."""
+    rows = [
+        _row('push', total_tokens='junk'),
+        _row('ci-verify', total_tokens=500),
+    ]
+
+    steps, totals = summarize_refires(rows)
+
+    assert totals['steps'] == 2
+    assert totals['total_tokens'] == 500
 
 
 # =============================================================================

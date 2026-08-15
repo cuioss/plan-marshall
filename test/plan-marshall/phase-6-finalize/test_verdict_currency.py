@@ -243,6 +243,38 @@ def test_undeclared_surface_still_preserves_on_an_unmoved_head(monkeypatch):
     assert payload['reason'] == _mod.REASON_HEAD_UNCHANGED
 
 
+def test_equal_shas_preserve_even_when_resolution_is_impossible(monkeypatch):
+    """The equal-SHA path consults NOTHING — the module docstring's promise.
+
+    Placed after the resolution gate, this case would answer ``invalidated``
+    whenever discovery hiccuped on an unmoved HEAD: a re-fire manufactured by a
+    broken lookup rather than by any change to the tree. Identical SHAs are
+    identical trees, so no verdict about that tree can be stale against it, and
+    the answer must hold with the declaration unresolvable.
+    """
+
+    def _explode(_step):
+        raise AssertionError('resolve_verdict_inputs must not run on equal SHAs')
+
+    monkeypatch.setattr(_mod, 'resolve_verdict_inputs', _explode)
+
+    payload = _mod.classify_step('any-step', '/nowhere', 'cafe', 'cafe')
+
+    assert payload['verdict'] == _PRESERVED
+    assert payload['reason'] == _mod.REASON_HEAD_UNCHANGED
+    assert payload['verdict_inputs'] == []
+
+
+def test_equal_shas_preserve_for_an_unresolvable_step(monkeypatch):
+    """The same property stated through the resolver's own failure mode."""
+    _patch_declaration(monkeypatch, [], False, _mod.REASON_DISCOVERY_UNAVAILABLE)
+
+    payload = _mod.classify_step('ghost-step', '/nowhere', 'cafe', 'cafe')
+
+    assert payload['verdict'] == _PRESERVED
+    assert payload['reason'] == _mod.REASON_HEAD_UNCHANGED
+
+
 def test_uncomputable_tree_diff_invalidates(monkeypatch):
     """A git failure is an uncertainty; it must never read as "nothing changed"."""
     _patch_declaration(monkeypatch, _SURFACE, True, None)

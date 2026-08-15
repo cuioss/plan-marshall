@@ -41,16 +41,18 @@ Fail-closed: every uncertainty is ``invalidated``
 The plan this seam implements states the safety direction explicitly — *fail
 TOWARD re-running when the classification is uncertain; an unnecessary re-run
 costs tokens, a skipped necessary one costs correctness.* That direction is
-structural here rather than advisory: ``preserved`` is reachable ONLY past a
-resolution gate — the step doc resolved AND the step is head-dependent — and past
-that gate on exactly TWO paths, each of which proves the tree the verdict was
-computed against is still in force:
+structural here rather than advisory: ``preserved`` is returned on exactly TWO
+paths, each of which PROVES the tree the verdict was computed against is still in
+force:
 
 1. ``REASON_HEAD_UNCHANGED`` — the two SHAs are equal, so the trees are
-   byte-identical and the verdict is current whatever the step reads. This path
-   needs no declaration, and consults none.
-2. ``REASON_DISJOINT`` — a non-empty declaration whose globs match no path in the
-   tree difference.
+   byte-identical and no verdict about a tree can be stale against that same tree.
+   This path is decided FIRST, before any resolution: it needs no declaration, no
+   head-dependence fact and no discovery call, and consults none of them, so it
+   stays correct even when they cannot be resolved at all.
+2. ``REASON_DISJOINT`` — reached only past the resolution gate (the step doc
+   resolved AND the step is head-dependent): a non-empty declaration whose globs
+   match no path in the tree difference.
 
 EVERY other path — an absent declaration on a genuinely-advanced HEAD, an
 unresolvable step doc, unavailable discovery machinery, an unreadable SHA, a git
@@ -383,11 +385,11 @@ def classify_step(
     """Resolve the declaration and the tree diff, then classify the advance.
 
     Two returns below are ``preserved`` and both prove the recorded tree is still
-    in force: the equal-SHA short-circuit (byte-identical trees, decided without
-    consulting any declaration) and :func:`classify_advance` reached with a
-    resolved, non-empty declaration and a successfully-computed tree difference.
-    Every other return is ``invalidated``, carrying the reason it could not prove
-    currency.
+    in force: the equal-SHA short-circuit — decided before ANY resolution, so it
+    holds even when discovery cannot run — and :func:`classify_advance` reached
+    with a resolved, non-empty declaration and a successfully-computed tree
+    difference. Every other return is ``invalidated``, carrying the reason it
+    could not prove currency.
     """
     if not recorded_head:
         return _payload(
@@ -403,6 +405,20 @@ def classify_step(
             recorded_head, live_head, [], [], [],
         )
 
+    # Equal SHAs short-circuit BEFORE anything is resolved. Identical SHAs mean
+    # byte-identical trees, and no verdict about a tree can be stale against that
+    # same tree — so the answer needs no declaration, no head-dependence fact, and
+    # no discovery call, and it stays correct even when those cannot be resolved
+    # at all. Placing this after the resolution gate would answer ``invalidated``
+    # for an unmoved HEAD whenever discovery hiccuped, contradicting both the
+    # dispatcher's steady-state SKIP row and this module's promise that the path
+    # "consults none".
+    if recorded_head == live_head:
+        return _payload(
+            step, VERDICT_PRESERVED, REASON_HEAD_UNCHANGED,
+            recorded_head, live_head, [], [], [],
+        )
+
     globs, is_head_dependent, unresolved = resolve_verdict_inputs(step)
     if unresolved is not None:
         return _payload(
@@ -412,18 +428,6 @@ def classify_step(
     if not is_head_dependent:
         return _payload(
             step, VERDICT_INVALIDATED, REASON_NOT_HEAD_DEPENDENT,
-            recorded_head, live_head, globs, [], [],
-        )
-
-    # Equal SHAs are decided BEFORE the declaration is consulted: identical SHAs
-    # mean byte-identical trees, so the verdict is current whatever the step
-    # reads and no surface is needed to prove it. Deciding this after the
-    # declaration check would answer ``invalidated`` for an UNDECLARED step whose
-    # HEAD never moved, contradicting the dispatcher's own steady-state SKIP row
-    # and making this verb unsound to reuse as a general re-entry oracle.
-    if recorded_head == live_head:
-        return _payload(
-            step, VERDICT_PRESERVED, REASON_HEAD_UNCHANGED,
             recorded_head, live_head, globs, [], [],
         )
 

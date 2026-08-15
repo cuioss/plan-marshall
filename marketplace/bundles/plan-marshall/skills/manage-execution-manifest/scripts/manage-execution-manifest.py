@@ -2555,6 +2555,23 @@ def cmd_record_step(args: argparse.Namespace) -> dict[str, Any] | None:
 _REFIRE_EXECUTED_OUTCOME = 'executed'
 
 
+def _refire_metric(value: Any) -> int:
+    """Coerce one execution-log metric to a non-negative int, tolerating junk.
+
+    ``summarize_refires`` tolerates a non-dict row and a row with no ``step_id``
+    by skipping it, and says so. The metric sums MUST follow the same discipline:
+    ``execution_log[]`` is append-only history parsed back from TOON, so a legacy
+    or hand-edited row can carry a non-numeric value, and letting that raise would
+    deny the whole report over one bad row — turning a diagnosable gap into a
+    total outage of the instrument. An uncoercible metric contributes ``0``, which
+    is the same attribution an inline step's row already carries.
+    """
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def summarize_refires(
     execution_log: list[dict[str, Any]],
     phase: str | None = None,
@@ -2617,9 +2634,9 @@ def summarize_refires(
             entry['skipped'] += 1
         elif outcome == 'error':
             entry['errors'] += 1
-        entry['total_tokens'] += max(0, int(row.get('total_tokens', 0) or 0))
-        entry['tool_uses'] += max(0, int(row.get('tool_uses', 0) or 0))
-        entry['duration_ms'] += max(0, int(row.get('duration_ms', 0) or 0))
+        entry['total_tokens'] += _refire_metric(row.get('total_tokens'))
+        entry['tool_uses'] += _refire_metric(row.get('tool_uses'))
+        entry['duration_ms'] += _refire_metric(row.get('duration_ms'))
 
     for entry in per_step.values():
         entry['refires'] = max(0, entry['firings'] - 1)

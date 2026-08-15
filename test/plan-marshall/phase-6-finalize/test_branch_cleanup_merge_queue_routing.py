@@ -946,28 +946,55 @@ def test_one_stop_enumeration_names_every_declared_param():
 def test_every_use_merge_queue_consumption_site_is_observable():
     """(4a) Each ``use_merge_queue`` read carries a mandatory observability line.
 
-    The two sides are counted independently — reads on one side, observability
-    markers on the other — and compared. Adding a consumption site without its
-    decision-log line fails here; so does deleting an observability block from an
-    existing site. Neither side is pinned to a cardinality literal, deliberately:
-    a hardcoded count would have to be hand-edited every time a site is added,
-    and an equality between two independently-derived counts catches the defect
-    without one.
+    Asserts a **per-site relationship**, not merely equal totals. Equal counts are
+    satisfied by a document that lost one site's marker and duplicated another's —
+    exactly the compensating-error shape a guard like this exists to catch, and
+    a real risk here because this guard has already reported green over a site it
+    could not see. Each derived read is therefore paired with the FIRST
+    observability marker that follows it, and the pairing must be injective: two
+    reads may not claim the same marker, and no marker may be left over.
+
+    Neither side is pinned to a cardinality literal, deliberately: a hardcoded
+    count would have to be hand-edited every time a site is added.
     """
     text = _read(_BRANCH_CLEANUP)
-    reads = _USE_MERGE_QUEUE_READ_RE.findall(text)
-    markers = text.count(_OBSERVABILITY_MARKER)
+    read_offsets = [m.start() for m in _USE_MERGE_QUEUE_READ_RE.finditer(text)]
+    marker_offsets = [
+        m.start() for m in re.finditer(re.escape(_OBSERVABILITY_MARKER), text)
+    ]
 
-    assert reads, (
+    assert read_offsets, (
         'No `use_merge_queue` consumption site was derived from '
         f'{_BRANCH_CLEANUP.name}. The routing is demonstrably driven by that param, so an '
         'empty derivation means the read marker stopped matching and this check is vacuous.'
     )
-    assert markers == len(reads), (
-        f'Derived {len(reads)} `use_merge_queue` consumption site(s) but {markers} '
-        f'{_OBSERVABILITY_MARKER} block(s). Every site that BINDS the value must emit a '
-        'decision-log line naming the bound value, its provenance, and the branch it '
-        'selects — otherwise which branch a run took is unreconstructible from the log.'
+
+    # Pair each read with the first marker at or after it. A site whose marker was
+    # deleted claims the NEXT site's marker, which then leaves the last read
+    # unpaired — so a compensating duplicate elsewhere cannot mask the deletion.
+    claimed: dict[int, int] = {}
+    for read_at in read_offsets:
+        following = [off for off in marker_offsets if off >= read_at]
+        assert following, (
+            f'The `use_merge_queue` consumption site at offset {read_at} is followed by no '
+            f'{_OBSERVABILITY_MARKER} block. Every site that BINDS the value must emit a '
+            'decision-log line naming the bound value, its provenance, and the branch it '
+            'selects — otherwise which branch a run took is unreconstructible from the log.'
+        )
+        marker_at = following[0]
+        assert marker_at not in claimed, (
+            f'Two `use_merge_queue` consumption sites (offsets {claimed[marker_at]} and '
+            f'{read_at}) share a single {_OBSERVABILITY_MARKER} block at offset {marker_at}. '
+            'A site whose own block was deleted is borrowing its neighbour\'s; equal totals '
+            'would have hidden this.'
+        )
+        claimed[marker_at] = read_at
+
+    assert len(claimed) == len(marker_offsets), (
+        f'{len(marker_offsets)} {_OBSERVABILITY_MARKER} block(s) exist but only '
+        f'{len(claimed)} are claimed by a consumption site. An unclaimed block is either a '
+        'duplicate masking a deletion elsewhere, or a marker whose site stopped matching '
+        'the derivation — both are the vacuity this guard exists to prevent.'
     )
 
 

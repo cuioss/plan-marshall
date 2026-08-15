@@ -115,17 +115,22 @@ mechanism. It is also strictly narrower than a commit walk: a change and its rev
 cancel out, and a rebase folding in upstream commits that touch nothing in the surface
 reports no difference on that surface.
 
-**Fail-closed, structurally.** `preserved` is reachable only past a resolution gate — the
-step doc resolved AND the step declares `head_dependent: true` — and past that gate on
-exactly two paths, each of which *proves* the recorded tree is still in force: the two SHAs
-are equal (byte-identical trees, decided without consulting any declaration), or a non-empty
-declaration's globs match no path in the tree difference. Every other path returns
-`invalidated` with a `reason` naming the uncertainty: an absent declaration on a genuinely
-advanced HEAD, an unresolvable step doc, unavailable discovery machinery, an absent recorded
-SHA, or a tree diff git could not compute (a SHA that no longer resolves after a force-push
-and a prune is exactly this case). An unnecessary re-run costs tokens; a skipped necessary
-one costs correctness, so the asymmetry is built into the control flow rather than stated as
-guidance.
+**Fail-closed, structurally.** `preserved` is returned on exactly two paths, each of which
+*proves* the recorded tree is still in force:
+
+1. **The two SHAs are equal** — byte-identical trees, so no verdict about a tree can be stale
+   against that same tree. This is decided **first, before any resolution**: it consults no
+   declaration, no head-dependence fact and no discovery machinery, so it stays correct even
+   when none of them can be resolved.
+2. **A resolved, head-dependent step whose non-empty declaration matches no changed path** —
+   reached only past the resolution gate.
+
+Every other path returns `invalidated` with a `reason` naming the uncertainty: an absent
+declaration on a genuinely advanced HEAD, an unresolvable step doc, unavailable discovery
+machinery, an absent recorded SHA, or a tree diff git could not compute (a SHA that no longer
+resolves after a force-push and a prune is exactly this case). An unnecessary re-run costs
+tokens; a skipped necessary one costs correctness, so the asymmetry is built into the control
+flow rather than stated as guidance.
 
 **A declaration is admissible only when it is a SUPERSET of what the step reads — and some
 steps have no such subset.** The bar is not "name the paths the step obviously cares about";
