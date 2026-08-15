@@ -194,7 +194,43 @@ API summary:
 | `assume(predicate)` | Discard generated inputs that fail a precondition |
 | `@settings(max_examples=...)` | Control the per-test example budget |
 
-Prefer property-based tests over a handful of hand-picked literals when validating parsers, normalisers, encoders, and any code that must hold a property across a wide, adversarial input space.
+### When to reach for it — and when not to
+
+Property-based testing is a **scoped** technique, not a default. Which of the two forms is correct is
+decided by what the contract *is*:
+
+**Generate where the contract is universal.** The behaviour is expressible as *"for all valid inputs,
+P holds"* — text and format parsers, identifier validators, path normalisers, round-trip encoders,
+comparators. Prefer property-based tests over a handful of hand-picked literals here: the literals
+sample an input space the contract quantifies over.
+
+**Write an exact literal where the literal is the contract.** The behaviour under test *is* one
+specific value — a seeded config knob's default, a canonical step id, a serialized field name, an
+argparse flag spelling, a documented exit code. Here the literal is the whole assertion. A generator
+would replace the one value that matters with an arbitrary one, so **a generator is the defect, not
+the fix**.
+
+The question that settles any given case: *would this test still be meaningful if the value were
+different?* If yes, generate. If no — if a different value means the production behaviour is wrong —
+write the literal exactly.
+
+```python
+# The literal IS the contract — assert it exactly. Do not generate.
+def test_branch_cleanup_seeds_merge_queue_wait_budget():
+    """`default:branch-cleanup` seeds merge_queue_wait_budget_seconds at 1800."""
+    assert seed_defaults()['branch-cleanup']['merge_queue_wait_budget_seconds'] == 1800
+
+
+# The contract is universal — generate over the input space.
+@given(st.text())
+def test_normalise_is_idempotent(value):
+    """Normalising an already-normalised path is a no-op for any input."""
+    once = normalise(value)
+    assert normalise(once) == once
+```
+
+The language-agnostic statement of the same discriminator is
+`plan-marshall:persona-module-tester` § "Test Data Principles → The discriminator".
 
 ## Mocking
 
@@ -355,6 +391,163 @@ def test_script_fails_on_missing_arg():
 ```
 
 ## Test Organization
+
+### Module budget: 400 lines
+
+A test module is budgeted at 400 lines, split by behaviour cluster into `test_{unit}_{cluster}.py`
+when over. The budget and its derivation are stated in
+`plan-marshall:persona-module-tester` § "Module Budget: 400 lines", and enforced by the plugin-doctor
+[`test-module-line-budget`](../../../../pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md#test-module-line-budget)
+rule.
+
+### Docstring content
+
+A test docstring states the invariant in the present tense. It does not narrate the incident that
+produced the test, and does not cite a plan id, a deliverable id, a PR number, a lesson id, or a
+superseded behaviour ("used to", "no longer", "previously").
+
+This is `CLAUDE.md` § Documentation Standards ("No version history", "Current state only") applied to
+the test tree — the same rule plugin-doctor already enforces over `marketplace/bundles/**` via
+`no-historical-prose-in-skills`, `no-incident-references`, and `no-lesson-id-in-skill-prose`. Over
+`test/` it is enforced by
+[`test-docstring-historical-prose`](../../../../pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md#test-docstring-historical-prose).
+
+```python
+# Before — the invariant is buried behind a citation the reader cannot resolve.
+def test_which_module_resolves_test_path_via_paths_tests():
+    """A ``test/**`` path absent from every ``files`` inventory resolves to its
+    owning module through the ``paths.tests`` containment fallback — not the
+    root ``default`` module and not ``None`` (closes lesson 2026-07-09-04-001)."""
+
+
+# After — same invariant, no citation, load-bearing reason in the present tense.
+def test_which_module_resolves_test_path_via_paths_tests():
+    """A ``test/**`` path absent from every ``files`` inventory resolves to its
+    owning module through the ``paths.tests`` containment fallback.
+
+    The two wrong answers are the ones that look plausible: the root ``default``
+    module (which would silently mis-attribute every uninventoried test path)
+    and ``None`` (which would drop the path from module resolution entirely)."""
+```
+
+The rationale a docstring legitimately carries is *why the invariant is load-bearing* — which is
+present-tense and survives the next refactor. See `plan-marshall:persona-module-tester` § "Test
+Docstring Content".
+
+### Where arrange logic lives
+
+Each rule below states the threshold that triggers it. The thresholds are the point: "extract when it
+feels repetitive" is not reviewable, and three occurrences is.
+
+| Trigger | Rule |
+|---------|------|
+| A literal repeated in **3 or more** tests in a module | Becomes a module constant |
+| A setup sequence repeated in **3 or more** tests | Becomes a fixture |
+| An object built in **3 or more** tests | Becomes a factory with keyword overrides |
+
+```python
+# Module constant — the literal is named once and asserted everywhere.
+PLAN_ID = 'default:branch-cleanup'
+
+
+# Factory with keyword overrides — every test states only what it varies.
+def make_plan(**overrides):
+    """Build a plan dict, overriding only the keys a test cares about."""
+    return {'id': PLAN_ID, 'phase': 'execute', 'tasks': [], **overrides}
+
+
+def test_blocked_plan_reports_blocked():
+    assert status(make_plan(phase='blocked')) == 'blocked'
+```
+
+A factory takes keyword overrides rather than positional arguments so a test names the one field it
+varies; a positional factory forces every call site to restate fields it does not care about, which is
+the duplication the factory was meant to remove.
+
+### Parametrize the table, not the prose
+
+**Two tests differing only in input and expected output are one `@pytest.mark.parametrize`.** The
+`ids=` list carries what the separate docstrings said, so the reduction loses no information — each
+row still names its case in the test report.
+
+```python
+@pytest.mark.parametrize(
+    'state,expected',
+    [
+        ('clean', True),
+        ('unstable', True),
+        ('blocked', False),
+        ('dirty', False),
+    ],
+    ids=[
+        'clean-is-mergeable',
+        'unstable-passes-required-contexts',
+        'blocked-holds-on-required-context',
+        'dirty-holds-on-conflict',
+    ],
+)
+def test_mergeability_by_state(state, expected):
+    """A PR is mergeable exactly when its merge state clears the required contexts."""
+    assert is_mergeable(state) is expected
+```
+
+Parametrizing **raises** the collected test count — four rows are four collected tests. It is a
+reduction in text, never in coverage.
+
+### Command arguments come from the real parser
+
+**Build command arguments through the shared real-parser helper, never as a hand-written
+`argparse.Namespace`.**
+
+A hand-built namespace does not carry the parser's defaults. So a test constructs a namespace the real
+CLI would never produce, and a newly-added flag with a default breaks production while the suite stays
+green — the namespace already had every attribute the test knew to set, and nothing told it about the
+new one.
+
+```python
+from conftest import parse_ns
+
+# Wrong — bypasses the parser, so the defaults under test are the test's own.
+args = argparse.Namespace(plan_id='p1', force=False)
+
+# Right — the real parser supplies every default, including ones added later.
+args = parse_ns('plan-marshall', 'manage-plan', 'manage-plan.py', '--plan-id', 'p1')
+```
+
+The shared helper is `parse_ns(bundle, skill, script, *argv)`, exported from `test/conftest.py`: it
+resolves the script, runs that script's own parser over `argv`, and returns the resulting namespace —
+so every default the parser declares is present, including ones added after the test was written.
+
+This is `plan-marshall:persona-module-tester` § "Foundation utilities — tests against the CLI" applied
+one layer lower: that section states the principle for the CLI entry point, and this is the same
+principle at the namespace layer.
+
+### Test budget: ~15 lines of body
+
+**A test function body over ~15 lines, excluding its docstring, is carrying arrange logic that belongs
+in a fixture or a factory.**
+
+This is a **review trigger, not a build failure.** Genuine scenario and integration tests legitimately
+exceed it, and no rule ships for it precisely because a mechanical line count cannot tell a scenario
+from a bloated unit — that judgement is the reviewer's. Crossing the threshold is a prompt to ask
+where the arrange logic should live, not a defect in itself.
+
+### One layer per contract
+
+Where an in-process test and a subprocess test assert the same behaviour, the in-process test is
+authoritative and the subprocess coverage collapses to a single per-script CLI-plumbing smoke proving
+the entry point wires up.
+
+Two exceptions keep this safe:
+
+1. **Do not collapse where the subprocess test is the only coverage** — write the in-process test
+   first, then collapse.
+2. **Do not collapse where the subprocess boundary is itself the subject** — environment propagation,
+   exit-code contracts, stdout/stderr separation.
+
+Every collapse names the in-process test that now carries the contract; without that, a collapse and a
+deletion are indistinguishable in the diff. The language-agnostic statement is
+`plan-marshall:persona-module-tester` § "One Layer Per Contract".
 
 ### Shared Infrastructure
 

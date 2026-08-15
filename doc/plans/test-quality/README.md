@@ -81,8 +81,9 @@ disagree, **the skills win** — this file is the epic's scoping brief, not the 
 **B1 — Module budget: 400 lines.** A test module over 400 lines is split by *behaviour cluster*, not
 in arbitrary halves: `test_{unit}_{cluster}.py`. 400 is chosen against the corpus, not invented — the
 median module is already ~323 lines and ~60% of modules already comply, so the budget describes the
-tree's own better half rather than an aspiration. It **replaces** the `~200 lines` figure currently in
-`persona-module-tester`, which ~75% of the corpus violates and which no guard has ever enforced.
+tree's own better half rather than an aspiration. It **replaced** the `~200 lines` figure
+`persona-module-tester` previously carried, which ~75% of the corpus violates and which no guard ever
+enforced. Plan `010` retired that figure and made the 400-line budget enforced.
 
 **B2 — Test budget: 15 lines of body.** A test function body (excluding its docstring) over ~15 lines
 is carrying arrange logic that belongs in a fixture or a factory. This is a review trigger, not a
@@ -124,8 +125,9 @@ earns its place for text and format parsers, identifier validators, path normali
 encoders — the places where the contract really is "for all valid inputs". It is **actively wrong**
 for most of this corpus: a test asserting that `default:branch-cleanup` seeds
 `merge_queue_wait_budget_seconds: 1800` is asserting an exact contract value, and a generator there
-would assert nothing at all. `persona-module-tester`'s current "prefer generated test data over
-hardcoded literals" reads as a blanket preference and needs the scoping that says so. Hypothesis is a
+would assert nothing at all. `persona-module-tester` previously carried a "prefer generated test data
+over hardcoded literals" phrasing that read as a blanket preference; plan `010` replaced it with the
+universal-contract / literal-is-the-contract discriminator that scopes it. Hypothesis is a
 third-party dependency and therefore a **user-approval step** — plan `010` records the proposal and
 names the candidate call sites; it does not add the dependency.
 
@@ -201,7 +203,7 @@ The floor is a target, not a licence.
 
 | Plan | Surface | May run concurrently with |
 |---|---|---|
-| `010` | `marketplace/bundles/pm-dev-python/skills/pytest-testing/**`, `marketplace/bundles/plan-marshall/skills/persona-module-tester/**`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**`, `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` (including the `rule4.py` it adds), `test/pm-plugin-development/plugin-doctor/_fixtures.py` | `020` only |
+| `010` | `marketplace/bundles/pm-dev-python/skills/pytest-testing/**`, `marketplace/bundles/plan-marshall/skills/persona-module-tester/**`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**`, `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` (including the `rule4.py` and `rule6.py` it adds), `test/pm-plugin-development/plugin-doctor/fixtures/test_conventions/rule*/`, `test/pm-plugin-development/plugin-doctor/test_doctor_marketplace_commands.py` (the `cmd_test_conventions` cases only), `test/pm-plugin-development/plugin-doctor/_fixtures.py` | `020` only |
 | `020` | `test/conftest.py`, `test/_shared/**`, `test/README.md`, and the ≤10 modules it converts as proof-of-use | `010` only |
 | `030`–`080` | one disjoint slice of `test/` each, listed in the plan | each other, once `010` **and** `020` have landed |
 
@@ -253,7 +255,8 @@ reduction plan restates them:
 
 One narrow carve-out, because two plans would otherwise collide: plan `010` owns
 `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` — the three modules that
-already test this scope's rules plus the `rule4.py` it adds — and the `_fixtures.py` corpus entries
-that make its new rules fire (it ships the tests for
-the rules it adds). Plan `080` owns the rest of `test/pm-plugin-development/**` and excludes those
-modules explicitly.
+already test this scope's rules plus the `rule4.py` and `rule6.py` it adds — their fixture directories
+under `fixtures/test_conventions/rule*/`, the `cmd_test_conventions` cases in
+`test_doctor_marketplace_commands.py`, and the `_fixtures.py` corpus entries that make its new rules
+fire (it ships the tests for the rules it adds). Plan `080` owns the rest of
+`test/pm-plugin-development/**` and excludes those modules explicitly.

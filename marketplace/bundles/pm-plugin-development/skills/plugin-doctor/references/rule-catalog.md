@@ -600,6 +600,35 @@ The allowlist is unchanged by the widened scope — the same exempt prefixes app
 
 ---
 
+## Rule Pack: Test-tree house style
+
+The structural half of the test-authoring standards stated in `plan-marshall:persona-module-tester` and `pm-dev-python:pytest-testing`. All four run under the `test-conventions` scope over `--test-root` (default `test/`), and all four ship at `severity: warning` — see `standards/doctor-test-conventions.md` § "Severity Summary" for why, and for the condition under which they flip to `error`. This pack is **not** part of the `quality-gate` subcommand.
+
+| Rule ID | Intent | False-positive policy | Suppression |
+|---------|--------|-----------------------|-------------|
+| `test-module-line-budget` | Flag a collected test module over the 400-line budget, so oversized modules are split by behaviour cluster rather than left to grow | None — the verdict is a line count against a fixed budget, with no textual ambiguity. A module deliberately over budget is a judgement the reviewer makes, not a detector question | Not provided; the rule reports at `warning` and does not fail the build |
+| `test-helper-module-misnamed` | Flag a module matching pytest's collection patterns that declares no test — collected, contributing nothing, and invisible in the run | None — "declares no `test*` function and no `Test*` class" is an AST fact | Not provided; reports at `warning` |
+| `test-module-preamble-boilerplate` | Flag `spec_from_file_location` preambles and `Path(__file__).parent` chains of depth ≥ 3, both of which resolve a module by the test file's own location instead of by identity | Chains shorter than depth 3 are not flagged (a `.parent.parent` hop is ordinary path work). Only the outermost `.parent` of a chain is reported, so one chain yields one finding. Both spellings of the idiom count — a `.parent` chain and an indexed `parents[N]` — through any path-preserving `.resolve()` / `.absolute()` hop, so the rule's count cannot be cleared by respelling. **One known-legitimate occurrence:** the rule fires on `test/conftest.py`'s own `load_script_module` implementation, whose `spec_from_file_location` call *is* the sanctioned helper — the remediation there is circular, since the message tells the canonical helper to call itself. It is left unsuppressed deliberately: the rule reports at `warning`, one structurally-unfixable finding among many is cheaper than a path allowlist that would also silence real defects in the same file | Not provided; reports at `warning` |
+| `test-docstring-historical-prose` | Forbid lesson-ID, PR-reference, and plan/deliverable-ID citations in test docstrings and comments — the test-tree counterpart of `no-lesson-id-in-skill-prose` / `no-incident-references` | **Docstrings and comments only.** String literals are never scanned: the same shapes appear far more often as test *data* (a lesson id fed to the validator under test), and flagging those would make the rule unusable. Measured with the shipped matchers: 285 prose hits vs 876 data occurrences correctly left alone | Not provided; reports at `warning` |
+
+### test-docstring-historical-prose
+
+**Rule ID**: `test-docstring-historical-prose`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`
+
+**Scope**: `*.py` under `--test-root` (default `test/`) — the tree `no-lesson-id-in-skill-prose` and `no-incident-references` do **not** cover, since both take a `marketplace_root`.
+
+**Intent**: A test docstring states the invariant in the present tense, not the incident that produced the test. This is `CLAUDE.md` § Documentation Standards ("No version history", "Current state only") applied to a tree those standards were never scoped over.
+
+**Detection logic**: The prose segments — module/class/function docstrings via `ast.get_docstring`, plus `#` comments via `tokenize` — are matched against five citation shapes. The lesson-ID matchers (`_LESSON_ID_RE`, `_LESSON_BACKTICK_ID_RE`) and the `plan-marshall#NNNN` matcher (`_PLAN_MARSHALL_REF_RE`) are **imported from** the two analyzers that already own them rather than restated: one textual shape, one matcher. Two shapes those analyzers do not carry are defined locally — `PR #NNN` / `pull request #NNN`, and plan/deliverable ids (`TASK-NNN`, `deliverable D<n>`, ``plan `slug` ``). At most one finding is emitted per segment; `details.kind` names which shape fired.
+
+**The prose-vs-data split is the rule's structural discriminator**, not a performance choice — see the false-positive policy above.
+
+**Recommended fix**: Rewrite the docstring to state the invariant in the present tense. Where the invariant is genuinely non-obvious, add a second paragraph explaining *why it is load-bearing* — which survives the next refactor, unlike the citation. `plan-marshall:persona-module-tester` § "Test Docstring Content" carries a worked before/after.
+
+---
+
 ## Rule Pack: Allowed-tools-body drift
 
 | Rule ID | Intent | False-positive policy | Suppression |

@@ -66,15 +66,15 @@ collected-test count and unchanged coverage *before* its line floor.
 
 | | Finding | Primary impact | Remediation |
 |---|---|---|---|
-| [F1](#f1--nearly-three-quarters-of-the-corpus-lives-in-modules-nobody-can-navigate) | ~40% of modules exceed 400 lines and hold ~73% of all lines | Navigability; compounds every other finding | [`010`](010-test-authoring-standards-and-enforcement.md), [`030`](030-config-and-manifest-test-reduction.md)–[`080`](080-plugin-development-and-generator-test-reduction.md) |
-| [F2](#f2--the-corpuss-own-module-size-standard-is-violated-by-three-quarters-of-it) | The ~200-line split standard is violated by ~75% of the tree and never enforced | A rule readers learn to skip | [`010`](010-test-authoring-standards-and-enforcement.md) |
+| [F1](#f1--nearly-three-quarters-of-the-corpus-lives-in-modules-nobody-can-navigate) | ~40% of modules exceed 400 lines and hold ~73% of all lines | Navigability; compounds every other finding | [`010`](010-test-authoring-standards-and-enforcement/plan.md), [`030`](030-config-and-manifest-test-reduction.md)–[`080`](080-plugin-development-and-generator-test-reduction.md) |
+| [F2](#f2--the-corpuss-own-module-size-standard-is-violated-by-three-quarters-of-it) | The ~200-line split standard is violated by ~75% of the tree and never enforced | A rule readers learn to skip | [`010`](010-test-authoring-standards-and-enforcement/plan.md) |
 | [F3](#f3--parametrization-is-the-corpuss-least-used-tool-against-its-most-tabular-content) | Parametrization in 179 of 770 modules | Largest available reduction; *strengthens* the suite | [`030`](030-config-and-manifest-test-reduction.md) |
-| [F4](#f4--hand-built-argument-namespaces-are-a-correctness-defect-not-just-bloat) | ~2,900 hand-built namespaces bypass the parsers' defaults | **Live correctness risk** — the suite cannot see the change it exists to catch | [`020`](020-shared-test-harness/plan.md), [`010`](010-test-authoring-standards-and-enforcement.md) |
+| [F4](#f4--hand-built-argument-namespaces-are-a-correctness-defect-not-just-bloat) | ~2,900 hand-built namespaces bypass the parsers' defaults | **Live correctness risk** — the suite cannot see the change it exists to catch | [`020`](020-shared-test-harness/plan.md), [`010`](010-test-authoring-standards-and-enforcement/plan.md) |
 | [F5](#f5--arrange-logic-is-inlined-roughly-eleven-times-more-often-than-it-is-fixtured) | `monkeypatch.setattr` outnumbers fixtures ~11:1 | Missing class-scoped fixtures, repeated | [`060`](060-runtime-and-script-substrate-test-reduction.md) |
 | [F6](#f6--197-modules-re-implement-a-loader-conftestpy-already-exports) | ~197 modules re-implement an exported loader | Duplication, and brittle to file moves | [`020`](020-shared-test-harness/plan.md) |
 | [F7](#f7--several-thousand-lines-of-test-prose-are-history-which-this-repository-forbids-everywhere-else) | Thousands of lines of prose are history, not invariant | Largest reduction in scenario slices; **highest deletion risk** | every reduction plan, each with a cold read |
 | [F8](#f8--one-shared-fixture-is-defined-three-times-incompatibly) | `create_marshal_json` defined 3× incompatibly | A test's baseline decided by an import line | [`020`](020-shared-test-harness/plan.md) |
-| [F9](#f9--three-silent-defects-the-tooling-cannot-see) | Helper modules invisible to the current lint, and a referenced `test/README.md` that does not exist | Silent no-ops in the run | [`020`](020-shared-test-harness/plan.md), [`010`](010-test-authoring-standards-and-enforcement.md) |
+| [F9](#f9--three-silent-defects-the-tooling-cannot-see) | Helper modules invisible to the current lint, and a referenced `test/README.md` that does not exist | Silent no-ops in the run | [`020`](020-shared-test-harness/plan.md), [`010`](010-test-authoring-standards-and-enforcement/plan.md) |
 | [F10](#f10--one-contract-asserted-at-two-layers) | One contract asserted at two layers in several modules | Real reduction, high deletion risk — bounded | [`040`](040-delivery-pipeline-test-reduction.md) |
 
 Rules **B1**–**B10** are defined in [`README.md`](README.md#house-style); the slices are defined in
@@ -298,15 +298,15 @@ contract ([**B8**](README.md#house-style)), rather than removing it.
 
 | Finding | Addressed by |
 |---|---|
-| F1, F2 | [`010`](010-test-authoring-standards-and-enforcement.md) (module budget + enforcement), [`030`](030-config-and-manifest-test-reduction.md)–[`080`](080-plugin-development-and-generator-test-reduction.md) (splits) |
+| F1, F2 | [`010`](010-test-authoring-standards-and-enforcement/plan.md) (module budget + enforcement), [`030`](030-config-and-manifest-test-reduction.md)–[`080`](080-plugin-development-and-generator-test-reduction.md) (splits) |
 | F3 | [`030`](030-config-and-manifest-test-reduction.md) primarily; [`050`](050-plan-state-and-records-test-reduction.md), [`060`](060-runtime-and-script-substrate-test-reduction.md), [`070`](070-architecture-and-orchestration-test-reduction.md) for their tabular families |
-| F4 | [`020`](020-shared-test-harness/plan.md) (`parse_ns` helper), [`010`](010-test-authoring-standards-and-enforcement.md) (the rule), all reduction plans (adoption) |
-| F5 | [`010`](010-test-authoring-standards-and-enforcement.md) (thresholds), [`060`](060-runtime-and-script-substrate-test-reduction.md) primarily |
-| F6 | [`010`](010-test-authoring-standards-and-enforcement.md) (the rule), [`020`](020-shared-test-harness/plan.md) (harness), all reduction plans |
-| F7 | [`010`](010-test-authoring-standards-and-enforcement.md) (rule + doctor lint), every reduction plan, each with a cold read |
+| F4 | [`020`](020-shared-test-harness/plan.md) (`parse_ns` helper), [`010`](010-test-authoring-standards-and-enforcement/plan.md) (the rule), all reduction plans (adoption) |
+| F5 | [`010`](010-test-authoring-standards-and-enforcement/plan.md) (thresholds), [`060`](060-runtime-and-script-substrate-test-reduction.md) primarily |
+| F6 | [`010`](010-test-authoring-standards-and-enforcement/plan.md) (the rule), [`020`](020-shared-test-harness/plan.md) (harness), all reduction plans |
+| F7 | [`010`](010-test-authoring-standards-and-enforcement/plan.md) (rule + doctor lint), every reduction plan, each with a cold read |
 | F8 | [`020`](020-shared-test-harness/plan.md) (one builder, named presets) |
-| F9 | [`020`](020-shared-test-harness/plan.md) (renames, `test/README.md`), [`010`](010-test-authoring-standards-and-enforcement.md) (a doctor rule that catches the class) |
-| F10 | [`010`](010-test-authoring-standards-and-enforcement.md) (the rule), [`040`](040-delivery-pipeline-test-reduction.md) primarily |
+| F9 | [`020`](020-shared-test-harness/plan.md) (renames, `test/README.md`), [`010`](010-test-authoring-standards-and-enforcement/plan.md) (a doctor rule that catches the class) |
+| F10 | [`010`](010-test-authoring-standards-and-enforcement/plan.md) (the rule), [`040`](040-delivery-pipeline-test-reduction.md) primarily |
 
 ## What this review did not examine
 

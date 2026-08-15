@@ -2,12 +2,21 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Test-tree conventions analyzer for plugin-doctor.
 
-Hosts the three build-failing rules documented in
-`standards/doctor-test-conventions.md`:
+Hosts the rules documented in `standards/doctor-test-conventions.md`:
 
-- analyze_unique_fixture_basenames -- Rule 1
-- analyze_subprocess_pythonpath    -- Rule 2 (added by a later task)
-- analyze_validator_regex_vs_corpus -- Rule 3 (added by a later task)
+- analyze_unique_fixture_basenames    -- Rule 1 (severity: error)
+- analyze_subprocess_pythonpath       -- Rule 2 (severity: error)
+- analyze_validator_regex_vs_corpus   -- Rule 3 (severity: error)
+- analyze_test_module_line_budget     -- Rule 4 (severity: warning)
+- analyze_test_helper_module_misnamed -- Rule 5 (severity: warning)
+- analyze_test_module_preamble        -- Rule 6 (severity: warning)
+- analyze_test_docstring_prose        -- Rule 7 (severity: warning)
+
+Rules 4-7 are the structural half of the house style stated in
+`plan-marshall:persona-module-tester` and `pm-dev-python:pytest-testing`. They
+ship at ``warning`` because the tree violates all four at scale today: a
+build-failing rule landed over a non-compliant tree would fail every
+subsequent build until the reduction work completes.
 
 Each rule returns a list of finding dicts in the standard plugin-doctor shape
 (type, rule_id, file, line, severity, fixable, description, details).
@@ -16,16 +25,21 @@ Each rule returns a list of finding dicts in the standard plugin-doctor shape
 from __future__ import annotations
 
 import ast
+import io
 import re
 import shlex
 import subprocess
+import tokenize
 from collections import defaultdict
 from pathlib import Path
 
+from _analyze_incident_reference_in_docs import _PLAN_MARSHALL_REF_RE
+from _analyze_lesson_id_in_skill_prose import _LESSON_BACKTICK_ID_RE, _LESSON_ID_RE
 from _doctor_shared import Finding
 from _rule_registry import RuleDescriptor
 
-# Three build-failing test-tree convention rules (cmd_test_conventions).
+# Test-tree convention rules (cmd_test_conventions). Rules 1-3 are
+# build-failing; rules 4-7 report at warning severity.
 RULE_DESCRIPTORS = [
     RuleDescriptor(rule_id='unique-fixture-basenames', severity='error', category='structural', scope='corpus-relational'),
     RuleDescriptor(rule_id='subprocess-pythonpath', severity='error', category='structural', scope='corpus-relational'),
@@ -35,11 +49,57 @@ RULE_DESCRIPTORS = [
         category='structural',
         scope='corpus-relational',
     ),
+    RuleDescriptor(rule_id='test-module-line-budget', severity='warning', category='structural', scope='file-local'),
+    RuleDescriptor(rule_id='test-helper-module-misnamed', severity='warning', category='structural', scope='file-local'),
+    RuleDescriptor(rule_id='test-module-preamble-boilerplate', severity='warning', category='structural', scope='file-local'),
+    RuleDescriptor(rule_id='test-docstring-historical-prose', severity='warning', category='content', scope='file-local'),
 ]
 
 GENERIC_HELPER_BASENAMES = frozenset({'_fixtures.py', '_helpers.py', '_common.py'})
 
 ID_LINE_PATTERN = re.compile(r'^\s*(?:- )?id:\s*(?P<id>\S+)\s*$', re.MULTILINE)
+
+# --- Rule 4 -----------------------------------------------------------------
+
+#: Module line budget. Derived above the corpus median (~327 lines) so it
+#: describes the tree's own compliant majority rather than an aspiration.
+TEST_MODULE_LINE_BUDGET = 400
+
+# --- Rule 6 -----------------------------------------------------------------
+
+#: ``Path(__file__).parent.parent.parent`` and deeper. A chain this long is
+#: resolving the repository root by counting directories from the test file's
+#: own location, which breaks the moment the file moves.
+PARENT_CHAIN_MIN_DEPTH = 3
+
+# --- Rule 7 -----------------------------------------------------------------
+#
+# The lesson-id and plan-marshall-reference matchers are imported from the two
+# analyzers that already detect this prose over ``marketplace/bundles/**``
+# rather than restated here: one textual shape, one matcher. Only the two
+# shapes those analyzers do not carry are defined locally.
+
+#: ``PR #123`` / ``pull request #123`` — the incident analyzer detects
+#: ``plan-marshall#123`` but not this spelling, which is the common one in
+#: test prose.
+_PR_REFERENCE_RE = re.compile(r'\b(?:PR|pull request)\s*#\d+', re.IGNORECASE)
+
+#: Plan and deliverable identifiers: ``TASK-001``, ``deliverable D3``,
+#: ``plan `some-plan-slug` ``.
+_PLAN_DELIVERABLE_ID_RE = re.compile(
+    r'\bTASK-\d{3}\b|\bdeliverable\s+D\d+\b|\bplan\s+`[a-z0-9][a-z0-9-]{4,}`',
+    re.IGNORECASE,
+)
+
+#: (kind, pattern) pairs. ``kind`` lands in the finding details so a consumer
+#: can tell which citation shape fired without re-matching.
+_HISTORICAL_PROSE_PATTERNS: list[tuple[str, re.Pattern]] = [
+    ('lesson_id', _LESSON_ID_RE),
+    ('lesson_id_backtick', _LESSON_BACKTICK_ID_RE),
+    ('plan_marshall_ref', _PLAN_MARSHALL_REF_RE),
+    ('pr_reference', _PR_REFERENCE_RE),
+    ('plan_deliverable_id', _PLAN_DELIVERABLE_ID_RE),
+]
 
 
 def _iter_helper_modules(test_root: Path) -> list[Path]:
@@ -436,5 +496,413 @@ def _build_collision_finding(path: Path, basename: str, other_paths: list[Path])
             'basename': basename,
             'colliding_with': [str(other) for other in other_paths],
             'standard_anchor': 'doctor-test-conventions.md#unique-fixture-basenames',
+        },
+    ).to_dict()
+
+
+# ---------------------------------------------------------------------------
+# Shared traversal helpers for the file-local test-tree rules (4-7)
+# ---------------------------------------------------------------------------
+
+
+def _iter_test_tree_modules(test_root: Path) -> list[Path]:
+    """Return every ``*.py`` under ``test_root``, excluding dunder modules."""
+    if not test_root.is_dir():
+        return []
+    return [path for path in sorted(test_root.rglob('*.py')) if path.is_file() and not path.name.startswith('__')]
+
+
+def _is_collected_module(path: Path) -> bool:
+    """Return True when pytest's default collection patterns match ``path``."""
+    return path.name.startswith('test_') or path.name.endswith('_test.py')
+
+
+def _read_source(path: Path) -> str | None:
+    """Read ``path``, returning None when it cannot be read."""
+    try:
+        return path.read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Rule 4 -- test-module-line-budget
+# ---------------------------------------------------------------------------
+
+
+def analyze_test_module_line_budget(test_root: Path, budget: int = TEST_MODULE_LINE_BUDGET) -> list[dict]:
+    """Rule 4 -- flag a collected test module over the line budget.
+
+    A module over budget is split by behaviour cluster into
+    ``test_{unit}_{cluster}.py``. The finding carries the module's own line
+    count and the budget so the message states the overage rather than
+    merely naming the rule.
+    """
+    findings: list[dict] = []
+    for path in _iter_test_tree_modules(test_root):
+        if not _is_collected_module(path):
+            continue
+        source = _read_source(path)
+        if source is None:
+            continue
+        line_count = len(source.splitlines())
+        if line_count > budget:
+            findings.append(_build_line_budget_finding(path, line_count, budget))
+    return findings
+
+
+def _build_line_budget_finding(path: Path, line_count: int, budget: int) -> dict:
+    description = (
+        f'test module is {line_count} lines, over the {budget}-line budget '
+        f'(by {line_count - budget}) — split by behaviour cluster into '
+        f'test_{{unit}}_{{cluster}}.py, not in arbitrary halves'
+    )
+    return Finding(
+        type='test-module-line-budget',
+        file=str(path),
+        line=1,
+        severity='warning',
+        fixable=False,
+        rule_id='test-module-line-budget',
+        description=description,
+        details={
+            'line_count': line_count,
+            'budget': budget,
+            'over_by': line_count - budget,
+            'standard_anchor': 'doctor-test-conventions.md#test-module-line-budget',
+        },
+    ).to_dict()
+
+
+# ---------------------------------------------------------------------------
+# Rule 5 -- test-helper-module-misnamed
+# ---------------------------------------------------------------------------
+
+
+def analyze_test_helper_module_misnamed(test_root: Path) -> list[dict]:
+    """Rule 5 -- flag a collected module that declares no test.
+
+    A module matching pytest's collection patterns (``test_*.py`` /
+    ``*_test.py``) that declares neither a ``test*`` function nor a ``Test*``
+    class is collected, contributes nothing, and is invisible in the run: it
+    reads as covered while asserting nothing. Such a module is a helper and
+    belongs under a ``_{domain}_fixtures.py`` name, outside the collection
+    patterns.
+    """
+    findings: list[dict] = []
+    for path in _iter_test_tree_modules(test_root):
+        if not _is_collected_module(path):
+            continue
+        source = _read_source(path)
+        if source is None:
+            continue
+        try:
+            tree = ast.parse(source, filename=str(path))
+        except SyntaxError:
+            continue
+        if not _declares_any_test(tree):
+            findings.append(_build_helper_misnamed_finding(path))
+    return findings
+
+
+def _declares_any_test(tree: ast.AST) -> bool:
+    """Return True when the module declares a pytest-collectable test."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name.startswith('test'):
+            return True
+        if isinstance(node, ast.ClassDef) and node.name.startswith('Test'):
+            return True
+    return False
+
+
+def _build_helper_misnamed_finding(path: Path) -> dict:
+    description = (
+        f"module '{path.name}' matches pytest's collection patterns but declares no test "
+        f'function or Test* class — it is collected, contributes nothing, and is invisible '
+        f'in the run; rename to _<domain>_fixtures.py'
+    )
+    return Finding(
+        type='test-helper-module-misnamed',
+        file=str(path),
+        line=1,
+        severity='warning',
+        fixable=False,
+        rule_id='test-helper-module-misnamed',
+        description=description,
+        details={
+            'basename': path.name,
+            'standard_anchor': 'doctor-test-conventions.md#test-helper-module-misnamed',
+        },
+    ).to_dict()
+
+
+# ---------------------------------------------------------------------------
+# Rule 6 -- test-module-preamble-boilerplate
+# ---------------------------------------------------------------------------
+
+
+def analyze_test_module_preamble(test_root: Path) -> list[dict]:
+    """Rule 6 -- flag hand-rolled import preambles under the test tree.
+
+    Two shapes are flagged, both of which resolve a module by the test file's
+    own location rather than by identity:
+
+    1. A ``spec_from_file_location`` call — re-implements ``load_script_module``.
+    2. A ``Path(__file__).parent`` chain of depth three or more — counts
+       directories to the repository root, and breaks when the file moves.
+
+    Both have a ``conftest`` helper (``load_script_module``, ``get_scripts_dir``)
+    that resolves by ``(bundle, skill, script)`` instead.
+    """
+    findings: list[dict] = []
+    for path in _iter_test_tree_modules(test_root):
+        source = _read_source(path)
+        if source is None:
+            continue
+        try:
+            tree = ast.parse(source, filename=str(path))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if _is_spec_from_file_location(node):
+                findings.append(_build_preamble_finding(path, node, 'spec_from_file_location'))
+        nested = _nested_parent_attribute_ids(tree)
+        for node in ast.walk(tree):
+            if id(node) in nested:
+                # An inner link of a longer chain — the outermost node reports it.
+                continue
+            depth = _parent_chain_depth(node) or _parents_index_depth(node)
+            if depth >= PARENT_CHAIN_MIN_DEPTH:
+                findings.append(_build_preamble_finding(path, node, 'parent_chain', depth=depth))
+    findings.sort(key=lambda f: (f['file'], f.get('line', 0)))
+    return findings
+
+
+def _is_spec_from_file_location(node: ast.Call) -> bool:
+    """Return True for ``spec_from_file_location(...)`` in either import form."""
+    func = node.func
+    if isinstance(func, ast.Attribute) and func.attr == 'spec_from_file_location':
+        return True
+    return isinstance(func, ast.Name) and func.id == 'spec_from_file_location'
+
+
+def _nested_parent_attribute_ids(tree: ast.AST) -> set[int]:
+    """Return the node ids of every ``.parent`` attribute nested inside another.
+
+    ``ast.walk`` visits each link of a ``.parent`` chain, and every suffix of a
+    long chain is itself a valid chain — so a depth-4 chain would otherwise
+    report once at depth 4 and again at depth 3. Excluding the inner links
+    leaves exactly the outermost node per chain.
+    """
+    nested: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr == 'parent':
+            value = node.value
+            if isinstance(value, ast.Attribute) and value.attr == 'parent':
+                nested.add(id(value))
+    return nested
+
+
+def _parent_chain_depth(node: ast.AST) -> int:
+    """Return the ``.parent`` chain depth rooted at ``Path(__file__)``.
+
+    Returns 0 for any node that does not terminate in ``Path(__file__)``.
+    Callers exclude inner chain links via :func:`_nested_parent_attribute_ids`
+    so one chain yields exactly one finding rather than one per link.
+    """
+    if not isinstance(node, ast.Attribute) or node.attr != 'parent':
+        return 0
+    depth = 0
+    current: ast.AST = node
+    while isinstance(current, ast.Attribute) and current.attr == 'parent':
+        depth += 1
+        current = current.value
+    if not _is_path_dunder_file(current):
+        return 0
+    return depth
+
+
+#: Path methods that return an equivalent path and so do not break the chain.
+#: ``Path(__file__).resolve().parents[3]`` is the same directory-counting idiom
+#: as ``Path(__file__).parent.parent.parent`` and is flagged identically.
+_PATH_PASSTHROUGH_METHODS = frozenset({'resolve', 'absolute', 'expanduser'})
+
+
+def _is_path_dunder_file(node: ast.AST) -> bool:
+    """Return True for ``Path(__file__)``, through any path-preserving calls.
+
+    Unwraps ``.resolve()`` / ``.absolute()`` / ``.expanduser()`` first: those
+    return an equivalent path, so a chain rooted at one of them counts
+    directories exactly as a bare ``Path(__file__)`` chain does.
+    """
+    current = node
+    while (
+        isinstance(current, ast.Call)
+        and isinstance(current.func, ast.Attribute)
+        and current.func.attr in _PATH_PASSTHROUGH_METHODS
+    ):
+        current = current.func.value
+    if not isinstance(current, ast.Call):
+        return False
+    func = current.func
+    is_path = (isinstance(func, ast.Name) and func.id == 'Path') or (
+        isinstance(func, ast.Attribute) and func.attr == 'Path'
+    )
+    if not is_path or not current.args:
+        return False
+    first = current.args[0]
+    return isinstance(first, ast.Name) and first.id == '__file__'
+
+
+def _parents_index_depth(node: ast.AST) -> int:
+    """Return N for ``Path(__file__)[…].parents[N]``, else 0.
+
+    ``parents[N]`` is the indexed spelling of an N-deep ``.parent`` chain and
+    carries the same brittleness, so it is measured on the same scale. Without
+    this the rule's count is gameable: respelling a flagged chain as
+    ``parents[N]`` would clear the finding while changing nothing.
+    """
+    if not isinstance(node, ast.Subscript):
+        return 0
+    value = node.value
+    if not isinstance(value, ast.Attribute) or value.attr != 'parents':
+        return 0
+    index = node.slice
+    if not isinstance(index, ast.Constant) or not isinstance(index.value, int) or index.value < 1:
+        return 0
+    receiver = value.value
+    # The two spellings compose: `Path(__file__).parent.parents[3]` counts 4.
+    # Measuring only the pure forms would leave the mixed one as an escape.
+    chain_depth = _parent_chain_depth(receiver)
+    if chain_depth:
+        return chain_depth + index.value
+    if _is_path_dunder_file(receiver):
+        return index.value
+    return 0
+
+
+def _build_preamble_finding(path: Path, node: ast.AST, kind: str, depth: int | None = None) -> dict:
+    if kind == 'spec_from_file_location':
+        description = (
+            'hand-rolled spec_from_file_location preamble — use '
+            'conftest.load_script_module(bundle, skill, filename), which resolves by '
+            "identity instead of by the test file's own location"
+        )
+    else:
+        description = (
+            f'Path(__file__) followed by a {depth}-deep .parent chain — use '
+            'conftest.get_scripts_dir(bundle, skill); a directory-counting chain '
+            'breaks the moment the test module moves'
+        )
+    details: dict = {
+        'kind': kind,
+        'standard_anchor': 'doctor-test-conventions.md#test-module-preamble-boilerplate',
+    }
+    if depth is not None:
+        details['parent_chain_depth'] = depth
+    return Finding(
+        type='test-module-preamble-boilerplate',
+        file=str(path),
+        line=getattr(node, 'lineno', 1),
+        severity='warning',
+        fixable=False,
+        rule_id='test-module-preamble-boilerplate',
+        description=description,
+        details=details,
+    ).to_dict()
+
+
+# ---------------------------------------------------------------------------
+# Rule 7 -- test-docstring-historical-prose
+# ---------------------------------------------------------------------------
+
+
+def analyze_test_docstring_prose(test_root: Path) -> list[dict]:
+    """Rule 7 -- flag historical citations in test docstrings and comments.
+
+    A test docstring states the invariant in the present tense; it does not
+    cite the incident that produced the test. This is ``CLAUDE.md``
+    Documentation Standards applied to the test tree, and it reuses the
+    matchers the ``no-incident-references`` and ``no-lesson-id-in-skill-prose``
+    analyzers already apply over ``marketplace/bundles/**``.
+
+    The scan is deliberately restricted to **docstrings and comments**. The
+    same textual shapes appear far more often as string-literal test *data* —
+    a lesson id fed to a validator under test is the corpus the test exists to
+    check, not a citation — and flagging those would make the rule unusable.
+    That prose-vs-data split is the rule's structural discriminator.
+    """
+    findings: list[dict] = []
+    for path in _iter_test_tree_modules(test_root):
+        source = _read_source(path)
+        if source is None:
+            continue
+        for lineno, text in _iter_prose_segments(source, path):
+            for kind, pattern in _HISTORICAL_PROSE_PATTERNS:
+                match = pattern.search(text)
+                if match:
+                    # Offset to the citation's own line, not the segment's first
+                    # line — the finding exists to be navigated to.
+                    hit_line = lineno + text[: match.start()].count('\n')
+                    findings.append(_build_docstring_prose_finding(path, hit_line, kind, match.group(0)))
+                    break
+    findings.sort(key=lambda f: (f['file'], f.get('line', 0)))
+    return findings
+
+
+def _iter_prose_segments(source: str, path: Path) -> list[tuple[int, str]]:
+    """Return ``(lineno, text)`` for every docstring and ``#`` comment.
+
+    Only these two contexts carry prose. Every other string in a test module is
+    data the test operates on.
+    """
+    segments: list[tuple[int, str]] = []
+    try:
+        tree = ast.parse(source, filename=str(path))
+    except SyntaxError:
+        return segments
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        docstring = ast.get_docstring(node, clean=False)
+        if not docstring:
+            continue
+        # Anchor on the docstring literal itself, not the def/class line, so a
+        # citation deep in a long docstring reports a navigable location.
+        first_stmt = node.body[0] if node.body else None
+        lineno: int = getattr(node, 'lineno', 1)
+        if isinstance(first_stmt, ast.Expr):
+            lineno = first_stmt.value.lineno
+        segments.append((lineno, docstring))
+    try:
+        for token in tokenize.generate_tokens(io.StringIO(source).readline):
+            if token.type == tokenize.COMMENT:
+                segments.append((token.start[0], token.string))
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        # A module that does not tokenize still yields its parsed docstrings.
+        pass
+    return segments
+
+
+def _build_docstring_prose_finding(path: Path, lineno: int, kind: str, matched: str) -> dict:
+    description = (
+        f"historical citation '{matched}' in test prose — a docstring states the "
+        f'invariant in the present tense, not the incident that produced the test '
+        f'(the history is in git; the citation costs context on every read)'
+    )
+    return Finding(
+        type='test-docstring-historical-prose',
+        file=str(path),
+        line=lineno,
+        severity='warning',
+        fixable=False,
+        rule_id='test-docstring-historical-prose',
+        description=description,
+        details={
+            'kind': kind,
+            'matched': matched,
+            'standard_anchor': 'doctor-test-conventions.md#test-docstring-historical-prose',
         },
     ).to_dict()

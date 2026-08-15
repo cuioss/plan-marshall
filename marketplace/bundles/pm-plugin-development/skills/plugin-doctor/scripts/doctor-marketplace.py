@@ -50,6 +50,10 @@ from _analyze_shared import (
 )
 from _analyze_test_conventions import (
     analyze_subprocess_pythonpath,
+    analyze_test_docstring_prose,
+    analyze_test_helper_module_misnamed,
+    analyze_test_module_line_budget,
+    analyze_test_module_preamble,
     analyze_unique_fixture_basenames,
     analyze_validator_regex_vs_corpus,
 )
@@ -910,7 +914,9 @@ def cmd_test_conventions(args) -> dict:
     """Run the test-tree convention rules across the configured test root.
 
     See ``standards/doctor-test-conventions.md`` for rule definitions and
-    severity. Exits non-zero on any error finding (build-failing).
+    severity. ``status`` is derived from **error-severity findings only**, so
+    the command exits non-zero for the build-failing rules while the
+    ``warning`` rules report their counts without failing the caller.
     """
     result = _resolve_marketplace_root(args)
     if isinstance(result, dict):
@@ -937,10 +943,27 @@ def cmd_test_conventions(args) -> dict:
     all_issues.extend(rule3_findings)
     rule_summaries.append({'rule': 'identifier-validator-corpus', 'findings': len(rule3_findings)})
 
+    # Warning-severity structural rules. They report their counts but do not
+    # drive the exit code — see the status derivation below.
+    for rule_id, analyzer in (
+        ('test-module-line-budget', analyze_test_module_line_budget),
+        ('test-helper-module-misnamed', analyze_test_helper_module_misnamed),
+        ('test-module-preamble-boilerplate', analyze_test_module_preamble),
+        ('test-docstring-historical-prose', analyze_test_docstring_prose),
+    ):
+        findings = analyzer(test_root)
+        all_issues.extend(findings)
+        rule_summaries.append({'rule': rule_id, 'findings': len(findings)})
+
+    error_count = sum(1 for issue in all_issues if issue.get('severity') == 'error')
+    warning_count = sum(1 for issue in all_issues if issue.get('severity') == 'warning')
+
     return {
-        'status': 'fail' if all_issues else 'pass',
+        'status': 'fail' if error_count else 'pass',
         'test_root': str(test_root),
         'total_issues': len(all_issues),
+        'error_count': error_count,
+        'warning_count': warning_count,
         'rules_run': rule_summaries,
         'issues': all_issues,
     }
@@ -1176,7 +1199,7 @@ Examples:
     # test-conventions subcommand
     p_test_conventions = subparsers.add_parser(
         'test-conventions',
-        help='Run test-tree convention rules (exit 1 on findings)',
+        help='Run test-tree convention rules (exit 1 on error-severity findings; warnings are reported only)',
         allow_abbrev=False,
     )
     p_test_conventions.add_argument(
