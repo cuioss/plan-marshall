@@ -1,0 +1,8 @@
+[project]
+name = "sample-core"
+version = "1.0.0"
+description = "Leaf distribution — depends on nothing internal."
+requires-python = ">=3.11"
+dependencies = [
+    "typing-extensions>=4.0.0",
+]
