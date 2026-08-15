@@ -418,6 +418,43 @@ full dispositions are posted on the PR as a single comment rather than split acr
 | J4 | `_cmd_quality_phases.py` duplicates `ci_base.MERGE_QUEUE_ELIGIBLE_STATES` as literals | **Rejected — pre-existing and out of scope.** The finding is correct but the file is untouched by this diff; the comment anchored beside an edited documentation row. This plan changes how often gates run and never what they check, and a constants refactor of the config-validation path is a different subsystem. Worth filing separately |
 | J5 | Reword D1 in `plan.md` to define invalidation in terms of resolved `verdict_inputs` | **Rejected — the substance is right and already implemented, but `plan.md` is the input brief.** Editing it after the fact to match what was built would erase the fact that the brief's simplified framing was refined by evidence, which is one of this run's more useful outputs. The refinement is recorded in `verdict-currency.md`, the ext-point row, and this report's D1 addendum |
 
+### From the operator (post-report-finalization)
+
+**The recurrence caught a fifth time — and this instance is the sharpest, because it landed on a
+surface no round had ever swept.** After the report was finalized, the operator asked whether all
+information was in the report and whether everything was merged. Checking rather than answering from
+memory found three stale claims, all created by work done *after* the sweep that was supposed to be
+final:
+
+| # | Stale claim | Where | Corrected |
+|---|---|---|---|
+| K1 | "It is presented to the operator and **awaits a decision**" | § What have we learned | The operator had decided and #1237 was already open. Fixed above |
+| K2 | The **PR body** still carried the pre-`e08a95b` framing: `preserved` "reachable only past a resolution gate", "48 new test cases (44 test functions)", "19616 passed", and "three verification rounds; every finding accepted and fixed, **none rejected**" | PR #1235 description | Four rounds ran, two PR findings *were* rejected, the ordering changed, and the counts moved twice. Rewritten against the current tree |
+| K3 | The `verify / conclusion` failure on `9a3af44` was diagnosed in conversation but recorded nowhere | § Build gate | Recorded below |
+
+**K2 is the finding, not K1.** Every sweep this run performed — four verification rounds plus the
+contract's own beyond-diff sweep — treated *the repository* as the surface. The PR description is a
+restatement of the same claims, written once at PR-creation time and never re-read, and it is the
+surface most readers actually see. It carried four false statements to the merge gate. The lane's
+Step 7 says to read every comment surface; it does not say to re-sweep the description you yourself
+wrote. That gap is now part of #1237's proposal.
+
+**The CI record.** `verify / conclusion` reported `failure` on `9a3af44`. The job log's own
+conditional shows why: `verify job failed or was cancelled`, with the matched literal `cancelled`.
+Pushing `f0d73cc` while `9a3af44`'s verify was running cancelled it via Actions concurrency — a
+superseded run, not a red gate, exactly as the lane's Step 8 describes. The judged run is `f0d73cc`'s,
+which reported `verify / conclusion: success`. Recorded because a reader seeing a red check on a
+merged PR's history deserves the reason without re-deriving it.
+
+**A second merge conflict.** `main` advanced twice during this run (`5a5446d` → `d3462f9` → `622f448`).
+The second merge conflicted in four files, three substantively: `manage-execution-manifest.py`, where
+`main` added a `reconcile` command in the same region as this branch's `refire-report` and the two
+entangled through shared boilerplate — resolved by taking `main`'s file whole and re-applying this
+branch's block as a unit, then restoring the CLI registration the resolution dropped; and
+`phase-6-finalize/SKILL.md` plus `branch-cleanup.md`, where both sides had added to the same list and
+**both sides were kept**. Re-verified to `verify: SUCCESS` (403 production files, 744 test files)
+before pushing.
+
 ## Reviewer participation
 
 Population **derived from configuration**, not transcribed: the `author_login` of each
@@ -484,7 +521,9 @@ fact rather than a skipped step: the measurement is not performable in a lane wi
 
 **One contract change is proposed, with evidence from this run. It is NOT applied here** — the lane
 forbids self-approving a change to the contract that governs the run, and requires it ship as a
-separate `chore/` PR touching only the skill. It is presented to the operator and awaits a decision.
+separate `chore/` PR touching only the skill. It was presented to the operator, who **approved it**;
+it ships as [#1237](https://github.com/cuioss/plan-marshall/pull/1237) on
+`chore/cloud-plan-lane-fix-sweep`, one file, docs-only.
 
 **The evidence.** Four verification rounds ran. Rounds 2, 3 and 4 each found that the *previous*
 round's fixes had landed at the site the finding named but **not** at the sites restating the same
