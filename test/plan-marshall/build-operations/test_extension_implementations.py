@@ -522,7 +522,7 @@ def _npm_module_data() -> dict:
         'paths': {'module': 'frontend', 'sources': ['src'], 'tests': ['test']},
         'metadata': {},
         'packages': {},
-        'dependencies': ['lit:compile'],
+        'dependencies': ['lit:runtime'],
         'commands': {},
         'stats': {'source_files': 20, 'test_files': 8},
     }

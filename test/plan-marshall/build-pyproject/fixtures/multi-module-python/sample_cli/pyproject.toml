@@ -1,0 +1,17 @@
+# Spells its internal dependency in a PEP 503-EQUIVALENT but textually different
+# form: "Sample_API" vs the published "sample-api". A raw string join misses this
+# edge; a PEP 503-normalised join finds it. The dev-scope entry pins that an
+# optional-dependency edge counts too.
+[project]
+name = "sample-cli"
+version = "1.0.0"
+description = "Exercises PEP 503 name normalisation and the dev scope."
+requires-python = ">=3.11"
+dependencies = [
+    "Sample_API>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "sample.core>=1.0.0",
+]
