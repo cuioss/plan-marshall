@@ -211,3 +211,25 @@ path** — so for the modules a consumer plan is most likely to touch, intercept
 seam, not the exception. Consumer plans `030`–`080` should read it that way.
 
 ## Reviewer participation
+
+_Pending — PR #1247 was opened at 18:41 UTC and the reviewers have not yet reported. This section is
+filled at the merge gate, one row per `author_login` in the registry
+(`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`), each verdict
+read from the actual comment bodies._
+
+## Residue
+
+* **`uv.lock` on `main` is out of sync with its own `pyproject.toml`.** `pyproject.toml` pins
+  `ruff>=0.16.2` (dependabot #1234) while `uv.lock` still records the `>=0.16.1` specifier, so every
+  `./pw` run regenerates the lockfile and dirties the tree. **Pre-existing on `main`, not caused by
+  this plan**, and unrelated to its deliverables — so it was backed out of every commit here rather
+  than shipped as undeclared collateral. It wants its own one-line PR.
+* **Two proposals for plan `010`**, which owns `marketplace/bundles/**` in this epic — see § Findings
+  rows 2 and 15: the `testing-standards.md` prescription of `test_helpers.py` that D5's guard now
+  fails the build on, and `load_script_module`'s `scripts/`-only resolution which cannot reach a
+  skill-root `extension.py`.
+* **`create_nested_marshal_json` remains in `_manage_config_fixtures.py`.** It is a third marshal
+  builder by behaviour, but D2 scopes the collapse to `create_marshal_json` plus the run-config
+  companion, so folding it in would have been unrequested scope.
+* **The remaining sections** (Cost, Contract check, What have we learned) are written at the merge
+  gate, as the last pre-merge commit — a queued branch can no longer be pushed to.
