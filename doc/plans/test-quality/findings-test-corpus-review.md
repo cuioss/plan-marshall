@@ -66,7 +66,7 @@ collected-test count and unchanged coverage *before* its line floor.
 
 | | Finding | Primary impact | Remediation |
 |---|---|---|---|
-| [F1](#f1--two-thirds-of-the-corpus-lives-in-modules-nobody-can-navigate) | ~40% of modules exceed 400 lines and hold ~73% of all lines | Navigability; compounds every other finding | [`010`](010-test-authoring-standards-and-enforcement.md), [`030`](030-config-and-manifest-test-reduction.md)–[`080`](080-plugin-development-and-generator-test-reduction.md) |
+| [F1](#f1--nearly-three-quarters-of-the-corpus-lives-in-modules-nobody-can-navigate) | ~40% of modules exceed 400 lines and hold ~73% of all lines | Navigability; compounds every other finding | [`010`](010-test-authoring-standards-and-enforcement.md), [`030`](030-config-and-manifest-test-reduction.md)–[`080`](080-plugin-development-and-generator-test-reduction.md) |
 | [F2](#f2--the-corpuss-own-module-size-standard-is-violated-by-three-quarters-of-it) | The ~200-line split standard is violated by ~75% of the tree and never enforced | A rule readers learn to skip | [`010`](010-test-authoring-standards-and-enforcement.md) |
 | [F3](#f3--parametrization-is-the-corpuss-least-used-tool-against-its-most-tabular-content) | Parametrization in 179 of 770 modules | Largest available reduction; *strengthens* the suite | [`030`](030-config-and-manifest-test-reduction.md) |
 | [F4](#f4--hand-built-argument-namespaces-are-a-correctness-defect-not-just-bloat) | ~2,900 hand-built namespaces bypass the parsers' defaults | **Live correctness risk** — the suite cannot see the change it exists to catch | [`020`](020-shared-test-harness.md), [`010`](010-test-authoring-standards-and-enforcement.md) |
@@ -74,7 +74,7 @@ collected-test count and unchanged coverage *before* its line floor.
 | [F6](#f6--197-modules-re-implement-a-loader-conftestpy-already-exports) | ~197 modules re-implement an exported loader | Duplication, and brittle to file moves | [`020`](020-shared-test-harness.md) |
 | [F7](#f7--several-thousand-lines-of-test-prose-are-history-which-this-repository-forbids-everywhere-else) | Thousands of lines of prose are history, not invariant | Largest reduction in scenario slices; **highest deletion risk** | every reduction plan, each with a cold read |
 | [F8](#f8--one-shared-fixture-is-defined-three-times-incompatibly) | `create_marshal_json` defined 3× incompatibly | A test's baseline decided by an import line | [`020`](020-shared-test-harness.md) |
-| [F9](#f9--two-silent-defects-the-tooling-cannot-see) | Three helper modules invisible to the current lint; a referenced `test/README.md` that does not exist | Silent no-ops in the run | [`020`](020-shared-test-harness.md), [`010`](010-test-authoring-standards-and-enforcement.md) |
+| [F9](#f9--three-silent-defects-the-tooling-cannot-see) | Helper modules invisible to the current lint, and a referenced `test/README.md` that does not exist | Silent no-ops in the run | [`020`](020-shared-test-harness.md), [`010`](010-test-authoring-standards-and-enforcement.md) |
 | [F10](#f10--one-contract-asserted-at-two-layers) | One contract asserted at two layers in several modules | Real reduction, high deletion risk — bounded | [`040`](040-delivery-pipeline-test-reduction.md) |
 
 Rules **B1**–**B10** are defined in [`README.md`](README.md#house-style); the slices are defined in
@@ -84,7 +84,7 @@ Rules **B1**–**B10** are defined in [`README.md`](README.md#house-style); the 
 
 ## Findings
 
-### F1 — Two thirds of the corpus lives in modules nobody can navigate
+### F1 — Nearly three quarters of the corpus lives in modules nobody can navigate
 
 ~40% of modules exceed 400 lines and hold **~73% of all lines**; ~74 exceed 1,000. The median module
 is ~323 lines. Re-derive by sorting `wc -l $(find test -name 'test_*.py')`.
@@ -220,7 +220,7 @@ Which one a module gets depends on which it imported. The defaults differ too �
 `MARSHAL_SCHEMA_DEFAULT` and `test_helpers`' java-flavoured default are not the same config — so a
 test's baseline is decided by an import line rather than by intent.
 
-### F9 — Two silent defects the tooling cannot see
+### F9 — Three silent defects the tooling cannot see
 
 * **`test/plan-marshall/manage-config/test_helpers.py`** — 223 lines, **zero test functions**,
   imported by ~23 modules, and named `test_*.py`. pytest collects it, finds nothing, and the module is
