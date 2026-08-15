@@ -360,11 +360,77 @@ almost no cost; coupling it to the other three defers that for no reason.
 
 ## Contract check (Step 9)
 
-_(completed at Step 8 condition 3, before arming auto-merge)_
+Re-read the skill and checked each step against what actually happened, confirming both that the step
+was performed and that its artifact exists.
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **Done** | Named in § "Skills loaded". Loaded by bundle path — the `plan-marshall` plugin is not installed in this session, so `Skill:` notation would have failed. No skill was unobtainable by both routes |
+| 2 Branch | **Done** | `claude/test-authoring-standards-ja0nqp` — the **harness-assigned** form, kept as-is per the contract. It was absent from `origin` on arrival and pushed as the run's first action, before any edit |
+| 3 Plan directory | **Done** | `doc/plans/test-quality/010-test-authoring-standards-and-enforcement/plan.md` exists and opens with the first-instruction block, verified by reading it after the move. The `010-` priority prefix is preserved |
+| 4 Implement | **Done** | Deliverables D1–D6 addressed. **12 of 13 commits carry the trailer**; the exception is the git-generated merge commit from resolving the `origin/main` conflict, whose message this run did not author. Reported rather than rewritten — amending it would rewrite pushed history for a cosmetic gain |
+| 4 Per-commit gate | **Done** | Every commit touching `*.py` was preceded by a clean `./pw quality-gate` (`ruff … All checks passed!`, `mypy … Success`, `SPDX-header check passed`). Commits touching only `.md` correctly skipped it |
+| 4 Pushed | **Done** | `git status -sb` reports no `ahead`; every commit pushed as made, not batched at PR time |
+| 5 Build gate | **Done** | Git-derived verdict and outcome in § "Build gate", including the three re-runs and the one **failure** it caught (`test-compile` mypy `Any` leak) |
+| 6 Verification sub-agent | **Done** | **Four** passes, plus two cold reads. Every finding and disposition in § "Findings" — 28 rows, including three rejected with reasons |
+| 7 PR cycle | **Done** | PR [#1248](https://github.com/cuioss/plan-marshall/pull/1248). All three comment surfaces read (`get_reviews`, `get_comments`, `get_review_comments`), each disposition recorded in § "Reviewer participation" |
+| 8 Merge gate | **Done** | Conditions 1–3 met; the condition-4 coverage shortfall disclosed below |
+| 8 Bridge | **Done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory. Two **declared-deliverable** edits to shared lane docs were made and are declared: `README.md` (a claim this change falsified, plus the carve-out this run's surface outgrew) and `findings-test-corpus-review.md` (11 links this run's own Step 3 move broke). The report carries the PR number and per-deliverable outcome |
+| 9 This check | **Done** | This table |
+| 9 What have we learned | **Done** | Two contract-change proposals below, presented to the operator rather than self-approved |
+
+No step was skipped.
 
 ## What have we learned (Step 9)
 
-_(completed at Step 8 condition 3)_
+Two proposals, both from evidence this run produced. Neither is self-approved: per Step 9 they are
+presented to the operator, and on approval ship as a **separate** `chore/` PR touching only the skill.
+
+### Proposal 1 — a by-reading check must derive its answer from each document independently
+
+**Evidence from this run.** The plan's cold read asked three questions of two documents. The first
+pass **passed cleanly while a HIGH-severity defect was live**: it settled Q2 by quoting the *pytest*
+document's worked example, so it never noticed that `testing-methodology.md`'s opening principle still
+read as a blanket preference for generated data — the exact clause D2 exists to close. The defect was
+found instead by the independent verification pass, and confirmed fixed only when the cold read was
+re-run with an explicit instruction to answer Q2 **twice**: once from the first 20 lines alone, once
+from the complete documents.
+
+**The gap.** § Step 6 tells a run to dispatch a verification sub-agent and re-dispatch on findings, but
+says nothing about how to frame a question that more than one document can answer. A single quotable
+sentence anywhere in the corpus satisfies the check, which is precisely how a contradiction between
+two documents — or between two parts of one document — survives it.
+
+**Proposed edit.** Add to § Step 6: when a by-reading verification asks a question that more than one
+document (or more than one section) could settle, the dispatch MUST require the answer be derived from
+each source independently, and MUST require the agent to report a disagreement rather than reconcile
+it. A reader who stops at the first plausible answer is the reader the check exists to simulate.
+
+### Proposal 2 — a re-dispatch verifies the fixes, not just the original sweep
+
+**Evidence from this run.** Four verification passes ran, and the later ones found the most valuable
+defects — a gameable metric, an invented API — precisely because each was told to verify the *previous
+round's claims* adversarially rather than re-run the original sweep: "do not take the commit message's
+word for it", and for the untested severity change, "prove it — actually apply that revert, run the
+tests, and report what you observed." That instruction is what turned "a test exists" into "the test is
+falsifiable", and it caught that one earlier fix was incomplete (the same stale claim survived one
+section over).
+
+**The gap.** § Step 6 says only "fix them, then re-dispatch. A verification pass that found a defect
+has not finished." A re-dispatch that merely repeats the original prompt re-derives the original
+findings and takes the fixes on trust — which is how an incomplete fix reads as a complete one.
+
+**Proposed edit.** Add to § Step 6: a re-dispatch MUST name the prior findings and require each claimed
+fix be verified independently of the commit message asserting it; where a fix is a behaviour change,
+the re-dispatch MUST require a falsification test (revert the change, observe the failure, restore).
+
+### Not proposed
+
+The lockfile guidance in § Step 4 attributes `uv.lock` churn to "a session interpreter below the
+project's floor". Here the cause was different — `main` itself carries a `pyproject.toml`/`uv.lock`
+mismatch — but the instruction the contract gives (never let it reach a commit) was correct and
+sufficient regardless of cause, so the diagnosis being incomplete changed no action. Recording it as
+observed, not proposing an edit.
 
 ## Residue
 
