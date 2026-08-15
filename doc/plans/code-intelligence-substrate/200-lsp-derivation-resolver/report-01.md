@@ -1,6 +1,6 @@
 # Run report — 200-lsp-derivation-resolver (run 01)
 
-**Date (UTC):** 2026-08-15    **Branch:** `claude/lsp-derivation-resolver-rtaki2`    **PR:** _pending_    **Outcome:** _pending_
+**Date (UTC):** 2026-08-15    **Branch:** `claude/lsp-derivation-resolver-rtaki2`    **PR:** [#1243](https://github.com/cuioss/plan-marshall/pull/1243)    **Outcome:** completed
 
 ## Skills loaded
 
@@ -263,7 +263,25 @@ _pending — filled after the PR review cycle._
 
 ## Contract check (Step 9)
 
-_pending — completed before the merge gate._
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **Done, with a caveat** | Named above. `ref-code-quality` was not separately read — recorded rather than claimed |
+| 2 Branch | **Done** | Harness-assigned `claude/lsp-derivation-resolver-rtaki2` kept as-is and pushed to `origin` **before any edit**, as the invariant requires. The run created no branch, so the closed prefix set did not apply |
+| 3 Plan directory | **Done, out of order** | `doc/plans/code-intelligence-substrate/200-lsp-derivation-resolver/plan.md` exists, numeric prefix preserved, first-instruction block present and verified. ⚠ **Performed after implementation had begun, not before** — the contract puts it at Step 3. No harm resulted (the branch was correct throughout and the move was a pure `git mv`), but it is reported as out-of-order rather than narrated as compliant |
+| 4 Implement | **Done** | Seven commits, each carrying the trailer, no "Generated with Claude Code" footer |
+| 4 Per-commit gate | **Done** | Every commit touching `*.py` was preceded by a clean `./pw quality-gate` — ruff "All checks passed!", mypy "Success: no issues found", "SPDX-header check passed", plugin-doctor `issues[0]` |
+| 4 Pushed | **Done** | Pushed after every commit; `git status -sb` reports no `ahead` |
+| 5 Build gate | **Done** | Python-change verdict non-empty (8 files) ⇒ full `./pw verify`, run to green over all three sub-steps |
+| 6 Verification sub-agent | **Done, twice** | First pass found 5 blocking defects; fixed and **re-dispatched** per the contract; second pass confirmed them resolved and found 8 regressions, all dispositioned above |
+| 7 PR cycle | **Done** | PR #1243. `skip-bot-review` deliberately **not** applied — the diff touches `*.py` and `marketplace/bundles/**`, and a skill is code |
+| 8 Merge gate | See § Reviewer participation | Conditions 1–3 checked before arming |
+| 8 Bridge | **Clean** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory. `.plan/` was not written at all |
+| 9 This check | **Done** | This table |
+| 9 What have we learned | **Done** | A contract change is proposed below and presented to the operator, not self-approved |
+
+**GitHub access path:** the GitHub MCP server (no `gh` CLI in this session).
+**Branch form:** harness-assigned.
+**Plugin cache sync:** not owed — a cloud run neither performs nor records one.
 
 ## What have we learned (Step 9)
 
