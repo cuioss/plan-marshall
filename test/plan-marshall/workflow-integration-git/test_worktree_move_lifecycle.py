@@ -58,14 +58,24 @@ _PLAN_ID = 'lifecycle-plan'
 
 
 def _worktree_ns(plan_id: str) -> Namespace:
-    """Args for ``git-workflow worktree-create``, built by the script's own parser.
-
-    Shared by every worktree-create / prepare-execute call below, which pass the
-    same three arguments. Building it through the real parser means the namespace
-    carries whatever defaults that CLI applies, so a flag added there is exercised
-    here instead of silently absent.
-    """
+    """Args for ``git-workflow worktree-create``, built by that script's own parser."""
     ns: Namespace = parse_ns(*_GIT_WF, 'worktree-create', '--plan-id', plan_id, '--branch', f'feature/{plan_id}')
+    return ns
+
+
+def _prepare_ns(plan_id: str) -> Namespace:
+    """Args for ``prepare_execute prepare``, built by THAT script's own parser.
+
+    Separate from :func:`_worktree_ns` on purpose. The two scripts take the same
+    three arguments today, so one namespace would serve both — but it would carry
+    ``git-workflow``'s defaults into a ``prepare_execute`` call, which is the class
+    of drift this helper exists to remove. Each script's args come from its own
+    parser.
+    """
+    ns: Namespace = parse_ns(
+        'plan-marshall', 'workflow-integration-git', 'prepare_execute.py',
+        'prepare', '--plan-id', plan_id, '--branch', f'feature/{plan_id}',
+    )
     return ns
 
 
@@ -138,7 +148,7 @@ class TestWorktreeMoveLifecycle:
         assert create['status'] == 'success', create
         worktree = Path(create['worktree_path'])
 
-        result = prepare_execute.run_prepare_execute(_worktree_ns(plan_id))
+        result = prepare_execute.run_prepare_execute(_prepare_ns(plan_id))
         assert result['status'] == 'success', result
         assert result['action'] == 'moved'
 
@@ -197,7 +207,7 @@ class TestWorktreeMoveLifecycle:
         assert create['status'] == 'success', create
         worktree = Path(create['worktree_path'])
 
-        move_in = prepare_execute.run_prepare_execute(_worktree_ns(plan_id))
+        move_in = prepare_execute.run_prepare_execute(_prepare_ns(plan_id))
         assert move_in['status'] == 'success', move_in
         # Main executor present + unchanged right after move-in (never moved).
         assert main_executor.is_file()
@@ -242,7 +252,7 @@ class TestWorktreeMoveLifecycle:
         plan_id = real_repo['plan_id']
 
         git_workflow.cmd_worktree_create(_worktree_ns(plan_id))
-        result = prepare_execute.run_prepare_execute(_worktree_ns(plan_id))
+        result = prepare_execute.run_prepare_execute(_prepare_ns(plan_id))
         worktree = Path(result['worktree_path'])
 
         # Pin cwd into the worktree — the phase-5 execution posture.
@@ -281,7 +291,7 @@ class TestWorktreeMoveLifecycle:
         wt_local.rmdir()
         wt_local.symlink_to(main_local, target_is_directory=True)
 
-        result = prepare_execute.run_prepare_execute(_worktree_ns(plan_id))
+        result = prepare_execute.run_prepare_execute(_prepare_ns(plan_id))
 
         assert result['status'] == 'error'
         assert result.get('error_code') == prepare_execute.ErrorCode.INVALID_INPUT

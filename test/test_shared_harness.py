@@ -96,6 +96,20 @@ def test_parse_ns_raises_named_error_for_a_script_with_no_parser_seam():
         parse_ns(*_NO_SEAM_CASE, 'anything')
 
 
+def test_a_router_script_fails_loudly_rather_than_yielding_a_guess():
+    """A script that dispatches before parsing raises, instead of a partial namespace.
+
+    ``platform_runtime``'s ``main()`` resolves an operation and dispatches BEFORE it
+    reaches any ``parse_args``, so the interception seam has nothing to capture.
+    The contract is that this fails loudly and steers the caller to the published
+    builder — never that it returns a namespace assembled from whatever was
+    reachable. This pins the limitation the ``parse_ns`` docstring states, so the
+    documented caveat is checked rather than merely asserted.
+    """
+    with pytest.raises(ParserSeamNotFound):
+        parse_ns('plan-marshall', 'platform-runtime', 'platform_runtime.py', 'statusline', 'render')
+
+
 def test_invalid_argv_is_not_reported_as_a_missing_seam():
     """A rejected command line raises SystemExit, not ParserSeamNotFound.
 
@@ -207,12 +221,22 @@ def test_the_project_data_companion_is_opt_in(tmp_path):
 # 4. Whole-tree guard: no collected module declares zero tests
 # ---------------------------------------------------------------------------
 
-#: Directory names that never hold project-owned test source.
-EXCLUDED_DIR_NAMES = frozenset({'__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache'})
+#: Directory names that never hold collectable test source. ``fixtures`` is in
+#: ``norecursedirs`` (pyproject), so pytest never collects under it — a scan that
+#: walked it would report a testless module pytest does not import.
+EXCLUDED_DIR_NAMES = frozenset(
+    {'__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', 'fixtures'}
+)
 
 
 def _is_collected_name(name: str) -> bool:
-    """Whether pytest's default ``python_files`` patterns collect this basename."""
+    """Whether a basename matches a pytest collection pattern.
+
+    Deliberately a SUPERSET of this project's ``python_files`` setting, which is
+    ``test_*.py`` alone: D3's done-when names both spellings, and a ``*_test.py``
+    helper would be an offender the moment the setting widened. Over-collecting
+    here only ever guards more.
+    """
     return name.startswith('test_') or name.endswith('_test.py')
 
 

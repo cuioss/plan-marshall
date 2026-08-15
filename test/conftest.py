@@ -555,6 +555,11 @@ def _parse_via_main(module: ModuleType, label: str, argv: list[str]) -> argparse
     finally:
         sys.argv = saved_argv
 
+    if parser_entered:
+        raise ParserSeamNotFound(
+            f'{label}: the parser was entered for argv {argv!r} but main() returned '
+            'without yielding a namespace — it caught the parse failure itself.'
+        )
     raise ParserSeamNotFound(
         f'{label}: main() returned without calling parse_args, so no namespace '
         'could be captured.'
@@ -600,15 +605,37 @@ def parse_ns(bundle: str, skill: str, script: str, *argv: str) -> argparse.Names
        ``argparse.ArgumentParser.parse_args`` patched, so the real parser still
        performs the parse and the stack is unwound the instant it returns.
 
-    The command body never runs on either path. What the second path does run is
-    whatever ``main()`` executes *before* it parses, which for an argparse CLI is
-    by convention nothing — a script cannot meaningfully act before it knows its
-    arguments. A script that breaks that convention is the case the caller should
-    prefer seam 1 for.
+    The handler the command line names never runs: interception unwinds the stack
+    at the parse, before ``main()`` can dispatch. What seam 2 DOES run is whatever
+    ``main()`` executes *before* it parses. For an ordinary argparse CLI that is
+    nothing — a script cannot meaningfully act before it knows its arguments — but
+    two shapes break that convention, and seam 1 is what a caller should prefer
+    for them:
+
+    * A **router** script that resolves and dispatches an operation *before*
+      reaching ``parse_args`` runs that pre-dispatch logic.
+      ``plan-marshall:platform-runtime:platform_runtime.py`` is the observed case:
+      its ``main()`` reads the marshal config, mutates ``sys.path`` and dispatches,
+      and only a *handler's* parser is ever interceptable.
+    * A script that parses with ``parse_known_args`` instead of ``parse_args`` is
+      not intercepted at all. Only ``parse_args`` is patched, deliberately:
+      ``parse_args`` calls ``parse_known_args`` internally, so patching both would
+      capture the inner call and yield a partially-parsed namespace.
+
+    Both shapes end in :class:`ParserSeamNotFound` rather than in a wrong
+    namespace, so neither fails silently — but a router script's pre-dispatch work
+    will already have run by the time the error is raised.
 
     Neither seam is a fallback to a *hand-built* namespace: both return the real
     parser's own output, and the no-seam case raises
     :class:`ParserSeamNotFound` rather than degrading.
+
+    Cost: this re-executes the script module on every call (via
+    :func:`load_script_module`, which also re-registers it in ``sys.modules``). A
+    test that builds many namespaces should hoist the call into a fixture or a
+    module-level constant rather than calling it per assertion, and should not
+    assume the module object the parser came from is the same instance the test
+    holds a reference to.
     """
     module = load_script_module(bundle, skill, script)
     label = f'{bundle}:{skill}:{script}'
