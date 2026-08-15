@@ -47,9 +47,9 @@ is there:
 
 | Probe | Result | Command |
 |---|---|---|
-| Tautological assertions (`assert True`, `assert 1 == …`) | ~20 tree-wide | `grep -rn 'assert True\|assert 1 ==' test --include=test_*.py` |
-| Bare `assert result is not None` as the only assertion | ~194 occurrences, almost all followed by substantive assertions | `grep -rn 'assert result is not None$' test --include=test_*.py` |
-| `assert` lines overall | ~43,000 (11% of all lines) | `grep -rh '^\s*assert ' test --include=test_*.py` |
+| Tautological assertions (`assert True`, `assert 1 == …`) | ~20 tree-wide | `grep -rn 'assert True\|assert 1 ==' test --include=test_*.py \| wc -l` |
+| Bare `assert result is not None` as the only assertion | ~194 occurrences, almost all followed by substantive assertions | `grep -rn 'assert result is not None$' test --include=test_*.py \| wc -l` |
+| `assert` lines overall | ~43,000 (11% of all lines) | `grep -rh '^\s*assert ' test --include=test_*.py \| wc -l` |
 
 Individually the tests name real contracts. Several subtrees carry deliberate positive/negative
 control pairs, population assertions that refuse to pass vacuously, and matched-pair fixtures whose
@@ -59,6 +59,26 @@ than average practice, and a naive line-reduction pass would destroy it.
 **The consequence for remediation is the epic's central constraint:** a plan that deletes an assertion
 to hit a line target has failed, not succeeded. Every reduction plan therefore gates on an unchanged
 collected-test count and unchanged coverage *before* its line floor.
+
+---
+
+## The findings at a glance
+
+| | Finding | Primary impact | Remediation |
+|---|---|---|---|
+| [F1](#f1--two-thirds-of-the-corpus-lives-in-modules-nobody-can-navigate) | ~40% of modules exceed 400 lines and hold ~73% of all lines | Navigability; compounds every other finding | [`010`](010-test-authoring-standards-and-enforcement.md), [`030`](030-config-and-manifest-test-reduction.md)–[`080`](080-plugin-development-and-generator-test-reduction.md) |
+| [F2](#f2--the-corpuss-own-module-size-standard-is-violated-by-three-quarters-of-it) | The ~200-line split standard is violated by ~75% of the tree and never enforced | A rule readers learn to skip | [`010`](010-test-authoring-standards-and-enforcement.md) |
+| [F3](#f3--parametrization-is-the-corpuss-least-used-tool-against-its-most-tabular-content) | Parametrization in 179 of 770 modules | Largest available reduction; *strengthens* the suite | [`030`](030-config-and-manifest-test-reduction.md) |
+| [F4](#f4--hand-built-argument-namespaces-are-a-correctness-defect-not-just-bloat) | ~2,900 hand-built namespaces bypass the parsers' defaults | **Live correctness risk** — the suite cannot see the change it exists to catch | [`020`](020-shared-test-harness.md), [`010`](010-test-authoring-standards-and-enforcement.md) |
+| [F5](#f5--arrange-logic-is-inlined-roughly-eleven-times-more-often-than-it-is-fixtured) | `monkeypatch.setattr` outnumbers fixtures ~11:1 | Missing class-scoped fixtures, repeated | [`060`](060-runtime-and-script-substrate-test-reduction.md) |
+| [F6](#f6--197-modules-re-implement-a-loader-conftestpy-already-exports) | ~197 modules re-implement an exported loader | Duplication, and brittle to file moves | [`020`](020-shared-test-harness.md) |
+| [F7](#f7--several-thousand-lines-of-test-prose-are-history-which-this-repository-forbids-everywhere-else) | Thousands of lines of prose are history, not invariant | Largest reduction in scenario slices; **highest deletion risk** | every reduction plan, each with a cold read |
+| [F8](#f8--one-shared-fixture-is-defined-three-times-incompatibly) | `create_marshal_json` defined 3× incompatibly | A test's baseline decided by an import line | [`020`](020-shared-test-harness.md) |
+| [F9](#f9--two-silent-defects-the-tooling-cannot-see) | Three helper modules invisible to the current lint; a referenced `test/README.md` that does not exist | Silent no-ops in the run | [`020`](020-shared-test-harness.md), [`010`](010-test-authoring-standards-and-enforcement.md) |
+| [F10](#f10--one-contract-asserted-at-two-layers) | One contract asserted at two layers in several modules | Real reduction, high deletion risk — bounded | [`040`](040-delivery-pipeline-test-reduction.md) |
+
+Rules **B1**–**B10** are defined in [`README.md`](README.md#house-style); the slices are defined in
+[`README.md`](README.md#the-plans-and-what-may-run-at-the-same-time).
 
 ---
 
@@ -87,7 +107,7 @@ own.
 **Impact.** This is worse than having no standard. A rule the tree violates at that rate is a number
 readers learn to skip, and its presence makes the *absence* of an enforced budget look like an
 oversight rather than a decision. Remediation replaces it with a budget derived from the corpus's own
-median (**B1**), enforced mechanically.
+median ([**B1**](README.md#house-style)), enforced mechanically.
 
 ### F3 — Parametrization is the corpus's least-used tool, against its most tabular content
 
@@ -106,8 +126,8 @@ multi-paragraph docstring.
 > (`admin_merge_on_stuck_state`, `auto_rebase_threshold`, `merge_queue_wait_budget_seconds`) are
 > genuinely crossed against both accessors. Several of the remainder assert entirely unrelated
 > subjects. Re-derive by extracting the knob suffix under each prefix separately and intersecting;
-> a single grep returning the count 22 does **not** establish pairing. Plan `030` D1 now derives the
-> family's real membership before collapsing anything.
+> a single grep returning the count 22 does **not** establish pairing. Plan [`030`](030-config-and-manifest-test-reduction.md) D1 now
+> derives the family's real membership before collapsing anything.
 
 `test/plan-marshall/manage-execution-manifest/test_manage_execution_manifest_compose.py` (~5,400
 lines) is the other exemplar: its own section comment names its subject as "table-driven cases — one
@@ -168,9 +188,9 @@ code "once derived", what "the fix" now does, which plan or PR changed it.
 
 | Marker class | Lines | Command |
 |---|---|---|
-| Superseded-behaviour narration | ~974 | `grep -rn 'once derived\|used to \|previously\|no longer\|the old \|legacy ' test --include=test_*.py` |
-| Incident / lesson / PR citations | ~393 | `grep -rn 'lesson-20\|LESSON-\|PR #[0-9]' test --include=test_*.py` |
-| Plan / deliverable ids | ~1,335 | `grep -rn 'deliverable\|D[0-9] —\|this plan' test --include=test_*.py` |
+| Superseded-behaviour narration | ~974 | `grep -rn 'once derived\|used to \|previously\|no longer\|the old \|legacy ' test --include=test_*.py \| wc -l` |
+| Incident / lesson / PR citations | ~393 | `grep -rn 'lesson-20\|LESSON-\|PR #[0-9]' test --include=test_*.py \| wc -l` |
+| Plan / deliverable ids | ~1,335 | `grep -rn 'deliverable\|D[0-9] —\|this plan' test --include=test_*.py \| wc -l` |
 
 Those are matching *lines*, not surrounding paragraphs, so they understate the volume.
 
@@ -269,7 +289,7 @@ Principles" states, without domain scoping, that tests "should use generated/ran
 "arbitrary hardcoded data" under Anti-Patterns. **In the majority case for this corpus, that tells an
 author to do the wrong thing** — while the technique that would genuinely help has no adoption at all.
 The remediation scopes the preference by whether the contract is universal or the literal *is* the
-contract (**B8**), rather than removing it.
+contract ([**B8**](README.md#house-style)), rather than removing it.
 
 `hypothesis` is a third-party dependency, so adding it is a user-approval step. The plans therefore
 **derive and record the candidate call sites** and stop there; they do not add the dependency.
@@ -278,15 +298,15 @@ contract (**B8**), rather than removing it.
 
 | Finding | Addressed by |
 |---|---|
-| F1, F2 | `010` (module budget + enforcement), `030`–`080` (splits) |
-| F3 | `030` primarily; `050`, `060`, `070` for their tabular families |
-| F4 | `020` (`parse_ns` helper), `010` (the rule), `030`–`080` (adoption) |
-| F5 | `010` (thresholds), `060` primarily |
-| F6 | `010` (the rule), `020` (harness), all reduction plans |
-| F7 | `010` (rule + doctor lint), every reduction plan, each with a cold read |
-| F8 | `020` (one builder, named presets) |
-| F9 | `020` (renames, `test/README.md`), `010` (a doctor rule that catches the class) |
-| F10 | `010` (the rule), `040` primarily |
+| F1, F2 | [`010`](010-test-authoring-standards-and-enforcement.md) (module budget + enforcement), [`030`](030-config-and-manifest-test-reduction.md)–[`080`](080-plugin-development-and-generator-test-reduction.md) (splits) |
+| F3 | [`030`](030-config-and-manifest-test-reduction.md) primarily; [`050`](050-plan-state-and-records-test-reduction.md), [`060`](060-runtime-and-script-substrate-test-reduction.md), [`070`](070-architecture-and-orchestration-test-reduction.md) for their tabular families |
+| F4 | [`020`](020-shared-test-harness.md) (`parse_ns` helper), [`010`](010-test-authoring-standards-and-enforcement.md) (the rule), all reduction plans (adoption) |
+| F5 | [`010`](010-test-authoring-standards-and-enforcement.md) (thresholds), [`060`](060-runtime-and-script-substrate-test-reduction.md) primarily |
+| F6 | [`010`](010-test-authoring-standards-and-enforcement.md) (the rule), [`020`](020-shared-test-harness.md) (harness), all reduction plans |
+| F7 | [`010`](010-test-authoring-standards-and-enforcement.md) (rule + doctor lint), every reduction plan, each with a cold read |
+| F8 | [`020`](020-shared-test-harness.md) (one builder, named presets) |
+| F9 | [`020`](020-shared-test-harness.md) (renames, `test/README.md`), [`010`](010-test-authoring-standards-and-enforcement.md) (a doctor rule that catches the class) |
+| F10 | [`010`](010-test-authoring-standards-and-enforcement.md) (the rule), [`040`](040-delivery-pipeline-test-reduction.md) primarily |
 
 ## What this review did not examine
 
