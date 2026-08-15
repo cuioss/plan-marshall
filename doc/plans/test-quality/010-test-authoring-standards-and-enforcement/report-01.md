@@ -184,6 +184,7 @@ its registry is empty by design, which is its documented no-op behaviour and not
 | 11 | Verification sub-agent (F7, LOW) | `doc/plans/test-quality/README.md` L84 said the 400-line budget "replaces the `~200 lines` figure **currently in** `persona-module-tester`" — falsified by this plan's own change | **Fixed** — restated in the past tense |
 | 12 | Verification sub-agent (F9, LOW) | `fixtures/test_conventions/` has a `README.md` per rule directory for rules 1–3; `rule4/` did not exist | **Fixed** — added, matching the sibling convention and recording why dynamic `tmp_path` fixtures are used (static fixtures would trip three of these four rules against the real tree and inflate the counts this plan measures) |
 | 13 | Verification sub-agent (F4, MEDIUM) | `doctor-marketplace.py` is not in the plan's "Expected surface" list, which names the analyzer but not the runner that dispatches it | **Accepted, not changed** — the import/dispatch wiring is unavoidable for any new rule in this scope, and the severity derivation is declared and justified above. The epic README's ownership row for `010` covers `plugin-doctor/**`, so this is a plan-list omission rather than a scope breach. Recorded so the omission is visible rather than silent |
+| 15 | Cold read, second pass | **D3 created an internal contradiction in its own file.** `testing-methodology.md` § "Surfacing limitations without locking them in" models `@pytest.mark.xfail(reason="TODO: fix boundary matching — see LESSON-nnnn")` — a lesson-id citation in test prose, in the same document D3 had just made forbid them in docstrings. Before D3 the example was consistent, so this is collateral from this run's own change, not pre-existing drift | **Fixed** — the modelled reason now states the defect (`comparator uses substring matching where boundary matching is required`) instead of its tracking id, with a sentence reconciling the scope: the marker names what is wrong so the reader can act without leaving the file, and the tracking identifier lives in the step-3 lesson/PR/issue. Note the shipped rule would **not** have caught this — `reason=` is a string literal, not a docstring or comment — so it was reachable only by reading |
 | 14 | Verification sub-agent (F5, MEDIUM) | `pm-dev-java` carries the retired figures — `junit-core/standards/testing-junit-core.md:16` ("split into multiple at ~200 lines") and `junit-weld-testing/standards/weld-testing-autowired.md:144` ("split at ~200 lines") — plus unscoped generated-data statements at `junit-core/SKILL.md:31` and `testing-junit-core.md:8`. `testing-junit-core.md:3` explicitly defers to `persona-module-tester` for test organization, so it now contradicts the skill it defers to | **Rejected for this PR, escalated to the epic** — `pm-dev-java` is outside this plan's Expected surface, and D1/D2's "Done when" clauses are scoped to the named files. Editing another bundle here would be exactly the undeclared collateral change the verification pass exists to catch. This is a real defect and is recorded in Residue with file:line so it is actionable, not lost |
 
 **Cold-read verification (the plan's mandated by-reading check).** A sub-agent was given the two amended
@@ -207,7 +208,16 @@ questions. Its answers, verbatim:
 > two files agree."*
 
 All three readings match the plan's expected readings (**400 / split by behaviour cluster**, **exact
-literal**, **no**), so no re-wording was required.
+literal**, **no**).
+
+**The cold read was run a second time after the F1 fix**, because the first pass had settled Q2 from the
+*pytest* document's worked example and so could not detect that the methodology file's opening principle
+still pointed the other way. The second pass was asked to answer Q2 twice — once from the first 20 lines
+alone, once from the complete documents — precisely to surface that split. Its verdict: *"**(a) and (b) do
+not disagree** — the discriminator is fully stated in the first 20 lines, so the skim-reader and the
+complete reader reach the same verdict of 'exact literal'."* It reported no contradiction on any of the
+three questions, and surfaced Finding 15 as an adjacent tension. That second pass is what a re-dispatch
+after a real finding is for: the first cold read passed while the defect was live.
 
 ## Reviewer participation
 

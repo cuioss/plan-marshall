@@ -497,9 +497,11 @@ Instead:
 
 1. **Fix the limitation in the same task** if the fix is small (a handful of lines) and the code path is already being touched.
 2. **Write a test that asserts the *correct* behavior** even if the code currently fails it, and mark it expected-to-fail with a clear TODO referencing where the fix will land. Use the language's idiom for expected failure:
-   * Python / pytest: `@pytest.mark.xfail(reason="TODO: fix boundary matching — see LESSON-nnnn")` (preferred — reports `XPASS` when the bug is fixed) or `@pytest.mark.skip(reason="…")`.
+   * Python / pytest: `@pytest.mark.xfail(reason="TODO: comparator uses substring matching where boundary matching is required")` (preferred — reports `XPASS` when the bug is fixed) or `@pytest.mark.skip(reason="…")`.
    * JUnit 5: `Assumptions.abort("TODO: …")` or `@Disabled("TODO: …")`.
    * Jest: `test.skip("TODO: …")` with a TODO comment (Jest has no native expected-fail marker). Vitest: `test.fails("…")` runs the test and records it as a known failure.
+
+   **State the defect, not its tracking id.** The marker's reason names *what is wrong* so the next reader can act on it without leaving the file; it does not cite a lesson id, a PR number, or a plan id, for the same reason § "Test Docstring Content" keeps those out of docstrings — a citation reasons from something the reader cannot see. The tracking identifier belongs in step 3's lesson, PR, or issue, which is where it stays current.
 3. **Surface the limitation up the chain** — record it in a lesson, a PR body, or an issue — so the follow-up is tracked. Do not encode it as a regression test that future-you has to argue against.
 
 Signals that the anti-pattern is about to be committed: the test name contains phrases like "documented limitation", "known behavior", "future-work", or "trade-off"; the test's docstring explains *why* the assertion is intentionally wrong; the rationale claims an alternative implementation "would be a breaking change" for the test. When reviewing, ask: would the author still write this test if the underlying bug were fixed five minutes before the review? If the answer is "no, the test would be deleted", the test does not deserve to land.
