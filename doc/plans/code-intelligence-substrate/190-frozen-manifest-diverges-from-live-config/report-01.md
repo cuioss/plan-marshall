@@ -189,7 +189,37 @@ The agent independently re-grounded all four D0 defects against the `origin/main
 
 Findings F1–F15 are recorded **per instance**, not bundled. Two were rejected with reasons stated; one is a factual challenge resolved against the agent, with the counter-evidence named rather than merely asserted.
 
-**Round 2:** _pending._
+### Round 2 (after `0eb85e6`)
+
+**All twelve fixes confirmed resolved**, each re-derived from the files rather than from the commit message — the agent checked `read_title_token`'s actual signature against what `_apply_set` passes, and proved the F5 invariant by establishing that `git rebase` appears exactly once in the whole bundle tree (`git-workflow.py`, inside `cmd_worktree_rebase_to`), so "every finalize rebase routes through this one verb" is true rather than merely restated.
+
+**F15 withdrawn, with a root cause.** The pushback was correct, and the reason is worth keeping: the agent's environment runs Python 3.11, and the guard predicate under test scans `tokenize` **NAME** tokens. Before PEP 701 an f-string is a single `STRING` token, so the interpolated identifier the guard looks for does not exist; from 3.12 it tokenizes normally. `pyproject.toml` sets `requires-python >= 3.12` and pins `UV_PYTHON = "3.12"`, so `./pw verify` was always running the supported interpreter. **Residue, informational and pre-existing in an untouched file:** that predicate is silently interpreter-version-sensitive and would go vacuous-then-red if the floor ever moved below 3.12.
+
+Three new findings, all introduced by the round-1 fixes — i.e. all mine:
+
+| # | Finding | Severity | Disposition |
+|---|---|---|---|
+| N1 | The round-1 schema doc asserted `steps ⊆ candidate_steps` as an invariant. It is not: `_apply_ceremony_finalize_selection` force-inserts a gate's canonical step on `always` with **no candidate-membership check**, and two of the four gate steps are absent from `DEFAULT_PHASE_6_STEPS`, so the violation is reachable on the CSV/default fallback. The same overstatement was encoded in my test assertion, which passes only because the default gates are `auto`. | **False invariant in new prose** | **FIXED** (`c81aee6`). The relation is now stated as normal-but-not-invariant with the exception named; the test states the condition it actually holds under and warns against generalizing. `reconcile` is genuinely unaffected — a forced-in step is in the frozen list so backfill excludes it, and the stale/broken partition never reads `candidate_steps`. |
+| N2 | A test I added in round 1 called `read_text()` **before** its `is_file()` guard, so the actionable message was unreachable — a bypass placed after the dispatch it guards, which is *verbatim* the anti-pattern D4c promotes into `ref-code-quality`. | **Self-inconsistency** | **FIXED** (`c81aee6`). Guard reordered, with a comment naming the rule it was violating. Shipping a rule and breaking it in the same change is the part worth recording. |
+| N3 | The round-1 F7 fix **duplicated** `_executor_landed` / `_worktree_executor_path` into a second file in the same scripts directory, with two independently-drifting `PLAN_DIR_NAME` sources — a direct hit on `code-organization.md` § Duplication. | **Duplication I introduced** | **FIXED** (`c81aee6`). Extracted to a shared `_executor_slot.py` both entrypoints import. The repo's `_cmd_*.py` counter-convention ("duplicate private helpers to keep modules independent") was weighed and found not to apply: it governs helpers private to ONE module, whereas these are a definition two executor-producing paths must **agree** on. |
+| N4 | `_emitted_for`'s docstring promised a reset mechanism that does not exist. | Minor | **FIXED** (`c81aee6`). |
+
+### Round 3 (after `c81aee6`) — final confirmation
+
+N1–N4 all confirmed resolved. The N3 extraction — the only fix touching a well-tested file outside the plan's scope — was checked specifically and found clean:
+
+- **No dangling references.** A repo-wide sweep found zero references to either deleted definition; the alias rebinding preserves monkeypatch behaviour, which is why `test_prepare_execute.py`'s five direct `prepare_execute._executor_landed(...)` calls read unchanged.
+- **`PLAN_DIR_NAME` equivalence verified, not assumed.** Both sources are the identical `os.environ.get('PLAN_DIR_NAME', '.plan')` expression, and **no test monkeypatches the attribute** on either module — every test that varies it uses `monkeypatch.setenv`, which both readers observe identically.
+- **Executor discovery checked against the discovery code and empirically.** The glob path skips `_`-prefixed files, and an authoritative inventory scan returned **147 notations, zero containing `:_`**. `_executor_slot.py` adds no notation, so **no executor regeneration is owed by this change**.
+- **Basename uniqueness** holds across all bundles — the property that actually matters, since the executor puts every skill's `scripts/` dir on `PYTHONPATH`.
+
+**No `SHIM(A|B)` marker owed.** The convention scopes the marker to a read path accommodating a persisted shape an older version wrote; a re-export alias is not that, and all three required fields (owner, version floor, removal trigger) would be unfillable. The detector's indicator set was checked directly — "historical" is not among them, so the module comment cannot trip `shim_unmarked`.
+
+**No new stale restatements.** One readability nit was raised and **fixed** (`e0d7c4a`): the N1 asymmetry sentences had been inserted between `candidate_steps` and the "It exists solely for…" sentence, stranding the pronoun from its antecedent. Reordered so the purpose statement follows the definition and the asymmetry becomes its own paragraph.
+
+**Final deliverable verdicts: D0–D5 all PASS.** Out-of-scope list clean across all three rounds — no registry-pin work, no emission arm, no boundary-ledger arithmetic.
+
+The agent could not run `./pw verify` itself (it needs the 3.12 toolchain), so the build gate in this report is the authority for the full gate; its own evidence is 5826 tests across the affected bundles plus direct reading.
 
 ## Reviewer participation
 
