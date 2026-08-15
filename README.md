@@ -10,7 +10,7 @@
 
 ### What is it?
 
-Plan Marshall is an orchestration layer for AI coding assistants (currently Claude Code) that enforces consistency, reliability, and more predictable outputs. It packages a phase-driven planning workflow, a library of domain skills, and a marketplace of ten production bundles covering Java, JavaScript, Python, OCI containers, requirements, and plugin development.
+Plan Marshall is an orchestration layer for AI coding assistants (currently Claude Code) that enforces consistency, reliability, and more predictable outputs. It packages a phase-driven planning workflow, a library of domain skills, and a marketplace of eleven production bundles covering Java, JavaScript, Python, OCI containers, requirements, and plugin development.
 
 ## Prerequisites
 
@@ -96,6 +96,7 @@ The canonical source of truth for every skill, standard, and extension point is 
 | Bundle | Purpose |
 |---|---|
 | [plan-marshall](marketplace/bundles/plan-marshall/README.md) | Core infrastructure, permissions, script execution, and the 6-phase planning workflow with task execution |
+| [pm-code-intelligence](marketplace/bundles/pm-code-intelligence/README.md) | Language-server-derived symbol intelligence for the module graph |
 | [pm-dev-java](marketplace/bundles/pm-dev-java/README.md) | Java development standards and agents |
 | [pm-dev-java-cui](marketplace/bundles/pm-dev-java-cui/README.md) | CUI-specific Java development standards covering CuiLogger, test generators, value object contracts, and HTTP client patterns |
 | [pm-dev-frontend](marketplace/bundles/pm-dev-frontend/README.md) | JavaScript/CSS standards and tooling |

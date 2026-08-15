@@ -577,7 +577,43 @@ def discover_plugin_modules(project_root: str) -> list:
             module['component_refs'] = component_refs.get(module['name'], [])
             modules.append(module)
 
+    attach_lsp_references(root, modules)
+
     return modules
+
+
+def attach_lsp_references(project_root: Path, modules: list[dict]) -> None:
+    """Fold the language-server harvest into each module's refs, in place.
+
+    Runs after module building because the harvest's file-to-module lift needs
+    the discovered module set: an endpoint that no module owns produces no edge,
+    which cannot be decided before the modules exist.
+
+    Unlike :func:`build_component_refs`, this materialization is gated — it boots
+    a language server and indexes the workspace, a cost every crawl would
+    otherwise pay whether or not the project wants symbol-derived edges. The gate
+    is the SHARED machine-local ``language_servers`` binding that
+    ``plan-marshall:lsp-client`` already reads, not a switch of this engine's own:
+    a language with no enabled binding harvests nothing. That store is
+    git-ignored, so a fresh clone is off by default.
+
+    Every module receives the harvest status under ``lsp_harvest`` — including
+    when the language is unconfigured or the harvest failed. That is deliberate:
+    the ``lsp`` resolver reports the status as a note, so a server that never
+    started stays distinguishable from a workspace with genuinely no references.
+    """
+    try:
+        from lsp_harvest import HARVEST_STATUS_FIELD, build_lsp_component_refs, resolve_binding
+    except ImportError:
+        return
+
+    module_paths = {module['name']: module['paths']['module'] for module in modules}
+
+    refs, status = build_lsp_component_refs(project_root, module_paths, binding=resolve_binding())
+
+    for module in modules:
+        module['component_refs'] = module['component_refs'] + refs.get(module['name'], [])
+        module[HARVEST_STATUS_FIELD] = status
 
 
 # =============================================================================

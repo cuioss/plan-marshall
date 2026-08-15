@@ -16,13 +16,15 @@ The substrate is built in tiers, cheapest first. Each tier is a strictly larger 
 [source,text]
 ----
 ┌───────────────────────────────────────────────────────────────┐
-│ Tier 2 — symbol intelligence                    NOT BUILT     │
-│   call graphs, symbol references, type relations              │
+│ Tier 2 — symbol intelligence                 PARTLY BUILT     │
+│   symbol references: queryable live (lsp-client), and         │
+│     harvested in batch, projected down to Tier 1              │
+│   call graphs, type relations: not built                      │
 ├───────────────────────────────────────────────────────────────┤
 │ Tier 1 — module edges                    RESOLVER-DERIVED     │
 │   which modules depend on which, with per-edge provenance     │
 ├───────────────────────────────────────────────────────────────┤
-│ Tier 0 — the crawl                        SUBPROCESS-FREE     │
+│ Tier 0 — the crawl        SUBPROCESS-FREE BY DEFAULT          │
 │   module set + per-module metadata + the file inventory,      │
 │   read by the path, ownership, and content readers;           │
 │   no edges at all                                             │
@@ -33,7 +35,20 @@ The substrate is built in tiers, cheapest first. Each tier is a strictly larger 
 
 *Tier 1* is the edge set — module-to-module dependency edges, each carrying the identity of whatever derived it. This is the tier the derivation-resolver seam ships, and it is what the `graph`, `path`, `neighbors`, and `impact` verbs traverse, plus the adjacency surfaces of `overview` and `module` / `info`.
 
-*Tier 2* is symbol-level intelligence — call graphs, symbol references, type relations. It is not built. It appears on the ladder so the tiers read as a ladder rather than as a finished set, and so the gap between "Plan Marshall knows the module graph" and "Plan Marshall understands the code" stays explicit.
+*Tier 2* is symbol-level intelligence — call graphs, symbol references, type relations. One of those three is now partly reached, and the distinction matters more than a single status word can carry.
+
+Symbol *references* are reached, by two different routes with two different lifecycles:
+
+* *Live, per-query* — the link:../../marketplace/bundles/plan-marshall/skills/lsp-client/SKILL.md[`lsp-client`] skill answers definition, references, document-symbol and workspace-symbol lookups, and performs verified renames, against a server it starts for that call. An execute leaf uses it opt-in. See xref:../user/lsp-code-intelligence.adoc[the user page].
+* *Batch, at derivation time* — the `lsp` resolver harvests references once during the crawl and projects them down into Tier 1 edges (see <<lsp-derivation-resolver>>).
+
+Call graphs and type relations are not built by either.
+
+What the batch route does **not** add is a persisted symbol store: it keeps only the module-level projection, so "where is this symbol referenced?" is answered by starting a server, not by reading `derived.json`. A reader who sees symbol-derived edges in the graph and infers a persisted symbol index behind them would be wrong.
+
+So the gap between "Plan Marshall knows the module graph" and "Plan Marshall understands the code" has narrowed by exactly one reference kind, in exactly one direction, and the ladder says so rather than rounding the tier up to built.
+
+The `SUBPROCESS-FREE` property Tier 0 carries is likewise now conditional, which is why the ladder says *by default*. The crawl invokes no build tool and no language server unless the symbol harvest is explicitly enabled; enabling it knowingly trades that property for the reference set, which is the whole reason the harvest is opt-in rather than opt-out.
 
 == The resolver seam
 
@@ -61,6 +76,49 @@ The seam is a third, independent axis rather than a face on an existing one. Pla
 Those two hierarchies are deliberately disjoint — xref:../adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc[ADR-004] keeps them that way — and that disjointness is what forces a third axis. The Maven coordinate join belongs to `build-maven`, which subclasses `BuildExtensionBase` and not `ExtensionBase`, so a resolver hook on `ExtensionBase` would have been structurally unreachable from the one bundle that most needed it. Folding edge derivation into Axis-B instead would have been the mirror error: a future markdown resolver would have to masquerade as a build system to declare an edge.
 
 `DerivationResolverBase` therefore inherits from neither and is inherited by neither. An implementor from either hierarchy opts in by multiple inheritance, which is the only shape reachable from both sides.
+
+[#lsp-derivation-resolver]
+== The language server as a derivation resolver
+
+A language server knows something no static join in this repository can derive: which symbol a name actually refers to, resolved by a real parser. Re-exports, aliases, relative imports and `__init__` chains all resolve correctly for it and only approximately for a regex or an AST import scan.
+
+The obstacle is not capability but *lifecycle*. The protocol is built for a long-lived editor session that pays a large indexing cost once and amortizes it over thousands of interactive queries. This project's consumers are the opposite: one-shot subprocesses and dispatched leaves, each living for a single command. Booting a server per query would pay the whole index cost on every question and amortize it over one answer.
+
+The resolution is to use the server as a *derivation-time producer* rather than as a query backend. It runs once, during the crawl, harvests references, lifts them from file granularity to module granularity, and its output is persisted. Every later read is a cheap join over persisted data, and no query boots anything.
+
+That shape is not merely preferred — it is what the seam permits. A derivation resolver is a pure function of its arguments, and resolvers are dispatched at graph-*query* time, once per `graph` / `path` / `neighbors` / `impact` call. A server booted inside `derive_edges` would therefore run on every one of those calls. The harvest lives in a discovery-time engine for the same reason the markdown and import detection engines do: the thing that reads from disk runs during the crawl, and the resolver joins over what it left behind.
+
+=== Why this is separate from the live lookup client
+
+Answering a definition or rename query at a cursor position is a *different* lifecycle, and it is already built: the `lsp-client` skill does exactly that, for a leaf that opts in.
+
+The two are deliberately not one component. A batch harvester wants to start a server, drive it over the whole workspace, and exit; its cost is dominated by the index build and amortized over thousands of positions in one pass. An interactive lookup wants the smallest possible round trip for a single position, and pays the index cost per call. Merging them would mean either a daemon this project has no lifecycle for, or a harvester that re-indexes per question.
+
+What they *do* share is the transport and the configuration, and they share it by reuse rather than by duplication: the harvest drives `lsp-client`'s own session and reads the same machine-local `language_servers` binding. A second LSP client, or a second key naming the same server, is the outcome this arrangement exists to avoid.
+
+So the split is a decision about lifecycle, not a gap in capability, and it is recorded here so the next reader does not read the batch resolver as a replacement for the live client or propose merging them.
+
+=== What the protocol does not offer
+
+Three absences explain why navigation stays on the persisted store rather than moving to the server:
+
+* No module-level edge method. The protocol speaks in files and positions; module granularity is this substrate's vocabulary, not the protocol's, so the lift is ours to perform.
+* No transitive traversal. There is no "what does this reach, transitively" request, which is precisely what `path` and `impact` need.
+* No path-to-owner method. Nothing maps a file back to the module that owns it, which is the path-attribution seam's job.
+
+A server is therefore an excellent *reference resolver* and a poor *graph backend*, which is exactly how it is used.
+
+=== The lift, and the edge it refuses to draw
+
+Symbol references are file-granular; edges are module-granular. The lift between them goes through the path-attribution seam, and its important behaviour is the case where it produces nothing: a reference whose endpoint no module owns yields *no edge and a note*, never a guessed module.
+
+This is the honest-limit rule applied to a producer capable of violating it at volume. A harvest over a large workspace resolves references into the standard library, into site-packages, and into files no module claims. Attributing those to a nearest-looking module would produce thousands of confidently-labelled wrong edges, each carrying provenance saying a real parser resolved it. Provenance makes an answer auditable; it does not make it correct, and a wrong edge wearing a trustworthy producer id is worse than a missing one.
+
+=== Honest failure
+
+A language server is a subprocess, and subprocesses fail in ways a pure function does not: the binary is absent, it fails to start, it times out, or it does not support the workspace.
+
+Each of those produces `ran: false` with a *distinct stated reason*, surfaced as a note on the resolver's report. None produces a zero-edge success. That is the confident-empty-answer archetype this whole substrate exists to eliminate, in its sharpest form: a resolver reporting `status: ok, edge_count: 0` because its server never started is indistinguishable, to every caller, from one reporting the same thing about a workspace that genuinely has no edges — and the two warrant opposite reactions.
 
 == N-resolver union
 
@@ -208,7 +266,7 @@ The three states stay distinct exactly as they do per-verb: `not_derivable` with
 
 `resolver_count: 2` tells a caller that two resolvers ran and names them. It does not tell the caller that either one understood the project. A resolver that parses the wrong file, or matches on the wrong key, reports `status: ok` with an edge count and contributes a confidently-labelled wrong edge. Provenance narrows "why is this graph empty?" to a mechanical answer; it does not review the derivation.
 
-The tier ladder has its own limit: Tier 1 stops at module granularity. "Module `api` depends on module `core`" is often too coarse to act on — the interesting question is usually which symbol, in which file. That is Tier 2, and Tier 2 is not built.
+The tier ladder has its own limit: Tier 1 stops at module granularity. "Module `api` depends on module `core`" is often too coarse to act on — the interesting question is usually which symbol, in which file. That is Tier 2, and Tier 2 is only partly built: symbol references can be looked up live and harvested in batch, but nothing persists them, and call graphs and type relations do not exist at all. The graph answers "which modules", never "which symbol", however the edge was derived.
 
 Finally, the seam derives edges only for module sets that Tier 0 discovered. A resolver cannot invent a node: the merge drops any pair whose endpoints are not both known module names. A dependency on something the crawl never found is not an edge, and is not reported as one.
 ====

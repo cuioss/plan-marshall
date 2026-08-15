@@ -59,8 +59,8 @@ _cmd_client = load_script_module(
     'plan-marshall', 'manage-architecture', '_cmd_client.py', 'cmd_client_graph_e2e'
 )
 
-EXPECTED_RESOLVER_IDS = ['documentation', 'markdown', 'maven', 'npm', 'pyproject', 'python']
-"""The shipped resolver roster: three Axis-B implementors and three Axis-A ones.
+EXPECTED_RESOLVER_IDS = ['documentation', 'lsp', 'markdown', 'maven', 'npm', 'pyproject', 'python']
+"""The shipped resolver roster: three Axis-B implementors and four Axis-A ones.
 
 This literal is the module's SINGLE executable pin, and it is deliberate. It is
 consumed only by :func:`test_the_expected_resolver_roster_is_discovered` (which
@@ -80,7 +80,7 @@ assertion set.
 # materially larger refactor than the roster-duplication these constants sit
 # next to, so they remain literals and are asserted as membership, not equality.
 AXIS_B_RESOLVER_IDS = {'maven', 'npm', 'pyproject'}
-AXIS_A_RESOLVER_IDS = {'documentation', 'markdown', 'python'}
+AXIS_A_RESOLVER_IDS = {'documentation', 'lsp', 'markdown', 'python'}
 
 
 # =============================================================================
