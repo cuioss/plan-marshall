@@ -543,6 +543,15 @@ defect as a stale doc, and it is the one a re-dispatch is *least* likely to catc
 verifier reads the code rather than the record. Re-read your own dispositions against the artifacts
 before declaring a round closed.
 
+**So is the PR description — and it is the surface most likely to be missed.** Every sweep you run
+treats *the repository* as the thing being checked, and the description lives outside it: written once
+at PR-creation time, never re-read, and yet the one restatement most reviewers actually read. Re-read
+it against the tree before the merge gate, exactly as you re-read the report. In an observed run it
+reached the gate asserting a control-flow ordering the code no longer had, two test counts that had
+moved twice since, and "every finding accepted and fixed, none rejected" on a PR where two findings
+had been rejected with reasons — four false statements, none of which any verification round could
+have seen, because none of them reads the description.
+
 **Figures that move between rounds are re-derived at the moment of the claim, never carried forward.**
 Test totals, character budgets, population counts: each round's fixes change them, and a number copied
 from an earlier round is stale by construction. Re-derive it (collect the tests, measure the string,
