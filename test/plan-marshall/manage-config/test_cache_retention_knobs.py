@@ -45,12 +45,14 @@ def _retention_ns(verb: str, field: str | None = None, value: str | None = None)
         argv += ['--field', field]
     if value is not None:
         argv += ['--value', str(value)]
-    return parse_ns(*_SCRIPT, *argv)
+    ns: Namespace = parse_ns(*_SCRIPT, *argv)
+    return ns
 
 
 def _sync_defaults_ns() -> Namespace:
     """Args for ``manage-config sync-defaults``, from the script's parser."""
-    return parse_ns(*_SCRIPT, 'sync-defaults')
+    ns: Namespace = parse_ns(*_SCRIPT, 'sync-defaults')
+    return ns
 
 cmd_system = _cmd_system_plan.cmd_system
 cmd_sync_defaults = _cmd_sync_defaults.cmd_sync_defaults

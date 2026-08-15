@@ -47,7 +47,10 @@ def _arch_ns(verb: str, project_dir: str, **flags: str | None) -> Namespace:
     for name, value in flags.items():
         if value is not None:
             argv += [f'--{name.replace("_", "-")}', value]
-    return parse_ns(*_ARCH_SCRIPT, *argv)
+    # Bound through a declared local: `conftest` is deliberately opaque to mypy
+    # (pyproject sets ignore_missing_imports for it), so parse_ns reads as Any.
+    ns: Namespace = parse_ns(*_ARCH_SCRIPT, *argv)
+    return ns
 
 
 sys.path.insert(0, str(Path(__file__).parent))

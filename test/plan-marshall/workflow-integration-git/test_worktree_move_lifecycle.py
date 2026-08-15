@@ -65,7 +65,8 @@ def _worktree_ns(plan_id: str) -> Namespace:
     carries whatever defaults that CLI applies, so a flag added there is exercised
     here instead of silently absent.
     """
-    return parse_ns(*_GIT_WF, 'worktree-create', '--plan-id', plan_id, '--branch', f'feature/{plan_id}')
+    ns: Namespace = parse_ns(*_GIT_WF, 'worktree-create', '--plan-id', plan_id, '--branch', f'feature/{plan_id}')
+    return ns
 
 
 def _init_main_repo(repo: Path) -> None:

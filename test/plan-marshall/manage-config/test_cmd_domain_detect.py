@@ -46,7 +46,8 @@ def _ns(
         argv += ['--domain-override', domain_override]
     if affected_files is not None:
         argv += ['--affected-files', affected_files]
-    return parse_ns(*_SCRIPT, *argv)
+    ns: Namespace = parse_ns(*_SCRIPT, *argv)
+    return ns
 
 
 def _write_request(plan_dir: Path, body: str) -> None:

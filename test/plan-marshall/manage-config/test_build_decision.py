@@ -54,7 +54,8 @@ def _decision_ns(
         argv += ['--audit-plan-id', audit_plan_id]
     if command is not None:
         argv += ['--command', command]
-    return parse_ns(*_SCRIPT, *argv)
+    ns: Namespace = parse_ns(*_SCRIPT, *argv)
+    return ns
 
 # extension_base lives in script-shared and is on PYTHONPATH (executor wires every
 # skill scripts dir). The handler resolves should_execute_build from it at call
