@@ -163,7 +163,9 @@ Dependencies use technology-native format without prefixes:
 | Build System | Format | Example |
 |--------------|--------|---------|
 | Maven | `groupId:artifactId:scope` | `de.cuioss:cui-java-tools:compile` |
-| npm | `name:scope` | `lit:compile`, `@testing-library/dom:test` |
+| Gradle | `groupId:artifactId:compile`, or `project:{name}:compile` for an inter-project dependency | `com.google.guava:guava:compile`, `project:core:compile` |
+| Python | `name:scope` (`runtime` from `[project] dependencies`, `dev` from `[project.optional-dependencies].dev`) | `typing-extensions:runtime`, `pytest:dev` |
+| npm | `name:scope` (`runtime` from `dependencies`, `dev` from `devDependencies`) | `lit:runtime`, `@testing-library/dom:dev` |
 
 ### `files:` block — categorised inventory
 

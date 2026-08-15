@@ -1,0 +1,12 @@
+{
+  "name": "@sample/api",
+  "version": "1.0.0",
+  "dependencies": {
+    "@sample/core": "workspace:*",
+    "zod": "^3.22.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  }
+}

@@ -58,6 +58,22 @@ Unlike Maven/Gradle (single parser) and npm (single-match registry), Python runs
 
 Directories with `test/` or `tests/` subdirectories. Searches one level deep from project root, plus root itself.
 
+## Module-edge derivation (Axis-C derivation resolver)
+
+`extension.py`'s `BuildExtension` subclasses **both** `BuildExtensionBase` (Axis-B, the file-to-build map) and `DerivationResolverBase` (Axis-C, module-edge derivation), so this skill also answers *which modules depend on which* for the `graph` / `path` / `neighbors` / `impact` query family.
+
+The resolver id is `pyproject`. Its derivation is the **distribution-name join**: a Python project publishes no `groupId:artifactId` coordinate, so the Maven join can never match one — what it publishes is its PEP 621 `[project] name`, carried on `metadata.name`. An edge exists wherever one module's `name:scope` dependency string names another module's published distribution, compared in PEP 503 normalised form so the `-`/`_`/`.`/case variants of one name resolve to the same module. Both scopes contribute: a `dev` extra is a real edge, because changing the depended-upon module can break the dependent's tests.
+
+Three behaviours are contract obligations rather than implementation detail:
+
+- **The join is scoped to modules this build system discovered.** Unlike a coordinate, a bare distribution name is a key shape every ecosystem uses, so an unscoped join would claim provenance for another ecosystem's edges and could fabricate an edge between a Python distribution and a same-named package elsewhere.
+- **There is no fallback to the module's own name.** A directory declaring no `[project] name` publishes no distribution, so nothing can depend on it; it stays a valid edge *source* but is never a *target*. Falling back would invent a key the ecosystem never published.
+- **An ambiguous distribution name yields no edge and a reported collision**, and the enriched overlay is not consulted — the declaration-wins ruling is core's, applied ahead of the resolver call.
+
+This resolver is distinct from `pm-dev-python`'s `python` resolver, and both are wanted: that one joins AST-parsed imports (language knowledge), this one joins declared distribution dependencies (build-system knowledge).
+
+The contract itself — the four faces, the N-resolver union semantics, the anti-vacuity provenance property, and the generic ambiguous-identity-key obligation — is owned by [`../extension-api/standards/ext-point-derivation-resolver.md`](../extension-api/standards/ext-point-derivation-resolver.md) and is deliberately not restated here.
+
 ## Canonical invocations
 
 The canonical argparse surface for `pyproject_build.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".

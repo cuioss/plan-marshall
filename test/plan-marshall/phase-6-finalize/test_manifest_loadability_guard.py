@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for phase-6-finalize Step 1.5 (Manifest Loadability Check).
+"""Tests for phase-6-finalize Step 1.5 (Manifest Reconciliation and Loadability Check).
 
 phase-6-finalize is a workflow-driven skill — it has no Python entry point of
-its own. The loadability guard is implemented by ``manage-execution-manifest
-validate-loadable`` and consumed by SKILL.md Step 1.5. These tests pin two
-contracts:
+its own. Step 1.5 runs two guards in a load-bearing order: ``reconcile``
+(heal a frozen manifest live config has moved past) and then
+``validate-loadable`` (abort on what survives). These tests pin two contracts:
 
 1. **SKILL.md narrative** — Step 1.5 is documented inline (with the exact
-   subcommand invocation and the canonical actionable failure message), and
-   ``standards/required-steps.md`` carries the matching "Loadability
-   Contract" section. A future edit that drops the guard from prose without
-   also dropping it from the underlying script must fail this test before it
-   can land.
+   subcommand invocations, the reconcile-before-loadability ORDER, the
+   ``unreconcilable_step`` fail-loud half, and the canonical actionable
+   failure message), and ``standards/required-steps.md`` carries the matching
+   "Reconciliation Contract" and "Loadability Contract" sections. A future
+   edit that drops either guard from prose without also dropping it from the
+   underlying script must fail this test before it can land.
 
 2. **Loadability simulation** — using ``cmd_validate_loadable`` directly as
    the dispatcher would, a manifest whose ``phase_6.steps`` contains a
@@ -105,10 +106,37 @@ class TestSkillNarrativeContract:
 
     def test_skill_md_documents_step_1_5_manifest_loadability_check(self):
         body = _SKILL_MD.read_text(encoding='utf-8')
-        assert 'Step 1.5: Manifest Loadability Check' in body, (
-            'phase-6-finalize SKILL.md MUST document Step 1.5 (Manifest Loadability Check) '
-            'between Step 2 (Read Manifest) and Step 3 (Execute Step Pipeline).'
+        assert 'Step 1.5: Manifest Reconciliation and Loadability Check' in body, (
+            'phase-6-finalize SKILL.md MUST document Step 1.5 (Manifest Reconciliation '
+            'and Loadability Check) between Step 2 (Read Manifest) and Step 3 (Execute '
+            'Step Pipeline).'
         )
+
+    def test_skill_md_reconciles_before_the_loadability_check(self):
+        """Reconcile runs FIRST, and the ordering is the whole point.
+
+        Checking loadability before reconciling would abort on exactly the
+        frozen-manifest staleness the reconcile exists to heal, so the two are
+        pinned in order rather than merely both being present.
+        """
+        body = _SKILL_MD.read_text(encoding='utf-8')
+        assert 'reconcile --plan-id {plan_id} --apply' in body, (
+            'SKILL.md Step 1.5 MUST dispatch `manage-execution-manifest reconcile '
+            '--apply` by name so a refactor cannot silently drop it.'
+        )
+        assert body.index('reconcile --plan-id {plan_id} --apply') < body.index(
+            'validate-loadable --plan-id {plan_id} --step-id'
+        ), 'the reconcile dispatch MUST precede the loadability check in Step 1.5'
+
+    def test_skill_md_names_the_unreconcilable_step_error(self):
+        """The fail-loud half of the split must stay documented.
+
+        Reconcile drops a step live config also dropped; it MUST still abort on
+        one live config still schedules. Losing that from prose would read as
+        "reconcile heals everything".
+        """
+        body = _SKILL_MD.read_text(encoding='utf-8')
+        assert 'unreconcilable_step' in body
 
     def test_skill_md_invokes_validate_loadable_subcommand(self):
         body = _SKILL_MD.read_text(encoding='utf-8')
@@ -134,6 +162,17 @@ class TestSkillNarrativeContract:
             'cross-referencing the validate-loadable subcommand.'
         )
         assert 'validate-loadable' in body
+
+    def test_required_steps_md_documents_reconciliation_contract(self):
+        body = _REQUIRED_STEPS_MD.read_text(encoding='utf-8')
+        assert '## Reconciliation Contract' in body, (
+            'standards/required-steps.md MUST carry a "Reconciliation Contract" '
+            'section cross-referencing the reconcile subcommand.'
+        )
+        assert body.index('## Reconciliation Contract') < body.index('## Loadability Contract'), (
+            'the reconciliation contract MUST be stated before the loadability one, '
+            'matching the order Step 1.5 runs them in'
+        )
 
 
 # ===========================================================================

@@ -13,6 +13,10 @@ presets: []
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 mutates_source: true
 head_dependent: true
+verdict_inputs:
+  - '.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py'
+  - 'test/plan-marshall/audit-archived-plan-retrospectives/test_audit.py'
+  - '.claude/skills/finalize-step-era-stamp-fill/scripts/era_stamp_fill.py'
 ---
 
 # Finalize Step — Era-Stamp Fill (project-local)
@@ -61,6 +65,55 @@ The declaration IS the membership marker the dispatcher's re-entry check reads (
 § "Implementor Frontmatter"). Re-firing is safe and cheap: the fill is a clean no-op when no sentinel
 is present. Capture `git rev-parse HEAD` immediately before the terminal `mark-step-done` call and
 forward it via `--head-at-completion {sha}` on the `done` outcome (Step 4).
+
+### Verdict-input surface
+
+The paired `verdict_inputs` declaration names that surface **by full path, and nothing else**:
+
+- `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` — the `CHECK_ERA` map
+- `test/plan-marshall/audit-archived-plan-retrospectives/test_audit.py` — its lock-step mirror
+- `.claude/skills/finalize-step-era-stamp-fill/scripts/era_stamp_fill.py` — the executor whose
+  matcher DEFINES what "unresolved" means
+
+It is a superset by construction rather than by survey, which is what makes it admissible where the
+other head-dependent gates' surfaces are not (see
+[verdict-currency.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/verdict-currency.md)
+§ "The classification"). The verdict this step records is a *property of the first two files* — that
+neither carries an unresolved `PR-PENDING` token — and the step reads no other tracked content to
+compute it: § Execution rewrites precisely that pair in lock-step, and the commit at Step 3 stages
+precisely that pair. Its remaining inputs (`{pr_number}`, `{plan_id}`, `{worktree_path}`) are
+dispatcher values, not tracked files, so no HEAD advance can move them. A HEAD advance touching none
+of the declared paths therefore cannot introduce or restore a sentinel, nor change what counts as
+one, so the recorded verdict still holds and the dispatcher preserves it instead of re-firing. Every
+other advance, and every uncertainty, re-fires as before.
+
+**The executor is in the surface because the verdict is defined relative to its matcher.** The
+recorded claim is not "these files contain no such bytes" in the abstract; it is "these files carry
+no sentinel *that `era_stamp_fill.py` recognises as unresolved*" — the script matches only the
+double-quoted map-value form, deliberately sparing prose mentions and already-resolved `"#NNN"`
+values. A commit that widened or narrowed that matcher would change the verdict with neither audited
+file touched. That path is narrow and the file changes almost never, which is exactly why it is
+declared rather than argued away: the superset bar asks what *could* change the answer, not what
+usually does.
+
+**This document is deliberately NOT in the surface, and the line is principled rather than
+pragmatic.** A declaration names what determines the **truth of the recorded claim**, not what
+determines the step's future behaviour. `era_stamp_fill.py` is in because it defines what
+"unresolved" *means*, so changing it can make an already-recorded verdict false. This SKILL.md
+governs procedure — which paths get staged, how the detail line reads, which branch runs — so
+editing it changes what the step does on its NEXT run and cannot falsify a verdict already recorded
+about the tree. The same line is why the classifier, the discovery machinery, and the Python runtime
+are not declared either: without it the surface regresses to "everything the process touches", which
+is the inert whole-tree declaration this mechanism exists to avoid. See
+[verdict-currency.md](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/verdict-currency.md)
+§ "The classification" for the rule; it is stated there once and applied here.
+
+The globs are exact paths rather than patterns on purpose. A pattern such as `*audit.py` would also
+match `marketplace/bundles/plan-marshall/skills/manage-build-server/scripts/_marshalld_audit.py`,
+which this step neither reads nor writes — widening the surface costs unnecessary re-fires, and a
+surface written as the step's own staged paths plus its own executor cannot drift from them silently.
+The form matches what `git diff --name-only` emits (repo-root-relative, no leading `./`), which is
+the path form the classifier compares against.
 
 ## Ordering
 

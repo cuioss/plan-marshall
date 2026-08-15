@@ -1,13 +1,31 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Build extension for plan-marshall:build-pyproject — the Python file-to-build map.
+"""Build extension for plan-marshall:build-pyproject — file-to-build map and edge derivation.
 
-Owns Axis-B of the extension contract for the Python build system: the
-``(pattern, role)`` build_map routes plus the ``classify_paths`` /
-``classify_path_specificity`` lookups that the manage-execution-manifest
-aggregator and the build_map seed consume. Subclasses
-:class:`BuildExtensionBase` (file-to-build only); skill-loading (Axis-A) lives
-on the language domain extensions that subclass ``ExtensionBase``.
+Owns TWO axes of the extension contract for the Python build system:
+
+- **Axis-B** (:class:`BuildExtensionBase`) — the ``(pattern, role)`` build_map
+  routes plus the ``classify_paths`` / ``classify_path_specificity`` lookups that
+  the manage-execution-manifest aggregator and the build_map seed consume.
+- **Axis-C** (:class:`DerivationResolverBase`) — the ``pyproject`` distribution-name
+  join that derives which modules depend on which. A Python project publishes no
+  ``groupId:artifactId`` coordinate, so the Maven join can never match it; what a
+  Python distribution DOES publish is its PEP 621 ``[project] name``, and that is
+  what this resolver joins on.
+
+Skill-loading (Axis-A) is NOT here — it lives on the Python domain extension that
+subclasses ``ExtensionBase``. The two Axis-C methods are opted into by multiple
+inheritance, the only shape reachable from both otherwise-disjoint hierarchies.
+
+**This resolver is distinct from ``pm-dev-python``'s ``python`` resolver, and both
+are wanted.** That one joins AST-parsed import statements (Python-language
+knowledge, owned by the language bundle); this one joins declared distribution
+dependencies (build-system knowledge, owned by the build skill). They answer
+different questions — "what does this code import" versus "what does this project
+declare" — and a consumer project that declares its dependencies but is not
+crawled for imports gets its graph from this one alone. Each registration site
+stamps a single resolver id, so keeping the two joins at separate sites is also
+what keeps per-edge provenance able to say WHICH of the two derived a given edge.
 
 The Python build extension claims ``pyproject.toml`` as config but NOT
 ``uv.lock`` or ``marshal.json`` — neither lockfile nor marshal config triggers a
@@ -18,7 +36,17 @@ import fnmatch
 from pathlib import Path
 
 import marketplace_paths
-from extension_base import BuildExtensionBase
+from _name_edge_join import derive_name_edges, normalize_pep503
+from extension_base import BuildExtensionBase, DerivationResolverBase
+
+PYTHON_BUILD_SYSTEM = 'python'
+"""The ``build_systems`` entry the Python discoverer stamps on every module it finds.
+
+The Axis-C join is scoped to modules carrying this entry. A bare distribution
+name is a key shape every ecosystem uses, so an unscoped join would attribute
+another ecosystem's edges to this resolver and could fabricate an edge between a
+Python distribution and a same-named package from a different ecosystem.
+"""
 
 
 def _project_local_skill_globs() -> list[tuple[str, str]]:
@@ -96,8 +124,8 @@ def _test_fixture_routes() -> tuple[str, ...]:
     )
 
 
-class BuildExtension(BuildExtensionBase):
-    """Python build-system file-to-build extension."""
+class BuildExtension(BuildExtensionBase, DerivationResolverBase):
+    """Python build-system file-to-build extension and module-edge derivation resolver."""
 
     def get_skill_domains(self) -> list[dict]:
         """Return the domain key this build system's routes are filed under.
@@ -248,3 +276,78 @@ class BuildExtension(BuildExtensionBase):
     # (``production → compile``, ``test → module-tests``,
     # ``config → verify``) are correct. No classify_build_class
     # override is required — the inherited base default is the contract.
+
+    # =========================================================================
+    # Axis-C: module-edge derivation (the distribution-name join)
+    # =========================================================================
+
+    def derivation_resolver_id(self) -> str:
+        """Return the stable provenance identity stamped onto every pyproject edge.
+
+        Deliberately ``pyproject`` and not ``python``: ``pm-dev-python``'s
+        import join already owns ``python``, ids must be unique across resolvers
+        (the discovery collector drops the second claimant of a duplicate id),
+        and the two derivations must stay distinguishable in an edge's
+        ``producers[]`` — an edge that only the declared-dependency join found is
+        a different fact from one the import join also found.
+
+        See extension-api/standards/ext-point-derivation-resolver.md for the
+        complete four-face contract this identity participates in.
+        """
+        return 'pyproject'
+
+    @staticmethod
+    def _distribution_name(module_data: dict) -> str | None:
+        """Return the module's published PEP 621 distribution name, or ``None``.
+
+        The name lives in ``metadata.name``, which the Python discoverer fills
+        from ``pyproject.toml``'s ``[project] name``. There is deliberately NO
+        fallback to the module's own ``name``: that field is directory-derived
+        when no descriptor names the project, and a directory that declares no
+        ``[project] name`` publishes no distribution, so nothing can depend on it
+        by name. Falling back would invent a join key the ecosystem never
+        publishes and could match an unrelated third-party package that happens
+        to share the directory's name — a fabricated edge, which is worse than
+        the missing one it would paper over.
+        """
+        name = (module_data.get('metadata') or {}).get('name')
+        return name if isinstance(name, str) else None
+
+    def derive_edges(
+        self,
+        derived_by_name: dict,
+        enriched_by_name: dict,
+    ) -> tuple[list[tuple[str, str]], list[str]]:
+        """Derive module edges by joining PEP 621 distribution names.
+
+        A Python project states its internal structure in distribution names:
+        each module publishes a ``[project] name`` and names its dependencies as
+        ``name:scope`` strings. An edge exists wherever one module's dependency
+        name matches another module's published name, compared in PEP 503
+        normalised form so the ``-``/``_``/``.``/case variants of one distribution
+        resolve to the same module.
+
+        Both scopes contribute. A ``dev`` dependency is a real edge for impact
+        analysis — changing the depended-upon module can break the dependent's
+        tests — which is the same reason the Maven join ignores its own scope
+        segment.
+
+        The enriched overlay is unused: the precedence of a curated or discovered
+        ``internal_dependencies`` declaration OVER a derived edge set is core's
+        decision, applied ahead of the resolver call, so a resolver that
+        second-guessed it would be overriding a ruling it does not own.
+
+        Args:
+            derived_by_name: Module name → derived data. Each module's
+                ``dependencies`` list is already materialized by the caller —
+                this resolver runs no subprocess and touches no file.
+            enriched_by_name: Module name → LLM-curated overlay. Unused here.
+
+        Returns:
+            An ``(edges, notes)`` tuple. ``edges`` is the sorted list of
+            ``(dependent, dependency)`` module-name pairs. ``notes`` names every
+            distribution-name collision that suppressed an edge.
+        """
+        return derive_name_edges(
+            derived_by_name, PYTHON_BUILD_SYSTEM, self._distribution_name, normalize_pep503
+        )

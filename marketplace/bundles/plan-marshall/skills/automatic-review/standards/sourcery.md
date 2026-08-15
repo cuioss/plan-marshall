@@ -14,8 +14,12 @@ Sourcery comment is ingested even when the bot appears in neither list, with a w
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter.
 Consumers read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`,
 `honors_skip_label`, `participation_evidence`, `participation_requires_update`, `ignore_patterns`,
-`refusal_patterns`, `contentless_review_markers`, `actionable_content_markers`, `rate_limit_class`,
-`rate_limit_eta_patterns`, and `severity_map` from it; the prose sections carry the rationale.
+`review_body_summary_patterns`, `refusal_patterns`, `refusal_size_patterns`,
+`refusal_size_cap_patterns`, `contentless_review_markers`, `actionable_content_markers`,
+`rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map`
+from it; the prose sections carry the rationale. This bot declares no
+`review_body_summary_patterns` — the empty default keeps every one of its `review_body`
+comments COUNTED, which is the fail-closed direction for a finding count.
 Sourcery declares neither `contentless_review_markers` nor `actionable_content_markers`, so the
 producer's content-aware layer never fires for it — the empty list is the fail-closed default and
 this bot's ingest behaviour is unchanged by it.
@@ -39,8 +43,10 @@ refusal_patterns:
   - "your pull request is larger than the review limit of"         # #1014 refusal notice — handle-free and number-free so it survives a different account handle and a different character budget
   - "reached your weekly rate limit of"                            # #1034 / #1037 refusal notice — the account-level weekly diff-character quota, a DIFFERENT mode from the per-PR size ceiling above
 refusal_size_patterns:                                             # the CAUSE overlay: which refusal above is diff-SIZE (needs a smaller diff), not a rate/budget quota (needs backoff)
-  - "your pull request is larger than the review limit of"         # the per-PR size ceiling — cause=size; the weekly-rate-limit notice above is NOT here, so it classifies cause=quota
-rate_limit_class: hard_quota   # both observed refusals are the same AWAITABILITY (hard_quota); their CAUSE differs (size vs quota) — carried by refusal_size_patterns above
+  - "your pull request is larger than the review limit of"         # the per-PR size ceiling — cause=size, which resolves the bot to refused_structural; the weekly-rate-limit notice above is NOT here, so it classifies cause=quota
+refusal_size_cap_patterns:                                         # extraction regexes reading the CAP the size notice itself states — the structural mirror of rate_limit_eta_patterns
+  - "review limit of ([0-9][0-9,]*(?: [A-Za-z]+){0,2})"            # captures the stated budget with up to two trailing unit words ("150000 diff characters"); number-free in the DETECTION list above on purpose, so the budget is READ here rather than encoded anywhere
+rate_limit_class: hard_quota   # the AWAITABILITY of the weekly quota; the size ceiling no longer relies on this field, since cause=size resolves refused_structural on its own
 rate_limit_eta_patterns:
 severity_map:
   issue_bug_risk: high      # **issue (bug_risk):**
@@ -121,8 +127,10 @@ assumed to cover this bot: the #1014 per-PR size ceiling above, and a weekly dif
 ("you have reached your weekly rate limit of … diff characters"). The second is notice-voiced and the
 structural layer does see it; the first it cannot. Both are `hard_quota` on the **awaitability** axis,
 but their **cause** differs — the size ceiling is listed in `refusal_size_patterns`, so
-`_github_pr.refusal_cause` classifies it `size` (remedy: a smaller diff), while the weekly quota is not,
-so it classifies `quota` (remedy: backoff). See
+`_github_pr.refusal_cause` classifies it `size` and it resolves to the `refused_structural` member
+(remedies: split / accept / disable-for-this-PR — never wait), while the weekly quota is not, so it
+classifies `quota` and keeps the `refused_hard` awaitability member (remedy: backoff). That one bot
+carries two causes at one class is precisely why the cause cannot be read off `rate_limit_class`. See
 [`bot-participation-contract.md`](bot-participation-contract.md) § "Two axes: awaitability and CAUSE".
 
 ## Participation evidence — `review_body`
@@ -133,19 +141,29 @@ reviewed this diff. Each review appends a new comment rather than editing one in
 *participated*, never that its review was good — see
 [`bot-participation-contract.md`](bot-participation-contract.md) § "Evidence taxonomy".
 
-## Rate-limit class — `hard_quota`
+## Rate-limit class — `hard_quota`, and why the size ceiling no longer depends on it
 
-The one observed Sourcery refusal is a **per-PR size limit**, not a rolling window: the same PR is
-over the limit a minute later and an hour later alike, so nothing reopens by waiting. `rate_limit_class`
-is therefore `hard_quota`, and `rate_limit_eta_patterns` is empty — there is no reset time to extract
-because there is no reset. A caller that reads this class must NOT claim Sourcery's rate window, await
-it, or generate a recovery event — the recovery sequence escalates immediately for this class
-(`escalate_ask{reason: rate_window_not_awaitable}`; see `../SKILL.md` § "Rate-limit refusal recovery
-(opt-in)"). The productive responses are to split the PR or to accept the bot's non-participation, and
-the required-versus-optional classification is what decides whether that non-participation blocks.
+`rate_limit_class` is `hard_quota`: neither observed Sourcery refusal reopens on a useful timescale,
+and `rate_limit_eta_patterns` is empty because neither states a reset time. A caller reading this class
+must NOT claim Sourcery's rate window, await it, or generate a recovery event — the recovery sequence
+escalates immediately for this class, since treating every bot's refusal as awaitable would burn the
+full `review_rate_window_timeout_seconds` budget and still time out.
 
-This is exactly the distinction the class exists to carry: treating every bot's refusal as awaitable
-would burn the full `review_rate_window_timeout_seconds` budget here and still time out.
+**The size ceiling is no longer carried by this field.** It was: the class was originally justified by
+the per-PR size limit ("the same PR is over the limit a minute later and an hour later alike"), which
+made a *structural* fact ride on a *temporal* field. That worked only by accident of this bot's value.
+The two refusals are structurally different — a size ceiling is a property of the diff, a weekly quota
+a property of the account — and `rate_limit_class` is declared once per bot, so one value could never
+be right for both. The size refusal is now classified from its **cause**: it resolves to
+`refused_structural` whatever this field says, which is what stops a bot whose window genuinely does
+reopen from being offered an await for a diff that is simply too big. See
+[`bot-participation-contract.md`](bot-participation-contract.md) § "A refusal resolves by CAUSE first".
+
+The productive responses to the size ceiling are to split the PR, to accept the bot's
+non-participation, or to disable this reviewer for the PR — never to wait — and the
+required-versus-optional classification is what decides whether that non-participation blocks.
+`refusal_size_cap_patterns` reads the ceiling out of the notice so the accepted gap can be reconciled
+against the diff that was actually refused.
 
 ## Consumer stage — classify a surviving Sourcery finding
 

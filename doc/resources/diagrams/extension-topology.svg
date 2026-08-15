@@ -135,8 +135,8 @@
   <rect class="stroke" x="500" y="675" width="320" height="100" rx="6" ry="6"/>
   <text x="660" y="697" class="mono" style="font-weight: 700">ext-point-derivation-resolver</text>
   <text x="660" y="716" class="mono">DerivationResolverBase (multiple inheritance)</text>
-  <text x="660" y="735" class="col-sub">1 impl · Active</text>
-  <text x="660" y="755" class="item">build-maven · the Maven coordinate join (Axis-C)</text>
+  <text x="660" y="735" class="col-sub">6 impls · Active</text>
+  <text x="660" y="755" class="item">coordinate, name, and reference joins (Axis-C)</text>
 
   <rect class="stroke" x="840" y="675" width="320" height="100" rx="6" ry="6"/>
   <text x="1000" y="697" class="mono" style="font-weight: 700">ext-point-path-attribution</text>

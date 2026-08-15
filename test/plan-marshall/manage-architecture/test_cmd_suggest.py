@@ -70,7 +70,7 @@ def test_suggest_domains_npm_module_gets_javascript_only():
                 'paths': {'module': 'frontend', 'sources': ['src'], 'tests': ['test']},
                 'metadata': {},
                 'packages': {},
-                'dependencies': ['lit:compile'],
+                'dependencies': ['lit:runtime'],
                 'commands': {},
                 'stats': {'source_files': 20, 'test_files': 8},
             }

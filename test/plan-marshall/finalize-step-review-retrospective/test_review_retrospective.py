@@ -192,7 +192,8 @@ def test_coderabbit_status_summary_review_body_is_meta():
         {
             'author': 'coderabbitai',
             'kind': 'review_body',
-            'title': 'Actionable comments posted: 5',
+            'title': 'PR #1 review_body comment by coderabbitai (1)',
+            'body': 'Actionable comments posted: 5',
             'detail': '',
         }
     ])
@@ -210,7 +211,8 @@ def test_status_summary_signature_only_meta_for_coderabbit_author():
         {
             'author': 'sourcery-ai',
             'kind': 'review_body',
-            'title': 'Actionable comments posted: 5',
+            'title': 'PR #1 review_body comment by coderabbitai (1)',
+            'body': 'Actionable comments posted: 5',
             'detail': '',
         }
     ])
@@ -220,14 +222,69 @@ def test_status_summary_signature_only_meta_for_coderabbit_author():
     assert row['meta_count'] == 0
 
 
-def test_status_summary_signature_matched_in_detail_case_insensitively():
-    # Signature lives in detail, mixed case — still matched (haystack lowercased).
+def test_status_summary_signature_matched_in_body_case_insensitively():
+    # Mixed case in the BODY — still matched (the first line is lowercased).
     result = rr.aggregate([
         {
             'author': 'coderabbitai',
             'kind': 'review_body',
-            'title': 'Review summary',
-            'detail': 'ACTIONABLE Comments Posted: 3',
+            'title': 'PR #1 review_body comment by coderabbitai (1)',
+            'body': 'ACTIONABLE Comments Posted: 3',
+        }
+    ])
+
+    row = _reviewer(result, 'coderabbitai')
+    assert row['actionable_count'] == 0
+    assert row['meta_count'] == 1
+
+
+def test_signature_in_title_or_detail_alone_does_not_make_a_body_meta():
+    # The carve-out reads the BODY, which is where the comment text reaches:
+    # `github_pr` builds title/detail from structured metadata and quarantines the
+    # text under raw_input.body, which ingest promotes to top-level `body`. Matching
+    # title/detail never fired on a real record, so every status summary was counted
+    # as actionable — and the fixtures that "proved" the carve-out worked used a
+    # shape production never produces.
+    result = rr.aggregate([
+        {
+            'author': 'coderabbitai',
+            'kind': 'review_body',
+            'title': 'Actionable comments posted: 3',
+            'detail': 'Actionable comments posted: 3',
+            'body': 'The guard coerces UNKNOWN into a positive.',
+        }
+    ])
+
+    row = _reviewer(result, 'coderabbitai')
+    assert row['actionable_count'] == 1
+    assert row['meta_count'] == 0
+
+
+def test_a_review_mentioning_the_phrase_mid_body_stays_actionable():
+    # Only a body that OPENS with the status line is a summary. A genuine review
+    # that refers to the phrase further down is not boilerplate; dropping it would
+    # deflate the reviewer's actionable_count and its %-resolved-as-fixed.
+    result = rr.aggregate([
+        {
+            'author': 'coderabbitai',
+            'kind': 'review_body',
+            'body': 'The guard is wrong.\n\nActionable comments posted: 1',
+        }
+    ])
+
+    row = _reviewer(result, 'coderabbitai')
+    assert row['actionable_count'] == 1
+    assert row['meta_count'] == 0
+
+
+def test_a_real_summary_with_its_details_block_is_meta():
+    # The shape a real status summary takes. An earlier rule tested whether a later
+    # line followed and therefore COUNTED this one as actionable.
+    result = rr.aggregate([
+        {
+            'author': 'coderabbitai',
+            'kind': 'review_body',
+            'body': '**Actionable comments posted: 3**\n\n<details>\nwalkthrough\n</details>',
         }
     ])
 
@@ -286,7 +343,7 @@ def test_unattributed_status_summary_not_special_cased():
     # unattributed record with that signature is still a substantive (actionable)
     # review_body.
     result = rr.aggregate([
-        {'kind': 'review_body', 'title': 'Actionable comments posted: 9'}
+        {'kind': 'review_body', 'body': 'Actionable comments posted: 9'}
     ])
 
     row = _reviewer(result, 'unattributed')
@@ -503,7 +560,8 @@ def test_pr_726_coderabbit_shape():
         {
             'author': 'coderabbitai',
             'kind': 'review_body',
-            'title': 'Actionable comments posted: 5',
+            'title': 'PR #1 review_body comment by coderabbitai (1)',
+            'body': 'Actionable comments posted: 5',
             'detail': '',
         },
         {
@@ -559,7 +617,8 @@ def test_multi_reviewer_coderabbit_vs_sourcery_vs_pr_agent():
         {
             'author': 'coderabbitai',
             'kind': 'review_body',
-            'title': 'Actionable comments posted: 2',
+            'title': 'PR #1 review_body comment by coderabbitai (2)',
+            'body': 'Actionable comments posted: 2',
         },
         {
             'author': 'sourcery-ai',

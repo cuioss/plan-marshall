@@ -126,6 +126,38 @@ function validate(token) {
 }
 ```
 
+#### Place a bypass before the dispatch it guards
+
+A guard that can skip an expensive or mutating step is written **before** that
+step, never after it. This is the guard-clause rule applied to dispatch: when a
+branch exists to avoid work, it must sit where the work has not happened yet.
+
+```text
+// GOOD -- the bypass short-circuits before the probe runs
+if (threshold == NEVER) {
+    decision = NEEDS_USER          // no probe, no cost
+} else {
+    result = dispatchClassifier()  // only reached when the bypass declined
+    decision = decide(result)
+}
+
+// BAD -- the probe already ran; the bypass only discards its result
+result = dispatchClassifier()
+decision = (threshold == NEVER) ? NEEDS_USER : decide(result)
+```
+
+The bad form is not merely wasteful. It is **wrong** whenever the guarded call
+has an effect the bypass was meant to prevent — a mutation, a lock acquisition,
+a remote call, a consumed rate budget, an operator prompt. Discarding a return
+value does not undo any of those. A bypass placed after its dispatch therefore
+looks like a guard while guarding nothing, which is the harder defect to see in
+review: the code reads as if the branch is honoured.
+
+Applies equally to config-driven skips, feature flags, cache hits, and
+precondition checks. The test is mechanical — for every branch that can skip
+work, ask whether the work has already been done by the time the branch is
+evaluated. If it has, the branch is in the wrong place.
+
 ### Naming
 
 * Use meaningful, descriptive names

@@ -80,10 +80,32 @@ is the write-side complement of the read-side key-normalization the
 `step_record_mismatched_key` orphans. Step names in
 the `## Steps` list above are the bare canonical keys.
 
+## Reconciliation Contract
+
+Before the loadability check below, `phase-6-finalize` SKILL.md Step 1.5 MUST
+reconcile the frozen `manifest.phase_6.steps` against live `marshal.json`
+configuration via `manage-execution-manifest reconcile --apply`. The manifest is
+a write-time snapshot composed at outline time, so a plan that edits finalize
+configuration during its own run reaches phase entry holding a view its own
+edits invalidated.
+
+The reconcile verb owns the fail-direction split, and this file does not restate
+it: a frozen step whose standards doc is gone **and** which live config no
+longer lists is DROPPED (the snapshot is merely behind); one that live config
+**still** lists fails loud as `unreconcilable_step`. See
+[`../../manage-execution-manifest/SKILL.md`](../../manage-execution-manifest/SKILL.md)
+§ `reconcile` for the authoritative table, the narrow backfill rule, and the
+fail-closed behaviour when live config is unreadable.
+
+A reconcile that reports `reconciled: true` changes the step list, so the
+dispatcher re-reads the manifest before the loadability check and the Step 3
+dispatch loop.
+
 ## Loadability Contract
 
-Before any step in `manifest.phase_6.steps` is dispatched, `phase-6-finalize`
-SKILL.md Step 1.5 ("Manifest Loadability Check") MUST verify that every
+After the reconciliation above and before any step in `manifest.phase_6.steps`
+is dispatched, `phase-6-finalize`
+SKILL.md Step 1.5 MUST verify that every
 built-in step's standards file is present and readable. The check is
 implemented by `manage-execution-manifest validate-loadable` and runs
 exactly once per phase entry, immediately after the manifest is read in
@@ -119,6 +141,11 @@ motivating failure mode. The fail-fast guard converts a confusing
 mid-dispatch failure (the dispatcher tries to load the deleted standards
 file when its turn comes) into an immediate, actionable error at phase
 entry.
+
+Because the reconciliation above runs first, a plan that pruned **both** the
+standards file and the `marshal.json` entry no longer trips this abort — its
+frozen manifest is reconciled instead. The abort is now reserved for the
+half-done sweep, which is the case it was written for.
 
 **Activation**: presence of every built-in step in this file plus
 `manifest.phase_6.steps` is the trigger. A step listed here but absent

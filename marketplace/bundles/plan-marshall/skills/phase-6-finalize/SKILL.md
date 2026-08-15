@@ -340,6 +340,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 The phase-6-finalize step list is read from the **per-plan execution manifest** (`execution.toon`), not from `marshal.json`. The manifest is composed at outline time by `plan-marshall:manage-execution-manifest:compose` and is the single source of truth for which Phase 6 steps fire for this plan. This skill reads the manifest verbatim and dispatches — it carries NO per-step skip logic of its own.
 
+**One bounded exception, immediately below:** Step 1.5's `reconcile` call is the single point at which live `marshal.json` is consulted, and it may amend the persisted list before the dispatch loop reads it. It heals a provably-stale entry; it never re-runs the decision matrix and never re-derives the selection. Past that one call the "reads the manifest verbatim" rule holds for the whole phase.
+
 #### Read the execution manifest
 
 ```bash
@@ -351,11 +353,27 @@ Extract `phase_6.steps` — the ordered list of step IDs (e.g., `push`, `create-
 
 **If the manifest is missing** (`status: error, error: file_not_found`): abort finalize with an explicit error — the manifest is REQUIRED. Re-run `plan-marshall:manage-execution-manifest:compose` from outline phase to repair.
 
-#### Step 1.5: Manifest Loadability Check
+#### Step 1.5: Manifest Reconciliation and Loadability Check
 
-After reading `phase_6.steps` from the manifest but BEFORE dispatching any step in Step 3, walk the list once and verify each step's standards file is loadable. This is the manifest fail-fast guard: it converts a confusing mid-dispatch failure (a built-in step pointing at a deleted standards file) into an immediate, actionable error at phase entry.
+After reading `phase_6.steps` from the manifest but BEFORE dispatching any step in Step 3, reconcile the frozen list against live configuration, then verify each surviving step's standards file is loadable.
 
-For each `step_id` in `manifest.phase_6.steps`:
+**Reconcile first.** The manifest is a write-time snapshot composed at outline time (see [`manage-execution-manifest/SKILL.md`](../manage-execution-manifest/SKILL.md) § "Manifest-on-Write Semantics"), so a plan that edits finalize configuration during its own run reaches this point holding a view its own edits have invalidated. Reconciling before the loadability check is what makes that case survivable:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  reconcile --plan-id {plan_id} --apply
+```
+
+Parse the returned TOON and branch on `status`:
+
+- **`status: success`** — the frozen list now agrees with live configuration. When `reconciled: true`, **re-read the manifest** (the step list changed under you) and use the reconciled `phase_6.steps` for the loadability check and the Step 3 dispatch loop. The `stale[]` and `backfill[]` lists name what moved; both are already decision-logged by the verb.
+- **`status: error, error: unreconcilable_step`** — a frozen step's standards doc is missing AND live `marshal.json` still schedules it. That is the genuine defect (the plan deleted the file without sweeping `marshal.json`), not a stale snapshot. ABORT finalize with the returned `message` — do NOT enter Step 3, and do NOT reconcile it away.
+
+The reconcile verb is the single authority on that distinction; this skill does not re-derive it. See [`manage-execution-manifest/SKILL.md`](../manage-execution-manifest/SKILL.md) § `reconcile` for the fail-direction table and why backfill is deliberately narrow.
+
+**Then check loadability.** This is the manifest fail-fast guard: it converts a confusing mid-dispatch failure (a built-in step pointing at a deleted standards file) into an immediate, actionable error at phase entry. After a successful reconcile it is a cheap confirmation rather than the primary gate — it stays because it is the check that runs even when reconcile could not read live config at all.
+
+For each `step_id` in the (reconciled) `manifest.phase_6.steps`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
@@ -378,7 +396,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Manifest loadability check failed — step `{step_id}` referenced by `marshal.json` is missing standards file `{standards_path}` — the plan likely deleted the file without sweeping `marshal.json`"
 ```
 
-The actionable message is fixed by [`standards/required-steps.md`](standards/required-steps.md) § "Loadability Contract" — the wording above is the canonical phrasing the contract guarantees. Self-modifying plans that delete a `phase-6-finalize/standards/{name}.md` without also pruning `marshal.json::plan.phase-6-finalize.steps` are the motivating failure mode.
+The actionable message is fixed by [`standards/required-steps.md`](standards/required-steps.md) § "Loadability Contract" — the wording above is the canonical phrasing the contract guarantees. Self-modifying plans that delete a `phase-6-finalize/standards/{name}.md` without also pruning `marshal.json::plan.phase-6-finalize.steps` are the motivating failure mode — and after the reconcile above, that is the ONLY failure this abort can now represent. A step whose doc is gone *and* which live config has also dropped was reconciled away rather than aborting here; one that survives to this point is still scheduled by live `marshal.json` and genuinely cannot run.
 
 **Scope**: the loadability check applies to **built-in** steps only (bare names that resolve to `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/{name}.md`). External steps (`project:` / `bundle:skill`) are not validated here — their loadability is the responsibility of the host plugin cache, and a missing project/skill step surfaces as a `Skill: {ref}` resolution error during dispatch, not as a missing standards file. The `validate-loadable` subcommand returns `loadable: true` with no further check for external step IDs so the bulk-form caller does not have to filter.
 
@@ -533,7 +551,7 @@ The version-skew failure mode this contract closes is behavioural: between sessi
 | Persisted state | Live worktree HEAD | Action |
 |-----------------|--------------------|--------|
 | `outcome == done` AND `head_at_completion == HEAD` | matches | SKIP (steady-state — gate already validated this exact tree) |
-| `outcome == done` AND `head_at_completion != HEAD` | differs | RE-FIRE (treat as no record — HEAD is no longer the SHA the verdict was computed against) |
+| `outcome == done` AND `head_at_completion != HEAD` | differs | **Consult the verdict-currency classifier** (below). `verdict: invalidated` → RE-FIRE (treat as no record). `verdict: preserved` → SKIP, leaving `head_at_completion` at its original SHA |
 | `outcome == done` AND `head_at_completion` absent | n/a | RE-FIRE **and report the prior verdict UNVERIFIED** (see below) — a record with no SHA was never anchored to a tree |
 | `outcome == failed` | n/a | RETRY (unchanged — same as the general rule) |
 | `outcome == loop_back` | n/a | RE-FIRE (treat as no record — same as the general rule for loop_back) |
@@ -541,7 +559,21 @@ The version-skew failure mode this contract closes is behavioural: between sessi
 
 **A head-dependent verdict is never left standing as green for a HEAD it was not computed against.** That is the governing rule the table encodes, and the two RE-FIRE rows are its two halves: a superseded SHA re-fires, and an absent SHA re-fires AND is reported UNVERIFIED. On the absent-SHA row the dispatcher MUST log the prior verdict as unverified rather than discarding it silently, so a `done` record that was never anchored to a SHA stays visibly distinguishable from one that was genuinely validated and later superseded — the two are different facts, and collapsing them hides which gate never ran at all.
 
-The `!= HEAD` comparison covers **all three supersession mechanisms in scope**: a loop-back commit, a force-push, and a rebase. Each one replaces the SHA the verdict was computed against, so a plain SHA inequality is sufficient for all three — no separate force-push detector and no rebase detector is introduced. (A rebase additionally arms the post-rebase step-doc re-resolution contract above; that is a different obligation on the same event, not a second membership test.)
+**The verdict-currency classifier — a HEAD advance that cannot change a verdict does not re-run the gate that produced it.** A bare SHA inequality treats EVERY advance as invalidating, which is safe and maximally expensive: one finalize advances HEAD many times (settle-band commits, a replaying rebase, loop-back fixes), and each advance re-stales every verdict recorded before it, mostly to re-confirm the identical answer. On the differing-SHA row above, resolve the question instead of assuming it:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:verdict_currency classify \
+  --step {step_id} --worktree-path {worktree_path} --head-at-completion {recorded_sha}
+```
+
+Branch on the returned `verdict`:
+
+- **`invalidated`** → RE-FIRE exactly as the table's differing-SHA row has always done. This is the answer on every uncertainty as well as on every genuine invalidation. The classifier returns `preserved` on exactly two paths, each of which *proves* the recorded tree is still in force: the two SHAs are equal (byte-identical trees — decided FIRST, before any resolution, so it holds even when discovery cannot run), or the step is head-dependent, declares a `verdict_inputs` surface, and the tree difference touches none of it. Everything else returns `invalidated` with a `reason` naming which. A step that declares no surface therefore keeps the unconditional re-fire on every real advance, so adoption is opt-in per step and silence never buys a skip.
+- **`preserved`** → SKIP, and **do NOT re-stamp `head_at_completion`**. The record keeps the SHA the verdict was genuinely computed against; re-stamping it to the live HEAD would make the record claim a currency it does not have, which is the false-green signal this whole mechanism exists to prevent. Keeping the original anchor also makes the decision monotone — the diff range only grows, so the first advance that touches the surface invalidates the verdict however many preserved advances preceded it. Log the `reason` and `detail` at INFO alongside the skip decision so the preservation is auditable rather than silent.
+
+The classifier compares TREES (`git diff --name-only {recorded} {live}`), not the commits between them, which is what makes one call correct under all three supersession mechanisms below. The model — the trigger set, the per-step cost, the declaration's discriminator, and the coverage boundary of the re-fire count — is owned by [`standards/verdict-currency.md`](standards/verdict-currency.md); this section states only where the dispatcher consults it.
+
+The `!= HEAD` comparison covers **all three supersession mechanisms in scope**: a loop-back commit, a force-push, and a rebase. Each one replaces the SHA the verdict was computed against, so a plain SHA inequality is sufficient to detect all three — no separate force-push detector and no rebase detector is introduced. (A rebase additionally arms the post-rebase step-doc re-resolution contract above; that is a different obligation on the same event, not a second membership test.)
 
 The comparison consults HEAD-advance only — there is no dirty-tree re-fire branch. The dispatcher's commit instrumentation (item 5f) commits every `mutates_source: true` step's output before the dispatcher advances, so no head-dependent step can leave an uncommitted tree at re-entry. A dirty tree at any re-entry indicates an upstream contract violation rather than a re-fire trigger; every head-dependent step follows the HEAD-only table.
 
@@ -651,7 +683,13 @@ FOR each step_id in manifest.phase_6.steps:
            Resolve the live worktree HEAD via `git -C {worktree_path} rev-parse HEAD`.
            Read this fresh per iteration; do NOT cache across the loop.
              - IF outcome == "done" AND head_at_completion == live HEAD: SKIP this step
-             - IF outcome == "done" AND head_at_completion != live HEAD: RE-FIRE (treat as no record — dispatch as fresh run)
+             - IF outcome == "done" AND head_at_completion != live HEAD:
+                 Consult the verdict-currency classifier (see "Special case — HEAD-dependent steps"):
+                   verdict_currency classify --step {step_id} --worktree-path {worktree_path}
+                     --head-at-completion {head_at_completion}
+                 - IF verdict == "invalidated": RE-FIRE (treat as no record — dispatch as fresh run)
+                 - IF verdict == "preserved": SKIP this step, log the returned reason/detail at INFO,
+                   and leave head_at_completion at its recorded SHA (never re-stamp it to live HEAD)
              - IF outcome == "done" AND head_at_completion is absent: RE-FIRE and report the prior
                verdict UNVERIFIED (a record with no SHA was never anchored to a tree; dispatch as fresh run)
              - IF outcome == "failed": RETRY (proceed to dispatch as fresh run)
@@ -685,9 +723,23 @@ FOR each step_id in manifest.phase_6.steps:
            - IF no record OR any other value: dispatch normally
      Log skip/retry/re-fire decisions at INFO level so the work.log reflects the re-entry path.
 
+     **Every SKIP branch above ALSO records its item-5e `record-step` row** with
+     `--outcome skipped` and a zero token triple, then continues to the next iteration
+     without running items 2-7. Item 5e's contract already names this case ("the
+     resumable re-entry check skipped an already-`done` step or a HEAD-comparison decided
+     no re-run was needed"); this sentence is where the SKIP branch discharges it, so the
+     obligation is not left to be inferred from a `continue`. The row is load-bearing for
+     the `verdict: preserved` skip in particular: without it the saving that skip creates
+     would appear only as one FEWER `executed` row, which is indistinguishable from a step
+     that was never in the manifest — see [`standards/verdict-currency.md`](standards/verdict-currency.md)
+     § "Obtaining the re-fire count". Note that this row is NOT a `mark-step-done` write and so
+     does not disturb the completion-line property below: `record-step` appends to the manifest's
+     execution log, while the completion line rides the `phase_steps` handshake write.
+
      **A re-entry SKIP emits NO completion line — structurally.** Every SKIP branch above (the
-     HEAD-dependent `head_at_completion == live HEAD` skip, the `push` parity-driven
-     `state == "synced"` skip, and the general `outcome == "done"` skip) calls NO `mark-step-done`
+     HEAD-dependent `head_at_completion == live HEAD` skip, the HEAD-dependent
+     `verdict: preserved` skip, the `push` parity-driven `state == "synced"` skip, and the
+     general `outcome == "done"` skip) calls NO `mark-step-done`
      — it reads a terminal record already on `status.metadata.phase_steps`, whose `mark-step-done`
      write already emitted the step's `[STEP] … Completed step:` line (the fused emission — see
      item 7). Because the completion line rides the handshake write and a SKIP performs no write, a
@@ -1065,7 +1117,7 @@ FOR each step_id in manifest.phase_6.steps:
 
       - **Inline-only steps** — every step classified under [`standards/dispatch-inline-split.md`](standards/dispatch-inline-split.md) § "Inline steps" (the single source of truth for inline membership; do NOT re-list it here) — they record their own mark synchronously in the main context.
       - **Timed-out steps** — the timeout path at item 5 already recorded `outcome=failed` before continuing.
-      - **`escalate_ask`-returning steps** — a `plan-marshall:automatic-review` step that returns `status: escalate_ask` legitimately left NO terminal `mark-step-done` record, because the continuation is owned by item 7a (the escalate-ask continuation hook), NOT by the leaf. The carve-out keys on `status: escalate_ask` alone and therefore generalizes over the `reason` field — it covers **both** escalation reasons uniformly: `reason: re_review_timeout` (trigger B re-review await timeout under an `ask` or `defer` policy) and `reason: rate_window_timeout` (the rate-window await loop exhausting its budget while the bot is still rate-limited). A dispatched leaf cannot fire the `AskUserQuestion` and cannot mark the step terminal — it returns the escalation envelope and item 7a consumes it. Asserting terminality for such a step is a FALSE POSITIVE that would halt the pipeline with `step_record_missing` BEFORE item 7a can run, leaving 7a unreachable. The dispatcher already has the return TOON in context (it read the same TOON to classify the termination cause under item 5c), so detecting `status: escalate_ask` adds no new read. This carve-out is the symmetric dispatcher-side counterpart of the leaf's no-mark contract documented in [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "`escalate_ask` return (timeout escalations)".
+      - **`escalate_ask`-returning steps** — a `plan-marshall:automatic-review` step that returns `status: escalate_ask` legitimately left NO terminal `mark-step-done` record, because the continuation is owned by item 7a (the escalate-ask continuation hook), NOT by the leaf. The carve-out keys on `status: escalate_ask` alone and therefore generalizes over the `reason` field — it covers **every** escalation reason uniformly, and deliberately names none of them, because an enumeration here would go stale each time a reason is added (it already had, twice: written for two reasons, stale at four, stale again at five). Item 7a owns the current list; this carve-out needs only the status. A dispatched leaf cannot fire the `AskUserQuestion` and cannot mark the step terminal — it returns the escalation envelope and item 7a consumes it. Asserting terminality for such a step is a FALSE POSITIVE that would halt the pipeline with `step_record_missing` BEFORE item 7a can run, leaving 7a unreachable. The dispatcher already has the return TOON in context (it read the same TOON to classify the termination cause under item 5c), so detecting `status: escalate_ask` adds no new read. This carve-out is the symmetric dispatcher-side counterpart of the leaf's no-mark contract documented in [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "`escalate_ask` return (timeout escalations)".
 
       See the "Post-dispatch completion guard" subsection below for the placement contract.
 
@@ -1250,25 +1302,29 @@ FOR each step_id in manifest.phase_6.steps:
       **Completion emission on this hook is fully structural — no exemption needed.**
       A `plan-marshall:automatic-review` step that returns `status: escalate_ask` recorded NO
       terminal outcome in its leaf (the item-5d `escalate_ask` carve-out), so nothing has emitted
-      a completion line for this iteration yet. The "Merge anyway" branch's
-      `mark-step-done --outcome done` below is therefore the step's FIRST and ONLY terminal
-      recording, and the fused emission (item 7) writes its `[STEP] … Completed step:` line exactly
-      once — do NOT pass `--no-completion-log` there. The `defer` branch records nothing at all by
-      design, so it emits nothing — correct, because a deferred step did not settle and owes no
-      completion.
+      a completion line for this iteration yet. Whichever RECORDING branch fires below —
+      the temporal reasons' "Merge anyway", or the structural reason's "Accept the coverage
+      gap" — its `mark-step-done --outcome done` is therefore the step's FIRST and ONLY
+      terminal recording, and the fused emission (item 7) writes its `[STEP] … Completed
+      step:` line exactly once — do NOT pass `--no-completion-log` there. The NON-recording
+      branches record nothing at all by design, so they emit nothing — correct, because a
+      step that deferred, split, or was re-dispatched did not settle and owes no completion.
+      The two classes are exhaustive over every branch below: each one either stamps a
+      terminal `done` or deliberately leaves the record absent for re-entry.
 
-      When the dispatched `plan-marshall:automatic-review` step returns `status: escalate_ask`, the leaf has returned an escalation envelope rather than firing an `AskUserQuestion` itself (a dispatched leaf cannot own the prompt — see the leaf/dispatch-topology contract in `ref-workflow-architecture/standards/agents.md`). The dispatcher owns the consumption. Four escalation reasons reach this hook, discriminated by the return TOON's `reason` field, and the hook handles them **identically at the AskUserQuestion layer** — the only difference is which policy knob (if any) is consulted first:
+      When the dispatched `plan-marshall:automatic-review` step returns `status: escalate_ask`, the leaf has returned an escalation envelope rather than firing an `AskUserQuestion` itself (a dispatched leaf cannot own the prompt — see the leaf/dispatch-topology contract in `ref-workflow-architecture/standards/agents.md`). The dispatcher owns the consumption. Five escalation reasons reach this hook, discriminated by the return TOON's `reason` field. **Four of them are handled identically at the AskUserQuestion layer; the fifth is not, and must not be** — see the `refusal_structural` carve-out below:
 
       - **`reason: re_review_timeout`** — a re-review await timed out at trigger B (see `../automatic-review/SKILL.md` § "On re-review timeout (trigger B)"). The `re_review_on_timeout` policy knob selects `action: defer` vs `action: ask` (or `proceed`, which never returns `escalate_ask`).
       - **`reason: rate_window_timeout`** — the rate-window expiry poll exhausted `review_rate_window_timeout_seconds` while the claimed window was still open.
       - **`reason: rate_window_not_awaitable`** — the refusing bot's `rate_limit_class` is `hard_quota` or `unknown`, so neither awaiting nor generating an event is productive; the leaf escalated without claiming a window.
       - **`reason: rate_window_exhausted`** — the recovery recursion cap for that bot on that PR is spent; the leaf escalated rather than re-triggering a bot it has already re-triggered `attempt_cap` times.
+      - **`reason: refusal_structural`** — ⛔ **the one reason whose option set is DISJOINT from the other four.** The refusing bot's refusal cause is a diff-SIZE ceiling, so it classified `refused_structural` and the limit is on the diff rather than on a window. Its `prompt_options[]` are *split / accept / disable-for-this-PR*, it carries `cap` and `measured_diff_size` instead of `timeout_seconds`, and **it must NEVER be offered a wait** — waiting is an action the operator can take that is guaranteed not to work, because the diff is the same size an hour later. See `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)" Branch 0.
 
-      The three rate-window reasons (see `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)") always carry `action: ask` and consult NO policy knob — they always fire the AskUserQuestion.
+      The three rate-window reasons and `refusal_structural` (see `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)") always carry `action: ask` and consult NO policy knob — they always fire the AskUserQuestion.
 
-      The full field set of the `escalate_ask` return TOON (all four `reason` variants) is defined in [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "`escalate_ask` return (timeout escalations)" — read it there; do NOT restate the field set here.
+      The full field set of the `escalate_ask` return TOON (all five `reason` variants) is defined in [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "`escalate_ask` return (timeout escalations)" — read it there; do NOT restate the field set here.
 
-      For `reason: re_review_timeout`, read the timeout policy from the `plan-marshall:automatic-review` step-params snapshot (the three rate-window variants skip this read — they have no policy knob):
+      For `reason: re_review_timeout`, read the timeout policy from the `plan-marshall:automatic-review` step-params snapshot (the other four variants skip this read — they have no policy knob):
 
          python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
            step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review
@@ -1283,8 +1339,10 @@ FOR each step_id in manifest.phase_6.steps:
 
       - **policy `proceed`** (the leaf already fell through to "Wait for review-bot comments" and the run terminated normally): the leaf does NOT return `escalate_ask` for `proceed` — no orchestrator branch is needed. This is the documented explicit non-escalating case; the unreviewed-HEAD WARNING was logged by the leaf.
 
-      - **policy `ask` (any of the four `reason` values)**: fire an `AskUserQuestion` using the three options encoded in the returned `prompt_options[]`. All four reasons are handled identically here — the same three options, the same terminal-record contract — differing only in how the "merge anyway" branch resolves the SHA it stamps (the three rate-window envelopes carry no `head_sha`; see the sub-branch note below). Classify the halt under the existing `blocked_user_review` termination cause (item 5c) when it fires AskUserQuestion. Branch on the operator's selection:
-        - **"Wait another {timeout_seconds}s"** → re-dispatch `plan-marshall:automatic-review` from scratch with a fresh budget (re-enter the Step 3 dispatch with the SAME role/level resolution — NOT a SendMessage resume; the harness cannot resume a spawned agent, see the harness-no-resume contract). For `reason: re_review_timeout` the fresh dispatch re-runs the re-review await against a new budget; for the three rate-window reasons it re-runs the refusal-recovery sequence against a fresh `review_rate_window_timeout_seconds` budget. Note that `rate_window_exhausted` is NOT reset by the re-dispatch — the recursion cap is stored per bot per PR and survives, so the fresh dispatch will re-escalate rather than silently re-triggering the bot a third time.
+      - **policy `ask`**: fire an `AskUserQuestion` using the options encoded in the returned `prompt_options[]`. ⛔ **Render `prompt_options[]` as returned — never a hard-coded option list.** The envelope is the authority on what the operator may choose, precisely because the option sets differ by reason; a hook that renders its own fixed three would offer the wrong ones the moment a reason's remedies diverge, which is exactly what `refusal_structural` does. Classify the halt under the existing `blocked_user_review` termination cause (item 5c) when it fires AskUserQuestion.
+
+        **The four TEMPORAL reasons** (`re_review_timeout`, `rate_window_timeout`, `rate_window_not_awaitable`, `rate_window_exhausted`) share one option set and one terminal-record contract, differing only in how the "merge anyway" branch resolves the SHA it stamps (the three rate-window envelopes carry no `head_sha`; see the sub-branch note below). Branch on the operator's selection:
+        - **"Wait another {timeout_seconds}s"** → re-dispatch `plan-marshall:automatic-review` from scratch with a fresh budget (re-enter the Step 3 dispatch with the SAME role/level resolution — NOT a SendMessage resume; the harness cannot resume a spawned agent, see the harness-no-resume contract). For `reason: re_review_timeout` the fresh dispatch re-runs the re-review await against a new budget; for the three rate-window reasons it re-runs the refusal-recovery sequence against a fresh `review_rate_window_timeout_seconds` budget. Note that `rate_window_exhausted` is NOT reset by the re-dispatch — the recursion cap is stored per bot per PR and survives, so the fresh dispatch will re-escalate rather than silently re-triggering the bot a third time. ⛔ **This branch does not exist for `refusal_structural`**, whose envelope deliberately carries no `timeout_seconds` — rendering it there would interpolate an unresolved placeholder into a non-option.
         - **"Merge anyway — proceed unreviewed"** → decision-log a WARNING, then record the terminal step outcome on the `plan-marshall:automatic-review` REQUIRED step BEFORE advancing, then continue the FOR loop (advance to `branch-cleanup`). The terminal record is mandatory: `plan-marshall:automatic-review` is head-dependent (its doc declares `head_dependent: true`) and a REQUIRED step in the `phase_steps_complete` handshake — without an `--outcome done` record on this branch the handshake deadlocks at the 6-finalize phase transition with a `step_record_missing` gap. `plan-marshall:automatic-review` requires a `--head-at-completion {sha}` on its terminal `done` record; resolve `{sha}` by reason:
            - `reason: re_review_timeout` → use the `{head_sha}` from the escalation envelope (the unreviewed commit the operator's decision applies to).
            - `reason: rate_window_timeout` / `rate_window_not_awaitable` / `rate_window_exhausted` → the envelope carries no `head_sha`; resolve the live worktree HEAD via `git -C {worktree_path} rev-parse HEAD` and stamp that.
@@ -1299,6 +1357,40 @@ FOR each step_id in manifest.phase_6.steps:
                --head-at-completion {head_sha}
 
         - **"Defer merge"** → same as `action: defer` above (skip the merge, leave the step record absent so the resumable re-entry check re-issues `plan-marshall:automatic-review` on the next finalize entry, and HALT).
+
+        ⛔ **`reason: refusal_structural` — its OWN branch table. Do not route it through the four above.** Its `prompt_options[]` are *"Split the PR into diffs under the cap"* / *"Accept the coverage gap (record reason)"* / *"Disable this reviewer for this PR"*, and **none of them maps to any branch above**. Render the returned options and, alongside the question, name the two figures the envelope carries — `cap` (the ceiling the bot's own notice stated) and `measured_diff_size` (how big the refused diff was), each the literal `unknown` when unavailable — so an operator choosing to accept the gap accepts a quantified one. Read them as an order-of-magnitude comparison; they carry different units by design. Branch on the operator's selection:
+          - **"Split the PR into diffs under the cap"** → decision-log at WARNING and take the SAME path as `action: defer` (skip the merge, leave the `plan-marshall:automatic-review` step record ABSENT so the resumable re-entry check re-issues it, and HALT). Splitting is a plan-shape change the operator performs outside this run; the absent record is what lets the smaller PR be reviewed on re-entry. This workflow never performs the split itself.
+          - **"Accept the coverage gap (record reason)"** → decision-log a WARNING naming the bot, the `cap`, and the `measured_diff_size`; resolve the live worktree HEAD (the envelope carries no `head_sha`); stamp the terminal `--outcome done --head-at-completion {sha}` record; and continue the FOR loop.
+
+            ⛔ **Mint the authorization HERE — the step record alone does not carry the ruling.** The pre-merge barrier re-derives participation from the provider and re-checks authorization at its own resolved HEAD, so a `done` record buys no merge; and under the DEFAULT `pre_merge_comment_barrier: fail_into_loopback` the barrier never re-PROMPTS — it records a loop-back and logs the remedies, so nothing asks the operator to accept the gap a second time. Without a grant at this site the operator selects "Accept the coverage gap", gets no merge, no second prompt, and no record of what they accepted: an option whose label promises an outcome it does not deliver. Grant it at the same `{sha}` stamped above (see `manage-status` Canonical invocations → `merge-authorization — grant`), carrying both figures so the record says WHICH gap was accepted rather than merely that one was:
+
+            ```bash
+            python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant \
+              --plan-id {plan_id} --kind barrier-ask-override --head {sha} --gap-class review-barrier-gap \
+              --granted-over "refused_structural={bot_kind}, cap={cap}, measured_diff_size={measured_diff_size}" \
+              --reason "{reason}"
+            ```
+
+            ⚠ The grant is HEAD-bound. If anything rebases between this hook and the barrier, it lapses and the barrier re-reports the gap — correct behaviour (the operator authorized a tree they saw), not a defect to work around.
+          - **"Disable this reviewer for this PR"** → move the bot from `required_bots` to `optional_bots`, then re-dispatch `plan-marshall:automatic-review` so the quorum is re-evaluated with the bot optional. Leave the step record ABSENT across the re-dispatch, exactly as the "wait again" branch does — the terminal record is written by the settling pass, not here. The reclassification is two writes, one per key, because `step-params set` takes a single `--param`/`--value` pair:
+
+            ```bash
+            python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+              step-params set --plan-id {plan_id} --phase 6-finalize \
+              --step-id plan-marshall:automatic-review --param required_bots --value "{required_bots minus this bot}"
+            ```
+
+            ```bash
+            python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+              step-params set --plan-id {plan_id} --phase 6-finalize \
+              --step-id plan-marshall:automatic-review --param optional_bots --value "{optional_bots plus this bot}"
+            ```
+
+            Then decision-log the reclassification at WARNING naming the bot and the cap.
+
+            ⛔ **The re-dispatch settles ONLY because the recovery is scoped to required bots.** That scoping is what `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)" declares: a refusal from a bot outside `required_bots` is an ordinary settle, never an escalation. Without it the re-dispatch would re-detect the same refusal, re-enter Branch 0, and re-escalate with the identical three options — an operator choosing the one remedy that resolves the block would loop on it forever. Do not weaken that scoping without removing this option.
+
+            ⭐ **The override is PLAN-LOCAL and the option label is therefore literal.** `step-params set` writes into this plan's persisted manifest snapshot and never touches `marshal.json`, so the reclassification expires with the plan and the reviewer stays required for every other plan and every future PR. Say that when presenting the option: an operator who believes they are permanently disabling a required reviewer will decline the one remedy that actually fits their situation.
 
   ### Loop-back Target Contract
 
@@ -1465,7 +1557,7 @@ The post-dispatch completion guard sub-step above (the `assert-step-recorded` ch
 
 - **Relationship to the `phase_steps_complete` handshake**: the guard is the earlier, attributed sibling of the existing `phase_steps_complete` handshake invariant (see [standards/required-steps.md](standards/required-steps.md)). The handshake catches a missing step record at the phase transition, but with no per-step attribution — it only reports that the phase is incomplete. The guard catches the same omission immediately after the offending step returns, names the step, and halts, so the violation surfaces at per-step granularity in the work-log and the Step 4 output template rather than as an opaque transition deadlock.
 
-- **`escalate_ask` guard invariant**: `escalate_ask` is a legitimate non-terminal return owned exclusively by item 7a (the escalate-ask continuation hook). When `plan-marshall:automatic-review` returns `status: escalate_ask` — for EITHER `reason: re_review_timeout` (trigger B re-review await timeout under an `ask` or `defer` policy) or `reason: rate_window_timeout` (the rate-window await loop exhausting its budget) — the leaf legitimately recorded no terminal `mark-step-done` outcome because the continuation — firing the `AskUserQuestion`, or deferring the merge — belongs to item 7a, not to the leaf. The completion guard MUST NOT assert terminality for an `escalate_ask` return regardless of `reason`: doing so produces a false `step_record_missing` halt that fires BEFORE item 7a runs, leaving item 7a unreachable for the escalate-ask path. This is the dispatcher-side half of the symmetric no-mark contract — the leaf does not record terminality (see [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "`escalate_ask` return (timeout escalations)"), and the guard does not assert it.
+- **`escalate_ask` guard invariant**: `escalate_ask` is a legitimate non-terminal return owned exclusively by item 7a (the escalate-ask continuation hook). When `plan-marshall:automatic-review` returns `status: escalate_ask` — under ANY `reason`, which item 7a enumerates and this invariant deliberately does not — the leaf legitimately recorded no terminal `mark-step-done` outcome because the continuation — firing the `AskUserQuestion`, or deferring the merge — belongs to item 7a, not to the leaf. The completion guard MUST NOT assert terminality for an `escalate_ask` return regardless of `reason`: doing so produces a false `step_record_missing` halt that fires BEFORE item 7a runs, leaving item 7a unreachable for the escalate-ask path. This is the dispatcher-side half of the symmetric no-mark contract — the leaf does not record terminality (see [`../automatic-review/SKILL.md`](../automatic-review/SKILL.md) § "`escalate_ask` return (timeout escalations)"), and the guard does not assert it.
 
 The guard is scoped to dispatched (Task-agent) steps only, and within that scope it exempts three classes uniformly — inline steps record their mark synchronously in the main context, the item-5 timeout path already records `outcome=failed`, and `escalate_ask`-returning steps legitimately leave no terminal record because item 7a owns their continuation. All three are exempt under the same gate as items 5b/5c, extended in item 5d with the `escalate_ask` carve-out.
 
@@ -1724,12 +1816,14 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `scripts/ci_verify.py` | `plan-marshall:phase-6-finalize:ci_verify` | Inline deterministic `default:ci-verify` executor — green CI marks the step done with zero dispatch; red CI classifies failures and returns a per-producer needs-triage signal |
 | `scripts/ci_complete_precondition.py` | `plan-marshall:phase-6-finalize:ci_complete_precondition` | Resolver for the `requires: [ci-complete]` frontmatter precondition, with a per-HEAD cache and a harness-ceiling clamp |
 | `scripts/derive_gate_bundles.py` | `plan-marshall:phase-6-finalize:derive_gate_bundles` | Derives the unique bundle set the pre-push quality gate runs over, from the live footprint |
+| `scripts/review_commitments.py` | `plan-marshall:phase-6-finalize:review_commitments` | Reconciles a simplify pass's deletions against the review commitments made earlier in the SAME finalize run — reports conflicts, gates nothing |
 | `scripts/pr_intent_section.py` | `plan-marshall:phase-6-finalize:pr_intent_section` | Renders the distilled `## Intent` section into the generated PR body — owns the character budget and its visible truncation, and omits the section entirely (heading included) when the plan has no outline intent |
 | `scripts/post_run_source_guard.py` | `plan-marshall:phase-6-finalize:post_run_source_guard` | Runtime tracked-source guard for the `post_run_review` band (item 5f sub-item 0) — reports dirty TRACKED paths (source, or a tracked `.plan/` config/descriptor) left by a step that declared `mutates_source: false`; the `.plan/` exemption is keyed on git trackedness, not the path prefix; publishes the examined population (`considered_paths` / `exempted_paths` / `offending_paths`); advisory and non-blocking (always exits 0) |
+| `scripts/verdict_currency.py` | `plan-marshall:phase-6-finalize:verdict_currency` | Classifies whether a HEAD advance invalidates a head-dependent step's recorded verdict, by diffing the recorded SHA's tree against the live HEAD over the step's declared `verdict_inputs` surface; fails closed to `invalidated` on every uncertainty |
 
 ## Canonical invocations
 
-The canonical argparse surface for `ci_complete_precondition.py`, `pr_intent_section.py` and `post_run_source_guard.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for `ci_complete_precondition.py`, `pr_intent_section.py`, `post_run_source_guard.py`, `review_commitments.py` and `verdict_currency.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
 ### ci_complete_precondition — resolve
 
@@ -1756,6 +1850,44 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:post_run_source_g
 `--project-dir` is required and takes the MAIN CHECKOUT — it carries no default
 because every caller runs after `default:branch-cleanup` removed the worktree,
 so a cwd default would silently observe a deleted tree.
+
+### verdict_currency — classify
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:verdict_currency classify \
+  --step STEP --head-at-completion HEAD_AT_COMPLETION \
+  [--worktree-path WORKTREE_PATH] [--live-head LIVE_HEAD]
+```
+
+`--live-head` is resolved from `git -C {worktree-path} rev-parse HEAD` when omitted.
+The command always exits `0` — an `invalidated` verdict is a normal answer, not an
+error — so the caller branches on the returned `verdict` field, never on the exit
+code. See [`standards/verdict-currency.md`](standards/verdict-currency.md) for the
+model this verb serves.
+
+### review_commitments — reconcile
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_commitments reconcile \
+  --plan-id PLAN_ID --diff-file DIFF_PATH
+```
+
+`--diff-file` takes a path to a unified diff of the simplify pass's own edits — the
+`git diff` over the worktree BEFORE the dispatcher's commit instrumentation commits
+them. Read from a file rather than stdin so the invocation stays one Bash call with
+no shell plumbing.
+
+Returns `verdict: clear | conflict` plus one `conflicts[]` record per deletion that
+removes a line the review process committed to earlier in the same run. It reports
+and never decides: the envelope carries `proves: removal_conflict_only` and
+`gates_merge: false` in as many words, and no caller may read a conflict as a merge
+verdict. Two undetermined states fail CLOSED to a conflict rather than to silence —
+an untriaged (`pending`) finding, whose disposition nobody has decided yet, and a
+finding with a path but no line anchor, which binds its whole file. An error return
+carries NO `verdict` field, so a crashed reconciliation reads as UNKNOWN rather than
+as a clear pass. See
+[`standards/finalize-step-simplify.md`](standards/finalize-step-simplify.md)
+§ "Reconcile against the run's review commitments".
 
 ## Related
 

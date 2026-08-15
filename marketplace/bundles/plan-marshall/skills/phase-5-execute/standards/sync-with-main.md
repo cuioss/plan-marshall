@@ -145,5 +145,5 @@ The split moves substantive reconciliation back to where the loop already exists
 ## Cross-References
 
 - [`phase-2-refine/standards/refine-workflow-detail.md` § Step 3d](../../phase-2-refine/standards/refine-workflow-detail.md#step-3d-baseline-reconciliation) — authoritative substantive reconciliation procedure
-- [`phase-6-finalize/standards/branch-cleanup.md` § Rebase Branch onto Base](../../phase-6-finalize/standards/branch-cleanup.md#rebase-branch-onto-base) — unconditional pre-merge rebase onto `origin/{base_branch}`; the authoritative actor for the rebase that this fast-path gate refuses to perform
+- [`phase-6-finalize/standards/branch-cleanup.md` § Rebase Branch onto Base](../../phase-6-finalize/standards/branch-cleanup.md#rebase-branch-onto-base) — the pre-merge rebase onto `origin/{base_branch}`; the authoritative actor for the rebase that this fast-path gate refuses to perform. Whether it performs one is routed by `use_merge_queue` — unconditional on the default `false` path, skipped on the `true` path where the platform merge queue rebases and re-tests instead
 - Substantive reconciliation moved to phase-2-refine because refine's iterate-to-confidence loop can absorb baseline shifts cheaply; execute-time reconciliation is expensive and occurs after outline, plan, and tasks have already locked intent.
