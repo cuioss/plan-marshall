@@ -302,6 +302,66 @@ def test_cmd_test_conventions_flags_generic_fixture_basename(tmp_path):
     assert result['total_issues'] >= 1
 
 
+def _over_budget_module() -> str:
+    """Return a collected test module that trips only the line-budget rule."""
+    return 'def test_x():\n    assert True\n' + '# filler\n' * 401
+
+
+def test_cmd_test_conventions_warning_only_tree_passes(tmp_path):
+    """A tree with only warning findings reports status pass with a non-zero warning count.
+
+    This is the premise the four warning-severity rules depend on: they report
+    without failing the caller. A status derived from every finding rather than
+    from error-severity findings alone would fail here.
+    """
+    _build_clean_marketplace(tmp_path)
+    test_root = tmp_path / 'test'
+    _write(test_root / 'pkg' / 'test_big.py', _over_budget_module())
+    args = _ns(marketplace_root=str(tmp_path / 'marketplace'), test_root=str(test_root))
+
+    result = _doctor.cmd_test_conventions(args)
+
+    assert result['status'] == 'pass'
+    assert result['error_count'] == 0
+    assert result['warning_count'] > 0
+    assert result['total_issues'] == result['warning_count']
+
+
+def test_cmd_test_conventions_error_beside_warning_still_fails(tmp_path):
+    """An error finding fails the command even when warning findings are present."""
+    _build_clean_marketplace(tmp_path)
+    test_root = tmp_path / 'test'
+    _write(test_root / 'pkg' / 'test_big.py', _over_budget_module())
+    _write(test_root / 'pkg' / '_fixtures.py', '# generic basename collides\n')
+    args = _ns(marketplace_root=str(tmp_path / 'marketplace'), test_root=str(test_root))
+
+    result = _doctor.cmd_test_conventions(args)
+
+    assert result['status'] == 'fail'
+    assert result['error_count'] > 0
+    assert result['warning_count'] > 0
+
+
+def test_cmd_test_conventions_reports_every_rule(tmp_path):
+    """Each rule in the scope contributes a rules_run entry, fired or not."""
+    _build_clean_marketplace(tmp_path)
+    test_root = tmp_path / 'test'
+    test_root.mkdir()
+    args = _ns(marketplace_root=str(tmp_path / 'marketplace'), test_root=str(test_root))
+
+    result = _doctor.cmd_test_conventions(args)
+
+    assert {entry['rule'] for entry in result['rules_run']} == {
+        'unique-fixture-basenames',
+        'subprocess-pythonpath',
+        'identifier-validator-corpus',
+        'test-module-line-budget',
+        'test-helper-module-misnamed',
+        'test-module-preamble-boilerplate',
+        'test-docstring-historical-prose',
+    }
+
+
 # =============================================================================
 # cmd_validate_contracts
 # =============================================================================

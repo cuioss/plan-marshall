@@ -60,6 +60,7 @@ def test_discount_applied_for_premium_user():
 | Standard | Purpose |
 |----------|---------|
 | testing-methodology.md | AAA pattern, test structure, naming, organization, property-based testing, test doubles, determinism, foundation-utility CLI testing, constructed-argv assertion at the lowest subprocess primitive, real-resolver E2E testing for path-resolver/create side effects (cross-references plugin-doctor test-conventions rules) |
+| testing-coverage.md | Coverage requirements, corner cases, boundary testing, classifier input matrices (cross-product over the axes rather than the diagonal, and the error-result input that discriminates a fail-closed unit) |
 
 ## House-Style Rules
 
@@ -74,4 +75,3 @@ def test_discount_applied_for_premium_user():
 The structural half of these rules is enforced by the `pm-plugin-development:plugin-doctor`
 `test-conventions` scope — see its
 [standards doc](../../../pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md).
-| testing-coverage.md | Coverage requirements, corner cases, boundary testing, classifier input matrices (cross-product over the axes rather than the diagonal, and the error-result input that discriminates a fail-closed unit) |

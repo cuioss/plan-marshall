@@ -104,7 +104,7 @@ markdown-oriented exemptions (frontmatter, fenced blocks, `Source:` lines) that 
 | `test-module-line-budget` | 315 | ✓ | ✓ | ✓ | `persona-module-tester` § "Module Budget: 400 lines" |
 | `test-helper-module-misnamed` | 1 | ✓ | ✓ | ✓ | `persona-module-tester` § "Test Helper Module Organization" |
 | `test-module-preamble-boilerplate` | 342 | ✓ | ✓ | ✓ | `conftest` helper contract (`load_script_module` / `get_scripts_dir`) |
-| `test-docstring-historical-prose` | 283 prose hits vs 861 legitimate data occurrences | ✓ | ✓ | ✓ | `CLAUDE.md` § Documentation Standards + the three `marketplace/bundles/**` prose rules |
+| `test-docstring-historical-prose` | 285 prose hits vs 876 legitimate data occurrences | ✓ | ✓ | ✓ | `CLAUDE.md` § Documentation Standards + the three `marketplace/bundles/**` prose rules |
 
 The citation-vs-D3 tension the plan flags is resolved as the plan directs: lesson ids remain permitted in
 the doctor's own provenance table (its canonical citation home, already allowlisted by
@@ -112,7 +112,7 @@ the doctor's own provenance table (its canonical citation home, already allowlis
 
 **Feasibility note for the prose rule.** The rule scans **docstrings and comments only**, never string
 literals. That restriction is the rule's structural discriminator, not an optimisation: measured over
-this tree, the citation shapes produce **283** hits in prose against **861** occurrences of the *same
+this tree with the shipped matchers, the citation shapes produce **285** hits in prose against **876** occurrences of the *same
 shapes* as string-literal test data (a lesson id fed to the validator under test is the corpus the test
 exists to check). A rule flagging both would be textually indistinguishable from a legitimate shape and
 therefore infeasible under the provenance contract; scoping to prose makes it feasible.
@@ -173,9 +173,18 @@ its registry is empty by design, which is its documented no-op behaviour and not
 |---|---|---|---|
 | 1 | Own test (`test_one_chain_yields_one_finding`) | `_parent_chain_depth` fired once per *suffix* of a `.parent` chain, so a depth-4 chain emitted a depth-4 **and** a depth-3 finding. The docstring claimed outermost-only; the code never checked it | **Fixed** before commit — added `_nested_parent_attribute_ids` to exclude inner links. Live-tree count fell 491 → 342 |
 | 2 | Self-review after the fix | The `rule-provenance.md` row still recorded the pre-fix count (491) — a stale claim in a file this run authored | **Fixed** — corrected to 342 |
-| 3 | Corpus feasibility (D5) | A naive whole-file matcher for the prose rule hits 291 files / 1730 raw occurrences, most of them legitimate test *data* — textually indistinguishable from the defect and therefore infeasible per the provenance contract | **Resolved by design** — scoped the scan to docstrings and comments, which is a genuine structural discriminator (283 prose vs 861 data) |
+| 3 | Corpus feasibility (D5) | A naive whole-file matcher for the prose rule hits 291 files / 1730 raw occurrences, most of them legitimate test *data* — textually indistinguishable from the defect and therefore infeasible per the provenance contract | **Resolved by design** — scoped the scan to docstrings and comments, which is a genuine structural discriminator (285 prose vs 876 data) |
 | 4 | Observation (not fixed) | `standards/doctor-test-conventions.md` § "Rule 3 — Validator Registry" is still the empty template, so `identifier-validator-corpus` is a permanent no-op over this tree | **Deferred** — populating it is outside this plan's deliverables and touches no D1–D6 clause. Recorded for the epic |
 | 5 | Observation (not fixed) | The three pre-existing test-conventions rules have no `rule-catalog.md` rows; only the four new rules do | **Deferred** — the provenance contract binds new rules, and back-filling three unrelated rows would widen this diff beyond its Expected surface |
+| 6 | Verification sub-agent (F1, HIGH) | **D2's file-level clause unmet.** Three unqualified blanket statements survived in `testing-methodology.md`, one of them the file's *opening* principle at § "Fundamental Principles" L8 — whose exception list (format parsing / spec boundary values / error messages) does **not** cover the literal-is-the-contract class D2 exists to carve out. A reader answering the plan's own cold-read Q2 from that line gets "generate". Also § "1. Happy Path" and § "AAA Pattern → Rules" | **Fixed** — all three now carry the discriminator. The Fundamental Principles bullet is rewritten as a discriminator rather than a preference and subsumes the old exception list; the other two are qualified and cross-referenced |
+| 7 | Verification sub-agent (F2, HIGH) | **Structural damage in a declared-surface file.** The D4 `## House-Style Rules` insertion landed *between the two body rows* of `persona-module-tester/SKILL.md` § "Standards Reference", orphaning the `testing-coverage.md` row after a prose paragraph at end-of-file, where it renders as literal pipe text and vanishes from the table | **Fixed** — row restored to the table, new section moved below it |
+| 8 | Verification sub-agent (F3, MEDIUM) | **The load-bearing severity change had no test.** Both existing `cmd_test_conventions` tests stay green if `status` is reverted to the old any-finding derivation, so nothing pinned the premise the four warning rules depend on | **Fixed** — added `test_cmd_test_conventions_warning_only_tree_passes` (plus an error-beside-warning case and a rules_run completeness case). Falsifiability verified by temporarily reverting the derivation: the new test goes red, then green on restore |
+| 9 | Verification sub-agent (F8, LOW) | The documented feasibility figure (283 prose hits) was measured with the exploratory script, not the shipped matchers; re-derived it is **285**, and the 861 data figure was not re-derivable from shipped code at all | **Fixed** — both figures re-derived against the shipped `_HISTORICAL_PROSE_PATTERNS` (**285** prose / **876** data) and corrected in the standards doc and rule-catalog, which now state that both are re-derivable |
+| 10 | Verification sub-agent (F6, LOW) | 11 relative links in `doc/plans/test-quality/findings-test-corpus-review.md` broke when Step 3 moved the plan file into its directory | **Fixed** — all 11 repointed to `…/plan.md`. This repairs breakage this run itself introduced, not unrelated drift |
+| 11 | Verification sub-agent (F7, LOW) | `doc/plans/test-quality/README.md` L84 said the 400-line budget "replaces the `~200 lines` figure **currently in** `persona-module-tester`" — falsified by this plan's own change | **Fixed** — restated in the past tense |
+| 12 | Verification sub-agent (F9, LOW) | `fixtures/test_conventions/` has a `README.md` per rule directory for rules 1–3; `rule4/` did not exist | **Fixed** — added, matching the sibling convention and recording why dynamic `tmp_path` fixtures are used (static fixtures would trip three of these four rules against the real tree and inflate the counts this plan measures) |
+| 13 | Verification sub-agent (F4, MEDIUM) | `doctor-marketplace.py` is not in the plan's "Expected surface" list, which names the analyzer but not the runner that dispatches it | **Accepted, not changed** — the import/dispatch wiring is unavoidable for any new rule in this scope, and the severity derivation is declared and justified above. The epic README's ownership row for `010` covers `plugin-doctor/**`, so this is a plan-list omission rather than a scope breach. Recorded so the omission is visible rather than silent |
+| 14 | Verification sub-agent (F5, MEDIUM) | `pm-dev-java` carries the retired figures — `junit-core/standards/testing-junit-core.md:16` ("split into multiple at ~200 lines") and `junit-weld-testing/standards/weld-testing-autowired.md:144` ("split at ~200 lines") — plus unscoped generated-data statements at `junit-core/SKILL.md:31` and `testing-junit-core.md:8`. `testing-junit-core.md:3` explicitly defers to `persona-module-tester` for test organization, so it now contradicts the skill it defers to | **Rejected for this PR, escalated to the epic** — `pm-dev-java` is outside this plan's Expected surface, and D1/D2's "Done when" clauses are scoped to the named files. Editing another bundle here would be exactly the undeclared collateral change the verification pass exists to catch. This is a real defect and is recorded in Residue with file:line so it is actionable, not lost |
 
 **Cold-read verification (the plan's mandated by-reading check).** A sub-agent was given the two amended
 standards files **and no other context** — not the plan, not the epic README — and asked the plan's three
@@ -295,6 +304,20 @@ _(completed at Step 8 condition 3)_
 
 ## Residue
 
+* **Finding 14 — `pm-dev-java` still carries the retired standards, and one of its files now
+  contradicts the skill it defers to.** This is the highest-value residue item, because it is the exact
+  misleading-signal defect this epic exists to remove, sitting one bundle over:
+  * `marketplace/bundles/pm-dev-java/skills/junit-core/standards/testing-junit-core.md:16` — "split into
+    multiple at ~200 lines", while **L3 of the same file** defers to `plan-marshall:persona-module-tester`
+    for test organization. The deferral and the figure now disagree.
+  * `marketplace/bundles/pm-dev-java/skills/junit-weld-testing/standards/weld-testing-autowired.md:144` —
+    "split at ~200 lines".
+  * `marketplace/bundles/pm-dev-java/skills/junit-core/SKILL.md:31` and `testing-junit-core.md:8` — the
+    unscoped generated-data phrasing D2 replaced.
+
+  Not fixed here: `pm-dev-java` is outside this plan's Expected surface, and fixing it would be the
+  undeclared collateral change the verification gate exists to catch. It needs its own plan — the same
+  D1/D2 edits applied to the Java bundle.
 * **Finding 4** — the Rule 3 validator registry is empty, making `identifier-validator-corpus` a
   permanent no-op. Belongs to whichever plan owns identifier-validator coverage; not this one.
 * **Finding 5** — the three pre-existing test-conventions rules have no `rule-catalog.md` rows. A

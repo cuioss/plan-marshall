@@ -5,7 +5,7 @@ Language-agnostic testing principles for writing reliable, maintainable tests ac
 ## Fundamental Principles
 
 * **No zero-benefit comments**. Do not add `// Arrange`, `// Act`, `// Assert` or similar phase markers — whitespace separation makes the structure clear. Comments are only justified when they explain non-obvious setup or business logic.
-* **Prefer generated test data** over hardcoded literals. Use randomized generators or factory methods so tests prove behavior works for any valid input, not just `"test"` or `42`. Consult your technology-specific skill for generator APIs. **Exceptions:** specific values are appropriate when testing format-specific parsing (e.g., date patterns, protocol constants), known boundary values from a specification, or exact error messages.
+* **Choose generated data or an exact literal by what the contract is** — this is a discriminator, not a preference. Where the contract is **universal** ("for all valid inputs, P holds" — parsers, identifier validators, path normalisers, round-trip encoders), use randomized generators or factory methods so tests prove behavior for any valid input, not just `"test"` or `42`; consult your technology-specific skill for generator APIs. Where **the literal *is* the contract** (a seeded config default, a canonical step id, a serialized field name, an argparse flag spelling, a documented exit code, a wire-format key, plus format-specific parsing values, spec-defined boundary values, and exact error messages), write the value exactly — a generator there replaces the one value that matters with an arbitrary one and asserts nothing, making it the defect rather than the fix. The full statement, with the question that settles any given case, is § "Test Data Principles → The discriminator".
 * **No branching logic in tests**. Tests must never contain `if/else`, `switch`, or ternary operators. Each test exercises exactly one deterministic path. If you need to test multiple scenarios, write separate test methods.
 * **Explicit assertions over implicit checks**. Always assert the expected outcome explicitly. Never rely on "no exception thrown" as the only verification.
 * **Always test corner cases**: null/undefined inputs, empty collections, boundary values, error paths. Group corner cases in dedicated test classes or nested groups.
@@ -20,7 +20,7 @@ Organize tests into these categories, in order of priority:
 
 ### 1. Happy Path
 
-Tests that exercise the method as intended by its specification. Use generated data within the defined valid ranges to prove the method works for any conforming input, not just hand-picked examples.
+Tests that exercise the method as intended by its specification. Where the contract is universal, use generated data within the defined valid ranges to prove the method works for any conforming input, not just hand-picked examples; where the literal is the contract, assert the exact value (§ "Test Data Principles → The discriminator").
 
 ### 2. Parameter Variants
 
@@ -59,7 +59,7 @@ test "Should validate input with correct format" {
 
 * One logical assertion per test (group related assertions using framework features like `assertAll`)
 * Descriptive variable names that convey intent
-* Generated test data, not hardcoded literals
+* Test data chosen by the discriminator — generated where the contract is universal, an exact literal where the literal *is* the contract (§ "Test Data Principles → The discriminator")
 * Single action in the Act phase — if you need multiple actions, it's an integration test or needs splitting
 
 ## Test Class Organization

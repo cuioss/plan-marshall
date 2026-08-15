@@ -81,8 +81,9 @@ disagree, **the skills win** — this file is the epic's scoping brief, not the 
 **B1 — Module budget: 400 lines.** A test module over 400 lines is split by *behaviour cluster*, not
 in arbitrary halves: `test_{unit}_{cluster}.py`. 400 is chosen against the corpus, not invented — the
 median module is already ~323 lines and ~60% of modules already comply, so the budget describes the
-tree's own better half rather than an aspiration. It **replaces** the `~200 lines` figure currently in
-`persona-module-tester`, which ~75% of the corpus violates and which no guard has ever enforced.
+tree's own better half rather than an aspiration. It **replaced** the `~200 lines` figure
+`persona-module-tester` previously carried, which ~75% of the corpus violates and which no guard ever
+enforced. Plan `010` retired that figure and made the 400-line budget enforced.
 
 **B2 — Test budget: 15 lines of body.** A test function body (excluding its docstring) over ~15 lines
 is carrying arrange logic that belongs in a fixture or a factory. This is a review trigger, not a
