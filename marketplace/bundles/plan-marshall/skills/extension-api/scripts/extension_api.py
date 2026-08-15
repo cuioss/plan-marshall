@@ -206,6 +206,7 @@ def main() -> int:
         required=True,
         help='Profile name to resolve per domain (e.g. security)',
     )
+    resolve_parser.set_defaults(func=cmd_resolve_skills)
 
     dr_parser = subparsers.add_parser(
         'derivation-resolvers',
@@ -222,8 +223,11 @@ def main() -> int:
 
     args = parse_args_with_toon_errors(parser)
 
-    handler = getattr(args, 'func', cmd_resolve_skills)
-    result = handler(args)
+    # Every subparser sets its own handler, so dispatch is explicit rather than
+    # defaulting: a future verb added without ``set_defaults`` fails loudly here
+    # instead of silently routing into whichever handler happened to be the
+    # fallback and dying on an argument it never declared.
+    result = args.func(args)
     if result is not None:
         output_toon(result)
     return 0

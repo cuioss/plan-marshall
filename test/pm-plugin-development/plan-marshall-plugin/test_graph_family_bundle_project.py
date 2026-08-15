@@ -332,7 +332,7 @@ def test_at_least_one_graph_edge_is_stamped_by_a_resolver_not_declared():
     )
 
 
-def test_graph_response_names_the_resolvers_that_ran():
+def test_graph_response_names_every_discovered_resolver():
     """The anti-vacuity numerator rides all the way to the consumer's response.
 
     Both sides are derived rather than pinned, and the claim survives that:
@@ -345,8 +345,20 @@ def test_graph_response_names_the_resolvers_that_ran():
     discovered_ids = sorted(record['id'] for record in pipeline['resolvers'])
     graph = pipeline['graph']
 
-    assert graph['resolver_count'] == len(discovered_ids)
+    # The ROSTER names every discovered resolver — that is the cross-stage
+    # agreement this test exists for.
     assert sorted(report['id'] for report in graph['resolvers']) == discovered_ids
+
+    # ``resolver_count`` is a DIFFERENT quantity: the number that actually ran.
+    # It equals the discovered count only while nothing is switched off, which is
+    # true of a fresh clone and of CI but NOT of a developer machine whose
+    # machine-local binding disables a resolver. Asserting the equivalence
+    # unconditionally would turn this red for that developer, so the count is
+    # checked against the dispatched population it actually describes.
+    dispatched_ids = [
+        report['id'] for report in graph['resolvers'] if report.get('status') != 'not_dispatched'
+    ]
+    assert graph['resolver_count'] == len(dispatched_ids)
 
 
 def test_merge_stage_produces_edges():

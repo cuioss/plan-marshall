@@ -74,9 +74,12 @@ condition that suppressed it.
   itself augments the result set after the merge, its additions are stamped with a
   reserved producer id rather than left unattributed, so the invariant holds for the
   whole response and not merely for its producer-derived part.
-* *Per response.* Every response carries the producer roster and its cardinality —
-  `resolvers[]` and `resolver_count` on the realising surface. This is what makes the
-  two empty states distinguishable **without inspecting the element list at all**:
+* *Per response.* Every response carries the producer roster and the count of producers
+  that *ran* — `resolvers[]` and `resolver_count` on the realising surface. The count is
+  not the roster's cardinality: a producer the environment declined to dispatch is
+  reported in the roster, so its suppression stays visible, but it did not run and is
+  excluded from the count. This is what makes the empty states distinguishable
+  **without inspecting the element list at all**:
 
 [cols="2,3", options="header"]
 |===
@@ -87,6 +90,9 @@ condition that suppressed it.
 
 | `resolver_count: N`, empty element list
 | *N producers ran and found nothing.* The empty answer is a real, positive answer.
+
+| `resolver_count: 0`, non-empty roster
+| *Producers exist, but none was dispatched here.* Each carries a status saying so. The first row's reading — an absence of capability — applies only when the roster is empty too.
 |===
 
 === The merge mechanisms
@@ -97,7 +103,12 @@ condition that suppressed it.
   element whose `producers[]` is the sorted list of every contributing producer id.
 * *A per-producer report.* Alongside the merged elements, the merge returns one report
   per producer of the shape `{id, count, status, notes[]}` — its identity, how many
-  elements it contributed, whether it succeeded, and every condition it reports.
+  elements it contributed, its outcome, and every condition it reports. `status` carries
+  the outcome rather than a bare success/failure flag, because "was not dispatched" is a
+  third outcome and is not a verdict on the producer. Carrying it as a status *value*
+  rather than an extra key keeps every report's key set identical, which a uniform
+  tabular wire format requires: a key present on only some records renders as an empty
+  cell on the others, and an empty cell is not a state anything should have to interpret.
 * *A raising producer degrades, it does not abort.* A producer that raises is reported
   with `status: error` and a zero count, contributes no elements, and does not stop
   the aggregate; its siblings still contribute. A single broken producer therefore

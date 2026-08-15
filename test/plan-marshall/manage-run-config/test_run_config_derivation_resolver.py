@@ -211,6 +211,25 @@ def test_rejecting_a_bad_flag_pair_persists_nothing(plan_context):
     assert run_config.read_derivation_resolvers_section() == {}
 
 
+def test_list_survives_a_raising_entry_read(plan_context, monkeypatch):
+    """One unreadable entry costs that entry's state, never the whole listing.
+
+    The third of three roster readers to get this guard (the graph seam's
+    dispatch gate and the extension-api roster have their own). It fails OPEN,
+    so a store problem can never render a resolver as disabled.
+    """
+    run_config.cmd_derivation_resolver_set(_set('lsp'))
+
+    def _boom(resolver_id: str, section=None) -> bool:
+        raise ValueError('bad entry')
+
+    monkeypatch.setattr(run_config, 'is_derivation_resolver_enabled', _boom)
+
+    listed = run_config.cmd_derivation_resolver_list(argparse.Namespace())
+    assert listed['status'] == 'success'
+    assert listed['resolvers'] == [{'id': 'lsp', 'enabled': True}]
+
+
 # ---------------------------------------------------------------------------
 # CLI boundary — the shape the verb exists to support, driven through argparse
 # ---------------------------------------------------------------------------

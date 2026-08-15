@@ -32,7 +32,6 @@ attribute lookup at every call.
 """
 
 import importlib
-import sys
 import tempfile
 
 import pytest
@@ -61,7 +60,6 @@ _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
 )
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
-_cmd_client_query = sys.modules['_cmd_client_query']
 
 save_project_meta = _architecture_core.save_project_meta
 save_module_derived = _architecture_core.save_module_derived

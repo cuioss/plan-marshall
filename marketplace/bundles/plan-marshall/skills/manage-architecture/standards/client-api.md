@@ -108,6 +108,7 @@ The live roster is whatever `discover_derivation_resolvers()` returns, enumerate
 |----------|---------|
 | `resolver_count: 0` + empty result | **No resolver ran.** The empty answer is an absence of capability, not a finding. |
 | `resolver_count: N` + empty result | **N resolvers ran and found nothing.** The empty answer is a real, positive result. |
+| `resolver_count: 0` + a **non-empty** `resolvers[]` | **Resolvers exist, but this machine switched them off.** Every record carries `status: not_dispatched`. Read the first row as "no resolver ran" only when `resolvers[]` is empty too. |
 
 This is the same fail-closed reporting discipline [ADR-009](../../../../../../doc/adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc) establishes and that `find` / `which-module` already apply via their `truncated` / `elided` flags: a confident-looking answer must carry the evidence that makes it confident.
 

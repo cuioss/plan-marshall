@@ -157,7 +157,7 @@ Every edge names its producers, and every response names the resolvers it discov
 | *N resolvers ran and found nothing.* The empty graph is a real, positive answer.
 
 | `resolver_count: 0`, `resolvers[]` non-empty
-| *Resolvers exist here, but this machine switched them off.* Each carries `dispatched: false` and a `configuration:` note naming the machine-local binding — see xref:../user/configuration.adoc#derivation-resolvers[Configuration › Which derivation resolvers run].
+| *Resolvers exist here, but this machine switched them off.* Each carries `status: not_dispatched` and a `configuration:` note naming the machine-local binding — see xref:../user/configuration.adoc#derivation-resolvers[Configuration › Which derivation resolvers run].
 |===
 
 Those states are indistinguishable without the count, and they warrant opposite reactions: the first means "install a resolver", the second means "there are genuinely no edges here", and the third means "re-enable one". An unqualified empty list reports all three as the second. This is the same fail-closed reporting discipline xref:../adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc[ADR-009] establishes and that the `find` and `which-module` verbs already apply through their `truncated` and `elided` flags — a confident-looking answer has to carry the evidence that makes it confident.
