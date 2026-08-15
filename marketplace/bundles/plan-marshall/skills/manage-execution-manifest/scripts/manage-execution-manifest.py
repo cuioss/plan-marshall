@@ -2655,6 +2655,172 @@ def cmd_record_step(args: argparse.Namespace) -> dict[str, Any] | None:
 
 
 # =============================================================================
+# Re-fire Report (refire-report)
+# =============================================================================
+
+#: The ``record-step`` outcome that means the step's body actually ran. A
+#: ``skipped`` row is a re-entry that DID NOT pay for the step, so it is counted
+#: separately and never folded into the firing count.
+_REFIRE_EXECUTED_OUTCOME = 'executed'
+
+
+def _refire_metric(value: Any) -> int:
+    """Coerce one execution-log metric to a non-negative int, tolerating junk.
+
+    ``summarize_refires`` tolerates a non-dict row and a row with no ``step_id``
+    by skipping it, and says so. The metric sums MUST follow the same discipline:
+    ``execution_log[]`` is append-only history parsed back from TOON, so a legacy
+    or hand-edited row can carry a non-numeric value, and letting that raise would
+    deny the whole report over one bad row — turning a diagnosable gap into a
+    total outage of the instrument. An uncoercible metric contributes ``0``, which
+    is the same attribution an inline step's row already carries.
+    """
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def summarize_refires(
+    execution_log: list[dict[str, Any]],
+    phase: str | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Derive the per-step firing / re-fire breakdown from ``execution_log[]``.
+
+    Pure over the rows so the derivation is testable without plan state.
+
+    ``execution_log[]`` is an ordered append log with one row per ``record-step``
+    invocation, so a step that fired seven times carries seven rows. The re-fire
+    count is therefore ``max(0, firings - 1)`` per step: the first ``executed``
+    row is the firing the pipeline owes, and every later one is an EXTRA firing.
+
+    ``refires`` counts extra firings, NOT re-stales, and this function does not
+    separate the causes. At least four produce a second ``executed`` row: the
+    dispatcher's HEAD-advance re-entry check re-firing a re-staled verdict, a
+    ``loop_back`` record re-firing the step on the next entry, a retry after a
+    ``failed`` record, and the ``push`` barrier's parity-driven re-fire plus its
+    explicit post-PR re-invocation. Attributing the whole count to one cause is
+    the confident-but-untrue framing this verb exists to replace.
+
+    ``skipped`` rows are reported alongside but never counted as firings — a
+    skip is precisely the outcome a preserved verdict produces, so folding it in
+    would make the instrument unable to measure the thing it exists to measure.
+
+    Args:
+        execution_log: The manifest's ``execution_log[]`` rows.
+        phase: When given, restrict the derivation to rows of that phase.
+
+    Returns:
+        A ``(steps, totals)`` tuple. ``steps`` is sorted by descending re-fire
+        count then by ``step_id``, so the worst offender reads first.
+    """
+    per_step: dict[str, dict[str, Any]] = {}
+    for row in execution_log:
+        if not isinstance(row, dict):
+            continue
+        if phase is not None and str(row.get('phase', '')) != phase:
+            continue
+        step_id = str(row.get('step_id', ''))
+        if not step_id:
+            continue
+        entry = per_step.setdefault(
+            step_id,
+            {
+                'step_id': step_id,
+                'firings': 0,
+                'refires': 0,
+                'skipped': 0,
+                'errors': 0,
+                'total_tokens': 0,
+                'tool_uses': 0,
+                'duration_ms': 0,
+            },
+        )
+        outcome = str(row.get('outcome', ''))
+        if outcome == _REFIRE_EXECUTED_OUTCOME:
+            entry['firings'] += 1
+        elif outcome == 'skipped':
+            entry['skipped'] += 1
+        elif outcome == 'error':
+            entry['errors'] += 1
+        entry['total_tokens'] += _refire_metric(row.get('total_tokens'))
+        entry['tool_uses'] += _refire_metric(row.get('tool_uses'))
+        entry['duration_ms'] += _refire_metric(row.get('duration_ms'))
+
+    for entry in per_step.values():
+        entry['refires'] = max(0, entry['firings'] - 1)
+
+    steps = sorted(per_step.values(), key=lambda e: (-e['refires'], e['step_id']))
+    totals = {
+        'steps': len(steps),
+        'firings': sum(e['firings'] for e in steps),
+        'refires': sum(e['refires'] for e in steps),
+        'skipped': sum(e['skipped'] for e in steps),
+        'errors': sum(e['errors'] for e in steps),
+        'total_tokens': sum(e['total_tokens'] for e in steps),
+        'tool_uses': sum(e['tool_uses'] for e in steps),
+        'duration_ms': sum(e['duration_ms'] for e in steps),
+    }
+    return steps, totals
+
+
+def cmd_refire_report(args: argparse.Namespace) -> dict[str, Any] | None:
+    """Report per-step firing / re-fire counts from the manifest execution log.
+
+    Consumes the EXISTING ``execution_log[]`` emitter rather than adding a
+    parallel one: ``record-step`` already appends one row per firing (dispatched
+    AND inline), so the count this verb reports is derived from instrumentation
+    that is already in place. No new emission is introduced here.
+
+    **The token column carries a KNOWN downward bias, and the payload says so.**
+    ``record-step`` receives the ``<usage>`` triple only for steps dispatched as
+    Task agents; every inline step records a row with zeros by contract. So
+    ``total_tokens`` is a FLOOR over the inline steps' real cost, and
+    ``token_population`` names exactly which rows the figure was summed over.
+    Reporting the number without that boundary would be the confident-but-untrue
+    signal this verb exists to replace.
+    """
+    plan_id = require_valid_plan_id(args)
+
+    phase = getattr(args, 'phase', None)
+    if phase is not None and phase not in VALID_RECORD_PHASES:
+        return {
+            'status': 'error',
+            'plan_id': plan_id,
+            'error': 'invalid_phase',
+            'message': f'Invalid phase: {phase!r}. Must be one of {list(VALID_RECORD_PHASES)}',
+        }
+
+    manifest = read_manifest(plan_id)
+    if manifest is None:
+        output_toon_error(
+            'file_not_found',
+            f'execution.toon not found for plan {plan_id}',
+            plan_id=plan_id,
+        )
+        return None
+
+    execution_log = manifest.get(EXECUTION_LOG_KEY)
+    if not isinstance(execution_log, list):
+        execution_log = []
+
+    steps, totals = summarize_refires(execution_log, phase)
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'phase': phase or 'all',
+        'execution_log_rows': len(execution_log),
+        'steps': steps,
+        'totals': totals,
+        'token_population': (
+            'record-step rows only; dispatched steps carry their <usage> triple and inline '
+            'steps record zeros by contract, so total_tokens is a FLOOR over inline-step cost'
+        ),
+    }
+
+
+# =============================================================================
 # Frozen-vs-live reconciliation (reconcile)
 # =============================================================================
 
@@ -3104,6 +3270,18 @@ def _build_parser() -> argparse.ArgumentParser:
     record_step_parser.add_argument('--tool-uses', type=int, default=0, help='Tool-use count attributed to the step')
     record_step_parser.add_argument('--duration-ms', type=int, default=0, help='Wall-clock duration in milliseconds')
 
+    refire_report_parser = subparsers.add_parser(
+        'refire-report',
+        help='Report per-step firing / re-fire counts derived from execution_log[]',
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(refire_report_parser)
+    refire_report_parser.add_argument(
+        '--phase',
+        default=None,
+        help='Restrict to one phase (one of VALID_RECORD_PHASES: 5-execute|6-finalize). Omit for all.',
+    )
+
     validate_parser = subparsers.add_parser('validate', help='Validate execution.toon', allow_abbrev=False)
     add_plan_id_arg(validate_parser)
     validate_parser.add_argument('--phase-5-steps', default=None, help='Comma-separated allowed Phase 5 step IDs')
@@ -3190,6 +3368,7 @@ def main() -> int:
         'compose': cmd_compose,
         'read': cmd_read,
         'record-step': cmd_record_step,
+        'refire-report': cmd_refire_report,
         'reconcile': cmd_reconcile,
         'validate': cmd_validate,
         'validate-loadable': cmd_validate_loadable,

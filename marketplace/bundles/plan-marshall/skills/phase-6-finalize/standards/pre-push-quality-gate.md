@@ -310,6 +310,20 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
 
 The module-tests outcome folds into the Mark Step Complete branches below: Branch A (green) requires a clean per-bundle `quality-gate` sweep AND a clean whole-tree `quality-gate` AND a clean whole-tree `test-compile` AND a clean module-tests gate; Branch B (failure) covers a red per-bundle `quality-gate` OR a red whole-tree `quality-gate` OR a red `test-compile` OR a red module-tests run.
 
+## Verdict-input surface — deliberately undeclared
+
+This gate declares **no** `verdict_inputs` (see [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Implementor Frontmatter"), so the dispatcher's verdict-currency classifier never narrows its re-fire: every HEAD advance re-runs it, exactly as before that mechanism existed. The absence is a **recorded refusal on evidence**, not an obligation left unwritten — and it is recorded here because the refusal is easy to mistake for an oversight and easy to "fix" wrongly.
+
+The admissibility bar for a declaration is that the globs be a **superset** of what the gate's verdict reads. Three of this gate's arms make that unachievable as a proper subset of the tree:
+
+- **The module-tests arm executes this repository's own pytest suite**, and that suite asserts over the *real repository tree*. Test modules read `doc/` (retired-token sweeps over `doc/**/*.md` / `*.adoc` / `*.svg`, and an `.adoc` governed-population contract that also reads root `CLAUDE.md`) and `.github/workflows/*.yml` (branch-prefix and merge-trigger contracts asserted against the live workflow). A commit confined to any of those turns this gate red, so none of them can be excluded.
+- **The whole-tree `quality-gate` arm runs the marketplace-wide plugin-doctor pass**, which brings in two further disqualifiers of its own. Its build-failing agentfile analyzers walk the **repository root** and lint every `CLAUDE.md` / `AGENTS.md` at any depth. And its `broken-relative-link` rule resolves each relative link target against the linking file's own directory and stats it whenever the result falls inside the repository-root containment boundary — so renaming or deleting *any* file that a marketplace doc links to turns this arm red, and that target set is discovered at run time rather than expressible as a glob written ahead of time. Both are the same disqualifiers `project:finalize-step-plugin-doctor` records in its own refusal, inherited here because this arm invokes that pass.
+- **Every arm resolves its tool versions through the lockfile**, so `uv.lock` is an input to all of them.
+
+Taken together the honest surface is "the tracked tree", and a declaration naming it would be an inert lever wearing the shape of a real one — the confident-but-untrue signal this document already refuses on the coverage-verdict and `display_detail` paths. Declaring nothing keeps the fail-closed default and says so.
+
+**The unblocking condition, for whoever revisits this.** A sound declaration becomes possible only if the gate's arms are separated so each carries its own surface — the module-tests arm's surface is unbounded, but the per-bundle `quality-gate` sweep's is not. That is a decomposition of this step, not a declaration on it, and it is deliberately out of scope here.
+
 ## Mark Step Complete
 
 Record the outcome on the live plan so the `phase_steps_complete` handshake invariant is satisfied at phase transition time. Branch A requires ALL FOUR of the per-bundle `quality-gate` sweep, the whole-tree `quality-gate` arm, the whole-tree `test-compile`, and the module-tests divergence gate to be green; Branch B fires when ANY of the four failed.
@@ -354,7 +368,7 @@ earn (`test-compile` and `module-tests` still ran on this path, so "tests green"
 Size it the same way as the module-tests variant — against its worst-case placeholder expansion, not
 its literal form — and it stays inside the same `display_detail` ceiling.
 
-The persisted `head_at_completion` field is consumed by phase-6-finalize Step 3's resumable re-entry check: when the worktree HEAD has advanced past `{sha}` (typically because `automated-review` or `sonar-roundtrip` opened a loop-back fix-task that produced a new commit), the dispatcher re-fires this gate against the newer HEAD instead of skipping it.
+The persisted `head_at_completion` field is consumed by phase-6-finalize Step 3's resumable re-entry check: when the worktree HEAD has advanced past `{sha}` (typically because `automated-review` or `sonar-roundtrip` opened a loop-back fix-task that produced a new commit), the dispatcher re-fires this gate against the newer HEAD. See § "Verdict-input surface — deliberately undeclared" above for why the verdict-currency classifier never narrows that re-fire for THIS gate.
 
 **Branch B — at least one bundle's quality-gate failed OR the whole-tree quality-gate failed OR test-compile failed OR the module-tests gate failed**:
 

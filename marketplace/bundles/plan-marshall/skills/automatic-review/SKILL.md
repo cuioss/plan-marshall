@@ -36,7 +36,7 @@ configurable:
     description: Gate (default-off) for re-requesting a fresh bot review after a phase-5 loop-back fix commit advances HEAD past the reviewed_commit_sha of the staged pr-comment findings (trigger B). When false, a loop-back fix commit is NOT re-reviewed by the automated bots.
   - key: re_review_on_branch_cleanup
     default: true
-    description: Gate (default-on) for re-requesting a fresh bot review after branch-cleanup rebases and force-pushes the feature branch onto base (trigger A). The automatic-review step owns this knob; branch-cleanup reads it to decide whether to re-review the rebased HEAD. When false, the rebased/force-pushed HEAD is NOT re-reviewed.
+    description: Gate (default-on) for re-requesting a fresh bot review when branch-cleanup's rebase actually advanced HEAD (trigger A). The automatic-review step owns this knob; branch-cleanup reads it to decide whether to re-review that advanced HEAD. It is consulted only where an advance happened at all — a rebase that returned action noop, and the use_merge_queue path that performs no rebase, leave HEAD unchanged and reach no re-review to gate. When false, an advanced HEAD is NOT re-reviewed.
   - key: re_review_await_timeout_seconds
     default: 600
     description: Await budget (seconds) threaded through the --timeout flag on the github_re_review re-review CLI, replacing the hardcoded DEFAULT_CI_TIMEOUT passed to await_fresh_review. Bounds how long both re-review triggers (A and B) poll for a fresh bot review before the await times out.

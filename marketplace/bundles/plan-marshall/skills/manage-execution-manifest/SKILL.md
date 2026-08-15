@@ -293,6 +293,42 @@ execution_log_count: 1
 
 On a missing manifest: `status: error`, `error: file_not_found`. On an invalid `--phase` / `--outcome` value: `status: error`, `error: invalid_phase` / `invalid_outcome`.
 
+### refire-report
+
+Report per-step firing / re-fire counts derived from the `execution_log[]` rows `record-step` already appends. Read-only — it writes nothing and emits no decision-log line.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  refire-report \
+  --plan-id {plan_id} \
+  [--phase {5-execute|6-finalize}]
+```
+
+**Parameters**:
+- `--plan-id` (required): Plan identifier
+- `--phase` (optional, default all phases): Restrict the derivation to one phase
+
+Because `execution_log[]` is an ordered append log with one row per firing, a step's re-fire count is `max(0, firings - 1)`: the first `executed` row is the firing the pipeline owes, and every later one is an **extra** firing. Rows are sorted by descending `refires`, then by `step_id`, so the worst offender reads first.
+
+**`refires` counts extra firings, NOT re-stales.** At least four mechanisms produce a second `executed` row — the dispatcher's HEAD-advance re-entry check re-firing a re-staled verdict, a `loop_back` record re-firing the step on the next entry, a retry after a `failed` record, and the `push` barrier's parity-driven re-fire plus its explicit post-PR re-invocation — and this column does not separate them. A before/after comparison over the same plan shape stays sound, since the other causes are common to both arms; a single run's `refires` is not a re-stale count and must not be reported as one. The consuming model — what advances HEAD, what a re-stale costs, and how an advance is classified as invalidating or not — is owned by [`phase-6-finalize/standards/verdict-currency.md`](../phase-6-finalize/standards/verdict-currency.md).
+
+**Two coverage boundaries the payload names rather than hides.** A `skipped` row is counted in its own column and never folded into `firings` — a skip is precisely what a preserved verdict produces, so folding it in would make the instrument unable to measure the thing it exists to measure. And `total_tokens` is a **floor**: `record-step` receives the `<usage>` triple only for steps dispatched as Task agents, while every inline step records zeros by contract, so `token_population` states which rows the figure was summed over. A saving computed from this column is reported with that floor attached, never as a measured total.
+
+**Output** (TOON):
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+phase: 6-finalize
+execution_log_rows: 11
+steps[2]{step_id,firings,refires,skipped,errors,total_tokens,tool_uses,duration_ms}:
+  pre-submission-self-review,7,6,0,0,412000,58,930000
+  push,1,0,3,0,0,0,0
+totals: { steps: 2, firings: 8, refires: 6, skipped: 3, errors: 0, ... }
+token_population: record-step rows only; ...
+```
+
+On a missing manifest: `status: error`, `error: file_not_found`. On an invalid `--phase` value: `status: error`, `error: invalid_phase`.
+
 ### step-params get
 
 Return a step's snapshotted param object from the plan-local manifest — a literal file read of the compose-time snapshot under `body[phase].step_params[step_id]`, never a marshal.json read. The one-stop read that phase-5/6 runtime consumers use instead of per-field `manage-config get --field` reads of step-owned params.
@@ -480,6 +516,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 | `read` | `--plan-id` | Read manifest as TOON |
 | `lanes preview` | `--plan-id [--phase-6-steps]` | Resolve the minimal/standard/full phase-6 step sets + cost sums in one TOON (the posture-dialogue projection) |
 | `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome {executed\|skipped\|error} [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon |
+| `refire-report` | `--plan-id [--phase {5-execute\|6-finalize}]` | Report per-step firing / re-fire counts derived from the existing `execution_log[]` rows (read-only; names its token-population floor) |
 | `step-params get` | `--plan-id --phase {5-execute\|6-finalize} --step-id` | Return a step's snapshotted param object from the manifest (plan-local read) |
 | `step-params set` | `--plan-id --phase {5-execute\|6-finalize} --step-id --param --value` | Write a per-plan param override into the manifest snapshot |
 | `reconcile` | `--plan-id [--apply]` | Reconcile the frozen `phase_6.steps` against live marshal.json config — drop steps live config also dropped, fail loud on a step live config still wants but whose doc is gone, backfill only candidates new since compose |
@@ -559,6 +596,16 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
   --outcome {executed|skipped|error} \
   [--total-tokens N] [--tool-uses N] [--duration-ms N]
 ```
+
+### refire-report
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest refire-report \
+  --plan-id PLAN_ID \
+  [--phase {5-execute|6-finalize}]
+```
+
+Read-only over the `execution_log[]` rows `record-step` appends — it writes nothing and emits no decision-log line. Omitting `--phase` covers every phase.
 
 ### validate
 

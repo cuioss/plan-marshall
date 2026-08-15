@@ -35,13 +35,13 @@ configurable:
     description: Bound (in seconds, ~30 min) applied SEPARATELY to each of the two queue waits branch-cleanup performs, so one run can block for up to twice this value. Wait 1 is the FIFO merge-queue admission poll — how long the step waits for its turn at the head of the queue; on exhaustion it falls back to the last-resort AskUserQuestion. Wait 2 is the platform queue-landing poll, reached only when use_merge_queue is true — how long the step waits for the platform to merge the enqueued PR; on exhaustion it logs a WARNING, releases the merge mutex and returns via Branch F with NO AskUserQuestion, leaving the head branch intact and the post-merge cleanup deferred to a later finalize re-entry.
   - key: merge_hold_window
     default: full_window_release_at_waits
-    description: Hold-scope mode for the widened merge mutex. full_window_release_at_waits acquires the lock before the pre-merge force-push and holds it through the CI wait, merge, and merge-CI-wait, releasing + FIFO-re-enqueueing at every operator-wait / loop-back boundary and re-validating after re-acquire. pre_merge_only is the legacy narrow hold (acquire only at the Pre-Merge Gate).
+    description: Hold-scope mode for the widened merge mutex. full_window_release_at_waits acquires the lock before the first staleness-creating operation (the pre-merge force-push when use_merge_queue is false; the enqueue when it is true, since that path performs no rebase) and holds it through the CI gate, merge, and merge-CI-wait, releasing + FIFO-re-enqueueing at every operator-wait / loop-back boundary and re-validating after re-acquire. pre_merge_only is the legacy narrow hold (acquire only at the Pre-Merge Gate).
   - key: merge_hold_budget_seconds
     default: 3600
     description: Bound (in seconds, ~60 min) the maximum wall-clock the widened merge mutex may be held across the staleness window. When the elapsed-since-acquire exceeds this budget during a legitimate wait, the orchestrator releases + FIFO-re-enqueues the lock and escalates via AskUserQuestion, so a live-but-slow holder can never monopolize the merge critical section.
   - key: use_merge_queue
     default: false
-    description: Opt-in complement that routes the final merge through the platform merge queue (GitHub merge queue / GitLab merge train) instead of the immediate pr safe-merge, so the platform re-tests-and-merges against the latest base and serializes a truly-external commit the session-scoped mutex cannot. Default false because engaging the platform merge queue is a repo-level branch-protection change affecting ALL PR workflows. Composes with the widened mutex — the mutex guards the pre-enqueue rebase/force-push window, the queue serializes the merge itself.
+    description: Opt-in complement that routes the final merge through the platform merge queue (GitHub merge queue / GitLab merge train) instead of the immediate pr safe-merge, so the platform re-tests-and-merges against the latest base and serializes a truly-external commit the session-scoped mutex cannot. Default false because engaging the platform merge queue is a repo-level branch-protection change affecting ALL PR workflows. Setting it true ALSO skips the pre-merge rebase and force-push entirely (§ Rebase Branch onto Base) — the queue rebases and re-tests against the latest base as its own authoritative gate, so performing one here would duplicate it and re-stale every recorded head-dependent verdict. Composes with the widened mutex — the mutex guards the window up to and including the enqueue, the queue serializes the merge itself.
   - key: admin_merge_on_stuck_state
     default: false
     description: Gate the GitHub-only stuck-state `--admin` fallback inside `ci pr safe-merge` — false refuses the admin merge and surfaces the stuck PR to the operator; true permits `gh pr merge --admin` only when the PR stays `mergeable_state: blocked` past the poll timeout AND every active ruleset requirement is provably met. Orthogonal to `final_merge_without_asking` (which gates whether the merge is attempted at all).
@@ -54,7 +54,7 @@ configurable:
 
 Pure executor for the `branch-cleanup` finalize step. Switches back to base branch and cleans up after plan completion. Behavior adapts based on whether `create-pr` is in `manifest.phase_6.steps`.
 
-This step's late pre-merge rebase (`order: 70`, onto the newly-fetched `origin/{base_branch}` tip) advances `main` when it is a non-noop, so the step is declared `advances_main_via_rebase: true` in its frontmatter — the fact that arms the dispatcher's **post-rebase step-doc re-resolution contract** (see `phase-6-finalize/SKILL.md` Step 3): every subsequent step's authoritative doc is re-read from the just-rebased `{worktree_path}` at dispatch time rather than trusting the session-start-loaded copy.
+This step's late pre-merge rebase (`order: 70`, onto the newly-fetched `origin/{base_branch}` tip) advances `main` when it runs and is a non-noop — it is skipped entirely when `use_merge_queue == true` (§ "Rebase Branch onto Base") — so the step is declared `advances_main_via_rebase: true` in its frontmatter. The declaration is a statement of capability, not of certainty: the dispatcher's contract already keys on the step having *actually* advanced `main`, which a skipped or noop rebase did not — the fact that arms the dispatcher's **post-rebase step-doc re-resolution contract** (see `phase-6-finalize/SKILL.md` Step 3): every subsequent step's authoritative doc is re-read from the just-rebased `{worktree_path}` at dispatch time rather than trusting the session-start-loaded copy.
 
 ## Exit-code convention for every script call
 
@@ -98,11 +98,11 @@ See `workflow-integration-git/standards/worktree-handling.md` for the worktree-s
 
 ## Merge-Mutex Hold Window (widened)
 
-The cross-plan merge mutex (`plan-marshall:manage-locks:merge_lock`) is held across the **full staleness-exposure window**, not just the merge call. Under the default `merge_hold_window == full_window_release_at_waits`, PR-mode branch-cleanup **acquires the lock BEFORE the pre-merge force-push** (see § "Acquire the Merge Mutex" below) and holds it through `rebase → force-push → CI wait → merge → merge-CI-wait`, releasing only **after `switch-and-pull`** has pulled the merge commit into the base branch. This closes the exposure window the previous narrow hold left uncovered: the old flow acquired the lock only at the Pre-Merge Gate, AFTER rebase → force-push → CI wait had already run, so `origin/{base_branch}` could advance under a concurrent plan during the CI wait and the merge would land stale. Both the auto path (`final_merge_without_asking == true`) AND the interactive path acquire the lock — the interactive path previously never locked.
+The cross-plan merge mutex (`plan-marshall:manage-locks:merge_lock`) is held across the **full staleness-exposure window**, not just the merge call. Under the default `merge_hold_window == full_window_release_at_waits`, PR-mode branch-cleanup **acquires the lock before the first staleness-creating operation** (see § "Acquire the Merge Mutex" below) and holds it through to the merge, releasing only **after `switch-and-pull`** has pulled the merge commit into the base branch. Which operation that is depends on `use_merge_queue`, because that knob decides whether a rebase happens at all (§ "Rebase Branch onto Base"): on the default `false` path it is the pre-merge force-push, so the hold spans `rebase → force-push → CI wait → merge → merge-CI-wait`; on the `true` path there is no rebase and no force-push, so the hold spans `CI snapshot → enqueue → queue landing`. The acquire point is the same either way — the section below — and so is everything the four invariants require. This closes the exposure window the previous narrow hold left uncovered: the old flow acquired the lock only at the Pre-Merge Gate, AFTER rebase → force-push → CI wait had already run, so `origin/{base_branch}` could advance under a concurrent plan during the CI wait and the merge would land stale. Both the auto path (`final_merge_without_asking == true`) AND the interactive path acquire the lock — the interactive path previously never locked.
 
 The widened hold obeys four invariants:
 
-1. **Release-and-FIFO-re-enqueue at every operator-wait / loop-back boundary.** The lock is held ONLY across non-interactive spans. Before EVERY `AskUserQuestion` (the Pre-Rebase Confirmation Gate, the re-review-timeout trigger-A gate, the Pre-Merge Confirmation Gate, the Pre-Merge Review-Completeness Barrier ask gate, and the merge-queue budget-exhaustion escalation), before every loop-back boundary (the loop-back-to-phase-5 disposition AND the Pre-Merge Review-Completeness Barrier's fail-closed loop-backs — both the pending-findings one and the structural-refusal one), and before every **terminating defer** that settles without merging (the barrier's UNKNOWN and pending-findings "Defer merge" branches), the orchestrator releases the lock **if held** and re-enqueues via the FIFO admission queue (preserving FIFO position). On resume it RE-ACQUIRES through the same FIFO poll loop and **re-validates** — re-runs `baseline-reconcile` and re-rebases when `origin/{base_branch}` advanced during the released window — before merging. Releasing before the interactive wait is what prevents a held lock from blocking every other plan while this plan waits on a human. (At the Pre-Rebase Gate the lock is normally not yet held, so its release is a no-op; the guard is uniform for robustness.)
+1. **Release-and-FIFO-re-enqueue at every operator-wait / loop-back boundary.** The lock is held ONLY across non-interactive spans. Before EVERY `AskUserQuestion` (the Pre-Rebase Confirmation Gate, the re-review-timeout trigger-A gate, the Pre-Merge Confirmation Gate, the Pre-Merge Review-Completeness Barrier ask gate, and the merge-queue budget-exhaustion escalation), before every loop-back boundary (the loop-back-to-phase-5 disposition AND the Pre-Merge Review-Completeness Barrier's fail-closed loop-backs — both the pending-findings one and the structural-refusal one), and before every **terminating defer** that settles without merging (the barrier's UNKNOWN and pending-findings "Defer merge" branches), the orchestrator releases the lock **if held** and re-enqueues via the FIFO admission queue (preserving FIFO position). On resume it RE-ACQUIRES through the same FIFO poll loop and **re-validates** before merging — re-running `baseline-reconcile`, and re-rebasing when `origin/{base_branch}` advanced during the released window **and this run's `use_merge_queue` is `false`**. On the merge-queue path the re-rebase is the queue's job, exactly as the initial rebase is (§ "Rebase Branch onto Base"), so the re-validation re-runs the classifier and merges without rebasing; the classifier re-run is not optional on either path, because it is what anchors the merge decision to the current base. Releasing before the interactive wait is what prevents a held lock from blocking every other plan while this plan waits on a human. (At the Pre-Rebase Gate the lock is normally not yet held, so its release is a no-op; the guard is uniform for robustness.)
 
 2. **Bounded hold with the `merge_hold_budget_seconds` knob.** The orchestrator records the wall-clock instant of acquire and tracks elapsed-since-acquire. When a legitimate wait would push the held duration past `merge_hold_budget_seconds` (default 3600s), it releases + FIFO-re-enqueues + escalates via `AskUserQuestion` rather than continuing to hold. `merge_lock.py` is unchanged — its holder-liveness reclaim already bounds a CRASHED holder; this budget bounds a live-but-slow holder at the orchestrator layer.
 
@@ -120,7 +120,7 @@ Each row leads with its backticked `{kind}` token and carries four machine-check
 
 - `barrier-ask-override` — head_bound: yes — bound_via: grant — authorizes: review-barrier-gap — site: § Pre-Merge Review-Completeness Barrier, `{barrier_mode} == ask` → "Merge anyway (record reason)". Granted at the live HEAD alongside the existing WARNING decision-log line, and checked by the barrier before any blocked path proceeds. **Two further sites mint this same kind over the same gap class**, both on the structural-refusal path: the barrier's own structural prompt → "Accept the coverage gap (record reason)" (§ "Structural refusal — RE-TRIAGE is not a remedy"), and the finalize dispatcher's `escalate_ask{reason: refusal_structural}` hook → the same option (phase-6-finalize SKILL.md item 7a). ⚠ Named in plain text **deliberately without a link**: this row's `site:` claim is machine-resolved from its FIRST markdown link, so linking a secondary site silently re-points the derivation guard at the wrong document. The roster enumerates authorization **mechanisms**, one row per `{kind}`, not one row per call site — so these are recorded for the reader while the row's `site:` keeps naming the primary one the guard checks.
 - `pre-merge-consent` — head_bound: yes — bound_via: grant — authorizes: merge-action — site: § Pre-Merge Confirmation Gate → "Yes, merge" (`{merge_consent} = explicit_yes`). Granted at the live HEAD so a re-rebase between consent and merge — the release-before-wait / re-acquire path — lapses the consent instead of silently carrying it onto a different tree.
-- `red-ci-override` — head_bound: yes — bound_via: grant — authorizes: red-ci-gate — site: § Rebase Branch onto Base, the immediate-merge authoritative CI gate → "Merge anyway — override red CI". Granted at the live HEAD before the override proceeds.
+- `red-ci-override` — head_bound: yes — bound_via: grant — authorizes: red-ci-gate — site: § "CI gate before the merge", its immediate-merge (`use_merge_queue == false`) authoritative arm → "Merge anyway — override red CI". Granted at the live HEAD before the override proceeds. The merge-queue arm has no such grant and needs none: its snapshot is non-authoritative and never blocks, so there is nothing to override.
 - `rereview-timeout-override` — head_bound: yes — bound_via: grant — authorizes: rereview-timeout — site: [`branch-cleanup-rereview.md`](branch-cleanup-rereview.md) § "On re-review timeout (trigger A)" — BOTH the `re_review_on_timeout: proceed` policy branch and the `ask` → "Merge anyway — proceed unreviewed" selection. Granted at the re-resolved `{head_sha}`.
 - `automatic-review-force-done` — head_bound: yes — bound_via: head_dependent — authorizes: find-step-completion — site: [`automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § "Force-done with an explicit recorded reason". Bound by that step's own `head_dependent: true` declaration and its persisted `--head-at-completion`, and the barrier re-derives participation from the provider rather than trusting the record — so it needs no grant of its own.
 - `final_merge_without_asking` — head_bound: n/a — bound_via: out_of_class — authorizes: merge-action — site: the `default:branch-cleanup` step param. Standing config that authorizes a *policy* rather than a specific tree, so it falls outside the HEAD-bound class and is recorded here rather than granted.
@@ -254,7 +254,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Pre-Rebase Confirmation Gate
 
-The pre-rebase gate decides whether the upcoming `worktree-rebase-to → force-push-with-lease → ci wait` sequence fires silently or prompts the operator for confirmation. It is driven by the `auto_rebase_threshold` knob (read above in the **Conflict-Severity Classifier** section) and the classifier's `{decision}`.
+The pre-rebase gate decides whether the upcoming pre-merge preparation fires silently or prompts the operator for confirmation. What that preparation IS depends on `use_merge_queue` (§ "Rebase Branch onto Base"): `worktree-rebase-to → force-push-with-lease → ci checks wait` on the default `false` path, and a `ci checks status` snapshot alone on the `true` path, which performs neither rebase nor force-push. The gate is driven by the `auto_rebase_threshold` knob (read above in the **Conflict-Severity Classifier** section) and the classifier's `{decision}`; it is retained on both paths because the classifier's upstream-overlap reading informs the merge decision either way.
 
 The merge step itself is governed by a separate gate (see **Pre-Merge Confirmation Gate** below) routed by the orthogonal `final_merge_without_asking` knob. The two gates are independent: a permissive `auto_rebase_threshold` does NOT imply a permissive merge gate, and vice versa.
 
@@ -273,33 +273,35 @@ Then proceed directly to **Safety Check: Other Open PRs**.
 
 #### Interactive path (`{decision} == needs_user` OR `state == merged`)
 
-Present the **rebase-and-cleanup** context and ask the user before any destructive action. The merge action is intentionally absent from this prompt — it is gated separately below after CI passes on the rebased branch.
+Present the **pre-merge-preparation** context and ask the user before any destructive action. The merge action is intentionally absent from this prompt — it is gated separately below, after the CI gate concludes.
 
-Determine planned actions based on PR state. Local cleanup (switch to base branch, pull, delete local feature branch) is uniform across both paths; only the remote-side action differs (the merge itself is deferred to the pre-merge gate when `state == open`):
+Determine planned actions based on PR state **and on `use_merge_queue`** — a prompt listing a rebase and force-push the run will not perform asks the operator to authorize work that never happens, which is the same untruth the routing section and the `[STATUS]` line already guard against. Local cleanup (switch to base branch, pull, delete local feature branch) is uniform across every path; only the remote-side action differs (the merge itself is deferred to the pre-merge gate when `state == open`):
 
-- **If `state == open`**: Actions = rebase onto base, force-push with lease, wait for CI; the post-CI merge is confirmed separately at the pre-merge gate. Local cleanup runs after the merge gate resolves.
+- **If `state == open` AND `use_merge_queue == false`** (default): Actions = rebase onto base, force-push with lease, authoritative CI wait; the post-CI merge is confirmed separately at the pre-merge gate. Local cleanup runs after the merge gate resolves.
+- **If `state == open` AND `use_merge_queue == true`**: Actions = CI snapshot only — no rebase and no force-push (§ "Rebase Branch onto Base"); the enqueue is confirmed separately at the pre-merge gate, and the queue rebases and re-tests. Local cleanup runs after the merge gate resolves.
 - **If `state == merged`**: Actions = switch to base branch, pull latest, delete local feature branch. No rebase or merge is planned; the pre-merge gate is skipped on this path.
 
 ```text
 AskUserQuestion:
   questions:
-    - question: "Rebase the feature branch onto {base_branch} and run CI? (Merge will be confirmed separately after CI passes.)"
-      header: "Branch Cleanup — Pre-rebase"
+    - question: "{Rebase the feature branch onto {base_branch} and run CI? (if state == open AND use_merge_queue == false) | Check CI before enqueueing to the merge queue? (if state == open AND use_merge_queue == true) | Clean up the local branch for the already-merged PR? (if state == merged)} (Merge will be confirmed separately when one is still planned.)"
+      header: "{Branch Cleanup — Pre-rebase (if state == open AND use_merge_queue == false) | Branch Cleanup — Pre-enqueue (if state == open AND use_merge_queue == true) | Branch Cleanup — Local (if state == merged)}"
       description: |
         **PR**: {pr_url} ({state})
         **Branch**: {head_branch} → {base_branch}
         **Other open PRs for this branch**: {count} {details if any}
 
-        **Actions** (this gate covers rebase + CI wait only; merge is gated separately):
-        {- Rebase {head_branch} onto origin/{base_branch} (if state == open)}
-        {- Force-push the rebased branch with --force-with-lease (if state == open)}
-        {- Wait for CI checks to complete on the rebased branch (if state == open)}
+        **Actions** (this gate covers the pre-merge preparation only; merge is gated separately):
+        {- Rebase {head_branch} onto origin/{base_branch} (if state == open AND use_merge_queue == false)}
+        {- Force-push the rebased branch with --force-with-lease (if state == open AND use_merge_queue == false)}
+        {- Wait for CI checks to complete on the rebased branch (if state == open AND use_merge_queue == false)}
+        {- Take a CI snapshot; no rebase or force-push — the merge queue rebases and re-tests (if state == open AND use_merge_queue == true)}
         - Switch to {base_branch}
         - Pull latest
         - Delete local branch {head_branch}
       options:
         - label: "Yes, proceed"
-          description: "Execute rebase + CI wait; merge will be confirmed separately"
+          description: "Execute the pre-merge preparation above; merge will be confirmed separately"
         - label: "No, skip"
           description: "Leave branch as-is"
       multiSelect: false
@@ -334,11 +336,11 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 Extract `pr_merge_strategy` from the returned `params` object as `{pr_merge_strategy}` (default: `squash`). Valid values: `squash`, `merge`, `rebase`.
 
-### Acquire the Merge Mutex (before the pre-merge force-push)
+### Acquire the Merge Mutex (before the first staleness-creating operation)
 
 **Only if `state == open` AND `merge_hold_window == full_window_release_at_waits`** (the default). Read `merge_hold_window`, `merge_hold_budget_seconds`, and `merge_queue_wait_budget_seconds` off the same one-stop `step-params get` `params` object resolved in the **Conflict-Severity Classifier** section above. When `merge_hold_window == pre_merge_only`, SKIP this section — the lock is acquired later, at the Pre-Merge Gate, exactly as the legacy narrow flow did.
 
-This is the widened-hold acquire point: it takes the cross-plan merge mutex BEFORE the rebase force-push (the first staleness-creating operation), so the lock spans the entire `force-push → CI wait → merge → merge-CI-wait` window. It runs on BOTH the auto (`final_merge_without_asking == true`) and interactive paths — the interactive path previously never locked. The Pre-Rebase Confirmation Gate has already resolved above (an operator wait that completed while NO lock was held), so acquiring here does not hold the lock across a human prompt.
+This is the widened-hold acquire point: it takes the cross-plan merge mutex before the first staleness-creating operation, so the lock spans the entire remaining window through the merge. On the default `use_merge_queue == false` path that first operation is the rebase force-push and the window is `force-push → CI wait → merge → merge-CI-wait`; on the `use_merge_queue == true` path no rebase or force-push happens (§ "Rebase Branch onto Base") and the window is `CI snapshot → enqueue → queue landing`. The acquire is unconditional across both — the enqueue is itself a merge action, and a plan that enqueued while another held the mutex would land against a base the mutex exists to pin. It runs on BOTH the auto (`final_merge_without_asking == true`) and interactive paths — the interactive path previously never locked. The Pre-Rebase Confirmation Gate has already resolved above (an operator wait that completed while NO lock was held), so acquiring here does not hold the lock across a human prompt.
 
 Acquire via the FIFO admission queue exactly as documented in **Budget-exhaustion escalation** below — the same poll/backoff mechanism, bounded by `merge_queue_wait_budget_seconds`:
 
@@ -351,7 +353,22 @@ Follow the **FIFO poll/backoff loop** and **Budget-exhaustion escalation** proce
 
 ### Rebase Branch onto Base
 
-**Only if `state == open`**: Rebase the feature branch onto the latest base branch before merging so the merge lands as a linear-history append. This step is unconditional — it runs every time the PR is still open, regardless of whether the branch was already up to date. A uniform rebase guarantees the merged history is linear and that CI runs against the exact commits that will land on the base branch.
+**Only if `state == open`**: Rebase the feature branch onto the latest base branch before merging so the merge lands as a linear-history append. The rebase serves exactly two purposes — the merged history is linear, and CI runs against the exact commits that will land on the base branch.
+
+**Whether it is performed is routed by `use_merge_queue`** — read `use_merge_queue` off the same one-stop `step-params get` `params` object resolved in the **Conflict-Severity Classifier** section above (default: `false`). The routing exists because both purposes above are already discharged by the merge queue when one is in use — the same reason the CI-gate section below downgrades the pre-merge CI wait to a non-authoritative snapshot on that path. Doing the work twice is not free: a rebase that actually replays rewrites every SHA on the branch, which re-stales every head-dependent verdict recorded during this finalize in one stroke (see [`verdict-currency.md`](verdict-currency.md) § "Ruling — the pre-merge rebase is conditional on the merge queue" for the ruling and its evidence).
+
+**Observability (mandatory)** — immediately after the predicate above is evaluated and BEFORE the branch it selects is entered, emit one decision-log line naming the bound value, its provenance, and the branch about to run. Both branches emit it, from this one call site, so which route a run took is reconstructible from the log rather than inferred from the absence of a rebase:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup pre-merge rebase routing: use_merge_queue={use_merge_queue} (provenance: default:branch-cleanup step-params object, Conflict-Severity Classifier one-stop read) — running {rebase SKIPPED, the merge queue rebases and re-tests as the authoritative gate | worktree-rebase-to + force-push-with-lease, authoritative}"
+```
+
+- **`use_merge_queue == true`** — SKIP the rebase and the force-push-with-lease below, and proceed directly to the CI gate. The queue rebases-and-re-tests the branch against the latest base as its own authoritative gate and refuses a still-red result, so a rebase here duplicates it while re-staling every recorded head-dependent verdict.
+
+- **`use_merge_queue == false`** (default) — the rebase is **unconditional**: it runs every time the PR is still open, regardless of whether the branch was already up to date. The immediate `pr safe-merge` path below has no queue re-test, so this rebase plus the authoritative CI wait after it ARE what make the merged history linear and verified; nothing else discharges those purposes on this path. Proceed with the dispatch below.
+
+Note that "unconditional" governs whether the verb is *called*, not whether history *moves*: `worktree-rebase-to` returns `action: noop` with HEAD unchanged when the branch already contained the base, so a call on an already-current branch re-stales nothing.
 
 Dispatch the rebase via the structured `worktree-rebase-to` verb so the result is consumed as a TOON payload (rather than ad-hoc shell parsing):
 
@@ -362,7 +379,7 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 Parse the returned TOON and branch on `status`:
 
-- `status: success` (including `action: noop` when the branch was already at the base, or `action: rebased` when the rebase produced a new history) → continue to force-push-with-lease below.
+- `status: success` (including `action: noop` when the branch was already at the base, or `action: rebased` when the rebase produced a new history) → capture the payload's `upstream_commit_count` as **`{rebase_upstream_commit_count}`** — a distinct name from the `{upstream_commit_count}` the later classifier re-run binds, so the two cannot be confused at the fact sites that consume them (see § "Mark Step Complete" Branch A) — then continue to force-push-with-lease below.
 
   The payload also carries `executor_drift` / `executor_regenerated` / `executor_detail`: `worktree-rebase-to` refreshes the worktree's per-tree executor when the rebase changed the bundle script set. The refresh is non-fatal by contract, so an `executor_regenerated: false` alongside a non-empty `executor_detail` is a reported degradation, not a cleanup failure — log it and proceed. The full contract is [`../../workflow-integration-git/standards/worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) § "Post-Rebase Executor Refresh".
 - `status: conflict` → ABORT cleanup with a fatal error. The rebase is left in progress with conflict markers so the user can inspect or abort manually. The classifier's merge-tree probe is best-effort — overlapping renames and a few other rare cases produce a clean probe but a real-rebase conflict. Log the returned `conflicts[]` file list and the conflict state:
@@ -392,7 +409,9 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 Parse the TOON output. On `status: rejected` (lease violation — remote moved since last fetch), ABORT cleanup and surface the error. On `status: error`, ABORT cleanup and return the error TOON verbatim to the dispatcher. On `status: success`, continue to the CI wait below. **Release-on-abort**: on either the `rejected` or `error` branch, release the merge mutex if held before returning (§ "Merge-Mutex Hold Window" invariant 4) — a lease violation means `origin/{base_branch}` moved, so holding the lock further would only block the plan that legitimately advanced it.
 
-After the force-push, gate on CI before proceeding to merge. **How much CI wall-clock this gate spends is governed by `use_merge_queue`** — read `use_merge_queue` off the same one-stop `step-params get` `params` object resolved in the **Conflict-Severity Classifier** section above (default: `false`). When the merge queue is enabled, the platform re-tests the rebased HEAD against the latest base as its OWN authoritative CI gate (see § "Merge routing"), so a full-green pre-merge wait here is redundant with it — the pre-review full-green `ci-verify` wait is folded into the merge queue's authoritative CI.
+#### CI gate before the merge
+
+Reached from both routes above — after the force-push on the `use_merge_queue == false` path, and directly from the routing decision on the `true` path, which performed neither rebase nor force-push. Gate on CI before proceeding to merge. **How much CI wall-clock this gate spends is governed by `use_merge_queue`** — read `use_merge_queue` off the same one-stop `step-params get` `params` object resolved in the **Conflict-Severity Classifier** section above (default: `false`). When the merge queue is enabled, the platform rebases the branch and re-tests it against the latest base as its OWN authoritative CI gate (see § "Merge routing"), so a full-green pre-merge wait here is redundant with it — the pre-review full-green `ci-verify` wait is folded into the merge queue's authoritative CI.
 
 **Observability (mandatory)** — immediately after the predicate above is evaluated and BEFORE the CI-gate branch it selects is entered, emit one decision-log line naming the bound value, its provenance, and the branch about to run. Which strategy a run took is otherwise unreconstructible from the log, because both branches call into `ci checks` and only the flags differ:
 
@@ -408,7 +427,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
       --pr-number {pr_number}
   ```
 
-  Parse `overall_status` from the returned TOON. `pending`, `success`, and `none` all proceed straight to the merge routing without waiting — the queue re-tests regardless. A `failure` snapshot (CI has already gone clearly red on the rebased HEAD) logs the warning below but still proceeds; the merge queue will re-test and refuse a still-red HEAD, so this gate never hard-blocks — it only surfaces the early signal cheaply. This is the fold: the redundant full-green pre-merge CI wait is removed under the merge-queue path, leaving only this single non-blocking snapshot.
+  Parse `overall_status` from the returned TOON. `pending`, `success`, and `none` all proceed straight to the merge routing without waiting — the queue re-tests regardless. A `failure` snapshot (CI has already gone clearly red on the current HEAD, which on this path is the un-rebased branch tip) logs the warning below but still proceeds; the merge queue will re-test and refuse a still-red HEAD, so this gate never hard-blocks — it only surfaces the early signal cheaply. This is the fold: the redundant full-green pre-merge CI wait is removed under the merge-queue path, leaving only this single non-blocking snapshot.
 
 - **`use_merge_queue == false`** (default) — the immediate `pr safe-merge` path below has NO queue re-test, so the pre-merge CI wait remains the authoritative gate. Pass `--adaptive` so this wait seeds its ceiling from — and records its observed duration back into — the persisted `ci:wait` budget (the same #849 ratchet `ci_complete_precondition` drives), instead of the fixed `DEFAULT_CI_TIMEOUT`:
 
@@ -421,11 +440,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 The disposition of a red gate depends on WHICH path produced it — the two paths are NOT symmetric, because only the merge-queue path has an authoritative re-test behind it:
 
-- **Merge-queue path (`use_merge_queue == true`)** — a `failure` snapshot is NON-authoritative: the merge queue re-tests the rebased HEAD and refuses a still-red one, so this cheap snapshot never hard-blocks. Log a warning and proceed to the enqueue:
+- **Merge-queue path (`use_merge_queue == true`)** — a `failure` snapshot is NON-authoritative: the merge queue rebases the branch onto the latest base and re-tests THAT, refusing a still-red result, so this cheap snapshot never hard-blocks. Log a warning and proceed to the enqueue:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-    work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: CI red snapshot after rebase (merge-queue path) — enqueuing anyway; the merge queue re-tests and refuses a still-red HEAD"
+    work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup: CI red snapshot on the current HEAD (merge-queue path, no local rebase) — enqueuing anyway; the merge queue rebases, re-tests and refuses a still-red HEAD"
   ```
 
 - **Immediate-merge path (`use_merge_queue == false`, default)** — the `pr safe-merge` below has NO queue re-test, so this `checks wait --adaptive` IS the authoritative CI gate. A failing (or `timed_out`) wait means a KNOWN-RED PR, and warn-and-proceed here would merge it whenever branch protection does not itself enforce the check. Do NOT proceed. Parse the wait's terminal status (`final_status`) from the returned TOON; when it is not green, **ABORT or ESCALATE** — never warn-and-continue:
@@ -455,21 +474,25 @@ The disposition of a red gate depends on WHICH path produced it — the two path
 
     The grant is in addition to the WARNING decision-log line, never in place of it. `--gap-class red-ci-gate` is this row's `authorizes:` claim: the ruling covers a red CI gate and nothing else, so it can never be read as authorization at the later review barrier, which reports a different gap.
 
-Log the rebase:
+Log the pre-merge preparation, naming what actually ran so a skipped rebase is not reported as a performed one:
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: rebased onto origin/{base_branch}, force-pushed with lease, CI gated"
+  work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Branch cleanup: {rebased onto origin/{base_branch}, force-pushed with lease (if action == rebased) | already current with origin/{base_branch}, force-pushed with lease (if action == noop) | pre-merge rebase skipped (if use_merge_queue == true)}, CI gated"
 ```
 
 ### Re-review the rebased HEAD (trigger A)
 
-**Only if `state == open`** (a rebase + force-push happened above): the rebase/force-push advanced HEAD past the `reviewed_commit_sha` of the staged `pr-comment` findings, so branch-cleanup's own rebase commit is unreviewed. This step re-requests a fresh bot review for the new HEAD (gated by the `re_review_on_branch_cleanup` knob, default `true`, owned by the `plan-marshall:automatic-review` step) and, on a re-review await timeout, resolves the unreviewed-HEAD decision via the `re_review_on_timeout` knob (default `ask`, an inline operator gate). The full walkthrough — bot_kind resolution, the `github_re_review re-review` invocation, the matched/timed_out branches, and the three timeout dispositions (proceed / defer / ask) — lives in the same-directory sub-standard [`branch-cleanup-rereview.md`](branch-cleanup-rereview.md). Load and execute it here when `state == open`, then continue to the **Pre-Merge Confirmation Gate**. This gate is an operator-wait boundary, so it obeys the § "Merge-Mutex Hold Window" release-before-wait / re-acquire-and-re-validate invariants.
+**Only if `state == open` AND HEAD actually advanced above** — that is, the rebase ran AND returned `action: rebased`. When it did, the rebase/force-push advanced HEAD past the `reviewed_commit_sha` of the staged `pr-comment` findings, so branch-cleanup's own rebase commit is unreviewed and this section closes that gap.
+
+When HEAD did NOT advance — the rebase was skipped on the merge-queue path, or it ran and returned `action: noop` — there is no unreviewed commit: the staged findings' `reviewed_commit_sha` still names the live HEAD, so a re-review would re-request a bot review of the exact tree already reviewed. **Skip this section entirely** and continue to the **Pre-Merge Confirmation Gate**. This narrows *when* the re-review fires and never *what it checks*: the gate's own precondition is an advanced HEAD, and an unadvanced HEAD does not satisfy it. Resolve the discriminator from the rebase step's returned `action` (which reports `pre_sha` and `post_sha` as its evidence), and when that return is unavailable or ambiguous, **fail toward re-reviewing** — an unnecessary re-review costs a bot's rate window, a skipped necessary one merges unreviewed code.
+
+When the section DOES run, it re-requests a fresh bot review for the new HEAD (gated by the `re_review_on_branch_cleanup` knob, default `true`, owned by the `plan-marshall:automatic-review` step) and, on a re-review await timeout, resolves the unreviewed-HEAD decision via the `re_review_on_timeout` knob (default `ask`, an inline operator gate). The full walkthrough — bot_kind resolution, the `github_re_review re-review` invocation, the matched/timed_out branches, and the three timeout dispositions (proceed / defer / ask) — lives in the same-directory sub-standard [`branch-cleanup-rereview.md`](branch-cleanup-rereview.md). Load and execute it here **on that same advanced-HEAD condition** — the entry condition is stated once, in this section, and the sub-standard inherits it rather than re-deriving one — then continue to the **Pre-Merge Confirmation Gate**. This gate is an operator-wait boundary, so it obeys the § "Merge-Mutex Hold Window" release-before-wait / re-acquire-and-re-validate invariants.
 
 ### Pre-Merge Confirmation Gate
 
 **Only if `state == open`** (when `state == merged` there is nothing to merge — skip this entire section and proceed to **Wait for Merge CI**, which itself is a no-op on the `state == merged` path).
 
-The pre-merge gate fires after `ci wait` returns green on the rebased branch and BEFORE the `pr merge --delete-branch` call below. It is suppressed only when `final_merge_without_asking == true`. The gate is orthogonal to the pre-rebase gate above — the operator may have auto-proceeded through rebase but still be asked to confirm the irreversible merge step.
+The pre-merge gate fires after the CI-gate section above concluded — an authoritative green `ci checks wait` on the default `use_merge_queue == false` path, or the non-authoritative snapshot on the `true` path — and BEFORE the `pr merge --delete-branch` call below. It is suppressed only when `final_merge_without_asking == true`. The gate is orthogonal to the pre-rebase gate above — the operator may have auto-proceeded through the pre-merge preparation but still be asked to confirm the irreversible merge step.
 
 #### Read the auto-merge gate
 
@@ -484,14 +507,14 @@ Extract `final_merge_without_asking` from the returned `params` object as `{fina
 
 #### Re-run the classifier against the current head
 
-The pre-rebase classifier observation can be stale by the time CI completes (other commits may have landed on `origin/{base_branch}` during the wait). Re-dispatch the classifier so the gate is anchored to the *current* head SHA on the rebased branch:
+The pre-rebase classifier observation can be stale by the time the CI gate concludes (other commits may have landed on `origin/{base_branch}` meanwhile). Re-dispatch the classifier so the gate is anchored to the branch's *current* head SHA — the re-run is required on both `use_merge_queue` paths, because what goes stale is the observation of `origin/{base_branch}`, not the rebase:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
   baseline-reconcile --plan-id {plan_id} --no-emit
 ```
 
-Parse the TOON return for refreshed `classification`, `auto_reconcilable`, `conflict_count`, `upstream_commit_count` values. These values are surfaced to the operator in the prompt below so the merge decision is anchored to the post-rebase reality, not the pre-rebase snapshot. Under `merge_hold_window == full_window_release_at_waits` this re-run classifier IS the mandatory post-hold re-validation before the merge (§ "Merge-Mutex Hold Window" invariant 1).
+Parse the TOON return for refreshed `classification`, `auto_reconcilable`, `conflict_count`, `upstream_commit_count` values. These values are surfaced to the operator in the prompt below so the merge decision is anchored to current reality, not to the pre-rebase snapshot. Under `merge_hold_window == full_window_release_at_waits` this re-run classifier IS the mandatory post-hold re-validation before the merge (§ "Merge-Mutex Hold Window" invariant 1).
 
 If the script exits non-zero, STOP and return an error TOON to the dispatcher carrying the stderr verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict. **Release-on-abort**: release the merge mutex if held before returning (§ "Merge-Mutex Hold Window" invariant 4).
 
@@ -508,7 +531,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 The merge is ALWAYS lock-coordinated: because the merge-to-main critical section serializes through the unified merge-lock, concurrent plans can never race on it. This section is the **canonical FIFO acquire procedure** referenced both by the early § "Acquire the Merge Mutex" (widened hold) and by the legacy `pre_merge_only` path.
 
-**Under `merge_hold_window == full_window_release_at_waits`** (default): the lock was ALREADY acquired before the force-push (§ "Acquire the Merge Mutex") and — unless a subsequent operator-wait released it — is still held here. In that case do NOT re-run the poll loop; the freshly-re-run classifier above IS the required re-validation, so proceed directly to **Merge PR (if not yet merged)**. Only when a prior operator-wait boundary released the lock (trigger-A timeout, or the interactive Pre-Merge prompt) do you re-enter the poll loop below to RE-ACQUIRE, then re-validate before merging.
+**Under `merge_hold_window == full_window_release_at_waits`** (default): the lock was ALREADY acquired before the first staleness-creating operation (§ "Acquire the Merge Mutex") and — unless a subsequent operator-wait released it — is still held here. In that case do NOT re-run the poll loop; the freshly-re-run classifier above IS the required re-validation, so proceed directly to **Merge PR (if not yet merged)**. Only when a prior operator-wait boundary released the lock (trigger-A timeout, or the interactive Pre-Merge prompt) do you re-enter the poll loop below to RE-ACQUIRE, then re-validate before merging.
 
 **Under `merge_hold_window == pre_merge_only`** (legacy narrow hold): the lock was NOT acquired earlier — acquire it here now via the poll loop below. BEFORE the merge, this plan takes its turn at the head of the FIFO merge queue. `acquire` is **non-blocking for the queue case** — it FIFO-enqueues `--plan-id` into `merge-queue.json` (idempotently, preserving FIFO position on re-poll), admits ONLY the FIFO-front plan, and returns an `admission` discriminator; the poll/backoff wait is the consumer's job here, NOT an internal `time.sleep` inside the script (see `plan-marshall:manage-locks` Canonical invocations → `merge_lock acquire`). `acquire` returns IMMEDIATELY — the `--timeout` flag is a legacy compatibility no-op (default `0`) and drives no internal backoff. The consumer paces successive polls by issuing a SINGLE standalone `sleep {interval}` Bash call between `acquire` invocations — one command, never a Bash `for`/`while`/`until` loop.
 
@@ -595,18 +618,19 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup pre-merge consent wording: use_merge_queue={use_merge_queue} (provenance: default:branch-cleanup step-params object, Conflict-Severity Classifier one-stop read) — seeking consent for {ci pr safe-merge --delete-branch | ci pr merge-queue enqueue}"
 ```
 
-Present the merge context and ask the operator to confirm. The prompt is anchored to the current (post-rebase, post-CI) head SHA via the freshly-re-run classifier above:
+Present the merge context and ask the operator to confirm. The prompt is anchored to the current head SHA via the freshly-re-run classifier above. **Its wording is routed by the same `use_merge_queue` value read above**, because consent given against a described action is only meaningful if the description is true: on the default `false` path a rebase ran and an authoritative `ci checks wait` gated it, while on the `true` path neither happened — the rebase was skipped (§ "Rebase Branch onto Base") and CI was only snapshotted non-authoritatively. A prompt asserting "CI passed on the rebased branch" on the queue path would seek consent for two facts the run does not have, which is the same defect the `[STATUS]` line above was written to avoid:
 
 ```text
 AskUserQuestion:
   questions:
-    - question: "CI passed on the rebased branch. Merge PR #{pr_number} now?"
+    - question: "{CI passed on the rebased branch. | CI snapshot taken; the merge queue re-tests against the latest base.} Merge PR #{pr_number} now?"
       header: "Branch Cleanup — Pre-merge"
       description: |
         **PR**: {pr_url} (state: open)
         **Branch**: {head_branch} → {base_branch}
         **Merge strategy**: {pr_merge_strategy}
-        **Current classifier** (post-rebase): classification={classification}, auto_reconcilable={auto_reconcilable}, upstream_commits={upstream_commit_count}
+        **Current classifier**: classification={classification}, auto_reconcilable={auto_reconcilable}, upstream_commits={upstream_commit_count}
+        **Pre-merge rebase**: {performed (action={action}) | skipped — the merge queue rebases and re-tests}
 
         **Actions on "Yes, merge"**:
         {- `pr safe-merge --pr-number {pr_number} --strategy {pr_merge_strategy} --delete-branch` (polls readiness, then merges and deletes the remote branch; GitHub-only `--admin` stuck-state fallback when `admin_merge_on_stuck_state` is enabled) (if use_merge_queue == false)}
@@ -614,7 +638,7 @@ AskUserQuestion:
         - Switch to {base_branch}, pull latest, delete local branch {head_branch}
 
         **Actions on "No, skip merge"**:
-        - Workflow exits cleanly; the rebased branch is left in place
+        - Workflow exits cleanly; the branch is left in place as it stands
         - Re-enter finalize later to merge (state == merged short-circuits this prompt if you merged manually)
       options:
         - label: "Yes, merge"
@@ -631,7 +655,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Branch cleanup: pre-merge deferred at user request — re-enter finalize later to merge"
 ```
 
-Set `{merge_consent} = deferred`. Skip the **Merge PR**, **Wait for Merge CI**, **Remove Worktree**, and **Switch to Base Branch** sections entirely; the rebased branch is left in place with no further mutation. Emit the `mark-step-done` payload below using **Branch C — declined by user** (deferral is the same shape from the workflow's point of view: cleanup was not completed this run, re-entry is expected) and return.
+Set `{merge_consent} = deferred`. Skip the **Merge PR**, **Wait for Merge CI**, **Remove Worktree**, and **Switch to Base Branch** sections entirely; the branch is left in place with no further mutation. Emit the `mark-step-done` payload below using **Branch C — declined by user** (deferral is the same shape from the workflow's point of view: cleanup was not completed this run, re-entry is expected) and return.
 
 **If user selects "Yes, merge"**: Set `{merge_consent} = explicit_yes`, then bind the consent to the tree it was given over — the release-before-wait / re-acquire path may re-rebase between this consent and the merge, and an unbound consent would silently carry onto the different tree that produces. Resolve the live HEAD:
 
@@ -1252,7 +1276,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 The routing itself:
 
 - **`use_merge_queue == false`** (default) → issue the immediate `pr safe-merge` call below. The plan merges the PR itself under the widened mutex.
-- **`use_merge_queue == true`** → route the merge through the platform merge queue via the `pr merge-queue` verb INSTEAD of `pr safe-merge`, so the platform re-tests-and-merges against the latest base and serializes a truly-external commit the session-scoped mutex cannot. The widened D4 mutex still guards the pre-enqueue rebase/force-push window; the two mechanisms compose. The enqueue takes no `--strategy` or `--delete-branch` flag — unchanged: the platform merges queued PRs with the method configured on the queue itself, GitHub rejects `--delete-branch` when a merge queue is enabled, and the platform auto-deletes the head branch after the queue merge. The queue's configured method is no longer an independent knob, though — `repo merge-queue enable` provisions and reconciles it from `pr_merge_strategy`, and the mismatch warn below catches residual drift. All engagement is routed through the `ci` abstraction — NEVER a direct `gh`/`glab` call.
+- **`use_merge_queue == true`** → route the merge through the platform merge queue via the `pr merge-queue` verb INSTEAD of `pr safe-merge`, so the platform rebases, re-tests and merges against the latest base and serializes a truly-external commit the session-scoped mutex cannot. The widened D4 mutex still guards the window up to and including the enqueue; the two mechanisms compose. It is NOT guarding a rebase or force-push on this path — § "Rebase Branch onto Base" routes both away precisely because the queue performs them. The enqueue takes no `--strategy` or `--delete-branch` flag — unchanged: the platform merges queued PRs with the method configured on the queue itself, GitHub rejects `--delete-branch` when a merge queue is enabled, and the platform auto-deletes the head branch after the queue merge. The queue's configured method is no longer an independent knob, though — `repo merge-queue enable` provisions and reconciles it from `pr_merge_strategy`, and the mismatch warn below catches residual drift. All engagement is routed through the `ci` abstraction — NEVER a direct `gh`/`glab` call.
 
   **Merge-method mismatch warn (best-effort, advisory)** — BEFORE the enqueue, probe the queue's configured merge method and warn when it disagrees with the configured `pr_merge_strategy`:
 
@@ -1682,38 +1706,43 @@ This step declares the `records_facts` union `action`, `upstream_commit_count`, 
 
 **Length discipline.** Every `--display-detail` below is bounded (≤80 chars, ASCII, no trailing period) and MUST be checked against its placeholders' **worst-case expansion**, never its literal form. **This rule binds the figures published here too** — every count below is re-derived by measuring the expanded string, never transcribed. The two placeholder-bearing branches:
 
-- **Branch A** — worst case `already current with base, queue-merged, corroborated, cleanup complete`, **71 chars**: the longest rebase clause combined with the longest merge clause.
+- **Branch A** — worst case `rebase deferred to queue, queue-merged, corroborated, cleanup complete`, **70 chars**. The two axes are **coupled by `use_merge_queue`**, so the longest rebase clause and the longest merge clause cannot co-occur: `already current with base` (25) requires a rebase to have run, which happens only on `use_merge_queue == false`, where the merge clause is necessarily `merged directly` (15); and `queue-merged, corroborated` (26) requires `use_merge_queue == true`, where the rebase is skipped and the clause is `rebase deferred to queue` (24). Measuring the free cross-product would report an unreachable 71.
 - **Branch E** — worst case `merged under barrier-ask-override, gap recorded`, **47 chars**. `{kind}` does NOT range over the whole `bound_via: grant` set: this site checks with `--gap-class review-barrier-gap`, and `barrier-ask-override` is the only § "Merge-Authorization Roster" row whose `authorizes:` is `review-barrier-gap`, so it is the only value `admissible_kinds` can yield here — and it is also the literal the `ask` path substitutes. The longest grant kind overall is `rereview-timeout-override` (25 chars, which would expand to 52), but it authorizes `rereview-timeout` and can never be admissible at this site.
 
 Branch B carries one placeholder (`{base_branch}`) and is checked the same way. Branches C, D, and F carry none, so each is its own worst case; the longest of those three is Branch F at **59 chars**.
 
 Every `loop_back` call site in the pre-merge comment barrier is deliberately untouched — none is a `done` record, so none carries a fact obligation.
 
-**Branch A — PR mode (rebase + landed merge + cleanup)** (PR was rebased onto base, the merge **landed** and was corroborated, base branch pulled, feature branch deleted locally and on remote, worktree removed). Branch A is the **clean-barrier** payload: use it only when the pre-merge review barrier resolved via its clean path. When the merge proceeded past a reported gap under an authorization, emit **Branch E** instead. When the PR was enqueued but the queue merge never landed, emit **Branch F** instead — Branch A requires `{merge_landed} == true`. It is the only clean-path branch that reaches both the rebase and a landed merge, so it carries all four facts:
+**Branch A — PR mode (landed merge + cleanup)** (the merge **landed** and was corroborated, base branch pulled, feature branch deleted locally and on remote, worktree removed — preceded by a rebase on the `use_merge_queue == false` path and by no rebase on the `true` path). Branch A is the **clean-barrier** payload: use it only when the pre-merge review barrier resolved via its clean path. When the merge proceeded past a reported gap under an authorization, emit **Branch E** instead. When the PR was enqueued but the queue merge never landed, emit **Branch F** instead — Branch A requires `{merge_landed} == true`. It is the only clean-path branch that reaches a landed merge, so it carries `merge_mechanism` and `work_performed` **always**, plus the two rebase facts **on the path that rebased**:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
-  --fact action={action} \
-  --fact upstream_commit_count={upstream_commit_count} \
+  {--fact action={action} (if use_merge_queue == false)} \
+  {--fact upstream_commit_count={rebase_upstream_commit_count} (if use_merge_queue == false)} \
   --fact merge_mechanism={merge_mechanism} \
   --fact work_performed=true \
   --display-detail "{rendered_detail}"
 ```
 
-Render `{rendered_detail}` as `"{rebase_clause}, {merge_clause}, cleanup complete"`, composing the two clauses independently from the two facts: `action` decides the rebase clause and `merge_mechanism` decides the merge clause. Both axes must be rendered as clauses rather than interpolated raw — a single-axis form such as `merged via {merge_mechanism}` reads as "this step merged it via the queue" and so claims for the queue path a merge this step never performed:
+The two rebase facts carry the same `{… (if …)}` conditional form the rest of this document uses for a per-path payload, because they are **conditional, not optional-by-taste**: they are recorded iff this run reached the rebase, which per § "Rebase Branch onto Base" it does iff `use_merge_queue == false`. On the `true` path no rebase ran, so both lines are omitted entirely — omission is the honest signal the fact table above requires, and interpolating a placeholder that has no value would fabricate one.
+
+**`upstream_commit_count` has two distinct bindings, so the fact site uses a DISTINCT placeholder.** The pre-merge gate's mandatory classifier re-run (§ "Re-run the classifier against the current head") also parses a field of that name and interpolates it into the operator prompt, on BOTH paths — and it runs LATER, so `{upstream_commit_count}` is bound to the classifier's value by the time an executor reaches this block. The two are not interchangeable: the fact recorded here is the count the `worktree-rebase-to` payload reported for the replay this step performed, so it exists only where that replay did, while a classifier-sourced count is an observation of `origin/{base_branch}` rather than a record of work this step did. Capturing the rebase payload's value as `{rebase_upstream_commit_count}` when § "Rebase Branch onto Base" parses its return is what keeps the two apart structurally; a prose prohibition alone would leave the executor interpolating the wrong binding by name. The recorded FACT key stays `upstream_commit_count` — only the template variable differs.
+
+Render `{rendered_detail}` as `"{rebase_clause}, {merge_clause}, cleanup complete"`, composing the two clauses independently: the rebase clause comes from `action` (or from its absence) and the merge clause from `merge_mechanism`. Both axes must be rendered as clauses rather than interpolated raw — a single-axis form such as `merged via {merge_mechanism}` reads as "this step merged it via the queue" and so claims for the queue path a merge this step never performed:
 
 | `action` | Rebase clause |
 |----------|---------------|
 | `rebased` | `rebased onto base` |
 | `noop` | `already current with base` |
+| _absent_ (rebase skipped — `use_merge_queue == true`) | `rebase deferred to queue` |
 
 | `merge_mechanism` | Merge clause |
 |-------------------|--------------|
 | `pr_safe_merge` | `merged directly` |
 | `merge_queue` | `queue-merged, corroborated` |
 
-The `merge_queue` clause is deliberately not the word "merged" alone: the platform performed the merge and this step observed it land, which is a different fact from this step having merged the PR itself. Worst-case expansion is the 71-char string checked in § "Length discipline" above.
+The `merge_queue` clause is deliberately not the word "merged" alone: the platform performed the merge and this step observed it land, which is a different fact from this step having merged the PR itself. Worst-case expansion is the 70-char string checked in § "Length discipline" above.
 
 **Branch B — local-only mode** (no PR was created; only the local switch-to-base-branch was performed). This path never reaches the rebase and never merges, so it records neither `action`, nor `upstream_commit_count`, nor `merge_mechanism` — but it DID perform its characteristic local cleanup, so `work_performed=true`:
 
@@ -1746,27 +1775,25 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 `{kind}` is the authorization kind actually relied on (the single value of `admissible_kinds` on the check path, or `barrier-ask-override` on the ask path). The form is fixed-width by construction — the unbounded gap expansion belongs to the `decision`-log line only, never here.
 
-This branch reaches the same rebase and merge Branch A does, so it records the same four facts; only the rendered detail differs, and it differs precisely because the gap must stay visible:
+This branch reaches the same rebase-or-skip routing and the same merge Branch A does, so it records the same facts under the same conditions — the two rebase facts conditional for the same reason (recorded iff this run reached the rebase, i.e. iff `use_merge_queue == false`, and sourced from the rebase payload rather than from the classifier re-run). Only the rendered detail differs, and it differs precisely because the gap must stay visible:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
-  --fact action={action} \
-  --fact upstream_commit_count={upstream_commit_count} \
+  {--fact action={action} (if use_merge_queue == false)} \
+  {--fact upstream_commit_count={rebase_upstream_commit_count} (if use_merge_queue == false)} \
   --fact merge_mechanism={merge_mechanism} \
   --fact work_performed=true \
   --display-detail "merged under {kind}, gap recorded"
 ```
 
-**Branch F — enqueued, merge not yet landed** (PR mode, `use_merge_queue == true`: the rebase, force-push, and `ci pr merge-queue` enqueue all succeeded, but § "Wait for the Queue Merge to Land (bounded)" did not observe the queue merge the PR within `merge_queue_wait_budget_seconds` — or observed it dequeued, or could not observe its state at all). The post-merge tail was skipped and the merge mutex released; the head branch and its remote-tracking ref are intact.
+**Branch F — enqueued, merge not yet landed** (PR mode, `use_merge_queue == true`: the `ci pr merge-queue` enqueue succeeded, but § "Wait for the Queue Merge to Land (bounded)" did not observe the queue merge the PR within `merge_queue_wait_budget_seconds` — or observed it dequeued, or could not observe its state at all). The post-merge tail was skipped and the merge mutex released; the head branch and its remote-tracking ref are intact.
 
-This branch reached the rebase, so it records `action` and `upstream_commit_count`. It performed real work — rebase, force-push, enqueue — so `work_performed=true`. It records **no `merge_mechanism`**, because no merge landed: recording `merge_queue` here would assert exactly the fact this branch exists to deny, and would make Branch F indistinguishable from Branch A to any consumer reading the facts rather than the detail string:
+This branch is reached only on `use_merge_queue == true`, and that is exactly the path § "Rebase Branch onto Base" routes AWAY from the rebase. It therefore **never reaches the rebase** and records neither `action` nor `upstream_commit_count` — their absence is the honest signal the fact table above names, and interpolating either placeholder here would fabricate a rebase that structurally cannot have happened on this branch. It performed real work — the enqueue — so `work_performed=true`. It records **no `merge_mechanism`**, because no merge landed: recording `merge_queue` here would assert exactly the fact this branch exists to deny, and would make Branch F indistinguishable from Branch A to any consumer reading the facts rather than the detail string:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
-  --fact action={action} \
-  --fact upstream_commit_count={upstream_commit_count} \
   --fact work_performed=true \
   --display-detail "enqueued to merge queue, merge not landed, cleanup deferred"
 ```
