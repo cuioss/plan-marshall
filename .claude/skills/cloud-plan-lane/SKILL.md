@@ -589,18 +589,19 @@ suppresses waste, never scrutiny.
 Then work the review cycle until it is genuinely finished:
 
 1. Wait for the automated reviewers and CI to report.
-2. Read the actual comment bodies, from **both** surfaces (see § GitHub access). A summary of a
-   review is not the review, and a green check is not evidence that a reviewer participated.
+2. Read the actual comment bodies, from **all three** surfaces (see § GitHub access, and the table
+   below). A summary of a review is not the review, and a green check is not evidence that a
+   reviewer participated.
 3. Handle **every** comment: fix it, or reply on the thread explaining why it is not actionable.
    Push fixes as further commits.
 4. Re-check after each push — new comments arrive on new commits.
 
 Record in the report which reviewers commented and how each comment was dispositioned.
 
-**PR comments live on two surfaces, and one of them is the one that matters here.** The repository's
-principal automated reviewers file their findings as *inline review-thread* comments, which the
-conversation view does not contain. Reading only the conversation view and then asserting "all
-comments handled" is a false clean signal — the exact failure this lane is built to avoid.
+**PR comments live on three surfaces, and the conversation view is only one of them.** Reviewers file
+findings as inline review-thread comments and as review-summary bodies, neither of which the
+conversation view contains. Reading only the conversation view and then asserting "all comments
+handled" is a false clean signal — the exact failure this lane is built to avoid.
 
 | Surface | Holds | `gh` | GitHub MCP `pull_request_read` method |
 |---|---|---|---|
@@ -635,22 +636,74 @@ and it goes stale the instant a reviewer is added to or removed from the registr
 
 **Record a verdict per reviewer, derived from the stored comment bodies** — never from a check state,
 a review summary, an absence of complaint, or this contract's prose. For each `author_login` in the
-population, read that author's actual comment/review bodies on the PR (both surfaces above) and assign
-exactly one verdict:
+population, read that author's actual comment/review bodies on the PR (all three surfaces above) and
+assign exactly one verdict:
 
 | Verdict | Body evidence |
 |---|---|
 | `reviewed` | The author published a review artifact **against the diff** — an inline thread comment, or a review/issue-comment body carrying findings (or an explicit "nothing to report" over the diff). |
 | `rate-limited` | The author published **only a refusal/quota notice** in place of a review (e.g. "Review limit reached", "reached your weekly rate limit of … diff characters"). It engaged but did not review this diff. |
-| `silent` | The author published **nothing at all** — no review, no notice. State the reason when one is known (a mid-review push aborted it; the PR carries `skip-bot-review`; the reviewer is disabled); an unexplained silence is recorded as such. |
+| `silent` | The author published **nothing at all** — no review, no notice. Before recording it, run the recovery check below; an unexplained silence is recorded as such only once that check has been made. |
 
 A check-run state is never a verdict: a green check can conclude having published nothing, and a
 reviewer that posts no check at all would read as absent on every run. The verdict comes from the
 bodies or it is not evidence.
 
-Record the population, each reviewer's verdict, and the body evidence for it in the report's
-**Reviewer participation** table (§ Report), and state the coverage as N-of-M. A reviewer that never
-spoke is then *visibly* `silent` in the record, not merely unmentioned.
+#### Every non-`reviewed` verdict also records whether it reopens
+
+The verdict says a reviewer did not review. It does not say whether that is temporary — and the two
+cases call for opposite handling, so the record carries both. Alongside each non-`reviewed` verdict,
+state **`Reopens? yes / no / unknown`**:
+
+| Reopens? | Meaning | Example |
+|---|---|---|
+| `yes` | The limit clears on its own, and the notice usually says when. Re-requesting later is productive. | "Review limit reached … next review available in 27 minutes" |
+| `no` | A property of *this diff*, not of the clock. The same request never succeeds at this size, so waiting is futile. | "your pull request is larger than the review limit of 150000 diff characters" |
+| `unknown` | The notice states a refusal without a clearing condition, or the reason for silence could not be established. | An unexplained silence; a bare "cannot review this PR" |
+
+⛔ **`rate-limited` alone cannot carry this**, and that is the whole reason for the column: two
+reviewers were observed refusing one PR **at the same moment**, one on a countdown that cleared and
+one on a size ceiling that never would, and the participation table rendered them identically. A
+reader of the table could not tell which — if either — was worth re-requesting.
+
+Take the value from the **notice body**, the same source as the verdict; do not infer it from the
+reviewer's identity, since one reviewer can refuse under both kinds.
+
+Record the population, each reviewer's verdict, its `Reopens?` value, and the body evidence for it in
+the report's **Reviewer participation** table (§ Report), and state the coverage as N-of-M. A reviewer
+that never spoke is then *visibly* `silent` in the record, not merely unmentioned.
+
+#### A `silent` verdict is not terminal until the recovery check says so
+
+Silence has several causes that look identical from the comment surfaces — the bodies are empty, which
+is what `silent` means — and **one of them is recoverable in a single comment**. So `silent` is a
+provisional verdict: before disclosing it, establish *why*, and act on the answer.
+
+Check whether the reviewer's workflow ran at all, and split on it:
+
+- **No run at all** → the reviewer never got the event. It is not rate-limited; it was not invited.
+  Post the registry's declared `trigger_comment` (`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`)
+  as a PR comment, re-read the surfaces, and record the *result* — a review that arrives this way is
+  `reviewed` like any other.
+- **A run that concluded `skipped`, or failed** → a guard or a failure suppressed it, and no comment
+  will change that. Record the run's conclusion as the reason and disclose.
+
+This adds a cheap recovery attempt before the disclosure. It is **not** a gate: if the trigger
+produces nothing, disclose the shortfall and carry on exactly as § Step 8 condition 4 says.
+
+⛔ **Query by `event`, never by head branch.** A **command**-triggered run (`issue_comment`) is
+attributed to the repository's **default** branch, because `issue_comment` is not a pull-request
+event. A head-branch-filtered query therefore returns `total_count: 0` *whether or not the run
+exists*. One run believed that false negative twice — once recording "no workflow run" while a run
+existed, and again eleven minutes after the recovery run had already succeeded, nearly reporting the
+recovery as failed. Written loosely as "check the Actions API", this rule reproduces the defect it
+fixes, because the obvious query is the wrong one.
+
+⭐ **And treat any negative as unverified until a positive control returns.** Before believing a
+`total_count: 0`, re-run the same query against something known present — another PR's branch, a
+broader filter — and confirm it returns a row. A filtered query that can only ever return zero is
+indistinguishable from a true absence, and this generalizes well past this one check: every false
+"nothing there" in the run above came from a filtered query believed without a control.
 
 ### A push during the review cycle: superseded runs and aborted reviews
 
@@ -742,10 +795,14 @@ arming auto-merge — it is not a gate on the merge. Merge only when conditions 
 4. **A review-coverage shortfall is disclosed to the operator — this is a disclosure step, not a
    merge condition.** From the per-reviewer participation record (§ Step 7), read the verdict of every
    expected reviewer. When **any** expected reviewer's verdict is not `reviewed`, state the shortfall
-   and its reason to the operator, explicitly and in words, *before* arming auto-merge — for example:
-   "Review coverage: 1 of 3 — `cuioss-review-bot` reviewed; `coderabbitai` rate-limited (window
-   reopens); `sourcery-ai` rate-limited (weekly quota)." **A run that merges on 1-of-3 must _say_
-   1-of-3.**
+   and its reason to the operator, explicitly and in words, *before* arming auto-merge — carrying each
+   reviewer's `Reopens?` value (§ Step 7), since that is what tells the operator whether the gap was
+   ever closable. For example: "Review coverage: 1 of 3 — `cuioss-review-bot` reviewed; `coderabbitai`
+   rate-limited, reopens in 27 minutes; `sourcery-ai` rate-limited on a size ceiling, does not reopen."
+   **A run that merges on 1-of-3 must _say_ 1-of-3.**
+
+   A `silent` verdict reaches this disclosure only after its recovery check (§ Step 7) — so what is
+   disclosed here is a shortfall that survived an attempt to fix it, not merely one that was noticed.
 
    ⛔ **This is a disclosure requirement, and it is NOT a block — the two must never be collapsed.**
    The gate does **not** hold the merge open, does **not** wait for the shortfall to clear, and does
@@ -829,7 +886,7 @@ and the queue landed the PR cleanly once `verify / conclusion` went green.
 **Manual read-polling is the in-session alternative to arm-and-hand-off while the session stays
 active.** "No way to block-until-landed" forbids a *blocking wait* — never `sleep` on GitHub in Bash
 (§ Cloud session affordances) — not an on-demand *read*. The GitHub read surface (`pull_request_read`:
-check-runs, `mergeStateStatus`, and BOTH comment surfaces) is **not** approval-gated even where
+check-runs, `mergeStateStatus`, and ALL THREE comment surfaces) is **not** approval-gated even where
 `send_later` / `subscribe_pr_activity` are, so a session that is still active — an interactive run with a
 reachable operator, or one re-entered by any means — MAY drive the whole review cycle and merge gate by
 polling that read surface on each re-entry: read the checks and comments, handle every comment, finalize
@@ -876,7 +933,7 @@ that its artifact exists on disk:
 | 4 Pushed | No unpushed commit remains (`git status -sb` reports no `ahead`) |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
 | 6 Verification sub-agent | Findings and dispositions in the report |
-| 7 PR cycle | PR exists; every comment dispositioned in the report |
+| 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict **and** a `Reopens?` value per reviewer, and every `silent` verdict records what its recovery check found |
 | 8 Merge gate | Conditions 1–3 met and auto-merge armed. Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
 | 8 Bridge | No **status or bookkeeping** write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory was touched; a **declared-deliverable** edit to a shared lane doc (e.g. `cloud-bridge.md`, `README.md`, the plan template) is permitted — and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
 | 9 This check | Its result appended to the report |
@@ -962,11 +1019,13 @@ cross-named by `.github/workflows/pr-agent.yml` — never a list transcribed her
 reviewer, each verdict derived from the stored comment bodies (§ Step 7), never from a check state or
 a summary:
 
-| Reviewer (`author_login`) | Verdict (`reviewed` / `rate-limited` / `silent`) | Body evidence / reason |
-|---|---|---|
-| … | … | … |
+| Reviewer (`author_login`) | Verdict (`reviewed` / `rate-limited` / `silent`) | Reopens? (`yes` / `no` / `unknown`, blank when `reviewed`) | Body evidence / reason |
+|---|---|---|---|
+| … | … | … | … |
 
 State the coverage as N-of-M, and whether the § Step 8 shortfall disclosure fired and what it said.
+Where a `silent` verdict triggered the recovery check (§ Step 7), record what the check found and
+whether the reviewer was recovered.
 
 ## Cost
 What the run cost, each figure carrying its **population** — a bare number that merely looks
