@@ -21,7 +21,7 @@ implements:
 configurable:
   - key: required_bots
     default: ""
-    description: Comma-separated list of review-bot kinds whose participation is REQUIRED. A required bot's silence is a failure — it gates the step-done participation quorum. Each entry MUST have a machine-readable registry doc at standards/{bot_kind}.md (bot_kind, author_login, trigger_comment, completion_check_name, honors_skip_label, participation_evidence, participation_requires_update, ignore_patterns, refusal_patterns, contentless_review_markers, actionable_content_markers, severity_map). The default is EMPTY so a never-asked key stays distinguishable from an answered-empty value — see standards/bot-participation-contract.md for the required-vs-optional semantics, the ask posture, the evidence taxonomy, and the nine-member failure taxonomy.
+    description: Comma-separated list of review-bot kinds whose participation is REQUIRED. A required bot's silence is a failure — it gates the step-done participation quorum. Each entry MUST have a machine-readable registry doc at standards/{bot_kind}.md (bot_kind, author_login, trigger_comment, completion_check_name, honors_skip_label, participation_evidence, participation_requires_update, ignore_patterns, refusal_patterns, contentless_review_markers, actionable_content_markers, severity_map). The default is EMPTY so a never-asked key stays distinguishable from an answered-empty value — see standards/bot-participation-contract.md for the required-vs-optional semantics, the ask posture, the evidence taxonomy, and the ten-member failure taxonomy.
   - key: optional_bots
     default: ""
     description: Comma-separated list of review-bot kinds whose participation is OPTIONAL. An optional bot's silence is not a failure and never gates mark-done. Same registry-doc requirement as required_bots. The default is EMPTY so a never-asked key stays distinguishable from an answered-empty value. A bot in NEITHER list is warned about but STILL ingested — see standards/bot-participation-contract.md.
@@ -45,7 +45,7 @@ configurable:
     description: "Timeout policy applied at both re-review triggers (A and B) when the await budget expires with no fresh bot review (timed_out: true, matched: false). One of ask|defer|proceed. ask halts and asks the operator (interactive); defer auto-skips the merge without prompting (safe default-action); proceed is the explicit opt-in to advance the unreviewed HEAD, decision-logged at WARNING."
   - key: review_rate_window_await
     default: false
-    description: "Opt-in bool (default-off) arming the rate-limit refusal recovery sequence instead of proceeding on a detected refusal. When enabled and a refusal is detected (a non-empty rate_limited_bots[] on the pr wait-for-comments return, or refusal_detected on the github_re_review await), the step branches on the bot's rate_limit_class: awaitable_window claims the bot's rate window via merge_lock rate-window claim, polls the claim's own expiry as a bounded paced wait, then GENERATES the event (rebase onto base and push; the registry trigger_comment only as a fallback when main is unchanged and only after the window elapsed); hard_quota and unknown escalate immediately without awaiting; cap exhaustion escalates with reason rate_window_exhausted. When false, a detected refusal is treated as an ordinary settle and the step proceeds."
+    description: "Opt-in bool (default-off) arming the rate-limit refusal recovery sequence instead of proceeding on a detected refusal. When enabled and a refusal is detected on a REQUIRED bot (a non-empty rate_limited_bots[] on the pr wait-for-comments return, or refusal_detected on the github_re_review await), the step branches on the refusal's CAUSE first and only then on the bot's rate_limit_class. Cause size is STRUCTURAL — the diff exceeds a ceiling the reviewer declares, so nothing reopens by waiting: it escalates immediately with reason refusal_structural, carrying the stated cap and the measured diff size, and its operator options are split / accept / disable-for-this-PR, never a wait. Otherwise: awaitable_window claims the bot's rate window via merge_lock rate-window claim, polls the claim's own expiry as a bounded paced wait, then GENERATES the event (rebase onto base and push; the registry trigger_comment only as a fallback when main is unchanged and only after the window elapsed); hard_quota and unknown escalate immediately without awaiting; cap exhaustion escalates with reason rate_window_exhausted. A refusal from a bot outside required_bots is an ordinary settle, never an escalation — its silence cannot block, so escalating it asks the operator a question they do not need. When false, a detected refusal is treated as an ordinary settle and the step proceeds."
   - key: review_rate_window_timeout_seconds
     default: 3600
     description: Await budget (seconds) capping the rate-window expiry poll, defaulting to 3600 to match CodeRabbit's ~hourly rate-window reset. On exhaustion the step releases the claim and returns escalate_ask with reason rate_window_timeout. Only consulted when review_rate_window_await is true.
@@ -129,16 +129,16 @@ Each entry in either list maps one-to-one to a machine-readable registry doc at
 `standards/{bot_kind}.md` under this skill's `standards/` directory — there is no hard-coded bot
 list in the pipeline. Each registry doc carries a fenced-YAML data block (`bot_kind`,
 `author_login`, `trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns[]`,
-`refusal_patterns[]`, `contentless_review_markers[]`, `actionable_content_markers[]`,
-`rate_limit_class`, `rate_limit_eta_patterns[]`, `severity_map`) plus the
+`review_body_summary_patterns[]`, `refusal_patterns[]`, `contentless_review_markers[]`,
+`actionable_content_markers[]`, `rate_limit_class`, `rate_limit_eta_patterns[]`, `severity_map`) plus the
 producer / consumer / trust boundary / disposition rationale for that bot, and links to the org
 signal/noise source-of-truth rather than duplicating it.
 
 The single generic loader `scripts/bot_registry.py` parses every `standards/{bot_kind}.md` data
 block at runtime and exposes the derived registry (`bot_kinds()`, the login→bot_kind map, each
 bot's `trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns`,
-`contentless_review_markers`, `actionable_content_markers`, `rate_limit_class`,
-`rate_limit_eta_patterns`, and `severity_map`). The producer
+`review_body_summary_patterns`, `contentless_review_markers`, `actionable_content_markers`,
+`rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map`). The producer
 (`github_pr.py` noise pre-filter), the finding store (`_findings_core.BOT_KINDS`), the re-review
 strategy registry (`github_re_review.py` — both its trigger comments and the `refusal_class` /
 `refusal_eta` it surfaces on a detected refusal), and the per-bot rate-limit detector
@@ -358,17 +358,46 @@ A detected refusal is a **branchable signal, never a silent drop**. Two producer
   `github_re_review re-review` return — the re-review await recorded a refusal instead of collapsing
   it into a bare `matched: false` / `timed_out: true`.
 
-Both carry the same two discriminators, so this section treats them uniformly: `{bot_kind}` and its
-`rate_limit_class` (`awaitable_window` / `hard_quota` / `unknown`), plus the stated `eta` when the
-bot's registry `rate_limit_eta_patterns` matched.
+Both carry the same discriminators, so this section treats them uniformly: `{bot_kind}`, its
+`rate_limit_class` (`awaitable_window` / `hard_quota` / `unknown`), the refusal's `cause` (`size` /
+`quota`, from the `refused_causes[]` overlay), plus the stated `eta` when the bot's registry
+`rate_limit_eta_patterns` matched and the stated `cap` when its `refusal_size_cap_patterns` matched.
 
 Read `review_rate_window_await` and `review_rate_window_timeout_seconds` off the same `params` object returned by the one-stop `manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review` call used for `review_bot_buffer_seconds` (defaults: `false` and `3600`). **When `review_rate_window_await == false`**, skip this entire subsection and proceed directly to "Producer: FIND" below — a detected refusal is treated as an ordinary settle.
 
-**When `review_rate_window_await == true` AND a refusal was detected**, branch on `rate_limit_class` BEFORE claiming or awaiting anything — recovery is only productive for a window that actually reopens.
+**When `review_rate_window_await == true` AND a refusal was detected on a bot in `required_bots`**, branch BEFORE claiming or awaiting anything — recovery is only productive for a limit that actually moves. Evaluate the branches **in the order given**: the CAUSE branch first, then the `rate_limit_class` branches.
+
+⛔ **Scope the recovery to REQUIRED bots — an optional bot's refusal is settled, never escalated.** An optional bot's silence is not a failure and can never hold the step open, so awaiting its window burns budget and escalating it puts a decision the operator does not need in front of them. Treat a refusal from a bot outside `required_bots` as an ordinary settle and proceed to "Producer: FIND"; it is still surfaced in `refused_bots[]` and still classified for visibility. This filter is also what makes moving a refusing bot to `optional_bots` an EFFECTIVE remedy rather than a loop: without it, the reclassification changes the quorum but the recovery re-detects the same refusal and re-escalates on the next pass, so the operator lands back on the identical prompt.
+
+⛔ **The cause branch comes first, and reading `rate_limit_class` alone is the defect it closes.** `rate_limit_class` is declared once per BOT while a cause is observed per REFUSAL, so a bot declaring `awaitable_window` that refuses because the **diff is too big** would otherwise fall into Branch 2 and be handed the full claim-await-generate recovery — spending `review_rate_window_timeout_seconds` on a ceiling that no amount of waiting moves, then re-triggering a bot whose answer cannot change while the diff is this size. Waiting is not merely unproductive there; it is an action guaranteed to fail.
 
 **Every branch below is decision-logged.** A refusal never leaves this section without an auditable record of what was decided and why.
 
-#### Branch 1 — `hard_quota` or `unknown`: escalate, do not await, do not generate
+#### Branch 0 — `cause: size` (STRUCTURAL): escalate, do not await, do not generate
+
+Evaluated FIRST, whatever `rate_limit_class` declares. The refusal names a ceiling on the **diff
+itself** — the bot classifies `refused_structural` (see
+[`standards/bot-participation-contract.md`](standards/bot-participation-contract.md) § "A refusal
+resolves by CAUSE first") — so the same request never succeeds while the diff is this size. Do NOT
+claim a window, do NOT await, and do NOT generate an event.
+
+Decision-log, then return `status: escalate_ask` with `reason: refusal_structural` (see "Output"
+below). ⛔ **Its `prompt_options[]` MUST NOT offer a wait.** The remedies are to split the diff, to
+accept the coverage gap, or to disable this reviewer for this PR; adding a wait option alongside them
+spends the operator's attention on the one action that cannot work. Carry `{cap}` — the
+ceiling the notice itself stated — and `{measured_diff_size}`, how big the refused diff actually was,
+so the operator deciding an acceptance reconciles the gap against a real figure rather than accepting
+an unquantified one. Either is `unknown` when unavailable; report it as unknown rather than
+substituting a default, and read the pair as an order-of-magnitude comparison, since the two carry
+different units by design.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+  decision --plan-id {plan_id} --level INFO \
+  --message "(plan-marshall:automatic-review) refusal recovery SKIPPED — bot {bot_kind} refused STRUCTURALLY (cause=size, cap={cap}, rate_limit_class={rate_limit_class}); returning escalate_ask{reason: refusal_structural} rather than awaiting a diff-size ceiling that waiting does not move"
+```
+
+#### Branch 1 — `hard_quota` or `unknown` (and `cause` is not `size`): escalate, do not await, do not generate
 
 Nothing reopens on a useful timescale (`hard_quota`), or the refusal shape has never been observed for
 that bot (`unknown`, the fail-closed value). Do NOT claim a window, do NOT await, and do NOT generate
@@ -384,7 +413,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "(plan-marshall:automatic-review) refusal recovery SKIPPED — bot {bot_kind} rate_limit_class={rate_limit_class} is not awaitable; returning escalate_ask{reason: rate_window_not_awaitable} rather than awaiting a limit that does not reopen"
 ```
 
-#### Branch 2 — `awaitable_window`: claim the window
+#### Branch 2 — `awaitable_window` (and `cause` is not `size`): claim the window
 
 The window is a **cross-plan shared resource**: every concurrently-finalizing plan in this repository
 contends for the same bot's rate window, so two plans must not both drive a recovery for it. Claim it
@@ -622,9 +651,13 @@ Then thread the four bot-keyed observation sets the predicate classifies from, p
 
 1. **`{participated_bots}`** — the EVIDENCE-TYPED participation set: the `participated_bots[]` records from the `github_pr fetch_findings` result of the "Producer: FIND" step, rendered as comma-separated `{bot_kind}:{evidence_kind}` pairs. This **replaces** the retired `responded_bots`-plus-completion-poll union: presence of *some* comment resolving to a bot's login is not evidence that the bot reviewed this diff, so the producer now credits a bot only when an observed comment's `kind` is one of the publish shapes that bot's registry record declares in `participation_evidence` (and, for a bot declaring `participation_requires_update`, only on first presence or observed `updated_at` movement). A bot that posted only noise is still credited — the evidence is computed before noise filtering — but a bot that posted only a help reply is not, and neither is a bot whose only output was a **refusal**: a refusal is published in one of the bot's declared shapes yet is positive evidence it did NOT review, so the producer excludes it from this set and reports it in `{refused_bots}` instead.
 2. **`{in_progress_bots}`** — every `{bot_kind}` whose `github_pr bot_completion` was still not terminal at the `review_completion_poll_timeout_seconds` bound, from the "Completion-aware poll" data above.
-3. **`{refused_bots}`** — every `{bot_kind}` observed publishing a refusal notice. Supply only the observation; the predicate splits it one-to-one into `refused_awaitable` / `refused_hard` / `refused_unknown` from that bot's three-valued registry `rate_limit_class`. Take the **union of two producers**, both already gathered above: the `refused_bots[]` list on the `github_pr fetch_findings` return of the "Producer: FIND" step, and the `rate_limited_bots[]` records on the "Wait for review-bot comments" return. The producer-side list is load-bearing rather than redundant — the wait step samples each bot's *newest* comment at one instant, while `fetch_findings` classifies **every** comment on the PR, so a refusal posted outside that sample still reaches the quorum layer. A bot whose refusal reaches neither channel would be classified `absent`, which reads as "not heard from yet" rather than "declined" — the exact conflation that let a PR with two refusing required bots report a complete review.
+3. **`{refused_bots}`** — every `{bot_kind}` observed publishing a refusal notice. Supply only the observation; the predicate assigns the member, reading the CAUSE first (a `size` cause gives `refused_structural`) and otherwise splitting one-to-one into `refused_awaitable` / `refused_hard` / `refused_unknown` from that bot's three-valued registry `rate_limit_class`. Take the **union of two producers**, both already gathered above: the `refused_bots[]` list on the `github_pr fetch_findings` return of the "Producer: FIND" step, and the `rate_limited_bots[]` records on the "Wait for review-bot comments" return. The producer-side list is load-bearing rather than redundant — the wait step samples each bot's *newest* comment at one instant, while `fetch_findings` classifies **every** comment on the PR, so a refusal posted outside that sample still reaches the quorum layer. A bot whose refusal reaches neither channel would be classified `absent`, which reads as "not heard from yet" rather than "declined" — the exact conflation that let a PR with two refusing required bots report a complete review.
 
-   **`{refused_causes}`** — the orthogonal CAUSE overlay: the `refused_causes[]` records from the same `github_pr fetch_findings` return, rendered as comma-separated `{bot_kind}:{cause}` pairs (`cause` in `size` / `quota`) and forwarded to `--refused-causes`. This is **advisory** — it names the *remedy* a refusal calls for (`size` → a smaller diff; `quota` → backoff) and is reported back in `refusal_causes[]`, but it never changes which awaitability member the bot resolves to. Sourcery is the motivating case: its per-PR size ceiling and its weekly quota are both `hard_quota` awaitability yet carry different causes, so the cause is the only signal that tells "split the PR" from "wait it out".
+   **`{refused_causes}`** — the CAUSE overlay: the `refused_causes[]` records from the same `github_pr fetch_findings` return, rendered as comma-separated `{bot_kind}:{cause}` pairs (`cause` in `size` / `quota`) and forwarded to `--refused-causes`. It names the *remedy* a refusal calls for and is reported back in `refusal_causes[]`. ⛔ **A `size` cause is STATE-DETERMINING, not advisory**: it resolves the bot to `refused_structural` whatever its `rate_limit_class` declares, because that field is per-BOT while a cause is per-REFUSAL and one bot can refuse for both at one class. Every other cause is advisory and leaves the awaitability split untouched. Sourcery is the motivating case: its per-PR size ceiling and its weekly quota are both `hard_quota` awaitability yet carry different causes, so the cause is the only signal that tells "split the PR" from "wait it out".
+
+   **`{refusal_size_caps}`** — the CAP overlay: the `refused_size_caps[]` records from the same return, rendered as comma-separated `{bot_kind}:{cap}` pairs and forwarded to `--refusal-size-caps`. `cap` is the ceiling the bot's own refusal notice stated, reported back in `refusal_causes[]` so a recorded coverage gap can be reconciled against the diff that was actually refused rather than being asserted. Sparse by design — a quota refusal names no ceiling, and a size notice may state none — and an absent entry is reported as `unknown`, never defaulted.
+
+   **`{measured_diff_size}`** — the other half of that reconciliation: the `measured_diff_size` scalar from the same return, forwarded to `--measured-diff-size`. A cap without the size that hit it is a claim the reader must take on trust, so the producer measures the diff once — and **only** when a size refusal was actually seen, so the extra provider round-trip is never paid on the common path. It is a single value rather than a per-bot list because it is a property of the PR, identical for every reviewer that refused it. Its unit rides inside the value and is deliberately **not** the reviewer's unit (counting the reviewer's own unit exactly means downloading the whole patch, which is most expensive precisely on the oversized PRs where this fires), so the pair is an order-of-magnitude comparison, never an equality check. Empty when unmeasured — reported as unknown, never as `0`, which would read as an empty diff refused for being too big.
 4. **`{stale_participation_bots}`** — the `stale_participation_bots[]` records from the `github_pr fetch_findings` return of the "Producer: FIND" step, rendered as comma-separated `{bot_kind}:{evidence_kind}` pairs. This is the SAME evidence-typed form as `{participated_bots}` (item 1) and the exact shape the producer emits, so the producer's output forwards to `--stale-participation-bots` verbatim — the consumer flag is pair-form, and the classifier reads only the `bot_kind`. Each names a bot whose observed comment matched a declared `participation_evidence` publish shape but failed the `participation_requires_update` currency test. These resolve to `participated_stale` — blocking, because the review they prove predates this HEAD, but with a **re-review trigger** as the remedy rather than the escalation `absent` calls for. The producer has already subtracted the proven set, so a bot with one stale and one fresh comment never appears here. Today only `pr-agent` can reach this set — it is the sole bot declaring `participation_requires_update`.
 5. **`{not_triggered}`** — the PR-WIDE observable: whether any `pull_request`-event workflow run exists for this PR at all. This is the one input NOT threaded forward, because no step above observes it; read it here:
 
@@ -644,17 +677,18 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   --plan-id {plan_id} --required-bots "{required_bots}" --optional-bots "{optional_bots}" \
   --participated-bots "{participated_bots}" --in-progress-bots "{in_progress_bots}" \
   --refused-bots "{refused_bots}" --stale-participation-bots "{stale_participation_bots}" \
-  --refused-causes "{refused_causes}"
+  --refused-causes "{refused_causes}" --refusal-size-caps "{refusal_size_caps}" \
+  --measured-diff-size "{measured_diff_size}"
 ```
 
-Append the bare `--not-triggered` flag to that call when and only when the item-5 read reported `has_pull_request_run: false`. It is a `store_true` bool with no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the seven list flags only. An item-5 read that was unreadable never reaches this call at all — it routes to the UNKNOWN verdict below before the predicate is invoked, so there is no third polarity to encode on the flag.
+Append the bare `--not-triggered` flag to that call when and only when the item-5 read reported `has_pull_request_run: false`. It is a `store_true` bool with no value of its own, so it is never interpolated and never quoted — the quoting discipline below governs the eight list flags only. An item-5 read that was unreadable never reaches this call at all — it routes to the UNKNOWN verdict below before the predicate is invoked, so there is no third polarity to encode on the flag.
 
-All seven list sets are legitimately empty in normal operation — a plan with no optional bots, no in-progress
-bots, no refusals, no stale publishes, and no refusal causes is the common case. **The load-bearing defence is the parser, not the quoting.**
+All eight list sets are legitimately empty in normal operation — a plan with no optional bots, no in-progress
+bots, no refusals, no stale publishes, no refusal causes, and no stated caps is the common case. **The load-bearing defence is the parser, not the quoting.**
 The generated executor strips every empty-string argument before argparse sees it (`script_args = [a
 for a in script_args if a]` in `.plan/execute-script.py`), so through the executor `--refused-bots ""`
 arrives as a bare `--refused-bots` exactly as an unquoted empty placeholder would — the quotes do NOT
-survive to the parser. What makes the empty case safe is that all seven list flags declare `nargs='?'` with
+survive to the parser. What makes the empty case safe is that all eight list flags declare `nargs='?'` with
 `const=''` (see § Canonical invocations → `review_completeness — check`), so a bare flag reads as the
 empty list instead of swallowing the next token or tripping an argparse rejection at end of line.
 
@@ -663,13 +697,13 @@ The placeholders are still double-quoted above, and should stay quoted — quoti
 (non-executor) invocation. Just do not read it as the empty-value defence: **never rely on quoting
 alone to make an empty list safe.**
 
-Read `participation_complete`, `pending_bots`, `unproven_bots`, `bot_states`, and `review_state_summary` from the returned TOON. `bot_states` carries one `{bot_kind, state}` row per classified bot, each resolving to exactly one state: the nine closed non-participation members (`absent`, `not_triggered`, `in_progress`, `refused_awaitable`, `refused_hard`, `refused_unknown`, `participated_but_empty`, `participated_stale`, `declined`) or `participated`. The three refusal members are split ONE-TO-ONE from the refusing bot's three-valued registry `rate_limit_class` — `awaitable_window` → `refused_awaitable`, `hard_quota` → `refused_hard`, `unknown` → `refused_unknown` — so a declared *we-do-not-know* reaches the reader as ignorance rather than as a positive hard-quota finding. `review_state_summary` is the compact one-line distribution of those states (e.g. `"3 refused"`, `"1 reviewed, 2 empty"`, or `""` for an empty roster); Branch A interpolates it into `display_detail` so a reader can tell *reviewed-and-clean* from *nobody-reviewed*. `pending_bots` is reported for visibility but does NOT gate the mark-done at this FIND step (the `--triage-ran` flag is omitted). The predicate is fail-closed over the required set — a plan with no observations reports every required bot as `absent` (or `not_triggered`, when no `pull_request` run exists at all) and `participation_complete: false`, and a bot whose registry record declares no `participation_evidence` can never be proven a participant.
+Read `participation_complete`, `pending_bots`, `unproven_bots`, `bot_states`, and `review_state_summary` from the returned TOON. `bot_states` carries one `{bot_kind, state}` row per classified bot, each resolving to exactly one state: the ten closed non-participation members (`absent`, `not_triggered`, `in_progress`, `refused_awaitable`, `refused_hard`, `refused_unknown`, `refused_structural`, `participated_but_empty`, `participated_stale`, `declined`) or `participated`. A refusal resolves by CAUSE first — an observed `cause: size` gives `refused_structural`, whatever the class says, because the ceiling is on the diff rather than on a window — and every other refusal splits ONE-TO-ONE from the refusing bot's three-valued registry `rate_limit_class`: `awaitable_window` → `refused_awaitable`, `hard_quota` → `refused_hard`, `unknown` → `refused_unknown`, so a declared *we-do-not-know* reaches the reader as ignorance rather than as a positive hard-quota finding. `review_state_summary` is the compact one-line distribution of those states (e.g. `"3 refused"`, `"1 reviewed, 2 empty"`, or `""` for an empty roster); Branch A interpolates it into `display_detail` so a reader can tell *reviewed-and-clean* from *nobody-reviewed*. `pending_bots` is reported for visibility but does NOT gate the mark-done at this FIND step (the `--triage-ran` flag is omitted). The predicate is fail-closed over the required set — a plan with no observations reports every required bot as `absent` (or `not_triggered`, when no `pull_request` run exists at all) and `participation_complete: false`, and a bot whose registry record declares no `participation_evidence` can never be proven a participant.
 
 - **`participation_complete: true`** — every REQUIRED bot resolved to `participated` or `participated_but_empty`. An unproven OPTIONAL bot never blocks. Pending-but-fetched findings do NOT block here; they await the downstream dispatcher-owned unified triage. Proceed to Branch A and mark the step `done` — recording participation, never a quality claim.
-- **`participation_complete: false`** — at least one REQUIRED bot is in `unproven_bots` (`absent`, `not_triggered`, `in_progress`, any of the three refusal members, `participated_stale`, or `declined`). A pending-but-fetched bot, an optional bot, or a bot that participated-but-empty does NOT cause `false` at this FIND step. The step is **NOT markable done** on this pass. Take exactly one of two paths:
+- **`participation_complete: false`** — at least one REQUIRED bot is in `unproven_bots` (`absent`, `not_triggered`, `in_progress`, any of the four refusal members, `participated_stale`, or `declined`). A pending-but-fetched bot, an optional bot, or a bot that participated-but-empty does NOT cause `false` at this FIND step. The step is **NOT markable done** on this pass. Take exactly one of two paths:
   1. **Loop back into FIND** (default): treat the unproven participation as an un-surfaced review — re-enter the FIND pipeline (await the bot) and record Branch C (`--outcome loop_back --loop-back-target 6-finalize`) for this iteration instead of Branch A. The terminal Branch A mark waits for a later pass that returns `participation_complete: true`. (This is a FIND-participation loop-back — awaiting an unproven bot review — NOT a triage loop-back; triage loop-back, including any real still-pending incompleteness after triage runs, is owned by the unified triage.)
 
-     Read `bot_states` before re-entering, because two of the blocking members enumerated above name a **different** remedy than awaiting: a required bot on `participated_stale` has a review that only predates this HEAD, so the productive action is the re-review trigger (the `re_review_on_loopback` path above) rather than a longer wait for a bot that already published; and a PR-wide `not_triggered` means no reviewer was ever asked, so the productive action is to generate the trigger event at all. Awaiting either one is waiting for something that will not arrive on its own.
+     Read `bot_states` before re-entering, because three of the blocking members enumerated above name a **different** remedy than awaiting: a required bot on `participated_stale` has a review that only predates this HEAD, so the productive action is the re-review trigger (the `re_review_on_loopback` path above) rather than a longer wait for a bot that already published; a PR-wide `not_triggered` means no reviewer was ever asked, so the productive action is to generate the trigger event at all; and a required bot on `refused_structural` refused because the DIFF is over its ceiling, so no loop-back and no wait can change its answer — the productive actions are to split, to accept the gap, or to disable that reviewer for this PR. Awaiting any of the three is waiting for something that will not arrive on its own.
 
      **Generating the trigger for `not_triggered`.** Naming two states with opposite remedies is only useful if BOTH remedies are reachable, so the `not_triggered` arm carries the same concrete mechanism the `participated_stale` arm does — the D2 re-review registry. `not_triggered` is a **PR-WIDE** observable (no `pull_request`-event run exists for this PR at all, item 5 above), so there is no per-bot evidence to condition on and every participating bot is equally un-asked: fire the trigger **once per bot in `required_bots ∪ optional_bots`**, never per-bot on a per-bot observation. Resolve the HEAD SHA and its commit time once, then invoke the registry per bot:
 
@@ -823,12 +857,13 @@ FIND-only producer — this step fetches and files `pr-comment` findings; the pe
 
 ### `escalate_ask` return (timeout escalations)
 
-This step returns `status: escalate_ask` instead of `success`/`loop_back` on four distinct escalations, discriminated by the `reason` field:
+This step returns `status: escalate_ask` instead of `success`/`loop_back` on five distinct escalations, discriminated by the `reason` field:
 
 - **`reason: re_review_timeout`** — the "On re-review timeout (trigger B)" sub-block fired with `re_review_on_timeout` of `defer` or `ask` (the re-review await budget expired with no fresh bot review). The `proceed` policy does NOT return `escalate_ask` — the leaf falls through to "Wait for review-bot comments" and the run terminates normally (`success`/`loop_back`); `proceed` is the documented non-escalating case.
 - **`reason: rate_window_timeout`** — the "Rate-limit refusal recovery" Branch 3 poll exhausted `review_rate_window_timeout_seconds` while the claimed window was still open.
 - **`reason: rate_window_not_awaitable`** — the "Rate-limit refusal recovery" Branch 1 fired: the refusing bot's `rate_limit_class` is `hard_quota` or `unknown`, so no await and no event generation is productive. Escalates immediately without claiming a window.
 - **`reason: rate_window_exhausted`** — the "Rate-limit refusal recovery" Branch 2 claim returned `recovery_cap_exhausted`: this PR has already spent its `attempt_cap` recovery events for this bot. Cap exhaustion is an explicit escalation, never a silent give-up.
+- **`reason: refusal_structural`** — the "Rate-limit refusal recovery" Branch 0 fired: the refusal's cause is `size`, so the bot resolved to `refused_structural` and the limit is a ceiling on the diff rather than a window. Escalates immediately, awaiting nothing, and its `prompt_options[]` offer no wait — the only escalation here for which waiting is not merely unproductive but unavailable.
 
 In all cases the dispatched leaf does NOT fire `AskUserQuestion` itself — it returns this envelope and the inline orchestrator (phase-6-finalize SKILL.md Step 3 item 7a) owns the prompt.
 
@@ -869,15 +904,54 @@ prompt_options[3]:
   - "Defer merge"
 ```
 
+The STRUCTURAL variant (`refusal_structural`, Branch 0) is a **third shape, not a fifth `reason` on
+the one above**, because its option set is disjoint from theirs:
+
+```toon
+status: escalate_ask
+display_detail: "refusal structural — {bot_kind} over cap {cap} (pr {pr_number})"
+action: ask
+reason: refusal_structural
+timed_out: false
+bot_kind: {the refusing bot}
+refusal_class: {awaitable_window | hard_quota | unknown}
+refusal_cause: size
+cap: {the ceiling the notice stated, or "unknown"}
+measured_diff_size: {how big the refused diff was, or "unknown"}
+pr_number: {pr_number}
+prompt_options[3]:
+  - "Split the PR into diffs under the cap"
+  - "Accept the coverage gap (record reason)"
+  - "Disable this reviewer for this PR"
+```
+
+⛔ **No `timeout_seconds` and no wait option, deliberately.** Every other escalation in this document
+offers "Wait another Ns" because its limit moves; this one's does not. Carrying the field would invite
+a consumer to render a wait, which is the exact non-option this variant exists to remove — so the
+field is **absent**, not merely unused. `timed_out` is `false` for the same reason `rate_window_not_awaitable`
+reports `false`: nothing was awaited, and reporting a timeout that never happened misdescribes the
+escalation.
+
+`cap` is the ceiling the refusing notice itself stated, so an operator choosing "Accept the coverage
+gap" can reconcile it against the diff's measured size instead of accepting an unquantified gap. It is
+the literal `unknown` when the notice stated no figure — never a default, because a cap nobody
+observed would make the gap look audited when it was not.
+
+"Disable this reviewer for this PR" is offered because it is the one remedy that resolves the block
+without changing the diff or waiving the review: moving the bot to `optional_bots` records that this
+PR is knowingly outside that reviewer's declared reach. The three options are the `refused_structural`
+remedy set from the participation contract, verbatim.
+
 Field contract:
 
-- `action`: `defer` when policy is `defer` (orchestrator skips the merge directly); `ask` when policy is `ask` (orchestrator fires `AskUserQuestion` with `prompt_options[]`). All three rate-window variants always use `action: ask`.
-- `reason`: `re_review_timeout`, `rate_window_timeout`, `rate_window_not_awaitable`, or `rate_window_exhausted` — distinguishes the four escalation triggers so item 7a can route them identically while keeping the audit trail specific.
-- `head_sha`: present only on the `re_review_timeout` variant — the full worktree HEAD SHA the timed-out re-review was awaiting; the unreviewed commit the operator decision applies to. Omitted on the three rate-window variants (no HEAD advance is involved).
-- `timed_out`: `true` only for `rate_window_timeout` (a budget genuinely elapsed). `rate_window_not_awaitable` and `rate_window_exhausted` escalate WITHOUT awaiting, so they report `false` — reporting a timeout that never happened would misdescribe the escalation.
-- `bot_kind` / `refusal_class`: present on the three rate-window variants — which bot refused and under which class, so the operator sees whether the non-participation is awaitable at all.
-- `timeout_seconds`: the exhausted budget — `re_review_await_timeout_seconds` for `re_review_timeout`, `review_rate_window_timeout_seconds` for the rate-window variants.
-- `prompt_options[]`: the three operator choices the orchestrator presents when `action: ask`. "Wait another {timeout_seconds}s" is realized by the orchestrator re-dispatching `plan-marshall:automatic-review` from scratch with a fresh budget (the harness cannot resume a spawned agent — see [phase-6-finalize SKILL.md](../phase-6-finalize/SKILL.md) Step 3). Present only when `action: ask`; omitted for `action: defer`.
+- `action`: `defer` when policy is `defer` (orchestrator skips the merge directly); `ask` when policy is `ask` (orchestrator fires `AskUserQuestion` with `prompt_options[]`). All three rate-window variants and the structural variant always use `action: ask`.
+- `reason`: `re_review_timeout`, `rate_window_timeout`, `rate_window_not_awaitable`, `rate_window_exhausted`, or `refusal_structural` — distinguishes the five escalation triggers. ⛔ **Item 7a routes the four TEMPORAL reasons identically and `refusal_structural` SEPARATELY**: its remedy set is disjoint from theirs, so folding it in is exactly the non-option that member exists to remove. The discrimination also keeps each audit trail specific.
+- `head_sha`: present only on the `re_review_timeout` variant — the full worktree HEAD SHA the timed-out re-review was awaiting; the unreviewed commit the operator decision applies to. Omitted on the rate-window and structural variants (no HEAD advance is involved).
+- `timed_out`: `true` only for `rate_window_timeout` (a budget genuinely elapsed). `rate_window_not_awaitable`, `rate_window_exhausted`, and `refusal_structural` escalate WITHOUT awaiting, so they report `false` — reporting a timeout that never happened would misdescribe the escalation.
+- `bot_kind` / `refusal_class`: present on the rate-window and structural variants — which bot refused and under which class, so the operator sees whether the non-participation is awaitable at all.
+- `refusal_cause` / `cap` / `measured_diff_size`: present ONLY on the `refusal_structural` variant. `refusal_cause` is always `size` there (it is what selected the variant); `cap` is the ceiling the notice stated and `measured_diff_size` is how big the refused diff was, each the literal `unknown` when unavailable. The pair is what makes an accepted gap auditable rather than asserted — and the two carry different units by design, so read them as an order-of-magnitude comparison, never as an equality check.
+- `timeout_seconds`: the exhausted budget — `re_review_await_timeout_seconds` for `re_review_timeout`, `review_rate_window_timeout_seconds` for the rate-window variants. ⛔ **Absent on `refusal_structural`**: nothing was awaited and nothing is awaitable, so carrying a budget would invite a consumer to render a wait option.
+- `prompt_options[]`: the three operator choices the orchestrator presents when `action: ask`. "Wait another {timeout_seconds}s" is realized by the orchestrator re-dispatching `plan-marshall:automatic-review` from scratch with a fresh budget (the harness cannot resume a spawned agent — see [phase-6-finalize SKILL.md](../phase-6-finalize/SKILL.md) Step 3). ⛔ **The `refusal_structural` variant's option set contains no wait**, and a consumer MUST NOT add one: its limit is a property of the diff, so waiting is an action guaranteed not to work. Present only when `action: ask`; omitted for `action: defer`.
 
 **No-mark invariant (symmetric with the dispatcher's item-5d carve-out)** — before returning `escalate_ask`, the leaf MUST NOT call `mark-step-done`. The continuation — firing the `AskUserQuestion` for the `ask` policy, or skipping the merge for the `defer` policy — is owned exclusively by the dispatcher's item 7a, not by the leaf. Recording a terminal outcome here would pre-empt that continuation. This no-mark contract is the symmetric counterpart of the dispatcher-side completion-guard carve-out: the leaf does not record terminality, and the post-dispatch completion guard does not assert it for an `escalate_ask` return (see [`../phase-6-finalize/SKILL.md`](../phase-6-finalize/SKILL.md) item 5d, the `escalate_ask`-returning steps skip class). Without both halves, the guard would halt the pipeline with `step_record_missing` before item 7a could run.
 
@@ -885,7 +959,7 @@ The orchestrator-side handling of this return (reading `re_review_on_timeout`, b
 
 ## Canonical invocations
 
-The canonical argparse surface for the invocable script this skill registers: `review_completeness.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for the invocable scripts this skill registers: `review_completeness.py` and `review_gate_delta.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
 ### review_completeness — check
 
@@ -894,10 +968,16 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   --plan-id PLAN_ID [--required-bots [REQUIRED_BOTS]] [--optional-bots [OPTIONAL_BOTS]] \
   [--participated-bots [PARTICIPATED_BOTS]] [--in-progress-bots [IN_PROGRESS_BOTS]] \
   [--refused-bots [REFUSED_BOTS]] [--stale-participation-bots [STALE_PARTICIPATION_BOTS]] \
-  [--declined-bots [DECLINED_BOTS]] [--not-triggered] [--triage-ran] [--refused-causes [REFUSED_CAUSES]]
+  [--declined-bots [DECLINED_BOTS]] [--not-triggered] [--triage-ran] \
+  [--refused-causes [REFUSED_CAUSES]] [--refusal-size-caps [REFUSAL_SIZE_CAPS]] \
+  [--measured-diff-size MEASURED_DIFF_SIZE]
 ```
 
-All eight list flags take an OPTIONAL value: each may be supplied bare (the flag with no value at
+`--measured-diff-size` is **not** a list flag: it takes a required value and is a single scalar, because
+it measures the PR rather than a bot. Omit it when unmeasured — the classifier then reports no
+`measured_diff_size` line at all, which reads as unknown rather than as a zero-sized diff.
+
+All nine list flags take an OPTIONAL value: each may be supplied bare (the flag with no value at
 all), which reads as the empty list — identical to omitting it. Callers interpolating a possibly-empty
 variable MUST still double-quote the placeholder; the bare form is the parser-side backstop, not a
 licence to leave the interpolation unquoted. An empty `--required-bots` is the vacuously-satisfied
@@ -906,7 +986,9 @@ non-empty required set. An empty `--stale-participation-bots` means no bot's pub
 currency test, so nothing resolves to `participated_stale`. An empty `--declined-bots` means no bot
 answered a re-review of the merge candidate without reviewing it, so nothing resolves to `declined`. An
 empty `--refused-causes` supplies no cause overlay, so `refusal_causes[]` is empty and every refusal is
-reported by its awaitability member alone — the advisory cause is simply absent, never a gate.
+reported by its awaitability member alone — no refusal resolves to `refused_structural`, because that
+member is only ever asserted on a positively-observed `size` cause. An empty `--refusal-size-caps`
+means no notice stated a ceiling, so every reported cap reads `unknown` — never a default.
 
 `--not-triggered` is **not** a list flag and takes no value at all: it is a `store_true` bool, passed
 bare when `ci checks pull-request-runs` reports `has_pull_request_run: false` and omitted otherwise.
@@ -921,11 +1003,19 @@ python3 .plan/execute-script.py plan-marshall:automatic-review:review_completene
   --plan-id PLAN_ID [--required-bots [REQUIRED_BOTS]] [--optional-bots [OPTIONAL_BOTS]] \
   [--participated-bots [PARTICIPATED_BOTS]] [--in-progress-bots [IN_PROGRESS_BOTS]] \
   [--refused-bots [REFUSED_BOTS]] [--stale-participation-bots [STALE_PARTICIPATION_BOTS]] \
-  [--declined-bots [DECLINED_BOTS]] [--not-triggered] [--min-deficit N]
+  [--declined-bots [DECLINED_BOTS]] [--not-triggered] [--refused-causes [REFUSED_CAUSES]] \
+  [--refusal-size-caps [REFUSAL_SIZE_CAPS]] [--min-deficit N]
 ```
 
 The `deficit` subcommand takes the SAME observation flags as `check` (so the step forwards the sets it
-already gathered) plus `--min-deficit` (default 1). It reports whether a REQUIRED reviewer produced
+already gathered) plus `--min-deficit` (default 1). `--refused-causes` **and `--refusal-size-caps`**
+are among them deliberately: neither changes a deficit verdict (no refusal member is a reviewed-at-all
+state), but the returned `reviewers[]` publishes a `state` column, and two commands naming different
+members for one bot's refusal would be a disagreement no reader of the output could adjudicate. ⛔ The
+cap flag is the load-bearing one: a cap arriving WITHOUT its cause drives the fail-closed cause
+recovery, so a caller that passes it to `check` but not `deficit` reproduces exactly the disagreement
+the pair exists to prevent — and that is the only scenario in which the two can diverge, so omitting it
+here would leave the invariant documented but unreachable. It reports whether a REQUIRED reviewer produced
 materially fewer findings than a reviewer that actually reviewed the SAME diff — a **reviewer-quality
 signal, never a merge verdict**. Its TOON carries `gates_merge: false` and `proves:
 reviewer_quality_only` in as many words, and the step MUST NOT gate the merge on it. The verdict is one
@@ -936,3 +1026,75 @@ the run is evidence neither way). It never fires when every other reviewer refus
 `0 : 0`. The finding count is the number of FILED `pr-comment` findings per reviewer — never a raw
 comment count, which is wrong in both directions when one reviewer's findings arrive across several
 review bodies.
+
+### review_completeness — size-caps
+
+```bash
+python3 .plan/execute-script.py plan-marshall:automatic-review:review_completeness size-caps
+```
+
+The **ADVANCE-disclosure** surface, and the only subcommand taking no arguments at all — it reads the
+registry rather than a plan or a PR, which is exactly what makes it answerable *before* a review is
+requested. It emits `size_capped_reviewers[]{bot_kind,structural_cap,cap_extractable}`, one row per
+registered reviewer.
+
+Every other verdict in this skill is computed from an **observed** refusal, so a structural gap is
+otherwise discovered only after a reviewer has already declined — at the merge gate, where the
+remaining options are expensive. A diff-size ceiling is different in kind: it is a declared property of
+the reviewer, not an outcome of the run, and a diff's size is measurable at PR creation. The exclusion
+also recurs **by size rather than by chance** — the ceiling is fixed, so every plan over it gets no
+review from that reviewer, predictably and forever. A plan whose footprint will exceed one can consult
+this at outline time instead of reading an unexplained non-participation later.
+
+`structural_cap` is DERIVED from the bot's `refusal_size_patterns`, so the disclosure can never
+disagree with the classification. `cap_extractable` reports separately whether the cap's *value* is
+recoverable from the bot's notice (`refusal_size_cap_patterns`), because the two are independent: a
+reviewer can have a ceiling nobody has taught the registry to read, and collapsing them would let
+"declares a ceiling" be misread as "the ceiling's value is known".
+
+### review_gate_delta — assess
+
+```bash
+python3 .plan/execute-script.py plan-marshall:automatic-review:review_gate_delta assess \
+  --plan-id PLAN_ID [--enabled-bots [ENABLED_BOTS]] [--reviewed-bots [REVIEWED_BOTS]] \
+  [--gates-green | --gates-red] [--gate-head-sha SHA] [--reviewed-head-sha SHA] \
+  [--partitions [PARTITIONS]]
+```
+
+Measures **what review caught that the in-house gates did not** — a signal about the GATES' reach,
+never about a reviewer and never a merge verdict (`proves: gate_escape_only`, `gates_merge: false`).
+It needs no per-finding gate attribution, because the gates run before review
+(`pre-push-quality-gate` at `order: 5`, `pre-submission-self-review` at `order: 7`, against this step
+at `order: 30`): a finding filed against a tree the gates already passed IS a gate escape. See
+[`standards/bot-participation-contract.md`](standards/bot-participation-contract.md) § "The
+review-versus-gate delta" for the governing contract, and § "The counting rule" for the definitions
+this verb applies.
+
+Five inputs decide whether the PR is evidence at all, and every absent one fails CLOSED to
+`verdict: excluded` rather than to a confident zero:
+
+- `--gates-green` / `--gates-red` — omitting BOTH leaves the gate state unsubstantiated
+  (`gate_state_unsubstantiated`). A red gate excludes too, as `gates_not_green`: nothing escaped a
+  gate that had not passed.
+- `--gate-head-sha` and `--reviewed-head-sha` — the tree the gates CERTIFIED and the tree review
+  REVIEWED. They must be supplied and must MATCH. ⚠ They routinely will not: `finalize-step-simplify`
+  (`order: 8`) and `finalize-step-security-audit` (`order: 9`) are `mutates_source: true` and run
+  between the gates and review, and a forward pass never returns to order 5 to re-gate their edits. A
+  mismatch is `gates_did_not_cover_reviewed_tree` and an absent SHA is `gate_tree_unsubstantiated` —
+  both honest exclusions, not failures of the caller.
+- `--enabled-bots` — the coverage DENOMINATOR (`required_bots ∪ optional_bots`). An empty roster is
+  `no_reviewer_roster`, never vacuously complete — `0/0` is not full coverage.
+- `--reviewed-bots` — `review_completeness`'s reviewed-at-all set. Coverage is its INTERSECTION with
+  the roster, so an off-roster reviewer cannot complete it; an empty intersection is
+  `no_reviewer_reviewed`.
+
+The return echoes `gate_head_sha` and `reviewed_head_sha` alongside `reviewer_coverage`,
+`enabled_bots`, `reviewed_bots` and `provenance`, so a reader sees which trees and which reviewers
+each figure was computed over rather than trusting that they were checked.
+
+`structural_share` (the share of escapes no in-house gate class could have caught) is emitted **only**
+at full coverage with every escape partitioned; otherwise it is `null` and `share_withheld` names the
+reason. Both withholding rules are structural rather than advisory — see § "The review-versus-gate
+delta" for why a partial collapse would otherwise report 100% ("the gates are perfect") exactly when
+the reviewer that finds the addressable defects went quiet. A withheld share is **not** a withheld
+observation: the escapes and their partition counts are still reported.

@@ -180,6 +180,15 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 Parse the returned TOON and branch on `status`:
 
 - `status: success` → continue to **Mark Step Complete (Success)**. The `action` field distinguishes `noop` (the branch was already at `origin/{base_branch}`, nothing to rebase) from `rebased` (the rebase produced a new history). Both are success.
+
+  A rebase at this order is exactly where upstream commits can change the bundle **script set**, which would leave the worktree's `.plan/execute-script.py` describing a tree that no longer exists — every later dispatch in this finalize run resolving notations against a stale map. `worktree-rebase-to` refreshes it as part of the rebase and reports the outcome on `executor_drift` / `executor_regenerated` / `executor_detail`; this step consumes those fields, it does not re-derive them. The refresh is non-fatal by contract, so an `executor_regenerated: false` alongside a non-empty `executor_detail` is a reported degradation, not a step failure — log it and proceed:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    work --plan-id {plan_id} --level INFO --message "[STATUS] (plan-marshall:phase-6-finalize) Sync baseline executor refresh: drift={executor_drift}, regenerated={executor_regenerated} — {executor_detail}"
+  ```
+
+  The full contract (why the refresh lives in the rebase verb, why an indeterminate drift verdict regenerates nothing) is [`workflow-integration-git/standards/worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) § "Post-Rebase Executor Refresh".
 - `status: conflict` → ABORT the step with `outcome=failed`. The rebase is left in progress with conflict markers so the operator can resolve them in the worktree. The classifier's merge-tree probe is best-effort — overlapping renames and a few other rare cases produce a clean probe but a real-rebase conflict. Log the returned `conflicts[]` file list and record the failure via **Mark Step Complete (Failure)**:
 
   ```bash

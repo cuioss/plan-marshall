@@ -1,0 +1,14 @@
+{
+  "name": "@sample/cli",
+  "version": "1.0.0",
+  "dependencies": {
+    "@SAMPLE/API": "workspace:*"
+  },
+  "devDependencies": {
+    "@sample/core": "workspace:*",
+    "typescript": "^5.4.0"
+  },
+  "scripts": {
+    "test": "vitest run"
+  }
+}

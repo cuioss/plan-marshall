@@ -49,7 +49,7 @@ await — and that is a legitimate configured state, not a misconfiguration to w
 ## Failure taxonomy
 
 When a bot does not deliver a usable review, the non-participation is classified into exactly one of
-nine members. The taxonomy is closed: every non-participation resolves to one of these.
+ten members. The taxonomy is closed: every non-participation resolves to one of these.
 
 | Member | Condition | Interpretation |
 |--------|-----------|----------------|
@@ -57,8 +57,9 @@ nine members. The taxonomy is closed: every non-participation resolves to one of
 | `not_triggered` | No `pull_request`-event workflow run exists for the PR at all, so nothing could have been published — a PR-wide condition, not a per-bot one. | The reviewers were never asked. The remedy is to trigger the review, not to escalate a reviewer that stayed silent. |
 | `in_progress` | The bot's completion check-run is still running when the poll budget expires. | The bot engaged but did not finish in time; left to the pre-merge comment barrier. |
 | `refused_awaitable` | The bot posted a refusal whose limit reopens on its own (`rate_limit_class: awaitable_window`). | Worth awaiting — the window resets. |
-| `refused_hard` | The bot posted a refusal that does not reopen on a useful timescale (`rate_limit_class: hard_quota`) — a per-PR size/diff ceiling or a plan-level quota. | Not worth awaiting; whether the absence is tolerable is a required-vs-optional question, not a waiting question. |
+| `refused_hard` | The bot posted a refusal that does not reopen on a useful timescale (`rate_limit_class: hard_quota`) and whose cause is a rate/budget **quota** — an account- or plan-level allowance. | Not worth awaiting; whether the absence is tolerable is a required-vs-optional question, not a waiting question. |
 | `refused_unknown` | The bot posted a refusal whose class the registry declares `unknown` — its refusal shape has never been observed, so whether the window reopens is genuinely not known. | A declared *we-do-not-know*, NEVER a positive hard quota. Rendering it as `refused_hard` steers an operator toward "waiting is futile, force it" for a refusal that might have been awaitable. Its own member so the ignorance reaches the reader as ignorance. |
+| `refused_structural` | The bot posted a refusal whose **cause is a ceiling on the diff itself** — the PR is over a per-PR size budget (an observed `cause: size`). Decided by the cause axis, whatever the bot's `rate_limit_class` declares. | **The only member whose refusal is not temporal.** The other three say *not now*; this one says *not this diff*, and the same request never succeeds while the diff is this size. Remedies: **split**, **accept the gap**, or **disable this reviewer for this PR** — ⛔ **never await.** The finding carries the **cap** the notice stated, so the gap is auditable against the measured diff size. |
 | `participated_but_empty` | The bot posted at least one comment, but every comment was filtered out (noise) so it stored zero findings. | **Accounted-for, not a failure.** The bot did its pass and had nothing actionable to say. |
 | `participated_stale` | The bot's comment matched a declared `participation_evidence` publish shape but failed the `participation_requires_update` currency test — the comment was reviewed against a commit that is **not** the merge candidate, and it was not edited in place since. | The bot reviewed an **earlier** commit, so nothing has reviewed the current diff. Blocking, but the remedy is a re-review trigger. |
 | `declined` | The bot was asked to review the merge candidate (a re-review was triggered) and answered without producing a review of it — an **incremental-review decline**: it responded with a comment carrying no reviewed-commit SHA (`head_sha_verified: false`) rather than a review of this HEAD. | The bot engaged but **declined** to review this commit. Blocking, but re-triggering is futile — the productive action is to accept the decline (move the bot to `optional`, or record a merge-authorization), not to trigger again. |
@@ -67,10 +68,11 @@ nine members. The taxonomy is closed: every non-participation resolves to one of
 *successful* review, not a silent one — it must never be treated as an incompleteness, or a clean PR
 would hold the step open forever.
 
-### Two members are refinements, not siblings — and their remedies are opposite
+### Three members are refinements, not siblings — and their remedies are opposite
 
-Seven of the nine members are mutually independent observations. The remaining two exist because
-`absent` was doing two other jobs badly, and each carries a remedy that `absent`'s does not:
+Seven of the ten members are mutually independent observations. The remaining three exist because
+another member was doing a second job badly, and each carries a remedy that member's does not. Two
+of them refine `absent`; the third refines the refusal branch.
 
 - **`participated_stale` is the opposite of `absent`.** `absent` means there is no review to refresh,
   so the remedy is to escalate a reviewer that was asked and did not answer. `participated_stale`
@@ -81,8 +83,19 @@ Seven of the nine members are mutually independent observations. The remaining t
   condition holds for every bot on the PR at once, which is why its input is a single bool rather
   than an observation set keyed by bot. Its remedy is also the opposite of `absent`'s: no reviewer
   was asked, so escalating one names the wrong failure.
+- **`refused_structural` refines the REFUSAL branch, and its remedy set is disjoint from the other
+  three's.** The three temporal refusal members all describe a limit that moves — the same request
+  succeeds once it does — so their remedy set is *wait, or accept the gap*. A diff-size ceiling does
+  not move: the same PR is over the limit a minute later and an hour later alike. Its remedy set is
+  *split, accept the gap, or disable this reviewer for this PR*, and ⛔ **`await` is not a member of
+  it.** Collapsing the structural case into a temporal member therefore does not merely mislabel it —
+  it **offers a non-option**, handing the operator a wait for a ceiling that waiting does not move.
 
-The two refinements narrow differently, and only one of them is strictly `absent`-narrowing.
+  This is why the cause is a **member** rather than a label attached to one. A label leaves every
+  consumer routing on the member, so the wrong remedy is still the one offered; only a distinct
+  member changes what the consumer does.
+
+The `absent` refinements narrow differently, and only one of them is strictly `absent`-narrowing.
 `not_triggered` is evaluated as the **last** branch before the `absent` fall-through, so it can never
 override a positive observation about a specific bot — only what would otherwise have been `absent`
 is refined. `participated_stale` is narrower in origin but not in effect: it is evaluated after the
@@ -99,16 +112,24 @@ The taxonomy member describes *what happened*; the required/optional classificat
 it matters*:
 
 - A **required** bot resolving to `absent`, `not_triggered`, `in_progress`, `refused_awaitable`,
-  `refused_hard`, `refused_unknown`, `participated_stale`, or `declined` is a completeness failure —
-  the step is not markable done without an explicitly recorded force-done reason.
+  `refused_hard`, `refused_unknown`, `refused_structural`, `participated_stale`, or `declined` is a
+  completeness failure — the step is not markable done without an explicitly recorded force-done
+  reason.
 - An **optional** bot resolving to any member never blocks.
 - Any bot resolving to `participated_but_empty` is accounted-for regardless of classification.
 
 A completeness failure is not one undifferentiated state: several blocking members name a **different
 remedy** than the others — `participated_stale` (re-trigger the stale review), `not_triggered`
-(trigger the review at all), and `declined` (accept the decline, because re-triggering a bot that will
-not review this commit is futile) — so a consumer that renders every blocking member as "the bot did
-not review" discards the one thing the widened taxonomy exists to carry.
+(trigger the review at all), `declined` (accept the decline, because re-triggering a bot that will
+not review this commit is futile), and `refused_structural` (split the diff, accept the gap, or
+disable this reviewer for this PR — **never** wait) — so a consumer that renders every blocking member
+as "the bot did not review" discards the one thing the widened taxonomy exists to carry.
+
+⛔ **`refused_structural` is the member on which offering the wrong remedy is worst**, because the
+wrong remedy there is not merely unhelpful but *unavailable*: waiting is an action the operator can
+take that is guaranteed not to work. A prompt that lists it has spent the operator's attention on a
+non-option and left the real remedies unnamed. Any consumer that renders a remedy set for a refusal
+MUST take it from the member, and MUST NOT offer `await` on this one.
 
 ## Evidence taxonomy
 
@@ -239,9 +260,9 @@ Such a bot resolves to the **`declined`** taxonomy member — blocking, and excl
 exactly as `participated_stale` is, but with a **distinct remedy**: re-triggering an incremental-review
 bot that already declined produces another decline, not a review, so the productive action is to
 accept the decline (move the bot to `optional`, or record an operator merge-authorization) rather than
-to trigger again. `declined` is distinct from `refused_awaitable` / `refused_hard`, which name an
-explicit rate-limit / quota / size **refusal notice**; the decline is the quieter shape — the bot
-answered, but its answer named no commit.
+to trigger again. `declined` is distinct from the four refusal members, which name an explicit
+rate-limit / quota / size **refusal notice**; the decline is the quieter shape — the bot answered, but
+its answer named no commit.
 
 The deciding bit — whether the re-review produced a review of the new HEAD (`head_sha_verified: true`)
 or only a comment (`head_sha_verified: false`) — is **computed and must be consumed**: a `matched:
@@ -308,22 +329,32 @@ successful reviews as refusals. The two lists answer different questions and mus
 
 A bot whose `refusal_patterns[]` is empty has no observed refusal shape; its non-participation
 resolves to one of the non-refusal members — `participated_stale`, `in_progress`, `not_triggered`, or
-`absent` — rather than to any of the three refusal members. This is the fail-closed default: a refusal
+`absent` — rather than to any of the four refusal members. This is the fail-closed default: a refusal
 is only ever claimed on positive evidence.
 
-### A refusal splits ONE-TO-ONE by the bot's three-valued `rate_limit_class`
+### A refusal resolves by CAUSE first, then ONE-TO-ONE by `rate_limit_class`
 
-A recognised refusal resolves to exactly one of **three** members, mapped one-to-one from the refusing
-bot's registry `rate_limit_class` — a three-valued field (`awaitable_window` / `hard_quota` /
+A recognised refusal resolves to exactly one of **four** members. The **cause** axis is consulted
+first, and it decides one member outright; every other refusal then splits one-to-one from the
+refusing bot's registry `rate_limit_class` — a three-valued field (`awaitable_window` / `hard_quota` /
 `unknown`), not a boolean:
 
-| `rate_limit_class` | Member | Meaning |
-|--------------------|--------|---------|
+| Observation | Member | Meaning |
+|-------------|--------|---------|
+| `cause: size` (any `rate_limit_class`) | `refused_structural` | A ceiling on the diff itself. The same request never succeeds at this size, so **no wait is productive** — the remedies are split / accept / disable-for-this-PR. |
 | `awaitable_window` | `refused_awaitable` | The limit reopens on its own; awaiting the reset is productive. |
 | `hard_quota` | `refused_hard` | A budget that does not reopen on a useful timescale; awaiting it only burns budget. |
 | `unknown` | `refused_unknown` | The registry declares ignorance — the refusal shape has never been observed, so whether waiting helps is not known. |
 
-`review_completeness._refusal_state()` is the one place this mapping lives, and it is total and
+**Why the cause outranks the class.** `rate_limit_class` is declared once per **bot**, while a cause
+is observed per **refusal**, and one bot can refuse for both causes at a single class — Sourcery's
+per-PR size ceiling and its weekly quota are both `hard_quota`. The per-bot field therefore cannot
+separate them even in principle, so the more specific observation is the one that must win. Reading
+the class first would keep the structural case invisible in exactly the case that matters most: a bot
+declaring `awaitable_window` that refuses on size would resolve `refused_awaitable`, whose whole
+meaning is *worth awaiting*.
+
+`review_completeness._refusal_state()` is the one place this mapping lives. The class arm is total and
 injective: no class value collapses into another, and any value that is neither of the first two —
 including a malformed or absent one — resolves fail-closed to `refused_unknown`. The mapping was once a
 binary `== 'awaitable_window'` test, which folded `unknown` into `refused_hard` and so rendered a
@@ -331,7 +362,7 @@ declared *we-do-not-know* as a positive *hard quota* finding. That is the defect
 closes: a declared ignorance is not a hard quota, and an operator shown `refused_hard` is steered
 toward "waiting is futile, force it" for a refusal that might have reopened on its own.
 
-### Two axes: awaitability and CAUSE — the wired cause overlay
+### Two axes: awaitability and CAUSE — and the cause is state-determining for `size`
 
 `rate_limit_class` is the **awaitability** axis (can the caller usefully wait?). It is distinct from the
 refusal's **cause**, which the same bot can carry more than one of: Sourcery declares TWO `hard_quota`
@@ -341,26 +372,56 @@ are `hard_quota` on the awaitability axis, yet their remedies differ — a size 
 diff, a quota refusal needs backoff — so a participation *rate* pooled across the two mis-attributes
 both.
 
-The cause axis is **wired**, as a per-refusal overlay that is orthogonal to the awaitability member and
-changes none of them:
+The cause axis is wired as a per-refusal overlay. Its `size` value **decides the member**; every other
+value is advisory and leaves the awaitability split untouched:
 
 - **Registry:** each bot declares `refusal_size_patterns` — the subset of its `refusal_patterns` whose
   cause is a diff-size ceiling. Every other refusal is a rate/budget quota. Sourcery declares its size
-  ceiling there; its weekly-quota notice is deliberately absent, so it classifies `quota`.
+  ceiling there; its weekly-quota notice is deliberately absent, so it classifies `quota`. A bot
+  declaring a non-empty `refusal_size_patterns` is a bot with a structural ceiling, which is what makes
+  the exclusion disclosable **in advance** (below).
 - **Derivation:** `_github_pr.refusal_cause(body, bot_kind)` returns `size` iff a `refusal_size_patterns`
   entry matches, else `quota`. It assumes a body already recognised as a refusal, so it names the cause
   rather than re-detecting it.
+- **Cap extraction:** each bot may also declare `refusal_size_cap_patterns` — extraction regexes that
+  read the **ceiling the notice itself states**. `_github_pr.refusal_size_cap(body, bot_kind)` returns
+  that figure, or `''` when the bot declares no pattern or the notice states none. The exact mirror of
+  `rate_limit_eta_patterns`, one axis over: an awaitable refusal states *when* it reopens, a structural
+  one states *how big* the diff was allowed to be. The figure is **read, never declared** — a declared
+  constant goes stale silently when the provider changes its budget, whereas the notice's own figure is
+  first-party evidence captured at the moment of refusal, which is what makes a recorded gap auditable
+  against the diff that was actually refused. An absent cap is reported as `unknown`, never defaulted.
 - **Producer:** `github_pr fetch_findings` emits `refused_causes[]` — one `{bot_kind, cause}` per
-  refusing bot (`size` sticky: a bot that posted both records `size`).
-- **Classifier:** `review_completeness check --refused-causes` reports the cause back in
-  `refusal_causes[]` for each bot it classified as refused. This is **advisory**: it names the remedy
-  (`size` → a smaller diff; `quota` → backoff) and never changes which `refused_*` awaitability member
-  the bot resolves to, nor whether the merge is gated.
+  refusing bot (`size` sticky: a bot that posted both records `size`) — and `refused_size_caps[]`, one
+  `{bot_kind, cap}` per bot whose size notice stated a ceiling.
+- **Classifier:** `review_completeness check --refused-causes --refusal-size-caps` resolves a `size`
+  cause to `refused_structural` and reports `refusal_causes[]` as `{bot_kind, cause, cap}`. The cause
+  flag is shared by `check` and `deficit`, so the two commands can never name different members for one
+  refusal.
 
 The invariant this enforces: **do not report a participation rate over a corpus pooled across causes** —
 a size refusal and a quota refusal have different remedies, so a rate that mixes them mis-attributes
-both. The partition is now a computed signal, not merely a documented possibility; diff sizes remain
-recoverable from merge commits via git for any after-the-fact audit.
+both. The partition is a computed signal, not merely a documented possibility.
+
+#### Advance disclosure — a size ceiling is knowable before the review is requested
+
+Every other verdict in this contract is computed from an **observed** refusal, so the gap is only ever
+discovered after a reviewer has already declined — at the merge gate, where the remaining options are
+expensive. A size ceiling is different in kind. It is a declared property of the **reviewer** rather
+than an outcome of the run, and a diff's size is measurable at PR creation, so the exclusion is
+knowable in advance.
+
+It also recurs **by size rather than by chance**: the ceiling is fixed, so *every* plan over it gets no
+review from that reviewer, predictably and forever. `review_completeness size-caps` is the surface a
+plan consults for this. It takes no plan and reads no PR — the answer is registry data — and reports
+per registered reviewer:
+
+- `structural_cap` — whether it declares a size-caused refusal at all, **derived** from
+  `refusal_size_patterns` so the disclosure can never disagree with the classification above.
+- `cap_extractable` — whether the cap's *value* is also recoverable from its notice. Reported
+  separately and honestly, because the two are independent: a reviewer can have a ceiling nobody has
+  taught the registry to read, and collapsing them would let "declares a ceiling" be misread as "the
+  ceiling's value is recoverable".
 
 ### A refusal is never noise — it is a branch
 
@@ -375,7 +436,7 @@ The producer therefore treats a recognised refusal as a **three-way branch**, no
 |--------|-----------|-----|
 | Filed as a `pr-comment` finding? | **No.** | A refusal is a signal *about the review*, not feedback about the code. Handing it to triage would ask the operator to dispose of a notice with nothing to fix. |
 | Counted as noise? | **No** — it has its own `count_skipped_refusal` counter. | Sharing `count_skipped_noise` is exactly the conflation that hid it. The two counters answer different questions. |
-| Surfaced? | **Yes** — the bot is named in `fetch_findings`'s `refused_bots[]` and forwarded to `review_completeness check --refused-bots`. | This is what lets the taxonomy assign `refused_awaitable` / `refused_hard` instead of inferring absence from silence. |
+| Surfaced? | **Yes** — the bot is named in `fetch_findings`'s `refused_bots[]` and forwarded to `review_completeness check --refused-bots`, with its cause and stated cap alongside. | This is what lets the taxonomy assign a refusal member — `refused_structural` for a size ceiling, `refused_awaitable` / `refused_hard` / `refused_unknown` otherwise — instead of inferring absence from silence. |
 | Counted as participation? | **No** — the refusing comment is excluded from `participated_bots[]`. | A refusal is published in one of the bot's declared publish shapes, so without an explicit exclusion the shape alone would credit it as a proven participant. |
 
 This is also why `refusal_patterns` must never be unioned into the producer's `ignore_patterns` drop
@@ -387,7 +448,8 @@ A bot's registry doc declares three independent marker surfaces that each drive 
 outcome (drop or branch). They are easy to confuse because all three are literal-substring lists read
 by the same producer, but each drives a different outcome and none is a superset of another. (The
 `refusal_size_patterns` overlay from § "Two axes" is deliberately NOT one of these three: it drives no
-comment-level outcome — it only *labels* a refusal's cause — and it is by design a subset of
+comment-level outcome — it labels a refusal's CAUSE, which selects the `refused_structural`
+member rather than dropping or keeping a comment — and it is by design a subset of
 `refusal_patterns`, so the no-superset property here is scoped to these three comment-level surfaces.)
 
 | Marker surface | Match semantics | Outcome |
@@ -460,7 +522,7 @@ its population published:
 
 - **The reviewed-at-all predicate** — a reviewer reviewed the diff iff its taxonomy state is
   `participated` or `participated_but_empty`: a proven publish shape against the merge candidate. Every
-  other state — the three refusals, `absent`, `not_triggered`, `in_progress`, `participated_stale`,
+  other state — the four refusals, `absent`, `not_triggered`, `in_progress`, `participated_stale`,
   `declined` — is a non-review, so it can be neither a deficit baseline nor a meaningful finding count.
   `participated_but_empty` (reviewed, found nothing) counts as a review with a count of zero; it is
   **never** collapsed into "did not review".
@@ -504,15 +566,101 @@ changes the quantity being measured, so a deficit measured before such a change 
 are not the same number. Which charter a PR's reviewer was running is part of the population a deficit
 is reported over.
 
+## The review-versus-gate delta
+
+*"What did review catch that the in-house gates did not"* is the only direct read on gate/review parity
+available, and it arrives free on every PR. `review_gate_delta assess` is the measurement; this section
+is its contract. It is a signal about **the gates' reach** — never about a reviewer, and never a merge
+verdict (`proves: gate_escape_only`, `gates_merge: false`).
+
+**A finding review files against a tree the gates already passed is a gate escape** — something the
+gates ran over and did not report — so no per-finding gate attribution is needed. The in-house gates
+run before review: `pre-push-quality-gate` at `order: 5` and `pre-submission-self-review` at `order: 7`,
+against `automatic-review` at `order: 30`. That is what makes the signal free rather than a bespoke
+study.
+
+⚠ **"The gates passed" is not the same claim as "the gates saw this tree", and the gap is real on an
+ordinary forward pass.** Two `mutates_source: true` steps run BETWEEN the gates and review —
+`finalize-step-simplify` (`order: 8`) and `finalize-step-security-audit` (`order: 9`) — and the
+dispatcher's re-entry check only re-fires a step the loop REACHES. A forward pass runs
+5 → 7 → 8 → 9 → 11 → 20 → 30 monotonically and never returns to order 5, so lines those two steps
+introduce reach the reviewer having never been gated. Counting a finding on such a line as a gate
+escape attributes to the gates a miss they were never given the chance to make.
+
+The escape claim therefore rests on three inputs, each failing closed: the gate **verdict** (a red gate
+escaped nothing; an absent signal is unsubstantiated), the **gate-certified tree** (`head_at_completion`
+from the gate step's record), and the **reviewed tree** (`reviewed_commit_sha` from the findings). The
+two trees must be shown EQUAL, not assumed — a missing SHA is not evidence of sameness, and a mismatch
+is positive evidence of the gap above. The unblocking condition is for the gate to re-fire after the
+mutating steps; that is a change to the finalize step ordering, not to this measurement.
+
+### Two properties, both structural rather than advisory
+
+**1. Refusal-PRs are excluded BY CONSTRUCTION.** The bots refuse frequently, so an absence of review
+findings is very often an absence of *review*, not of defects. ⛔ **A parity metric that does not
+exclude refusal-PRs will report improving parity as coverage collapses** — this epic's named failure
+mode, and the reason a metric that can produce it must not ship.
+
+The guard is that `structural_share` is emitted **only at full coverage** (every roster member in the
+reviewed-at-all set). A collapse can then only ever move the metric from *a number* to *no number*,
+never to a better number. **Partial** coverage is withheld for the same reason and it is the dangerous
+case: a collapse silently re-weights the partition. If the reviewer that finds the gate-addressable
+defects goes quiet, every surviving escape is structural and a naive share reports 100% — *"the gates
+are perfectly configured"* — when the only thing that changed is who spoke.
+
+**2. Partition BEFORE computing any rate.** The escape set is **mixed**, and conflating its halves is
+how a fixable configuration hole gets recorded as irreducible residual:
+
+| Partition | Meaning | What it is evidence of |
+|---|---|---|
+| `gate_addressable` | An in-house gate COULD have caught it — a lint family absent from the `select` list, an un-enabled check | A gate **configuration** finding. Actionable on our side |
+| `gate_structural` | No in-house gate CLASS reaches it however configured — documentation-prose semantics, report-claim consistency, behaviour under inputs no test supplies | The genuine residual the parity question is about |
+| `unpartitioned` | No admissible label supplied | Nothing. It **withholds** the share |
+
+An escape carrying no admissible label is never defaulted into a bucket — defaulting would let a typo
+move the number — so an unlabelled escape withholds the share exactly as partial coverage does.
+
+### A withheld share is not a withheld observation
+
+The escapes a partial or unlabelled round surfaced are real, and are still reported with their
+per-partition counts and their populations. Only the **ratio** — the thing a shrinking denominator
+corrupts — is withheld. Every figure publishes `reviewer_coverage`, `enabled_bots`, `reviewed_bots`,
+`gate_head_sha`, `reviewed_head_sha`, and a `provenance` string naming how the escape set was
+derived, because a rate reported without its population is the defect § "The counting rule" exists to
+remove. The two SHAs are echoed for the same reason the reviewer sets are: a reader can then see
+WHICH trees were compared rather than trusting that they were.
+
+⛔ **The provenance names a SELECTION EFFECT, and a consumer must carry it.** On the current finalize
+step ordering the tree check excludes most real PRs, so a column of `excluded` accumulates. That
+column reads, over time, exactly like *"the gates caught everything"* — the misreading this whole
+section exists to prevent. It means the opposite: those PRs were never measurable. A consumer
+reporting this signal states that the measurable population is only those PRs where neither post-gate
+`mutates_source` step committed, and that it is a biased population rather than a sample.
+
+### What this measures and what it does not
+
+It measures the **gates**. A high `gate_addressable` share is a to-do list for the gate configuration;
+a high `gate_structural` share says the gates are configured about as well as their analysis classes
+allow and the residual is genuinely review-only. ⚠ It is **not** an argument that self-review or the
+gates should be trusted less: the two mechanisms have different and complementary reach, and the same
+run that produced this measurement's motivating evidence had self-review catch four instances of a
+stale-set defect the bots did not. Neither a volume nor a share is a coverage number.
+
+Whether the gate-green / review-finding pairing is a **recurring** signal rather than a single
+instance is a hypothesis this instrument exists to test, not one it assumes. Until enough measured PRs
+accumulate, the verb ships as a measurement with **no parity claim attached**.
+
 ## Consumers
 
 | Consumer | What it reads |
 |----------|---------------|
 | `automatic-review/SKILL.md` | Both lists, to drive the completion-aware poll, the re-review trigger set, and the step-done guard. |
-| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]` **and the `stale_participation_bots[]` set that carries `participated_stale`**; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it, and its `refusal_size_patterns`, to attribute each refusal's CAUSE into `refused_causes[]` (size vs quota); each bot's `contentless_review_markers` / `actionable_content_markers`, to drop a fully clean review comment as noise. |
+| `github_pr fetch_findings` | Both lists, to classify each ingested comment and emit the unclassified-bot warning; each bot's `participation_evidence` / `participation_requires_update`, to derive the evidence-typed `participated_bots[]` **and the `stale_participation_bots[]` set that carries `participated_stale`**; each bot's `refusal_patterns`, to branch a refusal into `refused_bots[]` rather than drop it, and its `refusal_size_patterns`, to attribute each refusal's CAUSE into `refused_causes[]` (size vs quota), and its `refusal_size_cap_patterns`, to read the stated ceiling into `refused_size_caps[]`; each bot's `contentless_review_markers` / `actionable_content_markers`, to drop a fully clean review comment as noise. |
 | `github_pr pull_request_runs` / `ci checks pull-request-runs` | Nothing from this contract — it is the **observation channel for `not_triggered`**, answering the PR-wide question of whether any `pull_request`-event workflow run exists for the PR at all. Its verdict reaches the predicate as the single `--not-triggered` bool. |
-| `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` to split the THREE refusal states one-to-one (`refused_awaitable` / `refused_hard` / `refused_unknown`). Consumes `stale_participation_bots[]` via `--stale-participation-bots` to assign `participated_stale`, the bots that answered a re-review without reviewing the merge candidate via `--declined-bots` to assign `declined`, and the PR-wide `--not-triggered` bool to refine what would otherwise be `absent`, and the `--refused-causes` overlay (from `refused_causes[]`) to report each refusing bot's CAUSE in `refusal_causes[]` — advisory, gating nothing. Emits `review_state_summary` (the reviewer-state distribution) so `display_detail` can tell reviewed-clean from nobody-reviewed. |
+| `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; the `--refused-causes` overlay (from `refused_causes[]`) to resolve a `size` cause to `refused_structural`, and `rate_limit_class` to split every OTHER refusal one-to-one (`refused_awaitable` / `refused_hard` / `refused_unknown`). Consumes `stale_participation_bots[]` via `--stale-participation-bots` to assign `participated_stale`, the bots that answered a re-review without reviewing the merge candidate via `--declined-bots` to assign `declined`, the PR-wide `--not-triggered` bool to refine what would otherwise be `absent`, and `--refusal-size-caps` (from `refused_size_caps[]`) to carry each structural refusal's stated ceiling. Reports `refusal_causes[]` as `{bot_kind, cause, cap}`. Emits `review_state_summary` (the reviewer-state distribution) so `display_detail` can tell reviewed-clean from nobody-reviewed. |
+| `review_completeness size-caps` | Each bot's `refusal_size_patterns` and `refusal_size_cap_patterns`, to disclose IN ADVANCE which reviewers carry a structural diff-size ceiling and whether its value is recoverable. Reads no PR — the answer is registry data, so a plan can consult it before requesting a review. |
 | `review_completeness deficit` | The same observation flags as `check`, to classify each bot and derive its reviewed-at-all predicate and filed finding count, then report the comparative deficit signal — a reviewer-quality observation that gates no merge (§ "The comparative deficit signal"). |
+| `review_gate_delta assess` | The enabled roster (`required_bots ∪ optional_bots`) via `--enabled-bots` as the coverage denominator, and the reviewed-at-all set via `--reviewed-bots` as its numerator — both supplied by the caller from this rule's definitions rather than re-derived. Its escape count applies this rule's **filed-and-actionable** definition, review-body-summary carve-out included, matching `review_retrospective`'s classification; the two implement the same rule independently because they live in different bundles, so a change to the rule must land in both. Reports what review caught that the in-house gates did not — a signal about the GATES that gates no merge (§ "The review-versus-gate delta"). |
 | `finalize-step-review-retrospective` (`review_retrospective`) | The enabled roster (`author_login` values) via `--enabled-reviewers`, to emit a row per ENABLED reviewer rather than per responding one, each carrying `participation: measured` / `unmeasurable` (§ "The counting rule" — the row-domain population); and the reviewed-at-all set (`participated` / `participated_but_empty` `author_login` values) via `--reviewed-reviewers`, to grade whether the review-quality comparison could be performed at all (`comparison: measured` / `clean` / `vacuous` / `indeterminate`) rather than reporting a benign no-op on a run where no reviewer produced content. |
 | `github_ops pr wait-for-comments` | Each bot's `participation_requires_update`, to select the `updated_at`-movement arm of its completion predicate over the count-growth arm; `participation_evidence` plus `bot_kinds()`, to decide whether the await is answerable at all (`detector_answerable`). |
 | `marshall-steward` | Both lists, to ask the wizard question and record the provenance. |

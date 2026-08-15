@@ -117,6 +117,20 @@ def _patch_provider(monkeypatch, comments, head_sha='deadbeef'):
         },
     )
     monkeypatch.setattr(github_pr._github, 'fetch_pr_head_sha', lambda pr_number: head_sha)
+    # Stub the RAW subprocess seam too, not only the three named provider helpers.
+    # ``measure_diff_size`` reaches the provider through ``github_ops.run_gh`` rather
+    # than through ``_github``, so without this a size-refusal fixture would shell out
+    # to a real ``gh pr view`` and silently take its failure path — a test passing for
+    # the wrong reason, which is exactly the synthetic-double shape these fixtures are
+    # meant to avoid. The default is a well-formed measurement so the field is EXERCISED;
+    # a test that cares about the unmeasurable path re-patches with its own value.
+    # ``github_pr._github`` and ``_github_pr.github_ops`` are the SAME module object, so
+    # patching the attribute here reaches the call site inside ``measure_diff_size``.
+    monkeypatch.setattr(
+        github_pr._github,
+        'run_gh',
+        lambda *_a, **_k: (0, '{"additions": 900, "deletions": 340}', ''),
+    )
 
 
 def _run_fetch(pr_number, plan_id):
@@ -1015,7 +1029,8 @@ def test_fetch_findings_splits_a_refusing_bot_from_a_participating_one(plan_cont
     identically to one that reviewed. ``participated_bots`` is evidence-typed and
     excludes a refusal (a refusal is positive evidence the bot did NOT review, even
     though it is published in one of the bot's declared shapes), while
-    ``refused_bots`` carries the refusal so the quorum layer can classify it as
+    ``refused_bots`` carries the refusal so the quorum layer can classify it into a
+    refusal member — ``refused_structural`` for a diff-size ceiling, else
     ``refused_awaitable`` / ``refused_hard`` / ``refused_unknown``. The human author
     (``bot_kind`` None) appears in neither.
     """
@@ -2674,6 +2689,14 @@ def test_fetch_findings_reports_refusal_causes(plan_context, monkeypatch):
         {'bot_kind': 'coderabbit', 'cause': 'quota'},
         {'bot_kind': 'sourcery', 'cause': 'size'},
     ]
+    # The CAP rides alongside the cause, read off the SIZE-refusing bot's own notice —
+    # and only that bot's: a quota refusal names no diff ceiling, so CodeRabbit
+    # contributes no row rather than a zero or an empty one.
+    assert result['refused_size_caps'] == [
+        {'bot_kind': 'sourcery', 'cap': '150000 diff characters'}
+    ]
+    # ...and the measurement that makes the recorded gap auditable rather than asserted.
+    assert result['measured_diff_size'] == '1240 changed lines'
 
 
 def test_fetch_findings_size_cause_is_sticky(plan_context, monkeypatch):
@@ -2748,3 +2771,101 @@ def test_fetch_findings_size_cause_is_sticky_size_first(plan_context, monkeypatc
     result = _run_fetch(108, plan_id)
     assert result['status'] == 'success'
     assert result['refused_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size'}]
+
+
+def test_fetch_findings_measures_the_diff_on_a_size_refusal_with_no_stated_cap(
+    plan_context, monkeypatch
+):
+    """⛔ The measurement is gated on the CAUSE, never on a successfully-extracted cap.
+
+    Those two come apart exactly where the measurement matters most. A size refusal
+    whose notice states no figure yields NO cap — so a guard keyed on the cap would
+    leave the operator with neither number in the one case the feature exists to
+    prevent: an unquantified gap it cannot even bound.
+    """
+    plan_id = 'gh-pr-size-refusal-no-cap'
+    comments = [
+        {
+            'id': 'sr-size-nofigure',
+            'author': 'sourcery-ai',
+            'thread_id': '',
+            'kind': 'review_body',
+            # Recognised as a size refusal (the detection marker is number-free by
+            # design) but stating no figure, so no cap can be read from it.
+            'body': (
+                '> [!NOTE]\n'
+                '> Sorry, your pull request is larger than the review limit of our '
+                'current plan. Please split it into smaller PRs.'
+            ),
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+
+    result = _run_fetch(109, plan_id)
+    assert result['status'] == 'success'
+    assert result['refused_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size'}]
+    # No cap could be read...
+    assert result['refused_size_caps'] == []
+    # ...but the diff was still measured, so the gap is bounded rather than opaque.
+    assert result['measured_diff_size'] == '1240 changed lines'
+
+
+def test_fetch_findings_does_not_measure_the_diff_without_a_size_refusal(
+    plan_context, monkeypatch
+):
+    """A quota-only refusal names no diff ceiling, so it buys no provider round-trip.
+
+    The measurement is a real extra call; paying it on every fetch would tax the common
+    path for a figure with nothing to reconcile against.
+    """
+    plan_id = 'gh-pr-quota-only-no-measure'
+    comments = [
+        {
+            'id': 'cr-quota-only',
+            'author': 'coderabbitai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': _RATE_LIMIT_NOTICES['coderabbit'],
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+    # Make any measurement attempt LOUD rather than merely absent from the output.
+    monkeypatch.setattr(
+        github_pr._github,
+        'run_gh',
+        lambda *_a, **_k: pytest.fail('measured the diff with no size refusal'),
+    )
+
+    result = _run_fetch(110, plan_id)
+    assert result['status'] == 'success'
+    assert result['refused_causes'] == [{'bot_kind': 'coderabbit', 'cause': 'quota'}]
+    assert result['measured_diff_size'] == ''
+
+
+def test_fetch_findings_reports_an_unmeasurable_diff_as_unknown_never_zero(
+    plan_context, monkeypatch
+):
+    """A failed measurement stays empty. ``0`` would read as an empty diff refused."""
+    plan_id = 'gh-pr-size-refusal-unmeasurable'
+    comments = [
+        {
+            'id': 'sr-size-unmeasurable',
+            'author': 'sourcery-ai',
+            'thread_id': '',
+            'kind': 'review_body',
+            'body': _SOURCERY_SIZE_NOTICE,
+            'resolved': False,
+        },
+    ]
+    _patch_provider(monkeypatch, comments)
+    monkeypatch.setattr(github_pr._github, 'run_gh', lambda *_a, **_k: (1, '', 'boom'))
+
+    result = _run_fetch(111, plan_id)
+    assert result['status'] == 'success'
+    assert result['measured_diff_size'] == ''
+    # The cap still travels — the two are independent, so losing one must not lose both.
+    assert result['refused_size_caps'] == [
+        {'bot_kind': 'sourcery', 'cap': '150000 diff characters'}
+    ]

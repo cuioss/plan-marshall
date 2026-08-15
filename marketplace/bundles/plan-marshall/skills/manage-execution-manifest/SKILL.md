@@ -74,6 +74,7 @@ execution_log[K]{step_id,phase,outcome,total_tokens,tool_uses,duration_ms,timest
 | `phase_5.verification_steps` | list[string] | Ordered list of Phase 5 verification step IDs (e.g., `quality-gate`, `module-tests`, `coverage`). Empty list means no verification needed (e.g., docs-only plans) |
 | `phase_5.step_execution_tier` | list[object] | **Advisory** per-step `execution_tier` snapshot — one `{step_id, tier}` object per `phase_5.verification_steps` entry, in list order. `tier` is `per_task` (the step fit inside the Bash ceiling at compose) or `orchestrator` (it exceeded the ceiling, so the orchestrator's `await-long-running` seam owns it). Written by `compose` via `architecture resolve` per step; the list is total over `verification_steps` and every entry carries a resolved tier (unresolved/absent defaults to `per_task`). A record list rather than a keyed map because a step id (`verify:quality-gate`) contains a colon, which does not round-trip as a TOON object key. **Not the routing authority**: the tier derives from the adaptive learned build duration, so a ceiling-adjacent step's tier legitimately moves between compose and execute — the leaf re-resolves it live and routes on that verdict (see `phase-5-execute/standards/canonical_verify.md` § Workflow and `ref-workflow-architecture/standards/agents.md` § "Leaf cannot reap a backgrounded build"). |
 | `phase_6.steps` | list[string] | Ordered list of Phase 6 finalize step IDs to dispatch. Subset of the canonical step set: `push`, `create-pr`, `automated-review`, `sonar-roundtrip`, `lessons-capture`, `adr-propose`, `branch-cleanup`, `archive-plan`, `record-metrics`, `lessons-integration`. CI completion is a dispatcher-resolved precondition declared via `requires: [ci-complete]` on consumer step frontmatters (see `phase-6-finalize/SKILL.md` Step 3 § "Precondition resolution") — it is not itself a step in the canonical set. |
+| `phase_6.candidate_steps` | list[string] | The phase-6 candidate set this compose selected FROM, snapshotted **before** any pre-filter or decision-matrix row subtracted from it, boundary-normalized exactly like `phase_6.steps`. Written by `compose`; read only by `reconcile`, which diffs it against live configuration to tell a candidate that is NEW since compose (owed a backfill) from one the matrix considered and deliberately dropped (must stay dropped). The emitted `phase_6.steps` cannot serve that purpose — it is the post-subtraction result, so "in live config but not in the manifest" would match both cases. A manifest composed before this field existed has no `phase_6.candidate_steps` key; `reconcile` then reports `backfill_determinable: false` rather than guessing. |
 | `phase_5.step_params` | object | Per-step param snapshot for the selected Phase 5 verify steps, keyed by the (bare) in-manifest step id; each value is the step's resolved param object snapshotted from the marshal.json keyed map at compose time. Verify steps own no params, so values are typically `{}`. Read via `step-params get`; per-plan overridable via `step-params set`. |
 | `phase_6.step_params` | object | Per-step param snapshot for the selected Phase 6 finalize steps, keyed by the (bare) in-manifest step id; each value is the step's resolved param object snapshotted from the marshal.json keyed map at compose time (e.g. `branch-cleanup` carries `pr_merge_strategy` / `final_merge_without_asking` / `auto_rebase_threshold`; `sonar-roundtrip` carries `touched_file_cleanup` / `do_transition` / `ce_wait_timeout_seconds`; `automated-review` carries `review_bot_buffer_seconds`). This is the **plan-local runtime source** that phase-5/6 consumers read via `step-params get` (per-plan overridable via `step-params set`), NOT the marshal.json keyed map (the compose-time default). |
 | `execution_log` | list[object] | Ordered append log of per-step execution records, written one row per `record-step` invocation. Each row carries `step_id` (the dispatched step), `phase` (`5-execute` or `6-finalize`), `outcome` (`executed`/`skipped`/`error`), the token-attribution triple `total_tokens`/`tool_uses`/`duration_ms` (default `0`), and an ISO-8601 `timestamp`. Absent until the first `record-step` call; the `compose`/`read`/`validate`/`validate-loadable` operations never read or write it. |
@@ -322,6 +323,52 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 The value is coerced (`true`/`false` → bool; integer literal → int; else string), the param is merged into the step's param object (siblings preserved), and the updated `params` object is returned. An absent step id → `error: step_not_found`; a missing manifest → `error: file_not_found`; an invalid `--phase` → `error: invalid_phase`.
 
+### reconcile
+
+Reconcile the frozen `phase_6.steps` against **live** configuration at finalize entry. This is the verb that keeps a write-time snapshot from silently diverging from the configuration it was composed against — including divergence caused by the plan's own edits.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  reconcile --plan-id {plan_id} [--apply]
+```
+
+**Parameters**:
+
+- `--plan-id` (required): Plan identifier
+- `--apply` (optional): Write the reconciled list back to `execution.toon`. Without it the verb is a pure report and mutates nothing.
+
+**The fail-direction split.** A self-modifying plan deletes a finalize step's standards doc and sweeps `marshal.json`, and its own already-frozen manifest still names the step. `validate-loadable` (§ below) hard-aborts on any unloadable step, which blocks exactly that legitimate work. `reconcile` splits the case `validate-loadable` conflates, and the split is the whole point:
+
+| Frozen step | Live candidate set | Verdict | Action |
+|---|---|---|---|
+| unloadable | **absent** from it | `stale` | **Drop.** Live config agrees the step is gone, so the frozen view is merely behind a change this plan already made. |
+| unloadable | **still lists it** | `broken` | **Fail loud** (`unreconcilable_step`, canonical actionable message). The doc was deleted without sweeping `marshal.json` — the original motivating failure. Reconciling it away would silently drop work the project still schedules. |
+| loadable | — | retained | Untouched. |
+
+**Backfill is narrow by construction.** Only a live candidate absent from `phase_6.candidate_steps` is owed — such a step never faced the decision matrix. A candidate the matrix saw and dropped must stay dropped, so "in live config but not in the manifest" is NOT the backfill test. When `candidate_steps` is absent (a manifest frozen before the field existed) or live config is unreadable, the verb reports `backfill_determinable: false` and backfills nothing; guessing would resurrect every matrix-dropped step. The drop direction needs no snapshot and still runs.
+
+**Fail closed on unreadable live config.** When the live candidate set cannot be read at all (`candidate_source: unavailable`), "config dropped it" is indistinguishable from "config still wants it", so every unloadable step is classified `broken` — today's hard fail — rather than reconciled away on absent evidence.
+
+On `--apply` the merged list is re-sorted through the shared `_sort_steps_by_frontmatter_order` choke point (the same one `compose` uses), the dropped steps' `step_params` entries are pruned, and backfilled steps get a params snapshot from the live marshal map. One `decision.log` line is emitted per dropped and per backfilled step, so every subtraction and addition is auditable.
+
+**Output** (TOON):
+
+```toon
+status: success
+plan_id: EXAMPLE-PLAN
+file: execution.toon
+reconciled: true
+applied: true
+stale[1]: [ retired-step ]
+broken[0]:
+backfill[1]: [ newly-added-step ]
+backfill_determinable: true
+candidate_source: marshal.json
+steps_count: 12
+```
+
+On a broken step: `status: error`, `error: unreconcilable_step`, plus `message` (canonical phrasing), `broken[]`, `stale[]`, and `candidate_source`. No manifest is written on that path.
+
 ### validate
 
 Verify the manifest schema and that all step IDs appear in the caller-supplied allow-list CSVs.
@@ -358,13 +405,15 @@ On failure: `status: error`, `error: invalid_manifest`, plus a `message` and per
 The execution manifest is a **write-time snapshot**, not a runtime view. Two halves, both load-bearing — the manifest's design depends on both:
 
 1. **Baked at write time.** `compose` reads the **then-current** plugin cache state (decision-rules tables, candidate step lists from `marshal.json`, recipe-key mappings, default `Phase 5` / `Phase 6` step sets) and writes a fixed list of step IDs into `.plan/local/plans/{plan_id}/execution.toon`. The composer is `phase-4-plan` Step 8b at plan-write time; `phase-5-execute` MAY re-invoke `compose` to amend during its own loop, but every invocation is idempotent — the file is overwritten in full from the inputs supplied to that call.
-2. **Not re-resolved at read time.** `read` is a literal file load. `phase-5-execute` and `phase-6-finalize` consume `phase_5.verification_steps` and `phase_6.steps` verbatim from the persisted file — they do NOT re-derive the list from current decision rules, do NOT re-consult `marshal.json` for fresh candidate sets, and do NOT re-apply the decision matrix at consumption time. The manifest IS the contract for the running plan.
+2. **Not re-resolved at read time.** `read` is a literal file load. `phase-5-execute` and `phase-6-finalize` consume `phase_5.verification_steps` and `phase_6.steps` verbatim from the persisted file — they do NOT re-derive the list from current decision rules, do NOT re-consult `marshal.json` for fresh candidate sets, and do NOT re-apply the decision matrix at consumption time. The manifest IS the contract for the running plan. (The one bounded exception is the explicit `reconcile` verb — see below. It is an entry-point call, not a resolution the readers perform, so this item holds for every read path.)
 
 **Consequence — `Phase 6` reads the pre-change snapshot**: a plan that modifies a decision rule, a `marshal.json` default, the six-row decision matrix, or any other manifest-composer input still sees the **pre-change** manifest shape when `phase-6-finalize` reads it back, even after `/sync-plugin-cache` has run and the Claude Code session has been restarted. The cache sync and session restart fix the manifest's **future composition** (subsequent plans that invoke `compose`), not the current plan's already-written `execution.toon`.
 
-Meta-projects that author marketplace bundles maintain their own self-host fence to guard against this class of staleness in their own finalize phase; consumer projects of plan-marshall do not encounter the failure mode because their plans do not modify the manifest composer's own resolution roots. Plans that intend to use a newly-introduced step or a newly-changed decision rule in their own finalize phase MUST either (a) re-run `compose` after the cache sync and session restart (re-composition re-reads the now-current cache state) or (b) edit `execution.toon` directly with the intended step list. The `validate` and `validate-loadable` operations remain valid post-edit; both check the persisted file, not a re-derived view.
+**`reconcile` is the bounded exception, and it does not weaken either half.** At finalize entry `reconcile` is the ONE operation that reads live `marshal.json` and may amend the persisted list — but only in the two directions a frozen view can be provably wrong: a step whose standards doc is gone *and* which live config no longer lists (dropped), and a candidate that entered live config *after* this manifest recorded its `phase_6.candidate_steps` (backfilled). It never re-runs the decision matrix, never re-derives the list from current rules, and never re-adds a candidate the matrix already dropped. Read-time consumption stays verbatim: `reconcile` is an explicit entry-point verb, not a resolution the readers perform.
 
-The write-time-snapshot model is a deliberate design choice — it makes the manifest diffable, auditable, and resumable across crashes. Re-resolving at read time would couple every Phase 6 step dispatch to the in-memory decision rules, which is precisely the coupling the manifest exists to break.
+Meta-projects that author marketplace bundles maintain their own self-host fence to guard against this class of staleness in their own finalize phase; consumer projects of plan-marshall do not encounter the failure mode because their plans do not modify the manifest composer's own resolution roots. Plans that intend to use a newly-introduced step or a newly-changed decision rule in their own finalize phase MUST either (a) re-run `compose` after the cache sync and session restart (re-composition re-reads the now-current cache state) or (b) edit `execution.toon` directly with the intended step list. The `validate`, `validate-loadable`, and `reconcile` operations remain valid post-edit; none of the three re-derives the selection. `validate` and `validate-loadable` read the persisted file alone; `reconcile` reads it and additionally consults live `marshal.json`, which is exactly what lets it diff a hand-edited list against current configuration.
+
+The write-time-snapshot model is a deliberate design choice — it makes the manifest diffable, auditable, and resumable across crashes. Re-resolving at read time would couple every Phase 6 step dispatch to the in-memory decision rules, which is precisely the coupling the manifest exists to break — and is why `reconcile` heals a provably-stale entry rather than recomputing the selection.
 
 ### validate-loadable
 
@@ -433,6 +482,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 | `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome {executed\|skipped\|error} [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon |
 | `step-params get` | `--plan-id --phase {5-execute\|6-finalize} --step-id` | Return a step's snapshotted param object from the manifest (plan-local read) |
 | `step-params set` | `--plan-id --phase {5-execute\|6-finalize} --step-id --param --value` | Write a per-plan param override into the manifest snapshot |
+| `reconcile` | `--plan-id [--apply]` | Reconcile the frozen `phase_6.steps` against live marshal.json config — drop steps live config also dropped, fail loud on a step live config still wants but whose doc is gone, backfill only candidates new since compose |
 | `validate` | `--plan-id [--phase-5-steps] [--phase-6-steps]` | Validate manifest schema + step IDs against the caller-supplied allow-list CSVs (a separate surface from compose's candidate source) |
 | `validate-loadable` | `--plan-id (--step-id ID \| --all)` | Verify standards file presence for built-in `phase_6.steps` entries |
 
@@ -456,6 +506,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 | `unresolvable_step` | `compose` — a FINAL emitted phase-5/6 step id resolves to no built-in doc, project-local skill, or bundle discovery-registry entry (fail-loud; names the offending step's provenance — the `marshal.json` key for an authored step, or the derive-verification routing origin for a routed phase-5 step — and phase) |
 | `phase_6_order_violation` | `compose` — the FINAL composed `phase_6.steps` is not verifiably in ascending frontmatter `order`: either an `order_inversion` (a step precedes one with a lower `order`) or an `unresolvable_order` (a built-in / `project:` step whose `order` does not resolve, so its pinned position cannot be verified). Fail-loud; names the offending `step_id`, the `reason`, and `phase`; writes no partial manifest |
 | `non_canonical_step` | `compose` — a FINAL emitted phase-5/6 step id is not in canonical form (`canonicalize_step_key(step_id) != step_id`; a `default:` prefix or promoted-alias bundle spelling slipped past intake normalization). Fail-loud; names the offending `step_id`, its `canonical` form, and phase; writes no partial manifest |
+| `unreconcilable_step` | `reconcile` — a frozen `phase_6.steps` entry has no loadable standards doc AND live `marshal.json` still lists it (or live config is unreadable, so the drop cannot be substantiated). Fail-loud; names the offending step in `broken[]` and carries the canonical actionable message; writes no manifest |
 | `invalid_arguments` | `validate-loadable` invoked without exactly one of `--step-id` / `--all` |
 | `step_not_found` | `step-params get`/`set` `--step-id` has no snapshotted params in the manifest for the given phase |
 
@@ -518,6 +569,15 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 ```
 
 On `validate` the `--phase-5-steps` / `--phase-6-steps` CSVs are the **caller-supplied allow-list** of permitted step IDs — a separate input from `compose`'s candidate source (where the same-named flags are fallback-only against the marshal-authoritative seeding above). Omitting a flag skips that phase's step-ID check; when supplied, every manifest step ID must appear in the allow-list (prefix-agnostic on `default:`; `project:` / `bundle:skill` prefixes compare verbatim) or validation fails with `invalid_manifest`. Because `compose`'s `execution_tier` routing can append `verify:{verb}` step IDs that were never in the configured candidate list, the allow-list must also cover the compose-routed `verify:{verb}` IDs.
+
+### reconcile
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest reconcile \
+  --plan-id PLAN_ID [--apply]
+```
+
+Without `--apply` the verb reports the divergence and writes nothing. With `--apply` it persists the reconciled `phase_6.steps`. It never writes on the `unreconcilable_step` error path.
 
 ### validate-loadable
 

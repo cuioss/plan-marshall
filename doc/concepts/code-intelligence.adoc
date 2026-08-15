@@ -56,6 +56,16 @@ Edge derivation is an extension point rather than core logic, because there is n
 
 So core owns the merge, the provenance, and the traversal, and owns none of the derivation. A *derivation resolver* is a bundle-supplied implementor that answers exactly one question — which modules depend on which — by returning `(from, to)` module-name pairs plus notes describing anything it deliberately refused to answer.
 
+=== Coordinates are not the only identity
+
+The first resolver joined on a Maven `groupId:artifactId` coordinate, and for a while that was the only build-system join there was. It does not generalise: a Python distribution publishes a single PEP 621 `[project] name`, and an npm package a single `package.json` `name`. Neither ecosystem has a coordinate pair to match on, so a coordinate join over a Python or npm project matches nothing — and, before the native joins existed, every such project's edge set was empty while every graph verb reported success.
+
+Two resolvers now key on the ecosystem's own identity instead: `pyproject` joins distribution names in PEP 503 normalised form, and `npm` joins package names (scopes included) case-folded. Both read the *declared* dependency list, which is why they reach a project the reference-based resolvers cannot see: `component_refs` is materialized only by the bundles that crawl a marketplace or documentation corpus, so an ordinary consumer project has none.
+
+A name join needs one thing a coordinate join gets for free — *scoping*. Only Maven and Gradle publish a coordinate, so a coordinate join is scoped by the shape of its key; a bare name is a key shape every ecosystem uses. Each name join therefore restricts itself to the modules its own build system discovered, at both ends. Without that, a mixed repository would both misattribute provenance (one ecosystem's resolver claiming the other's edges) and fabricate an edge between a Python distribution and an npm package that merely share a name.
+
+Gradle needed no resolver of its own: its discovery publishes the same coordinate pair Maven's does, so the `maven` join already covers it — a second reference implementation rather than a second implementor. That coverage has one hole, verified and left in place: an inter-project dependency written the idiomatic way (`implementation project(':core')`) is extracted with a literal `project` segment, which matches no published coordinate, so a Gradle build wired that way derives no internal edges.
+
 === Why a third axis
 
 The seam is a third, independent axis rather than a face on an existing one. Plan Marshall already had two:
@@ -267,7 +277,10 @@ Finally, the seam derives edges only for module sets that Tier 0 discovered. A r
 * link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-path-attribution.md[`ext-point-path-attribution.md`] — the Axis-D companion contract: `PathAttributionBase`, the keyed-mapping merge semantics, the ambiguous-ownership rule, and longest-prefix resolution order.
 * xref:extension-architecture.adoc[Concepts › Extension Architecture] — the plumbing seam these extension points plug into, and the four-axis split they complete.
 * xref:build-management.adoc[Concepts › Build Management] — the `ext-point-build` surface whose `discover_modules()` output is Tier 0, and therefore the map every resolver reads.
-* link:../../marketplace/bundles/plan-marshall/skills/build-maven/SKILL.md[`build-maven/SKILL.md`] — the Axis-B coordinate join, re-homed from `manage-architecture` onto the seam.
+* link:../../marketplace/bundles/plan-marshall/skills/build-maven/SKILL.md[`build-maven/SKILL.md`] — the Axis-B coordinate join, re-homed from `manage-architecture` onto the seam, and the resolver that covers Gradle too.
+* link:../../marketplace/bundles/plan-marshall/skills/build-pyproject/SKILL.md[`build-pyproject/SKILL.md`] — the Axis-B PEP 621 distribution-name join.
+* link:../../marketplace/bundles/plan-marshall/skills/build-npm/SKILL.md[`build-npm/SKILL.md`] — the Axis-B `package.json` package-name join, workspace members included.
+* xref:../user/dependency-intelligence.adoc[User Guide › Dependency Intelligence] — the operator-facing side of the graph family: what each ecosystem derives with no configuration, and how to read an empty answer.
 * link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md[`client-api.md`] — the `graph` / `path` / `neighbors` / `impact` response contracts that carry `resolvers[]` and `resolver_count`, plus the `search` contract with its `match_count` / `files_scanned` / `unreadable[]` fields and every edge case.
 * xref:../user/code-search.adoc[User Guide › Code Search] — the operator-facing side of the content reader: `find` versus `search --content`, the invocations, and how to act on what comes back.
 * link:../../marketplace/bundles/plan-marshall/skills/manage-architecture/standards/architecture-persistence.md[`architecture-persistence.md`] — the persisted module-graph format, including the `{from, to, producers[]}` edge shape.

@@ -47,8 +47,11 @@ below before generalizing from them.
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter.
 Consumers read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`,
 `honors_skip_label`, `participation_evidence`, `participation_requires_update`, `ignore_patterns`,
-`refusal_patterns`, `contentless_review_markers`, `actionable_content_markers`, `rate_limit_class`,
-`rate_limit_eta_patterns`, and `severity_map` from it; the prose sections carry the rationale.
+`review_body_summary_patterns`, `refusal_patterns`, `contentless_review_markers`,
+`actionable_content_markers`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map`
+from it; the prose sections carry the rationale. This bot declares no
+`review_body_summary_patterns` — the empty default keeps every one of its `review_body`
+comments COUNTED, which is the fail-closed direction for a finding count.
 
 ```yaml
 bot_kind: pr-agent

@@ -270,6 +270,14 @@ def _build_module(
             'readme': base.paths.readme,
         },
         'metadata': {
+            # The package.json ``name`` — the identity every dependency entry
+            # refers to, and the join key the npm derivation resolver reads. It
+            # is carried HERE rather than read back off the module's own ``name``
+            # because that field falls back to the directory (or to ``default``
+            # for an unnamed root) when package.json declares no name: a package
+            # with no declared name publishes nothing, so nothing can depend on
+            # it, and only this field can tell the two cases apart.
+            'name': pkg_data.get('name'),
             'description': pkg_data.get('description'),
             'version': pkg_data.get('version'),
             'scripts': list(scripts.keys()) if scripts else [],

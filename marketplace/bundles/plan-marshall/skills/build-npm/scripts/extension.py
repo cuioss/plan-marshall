@@ -1,24 +1,50 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Build extension for plan-marshall:build-npm — the npm/JS file-to-build map.
+"""Build extension for plan-marshall:build-npm — file-to-build map and edge derivation.
 
-Owns Axis-B of the extension contract for the npm build system: the
-``(pattern, role)`` build_map routes plus the ``classify_paths`` /
-``classify_path_specificity`` lookups that the manage-execution-manifest
-aggregator and the build_map seed consume. Subclasses
-:class:`BuildExtensionBase` (file-to-build only); skill-loading (Axis-A) lives
-on the JavaScript domain extension that subclasses ``ExtensionBase``.
+Owns TWO axes of the extension contract for the npm build system:
+
+- **Axis-B** (:class:`BuildExtensionBase`) — the ``(pattern, role)`` build_map
+  routes plus the ``classify_paths`` / ``classify_path_specificity`` lookups that
+  the manage-execution-manifest aggregator and the build_map seed consume.
+- **Axis-C** (:class:`DerivationResolverBase`) — the ``npm`` package-name join
+  that derives which modules depend on which. An npm package publishes no
+  ``groupId:artifactId`` coordinate, so the Maven join can never match it; what a
+  package DOES publish is its ``package.json`` ``name``, and that is what this
+  resolver joins on.
+
+Skill-loading (Axis-A) is NOT here — it lives on the JavaScript domain extension
+that subclasses ``ExtensionBase``. The two Axis-C methods are opted into by
+multiple inheritance, the only shape reachable from both otherwise-disjoint
+hierarchies.
+
+**Workspace members are covered by construction.** ``discover_npm_modules``
+already resolves ``workspaces`` globs (npm/yarn array and object forms, and
+pnpm's ``pnpm-workspace.yaml``) into one module per member, so every member is a
+key of the map this resolver is handed. A workspace dependency is declared like
+any other — ``"react-router": "workspace:*"`` records as ``react-router:runtime``
+— so the name join resolves it with no workspace-specific branch.
 
 The npm build extension claims JS/TS production / test sources (recognising
 ``.spec.`` / ``.test.`` colocated test files) plus the npm toolchain config
 files (``package.json`` / ``tsconfig.json``).
 """
 
-from extension_base import BuildExtensionBase
+from _name_edge_join import derive_name_edges, normalize_npm
+from extension_base import BuildExtensionBase, DerivationResolverBase
+
+NPM_BUILD_SYSTEM = 'npm'
+"""The ``build_systems`` entry the npm discoverer stamps on every module it finds.
+
+The Axis-C join is scoped to modules carrying this entry. A bare package name is
+a key shape every ecosystem uses, so an unscoped join would attribute another
+ecosystem's edges to this resolver and could fabricate an edge between an npm
+package and a same-named distribution from a different ecosystem.
+"""
 
 
-class BuildExtension(BuildExtensionBase):
-    """npm/JS build-system file-to-build extension."""
+class BuildExtension(BuildExtensionBase, DerivationResolverBase):
+    """npm/JS build-system file-to-build extension and module-edge derivation resolver."""
 
     def get_skill_domains(self) -> list[dict]:
         """Return the domain key this build system's routes are filed under.
@@ -124,3 +150,68 @@ class BuildExtension(BuildExtensionBase):
     # (``production → compile``, ``test → module-tests``,
     # ``config → verify``) are correct. No classify_build_class
     # override is required — the inherited base default is the contract.
+
+    # =========================================================================
+    # Axis-C: module-edge derivation (the package-name join)
+    # =========================================================================
+
+    def derivation_resolver_id(self) -> str:
+        """Return the stable provenance identity stamped onto every npm edge.
+
+        See extension-api/standards/ext-point-derivation-resolver.md for the
+        complete four-face contract this identity participates in.
+        """
+        return 'npm'
+
+    @staticmethod
+    def _package_name(module_data: dict) -> str | None:
+        """Return the module's published ``package.json`` name, or ``None``.
+
+        Read from ``metadata.name`` rather than from the module's own ``name``:
+        that field falls back to the directory (or to ``default`` for an unnamed
+        root) when package.json declares no name. A package with no declared name
+        is unpublishable, so nothing can depend on it — and joining on the
+        fallback would invent a key npm never published, which could match an
+        unrelated registry package that happens to share the directory's name.
+        A fabricated edge is worse than the missing one it would paper over.
+        """
+        name = (module_data.get('metadata') or {}).get('name')
+        return name if isinstance(name, str) else None
+
+    def derive_edges(
+        self,
+        derived_by_name: dict,
+        enriched_by_name: dict,
+    ) -> tuple[list[tuple[str, str]], list[str]]:
+        """Derive module edges by joining ``package.json`` names.
+
+        An npm workspace states its internal structure in package names: each
+        package publishes a ``name`` and names its dependencies by that same
+        string. An edge exists wherever one module's dependency name matches
+        another module's published name. Scoped names (``@scope/pkg``) join
+        unchanged — the scope is part of the name, not a separate coordinate
+        segment — and comparison is case-folded, which admits the legacy
+        mixed-case names predating npm's lower-case rule without merging names
+        npm considers distinct.
+
+        Both ``dependencies`` and ``devDependencies`` contribute. A dev
+        dependency is a real edge for impact analysis — changing the
+        depended-upon package can break the dependent's build or tests — which
+        is the same reason the Maven join ignores its own scope segment.
+
+        The enriched overlay is unused: the precedence of a curated or discovered
+        ``internal_dependencies`` declaration OVER a derived edge set is core's
+        decision, applied ahead of the resolver call.
+
+        Args:
+            derived_by_name: Module name → derived data. Each module's
+                ``dependencies`` list is already materialized by the caller —
+                this resolver runs no subprocess and touches no file.
+            enriched_by_name: Module name → LLM-curated overlay. Unused here.
+
+        Returns:
+            An ``(edges, notes)`` tuple. ``edges`` is the sorted list of
+            ``(dependent, dependency)`` module-name pairs. ``notes`` names every
+            package-name collision that suppressed an edge.
+        """
+        return derive_name_edges(derived_by_name, NPM_BUILD_SYSTEM, self._package_name, normalize_npm)

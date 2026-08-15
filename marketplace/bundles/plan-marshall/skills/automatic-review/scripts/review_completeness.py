@@ -57,21 +57,37 @@ and had nothing to say — ``participated_but_empty``, an accounted-for outcome,
 an incompleteness. This stops the guard manufacturing an infinite loop-back for a
 bot whose review landed as pure noise.
 
-Every required bot is classified into exactly one **state**. Nine of the ten are
+Every required bot is classified into exactly one **state**. Ten of the eleven are
 the closed non-participation taxonomy owned by
 ``standards/bot-participation-contract.md`` (``absent``, ``in_progress``,
 ``refused_awaitable``, ``refused_hard``, ``refused_unknown``,
-``participated_but_empty``, ``participated_stale``, ``declined``,
-``not_triggered``); the tenth, ``participated``, is its complement — the bot
-delivered a usable review — and is not a non-participation. The refusal states are
-split ONE-TO-ONE by the refusing bot's registry three-valued ``rate_limit_class``
-(``awaitable_window`` -> ``refused_awaitable``, ``hard_quota`` -> ``refused_hard``,
-``unknown`` -> ``refused_unknown``), so no bot-name literal appears here and no
-class value is collapsed into another. ``refused_unknown`` is its OWN member rather
-than being folded into ``refused_hard``: a declared *we-do-not-know* is not a
-positive *hard quota* finding, and rendering it as one steered an operator toward
-"waiting is futile, force it" for a refusal shape that had simply never been
-observed.
+``refused_structural``, ``participated_but_empty``, ``participated_stale``,
+``declined``, ``not_triggered``); the eleventh, ``participated``, is its complement —
+the bot delivered a usable review — and is not a non-participation.
+
+The FOUR refusal states are decided from two axes, and no bot-name literal appears
+here. A refusal whose observed CAUSE is ``size`` resolves to ``refused_structural``:
+the diff is over a per-PR ceiling, so the same request never succeeds while the diff
+is this size. Every other refusal splits ONE-TO-ONE by the refusing bot's registry
+three-valued ``rate_limit_class`` (``awaitable_window`` -> ``refused_awaitable``,
+``hard_quota`` -> ``refused_hard``, ``unknown`` -> ``refused_unknown``), so no class
+value is collapsed into another.
+
+Two members are their OWN rather than folded into a neighbour, for the same reason
+each time — a fold makes the guard prescribe a remedy that cannot work:
+
+- ``refused_unknown`` is not ``refused_hard``. A declared *we-do-not-know* is not a
+  positive *hard quota* finding, and rendering it as one steered an operator toward
+  "waiting is futile, force it" for a refusal shape that had simply never been
+  observed.
+- ``refused_structural`` is not a cause label on a temporal member. The remedy sets
+  are DISJOINT: a temporal refusal is answered by waiting or accepting the gap, a
+  structural one by splitting the diff, accepting the gap, or disabling the reviewer
+  for this PR — and NEVER by waiting. A taxonomy carrying only temporal members
+  therefore offers a non-option on the size branch, handing the operator a wait for a
+  ceiling that waiting does not move. The cause is consulted BEFORE the class because
+  it is observed per refusal while the class is declared per bot, and one bot can
+  refuse for both causes at one class.
 
 ``participation_complete`` is TRIAGE-STATE AWARE (``triage_ran``):
 
@@ -96,8 +112,9 @@ state — the quorum is vacuously satisfied and ``participation_complete`` is
 ``true``.
 
 Usage:
-    review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--not-triggered] [--triage-ran] [--refused-causes [<csv>]]
-    review_completeness.py deficit --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--not-triggered] [--min-deficit <n>]
+    review_completeness.py check --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--not-triggered] [--triage-ran] [--refused-causes [<csv>]] [--refusal-size-caps [<csv>]] [--measured-diff-size <s>]
+    review_completeness.py deficit --plan-id <id> [--required-bots [<csv>]] [--optional-bots [<csv>]] [--participated-bots [<csv>]] [--in-progress-bots [<csv>]] [--refused-bots [<csv>]] [--stale-participation-bots [<csv>]] [--declined-bots [<csv>]] [--not-triggered] [--refused-causes [<csv>]] [--min-deficit <n>]
+    review_completeness.py size-caps
     review_completeness.py --help
 
 Every list flag above takes an OPTIONAL value: it may be supplied bare (the flag
@@ -122,9 +139,15 @@ pair would match no configured bot, both manufacturing a confident verdict over 
 misparsed population. An empty value is the empty list, never a malformed token.
 
 Subcommands:
-    check    Report whether every REQUIRED bot's PARTICIPATION is proven and triaged.
-    deficit  Report whether a REQUIRED reviewer under-produced against a real
-             baseline — a REVIEWER-QUALITY signal, never a merge verdict.
+    check      Report whether every REQUIRED bot's PARTICIPATION is proven and triaged.
+    deficit    Report whether a REQUIRED reviewer under-produced against a real
+               baseline — a REVIEWER-QUALITY signal, never a merge verdict.
+    size-caps  Report which registered reviewers declare a diff-SIZE ceiling — the
+               ADVANCE-disclosure surface. It reads the registry, not a PR, so it is
+               answerable BEFORE any review is requested: a structural ceiling is a
+               property of the reviewer, so a plan whose footprint will exceed one can
+               learn at outline time that the reviewer will not review it, instead of
+               discovering it as an unexplained non-participation at the merge gate.
 
 Return TOON shape (check):
     status: success
@@ -136,7 +159,12 @@ Return TOON shape (check):
     unproven_bots[N]:                    # emitted only when non-empty
       - bot
     bot_states[N]{bot_kind,state}: ...   # one row per required ∪ optional bot
-    refusal_causes[N]{bot_kind,cause}: ...  # emitted only when non-empty — the size/quota CAUSE axis per refusing bot
+    measured_diff_size: <how big the refused diff was>   # emitted only alongside a non-empty refusal_causes
+    refusal_causes[N]{bot_kind,cause,cap}: ...  # emitted only when non-empty — the size/quota CAUSE axis per refusing bot, with the ceiling its notice stated (``unknown`` when it stated none)
+
+Return TOON shape (size-caps):
+    status: success
+    size_capped_reviewers[N]{bot_kind,structural_cap,cap_extractable}: ...  # one row per REGISTERED bot
 
 Return TOON shape (deficit):
     status: success
@@ -158,10 +186,10 @@ import sys
 import bot_registry
 from _findings_core import query_findings
 
-# The state every classified bot resolves to. Nine members are the closed
+# The state every classified bot resolves to. Ten members are the closed
 # NON-participation taxonomy owned by
 # ``standards/bot-participation-contract.md``; ``participated`` is its complement
-# (the bot delivered a usable review) and is deliberately NOT a tenth member of
+# (the bot delivered a usable review) and is deliberately NOT an eleventh member of
 # that taxonomy — it is the success case the taxonomy exists to distinguish from.
 STATE_ABSENT = 'absent'
 STATE_IN_PROGRESS = 'in_progress'
@@ -174,6 +202,27 @@ STATE_REFUSED_HARD = 'refused_hard'
 # ``refused_hard`` — a binary ``== 'awaitable_window'`` test over the three-valued
 # field rendered this declared ignorance as a positive hard-quota finding.
 STATE_REFUSED_UNKNOWN = 'refused_unknown'
+# The bot published a refusal whose CAUSE is a ceiling on the DIFF ITSELF — it is over
+# a per-PR size budget. Structural rather than temporal: the other three refusal members
+# all say *not now*, and the same request succeeds once the limit moves; this one says
+# *not this diff*, and the same request never succeeds while the diff is this size.
+#
+# It is its OWN member rather than a cause label on top of one of them because the
+# REMEDY SETS ARE DISJOINT. A temporal refusal is answered by waiting or by accepting
+# the gap; a structural one is answered by splitting the diff, accepting the gap, or
+# disabling the reviewer for this PR — and never by waiting. A taxonomy that carries
+# only temporal members therefore offers a NON-OPTION on the size branch: it hands the
+# operator "wait" for a limit that the registry itself documents as unaffected by
+# waiting. Modelling the cause as advisory metadata alongside a temporal member does not
+# close that, because every consumer routes on the member.
+#
+# The cause axis DOMINATES the awaitability axis for this member, deliberately.
+# ``rate_limit_class`` is declared per BOT while a cause is observed per REFUSAL, and a
+# bot can refuse for both causes at one class (Sourcery's per-PR size ceiling and its
+# weekly quota are both ``hard_quota``), so the per-refusal observation is the more
+# specific evidence and wins — the same evidence-strength ordering ``classify_bot``
+# already applies elsewhere.
+STATE_REFUSED_STRUCTURAL = 'refused_structural'
 STATE_PARTICIPATED_BUT_EMPTY = 'participated_but_empty'
 # Never the bare ``stale``: the state is a PARTICIPATION that went stale, and the
 # short name loses the distinction from a bot that never published at all.
@@ -207,11 +256,19 @@ _UNPROVEN_STATES = frozenset(
         STATE_REFUSED_AWAITABLE,
         STATE_REFUSED_HARD,
         STATE_REFUSED_UNKNOWN,
+        STATE_REFUSED_STRUCTURAL,
         STATE_PARTICIPATED_STALE,
         STATE_DECLINED,
         STATE_NOT_TRIGGERED,
     }
 )
+
+# The refusal CAUSE that resolves to the STRUCTURAL member. The vocabulary is the
+# producer's (``_github_pr.REFUSAL_CAUSE_SIZE``); this is the one value that is
+# state-determining rather than advisory, because it is the one whose remedy set is
+# disjoint from every temporal member's. Any other cause the producer emits stays
+# advisory and leaves the awaitability split untouched.
+CAUSE_SIZE = 'size'
 
 # The states that mean a reviewer REVIEWED THE DIFF AT ALL — the reviewed-at-all
 # predicate the counting rule and the deficit signal (below) both read. Both are a
@@ -232,11 +289,19 @@ DEFICIT_UNASSESSABLE = 'unassessable'  # no baseline reviewer reviewed the diff 
 # reader of ``display_detail`` can tell *reviewed-and-clean* from *nobody-reviewed*
 # at a glance — the distinction a bare comment count collapses. Grouped so the label
 # answers the reader's question ("did anyone review?") rather than exposing every
-# internal state name; the three refusal members share one ``refused`` bucket.
+# internal state name; the three TEMPORAL refusal members share one ``refused`` bucket,
+# while the structural one takes its own (see below).
 _STATE_SUMMARY_BUCKETS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ('reviewed', (STATE_PARTICIPATED,)),
     ('empty', (STATE_PARTICIPATED_BUT_EMPTY,)),
     ('refused', (STATE_REFUSED_AWAITABLE, STATE_REFUSED_HARD, STATE_REFUSED_UNKNOWN)),
+    # Its OWN bucket rather than a fourth member of ``refused`` above: the three
+    # temporal members share a remedy set, so collapsing them costs the reader nothing,
+    # whereas folding the structural member in would render "1 refused" for a diff that
+    # is simply too big — the same collapse this summary exists to undo for
+    # reviewed-vs-nobody-reviewed. A reader who sees ``refused-structural`` knows the
+    # remedy without opening ``bot_states``.
+    ('refused-structural', (STATE_REFUSED_STRUCTURAL,)),
     ('stale', (STATE_PARTICIPATED_STALE,)),
     ('declined', (STATE_DECLINED,)),
     ('in-progress', (STATE_IN_PROGRESS,)),
@@ -315,21 +380,27 @@ def parse_participation(raw: str | None, flag: str = '--participated-bots') -> d
 
 
 def parse_causes(raw: str | None, flag: str = '--refused-causes') -> dict[str, str]:
-    """Parse a ``bot_kind:cause`` CSV into a bot -> refusal-cause map.
+    """Parse a ``bot_kind:{value}`` CSV into a bot -> value map.
 
-    The ``refused_causes[]`` records ``github_pr fetch_findings`` emits, forwarded
-    verbatim: each ``{bot_kind, cause}`` becomes a ``bot_kind:cause`` token. ``cause``
-    is the refusal's CAUSE axis (``size`` / ``quota``) — attached to the refusing bot's
-    reported state so the operator sees the remedy (a smaller diff vs backoff). It is
-    ADVISORY: it never changes which awaitability member the bot resolves to.
+    The shared reader for the two per-refusal overlays the producer emits, both
+    forwarded verbatim as ``bot_kind:{value}`` tokens:
 
-    A token that is not a ``bot_kind:cause`` pair — a bare ``bot_kind`` with no colon,
+    - ``--refused-causes`` (from ``refused_causes[]``) — the refusal's CAUSE axis
+      (``size`` / ``quota``). A ``size`` cause is STATE-DETERMINING: it resolves the bot
+      to ``refused_structural`` whatever its ``rate_limit_class`` declares, because that
+      per-bot field cannot separate two causes one bot refuses under. Every other cause
+      stays advisory and leaves the awaitability split untouched.
+    - ``--refusal-size-caps`` (from ``refused_size_caps[]``) — the diff-size ceiling the
+      bot's own notice stated, reported alongside the cause so a recorded gap is
+      auditable against the real diff size.
+
+    A token that is not a ``bot_kind:{value}`` pair — a bare ``bot_kind`` with no colon,
     or a pair with an empty side — is a SHAPE violation and is REJECTED with
     :class:`MalformedBotFlag`, the same loud-caller-error discipline the other pair-form
-    flags use. The cause VALUE is not validated against a closed set here: the cause
-    vocabulary is the producer's, so a value this flag does not recognise is carried
-    through rather than dropped. An empty token (the bare-flag / trailing-comma form)
-    is skipped.
+    flags use. Only the FIRST colon splits, so a value containing one survives intact.
+    The VALUE is not validated against a closed set here: the vocabulary is the
+    producer's, so a value this flag does not recognise is carried through rather than
+    dropped. An empty token (the bare-flag / trailing-comma form) is skipped.
     """
     causes: dict[str, str] = {}
     for entry in (raw or '').split(','):
@@ -341,27 +412,44 @@ def parse_causes(raw: str | None, flag: str = '--refused-causes') -> dict[str, s
         cause = cause.strip()
         if not sep or not bot_kind or not cause:
             raise MalformedBotFlag(
-                f'{flag} expects bot_kind:cause pairs but received the token {entry!r}, '
-                f'which is not a pair. A bare bot_kind carries no cause; silently dropping '
-                f'it would lose the size-vs-quota remedy signal, so it is rejected as a '
-                f'caller error.'
+                f'{flag} expects bot_kind:value pairs but received the token {entry!r}, '
+                f'which is not a pair. A bare bot_kind carries no value; silently dropping '
+                f'it would lose the remedy signal the overlay exists to carry — and for a '
+                f'size cause it would also lose the state, silently re-classifying a '
+                f'structural refusal as a temporal one. It is rejected as a caller error.'
             )
         causes[bot_kind] = cause
     return causes
 
 
-def _refusal_state(rate_limit_class: str) -> str:
-    """Map a bot's three-valued ``rate_limit_class`` to its refusal STATE, one-to-one.
+def _refusal_state(rate_limit_class: str, cause: str | None = None) -> str:
+    """Map a refusal's observed ``cause`` and the bot's ``rate_limit_class`` to its STATE.
 
-    The mapping is total and injective over the three declared classes, so no value
-    is collapsed into another:
+    Two axes decide one member, and the CAUSE axis is consulted FIRST:
 
-    - ``awaitable_window`` -> ``refused_awaitable`` — the window reopens on its own.
-    - ``hard_quota``       -> ``refused_hard`` — a budget that does not usefully reopen.
-    - ``unknown`` / anything else -> ``refused_unknown`` — the registry declares
-      ignorance, so whether waiting helps is genuinely not known.
+    - ``cause == 'size'`` -> ``refused_structural``, whatever the class says. The diff
+      is over a per-PR ceiling, so the same request never succeeds while the diff is
+      this size and no temporal member describes it.
+    - otherwise the awaitability split, total and injective over the three declared
+      classes so no value is collapsed into another:
+      ``awaitable_window`` -> ``refused_awaitable`` (the window reopens on its own),
+      ``hard_quota`` -> ``refused_hard`` (a budget that does not usefully reopen),
+      ``unknown`` / anything else -> ``refused_unknown`` (the registry declares
+      ignorance, so whether waiting helps is genuinely not known).
 
-    ``unknown`` resolves to its own member, never to ``refused_hard``. A binary
+    **Why the cause outranks the class.** ``rate_limit_class`` is declared once per
+    BOT, while a cause is observed per REFUSAL, and one bot can refuse for both causes
+    at a single class — Sourcery's per-PR size ceiling and its weekly quota are both
+    ``hard_quota``. The per-bot field therefore cannot separate them even in principle,
+    and the more specific observation is the one that must win. This is the same
+    evidence-strength ordering :func:`classify_bot` applies across its own branches.
+
+    Reading the class first instead would keep the structural case invisible in exactly
+    the case that matters most: a bot declaring ``awaitable_window`` that refuses on
+    size would resolve ``refused_awaitable``, whose whole meaning is *worth awaiting* —
+    handing the caller an await for a limit that no amount of waiting moves.
+
+    ``unknown`` still resolves to its own member, never to ``refused_hard``. A binary
     ``== 'awaitable_window'`` test over the three-valued field mapped everything that
     was not awaitable — ``hard_quota`` and ``unknown`` alike — into ``refused_hard``,
     rendering a declared *we-do-not-know* as a positive *hard quota* finding. Any
@@ -369,11 +457,49 @@ def _refusal_state(rate_limit_class: str) -> str:
     resolves fail-closed to ``refused_unknown`` rather than being asserted as a hard
     quota the registry never declared.
     """
+    if cause == CAUSE_SIZE:
+        return STATE_REFUSED_STRUCTURAL
     if rate_limit_class == 'awaitable_window':
         return STATE_REFUSED_AWAITABLE
     if rate_limit_class == 'hard_quota':
         return STATE_REFUSED_HARD
     return STATE_REFUSED_UNKNOWN
+
+
+def recover_causes_from_caps(
+    refused_causes: dict[str, str] | None,
+    refusal_size_caps: dict[str, str] | None,
+) -> dict[str, str]:
+    """Return the cause map, recovering a lost ``size`` cause from a surviving cap.
+
+    A cap is only ever produced for a SIZE refusal, so a bot carrying a cap but no
+    cause means the cause overlay was lost in transport. That is a reachable state, not
+    a hypothetical: the two travel as SEPARATE CLI flags, and the barrier's contract
+    lets either default to empty independently when a producer field is absent or
+    malformed.
+
+    Recovering the cause from the cap is the fail-CLOSED direction. Without it the bot
+    silently resolves to a TEMPORAL member and is offered a wait for a diff-size
+    ceiling — the exact non-option the structural member exists to remove, re-entered
+    through a transport failure.
+
+    The inference is ONE-DIRECTIONAL and non-overriding:
+
+    - ``setdefault`` never overrides an observed cause, so a positively-reported
+      ``quota`` stays ``quota``.
+    - A cause with no cap infers NOTHING. That direction would invent a ceiling, which
+      is precisely what the unknown-cap discipline exists to prevent.
+
+    Shared by :func:`check_completeness` and :func:`check_deficit` rather than inlined
+    in one. The recovery CHANGES which member a bot resolves to, so a command that
+    skipped it would report a different state for the same refusal — the cross-command
+    disagreement this module forbids in as many words, arriving through the very branch
+    added to prevent a different one.
+    """
+    recovered = dict(refused_causes or {})
+    for bot in (refusal_size_caps or {}):
+        recovered.setdefault(bot, CAUSE_SIZE)
+    return recovered
 
 
 def classify_bot(
@@ -385,6 +511,7 @@ def classify_bot(
     stale_participants: set[str] | None = None,
     not_triggered: bool = False,
     declined: set[str] | None = None,
+    refused_causes: dict[str, str] | None = None,
 ) -> str:
     """Return the single state ``bot`` resolves to.
 
@@ -401,12 +528,16 @@ def classify_bot(
     - **``participated``** — proven participant that filed at least one finding.
     - **``participated_but_empty``** — proven participant that filed none. It did
       its pass and had nothing actionable to say; accounted-for, never a failure.
-    - **``refused_awaitable`` / ``refused_hard`` / ``refused_unknown``** — the bot
-      published a refusal. Which member is decided ONE-TO-ONE by its registry
-      three-valued ``rate_limit_class`` (:func:`_refusal_state`): ``awaitable_window``
-      reopens on its own, ``hard_quota`` does not, and ``unknown`` is a declared
-      ignorance that is neither — never collapsed into ``refused_hard``. No bot-name
-      literal.
+    - **``refused_structural`` / ``refused_awaitable`` / ``refused_hard`` /
+      ``refused_unknown``** — the bot published a refusal. Which member is decided by
+      :func:`_refusal_state` from TWO axes: an observed ``cause`` of ``size`` resolves
+      ``refused_structural`` (the diff is over a per-PR ceiling, so the request never
+      succeeds at this size), and every other refusal splits ONE-TO-ONE from the bot's
+      registry three-valued ``rate_limit_class`` — ``awaitable_window`` reopens on its
+      own, ``hard_quota`` does not, and ``unknown`` is a declared ignorance that is
+      neither, never collapsed into ``refused_hard``. The cause is consulted first
+      because it is observed per refusal while the class is declared per bot. No
+      bot-name literal.
     - **``declined``** — the bot was asked to review the merge candidate and answered
       without producing a review of it (an incremental-review decline: a comment
       carrying no reviewed-commit SHA). Checked after the refusal branches — a refusal
@@ -434,7 +565,9 @@ def classify_bot(
     if bot in proven_participants:
         return STATE_PARTICIPATED if has_findings else STATE_PARTICIPATED_BUT_EMPTY
     if bot in refused:
-        return _refusal_state(bot_registry.rate_limit_class(bot))
+        return _refusal_state(
+            bot_registry.rate_limit_class(bot), (refused_causes or {}).get(bot)
+        )
     if bot in (declined or set()):
         return STATE_DECLINED
     if bot in (stale_participants or set()):
@@ -584,6 +717,8 @@ def check_completeness(
     declined_bots: list[str] | None = None,
     not_triggered: bool = False,
     refused_causes: dict[str, str] | None = None,
+    refusal_size_caps: dict[str, str] | None = None,
+    measured_diff_size: str = '',
 ) -> dict:
     """Classify each bot's PARTICIPATION against the plan's ``pr-comment`` findings store.
 
@@ -657,7 +792,7 @@ def check_completeness(
         ``bot_states`` spans required ∪ optional and assigns exactly one state per
         bot. ``unproven_bots`` is the subset whose state leaves participation
         unproven — the members of ``_UNPROVEN_STATES`` (``absent`` /
-        ``in_progress`` / any of the three refusal members / ``participated_stale`` /
+        ``in_progress`` / any of the four refusal members / ``participated_stale`` /
         ``declined`` / ``not_triggered``);
         ``pending_bots`` is the subset carrying an untriaged finding. Both span
         required ∪ optional for visibility, but only the REQUIRED subset gates
@@ -688,13 +823,24 @@ def check_completeness(
     # the reported lists read in a stable, caller-meaningful order.
     classified = list(required_bots) + [b for b in (optional_bots or []) if b not in required_set]
 
+    caps_in = dict(refusal_size_caps or {})
+    causes_in = recover_causes_from_caps(refused_causes, caps_in)
+
     bot_states: list[dict[str, str]] = []
     pending_bots: list[str] = []
     unproven_bots: list[str] = []
     for bot in classified:
         bot_findings = [f for f in findings if f.get('bot_kind') == bot]
         state = classify_bot(
-            bot, proven, bool(bot_findings), in_progress, refused, stale, not_triggered, declined
+            bot,
+            proven,
+            bool(bot_findings),
+            in_progress,
+            refused,
+            stale,
+            not_triggered,
+            declined,
+            causes_in,
         )
         bot_states.append({'bot_kind': bot, 'state': state})
         if state in _UNPROVEN_STATES:
@@ -718,24 +864,40 @@ def check_completeness(
     else:
         participation_complete = not required_unproven
 
-    # The orthogonal CAUSE axis, reported only for bots this pass actually classified
-    # as refused: {bot_kind, cause} per refusing bot whose cause the caller supplied.
-    # It names the remedy (size → a smaller diff, quota → backoff) alongside the
-    # awaitability member, and is advisory — it gates nothing.
-    causes_in = dict(refused_causes or {})
-    # Derive the refusal population per-record from the classifier rather than
-    # matching against a second hand-maintained state set: a bot is refused exactly
-    # when its classified state is the one ``_refusal_state`` maps its
-    # ``rate_limit_class`` to — the sole path to a refusal state (see ``classify_bot``).
-    # Any refusal member ``_refusal_state`` can emit is therefore covered
-    # automatically, so a new member cannot silently fall out of this overlay; a
-    # non-refused bot's state (participated / declined / absent / …) never equals a
-    # refusal state and is excluded.
+    # The CAUSE axis, reported only for bots this pass actually classified as refused:
+    # {bot_kind, cause, cap} per refusing bot whose cause the caller supplied. It names
+    # the remedy alongside the member — split for a structural ceiling, backoff for a
+    # quota — and carries the ``cap`` the refusing notice stated so a recorded coverage
+    # gap can be reconciled against the diff that was actually refused.
+    #
+    # ``cause`` is advisory for every value EXCEPT ``size``, which is state-determining
+    # (:func:`_refusal_state`). It remains reported here either way: the overlay is what
+    # a consumer reads to name the remedy, and dropping the row for the one cause that
+    # also moves the state would hide the cap exactly where it is most needed.
+    #
+    # ``cap`` is ``''`` when the notice stated no figure — reported as UNKNOWN by the
+    # emitter, never defaulted. A cap nobody observed would make the gap look audited
+    # against a number that was invented here.
+    #
+    # Derive the refusal population per-record from the classifier rather than matching
+    # against a second hand-maintained state set: a bot is refused exactly when its
+    # classified state is the one ``_refusal_state`` maps its (class, cause) pair to —
+    # the sole path to a refusal state (see ``classify_bot``). Any refusal member
+    # ``_refusal_state`` can emit is therefore covered automatically, so a new member
+    # cannot silently fall out of this overlay; a non-refused bot's state (participated
+    # / declined / absent / …) never equals a refusal state and is excluded.
     refusal_causes_out = [
-        {'bot_kind': rec['bot_kind'], 'cause': causes_in[rec['bot_kind']]}
+        {
+            'bot_kind': rec['bot_kind'],
+            'cause': causes_in[rec['bot_kind']],
+            'cap': caps_in.get(rec['bot_kind'], ''),
+        }
         for rec in bot_states
         if rec['bot_kind'] in causes_in
-        and rec['state'] == _refusal_state(bot_registry.rate_limit_class(rec['bot_kind']))
+        and rec['state']
+        == _refusal_state(
+            bot_registry.rate_limit_class(rec['bot_kind']), causes_in[rec['bot_kind']]
+        )
     ]
     return {
         'status': 'success',
@@ -751,7 +913,14 @@ def check_completeness(
         # ``display_detail`` reader can tell reviewed-and-clean from nobody-reviewed.
         # ``''`` for an empty roster — nothing to distribute.
         'review_state_summary': compose_review_state_summary(bot_states),
-        # The CAUSE axis per refusing bot (size vs quota) — advisory, names the remedy.
+        # How big the refused diff actually was. Reported ALONGSIDE the caps rather
+        # than per-bot: it is a property of the PR, identical for every reviewer that
+        # refused it, so a per-bot column would repeat one measurement N times and
+        # invite a reader to think each was measured separately. Empty when no size
+        # refusal occurred or the diff could not be measured — UNKNOWN, never zero.
+        'measured_diff_size': measured_diff_size,
+        # The CAUSE axis per refusing bot with the ceiling its notice stated. Names the
+        # remedy; state-determining for ``size``, advisory for every other value.
         'refusal_causes': refusal_causes_out,
     }
 
@@ -766,6 +935,8 @@ def check_deficit(
     stale_participation_bots: list[str] | None = None,
     declined_bots: list[str] | None = None,
     not_triggered: bool = False,
+    refused_causes: dict[str, str] | None = None,
+    refusal_size_caps: dict[str, str] | None = None,
     min_deficit: int = 1,
 ) -> dict:
     """Classify each bot, count its FILED findings, and assess the deficit signal (D2).
@@ -775,7 +946,12 @@ def check_deficit(
     is in :data:`_REVIEWED_STATES`), then hands the per-reviewer population to
     :func:`assess_deficit`. Takes the SAME observation inputs as
     :func:`check_completeness`, so the automatic-review step forwards the sets it has
-    already gathered.
+    already gathered — ``refused_causes`` INCLUDED. The cause changes no verdict here
+    (no refusal member is a :data:`_REVIEWED_STATES` member, so the assessment is
+    identical either way), but the returned ``reviewers[]`` publishes a ``state``
+    column, and that column must name the same member ``check`` would. Two commands
+    reporting different states for one bot's refusal would be a disagreement no reader
+    of the output could adjudicate.
 
     On a findings-store load failure returns the ``load_failure`` error branch —
     identical to :func:`check_completeness` — so a crashed read is an UNKNOWN verdict
@@ -798,11 +974,24 @@ def check_deficit(
     required_set = set(required_bots)
     classified = list(required_bots) + [b for b in (optional_bots or []) if b not in required_set]
 
+    # The SAME recovery ``check`` applies. It moves which member a bot resolves to, so
+    # skipping it here would make the two commands report different states for one
+    # refusal — the disagreement the docstring above forbids.
+    causes_in = recover_causes_from_caps(refused_causes, refusal_size_caps)
+
     reviewers: list[dict] = []
     for bot in classified:
         bot_findings = [f for f in findings if f.get('bot_kind') == bot]
         state = classify_bot(
-            bot, proven, bool(bot_findings), in_progress, refused, stale, not_triggered, declined
+            bot,
+            proven,
+            bool(bot_findings),
+            in_progress,
+            refused,
+            stale,
+            not_triggered,
+            declined,
+            causes_in,
         )
         reviewers.append(
             {
@@ -848,11 +1037,88 @@ def _emit_toon(payload: dict) -> None:
         print(f'bot_states[{len(states)}]{{bot_kind,state}}:')
         for record in states:
             print(f'  {record["bot_kind"]},{record["state"]}')
+    # Emitted immediately before the causes it qualifies, and only when a refusal cause
+    # was reported: a measured diff size standing alone would be a statistic about the
+    # PR with nothing to reconcile it against.
+    measured = payload.get('measured_diff_size', '')
     causes = payload.get('refusal_causes') or []
+    if causes and measured:
+        print(f'measured_diff_size: {measured}')
     if causes:
-        print(f'refusal_causes[{len(causes)}]{{bot_kind,cause}}:')
+        print(f'refusal_causes[{len(causes)}]{{bot_kind,cause,cap}}:')
         for record in causes:
-            print(f'  {record["bot_kind"]},{record["cause"]}')
+            # An unstated cap renders as the literal ``unknown``, never as an empty
+            # column and never as a number: the reader must be able to tell "the notice
+            # named no ceiling" from "the ceiling is N", because only the second can be
+            # reconciled against a measured diff size.
+            print(f'  {record["bot_kind"]},{record["cause"]},{record.get("cap") or "unknown"}')
+
+
+def declared_size_caps() -> list[dict]:
+    """Report, per REGISTERED bot, whether it declares a diff-SIZE ceiling (D1).
+
+    The ADVANCE-disclosure surface. Every other verdict in this module is computed
+    from an observed refusal, which means the structural gap is only ever discovered
+    after a reviewer has already declined — at the merge gate, where the remaining
+    options are expensive. A size ceiling is different in kind: it is a declared
+    property of the REVIEWER, not an outcome of the run, and a diff's size is
+    measurable at PR creation. So the exclusion is knowable in advance, and a plan
+    whose footprint will exceed a ceiling can consult this before requesting a review
+    rather than reading an unexplained non-participation afterwards.
+
+    ⭐ The exclusion also recurs BY SIZE rather than by chance: the ceiling is fixed,
+    so every plan over it gets no review from that reviewer, predictably and forever.
+    That is exactly the kind of gap worth disclosing once rather than rediscovering
+    per plan.
+
+    Each record carries:
+
+    - ``bot_kind`` — the registered reviewer.
+    - ``structural_cap`` — whether it declares a size-caused refusal at all, DERIVED
+      from ``refusal_size_patterns`` so the disclosure cannot disagree with the
+      classification (one declaration, two readers).
+    - ``cap_extractable`` — whether the bot also declares a pattern that reads the cap
+      VALUE out of its notice. It is reported separately, and honestly, because the
+      two are independent: a reviewer can have a ceiling nobody has taught the
+      registry to read. Collapsing them would let "declares a ceiling" be misread as
+      "the ceiling's value is recoverable", which is the sort of overstatement the
+      unknown-cap handling elsewhere in this module exists to avoid.
+
+    The population is the registry's, in its deterministic order — never a literal
+    list here, so a reviewer added or reclassified in a standards doc is disclosed
+    automatically.
+    """
+    return [
+        {
+            'bot_kind': bot,
+            'structural_cap': bot_registry.has_structural_size_cap(bot),
+            'cap_extractable': bool(bot_registry.refusal_size_cap_patterns(bot)),
+        }
+        for bot in bot_registry.bot_kinds()
+    ]
+
+
+def _emit_size_caps_toon(payload: dict) -> None:
+    """Print the advance-disclosure TOON block for the ``size-caps`` subcommand."""
+    print(f'status: {payload.get("status", "success")}')
+    rows = payload.get('size_capped_reviewers') or []
+    if rows:
+        print(f'size_capped_reviewers[{len(rows)}]{{bot_kind,structural_cap,cap_extractable}}:')
+        for record in rows:
+            declared = 'true' if record['structural_cap'] else 'false'
+            extractable = 'true' if record['cap_extractable'] else 'false'
+            print(f'  {record["bot_kind"]},{declared},{extractable}')
+
+
+def cmd_size_caps(args: argparse.Namespace) -> int:
+    """Emit the per-reviewer structural-size-ceiling disclosure.
+
+    Takes no plan and reads no PR: the answer is registry data, which is what makes it
+    consultable before a plan has a PR at all.
+    """
+    del args  # the disclosure is registry-wide; there is nothing to scope it by
+    _emit_size_caps_toon({'status': 'success', 'size_capped_reviewers': declared_size_caps()})
+    return 0
 
 
 def _emit_deficit_toon(payload: dict) -> None:
@@ -954,6 +1220,13 @@ def _parse_bot_observations(args: argparse.Namespace) -> dict:
             parse_participation(args.stale_participation_bots, '--stale-participation-bots')
         ),
         'declined_bots': _split_bots(args.declined_bots, '--declined-bots'),
+        # Shared by BOTH subcommands: the cause is state-determining for ``size``, and
+        # ``deficit`` publishes a per-reviewer ``state`` column, so parsing it here is
+        # what keeps the two commands from naming different members for one refusal.
+        'refused_causes': parse_causes(args.refused_causes, '--refused-causes'),
+        # Shared with ``check`` for the same reason the cause is: the cap drives the
+        # fail-closed cause recovery, which decides a member.
+        'refusal_size_caps': parse_causes(args.refusal_size_caps, '--refusal-size-caps'),
     }
 
 
@@ -970,7 +1243,6 @@ def cmd_check(args: argparse.Namespace) -> int:
     """
     try:
         obs = _parse_bot_observations(args)
-        refused_causes = parse_causes(args.refused_causes, '--refused-causes')
     except MalformedBotFlag as exc:
         _emit_toon({'status': 'error', 'error': 'malformed_bot_flag', 'detail': str(exc)})
         return 1
@@ -985,7 +1257,9 @@ def cmd_check(args: argparse.Namespace) -> int:
         stale_participation_bots=obs['stale_participation_bots'],
         declined_bots=obs['declined_bots'],
         not_triggered=args.not_triggered,
-        refused_causes=refused_causes,
+        refused_causes=obs['refused_causes'],
+        refusal_size_caps=obs['refusal_size_caps'],
+        measured_diff_size=args.measured_diff_size,
     )
     _emit_toon(payload)
     return 0 if payload.get('status') == 'success' else 1
@@ -1013,6 +1287,8 @@ def cmd_deficit(args: argparse.Namespace) -> int:
         stale_participation_bots=obs['stale_participation_bots'],
         declined_bots=obs['declined_bots'],
         not_triggered=args.not_triggered,
+        refused_causes=obs['refused_causes'],
+        refusal_size_caps=obs['refusal_size_caps'],
         min_deficit=args.min_deficit,
     )
     _emit_deficit_toon(payload)
@@ -1022,7 +1298,7 @@ def cmd_deficit(args: argparse.Namespace) -> int:
 def _add_bot_observation_flags(sub: argparse.ArgumentParser) -> None:
     """Add the observation flags shared by the ``check`` and ``deficit`` subcommands.
 
-    ``--plan-id`` plus the six list flags and the PR-wide ``--not-triggered`` bool —
+    ``--plan-id`` plus the nine list flags and the PR-wide ``--not-triggered`` bool —
     the classifier's whole input surface. Factored so the two subcommands cannot
     drift in flag name, ``nargs``, or ``const`` (a drift would silently change how an
     empty list parses on one command but not the other).
@@ -1088,9 +1364,11 @@ def _add_bot_observation_flags(sub: argparse.ArgumentParser) -> None:
         default='',
         help=(
             'Comma-separated review-bot kinds observed publishing a refusal '
-            'notice. Supply only the observation — the refusal is split ONE-TO-ONE '
-            "into refused_awaitable / refused_hard / refused_unknown from each bot's "
-            'registry three-valued rate_limit_class, never by the caller. May be '
+            'notice. Supply only the observation — the member is assigned here, never '
+            'by the caller: a size cause (from --refused-causes) gives '
+            'refused_structural, and every other refusal splits ONE-TO-ONE into '
+            "refused_awaitable / refused_hard / refused_unknown from each bot's "
+            'registry three-valued rate_limit_class. May be '
             'supplied bare (no value), which reads as the empty list.'
         ),
     )
@@ -1131,6 +1409,44 @@ def _add_bot_observation_flags(sub: argparse.ArgumentParser) -> None:
             'quota / size notice) and --stale-participation-bots (a review that '
             'exists but predates the merge candidate). May be supplied bare (no '
             'value), which reads as the empty list.'
+        ),
+    )
+    sub.add_argument(
+        '--refused-causes',
+        nargs='?',
+        const='',
+        default='',
+        help=(
+            'Comma-separated bot_kind:cause pairs — the exact shape github_pr '
+            'fetch_findings emits in refused_causes[], forwarded verbatim. cause is '
+            'the refusal CAUSE axis (size / quota), orthogonal to rate_limit_class: '
+            'size means the diff is over a per-PR ceiling (remedy: split, accept, or '
+            'disable the reviewer for this PR — never wait), quota means a rate/budget '
+            'limit (remedy: backoff). A size cause resolves the bot to '
+            'refused_structural whatever its rate_limit_class says, because a per-bot '
+            'class cannot separate two causes one bot refuses under; every other cause '
+            'is advisory and leaves the awaitability split untouched. Shared by check '
+            'and deficit so both report the same state for one refusal. May be '
+            'supplied bare (no value), which reads as the empty list.'
+        ),
+    )
+    sub.add_argument(
+        '--refusal-size-caps',
+        nargs='?',
+        const='',
+        default='',
+        help=(
+            'Comma-separated bot_kind:cap pairs — the shape github_pr fetch_findings '
+            "emits in refused_size_caps[], forwarded verbatim. cap is the diff-size "
+            "ceiling the bot's OWN refusal notice stated, so a recorded coverage gap "
+            'can be reconciled against the diff that was actually refused instead of '
+            'being asserted. Sparse by design: a quota refusal states no ceiling and a '
+            'size notice may state none, and an absent entry is reported as an UNKNOWN '
+            'cap rather than defaulted. A cap arriving WITHOUT its cause recovers the '
+            'cause fail-closed (a cap is only ever produced for a size refusal), which '
+            'is why this flag is shared by check and deficit: were it on one command '
+            'only, the two would name different members for that refusal. May be '
+            'supplied bare (no value), which reads as the empty list.'
         ),
     )
     sub.add_argument(
@@ -1182,19 +1498,18 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     check_parser.add_argument(
-        '--refused-causes',
-        nargs='?',
-        const='',
+        '--measured-diff-size',
         default='',
         help=(
-            'Comma-separated bot_kind:cause pairs — the exact shape github_pr '
-            'fetch_findings emits in refused_causes[], forwarded verbatim. cause is '
-            'the refusal CAUSE axis (size / quota), orthogonal to rate_limit_class: '
-            'size means the diff is over a per-PR ceiling (remedy: a smaller diff), '
-            'quota means a rate/budget limit (remedy: backoff). It is ADVISORY — '
-            'reported in refusal_causes[] for a bot classified refused, and never '
-            'changes which refusal member the bot resolves to. May be supplied bare '
-            '(no value), which reads as the empty list.'
+            "How big the refused diff actually was, as github_pr fetch_findings' "
+            'measured_diff_size field (e.g. "1240 changed lines"). Reported alongside '
+            'the caps so an accepted coverage gap is AUDITABLE — a cap without the '
+            'size that hit it is a claim the reader must take on trust. A single '
+            'scalar, not a per-bot list: it is a property of the PR, identical for '
+            'every reviewer that refused it. Its unit rides inside the value and is '
+            "deliberately not the reviewer's unit, so the two figures are an "
+            'order-of-magnitude comparison rather than an equality check. Omit it (the '
+            'default) when unmeasured — reported as unknown, never as zero.'
         ),
     )
     check_parser.set_defaults(func=cmd_check)
@@ -1223,6 +1538,16 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     deficit_parser.set_defaults(func=cmd_deficit)
+
+    size_caps_parser = subparsers.add_parser(
+        'size-caps',
+        help=(
+            'Report which registered reviewers declare a diff-SIZE ceiling — the '
+            'ADVANCE-disclosure surface, answerable before any review is requested'
+        ),
+        allow_abbrev=False,
+    )
+    size_caps_parser.set_defaults(func=cmd_size_caps)
 
     args = parser.parse_args(argv)
     rc: int = args.func(args)
