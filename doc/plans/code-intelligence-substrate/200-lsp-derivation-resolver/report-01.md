@@ -258,11 +258,21 @@ stored comment **bodies**, never from a check state.
 |---|---|---|
 | `cuioss-review-bot` | **reviewed** | Published a "PR Reviewer Guide" body carrying a real finding: the `ImportFrom` module-name offset ignored `node.level`, so a relative import's query landed on a leading `.`. Confirmed by reproduction and fixed in `c78e563` |
 | `coderabbitai` | **rate-limited** | Began a review, then published "Review failed — the head commit changed during the review from `1ee3e2d` to `dbaa266`", followed by "Review limit reached … Next review available in 55 minutes". It engaged but reviewed no head |
-| `sourcery-ai` | **silent** | Its check concluded `skipped`; no review body of any kind was published. A check state is not a verdict, so the verdict comes from the absence of a body |
+| `sourcery-ai` | **rate-limited** | Published a review body reading "you have reached your weekly rate limit of 500000 diff characters" (`get_reviews`, review `4944184671`). It engaged and refused; it did not review the diff |
 
 **Coverage: 1 of 3.** The § Step 8 shortfall disclosure fired, stated in the PR
 thread as "Coverage: 1 of 3" with each reviewer's reason, and repeated to the
 operator.
+
+⚠ **The `sourcery-ai` row was wrong on first writing, and the error is instructive
+enough to keep rather than quietly overwrite.** It was recorded as `silent`,
+reasoned from its check run concluding `skipped`. Reading the review surface shows
+a published refusal body, which is `rate-limited`. A `skipped` check and an absent
+review are not the same fact, and the first was substituted for the second —
+exactly the substitution the contract's "verdict from the bodies, never from a
+check state" rule exists to forbid, reproduced on this run's first attempt at the
+rule. The correction also changes the shortfall's shape: **all three reviewers
+engaged**, two refused for quota, and none was silent.
 
 ⚠ **This run caused one of the two shortfalls.** CodeRabbit's review was aborted
 by a push that changed the head mid-review, and its window was exhausted before it
@@ -276,6 +286,24 @@ The lever the contract offers for this is batching at the *commit* boundary rath
 than delaying pushes. This run made seven commits and pushed each; a coarser commit
 grain would have meant fewer head changes at zero durability cost, and that is the
 honest lesson from the shortfall.
+
+### Merge-conflict resolution
+
+`main` advanced during the run and landed two further resolvers (`pyproject` and
+`npm` name joins), making the PR `dirty`. Resolved by merging `origin/main` into
+the branch and reconciling three conflicts, each by **union rather than
+overwrite**:
+
+- the resolver roster in `test_graph_family_bundle_project.py` — both new ids and
+  `lsp` kept, giving seven, with the Axis-A/Axis-B split corrected on both sides;
+- the seam standard's § Current implementations, which `main` had restructured —
+  its new prose kept, `lsp` folded into the four-way split paragraph rather than
+  reinstating the three-way one this branch had written;
+- the topology diagram — `main`'s non-enumerating phrasing kept ("coordinate,
+  name, reference, and symbol joins"), count corrected to seven.
+
+Re-verified after the merge: **19 986 passed**, all three `./pw verify` sub-steps
+clean. The rise from 19 711 is `main`'s own new tests, not this branch's.
 
 ## Cost
 
