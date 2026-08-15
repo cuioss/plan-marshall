@@ -56,4 +56,4 @@ message: "{one-line}"
 ## Out of Scope
 
 - Re-running invariant capture (values are read-only here).
-- Phase handshake protocol details — see `plan-marshall:plan-marshall:ref-workflow-architecture` standards.
+- Phase handshake protocol details — see `plan-marshall:ref-workflow-architecture` standards.

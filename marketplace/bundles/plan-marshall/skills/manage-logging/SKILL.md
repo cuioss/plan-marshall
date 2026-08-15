@@ -158,10 +158,10 @@ entries:
 ```bash
 # Write: Script execution logging
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  script --plan-id EXAMPLE-PLAN --level INFO --message "plan-marshall:manage-task:manage-task add (0.15s)"
+  script --plan-id EXAMPLE-PLAN --level INFO --message "plan-marshall:manage-tasks:manage-tasks add (0.15s)"
 
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  script --plan-id EXAMPLE-PLAN --level ERROR --message "plan-marshall:manage-task:manage-task add failed (exit 1)"
+  script --plan-id EXAMPLE-PLAN --level ERROR --message "plan-marshall:manage-tasks:manage-tasks add failed (exit 1)"
 
 # Write: Work logging (include [CATEGORY] (caller) prefix)
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -268,7 +268,7 @@ Every log entry automatically includes a 6-character hash computed from the mess
 **script-execution.log**:
 ```text
 [2025-12-11T12:14:26Z] [INFO] [a3f2c1] plan-marshall:manage-files:manage-files create (0.19s)
-[2025-12-11T12:17:50Z] [ERROR] [b7e4d9] plan-marshall:manage-task:manage-task add failed (exit 1)
+[2025-12-11T12:17:50Z] [ERROR] [b7e4d9] plan-marshall:manage-tasks:manage-tasks add failed (exit 1)
 ```
 
 **work.log**:
