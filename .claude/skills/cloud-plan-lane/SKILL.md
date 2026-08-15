@@ -530,6 +530,31 @@ Then:
   dismissed finding is still evidence.
 - Every finding, accepted or rejected, goes in the run report (§ Report).
 
+**A fix is a change, so it gets the same beyond-diff sweep the original change got.** The sweep above
+is written against the diff under review; by the second round the diff under review is largely the
+*previous round's fixes*, and the sweep that matters is over what those fixes made false elsewhere. So
+before re-dispatching, list the claims your fix changed — the value, the ordering, the count, the
+mechanism it renamed — and sweep each one's restatements by consumer kind exactly as you did for the
+original change.
+
+**The run report is part of that surface.** A findings table recording a disposition the artifacts
+contradict — a row saying "fixed at all four sites" when one still carries the old claim — is the same
+defect as a stale doc, and it is the one a re-dispatch is *least* likely to catch, because the
+verifier reads the code rather than the record. Re-read your own dispositions against the artifacts
+before declaring a round closed.
+
+**Figures that move between rounds are re-derived at the moment of the claim, never carried forward.**
+Test totals, character budgets, population counts: each round's fixes change them, and a number copied
+from an earlier round is stale by construction. Re-derive it (collect the tests, measure the string,
+re-run the query) every time you state it, and say which unit you are stating — a count of test
+*functions* and a count of *collected cases* are different numbers, and a reader who runs the suite
+sees only the second.
+
+An observed run needed four verification rounds, and rounds 2, 3 and 4 each found that the previous
+round's fixes had landed at the site the finding named but not at the sites restating the same claim —
+twice in the run report's own findings table. Round 4 could predict its next instance from the
+pattern. This paragraph is what that run cost, written down.
+
 ## GitHub access
 
 Use whichever of these two paths is actually available in the running session, and say in the report
