@@ -34,10 +34,16 @@ path, no fixtures.
 | `open-telemetry/opentelemetry-python` (shallow clone) | 8 | 11 | **0** | **11** |
 | `remix-run/react-router` (shallow clone) | 31 | 83 | **0** | **83** |
 
-The consumer-wide claim the plan labelled **HYPOTHESIS** is therefore now **measured**, and measured on
-projects with 11 and 83 genuine internal dependency relations available to find. In every before-case four
-resolvers ran and returned zero — the anti-vacuity `resolver_count: N, edges: []` state, i.e. a real positive
-answer that the graph was empty.
+**What this does and does not establish.** Three real projects is not a survey of every Python and npm
+consumer, and the claim is not asserted as one. What generalises is **structural, not inductive**: the Python
+and npm discoverers emit no `group_id`/`artifact_id` at all — not "usually none", none — so the coordinate
+join's key cannot match for *any* project either discoverer handles, whatever its shape. The three
+measurements are the empirical confirmation of that structural argument, taken on projects that had 11 and 83
+genuine internal dependency relations available to find and found zero.
+
+So: the plan's **HYPOTHESIS** label is discharged by the mechanism plus three confirming measurements, not by
+extrapolation from a sample. In every before-case four resolvers ran and returned zero — the anti-vacuity
+`resolver_count: N, edges: []` state, i.e. a real positive answer that the graph was empty.
 
 A fourth measurement explains why this repository's own graph looked healthy and hid the defect: the **full**
 architecture crawl over `plan-marshall` yields 29 edges across 12 modules, but **zero** modules carry a
@@ -93,15 +99,20 @@ Commit `37788dc`.
 
 ### D4 — tests
 
-**Done**, 54 new tests across four modules (counts from `pytest --collect-only` at HEAD), all driven through
-the real discoverers:
+**Done**, **59 new tests across five modules** (counts from `pytest --collect-only` at HEAD), all driven
+through the real discoverers:
 
 - `test/plan-marshall/build-pyproject/test_pyproject_derivation_resolver.py` (13)
 - `test/plan-marshall/build-npm/test_npm_derivation_resolver.py` (16)
 - `test/plan-marshall/manage-architecture/test_native_resolver_graph_impact.py` (18) — end-to-end through the
   real `graph` and `impact` verbs with the real resolver objects registered
 - `test/plan-marshall/build-gradle/test_gradle_rides_the_maven_join.py` (7) — added in the review pass to pin
-  D1's outcome (see finding N-F14)
+  D1's outcome (see finding F14)
+- `test/plan-marshall/manage-architecture/test_scoped_module_name_persistence.py` (5) — added in pass 3 to
+  verify the scoped-name constraint the Residue section had left unverified (see finding C4)
+
+Earlier drafts of this section reported 47 and then 54; both were counts of the test set as it stood at the
+time. The figure above is re-derived at HEAD, for the same reason the build-gate figures are.
 
 **Impact is asserted separately from edges**, as the plan requires. The impact assertions name the expected
 dependent sets (`sample_core` → `['default', 'sample_api', 'sample_cli']`; `@sample/core` →
@@ -152,22 +163,25 @@ Commit `fc73d6a`.
 `./pw verify` (all three sub-steps) — **SUCCESS**. Figures below are from the **final** run, against the tree
 this report ships with:
 
-```
+```text
 mypy(production)  Success: no issues found in 400 source files
 ruff              All checks passed!
 SPDX              SPDX-header check passed
 plugin-doctor     issues[0]
-mypy(test)        Success: no issues found in 740 source files
-module-tests      19716 passed, 14 skipped
+mypy(test)        Success: no issues found in 741 source files
+module-tests      19721 passed, 14 skipped
 coverage          COMPLETE — full scope
 ```
 
 The working tree was clean at the gate, so the diff saw all the work.
 
-The gate ran three times across this run (after the implementation commit, after the docs commit, and after
-the review-fix commit). The figures above are the last one; the earlier runs reported 19709 and 739
-respectively, before the Gradle pin test existed. Recording the final run rather than an earlier one matters
-because an earlier run's numbers do not cover the tree that ships.
+**The gate was invoked repeatedly, and only the last invocation is recorded above.** The exact invocation
+count is deliberately not stated: it was one `./pw quality-gate` (before the implementation commit) followed
+by several `./pw verify` runs — each fix the gate caught was followed by another run — and reconstructing a
+precise total after the fact would be exactly the carried-forward guess this report's own Step 9 proposal
+argues against. What IS re-derived and stated: the figures above come from the final `./pw verify` over the
+tree this report ships with, and the `*.py` diff verdict above was re-derived at HEAD. Earlier runs reported
+19709 / 739, before the Gradle pin test existed; those numbers describe a tree that no longer exists.
 
 Two failures were caught by the gate and fixed before the docs commit — both worth recording because the
 narrower commands would have missed them:
@@ -224,7 +238,11 @@ attributable to this change; see Residue.
 ### Pass 2 — re-dispatch after the pass-1 fixes
 
 **Pass 2** verified each pass-1 fix against the code and swept the new surface the fixes themselves created.
-It confirmed all 16 fixes correct (one partial), and returned **16 new findings — all 16 fixed**. It also
+It confirmed 15 of the 16 fixes correct outright and one — **F16**, the `code-intelligence.adoc` § Related
+link — **partial**: the link resolved, but its text credited `build-maven/SKILL.md` with a Gradle claim that
+file did not carry. That partial was closed in the same pass as **N8** (the claim was added to
+`build-maven/SKILL.md`, now that a test pins it), so nothing remains outstanding from pass 1. Pass 2 also
+returned **16 new findings — all 16 fixed**. It also
 **independently re-derived every D0 row** by shallow-cloning the same two external repositories and driving
 the shipped discoverers, reproducing 8/11/11, 31/83/83, 1/0/0 and this repo's 12-module/29-edge full crawl.
 D0 is therefore confirmed by a second party, not merely asserted by the run that made the change.
@@ -248,6 +266,28 @@ D0 is therefore confirmed by a second party, not merely asserted by the run that
 | N15 | `client-api.md` § path and the `graph` verb describe edge direction oppositely (both correct in context) — pre-existing, and it contradicts what this plan's own e2e test pins | **Fixed** — an explicit ⚠ naming both orientations and why each is right, rather than changing either. |
 | N16 | `module-discovery.md` compliance checklist still enumerated "(Maven … npm …)" after the table above it grew to four ecosystems | **Fixed** — replaced with a reference to the table. |
 
+### Pass 3 — CodeRabbit's PR review (the re-request landed)
+
+The re-request described under § Reviewer participation ultimately **succeeded** on head `0f9f619`:
+CodeRabbit posted a real review with **7 actionable comments plus one that failed to post** (its own notice:
+"Inline review comments failed to post … likely due to GitHub's internal server error or limits"). Coverage
+therefore moved from 1 of 3 to **2 of 3**. All eight are dispositioned:
+
+| # | Finding | Disposition |
+|---|---|---|
+| C1 | `client-api.md` pins the six-row roster and `resolver_count: 6` across four examples; it will drift, and this PR itself moved that literal from 1 to 6 | **Fixed — and it overturns a pass-2 fix.** Pass 2 (N-F15) told me to correct the stale `1` to `6`; CodeRabbit's deeper point is that *any* literal there is the defect. The examples now read `resolvers[N]` / `resolver_count: N` with two representative rows and a "one row per REGISTERED resolver" elision, deferring to the roster's single enumeration. The better fix, arrived at only because two reviewers disagreed. |
+| C2 | `report-01.md` fenced blocks omit a language (MD040), and the quoted proposal repeats a `## Build gate` heading (MD024) | **Fixed** — fences tagged `text`; the quoted heading became a non-heading label. |
+| C3 | Report says the gate ran three times; the Cost section says four `./pw verify` runs | **Fixed** — a real contradiction I introduced. Rather than pick a number, the invocation count is now deliberately not restated: it was one `quality-gate` plus several `verify` runs, and reconstructing an exact total after the fact is the same carried-forward guess this report's own Step 9 proposal argues against. The proposal text was amended to say so. |
+| C4 | Scoped-module persistence is uncovered: `load_module_enriched('@scope/pkg')` reads the nested file but `_read_disk_derived` scans only immediate children, so the fallback cannot see it | **Fixed by verifying it.** I confirmed the mechanism in the source rather than taking the analysis on trust, then added `test_scoped_module_name_persistence.py` (5 tests, with a flat-name control and a non-npm `group/sub` case). This converts the Residue entry from "not verified by this run" into verified-and-pinned. |
+| C5 | `dependency-intelligence.adoc` says Gradle extracts `project:core`; `build-maven/SKILL.md` says `project:core:compile` | **Fixed** — the user page now states the recorded value *and* that the join compares the first two segments. |
+| C6 | `build-npm/SKILL.md` calls `name:scope` a dependency string, which is not npm syntax | **Fixed** — reworded to name the dependency **name** as the join key and to say plainly that `:scope` is an internal discovery marker, not npm syntax. A good catch: the sentence was accurate about the internal record and misleading about the ecosystem. |
+| C7 | The consumer-wide claim exceeds the recorded evidence — measuring some repositories shows observed behavior, not behavior for every consumer (this is the comment that failed to post) | **Fixed in the report; declined for `plan.md`.** The report now states that what generalises is **structural** (the discoverers emit no coordinate pair *at all*, so the join can never match for any project they handle) and that the three measurements confirm that argument rather than being extrapolated from. `plan.md` is deliberately **not** edited: it is this run's input artifact, and rewriting the brief a run was given to make it agree with the run's output is the wrong direction. |
+| C8 | Pre-merge checks: Description ✅, Title ✅ | No action. |
+
+CodeRabbit's overall verdict was **🟡 Moderate merge risk**, naming three concerns: the consumer-wide
+evidence claim (C7), conflicting dependency/verification details (C3, C5, C6), and uncovered scoped-npm
+persistence (C4). All three are addressed above rather than accepted as-is.
+
 ### Gate findings (not from the sub-agent)
 
 | Source | Finding | Disposition |
@@ -269,25 +309,28 @@ inline surface returned **0 threads**, so no reviewer filed a per-line finding.
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
 | `cuioss-review-bot` | `reviewed` | Issue comment "PR Reviewer Guide 🔍" over the diff: "PR contains tests", "No security concerns identified", "No major issues detected" — an explicit nothing-to-report verdict, which counts as a review. |
-| `coderabbitai` | `rate-limited` | Issue comment carrying **only** a quota refusal: "Review limit reached … you've reached your PR review limit, so we couldn't start this review. Next review available in: 20 minutes." It engaged but did not review this diff. |
+| `coderabbitai` | `reviewed` | Initially `rate-limited` (quota refusal only, twice). The re-request eventually landed: it published a full review of head `0f9f619` with 7 actionable comments plus one that failed to post, a walkthrough, and a 🟡 Moderate merge-risk verdict. Dispositioned in § Pass 3. |
 | `sourcery-ai` | `rate-limited` | Review-summary body carrying **only** a quota refusal: "you have reached your weekly rate limit of 500000 diff characters." Its `Sourcery review` check concluded `skipped`, but the verdict comes from the body, not the check. |
 
-**Coverage: 1 of 3.** Neither shortfall was caused by this run — no push aborted a review; both are
-account-level quotas (CodeRabbit's a rolling per-developer window, Sourcery's a weekly diff-character
-budget). The Step 8 shortfall disclosure **fired** and is recorded under the merge gate below.
+**Coverage: 2 of 3.** The one remaining shortfall (`sourcery-ai`) was not caused by this run — no push
+aborted a review; it is a weekly diff-character budget that cannot reset inside this run, so no re-request
+was attempted for it. The Step 8 shortfall disclosure **fired** and is recorded under the merge gate below.
 
-**Re-request attempted rather than banked.** CodeRabbit's notice named a ~20-minute window
-(from 12:50:54Z), so its review was re-requested rather than reading the refusal as coverage; the outcome of
-that re-request is recorded in the merge-gate section. Sourcery's is a weekly budget that will not reset
-inside this run, so no re-request was attempted for it.
+**The re-request is why coverage is 2 of 3 rather than 1 of 3.** CodeRabbit's first two responses were quota
+refusals, and banking either as coverage would have understated what the diff actually got reviewed by. It
+was re-requested instead (`@coderabbitai review`, 13:12Z), refused once more, and then — on the push of the
+finalized report — ran for real and produced the substantive review recorded in § Pass 3. Recording an
+attempt rather than a refusal turned out to matter: that review found the `client-api.md` roster-pinning
+defect that both earlier verification passes missed, and overturned one of their fixes.
 
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
 - **Wall-clock:** ~2h30m end to end — first commit `c820514` at 10:45:02Z, PR opened 12:50Z, merge gate
-  ~13:10Z — plus the preceding investigation (the D0 clones and measurements) which predates the first
-  commit. Source: git committer timestamps and the PR's own check-run timestamps. Roughly 30 minutes of that
-  is the four full `./pw verify` runs at ~7 minutes each.
+  ~13:35Z — plus the preceding investigation (the D0 clones and measurements) which predates the first
+  commit. Source: git committer timestamps and the PR's own check-run timestamps. A substantial share of that
+  is `./pw verify` itself, at roughly 7 minutes per invocation (see § Build gate on why the invocation count
+  is not restated).
 - **Population:** this single Claude Code cloud session's activity. ⛔ **Not comparable to a plan-marshall
   `metrics.toon` total**, which counts an orchestrator-plus-agent dispatch tree under plan-marshall's own
   per-task billing boundary. This run has no such boundary — one interactive session plus one verification
@@ -329,23 +372,19 @@ writing `~/.claude/`; a cloud run neither performs nor records it, even though t
 2. **Every PR comment handled.** Three comments exist: one clean review (nothing to action), and two quota
    refusals (nothing actionable, and no thread to answer). Zero inline review threads.
 3. **Report finalized and pushed as the last pre-merge commit** — this commit.
-4. **Shortfall disclosed** (a disclosure, not a gate): coverage is **1 of 3**, stated in words to the
-   operator before arming — "1 of 3: `cuioss-review-bot` reviewed and reported no findings; `coderabbitai`
-   rate-limited, re-requested and refused again; `sourcery-ai` rate-limited on a weekly quota."
+4. **Shortfall disclosed** (a disclosure, not a gate): coverage is **2 of 3**, stated in words to the
+   operator before arming — "2 of 3: `cuioss-review-bot` reviewed with no findings; `coderabbitai` reviewed
+   after two refusals and a re-request, 8 comments all dispositioned; `sourcery-ai` rate-limited on a weekly
+   diff-character quota that cannot reset inside this run."
 
-**Outcome of the CodeRabbit re-request.** `@coderabbitai review` was posted at 13:12Z, after its stated
-~20-minute window had elapsed. It acknowledged ("I will perform a fresh review of PR #1238. I will inspect
-the native name joins and their build-system scoping") and then **did not perform one**: the same comment
-was edited in place to "⚠️ Action not completed — Review rate limited." Its own note explains why a
-re-request may not help regardless — "CodeRabbit is an incremental review system and does not re-review
-already reviewed commits. This command is applicable only when automatic reviews are paused."
+**Outcome of the CodeRabbit re-request — it landed on the third attempt.** `@coderabbitai review` was posted
+at 13:12Z after its stated window elapsed. It acknowledged, then refused once more ("⚠️ Action not completed
+— Review rate limited"), noting that a re-request may not help regardless since it "does not re-review
+already reviewed commits". The push of the finalized report then changed the head, which is the other trigger
+its own notice names ("Alternatively, push new commits to this PR") — and that run reviewed for real.
 
-Its verdict therefore stays `rate-limited`, and coverage stays **1 of 3**. The attempt is recorded rather
-than the refusal being read as coverage, which is the whole point of making it: a run that tried and was
-refused is a different fact from one that never asked.
-
-Sourcery was not re-requested — its budget is a **weekly** diff-character quota that cannot reset inside
-this run, so a re-request would have been a pointless call with a predictable refusal.
+The sequence is worth recording because it is the general lesson: a rate-limited reviewer is not a settled
+verdict, and the cheapest way to convert one is a commit that has to be pushed anyway.
 
 ## What have we learned (Step 9)
 
@@ -370,7 +409,7 @@ most consequential instance because they are the run's headline evidence.
 **Concrete proposed edit** — in `.claude/skills/cloud-plan-lane/SKILL.md` § Report, extend the Build gate
 bullet:
 
-> ## Build gate
+> **(Build gate bullet)**
 > The `git diff --name-only origin/main...HEAD -- '*.py'` verdict, and the build result — or
 > "no Python changes, build skipped".
 >
@@ -378,7 +417,8 @@ bullet:
 > come from the LAST run, over the tree the report ships with, and the diff verdict MUST be re-derived at
 > HEAD. A figure observed earlier in the run and carried forward describes a tree that no longer exists —
 > and because Step 8 condition 3 makes the report the last pre-merge commit, an early figure is guaranteed
-> not to cover the commits that followed it. State the count of gate runs when it exceeds one.
+> not to cover the commits that followed it. Say which invocation the figures come from; do not reconstruct
+> an invocation count after the fact, since that reconstruction is the same carried-forward guess.
 
 **Why this is worth a contract change rather than a lesson.** The failure is silent and passes every gate: a
 stale-but-green figure looks exactly like a fresh-but-green one, so nothing but an explicit re-derivation
@@ -404,10 +444,16 @@ skill, never in this plan's PR, and never on the run's own authority. No such PR
 - **Serial-pytest module-registration collision.** Pre-existing (34 of 39 failures reproduce without this
   plan's e2e module), caused by `load_script_module` re-registering `_cmd_client_query` in `sys.modules`.
   Invisible under the canonical xdist run. Worth its own issue; not attributable to this change.
-- **A scoped npm module cannot round-trip through `save_module_derived`.** That writer names its per-module
-  directory after the module, so `@sample/core` nests into two directories and the synthetic-project
-  fallback that reads them back never finds it. This is why the e2e test copies its fixture into a temp
-  project root instead of seeding. The writer documents itself as a snapshot-fixture seam, so production
-  reads (which crawl live) are unaffected — but the **enriched** overlay is persisted per module by the same
-  naming scheme, and whether a scoped npm package's overlay round-trips was **not verified by this run**.
-  Stated as unverified rather than assumed either way.
+- **A scoped npm module cannot round-trip through `save_module_derived`** — now **verified and pinned**,
+  where an earlier draft of this report left it unverified. `get_module_dir` joins the module name onto the
+  data directory, so `@sample/core` becomes two directories, and `_read_disk_derived` scans only immediate
+  children, so the module is invisible to the synthetic-project fallback. The write itself succeeds, which is
+  what makes the loss silent. `test/plan-marshall/manage-architecture/test_scoped_module_name_persistence.py`
+  characterizes it (including a flat-name control and a non-npm `group/sub` case, since the constraint is
+  about the `/`, not about npm).
+
+  Production is unaffected: `crawl_all_modules` runs live discovery and only falls back to seeded files when
+  discovery yields nothing, which is a unit-test shape rather than a real worktree. This is exactly why the
+  e2e module copies its npm fixture into a temp project root instead of seeding it. The residual risk is
+  narrow and named: a future test author who seeds a scoped module and asserts on the resulting graph gets a
+  passing test that measured nothing — which the new characterization test now makes discoverable.

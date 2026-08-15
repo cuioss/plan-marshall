@@ -100,7 +100,7 @@ A package with no `name` in its `package.json` cannot be published, so nothing c
 [[gradle-limit]]
 === The Gradle limitation
 
-Gradle modules are covered by the coordinate join, with one gap. A dependency declared by full coordinate — `implementation "com.example:core:1.0"` — produces an edge. A dependency declared the idiomatic inter-project way — `implementation project(":core")` — does not: it is extracted as `project:core`, which matches no module's published coordinate.
+Gradle modules are covered by the coordinate join, with one gap. A dependency declared by full coordinate — `implementation "com.example:core:1.0"` — produces an edge. A dependency declared the idiomatic inter-project way — `implementation project(":core")` — does not: it is recorded as `project:core:compile`, and the join compares the first two segments (`project:core`), which match no module's published coordinate.
 
 If your Gradle build wires its modules together with `project(...)`, expect an empty internal graph today.
 

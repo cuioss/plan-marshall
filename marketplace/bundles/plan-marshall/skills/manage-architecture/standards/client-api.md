@@ -98,7 +98,9 @@ The four graph-family verbs — [`graph`](#graph), [`path`](#path), [`neighbors`
 | `resolvers` | list | One `{id, edge_count, status, notes[]}` record per derivation resolver that ran. `status` is `ok` or `error`; an errored resolver contributes zero edges without aborting the others. `notes[]` reports every condition that **suppressed** an edge (an ambiguous identity key, an unresolvable reference) — a resolver that drops an edge silently violates the contract. |
 | `resolver_count` | int | `len(resolvers)`. The discriminator below. |
 
-**Resolver discovery is registry-wide, not project-scoped.** Every registered resolver runs and gets a row, whatever the project's technology, so most rows on any given project report `edge_count: 0` — a Maven reactor still carries an `npm` row, and an npm workspace still carries a `maven` one. `resolver_count` therefore counts the resolvers that **ran**, never the ones that **contributed**; do not read a row's presence as evidence that its ecosystem is present, nor its `edge_count: 0` as a defect. The live roster is enumerated in [ext-point-derivation-resolver.md](../../extension-api/standards/ext-point-derivation-resolver.md) § Current implementations, and the examples below show it as it stands.
+**Resolver discovery is registry-wide, not project-scoped.** Every registered resolver runs and gets a row, whatever the project's technology, so most rows on any given project report `edge_count: 0` — a Maven reactor still carries an `npm` row, and an npm workspace still carries a `maven` one. `resolver_count` therefore counts the resolvers that **ran**, never the ones that **contributed**; do not read a row's presence as evidence that its ecosystem is present, nor its `edge_count: 0` as a defect.
+
+The live roster is whatever `discover_derivation_resolvers()` returns, enumerated once in [ext-point-derivation-resolver.md](../../extension-api/standards/ext-point-derivation-resolver.md) § Current implementations. The examples below deliberately write `resolvers[N]` and `resolver_count: N` with a couple of representative rows rather than transcribing the roster: a literal count here would silently go stale the moment a resolver is added, with no test to catch it — which is exactly what happened to these examples once already.
 
 **Zero-edge disambiguation** — the reason the pair exists. An empty result MUST be readable without inspecting the edge list:
 
@@ -189,14 +191,11 @@ path[3]:
   - oauth-sheriff-quarkus-integration-tests
   - oauth-sheriff-quarkus
   - oauth-sheriff-core
-resolvers[6]{id,edge_count,status,notes}:
-  documentation,0,ok,[]
-  markdown,0,ok,[]
+resolvers[N]{id,edge_count,status,notes}:
   maven,7,ok,[]
   npm,0,ok,[]
-  pyproject,0,ok,[]
-  python,0,ok,[]
-resolver_count: 6
+  ... one row per REGISTERED resolver, id-sorted
+resolver_count: N
 ```
 
 When `SOURCE == TARGET`, the path is a singleton `[SOURCE]`.
@@ -207,14 +206,11 @@ status: success
 source: lefty
 target: righty
 path: null
-resolvers[6]{id,edge_count,status,notes}:
-  documentation,0,ok,[]
-  markdown,0,ok,[]
+resolvers[N]{id,edge_count,status,notes}:
   maven,7,ok,[]
   npm,0,ok,[]
-  pyproject,0,ok,[]
-  python,0,ok,[]
-resolver_count: 6
+  ... one row per REGISTERED resolver, id-sorted
+resolver_count: N
 ```
 
 The `resolvers[]` / `resolver_count` pair disambiguates the `null` path — see § [Resolver provenance](#resolver-provenance-the-graph-family). With `resolver_count: 0` a `null` path means no resolver ran, so there were no edges to walk in the first place; with `resolver_count: N` it means N resolvers ran and no path exists.
@@ -253,14 +249,11 @@ neighbors[4]:
   - oauth-sheriff-quarkus
   - oauth-sheriff-quarkus-devui
   - oauth-sheriff-quarkus-integration-tests
-resolvers[6]{id,edge_count,status,notes}:
-  documentation,0,ok,[]
-  markdown,0,ok,[]
+resolvers[N]{id,edge_count,status,notes}:
   maven,7,ok,[]
   npm,0,ok,[]
-  pyproject,0,ok,[]
-  python,0,ok,[]
-resolver_count: 6
+  ... one row per REGISTERED resolver, id-sorted
+resolver_count: N
 ```
 
 The `depth` echoed in the response is the **clamped** value — useful when callers pass `--depth 999` and want to verify the actual horizon used.
@@ -296,14 +289,11 @@ impact[3]:
   - oauth-sheriff-quarkus
   - oauth-sheriff-quarkus-devui
   - oauth-sheriff-quarkus-integration-tests
-resolvers[6]{id,edge_count,status,notes}:
-  documentation,0,ok,[]
-  markdown,0,ok,[]
+resolvers[N]{id,edge_count,status,notes}:
   maven,7,ok,[]
   npm,0,ok,[]
-  pyproject,0,ok,[]
-  python,0,ok,[]
-resolver_count: 6
+  ... one row per REGISTERED resolver, id-sorted
+resolver_count: N
 ```
 
 A leaf module (nothing depends on it) returns an empty `impact` list — and the `resolvers[]` / `resolver_count` pair is what makes that empty list readable (see § [Resolver provenance](#resolver-provenance-the-graph-family)). Under `resolver_count: 0` an empty `impact` means no resolver ran, so nothing *could* have been found to depend on the module; under `resolver_count: N` it means N resolvers ran and the module genuinely has no dependents.
