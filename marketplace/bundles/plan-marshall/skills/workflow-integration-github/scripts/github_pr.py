@@ -1045,7 +1045,7 @@ def cmd_fetch_findings(args):
                 # name the remedy — a smaller diff vs backoff. ``size`` is sticky: once
                 # a size ceiling is seen for this bot it wins over a later quota notice.
                 cause = refusal_cause(body, bot_kind)
-                if cause == 'size' or bot_kind not in refused_causes:
+                if cause == REFUSAL_CAUSE_SIZE or bot_kind not in refused_causes:
                     refused_causes[bot_kind] = cause
                 # A size refusal states the CAP it refused over; capture it from the
                 # notice so the recorded coverage gap is auditable against the diff
@@ -1053,7 +1053,7 @@ def cmd_fetch_findings(args):
                 # (a size notice wins) and only ever SET from a size refusal — a quota
                 # notice states no diff ceiling, so reading one from it would invent a
                 # figure. An empty capture stays empty: unknown, never a default.
-                if cause == 'size':
+                if cause == REFUSAL_CAUSE_SIZE:
                     cap = refusal_size_cap(body, bot_kind)
                     if cap:
                         refused_size_caps[bot_kind] = cap

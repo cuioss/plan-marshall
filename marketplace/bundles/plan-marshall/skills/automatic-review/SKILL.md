@@ -45,7 +45,7 @@ configurable:
     description: "Timeout policy applied at both re-review triggers (A and B) when the await budget expires with no fresh bot review (timed_out: true, matched: false). One of ask|defer|proceed. ask halts and asks the operator (interactive); defer auto-skips the merge without prompting (safe default-action); proceed is the explicit opt-in to advance the unreviewed HEAD, decision-logged at WARNING."
   - key: review_rate_window_await
     default: false
-    description: "Opt-in bool (default-off) arming the rate-limit refusal recovery sequence instead of proceeding on a detected refusal. When enabled and a refusal is detected (a non-empty rate_limited_bots[] on the pr wait-for-comments return, or refusal_detected on the github_re_review await), the step branches on the bot's rate_limit_class: awaitable_window claims the bot's rate window via merge_lock rate-window claim, polls the claim's own expiry as a bounded paced wait, then GENERATES the event (rebase onto base and push; the registry trigger_comment only as a fallback when main is unchanged and only after the window elapsed); hard_quota and unknown escalate immediately without awaiting; cap exhaustion escalates with reason rate_window_exhausted. When false, a detected refusal is treated as an ordinary settle and the step proceeds."
+    description: "Opt-in bool (default-off) arming the rate-limit refusal recovery sequence instead of proceeding on a detected refusal. When enabled and a refusal is detected on a REQUIRED bot (a non-empty rate_limited_bots[] on the pr wait-for-comments return, or refusal_detected on the github_re_review await), the step branches on the refusal's CAUSE first and only then on the bot's rate_limit_class. Cause size is STRUCTURAL — the diff exceeds a ceiling the reviewer declares, so nothing reopens by waiting: it escalates immediately with reason refusal_structural, carrying the stated cap and the measured diff size, and its operator options are split / accept / disable-for-this-PR, never a wait. Otherwise: awaitable_window claims the bot's rate window via merge_lock rate-window claim, polls the claim's own expiry as a bounded paced wait, then GENERATES the event (rebase onto base and push; the registry trigger_comment only as a fallback when main is unchanged and only after the window elapsed); hard_quota and unknown escalate immediately without awaiting; cap exhaustion escalates with reason rate_window_exhausted. A refusal from a bot outside required_bots is an ordinary settle, never an escalation — its silence cannot block, so escalating it asks the operator a question they do not need. When false, a detected refusal is treated as an ordinary settle and the step proceeds."
   - key: review_rate_window_timeout_seconds
     default: 3600
     description: Await budget (seconds) capping the rate-window expiry poll, defaulting to 3600 to match CodeRabbit's ~hourly rate-window reset. On exhaustion the step releases the claim and returns escalate_ask with reason rate_window_timeout. Only consulted when review_rate_window_await is true.
@@ -365,7 +365,9 @@ Both carry the same discriminators, so this section treats them uniformly: `{bot
 
 Read `review_rate_window_await` and `review_rate_window_timeout_seconds` off the same `params` object returned by the one-stop `manage-execution-manifest step-params get --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review` call used for `review_bot_buffer_seconds` (defaults: `false` and `3600`). **When `review_rate_window_await == false`**, skip this entire subsection and proceed directly to "Producer: FIND" below — a detected refusal is treated as an ordinary settle.
 
-**When `review_rate_window_await == true` AND a refusal was detected**, branch BEFORE claiming or awaiting anything — recovery is only productive for a limit that actually moves. Evaluate the branches **in the order given**: the CAUSE branch first, then the `rate_limit_class` branches.
+**When `review_rate_window_await == true` AND a refusal was detected on a bot in `required_bots`**, branch BEFORE claiming or awaiting anything — recovery is only productive for a limit that actually moves. Evaluate the branches **in the order given**: the CAUSE branch first, then the `rate_limit_class` branches.
+
+⛔ **Scope the recovery to REQUIRED bots — an optional bot's refusal is settled, never escalated.** An optional bot's silence is not a failure and can never hold the step open, so awaiting its window burns budget and escalating it puts a decision the operator does not need in front of them. Treat a refusal from a bot outside `required_bots` as an ordinary settle and proceed to "Producer: FIND"; it is still surfaced in `refused_bots[]` and still classified for visibility. This filter is also what makes moving a refusing bot to `optional_bots` an EFFECTIVE remedy rather than a loop: without it, the reclassification changes the quorum but the recovery re-detects the same refusal and re-escalates on the next pass, so the operator lands back on the identical prompt.
 
 ⛔ **The cause branch comes first, and reading `rate_limit_class` alone is the defect it closes.** `rate_limit_class` is declared once per BOT while a cause is observed per REFUSAL, so a bot declaring `awaitable_window` that refuses because the **diff is too big** would otherwise fall into Branch 2 and be handed the full claim-await-generate recovery — spending `review_rate_window_timeout_seconds` on a ceiling that no amount of waiting moves, then re-triggering a bot whose answer cannot change while the diff is this size. Waiting is not merely unproductive there; it is an action guaranteed to fail.
 
@@ -855,7 +857,7 @@ FIND-only producer — this step fetches and files `pr-comment` findings; the pe
 
 ### `escalate_ask` return (timeout escalations)
 
-This step returns `status: escalate_ask` instead of `success`/`loop_back` on four distinct escalations, discriminated by the `reason` field:
+This step returns `status: escalate_ask` instead of `success`/`loop_back` on five distinct escalations, discriminated by the `reason` field:
 
 - **`reason: re_review_timeout`** — the "On re-review timeout (trigger B)" sub-block fired with `re_review_on_timeout` of `defer` or `ask` (the re-review await budget expired with no fresh bot review). The `proceed` policy does NOT return `escalate_ask` — the leaf falls through to "Wait for review-bot comments" and the run terminates normally (`success`/`loop_back`); `proceed` is the documented non-escalating case.
 - **`reason: rate_window_timeout`** — the "Rate-limit refusal recovery" Branch 3 poll exhausted `review_rate_window_timeout_seconds` while the claimed window was still open.
@@ -902,7 +904,7 @@ prompt_options[3]:
   - "Defer merge"
 ```
 
-The STRUCTURAL variant (`refusal_structural`, Branch 0) is a **fourth shape, not a fourth `reason` on
+The STRUCTURAL variant (`refusal_structural`, Branch 0) is a **third shape, not a fifth `reason` on
 the one above**, because its option set is disjoint from theirs:
 
 ```toon
@@ -943,7 +945,7 @@ remedy set from the participation contract, verbatim.
 Field contract:
 
 - `action`: `defer` when policy is `defer` (orchestrator skips the merge directly); `ask` when policy is `ask` (orchestrator fires `AskUserQuestion` with `prompt_options[]`). All three rate-window variants and the structural variant always use `action: ask`.
-- `reason`: `re_review_timeout`, `rate_window_timeout`, `rate_window_not_awaitable`, `rate_window_exhausted`, or `refusal_structural` — distinguishes the five escalation triggers so item 7a can route them identically while keeping the audit trail specific.
+- `reason`: `re_review_timeout`, `rate_window_timeout`, `rate_window_not_awaitable`, `rate_window_exhausted`, or `refusal_structural` — distinguishes the five escalation triggers. ⛔ **Item 7a routes the four TEMPORAL reasons identically and `refusal_structural` SEPARATELY**: its remedy set is disjoint from theirs, so folding it in is exactly the non-option that member exists to remove. The discrimination also keeps each audit trail specific.
 - `head_sha`: present only on the `re_review_timeout` variant — the full worktree HEAD SHA the timed-out re-review was awaiting; the unreviewed commit the operator decision applies to. Omitted on the rate-window and structural variants (no HEAD advance is involved).
 - `timed_out`: `true` only for `rate_window_timeout` (a budget genuinely elapsed). `rate_window_not_awaitable`, `rate_window_exhausted`, and `refusal_structural` escalate WITHOUT awaiting, so they report `false` — reporting a timeout that never happened would misdescribe the escalation.
 - `bot_kind` / `refusal_class`: present on the rate-window and structural variants — which bot refused and under which class, so the operator sees whether the non-participation is awaitable at all.

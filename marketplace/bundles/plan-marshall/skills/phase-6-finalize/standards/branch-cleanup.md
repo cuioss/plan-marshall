@@ -1016,6 +1016,57 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ⚠ **A loop-back here is only productive if the unproven bot can still produce evidence.** Whether it can is a per-bot, per-repository property: a bot with no auto-review-on-push trigger in this repository's caller workflow will never re-review a loop-back fix commit on its own, and `re_review_on_loopback` (default `false`) governs whether an explicit trigger comment is posted for it. If neither holds, the loop-back re-enters this barrier with the same verdict. Fix the trigger, or move the bot to `optional_bots` — do not answer a structurally-unprovable bot with repeated loop-backs. See [`../../automatic-review/standards/pr-agent.md`](../../automatic-review/standards/pr-agent.md) § "Signal calibration" for how to read a given repository's caller.
 
+##### ⛔ Structural refusal — the loop-back arm is UNAVAILABLE, under BOTH barrier modes
+
+The warning above was advisory because *"can this bot still produce evidence?"* was not machine-decidable. For one member it now is. Derive the set from the `bot_states` already read:
+
+```text
+{structural_bots} = every bot in {unproven_bots} ∩ required whose bot_states entry is refused_structural
+```
+
+**When `{structural_bots}` is non-empty, a loop-back CANNOT clear the block and MUST NOT be taken.** The bot refused because the diff exceeds a ceiling it declares; a loop-back re-runs the review against a diff of the same size, the bot re-refuses, and the barrier re-reaches this verdict — an action guaranteed not to work, repeated until `max_iterations` is spent. Neither barrier mode may take it:
+
+- **`{barrier_mode} == ask`** → fire the **structural** prompt below instead of the unhandled-comment prompt. ⛔ Its option set does NOT contain "Re-triage now": that option *is* the loop-back, under a friendlier name.
+- **`{barrier_mode} == fail_into_loopback` (the default, and the headless path)** → do NOT loop back and do NOT prompt. Decision-log at WARNING naming each structural bot with its `cap` and the `{measured_diff_size}`, then **defer the merge**: release the merge mutex if held, leave the `branch-cleanup` step record ABSENT, and HALT returning control for re-entry. A structural refusal on a REQUIRED bot has no automatic remedy at all — every exit is an operator ruling (`merge-authorization`), a re-scope (split), or a configuration change (move the bot to `optional_bots`) — so terminating with an actionable message is the honest headless outcome. Looping would be fail-closed and NON-terminating; this is fail-closed and terminating.
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
+    decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge review barrier: structural refusal — structural_bots={structural_bots} refused over cap={cap} against measured_diff_size={measured_diff_size}; NOT looping back (a re-review of the same-size diff re-refuses). Remedies: split the PR, record a merge-authorization over review-barrier-gap, or move the bot to optional_bots. pre_merge_comment_barrier={barrier_mode} (merge blocked, deferred)"
+  ```
+
+**The `{barrier_mode} == ask` structural prompt.** Same merge-mutex release-before-wait obligation as the unhandled-comment `ask` branch below:
+
+```text
+AskUserQuestion:
+  questions:
+    - question: "{structural_bots} will not review this PR: the diff exceeds a size ceiling the reviewer declares. How should branch cleanup proceed?"
+      header: "Branch Cleanup — Structural review refusal"
+      description: |
+        **PR**: #{pr_number}
+        **Reviewer(s)**: {structural_bots}
+        **Declared cap**: {cap}
+        **Measured diff size**: {measured_diff_size}
+
+        This ceiling does not reopen — the same PR is over it an hour
+        from now. Re-running the review cannot change the answer, so
+        re-triage is not offered. The two figures use different units;
+        read them as an order-of-magnitude comparison.
+      options:
+        - label: "Split the PR into diffs under the cap"
+          description: "Defer this merge; land the change as smaller PRs the reviewer will read"
+        - label: "Accept the coverage gap (record reason)"
+          description: "Merge with this reviewer's non-participation recorded as a HEAD-bound authorization"
+        - label: "Disable this reviewer for this PR"
+          description: "Move the bot to optional_bots for THIS PLAN only; it stays required elsewhere"
+      multiSelect: false
+```
+
+Branch on the operator's selection:
+
+- **"Split the PR into diffs under the cap"** → take the `fail_into_loopback` defer path above (release the mutex, leave the step record absent, HALT). The split is a plan-shape change the operator performs outside this run.
+- **"Accept the coverage gap (record reason)"** → identical in mechanics to the unhandled-comment block's "Merge anyway (record reason)" below — re-acquire the mutex, re-validate, decision-log at WARNING naming the bot, the cap, and the measured size, then persist the `barrier-ask-override` grant over `review-barrier-gap` at the freshly-resolved HEAD, then continue to **Merge PR**. The `--granted-over` string MUST carry both figures, so the record says what gap was accepted rather than merely that one was.
+- **"Disable this reviewer for this PR"** → move the bot from `required_bots` to `optional_bots` via `manage-execution-manifest step-params set` (two calls, one per key, `--phase 6-finalize --step-id plan-marshall:automatic-review`), decision-log the reclassification at WARNING, then **re-enter this barrier** — the predicate is re-evaluated with the bot optional, an optional bot never gates `participation_complete`, and the barrier proceeds on the clean path. ⭐ The override is **plan-local**: `step-params set` writes this plan's persisted manifest and never `marshal.json`, so the reviewer stays required for every other plan and every future PR. Say so when presenting the option — an operator who thinks they are permanently disabling a required reviewer will decline the remedy that fits.
+
 #### Blocked path — one or more pending findings
 
 When the pending list is non-empty, the merge is blocked. This is the second **authorizable** blocked path: § "Authorization check — the only admissible evidence on a blocked path" above has already run, and the branches below fire only when it returned `any_admissible: false` for `review-barrier-gap` — including when `any_authorized` was `true` under a ruling granted over some other gap. Branch on `{barrier_mode}` (these are the branches the participation-incomplete block above also uses):

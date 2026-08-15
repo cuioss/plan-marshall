@@ -1250,12 +1250,15 @@ FOR each step_id in manifest.phase_6.steps:
       **Completion emission on this hook is fully structural — no exemption needed.**
       A `plan-marshall:automatic-review` step that returns `status: escalate_ask` recorded NO
       terminal outcome in its leaf (the item-5d `escalate_ask` carve-out), so nothing has emitted
-      a completion line for this iteration yet. The "Merge anyway" branch's
-      `mark-step-done --outcome done` below is therefore the step's FIRST and ONLY terminal
-      recording, and the fused emission (item 7) writes its `[STEP] … Completed step:` line exactly
-      once — do NOT pass `--no-completion-log` there. The `defer` branch records nothing at all by
-      design, so it emits nothing — correct, because a deferred step did not settle and owes no
-      completion.
+      a completion line for this iteration yet. Whichever RECORDING branch fires below —
+      the temporal reasons' "Merge anyway", or the structural reason's "Accept the coverage
+      gap" — its `mark-step-done --outcome done` is therefore the step's FIRST and ONLY
+      terminal recording, and the fused emission (item 7) writes its `[STEP] … Completed
+      step:` line exactly once — do NOT pass `--no-completion-log` there. The NON-recording
+      branches record nothing at all by design, so they emit nothing — correct, because a
+      step that deferred, split, or was re-dispatched did not settle and owes no completion.
+      The two classes are exhaustive over every branch below: each one either stamps a
+      terminal `done` or deliberately leaves the record absent for re-entry.
 
       When the dispatched `plan-marshall:automatic-review` step returns `status: escalate_ask`, the leaf has returned an escalation envelope rather than firing an `AskUserQuestion` itself (a dispatched leaf cannot own the prompt — see the leaf/dispatch-topology contract in `ref-workflow-architecture/standards/agents.md`). The dispatcher owns the consumption. Five escalation reasons reach this hook, discriminated by the return TOON's `reason` field. **Four of them are handled identically at the AskUserQuestion layer; the fifth is not, and must not be** — see the `refusal_structural` carve-out below:
 
@@ -1306,7 +1309,23 @@ FOR each step_id in manifest.phase_6.steps:
         ⛔ **`reason: refusal_structural` — its OWN branch table. Do not route it through the four above.** Its `prompt_options[]` are *"Split the PR into diffs under the cap"* / *"Accept the coverage gap (record reason)"* / *"Disable this reviewer for this PR"*, and **none of them maps to any branch above**. Render the returned options and, alongside the question, name the two figures the envelope carries — `cap` (the ceiling the bot's own notice stated) and `measured_diff_size` (how big the refused diff was), each the literal `unknown` when unavailable — so an operator choosing to accept the gap accepts a quantified one. Read them as an order-of-magnitude comparison; they carry different units by design. Branch on the operator's selection:
           - **"Split the PR into diffs under the cap"** → decision-log at WARNING and take the SAME path as `action: defer` (skip the merge, leave the `plan-marshall:automatic-review` step record ABSENT so the resumable re-entry check re-issues it, and HALT). Splitting is a plan-shape change the operator performs outside this run; the absent record is what lets the smaller PR be reviewed on re-entry. This workflow never performs the split itself.
           - **"Accept the coverage gap (record reason)"** → identical in mechanics to the temporal reasons' "Merge anyway" branch: decision-log a WARNING naming the bot, the `cap`, and the `measured_diff_size`, resolve the live worktree HEAD (the envelope carries no `head_sha`), stamp the terminal `--outcome done --head-at-completion {sha}` record, and continue the FOR loop. The pre-merge barrier still re-derives participation from the provider, so this record buys no merge on its own — the operator's ruling is recorded there, under `review-barrier-gap`.
-          - **"Disable this reviewer for this PR"** → move the bot from `required_bots` to `optional_bots` via two `manage-execution-manifest step-params set` calls (one per key) on `--phase 6-finalize --step-id plan-marshall:automatic-review`, decision-log the reclassification at WARNING naming the bot and the cap, then re-dispatch `plan-marshall:automatic-review` so the quorum is re-evaluated with the bot optional. An optional bot's refusal never blocks, so the re-dispatch settles rather than re-escalating. Leave the step record ABSENT across the re-dispatch, exactly as the "wait again" branch does — the terminal record is written by the settling pass, not here.
+          - **"Disable this reviewer for this PR"** → move the bot from `required_bots` to `optional_bots`, then re-dispatch `plan-marshall:automatic-review` so the quorum is re-evaluated with the bot optional. Leave the step record ABSENT across the re-dispatch, exactly as the "wait again" branch does — the terminal record is written by the settling pass, not here. The reclassification is two writes, one per key, because `step-params set` takes a single `--param`/`--value` pair:
+
+            ```bash
+            python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+              step-params set --plan-id {plan_id} --phase 6-finalize \
+              --step-id plan-marshall:automatic-review --param required_bots --value "{required_bots minus this bot}"
+            ```
+
+            ```bash
+            python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+              step-params set --plan-id {plan_id} --phase 6-finalize \
+              --step-id plan-marshall:automatic-review --param optional_bots --value "{optional_bots plus this bot}"
+            ```
+
+            Then decision-log the reclassification at WARNING naming the bot and the cap.
+
+            ⛔ **The re-dispatch settles ONLY because the recovery is scoped to required bots.** That scoping is what `../automatic-review/SKILL.md` § "Rate-limit refusal recovery (opt-in)" declares: a refusal from a bot outside `required_bots` is an ordinary settle, never an escalation. Without it the re-dispatch would re-detect the same refusal, re-enter Branch 0, and re-escalate with the identical three options — an operator choosing the one remedy that resolves the block would loop on it forever. Do not weaken that scoping without removing this option.
 
             ⭐ **The override is PLAN-LOCAL and the option label is therefore literal.** `step-params set` writes into this plan's persisted manifest snapshot and never touches `marshal.json`, so the reclassification expires with the plan and the reviewer stays required for every other plan and every future PR. Say that when presenting the option: an operator who believes they are permanently disabling a required reviewer will decline the one remedy that actually fits their situation.
 

@@ -268,15 +268,15 @@ consumer must not flatten them back together:
 - `not_triggered` — nothing ran on account of the PR, so no bot was ever asked. Remedy: **trigger** the
   review at all.
 
-A third, `refused_structural`, refines the **refusal** branch the same way and for the same reason: the
-other three refusal members describe a limit that moves, so their remedy set is *wait or accept*, while
-a diff-size ceiling does not move and its remedy set is *split, accept, or disable this reviewer for
-this PR*. Flattening it into a temporal member does not merely mislabel it — it offers the operator a
-wait that is guaranteed not to work.
-
 `absent`, by contrast, means a reviewer was asked and did not answer — remedy: **escalate** the
-non-participation. A consumer that renders all three as "the bot did not review" prescribes escalation
-in two cases where a trigger was the correct and cheaper answer.
+non-participation. A consumer that renders those three — `participated_stale`, `not_triggered`, and
+`absent` — alike prescribes escalation in two cases where a trigger was the correct and cheaper answer.
+
+**`refused_structural` refines the REFUSAL branch the same way, and for the same reason.** The other
+three refusal members describe a limit that moves, so their remedy set is *wait or accept*; a diff-size
+ceiling does not move, and its remedy set is *split, accept, or disable this reviewer for this PR*.
+Flattening it into a temporal member does not merely mislabel it — it offers the operator a wait that
+is guaranteed not to work.
 
 **Provider coverage is not uniform, and the gap is explicit.** `stale_participation_bots[]` and the
 `not_triggered` observable are both GitHub-only today: `checks pull-request-runs` returns a structured

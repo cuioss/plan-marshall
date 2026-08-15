@@ -363,25 +363,44 @@ class TestSizeRefusalClassifiesStructural:
         assert result['participation_complete'] is False
         assert 'sourcery' in result['unproven_bots']
 
-    def test_check_and_deficit_agree_on_the_member(self, plan_context):
-        """Both commands read the cause, so neither can name a different member.
+    @pytest.mark.parametrize(
+        'case, kwargs, expected_attr',
+        [
+            # The ordinary path: both commands are handed the cause.
+            ('cause', {'refused_causes': {'sourcery': 'size'}}, 'STATE_REFUSED_STRUCTURAL'),
+            # ⭐ The path that ACTUALLY tests the invariant: the cause was lost in
+            # transport and only the cap survived, so the member depends entirely on the
+            # fail-closed recovery. When that recovery lived on ``check`` alone, the two
+            # commands disagreed here — and the ordinary case above could not see it,
+            # because it hands both commands the cause directly.
+            (
+                'cap-only',
+                {'refusal_size_caps': {'sourcery': '4242 diff characters'}},
+                'STATE_REFUSED_STRUCTURAL',
+            ),
+            # And the discriminator: no overlay at all keeps the temporal member on BOTH.
+            ('neither', {}, 'STATE_REFUSED_HARD'),
+        ],
+    )
+    def test_check_and_deficit_agree_on_the_member(
+        self, plan_context, case, kwargs, expected_attr
+    ):
+        """Both commands apply the SAME cause handling, so neither names a different member.
 
         ``deficit`` publishes a per-reviewer ``state`` column. If only ``check``
-        consumed the cause, the two commands would report different states for one
-        refusal and no reader of the output could adjudicate which was right.
+        consumed the cause — or only ``check`` ran the cap-recovery — the two commands
+        would report different states for one refusal and no reader of the output could
+        adjudicate which was right.
         """
-        plan_id = 'struct-both-commands'
+        plan_id = f'struct-both-commands-{case}'
         plan_context.plan_dir_for(plan_id)
-        kwargs = {
-            'refused_bots': ['sourcery'],
-            'refused_causes': {'sourcery': 'size'},
-        }
-        check = rc.check_completeness(plan_id, ['sourcery'], **kwargs)
-        deficit = rc.check_deficit(plan_id, ['sourcery'], **kwargs)
+        shared = {'refused_bots': ['sourcery'], **kwargs}
+        check = rc.check_completeness(plan_id, ['sourcery'], **shared)
+        deficit = rc.check_deficit(plan_id, ['sourcery'], **shared)
         deficit_state = next(
             r['state'] for r in deficit['reviewers'] if r['bot_kind'] == 'sourcery'
         )
-        assert deficit_state == _state_of(check, 'sourcery') == rc.STATE_REFUSED_STRUCTURAL
+        assert deficit_state == _state_of(check, 'sourcery') == getattr(rc, expected_attr)
 
     def test_the_summary_distinguishes_structural_from_temporal(self, plan_context):
         """``display_detail`` must not render a size refusal as a bare "1 refused".
@@ -423,6 +442,46 @@ _WAIT_OFFER = re.compile(
     r'|\bback\s*off\b',
     re.IGNORECASE,
 )
+
+
+def _hook_structural_table() -> str:
+    """The dispatcher's structural branch table, sliced to the NEXT heading.
+
+    Bounded by the document's own structure rather than a character count. A fixed
+    window silently stops covering whatever is appended past its end — so a wait added
+    at the bottom of a grown table would go unchecked while the sweep still read clean.
+    ``index`` raises when the anchor moves, which fails loudly rather than passing.
+    """
+    hook = _FINALIZE_SKILL.read_text(encoding='utf-8')
+    start = hook.index('reason: refusal_structural` — its OWN branch table')
+    nxt = re.search(r'^\s{0,4}#{2,6}\s', hook[start:], re.MULTILINE)
+    return hook[start:start + nxt.start()] if nxt else hook[start:]
+
+
+def _barrier_structural_prompt() -> str:
+    """The barrier's STRUCTURAL ``AskUserQuestion`` block, sliced to its own fence.
+
+    Bounded by the fence rather than a character count, so the assertions cannot go
+    quietly out of scope when the block grows — a fixed window silently stops covering
+    whatever was appended past its end.
+    """
+    barrier = _BRANCH_CLEANUP.read_text(encoding='utf-8')
+    anchor = barrier.index('Branch Cleanup — Structural review refusal')
+    fence_start = barrier.rindex('```text', 0, anchor)
+    fence_end = barrier.index('```', anchor)
+    return barrier[fence_start:fence_end]
+
+
+def _barrier_structural_options() -> str:
+    """Just the ``options:`` list of that prompt — what the operator can actually PICK.
+
+    Separated from the surrounding ``description:`` on purpose. The description
+    legitimately *explains* why re-triage is not offered, so a sweep over the whole
+    block trips on the explanation and reports a defect that is really a correct
+    warning. What must be free of a futile remedy is the list of selectable options.
+    """
+    block = _barrier_structural_prompt()
+    return block[block.index('options:'):]
 
 
 def _section(doc: str, heading_pattern: str) -> str:
@@ -557,9 +616,7 @@ class TestNoAwaitOnTheStructuralBranch:
         TEMPORAL reasons legitimately offer "Wait another {timeout_seconds}s", so a
         document-wide sweep would be permanently red and prove nothing.
         """
-        hook = _FINALIZE_SKILL.read_text(encoding='utf-8')
-        start = hook.index('reason: refusal_structural` — its OWN branch table')
-        table = hook[start:start + 2600]
+        table = _hook_structural_table()
         assert not _WAIT_OFFER.search(table), (
             f'the orchestrator hook offers a wait on the structural branch — the very '
             f'non-option this member exists to remove:\n{table[:600]}'
@@ -567,20 +624,38 @@ class TestNoAwaitOnTheStructuralBranch:
 
     def test_the_orchestrator_hook_offers_the_three_real_remedies(self):
         """Asserting only the absence of a wait would pass on an empty branch table."""
-        hook = _FINALIZE_SKILL.read_text(encoding='utf-8')
-        start = hook.index('reason: refusal_structural` — its OWN branch table')
-        table = hook[start:start + 2600].lower()
+        table = _hook_structural_table().lower()
         assert 'split' in table
         assert 'accept the coverage gap' in table
         assert 'disable this reviewer' in table
 
     def test_the_orchestrator_hook_names_both_audit_figures(self):
-        """The operator accepting a gap must be shown the cap AND the measured size."""
-        hook = _FINALIZE_SKILL.read_text(encoding='utf-8')
-        start = hook.index('reason: refusal_structural` — its OWN branch table')
-        table = hook[start:start + 2600]
-        assert 'cap' in table
+        """The operator accepting a gap must be shown the cap AND the measured size.
+
+        Matched as interpolation placeholders, not bare words: ``cap`` alone appears in
+        almost any prose about a ceiling, so asserting the substring would pass on a
+        table that merely discussed caps without ever rendering one.
+        """
+        table = _hook_structural_table()
+        assert '`cap`' in table or '{cap}' in table
         assert 'measured_diff_size' in table
+
+    def test_the_orchestrator_hook_does_not_promise_settling_it_cannot_deliver(self):
+        """The disable-reviewer branch must name the scoping that makes it terminate.
+
+        The branch re-dispatches the leaf. That settles ONLY because the recovery is
+        scoped to required bots — without that scoping the leaf re-detects the same
+        refusal and re-escalates, so the operator choosing the one remedy that resolves
+        the block loops on it forever. An earlier draft asserted the settling outcome
+        with no mechanism behind it.
+        """
+        table = _hook_structural_table().lower()
+        assert 'required_bots' in table, (
+            'the disable-reviewer branch does not name the required-bots scoping its '
+            'settling claim depends on'
+        )
+        recovery = _AR_SKILL.read_text(encoding='utf-8')
+        assert 'Scope the recovery to REQUIRED bots' in recovery
 
     def test_the_barrier_names_the_structural_remedy(self):
         """branch-cleanup renders the member's remedy, not "the bot did not review".
@@ -599,6 +674,62 @@ class TestNoAwaitOnTheStructuralBranch:
             and 'cap' in barrier[start:start + 1500]
             for start in mentions
         ), 'no mention of the structural member names both its remedy and its cap'
+
+    def test_the_barriers_own_prompt_offers_the_structural_remedies(self):
+        """⛔ The barrier renders a REAL option list, and it is the one that fires by default.
+
+        This is the surface round 1 did NOT reach. `review_rate_window_await` defaults
+        to `false`, so the leaf's Branch 0 never fires on a default configuration and
+        the dispatcher's structural branch table is unreachable — the prompt an operator
+        actually sees is this one. A test that only greps the barrier's PROSE (as the
+        sibling above does) passes while its rendered `options:` block still offers
+        re-triage.
+        """
+        options = _barrier_structural_options().lower()
+        assert 'split the pr' in options
+        assert 'accept the coverage gap' in options
+        assert 'disable this reviewer' in options
+
+    def test_the_barriers_own_prompt_does_not_offer_a_loop_back(self):
+        """⛔ "Re-triage now" IS the loop-back, and for this member it cannot work.
+
+        A re-triage re-runs the review against a diff of the SAME SIZE, so the bot
+        re-refuses and the barrier re-reaches this verdict. That is an action the
+        operator can take that is guaranteed not to work — the plan's own definition of
+        a non-option — and it escapes a wait-worded sweep entirely because it is spelled
+        "re-triage" and "loop back" rather than "wait".
+        """
+        options = _barrier_structural_options()
+        lowered = options.lower()
+        assert not _WAIT_OFFER.search(options), (
+            f'the barrier prompt offers a wait:\n{options}'
+        )
+        assert 're-triage' not in lowered, (
+            'the structural prompt offers "Re-triage now" — the loop-back under a '
+            'friendlier name, and futile against an unchanged diff'
+        )
+        assert 'loop back' not in lowered
+
+    def test_the_barriers_own_prompt_quantifies_the_gap(self):
+        """Both audit figures are shown, so an accepted gap is a quantified one."""
+        block = _barrier_structural_prompt()
+        assert '{cap}' in block
+        assert '{measured_diff_size}' in block
+
+    def test_the_default_barrier_mode_does_not_loop_on_a_structural_refusal(self):
+        """The HEADLESS path must not spin — it has no operator to ask.
+
+        `fail_into_loopback` is the default and the headless path. Looping there is
+        fail-closed but NON-terminating: it burns max_iterations re-reviewing a diff
+        whose size never changes. The honest headless outcome is to terminate with an
+        actionable message.
+        """
+        barrier = _BRANCH_CLEANUP.read_text(encoding='utf-8')
+        start = barrier.index('Structural refusal — the loop-back arm is UNAVAILABLE')
+        section = barrier[start:start + 3000]
+        lowered = ' '.join(section.lower().split())
+        assert 'do not loop back' in lowered
+        assert 'fail_into_loopback' in section
 
 
 # ---------------------------------------------------------------------------
@@ -940,10 +1071,24 @@ class TestCapExtraction:
             'refusal_size_cap_patterns',
             lambda _bot: [r'review limit of (?:[0-9]+)|(nevermatches)'],
         )
-        # Falls back to the whole match rather than raising.
-        assert seam.refusal_size_cap('review limit of 4242 chars', 'sourcery') == (
-            'review limit of 4242'
+        # Yields UNKNOWN rather than raising — and rather than falling back to the whole
+        # match, which would report the prose "review limit of 4242" as the cap.
+        assert seam.refusal_size_cap('review limit of 4242 chars', 'sourcery') == ''
+
+    def test_a_declared_group_that_captures_nothing_yields_unknown(self, monkeypatch):
+        """⛔ NOT a fallback to the whole match — that would report prose as a cap.
+
+        ``review limit of ([0-9]*)`` against a notice stating no number matches with an
+        empty group. Falling back to ``group(0)`` returns ``"review limit of"``, which is
+        comma-free, survives the CLI transport intact, and renders as
+        ``cap: review limit of`` beside a real ``measured_diff_size`` — making the gap
+        look audited against a figure nobody observed.
+        """
+        seam = self._seam()
+        monkeypatch.setattr(
+            seam.bot_registry, 'refusal_size_cap_patterns', lambda _bot: [r'review limit of ([0-9]*)']
         )
+        assert seam.refusal_size_cap('review limit of  chars', 'sourcery') == ''
 
     def test_a_pattern_capturing_only_whitespace_yields_unknown(self, monkeypatch):
         """An empty capture is no figure, not an empty-string cap."""
@@ -952,6 +1097,16 @@ class TestCapExtraction:
             seam.bot_registry, 'refusal_size_cap_patterns', lambda _bot: [r'limit of(\s*)']
         )
         assert seam.refusal_size_cap('review limit of 4242 chars', 'sourcery') == ''
+
+    def test_a_pattern_declaring_no_group_uses_the_whole_match(self, monkeypatch):
+        """The no-group convention is preserved — the fix narrows only the group case."""
+        seam = self._seam()
+        monkeypatch.setattr(
+            seam.bot_registry, 'refusal_size_cap_patterns', lambda _bot: [r'[0-9]+ diff characters']
+        )
+        assert seam.refusal_size_cap(
+            'review limit of 4242 diff characters', 'sourcery'
+        ) == '4242 diff characters'
 
 
 class TestDiffMeasurement:

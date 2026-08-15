@@ -249,17 +249,32 @@ def refusal_size_cap(body: str, bot_kind: str | None = None) -> str:
             continue
         if match is None:
             continue
+        # A pattern that declares a group means "the cap is THAT group"; one that
+        # declares none means "the cap is the whole match". Honour the declaration
+        # rather than silently substituting one for the other.
+        #
         # ``match.groups()`` is TRUTHY for a one-tuple holding ``None`` — a pattern whose
         # first group sits in a branch that did not participate (``limit of (?:[0-9]+)|(x)``)
-        # matches, reports groups, and yields ``None``. Taking ``.strip()`` on that raises
-        # an AttributeError out of the producer's whole return path, which is precisely the
+        # matches, reports groups, and yields ``None``. Taking ``.strip()`` on that raised
+        # an AttributeError out of the producer's whole return path, which is exactly the
         # failure the docstring above promises cannot happen: the ``re.error`` guard covers
         # a pattern that will not COMPILE, not one that compiles and captures nothing.
-        # Fall back to the whole match, and treat a genuinely empty capture as no figure.
-        captured = match.group(1) if match.groups() and match.group(1) else match.group(0)
-        captured = captured.strip()
-        if not captured:
-            continue
+        #
+        # A declared group that captured nothing yields NO figure and moves to the next
+        # pattern — never a fallback to ``group(0)``. That fallback is the wrong kind of
+        # graceful: on ``review limit of ([0-9]*)`` against a notice stating no number it
+        # returns the prose ``"review limit of"``, which is comma-free, survives the CLI,
+        # and renders as ``cap: review limit of`` beside a real measurement — making the
+        # gap look audited against a figure nobody observed, the precise thing the
+        # unknown-cap discipline forbids. Unknown is the honest answer.
+        if match.groups():
+            captured = (match.group(1) or '').strip()
+            if not captured:
+                continue
+        else:
+            captured = match.group(0).strip()
+            if not captured:
+                continue
         # Commas are stripped because the cap crosses a COMMA-SEPARATED CLI boundary
         # (``--refusal-size-caps "bot:cap"``), where a thousands separator would split
         # one record into two malformed ones. Removing it also leaves a figure that

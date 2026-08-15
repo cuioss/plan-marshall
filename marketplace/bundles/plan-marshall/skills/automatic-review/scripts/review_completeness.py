@@ -466,6 +466,42 @@ def _refusal_state(rate_limit_class: str, cause: str | None = None) -> str:
     return STATE_REFUSED_UNKNOWN
 
 
+def recover_causes_from_caps(
+    refused_causes: dict[str, str] | None,
+    refusal_size_caps: dict[str, str] | None,
+) -> dict[str, str]:
+    """Return the cause map, recovering a lost ``size`` cause from a surviving cap.
+
+    A cap is only ever produced for a SIZE refusal, so a bot carrying a cap but no
+    cause means the cause overlay was lost in transport. That is a reachable state, not
+    a hypothetical: the two travel as SEPARATE CLI flags, and the barrier's contract
+    lets either default to empty independently when a producer field is absent or
+    malformed.
+
+    Recovering the cause from the cap is the fail-CLOSED direction. Without it the bot
+    silently resolves to a TEMPORAL member and is offered a wait for a diff-size
+    ceiling — the exact non-option the structural member exists to remove, re-entered
+    through a transport failure.
+
+    The inference is ONE-DIRECTIONAL and non-overriding:
+
+    - ``setdefault`` never overrides an observed cause, so a positively-reported
+      ``quota`` stays ``quota``.
+    - A cause with no cap infers NOTHING. That direction would invent a ceiling, which
+      is precisely what the unknown-cap discipline exists to prevent.
+
+    Shared by :func:`check_completeness` and :func:`check_deficit` rather than inlined
+    in one. The recovery CHANGES which member a bot resolves to, so a command that
+    skipped it would report a different state for the same refusal — the cross-command
+    disagreement this module forbids in as many words, arriving through the very branch
+    added to prevent a different one.
+    """
+    recovered = dict(refused_causes or {})
+    for bot in (refusal_size_caps or {}):
+        recovered.setdefault(bot, CAUSE_SIZE)
+    return recovered
+
+
 def classify_bot(
     bot: str,
     proven_participants: dict[str, str],
@@ -787,18 +823,8 @@ def check_completeness(
     # the reported lists read in a stable, caller-meaningful order.
     classified = list(required_bots) + [b for b in (optional_bots or []) if b not in required_set]
 
-    causes_in = dict(refused_causes or {})
     caps_in = dict(refusal_size_caps or {})
-    # A cap is only ever produced for a SIZE refusal, so a bot carrying a cap but no
-    # cause means the cause overlay was lost in transport — the two travel as separate
-    # CLI flags, and the barrier's contract lets either default to empty independently
-    # when a producer field is absent or malformed. Recovering the cause from the cap is
-    # the fail-CLOSED direction: without it the bot silently resolves to a TEMPORAL
-    # member and gets offered a wait for a diff-size ceiling, which is the exact
-    # non-option this member exists to remove. The reverse is never inferred — a cause
-    # without a cap is an ordinary unknown-cap refusal, not evidence of anything.
-    for bot in caps_in:
-        causes_in.setdefault(bot, CAUSE_SIZE)
+    causes_in = recover_causes_from_caps(refused_causes, caps_in)
 
     bot_states: list[dict[str, str]] = []
     pending_bots: list[str] = []
@@ -910,6 +936,7 @@ def check_deficit(
     declined_bots: list[str] | None = None,
     not_triggered: bool = False,
     refused_causes: dict[str, str] | None = None,
+    refusal_size_caps: dict[str, str] | None = None,
     min_deficit: int = 1,
 ) -> dict:
     """Classify each bot, count its FILED findings, and assess the deficit signal (D2).
@@ -947,7 +974,10 @@ def check_deficit(
     required_set = set(required_bots)
     classified = list(required_bots) + [b for b in (optional_bots or []) if b not in required_set]
 
-    causes_in = dict(refused_causes or {})
+    # The SAME recovery ``check`` applies. It moves which member a bot resolves to, so
+    # skipping it here would make the two commands report different states for one
+    # refusal — the disagreement the docstring above forbids.
+    causes_in = recover_causes_from_caps(refused_causes, refusal_size_caps)
 
     reviewers: list[dict] = []
     for bot in classified:
@@ -1194,6 +1224,9 @@ def _parse_bot_observations(args: argparse.Namespace) -> dict:
         # ``deficit`` publishes a per-reviewer ``state`` column, so parsing it here is
         # what keeps the two commands from naming different members for one refusal.
         'refused_causes': parse_causes(args.refused_causes, '--refused-causes'),
+        # Shared with ``check`` for the same reason the cause is: the cap drives the
+        # fail-closed cause recovery, which decides a member.
+        'refusal_size_caps': parse_causes(args.refusal_size_caps, '--refusal-size-caps'),
     }
 
 
@@ -1210,7 +1243,6 @@ def cmd_check(args: argparse.Namespace) -> int:
     """
     try:
         obs = _parse_bot_observations(args)
-        size_caps = parse_causes(args.refusal_size_caps, '--refusal-size-caps')
     except MalformedBotFlag as exc:
         _emit_toon({'status': 'error', 'error': 'malformed_bot_flag', 'detail': str(exc)})
         return 1
@@ -1226,7 +1258,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         declined_bots=obs['declined_bots'],
         not_triggered=args.not_triggered,
         refused_causes=obs['refused_causes'],
-        refusal_size_caps=size_caps,
+        refusal_size_caps=obs['refusal_size_caps'],
         measured_diff_size=args.measured_diff_size,
     )
     _emit_toon(payload)
@@ -1256,6 +1288,7 @@ def cmd_deficit(args: argparse.Namespace) -> int:
         declined_bots=obs['declined_bots'],
         not_triggered=args.not_triggered,
         refused_causes=obs['refused_causes'],
+        refusal_size_caps=obs['refusal_size_caps'],
         min_deficit=args.min_deficit,
     )
     _emit_deficit_toon(payload)
@@ -1398,6 +1431,25 @@ def _add_bot_observation_flags(sub: argparse.ArgumentParser) -> None:
         ),
     )
     sub.add_argument(
+        '--refusal-size-caps',
+        nargs='?',
+        const='',
+        default='',
+        help=(
+            'Comma-separated bot_kind:cap pairs — the shape github_pr fetch_findings '
+            "emits in refused_size_caps[], forwarded verbatim. cap is the diff-size "
+            "ceiling the bot's OWN refusal notice stated, so a recorded coverage gap "
+            'can be reconciled against the diff that was actually refused instead of '
+            'being asserted. Sparse by design: a quota refusal states no ceiling and a '
+            'size notice may state none, and an absent entry is reported as an UNKNOWN '
+            'cap rather than defaulted. A cap arriving WITHOUT its cause recovers the '
+            'cause fail-closed (a cap is only ever produced for a size refusal), which '
+            'is why this flag is shared by check and deficit: were it on one command '
+            'only, the two would name different members for that refusal. May be '
+            'supplied bare (no value), which reads as the empty list.'
+        ),
+    )
+    sub.add_argument(
         '--not-triggered',
         action='store_true',
         default=False,
@@ -1443,22 +1495,6 @@ def main(argv: list[str] | None = None) -> int:
             'completeness — only unproven REQUIRED bots gate the mark-done. Pass '
             'it once triage has run so a still-pending required finding blocks as '
             'a real incompleteness.'
-        ),
-    )
-    check_parser.add_argument(
-        '--refusal-size-caps',
-        nargs='?',
-        const='',
-        default='',
-        help=(
-            'Comma-separated bot_kind:cap pairs — the shape github_pr fetch_findings '
-            'emits in refused_size_caps[], forwarded verbatim. cap is the diff-size '
-            'ceiling the bot\'s OWN refusal notice stated, so a recorded coverage gap '
-            'can be reconciled against the diff that was actually refused instead of '
-            'being asserted. Sparse by design: a quota refusal states no ceiling and a '
-            'size notice may state none, and an absent entry is reported as an UNKNOWN '
-            'cap rather than defaulted. May be supplied bare (no value), which reads '
-            'as the empty list.'
         ),
     )
     check_parser.add_argument(
