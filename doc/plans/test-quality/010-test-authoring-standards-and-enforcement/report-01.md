@@ -1,6 +1,6 @@
 # Run report — 010-test-authoring-standards-and-enforcement (run 01)
 
-**Date (UTC):** 2026-08-15    **Branch:** `claude/test-authoring-standards-ja0nqp`    **PR:** _(pending)_    **Outcome:** completed
+**Date (UTC):** 2026-08-15    **Branch:** `claude/test-authoring-standards-ja0nqp`    **PR:** [#1248](https://github.com/cuioss/plan-marshall/pull/1248)    **Outcome:** completed
 
 ## Skills loaded
 
