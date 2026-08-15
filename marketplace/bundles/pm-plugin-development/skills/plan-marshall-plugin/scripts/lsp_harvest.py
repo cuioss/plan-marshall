@@ -183,8 +183,11 @@ def import_positions(source: str) -> list[tuple[int, int]]:
                 continue
             positions.append((alias.lineno - 1, alias.col_offset))
         if isinstance(node, ast.ImportFrom) and node.module:
-            # 'from ' is five characters wide; the module name starts after it.
-            positions.append((node.lineno - 1, node.col_offset + 5))
+            # 'from ' is five characters wide, then one character per leading dot
+            # of a relative import. Omitting `node.level` puts the query on a '.'
+            # for `from .pkg import x`, and a server resolves nothing on
+            # punctuation — the same silent-zero this function exists to avoid.
+            positions.append((node.lineno - 1, node.col_offset + 5 + node.level))
     return positions
 
 

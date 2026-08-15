@@ -231,6 +231,33 @@ def test_import_positions_anchor_on_the_imported_name():
     assert all(character > 0 for _line, character in positions)
 
 
+def test_import_positions_skip_the_dots_of_a_relative_import():
+    """A relative import's module name starts after its leading dots.
+
+    `from .pkg import x` puts a '.' five characters in, and a server resolves
+    nothing on punctuation — so an offset that ignores `node.level` produces the
+    same silent zero as anchoring on the `from` keyword did.
+    """
+    # Arrange
+    source = 'from .pkg import thing\n'
+
+    # Act
+    positions = import_positions(source)
+
+    # Assert — the module query lands on 'pkg', not on the dot.
+    assert (0, source.index('pkg')) in positions
+    assert (0, source.index('.')) not in positions
+
+
+def test_import_positions_skip_multiple_relative_dots():
+    """The offset scales with the number of dots, not just the first."""
+    # Arrange
+    source = 'from ..alpha.beta import thing\n'
+
+    # Act / Assert
+    assert (0, source.index('alpha')) in import_positions(source)
+
+
 def test_import_positions_covers_plain_imports():
     """A plain 'import x' contributes its module-name position."""
     # Arrange
