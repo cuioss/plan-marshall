@@ -1,6 +1,10 @@
 # Run report — 120-review-barrier-deadlocks-on-a-refusing-bot (run 01)
 
-**Date (UTC):** 2026-08-15    **Branch:** `claude/review-barrier-deadlocks-6b5sao`    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-15    **Branch:** `claude/review-barrier-deadlocks-6b5sao`    **PR:** [#1241](https://github.com/cuioss/plan-marshall/pull/1241)    **Outcome:** completed — auto-merge armed, landing delegated to the merge queue
+
+**Per-deliverable outcome:** D0 ✅ (gate did not halt) · D1 ✅ (all three conjuncts) · D2 ✅ (4 cases,
+9 mutations). The merge commit is read from the PR merge event and reported to the operator, not
+embedded here — it does not exist when this report is committed.
 
 ⚠ **The slug does not describe the work.** The file name is kept because a cloud session is bound to
 its path, but the real subject is: **the refusal taxonomy had no STRUCTURAL member, so a size-capped
@@ -118,7 +122,7 @@ to undo for reviewed-vs-nobody-reviewed.
 |---|---|---|---|
 | D0 | Derive the barrier's terminal-state population | `55ba299` (report) + `eadae3b` (its code mirror) | ✅ Published above with its derivation method and size. Mirrored in code as two total classifications in `test_structural_refusal.py`, each asserted equal to the derived set in BOTH directions. Gate did not halt. |
 | D1 | Structural refusal as its own taxonomy member | `eadae3b`, `b7a7057`, `3131bdc` | ✅ All three "done when" conjuncts met — see below |
-| D2 | Tests, each verified discriminating | `eadae3b`, `b7a7057`, `3131bdc` | ✅ 4 cases, 7 mutations |
+| D2 | Tests, each verified discriminating | `eadae3b`, `b7a7057`, `3131bdc` | ✅ 4 cases, 9 mutations |
 
 ### D1's "done when" — the three conjuncts, checked independently
 
@@ -137,6 +141,40 @@ to undo for reviewed-vs-nobody-reviewed.
   where a diff's size first becomes measurable, framed as a disclosure and explicitly not a gate.
 - **Never `await` on the structural branch** ✅ Recovery gains **Branch 0**, evaluated before the
   class branches, returning `escalate_ask{reason: refusal_structural}`.
+
+### ⭐ The cold read — the plan's own verification item, answered verbatim
+
+The plan requires a fresh reader, given no framing about the change, to be asked what options the
+workflow offers a size-refused reviewer, and the answer reported **verbatim** — because *"if 'wait'
+appears among the options for the structural case, the fix has reproduced the non-option it was
+written to remove."* Rounds 3 and 4 both reported the cold read clean, but the tree moved three
+commits after round 6, so it was re-run at `601abf1` — the tree the PR merges from. The reader was
+told only to read the current working tree and was given no history, diff, or framing.
+
+**Its answer to the structural case, quoted:**
+
+> None of the three labels — "Split the PR into diffs under the cap", "Accept the coverage gap (record
+> reason)", "Disable this reviewer for this PR" — is a wait; the first defers the merge pending an
+> operator-performed split ("Defer this merge; land the change as smaller PRs the reviewer will read",
+> `branch-cleanup.md:1105`), not a re-review of the same diff.
+
+It found waiting excluded at **both** surfaces, quoting the leaf — *"⛔ **Its `prompt_options[]` MUST
+NOT offer a wait.**"* (`automatic-review/SKILL.md:385`) — and the barrier — *"This ceiling does not
+reopen — the same PR is over it an hour from now. Re-running the review cannot change the answer, so
+re-triage is not offered."* (`branch-cleanup.md:1093-1095`). Its verdict on question 3 was
+**"Size-ceiling case — no."**
+
+**Its answer to the temporal case, quoted:** **"Quota case — yes."** The first option there is
+literally `- "Wait another {review_rate_window_timeout_seconds}s"` (`automatic-review/SKILL.md:902`).
+That is the correct answer for that branch, and the two answers together are the whole point of the
+change: **the same reader, reading the same documents, is offered a wait on the branch where waiting
+works and is not offered one on the branch where it cannot.**
+
+⭐ The reader also reconstructed, unprompted, the distinction round 5 was spent making explicit —
+that the futile thing is the *re-triage remedy*, not the `loop_back` control-flow record, quoting
+`branch-cleanup.md:1035` and `:1042` for it. That distinction was invisible in the pre-round-5 text;
+a cold reader recovering it from the documents alone is the evidence that the repair landed in the
+normative prose rather than in an aside.
 
 ### Deliberate design decisions worth recording
 
@@ -168,8 +206,9 @@ applied: `bot_registry.py`, `review_completeness.py`, `_github_pr.py`, `github_p
 re-derived it — a count written from memory rather than from the command quoted next to it, which
 is the exact failure mode this report's own findings keep recording.
 
-`./pw verify` ran **eight times**. ⛔ **Two of those runs exited 0 while FAILING** — F37 and F49 — so
-every outcome below is read from the streamed output, never the exit code:
+`./pw verify` ran **ten times** — counted off the rows below, not from memory. ⛔ **Two of those runs
+exited 0 while FAILING** — F37 and F49 — so every outcome below is read from the streamed output,
+never the exit code:
 
 | At | Result |
 |---|---|
@@ -181,18 +220,23 @@ every outcome below is read from the streamed output, never the exit code:
 | `1b1b867` | SUCCESS — 19743 passed, 14 skipped, zero `FAILED` lines, zero sub-step failure lines (9m15s) |
 | `3ac175d` | SUCCESS — 19746 passed, 14 skipped, zero `FAILED`/`ERROR` lines, zero sub-step failure lines (6m27s) |
 | `902a5d9` | SUCCESS — 19746 passed, 14 skipped, zero `FAILED`/`ERROR` lines, zero sub-step failure lines (6m27s) |
-| **`a751c9a`** | **SUCCESS — 19746 passed, 14 skipped, zero `FAILED`/`ERROR` lines, zero sub-step failure lines (6m31s). This is the tree the PR opens from.** Round 5 refused a gate recorded two commits behind HEAD, correctly: `test-compile` is exactly what F37 proved the targeted suites cannot see, so a green targeted run at a later commit is not a substitute |
+| `a751c9a` | SUCCESS — 19746 passed, 14 skipped, zero `FAILED`/`ERROR` lines, zero sub-step failure lines (6m31s). This is the tree the PR opened from. Round 5 refused a gate recorded two commits behind HEAD, correctly: `test-compile` is exactly what F37 proved the targeted suites cannot see, so a green targeted run at a later commit is not a substitute |
+| **`601abf1`** | **SUCCESS — 19876 passed, 14 skipped, zero `FAILED`/`ERROR` lines, zero sub-step failure lines (6m41s). This is the MERGED tree the PR merges from** — `origin/main` merged in after the PR opened, so the pass count rises above `a751c9a`'s by `main`'s own new tests, not by anything this branch adds |
 
-⛔ **`./pw verify` exited 0 while FAILING on TWO of its eight runs.** Both were caught only by
+⛔ **`./pw verify` exited 0 while FAILING on TWO of its ten runs.** Both were caught only by
 reading the streamed output. Had the exit code been trusted at any of those points, this run would
 have opened a PR on a red gate and reported it green — which is precisely why the lane contract makes
 "read the output, not the exit code" a rule rather than a suggestion. The two distinct failures were a
 test-only type error (invisible to the quality gate, which type-checks production only) and a
 derivation-guard failure in a suite my targeted runs had not covered.
 
-Final run's coverage line: `COMPLETE — … mypy(production) [399 files], ruff [marketplace/bundles,
-test, .claude], SPDX headers, plugin-doctor [marketplace-wide], mypy(test) [737 files], module-tests
-[whole-tree pytest]`. `./pw quality-gate` additionally ran before every commit touching `*.py`, each
+Final run's (`601abf1`, the merged tree) coverage line, read back verbatim: `coverage: COMPLETE over
+the dimensions below — checked over full scope: mypy(production) [402 files, cache disabled], ruff
+[marketplace/bundles, test, .claude], SPDX headers [marketplace/bundles, test, .claude,
+marketplace/targets, build.py], plugin-doctor [marketplace-wide], mypy(test) [743 files, cache
+disabled], module-tests [whole-tree pytest]`, terminating in `=== verify: SUCCESS ===`. The file
+counts rise above the earlier runs' 399/737 because `origin/main` was merged in, not because this
+branch adds source. `./pw quality-gate` additionally ran before every commit touching `*.py`, each
 reporting `Success: no issues found in 399 source files`, `All checks passed!`, and `SPDX-header check
 passed`.
 
@@ -337,7 +381,7 @@ except the two already-deferred ones:
 | F23 | D2(c) asks the finding to carry the cap **and the measured diff size**; only the cap was implemented, leaving the gap half-audited | **FIXED** (`b7a7057`) — found by re-reading the plan's own acceptance text against the diff, not by any reviewer |
 | F24 | `workflow-integration-github/SKILL.md:137`'s "the cause is advisory … never changes which member" (same instance round 1 later reported as its item 1) | **FIXED** (`b7a7057`), independently and before the report arrived |
 
-### From mutation testing (my own, seven mutations)
+### From mutation testing (my own, nine mutations — counted off the rows below)
 
 Not defects — evidence that each D2 case DISCRIMINATES. Each mutation failed exactly the intended
 case(s) and nothing else:
@@ -354,27 +398,155 @@ case(s) and nothing else:
 | H — reintroduce the barrier's "Re-triage now" option | 2, both barrier-prompt checks |
 | I — remove `deficit`'s cap-recovery | 1, and only the **cap-only** agreement case — the parametrization added precisely because the `cause` case cannot observe it |
 
+### From my own closing sweep — the stale-count defect, third and fourth occurrences
+
+| # | Finding | Disposition |
+|---|---|---|
+| F79 | ⛔ **The mutation-testing heading read "seven mutations" against a NINE-row table, and the D2 deliverable row read "7 mutations" — the FOURTH instance, in a second table.** Found only because F78 prompted a sweep for the same shape elsewhere; the two earlier fixes had each treated it as a one-off in the build-gate sentence rather than as a pattern | **FIXED** in both places — re-derived by counting rows A–I. ⚠ The PR body already said "nine mutations", so the report and the PR contradicted each other and the report was the wrong one |
+| F78 | ⛔ **The build-gate run count read "eight" against a NINE-row table — the third instance of one defect** (F64 said "six" against seven rows; F72 said the count "is now eight", re-derived). Each fix restated a literal that the next two rows invalidated, so the count was correct only until the table grew again. The recurring cause is that the sentence carries a number the table already contains | **FIXED** — re-derived by counting the rows at this moment: **ten**, including the merged-tree gate added in this same edit. ⚠ The fix is the same shape as the two that failed, so it will go stale the same way if a row is ever added without re-counting. The durable repair is not to state a count beside a table at all; that is a documentation-standards change beyond this plan's scope and is not made here |
+
 ### From CI
 
-None yet — the PR is not open at the time this section was written. Any CI or PR-review finding is
-recorded in the run's closing update.
+**None.** Read back from the PR's own check runs at head `601abf1`: `verify / gate`,
+`dependency-review / dependency-review` and `generate-check` all concluded `success`;
+`verify / verify` was still `in_progress` at the merge gate (see Contract check below); `auto-merge`
+and `Sourcery review` concluded `skipped`. No check reported a failure, so there is no CI finding to
+disposition.
+
+### From PR review
+
+**None — and the reason is itself the finding.** No reviewer published a finding against this diff.
+Both reviewers that engaged published a refusal notice instead, and the third produced nothing. The
+per-reviewer evidence is in **Reviewer participation** below; the section is empty of findings
+because there were no reviews, not because reviews were clean.
 
 ## Reviewer participation
 
-_(completed below)_
+**Population, derived from configuration.** Read from the `author_login` of each registry doc under
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` — `coderabbit.md`,
+`sourcery.md`, `pr-agent.md`. **M = 3.** No list was transcribed; the set is whatever those docs
+declare.
+
+**All three comment surfaces were read** before the merge gate, as three separate MCP calls:
+`get_comments` (1 comment), `get_reviews` (1 review), `get_review_comments` (0 threads,
+`totalCount: 0`). Each verdict below comes from a stored body, never from a check state.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `sourcery-ai` | `rate-limited` | `get_reviews`, review `4944046456`: *"Sorry @cuioss-oliver, your pull request is larger than the review limit of 150000 diff characters"*. A **structural** refusal — the ceiling is a property of the diff, so it does not reopen. ⚠ Its `Sourcery review` **check run concluded `skipped`**, which as a check state is not a verdict and would have read as "nothing to see"; the body is the evidence |
+| `coderabbitai` | `rate-limited` | `get_comments`, comment `5302742537`: *"Review limit reached … you've reached your PR review limit, so we couldn't start this review. **Next review available in:** **56 minutes**"*. A **temporal** refusal, current-head-bound — the body names base `622f4484` and head `601abf11` |
+| `cuioss-review-bot` | `silent` | No artifact on any of the three surfaces, and no `review / review` check on the head. `actions_list` for `pr-agent.yml` filtered to this branch returns `total_count: 0`, so the workflow produced **no run** — despite triggering on `pull_request: [opened, …]` and none of its documented skip rules applying (no `skip-bot-review` label, not a fork, not a bot author). Cause not determined within this run; recorded as an unexplained silence, not waved through |
+
+**Coverage: 0 of 3.** No reviewer reviewed this diff.
+
+**The § Step 8 condition-4 shortfall disclosure is made here, and restated to the operator in words at
+the merge gate, before auto-merge is armed.** It states: coverage **0 of 3**; `sourcery-ai`
+rate-limited on a **structural** size ceiling of 150000 diff characters, which waiting does not clear;
+`coderabbitai` rate-limited on a **temporal** window reopening in 56 minutes; `cuioss-review-bot`
+silent with no workflow run and no cause determined. Per the contract this is a **disclosure and not
+a block** — the shortfall changes what the run says, never whether it merges.
+
+⭐ **This PR is a live instance of the defect it fixes, and of the fix's own distinction.** Two
+reviewers refused the same diff at the same moment under the two causes this change separates, with
+**opposite correct remedies**: sourcery's ceiling is unmoved by waiting, coderabbit's window clears in
+56 minutes. Under the pre-change taxonomy both would have resolved by `rate_limit_class` alone and
+been offered the same option pair — and sourcery's, at `hard_quota`, would have led with a wait. The
+implementation was run against both real notices as first-party evidence:
+
+| Bot | `is_refusal` | cause is `size` | `rate_limit_class` | cap extracted |
+|---|---|---|---|---|
+| `sourcery-ai` | `True` | `True` | `hard_quota` | `150000 diff characters` |
+| `coderabbitai` | `True` | `False` | `awaitable_window` | — |
+
+This also confirms with first-party evidence the cap figure the plan labelled a HYPOTHESIS. ⛔ **No
+test was pinned to it** — the plan calls the figure a lead, and the confirmation does not change that.
 
 ## Cost
 
-_(completed below)_
+- **Tokens:** **not available to the agent in this session.** The harness exposes no token counter to
+  the running agent, and no figure is inferred.
+- **Wall-clock:** ~4h40m — first commit on the branch `1481ac1` at `2026-08-15T10:26:05Z` to the
+  merge gate at `2026-08-15T15:04Z` (source: `git log --date=iso-strict` and `date -u`). This excludes
+  the pre-commit portion of the run (skill loading, plan read, D0 derivation), which produced no
+  timestamped artifact.
+- **Population:** one Claude Code cloud session's wall-clock, as its own git history records it.
+  ⛔ **NOT comparable to a plan-marshall `metrics.toon` total**, which counts an orchestrator-plus-agent
+  dispatch tree under plan-marshall's per-task billing boundary. This run has no such tree: it is a
+  single interactive session that dispatched six verification rounds and one closing cold read as
+  sub-agents inside its own context. The figures cannot be made comparable, so no parity is claimed.
 
 ## Contract check (Step 9)
 
-_(completed below)_
+**GitHub access path:** the GitHub MCP server throughout. No `gh` CLI exists in this session, and
+Bash cannot reach `api.github.com`. **Branch form:** harness-assigned `claude/review-barrier-deadlocks-6b5sao`,
+kept as-is per § Step 2 — this run created no branch, so the closed prefix set did not apply.
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | ✅ done | Named in **Skills loaded** above. Every bundle skill loaded by path; none was unobtainable |
+| 2 Branch | ✅ done | `claude/review-barrier-deadlocks-6b5sao` exists on `origin`; `git status -sb` reports no divergence. ⚠ Whether the *initial* push preceded the first commit is **not reconstructible** from the artifacts now — it is asserted by neither. What is verified is that nothing is unpushed |
+| 3 Plan directory | ✅ done | `doc/plans/review-apparatus/120-review-barrier-deadlocks-on-a-refusing-bot/plan.md` exists, moved with `git mv` in `1481ac1`, numeric prefix preserved, and re-checked at this step to still open with the first-instruction block (verbatim, line 1) |
+| 4 Implement | ✅ done | 18 commits; all three deliverables addressed. **17 of 18 carry the trailer** — `601abf1` is a `git merge` commit, which takes no trailer |
+| 4 Per-commit gate | ✅ done | Every commit touching `*.py` was preceded by a direct `./pw quality-gate` reporting `ruff`/`mypy`/SPDX clean. ⚠ **F50 records a real gap in how I chose the targeted suite**, not in the gate itself — see Findings |
+| 4 Pushed | ✅ done | `git status -sb` reports no `ahead` |
+| 5 Build gate | ✅ done | Python-change verdict and ten `./pw verify` runs recorded in **Build gate** above, two of which exited 0 while failing |
+| 6 Verification sub-agent | ✅ done | Six rounds plus a closing cold read; findings F1–F79 recorded per instance with dispositions. Ranges, not a total, precisely because a restated count is what F78/F79 record going stale |
+| 7 PR cycle | ✅ done | PR **#1241**. All three comment surfaces read as three separate calls. Both stored bodies are refusal notices carrying no finding to fix, so each is dispositioned as a participation verdict rather than a comment; no open, unaddressed comment remains |
+| 8 Merge gate | ✅ conditions 1–3 met, armed | Condition 1: `mergeable_state: blocked` at the gate with `verify / verify` **`in_progress`** on head `601abf1` — armed anyway per § Step 8's no-self-wake carve-out, deferring the required-green gate to the merge queue. Condition 2: no open comment. Condition 3: this report is the last pre-merge commit. Condition 4 disclosure made — see **Reviewer participation** |
+| 8 Bridge | ✅ done | `git diff --name-only origin/main...HEAD -- doc/plans/` returns exactly this plan's `plan.md` and `report-01.md`. No ledger, no status file, no other plan's directory |
+| 9 This check | ✅ done | This table |
+
+**No step is reported as not done.** No `/sync-plugin-cache` is owed: a cloud run neither performs
+nor records one (§ Scope and precedence), even though this branch edits `marketplace/bundles/`.
 
 ## What have we learned (Step 9)
 
-_(completed below)_
+**Two contract changes are proposed, both from evidence this run produced. Neither is applied** — the
+contract forbids self-approving a change to the contract that governs the run. Each would ship as a
+separate `chore/` PR on operator approval, never in this plan's diff.
+
+### Proposal 1 — the `rate-limited` verdict cannot say whether the shortfall clears
+
+**Evidence from this run.** § Step 7's verdict vocabulary is `reviewed` / `rate-limited` / `silent`.
+This PR recorded **two** reviewers as `rate-limited` at the same moment under refusals with **opposite**
+properties: `sourcery-ai` hit a 150000-diff-character ceiling that never clears for this diff, while
+`coderabbitai` hit a window reopening in 56 minutes. The participation table renders them identically.
+
+That matters because the contract elsewhere assumes the shortfall may clear — § Step 7 instructs
+"when its window permits, re-request its review", and condition 4's own example prose distinguishes
+"window reopens" from "weekly quota" in *free text* while the vocabulary does not carry it. A reader
+of the table alone cannot tell whether a re-trigger is worth attempting. This is precisely the
+distinction this plan's deliverable makes machine-readable in `review_completeness`; the lane's own
+record does not yet carry it.
+
+**Proposed edit.** Add a required column to the participation table — `Reopens? yes / no / unknown` —
+or split `rate-limited` into `rate-limited-temporal` / `rate-limited-structural`. The column form is
+the smaller change and keeps the three verdicts stable.
+
+### Proposal 2 — § Step 7 says "both surfaces" where it means three
+
+**Evidence from this run.** Step 7 item 2 reads "Read the actual comment bodies, from **both**
+surfaces", and the participation rule repeats "(both surfaces above)" — while the table immediately
+between them enumerates **three**, and the paragraph after it states "All THREE surfaces MUST be read"
+and names skipping one as the exact false-clean failure the lane exists to prevent. Executing the step
+required reconciling "both" against a three-row table to know how many calls to make.
+
+**Proposed edit.** Change both "both" occurrences to "all three". Purely a consistency repair — the
+normative rule is already correct and unambiguous three lines away.
+
+### What was examined and found sound
+
+The three-surface rule earned itself on this PR: `get_reviews` carried the sourcery refusal,
+`get_comments` carried the coderabbit one, and `get_review_comments` was empty. A run reading any one
+surface would have recorded the wrong population verdicts. The exit-code warning at both § Step 4 and
+§ Step 5 also earned itself three times (F26, F49, and the round-6 gate). Neither needs changing.
 
 ## Residue
 
-_(completed below)_
+| Item | Where it should go next |
+|---|---|
+| **Contract Proposals 1 and 2 above** | Awaiting operator decision. On approval, one `chore/cloud-plan-lane` PR touching only the skill |
+| **`cuioss-review-bot`'s silence is unexplained** | `pr-agent.yml` triggers on `pull_request: opened` and no documented skip rule applied, yet `actions_list` reports no workflow run on this branch. Worth a look at whether the reusable workflow's job-level `if:` guard or the PR's creation path suppresses the trigger — this run had no way to read the guard's evaluation |
+| **`coderabbitai`'s window reopens ~15:45Z** | A `@coderabbitai review` comment could obtain the review this PR never got. Not attempted: arming auto-merge locks the branch and the queue is expected to land the PR before the window opens. If the operator wants review coverage on this change, the reachable route is a follow-up read of the merged commit, not this PR |
+| **Two findings deferred out-of-scope** | Recorded with reasons in **Findings**; both are pre-existing and neither is touched by this diff |
+| **Local `/sync-plugin-cache`** | ⛔ **Not owed by this run.** Noted only because this branch edits `marketplace/bundles/`: a developer working locally after the merge syncs their own cache, which is a machine-local concern and not a debt this run tracks |
