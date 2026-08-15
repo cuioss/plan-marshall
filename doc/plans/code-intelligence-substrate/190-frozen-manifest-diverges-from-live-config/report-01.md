@@ -125,15 +125,18 @@ Each red was confirmed to fail **for the right reason** before the fix. An earli
 
 (plus three new test files.)
 
-**Result: `./pw verify` SUCCESS**, all three sub-steps clean:
+**Result: `./pw verify` SUCCESS**, all three sub-steps clean. Run twice — once before the PR, and again after the verification-agent fixes:
 
 ```text
 quality-gate:  ruff "All checks passed!", mypy "Success: no issues found in 399 source files",
                SPDX-header check passed, plugin-doctor issues[0]
 test-compile:  mypy "Success: no issues found in 739 source files"
-module-tests:  19693 passed, 14 skipped
+module-tests:  19693 passed, 14 skipped   (pre-fix run)
+               19702 passed, 14 skipped   (post-fix run, commit 0eb85e6)
 coverage: COMPLETE — checked over full scope
 ```
+
+Both runs reported **0 failed**. This is the evidence against finding F15's claim of a pre-existing failure — see the verification table.
 
 Read from the streamed tool output per the direct-`./pw` contract (no executor TOON log exists on this path). A per-commit `./pw quality-gate` also ran clean before commit `4e0859b`.
 
@@ -154,11 +157,39 @@ Two failures were caught by the gate and fixed before the commit landed — both
 
 Findings 3–8 are recorded **per instance**, not bundled.
 
+**Self-assessment on finding #7.** The beyond-diff sweep I ran found the `prepare_execute.py` executor enumeration but **missed its sibling** in `tools-script-executor/SKILL.md` — the identical defect class, one directory away. The verification agent caught it (F6). Recorded because it is the honest reading: my sweep was partial, and the independent pass is what closed it. Four further stale restatements (F1, F2, F3, F9, F12) were likewise mine to have found.
+
 _Verification sub-agent findings: see § "Verification sub-agent" below._
 
 ## Verification sub-agent
 
-_Pending — dispatched before PR creation per the lane contract Step 6._
+Dispatched read-only (`general-purpose`) before PR creation, against `plan.md`'s requirements and `git diff origin/main...HEAD`, with an explicit instruction to sweep beyond the diff by consumer kind including `*.py` fixtures.
+
+**Round 1 verdict:** D0 PASS, D1 PASS, D2 PASS-with-findings, D3 PASS-with-gaps, D4 PASS (3/3), D5 PASS, out-of-scope CLEAN (plugin-registry pin inversion verified untouched). 15 findings, recorded per instance below. Round 2 was dispatched after the fixes, because a verification pass that found a defect has not finished.
+
+The agent independently re-grounded all four D0 defects against the `origin/main` blobs rather than trusting the report — a check I want recorded, since D0's whole value is that its verdicts are re-derivable.
+
+| # | Finding | Severity | Disposition |
+|---|---|---|---|
+| F4 | `reconcile` emitted `decision.log` lines **outside** the `--apply` guard: a dry run both mutated a file the verb promises not to touch and wrote an audit record asserting a subtraction that never happened. Compounded by the test module globally stubbing `_emit_decision_log` to a no-op, making emission unobservable to any test. | **Behavioural — real bug in new code** | **FIXED** (`0eb85e6`). Emission moved inside the guard; the stub now *records* instead of discarding, and dry-run silence + apply-time emission are both pinned by new tests. |
+| F7 | `executor_regenerated: True` was derived from `gen_rc == 0` alone. The generator can exit 0 having written nothing when marketplace anchoring lands nowhere — exactly the case `prepare_execute._executor_landed` exists for. D3's done-when is phrased as an on-disk outcome. | **Behavioural** | **FIXED** (`0eb85e6`). Added `_worktree_executor_path` / `_executor_landed`; the verdict now comes from disk. Two new tests. |
+| F10 | The title-token change-gate compared the **raw** stored field. A record already aged past the staleness threshold "reads as absent" to every consumer, so re-asserting it reported `changed: false` and stayed silent about a token the renderers had stopped honouring. | **Behavioural** | **FIXED** (`0eb85e6`). Comparison now goes through `read_title_token` (staleness-aware). New test. |
+| F11 | `reconcile` compared raw frozen ids against a boundary-normalized live set, so a hand-edited `default:`-prefixed id (a path `SKILL.md` sanctions) could be dropped as stale though live config still lists it — and symmetrically backfilled as a duplicate. | **Behavioural** | **FIXED** (`0eb85e6`). Both comparisons canonicalize; the original id is still what is written back. Two new tests. |
+| F5 | My new prose asserted "**BOTH** finalize rebase sites route through `worktree-rebase-to`" in three places. There are **three** — `automatic-review` (order 30) dispatches it on its refusal-recovery path. The wrong population was the stated *rationale* for the placement. | **Wrong claim** | **FIXED** (`0eb85e6`). All three now assert the invariant ("EVERY finalize rebase routes through this one verb") with an illustrative rather than closed roster, so a new caller cannot falsify it. The placement decision was correct — arguably more so with three callers. |
+| F1 | `manifest-schema.md` — the canonical schema block omits `phase_6.candidate_steps` (while `SKILL.md`'s table was updated: two schema statements disagreeing), and § Validation named only `validate-loadable`. | Stale restatement | **FIXED** (`0eb85e6`). |
+| F2 | `phase-6-finalize/SKILL.md:341` "reads the manifest **verbatim** … **not from `marshal.json`**" contradicted Step 1.5 thirteen lines below it. | Stale restatement | **FIXED** (`0eb85e6`) — the bounded exception is now named at the point of the claim. |
+| F3 | `manage-execution-manifest/SKILL.md` item 2 of the numbered contract read false in isolation (the carve-out sat two paragraphs later with no pointer), and line 414 wrongly lumped `reconcile` in with the persisted-file-only readers. | Stale restatement | **FIXED** (`0eb85e6`). |
+| F6 | `tools-script-executor/SKILL.md:276-281` enumerates when a worktree-bound executor is regenerated — the **same defect class** this run had already fixed in `prepare_execute.py` (report finding #7), in a sibling file the sweep missed. | Stale restatement | **FIXED** (`0eb85e6`). |
+| F9 | `status-lifecycle.md:72` "**both verbs emit** a `[MANAGE-STATUS]` work-log line" made false by D4b. | Stale restatement | **FIXED** (`0eb85e6`). |
+| F12 | `branch-cleanup.md` documents the `worktree-rebase-to` parse step-by-step but said nothing about the three new payload fields it now receives. | Stale restatement | **FIXED** (`0eb85e6`). |
+| F8 | Every test replaced `_run_generate_executor` wholesale, so nothing pinned the verb names, `--marketplace-root`, the cwd pin, or `drift_status`. The agent verified all of them manually and they are correct today — but a rename would go green. | Coverage gap | **FIXED** (`0eb85e6`). Added `TestSubprocessSeamShape`: captures the real argv + cwd, and asserts the live `generate_executor.py` still exposes each name. |
+| F13 | Illustrative-only restatements (the SKILL.md TOON example, module docstring, frontmatter description) that already omitted verbs before this change. | INFO | **REJECTED — no action.** The agent itself classified these as not newly falsified; the example block already omits `step_params`, so it is evidently illustrative rather than normative. Changing them would imply a completeness they never claimed. |
+| F14 | Run report's Step 9 sections were unfilled and the file untracked at review time. | Process | **REJECTED as a defect — expected mid-flight.** The lane contract fixes those sections to Step 8 condition 3, immediately before the merge gate. Recorded because the observation is fair; the file was committed in `2a1f763` shortly after the agent read it. |
+| F15 | Claimed pre-existing failure of `test_branch_cleanup_merge_queue_routing.py::…[gitlab:merge-queue]` at HEAD, contradicting this report's clean-run claim. | Factual challenge | **NOT REPRODUCIBLE.** Re-ran standalone: **23 passed**. Two consecutive full `./pw verify` runs reported SUCCESS with **0 failed** (19693, then 19702). The agent's own runs were concurrent with this session's edits, which is the likeliest explanation. Re-check requested in round 2. The report's clean-run claim stands on the two full-gate runs, not on assertion. |
+
+Findings F1–F15 are recorded **per instance**, not bundled. Two were rejected with reasons stated; one is a factual challenge resolved against the agent, with the counter-evidence named rather than merely asserted.
+
+**Round 2:** _pending._
 
 ## Reviewer participation
 
