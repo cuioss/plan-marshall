@@ -340,6 +340,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 The phase-6-finalize step list is read from the **per-plan execution manifest** (`execution.toon`), not from `marshal.json`. The manifest is composed at outline time by `plan-marshall:manage-execution-manifest:compose` and is the single source of truth for which Phase 6 steps fire for this plan. This skill reads the manifest verbatim and dispatches — it carries NO per-step skip logic of its own.
 
+**One bounded exception, immediately below:** Step 1.5's `reconcile` call is the single point at which live `marshal.json` is consulted, and it may amend the persisted list before the dispatch loop reads it. It heals a provably-stale entry; it never re-runs the decision matrix and never re-derives the selection. Past that one call the "reads the manifest verbatim" rule holds for the whole phase.
+
 #### Read the execution manifest
 
 ```bash
@@ -351,11 +353,27 @@ Extract `phase_6.steps` — the ordered list of step IDs (e.g., `push`, `create-
 
 **If the manifest is missing** (`status: error, error: file_not_found`): abort finalize with an explicit error — the manifest is REQUIRED. Re-run `plan-marshall:manage-execution-manifest:compose` from outline phase to repair.
 
-#### Step 1.5: Manifest Loadability Check
+#### Step 1.5: Manifest Reconciliation and Loadability Check
 
-After reading `phase_6.steps` from the manifest but BEFORE dispatching any step in Step 3, walk the list once and verify each step's standards file is loadable. This is the manifest fail-fast guard: it converts a confusing mid-dispatch failure (a built-in step pointing at a deleted standards file) into an immediate, actionable error at phase entry.
+After reading `phase_6.steps` from the manifest but BEFORE dispatching any step in Step 3, reconcile the frozen list against live configuration, then verify each surviving step's standards file is loadable.
 
-For each `step_id` in `manifest.phase_6.steps`:
+**Reconcile first.** The manifest is a write-time snapshot composed at outline time (see [`manage-execution-manifest/SKILL.md`](../manage-execution-manifest/SKILL.md) § "Manifest-on-Write Semantics"), so a plan that edits finalize configuration during its own run reaches this point holding a view its own edits have invalidated. Reconciling before the loadability check is what makes that case survivable:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  reconcile --plan-id {plan_id} --apply
+```
+
+Parse the returned TOON and branch on `status`:
+
+- **`status: success`** — the frozen list now agrees with live configuration. When `reconciled: true`, **re-read the manifest** (the step list changed under you) and use the reconciled `phase_6.steps` for the loadability check and the Step 3 dispatch loop. The `stale[]` and `backfill[]` lists name what moved; both are already decision-logged by the verb.
+- **`status: error, error: unreconcilable_step`** — a frozen step's standards doc is missing AND live `marshal.json` still schedules it. That is the genuine defect (the plan deleted the file without sweeping `marshal.json`), not a stale snapshot. ABORT finalize with the returned `message` — do NOT enter Step 3, and do NOT reconcile it away.
+
+The reconcile verb is the single authority on that distinction; this skill does not re-derive it. See [`manage-execution-manifest/SKILL.md`](../manage-execution-manifest/SKILL.md) § `reconcile` for the fail-direction table and why backfill is deliberately narrow.
+
+**Then check loadability.** This is the manifest fail-fast guard: it converts a confusing mid-dispatch failure (a built-in step pointing at a deleted standards file) into an immediate, actionable error at phase entry. After a successful reconcile it is a cheap confirmation rather than the primary gate — it stays because it is the check that runs even when reconcile could not read live config at all.
+
+For each `step_id` in the (reconciled) `manifest.phase_6.steps`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
@@ -378,7 +396,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Manifest loadability check failed — step `{step_id}` referenced by `marshal.json` is missing standards file `{standards_path}` — the plan likely deleted the file without sweeping `marshal.json`"
 ```
 
-The actionable message is fixed by [`standards/required-steps.md`](standards/required-steps.md) § "Loadability Contract" — the wording above is the canonical phrasing the contract guarantees. Self-modifying plans that delete a `phase-6-finalize/standards/{name}.md` without also pruning `marshal.json::plan.phase-6-finalize.steps` are the motivating failure mode.
+The actionable message is fixed by [`standards/required-steps.md`](standards/required-steps.md) § "Loadability Contract" — the wording above is the canonical phrasing the contract guarantees. Self-modifying plans that delete a `phase-6-finalize/standards/{name}.md` without also pruning `marshal.json::plan.phase-6-finalize.steps` are the motivating failure mode — and after the reconcile above, that is the ONLY failure this abort can now represent. A step whose doc is gone *and* which live config has also dropped was reconciled away rather than aborting here; one that survives to this point is still scheduled by live `marshal.json` and genuinely cannot run.
 
 **Scope**: the loadability check applies to **built-in** steps only (bare names that resolve to `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/{name}.md`). External steps (`project:` / `bundle:skill`) are not validated here — their loadability is the responsibility of the host plugin cache, and a missing project/skill step surfaces as a `Skill: {ref}` resolution error during dispatch, not as a missing standards file. The `validate-loadable` subcommand returns `loadable: true` with no further check for external step IDs so the bulk-form caller does not have to filter.
 
@@ -1758,13 +1776,14 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `scripts/ci_verify.py` | `plan-marshall:phase-6-finalize:ci_verify` | Inline deterministic `default:ci-verify` executor — green CI marks the step done with zero dispatch; red CI classifies failures and returns a per-producer needs-triage signal |
 | `scripts/ci_complete_precondition.py` | `plan-marshall:phase-6-finalize:ci_complete_precondition` | Resolver for the `requires: [ci-complete]` frontmatter precondition, with a per-HEAD cache and a harness-ceiling clamp |
 | `scripts/derive_gate_bundles.py` | `plan-marshall:phase-6-finalize:derive_gate_bundles` | Derives the unique bundle set the pre-push quality gate runs over, from the live footprint |
+| `scripts/review_commitments.py` | `plan-marshall:phase-6-finalize:review_commitments` | Reconciles a simplify pass's deletions against the review commitments made earlier in the SAME finalize run — reports conflicts, gates nothing |
 | `scripts/pr_intent_section.py` | `plan-marshall:phase-6-finalize:pr_intent_section` | Renders the distilled `## Intent` section into the generated PR body — owns the character budget and its visible truncation, and omits the section entirely (heading included) when the plan has no outline intent |
 | `scripts/post_run_source_guard.py` | `plan-marshall:phase-6-finalize:post_run_source_guard` | Runtime tracked-source guard for the `post_run_review` band (item 5f sub-item 0) — reports dirty TRACKED paths (source, or a tracked `.plan/` config/descriptor) left by a step that declared `mutates_source: false`; the `.plan/` exemption is keyed on git trackedness, not the path prefix; publishes the examined population (`considered_paths` / `exempted_paths` / `offending_paths`); advisory and non-blocking (always exits 0) |
 | `scripts/verdict_currency.py` | `plan-marshall:phase-6-finalize:verdict_currency` | Classifies whether a HEAD advance invalidates a head-dependent step's recorded verdict, by diffing the recorded SHA's tree against the live HEAD over the step's declared `verdict_inputs` surface; fails closed to `invalidated` on every uncertainty |
 
 ## Canonical invocations
 
-The canonical argparse surface for `ci_complete_precondition.py`, `pr_intent_section.py`, `post_run_source_guard.py` and `verdict_currency.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for `ci_complete_precondition.py`, `pr_intent_section.py`, `post_run_source_guard.py`, `review_commitments.py` and `verdict_currency.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
 ### ci_complete_precondition — resolve
 
@@ -1805,6 +1824,30 @@ The command always exits `0` — an `invalidated` verdict is a normal answer, no
 error — so the caller branches on the returned `verdict` field, never on the exit
 code. See [`standards/verdict-currency.md`](standards/verdict-currency.md) for the
 model this verb serves.
+
+### review_commitments — reconcile
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_commitments reconcile \
+  --plan-id PLAN_ID --diff-file DIFF_PATH
+```
+
+`--diff-file` takes a path to a unified diff of the simplify pass's own edits — the
+`git diff` over the worktree BEFORE the dispatcher's commit instrumentation commits
+them. Read from a file rather than stdin so the invocation stays one Bash call with
+no shell plumbing.
+
+Returns `verdict: clear | conflict` plus one `conflicts[]` record per deletion that
+removes a line the review process committed to earlier in the same run. It reports
+and never decides: the envelope carries `proves: removal_conflict_only` and
+`gates_merge: false` in as many words, and no caller may read a conflict as a merge
+verdict. Two undetermined states fail CLOSED to a conflict rather than to silence —
+an untriaged (`pending`) finding, whose disposition nobody has decided yet, and a
+finding with a path but no line anchor, which binds its whole file. An error return
+carries NO `verdict` field, so a crashed reconciliation reads as UNKNOWN rather than
+as a clear pass. See
+[`standards/finalize-step-simplify.md`](standards/finalize-step-simplify.md)
+§ "Reconcile against the run's review commitments".
 
 ## Related
 

@@ -26,9 +26,12 @@ from _gate_coverage import (
     MAX_ANALYSIS_THROUGHPUT,
     SUSPECT_MIN_FILES,
     CoverageBoundary,
+    analysis_limit,
     classify_check_duration,
+    dimension_stem,
     parity_population,
     render_coverage_summary,
+    structural_limits,
 )
 
 # ---------------------------------------------------------------------------
@@ -178,3 +181,206 @@ def test_parity_cells_carry_a_verdict_and_evidence():
     for cell in parity_population():
         assert cell.verdict in {'equal', 'subset', 'closed'}
         assert cell.note
+
+
+# ---------------------------------------------------------------------------
+# Structural scope limits — what a green does NOT evaluate (plan 130 D0)
+# ---------------------------------------------------------------------------
+
+
+def test_dimension_stem_strips_the_recorded_scope_suffix():
+    """The analysis-kind key is the dimension text before its bracketed scope.
+
+    ``build.py`` records dimensions with a scope suffix
+    (``mypy(production) [660 files, cache disabled]``). The limit registry is keyed
+    by ANALYSIS KIND, so the suffix — which varies per run — must not be part of the
+    lookup key, or every real run would miss the registry.
+    """
+    assert dimension_stem('mypy(production) [660 files, cache disabled]') == 'mypy(production)'
+    assert dimension_stem('ruff [marketplace/bundles, test, .claude]') == 'ruff'
+    assert dimension_stem('plugin-doctor [marketplace-wide]') == 'plugin-doctor'
+    assert dimension_stem('module-tests') == 'module-tests'
+
+
+def test_every_dimension_build_py_records_has_a_registered_limit():
+    """Each analysis kind the gate actually runs states what it cannot evaluate.
+
+    The population is the dimension stems ``build.py`` records — an unregistered one
+    would render as an UNKNOWN-coverage disclaimer, which is honest but means the
+    gate cannot state its own scope limit for a check it really ran.
+    """
+    recorded_by_build_py = (
+        'mypy(production)',
+        'mypy(test)',
+        'ruff',
+        'SPDX headers',
+        'plugin-doctor',
+        'module-tests',
+    )
+
+    for stem in recorded_by_build_py:
+        limit = analysis_limit(stem)
+        assert limit is not None, f'{stem} has no registered structural scope limit'
+        assert limit.analysis
+        assert limit.cannot_evaluate
+
+
+def test_structural_limits_are_derived_from_the_dimensions_actually_checked():
+    """A gate that ran fewer analyses states fewer limits — derived, not boilerplate.
+
+    This is the D0 property: the scope limit comes from what the gate ACTUALLY
+    analysed, so two runs that checked different dimensions do not print the same
+    limit block.
+    """
+    narrow = structural_limits(['ruff [marketplace/bundles]'])
+    wide = structural_limits(
+        ['ruff [marketplace/bundles]', 'module-tests [whole-tree pytest]']
+    )
+
+    assert [stem for stem, _ in narrow] == ['ruff']
+    assert [stem for stem, _ in wide] == ['ruff', 'module-tests']
+    assert narrow != wide
+
+
+def test_unregistered_dimension_is_reported_unknown_not_omitted():
+    """An analysis with no registered limit fails CLOSED to UNKNOWN, never to silence.
+
+    Silently omitting it would let the limit block read as exhaustive over a run that
+    included an analysis nobody characterised — the same absence-read-as-coverage
+    defect the whole gate-honesty effort exists to close.
+    """
+    boundary = CoverageBoundary()
+    boundary.record_checked('ruff [marketplace/bundles]')
+    boundary.record_checked('novel-analysis [whole-tree]')
+
+    summary = render_coverage_summary(boundary)
+
+    assert 'novel-analysis' in summary
+    assert 'UNKNOWN' in summary
+
+
+def test_complete_verdict_states_what_its_green_does_not_cover():
+    """A COMPLETE verdict carries its own structural scope limit.
+
+    The defect this closes is not that a gate is narrow — it is that a narrow gate's
+    green reads as whole-tree assurance. A cold reader of the COMPLETE form must be
+    able to answer "what could still be wrong despite this passing?".
+    """
+    boundary = CoverageBoundary()
+    boundary.record_checked('mypy(production) [660 files, cache disabled]')
+    boundary.record_checked('module-tests [whole-tree pytest]')
+
+    summary = render_coverage_summary(boundary)
+
+    assert 'COMPLETE' in summary
+    # The green is explicitly disclaimed as non-exhaustive over defect classes.
+    assert 'does NOT evaluate' in summary
+    # And the disclaimer is per-analysis, naming each one that ran.
+    assert 'mypy(production)' in summary
+    assert 'module-tests' in summary
+    # The limits are structural, not scope-widening advice.
+    assert 'widening the scope does not reach' in summary
+
+
+def test_partial_verdict_also_states_the_structural_limit():
+    """PARTIAL names BOTH the un-run dimension and the limits of the ones that ran.
+
+    A PARTIAL verdict already says "X was not checked". Without the structural block
+    it still implies the dimensions that DID run cover their subject completely.
+    """
+    boundary = CoverageBoundary()
+    boundary.record_checked('ruff [marketplace/bundles]')
+    boundary.record_degraded('mypy(test)', 'freshness suspect')
+
+    summary = render_coverage_summary(boundary)
+
+    assert 'PARTIAL' in summary
+    assert 'freshness suspect' in summary
+    assert 'does NOT evaluate' in summary
+    assert 'ruff' in summary
+
+
+def test_limits_name_the_defect_classes_review_catches_and_gates_cannot():
+    """The registered limits describe behaviour under un-supplied inputs, not scope.
+
+    Each limit must state a defect class the analysis structurally cannot reach —
+    the classes an external reviewer routinely finds while every in-house gate is
+    green. A limit phrased as "only checks the files it was given" would be a SCOPE
+    statement, which the PARTIAL verdict already covers and which widening the scope
+    WOULD reach.
+    """
+    typing = analysis_limit('mypy(production)')
+    tests = analysis_limit('module-tests')
+    lint = analysis_limit('plugin-doctor')
+
+    assert typing is not None and tests is not None and lint is not None
+    # Type analysis cannot judge whether a well-typed value is the RIGHT one.
+    assert 'correct' in typing.cannot_evaluate.lower()
+    # Test execution says nothing about inputs no test supplies.
+    assert 'no test' in tests.cannot_evaluate.lower()
+    # Structural lint checks shape, never the TRUTH of a documented claim.
+    assert 'true' in lint.cannot_evaluate.lower()
+
+
+def test_an_analysis_the_gate_never_ran_is_named_not_omitted():
+    """A dimension absent from the run leaves no trace — so the verdict names it.
+
+    `quality-gate` runs no pytest and no test-tree mypy. Those dimensions appear
+    nowhere in its verdict: not as checked, not as degraded, not at all. A reader
+    then cannot tell "this gate does not execute tests" from "tests were fine",
+    which is the absence-read-as-coverage shape one level up from the one the
+    per-analysis limits close.
+    """
+    boundary = CoverageBoundary()
+    boundary.record_checked('mypy(production) [401 files, cache disabled]')
+    boundary.record_checked('ruff [marketplace/bundles]')
+
+    summary = render_coverage_summary(boundary)
+
+    assert 'not run in this gate' in summary
+    assert 'module-tests' in summary
+    assert 'mypy(test)' in summary
+
+
+def test_a_run_covering_every_registered_analysis_names_no_unrun_ones():
+    """The un-run list is derived, so a full run states nothing false.
+
+    Without this direction the section could hard-code a list and claim tests were
+    skipped on a `verify` run that did execute them.
+    """
+    boundary = CoverageBoundary()
+    for stem in ('mypy(production)', 'mypy(test)', 'ruff', 'SPDX headers', 'plugin-doctor', 'module-tests'):
+        boundary.record_checked(stem)
+
+    summary = render_coverage_summary(boundary)
+
+    assert 'not run in this gate' not in summary
+
+
+def test_a_degraded_dimension_does_not_count_as_never_run():
+    """Degraded means "attempted, not fully checked" — PARTIAL already reports it.
+
+    Listing it as un-run too would report the same gap twice under two different
+    names, and would wrongly imply the gate does not perform that analysis at all.
+    """
+    boundary = CoverageBoundary()
+    boundary.record_checked('ruff [marketplace/bundles]')
+    boundary.record_degraded('mypy(production)', 'freshness suspect')
+
+    summary = render_coverage_summary(boundary)
+
+    unrun_section = summary.split('not run in this gate')[-1]
+    assert 'mypy(production)' not in unrun_section
+
+
+def test_empty_boundary_does_not_claim_a_limit_block_it_cannot_populate():
+    """A run that checked nothing states no per-analysis limits — and says so.
+
+    Rendering a limit block over an empty checked set would attach a scope-limit
+    statement to a run that performed no analysis, which reads as though something
+    was analysed.
+    """
+    summary = render_coverage_summary(CoverageBoundary())
+
+    assert '(nothing)' in summary
+    assert 'does NOT evaluate' not in summary

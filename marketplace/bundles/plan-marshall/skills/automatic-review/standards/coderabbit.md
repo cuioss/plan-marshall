@@ -15,12 +15,21 @@ bot appears in neither list, with a warning recorded. See
 The fenced-YAML block below is the machine-readable per-bot record. It is data, not frontmatter —
 a fenced code block that plugin-doctor treats as an example, not an executable directive. Consumers
 read `bot_kind`, `author_login`, `trigger_comment`, `completion_check_name`, `honors_skip_label`,
-`participation_evidence`, `participation_requires_update`, `ignore_patterns`, `refusal_patterns`,
-`contentless_review_markers`, `actionable_content_markers`, `rate_limit_class`,
-`rate_limit_eta_patterns`, and `severity_map` from it; the prose sections that follow carry the
-rationale. CodeRabbit declares neither `contentless_review_markers` nor
-`actionable_content_markers`, so the producer's content-aware layer never fires for it — the
-empty list is the fail-closed default and this bot's ingest behaviour is unchanged by it.
+`participation_evidence`, `participation_requires_update`, `ignore_patterns`,
+`review_body_summary_patterns`, `refusal_patterns`, `contentless_review_markers`,
+`actionable_content_markers`, `rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map` from
+it; the prose sections that follow carry the rationale. CodeRabbit declares neither
+`contentless_review_markers` nor `actionable_content_markers`, so the producer's content-aware layer
+never fires for it — the empty list is the fail-closed default and this bot's ingest behaviour is
+unchanged by it.
+
+CodeRabbit DOES declare `review_body_summary_patterns`, and it is the only registered bot that does.
+Its `review_body` comes in two shapes — the consolidated review, and the
+`"Actionable comments posted: N"` status line about it — and the counting rule
+([`bot-participation-contract.md`](bot-participation-contract.md) § "The counting rule") excludes the
+status line from every finding count. Declaring the literal here rather than in each counter keeps
+the identity in the registry: a counter that hard-coded `coderabbitai` would be a second, drifting
+source of truth for a fact this block already owns.
 
 ```yaml
 bot_kind: coderabbit
@@ -40,6 +49,8 @@ ignore_patterns:
   - "<!-- tips_start -->"                                                     # tips block
   - "@coderabbitai help"                                                      # command help echo
   - "✏️ Learnings added"                                                      # learnings-only reply
+review_body_summary_patterns:
+  - "Actionable comments posted:"   # its review_body STATUS line — excluded from every finding count
 refusal_patterns:
   - "Review limit reached"                                                    # current refusal notice — posted in place of a review
 rate_limit_class: awaitable_window   # the review limit is a rolling window that reopens on its own

@@ -35,6 +35,23 @@ statements rather than re-deriving them here.
    emits a summary whose PARTIAL form tells a reader the pass does not certify
    the un-checked dimensions.
 
+2b. **Structural scope limit** (:class:`AnalysisLimit` / :func:`structural_limits`)
+   — a *second*, orthogonal honesty property, and the one a COMPLETE verdict needs
+   most. Coverage boundary answers *"did the gate check everything it set out to?"*;
+   this answers *"and what can that check never see, however wide its scope?"* The
+   distinction is load-bearing: a PARTIAL verdict is cured by re-running the degraded
+   dimension, whereas a structural limit is a property of the ANALYSIS and is not
+   cured by anything. mypy decides type consistency, so it cannot decide whether a
+   well-typed value is the right one; pytest executes the tests that exist, so it is
+   silent on inputs no test supplies; a structural linter checks the SHAPE of a
+   document, so it cannot check whether a documented claim is TRUE. Those are exactly
+   the defect classes an external reviewer keeps finding on a diff whose every
+   in-house gate is green, and the defect this block closes is not that the gates are
+   narrow — it is that **a narrow gate's green reads as whole-tree assurance**. The
+   limits are derived from the dimensions the run ACTUALLY recorded, so a gate that
+   analysed less states less; a dimension with no registered limit renders as UNKNOWN
+   rather than being omitted, since omission would make the block read as exhaustive.
+
 3. **Parity population** (:func:`parity_population`) — the derived set of
    dimensions along which the local gate's coverage is compared to CI's. It is
    returned so a test can assert it is **non-empty**: a parity table derived from
@@ -167,6 +184,181 @@ class CoverageBoundary:
         return not self.degraded
 
 
+# ---------------------------------------------------------------------------
+# Structural scope limit — what a green does NOT evaluate (plan 130 D0)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class AnalysisLimit:
+    """What one kind of analysis does, and what it therefore cannot evaluate.
+
+    Attributes:
+        analysis: The analysis the dimension actually performs, in one clause.
+        cannot_evaluate: The defect class that analysis structurally cannot reach.
+            It is a statement about the ANALYSIS, never about its scope — a limit
+            phrased as "only the files it was given" would be a scope statement,
+            which :class:`CoverageBoundary` already reports and which widening the
+            scope would cure.
+    """
+
+    analysis: str
+    cannot_evaluate: str
+
+
+#: Analysis-kind -> its structural limit, keyed by the dimension STEM the gate
+#: records (see :func:`dimension_stem`). Each entry names a defect class that
+#: survives a fully-scoped green run of that analysis, so a reader of the verdict
+#: can answer "what could still be wrong despite this passing?".
+_ANALYSIS_LIMITS: dict[str, AnalysisLimit] = {
+    'mypy(production)': AnalysisLimit(
+        analysis='infers and checks type consistency across declarations, call sites and returns',
+        cannot_evaluate=(
+            'whether a well-typed value is the correct one. A binary read of a '
+            'three-valued observable type-checks exactly as the three-way read does, '
+            'so coercing an unknown into a positive passes this dimension'
+        ),
+    ),
+    'mypy(test)': AnalysisLimit(
+        analysis='checks type consistency across the test tree',
+        cannot_evaluate=(
+            'whether a well-typed test asserts anything meaningful. A test driven by a '
+            'stub that encodes the retired behaviour type-checks and passes, so it '
+            'cannot show that the test exercises the real code path'
+        ),
+    ),
+    'ruff': AnalysisLimit(
+        analysis='matches the enabled lint-rule set against the AST',
+        cannot_evaluate=(
+            'any defect no enabled rule encodes, and the semantics of the code its '
+            'patterns do match — a rule family absent from the select list is not a '
+            'clean result, it is an un-asked question'
+        ),
+    ),
+    'SPDX headers': AnalysisLimit(
+        analysis='checks that each in-scope file carries the literal header line',
+        cannot_evaluate='anything whatsoever about the file content below that line',
+    ),
+    'plugin-doctor': AnalysisLimit(
+        analysis='statically lints marketplace structure, frontmatter, and skill-body shape',
+        cannot_evaluate=(
+            'whether a documented claim is true. It checks that a workflow doc has the '
+            'required shape, never that the remedy the doc prescribes is reachable, is '
+            'invoked, or describes what the code does'
+        ),
+    ),
+    'module-tests': AnalysisLimit(
+        analysis='executes the tests that exist',
+        cannot_evaluate=(
+            'behaviour under inputs no test supplies. A green suite is evidence about '
+            'the cases it encodes and is silent on every other one, so it cannot '
+            'distinguish "correct" from "never exercised"'
+        ),
+    ),
+}
+
+
+def dimension_stem(dimension: str) -> str:
+    """Return the analysis-kind key for a recorded dimension label.
+
+    The gate records dimensions with a per-run scope suffix in brackets
+    (``mypy(production) [660 files, cache disabled]``). The limit registry is keyed
+    by analysis kind, so the varying suffix is stripped before lookup — keying on
+    the full label would miss the registry on every real run.
+
+    Args:
+        dimension: The dimension label as recorded on the boundary.
+
+    Returns:
+        The text before the first ``' ['``, stripped.
+    """
+    return dimension.split(' [', 1)[0].strip()
+
+
+def analysis_limit(stem: str) -> AnalysisLimit | None:
+    """Return the registered structural limit for an analysis kind, or None.
+
+    ``None`` means the analysis kind is not characterised here. The caller MUST
+    render that as an explicit UNKNOWN rather than omitting the dimension: an
+    omitted dimension makes the limit block read as exhaustive over a run that
+    included an analysis nobody characterised.
+    """
+    return _ANALYSIS_LIMITS.get(stem)
+
+
+def structural_limits(dimensions: list[str]) -> tuple[tuple[str, AnalysisLimit | None], ...]:
+    """Pair each checked dimension with its structural limit, in recorded order.
+
+    Derived from the dimensions the run ACTUALLY recorded — not from a fixed
+    boilerplate block — so a gate that analysed less states fewer limits. Duplicate
+    stems collapse to their first occurrence, since the limit is a property of the
+    analysis kind rather than of the individual invocation.
+
+    Args:
+        dimensions: The boundary's ``checked`` labels, suffixes included.
+
+    Returns:
+        One ``(stem, limit_or_None)`` pair per distinct analysis kind, in order of
+        first appearance. A ``None`` limit marks an uncharacterised analysis.
+    """
+    seen: set[str] = set()
+    pairs: list[tuple[str, AnalysisLimit | None]] = []
+    for dimension in dimensions:
+        stem = dimension_stem(dimension)
+        if stem in seen:
+            continue
+        seen.add(stem)
+        pairs.append((stem, analysis_limit(stem)))
+    return tuple(pairs)
+
+
+def _render_structural_limits(boundary: CoverageBoundary) -> list[str]:
+    """Render the per-analysis structural-limit block, or nothing when none applies.
+
+    Returns an empty list for a boundary that checked nothing: attaching a
+    scope-limit statement to a run that performed no analysis would read as though
+    something had been analysed.
+    """
+    pairs = structural_limits(boundary.checked)
+    if not pairs:
+        return []
+    lines = [
+        '    scope limit — what a green here does NOT evaluate, per analysis:',
+    ]
+    for stem, limit in pairs:
+        if limit is None:
+            lines.append(
+                f'      - {stem}: UNKNOWN — no structural limit is registered for this '
+                f'analysis, so this verdict cannot state what its green leaves '
+                f'un-evaluated. Treat its coverage as UNKNOWN, not as complete.'
+            )
+            continue
+        lines.append(f'      - {stem}: {limit.analysis}; it cannot evaluate {limit.cannot_evaluate}.')
+    lines.append(
+        '    These are properties of the analyses themselves, not of their scope: '
+        'widening the scope does not reach them, and re-running does not cure them. '
+        'A green above is evidence about the dimensions listed and is not whole-tree '
+        'assurance that the change is sound.'
+    )
+    # A dimension this run never attempted leaves NO trace — not checked, not
+    # degraded, simply absent. A reader then cannot tell "this gate does not run
+    # tests" from "tests were fine", which is the absence-read-as-coverage shape
+    # one level up from the one the per-analysis limits close. Naming it costs one
+    # line and is derived, so a run that did cover everything says nothing false.
+    # Degraded dimensions are excluded: those were attempted, and PARTIAL already
+    # reports them.
+    attempted = {dimension_stem(d) for d in boundary.checked}
+    attempted |= {dimension_stem(d) for d, _ in boundary.degraded}
+    not_run = [stem for stem in _ANALYSIS_LIMITS if stem not in attempted]
+    if not_run:
+        lines.append(
+            f'    not run in this gate at all: {", ".join(not_run)} — absent from the '
+            f'list above because this gate never performs them, NOT because they '
+            f'passed. Their defect classes are un-evaluated here.'
+        )
+    return lines
+
+
 def render_coverage_summary(boundary: CoverageBoundary) -> str:
     """Render a reader-facing coverage summary that distinguishes full from partial.
 
@@ -175,6 +367,15 @@ def render_coverage_summary(boundary: CoverageBoundary) -> str:
     dimensions — so a reader asked "is it safe to push?" against a partial
     verdict reads *no, the gate did not check X*, never a clean pass. The wording
     is load-bearing: it is text whose value is what a reader does with it.
+
+    **Both forms carry the structural scope limit** (:func:`structural_limits`),
+    because the two properties answer different questions and the COMPLETE form
+    needs the second one most. COMPLETE means every dimension was checked over its
+    full scope — which a reader reasonably, and wrongly, reads as assurance that the
+    change is sound. The appended block states per analysis what that green does not
+    evaluate at all, so the reader can answer *"what could still be wrong despite
+    this passing?"*. PARTIAL carries it too: without it, naming the un-run dimension
+    still implies the dimensions that DID run cover their subject completely.
 
     Args:
         boundary: The accumulated :class:`CoverageBoundary`.
@@ -185,7 +386,12 @@ def render_coverage_summary(boundary: CoverageBoundary) -> str:
     """
     checked = ', '.join(boundary.checked) if boundary.checked else '(nothing)'
     if boundary.complete:
-        return f'>>> coverage: COMPLETE — checked over full scope: {checked}'
+        lines = [
+            f'>>> coverage: COMPLETE over the dimensions below — checked over full '
+            f'scope: {checked}'
+        ]
+        lines.extend(_render_structural_limits(boundary))
+        return '\n'.join(lines)
     lines = [
         '>>> coverage: PARTIAL — this pass does NOT certify the whole tree. '
         'The gate did NOT fully check:',
@@ -198,6 +404,7 @@ def render_coverage_summary(boundary: CoverageBoundary) -> str:
     )
     if boundary.checked:
         lines.append(f'    (Fully checked: {checked}.)')
+    lines.extend(_render_structural_limits(boundary))
     return '\n'.join(lines)
 
 

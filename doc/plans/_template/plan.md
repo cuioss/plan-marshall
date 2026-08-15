@@ -24,7 +24,8 @@
 
 # {Plan title — what changes, stated as an outcome}
 
-**Epic:** {truthful-signals | review-apparatus | code-intelligence-substrate}
+**Epic:** {the epic directory this plan lives in — a ledger-backed epic (truthful-signals |
+review-apparatus | code-intelligence-substrate) or a standalone one authored directly in git}
 **Branch prefix:** {feature | fix | chore} — new capability / bug fix / maintenance-refactor-docs
 
 ## Problem

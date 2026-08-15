@@ -276,9 +276,13 @@ changes nothing until an executor is regenerated from it. Concretely:
 - the **main checkout's** executor and the **plugin cache** pick the change up
   only after the change lands and the cache is synced plus the executor
   regenerated, so neither is exercised by the branch that authors the change;
-- a **worktree-bound** executor is regenerated at phase-5 move-in, so a run that
-  regenerates its own worktree executor after editing the template *does*
-  exercise the guard against the live notation set.
+- a **worktree-bound** executor is regenerated at phase-5 move-in, and again by
+  `git-workflow worktree-rebase-to` when a finalize rebase changes the script set
+  (see [`../workflow-integration-git/standards/worktree-handling.md`](../workflow-integration-git/standards/worktree-handling.md)
+  § "Post-Rebase Executor Refresh"), so a run that regenerates its own worktree
+  executor after editing the template *does* exercise the guard against the live
+  notation set — and a run whose finalize rebase pulled in a script-set change
+  re-exercises it against the post-rebase set.
 
 The consequence for a reader auditing a change to this surface: a green run is
 evidence only where a regeneration actually happened. Verify against a
