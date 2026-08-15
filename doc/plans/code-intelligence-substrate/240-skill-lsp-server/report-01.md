@@ -223,7 +223,7 @@ Per instance.
 | 16 | Sub-agent | User page hard-coded "380 unresolved references"; this branch's own prose moved it to 381 | **Fixed** — restated as a range; exact figures live here with their measurement point |
 | 17 | Sub-agent | Developer page said "306 components"; measured 308 on this branch | **Fixed** — restated as a range |
 | 18 | Sub-agent | The `language_servers` docs gained no back-reference to the new sibling config surface (cross-referencing was one-directional) | **Fixed** — § "A sibling surface lives elsewhere, deliberately" added |
-| 19 | Sub-agent | `CLAUDE.md` component counts ("157 registered components (153 skills…)") are drifted; measured 156 `SKILL.md` files, and this branch adds one | **DEFERRED, not fixed** — the drift is **pre-existing** (already off by 2 before this branch) and correcting it requires settling what "components" counts, which is a separate question this plan does not own. Recorded so it is visible rather than silently inherited |
+| 19 | Sub-agent | `CLAUDE.md` component counts ("157 registered components (153 skills…)") are drifted; re-derived from git, `origin/main` carries **155** `SKILL.md` files and this branch **156** | **DEFERRED, not fixed** — the drift is **pre-existing and larger than the doc suggests**: against 156 skills + 2 agents + 2 commands the true total is **160**, not the 157 claimed and correcting it requires settling what "components" counts, which is a separate question this plan does not own. Recorded so it is visible rather than silently inherited |
 | 20 | Sub-agent (noted, not a defect) | No `manage-config` verb writes the new section; the user page instructs hand-editing, unlike every other marshal.json section | **Accepted as-is** — D4 requires the path be *documented*, not scripted. Recorded as an asymmetry for a future plan |
 | 21 | CI | _(none at time of writing — see Contract check)_ | — |
 
@@ -263,8 +263,12 @@ on.
 
 - **Tokens:** not available to the agent in this session — the harness exposes no token counter to the
   running agent, so no figure is stated rather than an estimate being presented as a measurement.
-- **Wall-clock:** approximately 2 h 15 min from the first `git status` to this report, including three
-  full `./pw verify` runs (~5 min 15 s each) and one 9-minute verification sub-agent.
+- **Wall-clock:** at least 2 h 32 min — the interval between the first commit (`8795719`,
+  18:44:44Z) and the report commit — and necessarily longer, since the run's first `git status`
+  precedes that commit by an unrecorded margin. Stated as a lower bound rather than a point
+  estimate, because the start instant was never recorded. Includes four full `./pw verify` runs
+  (~5 min each, from the runs' own pytest summaries) and two verification sub-agents (~9 min and
+  ~10 min, from the task-completion durations).
 - **Population:** this single Claude Code cloud session's interactive usage. ⛔ **Not comparable to a
   plan-marshall `metrics.toon` total**, which counts an orchestrator-plus-agent dispatch tree under
   plan-marshall's own per-task billing boundary. This run has no dispatch tree (one sub-agent aside)
@@ -277,7 +281,7 @@ on.
 | 1 Skills loaded | **Done** — named above, including those deliberately not loaded |
 | 2 Branch | **Done** — harness-assigned `claude/skill-lsp-server-2oqo3r` kept as-is and pushed to `origin` **before any edit** |
 | 3 Plan directory | **Done** — `plan.md` in place; first-instruction block verified **present** on arrival, no repair needed |
-| 4 Implement | **Done** — 7 commits, each carrying the trailer |
+| 4 Implement | **Done** — every commit on the branch carries the trailer (verified across all of them); the count is not restated here because it moved after this table was first written |
 | 4 Per-commit gate | **Done** — every `*.py`-touching commit preceded by a clean gate (`ruff` passed, `mypy` clean, SPDX passed, plugin-doctor `issues[0]`) |
 | 4 Pushed | **Done** — pushed after every commit; no unpushed commit remains |
 | 5 Build gate | **Done** — Python changes present, so owed; `./pw verify` SUCCESS (20 117 passed) |

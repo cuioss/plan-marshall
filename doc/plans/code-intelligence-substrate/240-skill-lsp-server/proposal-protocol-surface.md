@@ -61,8 +61,15 @@ D1's gate, measured on this clone (3 runs, median reported):
 | `resolve_transitive_deps` depth 10, warm index | **≈ 1.5 ms** |
 | `detect_circular_deps` (whole graph), warm index | **≈ 4.0 ms** |
 
+⚠ **These are the inventory's own primitives, not this plan's verbs.** A provenance-verified
+`references` answer costs more, because it re-reads each cited line: measured later, during
+verification, at **≈ 18–20 ms on the first call** for the most-referenced component (443 inbound
+edges) and **≈ 3 ms** on repeat, once its per-component file lists are cached. The conclusion below is
+unchanged — that is still orders below the 2 s per-process build — but "single-digit milliseconds" is
+true only after the first call, and is corrected here rather than left standing.
+
 **Essentially the entire cost is index construction, and it is paid per process.** A warm index
-answers every verb the plan names in single-digit milliseconds — comfortably interactive. A cold one
+answers the verbs the plan names in single-digit milliseconds once warm — comfortably interactive. A cold one
 costs 2 s, which is not.
 
 ⭐ **This is the most decision-relevant number in the proposal, and it does not point where the plan
@@ -70,7 +77,7 @@ expected.** D1 was written as a *risk* — *if the verbs are too slow, an increm
 becomes a deliverable*. The measurement says something narrower and more useful: the index does not
 need to be incremental or cached. **It needs to be resident.** Any surface that survives across
 requests — which a language server is by construction — turns a 2 s query into a 2 s startup plus
-microsecond answers. Any surface that forks a process per query pays the 2 s every single time.
+answers orders of magnitude cheaper. Any surface that forks a process per query pays the 2 s every single time.
 
 So latency does not merely permit the protocol choice; it **discriminates between the options
 below**, and it is the axis on which they most differ.

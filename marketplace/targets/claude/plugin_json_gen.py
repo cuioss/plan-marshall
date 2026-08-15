@@ -44,6 +44,14 @@ from marketplace.targets.claude.variant_emitter import (
 )
 
 # Top-level fields that are preserved verbatim from the committed plugin.json.
+#
+# ⛔ This is an ALLOWLIST, and a key absent from it is DISCARDED at build with no
+# error: the emitter excludes the source manifest from its verbatim mirror, and
+# the equality check compares regenerated against emitted (both missing the key),
+# so a dropped key is invisible to every gate. A manifest key that governs runtime
+# behaviour must therefore be added here explicitly — `lspServers` was declared in
+# the committed manifest and silently never reached the deployed artifact, so the
+# server it declares was never started by any client.
 PASSTHROUGH_FIELDS = (
     'name',
     'version',
@@ -53,6 +61,7 @@ PASSTHROUGH_FIELDS = (
     'homepage',
     'repository',
     'keywords',
+    'lspServers',
 )
 
 

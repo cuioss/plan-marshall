@@ -24,7 +24,9 @@
       "command": "python3",
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/skills/tools-corpus-language-server/scripts/corpus_lsp.py",
-        "serve"
+        "serve",
+        "--project-path",
+        "${CLAUDE_PROJECT_DIR}"
       ],
       "extensionToLanguage": {
         ".md": "markdown"

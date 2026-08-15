@@ -23,16 +23,18 @@ Enforcement model
 -----------------
 The rule is an allowlist gate, not a heuristic. Any ``sys.path`` mutation call in
 a NON-allowlisted skill script is a finding. Adding a genuinely load-bearing site
-(a script that runs before the executor exists, or a functional lazy-import that
-must add a directory on demand and degrade gracefully) is a conscious, reviewed
+(a script the executor never dispatches — one that runs before it exists, or
+outside it entirely — or a functional lazy-import that must add a directory on
+demand and degrade gracefully) is a conscious, reviewed
 act: the file is added to :data:`_ALLOWLIST` with its justification. This mirrors
 the ``warn_unused_ignores`` guard that keeps the import-not-found silencing
 comments from creeping back.
 
 Allowlist categories
 --------------------
-1. **Pre-executor entry points** — scripts invoked before
-   ``.plan/execute-script.py`` exists (the executor generator, the
+1. **Entry points the executor does not dispatch** — scripts that run before
+   ``.plan/execute-script.py`` exists, or outside it entirely, and so have no
+   injected ``PYTHONPATH`` either way (the executor generator, the
    marshall-steward wizard scripts, the permission-fix wizard step and the
    permission chain it imports, the platform-runtime router and its Claude
    runtime, and the corpus language server, which an LSP client spawns
@@ -157,8 +159,9 @@ def _make_finding(path: Path, line_no: int, call: str) -> dict:
             'bootstrap. The executor injects a PYTHONPATH covering every skill '
             'scripts/ directory before it dispatches (tests mirror it via conftest, '
             'mypy via MYPYPATH), so cross-skill imports resolve without it — write '
-            'the import plainly. If this site is genuinely load-bearing (runs before '
-            'the executor exists, or is a functional lazy-import that degrades '
+            'the import plainly. If this site is genuinely load-bearing (the executor '
+            'never dispatches it — it runs before the executor exists, or outside '
+            'it entirely — or it is a functional lazy-import that degrades '
             'gracefully), add its path to _ALLOWLIST in _analyze_sys_path_bootstrap.py '
             'with a justification.'
         ),

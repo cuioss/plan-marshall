@@ -274,7 +274,7 @@ Two properties place it, and both are deliberate.
 
 Building the corpus index costs roughly 1.9 seconds, and that cost is paid *per process*. Against a warm index the same questions are cheap — forward and reverse edges in well under a millisecond, a depth-10 transitive closure in about 1.5, whole-graph cycle detection in about 4, and a full provenance-verified reference set in under 5 once the citing components' file lists are cached.
 
-That gap — three orders of magnitude — is what settled the shape, not a preference between protocols. A surface that starts a process per request pays the build every time and is a two-second surface whichever protocol it speaks; a resident one pays it once at startup. A language server is resident by construction, which is why the presentation surface is a server rather than another verb.
+That gap — roughly 400-fold against a full provenance-verified reference set, and far larger against the cheapest verbs — is what settled the shape, not a preference between protocols. A surface that starts a process per request pays the build every time and is a two-second surface whichever protocol it speaks; a resident one pays it once at startup. A language server is resident by construction, which is why the presentation surface is a server rather than another verb.
 
 === The bound it inherits, and the one thing it withholds
 
