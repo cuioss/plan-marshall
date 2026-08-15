@@ -159,8 +159,8 @@ Work the slice **largest module first**.
 
 ## Expected surface
 
-Exactly these directories under `test/plan-marshall/`, plus the four named root-level modules, and
-nothing else:
+Exactly these directories under `test/plan-marshall/`, plus the four named root-level test modules
+and the slice's own shared contract module, and nothing else:
 
 - `automatic-review/`, `manage-ci-artifacts/`, `phase-5-execute/`, `phase-6-finalize/`
 - `tools-integration-ci/`
@@ -180,7 +180,7 @@ nothing else:
 | The slice carries historical narrative at scale in test prose | HYPOTHESIS | Re-derive over this slice only: `grep -rn 'once derived\|used to \|no longer\|the fix \|PR #[0-9]\|lesson-20\|this plan' ` across the Expected surface. Report the count; it is D1's baseline. |
 | Some subprocess `run_script` tests in this slice duplicate an in-process test in the same module | HYPOTHESIS — **gating for D3; settle it per module before collapsing anything** | Per module, list its `run_script` call sites beside its in-process tests and identify the pairs that assert the same behaviour. A collapse performed without that pairing is a deletion, not a collapse. |
 | No test in this slice is the *only* coverage of a subprocess-boundary contract that D3 would remove | HYPOTHESIS — **asserted absence, the higher-risk half** | For every candidate collapse, confirm the in-process test asserts the same contract, and name it in the report. If no in-process test does, the subprocess test stays. |
-| The partition holds — every directory under `test/plan-marshall/*/` and every top-level `test/` entry appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the two deliberate exclusions. A directory in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
+| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the three deliberate exclusions. An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
 
 ## Verification
@@ -199,13 +199,13 @@ nothing else:
 
 **Executable.** `./pw verify` (the lane's build gate; this plan changes Python). Plus the
 `plugin-doctor test-conventions` scope over each directory in the slice, before and after, with the
-per-rule counts recorded. Use the two-step recipe in
-`doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" — a **direct**
+per-rule counts recorded. Use the invocation in
+`doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" — a **bare**
 call to `doctor-marketplace.py` fails with `ModuleNotFoundError: No module named '_dep_detection'`,
-because the script has no `sys.path` bootstrap and the generated executor is what supplies the
-`PYTHONPATH` it needs. The executor is git-ignored but its generator is tracked, so the recipe
-generates it first. If the generator itself cannot run, report the affected measurement
-**unavailable** rather than substituting a weaker check.
+because the script has no `sys.path` bootstrap, so the invocation supplies the five scripts
+directories it needs on `PYTHONPATH`. It is one command, touches no `.plan/`, and writes nothing. If
+it cannot be made to run, report the affected measurement **unavailable** rather than substituting a
+weaker check.
 
 **By reading — cold read, required for D1.** D1 rewrites text whose value is what a later reader takes
 from it, and the risk is not that too much is removed but that the *invariant* is removed along with

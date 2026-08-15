@@ -171,7 +171,7 @@ nothing else:
 | `manage-tasks/_helpers.py` carries the bare generic basename the existing `unique-fixture-basenames` rule forbids | OBSERVED | the file path; `doctor-test-conventions.md` § `unique-fixture-basenames` detection step 2 |
 | Every assertion in `test_audit_checks.py` belongs to exactly one identifiable check, so the decomposition is a clean partition | HYPOTHESIS — **gating for D1; settle it before moving anything** | Map every one of the ~90 classes to its check before the first move, and record the map in the report. A class that spans two checks is the case that decides whether a module is duplicated or a check is split — decide it explicitly, do not let the first move settle it. |
 | No test in this slice depends on `test_audit_checks.py`'s module-level import side effects surviving the split | HYPOTHESIS — **asserted absence, the higher-risk half** | The module loads `audit.py` via `spec_from_file_location` and registers it in `sys.modules` under a fixed name at import time. Confirm what else in the tree reads that `sys.modules` entry before splitting the loader across modules; a split that leaves two modules racing to register the same name is a flaky green. |
-| The partition holds — every directory under `test/plan-marshall/*/` and every top-level `test/` entry appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the two deliberate exclusions. A directory in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
+| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the three deliberate exclusions. An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
 
 ## Verification
@@ -193,13 +193,13 @@ nothing else:
 
 **Executable.** `./pw verify` (the lane's build gate; this plan changes Python). Plus the
 `plugin-doctor test-conventions` scope over each directory in the slice, before and after, with the
-per-rule counts recorded. Use the two-step recipe in
-`doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" — a **direct**
+per-rule counts recorded. Use the invocation in
+`doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" — a **bare**
 call to `doctor-marketplace.py` fails with `ModuleNotFoundError: No module named '_dep_detection'`,
-because the script has no `sys.path` bootstrap and the generated executor is what supplies the
-`PYTHONPATH` it needs. The executor is git-ignored but its generator is tracked, so the recipe
-generates it first. If the generator itself cannot run, report the affected measurement
-**unavailable** rather than substituting a weaker check.
+because the script has no `sys.path` bootstrap, so the invocation supplies the five scripts
+directories it needs on `PYTHONPATH`. It is one command, touches no `.plan/`, and writes nothing. If
+it cannot be made to run, report the affected measurement **unavailable** rather than substituting a
+weaker check.
 
 **By reading — cold read, required for D5.** D5 rewrites text whose value is what a later reader takes
 from it, and the risk is not that too much history is removed but that the **invariant** is removed

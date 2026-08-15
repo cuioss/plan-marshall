@@ -55,9 +55,11 @@ directories stage that contract's fixtures independently.
 `test/plan-marshall/build_test_helpers.py` exists to serve that family, but reaches only **four** of
 the six: `build-gradle`, `build-maven`, `build-npm` and `build-pyproject` import it;
 `build-operations` and `build-server` do not reference it at all. So D1's consolidation is two jobs,
-not one — four directories that already share a surface, and two that never did — on top of the two
-renames and the proposal it records. Re-derive the importer set before scoping the work. The helper sits at the tree's root level and
-carries no underscore prefix — so nothing marks it as non-collectable, the existing
+not one: four directories that already share a surface, and two that never did — on top of the two
+renames and the proposal D1 also records. Re-derive the importer set before scoping the work.
+
+The helper sits at the tree's root level and carries no underscore prefix — so nothing marks it as
+non-collectable, the existing
 `unique-fixture-basenames` doctor rule does not inspect it, and its own module docstring records that
 loading it through `load_script_module` **re-registers `_build_execute_factory` in `sys.modules`**,
 a hazard `test/conftest.py`'s daemon-routing fixture then has to work around by patching closure
@@ -214,7 +216,7 @@ the two root-level helper renames, and nothing else:
 | `build_test_helpers` is imported by exactly four `build-*` directories (`build-gradle`, `build-maven`, `build-npm`, `build-pyproject`) and by nothing outside this slice | OBSERVED | `grep -rln 'build_test_helpers' test` — note `test/conftest.py` names it **by path in a docstring**, which the same grep surfaces and which D1 handles as a recorded proposal, not an edit |
 | `discovery_test_helpers` is imported only by `build-npm/test_npm_discover.py` and `build-gradle/test_gradle_discover_modules.py`, both in this slice | OBSERVED | `grep -rln 'discovery_test_helpers' test` |
 | The phase and lifecycle directories each stage a plan directory by hand and **none shares that staging with another** | HYPOTHESIS — **asserted absence, the higher-risk half; it is D2's entire justification** | Read the staging preamble of one module per directory in the D2 group and record which helper, if any, each uses. If two already share one, D2 is an extension of that surface rather than a new one — say so rather than building a second. |
-| The partition holds — every directory under `test/plan-marshall/*/` and every top-level `test/` entry appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the two deliberate exclusions. A directory in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
+| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the three deliberate exclusions. An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
 
 ## Verification
@@ -239,13 +241,13 @@ happen.
 
 **Executable.** `./pw verify` (the lane's build gate; this plan changes Python). Plus the
 `plugin-doctor test-conventions` scope over each directory in the slice, before and after, with the
-per-rule counts recorded. Use the two-step recipe in
-`doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" — a **direct**
+per-rule counts recorded. Use the invocation in
+`doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" — a **bare**
 call to `doctor-marketplace.py` fails with `ModuleNotFoundError: No module named '_dep_detection'`,
-because the script has no `sys.path` bootstrap and the generated executor is what supplies the
-`PYTHONPATH` it needs. The executor is git-ignored but its generator is tracked, so the recipe
-generates it first. If the generator itself cannot run, report the affected measurement
-**unavailable** rather than substituting a weaker check.
+because the script has no `sys.path` bootstrap, so the invocation supplies the five scripts
+directories it needs on `PYTHONPATH`. It is one command, touches no `.plan/`, and writes nothing. If
+it cannot be made to run, report the affected measurement **unavailable** rather than substituting a
+weaker check.
 
 **By reading — cold read, required for D5.** D5 rewrites text whose value is what a later reader takes
 from it, and the risk is not that too much history is removed but that the **invariant** is removed

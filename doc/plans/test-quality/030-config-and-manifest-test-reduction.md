@@ -185,7 +185,7 @@ Exactly these directories under `test/plan-marshall/`, and nothing else:
 | The slice is ~53,800 lines across the six listed directories | HYPOTHESIS | Re-derive: `wc -l $(find test/plan-marshall/{manage-config,manage-execution-manifest,manage-run-config,manage-references,manage-solution-outline,marshall-steward} -name 'test_*.py')` |
 | `test_config_defaults.py` carries ~202 tests in ~3,990 lines, ~22 of them sharing the `_includes_{knob}` naming shape | OBSERVED | the file itself; `grep -n '^def test_default_plan_finalize_includes_\|^def test_get_default_config_includes_' test/plan-marshall/manage-config/test_config_defaults.py` |
 | Only **three** knobs are crossed against both accessors; the rest of the `_includes_` family is unpaired, and several assert unrelated subjects | OBSERVED | Extract the knob suffix under each prefix **separately** and intersect the two sets — a single grep returning the count 22 does **not** establish pairing. The three are `admin_merge_on_stuck_state`, `auto_rebase_threshold`, `merge_queue_wait_budget_seconds`. Re-derive before D1; the collapse shape depends on it |
-| The partition holds — every directory under `test/plan-marshall/*/` and every top-level `test/` entry appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the two deliberate exclusions. A directory in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
+| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the three deliberate exclusions. An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Almost none of this slice is written as parametrized tables | HYPOTHESIS | `grep -rn '@pytest.mark.parametrize'` over the six directories, against their test-function count. Report the ratio — it is D1's baseline |
 | `test_config_defaults.py` opens with a private `_load_module` and a four-level `Path(__file__).parent` chain, loading seven modules under bespoke aliases | OBSERVED | the first ~105 lines of that file |
 | `test_manage_execution_manifest_compose.py` describes its own subject as table-driven and then writes each row longhand | OBSERVED | the file's "Decision Matrix Tests — table-driven cases" section comment and the functions under it |
@@ -208,12 +208,12 @@ Exactly these directories under `test/plan-marshall/`, and nothing else:
 
 **Executable.** `./pw verify` (the lane's build gate; this plan changes Python). Plus the doctor's
 `test-conventions` scope over each of the six directories, before and after, with the per-rule counts
-recorded. Use the two-step recipe in `doc/plans/test-quality/README.md` § "Running the plugin-doctor
-test-conventions scope" — a **direct** call to `doctor-marketplace.py` fails with
+recorded. Use the invocation in `doc/plans/test-quality/README.md` § "Running the plugin-doctor
+test-conventions scope" — a **bare** call to `doctor-marketplace.py` fails with
 `ModuleNotFoundError: No module named '_dep_detection'`, because the script has no `sys.path`
-bootstrap and the generated executor is what supplies the `PYTHONPATH` it needs. The executor is
-git-ignored but its generator is tracked, so the recipe generates it first. If the generator itself
-cannot run, report the D5 measurement **unavailable** rather than substituting a weaker check.
+bootstrap, so the invocation supplies the five scripts directories it needs on `PYTHONPATH`. It is one
+command, touches no `.plan/`, and writes nothing. If it cannot be made to run, report the D5
+measurement **unavailable** rather than substituting a weaker check.
 
 **By reading — cold read, required for D5.** D5 rewrites text whose value is what a later reader takes
 from it, and the risk is not that too much history is removed but that the **invariant** is removed
@@ -223,7 +223,8 @@ contract does this test pin, and why does it matter?" A test whose rewritten doc
 both has been over-stripped; restore the invariant (not the history) and re-read. Record the answers
 verbatim.
 
-**By reading — D1's tables.** Pick the three largest parametrized tables D1 produced and read each `ids=` list cold:
+**By reading — D1's tables.** Pick the three largest parametrized tables D1 produced and read each
+`ids=` list cold:
 a reader who has never seen the pre-collapse functions must be able to say what each row asserts from
 its id alone. An `ids=` list of `case0, case1, …` has moved the prose out without putting the meaning
 back, and fails this check.

@@ -138,38 +138,38 @@ never a bare `_fixtures.py` or `_helpers.py`.
 Every plan in this epic measures itself with the doctor's `test-conventions` scope, so the invocation
 is stated **once, here**, verified to run.
 
-**Calling the script directly does not work.** `doctor-marketplace.py` has no `sys.path` bootstrap: its
-import chain reaches into a *different* skill's scripts directory (`_doctor_shared` → `_dep_detection`,
-which lives under `tools-marketplace-inventory`), so a bare
-`python3 marketplace/bundles/.../doctor-marketplace.py test-conventions` fails with
-`ModuleNotFoundError: No module named '_dep_detection'`. It needs a `PYTHONPATH` assembled from every
-`marketplace/bundles/*/skills/*/scripts` directory — which is precisely what the generated executor
-supplies, and what `test/conftest.py::_setup_marketplace_pythonpath` reconstructs for pytest.
+**A bare call to the script fails.** `doctor-marketplace.py` has no `sys.path` bootstrap: its import
+chain reaches into *other* skills' scripts directories (`_doctor_shared` → `_dep_detection` under
+`tools-marketplace-inventory`; `file_ops` → `toon_parser` under `ref-toon-format`), so
+`python3 marketplace/bundles/.../doctor-marketplace.py test-conventions` dies with
+`ModuleNotFoundError: No module named '_dep_detection'`.
 
-**The generated executor is git-ignored, but its generator is tracked.** So generate it once, then
-invoke through it — the same two steps `test/conftest.py` performs automatically at session start:
-
-```bash
-python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py generate
-```
+**Supply the five scripts directories it needs on `PYTHONPATH`, in one command.** This is a single
+invocation with no shell substitution, no loop, and — deliberately — **no `.plan/` involvement**: the
+lane forbids this run from touching `.plan/` at all, and generating the executor to borrow its
+`PYTHONPATH` would violate that prohibition for a convenience the line below does not need.
 
 ```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace test-conventions --test-root {path}
+PYTHONPATH=marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts:marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts:marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts:marketplace/bundles/plan-marshall/skills/script-shared/scripts:marketplace/bundles/plan-marshall/skills/ref-toon-format/scripts python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py test-conventions --test-root {path}
 ```
 
 `{path}` is `test/` for a whole-tree sweep, or one directory for a per-directory count. The whole-tree
-**rule-firing** sweep that plan `080` diffs before and after is the sibling subcommand `quality-gate`,
-not `test-conventions`:
+**rule-firing** sweep that plan `080` diffs before and after is the sibling subcommand `quality-gate`
+— same `PYTHONPATH` prefix, and it takes no `--test-root`:
 
 ```bash
-python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate
+PYTHONPATH=<the same five directories> python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py quality-gate
 ```
 
-Generating the executor writes only to the git-ignored `.plan/`, so it leaves the working tree clean
-and nothing to stage. If the generator itself cannot run, the measurement is genuinely **unavailable**
-— report it as such rather than substituting a weaker check.
+This writes nothing anywhere, so the working tree stays clean and there is nothing to stage. It is
+the same `PYTHONPATH` assembly `test/conftest.py::_setup_marketplace_pythonpath` performs in-process
+for pytest — spelled out as one literal path list rather than derived by a glob, so it stays a
+single command with no shell substitution. The five
+directories are a lead like any other — if the import chain has grown a sixth, the `ModuleNotFoundError`
+names it, so add it and say so in the report. If the command cannot be made to run at all, the
+measurement is genuinely **unavailable**: report it as such rather than substituting a weaker check.
 
-### What "reduce the line count" means here
+## What "reduce the line count" means here
 
 Every reduction plan carries the same three-part done-when, and **all three must hold**:
 
@@ -218,9 +218,11 @@ skipped, with nothing positioned to notice. Each reduction plan therefore carrie
 halting derivation**, run before its first deliverable:
 
 1. List every directory under `test/plan-marshall/*/`, **every file at the root of
-   `test/plan-marshall/`**, and every top-level entry under `test/`. The root-level files are not an
-   afterthought — they are exactly the category a slice boundary is most likely to mis-assign, since
-   they sit in one plan's tree while being imported from another's.
+   `test/plan-marshall/`**, and every top-level entry under `test/` **other than `plan-marshall/`
+   itself** — that one is decomposed by the first two clauses, so listing it as well would report it
+   unclaimed and halt on a non-defect. The root-level files are not an afterthought either: they are
+   exactly the category a slice boundary is most likely to mis-assign, since they sit in one plan's
+   tree while being imported from another's.
 2. Confirm each appears in **exactly one** of `030`–`080`'s Expected surface, allowing for these
    three deliberate exclusions and no others: `test/_shared/` and `test/conftest.py` (both plan
    `020`'s), and `test/fixtures/` (holds no `.py`).

@@ -198,7 +198,7 @@ rename, because plan `070` owns both of its importers (see the note under D3).
 | `test/plan-marshall/script-shared/` carries matched positive/negative control pairs whose arms are evidence only in contrast | OBSERVED | the module docstrings of the daemon-routing and root-fs neutralization control modules under that directory |
 | This slice contains units whose contract is universal in the **B8** sense | HYPOTHESIS — **D5 exists to settle it** | Derive from the slice itself. If the derivation finds few or none, that is the finding — report it, and say so plainly rather than padding the table. |
 | No property-based test already exists anywhere in the tree | HYPOTHESIS — **asserted absence** | `grep -rn 'hypothesis\|@given\|strategies' test --include=*.py`. If one exists, D5's table starts from it rather than from zero. |
-| The partition holds — every directory under `test/plan-marshall/*/` and every top-level `test/` entry appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the two deliberate exclusions. A directory in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
+| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the three deliberate exclusions. An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
 
 ## Verification
@@ -220,13 +220,13 @@ hoisted to too broad a scope shows up as an order-dependent failure, not as a co
 
 **Executable.** `./pw verify` (the lane's build gate; this plan changes Python). Plus the
 `plugin-doctor test-conventions` scope over each directory in the slice, before and after, with the
-per-rule counts recorded. Use the two-step recipe in
-`doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" — a **direct**
+per-rule counts recorded. Use the invocation in
+`doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" — a **bare**
 call to `doctor-marketplace.py` fails with `ModuleNotFoundError: No module named '_dep_detection'`,
-because the script has no `sys.path` bootstrap and the generated executor is what supplies the
-`PYTHONPATH` it needs. The executor is git-ignored but its generator is tracked, so the recipe
-generates it first. If the generator itself cannot run, report the affected measurement
-**unavailable** rather than substituting a weaker check.
+because the script has no `sys.path` bootstrap, so the invocation supplies the five scripts
+directories it needs on `PYTHONPATH`. It is one command, touches no `.plan/`, and writes nothing. If
+it cannot be made to run, report the affected measurement **unavailable** rather than substituting a
+weaker check.
 
 **By reading — cold read, required for D4.** D4 rewrites text whose value is what a later reader takes
 from it, and the risk is not that too much history is removed but that the **invariant** is removed

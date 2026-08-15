@@ -160,13 +160,10 @@ check rather than against a reviewer's memory.
      a `PR #` reference, or a deliverable/plan id. Reuse the detection shape the existing
      `incident-reference-in-docs` and `lesson-id-in-skill-prose` analyzers already use over
      `marketplace/bundles/**` rather than writing a second matcher.
-   Ship the tests in `test/pm-plugin-development/plugin-doctor/test_analyze_test_conventions_budget.py`
-   — a **new** module beside the three that already test this scope's existing rules
-   (`test_test_conventions_rule1.py`, `rule2.py`, `rule3.py`), which this plan also owns. Note that
-   **no file matching `test_analyze_test_conventions*.py` exists** — do not go looking for one; the
-   existing modules use the `test_test_conventions_rule{N}.py` spelling, and the new module should
-   follow the convention its siblings actually use rather than the one this sentence once assumed.
-   Give each rule a positive fixture that fires it and a negative control that does not.
+   Ship the tests in `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule4.py` — a
+   **new** module continuing the numbering of the three that already test this scope's existing rules
+   (`test_test_conventions_rule1.py`, `rule2.py`, `rule3.py`), all four of which this plan owns. Give
+   each rule a positive fixture that fires it and a negative control that does not.
 
    **The doctor has a provenance contract for new rules, and it applies here.**
    `references/rule-provenance.md` § "Provenance contract for new rules" requires, per rule: a
@@ -179,6 +176,19 @@ check rather than against a reviewer's memory.
    *test prose*, not in the doctor's own provenance table, which is where they belong. Do not resolve
    that by dropping the citation.
 
+   ⚠️ **Satisfy the zero-match invariant from your OWN module, not from `_fixtures.py`.**
+   `registered_rule_ids()` globs the analyzer modules, so the four new rules become registered the
+   moment D5's emitter lands, and `test_zero_match_suite_coverage.py` then requires
+   `registered − fired − EXEMPT == ∅` — **`./pw verify`, this plan's own armed build gate, fails until
+   they fire.** The three existing test-conventions rules satisfy that through `FIXTURE_CORPUS`
+   entries in `test/pm-plugin-development/plugin-doctor/_fixtures.py`, but **that file belongs to plan
+   `080`, which renames it** — editing it here is a direct collision with a plan that may be running
+   concurrently. Use the `record_fired(...)` escape hatch instead: it exists for exactly this case
+   ("rule IDs that fired in a test that the static corpus cannot drive"), `test_analyze_crossfile.py`
+   already uses it, and calling it from your own `rule4.py` keeps the two surfaces disjoint. **Do not
+   add an `EXEMPT_RULE_IDS` entry** — that would register four rules and then declare them exempt from
+   having to fire, which is the defect the invariant exists to catch.
+
    Landing four `warning` rules into this scope **falsifies two blanket statements in the standards
    doc it lands in**: `doctor-test-conventions.md` currently opens its § Rules with "All three rules
    emit findings with `severity: error`" and closes its § Severity Summary with "All three rules ship
@@ -190,14 +200,13 @@ check rather than against a reviewer's memory.
    severity statements are corrected to match the shipped rule set, and the run reports the per-rule
    finding counts.
 
-   > **Invoking the doctor.** Calling `doctor-marketplace.py` directly fails with
+   > **Invoking the doctor.** A bare call to `doctor-marketplace.py` fails with
    > `ModuleNotFoundError: No module named '_dep_detection'` — it has no `sys.path` bootstrap and its
-   > import chain reaches into another skill's scripts directory. The generated executor supplies the
-   > `PYTHONPATH` it needs; the executor is git-ignored but **its generator is tracked**, so generate
-   > it once and invoke through it. `doc/plans/test-quality/README.md` § "Running the plugin-doctor
-   > test-conventions scope" carries the verified two-step recipe and the exact commands — follow it
-   > there rather than reconstructing it. If the generator itself cannot run, report the deliverable
-   > **blocked** rather than substituting a weaker check.
+   > import chain reaches into other skills' scripts directories.
+   > `doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" carries
+   > the verified single-command invocation, which supplies those directories on `PYTHONPATH` and
+   > touches no `.plan/` — follow it there rather than reconstructing it. If it cannot be made to run,
+   > report the deliverable **blocked** rather than substituting a weaker check.
 
 6. **D6 — Record the two decisions this run may not take** — in the run report, as proposals for the
    operator, not as changes:
@@ -246,15 +255,19 @@ check rather than against a reviewer's memory.
 ## Expected surface
 
 - `marketplace/bundles/plan-marshall/skills/persona-module-tester/standards/testing-methodology.md` — D1, D2, D3
-- `marketplace/bundles/plan-marshall/skills/persona-module-tester/SKILL.md` — reference-table rows for the new rules
+- `marketplace/bundles/plan-marshall/skills/persona-module-tester/SKILL.md` — reference-table rows
+  for the new rules
 - `marketplace/bundles/pm-dev-python/skills/pytest-testing/standards/testing-pytest.md` — D2, D3, D4
 - `marketplace/bundles/pm-dev-python/skills/pytest-testing/SKILL.md` — Quick Reference rows (D4)
 - `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py` — D5
 - `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md` — D5
-- `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md` — D5 (one row per new rule, required by the provenance contract)
-- `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-provenance.md` — D5 (one row per new rule, with its class and source citation)
-- `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/SKILL.md` — Workflow 10 and the rule-index list (D5)
-- `test/pm-plugin-development/plugin-doctor/test_analyze_test_conventions_budget.py` — D5 (new)
+- `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md` — D5
+  (one row per new rule, required by the provenance contract)
+- `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-provenance.md` — D5
+  (one row per new rule, with its class and source citation)
+- `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/SKILL.md` — Workflow 10 and the
+  rule-index list (D5)
+- `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule4.py` — D5 (new)
 
 Nothing under `test/` other than that one new module. Nothing under `test/conftest.py` or
 `test/_shared/`.
@@ -270,15 +283,15 @@ Nothing under `test/` other than that one new module. Nothing under `test/confte
 | `plugin-doctor` already has historical-prose / incident-reference / lesson-id analyzers scoped over `marketplace/bundles/**` and **not** over `test/` | OBSERVED | `scripts/_analyze_historical_prose_in_skills.py`, `_analyze_incident_reference_in_docs.py`, `_analyze_lesson_id_in_skill_prose.py` — read their root argument before reusing their matchers |
 | Roughly three quarters of test lines sit in modules over 400 lines, and the median module is ~323 lines | HYPOTHESIS | Re-derive: `wc -l $(find test -name 'test_*.py')`, sort, take the median and the `>400` share. D1's derivation sentence must cite the number you measure, not the number written here. |
 | No existing `plugin-doctor` rule already covers any of the four D5 rule ids | HYPOTHESIS — **this is an asserted absence, the higher-risk half** | Enumerate every `RuleDescriptor(rule_id=…)` across `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_*.py` and confirm none of the four ids, or a rule with equivalent detection, is already registered. If one is, extend it rather than adding a second. |
-| `test/pm-plugin-development/plugin-doctor/test_analyze_test_conventions_budget.py` does not exist | HYPOTHESIS — asserted absence | `ls test/pm-plugin-development/plugin-doctor/` |
+| `test_test_conventions_rule1.py`, `rule2.py` and `rule3.py` exist and `rule4.py` does not, so the new module continues an established numbering rather than inventing a convention | HYPOTHESIS — the absence half is the higher-risk one | `ls test/pm-plugin-development/plugin-doctor/`. If a `rule4.py` already exists, extend it rather than colliding with it |
 
 ## Verification
 
 **Executable.** `./pw verify` (the lane's build gate — this plan changes Python under
 `marketplace/bundles/`, so the gate is armed). Additionally run the doctor scope itself over the live
-tree and record the per-rule finding counts in the report, using the two-step recipe in
+tree and record the per-rule finding counts in the report, using the invocation in
 `doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" (see the note
-under D5 for why a direct call fails), with `--test-root test/`.
+under D5 for why a bare call fails), with `--test-root test/`.
 
 A rule reporting **zero** findings over a tree the census says violates it is a broken detector, not a
 clean tree — treat a zero as a failure to investigate, not as a pass.
