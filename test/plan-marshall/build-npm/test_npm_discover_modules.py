@@ -12,9 +12,9 @@ to verify the unified Extension API contract.
 Structure validated per build-project-structure.md:
 - build_systems: ["npm"] (array)
 - paths: {module, descriptor, sources, tests, readme}
-- metadata: {type, description}
+- metadata: {name, description, version, scripts}
 - packages: {} (object keyed by package name)
-- dependencies: ["npm:name:scope", ...] (string format)
+- dependencies: ["name:scope", ...] (string format; scope is runtime|dev)
 - stats: {source_files, test_files}
 - commands: {} (canonical command mappings)
 """

@@ -23,9 +23,9 @@ knowledge, owned by the language bundle); this one joins declared distribution
 dependencies (build-system knowledge, owned by the build skill). They answer
 different questions — "what does this code import" versus "what does this project
 declare" — and a consumer project that declares its dependencies but is not
-crawled for imports gets its graph from this one alone. Because one bundle
-registers at most one resolver, the split across two bundles is also what keeps
-per-edge provenance able to say WHICH of the two derived a given edge.
+crawled for imports gets its graph from this one alone. Each registration site
+stamps a single resolver id, so keeping the two joins at separate sites is also
+what keeps per-edge provenance able to say WHICH of the two derived a given edge.
 
 The Python build extension claims ``pyproject.toml`` as config but NOT
 ``uv.lock`` or ``marshal.json`` — neither lockfile nor marshal config triggers a

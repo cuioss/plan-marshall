@@ -12,6 +12,37 @@ Plan Marshall builds a dependency graph of your project's modules and answers fo
 
 The graph is derived, not configured. You declare nothing, and there is no dependency file to maintain: Plan Marshall reads the dependency declarations your build system already has. This page tells you *what you get for your ecosystem*, and — just as importantly — how to tell an empty answer that means "nothing depends on this" from one that means "nothing could answer".
 
+== The four verbs
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture graph
+----
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture impact --module my-module
+----
+
+[cols="1,3", options="header"]
+|===
+| Verb | Answers
+
+| `graph`
+| The whole edge set, plus topological layers. Add `--full` to keep aggregator modules that are otherwise filtered out.
+
+| `path SOURCE TARGET`
+| How two modules connect, if they do. Both module names are positional.
+
+| `neighbors --module M [--depth N]`
+| What sits within `N` hops of a module.
+
+| `impact --module M`
+| Every module that transitively depends on `M` — what you risk breaking by changing it.
+|===
+
+Canonical invocations for every flag live in xref:../../marketplace/bundles/plan-marshall/skills/manage-architecture/SKILL.md[`manage-architecture`].
+
 == What your ecosystem gets
 
 Nothing here is opt-in. If your project is one of the ecosystems below, the graph verbs work on a fresh checkout with no configuration.
@@ -30,7 +61,7 @@ Nothing here is opt-in. If your project is one of the ecosystems below, the grap
 
 | Python
 | The PEP 621 `[project] name`
-| Each module's `pyproject.toml` name against every module's `dependencies` and `optional-dependencies`.
+| Each module's `pyproject.toml` name against every module's `dependencies` and its `optional-dependencies.dev` extra.
 
 | npm / yarn / pnpm
 | The `package.json` `name`
@@ -43,7 +74,9 @@ Two further joins run over cross-references rather than build declarations — P
 
 Names are matched the way Python packaging matches them: case-insensitively, with any run of `-`, `_` or `.` treated as equivalent. A module publishing `sample-api` is therefore reached by a dependency spelling it `Sample_API`.
 
-Both scopes count. A `dev` entry under `[project.optional-dependencies]` is a real edge, because changing the module you depend on can break your tests.
+Two scopes are read: `[project] dependencies`, and the `dev` extra under `[project.optional-dependencies]`. A `dev` entry is a real edge, because changing the module you depend on can break your tests.
+
+Other extras are *not* read. A sibling named only under a `test`, `docs` or `all` extra produces no edge — move it to `dev` (or to `dependencies`) if you need it in the graph.
 
 A directory with no `[project] name` publishes no distribution, so nothing can depend on it. It still appears as a module and its own dependencies still produce edges — it simply cannot be the *target* of one.
 
@@ -85,7 +118,7 @@ Never read a bare empty list as "my project has no internal dependencies". That 
 
 Each edge carries a `producers` list naming the resolvers that derived it, so you can tell where a claim came from. An edge found by two resolvers carries both — they corroborated, they did not conflict.
 
-Three producer names are not resolvers:
+Two producer names are not resolvers:
 
 * `declared` — you (or a curated overlay) declared this dependency explicitly, and that declaration replaced whatever the resolvers derived for that module.
 * `sibling-cross-link` — the two modules are the same directory under two build systems.

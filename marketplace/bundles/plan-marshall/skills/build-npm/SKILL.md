@@ -74,6 +74,22 @@ Uses a single-match parser registry: log content is analyzed to detect the tool 
 
 Reads `package.json` to detect workspaces and available scripts.
 
+## Module-edge derivation (Axis-C derivation resolver)
+
+`extension.py`'s `BuildExtension` subclasses **both** `BuildExtensionBase` (Axis-B, the file-to-build map) and `DerivationResolverBase` (Axis-C, module-edge derivation), so this skill also answers *which modules depend on which* for the `graph` / `path` / `neighbors` / `impact` query family.
+
+The resolver id is `npm`. Its derivation is the **package-name join**: an npm package publishes no `groupId:artifactId` coordinate, so the Maven join can never match one — what it publishes is its `package.json` `name`, carried on `metadata.name`. An edge exists wherever one module's `name:scope` dependency string names another module's published package, compared case-folded (which admits the legacy mixed-case names predating npm's lower-case rule without merging names npm considers distinct). Scoped names (`@scope/pkg`) join unchanged, since the scope is part of the name rather than a separate coordinate segment. Both `dependencies` and `devDependencies` contribute.
+
+**Workspace members need no special case.** `discover_npm_modules` already resolves the `workspaces` globs (the array form, the `{"packages": [...]}` form, and pnpm's `pnpm-workspace.yaml`) into one module per member, so every member is a key of the map the resolver is handed; the `workspace:*` protocol never reaches the join because only the dependency's name is read.
+
+Three behaviours are contract obligations rather than implementation detail:
+
+- **The join is scoped to modules this build system discovered.** Unlike a coordinate, a bare package name is a key shape every ecosystem uses, so an unscoped join would claim provenance for another ecosystem's edges and could fabricate an edge between an npm package and a same-named distribution elsewhere.
+- **There is no fallback to the module's own name.** A package declaring no `name` is unpublishable, so nothing can depend on it; it stays a valid edge *source* but is never a *target*.
+- **An ambiguous package name yields no edge and a reported collision**, and the enriched overlay is not consulted — the declaration-wins ruling is core's, applied ahead of the resolver call.
+
+The contract itself — the four faces, the N-resolver union semantics, the anti-vacuity provenance property, and the generic ambiguous-identity-key obligation — is owned by [`../extension-api/standards/ext-point-derivation-resolver.md`](../extension-api/standards/ext-point-derivation-resolver.md) and is deliberately not restated here.
+
 ## Canonical invocations
 
 The canonical argparse surface for `npm.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".

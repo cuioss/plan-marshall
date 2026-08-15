@@ -171,7 +171,51 @@ narrower commands would have missed them:
 
 ## Findings
 
-_Pending — the pre-PR verification sub-agent is still running._
+Source: the pre-PR verification sub-agent (Step 6), dispatched read-only against the plan. It returned 18
+findings plus one non-finding. **17 fixed, 1 rejected.** One finding class it surfaced — a claim this diff
+itself falsified — was the most valuable result of the pass and would not have been caught by any gate.
+
+The agent independently re-derived D1 rather than trusting the report, and empirically confirmed the
+impact/edge separability requirement by injecting a break into the reverse-index population only, observing
+`edges: 5, impact: []` — i.e. the failure mode the plan names is reachable and the impact assertions do catch
+it. It also confirmed the four Out-of-scope bullets are clean.
+
+| # | Finding | Disposition |
+|---|---|---|
+| F1 | Run report absent, making D0 unverifiable | **Rejected — stale.** `report-01.md` was committed at `047eef4`, after the agent was dispatched, so it read a tree that genuinely lacked it. D0's measurement is recorded above. The verdict it drove ("D0 NOT VERIFIABLE") falls with it. |
+| F2 | D0's consumer-wide claim stated as fact | **Rejected as stated, for the same reason** — the claim IS measured (11 and 83 edges on two real repos). The Gradle row of that table already points at its own limitation section, so the blanket sentence is qualified where it needs to be. |
+| F3 | `dependency-intelligence.adoc` says "Three producer names are not resolvers" and lists two | **Fixed** — corrected to two. My error. |
+| F4 | Same page's table claimed the Python join reads all `optional-dependencies`; discovery reads only the `dev` extra | **Fixed** — table corrected, and a paragraph added naming the consequence (a sibling under a `test`/`docs` extra silently produces no edge). Also recorded as residue. |
+| F5 | `ext-point-derivation-resolver.md` "One bundle registers at most one resolver … structural, not a convention" — **falsified by this diff** | **Fixed** — Axis-B resolvers are discovered per *build skill* (`discover_build_extensions` keys on `skill_name`), so `plan-marshall` alone now contributes `maven`, `npm` and `pyproject`. Replaced with a per-axis registration-site table and an explicit "do not read this as one-per-bundle". |
+| F6 | `build-pyproject/extension.py` restated the same false premise in new prose | **Fixed** — reworded to "each registration site stamps a single resolver id". |
+| F7 | `ext-point-derivation-resolver.md:172` leant on the premise (pre-existing) | **Fixed** — scoped to "all three are Axis-A, where the registration site is the bundle". |
+| F8 | `build-npm/SKILL.md` documents no Axis-C face, unlike every other resolver-owning skill | **Fixed** — added a "Module-edge derivation (Axis-C derivation resolver)" section matching `build-maven`'s shape. |
+| F9 | `build-pyproject/SKILL.md` — same gap | **Fixed** — same treatment. |
+| F10 | `module-discovery.md` § Dependency Format omits Python, and my own `_name_edge_join` docstring cites that table for both ecosystems | **Fixed** — Python and Gradle rows added; the npm example scopes corrected from `compile`/`test` to the emitted `runtime`/`dev`. |
+| F11 | `architecture-persistence.md` § Dependency Format — identical defect in a second owning standard | **Fixed** — same treatment. |
+| F12 | `test_npm_discover_modules.py` module-header roster `metadata: {type, description}` stale | **Fixed** — now `{name, description, version, scripts}`. |
+| F13 | Same header's `dependencies: ["npm:name:scope"]` wrong, and load-bearing — a double written from it would join every npm dependency on the literal key `npm` | **Fixed** — corrected to `["name:scope"]` with the scope vocabulary named. |
+| F14 | The Gradle claim shipped in three docs with zero test coverage | **Fixed** — new `test/plan-marshall/build-gradle/test_gradle_rides_the_maven_join.py` (7 tests) drives the real `_parse_dependencies_output` into the real Maven resolver, pinning both that the coordinate form yields an edge and that `project:core:compile` does not. The limitation is pinned as current behaviour, so closing it later fails the test and forces the three doc sites to be revisited. |
+| F15 | `client-api.md` worked examples show `resolver_count: 1` (pre-existing at four, widened to six here) | **Fixed** — all four examples updated to the real six-resolver roster, plus a normative note that discovery is registry-wide, so `resolver_count` counts resolvers that RAN, never ones that CONTRIBUTED. |
+| F16 | `code-intelligence.adoc` § Related linked only `build-maven/SKILL.md` while the body now introduces two more Axis-B joins | **Fixed** — both new skills linked. |
+| F17 | No back-link from `code-intelligence.adoc` to the new user page, though the sibling pattern has one | **Fixed** — added. |
+| F18 | The ⭐ user page never shows how to invoke any of the four verbs | **Fixed** — added a "The four verbs" section with two runnable invocations and a per-verb table. The `path` row was written with invented `--from/--to` flags on first draft and corrected against the skill's canonical block to positional `SOURCE TARGET`. |
+
+**Non-finding, recorded and not acted on.** Running `test/plan-marshall/manage-architecture` together with
+`build-*`, `pm-plugin-development` and `pm-dev-python` in ONE serial pytest process yields 39 failures. The
+agent verified this is **pre-existing** — 34 reproduce with the new e2e module excluded — and is caused by
+`load_script_module('…_cmd_client.py', '_cmd_client')` re-registering `_cmd_client_query` in `sys.modules`
+and orphaning other modules' captured references. The new module follows the identical idiom used by 14
+sibling test files, and the canonical xdist run distributes per file, so it does not surface there. Not
+attributable to this change; see Residue.
+
+### Gate findings (not from the sub-agent)
+
+| Source | Finding | Disposition |
+|---|---|---|
+| `./pw verify` test-compile | `no-any-return` in both new resolver test modules — invisible to `quality-gate` and `module-tests` | **Fixed** before the docs commit |
+| `./pw verify` module-tests | `test_graph_family_bundle_project.py`'s `EXPECTED_RESOLVER_IDS` / `AXIS_B_RESOLVER_IDS` pins failed (4 tests) — the deliberate hand-written pins, working as designed | **Fixed** — updated to the six-resolver roster |
+| `./pw verify` test-compile | `no-any-return` in the new Gradle pin test | **Fixed** |
 
 ## Reviewer participation
 
@@ -206,4 +250,19 @@ _Pending._
   plan excludes fixing Gradle and scopes its deliverables to Python and npm. A Gradle build wiring its
   modules with the idiomatic `implementation project(':core')` gets an empty internal graph. The natural fix
   is the same name-join shape this plan built — join `project:{name}` on the module name — which would make
-  it a small follow-up rather than new design work.
+  it a small follow-up rather than new design work. Now **pinned by test** and documented in three places,
+  so the follow-up has a failing assertion waiting for it.
+- **Python discovery reads only the `dev` extra** (F4). `_parse_pyproject_metadata` reads `[project]
+  dependencies` and `optional-dependencies.dev` and nothing else, so a sibling named only under a `test`,
+  `docs` or `all` extra produces no edge. Documented rather than changed: widening it alters what discovery
+  emits for every consumer of `dependencies`, not just edge derivation, which is beyond this plan's surface.
+- **Serial-pytest module-registration collision.** Pre-existing (34 of 39 failures reproduce without this
+  plan's e2e module), caused by `load_script_module` re-registering `_cmd_client_query` in `sys.modules`.
+  Invisible under the canonical xdist run. Worth its own issue; not attributable to this change.
+- **A scoped npm module cannot round-trip through `save_module_derived`.** That writer names its per-module
+  directory after the module, so `@sample/core` nests into two directories and the synthetic-project
+  fallback that reads them back never finds it. This is why the e2e test copies its fixture into a temp
+  project root instead of seeding. The writer documents itself as a snapshot-fixture seam, so production
+  reads (which crawl live) are unaffected — but the **enriched** overlay is persisted per module by the same
+  naming scheme, and whether a scoped npm package's overlay round-trips was **not verified by this run**.
+  Stated as unverified rather than assumed either way.

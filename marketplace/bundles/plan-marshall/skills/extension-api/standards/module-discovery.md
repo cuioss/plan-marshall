@@ -294,8 +294,13 @@ The `metadata.packaging` field stores build-system-specific packaging informatio
 ### Dependency Format
 
 Technology-native format without prefixes:
+
 - Maven: `groupId:artifactId:scope` (e.g., `org.projectlombok:lombok:compile`)
-- npm: `name:scope` (e.g., `lit:compile`, `@testing-library/dom:test`)
+- Gradle: `groupId:artifactId:compile`, plus `project:{name}:compile` for an inter-project dependency
+- Python: `name:scope` where scope is `runtime` (from `[project] dependencies`) or `dev` (from `[project.optional-dependencies].dev`) — e.g., `typing-extensions:runtime`, `pytest:dev`
+- npm: `name:scope` where scope is `runtime` (from `dependencies`) or `dev` (from `devDependencies`) — e.g., `lit:runtime`, `@testing-library/dom:dev`
+
+The first colon-separated segment is the identity a derivation resolver joins on: the `groupId` for the coordinate ecosystems (matched together with the `artifactId`), and the whole distribution/package name for Python and npm. See [ext-point-derivation-resolver.md](ext-point-derivation-resolver.md) § Current implementations.
 
 ---
 
