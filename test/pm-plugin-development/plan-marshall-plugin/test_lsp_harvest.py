@@ -18,6 +18,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import plugin_discover
 import pytest
 from lsp_harvest import (
     DEP_TYPE_LSP,
@@ -28,6 +29,8 @@ from lsp_harvest import (
     lift_to_modules,
     make_prefix_attributor,
 )
+
+from conftest import PROJECT_ROOT
 
 # A binary that exists and is executable, used where the test needs the server to
 # start (or to hang) rather than to be missing.
@@ -435,6 +438,29 @@ def test_failed_harvest_yields_no_refs_but_a_stated_status(tmp_path):
     assert refs == {}
     assert status['ran'] is False
     assert status['reason'].startswith('server-absent:')
+
+
+def test_discovery_attaches_a_harvest_status_to_every_module():
+    """The wiring, asserted at the integration level over the real tree.
+
+    Every unit test above drives the engine directly. This one proves discovery
+    actually calls it and that the status reaches the module dicts the resolver
+    will later read — the seam where a silent regression would otherwise leave
+    the resolver with nothing to report and no way to say so.
+
+    The assertion is the anti-vacuity INVARIANT rather than a specific
+    environment's state, so it holds whether or not the harvest happens to be
+    enabled on the machine running it.
+    """
+    # Act
+    modules = plugin_discover.discover_plugin_modules(str(PROJECT_ROOT))
+
+    # Assert
+    assert modules, 'expected the marketplace tree to yield bundle modules'
+    for module in modules:
+        status = module['lsp_harvest']
+        assert isinstance(status['ran'], bool)
+        assert status['ran'] or status['reason'], f'{module["name"]}: harvest did not run and stated no reason'
 
 
 def test_harvest_outcome_status_distinguishes_ran_from_found_nothing():
