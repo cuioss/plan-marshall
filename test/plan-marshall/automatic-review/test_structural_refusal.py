@@ -497,6 +497,19 @@ def _barrier_structural_section() -> str:
     return rest[: nxt.start()] if nxt else rest
 
 
+def _barrier_structural_commands() -> str:
+    """Only the fenced COMMAND blocks of the structural section, prose excluded.
+
+    The section deliberately *names* the things it forbids ("Do NOT settle this with
+    Branch C", "every remedy is an operator action (`merge-authorization grant`, …)"),
+    so a substring search over the whole section matches the warning as readily as a
+    violation. Scoping to the fences is what separates what the document INSTRUCTS
+    from what it merely mentions — the same distinction `_barrier_structural_options`
+    draws between a pickable option and its explanation.
+    """
+    return '\n'.join(_barrier_structural_section().split('```')[1::2])
+
+
 def _barrier_structural_options() -> str:
     """Just the ``options:`` list of that prompt — what the operator can actually PICK.
 
@@ -789,18 +802,76 @@ class TestNoAwaitOnTheStructuralBranch:
         block = skill[start:skill.index('```', skill.index('```bash', start) + 7)]
         assert '--refusal-size-caps' in block
 
-    def test_the_default_barrier_mode_does_not_loop_on_a_structural_refusal(self):
-        """The HEADLESS path must not spin — it has no operator to ask.
+    def test_the_default_path_uses_the_sibling_loop_back_not_a_new_semantic(self):
+        """⛔ The default path must NOT settle with a terminal `done` record.
 
-        `fail_into_loopback` is the default and the headless path. Looping there is
-        fail-closed but NON-terminating: it burns max_iterations re-reviewing a diff
-        whose size never changes. The honest headless outcome is to terminate with an
-        actionable message.
+        Branch C is the "declined by user" settle: it lets the FOR loop continue to
+        `archive-plan`, archiving the plan with the PR unmerged — and an already-`done`
+        `branch-cleanup` is SKIPPED by the resumable re-entry check, so the remedies the
+        message names ("grant at the HEAD the next pass will see", "reclassify then
+        re-enter") would point at a pass that never runs.
+
+        Two earlier drafts of this branch invented a disposition — first an absent
+        record with a HALT, then Branch C — when the document already carried a fitting
+        one. The sibling `loop_back` to `6-finalize` neither archives nor invents.
         """
-        section = _barrier_structural_section()
-        lowered = ' '.join(section.lower().split())
-        assert 'do not loop back' in lowered
-        assert 'fail_into_loopback' in section
+        commands = _barrier_structural_commands()
+        assert '--outcome loop_back' in commands
+        assert '--loop-back-target 6-finalize' in commands
+        assert '--outcome done' not in commands, (
+            'the structural default path settles with a terminal done record, which '
+            'archives the plan with the PR unmerged and forecloses the remedies its '
+            'own message names'
+        )
+
+    def test_the_default_path_explains_why_its_loop_back_is_clearable(self):
+        """The loop-back must be justified, not merely taken.
+
+        Round 2 correctly found a loop-back here futile — but that loop-back rendered
+        "{count} bot comment(s) are still unhandled" with count zero, offered re-triage,
+        and named no cap, no size, and no remedy. What makes a loop-back legitimate for
+        this member is that it re-runs the AUTHORIZATION check, which an operator
+        remedy can clear; the re-review half stays futile and the text must say so.
+        """
+        section = ' '.join(_barrier_structural_section().split())
+        assert 'AUTHORIZATION' in section or 'authorization' in section
+        assert 'max_iterations' in section, (
+            'the branch does not state what bounds an unattended run'
+        )
+
+    def test_the_default_paths_remedies_are_complete_invocations(self):
+        """A remedy an operator cannot copy-run is no remedy.
+
+        This decision-log is the ONLY operator-facing surface on the default
+        configuration. An earlier draft named the verbs but omitted required arguments
+        (`--plan-id`, `--granted-over`, `--reason`, `--param`, `--value`) and the
+        executor prefix, so copying either remedy verbatim is an argparse rejection.
+        """
+        commands = _barrier_structural_commands()
+        grant = commands[commands.index('merge-authorization grant'):]
+        for required in (
+            '--plan-id', '--kind', '--head', '--gap-class', '--granted-over', '--reason'
+        ):
+            assert required in grant[:1400], f'the grant remedy omits {required}'
+        params = commands[commands.index('step-params set'):]
+        for required in ('--plan-id', '--param', '--value'):
+            assert required in params[:1400], f'the reclassify remedy omits {required}'
+        # Both remedies must be reachable through the executor, not by raw path.
+        assert commands.count('execute-script.py') >= 3
+
+    def test_the_structural_prompt_discloses_every_unproven_bot(self):
+        """⛔ Accepting the gap authorizes past ALL of them, not just the refusing one.
+
+        A mixed gap — a size-capped bot plus one that was merely never heard from — is
+        reachable on the FIRST barrier entry with zero pending findings. The grant
+        covers the whole `review-barrier-gap`, so a prompt naming only the refusing bot
+        asks the operator to accept a bot they were never shown.
+        """
+        block = _barrier_structural_prompt()
+        assert '{unproven_bots}' in block, (
+            'the structural prompt names only the refusing bots, while accepting the '
+            'gap authorizes past every unproven one'
+        )
 
 
 # ---------------------------------------------------------------------------

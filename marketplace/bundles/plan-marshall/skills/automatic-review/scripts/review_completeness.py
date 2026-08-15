@@ -1298,7 +1298,7 @@ def cmd_deficit(args: argparse.Namespace) -> int:
 def _add_bot_observation_flags(sub: argparse.ArgumentParser) -> None:
     """Add the observation flags shared by the ``check`` and ``deficit`` subcommands.
 
-    ``--plan-id`` plus the eight list flags and the PR-wide ``--not-triggered`` bool —
+    ``--plan-id`` plus the nine list flags and the PR-wide ``--not-triggered`` bool —
     the classifier's whole input surface. Factored so the two subcommands cannot
     drift in flag name, ``nargs``, or ``const`` (a drift would silently change how an
     empty list parses on one command but not the other).
