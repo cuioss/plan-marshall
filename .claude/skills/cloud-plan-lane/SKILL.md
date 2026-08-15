@@ -534,8 +534,12 @@ Then:
 is written against the diff under review; by the second round the diff under review is largely the
 *previous round's fixes*, and the sweep that matters is over what those fixes made false elsewhere. So
 before re-dispatching, list the claims your fix changed — the value, the ordering, the count, the
-mechanism it renamed — and sweep each one's restatements by consumer kind exactly as you did for the
-original change.
+mechanism it renamed — and sweep each one's restatements the same way: by **consumer kind** (naming
+each kind a changed value can take — prose, docs, tests, `*.py` fixtures and stubs — and sweeping for
+each in turn, per the sub-agent instruction above), exactly as you did for the original change.
+
+The two obligations below are part of that same per-round sweep, not a separate pass done once at
+the end. Both are checked **before every re-dispatch and again before the merge gate**.
 
 **The run report is part of that surface.** A findings table recording a disposition the artifacts
 contradict — a row saying "fixed at all four sites" when one still carries the old claim — is the same
@@ -546,11 +550,11 @@ before declaring a round closed.
 **So is the PR description — and it is the surface most likely to be missed.** Every sweep you run
 treats *the repository* as the thing being checked, and the description lives outside it: written once
 at PR-creation time, never re-read, and yet the one restatement most reviewers actually read. Re-read
-it against the tree before the merge gate, exactly as you re-read the report. In an observed run it
-reached the gate asserting a control-flow ordering the code no longer had, two test counts that had
-moved twice since, and "every finding accepted and fixed, none rejected" on a PR where two findings
-had been rejected with reasons — four false statements, none of which any verification round could
-have seen, because none of them reads the description.
+it against the tree and update stale claims, on the same cadence as the report. One observed
+description reached the merge gate carrying four false statements — a control-flow ordering the code
+no longer had, two test counts that had moved twice since, and "none rejected" on a PR with two
+reasoned rejections — none of which any verification round could have caught, because none of them
+reads the description.
 
 **Figures that move between rounds are re-derived at the moment of the claim, never carried forward.**
 Test totals, character budgets, population counts: each round's fixes change them, and a number copied
@@ -559,10 +563,9 @@ re-run the query) every time you state it, and say which unit you are stating �
 *functions* and a count of *collected cases* are different numbers, and a reader who runs the suite
 sees only the second.
 
-An observed run needed four verification rounds, and rounds 2, 3 and 4 each found that the previous
-round's fixes had landed at the site the finding named but not at the sites restating the same claim —
-twice in the run report's own findings table. Round 4 could predict its next instance from the
-pattern. This paragraph is what that run cost, written down.
+These three exist because one run paid for them: across four verification rounds, each round's fixes
+landed at the site the finding named and not at the sites restating the same claim — twice in the run
+report's own findings table.
 
 ## GitHub access
 
