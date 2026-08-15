@@ -102,8 +102,8 @@ markdown-oriented exemptions (frontmatter, fenced blocks, `Source:` lines) that 
 | Rule | Feasibility count | Positive test fires | rule-catalog row | rule-provenance row | Source citation |
 |---|---|---|---|---|---|
 | `test-module-line-budget` | 315 | ✓ | ✓ | ✓ | `persona-module-tester` § "Module Budget: 400 lines" |
-| `test-helper-module-misnamed` | 1 | ✓ | ✓ | ✓ | `persona-module-tester` § "Test Helper Module Organization" |
-| `test-module-preamble-boilerplate` | 382 | ✓ | ✓ | ✓ | `conftest` helper contract (`load_script_module` / `get_scripts_dir`) |
+| `test-helper-module-misnamed` | 1 at authoring; **0** after `020` landed | ✓ | ✓ | ✓ | `persona-module-tester` § "Test Helper Module Organization" |
+| `test-module-preamble-boilerplate` | 382 at authoring; **370** after `020` landed | ✓ | ✓ | ✓ | `conftest` helper contract (`load_script_module` / `get_scripts_dir`) |
 | `test-docstring-historical-prose` | 285 prose hits vs 876 legitimate data occurrences | ✓ | ✓ | ✓ | `CLAUDE.md` § Documentation Standards + the three `marketplace/bundles/**` prose rules |
 
 The citation-vs-D3 tension the plan flags is resolved as the plan directs: lesson ids remain permitted in
@@ -147,7 +147,9 @@ The three existing `error` rules keep their build-failing behaviour unchanged. T
 |---|---|
 | After D5 (`5c31b15`) | `=== verify: SUCCESS ===`, `20066 passed, 14 skipped` in 389s |
 | After the verification fixes (`74e8693`) | `=== verify: SUCCESS ===`, `20069 passed, 14 skipped` in 334s — the +3 are the new command tests |
-| After the re-verification fixes (tip) | `=== verify: SUCCESS ===`, `20069 passed, 14 skipped` in 334s |
+| After the re-verification fixes | `=== verify: SUCCESS ===`, `20069 passed, 14 skipped` in 334s |
+| After the final-pass fixes and the module split | `=== verify: SUCCESS ===`, `20076 passed, 14 skipped` in 333s |
+| After merging `origin/main` (plan `020`, PR #1247) | `=== verify: SUCCESS ===`, **`20097 passed, 14 skipped`** in 330s |
 
 All three sub-steps ran on every pass: quality-gate (`ruff … All checks passed!`, `mypy … Success: no
 issues found in 405 source files`, `SPDX-header check passed`, plugin-doctor `issues[0]`), test-compile
@@ -166,15 +168,40 @@ clean `./pw quality-gate`.
 **Doctor scope over the live tree**, using the epic README's verified invocation with `--test-root test/`:
 
 ```text
-status: fail   total_issues: 969   error_count: 17   warning_count: 952
+status: fail   total_issues: 956   error_count: 17   warning_count: 939
   unique-fixture-basenames,2
   subprocess-pythonpath,15
   identifier-validator-corpus,0
   test-module-line-budget,315
-  test-helper-module-misnamed,1
-  test-module-preamble-boilerplate,382
+  test-helper-module-misnamed,0
+  test-module-preamble-boilerplate,370
   test-docstring-historical-prose,254
 ```
+
+These are the counts **after merging `origin/main`**, which landed plan `020` (PR #1247). Two rules
+moved, both because `020` fixed real instances:
+
+**`test-helper-module-misnamed` now reports 0, and the zero was investigated rather than accepted.**
+The plan is explicit that "a rule reporting zero findings over a tree the census says violates it is a
+broken detector, not a clean tree." Three independent checks say this zero is a genuinely clean tree:
+
+1. An AST sweep written independently of the analyzer finds **0** collected modules declaring no test.
+2. The single prior violation, `test/plan-marshall/manage-config/test_helpers.py`, was renamed by
+   `020` to `_manage_config_fixtures.py` — the exact remediation this rule prescribes. The old path is
+   gone; the new one exists.
+3. The detector is proven live independently of the tree: its positive unit test fires it, and its
+   `FIXTURE_CORPUS` entry satisfies the zero-match invariant, which would fail the build if the rule
+   could not fire at all.
+
+So the rule is alive and the tree is clean — and this is the *first* of the four to reach the flip
+condition in Proposal 2, one plan earlier than expected.
+
+**`test-module-preamble-boilerplate` fell 382 → 370** as `020`'s harness removed hand-rolled preambles.
+
+**`parse_ns` is no longer forward-looking.** `020` landed
+`parse_ns(bundle, skill, script, *argv) -> argparse.Namespace` in `test/conftest.py` — exactly the
+signature this run corrected the D4 example to use. What was a documented-but-absent helper at the time
+of the fix is now shipped code, and the standard matches it verbatim.
 
 `status: fail` is driven entirely by the 17 pre-existing `error`-severity findings, which this plan does
 not fix (out of scope — the reduction plans own them). No new rule reports zero, so no detector is broken
@@ -322,8 +349,8 @@ that would fix it.
 | Rule | Violations now | Flip condition |
 |---|---|---|
 | `test-module-line-budget` | **315** | reaches 0 |
-| `test-helper-module-misnamed` | **1** | reaches 0 — nearest to flippable by a wide margin; the single violation is `test/plan-marshall/manage-config/test_helpers.py` |
-| `test-module-preamble-boilerplate` | **382** | reaches 0 |
+| `test-helper-module-misnamed` | **0** | **condition already met** — `020` renamed the single violation. This rule can be flipped to `error` immediately, independently of the other three |
+| `test-module-preamble-boilerplate` | **370** | reaches 0 |
 | `test-docstring-historical-prose` | **254** | reaches 0 |
 
 **The proposal:** flip each rule to `severity: error` as a follow-up, per-rule and independently, once its
