@@ -9,7 +9,8 @@ Python scripts in the marketplace bundles. Uses only Python stdlib.
 Usage:
     from conftest import run_script, create_temp_file
 
-See test/README.md for full documentation.
+See test/README.md for the tree layout, what this module owns and deliberately
+does not, and the rule for where a new helper belongs.
 """
 
 import argparse
