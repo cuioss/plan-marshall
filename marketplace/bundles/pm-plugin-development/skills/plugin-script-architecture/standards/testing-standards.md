@@ -470,7 +470,9 @@ helper named `test_helpers.py` breaks the build.
 
 The name is `_{domain}_fixtures.py`: underscore-prefixed so it is not collected, and domain-prefixed
 because helper modules are imported by bare name and their basenames must therefore be unique
-tree-wide. Never a nested `conftest.py`, and never a bare `_fixtures.py` or `_helpers.py`.
+tree-wide. `{domain}` is the skill or subject the fixtures serve — the manage-config suite's helpers
+live in `_manage_config_fixtures.py`. Never a nested `conftest.py`, and never a bare `_fixtures.py`
+or `_helpers.py`.
 
 ### Example Structure
 
