@@ -1,0 +1,94 @@
+= Corpus Language Server — the protocol decision
+:nofooter:
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[Developer Guide]
+
+This page records *why the corpus reference intelligence is exposed as a language server*, so the choice is not re-litigated from scratch later. It is a decision record, not a how-to: the operator-facing page is xref:../user/corpus-language-server.adoc[User Guide › The Corpus Language Server], and the contract is the xref:../../marketplace/bundles/pm-plugin-development/skills/tools-corpus-language-server/SKILL.md[skill].
+
+The full option analysis, with the measurements and the re-verified external research behind it, is the proposal at `doc/plans/code-intelligence-substrate/240-skill-lsp-server/proposal-protocol-surface.md`. This page records the decision that proposal was written to inform.
+
+== The question
+
+The skill corpus already carried real cross-file reference intelligence — five edge types over 306 components, with line-level provenance — and nothing reached it. The question was not how to build that intelligence but *what surface should present it*, and specifically whether an editor protocol was appropriate at all when this repository's consumers are predominantly agents rather than humans in an editor.
+
+== What decided it
+
+=== Residency, which is a measurement and not a preference
+
+[cols="2,1", options="header"]
+|===
+| Path | Cost
+
+| One-shot CLI query, end to end
+| ≈ 2.0 s
+
+| Index construction alone
+| ≈ 1.87 s
+
+| Forward / reverse edges, warm index
+| < 0.1 ms
+
+| Transitive closure, depth 10, warm index
+| ≈ 1.5 ms
+
+| Whole-graph cycle detection, warm index
+| ≈ 4.0 ms
+|===
+
+Effectively the entire cost is index construction, and it is paid per process. This eliminates the one-shot shape outright rather than merely disfavouring it: a surface that forks per request is a two-second surface whichever protocol it speaks. Any acceptable answer had to be resident, and a language server is resident by construction.
+
+=== An editor protocol is now also an agent protocol
+
+The original framing assumed the two audiences were opposed — that an editor protocol serves humans while agents want tool calls. That is no longer true on this platform. Claude Code's plugin schema accepts an `lspServers` declaration (inline in `plugin.json`, or in a sibling `.lsp.json`), starts declared servers automatically when the plugin is enabled, and routes definition and reference lookups through them; `diagnostics` are pushed into the agent's context by default.
+
+So a single language server serves both audiences, and the premise that would have ruled the protocol out no longer holds.
+
+=== Nothing off the shelf covers the notation
+
+The claim that no language server existed for this surface was re-verified rather than repeated, and it needed correction. Generic Markdown language servers now exist — `markmark` and the `mdbase` server both offer go-to-definition, find-references and link validation over Markdown link targets. What none of them understands is the corpus's own vocabulary: `bundle:skill:script` notation, `skills:` and `implements:` frontmatter, and the Python-import edges. That is four of the five edge types, so an off-the-shelf server is a complement rather than a substitute.
+
+The converse claim held. The mature "language server for agents" projects run the *opposite* direction — bridging per-language code servers to agents, each requiring the language server binary installed separately, none offering documentation-corpus intelligence. Those are integrated, not rebuilt.
+
+== What was rejected, and why
+
+[cols="1,3", options="header"]
+|===
+| Option | Why not
+
+| A tool-calling or MCP surface
+| Solves nothing the language server does not, *unless* it is also resident — at which point the residency requirement, not the protocol name, is doing the work. It would also serve no editor, and risks repeating a pattern this epic has already paid for: a vocabulary shipped over verbs nothing calls.
+
+| Extending the machine-local `language_servers` binding
+| A direction error. That store binds a language to a *locally-installed third-party binary*, which is why it is machine-local and git-ignored. This server ships with the repository, so its command is a constant every developer would have to enter identically. Its key is also a *language*, which a corpus is not, and its `enabled` switch is already overloaded — enabling a language there also switches on a whole-workspace harvest at every crawl. Its hosting model is explicitly short-lived-subprocess-per-call, which is the two-second shape again.
+
+| Doing nothing until a consumer exists
+| A serious option, given that the dependency verbs had zero adoption and that this epic has already built and removed one zero-adoption surface. It was not needed here for a specific reason: on Claude Code a plugin-declared language server *is* consumed automatically by the agent, so declaring the server creates its first consumer rather than waiting for one.
+|===
+
+What *was* taken from the `language_servers` design is its degradation contract — `not_configured` / `ready` / `ok` with a `provider_count` discriminator, so a caller can always distinguish "nothing ran" from "ran and found nothing". That vocabulary is reused verbatim; the store is not.
+
+== Where opt-in is enforced, and why it cannot be the manifest
+
+A plugin-declared language server *starts automatically when its plugin is enabled*. Declaring the server would therefore itself constitute opting in, and "strictly opt-in" would be unachievable at the manifest layer.
+
+The switch is consequently read by the server itself, from the project's version-controlled `.plan/marshal.json` under `code_intelligence.corpus_language_server.enabled`. When it is not enabled the server starts — the client expects it to — and then advertises *no capabilities*, answers every request emptily, and never builds the index. Every unreadable or ambiguous configuration fails closed to disabled, so a malformed config can never accidentally switch a surface on.
+
+Version-controlled rather than machine-local is deliberate, and is the same argument that ruled out reusing the `language_servers` store: a repository-shipped server has one correct command for every developer.
+
+== Two constraints the decision carries forward
+
+*Extension collision.* `extensionToLanguage` binds by file extension, and the documented behaviour when several enabled servers claim one extension is that the first registered wins and the others never start. A `.md` registration could therefore shadow a user's own Markdown server. This is the concrete reason opt-in must be default-off rather than a flag consulted after the extension is already claimed.
+
+*Diagnostics stay withheld.* No diagnostic capability is advertised. The validator's unresolved set is presently about 97% false positives — documentation placeholders, foreign namespaces such as build-command and Maven coordinates, and notations whose third segment is a subcommand rather than a script. Advertising a diagnostic provider before that precision work lands would ship confidently wrong warnings at the substrate's most visible surface.
+
+== Related
+
+* xref:../user/corpus-language-server.adoc[User Guide › The Corpus Language Server] — the operator-facing page.
+* xref:../concepts/code-intelligence.adoc[Concepts › Code Intelligence] — where the surface sits, and why it adds no tier.
+* xref:../../marketplace/bundles/pm-plugin-development/skills/tools-corpus-language-server/SKILL.md[`tools-corpus-language-server` skill] — the contract and verb surface.
+* xref:../../marketplace/bundles/plan-marshall/skills/lsp-client/SKILL.md[`lsp-client` skill] — the opposite direction, and the source of the reused degradation contract.

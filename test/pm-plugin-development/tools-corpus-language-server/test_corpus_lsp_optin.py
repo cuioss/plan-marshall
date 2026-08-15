@@ -14,7 +14,7 @@ import json
 import sys
 from pathlib import Path
 
-from conftest import get_scripts_dir  # type: ignore[import-not-found]
+from conftest import get_scripts_dir
 
 SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'tools-corpus-language-server')
 INVENTORY_SCRIPTS = get_scripts_dir('pm-plugin-development', 'tools-marketplace-inventory')
@@ -126,7 +126,7 @@ class TestUnconfiguredProjectIsANoOp:
     def test_preflight_reports_the_opt_out(self, tmp_path: Path) -> None:
         _project(tmp_path, None)
         args = type('A', (), {'project_path': str(tmp_path)})()
-        payload = corpus_lsp.cmd_preflight(args)  # type: ignore[arg-type]
+        payload = corpus_lsp.cmd_preflight(args)
         assert payload['status'] == 'degraded'
         assert payload['state'] == 'not_configured'
         assert payload['provider_count'] == 0
@@ -135,7 +135,7 @@ class TestUnconfiguredProjectIsANoOp:
     def test_query_degrades_without_touching_the_corpus(self, tmp_path: Path) -> None:
         _project(tmp_path, None)
         args = type('A', (), {'project_path': str(tmp_path), 'kind': 'definition', 'notation': 'alpha:target-skill'})()
-        payload = corpus_lsp.cmd_query(args)  # type: ignore[arg-type]
+        payload = corpus_lsp.cmd_query(args)
         assert payload['status'] == 'degraded'
         assert payload['provider_count'] == 0
         assert 'definition' not in payload

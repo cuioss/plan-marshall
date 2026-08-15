@@ -348,6 +348,33 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config plan p
   --step-id plan-marshall:automatic-review
 ```
 
+## Section: code_intelligence
+
+Opt-in switches for presentation surfaces over the code- and corpus-intelligence substrates. The block is **absent by default**, and absence means every surface it governs is off. It is project-level and version-controlled (unlike the machine-local `language_servers` section of the run configuration, which binds a *locally-installed third-party* server): the surfaces here ship with the marketplace, so their invocation is identical for every developer and a machine-local store would make each one re-enter the same constant.
+
+`save_config` orders it canonically between `build` and `credentials_config` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`).
+
+### Structure
+
+```json
+{
+  "code_intelligence": {
+    "corpus_language_server": {
+      "enabled": true
+    }
+  }
+}
+```
+
+### Fields (`corpus_language_server`)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled` | boolean | No | Whether the corpus language server answers at all. Absent ⇒ `false`. Only a literal `true` enables it — a truthy non-boolean (e.g. `"yes"`) reads as disabled, so a malformed config can never switch the surface on. |
+| `corpus_path` | string | No | Corpus root, relative to the project root. Absent ⇒ `marketplace/bundles`. A configured path that does not exist yields `not_configured`, not an error. |
+
+Every unreadable or ambiguous configuration — absent file, malformed JSON, non-dict section — resolves to *disabled*. When disabled the server advertises no capabilities, answers every request emptily, and never builds its index. See [`tools-corpus-language-server`](../../../../pm-plugin-development/skills/tools-corpus-language-server/SKILL.md).
+
 ## Section: credentials_config
 
 Non-secret per-provider configuration (committed, shared via git), written by `manage-providers credentials edit --extra` / `configure --extra`. Holds the non-secret extra fields a provider integration needs (e.g. SonarCloud `organization` / `project_key`); the secret token is stored separately in the out-of-tree credential file under `~/.plan-marshall/credentials/` (the machine-global home root, overridable via `PLAN_MARSHALL_HOME`), never here. The block is keyed by the fully-qualified `bundle:skill` provider name. It is absent until the first `--extra` upsert; `save_config` orders it canonically between `build` and `project` (see `CANONICAL_TOP_LEVEL_KEY_ORDER` in `_config_core.py`).

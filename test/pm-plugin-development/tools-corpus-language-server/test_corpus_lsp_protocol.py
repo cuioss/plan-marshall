@@ -9,7 +9,7 @@ import io
 import json
 import sys
 
-from conftest import get_scripts_dir  # type: ignore[import-not-found]
+from conftest import get_scripts_dir
 
 SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'tools-corpus-language-server')
 if str(SCRIPTS_DIR) not in sys.path:

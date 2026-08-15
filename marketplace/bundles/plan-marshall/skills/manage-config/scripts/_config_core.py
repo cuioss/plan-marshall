@@ -140,6 +140,11 @@ CANONICAL_TOP_LEVEL_KEY_ORDER = [
     # sibling, so a seeded/back-filled empty block lands canonically next to it.
     'orchestrator',
     'build',
+    # `code_intelligence` holds the opt-in switches for presentation surfaces over
+    # the code- and corpus-intelligence substrates (currently the corpus language
+    # server). It sits between `build` and `credentials_config` alphabetically and
+    # by concern: a project-level capability block, not a provider or plan block.
+    'code_intelligence',
     'credentials_config',
     'project',
     'providers',

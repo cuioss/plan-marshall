@@ -12,7 +12,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from conftest import get_scripts_dir  # type: ignore[import-not-found]
+from conftest import get_scripts_dir
 
 SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'tools-corpus-language-server')
 INVENTORY_SCRIPTS = get_scripts_dir('pm-plugin-development', 'tools-marketplace-inventory')

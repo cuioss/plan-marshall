@@ -1,0 +1,136 @@
+= The Corpus Language Server
+:nofooter:
+:toc: left
+:toclevels: 3
+:toc-title: Table of Contents
+:sectnums:
+:source-highlighter: highlight.js
+
+xref:../../README.md[Plan Marshall] » xref:README.adoc[User Guide]
+
+[IMPORTANT]
+====
+*You do not need this page.*
+
+Plan Marshall works exactly the same whether you turn this on or not. It is off unless you switch it on by hand, and switching it on changes nothing about how plans run, how builds work, or how anything is verified — it only makes an editor better at navigating skill files.
+
+If you never read past this box, you have lost nothing. Nothing elsewhere in Plan Marshall waits for it, degrades without it, or works less well because it is off.
+====
+
+The skill corpus is full of cross-references: a `SKILL.md` names `bundle:skill:script`, a workflow document names another skill, a script imports a shared module. Those references are already tracked — the marketplace inventory builds an index of them. What was missing is a way to *follow* one in an editor.
+
+This is that: a language server that answers three questions about a notation your cursor is sitting on.
+
+== What it does, once you switch it on
+
+[cols="1,3", options="header"]
+|===
+| Question | Answer
+
+| *Go to definition*
+| Jump from `pm-plugin-development:plugin-doctor` to the file that defines it.
+
+| *Find references*
+| List everywhere that notation is cited, across every bundle — with each site checked before it is offered.
+
+| *Hover*
+| The component's description and frontmatter, plus how many edges point at it and how many it points out.
+|===
+
+That is the whole surface. It reads the index; it never writes to it, and it never edits your files.
+
+== Switching it on
+
+One key in your project's `.plan/marshal.json`:
+
+[source,json]
+----
+{
+  "code_intelligence": {
+    "corpus_language_server": {
+      "enabled": true
+    }
+  }
+}
+----
+
+[cols="1,1,2", options="header"]
+|===
+| Field | Default | Meaning
+
+| `enabled`
+| absent → `false`
+| Whether the server answers at all. Only a literal `true` switches it on — a missing key, a `false`, or anything else (including the string `"yes"`) leaves it off.
+
+| `corpus_path`
+| `marketplace/bundles`
+| Where the corpus lives, relative to your project root.
+|===
+
+Check what it thinks:
+
+[source,bash]
+----
+python3 .plan/execute-script.py pm-plugin-development:tools-corpus-language-server:corpus_lsp preflight
+----
+
+To switch it off again, set `enabled` to `false` or delete the key. There is no other state to clean up.
+
+=== Why this key and not the language-server binding
+
+If you already configured a language server for xref:lsp-code-intelligence.adoc[LSP Code Intelligence in Execute], you configured it in the *run configuration*, which is machine-local and git-ignored — correct, because that binding points at a binary *you* installed, and your teammate's path may differ.
+
+This server is different: it ships with Plan Marshall, so its command is the same for everyone. Putting it in a machine-local store would mean every developer separately typing an identical constant. It goes in the version-controlled project config instead, so the decision is made once for the project.
+
+== What "off" actually means
+
+Off is not a flag the server checks late, after it has already started doing things. When the key is absent or false, the server:
+
+* advertises *no capabilities at all*, so a correctly-behaving editor never sends it a request;
+* returns an empty result to any request that arrives anyway;
+* *never builds the index* — so it does not spend the ~2 seconds that build costs, either.
+
+An unconfigured project is not paying a quiet tax for a feature it is not using. This is verified by tests that run against an unconfigured project, not merely asserted here.
+
+== Telling "nothing found" from "nothing ran"
+
+Every answer says which of those two happened, so a blank result is never ambiguous:
+
+[cols="1,3", options="header"]
+|===
+| State | Meaning
+
+| `not_configured`
+| The server is off, or the corpus path in your config does not exist. Nothing ran. This is every unconfigured project, and it costs nothing.
+
+| `ready`
+| `preflight` only: the server is on and the index builds.
+
+| `ok`
+| The server ran. An empty result is now a *real* answer — the index genuinely found nothing.
+|===
+
+=== One bound worth knowing
+
+*Find-references is as complete as the index is.* It returns the edges the index's detectors recognise. A reference written in some form no detector matches is not in the index, and so will not appear.
+
+So an empty result means *the index found no reference*, not *the corpus contains none*. Every references answer carries that bound in its payload rather than leaving you to assume completeness.
+
+=== References are checked before they are offered
+
+When a reference is cited inside a skill's sub-document, the index records it against the *owning skill* — whose own file is `SKILL.md` — while the line number belongs to the sub-document. Following that pairing naively lands you on that line number in `SKILL.md`: usually a blank line, in the wrong file.
+
+So every site is re-read before it is reported. A site whose line genuinely contains the notation is marked `verified`; one that cannot be confirmed is still shown, but never presented as an exact location.
+
+== What it deliberately does not do
+
+*It does not flag broken references.* Live diagnostics — red squiggles on a reference that does not resolve — are not part of this surface, and no diagnostic capability is advertised.
+
+The reason is precision. The underlying validator currently reports 380 unresolved references across the corpus, and about 97% of them are not broken references at all: documentation placeholders like `bundle:skill:script`, build-command names like `default:verify:compile`, Maven coordinates, and notations whose third segment is a subcommand rather than a script. Turning that into editor diagnostics would put hundreds of confident, wrong warnings in front of you. It waits until the validator can tell those apart.
+
+== Related
+
+* xref:dependency-intelligence.adoc[User Guide › Dependency Intelligence] — the module dependency graph, a different substrate for a different question.
+* xref:lsp-code-intelligence.adoc[User Guide › LSP Code Intelligence in Execute] — the opposite direction: Plan Marshall as a *client* of a code language server you installed.
+* xref:../concepts/code-intelligence.adoc[Concepts › Code Intelligence] — where this surface sits, and why it is an accelerator rather than a prerequisite.
+* xref:../../marketplace/bundles/pm-plugin-development/skills/tools-corpus-language-server/SKILL.md[`tools-corpus-language-server` skill] — the full contract and verb surface.

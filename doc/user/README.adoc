@@ -20,6 +20,7 @@ Operating Plan Marshall in a target project. If you are working on Plan Marshall
 * xref:code-search.adoc[Code Search] — `architecture find` (path glob) versus `architecture search --content` (file content): the invocations, how to read `match_count` / `files_scanned`, and what a zero result does and does not prove.
 * xref:dependency-intelligence.adoc[Dependency Intelligence] — the module dependency graph behind `graph` / `path` / `neighbors` / `impact`: what Maven, Gradle, Python and npm projects get with no configuration, and how to tell "nothing depends on this" from "nothing could answer".
 * xref:lsp-code-intelligence.adoc[LSP Code Intelligence in Execute] — the opt-in language-server capability: locate symbols by coordinate and apply verified renames in `phase-5-execute`. Strictly opt-in — an unconfigured project loses nothing.
+* xref:corpus-language-server.adoc[The Corpus Language Server] — the opt-in editor surface over the skill corpus: go-to-definition, find-references and hover on skill and script notations. Off by default — an unconfigured project loses nothing and pays nothing.
 * xref:recipes.adoc[Recipes] — the surgical-fix micro-lane fast path for pre-diagnosed fixes: what it skips/keeps, and when (and when not) to use it.
 * xref:efforts.adoc[Efforts] — per-role model selection: wizard presets, polymorphic `marshal.json` shape, worked example, troubleshooting.
 * xref:terminal-title.adoc[Terminal Title] — VS Code and IntelliJ-specific integration for the per-session status indicator.
