@@ -1,6 +1,10 @@
 # Run report — 020-shared-test-harness (run 01)
 
-**Date (UTC):** 2026-08-15    **Branch:** `claude/shared-test-harness-keyzwy`    **PR:** _pending_    **Outcome:** _pending_
+**Date (UTC):** 2026-08-15    **Branch:** `claude/shared-test-harness-keyzwy`    **PR:** [#1247](https://github.com/cuioss/plan-marshall/pull/1247)    **Outcome:** completed
+
+All six deliverables landed and verified. `./pw verify` green locally; CI `verify / conclusion`
+**success** on the head SHA. Auto-merge armed with SQUASH as the gate's final act, after this report
+was pushed — a queued branch can no longer be pushed to, so the report had to precede the arm.
 
 ## Skills loaded
 
@@ -212,10 +216,113 @@ seam, not the exception. Consumer plans `030`–`080` should read it that way.
 
 ## Reviewer participation
 
-_Pending — PR #1247 was opened at 18:41 UTC and the reviewers have not yet reported. This section is
-filled at the merge gate, one row per `author_login` in the registry
-(`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`), each verdict
-read from the actual comment bodies._
+Population derived from the registry — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` doc
+(`coderabbit.md`, `pr-agent.md`, `sourcery.md`), not transcribed. Every verdict below is read from the
+reviewer's actual body across all three surfaces, never from a check state.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
+|---|---|---|---|
+| `cuioss-review-bot` | `reviewed` | — | Issue comment: *"PR Reviewer Guide 🔍 — PR contains tests / No security concerns identified / No major issues detected"* |
+| `coderabbitai` | `rate-limited` | **yes** | Issue comment: *"Review limit reached … you've reached your PR review limit, so we couldn't start this review. **Next review available in: 58 minutes**"* — a countdown that clears on its own |
+| `sourcery-ai` | `rate-limited` | **no** | Review-summary body: *"you have reached your weekly rate limit of 500000 diff characters"* — a ceiling on THIS diff's size, not a clock; the same request never succeeds at this size |
+
+**Coverage: 1 of 3.** The § Step 8 condition-4 disclosure fired and said exactly that — see below.
+
+Surfaces read, all three, as three separate calls: `get_comments` (2 issue comments), `get_reviews`
+(1 review-summary body — **the only place** Sourcery's refusal appears; a run that skipped this call
+would have recorded `sourcery-ai` as `silent` and never learned why), and `get_review_comments`
+(**0** inline threads).
+
+**No comment required action.** One reviewer reported no issues; the other two published quota
+notices rather than findings. Nothing was fixed and nothing was replied to, because there was no
+request to answer — the lane's "reply why not" applies to findings, and none were filed.
+
+**No `silent` verdict arose, so the recovery check did not run.** Both non-`reviewed` reviewers
+published an explaining notice, which is engagement, not silence.
+
+This PR is the case the `Reopens?` column was added for: two reviewers refused **at the same moment**,
+one on a 58-minute countdown and one on a weekly diff-character ceiling. Without the column the table
+would render them identically, and a reader could not tell that re-requesting CodeRabbit later is
+productive while re-requesting Sourcery on this diff never will be.
+
+## Cost
+
+- **Tokens:** **not available to the agent in this session.** No usage counter is exposed to me here,
+  and I will not estimate one.
+- **Wall-clock:** ~1 h 12 min — first commit `0f6167a` at 17:43:10 UTC to the merge gate at ~18:55
+  UTC, measured from git commit timestamps and the PR's own event times.
+- **Population:** one interactive Claude Code cloud session executing one `doc/plans/` plan end to
+  end, including the two Step-6 sub-agent dispatches. ⛔ **Not comparable to a plan-marshall
+  `metrics.toon` total**, which counts an orchestrator-plus-agent dispatch tree under plan-marshall's
+  own per-task billing boundary. This run has no orchestrator, no ledger, and no per-task billing
+  boundary, so the two figures count different things and no conversion between them is offered.
+
+## Contract check (Step 9)
+
+Re-read `cloud-plan-lane` and checked each step against what actually happened — both that the step
+ran and that its artifact exists.
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **Done** | Named in § Skills loaded. Loaded by bundle path; the plugin route was not available in this session |
+| 2 Branch | **Done** | `claude/shared-test-harness-keyzwy` — **harness-assigned**, kept as-is per the resumability rule. Pushed to `origin` as the run's first action, before any edit, after `git ls-remote` showed it absent |
+| 3 Plan directory | **Done** | `doc/plans/test-quality/020-shared-test-harness/plan.md` exists and opens with the first-instruction block (present on arrival; no repair needed). The `020-` prefix was preserved by the move |
+| 4 Implement | **Done** | 10 commits, **all 10** carrying the trailer; every deliverable addressed |
+| 4 Per-commit gate | **Done** | `./pw quality-gate` ran clean before every `*.py` commit — `ruff … All checks passed!`, `mypy … Success: no issues found`, `SPDX-header check passed`. Two commits needed no gate (the Step 3 `git mv`, and a docs-only commit) |
+| 4 Pushed | **Done** | `git status -sb` reports no `ahead`; every commit pushed as it was made |
+| 5 Build gate | **Done** | Git-derived verdict (**32** `*.py` files changed) and the `./pw verify` SUCCESS both recorded in § Build gate, with the collected-item reconciliation |
+| 6 Verification sub-agent | **Done** | Two dispatches — the lane's verifier and the plan's D4 reading test. 17 findings with dispositions in § Findings, including 2 recorded as proposals and 1 rejected with its reason |
+| 7 PR cycle | **Done** | PR #1247. All three surfaces read as three separate calls; every comment dispositioned; § Reviewer participation carries a verdict **and** a `Reopens?` value per reviewer. No `silent` verdict arose, so no recovery check was owed |
+| 8 Merge gate | **Done** | Condition 1: `verify / conclusion` **success** on the head SHA. Condition 2: no open comment. Condition 3: this report pushed as the last pre-merge commit. Condition 4 (a disclosure, not a gate): coverage stated as 1-of-3 |
+| 8 Bridge | **Done, with one judgment call disclosed below** | No status file, no ledger, no other plan's directory touched. The report carries the PR number and per-deliverable outcome |
+| 9 This check | **Done** | This table |
+| 9 What have we learned | **Done** | Three proposals below, presented to the operator and **not** self-approved |
+
+**The one judgment call, disclosed rather than glossed.** This run edited a file under `doc/plans/`
+outside its own plan directory: `findings-test-corpus-review.md`, to repair the eight links Step 3's
+mandated move broke (§ Findings row 3). That is not a status or bookkeeping write, and it is not a
+declared deliverable either — the two cases the bridge rule names. It is repair of link rot the
+contract's own required action caused. I judged repairing it correct and am flagging it here because
+the rule as written does not clearly authorise it; that ambiguity is proposal 3 below.
+
+## What have we learned (Step 9)
+
+Three proposals, each named by something that actually happened in this run. **Presented to the
+operator, not self-approved, and not shipped** — each would go on its own `chore/` branch as a
+separate PR, kept out of this plan's diff.
+
+**1 — The `uv.lock` churn rule names only one cause, and this run hit a different one.**
+§ Step 4 attributes lockfile churn to "a session interpreter older than the project's floor". Here the
+cause was unrelated: `main`'s `pyproject.toml` pins `ruff>=0.16.2` while its `uv.lock` still records
+`>=0.16.1` (dependabot #1234 updated one and not the other), so **any** `./pw` run regenerates the
+lockfile regardless of interpreter. A run that checks the stated cause, finds its interpreter fine,
+and concludes the churn must therefore be legitimate would commit it. Proposed edit: state the rule by
+its **symptom** — a lone `uv.lock` in `git status` is backed out, whatever the cause — and cite the
+interpreter floor as one cause among others.
+
+**2 — Step 6's beyond-diff sweep enumerates restatements, but not prescriptions.**
+The sweep's consumer kinds are all forms of a document *restating a value* the change made false. The
+verifier found a different kind here: `plugin-script-architecture/standards/testing-standards.md`
+*prescribes* `test_helpers.py` as the name for a fixture module with "No test functions" — the exact
+shape D5's new guard now fails the build on. That is not a stale restatement; it is a **normative rule
+the change makes impossible to comply with**, and an author following it produces a red suite. It
+matches no kind on the current list. Proposed edit: add a seventh kind — "a standard, rule, or
+template elsewhere that the change makes unfollowable".
+
+**3 — The bridge rule does not say who repairs the links Step 3's move breaks.**
+Step 3 mandates moving `{NNN}-{slug}.md` to `{NNN}-{slug}/plan.md`. Sibling documents under
+`doc/plans/` link to the old path — eight did here — and every one of them breaks. Step 8's bridge
+rule permits a "declared-deliverable edit to a shared lane doc" and forbids "status or bookkeeping"
+writes, but inbound-link repair is neither, so a run reading the rule literally leaves the links dead.
+Proposed edit: name link repair caused by the Step 3 move as explicitly permitted, and add it to
+Step 3 as an expected follow-up rather than leaving each run to decide.
+
+**What did NOT need changing, recorded because a run that looked is a different fact from one that
+did not.** The `Reopens?` column added by the previous contract change fired exactly as designed on
+its first real test: two reviewers refused this PR at the same moment, one on a clearing countdown and
+one on a permanent size ceiling, and the column is the only thing distinguishing them. No change
+proposed there.
 
 ## Residue
 
