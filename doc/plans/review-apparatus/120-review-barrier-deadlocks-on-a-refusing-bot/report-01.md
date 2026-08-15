@@ -76,7 +76,7 @@ a document's branch structure, not a code enumeration, so no `vars()` sweep reac
 | `authorized bypass` (`any_admissible: true`) | — | merges under a recorded, HEAD-bound, gap-class-matched ruling |
 | `blocked / pending findings` | ✅ | loop back → triage → re-enter |
 | `blocked / participation incomplete` (non-structural) | ✅ | loop back → re-await → re-enter |
-| ⭐ `blocked / participation incomplete — STRUCTURAL` | ❌ | **added by this run.** No automatic exit: operator ruling, re-scope, or reclassification. `fail_into_loopback` defers via Branch C; `ask` renders split / accept / disable |
+| ⭐ `blocked / participation incomplete — STRUCTURAL` | ❌ | **added by this run.** No automatic exit: operator ruling, re-scope, or reclassification. `fail_into_loopback` records the sibling `loop_back` to `6-finalize` — re-entry re-runs the authorization check, which an operator remedy clears — and logs three copy-runnable remedies; `ask` renders split / accept / disable. ⚠ This row asserted "defers via Branch C" until round 5 caught it: the disposition changed and its own D0 classification did not move with it |
 | `UNKNOWN` (re-fetch failed) | ✅ | never authorizable, but exitable — make the failed read succeed |
 | `UNKNOWN` (predicate failed) | ✅ | same |
 
@@ -161,11 +161,15 @@ to undo for reviewed-vs-nobody-reviewed.
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` is **non-empty** (5 Python files: the classifier,
-the registry, the two producer modules, and three test modules), so the full gate applied.
+`git diff --name-only origin/main...HEAD -- '*.py'` is **non-empty — 8 files**, so the full gate
+applied: `bot_registry.py`, `review_completeness.py`, `_github_pr.py`, `github_pr.py`,
+`test_bot_participation_contract.py`, `test_review_completeness.py`, `test_structural_refusal.py`,
+`test_github_pr.py`. ⚠ This said "5 Python files" beside an enumeration of seven until round 5
+re-derived it — a count written from memory rather than from the command quoted next to it, which
+is the exact failure mode this report's own findings keep recording.
 
-`./pw verify` ran four times. ⛔ **One of those runs exited 0 while FAILING** — see F37 — so the
-outcome below is read from the streamed output, never the exit code:
+`./pw verify` ran **six times**. ⛔ **Two of those runs exited 0 while FAILING** — F37 and F49 — so
+every outcome below is read from the streamed output, never the exit code:
 
 | At | Result |
 |---|---|
@@ -174,9 +178,11 @@ outcome below is read from the streamed output, never the exit code:
 | `7adf802` | ⛔ **FAILED** — `verify: test-compile failed`, 2 mypy errors, **exit code 0** |
 | `97f7493` | SUCCESS — 19740 passed, 14 skipped, 0 failed (10m00s) |
 | `6f31a5d` | ⛔ **FAILED** — `verify: module-tests failed`, 1 test, **exit code 0** |
-| `1b1b867` | SUCCESS — **19743 passed, 14 skipped**, zero `FAILED` lines, zero sub-step failure lines (9m15s) |
+| `1b1b867` | SUCCESS — 19743 passed, 14 skipped, zero `FAILED` lines, zero sub-step failure lines (9m15s) |
+| `3ac175d` | SUCCESS — 19746 passed, 14 skipped, zero `FAILED`/`ERROR` lines, zero sub-step failure lines (6m27s) |
+| **`{final}`** | **The gate MUST be re-run at the tree the PR opens from.** Round 5 correctly refused to accept a gate recorded two commits behind HEAD: `test-compile` is exactly what F37 proved the targeted suites cannot see, so a green targeted run at a later commit is not a substitute |
 
-⛔ **`./pw verify` exited 0 while FAILING on THREE of its six runs.** Every one was caught only by
+⛔ **`./pw verify` exited 0 while FAILING on TWO of its six runs.** Both were caught only by
 reading the streamed output. Had the exit code been trusted at any of those points, this run would
 have opened a PR on a red gate and reported it green — which is precisely why the lane contract makes
 "read the output, not the exit code" a rule rather than a suggestion. The two distinct failures were a
@@ -194,7 +200,7 @@ type-checks *production* only; the defect at `7adf802` was a test-only type erro
 `test-compile`'s `mypy` over the 737-file test tree and to nothing else — not to the gate, and not to
 pytest, which ran the offending helpers without complaint.
 
-`git status --porcelain` was empty after both `verify` runs — **no `uv.lock` churn** reached a commit,
+`git status --porcelain` was empty after every `verify` run — **no `uv.lock` churn** reached a commit,
 and every commit staged explicit deliverable paths rather than `git add -A`.
 
 ## Findings
@@ -224,7 +230,7 @@ fix for a defect that reproduces the defect's family* — and it recurred twice 
 
 | # | Finding | Disposition |
 |---|---|---|
-| F25 | ⭐⭐ **The non-option survived at the DEFAULT surface.** `review_rate_window_await` defaults to `false`, so on the default configuration the leaf's Branch 0 never fires and the dispatcher's structural branch table is **unreachable code**. The prompt an operator actually gets is the **pre-merge barrier's** — untouched by rounds 0–1 — which offered **"Re-triage now → loop back into automatic-review triage"** as option 1, and whose own default mode (`fail_into_loopback`) takes that action **automatically with no prompt at all**. For a size-capped bot a loop-back re-reviews a diff of the same size, the bot re-refuses, and the barrier re-reaches the identical verdict. It escaped every check because it is spelled *"re-triage"*, not *"wait"* — my `_WAIT_OFFER` regex, already widened once for exactly this class of miss, returns `False` on both "re-triage" and "loop back" | **FIXED** (`7adf802`). The barrier derives `{structural_bots}` from `bot_states` it already reads; the loop-back arm is UNAVAILABLE under **both** modes — `ask` gets its own prompt (split / accept / disable, no re-triage, both audit figures named), and `fail_into_loopback` neither loops nor prompts but logs the remedies and defers. **Mutation-verified**: reintroducing the re-triage option fails exactly the two barrier tests |
+| F25 | ⭐⭐ **The non-option survived at the DEFAULT surface.** `review_rate_window_await` defaults to `false`, so on the default configuration the leaf's Branch 0 never fires and the dispatcher's structural branch table is **unreachable code**. The prompt an operator actually gets is the **pre-merge barrier's** — untouched by rounds 0–1 — which offered **"Re-triage now → loop back into automatic-review triage"** as option 1, and whose own default mode (`fail_into_loopback`) takes that action **automatically with no prompt at all**. For a size-capped bot a loop-back re-reviews a diff of the same size, the bot re-refuses, and the barrier re-reaches the identical verdict. It escaped every check because it is spelled *"re-triage"*, not *"wait"* — my `_WAIT_OFFER` regex, already widened once for exactly this class of miss, returns `False` on both "re-triage" and "loop back" | **FIXED** (`7adf802`). The barrier derives `{structural_bots}` from `bot_states` it already reads; the loop-back arm is UNAVAILABLE under **both** modes — `ask` gets its own prompt (split / accept / disable, no re-triage, both audit figures named), and `fail_into_loopback` does not prompt but logs the remedies. ⚠ Its disposition was rewritten twice after this — see F39, F52 — and now records the sibling `loop_back`. **Mutation-verified**: reintroducing the re-triage option fails exactly the two barrier tests |
 | F26 | ⭐ **A remedy I added looped forever.** My "Disable this reviewer for this PR" branch asserted the re-dispatch settles. It does not: the recovery arms on ANY registered bot with no `required_bots` filter and fires before the participation guard, so the operator choosing the one remedy that resolves the block lands back on the identical prompt | **FIXED** (`7adf802`) — recovery scoped to required bots, which is independently correct: an optional bot's silence cannot block, so escalating it asks a question nobody needs. The dispatcher branch now names the scoping its settling claim depends on, and a test asserts both halves |
 | F27 | ⭐ **My round-1 cap-recovery broke a documented invariant.** It lived only on `check`, so `check` reported `refused_structural` and `deficit` reported `refused_hard` in exactly the scenario the recovery exists for — the cross-command disagreement three documents forbid in as many words. My own agreement test structurally could not see it: it handed both commands the cause directly | **FIXED** (`7adf802`) — hoisted to `recover_causes_from_caps`, shared by both; `--refusal-size-caps` moved to the shared flag block. The test now parametrizes the **cap-only** case, the only one that can observe it. **Mutation-verified**: removing `deficit`'s recovery fails exactly that case and nothing else |
 | F28 | **My round-1 crash fix introduced a smaller defect.** Falling back to `group(0)` on an empty declared capture returned the prose `"review limit of"` as a cap — comma-free, so it survives the CLI transport and renders beside a real `measured_diff_size`, making an unaudited gap look audited | **FIXED** (`7adf802`) — a declared group that captured nothing yields UNKNOWN; the no-group convention still uses the whole match, pinned separately |
@@ -252,7 +258,7 @@ prose. It then found ten more, four of them introduced by the round-2 fix itself
 | F42 | **`pre_merge_comment_barrier`'s own `configurable:` description was stale on both arms** — the same machine-read consumer kind the round-2 fix corrected one skill over and missed in the file it was editing | **FIXED** |
 | F43 | **The `deficit` canonical block omitted `--refusal-size-caps`**, so a caller following the docs passes the cap to `check` and not `deficit` — making the cap-only recovery unreachable from documented usage, which is the one scenario it exists for. plugin-doctor validates docs-against-parser, never parser-against-docs, so it stayed green | **FIXED** |
 | F44–F47 | Mutex-invariant enumeration missing the terminating-defer class; a forward reference where every sibling carries an inline release; the roster row naming one grant site of three; the 5d carve-out's reason enumeration stale for the second time | **ALL FIXED** — the 5d enumeration was **removed** rather than re-counted: it had gone stale at four and again at five, so the carve-out now names none and defers to item 7a |
-| F48 | A mixed gap (structural + `absent`) suppresses a loop-back that would still have fetched the absent bot's review | ⛔ **I recorded this RESOLVED and it was not — corrected in round 4.** My claim was that F38's precedence rule means "the absent bot is still awaited on the earlier pass". There need be **no earlier pass**: the first barrier entry can have `{count} == 0` with both bots unproven, and the structural gate is `{structural_bots}` non-empty AND `{count} == 0` — it says nothing about other unproven bots. **NOW FIXED** by disclosure rather than by suppression: the prompt renders the full `{unproven_bots}` set and states in as many words that accepting the gap authorizes past every one of them, and the grant's `--granted-over` carries the whole set like its sibling. The loop-back is still suppressed — correctly, since it cannot clear the structural half — but the operator is no longer asked to accept a bot they were never shown |
+| F48 | A mixed gap (structural + `absent`) suppresses a loop-back that would still have fetched the absent bot's review | ⛔ **I recorded this RESOLVED and it was not — corrected in round 4.** My claim was that F38's precedence rule means "the absent bot is still awaited on the earlier pass". There need be **no earlier pass**: the first barrier entry can have `{count} == 0` with both bots unproven, and the structural gate is `{structural_bots}` non-empty AND `{count} == 0` — it says nothing about other unproven bots. **NOW FIXED** by disclosure rather than by suppression: the prompt renders the full `{unproven_bots}` set and states in as many words that accepting the gap authorizes past every one of them, and the grant's `--granted-over` carries the whole set like its sibling. The RE-TRIAGE OPTION is suppressed in `ask` mode — correctly, since re-requesting the review cannot clear the structural half — while the default `fail_into_loopback` still records a loop-back, so a merely-`absent` bot IS re-observed on the next pass there. ⚠ I first wrote "the loop-back is still suppressed" flatly, which is false for the default mode; round 5 caught it |
 
 ### From the pre-PR verification sub-agent — round 4
 
@@ -269,6 +275,31 @@ introduced by the round-3 fix. ⭐ **The round-3 fix repeated the pattern round 
 | F55 | **R1's precedence rule had no landing site.** It obliged the pending-findings path to carry structural context in its message, but that message is a fixed literal in a section that never mentions the rule — executing it required improvising, which the workflow-discipline rule forbids | **FIXED** — the pending-findings section now carries both obligations inline, including making its `ask` prompt name the structural gap so an operator cannot "Merge anyway" past a reviewer they were never shown |
 | F56 | `_add_bot_observation_flags` docstring said "eight list flags"; the helper declares nine. The branch **incremented** the count rather than re-deriving it, preserving a pre-existing off-by-one | **FIXED** |
 | F57 | The widened mutex invariant dropped a conjunction, leaving a run-on in a normative sentence | **FIXED** |
+
+### From the pre-PR verification sub-agent — round 5
+
+Round 5 confirmed **all five** round-4 blockers fixed, verified the remedies against the **live
+argparse** rather than the prose, and — asked to challenge the new loop-back on its own terms —
+confirmed it is genuinely clearable (the authorization check runs *before* the disposition on
+re-entry) rather than a return to round 2's futile loop. It then returned NOT READY with seven
+blockers, and named the meta-pattern this run keeps reproducing:
+
+> ⭐ **"The fix lands, the sentences *about* the fix do not move with it."**
+
+Four of the seven were round-3 text describing a disposition round 4 replaced — in a knob
+description, a cross-skill reference, a normative prohibition, and the report's own D0 table.
+
+| # | Finding | Disposition |
+|---|---|---|
+| F58 | ⭐⭐ **A flat MUST-NOT/DO-IT contradiction four lines apart, in the section round 4 rewrote** (mine). The heading said *"the loop-back arm is UNAVAILABLE"* and the framing *"a loop-back … MUST NOT be taken"*, while the branch below **takes a `loop_back`**. The reconciling distinction existed only in an explanatory note, never in the normative sentence | **FIXED** — the two senses of "loop-back" are now separated explicitly: the **re-triage remedy** is what is unavailable; the **`loop_back` control-flow record** is what the branch emits. Heading, framing, and the `{barrier_mode} == ask` bullet all re-worded; the cross-reference and the test anchor moved with them |
+| F59 | ⛔ **The `configurable:` knob description still described the discarded Branch-C semantics** — *"defers with an actionable decision-log instead of looping"*. **The THIRD stale `configurable:` block in this branch**, and the SECOND on this very field | **FIXED** |
+| F60 | The dispatcher asserted *"the barrier never re-asks — it defers and settles"*, load-bearing as the justification for minting the grant at the hook, and false once the barrier began looping back | **FIXED** — it never re-*prompts*, which is the true and relevant claim |
+| F61 | ⛔ **The structural loop-back never said "return control to the finalize dispatcher", and the fall-through is DESTRUCTIVE.** The sections after **Merge PR** are not merge-gated: § "Remove Worktree" fires on `{worktree_path}` alone and § "Switch to Base Branch … Delete Local Branch" is uniform across `open` and `merged`. A literal executor honouring only *"Do NOT proceed to Merge PR"* would remove the worktree and delete the branch of an **unmerged** PR — then re-enter the loop-back it just recorded with no worktree | **FIXED** |
+| F62 | The report's **D0 table** still published *"`fail_into_loopback` defers via Branch C"* — the gate deliverable's own classification, asserting the disposition it had replaced | **FIXED** |
+| F63 | The report's F48 disposition claimed *"the loop-back is still suppressed"*, false for the default mode, where it is taken | **FIXED** — the RE-TRIAGE OPTION is suppressed in `ask`; the default still loops back |
+| F64 | ⛔ **The report's build-gate section carried four mutually inconsistent counts** — "5 Python files" beside an enumeration of seven (actual: **8**), "ran four times" against a six-row table, "THREE of six" failures against two marked rows — **and recorded no gate at the tree the PR would open from** | **FIXED** — counts re-derived from `git diff --name-only`, not memory; the `3ac175d` run recorded; and the final gate re-run at the true HEAD |
+| F65–F69 | An option label under-promising what it authorizes (it grants past *every* unproven bot, not one); the Branch C condemnation reading as condemning its legitimate sibling uses; a pointer naming a note title that does not exist; two stale reason enumerations (`escalate_ask` guard, and "**The** `loop_back` call site", now three) | **ALL FIXED** |
+| F70 | **On the DEFAULT configuration the operator's CONSOLE text names nothing** — the dispatcher's generic loop-back Display carries no bot, cap, size, or remedy, and instructs a replay that cannot clear the block. The three copy-runnable remedies are in `decision.log`, which nothing on that surface points at | ⚠ **DEFERRED — recorded, not fixed.** The Display is the finalize dispatcher's, shared by every loop-back in the phase; re-shaping it is a dispatcher-wide change well outside this plan's declared surface, and doing it here would repeat the scope drift that produced F51–F57. Named as residue so it is known debt rather than an unnoticed gap |
 
 ### From the build gate — second and third occurrences
 

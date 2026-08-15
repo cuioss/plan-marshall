@@ -487,7 +487,7 @@ def _barrier_structural_section() -> str:
     """
     barrier: str = _BRANCH_CLEANUP.read_text(encoding='utf-8')
     match = re.search(
-        r'^#{3,6}\s.*Structural refusal — the loop-back arm is UNAVAILABLE.*$',
+        r'^#{3,6}\s.*Structural refusal — RE-TRIAGE is not a remedy.*$',
         barrier,
         re.MULTILINE,
     )
