@@ -260,21 +260,37 @@ def test_signature_in_title_or_detail_alone_does_not_make_a_body_meta():
     assert row['meta_count'] == 0
 
 
-def test_a_status_line_followed_by_substance_stays_actionable():
-    # A body that opens with the status line and then reviews is a real finding.
-    # Matching anywhere in the body would drop it, which under-counts the reviewer's
-    # actionable output — so the match is first-line anchored.
+def test_a_review_mentioning_the_phrase_mid_body_stays_actionable():
+    # Only a body that OPENS with the status line is a summary. A genuine review
+    # that refers to the phrase further down is not boilerplate; dropping it would
+    # deflate the reviewer's actionable_count and its %-resolved-as-fixed.
     result = rr.aggregate([
         {
             'author': 'coderabbitai',
             'kind': 'review_body',
-            'body': 'Actionable comments posted: 1\n\nGuard the array bound here.',
+            'body': 'The guard is wrong.\n\nActionable comments posted: 1',
         }
     ])
 
     row = _reviewer(result, 'coderabbitai')
     assert row['actionable_count'] == 1
     assert row['meta_count'] == 0
+
+
+def test_a_real_summary_with_its_details_block_is_meta():
+    # The shape a real status summary takes. An earlier rule tested whether a later
+    # line followed and therefore COUNTED this one as actionable.
+    result = rr.aggregate([
+        {
+            'author': 'coderabbitai',
+            'kind': 'review_body',
+            'body': '**Actionable comments posted: 3**\n\n<details>\nwalkthrough\n</details>',
+        }
+    ])
+
+    row = _reviewer(result, 'coderabbitai')
+    assert row['actionable_count'] == 0
+    assert row['meta_count'] == 1
 
 
 # ---------------------------------------------------------------------------

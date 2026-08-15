@@ -11,10 +11,13 @@ which AUGMENTS these numbers; this script never reasons about comment content.
 
 Classification rules (kind -> actionability):
 - kind=inline                -> ACTIONABLE
-- kind=review_body           -> ACTIONABLE when substantive; META when it is
-                                CodeRabbit's status-summary ("Actionable comments
-                                posted: N", detected via author=coderabbitai + the
-                                status-summary signature in title/detail)
+- kind=review_body           -> ACTIONABLE when substantive; META when the BODY
+                                opens with a status-summary line the reviewer's
+                                registry record declares in
+                                `review_body_summary_patterns` (CodeRabbit's
+                                "Actionable comments posted: N"). The signature and
+                                the reviewer identity are registry data, not
+                                literals here — see `_is_status_summary`
 - kind=issue_comment         -> META/non-actionable (CodeRabbit walkthrough/poem)
 - record lacking kind        -> bucketed as `unknown` kind, counted in raw_total
                                 only (never in actionable_count)
@@ -75,11 +78,6 @@ _FALSE_POSITIVE_RESOLUTIONS = {'rejected'}
 # place and silently missed in the other.
 _ALL_RESOLUTIONS = frozenset({'fixed', 'rejected', 'accepted', 'taken_into_account', 'suppressed', 'pending'})
 _RESOLVED_RESOLUTIONS = _ALL_RESOLUTIONS - {'pending'}
-
-# CodeRabbit's status-summary review_body is META, not actionable. Detected by the
-# author login plus the status-summary signature in the title/detail.
-_CODERABBIT_AUTHOR = 'coderabbitai'
-_STATUS_SUMMARY_SIGNATURE = 'actionable comments posted'
 
 _UNATTRIBUTED = 'unattributed'
 _UNKNOWN_KIND = 'unknown'
@@ -155,37 +153,25 @@ def _grade_comparison(
     return COMPARISON_INDETERMINATE
 
 
-def _is_coderabbit_status_summary(record: dict[str, Any]) -> bool:
-    """True when a review_body record is CodeRabbit's META status summary.
+def _is_status_summary(record: dict[str, Any]) -> bool:
+    """True when a review_body record is the reviewer's META status summary.
 
-    The signature ("Actionable comments posted: N") is matched case-insensitively
-    against the record's BODY — the field the comment text actually reaches. The
-    producer (`github_pr.cmd_fetch_findings`) builds `title` and `detail` from
-    structured metadata and quarantines the untrusted text under `raw_input.body`,
-    which the batched `manage-findings ingest` pass promotes to the clean top-level
-    `body`. Matching title/detail therefore never fired on a real record, and every
-    CodeRabbit status summary was silently counted as actionable.
+    **Delegates to the shared implementation** in
+    `automatic-review/scripts/review_gate_delta.is_status_summary`, which resolves
+    the signature from the per-bot registry (`review_body_summary_patterns`) rather
+    than from a login literal here. Two counters applying one rule from two copies is
+    how they came to be wrong in the same way — matching `title`/`detail`, where the
+    comment text never reaches — so there is now one implementation and
+    `test_counting_rule_parity.py` pins the delegation over a shared corpus.
 
-    The match is FIRST-LINE anchored and refuses when substantive content follows,
-    because a body that opens with the status line and then reviews is a real
-    finding. The author gate is retained as a second condition so a substantive
-    review_body from another reviewer can never be mis-classed.
-
-    Kept behaviourally identical to
-    `automatic-review/scripts/review_gate_delta.is_status_summary`, which
-    `test_counting_rule_parity.py` asserts over a shared corpus — the two counters
-    implement one rule and must not drift.
+    Imported lazily, matching this module's existing `_findings_core` /
+    `toon_parser` pattern: the executor supplies the marketplace scripts dirs on
+    PYTHONPATH, and the pure `aggregate` path stays importable without them for any
+    record shape that never reaches this branch.
     """
-    if (record.get('author') or '') != _CODERABBIT_AUTHOR:
-        return False
-    body = str(record.get('body') or record.get('message') or '')
-    first_line = body.split('\n', 1)[0].strip().lower()
-    if not first_line:
-        return False
-    remainder = body.split('\n', 1)[1].strip() if '\n' in body else ''
-    if remainder:
-        return False
-    return _STATUS_SUMMARY_SIGNATURE in first_line
+    from review_gate_delta import is_status_summary
+
+    return bool(is_status_summary(record))
 
 
 def _is_actionable(record: dict[str, Any]) -> bool:
@@ -200,7 +186,7 @@ def _is_actionable(record: dict[str, Any]) -> bool:
     if kind == 'inline':
         return True
     if kind == 'review_body':
-        return not _is_coderabbit_status_summary(record)
+        return not _is_status_summary(record)
     # issue_comment, unknown, or missing kind.
     return False
 
@@ -405,7 +391,7 @@ def aggregate(
         },
         'kind_actionability': {
             'inline': 'actionable',
-            'review_body': 'actionable (meta when CodeRabbit status-summary)',
+            'review_body': 'actionable (meta when it opens with a registry-declared status-summary line)',
             'issue_comment': 'meta',
             'unknown': 'meta (raw_total only)',
         },

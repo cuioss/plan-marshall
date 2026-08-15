@@ -129,16 +129,16 @@ Each entry in either list maps one-to-one to a machine-readable registry doc at
 `standards/{bot_kind}.md` under this skill's `standards/` directory — there is no hard-coded bot
 list in the pipeline. Each registry doc carries a fenced-YAML data block (`bot_kind`,
 `author_login`, `trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns[]`,
-`refusal_patterns[]`, `contentless_review_markers[]`, `actionable_content_markers[]`,
-`rate_limit_class`, `rate_limit_eta_patterns[]`, `severity_map`) plus the
+`review_body_summary_patterns[]`, `refusal_patterns[]`, `contentless_review_markers[]`,
+`actionable_content_markers[]`, `rate_limit_class`, `rate_limit_eta_patterns[]`, `severity_map`) plus the
 producer / consumer / trust boundary / disposition rationale for that bot, and links to the org
 signal/noise source-of-truth rather than duplicating it.
 
 The single generic loader `scripts/bot_registry.py` parses every `standards/{bot_kind}.md` data
 block at runtime and exposes the derived registry (`bot_kinds()`, the login→bot_kind map, each
 bot's `trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns`,
-`contentless_review_markers`, `actionable_content_markers`, `rate_limit_class`,
-`rate_limit_eta_patterns`, and `severity_map`). The producer
+`review_body_summary_patterns`, `contentless_review_markers`, `actionable_content_markers`,
+`rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map`). The producer
 (`github_pr.py` noise pre-filter), the finding store (`_findings_core.BOT_KINDS`), the re-review
 strategy registry (`github_re_review.py` — both its trigger comments and the `refusal_class` /
 `refusal_eta` it surfaces on a detected refusal), and the per-bot rate-limit detector

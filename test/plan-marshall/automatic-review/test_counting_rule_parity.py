@@ -97,12 +97,22 @@ _CORPUS: tuple[tuple[str, dict, bool], ...] = (
         True,
     ),
     (
-        'status line followed by substance stays actionable',
+        'a real summary is the status line plus its details block — meta',
         {
             'author': 'coderabbitai',
             'bot_kind': 'coderabbit',
             'kind': 'review_body',
-            'body': 'Actionable comments posted: 1\n\nGuard the array bound here.',
+            'body': '**Actionable comments posted: 3**\n\n<details>\nwalkthrough\n</details>',
+        },
+        False,
+    ),
+    (
+        'a review that merely mentions the phrase mid-body is actionable',
+        {
+            'author': 'coderabbitai',
+            'bot_kind': 'coderabbit',
+            'kind': 'review_body',
+            'body': 'The guard is wrong.\n\nActionable comments posted: 1',
         },
         True,
     ),
@@ -130,6 +140,26 @@ _CORPUS: tuple[tuple[str, dict, bool], ...] = (
         'an unknown kind is meta',
         {'author': 'coderabbitai', 'bot_kind': 'coderabbit', 'kind': '', 'body': 'x'},
         False,
+    ),
+    # ---- The SELECTOR axis. A corpus whose records all set `author` and
+    # `bot_kind` consistently cannot see a divergence in WHICH key each
+    # implementation reads, and that is exactly where the two differed. Both
+    # shapes below occur in production: `add_finding` OMITS `bot_kind` when the
+    # producer could not classify the author, and `gitlab_pr` never sets it at all.
+    (
+        'summary identified from bot_kind with no author',
+        {'bot_kind': 'coderabbit', 'kind': 'review_body', 'body': 'Actionable comments posted: 5'},
+        False,
+    ),
+    (
+        'summary identified from the author login with no bot_kind',
+        {'author': 'coderabbitai', 'kind': 'review_body', 'body': 'Actionable comments posted: 5'},
+        False,
+    ),
+    (
+        'an unregistered author with no bot_kind resolves to no patterns',
+        {'author': 'some-human', 'kind': 'review_body', 'body': 'Actionable comments posted: 5'},
+        True,
     ),
 )
 

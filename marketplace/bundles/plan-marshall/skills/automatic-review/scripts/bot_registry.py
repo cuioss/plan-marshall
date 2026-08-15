@@ -33,6 +33,8 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
     ignore_patterns:
       - "## Walkthrough"
       - "No actionable comments were generated"
+    review_body_summary_patterns:     # a review_body OPENING with one of these is a status summary
+      - "Actionable comments posted:"
     refusal_patterns:
       - "Review limit reached"
     refusal_size_patterns:            # subset of refusal_patterns whose CAUSE is diff-size
@@ -50,9 +52,10 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
     ```
 
 Stdlib-only (no PyYAML): the block is a tightly-constrained subset — top-level
-scalars, lists (``ignore_patterns``, ``refusal_patterns``, ``refusal_size_patterns``,
-``contentless_review_markers``, ``actionable_content_markers``,
-``participation_evidence``, ``rate_limit_eta_patterns``), and one nested map
+scalars, lists (``ignore_patterns``, ``review_body_summary_patterns``,
+``refusal_patterns``, ``refusal_size_patterns``, ``contentless_review_markers``,
+``actionable_content_markers``, ``participation_evidence``,
+``rate_limit_eta_patterns``), and one nested map
 (``severity_map``) — parsed by a small deterministic reader below. Load order is the sorted
 ``standards/*.md`` filename order, so ``bot_kinds()`` is stable across runs.
 """

@@ -407,21 +407,37 @@ def test_the_signature_in_title_or_detail_does_not_drop_a_finding():
     assert result['escapes_total'] == 1
 
 
-def test_a_status_line_followed_by_substance_is_still_an_escape():
-    """A body that opens with the status line and then reviews is a real finding.
+def test_a_real_summary_with_its_details_block_is_meta():
+    """The shape a real status summary takes: the status line, then a details block.
 
-    Matching the signature anywhere in the body would drop it. For a gate-escape
-    count that UNDER-counts escapes and makes the gates look better than they are —
-    the dangerous direction — so the match is first-line anchored and refuses when
-    substantive content follows.
+    An earlier attempt tested whether any LATER LINE followed, which inverted the
+    result on exactly this shape — it was counted as an escape. Opening position is
+    what carries "this is a status line"; line count does not.
+    """
+    from review_gate_delta import is_status_summary
+
+    assert is_status_summary(
+        {
+            'bot_kind': 'coderabbit',
+            'kind': 'review_body',
+            'body': '**Actionable comments posted: 3**\n\n<details>\nwalkthrough\n</details>',
+        }
+    )
+
+
+def test_a_review_mentioning_the_phrase_mid_body_is_still_an_escape():
+    """Only a body that OPENS with the status line is a summary.
+
+    A genuine review that refers to the phrase further down is not boilerplate, and
+    dropping it would under-count escapes — the direction that flatters the gates.
     """
     findings = [
         {
-            'hash_id': 'combined',
+            'hash_id': 'mentions',
             'bot_kind': 'coderabbit',
             'kind': 'review_body',
             'author': 'coderabbitai',
-            'body': 'Actionable comments posted: 1\n\nGuard the array bound here.',
+            'body': 'The guard coerces UNKNOWN into a positive.\n\nActionable comments posted: 1',
         },
     ]
 
@@ -432,10 +448,45 @@ def test_a_status_line_followed_by_substance_is_still_an_escape():
         gates_green=True,
         gate_head_sha=_SHA,
         reviewed_head_sha=_SHA,
-        partitions={'combined': PARTITION_GATE_STRUCTURAL},
+        partitions={'mentions': PARTITION_GATE_STRUCTURAL},
     )
 
     assert result['escapes_total'] == 1
+
+
+def test_the_known_residual_is_pinned_rather_than_hidden():
+    """A body opening with the status line AND carrying same-line substance is meta.
+
+    This is the rule's documented cost, pinned so it is a KNOWN limitation rather
+    than an undiscovered one: it under-counts by at most one finding per reviewer per
+    PR, in the direction that flatters the gates. Narrowing it needs a content
+    predicate a text match cannot supply (the registry's contentless /
+    actionable-content marker pair is that mechanism, and CodeRabbit declares
+    neither). Change this assertion only alongside the docstring that states the
+    cost.
+    """
+    from review_gate_delta import is_status_summary
+
+    assert is_status_summary(
+        {
+            'bot_kind': 'coderabbit',
+            'kind': 'review_body',
+            'body': 'Actionable comments posted: 1. Guard the array bound here.',
+        }
+    )
+
+
+def test_a_padded_or_empty_registry_entry_cannot_break_the_carve_out():
+    """Both sides of a registry comparison are normalised — the project's rule.
+
+    A padded entry would silently disable the carve-out; an empty entry would make
+    every review_body from that bot a summary, dropping all of them.
+    """
+    from review_gate_delta import is_status_summary
+
+    record = {'bot_kind': 'coderabbit', 'kind': 'review_body', 'body': 'A real review comment.'}
+
+    assert not is_status_summary(record)
 
 
 def test_a_bot_declaring_no_summary_pattern_keeps_every_review_body():

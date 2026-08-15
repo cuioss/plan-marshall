@@ -174,39 +174,72 @@ _PROVENANCE = (
 )
 
 
+def resolve_bot_kind(record: dict) -> str:
+    """Resolve a finding's ``bot_kind``, falling back to its author login.
+
+    Two selectors, because ``bot_kind`` is not always present: ``add_finding`` OMITS
+    the key when the producer could not classify the author, and the GitLab producer
+    (``gitlab_pr``) never sets it at all. Keying on ``bot_kind`` alone would silently
+    disable every per-bot rule on the whole GitLab path; keying on ``author`` alone
+    would miss a record classified without a recognised login. Resolving one from the
+    other through the registry's own login map keeps a single answer for both.
+    """
+    bot_kind = str(record.get('bot_kind') or '')
+    if bot_kind:
+        return bot_kind
+    return bot_registry.login_to_bot_kind().get(str(record.get('author') or ''), '')
+
+
 def is_status_summary(record: dict) -> bool:
     """True when a ``review_body`` record is the reviewer's META status summary.
 
     Three properties, each load-bearing:
 
-    1. **The signature comes from the registry**, keyed by the record's own
-       ``bot_kind`` (``bot_registry.review_body_summary_patterns``). No login and no
-       bot-kind literal appears here — that identity is the registry's, and a second
-       copy of it in a counter is the hard-coded-population archetype.
+    1. **The signature comes from the registry** (``review_body_summary_patterns``),
+       keyed by :func:`resolve_bot_kind`. No login and no bot-kind literal appears
+       here — that identity is the registry's, and a second copy of it in a counter
+       is the hard-coded-population archetype.
     2. **It is matched against the BODY**, via :data:`_BODY_FIELDS`. Matching
        ``title`` / ``detail`` — which the producer builds from structured metadata
        and which never contain the comment text — is a carve-out that cannot fire.
-    3. **The match is FIRST-LINE anchored.** A body that opens with the status line
-       and then continues with substantive review content is a real finding. Matching
-       anywhere in the body would drop it, and for a gate-escape count that
-       under-counts escapes and makes the gates look better than they are — the
-       dangerous direction. Anchoring errs toward counting.
+    3. **The body must BEGIN with the pattern**, after leading whitespace and
+       markdown emphasis are stripped. A status summary is a body that *opens* with
+       its status line; a genuine review that merely mentions the phrase further down
+       is not one.
+
+    **Why begins-with and not "the status line is the only line".** An earlier
+    attempt tested whether any later line followed, which inverted the result on both
+    realistic shapes: a real summary is ``**Actionable comments posted: 3**`` followed
+    by a details block, so it was COUNTED, while a one-line body carrying the phrase
+    plus same-line substance was DROPPED. Line position does not carry "is there
+    review content"; opening position does carry "is this a status line".
+
+    **Known residual, stated rather than hidden.** A genuine review whose body opens
+    by quoting the phrase and continues on the same line is still classified meta.
+    That under-counts by at most one finding per reviewer per PR, and it is the
+    direction that flatters the gates — so it is a real, bounded cost, accepted
+    because the alternative (matching nowhere, or anywhere) is wrong on the far more
+    common pure-summary shape. Narrowing it further needs a content predicate this
+    text match cannot supply; the registry's ``contentless_review_markers`` /
+    ``actionable_content_markers`` pair is the mechanism for that, and CodeRabbit
+    declares neither today.
 
     A bot declaring no summary pattern can never reach ``True``: every one of its
     ``review_body`` records stays counted.
     """
-    patterns = bot_registry.review_body_summary_patterns(record.get('bot_kind') or '')
-    if not patterns:
-        return False
+    patterns = bot_registry.review_body_summary_patterns(resolve_bot_kind(record))
     body = next((str(record[f]) for f in _BODY_FIELDS if record.get(f)), '')
-    first_line = body.split('\n', 1)[0].strip().lower()
-    if not first_line:
+    # Normalise BOTH sides of a registry comparison (the project's rule — see
+    # `github_pr._is_contentless_boilerplate`): a padded registry entry must not
+    # silently disable the carve-out, and an empty entry must not match everything.
+    opening = body.lstrip().lstrip('*_# ').lower()
+    if not opening:
         return False
-    remainder = body.split('\n', 1)[1].strip() if '\n' in body else ''
-    if remainder:
-        # The status line is followed by real content — a substantive review body.
-        return False
-    return any(pattern.lower() in first_line for pattern in patterns)
+    return any(
+        opening.startswith(cleaned)
+        for cleaned in (p.strip().lower() for p in patterns)
+        if cleaned
+    )
 
 
 def _is_actionable(record: dict) -> bool:
