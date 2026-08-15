@@ -1724,6 +1724,7 @@ In-step state checks (consulted by individual standards docs after dispatch — 
 | `scripts/ci_verify.py` | `plan-marshall:phase-6-finalize:ci_verify` | Inline deterministic `default:ci-verify` executor — green CI marks the step done with zero dispatch; red CI classifies failures and returns a per-producer needs-triage signal |
 | `scripts/ci_complete_precondition.py` | `plan-marshall:phase-6-finalize:ci_complete_precondition` | Resolver for the `requires: [ci-complete]` frontmatter precondition, with a per-HEAD cache and a harness-ceiling clamp |
 | `scripts/derive_gate_bundles.py` | `plan-marshall:phase-6-finalize:derive_gate_bundles` | Derives the unique bundle set the pre-push quality gate runs over, from the live footprint |
+| `scripts/review_commitments.py` | `plan-marshall:phase-6-finalize:review_commitments` | Reconciles a simplify pass's deletions against the review commitments made earlier in the SAME finalize run — reports conflicts, gates nothing |
 | `scripts/pr_intent_section.py` | `plan-marshall:phase-6-finalize:pr_intent_section` | Renders the distilled `## Intent` section into the generated PR body — owns the character budget and its visible truncation, and omits the section entirely (heading included) when the plan has no outline intent |
 | `scripts/post_run_source_guard.py` | `plan-marshall:phase-6-finalize:post_run_source_guard` | Runtime tracked-source guard for the `post_run_review` band (item 5f sub-item 0) — reports dirty TRACKED paths (source, or a tracked `.plan/` config/descriptor) left by a step that declared `mutates_source: false`; the `.plan/` exemption is keyed on git trackedness, not the path prefix; publishes the examined population (`considered_paths` / `exempted_paths` / `offending_paths`); advisory and non-blocking (always exits 0) |
 
@@ -1756,6 +1757,30 @@ python3 .plan/execute-script.py plan-marshall:phase-6-finalize:post_run_source_g
 `--project-dir` is required and takes the MAIN CHECKOUT — it carries no default
 because every caller runs after `default:branch-cleanup` removed the worktree,
 so a cwd default would silently observe a deleted tree.
+
+### review_commitments — reconcile
+
+```bash
+python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_commitments reconcile \
+  --plan-id PLAN_ID --diff-file DIFF_PATH
+```
+
+`--diff-file` takes a path to a unified diff of the simplify pass's own edits — the
+`git diff` over the worktree BEFORE the dispatcher's commit instrumentation commits
+them. Read from a file rather than stdin so the invocation stays one Bash call with
+no shell plumbing.
+
+Returns `verdict: clear | conflict` plus one `conflicts[]` record per deletion that
+removes a line the review process committed to earlier in the same run. It reports
+and never decides: the envelope carries `proves: removal_conflict_only` and
+`gates_merge: false` in as many words, and no caller may read a conflict as a merge
+verdict. Two undetermined states fail CLOSED to a conflict rather than to silence —
+an untriaged (`pending`) finding, whose disposition nobody has decided yet, and a
+finding with a path but no line anchor, which binds its whole file. An error return
+carries NO `verdict` field, so a crashed reconciliation reads as UNKNOWN rather than
+as a clear pass. See
+[`standards/finalize-step-simplify.md`](standards/finalize-step-simplify.md)
+§ "Reconcile against the run's review commitments".
 
 ## Related
 
