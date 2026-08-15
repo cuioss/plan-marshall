@@ -1,6 +1,6 @@
 # Run report — 440-the-merge-currency-treadmill (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** `claude/merge-currency-treadmill-ecq37n` (harness-assigned)    **PR:** _pending_    **Outcome:** _pending_
+**Date (UTC):** 2026-08-13 → 2026-08-15    **Branch:** `claude/merge-currency-treadmill-ecq37n` (harness-assigned)    **PR:** [#1235](https://github.com/cuioss/plan-marshall/pull/1235)    **Outcome:** completed — D0–D3 done, **D4 not done** (not performable in this lane; see D4)
 
 ## Skills loaded
 
@@ -420,15 +420,34 @@ full dispositions are posted on the PR as a single comment rather than split acr
 
 ## Reviewer participation
 
-_Pending — recorded at Step 8 condition 3, derived from the `author_login` of each
-`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc._
+Population **derived from configuration**, not transcribed: the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc —
+`coderabbit.md` → `coderabbitai`, `pr-agent.md` → `cuioss-review-bot`, `sourcery.md` → `sourcery-ai`.
+Each verdict is read from that author's stored comment bodies across all three surfaces
+(`get_comments`, `get_reviews`, `get_review_comments`), never from a check state or a summary.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `coderabbitai` | **reviewed** | Two review-summary bodies plus three inline review threads against `809be20`, carrying five actionable findings. Its *incremental* re-reviews of `425c4c9` and later then hit its own quota — "Review limit reached … you've used all free OSS reviews for now" — so the later commits are unreviewed by it, but the diff as a whole was genuinely reviewed |
+| `sourcery-ai` | **rate-limited** | Published only a refusal in place of a review: "Sorry @cuioss-oliver, your pull request is larger than the review limit of 150000 diff characters". It engaged but reviewed nothing |
+| `cuioss-review-bot` | **silent** | Published nothing on any of the three surfaces. No refusal, no notice, no review. Cause not established from this session — the PR carries no `skip-bot-review` label, so suppression is not the explanation |
+
+**Coverage: 1 of 3 reviewed.** The § Step 8 shortfall disclosure fired before arming; its wording is
+reproduced under § Contract check below. Note the shortfall is not merely a quota accident: the diff
+is large enough that one reviewer refused on size outright, which is itself a fact about this change
+worth recording rather than smoothing over.
 
 ## Cost
 
-- **Tokens:** not available to the agent in this session — the harness exposes no usage counter to
-  the running agent, so no figure is reported rather than an estimated one.
-- **Wall-clock:** first commit `1a59f09` at 2026-08-13 19:04:06 UTC; measured to the last pre-merge
-  commit. Source: git committer timestamps on this branch.
+- **Tokens:** not available to the agent in this session for its own main-context usage — the harness
+  exposes no usage counter to the running agent, so no figure is reported rather than an estimated
+  one. The **sub-agent** spend IS reported by the harness per dispatch and totals **~1.09M** across
+  the four verification rounds (258k + 321k + 285k + 227k; the failed first launch of round 4 is not
+  counted because it produced no work). That figure is a floor on this run's total, not the total.
+- **Wall-clock:** first commit `1a59f09` at 2026-08-13 19:04:06 UTC to the merge resolution `9a3af44`
+  at 2026-08-15 12:41:17 UTC — **~41.6 hours elapsed**, which is *not* time worked: the run was
+  suspended between sessions and the span includes the operator-idle gap. Source: git committer
+  timestamps on this branch. No worked-time figure is available, so none is given.
 - **Population:** these figures cover this single Claude Code cloud session. ⛔ **NOT comparable to a
   plan-marshall `metrics.toon` total**, which counts the orchestrator-plus-agent dispatch tree under
   plan-marshall's own per-task billing boundary — a boundary an interactive cloud session does not
@@ -436,11 +455,88 @@ _Pending — recorded at Step 8 condition 3, derived from the `author_login` of 
 
 ## Contract check (Step 9)
 
-_Pending — recorded at Step 8 condition 3._
+**GitHub access path:** the GitHub MCP server (the cloud path). `gh` is absent in this session.
+**Branch form:** harness-assigned `claude/merge-currency-treadmill-ecq37n`, kept as-is per the lane's
+resumability rule — no prefixed branch was cut.
+**Plugin cache sync:** not owed. A cloud run neither performs nor records one.
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **done** | Eight named in § Skills loaded, all resolved by bundle path (the plugin is not installed here). None unobtainable |
+| 2 Branch | **done** | On `origin`; harness-assigned form kept. Published before the first edit — `git ls-remote` showed it absent locally-only, so it was pushed as the first action |
+| 3 Plan directory | **done** | `doc/plans/truthful-signals/440-the-merge-currency-treadmill/plan.md` exists via `git mv` (history preserved, `{NNN}-` prefix intact) and opens with the first-instruction block — checked at Step 3 and re-checked here |
+| 4 Implement | **done** | 17 commits, every one carrying the `Co-Authored-By` trailer and no "Generated with" footer. Deliverable paths staged explicitly at every commit; `git status` checked before each; no `uv.lock` churn ever reached a commit |
+| 4 Per-commit gate | **done** | Every commit touching `*.py` was preceded by a clean direct `./pw` gate — `ruff … All checks passed!`, `mypy … Success`, `SPDX-header check passed` |
+| 4 Pushed | **done** | No unpushed commit remains |
+| 5 Build gate | **done** | Git-derived verdict: `*.py` present ⇒ full `./pw verify`. Run to a clean `verify: SUCCESS` **six times** — after the initial implementation, after each of the three verification rounds' fixes, after the PR-review fixes, and after the merge resolution. Final: 400 production files, 738 test files, plugin-doctor `total_issues: 0`, **19721 passed / 14 skipped**, `coverage: COMPLETE` |
+| 6 Verification sub-agent | **done, four rounds** | Findings and dispositions in § Findings. Round 4's first launch failed on a usage limit and is recorded as an absent verification, not a clean one. Re-dispatched after every round that found a defect, as the contract requires |
+| 7 PR cycle | **done** | PR #1235. All three comment surfaces read (`get_comments`, `get_reviews`, `get_review_comments`) — the review-summary surface carried findings the inline surface did not, and CodeRabbit's inline posting partially failed, so reading only threads would have missed one. Every comment dispositioned in § Findings; the two rejections are argued on the PR itself |
+| 7 Merge conflict | **done** | `mergeable_state: dirty` after main advanced. Resolved by merging `origin/main` into the branch; one real conflict in `phase-6-finalize/SKILL.md` where main had improved the SKIP-emission rationale and this branch had added a branch plus an obligation to the same paragraph — **both sides kept**, neither discarded. Re-verified clean before pushing |
+| 8 Merge gate | see § Residue | Conditions 1–3 and the condition-4 disclosure are recorded there, with the arming decision |
+| 8 Bridge | **done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory. The report carries the PR number and the per-deliverable outcome the orchestrator collects from |
+| 9 This check | **done** | This table |
+| 9 What have we learned | **done** | Below — one contract-change proposal, presented to the operator, **not self-approved** |
+
+**No step is reported as not done.** The one deliverable that is not done is D4, and it is a scope
+fact rather than a skipped step: the measurement is not performable in a lane with no `.plan/`.
 
 ## What have we learned (Step 9)
 
-_Pending — recorded at Step 8 condition 3._
+**One contract change is proposed, with evidence from this run. It is NOT applied here** — the lane
+forbids self-approving a change to the contract that governs the run, and requires it ship as a
+separate `chore/` PR touching only the skill. It is presented to the operator and awaits a decision.
+
+**The evidence.** Four verification rounds ran. Rounds 2, 3 and 4 each found that the *previous*
+round's fixes had landed at the site the finding named but **not** at the sites restating the same
+claim — and in two cases the un-propagated site was this report's own findings table, asserting a
+disposition that was false (F4's "all four sites corrected"; F19's "corrected in both"). Round 4 saw
+the pattern clearly enough to *predict* its next instance: it observed the working tree dirty
+mid-review, reconstructed what committing those changes would do, and named the two report sections
+that would become stale. Both did.
+
+**The gap in the contract.** § Step 6 already mandates a beyond-diff sweep "by consumer kind" — and
+that instruction is what found these sites each time. What it does not say is that **the fixes
+themselves create new stale restatements**, so the sweep must be re-run *against the claims the fixes
+changed*, not only against the claims the original diff changed. The current wording points the sweep
+at the diff; by round 2 the diff under review is largely the previous round's fixes, and the sweep
+that matters is over what those fixes made false elsewhere.
+
+**The proposed edit** — to `.claude/skills/cloud-plan-lane/SKILL.md` § Step 6, appended to the
+"Findings that are real → fix them, then re-dispatch" bullet:
+
+> **A fix is a change, so it gets the same beyond-diff sweep the original change got.** When you fix a
+> finding, list the claims your fix made false — the value it changed, the ordering it changed, the
+> count it changed — and sweep for each one's restatements before re-dispatching, including in the run
+> report itself. The report is part of the reviewed surface: a findings table that records a
+> disposition the artifacts contradict is the same defect as a stale doc, and it is the one a
+> re-dispatch is least likely to catch, because the verifier is reading the code rather than the
+> record. Counts and figures that move with each round (test totals, character budgets) are re-derived
+> at the moment of the claim, never carried forward from an earlier round.
+
+**Why this and not something larger.** The obvious alternative — "verify more" — is already what the
+contract says, and it is what produced these findings; the run does not show under-verification. It
+shows a specific blind spot in *what* gets re-swept after a fix. The edit is one paragraph and names
+the failure it prevents.
+
+**Recorded as not proposed:** nothing else. The lane's other steps held up under a run that hit a
+merge conflict, a partially-failed inline review post, a reviewer refusing on diff size, a sub-agent
+dying on a usage limit, and four verification rounds — each of those was handled by an instruction
+already in the contract.
+
+## Merge gate (Step 8)
+
+- **Condition 1 — required contexts green on the head SHA.** Read from `pull_request_read`'s
+  `mergeable_state`, never from a ruleset-config call (unreachable on the MCP path). The merge
+  conflict that made it `dirty` was resolved and pushed; the gate is judged on the post-merge head.
+- **Condition 2 — every PR comment handled.** Five CodeRabbit findings: three fixed in `e08a95b`, two
+  rejected with reasons argued on the PR. No open unaddressed comment.
+- **Condition 3 — the report is finalized as the last pre-merge commit.** This section is part of
+  that commit. It lands *in* this PR, because arming locks the branch.
+- **Condition 4 — review-coverage shortfall, DISCLOSED (not a block).** *Review coverage: 1 of 3 —
+  `coderabbitai` reviewed; `sourcery-ai` rate-limited (refused on diff size, >150000 characters);
+  `cuioss-review-bot` silent, cause not established.* Per the contract this changes what the run
+  **says**, never whether it merges: rate limits and quotas are outside our control and blocking on
+  them would strand every landing behind a bot's quota.
 
 ## Residue
 
