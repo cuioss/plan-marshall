@@ -449,6 +449,11 @@ def iter_skill_subdoc_edge_sources(base_path: Path) -> list[tuple[ComponentId, P
     return sources
 
 
+def _normalize_segment(segment: str) -> str:
+    """Fold a notation segment to one case style so `_`/`-` variants compare equal."""
+    return segment.replace('_', '-')
+
+
 def _entry_script_for_subcommand(index: DependencyIndex, target: ComponentId) -> ComponentId | None:
     """Return the skill's entry script when ``target``'s final segment is a subcommand.
 
@@ -468,6 +473,15 @@ def _entry_script_for_subcommand(index: DependencyIndex, target: ComponentId) ->
     since plugin-doctor's entry script is ``doctor-marketplace``.
     """
     if target.component_type != 'script' or not target.parent_skill:
+        return None
+    # A script segment that is the skill's own name in the WRONG CASE STYLE is a
+    # misspelled script reference, not a verb. `plugin-doctor`'s
+    # `manage-findings-invocation-invalid` rule names this exact defect — the
+    # executor keys on the third segment literally, so
+    # `plan-marshall:manage-findings:manage_findings` does not resolve — and
+    # retargeting it onto the entry script would suppress a finding the
+    # repository deliberately raises.
+    if _normalize_segment(target.name) == _normalize_segment(target.parent_skill):
         return None
     entry = ComponentId(
         bundle=target.bundle,
@@ -496,6 +510,12 @@ def _index_dependencies_from(
     """
     for dep in detect_all_dependencies(file_path, component_id, dep_types):
         if dep.target.to_notation() not in index.components:
+            # A provisional match named a non-reference SHAPE and turned out to
+            # name no component either — drop it. One that DOES name a component
+            # never reaches here, so a genuine reference written parenthetically
+            # or with a file extension is kept rather than swallowed.
+            if dep.provisional:
+                continue
             entry = _entry_script_for_subcommand(index, dep.target)
             if entry is not None:
                 dep.target = entry

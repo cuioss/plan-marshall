@@ -85,6 +85,22 @@ class Dependency:
     dep_type: DependencyType
     context: str  # Location (line number, field name)
     resolved: bool = True  # False if target doesn't exist
+    provisional: bool = False  # Matched a non-reference shape; see below
+
+
+# ``provisional`` is how the non-reference exclusions below stay FAIL-CLOSED.
+#
+# Each exclusion recognises a *shape* — a placeholder, a parenthesised prefix, a
+# token embedded in a build coordinate. A shape is strong evidence but not proof:
+# nothing stops a genuine reference from being written parenthetically, or with a
+# ``.py`` suffix. Dropping on shape alone would silently swallow such a reference,
+# turning a precision fix into a hole in the gate.
+#
+# So a match on an excluded shape is marked ``provisional`` rather than discarded,
+# and the INDEX makes the final call (``_dep_index._index_dependencies_from``): a
+# provisional dependency naming a real component is kept as a genuine edge, and
+# only one naming nothing is dropped. Shape decides where to look; existence
+# decides.
 
 
 # ---------------------------------------------------------------------------
@@ -288,20 +304,18 @@ def detect_script_notations(content: str, source: ComponentId) -> list[Dependenc
             # Skip if skill looks like a port number (all digits)
             if skill.isdigit():
                 continue
-            # Prose documenting the notation form is not a reference to a
-            # component named after the placeholder.
-            if _has_placeholder_segment(bundle, skill, script):
-                continue
-            # A canonical verification-step ID names a build command.
-            if _is_canonical_command(match.group(0)):
-                continue
-            # A parenthesised decision-log prefix names the emitting step.
-            if _is_decision_log_prefix(line, match.start(), match.end()):
-                continue
-            # A build coordinate, Gradle task path, or sub-document path is a
-            # longer token that merely contains a colon-triple.
-            if _is_embedded_in_longer_token(line, match.start(), match.end()):
-                continue
+            # Non-reference shapes. Marked provisional, never dropped here —
+            # the index keeps any that turn out to name a real component.
+            provisional = (
+                # Prose documenting the notation form.
+                _has_placeholder_segment(bundle, skill, script)
+                # A canonical verification-step ID names a build command.
+                or _is_canonical_command(match.group(0))
+                # A parenthesised decision-log prefix names the emitting step.
+                or _is_decision_log_prefix(line, match.start(), match.end())
+                # A build coordinate, Gradle task path, or sub-document path.
+                or _is_embedded_in_longer_token(line, match.start(), match.end())
+            )
 
             target = ComponentId(
                 bundle=bundle,
@@ -315,6 +329,7 @@ def detect_script_notations(content: str, source: ComponentId) -> list[Dependenc
                     target=target,
                     dep_type=DependencyType.SCRIPT_NOTATION,
                     context=f'line:{line_num}',
+                    provisional=provisional,
                 )
             )
 
@@ -338,8 +353,6 @@ def detect_skill_references(content: str, frontmatter: dict[str, Any], source: C
                 parts = skill_ref.split(':')
                 if len(parts) == 2:
                     bundle, name = parts
-                    if _has_placeholder_segment(bundle, name):
-                        continue
                     target = ComponentId(bundle=bundle, component_type='skill', name=name)
                     deps.append(
                         Dependency(
@@ -347,6 +360,7 @@ def detect_skill_references(content: str, frontmatter: dict[str, Any], source: C
                             target=target,
                             dep_type=DependencyType.SKILL_REFERENCE,
                             context='frontmatter:skills',
+                            provisional=_has_placeholder_segment(bundle, name),
                         )
                     )
 
@@ -355,8 +369,6 @@ def detect_skill_references(content: str, frontmatter: dict[str, Any], source: C
     for line_num, line in enumerate(content.split('\n'), 1):
         for match in re.finditer(pattern, line):
             bundle, name = match.groups()
-            if _has_placeholder_segment(bundle, name):
-                continue
             target = ComponentId(bundle=bundle, component_type='skill', name=name)
             deps.append(
                 Dependency(
@@ -364,6 +376,7 @@ def detect_skill_references(content: str, frontmatter: dict[str, Any], source: C
                     target=target,
                     dep_type=DependencyType.SKILL_REFERENCE,
                     context=f'line:{line_num}',
+                    provisional=_has_placeholder_segment(bundle, name),
                 )
             )
 

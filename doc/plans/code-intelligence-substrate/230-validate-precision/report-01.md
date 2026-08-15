@@ -39,18 +39,33 @@ same file set (the row count reproduced the validator's 380 exactly, which is wh
 makes the enrichment trustworthy), then classified on syntactic evidence from that
 line.
 
-| Class | Rows | Share |
+Each row is reported under **the shipped guard that excludes it**, named by arm, so
+a later reader can re-derive the partition from the code rather than trusting a
+label. Script-notation rows first, then the other dependency types:
+
+| Class (excluding guard / arm) | Rows | Share |
 |---|---:|---:|
 | Decision-log prefix — `(bundle:skill:step)` | 145 | 38.2% |
 | Canonical verification-step ID — `default:verify:{canonical}` | 75 | 19.7% |
-| Genuinely broken (candidate) | 52 | 13.7% |
-| Documentation placeholder | 35 | 9.2% |
-| Build coordinate (Maven/Gradle) | 28 | 7.4% |
-| Foreign namespace (npm scripts, timestamps, tool pragmas) | 22 | 5.8% |
-| Stale Python-import mapping | 11 | 2.9% |
-| Placeholder in a `skill`-type reference | 10 | 2.6% |
-| Timestamp literal | 1 | 0.3% |
-| Relative-path reference | 1 | 0.3% |
+| **Excluded by no guard — candidate real breakage** | 64 | 16.8% |
+| Documentation placeholder | 46 | 12.1% |
+| Sub-document or versioned path (`/`, `.`+word arm) | 14 | 3.7% |
+| Build coordinate / Gradle task path (`.`, `:` prefix arm) | 14 | 3.7% |
+| `import` type — stale module mapping, none excluded | 11 | 2.9% |
+| `skill` type — 9 placeholder-excluded, 1 kept | 10 | 2.6% |
+| `path` type — 1 kept | 1 | 0.3% |
+
+Sum: **380**.
+
+⚠ **This table was republished after review.** The first version labelled 35
+placeholders and folded 28 rows into "build coordinate", which merged two distinct
+guard arms and pushed 11 Maven meta-syntactic placeholders
+(`groupId:artifactId:{scope,compile}`) into the residual bucket. The plan's
+Verification requires per-class counts "so a later reader can tell how the residue
+was derived", and labels that do not describe their rows fail that test. The counts
+above were re-derived by replaying the 380-row baseline population through the
+shipped guard predicates, and were reproduced independently by the verification
+sub-agent.
 
 **The plan's "three distinct detector confusions" framing did not survive the
 enumeration, and this is the run's most important finding.** The originating
@@ -131,8 +146,16 @@ is set and is the correct site.
 
 `_entry_script_for_subcommand` retargets `bundle:skill:{verb}` onto the skill's
 same-named entry script when one exists. Retargeting rather than merely flagging
-resolved keeps the graph honest: `rdeps` and `tree` now attribute those references
-to the script that owns the verb instead of leaving a dangling node.
+resolved keeps the graph honest: `rdeps` and `tree` attribute the reference to the
+script that owns the verb instead of leaving a dangling node.
+
+**The reach of that retarget is narrow, and the report's first version overstated
+it.** Most subcommand-shaped citations in this corpus are written as parenthesised
+decision-log prefixes, which the decision-log guard excludes at detection — so they
+never reach resolution and are absent from the graph rather than attributed to the
+entry script. Only **6 rows / 3 distinct targets** actually reach the retarget. The
+two mechanisms overlap heavily and the guard runs first; that ordering is a
+property of the design, not an accident, but it was unstated until review.
 
 The guard is what preserves real findings: `pm-plugin-development:plugin-doctor:validate`
 does **not** resolve, because plugin-doctor's entry script is `doctor-marketplace`.
@@ -164,7 +187,7 @@ one change that would have suppressed the rest, because it fails open.
 
 ### D4 — re-baseline and report the real unresolved set
 
-**Done.** 380 → **61**, with `resolved` rising 4921 → 4937 (the D2 retarget plus
+**Done.** 380 → **62**, with `resolved` rising 4921 → 4936 (the D2 retarget plus
 the references corrected below). `total_components` is unchanged at 306, so the
 comparison is like-for-like.
 
@@ -178,7 +201,7 @@ It splits cleanly:
 
 | Residue | Rows |
 |---|---:|
-| First segment IS an indexed bundle — actionable findings | 34 |
+| First segment IS an indexed bundle — actionable findings | 35 |
 | First segment is NOT an indexed bundle — untriaged, see D6 | 27 |
 
 **Fixed** (unambiguous staleness, each verified against the notation the
@@ -303,6 +326,44 @@ deliverable paths were staged explicitly. No commit in this branch touches `uv.l
 
 Findings 1–3 are the ones the plan's D0 gate exists to produce, and each is
 recorded per instance above rather than bundled into "the plan was roughly right".
+
+## Verification sub-agent — round 2 findings
+
+An independent read-only sub-agent verified the committed work against the plan.
+It reproduced every published figure exactly (baseline `306 / 5301 / 4921 / 380`,
+HEAD `306 / 4998 / 4937 / 61`, D0 table summing to 380, the residue split 34/27),
+proved the D5 fixture **non-vacuous** by disabling each guard independently
+(each raises the fixture 1 → 2; all-off gives 6, corroborating the red-before-green
+claim), and confirmed the `from_notation` refutation and the D6 conditional
+non-edit. It then found eight defects. All eight were accepted; none was rejected.
+
+| # | Finding | Severity | Disposition |
+|---|---|---|---|
+| 1 | D2 retargeted **any** unknown third segment, so `plan-marshall:manage-findings:manage_findings` — which plugin-doctor's `manage-findings-invocation-invalid` rule exists to raise, and which was unresolved at baseline — was reported **resolved**. A suppressed genuine finding, and it falsified a sentence shipped in `SKILL.md` | **Correctness** | **Fixed** — `_entry_script_for_subcommand` now rejects a script segment that is the skill's own name in the wrong case style; `SKILL.md` corrected |
+| 2 | Fail-open: **any** parenthesised reference was dropped unconditionally, so a genuinely-broken reference written parenthetically escaped the gate | **Correctness (latent)** | **Fixed** — see the provisional change below |
+| 3 | Fail-open: `bundle:skill:script.py` was dropped by the `.`+word arm | **Correctness (latent)** | **Fixed** — same change |
+| 4 | D2's stated rationale ("`rdeps`/`tree` now attribute those references") overstated its reach: the decision-log guard pre-empts most subcommand citations at detection, and only 6 rows reach the retarget | **Reporting accuracy** | **Fixed** — D2 section above now states the interaction and the measured figure |
+| 5 | D0's published classification was not reproducible as labelled — 35 vs 46 placeholders, and one row merged two guard arms while burying 11 Maven placeholders | **Reporting accuracy** | **Fixed** — table republished by guard arm, with the correction flagged |
+| 6 | `doc/adr/002-…adoc:140` still stated the retired `plan-marshall:workflow-integration-git:merge_lock` in present tense — an **untouched file**, invisible to the marketplace-scoped validator and to the doc-corpus engine, and reached by an xref from the paragraph this run edited | **Stale claim beyond the diff** | **Fixed** |
+| 7 | `test_from_notation_command` asserted on `plan-marshall:commands:tools-fix`, the nonexistent command this run corrected elsewhere. It passed because `from_notation` is a pure parser, so neither the local gate nor CI could catch it | **Test fixture keeping a retired value alive** | **Fixed** — retargeted to a command that exists |
+| 8 | The D5 fixture omitted the sub-document-path arm, so a regression there failed only a unit test and not the exact-count assertion | **Test coverage** | **Fixed** — fixture now instantiates all six documented classes and still asserts exactly one finding |
+
+**Findings 2 and 3 changed the design, for the better.** Both were the same defect:
+an exclusion that fires on **shape alone** cannot distinguish a non-reference from a
+genuine reference that merely looks like one. Exclusions are now **provisional** —
+a match on an excluded shape is marked rather than discarded, and the index drops it
+only when it also names no component. A provisional match that names a real
+component is kept as an ordinary resolved edge. Shape decides where to look;
+existence decides. This makes every guard fail-closed by construction rather than by
+the absence of a counter-example in today's corpus, and it is directly asserted by
+`TestExclusionsAreProvisional` (two fail-open cases plus two controls).
+
+**A blind spot in this run's own regression evidence.** The resolved-edge diff
+reported above checks for edges that were resolved and are now gone. Finding 1 ran
+in the opposite direction — a row that was **unresolved** and wrongly **became
+resolved** — which that diff cannot see by construction. The sub-agent caught what
+the run's self-check was structurally unable to. Post-fix the count is 62 rather
+than 61, and the extra row is the restored `manage_findings` finding.
 
 ## Reviewer participation
 

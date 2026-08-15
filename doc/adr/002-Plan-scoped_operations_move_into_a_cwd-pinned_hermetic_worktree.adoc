@@ -137,7 +137,7 @@ are exactly SIX such corpora:
 
 * `merge.lock` — the cooperative finalize lock (a single lock file whose contents record the
   holder `plan_id` / session). `merge_lock.py`
-  (notation `plan-marshall:workflow-integration-git:merge_lock`) provides `acquire` (atomic
+  (notation `plan-marshall:manage-locks:merge_lock`) provides `acquire` (atomic
   `O_EXCL` create writing the holder, simple-backoff retry, minimal stale-holder reclamation)
   and `release`; `integrate_into_main.py` acquires it before move-back/merge and
   releases it on every exit path.

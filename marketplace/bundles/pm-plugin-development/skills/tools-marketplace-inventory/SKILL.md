@@ -184,9 +184,13 @@ The `script` detector scans for a bare three-part colon-separated token, which i
 | Build coordinate or task path | `de.cuioss:cui-java-tools:compile`, `:services:auth-service:build` | A three-part token preceded by `.` or `:` is a fragment of a longer token |
 | Sub-document path | `bundle:skill:references/x.md`, `bundle:skill:planning.md` | A three-part token followed by `/`, or by `.` plus a word character, addresses a document. A trailing **sentence** period is not treated this way |
 
+**Every exclusion above is provisional, so the exclusions cannot hide a real reference.** Each recognises a *shape*, and a shape is evidence rather than proof — nothing stops a genuine reference from being written parenthetically, or with a `.py` suffix. So a match on an excluded shape is not discarded at detection: it is marked provisional, and the index drops it only when it also names no component in the graph. A provisional match that *does* name a real component is kept as an ordinary resolved edge. **Shape decides where to look; existence decides.**
+
 **Subcommands resolve rather than reporting unresolved.** A skill exposes one entry script named after the skill and dispatches its verbs as subcommands. Documentation names those verbs in the same three-part shape — `plan-marshall:manage-execution-manifest:compose` — so the reference is real and only the segment it lands on is a verb rather than a filename. Such a reference resolves to the entry script that owns the verb.
 
-This is a **deliberate non-detection**, not a blind spot: when the skill has no same-named entry script the notation stays unresolved, so a genuinely wrong invocation is still caught. Whether an invocation names an existing *subcommand* is enforced separately by the `manage-invocation-invalid` plugin-doctor rule.
+This is a **deliberate non-detection**, not a blind spot, and it is bounded on two sides. A skill with no same-named entry script cannot retarget, so its notation stays unresolved. And a script segment that is the skill's own name in the **wrong case style** — `plan-marshall:manage-findings:manage_findings` — is a misspelled script reference rather than a verb, so it also stays unresolved: the executor keys on the third segment literally, and plugin-doctor's `manage-findings-invocation-invalid` rule exists to raise exactly that defect.
+
+What this validator does **not** check is whether a verb is one the entry script actually registers; that is enforced separately by the `manage-invocation-invalid` plugin-doctor rule.
 
 ### Precision of `validate`
 
