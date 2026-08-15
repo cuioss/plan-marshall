@@ -63,10 +63,29 @@ unexitable). The four `passable: ❌` members all exit through the shipped, HEAD
 gap-class-bound, fail-closed merge-authorization surface — the override **is** the exit, so the
 plan's instruction not to re-litigate the deadlock framing is confirmed against merged `main`.
 
-The barrier's own dispositions were classified alongside the per-bot members: `clean` (merges),
-`blocked/participation-incomplete` and `blocked/pending-findings` (both authorizable), and the two
-`UNKNOWN` branches (never authorizable — but not deadlocks either: their exit is to make the failed
-read succeed, which is an action).
+### The barrier's OWN dispositions — the second axis, and its honest limitation
+
+D0 asks for *"every state in which the barrier can end"*, which is two populations, not one. The
+per-bot member axis above is derived in code and guarded in both directions. The **barrier-disposition
+axis is classified here in prose only**, and that limitation is stated rather than papered over: it is
+a document's branch structure, not a code enumeration, so no `vars()` sweep reaches it.
+
+| Barrier disposition | Passable by plan action | Exit |
+|---|---|---|
+| `clean` (both predicates pass) | — | merges |
+| `authorized bypass` (`any_admissible: true`) | — | merges under a recorded, HEAD-bound, gap-class-matched ruling |
+| `blocked / pending findings` | ✅ | loop back → triage → re-enter |
+| `blocked / participation incomplete` (non-structural) | ✅ | loop back → re-await → re-enter |
+| ⭐ `blocked / participation incomplete — STRUCTURAL` | ❌ | **added by this run.** No automatic exit: operator ruling, re-scope, or reclassification. `fail_into_loopback` defers via Branch C; `ask` renders split / accept / disable |
+| `UNKNOWN` (re-fetch failed) | ✅ | never authorizable, but exitable — make the failed read succeed |
+| `UNKNOWN` (predicate failed) | ✅ | same |
+
+⚠ **This table was incomplete when first written, and a reviewer caught it.** The structural
+disposition is one this run itself introduced, so the D0 classification had to be re-derived *after*
+the implementation rather than only before it — the gate's population is not static across a change
+that adds to it. Recorded because the reverse mistake (deriving once, up front, and never revisiting)
+is the one that leaves a plan reporting a complete classification over a population it has since
+grown.
 
 ### The non-option pairings — a remedy offered that cannot work
 
@@ -153,7 +172,16 @@ outcome below is read from the streamed output, never the exit code:
 | `b7a7057` | SUCCESS — 19702 passed, 14 skipped |
 | `3131bdc` | SUCCESS — 19731 passed, 14 skipped, 0 failed (11m27s) |
 | `7adf802` | ⛔ **FAILED** — `verify: test-compile failed`, 2 mypy errors, **exit code 0** |
-| `97f7493` | SUCCESS — **19740 passed, 14 skipped, 0 failed** (10m00s), zero sub-step failure lines |
+| `97f7493` | SUCCESS — 19740 passed, 14 skipped, 0 failed (10m00s) |
+| `6f31a5d` | ⛔ **FAILED** — `verify: module-tests failed`, 1 test, **exit code 0** |
+| `1b1b867` | SUCCESS — **19743 passed, 14 skipped**, zero `FAILED` lines, zero sub-step failure lines (9m15s) |
+
+⛔ **`./pw verify` exited 0 while FAILING on THREE of its six runs.** Every one was caught only by
+reading the streamed output. Had the exit code been trusted at any of those points, this run would
+have opened a PR on a red gate and reported it green — which is precisely why the lane contract makes
+"read the output, not the exit code" a rule rather than a suggestion. The two distinct failures were a
+test-only type error (invisible to the quality gate, which type-checks production only) and a
+derivation-guard failure in a suite my targeted runs had not covered.
 
 Final run's coverage line: `COMPLETE — … mypy(production) [399 files], ruff [marketplace/bundles,
 test, .claude], SPDX headers, plugin-doctor [marketplace-wide], mypy(test) [737 files], module-tests
@@ -208,6 +236,30 @@ fix for a defect that reproduces the defect's family* — and it recurred twice 
 | # | Finding | Disposition |
 |---|---|---|
 | F37 | ⛔ **`./pw verify` exited 0 while reporting `verify: test-compile failed`.** Two of my new doc-slicing helpers declared `-> str` but returned `Any` — `get_script_path` is untyped, so the `Path` and its `read_text()` propagate as `Any` through the slice. **Nothing else catches this**: the quality gate type-checks production only, and pytest runs the helpers happily. This is precisely the failure mode the lane contract documents, and the reason it requires reading the output rather than the exit code — reading the exit code would have shipped a red gate as green | **FIXED** (`97f7493`) |
+
+### From the pre-PR verification sub-agent — round 3
+
+Round 3 confirmed **every** round-2 finding fixed and reported the cold read clean of futile options
+at all three surfaces — the plan's actual goal, verified against rendered option lists rather than
+prose. It then found ten more, four of them introduced by the round-2 fix itself.
+
+| # | Finding | Disposition |
+|---|---|---|
+| F38 | ⭐ **The two blocked paths mandated OPPOSITE actions with no precedence** (mine). A PR with a structural refusal AND an unhandled comment satisfies both: one forbids the loop-back, the other mandates it. Harmless before the structural member existed (the paths were behaviourally identical); a live contradiction after | **FIXED** — pending findings take precedence, because triage is actionable and makes progress; the structural gap is disposed of LAST precisely because nothing automatic clears it. Disposing of it first would ask the operator to accept a gap while a remedy for the other half was still available |
+| F39 | ⭐ **My structural defer invented a THIRD defer semantic** (mine). Leaving the step record absent re-arms the resumable re-entry check to re-fire the barrier into the identical verdict — a slow loop, inside the branch written to stop a loop | **FIXED** — settles via Branch C, exactly as the UNKNOWN and pending-findings defers do |
+| F40 | ⭐ **"Accept the coverage gap (record reason)" recorded nothing** (mine). The dispatcher branch stamped a step record and claimed the ruling was "recorded there"; nothing carried it, and on the DEFAULT barrier mode the barrier never re-asks. An option whose label promises an outcome it does not deliver — a different failure from a non-option, the same disservice | **FIXED** — mints `barrier-ask-override` over `review-barrier-gap` at the stamped HEAD, carrying both audit figures |
+| F41 | **The headless decision-log named remedies an operator could not execute.** No `--kind`, no HEAD-binding hazard, and "move the bot to `optional_bots`" written where a reader reaches for `marshal.json` — which the barrier does not read | **FIXED** — each remedy names its verb and its hazard. This is the only operator-facing surface on the default configuration |
+| F42 | **`pre_merge_comment_barrier`'s own `configurable:` description was stale on both arms** — the same machine-read consumer kind the round-2 fix corrected one skill over and missed in the file it was editing | **FIXED** |
+| F43 | **The `deficit` canonical block omitted `--refusal-size-caps`**, so a caller following the docs passes the cap to `check` and not `deficit` — making the cap-only recovery unreachable from documented usage, which is the one scenario it exists for. plugin-doctor validates docs-against-parser, never parser-against-docs, so it stayed green | **FIXED** |
+| F44–F47 | Mutex-invariant enumeration missing the terminating-defer class; a forward reference where every sibling carries an inline release; the roster row naming one grant site of three; the 5d carve-out's reason enumeration stale for the second time | **ALL FIXED** — the 5d enumeration was **removed** rather than re-counted: it had gone stale at four and again at five, so the carve-out now names none and defers to item 7a |
+| F48 | A mixed gap (structural + `absent`) suppresses a loop-back that would still have fetched the absent bot's review | **RESOLVED BY F38's precedence rule** — with pending findings disposed of first and the structural branch scoped to `{count} == 0`, the absent bot is still awaited on the earlier pass |
+
+### From the build gate — second and third occurrences
+
+| # | Finding | Disposition |
+|---|---|---|
+| F49 | ⛔ **`./pw verify` exited 0 while reporting `verify: module-tests failed`.** Widening the roster row added a markdown link — and that row's `site:` claim is **machine-resolved from its first markdown link**, so the cross-reference silently re-pointed the derivation guard at a different document, which correctly reported no matching grant there | **FIXED** — the further sites are named in plain text, with the reason recorded inline so the next editor does not re-add a link. The roster enumerates authorization *mechanisms*, one row per `{kind}`, not one row per call site |
+| F50 | ⛔ **Process failure, mine.** F49 escaped my pre-commit checks because I ran the `automatic-review` suite and the quality gate while editing `phase-6-finalize` documents — the suite that OWNS those documents was never run. Targeted suites are chosen by where the *tests* live, not by where the *edits* land | **CORRECTED** — the full affected set (`phase-6-finalize`, `automatic-review`, `tools-integration-ci`, `pm-plugin-development`, 3659 tests) now runs before each commit touching these documents |
 
 ### From my own independent sweep (found before round 1 returned)
 
