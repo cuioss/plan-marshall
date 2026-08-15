@@ -49,7 +49,7 @@ Two properties that keep the signal from becoming harmful
    exactly as reviewer coverage collapsed**, which is this epic's named failure mode
    and the reason a metric that can produce it must not ship.
 
-   The guard is structural rather than advisory: :data:`STRUCTURAL_SHARE` is emitted
+   The guard is structural rather than advisory: ``structural_share`` is emitted
    only at FULL coverage (every enabled reviewer in the roster reviewed the diff).
    A coverage collapse can therefore only ever move the metric from *a number* to
    *no number* — never to a better number. Partial coverage is the dangerous case
@@ -93,6 +93,7 @@ one rule, owned by ``automatic-review/standards/bot-participation-contract.md``
 Usage:
     review_gate_delta.py assess --plan-id <id> [--enabled-bots [<csv>]]
         [--reviewed-bots [<csv>]] [--gates-green | --gates-red]
+        [--gate-head-sha <sha>] [--reviewed-head-sha <sha>]
         [--partitions [<csv of hash_id:label>]]
     review_gate_delta.py --help
 """
@@ -102,6 +103,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+import bot_registry
 from _findings_core import query_findings
 from toon_parser import serialize_toon
 
@@ -129,14 +131,15 @@ _ADMISSIBLE_PARTITIONS = frozenset({PARTITION_GATE_ADDRESSABLE, PARTITION_GATE_S
 #: missed, and an absent/unknown kind cannot be shown to be one.
 _ACTIONABLE_KINDS = frozenset({'inline', 'review_body'})
 
-#: The counting rule's review-body-summary carve-out, matched the same way the
-#: review-retrospective aggregator matches it: the status-summary signature, gated
-#: on the author login so a genuine substantive ``review_body`` from any reviewer is
-#: never mis-classed as boilerplate. Dropping every ``review_body`` instead would
-#: discard the surface where the bots file their CONSOLIDATED findings, which is the
-#: bulk of what they report.
-_SUMMARY_AUTHOR = 'coderabbitai'
-_SUMMARY_SIGNATURE = 'actionable comments posted'
+#: The finding fields that can carry a comment's BODY, in preference order. The
+#: producer quarantines the untrusted body under ``raw_input.body``; the batched
+#: ``manage-findings ingest`` pass then validates it and promotes it to the clean
+#: TOP-LEVEL ``body`` field, which is the one a consumer reads (the containment
+#: invariant in ``plan-marshall/workflow/triage.md`` forbids reading ``raw_input.*``
+#: outside audit). ``title`` and ``detail`` are NOT in this list and must not be:
+#: ``github_pr.cmd_fetch_findings`` builds them from structured metadata only, so a
+#: signature matched against them can never fire on a real record.
+_BODY_FIELDS = ('body', 'message')
 
 #: Reasons a PR contributes no delta figure. Each is an honest "this PR is not
 #: evidence" rather than a zero.
@@ -157,20 +160,53 @@ WITHHELD_UNPARTITIONED = 'unpartitioned_escapes'
 WITHHELD_NO_ESCAPES = 'no_escapes_to_partition'
 
 _PROVENANCE = (
-    'escapes are the actionable pr-comment findings filed on a PR whose in-house '
-    'gates had already passed (pre-push-quality-gate order 5, self-review next, '
-    'automatic-review order 30), counted per the counting rule in '
+    'escapes are the actionable pr-comment findings filed against a tree the '
+    'in-house gates had already passed — gate verdict green AND gate_head_sha == '
+    'reviewed_head_sha — counted per the counting rule in '
     'automatic-review/standards/bot-participation-contract.md; the reviewed-at-all '
-    'set is review_completeness\'s _REVIEWED_STATES, supplied by the caller'
+    'set is review_completeness\'s _REVIEWED_STATES, supplied by the caller. '
+    'SELECTION EFFECT: on the current finalize step ordering, finalize-step-simplify '
+    '(order 8) and finalize-step-security-audit (order 9) mutate source after the '
+    'gates (5, 7) and a forward pass never re-gates their edits, so the ONLY '
+    'measurable PRs are those where neither step committed anything. That is a '
+    'biased population, not a random sample, and few measurements will accumulate '
+    'until the gate re-fires after those steps'
 )
 
 
-def _is_status_summary(record: dict) -> bool:
-    """True when a ``review_body`` record is the reviewer's META status summary."""
-    if (record.get('author') or '') != _SUMMARY_AUTHOR:
+def is_status_summary(record: dict) -> bool:
+    """True when a ``review_body`` record is the reviewer's META status summary.
+
+    Three properties, each load-bearing:
+
+    1. **The signature comes from the registry**, keyed by the record's own
+       ``bot_kind`` (``bot_registry.review_body_summary_patterns``). No login and no
+       bot-kind literal appears here — that identity is the registry's, and a second
+       copy of it in a counter is the hard-coded-population archetype.
+    2. **It is matched against the BODY**, via :data:`_BODY_FIELDS`. Matching
+       ``title`` / ``detail`` — which the producer builds from structured metadata
+       and which never contain the comment text — is a carve-out that cannot fire.
+    3. **The match is FIRST-LINE anchored.** A body that opens with the status line
+       and then continues with substantive review content is a real finding. Matching
+       anywhere in the body would drop it, and for a gate-escape count that
+       under-counts escapes and makes the gates look better than they are — the
+       dangerous direction. Anchoring errs toward counting.
+
+    A bot declaring no summary pattern can never reach ``True``: every one of its
+    ``review_body`` records stays counted.
+    """
+    patterns = bot_registry.review_body_summary_patterns(record.get('bot_kind') or '')
+    if not patterns:
         return False
-    haystack = f'{record.get("title") or ""}\n{record.get("detail") or ""}'.lower()
-    return _SUMMARY_SIGNATURE in haystack
+    body = next((str(record[f]) for f in _BODY_FIELDS if record.get(f)), '')
+    first_line = body.split('\n', 1)[0].strip().lower()
+    if not first_line:
+        return False
+    remainder = body.split('\n', 1)[1].strip() if '\n' in body else ''
+    if remainder:
+        # The status line is followed by real content — a substantive review body.
+        return False
+    return any(pattern.lower() in first_line for pattern in patterns)
 
 
 def _is_actionable(record: dict) -> bool:
@@ -182,7 +218,7 @@ def _is_actionable(record: dict) -> bool:
     """
     kind = record.get('kind') or ''
     if kind == 'review_body':
-        return not _is_status_summary(record)
+        return not is_status_summary(record)
     return kind in _ACTIONABLE_KINDS
 
 

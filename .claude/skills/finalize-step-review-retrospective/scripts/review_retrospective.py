@@ -159,13 +159,33 @@ def _is_coderabbit_status_summary(record: dict[str, Any]) -> bool:
     """True when a review_body record is CodeRabbit's META status summary.
 
     The signature ("Actionable comments posted: N") is matched case-insensitively
-    against the record's title and detail, gated on the CodeRabbit author so a
-    genuine substantive review_body from another reviewer is never mis-classed.
+    against the record's BODY — the field the comment text actually reaches. The
+    producer (`github_pr.cmd_fetch_findings`) builds `title` and `detail` from
+    structured metadata and quarantines the untrusted text under `raw_input.body`,
+    which the batched `manage-findings ingest` pass promotes to the clean top-level
+    `body`. Matching title/detail therefore never fired on a real record, and every
+    CodeRabbit status summary was silently counted as actionable.
+
+    The match is FIRST-LINE anchored and refuses when substantive content follows,
+    because a body that opens with the status line and then reviews is a real
+    finding. The author gate is retained as a second condition so a substantive
+    review_body from another reviewer can never be mis-classed.
+
+    Kept behaviourally identical to
+    `automatic-review/scripts/review_gate_delta.is_status_summary`, which
+    `test_counting_rule_parity.py` asserts over a shared corpus — the two counters
+    implement one rule and must not drift.
     """
     if (record.get('author') or '') != _CODERABBIT_AUTHOR:
         return False
-    haystack = f"{record.get('title') or ''}\n{record.get('detail') or ''}".lower()
-    return _STATUS_SUMMARY_SIGNATURE in haystack
+    body = str(record.get('body') or record.get('message') or '')
+    first_line = body.split('\n', 1)[0].strip().lower()
+    if not first_line:
+        return False
+    remainder = body.split('\n', 1)[1].strip() if '\n' in body else ''
+    if remainder:
+        return False
+    return _STATUS_SUMMARY_SIGNATURE in first_line
 
 
 def _is_actionable(record: dict[str, Any]) -> bool:

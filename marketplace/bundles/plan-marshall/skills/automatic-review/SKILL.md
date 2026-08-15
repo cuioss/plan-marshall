@@ -959,7 +959,8 @@ Five inputs decide whether the PR is evidence at all, and every absent one fails
 `verdict: excluded` rather than to a confident zero:
 
 - `--gates-green` / `--gates-red` — omitting BOTH leaves the gate state unsubstantiated
-  (`gate_state_unsubstantiated`). A red gate excludes too: nothing escaped a gate that had not passed.
+  (`gate_state_unsubstantiated`). A red gate excludes too, as `gates_not_green`: nothing escaped a
+  gate that had not passed.
 - `--gate-head-sha` and `--reviewed-head-sha` — the tree the gates CERTIFIED and the tree review
   REVIEWED. They must be supplied and must MATCH. ⚠ They routinely will not: `finalize-step-simplify`
   (`order: 8`) and `finalize-step-security-audit` (`order: 9`) are `mutates_source: true` and run
@@ -971,6 +972,10 @@ Five inputs decide whether the PR is evidence at all, and every absent one fails
 - `--reviewed-bots` — `review_completeness`'s reviewed-at-all set. Coverage is its INTERSECTION with
   the roster, so an off-roster reviewer cannot complete it; an empty intersection is
   `no_reviewer_reviewed`.
+
+The return echoes `gate_head_sha` and `reviewed_head_sha` alongside `reviewer_coverage`,
+`enabled_bots`, `reviewed_bots` and `provenance`, so a reader sees which trees and which reviewers
+each figure was computed over rather than trusting that they were checked.
 
 `structural_share` (the share of escapes no in-house gate class could have caught) is emitted **only**
 at full coverage with every escape partitioned; otherwise it is `null` and `share_withheld` names the

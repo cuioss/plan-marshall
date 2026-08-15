@@ -342,7 +342,13 @@ identities the escape claim rests on:
 - `{gate_head_sha}` — the `head_at_completion` recorded by `pre-push-quality-gate`
   (read the step record via `manage-status`).
 - `{reviewed_head_sha}` — the `reviewed_commit_sha` carried by the `pr-comment`
-  findings.
+  findings. **Findings from different loop-back iterations carry DIFFERENT values**,
+  and `fetch_findings` pre-filter 5 never re-stamps an existing one, so a PR that
+  looped back has no single answer. The rule: pass the value only when every
+  finding agrees on it; when they disagree, **pass nothing**. A mixed set means
+  no one tree was reviewed in full, which is exactly the `gate_tree_unsubstantiated`
+  exclusion — deriving a single SHA from a mixed set by taking the newest would
+  manufacture a tree identity no reviewer actually reviewed against.
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:automatic-review:review_gate_delta assess \
@@ -366,10 +372,14 @@ re-fire after those steps, which is a change to the finalize step ordering and i
 not made here. Record the exclusion rather than working around it.
 
 Read `verdict`, `escapes_total`, `by_partition`, `structural_share`,
-`share_withheld`, `reviewer_coverage`, and `provenance`. **`structural_share: null`
-is never `0`**, and `verdict: excluded` is never "the gates caught everything" —
-both name a PR that is not evidence. Report the withheld or exclusion reason
-verbatim rather than a number. See
+`share_withheld`, `reviewer_coverage`, `gate_head_sha`, `reviewed_head_sha`, and
+`provenance` — the same field set Step 4 persists, so the step that reads and the
+step that records cannot disagree about it. **`structural_share: null` is never
+`0`**, and `verdict: excluded` is never "the gates caught everything" — both name a
+PR that is not evidence. Report the withheld or exclusion reason verbatim rather
+than a number, and carry the `provenance` string's selection-effect sentence with
+it: a run of `excluded` rows means those PRs were never measurable, not that the
+gates were clean. See
 [`automatic-review/standards/bot-participation-contract.md`](../../../marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md)
 § "The review-versus-gate delta" for why the withholding rules are structural, and
 [`automatic-review/SKILL.md`](../../../marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md)
@@ -433,6 +443,15 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --outcome done --display-detail "{N} reviewers compared, {M} actionable comments" \
   --head-at-completion {sha}
 ```
+
+**Step 3b's delta verdict deliberately does NOT reach `display_detail`.** The
+`display_detail` ceiling (owned by
+[`phase-6-finalize/standards/external-step-contract.md`](../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/external-step-contract.md)
+§ "Required termination") has no room for a verdict plus its exclusion reason plus
+its populations, and a delta figure shown WITHOUT them is precisely the bare number
+the whole measurement forbids. It rides the Step 4 artifact instead, in full. This
+omission is a stated choice, not an oversight — the same carve-out the surfacer's
+`scope_statement` and `structural_limit` take for the same reason.
 
 ## Error Handling
 

@@ -349,8 +349,14 @@ def test_the_coderabbit_status_summary_is_not_an_escape():
             'bot_kind': 'coderabbit',
             'kind': 'review_body',
             'author': 'coderabbitai',
-            'title': 'Actionable comments posted: 3',
-            'detail': '',
+            # The REACHABLE field. `github_pr` builds title/detail from structured
+            # metadata and quarantines the comment text under raw_input.body, which
+            # the batched ingest pass promotes to top-level `body`. A fixture that
+            # puts the signature in `title` would pass against a carve-out that can
+            # never fire on a real record — which is exactly how one shipped.
+            'title': 'PR #42 review_body comment by coderabbitai (99)',
+            'detail': 'pr_number: 42\nkind: review_body\nauthor: coderabbitai',
+            'body': 'Actionable comments posted: 3',
         },
     ]
 
@@ -366,6 +372,79 @@ def test_the_coderabbit_status_summary_is_not_an_escape():
 
     assert result['escapes_total'] == 1
     assert {e['finding_id'] for e in result['escapes']} == {'f1'}
+
+
+def test_the_signature_in_title_or_detail_does_not_drop_a_finding():
+    """The carve-out reads the BODY only — the field the comment text reaches.
+
+    `github_pr.cmd_fetch_findings` builds `title` from structured metadata and
+    quarantines the text under `raw_input.body`. A carve-out matched against
+    title/detail can never fire on a real record; one matched against BOTH could be
+    tricked by metadata that merely mentions the phrase.
+    """
+    findings = [
+        {
+            'hash_id': 'real',
+            'bot_kind': 'coderabbit',
+            'kind': 'review_body',
+            'author': 'coderabbitai',
+            'title': 'Actionable comments posted: 3',
+            'detail': 'Actionable comments posted: 3',
+            'body': 'The guard coerces UNKNOWN into a positive.',
+        },
+    ]
+
+    result = assess_delta(
+        findings=findings,
+        enabled_bots=_ROSTER,
+        reviewed_bots=list(_ROSTER),
+        gates_green=True,
+        gate_head_sha=_SHA,
+        reviewed_head_sha=_SHA,
+        partitions={'real': PARTITION_GATE_STRUCTURAL},
+    )
+
+    assert result['escapes_total'] == 1
+
+
+def test_a_status_line_followed_by_substance_is_still_an_escape():
+    """A body that opens with the status line and then reviews is a real finding.
+
+    Matching the signature anywhere in the body would drop it. For a gate-escape
+    count that UNDER-counts escapes and makes the gates look better than they are —
+    the dangerous direction — so the match is first-line anchored and refuses when
+    substantive content follows.
+    """
+    findings = [
+        {
+            'hash_id': 'combined',
+            'bot_kind': 'coderabbit',
+            'kind': 'review_body',
+            'author': 'coderabbitai',
+            'body': 'Actionable comments posted: 1\n\nGuard the array bound here.',
+        },
+    ]
+
+    result = assess_delta(
+        findings=findings,
+        enabled_bots=_ROSTER,
+        reviewed_bots=list(_ROSTER),
+        gates_green=True,
+        gate_head_sha=_SHA,
+        reviewed_head_sha=_SHA,
+        partitions={'combined': PARTITION_GATE_STRUCTURAL},
+    )
+
+    assert result['escapes_total'] == 1
+
+
+def test_a_bot_declaring_no_summary_pattern_keeps_every_review_body():
+    """The fail-closed default is COUNTED, because dropping is the dangerous direction."""
+    from review_gate_delta import is_status_summary
+
+    assert not is_status_summary(
+        {'bot_kind': 'sourcery', 'kind': 'review_body', 'body': 'Actionable comments posted: 2'}
+    )
 
 
 def test_a_substantive_review_body_from_another_author_is_still_an_escape():

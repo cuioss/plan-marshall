@@ -353,6 +353,29 @@ class BotRegistry:
         value = self._by_kind.get(bot_kind, {}).get('contentless_review_markers', [])
         return list(value) if isinstance(value, list) else []
 
+    def review_body_summary_patterns(self, bot_kind: str) -> list[str]:
+        """Return the literals marking a ``review_body`` as a STATUS SUMMARY (``[]`` if absent).
+
+        A ``review_body`` is either the bot's consolidated findings or a status line
+        about them (``"Actionable comments posted: N"``). The counting rule
+        (``standards/bot-participation-contract.md`` § "The counting rule") excludes
+        the latter from every finding count, and WHICH literal marks it is a per-bot
+        fact — so it is registry data rather than a login literal baked into each
+        counter.
+
+        ANY entry present in the body's first line marks the body a summary; the
+        match is deliberately first-line-anchored by the consumer, because a body
+        that opens with the status line and then continues with substantive review
+        content is a real finding, not boilerplate.
+
+        An empty list is the fail-closed default, and "closed" here means
+        **counted**: for a gate-escape count, dropping a substantive ``review_body``
+        under-counts escapes and makes the gates look better than they are, so a bot
+        that has not opted in keeps every ``review_body``.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('review_body_summary_patterns', [])
+        return list(value) if isinstance(value, list) else []
+
     def actionable_content_markers(self, bot_kind: str) -> list[str]:
         """Return the literals that DISQUALIFY a contentless drop (``[]`` if unknown/absent).
 
@@ -499,6 +522,11 @@ def contentless_review_markers(bot_kind: str) -> list[str]:
 def actionable_content_markers(bot_kind: str) -> list[str]:
     """The literals that disqualify a contentless drop for ``bot_kind`` (``[]`` if absent)."""
     return REGISTRY.actionable_content_markers(bot_kind)
+
+
+def review_body_summary_patterns(bot_kind: str) -> list[str]:
+    """The literals marking a ``bot_kind`` review_body a STATUS SUMMARY (``[]`` = counted)."""
+    return REGISTRY.review_body_summary_patterns(bot_kind)
 
 
 def participation_evidence(bot_kind: str) -> list[str]:

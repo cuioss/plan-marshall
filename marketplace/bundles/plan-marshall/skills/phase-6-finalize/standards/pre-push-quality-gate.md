@@ -85,6 +85,7 @@ The distinction is load-bearing, and the two axes must not be collapsed:
 |---|---|---|
 | **Coverage boundary** — a dimension the run could not fully check | re-running it at full scope | the PARTIAL verdict, naming the degraded dimension |
 | **Structural scope limit** — a defect class the analysis cannot reach at all | nothing. Not a wider sweep, not another round, not a re-run | a per-analysis block on **both** the COMPLETE and PARTIAL verdicts |
+| **Un-run analysis** — an analysis this gate does not perform at all | running the gate that does perform it (`verify`, not `quality-gate`) | a closing `not run in this gate at all: …` line |
 
 **The defect is not that a gate is narrow — it is that a narrow gate's green reads as whole-tree
 assurance.** Each analysis this gate runs decides one specific question and is silent on the rest:
@@ -102,6 +103,20 @@ analysis kind (`_gate_coverage.dimension_stem` strips the per-run scope suffix).
 registered limit renders as an explicit **UNKNOWN** rather than being omitted: omitting it would make
 the block read as exhaustive over a run that included an analysis nobody characterised, which is the
 same absence-read-as-coverage defect in miniature.
+
+**An analysis the gate never ran leaves no trace at all** — not checked, not degraded, simply absent
+from every list — so a reader cannot tell *"this gate does not execute tests"* from *"tests were
+fine"*. That is the same defect one level up, so the block closes with a derived
+`not run in this gate at all: …` line naming them. `quality-gate` runs no pytest and no test-tree
+mypy, and now says so; `verify` runs both, and the line correctly disappears. Degraded dimensions are
+excluded from it: those were attempted, and PARTIAL already reports them — listing them again would
+report one gap twice under two names and wrongly imply the gate cannot perform that analysis.
+
+This makes `_ANALYSIS_LIMITS` serve two purposes at once — the per-analysis limit registry, and the
+catalogue of analyses that exist for the un-run derivation to subtract from. That dual role is
+deliberate and worth naming, because it bounds the guarantee: an analysis that is neither run nor
+registered is invisible to both halves. Registering every analysis the build performs is therefore
+the precondition for the un-run line meaning what it says.
 
 This is the build-gate arm of a rule that binds every in-house gate. Its self-review counterpart is
 [`../workflow/pre-submission-self-review.md`](../workflow/pre-submission-self-review.md) § "A clean
