@@ -417,10 +417,31 @@ behind: {commits behind base, when detected}
 action: noop | rebased   # success only; derived from pre_sha vs post_sha, not from state
 pre_sha: {HEAD before the rebase attempt}    # rebase-attempted success only
 post_sha: {HEAD after the rebase attempt}    # rebase-attempted success only
+executor_drift: ok | drift | unknown         # success only
+executor_regenerated: true | false           # success only
+executor_detail: {what the refresh did, or why it did nothing}   # success only
 conflicts[N]: [paths]    # conflict only
 error: {error_code}      # error or conflict only
 message: {human-readable summary}
 ```
+
+### Post-Rebase Executor Refresh
+
+The per-tree executor (`.plan/execute-script.py`) is **derived state**: it embeds a notation→path map generated from the bundle tree as it stood when the worktree was materialized. A rebase replays the branch onto a newly-fetched `origin/{base}`, so when those upstream commits added, removed, or renamed a bundle script the embedded map stops describing the tree — and every later dispatch in that worktree resolves against a stale map, leaving a notation introduced upstream unresolvable.
+
+`worktree-rebase-to` therefore refreshes the worktree executor as part of a successful rebase. The refresh lives in this verb rather than in any caller because **every** finalize rebase routes through it — this verb is the single seam, and it already knows whether the rebase replayed anything. Callers today include `finalize-step-sync-baseline` (`order: 3`), `automatic-review` (`order: 30`, refusal-recovery path), and `branch-cleanup` (`order: 70`); that roster is illustrative rather than closed, and the placement is chosen precisely so a **new** caller inherits the refresh without having to know it exists.
+
+Three conditions bound it, each observable on the payload:
+
+| Condition | Behaviour |
+|---|---|
+| The rebase replayed no commits (`action: noop`, including the `clean` early return) | No probe. Nothing entered the tree, so the map cannot have drifted — reported as `executor_drift: ok`, `executor_regenerated: false`. |
+| The rebase replayed commits | Probe `generate_executor drift`, which compares the executor's **embedded** mappings against live bundle state — a precise answer to "did the script set change?", not a guess from changed paths. Regenerate only on a positive `drift` verdict. |
+| The drift verdict is indeterminate (`executor_drift: unknown`) | **Regenerate nothing.** A tree with no vendored `marketplace/bundles` — every consumer project of plan-marshall — cannot produce a meaningful verdict, and generating there can exit 0 having written nothing, replacing a working executor with an empty one. That is strictly worse than the stale map: a stale map fails one dispatch loudly and is repairable via `/marshall-steward`, while an empty executor breaks every dispatch. The verdict is reported and acted on by nobody. |
+
+**The refresh is non-fatal.** By the time it runs the rebase has already succeeded and moved HEAD, so a refresh failure is reported in `executor_detail` and never converted into a rebase failure — otherwise a caller would abort a rebase that worked.
+
+This is the **worktree-side** regeneration. It is distinct from the meta-project-only, post-merge regeneration of *main's* executor performed by `project:finalize-step-sync-plugin-cache` (`order: 85`), and from the universal generation of a *new* worktree's executor at move-in (`prepare_execute`). All three keep the executor per-tree derived state per ADR-002; none file-moves it.
 
 ### Conflict Handling
 

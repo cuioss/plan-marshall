@@ -25,12 +25,19 @@ phase_6:
   steps[N]:
     - <step-id>
     ...
+  candidate_steps[M]:
+    - <step-id>
+    ...
   step_params:
     <step-id>: { <param>: <value>, ... }
     ...
 ```
 
 The in-manifest `verification_steps` / `steps` arrays carry the ordered step-id list (a `list[str]`); the sibling `step_params` map carries each selected step's resolved per-step params alongside it, keyed by the same (bare) step id.
+
+`phase_6.candidate_steps` is the candidate set `compose` selected **from**, snapshotted before any pre-filter or decision-matrix row subtracted from it. It exists solely for [`reconcile`](../SKILL.md#reconcile), which diffs it against live `marshal.json` to distinguish a candidate that is NEW since compose (owed a backfill) from one the matrix considered and deliberately dropped (must stay dropped) — a distinction the post-subtraction `steps` array cannot express. A manifest composed before the field existed omits it, and `reconcile` then reports `backfill_determinable: false` rather than guessing.
+
+`steps` is therefore normally a subset of `candidate_steps` — but **not invariantly**: the ceremony-finalize selection can *force in* a gate's canonical step (`lane: minimal` → `always`) that was never in the candidate list at all, so a forced-in step legitimately appears in `steps` and not in `candidate_steps`. `reconcile` is unaffected by that asymmetry, because a forced-in step is present in the frozen list and is therefore excluded from backfill by the frozen-membership test, while the stale/broken partition never consults `candidate_steps` at all.
 
 `phase_5.step_execution_tier` is an **advisory** compose-time snapshot of the per-step execution tier: a `{step_id, tier}` record list stamped by `compose()` for every `phase_5.verification_steps` entry, where `tier` is `per_task` (the step fit inside the Bash ceiling when the plan was composed) or `orchestrator` (it exceeded the ceiling, so the orchestrator's `await-long-running` seam owns it, never the leaf). An absent or unresolved tier defaults to `per_task`.
 
@@ -141,7 +148,19 @@ at runtime.
 
 ## Validation
 
-`manage-execution-manifest validate-loadable` checks that every step
+Two surfaces run at finalize entry, in this order.
+
+`manage-execution-manifest reconcile` runs FIRST and diffs the frozen
+`phase_6.steps` against live `marshal.json`: a step whose standards doc is gone
+**and** which live config no longer lists is dropped (the snapshot is behind a
+change the plan already made), while one live config **still** lists fails loud
+as `unreconcilable_step`. The order is load-bearing — checking loadability first
+would abort on exactly the staleness the reconcile exists to heal. See
+[`../SKILL.md`](../SKILL.md#reconcile) for the authoritative fail-direction
+table and [`../../phase-6-finalize/standards/required-steps.md`](../../phase-6-finalize/standards/required-steps.md)
+§ "Reconciliation Contract" for the dispatcher obligation.
+
+`manage-execution-manifest validate-loadable` then checks that every step
 named in `phase_6.steps` resolves to a readable standards file under
 `phase-6-finalize/standards/{step}.md`. For `ci-verify`, the
 standards file is [`../../phase-6-finalize/standards/ci-verify.md`](../../phase-6-finalize/standards/ci-verify.md).
