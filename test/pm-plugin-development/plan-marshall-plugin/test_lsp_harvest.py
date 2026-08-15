@@ -295,6 +295,42 @@ def test_workspace_without_sources_reports_unsupported(tmp_path):
     assert outcome.references == []
 
 
+def test_workspace_under_a_skip_named_directory_is_still_harvested(tmp_path):
+    """A skip-list name in the ROOT's own path must not veto the whole workspace.
+
+    The skip list filters trees INSIDE the workspace. Matching it against the
+    absolute path instead lets a project checked out under `target/` or `venv/`
+    match on every file and report itself unsupported — a stated-but-WRONG
+    reason, which is worse than a silent one because it looks considered.
+    """
+    # Arrange — a real workspace that happens to live under a skipped name.
+    root = tmp_path / 'target' / 'project'
+    root.mkdir(parents=True)
+    (root / 'x.py').write_text('import os\n')
+
+    # Act
+    outcome = harvest_workspace(
+        root, server_cmd=[PYTHON, '-c', 'raise SystemExit(1)'], timeout_s=20.0, request_timeout_s=5.0
+    )
+
+    # Assert — it may fail for server reasons, but never for an empty workspace.
+    assert not outcome.reason.startswith('workspace-unsupported:')
+
+
+def test_skip_list_still_excludes_vendor_trees_inside_the_workspace(tmp_path):
+    """The relative-path fix must not disable the skip list it narrowed."""
+    # Arrange — the only sources live in a skipped subtree.
+    vendored = tmp_path / 'node_modules'
+    vendored.mkdir()
+    (vendored / 'dep.py').write_text('VALUE = 1\n')
+
+    # Act
+    outcome = harvest_workspace(tmp_path, server_cmd=[PYTHON, '-c', 'pass'])
+
+    # Assert
+    assert outcome.reason.startswith('workspace-unsupported:')
+
+
 def test_every_failure_mode_states_a_distinct_reason(tmp_path):
     """The four modes must be tellable apart, not collapsed into one message."""
     # Arrange

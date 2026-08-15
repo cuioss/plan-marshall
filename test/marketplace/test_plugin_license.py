@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BUNDLES_DIR = PROJECT_ROOT / 'marketplace' / 'bundles'
 
 EXPECTED_LICENSE = 'FSL-1.1-ALv2'
-EXPECTED_MANIFEST_COUNT = 10
+EXPECTED_MANIFEST_COUNT = 11
 
 
 def _bundle_manifests() -> list[Path]:

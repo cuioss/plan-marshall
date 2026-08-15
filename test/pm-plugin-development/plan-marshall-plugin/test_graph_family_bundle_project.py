@@ -59,7 +59,7 @@ _cmd_client = load_script_module(
     'plan-marshall', 'manage-architecture', '_cmd_client.py', 'cmd_client_graph_e2e'
 )
 
-EXPECTED_RESOLVER_IDS = ['documentation', 'markdown', 'maven', 'python']
+EXPECTED_RESOLVER_IDS = ['documentation', 'lsp', 'markdown', 'maven', 'python']
 """The shipped resolver roster: one Axis-B implementor and three Axis-A ones.
 
 This literal is the module's SINGLE executable pin, and it is deliberate. It is

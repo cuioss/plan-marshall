@@ -242,11 +242,20 @@ def import_positions(source: str) -> list[tuple[int, int]]:
 
 
 def _candidate_files(project_root: Path, suffix: str, file_budget: int | None) -> list[Path]:
-    """Collect workspace sources, skipping trees no crawl should descend into."""
+    """Collect workspace sources, skipping trees no crawl should descend into.
+
+    The skip list is matched against each file's path RELATIVE to the workspace
+    root, never against its absolute path. Matching absolutely would let a
+    component of the root's own location veto the entire workspace: a project
+    checked out under a directory named ``target`` or ``venv`` would match on
+    every file, harvest nothing, and report the workspace as unsupported — a
+    stated-but-wrong reason, which is worse than a silent one because it looks
+    considered.
+    """
     skip = {'.git', 'node_modules', 'target', '.venv', 'venv', '__pycache__', '.plan'}
     found: list[Path] = []
     for path in sorted(project_root.rglob(f'*{suffix}')):
-        if skip.intersection(path.parts):
+        if skip.intersection(path.relative_to(project_root).parts):
             continue
         found.append(path)
         if file_budget is not None and len(found) >= file_budget:

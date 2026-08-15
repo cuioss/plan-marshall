@@ -683,11 +683,11 @@ def test_find_extension_path_skips_hidden_version_dirs(tmp_path):
     assert resolved == valid_skill / 'extension.py'
 
 
-# --- find_extension_path real-tree coverage: all 10 production manifests ------
+# --- find_extension_path real-tree coverage: all 11 production manifests ------
 
 
-def test_find_extension_path_resolves_all_10_production_manifests():
-    """find_extension_path() resolves each of the 10 production bundles' manifests.
+def test_find_extension_path_resolves_all_production_manifests():
+    """find_extension_path() resolves each of the production bundles' manifests.
 
     The central regression for this deliverable: every production bundle's
     extension.py is discovered through the frontmatter declaration over the live
@@ -701,7 +701,7 @@ def test_find_extension_path_resolves_all_10_production_manifests():
         assert path.is_file(), f'{bundle}: resolved path is not a file: {path}'
         assert path.name == 'extension.py', f'{bundle}: resolved non-extension.py: {path}'
         resolved[bundle] = path
-    assert len(resolved) == 10
+    assert len(resolved) == len(_PRODUCTION_BUNDLES)
 
 
 def test_find_extension_path_resolved_manifests_declare_the_archetype():
