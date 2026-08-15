@@ -50,6 +50,21 @@ from marketplace.targets.claude.marketplace_json_gen import build_marketplace_js
 from marketplace.targets.claude.plugin_json_gen import build_plugin_json
 
 
+class CorruptEmittedPluginJsonError(RuntimeError):
+    """Raised when an emitted ``plugin.json`` exists but is not valid JSON.
+
+    Distinct from a corrupt *source* ``plugin.json`` (which stays a hard
+    error): an unreadable emitted artifact is resolved by re-running the
+    emit step, so ``run_equality_check`` turns this into the documented
+    "re-run emit" diagnostic rather than letting a traceback escape.
+    """
+
+    def __init__(self, bundle_name: str, path: Path, exc: json.JSONDecodeError) -> None:
+        self.bundle_name = bundle_name
+        self.path = path
+        super().__init__(f'{path} is not valid JSON: {exc}')
+
+
 @dataclass
 class BundleDiff:
     """Per-bundle drift summary."""
@@ -112,7 +127,10 @@ def _read_emitted_plugin_json(bundle_dir: Path, target_dir: Path) -> dict:
     here.
     """
     plugin_json = _emitted_plugin_json_path(target_dir, bundle_dir.name)
-    parsed: dict = json.loads(plugin_json.read_text(encoding='utf-8'))
+    try:
+        parsed: dict = json.loads(plugin_json.read_text(encoding='utf-8'))
+    except json.JSONDecodeError as exc:
+        raise CorruptEmittedPluginJsonError(bundle_dir.name, plugin_json, exc) from exc
     return parsed
 
 
@@ -234,24 +252,35 @@ def run_equality_check(target_dir: Path, bundle_dirs: Iterable[Path]) -> Equalit
 
     all_diffs: list[BundleDiff] = []
     missing: list[str] = []
+    corrupt: list[str] = []
     for bundle_dir in bundles_list:
         emitted_path = _emitted_plugin_json_path(target_dir, bundle_dir.name)
         if not emitted_path.exists():
             missing.append(bundle_dir.name)
             continue
-        all_diffs.extend(check_bundle(bundle_dir, target_dir))
+        try:
+            all_diffs.extend(check_bundle(bundle_dir, target_dir))
+        except CorruptEmittedPluginJsonError:
+            # An emitted plugin.json that exists but is not valid JSON is
+            # resolved by re-emitting, exactly like a missing one — return the
+            # documented diagnostic instead of crashing the equality CLI.
+            corrupt.append(bundle_dir.name)
 
-    if missing:
-        joined = ', '.join(sorted(missing))
+    if missing or corrupt:
+        reasons: list[str] = []
+        if missing:
+            reasons.append(f"missing for: {', '.join(sorted(missing))}")
+        if corrupt:
+            reasons.append(f"not valid JSON for: {', '.join(sorted(corrupt))}")
         summary = (
-            f"target/claude/{{bundle}}/.claude-plugin/plugin.json missing for: {joined} — "
+            f"target/claude/{{bundle}}/.claude-plugin/plugin.json {'; '.join(reasons)} — "
             "run 'python3 marketplace/targets/generate.py --target claude --output target/claude' first"
         )
         return EqualityResult(
             passed=False,
             diffs=all_diffs,
             summary=summary,
-            missing_target_bundles=sorted(missing),
+            missing_target_bundles=sorted(missing) + sorted(corrupt),
         )
 
     # Compare the top-level marketplace.json. Bundles are sourced from

@@ -5,7 +5,7 @@
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO]
 [INFO] --- maven-clean-plugin:3.2.0:clean (default-clean) @ cui-java-tools ---
-[INFO] Deleting /Users/oliver/project/target
+[INFO] Deleting /home/dev/project/target
 [INFO]
 [INFO] --- maven-resources-plugin:3.3.0:resources (default-resources) @ cui-java-tools ---
 [INFO] Using 'UTF-8' encoding to copy filtered resources.
@@ -13,7 +13,7 @@
 [INFO]
 [INFO] --- maven-compiler-plugin:3.11.0:compile (default-compile) @ cui-java-tools ---
 [INFO] Changes detected - recompiling the module!
-[INFO] Compiling 25 source files to /Users/oliver/project/target/classes
+[INFO] Compiling 25 source files to /home/dev/project/target/classes
 [INFO] ------------------------------------------------------------------------
 [INFO] BUILD SUCCESS
 [INFO] ------------------------------------------------------------------------

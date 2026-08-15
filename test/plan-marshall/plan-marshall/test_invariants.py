@@ -35,6 +35,7 @@ invariants.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from argparse import Namespace
 from pathlib import Path
@@ -905,52 +906,16 @@ def test_worktree_orphan_invariant_removed() -> None:
 
 
 # --- _filter_main_dirty_paths ---------------------------------------------
-
-
-def test_filter_main_dirty_paths_drops_dot_plan_paths() -> None:
-    """``.plan/`` prefixes are stripped — they live legitimately in main."""
-    paths = [
-        '.plan/local/plans/foo/work.log',
-        '.plan/temp/scratch.toon',
-        'src/main.py',
-        'README.md',
-    ]
-    filtered = inv._filter_main_dirty_paths(paths)
-    assert filtered == ['src/main.py', 'README.md'], (
-        f'expected ``.plan/`` paths to be dropped, got {filtered}'
-    )
-
-
-def test_filter_main_dirty_paths_keeps_non_plan_paths() -> None:
-    """Non-``.plan/`` paths pass through unchanged in declaration order."""
-    paths = ['a.txt', 'src/b.py', 'docs/c.md']
-    assert inv._filter_main_dirty_paths(paths) == ['a.txt', 'src/b.py', 'docs/c.md']
-
-
-def test_filter_main_dirty_paths_handles_empty_list() -> None:
-    """Empty input → empty output (no error)."""
-    assert inv._filter_main_dirty_paths([]) == []
-
-
-def test_filter_main_dirty_paths_only_plan_paths_returns_empty() -> None:
-    """Input where every path is under ``.plan/`` → empty result."""
-    paths = ['.plan/foo', '.plan/bar', '.plan/baz/qux']
-    assert inv._filter_main_dirty_paths(paths) == []
-
-
-def test_filter_main_dirty_paths_does_not_match_plan_substring() -> None:
-    """Filter is prefix-based — ``my.plan/foo`` MUST NOT be dropped.
-
-    Guards against an over-eager substring match that would erroneously
-    strip paths that merely contain ``.plan/`` somewhere in their string
-    representation. Only paths starting with ``.plan/`` (the project's
-    plan-data directory) qualify for the filter.
-    """
-    paths = ['my.plan/foo.py', 'src/.plan/bar.py']
-    # The first path doesn't start with ``.plan/`` — only ``my.plan/`` —
-    # so it stays. The second starts with ``src/`` (also not ``.plan/``)
-    # so it likewise stays.
-    assert inv._filter_main_dirty_paths(paths) == ['my.plan/foo.py', 'src/.plan/bar.py']
+#
+# ``_filter_main_dirty_paths`` now delegates its ``.plan/`` exemption to the
+# SHARED trackedness predicate ``partition_plan_state_exemption`` (script-shared)
+# — the same one the post-run source guard uses. The prefix-precision and
+# tracked-vs-untracked logic is therefore covered once, against real git repos,
+# in ``test/plan-marshall/script-shared/test_plan_state_exemption.py``. The
+# site-2 binding (capture threads the tree; a dirtied TRACKED ``.plan/`` file is
+# retained while an untracked one is exempt) is covered by the real-repo
+# ``test_capture_main_dirty_files_reports_tracked_plan_state`` /
+# ``..._exempts_untracked_plan_state`` tests above.
 
 
 # --- _main_dirty_drift_diff -----------------------------------------------
@@ -1024,29 +989,23 @@ def test_main_dirty_drift_diff_result_is_deterministic() -> None:
 # --- _capture_main_dirty_files (integration with filter + git_dirty_files) -
 
 
-def test_capture_main_dirty_files_returns_filtered_sorted_list(
+def test_capture_main_dirty_files_wraps_git_dirty_files(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Capture wraps ``git_dirty_files`` with ``_filter_main_dirty_paths``.
+    """Capture wraps ``git_dirty_files`` and returns the sorted retained set.
 
-    Drives the function directly so the capture-time chain (git probe →
-    filter → return) is exercised end-to-end as a unit.
+    The ``.plan/`` trackedness split is covered by the real-repo tests above and
+    the shared-module suite. This pins the plain wrap (git probe → partition →
+    sorted, de-duplicated return) with a stub that contains no ``.plan/`` path,
+    so no trackedness query runs and the result is deterministic.
     """
     monkeypatch.setattr(
         inv,
         'git_dirty_files',
-        lambda _cwd: [
-            '.plan/local/plans/foo/work.log',  # filtered
-            'src/main.py',
-            'README.md',
-            '.plan/temp/scratch',  # filtered
-        ],
+        lambda _cwd: ['src/main.py', 'README.md'],
     )
     result = inv._capture_main_dirty_files('any-plan', {}, '5-execute')
-    # The filter preserves git-output order; sorting is the responsibility
-    # of git_dirty_files (which sorts its return). Here we assert the
-    # filter preserved order while dropping ``.plan/`` paths.
-    assert result == ['src/main.py', 'README.md']
+    assert result == ['README.md', 'src/main.py']
 
 
 def test_capture_main_dirty_files_returns_none_when_git_unavailable(
@@ -1069,10 +1028,115 @@ def test_capture_main_dirty_files_empty_input_returns_empty_list(
     assert inv._capture_main_dirty_files('any-plan', {}, '5-execute') == []
 
 
-def test_capture_main_dirty_files_only_dot_plan_paths_returns_empty_list(
-    monkeypatch: pytest.MonkeyPatch,
+# --- trackedness-based .plan/ exemption (D5c, site 2) ----------------------
+#
+# These drive the REAL git observation (no stubbed git_dirty_files) against a
+# throwaway repository, because the fix keys the .plan/ exemption on git
+# trackedness rather than on the path prefix — a property only a real index can
+# answer.
+
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    """Run one git command against ``repo`` with a pinned, hermetic identity."""
+    return subprocess.run(
+        [
+            'git',
+            '-C',
+            str(repo),
+            '-c',
+            'user.name=Test',
+            '-c',
+            'user.email=test@example.invalid',
+            '-c',
+            'commit.gpgsign=false',
+            *args,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+
+
+def _repo_with_committed_plan_file(tmp_path: Path) -> Path:
+    """A real git repo with one TRACKED ``.plan/`` file, committed and clean.
+
+    ``.plan/`` is force-added because an ambient ``core.excludesFile`` could
+    otherwise keep it untracked, which would silently turn the tracked control
+    into an untracked one.
+    """
+    repo = tmp_path / 'main-checkout'
+    repo.mkdir()
+    _git(repo, 'init', '--initial-branch=main')
+    marshal = repo / '.plan' / 'marshal.json'
+    marshal.parent.mkdir(parents=True, exist_ok=True)
+    marshal.write_text('{"schema": 1}\n', encoding='utf-8')
+    _git(repo, 'add', '-f', '.plan/marshal.json')
+    _git(repo, 'commit', '-m', 'chore: seed marshal.json')
+    return repo
+
+
+def test_capture_main_dirty_files_reports_tracked_plan_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Only ``.plan/`` paths dirty → empty list after filter."""
+    """(D5c POSITIVE CONTROL, site 2) A dirty TRACKED ``.plan/`` file is retained.
+
+    The layer-D drift capture must observe a dirtied *tracked* ``.plan/`` file
+    (an architecture-enrich write to ``marshal.json`` / a descriptor) so the
+    drift check can catch it. Seen RED before the fix (the prefix filter drops
+    every ``.plan/`` path), GREEN after (only UNTRACKED ``.plan/`` paths are
+    exempt).
+    """
+    repo = _repo_with_committed_plan_file(tmp_path)
+    (repo / '.plan' / 'marshal.json').write_text('{"schema": 1, "dirty": true}\n', encoding='utf-8')
+    monkeypatch.setattr(inv, '_repo_root', lambda: repo)
+
+    result = inv._capture_main_dirty_files('any-plan', {}, '5-execute')
+
+    assert result is not None
+    assert '.plan/marshal.json' in result, (
+        'A dirty TRACKED .plan/ file was dropped from the main-dirty capture, so '
+        f'the layer-D drift check can never see it. Captured: {result}'
+    )
+
+
+def test_capture_main_dirty_files_exempts_untracked_plan_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """(D5c NEGATIVE CONTROL, site 2) A dirty UNTRACKED ``.plan/`` file stays exempt.
+
+    Ordinary plan-state writes (logs, status, findings) are untracked and must
+    NOT trip drift, or every worktree-routed plan starts reporting normal
+    bookkeeping. Matched to the positive control above.
+    """
+    repo = _repo_with_committed_plan_file(tmp_path)
+    untracked = repo / '.plan' / 'local' / 'status.json'
+    untracked.parent.mkdir(parents=True, exist_ok=True)
+    untracked.write_text('{"phase": "5-execute"}\n', encoding='utf-8')
+    monkeypatch.setattr(inv, '_repo_root', lambda: repo)
+
+    result = inv._capture_main_dirty_files('any-plan', {}, '5-execute')
+
+    assert result is not None
+    assert '.plan/local/status.json' not in result, (
+        'An UNTRACKED .plan/ bookkeeping write was retained as drift; only '
+        f'tracked .plan/ files should be. Captured: {result}'
+    )
+
+
+def test_capture_main_dirty_files_only_untracked_dot_plan_paths_returns_empty_list(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Only UNTRACKED ``.plan/`` paths dirty → empty list after filter.
+
+    A tracked ``.plan/`` file would be RETAINED (see
+    ``test_capture_main_dirty_files_reports_tracked_plan_state``); the exemption
+    is trackedness-based, so ``_repo_root`` is stubbed to a controlled repo where
+    the two dirty paths are genuinely untracked, rather than relying on the
+    ambient checkout's tracked-``.plan/`` set.
+    """
+    repo = _repo_with_committed_plan_file(tmp_path)
+    monkeypatch.setattr(inv, '_repo_root', lambda: repo)
     monkeypatch.setattr(
         inv,
         'git_dirty_files',

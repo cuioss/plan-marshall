@@ -74,10 +74,21 @@ def test_enrich_module_rejects_invalid_name(axis, bad_value):
 # --package (used by `enrich package`)
 # =============================================================================
 
+# D1: ``--package`` is now a repo-relative PATH (path is identity), validated by
+# ``validate_relative_path`` — an empty value, an absolute path, or a traversal
+# is rejected (still surfaced as ``invalid_package`` via _FLAG_TO_ERROR_CODE).
+# The shared dotted-identifier matrix no longer fits this axis: a plain relative
+# path like ``foo/bar`` is now VALID, so path-shaped malformed values are used.
+_PACKAGE_PATH_REJECTIONS = [
+    ('empty', ''),
+    ('absolute', '/etc/passwd'),
+    ('traversal', '../parent'),
+]
 
-@pytest.mark.parametrize('axis,bad_value', MALFORMED_AXES['package'])
+
+@pytest.mark.parametrize('axis,bad_value', _PACKAGE_PATH_REJECTIONS)
 def test_enrich_package_rejects_invalid_package(axis, bad_value):
-    """``architecture enrich package --package <bad> ...`` rejects with invalid_package."""
+    """``architecture enrich package --package <bad-path> ...`` rejects with invalid_package."""
     result = run_script(
         SCRIPT_PATH,
         'enrich',

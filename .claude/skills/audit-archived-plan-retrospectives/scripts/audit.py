@@ -376,10 +376,19 @@ CHECK_ERA: dict[str, str] = {
     # pre-classified before the router runs). Unaffected by this plan.
     "track-selection-accuracy": "#875",
     "global-log-analysis": "#849",
-    # sequence-and-build-minimality — #887 (plan-7's boundary): plan-7's D1
-    # which-module containment fix and the per-task-vs-per-deliverable build-cost
-    # model change are the mechanics this check's rows are read against.
-    "sequence-and-build-minimality": "#887",
+    # sequence-and-build-minimality — PR-PENDING (this plan's own boundary, a
+    # placeholder resolved to the real PR at finalize by
+    # project:finalize-step-era-stamp-fill AFTER create-pr, bumped from #887): this
+    # plan RE-BASES the check's build-duration derivation off the plan-scoped log
+    # onto the structured change-ledger — durations now come from the ledger's
+    # `duration_seconds` for every build system and every phase (closing the
+    # single-tool and early-phase blindnesses), the pass/fail/timeout/killed status
+    # ratio and the build-vs-wall-clock share are new ledger-derived facets, and a
+    # suspect-zero rule plus a build-time-exceeds-wall-clock invariant guard the
+    # numbers. Those ARE the build-minimality mechanics this check's rows are read
+    # against, so pre-boundary log-derived rows read as era-expected and
+    # post-boundary ledger-derived rows as the current truth.
+    "sequence-and-build-minimality": "#1224",
     # token-economics — PR-PENDING (plan-8's boundary, a placeholder resolved to
     # the real PR at finalize by project:finalize-step-era-stamp-fill AFTER
     # create-pr): plan-8's finalize-wait consolidation changes the finalize_heavy
@@ -2143,18 +2152,103 @@ def _preference_disposition(obj: dict[str, Any]) -> str | None:
     return res if res in _PREFERENCE_DISPOSITIONS else None
 
 
+# The literal module bucket a finding with no concrete `module`/`component`
+# attribution collapses into. It is the UNATTRIBUTED sink — and, per D2 of the
+# `truthful-signals` "pipeline-echo" plan, NOT a promotable preference bucket (see
+# `cross_preference_pattern` and disposition-to-hint-routing.md § (d), which
+# retires the former `--module default` cross-cutting routing target).
+_UNATTRIBUTED_MODULE = "default"
+
+
 def _preference_module(obj: dict[str, Any]) -> str:
     """Return the finding's module attribution for preference aggregation.
 
     Prefers the explicit `module` field, falls back to `component`, then to the
-    cross-cutting `default` bucket. Cross-cutting patterns (no concrete module)
-    route via `--module default` per the shared routing contract.
+    `default` UNATTRIBUTED bucket. Per D2 (see `cross_preference_pattern`), a tuple
+    landing in the `default` bucket is counted but never promoted — it is not a
+    cross-cutting judgement and no longer routes anywhere.
     """
     for key in ("module", "component"):
         value = obj.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
-    return "default"
+    return _UNATTRIBUTED_MODULE
+
+
+def _recognized_bot_kinds() -> frozenset[str] | None:
+    """Return the live registry-derived recognized reviewer `bot_kind` set, or None.
+
+    The authorship gate admits a `pr-comment` only when it is attributed to a
+    RECOGNIZED reviewer bot. `add_finding` validates `bot_kind` against this set at
+    WRITE time, but the auditor reads archived JSONL DIRECTLY — an archived (legacy,
+    de-registered, or hand-edited) record could carry a `bot_kind` that is not a
+    real reviewer identity — so the gate re-derives the set from the live
+    `automatic-review` registry here rather than trusting an arbitrary stored
+    string. Mirrors `_load_routing_logic`'s marketplace-import pattern: repo root is
+    `__file__`'s 4th parent (`scripts/ → skill/ → skills/ → .claude/ → repo`).
+
+    Returns None when the marketplace tree or the registry module cannot be loaded
+    — the caller then degrades to a presence-only check rather than over-excluding
+    every bot-attributed comment (the pipeline-self coverage, which keys on an
+    ABSENT `bot_kind`, is unaffected either way).
+    """
+    parents = Path(__file__).resolve().parents
+    if len(parents) < 5:
+        return None
+    scripts_dir = (
+        parents[4]
+        / "marketplace" / "bundles" / "plan-marshall" / "skills"
+        / "automatic-review" / "scripts"
+    )
+    if not scripts_dir.is_dir():
+        return None
+    path_str = str(scripts_dir)
+    if path_str not in sys.path:
+        sys.path.insert(0, path_str)
+    try:
+        import bot_registry  # noqa: PLC0415
+
+        return frozenset(str(k) for k in bot_registry.bot_kinds())
+    except Exception:  # noqa: BLE001 — any import/parse failure degrades to presence-only
+        return None
+
+
+def _preference_admissible(
+    obj: dict[str, Any], recognized_bot_kinds: frozenset[str] | None
+) -> bool:
+    """Return False for a finding that must not seed a preference recurrence.
+
+    Authorship gate (D1 of the `truthful-signals` "the-pipeline-talks-to-itself"
+    plan). A `pr-comment` finding contributes to preference learning ONLY when it
+    is positively attributed to a recognized external reviewer bot — i.e. it
+    carries a `bot_kind` that is one of the registry-derived reviewer identities
+    (`recognized_bot_kinds`) the ingest verb stamps from the comment author login.
+
+    A `pr-comment` with no `bot_kind` — or a `bot_kind` that is not a recognized
+    reviewer identity — cannot be told apart from the pipeline's own posted
+    comments: the ingest verb records the pipeline's own PR comments (a
+    review-trigger comment, a description-restore) with `bot_kind` absent, exactly
+    as it records an unattributed human comment. Admitting such a comment would let
+    the pipeline's own control traffic become evidence about the pipeline's
+    preferences — a SELF-REINFORCING measurement artifact that grows with pipeline
+    chattiness rather than with operator judgement. There is no self-login signal on
+    the finding to identify "self" directly (the comment-preparation verb stamps no
+    marker), so this gate fails CLOSED on positive external attribution instead of
+    trying to recognize self. When the registry cannot be loaded
+    (`recognized_bot_kinds is None`) the gate degrades to a presence-only check.
+
+    Non-comment findings (lint/sonar/bug/test-failure/…) carry no author and are
+    never pipeline-authored PR chatter; they are unaffected — their tool-disposition
+    recurrences are exactly the signal preference learning exists to capture.
+    """
+    if obj.get("type") == "pr-comment":
+        bot_kind = obj.get("bot_kind")
+        if not (isinstance(bot_kind, str) and bot_kind.strip()):
+            return False
+        if recognized_bot_kinds is None:
+            return True
+        return bot_kind.strip() in recognized_bot_kinds
+    return True
 
 
 def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
@@ -2168,6 +2262,9 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     threshold-gates at `THRESHOLDS["preference_disposition_occurrences"]`.
     """
     threshold = THRESHOLDS["preference_disposition_occurrences"]
+    # Resolve the recognized reviewer-bot set ONCE for the whole corpus walk (the
+    # authorship gate validates archived `bot_kind` values against it).
+    recognized_bot_kinds = _recognized_bot_kinds()
     tuple_to_plans: dict[tuple[str, str, str], set[str]] = defaultdict(set)
     for inputs in all_inputs:
         findings_dir = inputs.plan_dir / "artifacts" / "findings"
@@ -2176,6 +2273,11 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         seen_in_plan: set[tuple[str, str, str]] = set()
         for jsonl in findings_dir.glob("*.jsonl"):
             for obj in read_jsonl(jsonl):
+                # D1 authorship gate: a pipeline-self-authored comment (or one with
+                # an unrecognized bot_kind) cannot seed a preference (see
+                # `_preference_admissible`).
+                if not _preference_admissible(obj, recognized_bot_kinds):
+                    continue
                 disposition = _preference_disposition(obj)
                 if disposition is None:
                     continue
@@ -2187,17 +2289,31 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         for key in seen_in_plan:
             tuple_to_plans[key].add(inputs.plan_id)
 
-    candidates: list[dict[str, Any]] = [
-        {
-            "module": module,
-            "finding_class": finding_class,
-            "disposition": disposition,
-            "occurrence_count": len(plans),
-            "plan_ids": sorted(plans),
-        }
-        for (module, finding_class, disposition), plans in tuple_to_plans.items()
-        if len(plans) >= threshold
-    ]
+    candidates: list[dict[str, Any]] = []
+    unattributed_excluded = 0
+    for (module, finding_class, disposition), plans in tuple_to_plans.items():
+        if len(plans) < threshold:
+            continue
+        if module == _UNATTRIBUTED_MODULE:
+            # D2 unattributed-bucket gate: the `default` bucket is the sink for
+            # UNATTRIBUTED recurrences (no module, no component), not a genuine
+            # cross-cutting judgement — the aggregation keys on a single module
+            # value and cannot detect a spans-modules pattern, so `default` only
+            # ever means unattributed. Promoting it would route an unverified hint
+            # to the widest blast radius — the `default` sink the shared contract
+            # now declines to promote (disposition-to-hint-routing.md § (d)). Count
+            # it for visibility; never surface it as a promotable candidate.
+            unattributed_excluded += 1
+            continue
+        candidates.append(
+            {
+                "module": module,
+                "finding_class": finding_class,
+                "disposition": disposition,
+                "occurrence_count": len(plans),
+                "plan_ids": sorted(plans),
+            }
+        )
     candidates.sort(
         key=lambda r: (
             -int(r["occurrence_count"]),
@@ -2209,6 +2325,7 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     return {
         "threshold": threshold,
         "candidate_count": len(candidates),
+        "unattributed_excluded_count": unattributed_excluded,
         "rows": candidates,
     }
 
@@ -3457,7 +3574,79 @@ _SBM_VERB_RE = re.compile(
     r"\b(module-tests|quality-gate|verify|coverage|compile)\b(?:\s+([a-z][a-z0-9-]+))?"
 )
 
-# A pyproject_build run call (the only build notation in this Python project).
+# ---------------------------------------------------------------------------
+# The build-time ORACLE: the append-only change-ledger's kind=build rows.
+# ---------------------------------------------------------------------------
+#
+# Build time is derived from the STRUCTURED change-ledger, not by regex-parsing a
+# log. The ledger (`<repo>/.plan/work/change-ledger.jsonl`, written by the
+# executor dispatch boundary — see `manage-change-ledger`) stamps one kind=build
+# row per build-EXECUTING dispatch, for EVERY build system and EVERY phase, each
+# carrying a structured `duration_seconds` and a truthful `status`. This closes
+# the two blindnesses of the former log derivation:
+#   1. single build system — the log matcher (`_sbm_is_build`) sees only
+#      `build-pyproject`, so Maven / Gradle / npm builds were invisible.
+#   2. early-phase invisibility — a build run before the plan-scoped log exists
+#      never reached it, so it was invisible regardless of tool.
+# `_sbm_is_build` and the log-derived total are RETAINED only as the OLD baseline
+# the re-base quantifies its delta against (D1) — not as the build-time source.
+
+# The four truthful build outcomes a kind=build row's `status` carries, plus the
+# boundary-derived `unknown`. `killed` is kept STRICTLY separate from `error`: a
+# whole-tree kill is an infrastructure event, and collapsing it into "failed"
+# would report a harness problem as a code problem.
+_SBM_LEDGER_STATUSES: tuple[str, ...] = ("success", "error", "timeout", "killed", "unknown")
+
+# `manage-status archive` renames `{plan_id}` to `{YYYY-MM-DD}-{plan_id}`, but a
+# ledger row carries the bare execution-time `plan_id`, so the archive-date prefix
+# is stripped to attribute rows to an archived plan dir. An --include-active plan
+# dir under `.plan/local/plans/` carries no prefix and is matched unchanged.
+_SBM_ARCHIVE_DATE_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
+
+
+def _ledger_plan_key(plan_id: str) -> str:
+    """The bare plan_id used to attribute ledger rows to an archived plan dir."""
+    return _SBM_ARCHIVE_DATE_PREFIX_RE.sub("", plan_id)
+
+
+def _load_build_ledger_index(repo_root: Path) -> dict[str, list[dict[str, Any]]]:
+    """Index the single change-ledger's kind=build rows by their bare plan_id.
+
+    Reads `<repo_root>/.plan/work/change-ledger.jsonl` (a single, non-plan-scoped,
+    append-only file) and returns `{plan_id: [kind=build rows...]}` — `{}` when the
+    ledger is absent. A `NO_PLAN`-sentinel row (a plan-less orchestrator build) is
+    indexed under that sentinel and simply matches no archived plan; it is never a
+    false zero for a real plan. Best-effort: a plan with no rows degrades to
+    "unavailable", never to a fabricated zero.
+    """
+    ledger_path = repo_root / ".plan" / "work" / "change-ledger.jsonl"
+    index: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in read_jsonl(ledger_path):
+        if row.get("kind") != "build":
+            continue
+        plan_id = row.get("plan_id")
+        if isinstance(plan_id, str) and plan_id:
+            index[plan_id].append(row)
+    return dict(index)
+
+
+def _sbm_ledger_duration(row: dict[str, Any]) -> float | None:
+    """A kind=build row's `duration_seconds` as a float, or None when SUSPECT.
+
+    None (absent), a non-numeric value, or a value <= 0 all return None: a zero is
+    indistinguishable from a cache hit, a no-op, or a build killed at N seconds
+    whose routed status reported `duration_seconds = 0` — so it is treated as
+    SUSPECT (corroboration-required), never summed into a total or averaged in.
+    """
+    raw = row.get("duration_seconds")
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return None
+    value = float(raw)
+    return value if value > 0 else None
+
+
+# A pyproject_build run call in the plan-scoped log — the OLD build derivation,
+# kept only as the delta baseline (see the oracle note above).
 def _sbm_is_build(notation: str, sub: str) -> bool:
     return notation.endswith("build-pyproject:pyproject_build") and sub == "run"
 
@@ -3511,15 +3700,21 @@ def _sbm_normalize_role(role: str) -> str:
     return role.replace("phase-", "", 1)
 
 
-def _sequence_build_minimality_plan(inputs: PlanInputs) -> dict[str, Any]:
-    """Reconstruct one plan's call sequence + build-minimality signals.
+def _sequence_build_minimality_plan(
+    inputs: PlanInputs, ledger_index: dict[str, list[dict[str, Any]]]
+) -> dict[str, Any]:
+    """Reconstruct one plan's call sequence + LEDGER-derived build-minimality signals.
 
-    Reads the plan-scoped `logs/script-execution.log` (ordered call timeline) and
-    `logs/work.log` (phase-dispatch markers + build-verb mentions), joins the
-    `references.json` / `status.json::metadata` footprint already on `inputs`, and
-    counts CI run directories under `artifacts/ci-runs/`. Returns the per-plan row
-    dict consumed by the emitter. Best-effort: a plan with no logs degrades to an
-    all-zero row rather than raising.
+    The call timeline, per-phase call buckets, architecture-call count,
+    consecutive-dup primitive and build-verb mining are read from the plan-scoped
+    `logs/script-execution.log` / `logs/work.log` as before. The BUILD facts —
+    count, per-build duration, duration-band classification, total / max seconds,
+    the pass/fail status ratio, and the build-vs-wall-clock share — are RE-BASED
+    onto the structured change-ledger (`ledger_index`, keyed by bare plan_id), so
+    they cover EVERY build system and EVERY phase, not just the pyproject builds a
+    plan happened to log. The old log-derived build seconds are retained as
+    `log_build_seconds` so the emitter can quantify the delta (D1). Best-effort: a
+    plan with no logs and no ledger rows degrades to an all-zero / unavailable row.
     """
     plan_dir = inputs.plan_dir
     sel = plan_dir / "logs" / "script-execution.log"
@@ -3595,30 +3790,67 @@ def _sequence_build_minimality_plan(inputs: PlanInputs) -> dict[str, Any]:
                 break
         return cur
 
-    # (3) Per-phase call buckets + per-phase build counts/durations.
+    # (3) Per-phase CALL buckets + arch calls + the OLD log-derived build baseline.
+    #     Build TIME is no longer read from the log here — only the log-derived
+    #     seconds the re-base measures its delta against (D1).
     per_phase: dict[str, dict[str, float]] = defaultdict(
-        lambda: {"calls": 0.0, "builds": 0.0, "build_seconds": 0.0, "arch": 0.0}
+        lambda: {"calls": 0.0, "builds": 0.0, "arch": 0.0}
     )
-    builds: list[tuple[datetime, float]] = []
     arch_calls = 0
+    log_builds: list[float] = []
     for ts, notation, sub, dur in calls:
         phase = phase_of(ts)
         bucket = per_phase[phase]
         bucket["calls"] += 1
         if _sbm_is_build(notation, sub):
-            bucket["builds"] += 1
-            bucket["build_seconds"] += dur
-            builds.append((ts, dur))
+            log_builds.append(dur)
         if _sbm_is_arch(notation):
             bucket["arch"] += 1
             arch_calls += 1
+    log_build_seconds = sum(log_builds)
 
-    # (4) Build classification by duration band.
+    # (3b) LEDGER build rows for this plan — the build-time ORACLE (D1/D2). Covers
+    #      every build system and every phase; the log saw only pyproject builds
+    #      that reached the plan-scoped log.
+    ledger_rows = ledger_index.get(_ledger_plan_key(inputs.plan_id), [])
+    has_ledger = bool(ledger_rows)
+
     klass = {"minimal": 0, "scoped": 0, "heavy": 0, "unknown": 0}
-    for _, dur in builds:
-        klass[_sbm_classify_build(dur)] += 1
-    max_build_seconds = max((d for _, d in builds), default=0.0)
-    total_build_seconds = sum(d for _, d in builds)
+    status_counts = dict.fromkeys(_SBM_LEDGER_STATUSES, 0)
+    build_times: list[float] = []  # real (> 0) durations only — summed
+    build_moments: list[datetime] = []  # parseable timestamps — for churn
+    for row in ledger_rows:
+        status = row.get("status")
+        status_counts[status if status in status_counts else "unknown"] += 1
+        ledger_dur = _sbm_ledger_duration(row)
+        # SUSPECT-ZERO rule: a None / <= 0 duration classifies as `unknown` and is
+        # NOT summed into `build_times`, so it is counted separately rather than
+        # averaged in as a fabricated zero (a killed run reporting 0, a cache hit,
+        # a no-op — all indistinguishable from a real 0).
+        klass[_sbm_classify_build(ledger_dur if ledger_dur is not None else 0.0)] += 1
+        if ledger_dur is not None:
+            build_times.append(ledger_dur)
+        moment = _sbm_parse_ts((row.get("timestamp_iso") or "").rstrip("Z"))
+        if moment is not None:
+            per_phase[phase_of(moment)]["builds"] += 1
+            build_moments.append(moment)
+
+    n_builds = len(ledger_rows)
+    suspect_builds = klass["unknown"]
+    total_build_seconds = sum(build_times)
+    max_build_seconds = max(build_times, default=0.0)
+
+    # (3c) Wall-clock denominator: the sum of per-phase `duration_seconds` from
+    #      `work/metrics.toon`. Absent metrics ⇒ 0 ⇒ the build-share is WITHHELD
+    #      (None), never fabricated — the ratio inherits the metrics absent-file
+    #      hole and reports it honestly rather than dividing by a false denominator.
+    wall_clock_seconds = sum(
+        p.duration_seconds
+        for p in parse_metrics_toon(plan_dir / "work" / "metrics.toon")
+    )
+    build_share = (
+        total_build_seconds / wall_clock_seconds if wall_clock_seconds > 0 else None
+    )
 
     # (5) Redundancy primitives.
     # consecutive_dup — back-to-back identical (notation, sub). Over-counts
@@ -3631,12 +3863,13 @@ def _sequence_build_minimality_plan(inputs: PlanInputs) -> dict[str, Any]:
             consecutive_dup += 1
         prev_key = key
 
-    # build_churn — builds whose start falls within build_clustering_minutes of the
-    # previous build's start (a re-run cluster rather than one focused build).
+    # build_churn — LEDGER builds whose start falls within build_clustering_minutes
+    # of the previous build's start (a re-run cluster rather than one focused build).
     cluster_window_seconds = float(THRESHOLDS["build_clustering_minutes"]) * 60.0
+    build_moments.sort()
     churn = 0
-    for i in range(1, len(builds)):
-        if (builds[i][0] - builds[i - 1][0]).total_seconds() < cluster_window_seconds:
+    for i in range(1, len(build_moments)):
+        if (build_moments[i] - build_moments[i - 1]).total_seconds() < cluster_window_seconds:
             churn += 1
 
     # CI run directories.
@@ -3659,7 +3892,6 @@ def _sequence_build_minimality_plan(inputs: PlanInputs) -> dict[str, Any]:
     affected = refs.get("modified_files") or refs.get("affected_files") or []
     py_files = [f for f in affected if isinstance(f, str) and f.endswith(".py")]
     docs_only = inputs.change_type == "documentation" or (bool(affected) and not py_files)
-    n_builds = len(builds)
 
     # (6) Flags.
     flags: list[str] = []
@@ -3681,6 +3913,19 @@ def _sequence_build_minimality_plan(inputs: PlanInputs) -> dict[str, Any]:
         flags.append(f"arch_over_resolution(arch={arch_calls};builds={n_builds})")
     if consecutive_dup > 0:
         flags.append(f"consecutive_dup({consecutive_dup})")
+    # suspect_build_duration — N ledger builds carry a zero / absent duration, so
+    # the plan's build-time total is a FLOOR (a killed run reporting 0, a cache
+    # hit, a no-op — all indistinguishable). Surfaced, never averaged in.
+    if suspect_builds > 0:
+        flags.append(f"suspect_build_duration({suspect_builds})")
+    # build_exceeds_wallclock — the D2 invariant: summed build time cannot exceed
+    # plan wall-clock. A violation is a RECORDING defect (a duration plumbed
+    # through wrongly), not a code problem — the same impossible-values family the
+    # metrics check already models (worked > wall).
+    if wall_clock_seconds > 0 and total_build_seconds > wall_clock_seconds + 1.0:
+        flags.append(
+            f"build_exceeds_wallclock(build={int(total_build_seconds)}s>wall={int(wall_clock_seconds)}s)"
+        )
 
     # Phase graph string: `phase:calls(builds=B,arch=A)` per phase in canonical order.
     phase_order = [
@@ -3713,12 +3958,22 @@ def _sequence_build_minimality_plan(inputs: PlanInputs) -> dict[str, Any]:
         "change_type": inputs.change_type or "",
         "calls": len(calls),
         "span_seconds": int(span_seconds),
+        "has_ledger": has_ledger,
         "builds": n_builds,
         "build_minimal": klass["minimal"],
         "build_scoped": klass["scoped"],
         "build_heavy": klass["heavy"],
+        "build_unknown": klass["unknown"],
+        "build_success": status_counts["success"],
+        "build_error": status_counts["error"],
+        "build_timeout": status_counts["timeout"],
+        "build_killed": status_counts["killed"],
+        "build_status_unknown": status_counts["unknown"],
         "max_build_seconds": int(max_build_seconds),
         "total_build_seconds": int(total_build_seconds),
+        "log_build_seconds": int(log_build_seconds),
+        "wall_clock_seconds": int(wall_clock_seconds),
+        "build_share": build_share,
         "build_churn": churn,
         "arch_calls": arch_calls,
         "ci_runs": ci_runs,
@@ -3731,24 +3986,47 @@ def _sequence_build_minimality_plan(inputs: PlanInputs) -> dict[str, Any]:
     }
 
 
-def cross_sequence_build_minimality(all_inputs: list[PlanInputs]) -> dict[str, Any]:
-    """Reconstruct the per-plan call sequence + build-minimality signal set.
+def cross_sequence_build_minimality(
+    all_inputs: list[PlanInputs], ledger_index: dict[str, list[dict[str, Any]]]
+) -> dict[str, Any]:
+    """Reconstruct the per-plan call sequence + LEDGER-derived build-minimality set.
 
     Returns a result dict consumed by `emit_sequence_build_minimality_block`. Each
-    per-plan row carries the call/build/verb counts, the per-phase graph, and the
-    redundancy/anti-pattern flag list; the corpus aggregates carry the duration-band
-    totals, the build-verb totals, and the corpus build-second total. Best-effort:
-    an empty corpus yields all-zero aggregates and no rows rather than raising.
+    per-plan row carries the call/verb counts, the per-phase graph, the ledger
+    build-status ratio, the build-vs-wall-clock share, and the redundancy /
+    anti-pattern flag list; the corpus aggregates carry the duration-band totals,
+    the pass/fail status totals, the ledger build-second total and its delta
+    against the OLD log-derived total (D1), and the count + ids of plans whose
+    build time is UNAVAILABLE because they carry no ledger rows (absent is not
+    zero). `ledger_index` maps bare plan_id → its kind=build rows. Best-effort: an
+    empty corpus yields all-zero aggregates and no rows rather than raising.
     """
-    rows = [_sequence_build_minimality_plan(i) for i in all_inputs]
+    rows = [_sequence_build_minimality_plan(i, ledger_index) for i in all_inputs]
     rows.sort(key=lambda r: -int(r["total_build_seconds"]))
 
+    # The delta is measured over the ledger-BEARING population only: a plan with no
+    # ledger rows has an UNAVAILABLE build time (absent is not zero), so folding its
+    # log-derived seconds into the delta would compare the ledger's silence against
+    # the log's speech. Its ids are named separately.
+    ledger_rows_ = [r for r in rows if r["has_ledger"]]
     corpus = {
         "minimal": sum(int(r["build_minimal"]) for r in rows),
         "scoped": sum(int(r["build_scoped"]) for r in rows),
         "heavy": sum(int(r["build_heavy"]) for r in rows),
+        "unknown": sum(int(r["build_unknown"]) for r in rows),
         "builds": sum(int(r["builds"]) for r in rows),
         "build_seconds": sum(int(r["total_build_seconds"]) for r in rows),
+        # OLD log-derived total over the SAME ledger-bearing population — the
+        # apples-to-apples baseline the re-base quantifies its delta against.
+        "build_seconds_log_derived": sum(int(r["log_build_seconds"]) for r in ledger_rows_),
+        "success": sum(int(r["build_success"]) for r in rows),
+        "error": sum(int(r["build_error"]) for r in rows),
+        "timeout": sum(int(r["build_timeout"]) for r in rows),
+        "killed": sum(int(r["build_killed"]) for r in rows),
+        # Builds carrying an unrecognized / unknown STATUS — the remainder that
+        # makes pass+error+timeout+killed+status_unknown == corpus_builds, so the
+        # status ratio accounts for every build rather than leaving a silent gap.
+        "status_unknown": sum(int(r["build_status_unknown"]) for r in rows),
         "build_churn": sum(int(r["build_churn"]) for r in rows),
         "ci_runs": sum(int(r["ci_runs"]) for r in rows),
         "consecutive_dup": sum(int(r["consecutive_dup"]) for r in rows),
@@ -3756,10 +4034,16 @@ def cross_sequence_build_minimality(all_inputs: list[PlanInputs]) -> dict[str, A
             1 for r in rows if r["docs_only"] and int(r["builds"]) > 0
         ),
     }
+    corpus["build_seconds_delta"] = (
+        corpus["build_seconds"] - corpus["build_seconds_log_derived"]
+    )
+    without_ledger = [r["plan_id"] for r in rows if not r["has_ledger"]]
     return {
         "plans_in_corpus": len(rows),
         "rows": rows,
         "corpus": corpus,
+        "plans_without_ledger": len(without_ledger),
+        "plans_without_ledger_ids": without_ledger,
         "build_minimal_seconds": float(THRESHOLDS["build_minimal_seconds"]),
         "build_heavy_seconds": float(THRESHOLDS["build_heavy_seconds"]),
         "build_clustering_minutes": float(THRESHOLDS["build_clustering_minutes"]),
@@ -5030,6 +5314,10 @@ def emit_preference_pattern_block(result: dict[str, Any]) -> str:
         "status: success",
         f"threshold: {result['threshold']}",
         f"candidate_count: {result['candidate_count']}",
+        # D2: unattributed (`default`-bucket) recurrences that cleared the
+        # threshold but were declined promotion — surfaced so the decision is
+        # visible rather than a silent drop.
+        f"unattributed_excluded_count: {result.get('unattributed_excluded_count', 0)}",
         f"genuine_signal_count: {genuine_signal_count}",
         f"rows[{len(rows)}]{{module,finding_class,disposition,occurrence_count,plan_ids,severity}}:",
     ]
@@ -5396,9 +5684,10 @@ def _sbm_genuine(row: dict[str, Any]) -> bool:
 
     Genuine (actionable): the row carries at least one redundancy / non-minimality
     flag (`build_churn`, `non_minimal_build`, `docs_only_build`, `ci_rerun`,
-    `phase_reentry`, `arch_over_resolution`, `consecutive_dup`). Informational: a
-    plan that built minimally with no redundancy primitive — the expected shape,
-    not a signal.
+    `phase_reentry`, `arch_over_resolution`, `consecutive_dup`) or a
+    ledger-derived data-quality flag (`suspect_build_duration`,
+    `build_exceeds_wallclock`). Informational: a plan that built minimally with no
+    flag — the expected shape, not a signal.
     """
     return bool(row["flags"])
 
@@ -5425,6 +5714,10 @@ def emit_sequence_build_minimality_block(result: dict[str, Any]) -> str:
     rows = result["rows"]
     for r in rows:
         r["flags_str"] = ";".join(r["flags"])
+        # build_share is WITHHELD (`n/a`) when wall-clock is absent — never a
+        # fabricated ratio over a zero / missing denominator.
+        share = r["build_share"]
+        r["build_share_str"] = "n/a" if share is None else f"{share:.0%}"
     rows, genuine_signal_count = _severity_summary(rows, _sbm_genuine)
 
     corpus = result["corpus"]
@@ -5432,23 +5725,40 @@ def emit_sequence_build_minimality_block(result: dict[str, Any]) -> str:
         "check: sequence-and-build-minimality",
         "status: success",
         f"plans_in_corpus: {result['plans_in_corpus']}",
+        # Build time is derived from the change-ledger's structured duration field,
+        # not from log fragments — see the check sub-doc. `build_seconds` is the
+        # ledger total; `build_seconds_log_derived` is the OLD pyproject-only log
+        # total over the SAME ledger-bearing plans; `build_seconds_delta` is what
+        # the re-base now sees that the log did not (other build systems, early
+        # phases). `plans_without_ledger` names plans whose build time is
+        # UNAVAILABLE (no ledger rows) — absent is not zero.
         # Duration-band thresholds (from the centralized THRESHOLDS table) so each
         # build-class count is self-describing.
         f"build_minimal_seconds: {result['build_minimal_seconds']:.0f}",
         f"build_heavy_seconds: {result['build_heavy_seconds']:.0f}",
         f"build_clustering_minutes: {result['build_clustering_minutes']:.0f}",
-        # Corpus build-class + redundancy totals.
+        # Corpus build-class + status + redundancy totals.
         f"corpus_builds: {corpus['builds']}",
         f"corpus_build_minimal: {corpus['minimal']}",
         f"corpus_build_scoped: {corpus['scoped']}",
         f"corpus_build_heavy: {corpus['heavy']}",
+        f"corpus_build_unknown: {corpus['unknown']}",
+        f"corpus_build_pass: {corpus['success']}",
+        f"corpus_build_error: {corpus['error']}",
+        f"corpus_build_timeout: {corpus['timeout']}",
+        f"corpus_build_killed: {corpus['killed']}",
+        f"corpus_build_status_unknown: {corpus['status_unknown']}",
         f"corpus_build_seconds: {corpus['build_seconds']}",
+        f"corpus_build_seconds_log_derived: {corpus['build_seconds_log_derived']}",
+        f"corpus_build_seconds_delta: {corpus['build_seconds_delta']}",
         f"corpus_build_churn: {corpus['build_churn']}",
         f"corpus_ci_runs: {corpus['ci_runs']}",
         f"corpus_consecutive_dup: {corpus['consecutive_dup']}",
         f"corpus_docs_only_build_plans: {corpus['docs_only_build_plans']}",
+        f"plans_without_ledger: {result['plans_without_ledger']}",
+        f"plans_without_ledger_ids: {_cell(';'.join(result['plans_without_ledger_ids']))}",
         f"genuine_signal_count: {genuine_signal_count}",
-        f"rows[{len(rows)}]{{plan_id,change_type,calls,span_seconds,builds,build_minimal,build_scoped,build_heavy,max_build_seconds,build_churn,arch_calls,ci_runs,consecutive_dup,phase_reentry,verbs,phase_graph,flags,severity}}:",
+        f"rows[{len(rows)}]{{plan_id,change_type,calls,span_seconds,has_ledger,builds,build_minimal,build_scoped,build_heavy,build_unknown,pass,error,timeout,killed,total_build_seconds,max_build_seconds,log_build_seconds,wall_clock_seconds,build_share,build_churn,arch_calls,ci_runs,consecutive_dup,phase_reentry,verbs,phase_graph,flags,severity}}:",
     ]
     for r in rows:
         out.append(
@@ -5460,11 +5770,21 @@ def emit_sequence_build_minimality_block(result: dict[str, Any]) -> str:
                     r["change_type"],
                     r["calls"],
                     r["span_seconds"],
+                    r["has_ledger"],
                     r["builds"],
                     r["build_minimal"],
                     r["build_scoped"],
                     r["build_heavy"],
+                    r["build_unknown"],
+                    r["build_success"],
+                    r["build_error"],
+                    r["build_timeout"],
+                    r["build_killed"],
+                    r["total_build_seconds"],
                     r["max_build_seconds"],
+                    r["log_build_seconds"],
+                    r["wall_clock_seconds"],
+                    r["build_share_str"],
                     r["build_churn"],
                     r["arch_calls"],
                     r["ci_runs"],
@@ -7944,8 +8264,12 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
             summary_metrics["quality-chain_shift_left_tier1"] = th.get(1, 0)
 
     if "sequence-and-build-minimality" in selected or synth_needed:
+        # The build-time oracle: the single append-only change-ledger, read once
+        # and indexed by plan_id (see `_load_build_ledger_index`).
+        build_ledger_index = _load_build_ledger_index(repo_root)
         sbm_result = cross_sequence_build_minimality(
-            _check_corpus("sequence-and-build-minimality", all_inputs, shipping)
+            _check_corpus("sequence-and-build-minimality", all_inputs, shipping),
+            build_ledger_index,
         )
         all_results["sequence-and-build-minimality"] = sbm_result
         if "sequence-and-build-minimality" in selected:

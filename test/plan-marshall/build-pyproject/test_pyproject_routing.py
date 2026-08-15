@@ -25,18 +25,12 @@ state.
 
 import argparse
 import json
-import sys
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import _build_queue_slot as bqs
 import pytest
 
 from conftest import load_script_module
-
-sys.modules.setdefault('plan_logging', MagicMock(log_entry=MagicMock()))
-sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_value=300), timeout_set=MagicMock()))
-
 
 _pyproject_execute_mod = load_script_module(
     'plan-marshall', 'build-pyproject', '_pyproject_execute.py', '_pyproject_execute'

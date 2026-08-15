@@ -5,8 +5,32 @@ How much time and how many tokens did the plan consume relative to its scope? LL
 ## Inputs
 
 - `metrics.md` — total_wall_seconds, total_tokens, per-phase breakdown.
-- `log_analysis` fragment (already computed) — entry counts, script durations.
+- `log_analysis` fragment (already computed) — entry counts, script durations, **and the `build_time` block** (see § "Build time is READ from the change-ledger").
 - `work/metrics.toon` — the **persisted denominators** and their sampling points: `deliverable_count`, `files_modified`, `tasks_completed`, each with its `{denominator}_sampling_point` companion, plus the shared `denominators_sampled_at` timestamp.
+
+### Build time is READ from the change-ledger, never re-derived here
+
+`totals.total_build_seconds` is **read verbatim** from the `log_analysis`
+fragment's `build_time.total_build_seconds`, which `analyze-logs.py` computes from
+the structured change-ledger (`summarize_build_ledger`) — the build-time ORACLE.
+That total spans **every build system and every phase** (the ledger records
+`command` per build system and is written in every phase), not just the pyproject
+builds a plan happened to log. Do NOT re-derive build time from a log here — the
+same read-the-record discipline the denominators above take.
+
+Two truthfulness rules ride with it, both already applied by the source block —
+surface them, do not recompute them:
+
+- **Suspect-zero.** The `build_time` block reports `suspect_count` — builds whose
+  `duration_seconds` was `0` / absent (a killed run reporting 0, a cache hit, a
+  no-op). Those are NOT summed into `total_build_seconds`. When `suspect_count > 0`
+  the total is a **FLOOR**; say so rather than presenting it as exact.
+- **`killed` is SEPARATE from `error`.** The block's `killed` count is an
+  infrastructure-event tally, never folded into `error`; a whole-tree kill is not
+  a red build.
+
+A plan with `build_count: 0` has **no ledger build rows** — its build time is
+UNAVAILABLE (absent is not zero), not "no builds ran".
 
 ### Denominators are READ, never re-derived
 
@@ -41,6 +65,7 @@ plan_id: {plan_id}
 totals:
   duration_seconds: N
   tokens: N
+  total_build_seconds: N   # READ from log_analysis.build_time (a FLOOR when suspect_count > 0)
   files_modified: N
   tasks_completed: N
   deliverable_count: N

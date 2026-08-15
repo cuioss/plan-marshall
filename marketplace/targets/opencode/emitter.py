@@ -28,6 +28,7 @@ import shutil
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 
+from marketplace.targets.fs_safety import safe_rmtree
 from marketplace.targets.opencode.frontmatter import (
     OPENCODE_MODEL_PREFIX,
     UnmappedFrontmatterError,
@@ -122,23 +123,56 @@ def _read_plugin_json(bundle_dir: Path) -> dict:
     return parsed
 
 
-def _safe_rmtree(path: Path, output_dir: Path) -> None:
-    """Remove ``path`` only when it is contained within ``output_dir``."""
-    resolved = path.resolve()
-    resolved_output = output_dir.resolve()
-    sentinel = str(resolved_output) + '/'
-    if not str(resolved).startswith(sentinel) and resolved != resolved_output:
-        raise ValueError(f'Refusing to delete {resolved}: not within output directory {resolved_output}')
-    shutil.rmtree(path)
-
-
 def _copy_verbatim(src: Path, dst: Path, *, output_dir: Path, written: list[Path]) -> None:
     if dst.exists():
-        _safe_rmtree(dst, output_dir)
+        safe_rmtree(dst, output_dir)
     shutil.copytree(src, dst, ignore=shutil.ignore_patterns(*EXCLUDED_DIR_NAMES))
     for f in dst.rglob('*'):
         if f.is_file():
             written.append(f)
+
+
+def _prune_stale_outputs(output_dir: Path, written: list[Path]) -> None:
+    """Remove ``skill/``, ``agent/``, ``command/`` outputs left over from a prior emit.
+
+    The per-component emit only creates directories and overwrites files in
+    place, so anything *removed from source* — a whole skill, a single agent or
+    command, or one verbatim sub-directory (``standards/``, ``references/``, …)
+    of a surviving skill — leaves its previously-emitted output behind and the
+    tree drifts past source. This tracks every path written this run and prunes
+    the leftovers at **file** granularity: any emitted file under the three
+    output subtrees that was not (re)written this run is unlinked, then the
+    directories left empty are removed (deepest first). File-granularity is
+    what closes the surviving-skill sub-directory case that a whole-``skill``-dir
+    sweep would miss. No broad ``rmtree`` is used, so this never re-introduces
+    the sibling emitter's containment hazard.
+
+    Called only on a **full** regeneration (all bundles). A scoped emit
+    (``--bundles`` subset) shares the flat ``agent/`` and ``command/``
+    namespaces across bundles and cannot attribute a leftover file to a
+    specific bundle from its name alone, so pruning a subset would risk
+    deleting a non-emitted bundle's output; the normal build and the
+    drift checks both run full regenerations.
+    """
+    written_set = {p.resolve() for p in written}
+
+    for subdir in ('skill', 'agent', 'command'):
+        root = output_dir / subdir
+        if not root.is_dir():
+            continue
+        # Unlink every emitted file not (re)written this run.
+        for path in sorted(root.rglob('*')):
+            if path.is_file() and path.resolve() not in written_set:
+                path.unlink()
+        # Remove directories left empty by the unlinks, deepest first so a
+        # parent is considered only after its emptied children are gone.
+        for directory in sorted(
+            (p for p in root.rglob('*') if p.is_dir()),
+            key=lambda p: len(p.parts),
+            reverse=True,
+        ):
+            if not any(directory.iterdir()):
+                directory.rmdir()
 
 
 def _emit_skill(
@@ -465,6 +499,11 @@ def emit_bundles(
 
         for command_md in _resolve_md_components(bundle_dir, plugin_config, 'commands', 'commands'):
             _emit_command(bundle_name, command_md, output_dir, rules, transform_body, written)
+
+    # Prune stale outputs so a component removed from source leaves no emitted
+    # artifact behind. Full regenerations only (see _prune_stale_outputs).
+    if bundle_list is None:
+        _prune_stale_outputs(output_dir, written)
 
     written.append(_generate_opencode_json(output_dir, agent_index))
     return written

@@ -320,6 +320,15 @@ def _extract_profiles(content: str) -> list[str]:
 def _extract_affected_files(content: str) -> list[dict[str, Any]]:
     """Extract **Affected files:** list from deliverable content.
 
+    This is the FREEZE POINT of the plan's declared footprint: the list is
+    captured here, at outline time (phase-3), and is not re-derived when scope
+    moves during execution. It is therefore a *declaration* of the surface a
+    deliverable expects to touch — a lower-bound estimate — and NEVER a record
+    of what was actually touched; the authoritative touched-file record is the
+    live footprint derived from the worktree. See
+    ``manage-execution-manifest/standards/decision-rules.md`` § "Declared surface
+    vs. live footprint" for the consumer contract.
+
     Each entry is returned as a ``{'path': str, 'intent': str | None}`` object.
     The canonical annotated form is a backticked path followed by a
     parenthesized intent marker: ``- `path/to/file.ext` (write-new)``. An entry

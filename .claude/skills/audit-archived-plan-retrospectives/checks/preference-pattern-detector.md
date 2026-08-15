@@ -21,10 +21,29 @@ each finding carrying a **user-gate disposition**, derives a
   uses: the row's `title` (or `type` when `title` is absent), truncated at the
   first `:` and lowercased.
 - **module** — the finding's `module` attribution, falling back to `component`,
-  then to the cross-cutting `default` bucket when neither is present.
+  then to the `default` bucket when neither is present. A tuple in the `default`
+  bucket is UNATTRIBUTED (see § "Attribution and authorship gates").
 
 Each tuple is counted once per plan (a tuple appearing in multiple findings
 within one plan still contributes a single occurrence for that plan).
+
+## Attribution and authorship gates
+
+Two gates run over the derived tuples, both owned by the shared contract
+[`phase-6-finalize/standards/disposition-to-hint-routing.md`](../../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/disposition-to-hint-routing.md)
+(§§ (d), (e)):
+
+- **Authorship admissibility (pre-count).** A `pr-comment` finding seeds a
+  recurrence ONLY when it carries a recognized reviewer `bot_kind`. A `pr-comment`
+  with no `bot_kind` is the pipeline's own control traffic (or an unattributed
+  comment) and is dropped before counting — self-authored comments cannot become
+  evidence about the pipeline's own preferences. Non-comment findings are
+  unaffected.
+- **Attribution gate (post-count).** A tuple whose module resolves to the
+  `default` fallback bucket is UNATTRIBUTED, not a cross-cutting judgement, and is
+  **never surfaced as a candidate** — promoting it would route an unverified hint
+  to the widest blast radius. Such tuples are tallied in
+  `unattributed_excluded_count` so the decision is visible rather than silent.
 
 ## Threshold
 
@@ -41,17 +60,20 @@ the shared contract below.)
 ```yaml
 threshold: 3
 candidate_count: M
+unattributed_excluded_count: K
 rows[M]{module,finding_class,disposition,occurrence_count,plan_ids,severity}
 ```
 
 | Column | Meaning |
 |--------|---------|
-| `module` | The finding's module attribution (or `default` for cross-cutting). |
+| `candidate_count` | Number of promotable (module-attributed) candidate rows. |
+| `unattributed_excluded_count` | Number of `default`-bucket recurrences that cleared the threshold but were declined promotion by the attribution gate. |
+| `module` | The finding's concrete module attribution — always a real module (the `default` bucket is never surfaced). |
 | `finding_class` | The collapsed finding signature (title prefix, lowercased). |
 | `disposition` | The user-gate disposition (`suppressed`/`accepted`/`taken_into_account`). |
 | `occurrence_count` | Number of distinct plans the tuple appears in. |
 | `plan_ids` | `;`-joined plan ids contributing to the tuple. |
-| `severity` | Always `genuine` — every surfaced row cleared the threshold. |
+| `severity` | Always `genuine` — every surfaced row cleared the threshold and is module-attributed. |
 
 Rows are ordered by descending `occurrence_count`, then by `module`,
 `finding_class`, `disposition`.
@@ -59,13 +81,13 @@ Rows are ordered by descending `occurrence_count`, then by `module`,
 ## How the orchestrator interprets the rows
 
 Each candidate row is a **preference-enrichment input** routed to
-`architecture enrich`. Because every surfaced row is already threshold-gated by
-the script, SKILL.md Step 4c routes EVERY surfaced row — there is no further
-gating in the LLM body. The generalization rule (tuple → best-practice / insight
-string), the routing targets (`architecture enrich best-practice` for
-module-attributed patterns, `enrich insight --module default` for cross-cutting
-patterns), and the "generalize, do not log raw dispositions" privacy invariant
-are owned ONCE by
+`architecture enrich`. Every surfaced row is already threshold-gated AND
+module-attributed (the authorship and attribution gates ran in the script), so
+SKILL.md Step 4c routes EVERY surfaced row to its concrete module — there is no
+further gating in the LLM body, and no row routes to the `default` bucket. The
+generalization rule (tuple → best-practice / insight string), the routing target
+(`architecture enrich … --module {module}` for the row's concrete module), and
+the "generalize, do not log raw dispositions" privacy invariant are owned ONCE by
 [`phase-6-finalize/standards/disposition-to-hint-routing.md`](../../../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/disposition-to-hint-routing.md);
 this check does not restate them.
 

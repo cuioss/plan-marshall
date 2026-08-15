@@ -9,7 +9,12 @@ FSL's competing-use restriction during the licensed period (e.g., proprietary or
 closed-source deployments that compete with the software), commercial licenses
 are available.
 
-Inquire: https://github.com/cuioss/plan-marshall/issues/new/choose
+Inquire privately through the commercial-licensing form — no public issue is
+created: https://tally.so/r/9qalQY
+
+This is the same private form the GitHub "New issue" chooser links to
+(`.github/ISSUE_TEMPLATE/config.yml`). To report a security vulnerability, do not
+use this channel — see [SECURITY.md](SECURITY.md).
 
 ---
 

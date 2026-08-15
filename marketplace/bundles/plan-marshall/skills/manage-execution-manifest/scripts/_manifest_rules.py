@@ -349,12 +349,11 @@ def _apply_security_class_inactive(
     """Pre-filter: drop a security-class step only when there is no change surface at all.
 
     The gate is deliberately NOT the shared ``_apply_code_step_inactive`` change-shape
-    gate. ``change_type`` is a semantic label frozen at outline time and selected
-    FIRST-DELIVERABLE-WINS by the composer's caller, so a plan that opens with a
-    read-only discovery deliverable forwards ``verification`` however much production
-    code its remaining deliverables mutate. A security sweep must never be removed on
-    that evidence, so the change-type leg is absent here entirely and the gate **fails
-    toward inclusion**.
+    gate. ``change_type`` — even reconciled to the plan's settled classification — is
+    orthogonal to the security surface: a ``bug_fix`` or ``feature`` plan can equally
+    touch security-sensitive code, so a security sweep must gate on the change SURFACE,
+    not on the plan's change type. The change-type leg is therefore absent here entirely
+    and the gate **fails toward inclusion**.
 
     What remains is the zero-surface leg, now evaluated against BOTH the declared and
     the live change surface: a security-class step is dropped only when
@@ -896,10 +895,16 @@ def _apply_unresolved_ask_provider_drop(
 # coverage / module-tests). This map is the canonical FAST PATH only: for
 # orchestrator-tier commands, verbs not in this map generalize to the bare
 # ``verify:{verb}`` step ID at the composer's routing pass
-# (``_route_task_verification_commands``), so no orchestrator-tier build
-# command is ever left in a task's ``verification.commands`` for a leaf to
-# run inline. Only per-task-tier and unparseable (raw-shell /
-# non-``plan-marshall:build-``) commands stay with the consumer.
+# (``_route_task_verification_commands``), so most orchestrator-tier build
+# commands are hoisted rather than left in a task's ``verification.commands``
+# for a leaf to run inline. THREE kinds stay with the consumer instead:
+# per-task-tier commands, unparseable (raw-shell / non-``plan-marshall:build-``)
+# commands, and — the build-phase-canonical carve-out — a verb that is a KNOWN
+# canonical build command (``compile`` / ``test-compile``) with no phase-5
+# verify gate, whose ``verify:{verb}`` generalization would not resolve. Routing
+# that last kind would append an unresolvable step and fail the whole compose,
+# so the routing pass keeps it with the task (see
+# ``_route_task_verification_commands``).
 #
 # The step IDs are BARE (no ``default:`` prefix) per the boundary-
 # normalization contract: the candidate lists are stripped to bare names at

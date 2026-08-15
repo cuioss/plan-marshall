@@ -22,8 +22,10 @@ HANDSHAKE_FIELDS = [
     'override_reason',
     'main_sha',
     'main_dirty',
-    # ``main_dirty_files`` is a TOON list field (sorted, ``.plan/``-filtered
-    # path set) captured every boundary as the layer-D drift baseline. Its
+    # ``main_dirty_files`` is a TOON list field (sorted dirty-path set with the
+    # ``.plan/`` exemption keyed on git trackedness — untracked plan state
+    # dropped, a tracked ``.plan/`` file retained as a leak) captured every
+    # boundary as the layer-D drift baseline. Its
     # paired drift check lives in ``_handshake_commands._check_main_dirty_drift``
     # and raises ``MainCheckoutDirtiedDuringPlan`` on proper-superset drift
     # against the previous captured row. The scalar ``main_dirty`` column

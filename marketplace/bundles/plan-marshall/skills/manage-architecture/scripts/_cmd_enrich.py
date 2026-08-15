@@ -17,6 +17,7 @@ from typing import Any
 from _architecture_core import (
     DataNotFoundError,
     ModuleNotFoundInProjectError,
+    NonResolvingPathKeyError,
     crawl_all_modules,
     get_module_enriched_path,
     handle_module_not_found_result,
@@ -28,6 +29,7 @@ from _architecture_core import (
     require_project_meta_result,
     save_module_enriched,
     save_project_meta,
+    validate_package_key,
 )
 
 # =============================================================================
@@ -125,8 +127,15 @@ def enrich_package(
     project_dir: str = '.',
     components: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Add or update key package description and components."""
+    """Add or update key package description and components.
+
+    The package key is a repo-relative PATH (path is identity, D1): it must
+    resolve to a real filesystem location under the project root. A non-resolving
+    key — a dotted pseudo-identifier, an absolute path, or a path to nothing — is
+    refused with :class:`NonResolvingPathKeyError` rather than persisted.
+    """
     _load_module_or_raise(module_name, project_dir)
+    validate_package_key(package_name, project_dir)
 
     enriched = load_module_enriched_or_empty(module_name, project_dir)
 
@@ -180,6 +189,17 @@ def _validate_skills_by_profile_structure(skills_by_profile: dict[str, Any]) -> 
         if not isinstance(profile_data, dict):
             warnings.append(f"Profile '{profile_name}' must be a dict, got {type(profile_data).__name__}")
             continue
+        # A profile MAY positively declare itself deliberately minimal via a
+        # boolean `minimal` flag (see architecture-persistence.md § "Skills by
+        # Profile"). The declaration is validated fail-closed: a non-boolean
+        # value is a malformed declaration, not a silent truthy pass, so an
+        # empty profile carrying `"minimal": "true"` still surfaces the
+        # unresolved-profile condition on read.
+        if 'minimal' in profile_data and not isinstance(profile_data['minimal'], bool):
+            warnings.append(
+                f"Profile '{profile_name}.minimal' must be a boolean, "
+                f'got {type(profile_data["minimal"]).__name__}'
+            )
         for section in ['defaults', 'optionals']:
             entries = profile_data.get(section, [])
             if not isinstance(entries, list):
@@ -594,6 +614,8 @@ def cmd_enrich_package(args: argparse.Namespace) -> dict[str, Any]:
         return enrich_package(args.module, args.package, args.description, args.project_dir, components)
     except ModuleNotFoundInProjectError:
         return handle_module_not_found_result(args.module, args.project_dir)
+    except NonResolvingPathKeyError as e:
+        return {'status': 'error', 'error': 'non_resolving_package_key', 'message': str(e)}
     except DataNotFoundError:
         return require_project_meta_result(args.project_dir)
     except Exception as e:

@@ -166,14 +166,16 @@ Files 2 pending `sonar-issue` findings; `mark-step-done --outcome done --head-at
 
 `sonar-roundtrip` is the later of the two wait-region producers in manifest order, so its `done` outcome triggers item 7c — the dispatcher runs ONE unified triage over the union.
 
-**Steps 2–3 (resolve level):**
+**Steps 2–3 (resolve level):** The resolve carries the dispatch context, so the seam emits the `[DISPATCH]` work-log line and the paired decision-log resolution record itself — no separate logging step (per [`dispatch-logging.md`](dispatch-logging.md) § "Emission contract"):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-6-finalize --role verification-feedback
+  effort resolve-target --phase phase-6-finalize --role verification-feedback \
+  --workflow plan-marshall:plan-marshall/workflow/verification-feedback.md \
+  --plan-id feature-jwt-auth --caller plan-marshall:phase-6-finalize
 ```
 
-Returns `target: execution-context-level-3`.
+Returns `target: execution-context-level-3`; the same call has already written the finalize `[DISPATCH]` line under `(plan-marshall:phase-6-finalize)`.
 
 **Step 4 (prompt body — no findings list inline):**
 

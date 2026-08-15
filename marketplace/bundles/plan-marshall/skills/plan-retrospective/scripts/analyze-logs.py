@@ -44,6 +44,7 @@ from _footprint_resolver import (
     read_captured_footprint,
     resolve_merge_commit_footprint,
 )
+from _ledger_core import read_entries
 from _references_core import (
     compute_plan_branch_diff,
     resolve_base_ref,
@@ -119,6 +120,58 @@ _GLOBAL_LOG_FIXTURE_LEAK_RE = re.compile(
     r'\bfake-[a-z0-9-]*bundle\b|\bidem-bundle\b|\braising-bundle\b|\borphan-md-[a-z0-9-]+\b',
     re.IGNORECASE,
 )
+
+
+# A ledger row carries the bare execution-time ``plan_id``; an archived plan dir
+# is named ``{YYYY-MM-DD}-{plan_id}``, so the date prefix is stripped when the
+# plan key is derived from an archived path. A live plan_id has no prefix.
+_LEDGER_DATE_PREFIX_RE = re.compile(r'^\d{4}-\d{2}-\d{2}-')
+
+
+def summarize_build_ledger(plan_key: str) -> dict[str, Any]:
+    """Sum this plan's build time from the change-ledger — the build-time ORACLE.
+
+    Reads the single append-only change-ledger
+    (``<tracked-config>/work/change-ledger.jsonl``), keeps this plan's
+    ``kind=build`` rows (matched on the bare ``plan_id``), and returns the plan's
+    total build seconds plus the pass/error/timeout/killed status ratio. Because
+    the ledger records ``command`` per build system and is written in every phase,
+    the total spans EVERY build system and EVERY phase — not just the pyproject
+    builds a plan happened to log.
+
+    SUSPECT-ZERO rule: a row whose ``duration_seconds`` is ``0`` / absent /
+    non-numeric is counted in ``suspect_count`` and is NOT summed into
+    ``total_build_seconds`` — never averaged in as a fabricated zero. When
+    ``suspect_count > 0`` the total is a FLOOR. ``killed`` is counted SEPARATELY
+    from ``error`` (an infrastructure kill is not a red build). Best-effort: a
+    plan with no ledger rows returns an all-zero block (``build_count: 0``), which
+    the reader treats as "unavailable", never as "no builds ran".
+    """
+    status_keys = ('success', 'error', 'timeout', 'killed', 'unknown')
+    status_counts = dict.fromkeys(status_keys, 0)
+    total = 0.0
+    build_count = 0
+    suspect_count = 0
+    for entry in read_entries():
+        if entry.get('kind') != 'build' or entry.get('plan_id') != plan_key:
+            continue
+        build_count += 1
+        status = entry.get('status')
+        status_counts[status if status in status_counts else 'unknown'] += 1
+        dur = entry.get('duration_seconds')
+        if isinstance(dur, bool) or not isinstance(dur, (int, float)) or dur <= 0:
+            suspect_count += 1
+        else:
+            total += float(dur)
+    return {
+        'total_build_seconds': round(total, 3),
+        'build_count': build_count,
+        'suspect_count': suspect_count,
+        'pass': status_counts['success'],
+        'error': status_counts['error'],
+        'timeout': status_counts['timeout'],
+        'killed': status_counts['killed'],
+    }
 
 
 def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
@@ -518,6 +571,56 @@ def detect_outcome_for_diffed_tasks(
 
     missing = sorted(done_tasks - outcomes)
     return {'tasks_with_diff_no_outcome': missing}
+
+
+def artifact_emission_population(
+    work_log_lines: list[str], plan_dir: Path
+) -> dict[str, Any]:
+    """Publish per-task ARTIFACT emission as a POPULATION, not a non-zero floor.
+
+    Per-task ``[ARTIFACT] (plan-marshall:phase-5-execute:{N}) Wrote {path}`` lines
+    are hand-emitted at task completion, one per changed file, and a completed
+    task with an empty diff emits none by design. A count-based guard
+    (``artifact_entries == 0``) is therefore a FLOOR: it fires only when the whole
+    plan emitted zero and is satisfied by any single artifact even when most
+    completed tasks emitted nothing. That partiality reads to a consumer as "few
+    artifacts produced" when the real signal may be "emission was bypassed" — a
+    count-based detector cannot guard a per-item emission defect.
+
+    This states BOTH numbers instead — ``N of M completed tasks emitted >= 1
+    [ARTIFACT] line`` — so a consumer cannot read a partial count as a total.
+    ``M`` (``completed_tasks``) is the completed-task population (task files with
+    ``status: done``); ``N`` (``tasks_with_artifacts``) is the subset carrying at
+    least one per-task artifact line. Tasks are keyed by their numeric id so the
+    ``TASK-007`` file matches an ``…:7)`` caller regardless of zero-padding.
+    """
+    done_task_nums: set[int] = set()
+    tasks_dir = plan_dir / 'tasks'
+    if tasks_dir.exists():
+        for task_path in sorted(tasks_dir.glob('TASK-*.json')):
+            try:
+                task_data = json.loads(task_path.read_text(encoding='utf-8'))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if task_data.get('status') != 'done':
+                continue
+            num_match = re.search(r'TASK-(\d+)', task_path.stem)
+            if num_match:
+                done_task_nums.add(int(num_match.group(1)))
+
+    artifact_task_nums: set[int] = set()
+    for line in work_log_lines:
+        match = _ARTIFACT_TASK_RE.search(line)
+        if match:
+            artifact_task_nums.add(int(match.group(1)))
+
+    emitted = done_task_nums & artifact_task_nums
+    missing = sorted(done_task_nums - artifact_task_nums)
+    return {
+        'completed_tasks': len(done_task_nums),
+        'tasks_with_artifacts': len(emitted),
+        'tasks_without_artifacts': [f'TASK-{num:03d}' for num in missing],
+    }
 
 
 # Dispatch-boundary row schema, consumed from the producer's declared contract.
@@ -960,6 +1063,35 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
 
+    # Per-task ARTIFACT emission as a POPULATION statement (D4). The plan-level
+    # ``artifact_entries == 0`` floor above cannot see per-task partiality — it is
+    # satisfied by a single artifact even when most completed tasks emitted none.
+    # Stating ``N of M completed tasks emitted`` makes that partiality legible so a
+    # consumer cannot read a partial count as a total. The population is ALWAYS
+    # published (below); the WARNING fires only for unambiguous partiality —
+    # ``0 < N < M`` — where the per-task emitting path is demonstrably in use yet
+    # incomplete. ``N == 0`` is left to the plan-level floor and the published
+    # population (a plan may simply not use per-task emission), and ``N == M`` is
+    # complete. The finding always carries both numbers, never a bare non-zero
+    # assertion.
+    artifact_emission = artifact_emission_population(work, plan_dir)
+    if 0 < artifact_emission['tasks_with_artifacts'] < artifact_emission['completed_tasks']:
+        missing_count = (
+            artifact_emission['completed_tasks'] - artifact_emission['tasks_with_artifacts']
+        )
+        findings.append(
+            {
+                'severity': 'warning',
+                'message': (
+                    f'ARTIFACT_EMISSION_PARTIAL: {artifact_emission["tasks_with_artifacts"]} of '
+                    f'{artifact_emission["completed_tasks"]} completed task(s) emitted >= 1 '
+                    f'[ARTIFACT] line ({missing_count} emitted none). A completed task with an '
+                    'empty diff legitimately emits nothing; a broad gap indicates the emitting '
+                    'path was bypassed. See logging-gap-analysis.md § ARTIFACT_EMISSION.'
+                ),
+            }
+        )
+
     # Phase-5 logging-gap fact extractors (lesson 2026-05-08-14-001).
     # Pure counting/pairing — judgement lives in the LLM rules.
     voluntary_checkpoint_polling = detect_voluntary_checkpoint_polling(work)
@@ -1026,10 +1158,20 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
 
+    # Build time from the change-ledger (the build-time ORACLE): the total spans
+    # every build system and every phase, with the pass/error/timeout/killed ratio
+    # (killed SEPARATE) and the suspect-zero rule applied. The plan_efficiency
+    # aspect READS `total_build_seconds` from this block into its `totals`.
+    plan_ledger_key = _LEDGER_DATE_PREFIX_RE.sub(
+        '', args.plan_id or Path(args.archived_plan_path or '').name
+    )
+    build_time = summarize_build_ledger(plan_ledger_key)
+
     return {
         'status': 'success',
         'aspect': 'log_analysis',
         'plan_id': args.plan_id or Path(args.archived_plan_path or '').name,
+        'build_time': build_time,
         'counts': {
             'work_entries': len(work),
             'decision_entries': len(decision),
@@ -1040,6 +1182,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             'warnings_script': script_levels['WARNING'],
             'artifact_entries': artifact_entries,
         },
+        'artifact_emission': artifact_emission,
         'phases_seen': extract_phases(work + decision),
         'script_duration_p50_ms': round(percentile(duration_values, 50.0), 3),
         'script_duration_p95_ms': round(percentile(duration_values, 95.0), 3),

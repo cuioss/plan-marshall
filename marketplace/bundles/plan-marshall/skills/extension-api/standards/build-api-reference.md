@@ -84,7 +84,14 @@ exit_code	0
 duration_seconds	45
 log_file	.plan/local/plans/{plan_id}/build-results/default/{tool}-{timestamp}.log
 command	{wrapper} {args}
+tests_run	40
 ```
+
+`tests_run` is the number of tests this run executed (0 for a non-test command
+such as `compile`, or a test command that collected nothing). It is the
+population the green-build finding reconciliation is decided on: a `test-failure`
+finding is cleared by a green build only when `tests_run > 0`, so a build that
+tested nothing cannot clear a stale test failure.
 
 Build Failure:
 ```text

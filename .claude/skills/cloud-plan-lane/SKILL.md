@@ -421,6 +421,41 @@ Both commands run from the repository root:
 Narrower calls when you need them: `./pw module-tests` (tests only), `./pw compile`. Append a bundle
 name to scope to one module, e.g. `./pw verify plan-marshall`.
 
+**Running one test file to watch it fail first.** None of the `./pw` sub-commands runs a *single*
+test file — they are the whole suite or a whole module — and `pytest` is not on the session
+interpreter. When a new test warrants the red-before-green check (observe it fail before the fix
+exists, so a vacuous test cannot pass silently), run that one file through `uv` with the same
+interpreter pin `./pw` uses, from the repository root:
+
+```bash
+UV_PYTHON=3.12 UV_HTTP_TIMEOUT=600 uv run pytest {path/to/test_file.py}
+```
+
+This runs in seconds against one file instead of the whole `verify` suite, and never substitutes for
+the Step 5 gate — the full `./pw verify` still runs over the branch diff before the PR.
+
+**Gate on the full `./pw verify` — the narrower calls do not add up to it.** `./pw verify` is exactly
+three sub-steps: **quality-gate** (`ruff`/`mypy` over `*.py` sources, SPDX, plugin-doctor),
+**test-compile** (`mypy` over the whole `test/` tree), and **module-tests** (`pytest`). Only
+`test-compile` type-checks the tests, and *neither* `quality-gate` *nor* `module-tests` runs it. So do
+not substitute `./pw quality-gate` + a scoped `./pw module-tests` for the gate: that pair goes green
+while a test-only type error slips straight through to CI, which runs the full `verify`. The classic
+shape is a dynamically-loaded class (`load_script_module`) bound to a module-level name and then used
+as a type annotation — legal at runtime, but `mypy` rejects a variable used as a type, so it is green
+locally under the narrower calls and red on CI's `test-compile`. Run the full `./pw verify` (scope it
+to a bundle if you must, but keep all three sub-steps).
+
+**For fast iterative red/green checks on specific test files, `uv run` is far faster than `./pw` — but
+it is NOT the gate.** `uv` is on `PATH` in a cloud session and resolves the same pyproject-defined
+environment `./pw` uses, so `uv run python -m pytest <path> -o addopts=""` runs a targeted subset in
+about a second (after the first dependency fetch) instead of routing every check through
+`./pw module-tests` (whole-suite, minutes). Use it to iterate — confirming a test goes red before a fix
+and green after, or re-checking one file you just edited — and reserve the full `./pw verify` for the
+authoritative gate before the PR (nothing about the gate changes). The `-o addopts=""` clears the repo's
+default pytest options (coverage, `--durations`) for a clean single-file run; it alters nothing the gate
+checks. An observed run drove the red-first test verification and every incremental test-update check
+this way — order-of-seconds each — then ran `./pw verify` once, unchanged, as the gate.
+
 Give every `./pw` call a Bash timeout of at least **600000 ms (10 minutes)**.
 
 Also export **`UV_HTTP_TIMEOUT=600`** (or higher) on every `./pw` call in a cloud session. The wrapper

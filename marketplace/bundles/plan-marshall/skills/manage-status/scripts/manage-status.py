@@ -423,6 +423,19 @@ def main() -> int:
             'historical record shape with no facts key.'
         ),
     )
+    mark_step_parser.add_argument(
+        '--no-completion-log',
+        action='store_true',
+        help=(
+            'Suppress the fused [STEP] Completed step: work-log line this call would '
+            'otherwise emit for a phase-6-finalize step (see _cmd_mark_step.py). Pass it '
+            'ONLY on a call that RE-STAMPS an already-emitted step outcome — the '
+            'phase-6-finalize item-5f head_at_completion re-stamp — so the completion line '
+            'is emitted exactly once per step rather than once per mark-step-done call. A '
+            'first terminal recording never passes it (the item-7a merge-anyway resolution '
+            "is the escalate-ask step's first and only terminal write, so it MUST emit)."
+        ),
+    )
     mark_step_parser.set_defaults(func=cmd_mark_step_done)
 
     # assert-step-recorded — read-only post-dispatch guard over phase_steps.

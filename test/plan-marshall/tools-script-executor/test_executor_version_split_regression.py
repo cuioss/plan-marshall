@@ -10,19 +10,13 @@ the notation->path mappings come from the ``find_bundles`` leg while the
 ``sys.path`` / PYTHONPATH entries come from the ``resolve_bundle_path`` and
 ``collect_script_dirs`` legs, and both land in the SAME emitted file.
 
-The defect this pins: those legs used to disagree about whether ``.orphaned_at``
-disqualifies a candidate, so with the newest dir marked and an older dir unmarked
-the mappings resolved under one version dir while the import paths resolved under
-another — a perfectly parseable, fully substituted, internally version-split
-executor that every existing shape check reported as green.
-
-Pre-fix behaviour of case 1 (documented, not executed here — the pre-fix code is
-not importable from this branch): ``find_bundles`` was marker-aware and would
-return the older ``1.0.0`` dir, while ``collect_script_dirs`` /
-``resolve_bundle_path`` were marker-blind and returned the marked ``1.0.10`` dir.
-Both version strings would therefore appear in the emitted executor and
-``test_newest_marked_never_writes_a_mixed_version_executor`` would fail on its
-"exactly one version dir per bundle" assertion.
+The property this pins: every leg resolves through the single
+``select_live_version_dir`` selector (numerically-newest eligible dir, with the
+``.orphaned_at`` marker never consulted), so the mappings leg and the import-path
+legs always land on the SAME version dir and no on-disk marker state can produce
+an internally version-split executor. The fixtures carry ``.orphaned_at`` marks
+on various dirs precisely to prove those marks change nothing: the newest
+eligible dir is chosen regardless.
 
 No ``conftest.py`` is added under this directory; every helper lives here.
 """
@@ -31,7 +25,7 @@ import json
 import re
 from pathlib import Path
 
-from marketplace_bundles import find_bundles
+from marketplace_bundles import find_bundles, select_live_version_dir
 
 from conftest import load_script_module
 
@@ -287,7 +281,7 @@ def _assert_generated_resolver_agrees(tmp_path, monkeypatch, marked: tuple[str, 
     runtime_cache = _seed_runtime_cache(home, marked=marked)
     monkeypatch.setattr(Path, 'home', lambda: home)
 
-    expected = gen.select_live_version_dir(
+    expected = select_live_version_dir(
         runtime_cache, lambda d: (d / 'skills' / 'miss-skill' / 'scripts' / 'absent.py').is_file()
     )
     assert expected is not None

@@ -6,6 +6,12 @@ on:
       - 'marketplace/bundles/**'
       - 'marketplace/targets/**'
 
+# The job only checks out the code and runs the generator; it never writes to the
+# repository or the PR. Declare read-only content access so the token cannot
+# inherit a read-write repository/organisation default.
+permissions:
+  contents: read
+
 jobs:
   generate-check:
     runs-on: ubuntu-latest

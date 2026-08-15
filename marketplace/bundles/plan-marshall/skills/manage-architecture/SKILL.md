@@ -193,12 +193,12 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
 
 ## Step 7: Key Packages & Dependencies
 
-Select 2-4 architecturally significant packages per module (choose packages that represent the module's core abstractions, public API, or key implementation concerns):
+Select 2-4 architecturally significant packages per module (choose packages that represent the module's core abstractions, public API, or key implementation concerns). The `--package` key is a **repo-relative path** (path is identity) — it must resolve to a real filesystem location; a non-resolving key is refused:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture \
   enrich package --module {module-name} \
-  --package {full.package.name} \
+  --package {repo-relative-path-to-package} \
   --description "{1-2 sentence description}"
 ```
 
@@ -573,6 +573,8 @@ python3 .plan/execute-script.py plan-marshall:manage-architecture:architecture e
   --module MODULE --package PACKAGE --description TEXT \
   [--components LIST]
 ```
+
+`--package` is a **repo-relative path** (path is identity, not a dotted package name); it must resolve to a real filesystem location, else the write is refused with `error: non_resolving_package_key`.
 
 ### enrich skills-by-profile
 

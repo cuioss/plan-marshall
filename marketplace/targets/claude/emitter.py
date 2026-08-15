@@ -26,6 +26,7 @@ from marketplace.targets.claude.variant_emitter import (
     VariantEmissionResult,
     emit_variants_for_agent,
 )
+from marketplace.targets.fs_safety import is_within, safe_rmtree
 
 EXCLUDED_DIR_NAMES = frozenset({'__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache'})
 
@@ -86,15 +87,32 @@ def emit_bundle_verbatim(bundle_dir: Path, output_dir: Path) -> list[Path]:
 
     The destination bundle directory is wiped before writing so stale
     artifacts from prior emits (e.g. variant files for source canonicals
-    that have since been removed) do not linger. Target/claude/ is a pure
-    build output (gitignored, regenerable), so the wipe is safe; the
-    top-level ``target/claude/.claude-plugin/`` directory holding the
-    marketplace.json sits outside any per-bundle dir and is untouched.
+    that have since been removed) do not linger. The wipe is **guarded**,
+    not assumed safe: it is refused outright when the resolved destination
+    lies inside the source tree (``bundle_dir.parent``), and
+    :func:`safe_rmtree` independently refuses any target outside the
+    resolved ``output_dir``. Gitignored-ness of the intended
+    ``target/claude/`` destination is NOT the safeguard — that reasoning
+    holds only for the intended path and says nothing about a mistyped
+    ``output_dir`` pointing at real source, which the source-tree guard
+    below refuses before a single byte is deleted. The top-level
+    ``target/claude/.claude-plugin/`` directory holding the marketplace.json
+    sits outside any per-bundle dir and is untouched.
     """
     bundle_name = bundle_dir.name
     dest_root = output_dir / bundle_name
+    # Refuse to wipe a destination that overlaps the source tree: a mistyped
+    # ``output_dir`` pointing at ``marketplace/bundles`` would otherwise make
+    # ``dest_root`` the bundle's own source dir and this wipe destroy it.
+    source_root = bundle_dir.parent
+    if is_within(dest_root, source_root):
+        raise ValueError(
+            f'Refusing to wipe {dest_root.resolve()}: it lies inside the source tree '
+            f'{source_root.resolve()} — the output directory must be a distinct build '
+            'location, not the marketplace source'
+        )
     if dest_root.exists():
-        shutil.rmtree(dest_root)
+        safe_rmtree(dest_root, output_dir)
     dest_root.mkdir(parents=True, exist_ok=True)
 
     written: list[Path] = []

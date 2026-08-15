@@ -94,7 +94,7 @@ Compose and write the execution manifest from inputs gathered at the end of phas
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
   compose \
   --plan-id {plan_id} \
-  --change-type {change_type} \
+  --plan-change-type {change_type} \
   --track {simple|complex} \
   --scope-estimate {none|surgical|single_module|multi_module|broad} \
   [--recipe-key {recipe_key}] \
@@ -107,7 +107,7 @@ python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-e
 
 **Parameters**:
 - `--plan-id` (required): Plan identifier (kebab-case)
-- `--change-type` (required): `analysis|feature|enhancement|bug_fix|tech_debt|verification`
+- `--plan-change-type` (required): `analysis|feature|enhancement|bug_fix|tech_debt|verification`. This is the PLAN-scoped change type — a distinct scope from a deliverable's local `change_type`. The composer reconciles it against the plan's **settled classification** at `status.metadata.change_type`: when a settled classification exists, the supplied value MUST agree with it, otherwise compose returns `change_type_scope_conflict` (naming both values) rather than silently narrowing the whole plan on a deliverable-scoped value. When no settled classification exists, the supplied value stands alone. The flag was renamed from `--change-type` so a caller cannot pass a deliverable's kind where the plan's classification is meant. See [decision-rules.md](standards/decision-rules.md) § "change_type scope reconciliation".
 - `--track` (required): `simple|complex` — outline track from phase-3-outline
 - `--scope-estimate` (required): `none|surgical|single_module|multi_module|broad` — from solution outline metadata (deliverable 2)
 - `--recipe-key` (optional override): Forces the `recipe` rule. When omitted, the composer reads the provenance itself from `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`), so lesson- and recipe-derived plans select the `recipe` rule without the caller forwarding this flag.
@@ -124,6 +124,10 @@ plan_id: EXAMPLE-PLAN
 file: execution.toon
 created: true
 manifest_version: 1
+change_type_scope: settled
+effective_change_type: bug_fix
+settled_change_type: bug_fix
+supplied_change_type: bug_fix
 phase_5:
   early_terminate: false
   verification_steps_count: 2
@@ -159,6 +163,8 @@ lane_warnings[0]:
 
 Every field that can name more than one dropped step is a `{step, reason}` **record list**, not a boolean — `commit_push_dropped`, `decision_matrix_dropped`, `security_class_omitted`, `unresolved_ask_provider_dropped`, `lane_dropped`, and the two `scope_gated_finalize_*` lists. A boolean cannot say *which* step went or *why*, and each such field pairs with one `[STATUS]` `decision.log` line per record. **Not every multi-step field has reached that shape yet.** `ceremony_finalize_forced_out`, `scope_gated_finalize_dropped`, `scope_gated_finalize_immune`, and `unresolved_ask_provider_dropped` are still emitted as bare step-id lists: each reports *which* steps went but not *why*, and in some cases (`ceremony_finalize_forced_out`) a per-entry reason is available upstream and discarded by the compose-result projection. Treat `cmd_compose`'s return dict in [`scripts/manage-execution-manifest.py`](scripts/manage-execution-manifest.py) as the authority on each field's actual shape rather than inferring it from this paragraph. `pre_push_quality_gate_omitted` and `simplify_omitted` stay booleans because each names one fixed step; `build_verdict_decision` carries the build verdict verbatim (`build` / `not_necessary` / `unknown`) so an `unknown` verdict — which KEEPS the gate — is distinguishable from a `build` one. The full convention is normative in [`standards/decision-rules.md`](standards/decision-rules.md) § "Every subtraction is reported".
 
+**change_type scope record.** `change_type_scope` names which scope drove every change-type-gated decision this compose made: `settled` when the plan's authoritative classification at `status.metadata.change_type` was present and used, or `supplied` when no settled classification existed and the caller-supplied `--plan-change-type` value stood alone. `effective_change_type` is the value actually consumed by the decision matrix and pre-filters; `settled_change_type` and `supplied_change_type` carry the two candidate inputs (either may be `null`/absent). This makes the narrowing auditable after the fact — a run can no longer disagree with itself about which change type narrowed the plan. A supplied value that contradicts a present settled classification never reaches this output: compose returns `change_type_scope_conflict` instead. See [decision-rules.md](standards/decision-rules.md) § "change_type scope reconciliation".
+
 #### Compose-time step-resolution gate
 
 As its final gate — after the frontmatter-order sort, over the FINAL emitted `phase_5.verification_steps` and `phase_6.steps` — `compose` resolves every emitted step id and **fails loud** on the first one that does not resolve. This closes the gap left by `validate-loadable`, which only checks built-in standards-file presence and short-circuits every external (`project:` / `bundle:skill`) step to `loadable: true`: a never-existed `bundle:skill` key, a renamed/removed `project:` skill, or a built-in doc deleted without sweeping `marshal.json` would otherwise compose silently and fail only much later at dispatch time.
@@ -171,7 +177,7 @@ Resolution is keyed on the step-id shape and the phase:
 - **phase-6 external `bundle:skill`** step resolves iff its (normalized) id is a discovered `ext-point-finalize-step` implementor name (the same `extension_discovery.find_implementors` query the finalize/verify seed and discovery surfaces use — the SOLE discovery path).
 - **phase-6 built-in** step (bare / `default:`) keeps the existing standards/workflow file check.
 
-On the first unresolvable id, `compose` returns `status: error`, `error: unresolvable_step`, and a `message` naming the offending **original `marshal.json` key** (mapped back from the boundary-normalized emitted id via `marshal_phase_{5,6}_map`) and the phase — plus `phase`, `step_id`, and `marshal_key` fields — and emits one `decision.log` line. The gate never writes a partial manifest: the error returns before the step-params snapshot and `write_manifest`.
+On the first unresolvable id, `compose` returns `status: error`, `error: unresolvable_step`, and a `message` naming the offending step's **provenance** and the phase — plus `phase`, `step_id`, and `marshal_key` fields — and emits one `decision.log` line. The provenance distinguishes the two origins an emitted id can have: a **marshal.json-authored** step names the original `marshal.json` key (mapped back from the boundary-normalized emitted id via `marshal_phase_{5,6}_map`); a **phase-5 routed** step — one appended by the `execution_tier` COMMAND routing pass from a derived `verification.commands` entry, so absent from the marshal step map — is named as NOT authored in marshal.json but emitted by `architecture derive-verification`, so a reader traces it to the emitting build verb rather than a non-existent key. The gate never writes a partial manifest: the error returns before the step-params snapshot and `write_manifest`.
 
 ```toon
 status: error
@@ -457,7 +463,7 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
-| `compose` | `--plan-id --change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count]` | Compose and write execution.toon (`--phase-5-steps`/`--phase-6-steps` are fallback-only — `marshal.json` is the authoritative candidate source) |
+| `compose` | `--plan-id --plan-change-type --track --scope-estimate [--recipe-key] [--affected-files-count] [--phase-5-steps] [--phase-6-steps] [--commit-and-push] [--envelope-count]` | Compose and write execution.toon (`--phase-5-steps`/`--phase-6-steps` are fallback-only — `marshal.json` is the authoritative candidate source; `--plan-change-type` is reconciled against the settled `status.metadata.change_type`) |
 | `read` | `--plan-id` | Read manifest as TOON |
 | `lanes preview` | `--plan-id [--phase-6-steps]` | Resolve the minimal/standard/full phase-6 step sets + cost sums in one TOON (the posture-dialogue projection) |
 | `record-step` | `--plan-id --step-id --phase {5-execute\|6-finalize} --outcome {executed\|skipped\|error} [--total-tokens] [--tool-uses] [--duration-ms]` | Append a per-step execution-log row (outcome + token attribution) to execution.toon |
@@ -477,13 +483,14 @@ The bulk form requires the manifest to exist on disk; if it does not, the script
 |------------|-------|
 | `invalid_plan_id` | plan_id format invalid |
 | `file_not_found` | execution.toon doesn't exist (read/validate) |
-| `invalid_change_type` | --change-type not in the valid enum |
+| `invalid_change_type` | --plan-change-type not in the valid enum |
+| `change_type_scope_conflict` | `compose` — the supplied `--plan-change-type` (a DELIVERABLE-scoped value) contradicts the plan's settled classification at `status.metadata.change_type` (the PLAN scope). Fail-loud; names BOTH values (`settled_change_type`, `supplied_change_type`); writes no manifest. A plan with NO settled classification never trips this — the supplied value stands alone |
 | `invalid_scope_estimate` | --scope-estimate not in the valid enum |
 | `invalid_track` | --track not `simple` or `complex` |
 | `invalid_phase` | `record-step` --phase not `5-execute` or `6-finalize` |
 | `invalid_outcome` | `record-step` --outcome not `executed`, `skipped`, or `error` |
 | `invalid_manifest` | Manifest schema invalid or step IDs unknown; or `step-params set` target section malformed |
-| `unresolvable_step` | `compose` — a FINAL emitted phase-5/6 step id resolves to no built-in doc, project-local skill, or bundle discovery-registry entry (fail-loud; names the offending `marshal.json` key and phase) |
+| `unresolvable_step` | `compose` — a FINAL emitted phase-5/6 step id resolves to no built-in doc, project-local skill, or bundle discovery-registry entry (fail-loud; names the offending step's provenance — the `marshal.json` key for an authored step, or the derive-verification routing origin for a routed phase-5 step — and phase) |
 | `phase_6_order_violation` | `compose` — the FINAL composed `phase_6.steps` is not verifiably in ascending frontmatter `order`: either an `order_inversion` (a step precedes one with a lower `order`) or an `unresolvable_order` (a built-in / `project:` step whose `order` does not resolve, so its pinned position cannot be verified). Fail-loud; names the offending `step_id`, the `reason`, and `phase`; writes no partial manifest |
 | `non_canonical_step` | `compose` — a FINAL emitted phase-5/6 step id is not in canonical form (`canonicalize_step_key(step_id) != step_id`; a `default:` prefix or promoted-alias bundle spelling slipped past intake normalization). Fail-loud; names the offending `step_id`, its `canonical` form, and phase; writes no partial manifest |
 | `invalid_arguments` | `validate-loadable` invoked without exactly one of `--step-id` / `--all` |
@@ -504,7 +511,7 @@ section by name (e.g., "see `manage-execution-manifest` Canonical invocations �
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest compose \
   --plan-id PLAN_ID \
-  --change-type {analysis|feature|enhancement|bug_fix|tech_debt|verification} \
+  --plan-change-type {analysis|feature|enhancement|bug_fix|tech_debt|verification} \
   --track {simple|complex} \
   --scope-estimate {none|surgical|single_module|multi_module|broad} \
   [--recipe-key KEY] [--affected-files-count N] \
@@ -613,9 +620,12 @@ After the six-row matrix and `execution_tier` routing produce the final `phase_5
 
 ### Command-level execution_tier routing (`execution_tier_routing`)
 
-Before the per-step stamping below, the composer walks every task's `verification.commands` and routes each build command by its resolved `execution_tier` (see [standards/decision-rules.md](standards/decision-rules.md) § "execution_tier Routing" for the full predicate). For `orchestrator`-tier commands the verb maps to a bare phase-5 step ID: the four canonical verbs route through the `_VERB_TO_PHASE_5_STEP` fast path (`quality-gate` / `verify` / `module-tests` / `coverage`), and **every other parseable verb generalizes to the bare `verify:{verb}` step** — the command is removed from the task in both cases, so no leaf ever runs an orchestrator-tier command inline. Each non-canonical routed verb is named in its own `decision.log` line (canonical prefix `(plan-marshall:manage-execution-manifest:compose) execution_tier routing`), in addition to the summary line carrying `mutated_tasks` and the final step list.
+Before the per-step stamping below, the composer walks every task's `verification.commands` and routes each build command by its resolved `execution_tier` (see [standards/decision-rules.md](standards/decision-rules.md) § "execution_tier Routing" for the full predicate). For `orchestrator`-tier commands the verb maps to a bare phase-5 step ID: the four canonical verbs route through the `_VERB_TO_PHASE_5_STEP` fast path (`quality-gate` / `verify` / `module-tests` / `coverage`), and every other parseable verb generalizes to the bare `verify:{verb}` step and routes to it — the command is removed from the task, so no leaf runs it inline. (A custom / unknown verb whose `verify:{verb}` is unresolvable still routes here, then fails loud at the compose-time resolution gate; only the two kinds named below are kept with the task instead.) Each non-canonical routed verb is named in its own `decision.log` line (canonical prefix `(plan-marshall:manage-execution-manifest:compose) execution_tier routing`), in addition to the summary line carrying `mutated_tasks` and the final step list.
 
-**Raw-shell limitation**: only commands in the canonical Bucket B build shape (`python3 .plan/execute-script.py plan-marshall:build-*:... run --command-args "..."`) carry a parseable verb. A raw-shell or non-`plan-marshall:build-` command that the tier classifier nonetheless labels `orchestrator` cannot be verb-routed — it is deliberately left in the task's `verification.commands` so the mapping mismatch stays observable at the next compose, rather than being silently dropped.
+**Two kinds of orchestrator-tier command are kept with the task instead of routing** — both stay in the task's `verification.commands` so the mismatch stays observable at the next compose, rather than being silently dropped or routed to a step that fails compose:
+
+- **Raw-shell / non-build**: only commands in the canonical Bucket B build shape (`python3 .plan/execute-script.py plan-marshall:build-*:... run --command-args "..."`) carry a parseable verb. A raw-shell or non-`plan-marshall:build-` command that the tier classifier nonetheless labels `orchestrator` cannot be verb-routed and is left in the task.
+- **Build-phase-canonical carve-out**: `derive-verification` legitimately emits `compile` and `test-compile` — known canonical build commands with no phase-5 verify gate. Routing either to `verify:compile` / `verify:test-compile` would append an unresolvable step and fail the whole compose (`unresolvable_step`), so the routing pass keeps such a command with the task (the per_task fallback the leaf re-resolves live). The carve-out is restricted to KNOWN canonical commands (the vocabulary registry) so a genuinely custom / typo'd verb still routes and fails loud.
 
 **Interaction with per-step stamping**: routing runs first and may append `verify:{verb}` entries to `phase_5.verification_steps`; the stamping pass below then resolves a tier for the FINAL list, so every routed step — canonical or generalized — receives a stamped `{step_id, tier}` record. A generalized `verify:{verb}` whose canonical is unresolvable stamps to the `per_task` permissive default per the stamping rule.
 

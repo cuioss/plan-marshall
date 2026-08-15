@@ -261,3 +261,21 @@ def test_missing_per_bundle_target_returns_diagnostic(clean_marketplace: tuple[P
     assert 'demo' in result.summary
     assert 'missing' in result.summary
     assert result.missing_target_bundles == ['demo']
+
+
+def test_corrupt_emitted_plugin_json_returns_diagnostic(clean_marketplace: tuple[Path, Path]):
+    """A corrupt (invalid JSON) emitted plugin.json returns the documented
+    're-run emit' diagnostic instead of crashing the equality CLI with a
+    traceback — mirroring the adjacent, already-guarded marketplace.json read.
+    """
+    marketplace, target = clean_marketplace
+    plugin_path = target / 'demo' / '.claude-plugin' / 'plugin.json'
+    plugin_path.write_text('{ not valid json ', encoding='utf-8')
+
+    bundles = list(iter_bundle_dirs(marketplace, None))
+    # Must return a structured result, NOT raise json.JSONDecodeError.
+    result = run_equality_check(target, bundles)
+    assert result.passed is False
+    assert 'demo' in result.summary
+    assert 'generate.py --target claude' in result.summary
+    assert 'demo' in result.missing_target_bundles

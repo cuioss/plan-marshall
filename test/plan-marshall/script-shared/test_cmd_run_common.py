@@ -77,6 +77,11 @@ def _error_parser(log_file):
     return issues, UnitTestSummary(passed=5, failed=1, skipped=0, total=6), 'FAILURE'
 
 
+def _tests_ran_parser(log_file):
+    """Parser for a green build that actually executed tests (total > 0)."""
+    return [], UnitTestSummary(passed=5, failed=0, skipped=0, total=5), 'success'
+
+
 def _command_parser(log_file, command):
     """Parser that needs command string (npm-style)."""
     issues = [
@@ -220,17 +225,20 @@ class TestCmdRunCommonModeFiltering:
 
 
 class TestCmdRunCommonGreenBuildReconciliation:
-    """A green build run terminalizes any pending build findings from a prior
-    failing run.
+    """A green build run terminalizes pending build findings from a prior
+    failing run, passing the executed-test count so the reconciler can decide
+    whether a test-failure finding may be cleared.
 
     ``cmd_run_common`` delegates the bulk-resolve to
     ``_reconcile_pending_build_findings`` (which itself calls
     ``resolve_findings_by_type``). These tests pin the routing contract at the
     ``cmd_run_common`` boundary: reconciliation fires on the green path when a
-    ``plan_id`` is supplied, never fires on a failing build, and is a clean
-    no-op when nothing is pending. The reconciler's internals (the actual
-    ``resolve_findings_by_type`` integration) are covered end-to-end against the
-    real findings store in ``test_build_findings_store.py``.
+    ``plan_id`` is supplied, carries the run's ``tests_run`` count, never fires
+    on a failing build, and is a clean no-op when nothing is pending. The
+    reconciler's internals — the type split that clears ``test-failure`` only
+    when ``tests_run > 0``, and the actual ``resolve_findings_by_type``
+    integration — are covered end-to-end against the real findings store in
+    ``test_build_findings_store.py``.
     """
 
     def test_green_build_with_plan_id_terminalizes_pending_findings(self):
@@ -244,7 +252,8 @@ class TestCmdRunCommonGreenBuildReconciliation:
             rc = cmd_run_common(result, _noop_parser, 'python', plan_id='my-plan')
 
         assert rc == 0
-        mock_reconcile.assert_called_once_with(plan_id='my-plan', command_str='./pw verify')
+        # _noop_parser reports no test summary, so the run executed zero tests.
+        mock_reconcile.assert_called_once_with(plan_id='my-plan', command_str='./pw verify', tests_run=0)
 
     def test_failing_build_does_not_terminalize_findings(self):
         """Build fails → pending findings are NOT terminalized (the failure they
@@ -268,7 +277,20 @@ class TestCmdRunCommonGreenBuildReconciliation:
             rc = cmd_run_common(result, _noop_parser, 'python', plan_id='my-plan')
 
         assert rc == 0
-        mock_reconcile.assert_called_once_with(plan_id='my-plan', command_str='./pw verify')
+        mock_reconcile.assert_called_once_with(plan_id='my-plan', command_str='./pw verify', tests_run=0)
+
+    def test_green_build_that_ran_tests_passes_executed_count(self):
+        """A green build whose parser reports executed tests routes the non-zero
+        executed-test count into the reconciler — the evidence that lets it clear
+        a test-failure finding (see test_build_findings_store.py for the split)."""
+        result = _make_result(status='success', command='./pw verify')
+
+        with patch.object(_build_shared_mod, '_reconcile_pending_build_findings') as mock_reconcile:
+            mock_reconcile.return_value = 1
+            rc = cmd_run_common(result, _tests_ran_parser, 'python', plan_id='my-plan')
+
+        assert rc == 0
+        mock_reconcile.assert_called_once_with(plan_id='my-plan', command_str='./pw verify', tests_run=5)
 
     def test_green_build_without_plan_id_skips_reconciliation(self):
         """No plan_id supplied → reconciliation is skipped entirely (preserves

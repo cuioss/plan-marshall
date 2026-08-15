@@ -353,7 +353,7 @@ def test_cli_validate_happy_path(plan_context):
         'compose',
         '--plan-id',
         'cli-val-ok',
-        '--change-type',
+        '--plan-change-type',
         'feature',
         '--track',
         'complex',

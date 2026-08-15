@@ -242,8 +242,13 @@ def test_api_discover_preserves_enrichment(monkeypatch):
         }
         save_module_enriched('module-a', curated, tmpdir)
 
-        # Sanity check: the curated content is on disk before discover runs.
-        assert load_module_enriched('module-a', tmpdir) == curated
+        # Sanity check: the curated content is on disk before discover runs. The
+        # writer additionally stamps the concept ``type`` and a ``generation``
+        # header, so equality is asserted over the curated fields (a subset),
+        # not the whole document.
+        before = load_module_enriched('module-a', tmpdir)
+        for key, value in curated.items():
+            assert before[key] == value
 
         # Replace the heavy discovery delegate with a deterministic stub that
         # returns the same module-a (which has prior enrichment) plus a brand
@@ -287,10 +292,13 @@ def test_api_discover_preserves_enrichment(monkeypatch):
         assert result['status'] == 'success'
         assert result['modules_discovered'] == 2
 
-        # Positive branch: module-a's curated enrichment survived the swap
-        # byte-for-byte. JSON round-trips dict equality, which is sufficient
-        # to prove no field was clobbered, reordered, or coerced.
-        assert load_module_enriched('module-a', tmpdir) == curated
+        # Positive branch: module-a's curated enrichment survived the swap. Every
+        # curated field round-trips unchanged (the concept-model ``type`` /
+        # ``generation`` header the writer adds is additive, so the assertion is
+        # over the curated subset rather than whole-dict equality).
+        preserved = load_module_enriched('module-a', tmpdir)
+        for key, value in curated.items():
+            assert preserved[key] == value
 
         # Negative branch: module-c had no prior enrichment, so it gets the
         # canonical empty stub shape. This guards against the opposite

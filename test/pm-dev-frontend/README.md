@@ -20,5 +20,5 @@ test/pm-dev-frontend/
 ## Running Tests
 
 ```bash
-python3 test/run-tests.py test/pm-dev-frontend/
+python3 .plan/execute-script.py plan-marshall:build-pyproject:pyproject_build run --command-args "module-tests pm-dev-frontend"
 ```

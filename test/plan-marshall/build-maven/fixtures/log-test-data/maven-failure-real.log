@@ -7,18 +7,18 @@
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO]
 [INFO] --- clean:3.5.0:clean (default-clean) @ cui-http ---
-[INFO] Deleting /Users/oliver/git/cui-http/target
+[INFO] Deleting /home/dev/git/cui-http/target
 [INFO]
 [INFO] --- compiler:3.14.1:compile (default-compile) @ cui-http ---
 [INFO] Recompiling the module because of changed source code.
 [INFO] Compiling 56 source files with javac [debug release 21 module-path] to target/classes
 [ERROR] COMPILATION ERROR :
 [INFO] -------------------------------------------------------------
-[ERROR] /Users/oliver/git/cui-http/src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java:[45,20] cannot find symbol
+[ERROR] /home/dev/git/cui-http/src/main/java/de/cuioss/http/security/core/HttpSecurityValidator.java:[45,20] cannot find symbol
 [ERROR]   symbol:   class MissingImport
 [ERROR]   location: class de.cuioss.http.security.core.HttpSecurityValidator
-[ERROR] /Users/oliver/git/cui-http/src/main/java/de/cuioss/http/client/handler/HttpHandler.java:[78,15] incompatible types: String cannot be converted to Integer
-[WARNING] /Users/oliver/git/cui-http/src/main/java/de/cuioss/http/client/adapter/HttpAdapter.java:[12,5] [deprecation] deprecated method oldValidate() in Validator has been deprecated
+[ERROR] /home/dev/git/cui-http/src/main/java/de/cuioss/http/client/handler/HttpHandler.java:[78,15] incompatible types: String cannot be converted to Integer
+[WARNING] /home/dev/git/cui-http/src/main/java/de/cuioss/http/client/adapter/HttpAdapter.java:[12,5] [deprecation] deprecated method oldValidate() in Validator has been deprecated
 [INFO] -------------------------------------------------------------
 [ERROR] COMPILATION ERROR :
 [INFO] -------------------------------------------------------------
@@ -53,5 +53,5 @@
 [INFO] ------------------------------------------------------------------------
 [ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.4:test (default-test) on project cui-http: There are test failures.
 [ERROR]
-[ERROR] Please refer to /Users/oliver/git/cui-http/target/surefire-reports for the individual test results.
+[ERROR] Please refer to /home/dev/git/cui-http/target/surefire-reports for the individual test results.
 [ERROR] -> [Help 1]

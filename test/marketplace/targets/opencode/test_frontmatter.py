@@ -74,6 +74,34 @@ class TestParseFrontmatter:
         assert 'line two' in fm['description']
         assert fm['name'] == 'x'
 
+    def test_value_containing_triple_dash_does_not_truncate(self):
+        """A value carrying ``---`` must not end the block early.
+
+        The closing fence is a newline-delimited ``---`` line, not a raw
+        substring; a raw-substring search would stop at the ``---`` inside the
+        ``description`` value and silently drop every later field.
+        """
+        content = (
+            '---\n'
+            'name: foo\n'
+            'description: before --- after\n'
+            'tools: Read, Write\n'
+            '---\n'
+            'body\n'
+        )
+        fm, body = parse_frontmatter(content)
+        assert fm['name'] == 'foo'
+        assert fm['description'] == 'before --- after'
+        assert fm['tools'] == 'Read, Write'  # dropped by a raw-substring fence
+        assert body == 'body\n'
+
+    def test_closing_fence_without_trailing_newline_tolerated(self):
+        """A closing fence at end-of-file with no trailing newline still parses."""
+        fm, body = parse_frontmatter('---\nname: x\ndescription: d\n---')
+        assert fm['name'] == 'x'
+        assert fm['description'] == 'd'
+        assert body == ''
+
 
 # ---------------------------------------------------------------------------
 # tool → permission mapping

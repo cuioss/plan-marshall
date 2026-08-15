@@ -5,14 +5,7 @@
 Tests the Gradle execution config and factory-generated functions.
 """
 
-import sys
-from unittest.mock import MagicMock
-
 from conftest import load_script_module
-
-sys.modules.setdefault('plan_logging', MagicMock(log_entry=MagicMock()))
-sys.modules.setdefault('run_config', MagicMock(timeout_get=MagicMock(return_value=300), timeout_set=MagicMock()))
-
 
 _gradle_execute_mod = load_script_module('plan-marshall', 'build-gradle', '_gradle_execute.py', '_gradle_execute')
 

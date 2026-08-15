@@ -12,9 +12,9 @@ from input_validation import (
     add_domain_arg,
     add_module_arg,
     add_name_arg,
-    add_package_arg,
     parse_args_with_toon_errors,
     validate_module_name,
+    validate_relative_path,
 )
 from resolve_project_dir import (
     MutuallyExclusiveArgsError,
@@ -371,7 +371,12 @@ def main() -> int:
         'package', help='Add or update key package description', allow_abbrev=False
     )
     add_module_arg(enrich_package_parser)
-    add_package_arg(enrich_package_parser)
+    enrich_package_parser.add_argument(
+        '--package',
+        required=True,
+        type=validate_relative_path,
+        help='Repo-relative path to the package (path IS the identity key; must resolve to a real location)',
+    )
     enrich_package_parser.add_argument('--description', required=True, help='Package description (1-2 sentences)')
     enrich_package_parser.add_argument(
         '--components', help='Comma-separated list of key class/interface names in the package'

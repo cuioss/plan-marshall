@@ -37,12 +37,18 @@ project:
 technologies[1]:
   - maven
 
-modules[4]{name,path,purpose}:
-oauth-sheriff-parent,.,parent
-oauth-sheriff-core,oauth-sheriff-core,library
-oauth-sheriff-quarkus,oauth-sheriff-quarkus,extension
-oauth-sheriff-quarkus-deployment,oauth-sheriff-quarkus-deployment,deployment
+modules[4]{name,path,purpose,description,freshness}:
+oauth-sheriff-parent,.,parent,Aggregator POM for the OAuth Sheriff modules,fresh
+oauth-sheriff-core,oauth-sheriff-core,library,Core JWT validation logic,fresh
+oauth-sheriff-quarkus,oauth-sheriff-quarkus,extension,Quarkus runtime integration,stale
+oauth-sheriff-quarkus-deployment,oauth-sheriff-quarkus-deployment,deployment,Build-time processing,fresh
 ```
+
+`description` and `freshness` are read from the `_project.json` `modules`
+index header (the module's description and its `generation.tree_sha` compared
+to the current working tree) — a pre-flight surface, so a consumer filters
+which concept documents to open without opening any concept body. `freshness`
+is one of `fresh` / `stale` / `unknown`.
 
 ---
 
@@ -304,6 +310,10 @@ architecture.py module [--module MODULE] [--full] [--budget N]
 ```toon
 module:
   name: oauth-sheriff-core
+  type: module
+  generation:
+    by: architecture
+    tree_sha: 9f2c…
   responsibility: Core JWT validation logic
   purpose: library
   path: oauth-sheriff-core
@@ -316,7 +326,7 @@ paths:
   descriptor: pom.xml
 
 key_packages[1]{name,description}:
-de.cuioss.sheriff.oauth.core.pipeline,JWT validation pipeline
+oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/pipeline,JWT validation pipeline
 
 key_dependencies[2]:
   - io.quarkus:quarkus-core
@@ -346,6 +356,10 @@ commands[3]:
 ```toon
 module:
   name: oauth-sheriff-core
+  type: module
+  generation:
+    by: architecture
+    tree_sha: 9f2c…
   responsibility: Core JWT validation logic
   responsibility_reasoning: Derived from README overview
   purpose: library
@@ -360,11 +374,11 @@ paths:
   descriptor: pom.xml
 
 key_packages[1]{name,description}:
-de.cuioss.sheriff.oauth.core.pipeline,JWT validation pipeline
+oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/pipeline,JWT validation pipeline
 
 packages[2]{name,path,has_package_info}:
-de.cuioss.sheriff.oauth.core,src/main/java/de/cuioss/sheriff/oauth/core,true
-de.cuioss.sheriff.oauth.core.util,src/main/java/de/cuioss/sheriff/oauth/core/util,false
+de.cuioss.sheriff.oauth.core,oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core,true
+de.cuioss.sheriff.oauth.core.util,oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/util,false
 
 key_dependencies[2]:
   - de.cuioss:cui-java-tools
@@ -1429,9 +1443,13 @@ The primary consumer is **solution-outline** during task planning.
 └── ...
 ```
 
-`_project.json`'s `modules` field is the single source of truth for "which
-modules exist"; clients iterate the index and lazy-load the per-module
-`derived.json` and `enriched.json` files on demand.
+Module discovery crawls the live worktree filesystem (`iter_modules`); the
+`_project.json` `modules` field is **not** the discovery gatekeeper — a module
+on disk but absent from the index is still discovered. The index is instead a
+read-side pre-flight surface: each entry mirrors the module's concept-document
+`description` and `generation` header so a consumer can decide which per-module
+`enriched.json` documents to open (and whether each is stale) from
+`_project.json` alone.
 
 See [architecture-persistence.md](architecture-persistence.md) for complete
 schema, including the atomic tmp+swap protocol used by `discover --force`.

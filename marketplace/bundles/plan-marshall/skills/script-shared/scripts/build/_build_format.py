@@ -46,6 +46,7 @@ EXTRA_FIELDS = [
     'wrapper',
     'command_type',
     'truncated',
+    'tests_run',
 ]
 """Additional scalar fields that appear after core fields.
 
@@ -68,7 +69,13 @@ can disagree in TOON output (the JSON path already passes it through).
 ``tool_duration_seconds`` is the test tool's own reported run duration, surfaced
 next to ``duration_seconds`` (wall clock) so a run killed before it finished shows
 how long the suite actually took before the kill. Like ``truncated`` it must be
-listed here or ``format_toon`` drops it silently."""
+listed here or ``format_toon`` drops it silently.
+
+``tests_run`` is the executed-test count a green run reports on its success
+result (see ``_build_shared.cmd_run_common``). It is the population the
+green-build finding reconciliation was decided on — a ``test-failure`` finding is
+cleared only when ``tests_run > 0`` — so it must be published, never left
+implicit; listing it here keeps the TOON and JSON success outputs in agreement."""
 
 # Structured fields handled specially
 STRUCTURED_FIELDS = {'errors', 'warnings', 'tests'}

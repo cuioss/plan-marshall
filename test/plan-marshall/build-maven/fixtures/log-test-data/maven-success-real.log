@@ -8,7 +8,7 @@
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO]
 [INFO] --- clean:3.5.0:clean (default-clean) @ cui-http ---
-[INFO] Deleting /Users/oliver/git/cui-http/target
+[INFO] Deleting /home/dev/git/cui-http/target
 [INFO]
 [INFO] --- enforcer:3.5.0:enforce (mojo-enforcer-rules) @ cui-http ---
 [INFO] Rule 0: org.apache.maven.enforcer.rules.RequirePluginVersions passed
@@ -19,7 +19,7 @@
 [INFO] Rule 5: org.apache.maven.enforcer.rules.RequireSameVersions passed
 [INFO]
 [INFO] --- resources:3.3.1:resources (default-resources) @ cui-http ---
-[INFO] skip non existing resourceDirectory /Users/oliver/git/cui-http/src/main/resources
+[INFO] skip non existing resourceDirectory /home/dev/git/cui-http/src/main/resources
 [INFO]
 [INFO] --- compiler:3.14.1:compile (default-compile) @ cui-http ---
 [INFO] Recompiling the module because of changed source code.
@@ -27,7 +27,7 @@
 [INFO] JDK-8318913 workaround: patched module-info.class requires version from [21.0.7] to [21] on 2 JDK modules [java.base, java.net.http]
 [INFO]
 [INFO] --- resources:3.3.1:testResources (default-testResources) @ cui-http ---
-[INFO] skip non existing resourceDirectory /Users/oliver/git/cui-http/src/test/resources
+[INFO] skip non existing resourceDirectory /home/dev/git/cui-http/src/test/resources
 [INFO]
 [INFO] --- compiler:3.14.1:testCompile (default-testCompile) @ cui-http ---
 [INFO] Recompiling the module because of changed dependency.
@@ -70,13 +70,13 @@
 [INFO]
 [INFO]
 [INFO] --- jar:3.4.4:jar (default-jar) @ cui-http ---
-[INFO] Building jar: /Users/oliver/git/cui-http/target/cui-http-1.0-SNAPSHOT.jar
+[INFO] Building jar: /home/dev/git/cui-http/target/cui-http-1.0-SNAPSHOT.jar
 [INFO]
 [INFO] --- source:3.3.1:jar-no-fork (attach-sources) @ cui-http ---
-[INFO] Building jar: /Users/oliver/git/cui-http/target/cui-http-1.0-SNAPSHOT-sources.jar
+[INFO] Building jar: /home/dev/git/cui-http/target/cui-http-1.0-SNAPSHOT-sources.jar
 [INFO]
 [INFO] --- javadoc:3.11.2:jar (attach-javadocs) @ cui-http ---
-[INFO] Building jar: /Users/oliver/git/cui-http/target/cui-http-1.0-SNAPSHOT-javadoc.jar
+[INFO] Building jar: /home/dev/git/cui-http/target/cui-http-1.0-SNAPSHOT-javadoc.jar
 [INFO]
 [INFO] --- failsafe:3.5.4:integration-test (default) @ cui-http ---
 [INFO] No tests to run.
