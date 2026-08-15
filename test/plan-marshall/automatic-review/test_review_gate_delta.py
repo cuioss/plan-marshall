@@ -476,17 +476,55 @@ def test_the_known_residual_is_pinned_rather_than_hidden():
     )
 
 
-def test_a_padded_or_empty_registry_entry_cannot_break_the_carve_out():
+def test_a_padded_registry_entry_still_matches(monkeypatch):
     """Both sides of a registry comparison are normalised — the project's rule.
 
-    A padded entry would silently disable the carve-out; an empty entry would make
-    every review_body from that bot a summary, dropping all of them.
+    A padded entry must not silently disable the carve-out. The padding is INJECTED
+    here: asserting against the real (unpadded) registry entry would pass with or
+    without the `.strip()`, which is a guard that pins nothing.
+    """
+    import bot_registry
+    from review_gate_delta import is_status_summary
+
+    monkeypatch.setattr(
+        bot_registry, 'review_body_summary_patterns', lambda _k: ['  Actionable comments posted:  ']
+    )
+
+    assert is_status_summary(
+        {'bot_kind': 'coderabbit', 'kind': 'review_body', 'body': 'Actionable comments posted: 5'}
+    )
+
+
+def test_an_empty_registry_entry_does_not_match_everything(monkeypatch):
+    """An empty entry must not drop every review_body from that bot.
+
+    Without the `if cleaned` filter, `''` is a prefix of every string, so a stray
+    `- ""` in a registry doc would silently classify the bot's whole review output
+    as boilerplate — a total, invisible suppression.
+    """
+    import bot_registry
+    from review_gate_delta import is_status_summary
+
+    monkeypatch.setattr(bot_registry, 'review_body_summary_patterns', lambda _k: ['', '   '])
+
+    assert not is_status_summary(
+        {'bot_kind': 'coderabbit', 'kind': 'review_body', 'body': 'A real review comment.'}
+    )
+
+
+def test_a_bot_login_carrying_the_bot_suffix_still_resolves(monkeypatch):
+    """The author fallback normalises the login, so `[bot]` and casing still classify.
+
+    Exercised through the classifier rather than the resolver alone, because the
+    failure mode is silent: an unresolved login yields no patterns, so the carve-out
+    simply never fires and every status summary counts as an escape.
     """
     from review_gate_delta import is_status_summary
 
-    record = {'bot_kind': 'coderabbit', 'kind': 'review_body', 'body': 'A real review comment.'}
-
-    assert not is_status_summary(record)
+    for login in ('coderabbitai[bot]', 'CodeRabbitAI', 'CodeRabbitAI[bot]'):
+        assert is_status_summary(
+            {'author': login, 'kind': 'review_body', 'body': 'Actionable comments posted: 5'}
+        ), login
 
 
 def test_a_bot_declaring_no_summary_pattern_keeps_every_review_body():

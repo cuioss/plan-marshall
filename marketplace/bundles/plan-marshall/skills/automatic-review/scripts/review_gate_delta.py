@@ -187,7 +187,11 @@ def resolve_bot_kind(record: dict) -> str:
     bot_kind = str(record.get('bot_kind') or '')
     if bot_kind:
         return bot_kind
-    return bot_registry.login_to_bot_kind().get(str(record.get('author') or ''), '')
+    # The NORMALISED registry lookup, not the raw map: `github_pr` stores `author`
+    # verbatim, and real logins carry a `[bot]` suffix and non-canonical casing that
+    # an exact match silently loses — on exactly the records this fallback exists to
+    # serve. See `bot_registry.bot_kind_for_login`.
+    return bot_registry.bot_kind_for_login(str(record.get('author') or ''))
 
 
 def is_status_summary(record: dict) -> bool:

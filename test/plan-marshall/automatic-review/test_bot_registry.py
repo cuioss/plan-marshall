@@ -507,3 +507,28 @@ def test_review_body_summary_patterns_default_empty_and_fail_closed():
     assert bot_registry.review_body_summary_patterns('sourcery') == []
     assert bot_registry.review_body_summary_patterns('pr-agent') == []
     assert bot_registry.review_body_summary_patterns('no-such-bot') == []
+
+
+def test_bot_kind_for_login_normalises_casing_and_the_bot_suffix():
+    """The login→bot_kind lookup tolerates the two drifts real logins carry.
+
+    `github_pr` stores `author` VERBATIM, and GraphQL author logins arrive both
+    with a `[bot]` suffix and with non-canonical casing — the repo's own fixtures
+    use `coderabbitai[bot]`. A raw exact-match lookup silently resolves those to
+    nothing, which disables every per-bot rule keyed off the author for exactly the
+    records that have no `bot_kind` to fall back on.
+
+    The registry owns the login map, so the normalised lookup belongs here rather
+    than being re-implemented by each consumer.
+    """
+    assert bot_registry.bot_kind_for_login('coderabbitai') == 'coderabbit'
+    assert bot_registry.bot_kind_for_login('coderabbitai[bot]') == 'coderabbit'
+    assert bot_registry.bot_kind_for_login('CodeRabbitAI') == 'coderabbit'
+    assert bot_registry.bot_kind_for_login('CodeRabbitAI[bot]') == 'coderabbit'
+
+
+def test_bot_kind_for_login_returns_empty_for_a_human_or_absent_login():
+    """A non-bot author resolves to no bot_kind — never to a wrong one."""
+    assert bot_registry.bot_kind_for_login('some-human') == ''
+    assert bot_registry.bot_kind_for_login('') == ''
+    assert bot_registry.bot_kind_for_login(None) == ''
