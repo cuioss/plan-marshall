@@ -12,6 +12,8 @@ Usage:
 See test/README.md for full documentation.
 """
 
+import argparse
+import copy
 import json
 import os
 import shutil
@@ -21,6 +23,7 @@ import tempfile
 from pathlib import Path
 from types import ModuleType
 from typing import Any
+from unittest import mock
 
 # =============================================================================
 # Path Constants
@@ -429,6 +432,191 @@ def load_script_module(bundle: str, skill: str, script_file: str, module_name: s
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+# =============================================================================
+# Argument Namespace Construction
+# =============================================================================
+
+#: Attribute names a script may publish its ``argparse.ArgumentParser`` builder
+#: under. :func:`parse_ns` probes them in this order and takes the first
+#: zero-argument callable that returns an ``ArgumentParser``.
+#:
+#: This is the documented convention referred to by :func:`parse_ns`. It is a
+#: small CLOSED set rather than a name-shaped heuristic on purpose: a probe that
+#: called anything matching ``*parser*`` would eventually call a function with
+#: side effects, and a test helper that runs arbitrary script code to build an
+#: argument list is worse than the hand-built namespace it replaces.
+PARSER_BUILDER_NAMES: tuple[str, ...] = ('build_parser', '_build_parser', '_build_arg_parser')
+
+
+class ParserSeamNotFound(RuntimeError):
+    """A script exposes no reachable ``argparse`` parser seam.
+
+    Raised by :func:`parse_ns` when neither seam resolves — the script publishes
+    no builder from :data:`PARSER_BUILDER_NAMES`, and either has no ``main()`` or
+    has one that returns without ever parsing.
+
+    This error is deliberately loud. :func:`parse_ns` exists because a hand-built
+    ``argparse.Namespace`` carries only the attributes its author remembered, not
+    the parser's defaults — so a flag added to a script with a default breaks
+    production while every hand-built namespace keeps passing. Degrading to a
+    hand-built namespace on the no-seam path would reintroduce exactly that
+    defect at exactly the call sites least able to notice it, so the no-seam path
+    raises instead.
+    """
+
+
+class _ParseIntercepted(BaseException):
+    """Internal sentinel that unwinds a script's ``main()`` at its parse call.
+
+    Derives from :class:`BaseException` rather than :class:`Exception` so that a
+    broad ``except Exception`` inside a script's ``main()`` cannot swallow it and
+    let the command body run after all.
+    """
+
+    def __init__(self, namespace: argparse.Namespace) -> None:
+        super().__init__('argparse namespace captured')
+        self.namespace = namespace
+
+
+def _parser_from_builder(module: ModuleType) -> argparse.ArgumentParser | None:
+    """Return the parser from the module's published builder, or ``None``.
+
+    A builder that requires arguments is not a seam :func:`parse_ns` can use
+    (``ci_base.build_parser`` takes the script's command table, for example), so
+    a ``TypeError`` from the zero-argument call falls through to the next
+    candidate name rather than failing the whole resolution.
+    """
+    for name in PARSER_BUILDER_NAMES:
+        builder = getattr(module, name, None)
+        if not callable(builder):
+            continue
+        try:
+            parser = builder()
+        except TypeError:
+            continue
+        if isinstance(parser, argparse.ArgumentParser):
+            return parser
+    return None
+
+
+def _parse_via_main(module: ModuleType, label: str, argv: list[str]) -> argparse.Namespace:
+    """Capture the namespace a script's ``main()`` would parse, without running it.
+
+    ``argparse.ArgumentParser.parse_args`` is patched for the duration of one
+    ``main()`` call: the real parser still does the parsing (so every default,
+    ``type=`` conversion and subparser binding is the production one), but the
+    result is captured and the stack is unwound before ``main()`` reaches the
+    command body.
+    """
+    main = getattr(module, 'main', None)
+    if not callable(main):
+        raise ParserSeamNotFound(
+            f'{label}: no parser seam — the module publishes none of '
+            f'{PARSER_BUILDER_NAMES} and has no callable main().'
+        )
+
+    real_parse_args = argparse.ArgumentParser.parse_args
+    #: Set the moment the real parser is entered. It distinguishes the two ways
+    #: ``main()`` can exit without yielding a namespace: a parser that REJECTED
+    #: argv (reached, so the caller's command line is the defect) versus a script
+    #: that exits BEFORE parsing (never reached, so there is no usable seam).
+    parser_entered = False
+
+    def _intercept(
+        self: argparse.ArgumentParser,
+        args: Any = None,
+        namespace: Any = None,
+    ) -> argparse.Namespace:
+        nonlocal parser_entered
+        parser_entered = True
+        parsed = real_parse_args(self, argv if args is None else args, namespace)
+        raise _ParseIntercepted(parsed)
+
+    saved_argv = sys.argv
+    sys.argv = [label, *argv]
+    try:
+        with mock.patch.object(argparse.ArgumentParser, 'parse_args', _intercept):
+            main()
+    except _ParseIntercepted as captured:
+        return captured.namespace
+    except SystemExit:
+        if parser_entered:
+            # The real parser rejected argv. That is the caller's command line
+            # being wrong, which is exactly what the published-builder seam
+            # surfaces as SystemExit too — so both seams fail the same way.
+            raise
+        raise ParserSeamNotFound(
+            f'{label}: main() exited before reaching its parse_args call, so no '
+            f'parser seam was reachable for argv {argv!r}.'
+        ) from None
+    finally:
+        sys.argv = saved_argv
+
+    raise ParserSeamNotFound(
+        f'{label}: main() returned without calling parse_args, so no namespace '
+        'could be captured.'
+    )
+
+
+def parse_ns(bundle: str, skill: str, script: str, *argv: str) -> argparse.Namespace:
+    """Build an ``argparse.Namespace`` by running the script's OWN parser.
+
+    The shared replacement for a hand-built ``argparse.Namespace(...)``. A
+    hand-built namespace carries only the attributes its author remembered; the
+    namespace returned here carries every default the production CLI would apply,
+    because the production parser produced it.
+
+    Args:
+        bundle: Bundle name (e.g. ``'plan-marshall'``).
+        skill: Skill name (e.g. ``'manage-tasks'``).
+        script: Script filename (e.g. ``'manage-tasks.py'``).
+        *argv: The command line, one token per argument, exactly as it would be
+            typed after the script name — e.g.
+            ``parse_ns('plan-marshall', 'manage-files', 'manage-files.py',
+            'read', '--plan-id', 'p', '--file', 'task.md')``.
+
+    Returns:
+        The namespace the script's parser produces for ``argv``.
+
+    Raises:
+        ParserSeamNotFound: when no parser seam resolves — see below.
+        SystemExit: propagated from the parser when ``argv`` is invalid. The
+            caller passed a command line the real CLI would reject, which is a
+            defect in the test rather than in the script. Both seams fail this
+            way, so the error a caller sees does not depend on which seam the
+            script happens to expose.
+
+    Two seams, in order
+    -------------------
+    1. **A published builder.** The module attribute named by
+       :data:`PARSER_BUILDER_NAMES` is called with no arguments and its parser is
+       used directly. This is the cheap path: nothing but the builder runs.
+    2. **Interception at ``main()``'s parse call.** Most scripts in this tree
+       build their parser *inside* ``main()``, where it is not reachable as an
+       object. For those, ``main()`` is invoked with
+       ``argparse.ArgumentParser.parse_args`` patched, so the real parser still
+       performs the parse and the stack is unwound the instant it returns.
+
+    The command body never runs on either path. What the second path does run is
+    whatever ``main()`` executes *before* it parses, which for an argparse CLI is
+    by convention nothing — a script cannot meaningfully act before it knows its
+    arguments. A script that breaks that convention is the case the caller should
+    prefer seam 1 for.
+
+    Neither seam is a fallback to a *hand-built* namespace: both return the real
+    parser's own output, and the no-seam case raises
+    :class:`ParserSeamNotFound` rather than degrading.
+    """
+    module = load_script_module(bundle, skill, script)
+    label = f'{bundle}:{skill}:{script}'
+
+    parser = _parser_from_builder(module)
+    if parser is not None:
+        return parser.parse_args(list(argv))
+
+    return _parse_via_main(module, label, list(argv))
 
 
 # =============================================================================
@@ -1422,7 +1610,12 @@ MARSHAL_KEY_SKILL_DOMAINS = 'skill_domains'
 MARSHAL_KEY_SYSTEM = 'system'
 MARSHAL_KEY_PLAN = 'plan'
 
-# Default schema for marshal.json
+# Named baselines for :func:`create_marshal_json`.
+#
+# These two are NOT variants of one config that could be averaged into a third —
+# they are different fixtures for different consumers, and a module that silently
+# inherited the wrong one is the defect the single builder exists to close. A
+# caller therefore names the baseline it wants.
 #
 # ``verification_steps`` (phase-5-execute) and ``steps`` (phase-6-finalize) are
 # id-keyed maps: each key is a step id, each value is that step's nested param
@@ -1430,6 +1623,16 @@ MARSHAL_KEY_PLAN = 'plan'
 # execution order. Step-owned params nest under their owning step — here
 # ``review_bot_buffer_seconds`` nests under ``plan-marshall:automatic-review`` rather
 # than living as a flat sibling of ``steps``.
+
+#: Preset name: the minimal schema — the smallest config that satisfies the
+#: marshal schema, with no language domain and no providers.
+MARSHAL_PRESET_MINIMAL = 'minimal'
+
+#: Preset name: the java-flavoured schema — skill domains, retention knobs,
+#: branch-cleanup params and a GitHub provider entry. This is the baseline the
+#: manage-config suite asserts against.
+MARSHAL_PRESET_JAVA = 'java'
+
 MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
     MARSHAL_KEY_SKILL_DOMAINS: {'system': {}},
     MARSHAL_KEY_SYSTEM: {'retention': {}},
@@ -1459,39 +1662,192 @@ MARSHAL_SCHEMA_DEFAULT: dict[str, Any] = {
     },
 }
 
+MARSHAL_SCHEMA_JAVA: dict[str, Any] = {
+    MARSHAL_KEY_SKILL_DOMAINS: {
+        'java': {'defaults': ['pm-dev-java:java-core'], 'optionals': ['pm-dev-java:java-cdi']},
+        'java-testing': {'defaults': ['pm-dev-java:junit-core'], 'optionals': []},
+    },
+    MARSHAL_KEY_SYSTEM: {'retention': {'logs_days': 1, 'archived_plans_days': 5, 'temp_on_maintenance': True}},
+    MARSHAL_KEY_PLAN: {
+        'phase-1-init': {'branch_strategy': 'direct'},
+        'phase-2-refine': {'confidence_threshold': 95, 'compatibility': 'breaking'},
+        'phase-3-outline': {},
+        'phase-4-plan': {},
+        'phase-5-execute': {
+            'commit_and_push': True,
+            'max_iterations': 5,
+            'verification_steps': {
+                'default:verify:quality-gate': {},
+                'default:verify:module-tests': {},
+            },
+        },
+        'phase-6-finalize': {
+            'max_iterations': 3,
+            'steps': {
+                'default:push': {},
+                'default:create-pr': {},
+                'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 300},
+                'default:sonar-roundtrip': {},
+                'default:lessons-capture': {},
+                'default:branch-cleanup': {
+                    'pr_merge_strategy': 'squash',
+                    'final_merge_without_asking': False,
+                    'auto_rebase_threshold': 'no_overlap_only',
+                },
+                'default:record-metrics': {},
+                'default:archive-plan': {},
+            },
+        },
+    },
+    'providers': [
+        {
+            'skill_name': 'workflow-integration-github',
+            'display_name': 'GitHub CLI (gh)',
+            'auth_type': 'system',
+            'default_url': 'https://github.com',
+            'description': 'GitHub CI provider via gh CLI',
+            'verify_command': 'gh auth status',
+            'provider': 'github',
+            'repo_url': 'https://github.com/test/repo',
+            'detected_at': '2025-01-15T10:30:00Z',
+        },
+    ],
+}
 
-def create_marshal_json(base_dir: Path, skill_domains: dict | None = None, extra: dict | None = None) -> Path:
-    """
-    Create marshal.json with proper schema.
+#: Baseline lookup for :func:`create_marshal_json`'s ``preset`` argument.
+MARSHAL_PRESETS: dict[str, dict[str, Any]] = {
+    MARSHAL_PRESET_MINIMAL: MARSHAL_SCHEMA_DEFAULT,
+    MARSHAL_PRESET_JAVA: MARSHAL_SCHEMA_JAVA,
+}
+
+#: Module facts written beside marshal.json when ``with_project_data`` is set.
+#: ``raw-project-data.json`` is the source of truth for modules, so a fixture
+#: whose script resolves modules needs both files or it resolves none.
+_RAW_PROJECT_DATA_COMPANION: dict[str, Any] = {
+    'project': {'name': 'test-project'},
+    'modules': [
+        {'name': 'my-core', 'path': 'my-core', 'parent': None, 'build_systems': ['maven'], 'packaging': 'jar'},
+        {'name': 'my-ui', 'path': 'my-ui', 'parent': None, 'build_systems': ['maven', 'npm'], 'packaging': 'war'},
+    ],
+}
+
+
+def create_marshal_json(
+    base_dir: Path,
+    config: dict | None = None,
+    *,
+    preset: str = MARSHAL_PRESET_MINIMAL,
+    skill_domains: dict | None = None,
+    extra: dict | None = None,
+    nest_in_plan_dir: bool = True,
+    with_project_data: bool = False,
+) -> Path:
+    """Write a ``marshal.json`` fixture. The one builder for the whole test tree.
+
+    Supersedes the three incompatible ``create_marshal_json`` definitions the
+    tree used to carry, whose behaviour differed in the baseline config, in the
+    destination path, and in whether a ``raw-project-data.json`` companion was
+    written. Which one a module got depended on which it happened to import, so
+    each difference is now an explicit argument instead.
+
+    Two call forms:
+
+    * **Full config** — pass ``config``; it is written verbatim. Use when the
+      test asserts against a config shape it states in full.
+    * **Defaults plus overrides** — pass ``preset`` (and optionally
+      ``skill_domains`` / ``extra``); the named baseline is deep-copied and the
+      overrides applied. Use when the test cares about one knob.
 
     Args:
-        base_dir: Directory to create .plan/marshal.json in (or directory containing marshal.json)
-        skill_domains: Skill domains dict (optional, defaults to {"system": {}})
-        extra: Additional top-level keys to merge (optional)
+        base_dir: Directory the fixture is written under. See ``nest_in_plan_dir``
+            for exactly where.
+        config: Complete config dict, written as-is. Mutually exclusive with
+            ``skill_domains`` / ``extra``.
+        preset: Which named baseline to start from — :data:`MARSHAL_PRESET_MINIMAL`
+            or :data:`MARSHAL_PRESET_JAVA`. Ignored when ``config`` is given.
+        skill_domains: Replaces the baseline's ``skill_domains`` key.
+        extra: Top-level keys merged over the baseline.
+        nest_in_plan_dir: When true (default) the file is written to
+            ``base_dir/.plan/marshal.json``, the layout a project root uses. When
+            false it is written to ``base_dir/marshal.json``, the layout
+            ``plan_context`` sets up — that fixture points ``MARSHAL_PATH`` at
+            ``tmp_path/'marshal.json'`` directly, so a nested write would land
+            somewhere the script under test never looks.
+        with_project_data: Also write the ``raw-project-data.json`` companion
+            beside the config.
 
     Returns:
-        Path to created marshal.json
+        Path to the written ``marshal.json``.
+
+    Raises:
+        ValueError: when ``config`` is combined with ``skill_domains`` / ``extra``
+            (the two forms would disagree about what the result should be), or
+            when ``preset`` names no known baseline.
 
     Example:
         marshal_path = create_marshal_json(temp_dir, skill_domains={
             "system": {"defaults": [...], "optionals": [...]}
         })
     """
-    # Determine the correct location for marshal.json
-    plan_dir = base_dir / '.plan'
-    if not plan_dir.exists():
-        plan_dir.mkdir(parents=True)
-    marshal_path = plan_dir / 'marshal.json'
+    if config is not None and (skill_domains is not None or extra is not None):
+        raise ValueError(
+            'create_marshal_json: pass either config (full-config form) or '
+            'skill_domains/extra (defaults-plus-overrides form), not both.'
+        )
 
-    # Build the data structure
-    data = MARSHAL_SCHEMA_DEFAULT.copy()
-    if skill_domains is not None:
-        data[MARSHAL_KEY_SKILL_DOMAINS] = skill_domains
-    if extra:
-        data.update(extra)
+    if config is not None:
+        data = copy.deepcopy(config)
+    else:
+        if preset not in MARSHAL_PRESETS:
+            raise ValueError(
+                f'create_marshal_json: unknown preset {preset!r}; '
+                f'known presets are {sorted(MARSHAL_PRESETS)}.'
+            )
+        # Deep-copied, not ``.copy()``-ed: a shallow copy shares every nested
+        # dict with the module-level baseline, so one test mutating
+        # ``data['plan']['phase-6-finalize']`` would rewrite the baseline for
+        # every later test in the session.
+        data = copy.deepcopy(MARSHAL_PRESETS[preset])
+        if skill_domains is not None:
+            data[MARSHAL_KEY_SKILL_DOMAINS] = skill_domains
+        if extra:
+            data.update(extra)
 
+    target_dir = base_dir / PLAN_DIR_NAME if nest_in_plan_dir else base_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    marshal_path = target_dir / 'marshal.json'
     marshal_path.write_text(json.dumps(data, indent=2))
+
+    if with_project_data:
+        raw_path = target_dir / 'raw-project-data.json'
+        raw_path.write_text(json.dumps(copy.deepcopy(_RAW_PROJECT_DATA_COMPANION), indent=2))
+
     return marshal_path
+
+
+def create_run_config(base_dir: Path, config: dict | None = None, *, nest_in_plan_dir: bool = False) -> Path:
+    """Write a ``run-configuration.json`` fixture beside its marshal config.
+
+    The companion builder to :func:`create_marshal_json`, moved here from the
+    manage-config subtree so both files come from one place. ``nest_in_plan_dir``
+    defaults to false because ``plan_context`` points ``RUN_CONFIG_PATH`` at
+    ``tmp_path/'run-configuration.json'`` directly.
+
+    Args:
+        base_dir: Directory the fixture is written under.
+        config: Complete config dict. Defaults to an empty version-1 command map.
+        nest_in_plan_dir: Write to ``base_dir/.plan/`` instead of ``base_dir``.
+
+    Returns:
+        Path to the written ``run-configuration.json``.
+    """
+    if config is None:
+        config = {'version': 1, 'commands': {}}
+    target_dir = base_dir / PLAN_DIR_NAME if nest_in_plan_dir else base_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    run_config_path = target_dir / 'run-configuration.json'
+    run_config_path.write_text(json.dumps(config, indent=2))
+    return run_config_path
 
 
 def create_raw_project_data(

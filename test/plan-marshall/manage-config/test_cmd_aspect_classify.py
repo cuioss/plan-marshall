@@ -40,7 +40,7 @@ argparse boundary.
 from argparse import Namespace
 
 import pytest
-from test_helpers import SCRIPT_PATH
+from _manage_config_fixtures import SCRIPT_PATH
 
 from conftest import load_script_module, run_script
 

@@ -1,119 +1,43 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared test helpers for manage-config tests.
+"""Fixture builders for the manage-config test modules.
 
-Provides common fixtures and utilities used across all test modules.
+Named ``_{domain}_fixtures.py`` rather than ``test_*.py`` because it declares no
+test function: pytest collects any module matching ``test_*.py``, so a helper
+under that name is imported, yields nothing, and is invisible in the run.
+
+``create_marshal_json`` and ``create_run_config`` are NOT defined here. They are
+the shared builders in ``test/conftest.py``, bound below to the baseline and
+layout this subtree's modules expect, so that the one builder serves every
+subtree and no module inherits a baseline by accident of which module it
+imported.
 """
 
+import functools
 import json
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import get_script_path
+from conftest import MARSHAL_PRESET_JAVA, get_script_path
+from conftest import create_marshal_json as _create_marshal_json
+from conftest import create_run_config as _create_run_config
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-config', 'manage-config.py')
 
+#: The shared marshal builder bound to this subtree's expectations: the
+#: java-flavoured baseline, written flat into the fixture directory (which is
+#: where ``plan_context`` points ``MARSHAL_PATH``), with the
+#: ``raw-project-data.json`` module-facts companion beside it.
+create_marshal_json = functools.partial(
+    _create_marshal_json,
+    preset=MARSHAL_PRESET_JAVA,
+    nest_in_plan_dir=False,
+    with_project_data=True,
+)
 
-def create_run_config(fixture_dir: Path, config: dict | None = None) -> Path:
-    """Create run-configuration.json in fixture directory.
-
-    Args:
-        fixture_dir: Directory to create file in
-        config: Optional config dict (uses default if not provided)
-
-    Returns:
-        Path to created file
-    """
-    if config is None:
-        config = {
-            'version': 1,
-            'commands': {},
-        }
-    run_config_path = fixture_dir / 'run-configuration.json'
-    run_config_path.write_text(json.dumps(config, indent=2))
-    return run_config_path
-
-
-def create_marshal_json(fixture_dir: Path, config: dict | None = None) -> Path:
-    """Create marshal.json in fixture directory.
-
-    Also creates raw-project-data.json with module facts (source of truth for modules).
-    """
-    if config is None:
-        config = {
-            'skill_domains': {
-                'java': {'defaults': ['pm-dev-java:java-core'], 'optionals': ['pm-dev-java:java-cdi']},
-                'java-testing': {'defaults': ['pm-dev-java:junit-core'], 'optionals': []},
-            },
-            'system': {
-                'retention': {'logs_days': 1, 'archived_plans_days': 5, 'temp_on_maintenance': True}
-            },
-            'plan': {
-                'phase-1-init': {
-                    'branch_strategy': 'direct',
-                },
-                'phase-2-refine': {
-                    'confidence_threshold': 95,
-                    'compatibility': 'breaking',
-                },
-                'phase-3-outline': {},
-                'phase-4-plan': {},
-                'phase-5-execute': {
-                    'commit_and_push': True,
-                    'max_iterations': 5,
-                    'verification_steps': {
-                        'default:verify:quality-gate': {},
-                        'default:verify:module-tests': {},
-                    },
-                },
-                'phase-6-finalize': {
-                    'max_iterations': 3,
-                    'steps': {
-                        'default:push': {},
-                        'default:create-pr': {},
-                        'plan-marshall:automatic-review': {'review_bot_buffer_seconds': 300},
-                        'default:sonar-roundtrip': {},
-                        'default:lessons-capture': {},
-                        'default:branch-cleanup': {
-                            'pr_merge_strategy': 'squash',
-                            'final_merge_without_asking': False,
-                            'auto_rebase_threshold': 'no_overlap_only',
-                        },
-                        'default:record-metrics': {},
-                        'default:archive-plan': {},
-                    },
-                },
-            },
-            'providers': [
-                {
-                    'skill_name': 'workflow-integration-github',
-                    'display_name': 'GitHub CLI (gh)',
-                    'auth_type': 'system',
-                    'default_url': 'https://github.com',
-                    'description': 'GitHub CI provider via gh CLI',
-                    'verify_command': 'gh auth status',
-                    'provider': 'github',
-                    'repo_url': 'https://github.com/test/repo',
-                    'detected_at': '2025-01-15T10:30:00Z',
-                },
-            ],
-        }
-    marshal_path = fixture_dir / 'marshal.json'
-    marshal_path.write_text(json.dumps(config, indent=2))
-
-    # Also create raw-project-data.json with module facts (source of truth)
-    raw_data = {
-        'project': {'name': 'test-project'},
-        'modules': [
-            {'name': 'my-core', 'path': 'my-core', 'parent': None, 'build_systems': ['maven'], 'packaging': 'jar'},
-            {'name': 'my-ui', 'path': 'my-ui', 'parent': None, 'build_systems': ['maven', 'npm'], 'packaging': 'war'},
-        ],
-    }
-    raw_data_path = fixture_dir / 'raw-project-data.json'
-    raw_data_path.write_text(json.dumps(raw_data, indent=2))
-
-    return marshal_path
+#: The shared run-configuration builder, written flat for the same reason.
+create_run_config = functools.partial(_create_run_config, nest_in_plan_dir=False)
 
 
 def create_nested_marshal_json(fixture_dir: Path) -> Path:

@@ -20,7 +20,7 @@ import sys
 from argparse import Namespace
 from pathlib import Path
 
-from test_helpers import create_marshal_json
+from _manage_config_fixtures import create_marshal_json
 
 _MANAGE_CONFIG_SCRIPTS_DIR = (
     Path(__file__).parent.parent.parent.parent

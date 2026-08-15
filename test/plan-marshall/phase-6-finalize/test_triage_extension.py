@@ -5,9 +5,9 @@
 Tests the resolve-workflow-skill-extension command for triage extensions.
 """
 
-import json
-from pathlib import Path
+import functools
 
+from conftest import create_marshal_json as _create_marshal_json
 from conftest import get_script_path, run_script
 
 # Get script path for manage-config
@@ -16,11 +16,11 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-config', 'manage-config.p
 # Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # noqa: E402
 
-
-def create_marshal_json(fixture_dir: Path, config: dict):
-    """Create marshal.json in the fixture directory."""
-    marshal_path = fixture_dir / 'marshal.json'
-    marshal_path.write_text(json.dumps(config, indent=2))
+#: The shared marshal builder bound to this module's layout: a full config
+#: written flat into the fixture directory, which is where ``plan_context``
+#: points ``MARSHAL_PATH``. No ``raw-project-data.json`` companion — these tests
+#: resolve workflow-skill extensions, not modules.
+create_marshal_json = functools.partial(_create_marshal_json, nest_in_plan_dir=False)
 
 
 # =============================================================================
