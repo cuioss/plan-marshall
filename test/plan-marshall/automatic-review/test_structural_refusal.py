@@ -452,7 +452,11 @@ def _hook_structural_table() -> str:
     at the bottom of a grown table would go unchecked while the sweep still read clean.
     ``index`` raises when the anchor moves, which fails loudly rather than passing.
     """
-    hook = _FINALIZE_SKILL.read_text(encoding='utf-8')
+    # Annotated because ``get_script_path`` is untyped, so the Path — and everything
+    # derived from it, including ``read_text`` — propagates as ``Any``. Without the
+    # annotation this helper returns ``Any`` from a ``-> str`` signature, which
+    # ``./pw test-compile`` rejects and neither the quality gate nor a pytest run sees.
+    hook: str = _FINALIZE_SKILL.read_text(encoding='utf-8')
     start = hook.index('reason: refusal_structural` — its OWN branch table')
     nxt = re.search(r'^\s{0,4}#{2,6}\s', hook[start:], re.MULTILINE)
     return hook[start:start + nxt.start()] if nxt else hook[start:]
@@ -465,7 +469,7 @@ def _barrier_structural_prompt() -> str:
     quietly out of scope when the block grows — a fixed window silently stops covering
     whatever was appended past its end.
     """
-    barrier = _BRANCH_CLEANUP.read_text(encoding='utf-8')
+    barrier: str = _BRANCH_CLEANUP.read_text(encoding='utf-8')
     anchor = barrier.index('Branch Cleanup — Structural review refusal')
     fence_start = barrier.rindex('```text', 0, anchor)
     fence_end = barrier.index('```', anchor)
