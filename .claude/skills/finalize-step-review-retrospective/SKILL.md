@@ -259,45 +259,6 @@ as, or rendered as, `0%`: a `null` is the absence of a measurement, whereas `0%`
 asserts the reviewer got everything wrong. These numbers are authoritative; do NOT
 recompute them.
 
-### Step 2b: The review-versus-gate delta
-
-Step 2 compares reviewers **against each other**. It answers nothing about the
-question the whole apparatus exists for: *what did review catch that the in-house
-gates did not?* That delta is the only direct read on gate/review parity available,
-and it arrives free on every PR — the gates ran first and went green, so every
-finding review then filed is by construction a gate escape.
-
-Run it over the same populations Step 2 already derived — note it takes **`bot_kind`
-values**, not the `author_login`s Step 2 passes, since it reads `bot_kind` off the
-findings:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:automatic-review:review_gate_delta assess \
-  --plan-id {plan_id} --enabled-bots "{enabled_bot_kinds}" \
-  --reviewed-bots "{reviewed_bot_kinds}" --gates-green --partitions "{partitions}"
-```
-
-Pass `--gates-green` only when `pre-push-quality-gate` and `pre-submission-self-review`
-both recorded `done` for this run; pass `--gates-red` when either failed. **Omitting
-both is not a shortcut** — it leaves the gate state unsubstantiated and excludes the
-PR, which is the correct fail-closed outcome but produces no measurement.
-
-`--partitions` takes `hash_id:label` pairs classifying each escape as
-`gate_addressable` (an in-house gate could have caught it — a gate CONFIGURATION
-finding) or `gate_structural` (no gate class reaches it). This partition is a
-judgment, so it comes from the Step 3 qualitative pass on a run that performs one;
-supply it bare when no judgment is available. An unlabelled escape withholds the
-share rather than being bucketed by default.
-
-Read `verdict`, `escapes_total`, `by_partition`, `structural_share`, and
-`share_withheld`. **`structural_share: null` is never `0`**, and `verdict: excluded`
-is never "the gates caught everything" — both name a PR that is not evidence.
-Report the withheld reason verbatim rather than a number. See
-[`automatic-review/standards/bot-participation-contract.md`](../../../marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md)
-§ "The review-versus-gate delta" for why the withholding rules are structural, and
-[`automatic-review/SKILL.md`](../../../marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md)
-§ Canonical invocations → `review_gate_delta assess` for the argument surface.
-
 ### Step 3: LLM qualitative-judgment pass
 
 Reading the comment titles/bodies/details (from Step 1) + their resolutions + the
@@ -360,16 +321,79 @@ unmeasurable reviewer reads as a verdict that measured it and found nothing.
 When NO reviewer is measurable, the verdict itself is `unmeasurable`; do not
 manufacture a ranking from an empty store.
 
+### Step 3b: The review-versus-gate delta
+
+Steps 2 and 3 compare reviewers **against each other**. Neither answers the
+question the whole apparatus exists for: *what did review catch that the in-house
+gates did not?* That delta is the only direct read on gate/review parity available,
+and it arrives free on every PR.
+
+**This step runs AFTER Step 3, not before it, and the ordering is load-bearing.**
+The delta's `--partitions` labels are a judgment — whether an in-house gate *could*
+have caught each escape — and that judgment is produced by Step 3's qualitative
+pass. Placed ahead of Step 3 the flag would always be empty, every escape would be
+`unpartitioned`, and the share would be withheld on every PR forever: an instrument
+that is correct and never measures.
+
+Derive the two populations as `bot_kind` values — **not** the `author_login`s Step 2
+passes, since this verb reads `bot_kind` off the findings. Then resolve the two tree
+identities the escape claim rests on:
+
+- `{gate_head_sha}` — the `head_at_completion` recorded by `pre-push-quality-gate`
+  (read the step record via `manage-status`).
+- `{reviewed_head_sha}` — the `reviewed_commit_sha` carried by the `pr-comment`
+  findings.
+
+```bash
+python3 .plan/execute-script.py plan-marshall:automatic-review:review_gate_delta assess \
+  --plan-id {plan_id} --enabled-bots "{enabled_bot_kinds}" \
+  --reviewed-bots "{reviewed_bot_kinds}" --gates-green \
+  --gate-head-sha {gate_head_sha} --reviewed-head-sha {reviewed_head_sha} \
+  --partitions "{partitions}"
+```
+
+Pass `--gates-green` only when `pre-push-quality-gate` and `pre-submission-self-review`
+both recorded `done`; pass `--gates-red` when either failed. **Omitting both is not a
+shortcut** — it leaves the gate state unsubstantiated and excludes the PR.
+
+The two SHAs must be supplied and must MATCH. They routinely will not: two
+`mutates_source` steps — `finalize-step-simplify` (8) and
+`finalize-step-security-audit` (9) — run between the gates and review on an ordinary
+forward pass, so the reviewer sees lines the gates never did and the PR is correctly
+excluded as `gates_did_not_cover_reviewed_tree`. That exclusion is the honest
+outcome, not a failure of this step: the unblocking condition is for the gate to
+re-fire after those steps, which is a change to the finalize step ordering and is
+not made here. Record the exclusion rather than working around it.
+
+Read `verdict`, `escapes_total`, `by_partition`, `structural_share`,
+`share_withheld`, `reviewer_coverage`, and `provenance`. **`structural_share: null`
+is never `0`**, and `verdict: excluded` is never "the gates caught everything" —
+both name a PR that is not evidence. Report the withheld or exclusion reason
+verbatim rather than a number. See
+[`automatic-review/standards/bot-participation-contract.md`](../../../marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md)
+§ "The review-versus-gate delta" for why the withholding rules are structural, and
+[`automatic-review/SKILL.md`](../../../marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md)
+§ Canonical invocations → `review_gate_delta assess` for the argument surface.
+
 ### Step 4: Persist the retrospective artifact
 
-Write `review-retrospective.md` under the plan dir, containing BOTH the
+Write `review-retrospective.md` under the plan dir, containing the
 deterministic per-reviewer metrics table (raw vs actionable vs meta,
-positives/false-positives/acknowledged, %-resolved-as-fixed) from Step 2 AND the
-LLM sections from Step 3 as NAMED sections — `## Qualitative Quality Assessment`
+positives/false-positives/acknowledged, %-resolved-as-fixed) from Step 2, the
+review-versus-gate delta from Step 3b as a `## Review-versus-Gate Delta` section,
+AND the LLM sections from Step 3 as NAMED sections — `## Qualitative Quality Assessment`
 (per reviewer) and `## Comparative Verdict`. Render a `null`
 `pct_resolved_as_fixed` as `n/a` — never as `0%` — and put the denominator beside
 every rendered value (e.g. `40.0% (2/5 resolved actionable)`, `n/a (0 resolved
 actionable)`) so the reader can see what the percentage was measured over:
+
+The `## Review-versus-Gate Delta` section carries Step 3b's `verdict`,
+`escapes_total`, the `by_partition` counts, `structural_share` (or `null` with its
+`share_withheld` reason), `reviewer_coverage`, both tree SHAs, and the `provenance`
+string — **every figure beside the population it was computed over**, and the
+exclusion or withheld reason in words whenever no share exists. Persisting it is
+what makes the delta a *recurring* signal rather than a number computed and
+discarded: the artifact is the only place it accumulates across PRs.
 
 Both LLM sections carry the participation state Step 3 assigned: every reviewer
 classified `unmeasurable` is named as such, and the comparative verdict states

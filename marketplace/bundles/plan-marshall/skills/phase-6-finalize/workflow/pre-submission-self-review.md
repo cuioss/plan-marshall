@@ -267,7 +267,9 @@ This pass matches patterns over the diff's added lines and adjudicates the state
 Two obligations follow, and they bind on the CLEAN verdict above all — a clean full-surface pass is the verdict most likely to be misread as evidence the diff is sound:
 
 - **Never render a clean pass as a reviewed diff.** "Clean: {N} candidates examined, no check matched" is a statement about the candidate set this analysis can construct, and `{N}` is a VOLUME, not a coverage number. A large `{N}` says the surface was rich, never that the diff was covered.
-- **Carry the limit, do not re-derive it.** Quote the round's `structural_limit` verbatim wherever the clean verdict is reported onward. Re-deriving it in a consumer's own words is how it drifts into a scope statement, which the field above already covers and which is not the same claim.
+- **Read the limit from the surface, do not re-derive it.** `structural_limit` rides the surfacer's TOON, exactly as `scope_statement` does, and for the same reason the section above gives: the `--display-detail` budget (owned by [`../standards/external-step-contract.md`](../standards/external-step-contract.md) § "Required termination") carries neither, and the dispatched-envelope schema below has no field for either. So a consumer that needs the boundary reads it off the surfacer's output — never from the verdict string, and never by restating it in its own words, which is how it drifts into the scope claim it is not.
+
+The asymmetry with the scope rule is deliberate and worth naming: a delta round's scope claim is **repairable** by re-running at full scope, and Step 4 Branch A requires exactly that before `done`. The structural limit is not repairable by any round, so there is nothing for the step to do about it — it is published, not discharged.
 
 This is the self-review arm of the whole-tree honesty rule the build gate applies to its own dimensions (`_gate_coverage.structural_limits`); both exist because a narrow gate's green reads as whole-tree assurance.
 

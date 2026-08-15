@@ -511,13 +511,26 @@ available, and it arrives free on every PR. `review_gate_delta assess` is the me
 is its contract. It is a signal about **the gates' reach** — never about a reviewer, and never a merge
 verdict (`proves: gate_escape_only`, `gates_merge: false`).
 
-**Every finding on a green-gate PR is a gate escape, by construction.** The in-house gates run FIRST —
-`pre-push-quality-gate` at `order: 5`, `pre-submission-self-review` immediately after — and the branch
-only reaches `push` / `create-pr` / `automatic-review` (`order: 30`) once they are green. So a finding
-review files on such a PR is something the gates ran over and did not report. No per-finding gate
-attribution is needed, which is what makes the signal free rather than a bespoke study. The gate state
-is therefore load-bearing input: a RED-gate PR escaped nothing, and an absent gate signal leaves the
-escape claim unsubstantiated.
+**A finding review files against a tree the gates already passed is a gate escape** — something the
+gates ran over and did not report — so no per-finding gate attribution is needed. The in-house gates
+run before review: `pre-push-quality-gate` at `order: 5` and `pre-submission-self-review` at `order: 7`,
+against `automatic-review` at `order: 30`. That is what makes the signal free rather than a bespoke
+study.
+
+⚠ **"The gates passed" is not the same claim as "the gates saw this tree", and the gap is real on an
+ordinary forward pass.** Two `mutates_source: true` steps run BETWEEN the gates and review —
+`finalize-step-simplify` (`order: 8`) and `finalize-step-security-audit` (`order: 9`) — and the
+dispatcher's re-entry check only re-fires a step the loop REACHES. A forward pass runs
+5 → 7 → 8 → 9 → 11 → 20 → 30 monotonically and never returns to order 5, so lines those two steps
+introduce reach the reviewer having never been gated. Counting a finding on such a line as a gate
+escape attributes to the gates a miss they were never given the chance to make.
+
+The escape claim therefore rests on three inputs, each failing closed: the gate **verdict** (a red gate
+escaped nothing; an absent signal is unsubstantiated), the **gate-certified tree** (`head_at_completion`
+from the gate step's record), and the **reviewed tree** (`reviewed_commit_sha` from the findings). The
+two trees must be shown EQUAL, not assumed — a missing SHA is not evidence of sameness, and a mismatch
+is positive evidence of the gap above. The unblocking condition is for the gate to re-fire after the
+mutating steps; that is a change to the finalize step ordering, not to this measurement.
 
 ### Two properties, both structural rather than advisory
 
@@ -575,7 +588,7 @@ accumulate, the verb ships as a measurement with **no parity claim attached**.
 | `github_pr pull_request_runs` / `ci checks pull-request-runs` | Nothing from this contract — it is the **observation channel for `not_triggered`**, answering the PR-wide question of whether any `pull_request`-event workflow run exists for the PR at all. Its verdict reaches the predicate as the single `--not-triggered` bool. |
 | `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` to split the THREE refusal states one-to-one (`refused_awaitable` / `refused_hard` / `refused_unknown`). Consumes `stale_participation_bots[]` via `--stale-participation-bots` to assign `participated_stale`, the bots that answered a re-review without reviewing the merge candidate via `--declined-bots` to assign `declined`, and the PR-wide `--not-triggered` bool to refine what would otherwise be `absent`, and the `--refused-causes` overlay (from `refused_causes[]`) to report each refusing bot's CAUSE in `refusal_causes[]` — advisory, gating nothing. Emits `review_state_summary` (the reviewer-state distribution) so `display_detail` can tell reviewed-clean from nobody-reviewed. |
 | `review_completeness deficit` | The same observation flags as `check`, to classify each bot and derive its reviewed-at-all predicate and filed finding count, then report the comparative deficit signal — a reviewer-quality observation that gates no merge (§ "The comparative deficit signal"). |
-| `review_gate_delta assess` | The enabled roster (`required_bots ∪ optional_bots`) via `--enabled-bots` as the coverage denominator, and the reviewed-at-all set via `--reviewed-bots` as its numerator; the filed-and-actionable finding count as the escape count. All three are § "The counting rule" definitions consumed verbatim, never re-derived. Reports what review caught that the in-house gates did not — a signal about the GATES that gates no merge (§ "The review-versus-gate delta"). |
+| `review_gate_delta assess` | The enabled roster (`required_bots ∪ optional_bots`) via `--enabled-bots` as the coverage denominator, and the reviewed-at-all set via `--reviewed-bots` as its numerator — both supplied by the caller from this rule's definitions rather than re-derived. Its escape count applies this rule's **filed-and-actionable** definition, review-body-summary carve-out included, matching `review_retrospective`'s classification; the two implement the same rule independently because they live in different bundles, so a change to the rule must land in both. Reports what review caught that the in-house gates did not — a signal about the GATES that gates no merge (§ "The review-versus-gate delta"). |
 | `finalize-step-review-retrospective` (`review_retrospective`) | The enabled roster (`author_login` values) via `--enabled-reviewers`, to emit a row per ENABLED reviewer rather than per responding one, each carrying `participation: measured` / `unmeasurable` (§ "The counting rule" — the row-domain population); and the reviewed-at-all set (`participated` / `participated_but_empty` `author_login` values) via `--reviewed-reviewers`, to grade whether the review-quality comparison could be performed at all (`comparison: measured` / `clean` / `vacuous` / `indeterminate`) rather than reporting a benign no-op on a run where no reviewer produced content. |
 | `github_ops pr wait-for-comments` | Each bot's `participation_requires_update`, to select the `updated_at`-movement arm of its completion predicate over the count-growth arm; `participation_evidence` plus `bot_kinds()`, to decide whether the await is answerable at all (`detector_answerable`). |
 | `marshall-steward` | Both lists, to ask the wizard question and record the provenance. |

@@ -20,6 +20,7 @@ either as "no commitment here" is absence-laundered-into-a-negative, so both
 resolve to a conflict rather than to silence.
 """
 
+import pytest
 from review_commitments import (
     COMMITTED_RESOLUTIONS,
     RELEASED_RESOLUTIONS,
@@ -195,6 +196,55 @@ def test_parse_deletions_does_not_mistake_the_file_header_for_a_deletion():
     assert all(d.start_line > 0 for d in deletions)
 
 
+def test_the_no_newline_marker_does_not_shift_later_coordinates():
+    """`\\ No newline at end of file` annotates the preceding line; it is not a line.
+
+    Advancing the old-side counter past it shifts every subsequent coordinate in the
+    hunk by one, which silently mis-anchors every conflict after it.
+    """
+    diff = (
+        'diff --git a/pkg/mod.py b/pkg/mod.py\n'
+        '--- a/pkg/mod.py\n'
+        '+++ b/pkg/mod.py\n'
+        '@@ -1,5 +1,5 @@\n'
+        '-removed_one\n'
+        '\\ No newline at end of file\n'
+        '+added_one\n'
+        ' context_two\n'
+        '-removed_three\n'
+    )
+
+    deletions = parse_deletions(diff)
+
+    assert Deletion('pkg/mod.py', 1, 1) in deletions
+    # Without the fix the marker consumes line 2 and this lands on 4.
+    assert Deletion('pkg/mod.py', 3, 3) in deletions
+
+
+def test_a_removed_line_beginning_with_two_dashes_is_content_not_a_header():
+    """`-` + `-- text` renders as `--- text`, which looks exactly like a file header.
+
+    Prefix alone cannot disambiguate it; position can — a header precedes the first
+    `@@` of a file, content follows it. Misreading it as a header silently drops the
+    deletion AND repoints every later deletion in the hunk at a bogus path.
+    """
+    diff = (
+        'diff --git a/doc/notes.md b/doc/notes.md\n'
+        '--- a/doc/notes.md\n'
+        '+++ b/doc/notes.md\n'
+        '@@ -10,3 +10,2 @@\n'
+        '--- a section rule\n'
+        ' kept\n'
+        '-trailing\n'
+    )
+
+    deletions = parse_deletions(diff)
+
+    assert Deletion('doc/notes.md', 10, 10) in deletions
+    assert Deletion('doc/notes.md', 12, 12) in deletions
+    assert all(d.path == 'doc/notes.md' for d in deletions)
+
+
 def test_parse_deletions_handles_a_whole_file_removal():
     """A deleted file's `+++ /dev/null` still attributes its removals to the old path."""
     removal = (
@@ -351,3 +401,79 @@ def test_the_envelope_states_that_it_reports_rather_than_blocks():
 
     assert result['proves'] == 'removal_conflict_only'
     assert result['gates_merge'] is False
+
+
+# ---------------------------------------------------------------------------
+# CLI surface — the contract finalize-step-simplify Step 3b actually invokes
+# ---------------------------------------------------------------------------
+
+
+class TestCLI:
+    """The ``reconcile`` verb's argparse surface and its error branches.
+
+    Step 3b invokes the CLI, not the pure functions, so a flag or emitter defect
+    would ship green against the unit tests above.
+    """
+
+    @staticmethod
+    def _script():
+        from conftest import get_script_path
+
+        return get_script_path('plan-marshall', 'phase-6-finalize', 'review_commitments.py')
+
+    def test_an_unreadable_diff_is_an_error_with_no_verdict(self, tmp_path):
+        """A crashed reconciliation must read UNKNOWN, never as a clear pass.
+
+        Emitting `verdict: clear` here would be the false-clean signal the whole
+        seam exists to prevent: the check did not run, so it found nothing.
+        """
+        from conftest import run_script
+
+        result = run_script(
+            self._script(),
+            'reconcile',
+            '--plan-id',
+            'rc-missing-diff',
+            '--diff-file',
+            str(tmp_path / 'nope.diff'),
+        )
+
+        assert not result.success
+        assert 'status: error' in result.stdout
+        assert 'diff_unreadable' in result.stdout
+        assert 'verdict:' not in result.stdout
+
+    def test_both_flags_are_required(self):
+        from review_commitments import build_parser
+
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(['reconcile', '--plan-id', 'p'])
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(['reconcile', '--diff-file', 'd'])
+
+    def test_a_clear_run_emits_a_verdict_and_its_populations(self, tmp_path, plan_context):
+        """The happy path through the real CLI, including the population fields."""
+        from conftest import run_script
+
+        plan_id = 'rc-cli-clear'
+        plan_context.plan_dir_for(plan_id)
+        diff = tmp_path / 'pass.diff'
+        diff.write_text(
+            'diff --git a/pkg/mod.py b/pkg/mod.py\n'
+            '--- a/pkg/mod.py\n'
+            '+++ b/pkg/mod.py\n'
+            '@@ -1,3 +1,2 @@\n'
+            ' head\n'
+            '-surplus\n'
+            ' tail\n'
+        )
+
+        result = run_script(
+            self._script(), 'reconcile', '--plan-id', plan_id, '--diff-file', str(diff)
+        )
+
+        assert result.success, result.stderr
+        assert 'verdict: clear' in result.stdout
+        assert 'gates_merge: false' in result.stdout
+        assert 'proves: removal_conflict_only' in result.stdout
+        assert 'deletions_considered: 1' in result.stdout

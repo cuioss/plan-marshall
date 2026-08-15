@@ -49,13 +49,26 @@ request rather than about a line. That exclusion is legitimate, so it is
 **counted** into ``unanchored_commitments`` rather than silently shrinking the
 population the verdict was computed over.
 
-Line-number basis
------------------
-Deletions are reported in the diff's **old-side** numbering, which is the tree as
-it stood before the simplify pass — the same tree the run's current findings were
-stamped against, since ``fetch_findings`` re-stamps ``reviewed_commit_sha`` and
-re-anchors on every FIND. Comparing an old-side deletion range against a finding's
-stored ``line`` therefore compares two coordinates in the same file state.
+Line-number basis, and its known imprecision
+--------------------------------------------
+Deletions are reported in the diff's **old-side** numbering — the tree as it stood
+immediately before the simplify pass. A finding's stored ``line`` is GitHub's line
+at the commit the reviewer reviewed (``github_pr`` stores it verbatim at FIND time).
+
+**Those two coordinates are not guaranteed to be the same.** ``fetch_findings``
+pre-filter 5 SKIPS an already-stored ``(bot_kind, comment_id)`` rather than
+re-stamping it, so an existing finding's ``line`` is never re-anchored to a later
+HEAD. D1's own scenario — review comment, then a loop-back fix commit, then simplify
+re-fires — is exactly a case where the fix commit shifts the file between the two.
+A drift of a few lines can therefore produce a false positive (a conflict reported
+against an innocent deletion) or a false negative (a real conflict missed).
+
+That imprecision is **stated rather than hidden**, and it is tolerable here only
+because of what the seam does with a hit: it REPORTS. A false positive costs a
+reverted simplification and a finding a human can overturn; it never blocks a merge.
+Tightening it would mean re-anchoring stored findings on each FIND, which is a
+producer-side change to ``github_pr`` and is deliberately not made here. The
+file-wide fail-closed rule above absorbs part of the risk in the safe direction.
 
 Usage:
     review_commitments.py reconcile --plan-id <id> --diff-file <path>
@@ -215,6 +228,11 @@ def parse_deletions(diff_text: str) -> tuple[Deletion, ...]:
     old_line = 0
     run_start: int | None = None
     run_end: int | None = None
+    # Inside a hunk every line carries a prefix char, so a removed line whose own
+    # content starts with '-- ' renders as '--- …' and is indistinguishable from a
+    # file header by prefix alone. Position disambiguates it: headers precede the
+    # first '@@' of a file, content follows it.
+    in_hunk = False
 
     def flush() -> None:
         nonlocal run_start, run_end
@@ -227,15 +245,16 @@ def parse_deletions(diff_text: str) -> tuple[Deletion, ...]:
         if raw.startswith('diff --git '):
             flush()
             path = None
+            in_hunk = False
             continue
-        if raw.startswith('--- '):
+        if not in_hunk and raw.startswith('--- '):
             flush()
             # The old-side header names the pre-image path, which is the one a
             # whole-file removal (`+++ /dev/null`) must still be attributed to.
             old_path = raw[4:].strip()
             path = None if old_path == '/dev/null' else _strip_diff_prefix(old_path)
             continue
-        if raw.startswith('+++ '):
+        if not in_hunk and raw.startswith('+++ '):
             # The new-side header never changes the attribution: a rename is
             # reported against its old path, matching the old-side line numbers.
             continue
@@ -243,6 +262,13 @@ def parse_deletions(diff_text: str) -> tuple[Deletion, ...]:
             flush()
             start = _hunk_old_start(raw)
             old_line = start if start is not None else 0
+            in_hunk = True
+            continue
+        if raw.startswith('\\'):
+            # The '\ No newline at end of file' marker annotates the PRECEDING
+            # line; it is not itself a line of either side, so it must not advance
+            # the old-side counter — doing so shifts every later coordinate in the
+            # hunk. It also must not flush: a deletion run continues across it.
             continue
         if raw.startswith('-'):
             if run_start is None:
@@ -254,7 +280,7 @@ def parse_deletions(diff_text: str) -> tuple[Deletion, ...]:
         if raw.startswith('+'):
             # An added line consumes no old-side number.
             continue
-        # A context line (leading space) or the '\ No newline' marker.
+        # A context line (leading space).
         old_line += 1
 
     flush()
@@ -342,15 +368,20 @@ def reconcile(
 def _read_pr_comment_findings(plan_id: str) -> list[dict]:
     """Read the plan's ``pr-comment`` findings via the shared findings read path.
 
-    Imported lazily so the pure functions above stay importable — and unit-testable
-    — without the executor PYTHONPATH that supplies ``_findings_core``.
+    Imported inside the function purely to keep the import graph honest about who
+    needs it — the pure functions above do not. It buys no import-time isolation:
+    ``toon_parser`` is already a module-level import needing the same executor
+    ``PYTHONPATH``, so the module does not load without it either way.
+
+    ``query_findings`` signals a read failure by RAISING (``OSError`` / ``ValueError``
+    on an unreadable or malformed store), which :func:`cmd_reconcile` catches and
+    renders as a verdict-less error TOON. It has no ``status: error`` return branch,
+    so this function deliberately does not test for one — a dead guard against a
+    shape the callee never produces reads as defence and provides none.
     """
     from _findings_core import query_findings
 
-    result = query_findings(plan_id, finding_type='pr-comment')
-    if result.get('status') == 'error':
-        raise RuntimeError(result.get('message') or 'Failed to query findings')
-    findings: list[dict] = result.get('findings', [])
+    findings: list[dict] = query_findings(plan_id, finding_type='pr-comment')['findings']
     return findings
 
 
@@ -369,7 +400,7 @@ def cmd_reconcile(args: argparse.Namespace) -> int:
         return 1
     try:
         findings = _read_pr_comment_findings(args.plan_id)
-    except (OSError, RuntimeError, ValueError) as exc:
+    except (OSError, ValueError, KeyError) as exc:
         print(serialize_toon({'status': 'error', 'error': 'load_failure', 'detail': str(exc)}))
         return 1
 

@@ -340,6 +340,22 @@ def _render_structural_limits(boundary: CoverageBoundary) -> list[str]:
         'A green above is evidence about the dimensions listed and is not whole-tree '
         'assurance that the change is sound.'
     )
+    # A dimension this run never attempted leaves NO trace — not checked, not
+    # degraded, simply absent. A reader then cannot tell "this gate does not run
+    # tests" from "tests were fine", which is the absence-read-as-coverage shape
+    # one level up from the one the per-analysis limits close. Naming it costs one
+    # line and is derived, so a run that did cover everything says nothing false.
+    # Degraded dimensions are excluded: those were attempted, and PARTIAL already
+    # reports them.
+    attempted = {dimension_stem(d) for d in boundary.checked}
+    attempted |= {dimension_stem(d) for d, _ in boundary.degraded}
+    not_run = [stem for stem in _ANALYSIS_LIMITS if stem not in attempted]
+    if not_run:
+        lines.append(
+            f'    not run in this gate at all: {", ".join(not_run)} — absent from the '
+            f'list above because this gate never performs them, NOT because they '
+            f'passed. Their defect classes are un-evaluated here.'
+        )
     return lines
 
 

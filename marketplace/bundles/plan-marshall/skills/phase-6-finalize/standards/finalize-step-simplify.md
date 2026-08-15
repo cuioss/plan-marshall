@@ -175,15 +175,19 @@ This step and `plan-marshall:automatic-review` (`order: 30`) run inside one fina
 Run the reconciliation seam over this step's OWN edits, **before** marking the step done — so the conflict is surfaced while the edits are still uncommitted and reversible:
 
 ```bash
-git -C {worktree_path} diff > {worktree_path}/.git/simplify-pass.diff
+mkdir -p {worktree_path}/.plan/temp
+```
+
+```bash
+git -C {worktree_path} diff > {worktree_path}/.plan/temp/simplify-pass.diff
 ```
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:phase-6-finalize:review_commitments reconcile \
-  --plan-id {plan_id} --diff-file {worktree_path}/.git/simplify-pass.diff
+  --plan-id {plan_id} --diff-file {worktree_path}/.plan/temp/simplify-pass.diff
 ```
 
-The diff is written under `.git/` deliberately: it is a transient input to this call, and `.git/` is the one path in the worktree that can never reach the plan's footprint or a commit. See [`../SKILL.md` § Canonical invocations → `review_commitments reconcile`](../SKILL.md#review_commitments--reconcile) for the argument surface and the two fail-closed states.
+The diff goes under `{worktree_path}/.plan/temp/` — the project's temp location, and git-ignored so it can never reach the plan's footprint or a commit. **Do not write it under `{worktree_path}/.git/`**: plan-marshall materialises `{worktree_path}` with `git worktree add`, where `.git` is a pointer **file** rather than a directory, so the redirect fails with *Not a directory* and the whole reconciliation is skipped in exactly the mode finalize normally runs in. See [`../SKILL.md` § Canonical invocations → `review_commitments reconcile`](../SKILL.md#review_commitments--reconcile) for the argument surface and the fail-closed states.
 
 Branch on the returned `verdict`:
 
@@ -222,7 +226,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 --display-detail "Simplify: {applied_edits} edits, {reverted_count} review-conflict reverts"
 ```
 
-Size any further variant against its **worst-case placeholder expansion**, never its literal form — the `display_detail` ceiling is owned by [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) (read the number there, do not restate it here).
+Size any further variant against its **worst-case placeholder expansion**, never its literal form — the `display_detail` ceiling is owned by [`external-step-contract.md`](external-step-contract.md) § "Required termination" (read the number there, do not restate it here).
 
 **Record before returning (binding).** The `mark-step-done` call above MUST complete BEFORE the return TOON below is composed — it is the step's terminal action, never a trailing formality after the payload is assembled. Composing and emitting the return TOON without having landed that record is a **contract violation**, not a cosmetic omission: the dispatcher's post-dispatch completion guard (`phase-6-finalize/SKILL.md` Step 3 item 5d) asserts the record via `assert-step-recorded --require-terminal`, raises `step_record_missing` attributed to this step, and halts the phase. A `status: done` payload is NOT a substitute for the record — the guard reads `status.metadata.phase_steps`, not the return. The governing invariant for every dispatched leaf is [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § the record-before-return corollary.
 
@@ -230,9 +234,12 @@ Return a `commit_message` element in this step's return TOON so the dispatcher's
 
 ```toon
 status: done
-display_detail: "Simplify: {applied_edits} edits, {findings_count} findings"
+display_detail: "{the Branch A string, or the review-conflict variant above}"
+reverted_count: {number of deletions Step 3b reverted — 0 on a clear reconciliation}
 commit_message: "chore(simplify): collapse accidental complexity in {plan_id}"
 ```
+
+`reverted_count` is emitted UNCONDITIONALLY, `0` included. A field present only when non-zero makes "no conflicts" and "the reconciliation never ran" the same absence, which is the distinction Step 3b's `status: error` branch exists to preserve.
 
 ## Error Handling
 

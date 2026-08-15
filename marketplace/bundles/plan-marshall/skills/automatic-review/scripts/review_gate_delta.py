@@ -8,16 +8,37 @@ GATES, never a merge verdict and never a statement about a reviewer.
 
 Why the delta needs no per-finding gate attribution
 ---------------------------------------------------
-The in-house gates run FIRST: ``pre-push-quality-gate`` at ``order: 5``,
-``pre-submission-self-review`` immediately after, and the branch only reaches
-``push`` / ``create-pr`` / ``automatic-review`` (``order: 30``) once they are green.
-So on a PR whose gates passed, **every finding review then files is by construction
-a gate escape** — something the gates ran over and did not report. That is why the
-signal arrives free on every PR rather than needing a bespoke corpus.
+The in-house gates run BEFORE review: ``pre-push-quality-gate`` at ``order: 5`` and
+``pre-submission-self-review`` at ``order: 7``, while ``automatic-review`` is
+``order: 30``. So a finding review files against a tree the gates already passed is
+something the gates ran over and did not report — a gate escape — with no
+per-finding attribution needed. That is why the signal arrives free on every PR
+rather than needing a bespoke corpus.
 
-The gate state is therefore load-bearing input, not decoration. On a RED-gate PR
-nothing escaped anything, and absent any gate signal at all the escape claim is
-unsubstantiated — both resolve to ``excluded`` rather than to a confident zero.
+**But "the gates passed" is not the same claim as "the gates saw this tree", and
+the difference is not hypothetical here.** Two ``mutates_source: true`` steps run
+BETWEEN the gates and review — ``finalize-step-simplify`` (``order: 8``) and
+``finalize-step-security-audit`` (``order: 9``) — and the dispatcher's re-entry
+check (``phase-6-finalize/SKILL.md`` Step 3 item 1) only re-fires a step the loop
+REACHES. A forward pass runs 5 → 7 → 8 → 9 → 11 → 20 → 30 monotonically and never
+returns to order 5, so lines those two steps introduce reach the reviewer having
+never been gated. Counting a finding on such a line as a gate escape would
+attribute to the gates a miss they were never given the chance to make, and would
+bias the share in an unknown direction.
+
+The escape claim therefore rests on THREE inputs, each of which fails closed:
+
+* ``gates_green`` — a red gate means nothing escaped anything.
+* ``gate_head_sha`` — the tree the gates certified (the ``head_at_completion`` the
+  gate step recorded).
+* ``reviewed_head_sha`` — the tree review actually reviewed (the
+  ``reviewed_commit_sha`` the findings carry).
+
+The two SHAs must be EQUAL, proven rather than assumed. An absent SHA is not
+evidence of sameness, and a mismatch is positive evidence of the gap above; both
+resolve to ``excluded`` rather than to a confident zero. (The unblocking condition
+is for the gate to re-fire after the mutating steps — that is a change to the
+finalize step ordering, deliberately not made here.)
 
 Two properties that keep the signal from becoming harmful
 ---------------------------------------------------------
@@ -57,9 +78,12 @@ one rule, owned by ``automatic-review/standards/bot-participation-contract.md``
 * the escape count is over **filed** ``pr-comment`` findings, after the producer's
   pre-filter dropped noise, refusals, self-responses and cross-iteration duplicates
   — never a raw comment count;
-* only **actionable** findings count, by the same ``kind`` classification the
-  review-retrospective applies (``inline`` and substantive ``review_body``;
-  ``issue_comment`` and unknown kinds are meta);
+* only **actionable** findings count: ``inline`` and *substantive* ``review_body``,
+  while ``issue_comment`` and unknown kinds are meta. "Substantive" carries the
+  rule's explicit carve-out — the count is *"never a count of review-body
+  summaries"* — so a reviewer's ``"Actionable comments posted: N"`` status summary
+  is meta, not an escape. Without that carve-out the numerator would gain one
+  phantom escape on essentially every PR that reviewer touches;
 * the **reviewed-at-all** predicate is supplied by the caller from
   ``review_completeness``'s ``_REVIEWED_STATES`` (``participated`` /
   ``participated_but_empty``), so this module never invents a second notion of
@@ -79,6 +103,7 @@ import argparse
 import sys
 
 from _findings_core import query_findings
+from toon_parser import serialize_toon
 
 VERDICT_MEASURED = 'measured'
 VERDICT_EXCLUDED = 'excluded'
@@ -104,12 +129,27 @@ _ADMISSIBLE_PARTITIONS = frozenset({PARTITION_GATE_ADDRESSABLE, PARTITION_GATE_S
 #: missed, and an absent/unknown kind cannot be shown to be one.
 _ACTIONABLE_KINDS = frozenset({'inline', 'review_body'})
 
+#: The counting rule's review-body-summary carve-out, matched the same way the
+#: review-retrospective aggregator matches it: the status-summary signature, gated
+#: on the author login so a genuine substantive ``review_body`` from any reviewer is
+#: never mis-classed as boilerplate. Dropping every ``review_body`` instead would
+#: discard the surface where the bots file their CONSOLIDATED findings, which is the
+#: bulk of what they report.
+_SUMMARY_AUTHOR = 'coderabbitai'
+_SUMMARY_SIGNATURE = 'actionable comments posted'
+
 #: Reasons a PR contributes no delta figure. Each is an honest "this PR is not
 #: evidence" rather than a zero.
 EXCLUSION_NO_ROSTER = 'no_reviewer_roster'
 EXCLUSION_NO_REVIEWER = 'no_reviewer_reviewed'
 EXCLUSION_GATES_RED = 'gates_not_green'
 EXCLUSION_GATE_UNKNOWN = 'gate_state_unsubstantiated'
+#: The gates passed, but over a DIFFERENT tree than the one review reviewed — the
+#: post-gate `mutates_source` window the module docstring describes.
+EXCLUSION_GATE_TREE_STALE = 'gates_did_not_cover_reviewed_tree'
+#: One or both tree identities are missing, so sameness cannot be shown. Absence is
+#: never read as sameness.
+EXCLUSION_GATE_TREE_UNKNOWN = 'gate_tree_unsubstantiated'
 
 #: Reasons the share is withheld on an otherwise-measured PR.
 WITHHELD_PARTIAL_COVERAGE = 'partial_reviewer_coverage'
@@ -125,9 +165,25 @@ _PROVENANCE = (
 )
 
 
+def _is_status_summary(record: dict) -> bool:
+    """True when a ``review_body`` record is the reviewer's META status summary."""
+    if (record.get('author') or '') != _SUMMARY_AUTHOR:
+        return False
+    haystack = f'{record.get("title") or ""}\n{record.get("detail") or ""}'.lower()
+    return _SUMMARY_SIGNATURE in haystack
+
+
 def _is_actionable(record: dict) -> bool:
-    """Classify one finding as an actionable review claim, per the counting rule."""
-    return (record.get('kind') or '') in _ACTIONABLE_KINDS
+    """Classify one finding as an actionable review claim, per the counting rule.
+
+    ``inline`` is actionable; ``review_body`` is actionable UNLESS it is the status
+    summary the rule explicitly excludes; everything else (``issue_comment``, an
+    absent or unknown kind) is meta.
+    """
+    kind = record.get('kind') or ''
+    if kind == 'review_body':
+        return not _is_status_summary(record)
+    return kind in _ACTIONABLE_KINDS
 
 
 def assess_delta(
@@ -135,6 +191,8 @@ def assess_delta(
     enabled_bots: list[str],
     reviewed_bots: list[str],
     gates_green: bool | None,
+    gate_head_sha: str | None = None,
+    reviewed_head_sha: str | None = None,
     partitions: dict[str, str] | None = None,
 ) -> dict:
     """Measure what review caught on a PR whose in-house gates were already green.
@@ -152,6 +210,13 @@ def assess_delta(
             means the caller supplied no signal, which fails CLOSED to
             ``excluded`` — crediting an un-instrumented PR as a clean measurement is
             the absence-read-as-evidence defect.
+        gate_head_sha: The tree the gates CERTIFIED — the ``head_at_completion`` the
+            gate step recorded on its terminal ``mark-step-done``.
+        reviewed_head_sha: The tree review actually REVIEWED — the
+            ``reviewed_commit_sha`` the findings carry. Must equal
+            ``gate_head_sha``; see the module docstring for the post-gate
+            ``mutates_source`` window that makes them diverge on an ordinary
+            forward pass. An absent value is not evidence of sameness.
         partitions: ``finding hash_id -> partition label``. A finding with no
             admissible label is :data:`PARTITION_UNPARTITIONED`.
 
@@ -212,10 +277,14 @@ def assess_delta(
         'escapes': escapes,
         'structural_share': None,
         'share_withheld': None,
+        # The two tree identities the escape claim rests on, echoed so a reader can
+        # see WHICH trees were compared rather than trusting that they were.
+        'gate_head_sha': gate_head_sha or '',
+        'reviewed_head_sha': reviewed_head_sha or '',
         'provenance': _PROVENANCE,
     }
 
-    exclusion = _exclusion_reason(roster, covered, gates_green)
+    exclusion = _exclusion_reason(roster, covered, gates_green, gate_head_sha, reviewed_head_sha)
     if exclusion is not None:
         payload['verdict'] = VERDICT_EXCLUDED
         payload['exclusion_reason'] = exclusion
@@ -232,17 +301,28 @@ def assess_delta(
     return payload
 
 
-def _exclusion_reason(roster: list[str], covered: list[str], gates_green: bool | None) -> str | None:
+def _exclusion_reason(
+    roster: list[str],
+    covered: list[str],
+    gates_green: bool | None,
+    gate_head_sha: str | None,
+    reviewed_head_sha: str | None,
+) -> str | None:
     """Return why this PR is not evidence, or ``None`` when it is.
 
-    Checked in strength order so exactly one reason is assigned. The gate state is
-    checked FIRST because a red or unknown gate invalidates the escape claim itself,
-    whereas the coverage reasons invalidate only the population.
+    Checked in strength order so exactly one reason is assigned. The gate reasons
+    come FIRST because a red gate, an unknown gate state, or a gate that certified a
+    different tree each invalidate the escape claim ITSELF, whereas the coverage
+    reasons invalidate only the population the claim is computed over.
     """
     if gates_green is None:
         return EXCLUSION_GATE_UNKNOWN
     if not gates_green:
         return EXCLUSION_GATES_RED
+    if not gate_head_sha or not reviewed_head_sha:
+        return EXCLUSION_GATE_TREE_UNKNOWN
+    if gate_head_sha != reviewed_head_sha:
+        return EXCLUSION_GATE_TREE_STALE
     if not roster:
         # 0/0 is not full coverage. Treating an empty roster as complete would make
         # every un-reviewed repository report perfect parity.
@@ -299,40 +379,14 @@ def _parse_partitions(raw: str | None) -> dict[str, str]:
 
 
 def _emit_toon(payload: dict) -> None:
-    """Print the delta TOON block."""
-    print(f'status: {payload.get("status", "success")}')
-    if payload.get('status') == 'error':
-        print(f'error: {payload.get("error", "unknown")}')
-        if 'detail' in payload:
-            print(f'detail: {payload["detail"]}')
-        return
-    print(f'verdict: {payload["verdict"]}')
-    if payload.get('exclusion_reason'):
-        print(f'exclusion_reason: {payload["exclusion_reason"]}')
-    print(f'proves: {payload["proves"]}')
-    print('gates_merge: ' + ('true' if payload['gates_merge'] else 'false'))
-    print(f'reviewer_coverage: {payload["reviewer_coverage"]}')
-    print(f'escapes_total: {payload["escapes_total"]}')
-    share = payload['structural_share']
-    print('structural_share: ' + ('null' if share is None else f'{share}'))
-    if payload.get('share_withheld'):
-        print(f'share_withheld: {payload["share_withheld"]}')
-    print(f'provenance: {payload["provenance"]}')
-    counts = payload['by_partition']
-    print(f'by_partition[{len(counts)}]{{partition,count}}:')
-    for partition, count in counts.items():
-        print(f'  {partition},{count}')
-    for field in ('enabled_bots', 'reviewed_bots'):
-        values = payload[field]
-        if values:
-            print(f'{field}[{len(values)}]:')
-            for value in values:
-                print(f'  - {value}')
-    escapes = payload['escapes']
-    if escapes:
-        print(f'escapes[{len(escapes)}]{{finding_id,bot_kind,partition}}:')
-        for record in escapes:
-            print(f'  {record["finding_id"]},{record["bot_kind"]},{record["partition"]}')
+    """Serialise the payload through the shared TOON writer.
+
+    Deliberately NOT a hand-rolled emitter. The workflow doc instructs a reader to
+    parse these fields, and a bespoke renderer is a second serialisation format that
+    can drift from the shared one with no test to notice — the shape of a defect
+    that ships green.
+    """
+    print(serialize_toon(payload))
 
 
 def cmd_assess(args: argparse.Namespace) -> int:
@@ -347,7 +401,9 @@ def cmd_assess(args: argparse.Namespace) -> int:
         _split_csv(args.enabled_bots),
         _split_csv(args.reviewed_bots),
         args.gates_green,
-        _parse_partitions(args.partitions),
+        gate_head_sha=args.gate_head_sha,
+        reviewed_head_sha=args.reviewed_head_sha,
+        partitions=_parse_partitions(args.partitions),
     )
     _emit_toon(payload)
     return 0
@@ -417,6 +473,30 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             'Pass when the in-house gates FAILED. Nothing escaped a gate that had '
             'not passed, so the PR is excluded rather than scored.'
+        ),
+    )
+    assess.add_argument(
+        '--gate-head-sha',
+        dest='gate_head_sha',
+        default='',
+        help=(
+            'The tree the gates CERTIFIED — the head_at_completion the '
+            'pre-push-quality-gate step recorded. Must equal --reviewed-head-sha: '
+            'two mutates_source steps (finalize-step-simplify order 8, '
+            'finalize-step-security-audit order 9) run between the gates and review '
+            'on an ordinary forward pass, so a differing SHA means the reviewer saw '
+            'lines the gates never did. Omitting it excludes the PR — an absent SHA '
+            'is not evidence of sameness.'
+        ),
+    )
+    assess.add_argument(
+        '--reviewed-head-sha',
+        dest='reviewed_head_sha',
+        default='',
+        help=(
+            'The tree review actually REVIEWED — the reviewed_commit_sha the '
+            'pr-comment findings carry. See --gate-head-sha for why the two must '
+            'match and why an absent value excludes rather than assumes.'
         ),
     )
     assess.add_argument(

@@ -322,6 +322,57 @@ def test_limits_name_the_defect_classes_review_catches_and_gates_cannot():
     assert 'true' in lint.cannot_evaluate.lower()
 
 
+def test_an_analysis_the_gate_never_ran_is_named_not_omitted():
+    """A dimension absent from the run leaves no trace — so the verdict names it.
+
+    `quality-gate` runs no pytest and no test-tree mypy. Those dimensions appear
+    nowhere in its verdict: not as checked, not as degraded, not at all. A reader
+    then cannot tell "this gate does not execute tests" from "tests were fine",
+    which is the absence-read-as-coverage shape one level up from the one the
+    per-analysis limits close.
+    """
+    boundary = CoverageBoundary()
+    boundary.record_checked('mypy(production) [401 files, cache disabled]')
+    boundary.record_checked('ruff [marketplace/bundles]')
+
+    summary = render_coverage_summary(boundary)
+
+    assert 'not run in this gate' in summary
+    assert 'module-tests' in summary
+    assert 'mypy(test)' in summary
+
+
+def test_a_run_covering_every_registered_analysis_names_no_unrun_ones():
+    """The un-run list is derived, so a full run states nothing false.
+
+    Without this direction the section could hard-code a list and claim tests were
+    skipped on a `verify` run that did execute them.
+    """
+    boundary = CoverageBoundary()
+    for stem in ('mypy(production)', 'mypy(test)', 'ruff', 'SPDX headers', 'plugin-doctor', 'module-tests'):
+        boundary.record_checked(stem)
+
+    summary = render_coverage_summary(boundary)
+
+    assert 'not run in this gate' not in summary
+
+
+def test_a_degraded_dimension_does_not_count_as_never_run():
+    """Degraded means "attempted, not fully checked" — PARTIAL already reports it.
+
+    Listing it as un-run too would report the same gap twice under two different
+    names, and would wrongly imply the gate does not perform that analysis at all.
+    """
+    boundary = CoverageBoundary()
+    boundary.record_checked('ruff [marketplace/bundles]')
+    boundary.record_degraded('mypy(production)', 'freshness suspect')
+
+    summary = render_coverage_summary(boundary)
+
+    unrun_section = summary.split('not run in this gate')[-1]
+    assert 'mypy(production)' not in unrun_section
+
+
 def test_empty_boundary_does_not_claim_a_limit_block_it_cannot_populate():
     """A run that checked nothing states no per-analysis limits — and says so.
 

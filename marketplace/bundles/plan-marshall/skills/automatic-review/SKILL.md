@@ -942,23 +942,30 @@ review bodies.
 ```bash
 python3 .plan/execute-script.py plan-marshall:automatic-review:review_gate_delta assess \
   --plan-id PLAN_ID [--enabled-bots [ENABLED_BOTS]] [--reviewed-bots [REVIEWED_BOTS]] \
-  [--gates-green | --gates-red] [--partitions [PARTITIONS]]
+  [--gates-green | --gates-red] [--gate-head-sha SHA] [--reviewed-head-sha SHA] \
+  [--partitions [PARTITIONS]]
 ```
 
 Measures **what review caught that the in-house gates did not** — a signal about the GATES' reach,
 never about a reviewer and never a merge verdict (`proves: gate_escape_only`, `gates_merge: false`).
-It needs no per-finding gate attribution: the gates run first (`pre-push-quality-gate` at `order: 5`,
-self-review next) and the branch only reaches this step at `order: 30` once they are green, so on a
-green-gate PR every filed finding is by construction a gate escape. See
+It needs no per-finding gate attribution, because the gates run before review
+(`pre-push-quality-gate` at `order: 5`, `pre-submission-self-review` at `order: 7`, against this step
+at `order: 30`): a finding filed against a tree the gates already passed IS a gate escape. See
 [`standards/bot-participation-contract.md`](standards/bot-participation-contract.md) § "The
 review-versus-gate delta" for the governing contract, and § "The counting rule" for the definitions
-this verb consumes rather than re-derives.
+this verb applies.
 
-Three inputs decide whether the PR is evidence at all, and each absent one fails CLOSED to
+Five inputs decide whether the PR is evidence at all, and every absent one fails CLOSED to
 `verdict: excluded` rather than to a confident zero:
 
 - `--gates-green` / `--gates-red` — omitting BOTH leaves the gate state unsubstantiated
   (`gate_state_unsubstantiated`). A red gate excludes too: nothing escaped a gate that had not passed.
+- `--gate-head-sha` and `--reviewed-head-sha` — the tree the gates CERTIFIED and the tree review
+  REVIEWED. They must be supplied and must MATCH. ⚠ They routinely will not: `finalize-step-simplify`
+  (`order: 8`) and `finalize-step-security-audit` (`order: 9`) are `mutates_source: true` and run
+  between the gates and review, and a forward pass never returns to order 5 to re-gate their edits. A
+  mismatch is `gates_did_not_cover_reviewed_tree` and an absent SHA is `gate_tree_unsubstantiated` —
+  both honest exclusions, not failures of the caller.
 - `--enabled-bots` — the coverage DENOMINATOR (`required_bots ∪ optional_bots`). An empty roster is
   `no_reviewer_roster`, never vacuously complete — `0/0` is not full coverage.
 - `--reviewed-bots` — `review_completeness`'s reviewed-at-all set. Coverage is its INTERSECTION with

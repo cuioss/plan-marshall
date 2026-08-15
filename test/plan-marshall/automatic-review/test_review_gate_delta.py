@@ -4,11 +4,17 @@
 
 *"What did review catch that the in-house gates did not"* is the only direct read
 on gate/review parity available, and it arrives free on every PR: the gates run
-first (`pre-push-quality-gate` at order 5, self-review just after) and the branch
-only reaches review once they are green, so **every finding review then files is,
-by construction, a gate escape**. No per-finding gate attribution is needed.
+before review (`pre-push-quality-gate` at order 5, self-review at 7, against
+`automatic-review` at 30), so a finding filed against a tree the gates already
+passed IS a gate escape. No per-finding gate attribution is needed.
 
-Two properties make the signal usable rather than harmful, and both are tested
+**But "the gates passed" is not "the gates saw this tree".** Two `mutates_source`
+steps run between them — `finalize-step-simplify` (8) and
+`finalize-step-security-audit` (9) — and a forward pass never returns to order 5 to
+re-gate their edits, so the escape claim rests on the gate-certified tree and the
+reviewed tree being the SAME tree, proven by SHA rather than assumed.
+
+Three properties make the signal usable rather than harmful, and all are tested
 here in the direction that matters:
 
 * **Refusal-PRs are excluded BY CONSTRUCTION.** The bots refuse frequently, so an
@@ -25,6 +31,10 @@ here in the direction that matters:
   read a configuration gap as evidence of a structural bot-only class. An
   unpartitioned finding therefore withholds the share rather than being bucketed by
   default.
+
+* **The escape claim is anchored to a tree.** A gate verdict, a gate-certified SHA,
+  and a reviewed SHA — each absent or mismatched one excludes the PR, so a finding
+  on a line the gates never saw is never counted as a miss they made.
 """
 
 import pytest
@@ -39,6 +49,10 @@ from review_gate_delta import (
 
 _ROSTER = ['coderabbit', 'pr-agent', 'sourcery']
 
+#: The tree the gates certified and the tree review reviewed — equal in the
+#: measurable case, and the whole subject of the post-gate-mutation exclusion.
+_SHA = 'a' * 40
+
 
 def _finding(hash_id, bot_kind='coderabbit', kind='inline'):
     return {'hash_id': hash_id, 'bot_kind': bot_kind, 'kind': kind}
@@ -51,6 +65,8 @@ def _full_coverage(**overrides):
         'enabled_bots': _ROSTER,
         'reviewed_bots': list(_ROSTER),
         'gates_green': True,
+        'gate_head_sha': _SHA,
+        'reviewed_head_sha': _SHA,
         'partitions': {
             'f1': PARTITION_GATE_ADDRESSABLE,
             'f2': PARTITION_GATE_STRUCTURAL,
@@ -113,6 +129,8 @@ def test_a_pr_no_reviewer_reviewed_is_excluded_not_scored_zero():
         enabled_bots=_ROSTER,
         reviewed_bots=[],
         gates_green=True,
+        gate_head_sha=_SHA,
+        reviewed_head_sha=_SHA,
         partitions={},
     )
 
@@ -139,6 +157,8 @@ def test_collapsing_coverage_withholds_the_share_it_never_improves_it():
         enabled_bots=_ROSTER,
         reviewed_bots=['pr-agent'],
         gates_green=True,
+        gate_head_sha=_SHA,
+        reviewed_head_sha=_SHA,
         partitions={'f2': PARTITION_GATE_STRUCTURAL, 'f3': PARTITION_GATE_STRUCTURAL},
     )
 
@@ -159,6 +179,8 @@ def test_partial_coverage_still_reports_the_escapes_it_saw():
         enabled_bots=_ROSTER,
         reviewed_bots=['pr-agent'],
         gates_green=True,
+        gate_head_sha=_SHA,
+        reviewed_head_sha=_SHA,
         partitions={'f2': PARTITION_GATE_STRUCTURAL},
     )
 
@@ -178,6 +200,8 @@ def test_a_reviewed_bot_outside_the_roster_does_not_earn_coverage():
         enabled_bots=_ROSTER,
         reviewed_bots=['some-other-bot'],
         gates_green=True,
+        gate_head_sha=_SHA,
+        reviewed_head_sha=_SHA,
         partitions={'f1': PARTITION_GATE_STRUCTURAL},
     )
 
@@ -196,6 +220,8 @@ def test_an_empty_roster_is_excluded_rather_than_vacuously_complete():
         enabled_bots=[],
         reviewed_bots=[],
         gates_green=True,
+        gate_head_sha=_SHA,
+        reviewed_head_sha=_SHA,
         partitions={},
     )
 
@@ -273,6 +299,105 @@ def test_an_unsubstantiated_gate_state_fails_closed_to_excluded():
 # ---------------------------------------------------------------------------
 
 
+def test_a_tree_the_gates_never_saw_is_excluded():
+    """Two source-mutating finalize steps run BETWEEN the gates and review.
+
+    `pre-push-quality-gate` is order 5 and self-review 7, but `finalize-step-simplify`
+    (8) and `finalize-step-security-audit` (9) are `mutates_source: true` and run
+    after them; the dispatcher's re-entry check only re-fires a step the loop
+    REACHES, and a forward pass never returns to order 5. So a line those steps
+    introduced reaches the reviewer at order 30 having never been gated.
+
+    Counting a finding on such a line as a "gate escape" attributes to the gates a
+    miss they were never given the chance to make. The gate-certified tree and the
+    reviewed tree must therefore be the SAME tree, proven by SHA rather than
+    asserted.
+    """
+    result = _full_coverage(reviewed_head_sha='b' * 40)
+
+    assert result['verdict'] == VERDICT_EXCLUDED
+    assert result['exclusion_reason'] == 'gates_did_not_cover_reviewed_tree'
+    assert result['structural_share'] is None
+
+
+def test_an_absent_tree_identity_fails_closed_to_excluded():
+    """Without both SHAs the trees cannot be shown equal, so the escape claim is unproven.
+
+    Absence must not read as "same tree" — that is the assumption the finding above
+    showed to be false in the ordinary forward pass.
+    """
+    for missing in ({'gate_head_sha': ''}, {'reviewed_head_sha': ''}):
+        result = _full_coverage(**missing)
+        assert result['verdict'] == VERDICT_EXCLUDED, missing
+        assert result['exclusion_reason'] == 'gate_tree_unsubstantiated', missing
+
+
+def test_the_coderabbit_status_summary_is_not_an_escape():
+    """The counting rule excludes review-body SUMMARIES — consumed, not re-derived.
+
+    `bot-participation-contract.md` § "The counting rule" says the count is "never a
+    count of review-body summaries", naming `"Actionable comments posted: N"`. The
+    review-retrospective aggregator already implements that carve-out; a second
+    counter without it would count CodeRabbit's status summary as a gate escape on
+    essentially every PR CodeRabbit reviews, inflating the numerator that the
+    structural share divides.
+    """
+    findings = [
+        _finding('f1', kind='inline'),
+        {
+            'hash_id': 'summary',
+            'bot_kind': 'coderabbit',
+            'kind': 'review_body',
+            'author': 'coderabbitai',
+            'title': 'Actionable comments posted: 3',
+            'detail': '',
+        },
+    ]
+
+    result = assess_delta(
+        findings=findings,
+        enabled_bots=_ROSTER,
+        reviewed_bots=list(_ROSTER),
+        gates_green=True,
+        gate_head_sha=_SHA,
+        reviewed_head_sha=_SHA,
+        partitions={'f1': PARTITION_GATE_STRUCTURAL, 'summary': PARTITION_GATE_STRUCTURAL},
+    )
+
+    assert result['escapes_total'] == 1
+    assert {e['finding_id'] for e in result['escapes']} == {'f1'}
+
+
+def test_a_substantive_review_body_from_another_author_is_still_an_escape():
+    """The carve-out is gated on the author AND the signature — not on the kind.
+
+    Dropping every `review_body` would discard the surface where the review bots
+    file their consolidated findings, which is the bulk of what they report.
+    """
+    findings = [
+        {
+            'hash_id': 'real',
+            'bot_kind': 'sourcery',
+            'kind': 'review_body',
+            'author': 'sourcery-ai',
+            'title': 'Guard coerces UNKNOWN into a positive',
+            'detail': '',
+        },
+    ]
+
+    result = assess_delta(
+        findings=findings,
+        enabled_bots=_ROSTER,
+        reviewed_bots=list(_ROSTER),
+        gates_green=True,
+        gate_head_sha=_SHA,
+        reviewed_head_sha=_SHA,
+        partitions={'real': PARTITION_GATE_STRUCTURAL},
+    )
+
+    assert result['escapes_total'] == 1
+
+
 def test_meta_findings_are_not_counted_as_escapes():
     """The escape count is over ACTIONABLE findings, per the epic's counting rule.
 
@@ -287,6 +412,8 @@ def test_meta_findings_are_not_counted_as_escapes():
         enabled_bots=_ROSTER,
         reviewed_bots=list(_ROSTER),
         gates_green=True,
+        gate_head_sha=_SHA,
+        reviewed_head_sha=_SHA,
         partitions={'f1': PARTITION_GATE_STRUCTURAL, 'meta1': PARTITION_GATE_STRUCTURAL},
     )
 
@@ -300,3 +427,94 @@ def test_the_envelope_states_that_it_gates_nothing():
 
     assert result['proves'] == 'gate_escape_only'
     assert result['gates_merge'] is False
+
+
+# ---------------------------------------------------------------------------
+# CLI surface — the contract the workflow docs actually invoke
+# ---------------------------------------------------------------------------
+
+
+class TestCLI:
+    """The ``assess`` verb's argparse surface and emitted TOON block.
+
+    The pure function above is where the logic lives, but the CLI is what
+    `finalize-step-review-retrospective` invokes and what a reader parses. An
+    emitter or flag defect ships green if only the pure function is exercised.
+    """
+
+    def test_emits_toon_and_zero_exit(self, plan_context):
+        from conftest import get_script_path, run_script
+
+        script = get_script_path('plan-marshall', 'automatic-review', 'review_gate_delta.py')
+        plan_id = 'rgd-cli'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(
+            script,
+            'assess',
+            '--plan-id',
+            plan_id,
+            '--enabled-bots',
+            'coderabbit,sourcery',
+            '--reviewed-bots',
+            'coderabbit,sourcery',
+            '--gates-green',
+            '--gate-head-sha',
+            _SHA,
+            '--reviewed-head-sha',
+            _SHA,
+        )
+
+        assert result.success, result.stderr
+        assert 'status: success' in result.stdout
+        assert 'proves: gate_escape_only' in result.stdout
+        assert 'gates_merge: false' in result.stdout
+        assert 'reviewer_coverage: 2/2' in result.stdout
+
+    def test_omitting_both_gate_flags_excludes_rather_than_assuming_green(self, plan_context):
+        """The fail-closed default reaches the CLI, not only the pure function."""
+        from conftest import get_script_path, run_script
+
+        script = get_script_path('plan-marshall', 'automatic-review', 'review_gate_delta.py')
+        plan_id = 'rgd-cli-nogate'
+        plan_context.plan_dir_for(plan_id)
+
+        result = run_script(script, 'assess', '--plan-id', plan_id)
+
+        assert result.success, result.stderr
+        assert 'verdict: excluded' in result.stdout
+        assert 'gate_state_unsubstantiated' in result.stdout
+
+    def test_gates_red_and_gates_green_are_mutually_exclusive(self):
+        """Passing both is a caller error argparse refuses, not a silent last-wins."""
+        from review_gate_delta import build_parser
+
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(
+                ['assess', '--plan-id', 'p', '--gates-green', '--gates-red']
+            )
+
+    def test_bare_list_flags_read_as_empty(self):
+        """A caller interpolating an empty variable gets the empty list, not a rejection."""
+        from review_gate_delta import build_parser
+
+        args = build_parser().parse_args(
+            ['assess', '--plan-id', 'p', '--enabled-bots', '--reviewed-bots', '--partitions']
+        )
+
+        assert args.enabled_bots == ''
+        assert args.reviewed_bots == ''
+        assert args.partitions == ''
+        # No gate flag passed at all — the fail-closed sentinel, never False.
+        assert args.gates_green is None
+
+    def test_partitions_flag_parses_pairs_and_skips_malformed_tokens(self):
+        from review_gate_delta import _parse_partitions
+
+        assert _parse_partitions('a:gate_structural,b:gate_addressable') == {
+            'a': 'gate_structural',
+            'b': 'gate_addressable',
+        }
+        # A bare token carries no label; skipping it leaves the finding
+        # unpartitioned, which withholds the share — already the fail-closed side.
+        assert _parse_partitions('a:gate_structural,bare,,c:') == {'a': 'gate_structural'}
