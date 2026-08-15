@@ -21,7 +21,7 @@ module edges derived from language-server-resolved symbol references.
 - Do not boot a language server inside `derive_edges()` — the harvest is a
   discovery-time engine, and the resolver is a pure join over its output
 - Do not add a configuration mechanism here; the harvest is configured through the
-  shared extension-defaults surface in `.plan/marshal.json`
+  shared machine-local `language_servers` binding (see § Configuration)
 
 **Constraints:**
 - Extension must implement `get_skill_domains()` from `ExtensionBase`
@@ -35,9 +35,9 @@ Registers the `lsp` resolver identity and its edge derivation. The bundle declar
 domain with no skills would put an empty entry in front of every domain-selection
 surface.
 
-## Configuration
+## Extension API surface
 
-All configuration is in `extension.py`, which implements two axes of the Extension API.
+`extension.py` implements two axes of the Extension API.
 
 Axis-A (`ExtensionBase`):
 - `get_skill_domains()` - Returns `[]`; this bundle registers no skill domain

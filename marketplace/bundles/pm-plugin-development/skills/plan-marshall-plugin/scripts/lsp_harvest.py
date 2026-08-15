@@ -65,7 +65,23 @@ DEFAULT_TIMEOUT_S = 300.0
 """Whole-harvest wall-clock budget, after which the harvest reports a timeout."""
 
 DEFAULT_REQUEST_TIMEOUT_S = 15.0
-"""Per-request budget. A single wedged request must not consume the whole run."""
+"""Handshake budget, scaled to bound the ``initialize`` round trip.
+
+⚠ This does **not** bound the individual definition requests. The shared
+``LspSession`` exposes no per-call timeout, so those use the transport's own
+default; the whole-harvest ``timeout_s`` is what bounds them in aggregate. Naming
+this a per-request budget would promise an enforcement that does not exist.
+"""
+
+INITIALIZE_BUDGET_FACTOR = 2.0
+"""How much longer than a normal request the ``initialize`` handshake may take.
+
+A server builds its index during ``initialize``, so it legitimately needs longer
+than a lookup. The factor is bounded rather than generous because a server that
+died on launch is only detectable here by NOT answering: the shared transport
+returns on EOF without waking its waiters, so a dead binding costs exactly this
+budget on every crawl before the harvest gives up.
+"""
 
 HARVEST_LANGUAGE = 'python'
 """The language key looked up in the shared ``language_servers`` binding.
@@ -221,8 +237,11 @@ def harvest_workspace(
         server_cmd: Language-server argv, from the shared binding.
         language_id: LSP ``languageId`` for opened documents.
         suffix: File suffix selecting workspace sources.
-        timeout_s: Whole-harvest wall-clock budget.
-        request_timeout_s: Per-request budget.
+        timeout_s: Whole-harvest wall-clock budget, and the only bound on the
+            definition requests in aggregate.
+        request_timeout_s: Handshake budget, scaled by
+            :data:`INITIALIZE_BUDGET_FACTOR`. It does NOT bound individual
+            definition calls — the shared session exposes no per-call timeout.
         file_budget: Optional cap on files scanned, for a bounded probe.
 
     Returns:
@@ -258,16 +277,18 @@ def harvest_workspace(
     scanned = 0
     external = 0
     unresolved = 0
+    truncated = False
+    # Bind the handshake budget once so the failure reason can report the budget
+    # that was ACTUALLY waited on. Interpolating the whole-harvest timeout here
+    # would state a number no code used.
+    initialize_budget = min(request_timeout_s * INITIALIZE_BUDGET_FACTOR, max(deadline - time.monotonic(), 0.0))
 
     try:
-        session.initialize(timeout=min(request_timeout_s * 4, max(deadline - time.monotonic(), 0.0)))
+        session.initialize(timeout=initialize_budget)
 
         for path in files:
             if time.monotonic() >= deadline:
-                notes.append(
-                    f'harvest-budget: stopped after {scanned} of {len(files)} files at the '
-                    f'{timeout_s:.0f}s budget; the reference set is partial'
-                )
+                truncated = True
                 break
             try:
                 text = path.read_text(encoding='utf-8')
@@ -283,6 +304,10 @@ def harvest_workspace(
             session.open(str(path))
             for line, character in positions:
                 if time.monotonic() >= deadline:
+                    # Truncation inside the LAST file would otherwise exit the
+                    # outer loop normally and report a partial harvest as
+                    # complete.
+                    truncated = True
                     break
                 locations = session.definition(str(path), line, character)
                 if not locations:
@@ -298,11 +323,13 @@ def harvest_workspace(
 
     except client.LspError as exc:
         # The shared transport reports a wedged server, a dead server, and a
-        # protocol error alike as LspError; none of them may escape into the
-        # crawl, and none may read as a successful empty harvest.
+        # protocol error alike as LspError — it returns on EOF without waking its
+        # waiters, so a server that died on launch is indistinguishable here from
+        # one that is merely slow. None of them may escape into the crawl, and
+        # none may read as a successful empty harvest.
         return HarvestOutcome(
             ran=False,
-            reason=REASON_SERVER_TIMEOUT.format(binary=binary, budget=timeout_s, detail=exc),
+            reason=REASON_SERVER_TIMEOUT.format(binary=binary, budget=initialize_budget, detail=exc),
             files_scanned=scanned,
             elapsed_s=time.monotonic() - started,
         )
@@ -316,6 +343,11 @@ def harvest_workspace(
     finally:
         transport.close()
 
+    if truncated:
+        notes.append(
+            f'harvest-budget: stopped after {scanned} of {len(files)} files at the '
+            f'{timeout_s:.0f}s budget; the reference set is partial'
+        )
     if external:
         notes.append(f'out-of-workspace: {external} reference(s) resolved outside the project root and own no module')
     if unresolved:
@@ -496,10 +528,14 @@ def build_lsp_component_refs(
         module carries under :data:`HARVEST_STATUS_FIELD`.
     """
     if not binding:
-        status = HarvestOutcome(
-            ran=False, reason=REASON_NOT_CONFIGURED.format(language=HARVEST_LANGUAGE)
-        ).as_status()
-        return {}, status
+        # "No binding" has two causes with different remedies, and collapsing
+        # them would tell an operator to configure a language server when the
+        # real problem is that the client module is not on the path.
+        try:
+            _load_lsp_client()
+        except ImportError as exc:
+            return {}, HarvestOutcome(ran=False, reason=REASON_CLIENT_UNAVAILABLE.format(detail=exc)).as_status()
+        return {}, HarvestOutcome(ran=False, reason=REASON_NOT_CONFIGURED.format(language=HARVEST_LANGUAGE)).as_status()
 
     outcome = harvest_workspace(
         project_root,

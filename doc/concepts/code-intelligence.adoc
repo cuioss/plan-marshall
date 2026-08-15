@@ -39,7 +39,7 @@ The substrate is built in tiers, cheapest first. Each tier is a strictly larger 
 
 Symbol *references* are reached, by two different routes with two different lifecycles:
 
-* *Live, per-query* — the xref:../../marketplace/bundles/plan-marshall/skills/lsp-client/SKILL.md[`lsp-client`] skill answers definition, references, document-symbol and workspace-symbol lookups, and performs verified renames, against a server it starts for that call. An execute leaf uses it opt-in. See xref:../user/lsp-code-intelligence.adoc[the user page].
+* *Live, per-query* — the link:../../marketplace/bundles/plan-marshall/skills/lsp-client/SKILL.md[`lsp-client`] skill answers definition, references, document-symbol and workspace-symbol lookups, and performs verified renames, against a server it starts for that call. An execute leaf uses it opt-in. See xref:../user/lsp-code-intelligence.adoc[the user page].
 * *Batch, at derivation time* — the `lsp` resolver harvests references once during the crawl and projects them down into Tier 1 edges (see <<lsp-derivation-resolver>>).
 
 Call graphs and type relations are not built by either.

@@ -207,6 +207,17 @@ The `language_servers` section binds a language to its locally-installed languag
 
 The section is optional. An absent language, or one with `enabled: false`, is treated by `lsp-client` as *not configured*: the client degrades to the `Read` / `Edit` path, so a project that never configures a server loses nothing.
 
+### Two consumers, one switch
+
+The binding now has a **second** consumer with a very different cost profile, and enabling one enables both:
+
+| Consumer | When it runs | Cost |
+|----------|--------------|------|
+| [`lsp-client`](../../lsp-client/SKILL.md) | Per lookup or edit, from an execute leaf that opts in | One server start per call |
+| The `lsp` derivation resolver's harvest (`pm-plugin-development:plan-marshall-plugin:lsp_harvest`) | Once per **architecture crawl**, over the whole workspace | One server start plus a full-workspace index and one request per import position — order of a minute on a large repository |
+
+⚠ **Configuring a language here therefore also switches on a whole-workspace harvest during every crawl.** That is deliberate — one binding per language, not two — but it means the cost of enabling a language is no longer only per-lookup. A project that wants leaf lookup and *not* the harvest has no separate switch today; the honest options are to leave the language unconfigured or to accept the per-crawl cost. See [`ext-point-derivation-resolver.md`](../../extension-api/standards/ext-point-derivation-resolver.md) § Current implementations.
+
 ### Schema
 
 | Field | Type | Description |

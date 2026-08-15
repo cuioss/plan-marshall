@@ -23,6 +23,7 @@ import pytest
 from lsp_harvest import (
     DEP_TYPE_LSP,
     HarvestOutcome,
+    _definition_targets,
     build_lsp_component_refs,
     harvest_workspace,
     import_positions,
@@ -188,6 +189,28 @@ def test_prefix_attributor_returns_none_when_nothing_claims_the_path():
 # =============================================================================
 # Position enumeration
 # =============================================================================
+
+
+def test_definition_uri_is_percent_decoded():
+    """A path with a space arrives percent-encoded and must be decoded.
+
+    Left encoded, the `%20` path fails the in-workspace containment test, so every
+    reference in such a workspace is silently recounted as out-of-workspace — a
+    stated but WRONG reason, the same defect class as the absolute-path skip bug.
+    """
+    # Arrange
+    encoded = 'file:///tmp/my%20project/pkg/mod.py'
+
+    # Act
+    targets = _definition_targets([{'uri': encoded}])
+
+    # Assert
+    assert targets == [Path('/tmp/my project/pkg/mod.py')]
+
+
+def test_non_file_uris_are_ignored():
+    """An `untitled:` or in-memory document owns no module and is dropped."""
+    assert _definition_targets([{'uri': 'untitled:Untitled-1'}]) == []
 
 
 def test_import_positions_anchor_on_the_imported_name():
@@ -547,16 +570,22 @@ def test_end_to_end_harvest_against_a_real_server():
 
 @pytest.mark.skipif(shutil.which('pyright-langserver') is None, reason='pyright-langserver not installed')
 def test_end_to_end_materialization_produces_lsp_component_refs():
-    """A real harvest reaches the resolver's field in the shape it joins over."""
+    """A real harvest reaches the resolver's field in the shape it joins over.
+
+    The layout is a package pyright can actually resolve from the workspace root.
+    An earlier version used a `sys.path.insert` trick, which pyright does not
+    follow: the harvest ran, resolved nothing, and the assertion loop over `refs`
+    iterated zero times — a green test proving nothing about the shape it claims
+    to check. The non-empty assertions below are what stop that recurring.
+    """
     # Arrange
     with tempfile.TemporaryDirectory() as workspace:
         root = Path(workspace)
         (root / 'alpha').mkdir()
         (root / 'beta').mkdir()
+        (root / 'beta' / '__init__.py').write_text('')
         (root / 'beta' / 'target_mod.py').write_text('VALUE = 1\n')
-        (root / 'alpha' / 'source_mod.py').write_text(
-            'import sys\n\nsys.path.insert(0, "../beta")\nfrom target_mod import VALUE\n'
-        )
+        (root / 'alpha' / 'source_mod.py').write_text('from beta.target_mod import VALUE\n\nprint(VALUE)\n')
 
         # Act
         refs, status = build_lsp_component_refs(
@@ -567,7 +596,8 @@ def test_end_to_end_materialization_produces_lsp_component_refs():
             request_timeout_s=30.0,
         )
 
-        # Assert
+        # Assert — the edge exists, and it is stamped with this engine's kind.
         assert status['ran'] is True, status['reason']
-        for entries in refs.values():
-            assert all(entry['dep_type'] == DEP_TYPE_LSP for entry in entries)
+        assert refs, f'expected materialized refs, got none (notes: {status.get("notes")})'
+        assert 'alpha' in refs, f'expected alpha -> beta, got {refs}'
+        assert refs['alpha'] == [{'target_bundle': 'beta', 'dep_type': DEP_TYPE_LSP, 'resolved': True}]

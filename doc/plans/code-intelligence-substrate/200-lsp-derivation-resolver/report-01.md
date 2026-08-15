@@ -189,6 +189,34 @@ Recorded per instance.
 | 15 | Verification sub-agent (should-fix) | URI paths were not percent-decoded, so a workspace path containing a space would miscount every reference as out-of-workspace — a stated-but-wrong reason, the same class as finding 3 | **Fixed** — `unquote` + `urlparse` |
 | 16 | Verification sub-agent (should-fix) | D3's fourth mode fires before the server launches (no sources found), so it tests "workspace has no sources", not "server rejects this workspace" | **Accepted, scope narrowed rather than renamed** — the reason string now reads `workspace-unsupported: no {language} sources found under the project root`, which states exactly what was detected. A true server-side rejection is not reachable without a server that emits one; recorded in Residue |
 
+### Second verification pass (after the fixes)
+
+The sub-agent was re-dispatched, as the contract requires. It confirmed findings
+7–9 and 11–15 resolved by reading the source and executing the tests, and found
+that the reuse refactor had introduced regressions of its own:
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| 17 | Sub-agent round 2 (blocking) | Three prose sites still described the retired `.plan/marshal.json` keys — including this bundle's own **prohibition list**, which named the very surface D4's ⛔ forbids | **Fixed** — all three rewritten to the shared binding |
+| 18 | Sub-agent round 2 | **Regression from the refactor**: a dead server stalled 60 s instead of failing fast (the shared transport returns on EOF without waking its waiters), and the reason then interpolated the *whole-harvest* budget (`300s`) rather than the handshake budget actually waited on | **Fixed** — the handshake budget is bound once and reported; the factor is now an explicit, documented constant, halving the stall |
+| 19 | Sub-agent round 2 | `request_timeout_s` was documented as a per-request budget but bounds only `initialize` after the refactor — the shared session exposes no per-call timeout | **Fixed as documentation**, not as behaviour: the docstrings now state what is actually enforced. Claiming a bound that does not exist is the defect; silently adding one to another bundle's session is not this plan's call |
+| 20 | Sub-agent round 2 | **A vacuous test.** `test_end_to_end_materialization_...` used a `sys.path.insert` trick pyright does not follow, so `refs` was empty and its assertion loop ran **zero** iterations — green while proving nothing, and it was the only real-server test of the materialization shape | **Fixed** — a package layout pyright resolves, plus non-empty assertions and an exact-shape check so it cannot pass empty again |
+| 21 | Sub-agent round 2 | An unimportable `lsp-client` was reported as "not configured", telling an operator to configure a server when the client module was missing — and it made the real reason unreachable | **Fixed** — the two causes are now distinguished |
+| 22 | Sub-agent round 2 | Enabling `language_servers` for a language now also switches on a per-crawl whole-workspace harvest, and no page a user reads said so | **Fixed** — the run-config standard gains a two-consumers table naming the cost asymmetry |
+| 23 | Sub-agent round 2 | The URI percent-decoding fix (finding 15) had **no test** | **Fixed** — two tests pin decoding and non-`file:` rejection |
+| 24 | Sub-agent round 2 | Truncation inside the *last* file exited the loop normally, returning a partial harvest with no partiality note | **Fixed** — truncation is tracked and reported wherever it occurs |
+| 25 | Sub-agent round 2 | Duplicate, mutually contradictory `## Configuration` sections in the bundle SKILL.md | **Fixed** |
+| 26 | Sub-agent round 2 | Topology diagram's derivation-resolver card read `1 impl · build-maven`; there are five | **Fixed** (pre-existing staleness, adjacent to this diff) |
+| 27 | Sub-agent round 2 | `doc/concepts/README.adoc` still called Tier 0 "subprocess-free" unqualified after the page it summarises had been qualified | **Fixed** |
+| 28 | Sub-agent round 2 (nit) | `_path_from_uri` re-implements `_lsp_workspace_edit.uri_to_path()` | **Rejected** — that helper is a private module of another bundle. Importing a `_`-prefixed module across a bundle boundary is worse coupling than six lines of stdlib, and the public `lsp_client` surface does not re-export it |
+| 29 | Sub-agent round 2 (nit) | `domain-residency-audit.md` says "all 10 bundles" | **Deferred** — an audit recipe's own historical record, not a claim about the current tree |
+
+Finding 20 deserves emphasis: a test asserting over an empty collection passes
+unconditionally. It survived the first review, the build gate, and CI, and was
+caught only because the second pass **executed** the arrangement and printed what
+it produced rather than reading the assertions. The lane's warning about fixtures
+that "still pass" applies to vacuous loops as much as to stale constants.
+
 Finding 3 is worth its own note: it was invisible to the isolated test run and
 surfaced only under the full suite, because pytest's `tmp_path` lives under this
 project's `target/`. The check that caught it was
@@ -313,9 +341,12 @@ as its own `chore/` PR touching only the skill, never folded into this plan's PR
   workspace. A larger hand-verified sample, or a cross-check of `lsp` edges
   against `python` edges (where the union should show heavy corroboration), would
   turn "correct here" into a real precision estimate.
-- **The resolver-configuration plan has not landed.** When it does, the three
-  `pm_code_intelligence.lsp.*` keys should move onto whatever shared surface it
-  defines rather than staying as free-standing extension defaults.
+- **Enabling a language now enables two things at once.** The `language_servers`
+  binding switches on both `lsp-client`'s per-lookup path and this harvest's
+  per-crawl one, and there is no separate switch for the harvest alone. That is a
+  deliberate one-binding-per-language choice, and it is now disclosed in the
+  run-config standard — but a project wanting leaf lookup without the per-crawl
+  cost has no option today beyond leaving the language unconfigured.
 - **One language only.** Python via pyright, as scoped. The engine takes
   `server_cmd` / `language` / `suffix` parameters, so a second language is
   configuration plus a position-enumeration strategy — `import_positions` is
