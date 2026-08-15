@@ -24,35 +24,37 @@ itself — not a live git worktree — is exercised deterministically.
 
 # ruff: noqa: I001, E402
 
-import importlib.util
-import sys
 from argparse import Namespace
-from pathlib import Path
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+from conftest import add_skill_scripts_to_path, load_script_module, parse_ns
+
+_MANAGE_CONFIG = ('plan-marshall', 'manage-config')
+_SCRIPT = (*_MANAGE_CONFIG, 'manage-config.py')
+
+add_skill_scripts_to_path(*_MANAGE_CONFIG)
+
+_cmd_build_map_mod = load_script_module(
+    *_MANAGE_CONFIG, '_cmd_build_map.py', module_name='_cmd_build_map_for_build_decision_test'
 )
 
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
 
+def _decision_ns(
+    *, command: str | None = None, plan_id: str | None = None, audit_plan_id: str | None = None
+) -> Namespace:
+    """Args for ``manage-config build-decision``, built by the script's own parser.
 
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_cmd_build_map_mod = _load_module('_cmd_build_map_for_build_decision_test', '_cmd_build_map.py')
+    Built through the real parser rather than by hand, so the namespace carries
+    every attribute the CLI would supply — including ones no test names, which a
+    hand-built namespace silently omits.
+    """
+    argv = ['build-decision']
+    if plan_id is not None:
+        argv += ['--plan-id', plan_id]
+    if audit_plan_id is not None:
+        argv += ['--audit-plan-id', audit_plan_id]
+    if command is not None:
+        argv += ['--command', command]
+    return parse_ns(*_SCRIPT, *argv)
 
 # extension_base lives in script-shared and is on PYTHONPATH (executor wires every
 # skill scripts dir). The handler resolves should_execute_build from it at call
@@ -209,7 +211,7 @@ def test_handler_returns_build_verdict(monkeypatch):
     )
 
     result = _cmd_build_map_mod.cmd_build_decision(
-        Namespace(command='quality-gate', plan_id='my-plan', audit_plan_id=None)
+        _decision_ns(command='quality-gate', plan_id='my-plan')
     )
 
     assert result['status'] == 'success'
@@ -224,7 +226,7 @@ def test_handler_returns_not_necessary_with_reason(monkeypatch):
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: [])
 
     result = _cmd_build_map_mod.cmd_build_decision(
-        Namespace(command='verify', plan_id='my-plan', audit_plan_id=None)
+        _decision_ns(command='verify', plan_id='my-plan')
     )
 
     assert result['status'] == 'success'
@@ -243,7 +245,7 @@ def test_handler_forwards_the_unknown_verdict_verbatim(monkeypatch):
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: None)
 
     result = _cmd_build_map_mod.cmd_build_decision(
-        Namespace(command='quality-gate', plan_id='my-plan', audit_plan_id=None)
+        _decision_ns(command='quality-gate', plan_id='my-plan')
     )
 
     assert result['status'] == 'success'
@@ -263,11 +265,11 @@ def test_handler_unknown_and_not_necessary_are_distinct(monkeypatch):
 
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: None)
     unresolvable = _cmd_build_map_mod.cmd_build_decision(
-        Namespace(command=None, plan_id='my-plan', audit_plan_id=None)
+        _decision_ns(plan_id='my-plan')
     )
     monkeypatch.setattr(extension_base, '_resolve_plan_footprint', lambda _plan: [])
     resolvable_empty = _cmd_build_map_mod.cmd_build_decision(
-        Namespace(command=None, plan_id='my-plan', audit_plan_id=None)
+        _decision_ns(plan_id='my-plan')
     )
 
     assert unresolvable['decision'] == 'unknown'
@@ -290,7 +292,7 @@ def test_phase5_gate_does_not_skip_on_an_unknown_verdict(monkeypatch):
 
     # Act — the exact call shape phase-5 Step 11b issues.
     result = _cmd_build_map_mod.cmd_build_decision(
-        Namespace(command='quality-gate', plan_id='footprint-driven-build-gating', audit_plan_id=None)
+        _decision_ns(command='quality-gate', plan_id='footprint-driven-build-gating')
     )
 
     # Assert
@@ -308,7 +310,7 @@ def test_handler_accepts_audit_plan_id_alias(monkeypatch):
 
     # only audit_plan_id is set.
     result = _cmd_build_map_mod.cmd_build_decision(
-        Namespace(command='quality-gate', plan_id=None, audit_plan_id='my-plan')
+        _decision_ns(command='quality-gate', audit_plan_id='my-plan')
     )
 
     assert result['status'] == 'success'
@@ -318,7 +320,7 @@ def test_handler_accepts_audit_plan_id_alias(monkeypatch):
 def test_handler_errors_when_plan_id_missing():
     """A missing plan identifier surfaces a structured error, not a crash."""
     result = _cmd_build_map_mod.cmd_build_decision(
-        Namespace(command='quality-gate', plan_id=None, audit_plan_id=None)
+        _decision_ns(command='quality-gate')
     )
 
     assert result['status'] == 'error'
@@ -359,7 +361,7 @@ def test_phase5_gate_pure_doc_footprint_resolves_not_necessary(monkeypatch):
 
     # Act — the exact call shape phase-5 Step 11b issues.
     result = _cmd_build_map_mod.cmd_build_decision(
-        Namespace(command='quality-gate', plan_id='footprint-driven-build-gating', audit_plan_id=None)
+        _decision_ns(command='quality-gate', plan_id='footprint-driven-build-gating')
     )
 
     # Assert — the verdict Step 11b keys its skip on.
@@ -386,7 +388,7 @@ def test_phase5_gate_buildable_footprint_resolves_build(monkeypatch):
 
     # Act — the exact call shape phase-5 Step 11b issues.
     result = _cmd_build_map_mod.cmd_build_decision(
-        Namespace(command='quality-gate', plan_id='footprint-driven-build-gating', audit_plan_id=None)
+        _decision_ns(command='quality-gate', plan_id='footprint-driven-build-gating')
     )
 
     # Assert — a build verdict so the sweep fires.
@@ -415,7 +417,7 @@ def test_handler_command_free_build_verdict_omits_label(monkeypatch):
 
     # Act — argparse supplies command=None when the optional flag is omitted.
     result = _cmd_build_map_mod.cmd_build_decision(
-        Namespace(command=None, plan_id='my-plan', audit_plan_id=None)
+        _decision_ns(plan_id='my-plan')
     )
 
     # Assert
@@ -436,7 +438,7 @@ def test_handler_command_free_not_necessary_verdict_omits_label(monkeypatch):
 
     # Act
     result = _cmd_build_map_mod.cmd_build_decision(
-        Namespace(command=None, plan_id='my-plan', audit_plan_id=None)
+        _decision_ns(plan_id='my-plan')
     )
 
     # Assert
@@ -459,10 +461,10 @@ def test_handler_command_free_and_command_bearing_agree(monkeypatch):
 
     # Act
     command_free = _cmd_build_map_mod.cmd_build_decision(
-        Namespace(command=None, plan_id='my-plan', audit_plan_id=None)
+        _decision_ns(plan_id='my-plan')
     )
     with_command = _cmd_build_map_mod.cmd_build_decision(
-        Namespace(command='quality-gate', plan_id='my-plan', audit_plan_id=None)
+        _decision_ns(command='quality-gate', plan_id='my-plan')
     )
 
     # Assert — same decision and same reason; the label is the only difference.
@@ -480,7 +482,7 @@ def test_handler_command_free_still_requires_a_plan_id():
     and must surface a structured error rather than a permissive default.
     """
     result = _cmd_build_map_mod.cmd_build_decision(
-        Namespace(command=None, plan_id=None, audit_plan_id=None)
+        _decision_ns()
     )
 
     assert result['status'] == 'error'
@@ -500,7 +502,7 @@ def test_handler_command_free_works_without_a_command_attribute(monkeypatch):
 
     # Act — note: no ``command`` attribute on the Namespace.
     result = _cmd_build_map_mod.cmd_build_decision(
-        Namespace(plan_id='my-plan', audit_plan_id=None)
+        _decision_ns(plan_id='my-plan')
     )
 
     # Assert

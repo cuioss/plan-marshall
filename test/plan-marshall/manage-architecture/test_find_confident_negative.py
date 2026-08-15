@@ -29,7 +29,26 @@ import tempfile
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
+
+_ARCH_SCRIPT = ('plan-marshall', 'manage-architecture', 'architecture.py')
+
+
+def _arch_ns(verb: str, project_dir: str, **flags: str | None) -> Namespace:
+    """Args for an ``architecture`` verb, built by the script's own parser.
+
+    Replaces a hand-built namespace. Note the argument ORDER the real CLI
+    requires: ``--project-dir`` is a top-level flag and must precede the verb.
+    A hand-built namespace cannot express that constraint, so it cannot catch a
+    test that assumed the wrong shape — and the namespace it produces omits
+    ``plan_id``, which the real parser always supplies.
+    """
+    argv = ['--project-dir', project_dir, verb]
+    for name, value in flags.items():
+        if value is not None:
+            argv += [f'--{name.replace("_", "-")}', value]
+    return parse_ns(*_ARCH_SCRIPT, *argv)
+
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -112,7 +131,7 @@ def test_self_scan_arm_returns_past_horizon_hit_untruncated():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_over_cap_self_scan_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, pattern=_PAST_HORIZON, category=None)
+        args = _arch_ns('find', tmpdir, pattern=_PAST_HORIZON)
         result = cmd_find(args)
 
         assert result['status'] == 'success'
@@ -127,7 +146,7 @@ def test_truthful_truncation_arm_never_confident_negative():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_truncation_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, pattern=_PAST_HORIZON, category=None)
+        args = _arch_ns('find', tmpdir, pattern=_PAST_HORIZON)
         result = cmd_find(args)
 
         assert result['status'] == 'success'
@@ -149,7 +168,7 @@ def test_which_module_arm_self_scan_resolves_owner():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_over_cap_self_scan_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, path=_PAST_HORIZON)
+        args = _arch_ns('which-module', tmpdir, path=_PAST_HORIZON)
         result = cmd_which_module(args)
 
         assert result['status'] == 'success'
@@ -182,7 +201,7 @@ def test_unknown_category_is_an_error_on_files():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_partially_populated_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, module='pkg', category=_UNKNOWN_CATEGORY)
+        args = _arch_ns('files', tmpdir, module='pkg', category=_UNKNOWN_CATEGORY)
         result = cmd_files(args)
 
         assert result['status'] == 'error'
@@ -197,7 +216,7 @@ def test_unknown_category_is_an_error_on_find():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_partially_populated_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, pattern='*', category=_UNKNOWN_CATEGORY)
+        args = _arch_ns('find', tmpdir, pattern='*', category=_UNKNOWN_CATEGORY)
         result = cmd_find(args)
 
         assert result['status'] == 'error'
@@ -220,7 +239,7 @@ def test_recognised_but_unpopulated_category_still_succeeds_on_files():
         # Precondition: the category is in the vocabulary but absent from the block.
         assert _RECOGNISED_UNPOPULATED_CATEGORY in FILE_CATEGORIES
 
-        args = Namespace(project_dir=tmpdir, module='pkg', category=_RECOGNISED_UNPOPULATED_CATEGORY)
+        args = _arch_ns('files', tmpdir, module='pkg', category=_RECOGNISED_UNPOPULATED_CATEGORY)
         result = cmd_files(args)
 
         assert result['status'] == 'success'
@@ -233,7 +252,7 @@ def test_recognised_but_unpopulated_category_still_succeeds_on_find():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_partially_populated_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, pattern='*', category=_RECOGNISED_UNPOPULATED_CATEGORY)
+        args = _arch_ns('find', tmpdir, pattern='*', category=_RECOGNISED_UNPOPULATED_CATEGORY)
         result = cmd_find(args)
 
         assert result['status'] == 'success'
@@ -250,8 +269,8 @@ def test_unknown_category_error_advertises_the_declared_vocabulary():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_partially_populated_project(tmpdir)
 
-        files_result = cmd_files(Namespace(project_dir=tmpdir, module='pkg', category=_UNKNOWN_CATEGORY))
-        find_result = cmd_find(Namespace(project_dir=tmpdir, pattern='*', category=_UNKNOWN_CATEGORY))
+        files_result = cmd_files(_arch_ns('files', tmpdir, module='pkg', category=_UNKNOWN_CATEGORY))
+        find_result = cmd_find(_arch_ns('find', tmpdir, pattern='*', category=_UNKNOWN_CATEGORY))
 
         assert files_result['valid_categories'] == sorted(FILE_CATEGORIES)
         assert find_result['valid_categories'] == sorted(FILE_CATEGORIES)
@@ -266,7 +285,7 @@ def test_which_module_arm_truncation_qualifies_null():
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_truncation_project(tmpdir)
 
-        args = Namespace(project_dir=tmpdir, path=_PAST_HORIZON)
+        args = _arch_ns('which-module', tmpdir, path=_PAST_HORIZON)
         result = cmd_which_module(args)
 
         assert result['status'] == 'success'
