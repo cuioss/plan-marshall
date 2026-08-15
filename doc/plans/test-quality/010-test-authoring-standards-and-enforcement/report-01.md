@@ -355,6 +355,12 @@ _(completed at Step 8 condition 3)_
   Not fixed here: `pm-dev-java` is outside this plan's Expected surface, and fixing it would be the
   undeclared collateral change the verification gate exists to catch. It needs its own plan — the same
   D1/D2 edits applied to the Java bundle.
+* **`uv.lock` is out of sync with `pyproject.toml` on `main`.** `pyproject.toml` declares
+  `ruff>=0.16.2` while `uv.lock` still records `>=0.16.1`, so every `./pw` run in this repository
+  rewrites the lockfile as a side effect. This run discarded that churn on each build rather than
+  committing it, per `CLAUDE.md` § Standalone Plan Lane — it is not this plan's change and would be
+  undeclared collateral here. Worth a one-line fix on `main` by whoever owns dependency updates;
+  until then every branch sees a dirty `uv.lock` after building.
 * **Finding 4** — the Rule 3 validator registry is empty, making `identifier-validator-corpus` a
   permanent no-op. Belongs to whichever plan owns identifier-validator coverage; not this one.
 * **Finding 21** — `rule-catalog.md:29` carries a dead anchor
