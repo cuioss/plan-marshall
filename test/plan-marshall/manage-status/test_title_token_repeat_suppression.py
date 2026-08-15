@@ -123,6 +123,29 @@ class TestRepeatSuppression:
         assert result['changed'] is True
         assert len(spy.title_token_lines) == 2
 
+    def test_set_after_the_token_aged_out_emits_a_line_again(
+        self, plan_context, monkeypatch
+    ):
+        """An aged token READS as absent, so re-asserting it is a real change.
+
+        Staleness is a read-side rule: a record past the threshold is invisible
+        to every consumer, including the renderers. Comparing the raw stored
+        field would report `changed: false` and stay silent about a token the
+        renderers had already stopped honouring — so the comparison goes
+        through the staleness-aware accessor.
+        """
+        plan_id = _plan('tt-aged')
+        spy = _spy(monkeypatch)
+        _set(plan_id, 'build-busy')
+        _backdate(plan_context, plan_id, seconds=_core.TITLE_TOKEN_STALE_AFTER_SECONDS + 60)
+
+        result = _set(plan_id, 'build-busy')
+        assert result['changed'] is True, (
+            'the stored record had aged past the staleness threshold, so it read '
+            'as absent — re-asserting it is an absent→present change'
+        )
+        assert len(spy.title_token_lines) == 2
+
 
 class TestSuppressionDoesNotWeakenTheRecord:
     def test_suppressed_set_still_refreshes_set_at(self, plan_context):

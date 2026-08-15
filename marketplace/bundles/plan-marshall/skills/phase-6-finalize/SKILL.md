@@ -340,6 +340,8 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 The phase-6-finalize step list is read from the **per-plan execution manifest** (`execution.toon`), not from `marshal.json`. The manifest is composed at outline time by `plan-marshall:manage-execution-manifest:compose` and is the single source of truth for which Phase 6 steps fire for this plan. This skill reads the manifest verbatim and dispatches — it carries NO per-step skip logic of its own.
 
+**One bounded exception, immediately below:** Step 1.5's `reconcile` call is the single point at which live `marshal.json` is consulted, and it may amend the persisted list before the dispatch loop reads it. It heals a provably-stale entry; it never re-runs the decision matrix and never re-derives the selection. Past that one call the "reads the manifest verbatim" rule holds for the whole phase.
+
 #### Read the execution manifest
 
 ```bash

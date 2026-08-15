@@ -10,9 +10,11 @@ worktree was materialised (``prepare_execute._generate_worktree_executor``).
 bundle script, the embedded map no longer describes the tree — and nothing
 regenerated it. Every subsequent dispatch in that worktree resolves notations
 against a stale map, so a notation introduced upstream cannot be resolved at
-all. Both finalize rebase sites route through this one verb
-(``finalize-step-sync-baseline`` at ``order: 3`` and ``branch-cleanup`` at
-``order: 70``), so the refresh belongs here rather than in either caller.
+all. EVERY finalize rebase routes through this one verb — callers today include
+``finalize-step-sync-baseline`` (``order: 3``), ``automatic-review``
+(``order: 30``, refusal-recovery path) and ``branch-cleanup`` (``order: 70``) —
+so the refresh belongs here rather than in any caller, and a new caller inherits
+it without having to know it exists.
 
 The refresh is:
 
@@ -100,19 +102,34 @@ class _GeneratorSpy:
     Records the verbs invoked and returns a canned TOON per verb, so the tests
     assert on the DECISION (probe, then regenerate or not) without needing a
     vendored bundle tree in the fixture.
+
+    ``lands_executor`` controls whether a successful ``generate`` actually
+    writes the executor file, so the on-disk post-assertion is exercisable: a
+    generator that exits 0 having written nothing must NOT be reported as a
+    successful regeneration.
     """
 
-    def __init__(self, drift_status: str = 'ok', generate_rc: int = 0):
+    def __init__(
+        self,
+        drift_status: str = 'ok',
+        generate_rc: int = 0,
+        lands_executor: bool = True,
+    ):
         self._drift_status = drift_status
         self._generate_rc = generate_rc
+        self._lands_executor = lands_executor
         self.verbs: list[str] = []
 
-    def __call__(self, _worktree: Path, verb: str, *_args: str):
+    def __call__(self, worktree: Path, verb: str, *_args: str):
         self.verbs.append(verb)
         if verb == 'drift':
             if self._drift_status == 'UNREADABLE':
                 return 0, 'garbage not toon\n', ''
             return 0, f'status: success\ndrift_status: {self._drift_status}\n', ''
+        if self._generate_rc == 0 and self._lands_executor:
+            slot = git_workflow._worktree_executor_path(worktree)
+            slot.parent.mkdir(parents=True, exist_ok=True)
+            slot.write_text('#!/usr/bin/env python3\n# generated\n')
         return self._generate_rc, 'status: success\n', '' if self._generate_rc == 0 else 'boom'
 
 
@@ -209,6 +226,91 @@ class TestRefreshIsNonFatal:
         assert result['executor_drift'] == 'unknown'
         assert result['executor_regenerated'] is False
         assert spy.verbs == ['drift'], 'an indeterminate verdict must not regenerate'
+
+
+class TestSuccessIsDerivedFromDiskNotExitCode:
+    def test_generation_exiting_zero_without_landing_a_file_is_not_success(
+        self, env, monkeypatch
+    ):
+        """`returncode == 0` is not proof the executor exists.
+
+        The generator can exit 0 having written nothing when marketplace
+        anchoring lands nowhere. Reporting that as `executor_regenerated: True`
+        would claim a refreshed executor that is not on disk — the same rule
+        `prepare_execute._generate_worktree_executor` states for this generator.
+        """
+        _commit(env['main_repo'], 'upstream.txt', 'new\n', 'upstream')
+        _commit(env['worktree'], 'local.txt', 'mine\n', 'local work')
+
+        spy = _GeneratorSpy(drift_status='drift', lands_executor=False)
+        result = _invoke(env, monkeypatch, spy)
+
+        assert result['status'] == 'success', 'the rebase itself succeeded'
+        assert spy.verbs == ['drift', 'generate'], 'generation was attempted'
+        assert result['executor_regenerated'] is False, (
+            'no executor landed on disk, so the refresh did not succeed'
+        )
+        assert 'no executor landed' in result['executor_detail']
+
+    def test_generation_that_lands_a_file_is_success(self, env, monkeypatch):
+        _commit(env['main_repo'], 'upstream.txt', 'new\n', 'upstream')
+        _commit(env['worktree'], 'local.txt', 'mine\n', 'local work')
+
+        spy = _GeneratorSpy(drift_status='drift', lands_executor=True)
+        result = _invoke(env, monkeypatch, spy)
+
+        assert result['executor_regenerated'] is True
+        assert git_workflow._worktree_executor_path(env['worktree']).is_file()
+
+
+class TestSubprocessSeamShape:
+    """Pin the ACTUAL command the seam issues, and the live script's contract.
+
+    Every test above replaces ``_run_generate_executor`` wholesale, so none of
+    them would catch a drift in the verb names, the flag, the cwd pin, or the
+    field the probe reads. These pin the seam against the real
+    ``generate_executor.py`` so a rename there fails here rather than silently
+    at runtime.
+    """
+
+    def test_seam_issues_the_expected_argv_and_pins_cwd(self, env, monkeypatch):
+        captured: dict = {}
+
+        def _fake_run(argv, **kwargs):
+            captured['argv'] = argv
+            captured['cwd'] = kwargs.get('cwd')
+
+            class _R:
+                returncode = 0
+                stdout = 'status: success\ndrift_status: ok\n'
+                stderr = ''
+
+            return _R()
+
+        monkeypatch.setattr(git_workflow.subprocess, 'run', _fake_run)
+        git_workflow._run_generate_executor(env['worktree'], 'drift')
+
+        argv = captured['argv']
+        assert argv[1].endswith('generate_executor.py')
+        assert argv[2] == 'drift'
+        assert '--marketplace-root' in argv
+        assert argv[argv.index('--marketplace-root') + 1] == str(env['worktree'])
+        assert captured['cwd'] == str(env['worktree']), (
+            'cwd MUST be pinned to the worktree — the generator resolves its '
+            "OUTPUT location by walking up from cwd, so an unpinned call would "
+            "rewrite main's executor"
+        )
+
+    def test_live_generator_exposes_the_verbs_and_field_the_seam_relies_on(self):
+        """The real script must still carry `drift`, `generate`, and `drift_status`."""
+        source = git_workflow._GENERATE_EXECUTOR_PATH.read_text(encoding='utf-8')
+        assert git_workflow._GENERATE_EXECUTOR_PATH.is_file(), (
+            f'generator not found at {git_workflow._GENERATE_EXECUTOR_PATH}'
+        )
+        assert "'drift'" in source, 'the drift subcommand the probe calls'
+        assert "'generate'" in source, 'the generate subcommand the refresh calls'
+        assert "'drift_status'" in source, 'the field the probe parses'
+        assert "'--marketplace-root'" in source, 'the flag the seam passes'
 
 
 class TestConflictPathIsUnaffected:

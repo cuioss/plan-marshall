@@ -782,11 +782,13 @@ def _executor_path() -> Path | None:
 # tree — every later dispatch in that worktree then resolves against a stale map
 # and a notation introduced upstream cannot resolve at all.
 #
-# The refresh lives here rather than in either caller because BOTH finalize
-# rebase sites route through ``worktree-rebase-to``
-# (``finalize-step-sync-baseline`` at ``order: 3`` and ``branch-cleanup`` at
-# ``order: 70``), and this verb already knows whether the rebase actually
-# replayed anything.
+# The refresh lives here rather than in any caller because EVERY finalize rebase
+# routes through ``worktree-rebase-to`` — this verb is the single seam, and it
+# already knows whether the rebase actually replayed anything. Callers today
+# include ``finalize-step-sync-baseline`` (``order: 3``), ``automatic-review``
+# (``order: 30``, refusal-recovery path) and ``branch-cleanup`` (``order: 70``);
+# that roster is illustrative, not a closed set, and the placement is chosen so a
+# NEW caller inherits the refresh without having to know it exists.
 
 _GENERATE_EXECUTOR_PATH = (
     Path(__file__).resolve().parent.parent.parent
@@ -807,6 +809,29 @@ _EXECUTOR_REFRESH_NOT_REPLAYED: dict[str, Any] = {
     'executor_regenerated': False,
     'executor_detail': 'no commits replayed; executor cannot have drifted',
 }
+
+
+def _worktree_executor_path(worktree_path: Path) -> Path:
+    """The worktree's own executor slot — the file a refresh must land."""
+    return worktree_path / _PLAN_DIR_NAME / 'execute-script.py'
+
+
+def _executor_landed(executor_path: Path) -> bool:
+    """True when ``executor_path`` exists on disk AND is non-empty.
+
+    The on-disk post-assertion that keeps a generation's SUCCESS verdict tied to
+    reality rather than to its exit code. Mirrors
+    ``prepare_execute._executor_landed``, which exists for the same generator and
+    the same failure mode: a run that exits 0 but writes nothing.
+    """
+    try:
+        return (
+            executor_path.is_file()
+            and not executor_path.is_symlink()
+            and executor_path.stat().st_size > 0
+        )
+    except OSError:
+        return False
 
 
 def _run_generate_executor(worktree_path: Path, verb: str, *extra: str) -> tuple[int, str, str]:
@@ -907,6 +932,22 @@ def _refresh_worktree_executor(worktree_path: Path) -> dict[str, Any]:
             'executor_detail': (
                 f'script set drifted but regeneration failed (rc={gen_rc}): '
                 f'{(gen_err or gen_out).strip()[:200] or "no output"} — '
+                'run /marshall-steward to repair the executor'
+            ),
+        }
+    # The verdict is derived from ON-DISK reality, never from generation intent.
+    # ``prepare_execute._generate_worktree_executor`` states the same rule for
+    # the same generator: a run that exits 0 having written nothing (anchoring
+    # landed nowhere) is NOT a success, and reporting it as one would claim a
+    # refreshed executor that does not exist.
+    landed = _executor_landed(_worktree_executor_path(worktree_path))
+    if not landed:
+        return {
+            'executor_drift': 'drift',
+            'executor_regenerated': False,
+            'executor_detail': (
+                'script set drifted and regeneration exited 0, but no executor '
+                f'landed at {_worktree_executor_path(worktree_path)} — '
                 'run /marshall-steward to repair the executor'
             ),
         }

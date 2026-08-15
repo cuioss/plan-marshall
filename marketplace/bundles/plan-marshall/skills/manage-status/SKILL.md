@@ -90,6 +90,12 @@ incoming `(owner, state)` pair differs from the pair already in
 `status.title_token`, or no record is stored. A re-assertion of the pair already
 present is a silent no-op on the log and reports `changed: false`.
 
+The comparison goes through the **staleness-aware** read, not the raw field: a
+record older than the staleness threshold already reads as absent to every
+consumer, so re-asserting it is a genuine absent→present change and does log.
+Comparing the raw field would stay silent about a token the renderers had
+stopped honouring.
+
 The gate exists because the `PreToolUse:Bash` render hook re-asserts
 `build-busy`/`build-hook` on **every** build command, so an unconditional
 emission turned one build bracket into a run of identical lines carrying no new

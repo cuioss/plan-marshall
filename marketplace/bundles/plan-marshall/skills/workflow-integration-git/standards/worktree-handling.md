@@ -429,7 +429,7 @@ message: {human-readable summary}
 
 The per-tree executor (`.plan/execute-script.py`) is **derived state**: it embeds a notation→path map generated from the bundle tree as it stood when the worktree was materialized. A rebase replays the branch onto a newly-fetched `origin/{base}`, so when those upstream commits added, removed, or renamed a bundle script the embedded map stops describing the tree — and every later dispatch in that worktree resolves against a stale map, leaving a notation introduced upstream unresolvable.
 
-`worktree-rebase-to` therefore refreshes the worktree executor as part of a successful rebase. The refresh lives in this verb rather than in either caller because **both** finalize rebase sites route through it (`finalize-step-sync-baseline` at `order: 3` and `branch-cleanup` at `order: 70`), and this verb already knows whether the rebase replayed anything.
+`worktree-rebase-to` therefore refreshes the worktree executor as part of a successful rebase. The refresh lives in this verb rather than in any caller because **every** finalize rebase routes through it — this verb is the single seam, and it already knows whether the rebase replayed anything. Callers today include `finalize-step-sync-baseline` (`order: 3`), `automatic-review` (`order: 30`, refusal-recovery path), and `branch-cleanup` (`order: 70`); that roster is illustrative rather than closed, and the placement is chosen precisely so a **new** caller inherits the refresh without having to know it exists.
 
 Three conditions bound it, each observable on the payload:
 

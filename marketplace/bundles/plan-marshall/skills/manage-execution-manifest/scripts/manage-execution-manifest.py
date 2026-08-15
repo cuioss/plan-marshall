@@ -2767,7 +2767,13 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
         verdict = _check_step_loadable(step)
         if verdict['loadable']:
             retained.append(step)
-        elif live_candidates is not None and step not in live_set:
+        elif live_candidates is not None and canonicalize_step_key(step) not in live_set:
+            # Compare canonically — ``live_set`` is boundary-normalized, and a
+            # hand-edited manifest may legitimately carry a ``default:``-prefixed
+            # id (SKILL.md sanctions direct edits). Comparing raw would read a
+            # prefixed id as absent from live config and drop a step live config
+            # still lists. The ORIGINAL id is what goes into the bucket, so a
+            # retained step is written back exactly as it was stored.
             stale.append(step)
         else:
             broken.append({'step': step, 'message': verdict.get('message', '')})
@@ -2795,7 +2801,10 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
             for step in composed_candidates
             if isinstance(step, str)
         }
-        frozen_set = set(frozen_steps)
+        # Canonical for the same reason the stale test above is: a prefixed
+        # frozen id must not read as "absent from the manifest" and get
+        # backfilled as a duplicate of a step already there.
+        frozen_set = {canonicalize_step_key(step) for step in frozen_steps}
         backfill = [
             step
             for step in live_candidates
@@ -2820,21 +2829,26 @@ def cmd_reconcile(args: argparse.Namespace) -> dict[str, Any] | None:
             }
         write_manifest(plan_id, manifest)
 
-    for step in stale:
-        _emit_decision_log(
-            plan_id,
-            '(plan-marshall:manage-execution-manifest:reconcile) frozen_manifest_stale — '
-            f'dropped `{step}` from phase_6.steps: its standards doc is absent AND '
-            'live marshal.json no longer lists it, so the frozen manifest is behind '
-            'a change this plan already made',
-        )
-    for step in backfill:
-        _emit_decision_log(
-            plan_id,
-            '(plan-marshall:manage-execution-manifest:reconcile) frozen_manifest_backfill — '
-            f'added `{step}` to phase_6.steps: it entered live marshal.json after this '
-            'manifest was composed, so the decision matrix never considered it',
-        )
+        # Emission is INSIDE the apply guard, deliberately. A decision-log line
+        # is an audit record of a subtraction or addition that HAPPENED; emitting
+        # one from a dry run would both mutate a file the verb promises not to
+        # touch and assert a change that was never made — a false audit trail is
+        # worse than none.
+        for step in stale:
+            _emit_decision_log(
+                plan_id,
+                '(plan-marshall:manage-execution-manifest:reconcile) frozen_manifest_stale — '
+                f'dropped `{step}` from phase_6.steps: its standards doc is absent AND '
+                'live marshal.json no longer lists it, so the frozen manifest is behind '
+                'a change this plan already made',
+            )
+        for step in backfill:
+            _emit_decision_log(
+                plan_id,
+                '(plan-marshall:manage-execution-manifest:reconcile) frozen_manifest_backfill — '
+                f'added `{step}` to phase_6.steps: it entered live marshal.json after this '
+                'manifest was composed, so the decision matrix never considered it',
+            )
 
     return {
         'status': 'success',

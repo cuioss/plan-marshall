@@ -18,6 +18,7 @@ from _status_core import (
     get_status_path,
     log_entry,
     normalize_metadata,
+    read_title_token,
     require_status,
     title_token_is_stale,
     write_status,
@@ -313,7 +314,13 @@ def cmd_title_token(args: argparse.Namespace) -> dict[str, Any] | None:
         set_outcome: dict[str, Any] = {'changed': True}
 
         def _apply_set(current: dict[str, Any]) -> dict[str, Any]:
-            previous = current.get('title_token')
+            # Read through ``read_title_token`` — the staleness-aware accessor —
+            # not the raw field. A record past TITLE_TOKEN_STALE_AFTER_SECONDS
+            # "reads as absent" to every reader, so re-asserting it IS a change
+            # (absent → present) and must log. Comparing the raw field would
+            # stay silent about a token the renderers had already stopped
+            # honouring.
+            previous = read_title_token(current)
             set_outcome['changed'] = not (
                 isinstance(previous, dict)
                 and previous.get('owner') == owner

@@ -67,7 +67,13 @@ DEFAULT_PHASE_5_STEPS = _mem.DEFAULT_PHASE_5_STEPS
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 
 _mem._log_decision = lambda *a, **kw: None
-_mem._emit_decision_log = lambda *a, **kw: None
+
+# ``_emit_decision_log`` shells out to the executor, which no test may depend
+# on — but stubbing it to a bare no-op would make emission UNOBSERVABLE, and
+# "does a dry run write an audit record?" is exactly a question these tests must
+# be able to ask. Record instead of discarding.
+_EMITTED: list[tuple[str, str]] = []
+_mem._emit_decision_log = lambda plan_id, message, *a, **kw: _EMITTED.append((plan_id, message))
 
 
 # =============================================================================
@@ -86,6 +92,11 @@ def _write_marshal(fixture_dir: Path, phase_6_steps: list[str]) -> None:
 
 def _reconcile_ns(plan_id: str, apply: bool = False) -> Namespace:
     return Namespace(plan_id=plan_id, apply=apply)
+
+
+def _emitted_for(plan_id: str) -> list[str]:
+    """Decision-log messages emitted for ``plan_id`` since the last reset."""
+    return [message for pid, message in _EMITTED if pid == plan_id]
 
 
 def _seed_manifest(
@@ -174,6 +185,33 @@ class TestStaleStepIsDroppedNotFailed:
         assert GHOST in read_manifest('rec-dry')['phase_6']['steps'], (
             'reconcile without --apply is a report, not a mutation'
         )
+
+    def test_dry_run_emits_no_decision_log_line(self, plan_context):
+        """A dry run must not write an audit record for a change it did not make.
+
+        The decision log is a record of subtractions that HAPPENED. Emitting
+        from a dry run both mutates a file the verb promises not to touch and
+        asserts a drop that never occurred — a false audit trail, which is
+        worse than none.
+        """
+        _write_marshal(plan_context.fixture_dir, [REAL_A])
+        _seed_manifest('rec-dry-log', [REAL_A, GHOST], candidate_steps=[REAL_A, GHOST])
+
+        cmd_reconcile(_reconcile_ns('rec-dry-log'))
+        assert _emitted_for('rec-dry-log') == [], (
+            'a dry run emitted a decision-log line: '
+            f'{_emitted_for("rec-dry-log")}'
+        )
+
+    def test_apply_emits_one_decision_log_line_per_dropped_step(self, plan_context):
+        _write_marshal(plan_context.fixture_dir, [REAL_A])
+        _seed_manifest('rec-apply-log', [REAL_A, GHOST], candidate_steps=[REAL_A, GHOST])
+
+        cmd_reconcile(_reconcile_ns('rec-apply-log', apply=True))
+        messages = _emitted_for('rec-apply-log')
+        assert len(messages) == 1
+        assert 'frozen_manifest_stale' in messages[0]
+        assert GHOST in messages[0]
 
 
 # =============================================================================
@@ -272,6 +310,46 @@ class TestBackfillIsNarrow:
         result = cmd_reconcile(_reconcile_ns('rec-legacy-drop', apply=True))
         assert result['stale'] == [GHOST]
         assert GHOST not in read_manifest('rec-legacy-drop')['phase_6']['steps']
+
+
+# =============================================================================
+# Key canonicalization across the frozen/live boundary
+# =============================================================================
+
+
+class TestPrefixedFrozenIdsCompareCanonically:
+    def test_prefixed_frozen_step_is_not_dropped_when_live_lists_it_bare(
+        self, plan_context
+    ):
+        """A hand-edited manifest may carry `default:`-prefixed ids.
+
+        SKILL.md explicitly sanctions editing execution.toon directly, so the
+        frozen list can hold a prefixed id while the live candidate set is
+        boundary-normalized. Comparing raw would read the prefixed id as absent
+        from live config and drop a step live config still schedules.
+        """
+        _write_marshal(plan_context.fixture_dir, [REAL_A, GHOST])
+        _seed_manifest(
+            'rec-prefixed', [REAL_A, f'default:{GHOST}'], candidate_steps=[REAL_A, GHOST]
+        )
+
+        result = cmd_reconcile(_reconcile_ns('rec-prefixed'))
+        assert result['status'] == 'error', (
+            'live config still lists the step, so a prefixed frozen id must be '
+            'BROKEN (fail loud), never silently dropped as stale'
+        )
+        assert result['error'] == 'unreconcilable_step'
+
+    def test_prefixed_frozen_step_is_not_backfilled_as_a_duplicate(self, plan_context):
+        """A prefixed frozen id must not read as "absent from the manifest"."""
+        _write_marshal(plan_context.fixture_dir, [REAL_A, REAL_B])
+        _seed_manifest('rec-dup', [REAL_A, f'default:{REAL_B}'], candidate_steps=[REAL_A])
+
+        result = cmd_reconcile(_reconcile_ns('rec-dup', apply=True))
+        assert result['backfill'] == [], (
+            f'{REAL_B} is already in the manifest under a prefixed id; '
+            'backfilling it would duplicate the step'
+        )
 
 
 # =============================================================================
