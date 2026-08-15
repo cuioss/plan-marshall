@@ -2201,3 +2201,80 @@ class TestRefusalCauseOverlay:
         # The only difference is the advisory report itself.
         assert without['refusal_causes'] == []
         assert with_cause['refusal_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size'}]
+
+
+class TestAbsentVersusInProgressDistinction:
+    """An absent reviewer and an in-flight one are DIFFERENT facts (plan 130 D3).
+
+    Retirement evidence for the carried lesson *"the completeness guard conflates
+    an absent bot with an in-progress one"*. The distinction is shipped — the two
+    are separate taxonomy members with separate `classify_bot` branches — but no
+    single test pinned that they stay distinguishable all the way to what a reader
+    sees, and a conflation would be invisible until it cost a run.
+
+    It matters because the two call for OPPOSITE remedies. An in-flight review will
+    land on its own: waiting is the correct action. An absent reviewer never
+    started: waiting is pure loss and the correct action is to escalate or trigger.
+    Both block the quorum, which is exactly why the blocking verdict alone cannot
+    tell them apart — the discrimination has to survive into `bot_states` and into
+    the rendered summary a reader acts on.
+    """
+
+    def test_the_two_states_are_distinct_taxonomy_members(self):
+        assert rc.STATE_ABSENT != rc.STATE_IN_PROGRESS
+
+    def test_both_block_but_classify_differently(self, plan_context):
+        """Identical `participation_complete`, different `bot_states` — the whole point.
+
+        Matched pair over one fixture: the ONLY input that differs is whether the
+        bot was observed in-flight, so a difference in the reported state can come
+        from nothing else.
+        """
+        plan_id = 'rc-absent-vs-inprogress'
+        plan_context.plan_dir_for(plan_id)
+
+        absent = rc.check_completeness(plan_id, ['coderabbit'])
+        in_flight = rc.check_completeness(
+            plan_id, ['coderabbit'], in_progress_bots=['coderabbit']
+        )
+
+        # Same gating outcome — which is why the verdict alone cannot separate them.
+        assert absent['participation_complete'] is False
+        assert in_flight['participation_complete'] is False
+        assert absent['unproven_bots'] == in_flight['unproven_bots'] == ['coderabbit']
+        # ...and yet the reported state differs.
+        assert _state_of(absent, 'coderabbit') == rc.STATE_ABSENT
+        assert _state_of(in_flight, 'coderabbit') == rc.STATE_IN_PROGRESS
+
+    def test_the_distinction_survives_into_the_rendered_summary(self):
+        """A reader of `display_detail` can tell "not started" from "still running".
+
+        The classification being distinct buys nothing if both collapse into one
+        display bucket, since the summary is what an operator actually reads.
+        """
+        absent = rc.compose_review_state_summary([
+            {'bot_kind': 'coderabbit', 'state': rc.STATE_ABSENT},
+        ])
+        in_flight = rc.compose_review_state_summary([
+            {'bot_kind': 'coderabbit', 'state': rc.STATE_IN_PROGRESS},
+        ])
+
+        assert absent == '1 absent'
+        assert in_flight == '1 in-progress'
+        assert absent != in_flight
+
+    def test_not_triggered_is_a_third_fact_not_a_synonym_for_either(self, plan_context):
+        """PR-wide "nothing ran" refines `absent` without collapsing into it.
+
+        Its remedy differs again: trigger the review, rather than escalate a
+        reviewer that was asked and stayed silent.
+        """
+        plan_id = 'rc-absent-vs-nottriggered'
+        plan_context.plan_dir_for(plan_id)
+
+        absent = rc.check_completeness(plan_id, ['coderabbit'])
+        not_triggered = rc.check_completeness(plan_id, ['coderabbit'], not_triggered=True)
+
+        assert _state_of(absent, 'coderabbit') == rc.STATE_ABSENT
+        assert _state_of(not_triggered, 'coderabbit') == rc.STATE_NOT_TRIGGERED
+        assert rc.STATE_NOT_TRIGGERED not in {rc.STATE_ABSENT, rc.STATE_IN_PROGRESS}
