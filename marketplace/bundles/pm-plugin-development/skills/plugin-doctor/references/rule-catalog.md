@@ -602,7 +602,7 @@ The allowlist is unchanged by the widened scope — the same exempt prefixes app
 
 ## Rule Pack: Test-tree infrastructure
 
-The three build-failing (`severity: error`) rules of the `test-conventions` scope. They predate the house-style pack below and were catalogued late; `standards/doctor-test-conventions.md` carries their full detection and remediation detail.
+The three build-failing (`severity: error`) rules of the `test-conventions` scope. They predate the house-style pack below and were catalogued late; `standards/doctor-test-conventions.md` carries their full detection and remediation details.
 
 | Rule ID | Intent | False-positive policy | Suppression |
 |---------|--------|-----------------------|-------------|
