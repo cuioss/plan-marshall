@@ -478,3 +478,57 @@ def test_unknown_bot_kind_returns_empty_defaults():
     # The rate-limit accessors fail closed for an unregistered kind too.
     assert bot_registry.rate_limit_class('nope') == 'unknown'
     assert bot_registry.rate_limit_eta_patterns('nope') == []
+
+
+def test_review_body_summary_patterns_are_registry_owned():
+    """The status-summary signature is per-bot DATA, not a literal in a counter.
+
+    A `review_body` can be either the bot's consolidated findings or its
+    "Actionable comments posted: N" status line, and the counting rule
+    (`bot-participation-contract.md` § "The counting rule") excludes the latter.
+    Which literal marks it is a per-bot fact, so it belongs in the registry beside
+    `ignore_patterns` and `refusal_patterns` — a counter that hard-codes the login
+    or the bot_kind is the hard-coded-population archetype one directory away from
+    the registry that exists to prevent it.
+    """
+    assert bot_registry.review_body_summary_patterns('coderabbit') == [
+        'Actionable comments posted:',
+    ]
+
+
+def test_review_body_summary_patterns_default_empty_and_fail_closed():
+    """A bot that declares none never has a review_body reclassified as a summary.
+
+    Empty is the fail-closed default in the direction that matters HERE: for the
+    gate-escape count, dropping a substantive review_body under-counts escapes and
+    makes the gates look better than they are. A bot that has not opted in keeps
+    every review_body counted.
+    """
+    assert bot_registry.review_body_summary_patterns('sourcery') == []
+    assert bot_registry.review_body_summary_patterns('pr-agent') == []
+    assert bot_registry.review_body_summary_patterns('no-such-bot') == []
+
+
+def test_bot_kind_for_login_normalises_casing_and_the_bot_suffix():
+    """The login→bot_kind lookup tolerates the two drifts real logins carry.
+
+    `github_pr` stores `author` VERBATIM, and GraphQL author logins arrive both
+    with a `[bot]` suffix and with non-canonical casing — the repo's own fixtures
+    use `coderabbitai[bot]`. A raw exact-match lookup silently resolves those to
+    nothing, which disables every per-bot rule keyed off the author for exactly the
+    records that have no `bot_kind` to fall back on.
+
+    The registry owns the login map, so the normalised lookup belongs here rather
+    than being re-implemented by each consumer.
+    """
+    assert bot_registry.bot_kind_for_login('coderabbitai') == 'coderabbit'
+    assert bot_registry.bot_kind_for_login('coderabbitai[bot]') == 'coderabbit'
+    assert bot_registry.bot_kind_for_login('CodeRabbitAI') == 'coderabbit'
+    assert bot_registry.bot_kind_for_login('CodeRabbitAI[bot]') == 'coderabbit'
+
+
+def test_bot_kind_for_login_returns_empty_for_a_human_or_absent_login():
+    """A non-bot author resolves to no bot_kind — never to a wrong one."""
+    assert bot_registry.bot_kind_for_login('some-human') == ''
+    assert bot_registry.bot_kind_for_login('') == ''
+    assert bot_registry.bot_kind_for_login(None) == ''

@@ -24,6 +24,7 @@ from _self_review_patterns import (
 from self_review import (
     _build_parser,
     _compose_candidate_output,
+    _format_structural_limit,
     _detect_advertised_form_help_strings,
     _detect_contract_sources,
     _detect_count_prose,
@@ -3808,3 +3809,100 @@ class TestSinceRefDeltaScoping:
         args = _build_parser().parse_args(['surface', '--plan-id', 'defaults-plan'])
 
         assert args.since_ref is None
+
+
+class TestStructuralLimit:
+    """The surface states what this analysis CLASS cannot evaluate (plan 130 D0).
+
+    ``scope_statement`` answers *which files were searched*, and widening the file
+    set cures it. ``structural_limit`` answers a different question — *what can this
+    analysis never see, however many files it searches* — and nothing cures it. The
+    two are kept apart because collapsing them is the defect: a reader who sees only
+    the file-scope statement reads a full-scope clean round as assurance the diff is
+    sound, when the round only ever compared statements INSIDE the diff against each
+    other.
+    """
+
+    @staticmethod
+    def _build_repo(tmp_path: Path) -> Path:
+        """A feature branch carrying one candidate-bearing file — a clean full round."""
+        repo = tmp_path / 'repo'
+        _init_repo(repo)
+        _commit(repo, 'base', {'base.txt': 'base\n'})
+        _git(repo, 'checkout', '-b', 'feature')
+        _commit(repo, 'work', {'alpha.py': 'import re\n_A = re.compile(r"^alpha-[0-9]+$")\n'})
+        return repo
+
+    @staticmethod
+    def _surface(repo: Path, *extra: str):
+        from conftest import get_script_path, run_script
+
+        script = get_script_path(
+            'pm-plugin-development', 'ext-self-review-plan-marshall', 'self_review.py'
+        )
+        return run_script(
+            script,
+            'surface',
+            '--plan-id',
+            'structural-limit-plan',
+            '--project-dir',
+            str(repo),
+            '--base-branch',
+            'main',
+            *extra,
+        )
+
+    def test_structural_limit_names_the_class_the_analysis_cannot_reach(self):
+        """The statement describes the ANALYSIS, not its file scope."""
+        statement = _format_structural_limit()
+
+        assert statement
+        # It names what the analysis does...
+        assert 'added lines' in statement
+        # ...and the class it therefore cannot reach: runtime behaviour under
+        # inputs the diff does not contain.
+        assert 'does NOT evaluate' in statement
+        assert 'inputs the diff does not contain' in statement
+
+    def test_structural_limit_is_not_a_file_scope_statement(self):
+        """It must not be curable by widening the file set — that is the other axis.
+
+        A structural limit phrased as "only the files in the diff" would duplicate
+        ``scope_statement`` and would be wrong: widening the scope WOULD cure that,
+        so it is not structural.
+        """
+        statement = _format_structural_limit()
+
+        assert 'searched' not in statement
+        assert 'widening the scope' in statement
+
+    def test_surface_publishes_the_structural_limit_unconditionally(self, tmp_path):
+        """Every surface round carries it — including a clean, full-scope one.
+
+        A clean full-scope round is exactly when the limit matters most, because
+        that is the verdict a reader is most likely to take as whole-diff assurance.
+        """
+        repo = self._build_repo(tmp_path)
+
+        result = self._surface(repo)
+        assert result.success, f'surface failed: stderr={result.stderr}'
+        data = result.toon()
+
+        assert data['structural_limit']
+        assert 'inputs the diff does not contain' in data['structural_limit']
+
+    def test_structural_limit_and_scope_statement_are_distinct_fields(self, tmp_path):
+        """Two different honesty claims, emitted as two fields — never one.
+
+        Merging them would let a caller that reads either one believe it has both,
+        which is how a file-scope statement came to stand in for a statement about
+        what the analysis can see at all.
+        """
+        repo = self._build_repo(tmp_path)
+
+        result = self._surface(repo)
+        assert result.success, f'surface failed: stderr={result.stderr}'
+        data = result.toon()
+
+        assert data['scope_statement'] != data['structural_limit']
+        assert data['scope_statement'].startswith('searched full scope')

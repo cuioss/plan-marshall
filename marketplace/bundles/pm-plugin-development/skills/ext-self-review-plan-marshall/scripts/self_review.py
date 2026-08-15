@@ -136,6 +136,41 @@ def _format_scope_statement(
     )
 
 
+def _format_structural_limit() -> str:
+    """Render the STRUCTURAL limit of this analysis — a different axis from scope.
+
+    :func:`_format_scope_statement` answers *which files were searched*, and widening
+    the file set cures it. This answers *what this analysis can never see, however
+    many files it searches*, and nothing cures it — not a wider sweep, not another
+    round, not a re-run.
+
+    The two are emitted as two fields precisely because collapsing them is the
+    defect. This surface detects patterns over the diff's ADDED LINES and adjudicates
+    the statements it finds against each other, so its whole reach is *internal
+    consistency between statements present in the diff*: a claim narrower than the
+    code, a sentence contradicting an instruction above it, a count restated in three
+    places and retired in one. What it structurally cannot reach is the behaviour of
+    the code under inputs the diff does not contain — a binary read of a three-valued
+    observable, a documented remedy with no reachable invocation, an observable
+    scoped per-branch whose meaning is per-PR. Those are a different search problem,
+    and a clean full-scope round is exactly the verdict most likely to be misread as
+    covering them.
+
+    Emitted UNCONDITIONALLY, for the same reason the scope statement is: the round
+    most in need of the disclaimer is the clean one.
+    """
+    return (
+        'structural limit: this pass matches patterns over the diff\'s added lines '
+        'and adjudicates the statements it finds against each other, so it reaches '
+        'INTERNAL CONSISTENCY between statements present in the diff. It does NOT '
+        'evaluate the behaviour of the code under inputs the diff does not contain — '
+        'a fallible observable read as a binary, a documented remedy with no '
+        'reachable invocation, an observable whose scope and whose meaning disagree. '
+        'That is a property of the analysis, not of its file set: widening the scope '
+        'does not reach it, so a clean round here is not evidence the diff is sound.'
+    )
+
+
 def _compose_candidate_output(detected: dict[str, list]) -> dict[str, Any]:
     """Derive the counts block and the candidate payload from ``CANDIDATE_LISTS``.
 
@@ -367,6 +402,11 @@ def _cmd_surface(args: argparse.Namespace) -> int:
         'scope_statement': _format_scope_statement(
             surface_scope, files_in_scope, since_ref
         ),
+        # The second, orthogonal honesty field: what this ANALYSIS cannot evaluate
+        # at all, as distinct from which files it happened to search. Kept separate
+        # from scope_statement so a caller reading either one cannot believe it has
+        # both — see _format_structural_limit.
+        'structural_limit': _format_structural_limit(),
         **_compose_candidate_output(detected),
     }
     output_toon(output)
