@@ -248,7 +248,34 @@ measured precision at scale.
 
 ## Reviewer participation
 
-_pending — filled after the PR review cycle._
+Population derived from configuration, not transcribed: the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`
+registry doc — `pr-agent.md` → `cuioss-review-bot`, `coderabbit.md` →
+`coderabbitai`, `sourcery.md` → `sourcery-ai`. Each verdict is read from the
+stored comment **bodies**, never from a check state.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | **reviewed** | Published a "PR Reviewer Guide" body carrying a real finding: the `ImportFrom` module-name offset ignored `node.level`, so a relative import's query landed on a leading `.`. Confirmed by reproduction and fixed in `c78e563` |
+| `coderabbitai` | **rate-limited** | Began a review, then published "Review failed — the head commit changed during the review from `1ee3e2d` to `dbaa266`", followed by "Review limit reached … Next review available in 55 minutes". It engaged but reviewed no head |
+| `sourcery-ai` | **silent** | Its check concluded `skipped`; no review body of any kind was published. A check state is not a verdict, so the verdict comes from the absence of a body |
+
+**Coverage: 1 of 3.** The § Step 8 shortfall disclosure fired, stated in the PR
+thread as "Coverage: 1 of 3" with each reviewer's reason, and repeated to the
+operator.
+
+⚠ **This run caused one of the two shortfalls.** CodeRabbit's review was aborted
+by a push that changed the head mid-review, and its window was exhausted before it
+could retry. That push was the contract's mandated trade — an unpushed commit is
+lost work the moment a VM is reclaimed, so durability outranks review cleanliness —
+but the cost is real and is not written off: an aborted review is recorded as
+`rate-limited`, never counted as coverage. It can be re-triggered with
+`@coderabbitai review` once the limit resets.
+
+The lever the contract offers for this is batching at the *commit* boundary rather
+than delaying pushes. This run made seven commits and pushed each; a coarser commit
+grain would have meant fewer head changes at zero durability cost, and that is the
+honest lesson from the shortfall.
 
 ## Cost
 
