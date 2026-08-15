@@ -74,6 +74,7 @@ from _cmd_baseline_reconcile import cmd_baseline_reconcile
 from _cmd_force_push import cmd_force_push
 from _cmd_prune_ref import cmd_prune_ref
 from _cmd_switch_and_pull import cmd_switch_and_pull
+from _executor_slot import executor_landed, worktree_executor_path
 from file_ops import (
     WorktreeResolutionError,
     get_executor_path,
@@ -811,29 +812,6 @@ _EXECUTOR_REFRESH_NOT_REPLAYED: dict[str, Any] = {
 }
 
 
-def _worktree_executor_path(worktree_path: Path) -> Path:
-    """The worktree's own executor slot — the file a refresh must land."""
-    return worktree_path / _PLAN_DIR_NAME / 'execute-script.py'
-
-
-def _executor_landed(executor_path: Path) -> bool:
-    """True when ``executor_path`` exists on disk AND is non-empty.
-
-    The on-disk post-assertion that keeps a generation's SUCCESS verdict tied to
-    reality rather than to its exit code. Mirrors
-    ``prepare_execute._executor_landed``, which exists for the same generator and
-    the same failure mode: a run that exits 0 but writes nothing.
-    """
-    try:
-        return (
-            executor_path.is_file()
-            and not executor_path.is_symlink()
-            and executor_path.stat().st_size > 0
-        )
-    except OSError:
-        return False
-
-
 def _run_generate_executor(worktree_path: Path, verb: str, *extra: str) -> tuple[int, str, str]:
     """Invoke ``generate_executor.py {verb}`` against ``worktree_path``.
 
@@ -940,14 +918,14 @@ def _refresh_worktree_executor(worktree_path: Path) -> dict[str, Any]:
     # the same generator: a run that exits 0 having written nothing (anchoring
     # landed nowhere) is NOT a success, and reporting it as one would claim a
     # refreshed executor that does not exist.
-    landed = _executor_landed(_worktree_executor_path(worktree_path))
+    landed = executor_landed(worktree_executor_path(worktree_path))
     if not landed:
         return {
             'executor_drift': 'drift',
             'executor_regenerated': False,
             'executor_detail': (
                 'script set drifted and regeneration exited 0, but no executor '
-                f'landed at {_worktree_executor_path(worktree_path)} — '
+                f'landed at {worktree_executor_path(worktree_path)} — '
                 'run /marshall-steward to repair the executor'
             ),
         }

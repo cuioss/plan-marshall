@@ -95,7 +95,12 @@ def _reconcile_ns(plan_id: str, apply: bool = False) -> Namespace:
 
 
 def _emitted_for(plan_id: str) -> list[str]:
-    """Decision-log messages emitted for ``plan_id`` since the last reset."""
+    """Every decision-log message emitted for ``plan_id`` in this session.
+
+    ``_EMITTED`` is never reset — filtering by plan id is what isolates one
+    test from another, so each test that inspects emission MUST use a plan id
+    no other test uses.
+    """
     return [message for pid, message in _EMITTED if pid == plan_id]
 
 
@@ -423,6 +428,14 @@ class TestComposeSnapshotsCandidateSteps:
         candidates = manifest['phase_6'].get('candidate_steps')
         assert candidates, 'compose must snapshot the phase-6 candidate set'
         selected = manifest['phase_6']['steps']
+        # Subset holds HERE because this compose leaves every ceremony gate at
+        # its `auto` default. It is NOT a general invariant: a gate resolved to
+        # `always` force-inserts its canonical step via
+        # `_apply_ceremony_finalize_selection` with no candidate-membership
+        # check, so a forced-in step legitimately appears in `steps` and not in
+        # `candidate_steps`. Do not generalize this assertion — see
+        # standards/manifest-schema.md.
         assert set(selected).issubset(set(candidates)), (
-            'every selected step must come from the recorded candidate set'
+            'with every ceremony gate at `auto`, each selected step must come '
+            'from the recorded candidate set'
         )

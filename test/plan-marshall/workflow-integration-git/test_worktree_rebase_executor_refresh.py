@@ -127,7 +127,7 @@ class _GeneratorSpy:
                 return 0, 'garbage not toon\n', ''
             return 0, f'status: success\ndrift_status: {self._drift_status}\n', ''
         if self._generate_rc == 0 and self._lands_executor:
-            slot = git_workflow._worktree_executor_path(worktree)
+            slot = git_workflow.worktree_executor_path(worktree)
             slot.parent.mkdir(parents=True, exist_ok=True)
             slot.write_text('#!/usr/bin/env python3\n# generated\n')
         return self._generate_rc, 'status: success\n', '' if self._generate_rc == 0 else 'boom'
@@ -260,7 +260,7 @@ class TestSuccessIsDerivedFromDiskNotExitCode:
         result = _invoke(env, monkeypatch, spy)
 
         assert result['executor_regenerated'] is True
-        assert git_workflow._worktree_executor_path(env['worktree']).is_file()
+        assert git_workflow.worktree_executor_path(env['worktree']).is_file()
 
 
 class TestSubprocessSeamShape:
@@ -303,10 +303,15 @@ class TestSubprocessSeamShape:
 
     def test_live_generator_exposes_the_verbs_and_field_the_seam_relies_on(self):
         """The real script must still carry `drift`, `generate`, and `drift_status`."""
-        source = git_workflow._GENERATE_EXECUTOR_PATH.read_text(encoding='utf-8')
+        # Guard BEFORE the read, not after it: `read_text` on a missing path
+        # raises FileNotFoundError and the actionable message below would never
+        # be reached — a bypass placed after the work it guards, which is the
+        # exact anti-pattern this plan's D4c promotes into ref-code-quality
+        # standards/code-organization.md § Guard Clauses.
         assert git_workflow._GENERATE_EXECUTOR_PATH.is_file(), (
             f'generator not found at {git_workflow._GENERATE_EXECUTOR_PATH}'
         )
+        source = git_workflow._GENERATE_EXECUTOR_PATH.read_text(encoding='utf-8')
         assert "'drift'" in source, 'the drift subcommand the probe calls'
         assert "'generate'" in source, 'the generate subcommand the refresh calls'
         assert "'drift_status'" in source, 'the field the probe parses'

@@ -53,6 +53,7 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
+from _executor_slot import executor_landed, worktree_executor_path
 from file_ops import (
     get_plan_dir,
     get_worktree_root,
@@ -225,8 +226,13 @@ _GENERATE_EXECUTOR_PATH = (
 )
 
 
-def _worktree_executor_path(worktree_path: Path) -> Path:
-    return worktree_path / PLAN_DIR_NAME / 'execute-script.py'
+#: Re-exported under this module's historical private names so the many call
+#: sites below (and their tests) keep reading naturally. The definitions live in
+#: ``_executor_slot`` because ``git-workflow``'s post-rebase refresh produces the
+#: SAME artifact and must agree with this module on both the path and what
+#: counts as landed.
+_worktree_executor_path = worktree_executor_path
+_executor_landed = executor_landed
 
 
 def _already_moved_in_response(
@@ -264,22 +270,6 @@ def _already_moved_in_response(
         'worktree_executor_generated': generated,
         'executor_detail': executor_detail,
     }
-
-
-def _executor_landed(executor_path: Path) -> bool:
-    """Return True when ``executor_path`` exists on disk AND is non-empty.
-
-    The on-disk post-assertion (FIX 1): a generation that exits 0 but writes
-    nothing (the plugin-cache-install case, where the worktree has no vendored
-    ``marketplace/bundles`` and anchoring lands nowhere) leaves the executor
-    absent or empty. ``returncode == 0`` alone is NOT proof the file landed, so
-    the success verdict must be derived from on-disk reality, never from
-    generation intent.
-    """
-    try:
-        return executor_path.is_file() and not executor_path.is_symlink() and executor_path.stat().st_size > 0
-    except OSError:
-        return False
 
 
 def _main_executor_path(plan_id: str) -> Path | None:
