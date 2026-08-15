@@ -181,7 +181,7 @@ every outcome below is read from the streamed output, never the exit code:
 | `1b1b867` | SUCCESS — 19743 passed, 14 skipped, zero `FAILED` lines, zero sub-step failure lines (9m15s) |
 | `3ac175d` | SUCCESS — 19746 passed, 14 skipped, zero `FAILED`/`ERROR` lines, zero sub-step failure lines (6m27s) |
 | `902a5d9` | SUCCESS — 19746 passed, 14 skipped, zero `FAILED`/`ERROR` lines, zero sub-step failure lines (6m27s) |
-| **`{final}`** | The gate is re-run at the tree the PR actually opens from, and this row records THAT run. Round 5 refused a gate recorded two commits behind HEAD, correctly: `test-compile` is exactly what F37 proved the targeted suites cannot see, so a green targeted run at a later commit is not a substitute |
+| **`a751c9a`** | **SUCCESS — 19746 passed, 14 skipped, zero `FAILED`/`ERROR` lines, zero sub-step failure lines (6m31s). This is the tree the PR opens from.** Round 5 refused a gate recorded two commits behind HEAD, correctly: `test-compile` is exactly what F37 proved the targeted suites cannot see, so a green targeted run at a later commit is not a substitute |
 
 ⛔ **`./pw verify` exited 0 while FAILING on TWO of its eight runs.** Both were caught only by
 reading the streamed output. Had the exit code been trusted at any of those points, this run would
