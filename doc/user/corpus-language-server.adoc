@@ -80,7 +80,9 @@ To switch it off again, set `enabled` to `false` or delete the key. There is no 
 
 Turning on the switch above makes the server *willing* to answer. It does not connect an editor to it — that is a second, separate step, and it is deliberately yours to take.
 
-To wire up an LSP client, add a declaration of this shape to your own configuration:
+Where the declaration goes depends on which client you use, because the `${...}` placeholders below are *plugin-scoped* — Claude Code substitutes them for a plugin's own declared servers, and they mean nothing in an ordinary editor config.
+
+*If you maintain your own Claude Code plugin*, declare it there — inline in that plugin's `.claude-plugin/plugin.json`, or in a `.lsp.json` at its root:
 
 [source,json]
 ----
@@ -97,6 +99,21 @@ To wire up an LSP client, add a declaration of this shape to your own configurat
   }
 }
 ----
+
+NOTE: `${CLAUDE_PLUGIN_ROOT}` resolves to the plugin whose manifest carries the declaration. If that is not the plugin shipping this skill, it points at the wrong tree — use the absolute-path form below instead.
+
+*For any other LSP client* — Neovim, VS Code, Emacs — there is no placeholder expansion, so give real paths:
+
+[source,text]
+----
+command: python3
+args:    /abs/path/to/<bundle-root>/pm-plugin-development/skills/tools-corpus-language-server/scripts/corpus_lsp.py
+         serve
+         --project-path /abs/path/to/your/project
+filetypes: markdown (.md)
+----
+
+`<bundle-root>` is wherever your bundles live: `marketplace/bundles/` in a source checkout, or the plugin cache root in an installed one.
 
 [IMPORTANT]
 ====

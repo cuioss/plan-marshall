@@ -48,10 +48,11 @@ def _bootstrap_sys_path() -> None:
     ⭐ **This script has two callers with different environments, and only one of
     them is the executor.** Run as an executor verb it needs nothing: the
     executor injects a ``PYTHONPATH`` covering every skill's ``scripts/``
-    directory. But the ``serve`` verb is spawned **directly by an LSP client**
-    from the plugin manifest's ``lspServers`` declaration — no executor, and
-    therefore no ``PYTHONPATH`` — which is exactly the "pre-executor entry point"
-    case the ``sys-path-bootstrap`` allowlist sanctions.
+    directory. But the ``serve`` verb is spawned **directly by an LSP client**,
+    from a declaration an operator adds (no bundle ships one) — so the executor
+    is never in the picture and no ``PYTHONPATH`` is injected. That is the
+    "entry points the executor does not dispatch" case the ``sys-path-bootstrap``
+    allowlist sanctions.
 
     Resolution walks up from this file to the bundles root (the ancestor holding
     sibling bundle directories, each with a ``.claude-plugin/plugin.json``), so

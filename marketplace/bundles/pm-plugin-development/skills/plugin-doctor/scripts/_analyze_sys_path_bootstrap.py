@@ -38,7 +38,8 @@ Allowlist categories
    marshall-steward wizard scripts, the permission-fix wizard step and the
    permission chain it imports, the platform-runtime router and its Claude
    runtime, and the corpus language server, which an LSP client spawns
-   directly from the ``lspServers`` manifest declaration). These have no
+   directly — no bundle declares it, so the declaration is operator-added, but
+   either way the executor is not in the picture). These have no
    executor-provided ``PYTHONPATH`` to rely on.
 2. **Functional lazy-imports** — functions that add a specific skill's scripts
    directory on demand to import an optional cross-skill module, degrading
@@ -94,14 +95,17 @@ RULE_DESCRIPTOR = RuleDescriptor(
 # PYTHONPATH.
 _ALLOWLIST: frozenset[str] = frozenset(
     {
-        # 1. Pre-executor entry points (run before .plan/execute-script.py exists)
+        # 1. Entry points the executor does not dispatch (run before .plan/execute-script.py exists, or outside it)
         'plan-marshall/skills/tools-script-executor/scripts/generate_executor.py',
         'plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py',
         'plan-marshall/skills/marshall-steward/scripts/determine_mode.py',
         'plan-marshall/skills/marshall-steward/scripts/gitignore_setup.py',
         'plan-marshall/skills/tools-permission-fix/scripts/permission_fix.py',
-        # Spawned directly by an LSP client from the `lspServers` manifest
-        # declaration, so no executor and no injected PYTHONPATH.
+        # Spawned directly by an LSP client from an operator-added `lspServers`
+        # declaration (this bundle deliberately ships none), so the executor never
+        # dispatches it and no PYTHONPATH is injected. Verified by running `serve`
+        # as a bare subprocess with PYTHONPATH stripped, in both the source tree
+        # and the generated target tree.
         'pm-plugin-development/skills/tools-corpus-language-server/scripts/corpus_lsp.py',
         'plan-marshall/skills/tools-permission-doctor/scripts/permission_common.py',
         'plan-marshall/skills/tools-permission-doctor/scripts/permission_doctor.py',

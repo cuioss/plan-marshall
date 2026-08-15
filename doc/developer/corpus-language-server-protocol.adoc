@@ -49,7 +49,9 @@ Effectively the entire cost is index construction, and it is paid per process. T
 
 The original framing assumed the two audiences were opposed — that an editor protocol serves humans while agents want tool calls. That is no longer true on this platform. Claude Code's plugin schema accepts an `lspServers` declaration (inline in `plugin.json`, or in a sibling `.lsp.json`), starts declared servers automatically when the plugin is enabled, and routes definition and reference lookups through them; `diagnostics` are pushed into the agent's context by default.
 
-So a single language server serves both audiences, and the premise that would have ruled the protocol out no longer holds.
+So a single language server *can* serve both audiences, and the premise that would have ruled the protocol out no longer holds.
+
+⚠ This is a fact about the **platform**, not about what ships. The automatic-consumption path requires a declaration, and — for reasons in "The declaration is documented, not shipped" below — this bundle does not carry one. The protocol choice stands on this fact; the adoption argument that was built on top of it did not survive.
 
 === Nothing off the shelf covers the notation
 
@@ -79,7 +81,7 @@ What *was* taken from the `language_servers` design is its degradation contract 
 
 A plugin-declared language server *starts automatically when its plugin is enabled*. Declaring the server would therefore itself constitute opting in, and "strictly opt-in" would be unachievable at the manifest layer.
 
-The switch is consequently read by the server itself, from the project's version-controlled `.plan/marshal.json` under `code_intelligence.corpus_language_server.enabled`. When it is not enabled the server starts — the client expects it to — and then advertises *no capabilities*, answers every request emptily, and never builds the index. Every unreadable or ambiguous configuration fails closed to disabled, so a malformed config can never accidentally switch a surface on.
+The switch is consequently read by the server itself, from the project's version-controlled `.plan/marshal.json` under `code_intelligence.corpus_language_server.enabled`. When it is not enabled the server still starts if a client was configured to launch it — clients expect a declared server to come up — and then advertises *no capabilities*, answers every request emptily, and never builds the index. Every unreadable or ambiguous configuration fails closed to disabled, so a malformed config can never accidentally switch a surface on.
 
 Version-controlled rather than machine-local is deliberate, and is the same argument that ruled out reusing the `language_servers` store: a repository-shipped server has one correct command for every developer.
 
@@ -87,7 +89,9 @@ Version-controlled rather than machine-local is deliberate, and is the same argu
 
 *Extension collision.* `extensionToLanguage` binds by file extension, and the documented behaviour when several enabled servers claim one extension is that the first registered wins and the others never start. A `.md` registration could therefore shadow a user's own Markdown server. This is the concrete reason opt-in must be default-off rather than a flag consulted after the extension is already claimed — and, as the next section records, it is what decided that the declaration is not shipped at all.
 
-== The declaration is documented, not shipped
+*Diagnostics stay withheld.* No diagnostic capability is advertised. The validator's unresolved set is presently about 97% false positives — documentation placeholders, foreign namespaces such as build-command and Maven coordinates, and notations whose third segment is a subcommand rather than a script. Advertising a diagnostic provider before that precision work lands would ship confidently wrong warnings at the substrate's most visible surface.
+
+=== The declaration is documented, not shipped
 
 ⛔ The bundle manifest carries **no** `lspServers` declaration. The `SKILL.md` and the user page document the block; an operator adds it deliberately.
 
@@ -96,8 +100,6 @@ This reverses the reasoning that set Option D aside, and the reversal is the mos
 ⚠ Both halves of that could not be had. The consequence is stated rather than softened: **the surface has no automatic consumer.** The `query` verb is reachable without a client, and the editor surface is one documented copy-paste away — a smaller adoption gap than shipping nothing, and a larger one than the decision assumed.
 
 ⭐ Two findings from implementation are worth carrying forward, because neither was visible from the analysis. First, the two defects masked each other: the multi-target generator was silently dropping `lspServers` from the built artifact, so the collision could not occur and the declaration did nothing — fixing the generator is what made the trade-off real and forced this decision. Second, a static manifest cannot express a conditional binding, so "declare it and let the server decide" is not available on this platform at all.
-
-*Diagnostics stay withheld.* No diagnostic capability is advertised. The validator's unresolved set is presently about 97% false positives — documentation placeholders, foreign namespaces such as build-command and Maven coordinates, and notations whose third segment is a subcommand rather than a script. Advertising a diagnostic provider before that precision work lands would ship confidently wrong warnings at the substrate's most visible surface.
 
 == Related
 

@@ -141,8 +141,13 @@ server:
 - `text=True` applies universal-newline translation, rewriting the LSP header terminator `\r\n\r\n`
   as `\n\n` and corrupting the frame.
 
-A language server is spawned by its **client**, not by a verb call. An LSP client is pointed at it
-with a declaration of this shape:
+A language server is spawned by its **client**, not by a verb call. Two forms are given below because
+the placeholders are **plugin-scoped**: `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PROJECT_DIR}` are
+substituted for a plugin's own declared servers, so they carry no meaning in a general-purpose editor
+config. Use the form that matches where the declaration lives.
+
+**Form 1 — a Claude Code plugin manifest you control.** Goes in that plugin's
+`.claude-plugin/plugin.json` (inline) or a `.lsp.json` at its root:
 
 ```json
 "lspServers": {
@@ -158,6 +163,24 @@ with a declaration of this shape:
   }
 }
 ```
+
+⚠ `${CLAUDE_PLUGIN_ROOT}` resolves to the root of the plugin **whose manifest declares the server**.
+Declaring it from a *different* plugin than the one shipping this skill therefore resolves to the
+wrong tree — use Form 2's absolute path in that case.
+
+**Form 2 — any other LSP client** (Neovim, VS Code, Emacs, or a hand-rolled client). No placeholder
+expansion, so give real paths:
+
+```text
+command: python3
+args:    /abs/path/to/<bundle-root>/pm-plugin-development/skills/tools-corpus-language-server/scripts/corpus_lsp.py
+         serve
+         --project-path /abs/path/to/your/project
+filetypes/extensions: markdown (.md)
+```
+
+`<bundle-root>` is wherever the bundles are on disk — `marketplace/bundles/` in a source checkout, or
+the plugin cache root in an installed one.
 
 ⛔ **This bundle deliberately does NOT ship that declaration**, and the reason is the one thing a
 static manifest cannot express. A plugin-declared server is started — and its extension claimed — the
@@ -181,7 +204,7 @@ diagnostic provider while D3 is gated.
 
 Because a client spawns the script **without** the executor, there is no injected `PYTHONPATH`. The
 script therefore bootstraps its own `sys.path` from its location up to the bundles root — the
-"pre-executor entry point" case the `sys-path-bootstrap` allowlist sanctions. It is layout-derived
+"entry points the executor does not dispatch" case the `sys-path-bootstrap` allowlist sanctions. It is layout-derived
 rather than hardcoded, so it resolves identically in the source tree and in a deployed plugin cache.
 
 ## Scripts

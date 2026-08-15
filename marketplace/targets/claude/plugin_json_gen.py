@@ -49,9 +49,13 @@ from marketplace.targets.claude.variant_emitter import (
 # error: the emitter excludes the source manifest from its verbatim mirror, and
 # the equality check compares regenerated against emitted (both missing the key),
 # so a dropped key is invisible to every gate. A manifest key that governs runtime
-# behaviour must therefore be added here explicitly — `lspServers` was declared in
-# the committed manifest and silently never reached the deployed artifact, so the
-# server it declares was never started by any client.
+# behaviour must therefore be added here explicitly. The worked example:
+# `lspServers` was declared in a committed manifest and silently never reached the
+# deployed artifact, so the server it declared was never started by any client.
+# That declaration was subsequently withdrawn for unrelated reasons, so no bundle
+# currently ships one — the entry is kept deliberately, because the defect is in
+# the allowlist mechanism rather than in any one key, and an operator-added
+# declaration would hit the same path.
 PASSTHROUGH_FIELDS = (
     'name',
     'version',

@@ -4,8 +4,9 @@
 """End-to-end tests for `serve` as an LSP CLIENT actually spawns it.
 
 These drive the real script as a subprocess with **no `PYTHONPATH`**, which is
-the environment the `lspServers` manifest declaration produces: the client
-spawns the script directly, so there is no executor to inject one.
+the environment any `lspServers` declaration produces — this bundle ships none,
+so the declaration is operator-added, but either way the client spawns the
+script directly and there is no executor to inject one.
 
 ⚠ The in-process protocol tests cannot catch what these catch. They drive
 `LspServer.serve()` against `BytesIO`, so they never exercise the import
