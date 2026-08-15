@@ -880,8 +880,7 @@ def _partition_configured_resolvers(
     an unconfigured project dispatches every discovered resolver.
 
     **A disabled resolver is REPORTED, never silently dropped.** It comes back as
-    a ``status: not_dispatched``, ``edge_count: 0`` report carrying a
-    ``configuration:`` note,
+    a ``status: not_dispatched``, ``edge_count: 0`` report carrying a ``configuration:`` note,
     because the seam's anti-vacuity property is exactly that a zero-edge answer
     explains itself: dropping the record instead would make "switched off by the
     operator" indistinguishable from "never registered", which is the vacuity

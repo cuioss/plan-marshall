@@ -122,7 +122,15 @@ per verification round. Every dimension clean each time — `ruff … All checks
 |---|---|---|
 | 1 | pre-fix | **20091 passed, 14 skipped** |
 | 2 | after the round-1 fixes | **20098 passed, 14 skipped** |
-| 3 | after the round-2 fixes | recorded at the merge gate |
+| 3 | after the round-2 fixes | **20102 passed, 14 skipped** |
+| 4 | after the round-3 fixes | **20103 passed, 14 skipped** |
+| 5 | after the round-4 fixes | recorded at the merge gate |
+
+⚠ **The wrapper exits 0 even when the gate fails**, and it did so **three times** this run — twice on
+an unused import left behind by my own edits, once on a relative link written at the wrong `../`
+depth. Each was caught only by reading `verify: quality-gate failed` in the output. A run that gated
+on the exit code would have shipped all three to CI. After the third, a fast `ruff check` was run
+ahead of each full gate, which catches that class in seconds rather than after seven minutes.
 
 Lockfile churn: `./pw` rewrote `uv.lock` under the session interpreter. It was backed out with
 `git checkout -- uv.lock` and never staged; every commit stages named deliverable paths, never
@@ -141,10 +149,21 @@ per-module and is green. Recorded in Residue.
 
 ## Findings
 
-**Three verification rounds.** Round 1 found ten findings; round 2 found that round 1's own fix was
-wrong on the wire, plus ten more; round 3 found nine, six of them in this report. Each round was
-dispatched because the previous one found a defect — a verification pass that found something has not
-finished. Recorded per instance, per round.
+**Four verification rounds.** Each was dispatched because the previous one found a defect — a
+verification pass that found something has not finished. Recorded per instance, per round; the row
+counts below are the tables' own:
+
+| Round | Rows | Of which |
+|---|---|---|
+| 1 | 13 | 10 from the sub-agent, 3 self-caught while fixing |
+| 2 | 11 | 10 from the sub-agent (including the wire defect in round 1's own fix), 1 self-caught |
+| 3 | 10 | 9 code/doc, plus one row (R3-R) covering six inaccuracies in this report |
+| 4 | 10 | 3 code/doc, 1 cross-surface ADR defect, 6 further report inaccuracies |
+
+Round 4 reported the **mechanical contract surface converged**: zero instances of a surviving
+`dispatched` key, a two-valued `status` claim, a `resolver_count == len(resolvers)` assertion, a
+two-state anti-vacuity table, or a "`resolvers[]` holds only what ran" claim, swept repo-wide. What had
+not converged was the prose around the corrected tables, and this report.
 
 | # | Source | Finding | Disposition |
 |---|---|---|---|
@@ -155,19 +174,33 @@ finished. Recorded per instance, per round.
 | F4 | R1 sub-agent | **The ABC contract test was stale and had no coverage for the new method** — its docstring enumerated two defaults, `test_subclass_overriding_both_methods_is_accepted`, and no test asserted `DerivationResolverBase().derivation_file_patterns() == []`. | **Fixed** — docstring and test names corrected, the fixture supplies the third method, and `test_declared_file_patterns_default_to_empty` pins the ABC default a third-party resolver relies on. |
 | F5 | R1 sub-agent | The Configuration submenu Page 4 is now at the `AskUserQuestion` 4-element cap, so the next entry forces a Page 5. | **Accepted, not fixed** — the pagination pattern explicitly supports adding pages, and pre-building an empty Page 5 for plans that do not exist yet is speculative. Recorded in Residue for the sibling plans the Coordination note names. |
 | F6 | R1 sub-agent | `extension-api/SKILL.md`'s Canonical-invocations intro was edited to claim it covers `extension_api.py`, but only the new verb got a block — `resolve-skills` had none. | **Fixed** — a `resolve-skills` block was added, making the claim true. (`plugin-doctor` was clean marketplace-wide in round 1, so this never tripped the gate; it was an internal inconsistency, fixed on its merits.) |
-| F7 | R1 sub-agent | **Asymmetric fail-open**: the seam's gate guards the per-resolver `enabled` read, the roster did not, so one malformed entry would raise out of the read the menu depends on. | **Fixed** — per-resolver guard added, plus `test_raising_enabled_check_treats_the_resolver_as_active` mirroring the seam's own test. Round 2 found a **third** reader with the same gap (`cmd_derivation_resolver_list`) and round 3 found that third guard shipped untested; both closed — see R2-7 and R3-7. |
+| F7 | R1 sub-agent | **Asymmetric fail-open**: the seam's gate guards the per-resolver `enabled` read, the roster did not, so one malformed entry would raise out of the read the menu depends on. | **Fixed** — per-resolver guard added, plus `test_raising_enabled_check_treats_the_resolver_as_active` mirroring the seam's own test. Round 2 found a **third** reader with the same gap (`cmd_derivation_resolver_list`) and round 3 found that third guard shipped untested; both closed — see R2-10 and R3-7. |
 | F8 | R1 sub-agent | `run-config-standard.md`'s "Full Example" block lacks `derivation_resolvers`. | **Rejected — pre-existing drift, out of scope.** That block already omitted `language_servers`, `display_timezone`, `build.queue` and `ci` before this change. Adding only the new section would deepen the inconsistency; fixing it properly means reconciling five unrelated sections, which is not this plan's work. The two blocks that *are* maintained were updated. Recorded in Residue. |
 | F9 | R1 sub-agent | Two test files written in the same commit disagreed on isolation: the roster test documents the `sys.modules` hazard and defers its patch target, its sibling used the module-level import the docstring warns against. | **Fixed** — the same deferral applied to the sibling. |
-| F10 | R1 sub-agent | The report's deliverables table never named `_cmd_client_query.py`, `extension_base.py`, or the three `build-*/extension.py` edits, and five sections were `TBD`. | **Fixed** — this report. |
+| F10 | R1 sub-agent | The report's deliverables table never named `_cmd_client_query.py`, `extension_base.py`, or the three `build-*/extension.py` edits, and five sections were `TBD`. | **Fixed** for the deliverables table and for every section fillable before the PR exists. The `TBD`s that remain are the genuinely post-PR ones — the PR number, the outcome, and reviewer participation — filled at the merge gate. |
 | S1 | R1, self-caught | The first F1 fix stamped `dispatched: True` on **every** merge report, which broke **45 existing exact-dict assertions** pinning the merge's report shape — a deliberate contract those tests encode. An earlier grep for exact-dict pins had used too narrow a pattern and wrongly reported none. | **Fixed by narrowing** the marker to the withheld records only; blast radius 45 tests → 0. That narrowing is what R2-1 then found to be wrong on the wire. |
 | S2 | R1, self-caught | After that narrowing, two of my own new assertions still expected `dispatched is True` on merge reports and failed. | **Fixed** — and superseded by R2-1: they now assert `status`. |
 | S3 | R1, own beyond-diff sweep | **The rendered provenance footer credited disabled resolvers with deriving edges** — `_resolver_provenance_line` used `len(resolver_reports)` and every id, so a switched-off resolver appeared in "derived by N resolver(s)". The rendered form of exactly the F1 defect, at a surface the sub-agent did not flag. | **Fixed** — the footer names only dispatched resolvers as derivers, states withheld ones separately, and has a distinct wording for "all switched off" that cannot be confused with "none registered". Two new tests. |
+
+### Operator escalations
+
+This run executed in an interactive session with the operator reachable, so two decisions the lane
+permits escalating were put via `AskUserQuestion` rather than resolved autonomously. A conversation
+event is not a committed artifact, so both question and answer are recorded here:
+
+| Question | Answer |
+|---|---|
+| Ship the § Step 6 contract amendment (evidence below) as a separate `chore/` PR? | **Ship it as a separate PR.** |
+| Configuration menu Page 4 is now at the `AskUserQuestion` 4-element cap, and the plan's Coordination note requires two sibling plans to land inside this surface. Pre-build Page 5, restructure into grouped submenus, or leave as residue? | **Leave as residue** — pre-building a page for plans that do not exist yet is speculative; the next author adds Page 5 via the documented "More..." continuation. |
+
+Neither was a blocking question: the lane's autonomous fallbacks (record in the report; do not
+self-amend the contract) were available and would have produced a complete run.
 
 ### Round 2 — the wire defect, and what round 1's sweep missed
 
 | # | Finding | Disposition |
 |---|---|---|
-| R2-1 | ⛔ **The round-1 representation does not survive serialization.** Withheld records were marked with a `dispatched: false` **key**, but resolver reports go out as a **uniform TOON array** whose header is the union of the records' keys. A key present on only some records renders as an empty cell on the others — so a resolver that DID run printed as `dispatched: ""` beside a sibling reading `false`, which reads as *not dispatched*: the exact inversion the marker exists to prevent. The column position floated too, since the header follows first-occurrence order over an id-sorted list. Verified by driving the real serializer. | **Fixed by redesign** — the state now rides on `status`, which every report already carries: `ok` \| `error` \| `not_dispatched`. Every record keeps an identical key set, so the wire is four columns wide whatever the configuration is, and the four documented TOON schema blocks are correct as written. No consumer branches on `status` (re-verified independently in round 3). Two tests pin it against the real serializer. |
+| R2-1 | ⛔ **The round-1 representation does not survive serialization.** Withheld records were marked with a `dispatched: false` **key**, but resolver reports go out as a **uniform TOON array** whose header is the union of the records' keys. A key present on only some records renders as an empty cell on the others — so a resolver that DID run printed as `dispatched: ""` beside a sibling reading `false`, which reads as *not dispatched*: the exact inversion the marker exists to prevent. The column position floated too, since the header follows first-occurrence order over an id-sorted list. Verified by driving the real serializer. | **Fixed by redesign** — the state now rides on `status`, which every report already carries: `ok` \| `error` \| `not_dispatched`. Every record keeps an identical key set, so the wire is four columns wide whatever the configuration is, and the four documented TOON schema blocks are correct as written. No **pre-existing** consumer branched on `status`, re-verified independently in round 3; the three that do are the ones this branch adds (`count_dispatched`, `capabilities`, the provenance footer). Two tests pin it against the real serializer. |
 | R2-2 | **`architecture-persistence.md:606` carried verbatim the retired sentence** the F2 row claimed to have fixed, plus `resolver_count` = `len(resolvers)` at `:607` and a two-state table at `:609`. The file is normative: `client-api.md:130` routes readers to it for the graph verb's shape. | **Fixed** (all three). |
 | R2-3 | **`client-api.md:99` asserted `len(resolvers)` one row below the row the F2 fix had just rewritten** to say the opposite — same table, adjacent rows. | **Fixed.** |
 | R2-4 | `client-api.md:101` "Every registered resolver runs and gets a row … `resolver_count` **therefore** counts the resolvers that ran" — the "therefore" no longer follows. | **Fixed.** |
@@ -194,6 +227,24 @@ finished. Recorded per instance, per round.
 | R3-9 | `extension_api.main`'s `getattr(args, 'func', cmd_resolve_skills)` fallback would silently route a future verb into the wrong handler. | **Fixed** — every subparser sets its own handler and dispatch is explicit. |
 | R3-R | **Six inaccuracies in this report**, including three rows describing the design R2-1 deleted, a dangling "see R2-B1/B2/B3 below" pointing at rows that were never written, "two self-caught" where the table showed three, and a file count matching no commit on the branch. | **Fixed** — this section. The lesson is recorded in § What have we learned. |
 
+### Round 4 — the convergence check
+
+Dispatched explicitly to answer whether the rounds-1→3 pattern was continuing. Its verdict:
+**the mechanical contract surface has converged; the prose around it and this report had not.**
+
+| # | Finding | Disposition |
+|---|---|---|
+| R4-1 | `code-intelligence.adoc:163` — "Those states are **indistinguishable without the count**" is false against the table directly above it, which this branch widened to three rows. Rows 1 and 3 **both** read `resolver_count: 0`, so the count alone no longer discriminates. The branch edited this very sentence twice ("two states" → "those states", "both" → "all three") and left the load-bearing clause. All three sibling surfaces got it right; this was the outlier. | **Fixed** — the sentence now says which pair the count separates and what distinguishes the other two. |
+| R4-2 | `code-intelligence.adoc:234` — "the same shape as `resolver_count` and `attributor_count`: **two states**", 71 lines below the table round 3 converted, naming the field explicitly. | **Fixed.** |
+| R4-3 | ⛔ **My ADR-014 amendment over-generalized across a sibling surface the same ADR governs.** ADR-014 is the cross-surface record, and **path attribution (Axis-D) cites it**. There, `attributor_count = len(attributor_reports)` — the count *is* cardinality — `status` is genuinely two-valued, and the two-state tables are correct. My unconditional "the count is **not** the roster's cardinality" made the governing ADR false for that surface and would have told a future Axis-D implementor to exclude a population that does not exist there. | **Fixed** — every claim is now scoped to *surfaces with a dispatch control*, naming Axis-C as the only one today and stating that Axis-D's count is its cardinality. |
+| R4-4 | `client-api.md:101` — the link text named the section but the href dropped the `#derivation-resolvers` fragment, landing readers at the top of a 700-line document. Its three siblings carry it. | **Fixed.** |
+| R4-5 | **This report, R3-R: "the lesson is recorded in § What have we learned"** — pointing at a section reading `TBD`. Exactly the dangling-forward-reference defect R3-R itself claims to have eliminated. | **Fixed** — that section is written. |
+| R4-6 | **This report, F7: "see R2-7 and R3-7"** — R2-7 is the paragraphs row; the `cmd_derivation_resolver_list` guard is R2-10. Added by the round-3 commit. | **Fixed.** |
+| R4-7 | **This report: "round 3 found nine, six of them in this report"** — irreconcilable with its own table either way. | **Fixed** — replaced with a per-round table whose counts are the tables' own. |
+| R4-8 | **This report: the build-gate table's last row said "recorded at the merge gate"** while two more green runs had happened, and HEAD's figure appeared nowhere. | **Fixed** — one row per round, and the three exit-0-but-failed gate incidents are recorded. |
+| R4-9 | **This report, R2-1: "No consumer branches on `status`"** — contradicted by the three consumers this branch itself adds. The intended claim was "no *pre-existing* consumer". | **Fixed** — scoped. |
+| R4-10 | **This report, F10: "five sections were `TBD` \| Fixed"** while exactly five `TBD` markers remained. | **Fixed** — the row now distinguishes what was fillable pre-PR from what is genuinely post-PR. |
+
 ### One sub-agent claim rejected on the contract
 
 The sub-agent's closing note said the lane "records [a `/sync-plugin-cache`] as owed" for the
@@ -218,11 +269,68 @@ TBD — filled in after the PR review cycle.
 
 ## Contract check (Step 9)
 
-TBD
+**GitHub access path:** the GitHub MCP server (no `gh` CLI in this cloud session).
+**Branch form:** harness-assigned `claude/resolver-configuration-s8jcg5`, kept as-is per the contract's
+resumability rule — not a run-created prefixed branch.
+**Plugin cache:** a cloud run neither performs nor owes a `/sync-plugin-cache`; none is recorded.
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | ✅ | Named above; loaded by bundle path, since the plugin is absent here |
+| 2 Branch | ✅ | On `origin` before the first edit — it existed locally but not remotely, and was pushed as the run's first action |
+| 3 Plan directory | ✅ | `doc/plans/code-intelligence-substrate/220-resolver-configuration/plan.md`, opening with the first-instruction block (present on arrival; no repair needed) |
+| 4 Implement | ✅ | Commits carry the trailer; every deliverable addressed |
+| 4 Per-commit gate | ✅ | Every `*.py`-touching commit preceded by a clean `./pw` run — `ruff`/`mypy`/SPDX/plugin-doctor each reporting clean, read from the output rather than the exit code (which was 0 on three failed gates) |
+| 4 Pushed | ✅ | No unpushed commit at any point; `git status -sb` clean |
+| 5 Build gate | ✅ | Git-derived verdict recorded; five full `./pw verify` runs, the last green |
+| 6 Verification sub-agent | ✅ | Four rounds, each dispatched because the prior found a defect. All findings and dispositions above |
+| 7 PR cycle | Recorded at the merge gate |
+| 8 Merge gate | Recorded at the merge gate |
+| 8 Bridge | ✅ | No status or bookkeeping write outside this plan's own directory. `doc/concepts/code-intelligence.adoc`, `doc/user/*.adoc` and `doc/adr/014-*.adoc` are **declared deliverables** (D5) and its consumers, not records |
+| 9 This check | ✅ | This section |
+| 9 What have we learned | ✅ | Below |
 
 ## What have we learned (Step 9)
 
-TBD
+**One contract change is proposed, and it is the run's clearest lesson.**
+
+The contract governing this run may not be self-amended, so it was presented to the operator via
+`AskUserQuestion`. **Operator decision: ship it**, as a separate `chore/` PR touching only the skill —
+kept out of this plan's PR so the two changes get their own review audiences, and carrying its bot
+review (a skill is code).
+
+### Proposed: a fix's own sweep must include the artifacts the *previous* round's fix touched
+
+**Evidence from this run.** The contract already says a fix is a change and gets the same beyond-diff
+sweep. This run obeyed that and still leaked the same defect class four rounds running:
+
+| Round | The leak |
+|---|---|
+| 1→2 | The round-1 fix introduced a docstring in `_derivation_merge.py` describing its new marker. Round 2 replaced the marker and did not re-read the docstring round 1 had just written. |
+| 2→3 | Round 2 rewrote one sibling test's docstring to disclaim an equivalence and left the *neighbouring assertion in the same file* encoding it. |
+| 3→4 | Round 3 amended ADR-014 and did not check the sibling surface (Axis-D) that cites it, making the governing record false there. |
+
+The pattern is exact: **each round swept the surface the ORIGINAL change touched, and missed the
+surface the PREVIOUS ROUND'S FIX touched.** The contract's sweep instruction is written against "the
+diff under review", and by round N the riskiest surface is the round N−1 fix's own new prose — text
+that is young, unreviewed, and *not yet a consumer anyone thinks to grep for*.
+
+**Proposed edit** — in § Step 6, after "A fix is a change, so it gets the same beyond-diff sweep the
+original change got", add:
+
+> **Sweep the previous round's fixes as a first-class surface, not only the original change.** By
+> round N the highest-risk text is what round N−1 *wrote*: a docstring, a table row, or a decision
+> record added to explain a fix, which is young, unreviewed, and not yet a consumer anyone greps for.
+> Before re-dispatching, list the files the previous round edited and re-read each one against the
+> current design — especially any prose it *added*. Where the fix amended a shared or governing
+> document, check every sibling surface that cites it: a cross-surface record made true for the
+> surface you fixed can be made false for the one you did not.
+
+**A second, smaller lesson is recorded but not proposed as an edit**, because the contract already
+covers it and this run simply had to learn it three times: `./pw` exits 0 on a failed gate. The
+contract says to read the output; it was right, and the cost of forgetting is a red CI run. Running a
+fast `ruff check` before each full gate turned a 7-minute feedback loop into a 5-second one, which is
+worth doing but is a technique, not a contract change.
 
 ## Residue
 
