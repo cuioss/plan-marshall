@@ -16,13 +16,15 @@ The substrate is built in tiers, cheapest first. Each tier is a strictly larger 
 [source,text]
 ----
 ┌───────────────────────────────────────────────────────────────┐
-│ Tier 2 — symbol intelligence                    NOT BUILT     │
-│   call graphs, symbol references, type relations              │
+│ Tier 2 — symbol intelligence              PARTLY HARVESTED    │
+│   symbol references: harvested, projected down to Tier 1      │
+│   call graphs, type relations: not built                      │
+│   nothing at this tier is queryable                           │
 ├───────────────────────────────────────────────────────────────┤
 │ Tier 1 — module edges                    RESOLVER-DERIVED     │
 │   which modules depend on which, with per-edge provenance     │
 ├───────────────────────────────────────────────────────────────┤
-│ Tier 0 — the crawl                        SUBPROCESS-FREE     │
+│ Tier 0 — the crawl        SUBPROCESS-FREE BY DEFAULT          │
 │   module set + per-module metadata + the file inventory,      │
 │   read by the path, ownership, and content readers;           │
 │   no edges at all                                             │
@@ -33,7 +35,13 @@ The substrate is built in tiers, cheapest first. Each tier is a strictly larger 
 
 *Tier 1* is the edge set — module-to-module dependency edges, each carrying the identity of whatever derived it. This is the tier the derivation-resolver seam ships, and it is what the `graph`, `path`, `neighbors`, and `impact` verbs traverse, plus the adjacency surfaces of `overview` and `module` / `info`.
 
-*Tier 2* is symbol-level intelligence — call graphs, symbol references, type relations. It is not built. It appears on the ladder so the tiers read as a ladder rather than as a finished set, and so the gap between "Plan Marshall knows the module graph" and "Plan Marshall understands the code" stays explicit.
+*Tier 2* is symbol-level intelligence — call graphs, symbol references, type relations. One of those three is now partly reached, and the distinction matters more than a single status word can carry.
+
+Symbol *references* are harvested: a language server resolves them with a real parser, and the `lsp` resolver projects them down into Tier 1 edges (see <<lsp-derivation-resolver>>). Call graphs and type relations are not built. And nothing at this tier is *queryable* — there is no verb that answers "where is this symbol referenced?", because the references are consumed at derivation time and only their module-level projection is persisted. A reader who sees symbol-derived edges in the graph and infers a symbol query surface behind them would be wrong.
+
+So the gap between "Plan Marshall knows the module graph" and "Plan Marshall understands the code" has narrowed by exactly one reference kind, in exactly one direction, and the ladder says so rather than rounding the tier up to built.
+
+The `SUBPROCESS-FREE` property Tier 0 carries is likewise now conditional, which is why the ladder says *by default*. The crawl invokes no build tool and no language server unless the symbol harvest is explicitly enabled; enabling it knowingly trades that property for the reference set, which is the whole reason the harvest is opt-in rather than opt-out.
 
 == The resolver seam
 
@@ -51,6 +59,47 @@ The seam is a third, independent axis rather than a face on an existing one. Pla
 Those two hierarchies are deliberately disjoint — xref:../adr/004-The_file-to-build_contract_is_owned_by_build-system_extensions_not_languagecontent_domains.adoc[ADR-004] keeps them that way — and that disjointness is what forces a third axis. The Maven coordinate join belongs to `build-maven`, which subclasses `BuildExtensionBase` and not `ExtensionBase`, so a resolver hook on `ExtensionBase` would have been structurally unreachable from the one bundle that most needed it. Folding edge derivation into Axis-B instead would have been the mirror error: a future markdown resolver would have to masquerade as a build system to declare an edge.
 
 `DerivationResolverBase` therefore inherits from neither and is inherited by neither. An implementor from either hierarchy opts in by multiple inheritance, which is the only shape reachable from both sides.
+
+[#lsp-derivation-resolver]
+== The language server as a derivation resolver
+
+A language server knows something no static join in this repository can derive: which symbol a name actually refers to, resolved by a real parser. Re-exports, aliases, relative imports and `__init__` chains all resolve correctly for it and only approximately for a regex or an AST import scan.
+
+The obstacle is not capability but *lifecycle*. The protocol is built for a long-lived editor session that pays a large indexing cost once and amortizes it over thousands of interactive queries. This project's consumers are the opposite: one-shot subprocesses and dispatched leaves, each living for a single command. Booting a server per query would pay the whole index cost on every question and amortize it over one answer.
+
+The resolution is to use the server as a *derivation-time producer* rather than as a query backend. It runs once, during the crawl, harvests references, lifts them from file granularity to module granularity, and its output is persisted. Every later read is a cheap join over persisted data, and no query boots anything.
+
+That shape is not merely preferred — it is what the seam permits. A derivation resolver is a pure function of its arguments, and resolvers are dispatched at graph-*query* time, once per `graph` / `path` / `neighbors` / `impact` call. A server booted inside `derive_edges` would therefore run on every one of those calls. The harvest lives in a discovery-time engine for the same reason the markdown and import detection engines do: the thing that reads from disk runs during the crawl, and the resolver joins over what it left behind.
+
+=== Why live symbol pass-through is not built
+
+Answering a definition or rename query at a cursor position against a warm server is a *different* lifecycle, and it is deliberately absent rather than merely unimplemented.
+
+A batch harvester wants to start a server, drive it to completion, and exit. An interactive client wants a server that outlives every individual request and holds a warm index. Those two process models cannot be satisfied by one component: a harvester that keeps a server warm is a daemon, and a daemon that exits after one pass is a harvester. A design carrying both would ship neither well.
+
+The absence is therefore a decision, not an oversight, and it is recorded here so the next reader does not re-propose pass-through as an obvious missing feature.
+
+=== What the protocol does not offer
+
+Three absences explain why navigation stays on the persisted store rather than moving to the server:
+
+* No module-level edge method. The protocol speaks in files and positions; module granularity is this substrate's vocabulary, not the protocol's, so the lift is ours to perform.
+* No transitive traversal. There is no "what does this reach, transitively" request, which is precisely what `path` and `impact` need.
+* No path-to-owner method. Nothing maps a file back to the module that owns it, which is the path-attribution seam's job.
+
+A server is therefore an excellent *reference resolver* and a poor *graph backend*, which is exactly how it is used.
+
+=== The lift, and the edge it refuses to draw
+
+Symbol references are file-granular; edges are module-granular. The lift between them goes through the path-attribution seam, and its important behaviour is the case where it produces nothing: a reference whose endpoint no module owns yields *no edge and a note*, never a guessed module.
+
+This is the honest-limit rule applied to a producer capable of violating it at volume. A harvest over a large workspace resolves references into the standard library, into site-packages, and into files no module claims. Attributing those to a nearest-looking module would produce thousands of confidently-labelled wrong edges, each carrying provenance saying a real parser resolved it. Provenance makes an answer auditable; it does not make it correct, and a wrong edge wearing a trustworthy producer id is worse than a missing one.
+
+=== Honest failure
+
+A language server is a subprocess, and subprocesses fail in ways a pure function does not: the binary is absent, it fails to start, it times out, or it does not support the workspace.
+
+Each of those produces `ran: false` with a *distinct stated reason*, surfaced as a note on the resolver's report. None produces a zero-edge success. That is the confident-empty-answer archetype this whole substrate exists to eliminate, in its sharpest form: a resolver reporting `status: ok, edge_count: 0` because its server never started is indistinguishable, to every caller, from one reporting the same thing about a workspace that genuinely has no edges — and the two warrant opposite reactions.
 
 == N-resolver union
 
