@@ -29,7 +29,7 @@ python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci pr wait-fo
 | `status: success`, `timed_out: true` | No new comment within timeout — proceed to Step 2 anyway (the producer at Step 2 surfaces whatever is on the PR; if nothing, the lifecycle returns `comments_total: 0`) |
 | `status: error` | Treat as warning, log, proceed to Step 2 best-effort |
 
-> **Rate-limit refusal recovery (cross-reference).** The `pr wait-for-comments` return also carries a per-bot `rate_limited_bots[]` discriminator — one `{bot_kind, rate_limit_class, eta}` record per REGISTERED bot whose newest comment is a rate-limit notice posted in place of a review, empty when no registered bot is rate-limited. The `plan-marshall:automatic-review` finalize step exposes an opt-in `review_rate_window_await` knob (with `review_rate_window_timeout_seconds`) that arms a recovery sequence rather than a bare wait: for an `awaitable_window` bot it claims the bot's rate window through `merge_lock rate-window claim`, polls that claim's own expiry as a bounded paced wait, then GENERATES the trigger event (rebase onto base and push; the registry `trigger_comment` only as a fallback when main is unchanged and only after the window elapsed). A `hard_quota` or `unknown` bot escalates immediately via `escalate_ask{reason: rate_window_not_awaitable}` since a limit that does not reopen cannot be waited out; a spent recursion cap escalates via `escalate_ask{reason: rate_window_exhausted}`; budget exhaustion escalates via `escalate_ask{reason: rate_window_timeout}`. This lifecycle reference does NOT duplicate that behaviour — see [`automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § "Rate-limit refusal recovery (opt-in)" for the authoritative sequence and escalation contract, and [`tools-integration-ci/standards/api-contract.md`](../../tools-integration-ci/standards/api-contract.md) § "Provider Field Mapping" for the field contract.
+> **Rate-limit refusal recovery (cross-reference).** The `pr wait-for-comments` return also carries a per-bot `rate_limited_bots[]` discriminator — one `{bot_kind, rate_limit_class, eta}` record per REGISTERED bot whose newest comment is a rate-limit notice posted in place of a review, empty when no registered bot is rate-limited. The `plan-marshall:automatic-review` finalize step exposes an opt-in `review_rate_window_await` knob (with `review_rate_window_timeout_seconds`) that arms a recovery sequence rather than a bare wait. It branches on the refusal's CAUSE first: a `size` cause is STRUCTURAL — the diff exceeds a ceiling the reviewer declares, so nothing reopens by waiting — and escalates immediately via `escalate_ask{reason: refusal_structural}`, whose options are split / accept / disable-for-this-PR and never a wait. Otherwise, for an `awaitable_window` bot it claims the bot's rate window through `merge_lock rate-window claim`, polls that claim's own expiry as a bounded paced wait, then GENERATES the trigger event (rebase onto base and push; the registry `trigger_comment` only as a fallback when main is unchanged and only after the window elapsed). A `hard_quota` or `unknown` bot whose cause is not `size` escalates immediately via `escalate_ask{reason: rate_window_not_awaitable}` since a limit that does not reopen cannot be waited out; a refusal from a bot outside `required_bots` is an ordinary settle rather than an escalation; a spent recursion cap escalates via `escalate_ask{reason: rate_window_exhausted}`; budget exhaustion escalates via `escalate_ask{reason: rate_window_timeout}`. This lifecycle reference does NOT duplicate that behaviour — see [`automatic-review/SKILL.md`](../../automatic-review/SKILL.md) § "Rate-limit refusal recovery (opt-in)" for the authoritative sequence and escalation contract, and [`tools-integration-ci/standards/api-contract.md`](../../tools-integration-ci/standards/api-contract.md) § "Provider Field Mapping" for the field contract.
 
 ### Step 2: FIND — file PR comments to the ledger
 
@@ -49,13 +49,14 @@ For GitLab projects use `plan-marshall:workflow-integration-gitlab:gitlab_pr fet
 
 > **Participation classification (cross-reference).** Beside the findings it files, `fetch_findings`
 > returns the participation observation sets — `participated_bots[]`, `stale_participation_bots[]`,
-> `refused_bots[]` (with the advisory `refused_causes[]` size/quota overlay), `unclassified_bots[]`.
+> `refused_bots[]` (with the `refused_causes[]` size/quota overlay and the `refused_size_caps[]` stated
+> ceilings), `unclassified_bots[]`.
 > This lifecycle does not classify them; the
 > `plan-marshall:automatic-review` step-done participation guard does, and it resolves every required
-> bot into **exactly one of nine** terminal non-participation states — `absent`, `not_triggered`,
-> `in_progress`, `refused_awaitable`, `refused_hard`, `refused_unknown`, `participated_but_empty`,
-> `participated_stale`, `declined` — or into `participated`, their complement. The taxonomy is closed
-> and is owned by
+> bot into **exactly one of ten** terminal non-participation states — `absent`, `not_triggered`,
+> `in_progress`, `refused_awaitable`, `refused_hard`, `refused_unknown`, `refused_structural`,
+> `participated_but_empty`, `participated_stale`, `declined` — or into `participated`, their
+> complement. The taxonomy is closed and is owned by
 > [`automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md);
 > its semantics are not restated here.
 >
@@ -65,7 +66,11 @@ For GitLab projects use `plan-marshall:workflow-integration-gitlab:gitlab_pr fet
 > `not_triggered` (no `pull_request`-event run exists, so nothing was ever asked — surfaced by
 > `ci checks pull-request-runs`) both block, but their remedy is to **re-trigger** or **trigger** the
 > review, the opposite of `absent`'s escalate-the-non-participation. Rendering all three alike
-> prescribes escalation in the two cases where a trigger was the correct answer.
+> prescribes escalation in the two cases where a trigger was the correct answer. `refused_structural`
+> (the bot refused because the DIFF is over its declared ceiling) is the sharpest case: neither a
+> trigger nor a wait can change its answer, so its remedies are to **split**, to **accept the gap**, or
+> to **disable that reviewer for this PR** — and offering a wait there is not a weaker remedy but an
+> unavailable one.
 
 ### Step 2.5: INGEST — promote quarantined bodies to top-level
 

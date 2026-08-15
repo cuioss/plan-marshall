@@ -174,8 +174,9 @@ def _is_refusal_notice(body: str, bot_kind: str | None = None) -> bool:
 
     **A refusal is positive evidence of NON-participation, never noise.** Callers
     MUST branch on it — surfacing the refusing bot so the completeness / quorum
-    layer sees ``refused_awaitable`` / ``refused_hard`` / ``refused_unknown`` —
-    rather than drop it.
+    layer sees a refusal member (``refused_structural`` when the cause is a diff-size
+    ceiling, otherwise ``refused_awaitable`` / ``refused_hard`` / ``refused_unknown``
+    by the bot's ``rate_limit_class``) — rather than drop it.
     Dropping it is precisely what let a PR whose every required reviewer refused
     report a clean, complete review with substantively zero review coverage.
     """
@@ -215,6 +216,111 @@ def refusal_cause(body: str, bot_kind: str | None = None) -> str:
     if bot_kind and any(marker in body for marker in bot_registry.refusal_size_patterns(bot_kind)):
         return REFUSAL_CAUSE_SIZE
     return REFUSAL_CAUSE_QUOTA
+
+
+def refusal_size_cap(body: str, bot_kind: str | None = None) -> str:
+    """Return the diff-size CAP ``body`` states, or ``''`` when it states none.
+
+    The structural counterpart of :func:`_extract_rate_limit_eta`, and deliberately
+    its mirror image: an awaitable refusal states WHEN its window reopens, a
+    structural one states HOW BIG the diff was allowed to be. Both figures are read
+    off the notice through per-bot registry regexes rather than encoded here, so no
+    bot-name literal and no budget figure appears in this path.
+
+    The cap is what makes a recorded coverage gap AUDITABLE — it can be reconciled
+    against the diff that was actually refused — rather than merely asserted. That is
+    why it is extracted from the bot's own notice at the moment of refusal instead of
+    being declared as a constant: a declared figure goes stale silently when the
+    provider changes its budget, and nothing would detect the drift.
+
+    Returns ``''`` for a bot that declares no cap pattern, for a notice that states
+    no figure, and for a body that is not a size refusal at all. The caller reports
+    an empty cap as UNKNOWN and never substitutes a default — a cap nobody observed
+    would make the gap look audited when it was not. A malformed registry pattern is
+    skipped rather than raised, matching the ETA extractor: a bad registry edit must
+    not break the producer's return path.
+    """
+    if not body or not bot_kind:
+        return ''
+    for pattern in bot_registry.refusal_size_cap_patterns(bot_kind):
+        try:
+            match = re.search(pattern, body, re.IGNORECASE)
+        except re.error:
+            continue
+        if match is None:
+            continue
+        # A pattern that declares a group means "the cap is THAT group"; one that
+        # declares none means "the cap is the whole match". Honour the declaration
+        # rather than silently substituting one for the other.
+        #
+        # ``match.groups()`` is TRUTHY for a one-tuple holding ``None`` — a pattern whose
+        # first group sits in a branch that did not participate (``limit of (?:[0-9]+)|(x)``)
+        # matches, reports groups, and yields ``None``. Taking ``.strip()`` on that raised
+        # an AttributeError out of the producer's whole return path, which is exactly the
+        # failure the docstring above promises cannot happen: the ``re.error`` guard covers
+        # a pattern that will not COMPILE, not one that compiles and captures nothing.
+        #
+        # A declared group that captured nothing yields NO figure and moves to the next
+        # pattern — never a fallback to ``group(0)``. That fallback is the wrong kind of
+        # graceful: on ``review limit of ([0-9]*)`` against a notice stating no number it
+        # returns the prose ``"review limit of"``, which is comma-free, survives the CLI,
+        # and renders as ``cap: review limit of`` beside a real measurement — making the
+        # gap look audited against a figure nobody observed, the precise thing the
+        # unknown-cap discipline forbids. Unknown is the honest answer.
+        if match.groups():
+            captured = (match.group(1) or '').strip()
+            if not captured:
+                continue
+        else:
+            captured = match.group(0).strip()
+            if not captured:
+                continue
+        # Commas are stripped because the cap crosses a COMMA-SEPARATED CLI boundary
+        # (``--refusal-size-caps "bot:cap"``), where a thousands separator would split
+        # one record into two malformed ones. Removing it also leaves a figure that
+        # compares directly against a measured diff size, which is the whole point of
+        # recording it.
+        return captured.replace(',', '')
+    return ''
+
+
+def measure_diff_size(pr_number: int) -> str:
+    """Return this PR's measured diff size as ``"{n} changed lines"``, or ``''``.
+
+    The second half of an auditable coverage gap. A recorded cap says what the
+    reviewer's ceiling was; without the size of the diff that hit it, a reader can
+    only take the refusal's word for it. Recording both makes the gap checkable:
+    the operator accepting it can see how far over the line the PR actually was.
+
+    **The unit is stated in the value, and it is deliberately NOT the reviewer's
+    unit.** A provider's ceiling is expressed in whatever it counts — Sourcery's is
+    diff CHARACTERS — and counting those exactly means downloading the whole patch,
+    which is most expensive precisely on the oversized PRs where this fires. Changed
+    lines come from the PR's existing metadata for one cheap call. So the two figures
+    are an ORDER-OF-MAGNITUDE comparison, not an equality check, and carrying the unit
+    inside the string is what stops a reader treating "150000 diff characters" against
+    "1240 changed lines" as an exact reconciliation.
+
+    Returns ``''`` when the read fails, is unparseable, or reports no numbers —
+    UNKNOWN, never a zero. A zero would read as "an empty diff was refused for being
+    too big", which is a claim this function has no evidence for.
+    """
+    returncode, stdout, _stderr = github_ops.run_gh(
+        ['pr', 'view', str(pr_number), '--json', 'additions,deletions']
+    )
+    if returncode != 0 or not stdout.strip():
+        return ''
+    try:
+        payload = json.loads(stdout)
+    except (ValueError, TypeError):
+        return ''
+    if not isinstance(payload, dict):
+        return ''
+    additions = payload.get('additions')
+    deletions = payload.get('deletions')
+    if not isinstance(additions, int) or not isinstance(deletions, int):
+        return ''
+    return f'{additions + deletions} changed lines'
 
 
 def _extract_rate_limit_eta(body: str, bot_kind: str) -> str:

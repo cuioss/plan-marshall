@@ -13,6 +13,11 @@ Read [`../README.md`](../README.md) for the tree layout and the run contract, an
 specific to this epic: the census the plans were scoped from, the house style they converge on, and
 the dependency graph that says which of them may run at the same time.
 
+[`findings-test-corpus-review.md`](findings-test-corpus-review.md) is the **evidence** this file is
+scoped from — the corpus review itself, with the per-finding detail, the named exemplars, the review's
+own coverage limits, and what in the corpus is good enough that a reduction plan must not touch it.
+Read it when you need to know *why* a rule below says what it does; this file is the operative brief.
+
 ## The census
 
 Every number below is a **lead, not a fact**. It was measured on one clone at one moment; re-derive

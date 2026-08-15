@@ -465,7 +465,9 @@ class TestStateTaxonomy:
     def test_refusal_of_unknown_class_is_its_own_state_not_hard(self, plan_context):
         """An ``unknown`` rate-limit class resolves to ``refused_unknown``, never ``refused_hard``.
 
-        The three-valued ``rate_limit_class`` splits ONE-TO-ONE into three refusal
+        For a refusal whose cause is not ``size`` (a ``size`` cause resolves the
+        structural member ahead of this axis — see ``test_structural_refusal.py``), the
+        three-valued ``rate_limit_class`` splits ONE-TO-ONE into three refusal
         members: ``awaitable_window`` -> ``refused_awaitable``, ``hard_quota`` ->
         ``refused_hard``, ``unknown`` -> ``refused_unknown``. A binary
         ``== 'awaitable_window'`` test collapsed ``unknown`` into ``refused_hard``,
@@ -2067,18 +2069,25 @@ class TestDeficitSignal:
 
 
 # =============================================================================
-# The refusal CAUSE overlay (size vs quota) — orthogonal to awaitability, advisory
+# The refusal CAUSE overlay (size vs quota) — state-determining for size, else advisory
 # =============================================================================
 
 
 class TestRefusalCauseOverlay:
-    """The size/quota CAUSE axis rides alongside the awaitability member — never changes it.
+    """The size/quota CAUSE axis: STATE-DETERMINING for ``size``, advisory otherwise.
 
-    ``refusal_cause`` (in the producer) names the REMEDY a refusal calls for: ``size``
-    means the diff is over a per-PR ceiling (a smaller diff), ``quota`` means a
-    rate/budget limit (backoff). It is forwarded to ``--refused-causes`` and reported in
-    ``refusal_causes[]``. It is advisory: it gates nothing and moves no awaitability
-    member (``refused_awaitable`` / ``refused_hard`` / ``refused_unknown``).
+    ``refusal_cause`` (in the producer) names the REMEDY a refusal calls for. It is
+    forwarded to ``--refused-causes`` and reported in ``refusal_causes[]``, and it
+    splits into two halves that must be pinned separately:
+
+    - ``size`` resolves the bot to ``refused_structural`` **whatever its
+      ``rate_limit_class`` declares** — the ceiling is on the diff, so no temporal
+      member describes it and none of their remedies applies.
+    - every other cause is ADVISORY: it is reported, and it moves no awaitability
+      member (``refused_awaitable`` / ``refused_hard`` / ``refused_unknown``).
+
+    Neither half gates: ``participation_complete`` is unmoved either way, because every
+    refusal member is unproven regardless of which one it is.
     """
 
     def test_parse_causes_maps_pairs(self):
@@ -2109,9 +2118,13 @@ class TestRefusalCauseOverlay:
             plan_id, ['sourcery'], refused_bots=['sourcery'],
             refused_causes={'sourcery': 'size'},
         )
-        # The awaitability member is unchanged — the cause is an overlay, not a member.
-        assert _state_of(result, 'sourcery') == rc.STATE_REFUSED_HARD
-        assert result['refusal_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size'}]
+        # A size cause resolves the STRUCTURAL member, not sourcery's hard_quota
+        # awaitability member — and the row carries a cap column (unknown here, since
+        # no cap was supplied).
+        assert _state_of(result, 'sourcery') == rc.STATE_REFUSED_STRUCTURAL
+        assert result['refusal_causes'] == [
+            {'bot_kind': 'sourcery', 'cause': 'size', 'cap': ''}
+        ]
 
     def test_cause_for_a_non_refused_bot_is_dropped(self, plan_context):
         # A cause supplied for a bot that did NOT resolve to a refusal state is not
@@ -2127,9 +2140,9 @@ class TestRefusalCauseOverlay:
         assert _state_of(result, 'coderabbit') == rc.STATE_PARTICIPATED
         assert result['refusal_causes'] == []
 
-    def test_cause_never_changes_the_awaitability_member(self, plan_context):
-        # coderabbit's rate_limit_class is awaitable_window → refused_awaitable, whatever
-        # cause is supplied. The two axes are independent.
+    def test_a_non_size_cause_never_changes_the_awaitability_member(self, plan_context):
+        # coderabbit's rate_limit_class is awaitable_window → refused_awaitable. A
+        # non-size cause is advisory and leaves that member alone.
         plan_id = 'rc-cause-advisory'
         plan_context.plan_dir_for(plan_id)
         result = rc.check_completeness(
@@ -2137,7 +2150,9 @@ class TestRefusalCauseOverlay:
             refused_causes={'coderabbit': 'quota'},
         )
         assert _state_of(result, 'coderabbit') == rc.STATE_REFUSED_AWAITABLE
-        assert result['refusal_causes'] == [{'bot_kind': 'coderabbit', 'cause': 'quota'}]
+        assert result['refusal_causes'] == [
+            {'bot_kind': 'coderabbit', 'cause': 'quota', 'cap': ''}
+        ]
 
     def test_no_causes_emits_no_refusal_causes(self, plan_context):
         plan_id = 'rc-cause-none'
@@ -2154,8 +2169,10 @@ class TestRefusalCauseOverlay:
             '--refused-causes', 'sourcery:size',
         )
         assert result.returncode == 0
-        assert 'refusal_causes[1]{bot_kind,cause}:' in result.stdout
-        assert 'sourcery,size' in result.stdout
+        assert 'refusal_causes[1]{bot_kind,cause,cap}:' in result.stdout
+        # No --refusal-size-caps supplied, so the cap column reads the literal
+        # ``unknown`` rather than an empty field or an invented figure.
+        assert 'sourcery,size,unknown' in result.stdout
 
     def test_cli_malformed_cause_is_an_unknown_verdict(self, plan_context):
         # A bare token on the pair-form --refused-causes is a caller error → status:
@@ -2181,11 +2198,13 @@ class TestRefusalCauseOverlay:
         assert 'refusal_causes' not in result.stdout
 
     def test_cause_does_not_change_the_verdict(self, plan_context):
-        """The 'no gating' half of advisory: the verdict is IDENTICAL with vs without a cause.
+        """The 'no gating' half: the VERDICT is identical with vs without a cause.
 
-        Supplying ``--refused-causes`` may add a ``refusal_causes[]`` report but must
-        move neither ``participation_complete``, the unproven/pending sets, nor the
-        ``bot_states`` awaitability members — the cause is reported, never acted on.
+        A size cause moves the reported STATE (that is the point of the member), but it
+        must move neither ``participation_complete`` nor the unproven/pending sets —
+        every refusal member is unproven regardless of which one it is, so the cause
+        selects a remedy, never an admission. Pinning this separately from the state is
+        what stops a future edit turning the remedy signal into a gate.
         """
         plan_id = 'rc-cause-no-gate'
         plan_context.plan_dir_for(plan_id)
@@ -2197,10 +2216,14 @@ class TestRefusalCauseOverlay:
         assert without['participation_complete'] == with_cause['participation_complete']
         assert without['unproven_bots'] == with_cause['unproven_bots']
         assert without['pending_bots'] == with_cause['pending_bots']
-        assert without['bot_states'] == with_cause['bot_states']
-        # The only difference is the advisory report itself.
+        # The state DOES move — from the temporal member to the structural one — and
+        # that is the deliberate change, so it is asserted rather than tolerated.
+        assert _state_of(without, 'sourcery') == rc.STATE_REFUSED_HARD
+        assert _state_of(with_cause, 'sourcery') == rc.STATE_REFUSED_STRUCTURAL
         assert without['refusal_causes'] == []
-        assert with_cause['refusal_causes'] == [{'bot_kind': 'sourcery', 'cause': 'size'}]
+        assert with_cause['refusal_causes'] == [
+            {'bot_kind': 'sourcery', 'cause': 'size', 'cap': ''}
+        ]
 
 
 class TestAbsentVersusInProgressDistinction:

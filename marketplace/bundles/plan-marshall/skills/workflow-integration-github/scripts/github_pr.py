@@ -91,10 +91,13 @@ from typing import Any
 import bot_registry
 import github_ops as _github
 from _github_pr import (
+    REFUSAL_CAUSE_SIZE,
     RESOLVE_THREAD_MUTATION,
     THREAD_REPLY_MUTATION,
     _is_refusal_notice,
+    measure_diff_size,
     refusal_cause,
+    refusal_size_cap,
 )
 from ci_base import extract_routing_args, register_subcommands, set_default_cwd
 from github_re_review import bot_kind_for_author, is_registered_trigger_comment
@@ -803,9 +806,11 @@ def cmd_fetch_findings(args):
     recognized through ``_github_pr._is_refusal_notice`` (the bot's registry
     ``refusal_patterns`` OR the structural last-resort recognizer). This is the
     producer-side refusal channel the completeness / quorum layer consumes as
-    ``--refused-bots``, so it can classify the bot as ``refused_awaitable`` /
-    ``refused_hard`` / ``refused_unknown`` (the one-to-one split of the bot's
-    three-valued ``rate_limit_class``) instead of inferring absence from silence.
+    ``--refused-bots``, so it can classify the bot into a refusal member —
+    ``refused_structural`` when the observed cause is a diff-size ceiling, otherwise
+    the one-to-one split of the bot's three-valued ``rate_limit_class`` into
+    ``refused_awaitable`` / ``refused_hard`` / ``refused_unknown`` — instead of
+    inferring absence from silence.
     A refusing comment
     is excluded from ``participated_bots`` — a refusal is positive evidence the bot
     did NOT review — and files no finding, so it never reaches operator triage. A
@@ -820,6 +825,25 @@ def cmd_fetch_findings(args):
     ``quota`` (a rate/budget limit → backoff). ``size`` is sticky per bot — a bot that
     posted both a size ceiling and a quota notice on this PR records ``size``. Forwarded
     to ``review_completeness check --refused-causes``.
+
+    ``refused_size_caps``: one ``{bot_kind, cap}`` record per bot whose SIZE refusal
+    stated the ceiling it refused over (``_github_pr.refusal_size_cap``). Sparse by
+    design — a bot that refused for quota states no diff ceiling, and a size notice
+    that states no figure yields no record — so an absent entry is an UNKNOWN cap the
+    consumer reports as unknown rather than defaulting to one nobody observed. It is
+    what makes a recorded coverage gap auditable against the diff that was actually
+    refused. Forwarded to ``review_completeness check --refusal-size-caps``.
+
+    ``measured_diff_size``: how big the refused diff actually was, as
+    ``"{n} changed lines"`` — the OTHER half of an auditable gap, since a cap without
+    the size that hit it is a claim the reader must take on trust. Measured ONLY when a
+    size refusal was seen, so the extra provider round-trip is paid on the rare branch
+    that needs it and never on the common path. ``''`` when no size refusal occurred or
+    the read failed — UNKNOWN, never ``0``, which would read as an empty diff being
+    refused for being too big. Its unit rides inside the value and is deliberately not
+    the reviewer's unit (see ``_github_pr.measure_diff_size``), so the two figures are an
+    order-of-magnitude comparison rather than an equality check. Forwarded to
+    ``review_completeness check --measured-diff-size``.
 
     ``unclassified_bots``: the sorted list of bot_kinds that participated but
     appear in NEITHER ``--required-bots`` nor ``--optional-bots``. Per the
@@ -976,6 +1000,11 @@ def cmd_fetch_findings(args):
     # both a size ceiling and a quota notice on this PR records ``size``, the more
     # actionable remedy (a smaller diff).
     refused_causes: dict[str, str] = {}
+    # Per SIZE-refusing bot, the diff-size CAP its own notice stated. Populated only
+    # from a ``size`` refusal — a quota notice names no diff ceiling — and left absent
+    # when the notice states no figure, so an unknown cap stays unknown rather than
+    # defaulting to one nobody observed.
+    refused_size_caps: dict[str, str] = {}
     unclassified_set: set[str] = set()
     store_failures: list[str] = []
 
@@ -1001,8 +1030,9 @@ def cmd_fetch_findings(args):
         # a drop-as-noise: the comment files no finding (a refusal is a signal
         # about the review, not feedback about the code, so it must never reach
         # operator triage), but the refusing bot is SURFACED in ``refused_bots`` so
-        # the completeness / quorum layer classifies it as refused_awaitable /
-        # refused_hard / refused_unknown rather than inferring absence from silence.
+        # the completeness / quorum layer classifies it into a refusal member —
+        # refused_structural for a diff-size ceiling, else refused_awaitable /
+        # refused_hard / refused_unknown — rather than inferring absence from silence.
         # Checked BEFORE
         # the noise filter so a refusal can never be swallowed by a shared ignore
         # regex on its way past. An unregistered login's refusal is still
@@ -1015,8 +1045,18 @@ def cmd_fetch_findings(args):
                 # name the remedy — a smaller diff vs backoff. ``size`` is sticky: once
                 # a size ceiling is seen for this bot it wins over a later quota notice.
                 cause = refusal_cause(body, bot_kind)
-                if cause == 'size' or bot_kind not in refused_causes:
+                if cause == REFUSAL_CAUSE_SIZE or bot_kind not in refused_causes:
                     refused_causes[bot_kind] = cause
+                # A size refusal states the CAP it refused over; capture it from the
+                # notice so the recorded coverage gap is auditable against the diff
+                # that was actually refused. Kept on the same stickiness as the cause
+                # (a size notice wins) and only ever SET from a size refusal — a quota
+                # notice states no diff ceiling, so reading one from it would invent a
+                # figure. An empty capture stays empty: unknown, never a default.
+                if cause == REFUSAL_CAUSE_SIZE:
+                    cap = refusal_size_cap(body, bot_kind)
+                    if cap:
+                        refused_size_caps[bot_kind] = cap
             continue
 
         # Pre-filter 3: SELF-AUTHORED RESPONSE — the batched disposition comment
@@ -1121,6 +1161,19 @@ def cmd_fetch_findings(args):
         count_fetched - skipped_noise - skipped_duplicate - skipped_refusal - skipped_self_response
     )
 
+    # Measure the diff ONLY when a size refusal was actually seen. A recorded cap
+    # without the size that hit it is a claim the reader must take on trust, so the
+    # measurement is what turns the gap from asserted into auditable — but it is a
+    # provider round-trip, so it is gated on the rare branch that needs it rather
+    # than paid on every fetch. An unmeasurable diff stays '' (UNKNOWN), never 0.
+    #
+    # Gated on the CAUSE, never on ``refused_size_caps``. Those two come apart exactly
+    # where the measurement matters most: a size refusal whose notice states no figure
+    # extracts no cap, so gating on the cap would leave the operator with NEITHER
+    # number in the one case the feature exists to prevent — an unquantified gap.
+    saw_size_refusal = any(cause == REFUSAL_CAUSE_SIZE for cause in refused_causes.values())
+    measured_diff_size = measure_diff_size(args.pr_number) if saw_size_refusal else ''
+
     qgate_hash: str | None = None
     qgate_persist_failure: dict[str, str] | None = None
     if count_stored != expected_stored:
@@ -1224,6 +1277,22 @@ def cmd_fetch_findings(args):
         'refused_causes': [
             {'bot_kind': bot, 'cause': refused_causes[bot]} for bot in sorted(refused_causes)
         ],
+        # The CAP each SIZE-refusing bot's own notice stated — {bot_kind, cap}, sparse.
+        # A bot is absent here when it refused for quota, or when its size notice
+        # stated no figure; an absent entry is an UNKNOWN cap the consumer reports as
+        # such, never a zero and never a default. Forwarded to
+        # ``review_completeness check --refusal-size-caps``, which reports it alongside
+        # the cause so a recorded gap can be reconciled against the real diff size.
+        'refused_size_caps': [
+            {'bot_kind': bot, 'cap': refused_size_caps[bot]} for bot in sorted(refused_size_caps)
+        ],
+        # The OTHER half of an auditable gap: how big the refused diff actually was.
+        # Measured only when a size refusal was seen (see above) — one cheap metadata
+        # call on a path that fires rarely, and none at all on the common path — and
+        # left '' when the read fails or no size refusal occurred. Its unit rides
+        # inside the value because it is NOT the reviewer's unit; see
+        # ``_github_pr.measure_diff_size``.
+        'measured_diff_size': measured_diff_size,
         'unclassified_bots': sorted(unclassified_set),
         'stored_hash_ids': stored_hashes,
         'producer_mismatch_hash_id': qgate_hash,
