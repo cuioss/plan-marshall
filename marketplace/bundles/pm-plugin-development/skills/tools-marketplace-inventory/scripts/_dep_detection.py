@@ -85,10 +85,15 @@ class Dependency:
     dep_type: DependencyType
     context: str  # Location (line number, field name)
     resolved: bool = True  # False if target doesn't exist
-    provisional: bool = False  # Matched a non-reference shape; see below
+    exclusion: str = ''  # Name of the non-reference shape matched; see below
+
+    @property
+    def provisional(self) -> bool:
+        """True when this match wore an excluded shape rather than a plain notation."""
+        return bool(self.exclusion)
 
 
-# ``provisional`` is how the non-reference exclusions below stay FAIL-CLOSED.
+# ``exclusion`` is how the non-reference exclusions below stay FAIL-CLOSED.
 #
 # Each exclusion recognises a *shape* — a placeholder, a parenthesised prefix, a
 # token embedded in a build coordinate. A shape is strong evidence but not proof:
@@ -96,11 +101,26 @@ class Dependency:
 # ``.py`` suffix. Dropping on shape alone would silently swallow such a reference,
 # turning a precision fix into a hole in the gate.
 #
-# So a match on an excluded shape is marked ``provisional`` rather than discarded,
-# and the INDEX makes the final call (``_dep_index._index_dependencies_from``): a
-# provisional dependency naming a real component is kept as a genuine edge, and
-# only one naming nothing is dropped. Shape decides where to look; existence
-# decides.
+# So a match on an excluded shape records WHICH shape it matched rather than being
+# discarded, and the INDEX makes the final call
+# (``_dep_index._index_dependencies_from``): an excluded dependency naming a real
+# component is kept as a genuine edge, and only one naming nothing is dropped.
+# Shape decides where to look; existence decides.
+#
+# The shape's NAME matters as well as its presence, because only one of them can
+# still be a reference. A decision-log prefix names a workflow step, and a step is
+# very often a verb of the skill's entry script — so that shape alone is eligible
+# for the subcommand retarget. The others cannot be: a placeholder names nothing, a
+# canonical command names a build step, and a sub-document path's third segment is
+# a DIRECTORY (``manage-lessons:references/dedup-analysis.md``), never a verb.
+# Letting those retarget manufactured five false edges onto ``manage-lessons``.
+EXCLUSION_PLACEHOLDER = 'placeholder'
+EXCLUSION_CANONICAL_COMMAND = 'canonical-command'
+EXCLUSION_DECISION_LOG = 'decision-log'
+EXCLUSION_EMBEDDED_TOKEN = 'embedded-token'
+
+# The only excluded shape whose third segment can still name a verb.
+VERB_BEARING_EXCLUSIONS: frozenset[str] = frozenset({EXCLUSION_DECISION_LOG})
 
 
 # ---------------------------------------------------------------------------
@@ -306,16 +326,16 @@ def detect_script_notations(content: str, source: ComponentId) -> list[Dependenc
                 continue
             # Non-reference shapes. Marked provisional, never dropped here —
             # the index keeps any that turn out to name a real component.
-            provisional = (
-                # Prose documenting the notation form.
-                _has_placeholder_segment(bundle, skill, script)
-                # A canonical verification-step ID names a build command.
-                or _is_canonical_command(match.group(0))
-                # A parenthesised decision-log prefix names the emitting step.
-                or _is_decision_log_prefix(line, match.start(), match.end())
-                # A build coordinate, Gradle task path, or sub-document path.
-                or _is_embedded_in_longer_token(line, match.start(), match.end())
-            )
+            if _has_placeholder_segment(bundle, skill, script):
+                exclusion = EXCLUSION_PLACEHOLDER
+            elif _is_canonical_command(match.group(0)):
+                exclusion = EXCLUSION_CANONICAL_COMMAND
+            elif _is_decision_log_prefix(line, match.start(), match.end()):
+                exclusion = EXCLUSION_DECISION_LOG
+            elif _is_embedded_in_longer_token(line, match.start(), match.end()):
+                exclusion = EXCLUSION_EMBEDDED_TOKEN
+            else:
+                exclusion = ''
 
             target = ComponentId(
                 bundle=bundle,
@@ -329,7 +349,7 @@ def detect_script_notations(content: str, source: ComponentId) -> list[Dependenc
                     target=target,
                     dep_type=DependencyType.SCRIPT_NOTATION,
                     context=f'line:{line_num}',
-                    provisional=provisional,
+                    exclusion=exclusion,
                 )
             )
 
@@ -360,7 +380,11 @@ def detect_skill_references(content: str, frontmatter: dict[str, Any], source: C
                             target=target,
                             dep_type=DependencyType.SKILL_REFERENCE,
                             context='frontmatter:skills',
-                            provisional=_has_placeholder_segment(bundle, name),
+                            exclusion=(
+                                EXCLUSION_PLACEHOLDER
+                                if _has_placeholder_segment(bundle, name)
+                                else ''
+                            ),
                         )
                     )
 
@@ -376,7 +400,9 @@ def detect_skill_references(content: str, frontmatter: dict[str, Any], source: C
                     target=target,
                     dep_type=DependencyType.SKILL_REFERENCE,
                     context=f'line:{line_num}',
-                    provisional=_has_placeholder_segment(bundle, name),
+                    exclusion=(
+                        EXCLUSION_PLACEHOLDER if _has_placeholder_segment(bundle, name) else ''
+                    ),
                 )
             )
 

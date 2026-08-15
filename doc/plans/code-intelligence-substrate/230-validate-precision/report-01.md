@@ -119,8 +119,8 @@ run over the same tree, and their **resolved-edge sets** were diffed.
 
 | | Resolved edges |
 |---|---:|
-| Pre-change detector | 4931 |
-| Current detector | 4971 |
+| Pre-change detector | 4928 |
+| Current detector | 4965 |
 | **Lost** (was resolved, now absent) | **0** |
 | Gained | the D2 retargets |
 
@@ -192,8 +192,8 @@ one change that would have suppressed the rest, because it fails open.
 
 ### D4 — re-baseline and report the real unresolved set
 
-**Done.** 380 → **62**, with `resolved` rising 4921 → **4971** and
-`total_dependencies` falling 5301 → 5033. `total_components` is unchanged at 306 and
+**Done.** 380 → **62**, with `resolved` rising 4921 → **4965** and
+`total_dependencies` falling 5301 → 5027. `total_components` is unchanged at 306 and
 `circular_dependencies` is unchanged at 294, so the comparison is like-for-like on
 both axes the validator reports.
 
@@ -222,8 +222,9 @@ repository itself already uses — 10 rows):
 A further stale example — `plan-marshall:commands:tools-fix`, a command that does
 not exist — was corrected in the same file D6 edits.
 
-**Filed** (each needs a decision or a design change this plan excludes; the plan's
-Out-of-scope explicitly declines a blanket fix obligation):
+**Filed** — 35 rows, enumerated in full (each needs a decision or a design change
+this plan excludes; the plan's Out-of-scope explicitly declines a blanket fix
+obligation):
 
 | Finding | Rows | Why filed rather than fixed |
 |---|---:|---|
@@ -231,6 +232,7 @@ Out-of-scope explicitly declines a blanket fix obligation):
 | `pm-plugin-development:plugin-doctor:{validate,fix,analyze}` | 13 | `doctor-marketplace.py` exposes `analyze`/`fix`/`report`/`quality-gate`/`list-components`/`test-conventions`/`contracts` — there is no `validate`, and the documented `fix apply`, `analyze cross-file` chains do not map onto it. Establishing the consolidated CLI's real surface is a separate job; guessing would document commands that do not run |
 | `_BUCKET_B_NOTATIONS` holds two unresolvable notations | 2 | **Production behaviour, not documentation.** `execute-task/scripts/inject_project_dir.py` matches on `plan-marshall:workflow-integration-git:git` and `plan-marshall:workflow-pr-doctor:pr-doctor`; the real scripts are `git-workflow.py` and `pr_doctor.py`, so project-dir injection cannot fire for either. The sibling entries in the same frozenset do resolve, which is what makes these two look wrong rather than stylistic. Changing dispatch behaviour is beyond a precision plan |
 | `plan-marshall:tools-integration-ci:{github,gitlab}` | 2 | The Executor Mapping sections document a `github`/`gitlab` script; the real entry script is `ci.py`. The correct replacement depends on how `ci.py` dispatches providers |
+| `plan-marshall:manage-findings:manage_findings` | 1 | The underscored script segment plugin-doctor's `manage-findings-invocation-invalid` rule already raises. Restored as a finding by round-2 fix 1; the doc site itself is a rule-catalogue example, so correcting it belongs with that rule's owner |
 | Six one-off references | 6 | `domain-extension-api:validate_manifest`, `plan-marshall:plan-marshall:_invariants` (private module, deliberately not a component), `plan-marshall:recipe-` (ASCII-art placeholder), `pm-dev-java:build-maven:maven` and `pm-dev-java:java-core:java-core` (illustrative hypotheticals), `pm-plugin-development:README.md` (a relative link in an *asset template*, resolved against the template's own location rather than its destination) |
 
 ### D5 — precision regression test
@@ -252,8 +254,9 @@ detector the fixture reported 6 unresolved targets rather than 1. The 5 that pas
 are the deliberate controls asserting real notation is still detected — correctly
 green both before and after.
 
-**25 new test functions**; the file's collected total is **90** (from 65). Whole-suite
-at this revision: **20072 passed, 14 skipped**. (Function count and collected-case
+**30 new test functions**; the file's collected total is **95** (from 65), and the
+inventory suite is **187 passed**. Whole-suite at this revision: **20075 passed,
+14 skipped**. (Function count and collected-case
 count coincide here — none of these tests is parametrized.)
 
 ### D6 — documentation
@@ -308,7 +311,7 @@ All three sub-steps ran and were read from the tool output, not the exit code:
 `ruff … All checks passed!`, `mypy … Success: no issues found in 405 source files`
 (production), `mypy(test) … 750 source files`, `SPDX-header check passed`,
 plugin-doctor marketplace-wide `total_issues: 0` with an empty `issues[]`, and
-**`20072 passed, 14 skipped`** with no failures or errors.
+**`20075 passed, 14 skipped`** with no failures or errors.
 
 `./pw quality-gate` was additionally run before each `*.py`-touching commit, clean
 each time.
@@ -414,6 +417,30 @@ just the one the fix was about.** R‑9 is the same lesson in the reporting dire
 "zero rows from my own docs" was verified against `unresolved` only, while
 `circular` and a second lint engine moved unwatched.
 
+## Verification sub-agent — round 4 findings
+
+A third independent dispatch verified the round-3 fixes. It confirmed the self-edge
+skip is clean (all 26 skipped rows were already excluded, and both call paths compare
+the right thing), the dual-case entry-script lookup is safe (no skill has both
+spellings; the nine underscore-only skills are unaffected), and the prefix mirror is
+inert-but-faithful. It found that **the R‑1 fix had over-corrected**, plus three
+reporting defects.
+
+| # | Finding | Disposition |
+|---|---|---|
+| R‑12 | **The R‑1 reorder bypassed every detection guard for any skill with an entry script.** 38 of 43 retargets were guard-bypassing, and 6 were wrong — five sub-document paths became false edges onto `manage-lessons` (whose entry script registers no `references`/`standards` verb), plus one step id | **Fixed** — the retarget is now attempted only for a shape whose third segment *can* be a verb. A decision-log prefix qualifies; a placeholder, canonical command, or sub-document path never does, because its third segment is a directory or a meta-variable. `Dependency.provisional` became `Dependency.exclusion`, recording *which* shape matched, so the distinction is data rather than a comment |
+| R‑13 | The D5 fixture was **still vacuous for the `.`+word arm** — the recurrence round-2 #8 and R‑3 had each aimed at and missed | **Fixed** — a seventh instance added; each of the two embedded sub-arms is now disabled *separately* and both raise the count |
+| R‑14 | **Fourth instance of self-inflicted noise**: `SKILL.md` spelled a real notation 26 lines below this run's own newly-added rule against doing so, creating both an edge and a lint finding | **Fixed** — measured against `origin/main` in a worktree: both revisions now report the **same two** notation findings, so this run adds zero |
+| R‑15 | **The R‑6 fix replaced one false claim with another.** `_EXECUTOR_NOTATION_RE` belongs to the `notation-bundle-skill-drift` rule, not `notation-staleness`; and `notation-staleness` itself skips notations whose `scripts/` directory is absent — the very membership-based fail-open the same paragraph rejects | **Fixed** — the correct rule is named, and the paragraph now records that adopting it narrows the class by narrowing what counts as a reference |
+| R‑16 | Three report figures stale (`59` retargets → 38; pre-change edge count `4931` → 4928; test counts), and the D4 Filed table enumerated 34 of 35 rows | **Fixed** — every figure re-derived at this revision; the missing row now has its own entry |
+| R‑17 | **The "what have we learned" proposal named the wrong root cause.** It attributed `uv.lock` churn to an old session interpreter; the real cause is that `origin/main`'s lockfile pins `ruff>=0.16.1` while `pyproject.toml` requires `>=0.16.2`, so *any* `uv run` re-syncs it | **Fixed** — the proposal now states the actual mechanism |
+
+**R‑12 is the third time a fix in this run introduced a defect**, after R‑10 and
+R‑11. All three were over-corrections of the previous round's finding, and all three
+were found by *measuring the corpus after the change* rather than by reasoning about
+it. The countermeasure that actually worked, every time, was enumerating what the
+change did to the whole corpus — not inspecting the diff.
+
 ## Reviewer participation
 
 Population derived from configuration — the `author_login` of each
@@ -472,24 +499,28 @@ surfaces before the merge gate.
 
 **One contract change is proposed, and this run produced the evidence.**
 
-**Evidence.** § Step 4 requires the quality gate before any commit touching
-`*.py`, and § Step 5 warns that `./pw` rewrites `uv.lock` under a session
-interpreter below the project's floor. Both are stated. What neither says is that
-they **compound**: the gate must run *before* the commit, and running it is what
-dirties `uv.lock`. So every gated commit in this run arrived at `git add` with churn
-already present, and the contract's remedy ("stage the deliverable paths explicitly,
-never `git add -A`") leaves the churn sitting in the working tree — where it is then
-picked up by the *next* commit's staging, and where § Step 5's own
-`git status --porcelain` clean-tree re-assertion flags it as a defect in the run.
-This run backed the lockfile out before each of four commits; the contract never
-says to.
+**Evidence.** § Step 4 requires the quality gate before any commit touching `*.py`,
+and § Step 5 warns that `./pw` rewrites `uv.lock`. Both are stated. What neither says
+is that they **compound**: the gate must run *before* the commit, and running it is
+what dirties `uv.lock`. Every gated commit in this run therefore arrived at `git add`
+with churn already present, and § Step 5's own clean-tree re-assertion then flags it
+as a defect in the run. This run backed the lockfile out before each of eight
+commits; the contract never says to.
 
-**Proposed edit.** In § Step 4 "Commit and push", after the existing
-`git add -A` prohibition, add: *"The gate you just ran is itself a likely source of
-that churn — `./pw` rewrites `uv.lock` under a session interpreter below the
-project's floor. Revert it (`git checkout -- uv.lock`) as part of committing, not
-only when you happen to notice it, and re-check before Step 5's clean-tree
-assertion."*
+⚠ **The first version of this proposal named the wrong cause, and verification
+caught it.** It repeated § Step 5's explanation — "`./pw` rewrites `uv.lock` under a
+session interpreter below the project's floor" — as though that were the mechanism
+here. It is not. The committed `uv.lock` on `origin/main` pins `ruff` at
+`>=0.16.1` while `pyproject.toml` requires `>=0.16.2`, so **any** `uv run` re-syncs
+that one metadata line regardless of interpreter version. The observation that the
+churn is real stands; the diagnosis in the contract does not cover it.
+
+**Proposed edit.** In § Step 4 "Commit and push", after the existing `git add -A`
+prohibition, add: *"Expect `uv.lock` to be dirty whenever you have run the gate —
+`./pw` re-syncs it, and not only under an old interpreter: a lockfile pin that has
+drifted from `pyproject.toml` re-syncs on every `uv run`. Revert it
+(`git checkout -- uv.lock`) as part of committing rather than when you happen to
+notice, and re-check before Step 5's clean-tree assertion."*
 
 **Not proposed, though tempting.** § Step 6's beyond-diff sweep worked as written
 and caught a real defect in this run's own documentation (finding 8) — no change

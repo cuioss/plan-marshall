@@ -1123,56 +1123,56 @@ class TestNonReferenceColonTriples:
         return detect_script_notations(content, source)
 
     @classmethod
-    def _provisional(cls, content):
-        """Every match is flagged provisional — i.e. excluded unless it names a component."""
+    def _excluded_as(cls, content, exclusion):
+        """Every match records `exclusion` — the arm that excluded it, not just that one did."""
         deps = cls._detect(content)
-        return bool(deps) and all(d.provisional for d in deps)
+        return bool(deps) and all(d.exclusion == exclusion for d in deps)
 
     def test_documentation_placeholder_is_not_a_reference(self):
         """Prose documenting the notation form produces no finding."""
         content = 'Scripts are referenced as `bundle:skill:script` in documentation.\n'
-        assert self._provisional(content)
+        assert self._excluded_as(content, 'placeholder')
 
     def test_maven_placeholder_coordinate_is_not_a_reference(self):
         """``groupId:artifactId:scope`` documents a coordinate, not a script."""
         content = 'Each module names dependencies as `groupId:artifactId:scope`.\n'
-        assert self._provisional(content)
+        assert self._excluded_as(content, 'placeholder')
 
     def test_canonical_verification_step_is_not_a_reference(self):
         """``default:verify:{canonical}`` is a build command, not a script."""
         content = 'Set per_deliverable_build to default:verify:quality-gate here.\n'
-        assert self._provisional(content)
+        assert self._excluded_as(content, 'canonical-command')
 
     def test_decision_log_prefix_is_not_a_reference(self):
         """A parenthesised ``(bundle:skill:step)`` prefix names the emitting step."""
         content = '--message "(plan-marshall:phase-6-finalize:qgate) Finding fixed"\n'
-        assert self._provisional(content)
+        assert self._excluded_as(content, 'decision-log')
 
     def test_dotted_build_coordinate_is_not_a_reference(self):
         """A Maven coordinate preceded by its group prefix is not a script."""
         content = 'Depend on "de.cuioss:cui-java-tools:compile" for the utilities.\n'
-        assert self._provisional(content)
+        assert self._excluded_as(content, 'embedded-token')
 
     def test_gradle_task_path_is_not_a_reference(self):
         """A Gradle task path (leading colon) is not a script notation."""
         content = './gradlew :services:auth-service:build\n'
-        assert self._provisional(content)
+        assert self._excluded_as(content, 'embedded-token')
 
     def test_subdocument_path_is_not_a_reference(self):
         """``bundle:skill:dir/file.md`` addresses a document, not a script."""
         content = 'Load `plan-marshall:manage-lessons:references/dedup-analysis.md` first.\n'
-        assert self._provisional(content)
+        assert self._excluded_as(content, 'embedded-token')
 
     def test_dotted_document_suffix_is_not_a_reference(self):
         """``bundle:skill:name.md`` addresses a workflow document, not a script."""
         content = 'See `plan-marshall:plan-marshall:planning.md` for the contract.\n'
-        assert self._provisional(content)
+        assert self._excluded_as(content, 'embedded-token')
 
     def test_real_notation_at_end_of_sentence_is_still_a_reference(self):
         """A trailing sentence period must NOT be read as a document suffix."""
         deps = self._detect('Run plan-marshall:manage-files:manage-files.\n')
         assert len(deps) == 1
-        assert not deps[0].provisional
+        assert not deps[0].exclusion
         assert deps[0].target.to_notation() == 'plan-marshall:manage-files:manage-files'
 
     def test_genuine_notation_is_still_detected(self):
@@ -1180,7 +1180,7 @@ class TestNonReferenceColonTriples:
         content = 'python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add\n'
         deps = self._detect(content)
         assert len(deps) == 1
-        assert not deps[0].provisional
+        assert not deps[0].exclusion
         assert deps[0].target.to_notation() == 'plan-marshall:manage-files:manage-files'
 
 
@@ -1190,13 +1190,13 @@ class TestPlaceholderSkillReferences:
     def test_skill_pattern_placeholder_is_not_a_reference(self):
         source = ComponentId(bundle='test', component_type='skill', name='test')
         deps = detect_skill_references('Skill: bundle:skill-name\n', {}, source)
-        assert deps and all(d.provisional for d in deps)
+        assert deps and all(d.exclusion == 'placeholder' for d in deps)
 
     def test_frontmatter_placeholder_is_not_a_reference(self):
         source = ComponentId(bundle='test', component_type='skill', name='test')
         frontmatter = {'skills': ['bundle-name:skill-name']}
         deps = detect_skill_references('', frontmatter, source)
-        assert deps and all(d.provisional for d in deps)
+        assert deps and all(d.exclusion == 'placeholder' for d in deps)
 
     def test_real_skill_reference_is_still_detected(self):
         source = ComponentId(bundle='test', component_type='skill', name='test')
@@ -1216,7 +1216,8 @@ class TestPlaceholderSkillReferences:
 # Graph shape (bundle ``precision-bundle``):
 #
 #   manage-thing  (skill) + manage-thing.py  (its same-named ENTRY script)
-#   (six excluded instances in total, one per documented class). The
+#   (seven excluded instances in total, one per documented class AND one per
+#   arm of the embedded-token guard). The
 #   sub-document instance sits on `phase-thing` DELIBERATELY: on a skill
 #   with an entry script the subcommand retarget would absorb it, and the
 #   fixture would stay green with that arm disabled.
@@ -1255,6 +1256,7 @@ def _build_precision_graph(root: Path) -> Path:
         '--message "(precision-bundle:phase-thing:qgate) step emitted this"\n'
         'The coordinate is "de.example:example-lib:compile" in the POM.\n'
         'Load `precision-bundle:phase-thing:standards/detail.md` first.\n'
+        'See `precision-bundle:phase-thing:planning.md` for the contract.\n'
         'python3 .plan/execute-script.py precision-bundle:phase-thing:ghost-script run\n',
     )
     return bundles
@@ -1456,3 +1458,29 @@ class TestRetargetAppliesToWrittenNotationOnly:
             if dep.dep_type == DependencyType.PYTHON_IMPORT
         ]
         assert imports == [('plan-marshall:ref-toon-format:toon_parser', False)]
+
+
+class TestOnlyVerbBearingShapesRetarget:
+    """The retarget is attempted for a decision-log prefix, never for a path."""
+
+    def test_subdocument_path_never_retargets_onto_the_entry_script(self, tmp_path):
+        """A sub-document path's third segment is a DIRECTORY, never a verb.
+
+        Attempting the retarget for every excluded shape manufactured five false
+        edges onto `manage-lessons`, whose entry script registers no `references`
+        or `standards` subcommand.
+        """
+        assert _probe_reference(
+            tmp_path, 'Load `probe-bundle:real-skill:references/detail.md` first.'
+        ) == []
+
+    def test_placeholder_never_retargets_onto_the_entry_script(self, tmp_path):
+        """A placeholder segment names nothing, so it cannot be a verb either."""
+        assert _probe_reference(
+            tmp_path, 'Referenced as `probe-bundle:real-skill:script` in docs.'
+        ) == []
+
+    def test_decision_log_prefix_still_retargets(self, tmp_path):
+        """The control: the one excluded shape whose segment CAN be a verb."""
+        edges = _probe_reference(tmp_path, 'Emitted (probe-bundle:real-skill:compose) here.')
+        assert edges == [('probe-bundle:real-skill:real-skill', True)]

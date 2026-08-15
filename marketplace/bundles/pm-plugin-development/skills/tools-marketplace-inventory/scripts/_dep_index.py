@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from _dep_detection import (
+    VERB_BEARING_EXCLUSIONS,
     ComponentId,
     Dependency,
     DependencyType,
@@ -530,20 +531,28 @@ def _index_dependencies_from(
     """
     for dep in detect_all_dependencies(file_path, component_id, dep_types):
         if dep.target.to_notation() not in index.components:
-            entry = _entry_script_for_subcommand(index, dep.target, dep.dep_type)
+            # The retarget is attempted before the drop, but ONLY for a shape whose
+            # third segment can still be a verb. A plain notation qualifies, and so
+            # does a decision-log prefix — a step id is very often a verb of the
+            # skill's entry script, and dropping it on shape alone hid exactly what
+            # this module calls a real reference. A sub-document path, placeholder,
+            # or build coordinate never qualifies: its third segment is a directory
+            # or a meta-variable, and letting those retarget manufactured five false
+            # edges onto `manage-lessons`.
+            may_be_verb = not dep.exclusion or dep.exclusion in VERB_BEARING_EXCLUSIONS
+            entry = (
+                _entry_script_for_subcommand(index, dep.target, dep.dep_type)
+                if may_be_verb
+                else None
+            )
             if entry is not None:
-                # A genuine subcommand citation, whatever shape it wears. This is
-                # tried BEFORE the provisional drop: a decision-log prefix naming
-                # a real verb (`(bundle:skill:compose)`) is still a reference to
-                # the script that owns the verb, and dropping it on shape alone
-                # would hide exactly what this module calls real.
                 if entry.to_notation() == component_id.to_notation():
                     # An entry script documenting its OWN verbs. Retargeting that
                     # onto itself would manufacture a self-loop and report it as a
                     # circular dependency; a script is not dependent on itself.
                     continue
                 dep.target = entry
-            elif dep.provisional:
+            elif dep.exclusion:
                 # An excluded SHAPE that names no component and no verb — the
                 # only case in which a match is discarded.
                 continue
