@@ -212,6 +212,23 @@ def test_raising_pattern_accessor_degrades_to_no_patterns(plan_context, monkeypa
     assert entries['fine']['file_patterns'] == ['**/*.py']
 
 
+def test_raising_enabled_check_treats_the_resolver_as_active(plan_context, roster, monkeypatch):
+    """A per-resolver read failure costs that resolver's state, not the roster.
+
+    The seam's gate guards each resolver individually; the roster must too, or a
+    single malformed entry would raise out of the read the menu depends on.
+    """
+
+    def _boom(resolver_id: str, section=None) -> bool:
+        raise ValueError('bad entry')
+
+    monkeypatch.setattr(_live('run_config'), 'is_derivation_resolver_enabled', _boom)
+
+    result = extension_api.list_derivation_resolvers()
+    assert result['count'] == 2
+    assert result['enabled_count'] == 2
+
+
 def test_unreadable_store_reports_every_resolver_enabled(plan_context, roster, monkeypatch):
     """Fail-open, matching the seam's gate: a store problem never reads as disabled."""
 

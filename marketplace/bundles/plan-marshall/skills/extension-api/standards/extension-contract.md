@@ -651,7 +651,7 @@ def _detect_applicable_profiles(self, profiles: dict,
 
 ## DerivationResolverBase Methods (Axis-C)
 
-The two methods below form the **complete Axis-C contract** — the module-edge derivation surface that answers "which modules depend on which" for the `graph` / `path` / `neighbors` / `impact` query family. They are declared on `DerivationResolverBase`, a third ABC that inherits from neither `ExtensionBase` nor `BuildExtensionBase` and is inherited by neither.
+The three methods below form the **complete Axis-C contract** — the module-edge derivation surface that answers "which modules depend on which" for the `graph` / `path` / `neighbors` / `impact` query family. They are declared on `DerivationResolverBase`, a third ABC that inherits from neither `ExtensionBase` nor `BuildExtensionBase` and is inherited by neither.
 
 Because Axis-A and Axis-B are disjoint hierarchies — a build system's extension subclasses `BuildExtensionBase` only, a language/content domain extension subclasses `ExtensionBase` only — a resolver face on either one would be structurally unreachable from the other. An implementor therefore opts into Axis-C by **multiple inheritance** from whichever hierarchy it already belongs to (e.g. `class BuildExtension(BuildExtensionBase, DerivationResolverBase)`), which is the only shape that lets a build skill and a domain bundle each provide a resolver. No method is abstract: all three carry safe defaults, so a subclass that overrides nothing is a valid no-edge resolver.
 

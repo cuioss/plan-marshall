@@ -407,7 +407,7 @@ def get_module_graph(
         # ran and found nothing. The two states must stay distinguishable without
         # inspecting the edge list.
         'resolvers': resolver_reports,
-        'resolver_count': len(resolver_reports),
+        'resolver_count': count_dispatched(resolver_reports),
     }
 
 
@@ -828,6 +828,26 @@ def _declared_dependencies(
     return None
 
 
+def count_dispatched(resolver_reports: list[dict[str, Any]]) -> int:
+    """Count the resolvers that actually RAN, from their reports.
+
+    ``resolver_count`` is the anti-vacuity discriminator every graph-family
+    response carries: ``0`` means no resolver ran (an absence of capability),
+    ``N`` means N ran and found what they found. That meaning only holds if the
+    count excludes resolvers the machine-local configuration switched off — they
+    appear in ``resolvers[]`` so the suppression is visible, but they did not
+    run, and counting them would report an edge-derivation capability the
+    envelope does not have.
+
+    A report with no ``dispatched`` key counts as dispatched. That keeps a
+    caller that merges reports from an older path (or a test fixture predating
+    the flag) reading as "ran" rather than silently deflating the count — the
+    conservative direction, since under-counting would turn a working envelope
+    into a false ``not_derivable``.
+    """
+    return sum(1 for report in resolver_reports if report.get('dispatched', True))
+
+
 #: Note prefix marking a resolver the machine-local configuration switched off,
 #: distinguishing an operator decision from a merge-side drop (``merge: ``) and
 #: from a note the resolver itself returned.
@@ -888,6 +908,12 @@ def _partition_configured_resolvers(
                 'id': resolver_id,
                 'edge_count': 0,
                 'status': 'ok',
+                # NOT dispatched: it was discovered and reported, but never called.
+                # ``resolver_count`` counts dispatched resolvers only, so a fully
+                # disabled envelope still reads as "no resolver ran" — which is
+                # the truth, and what keeps ``capabilities`` from promising an
+                # edge-derivation capability the envelope does not have.
+                'dispatched': False,
                 'notes': [
                     f'{_DISABLED_NOTE_PREFIX}resolver disabled by the machine-local '
                     f'derivation_resolvers binding — it was discovered but not dispatched'
@@ -943,8 +969,11 @@ def _derive_edges(
         A ``(edges, resolver_reports)`` tuple. ``edges`` is a list of
         ``{'from', 'to', 'producers'}`` dicts where ``from`` depends on ``to``.
         ``resolver_reports`` is one ``{'id', 'edge_count', 'status', 'notes'}``
-        record per resolver that ran — an EMPTY list means no resolver was
-        registered, which is what makes a zero-edge answer non-vacuous.
+        record per DISCOVERED resolver — an EMPTY list means no resolver was
+        registered, which is what makes a zero-edge answer non-vacuous. A record
+        carrying ``dispatched: False`` was discovered and reported but not run
+        (the machine-local binding switched it off), so it is excluded from
+        ``resolver_count`` — see :func:`count_dispatched`.
     """
     try:
         from _derivation_merge import merge_resolver_edges

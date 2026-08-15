@@ -1359,8 +1359,8 @@ class DerivationResolverBase(ABC):  # noqa: B024 — ABC contract anchor; every 
     than one resolver collapses to one edge carrying every contributing
     resolver's id, which is exactly what the provenance contract needs.
 
-    There is no abstract method: both Axis-C methods have safe defaults, so a
-    subclass that overrides nothing is a valid (no-edge) resolver. The ``ABC``
+    There is no abstract method: all three Axis-C methods have safe defaults, so
+    a subclass that overrides nothing is a valid (no-edge) resolver. The ``ABC``
     base marks the class as the Axis-C contract anchor, matching
     :class:`BuildExtensionBase`.
 

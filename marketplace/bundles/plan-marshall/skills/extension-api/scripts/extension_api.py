@@ -152,11 +152,18 @@ def list_derivation_resolvers() -> dict[str, Any]:
             patterns = list(module.derivation_file_patterns()) if module is not None else []
         except Exception:
             patterns = []
+        # Guarded per resolver, matching the seam's own gate: one malformed
+        # entry costs that resolver's state, never the whole roster, and it
+        # fails OPEN so a store problem can never render as "disabled".
+        try:
+            enabled = enabled_of(resolver_id, section)
+        except Exception:
+            enabled = True
         resolvers.append(
             {
                 'id': resolver_id,
                 'origin': record.get('origin', 'unknown'),
-                'enabled': enabled_of(resolver_id, section),
+                'enabled': enabled,
                 'configured': resolver_id in section,
                 'file_patterns': patterns,
             }

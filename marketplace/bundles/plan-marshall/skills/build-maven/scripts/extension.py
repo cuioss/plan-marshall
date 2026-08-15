@@ -15,7 +15,7 @@ Owns TWO axes of the extension contract for the Maven build system:
   the bundle that already understands that data is the one that owns it.
 
 Skill-loading (Axis-A) is NOT here — it lives on the Java domain extension that
-subclasses ``ExtensionBase``. The two Axis-C methods are opted into by multiple
+subclasses ``ExtensionBase``. The three Axis-C methods are opted into by multiple
 inheritance, the only shape reachable from both otherwise-disjoint hierarchies.
 
 The Maven build extension claims Java production / test sources under the

@@ -34,11 +34,22 @@ attribute lookup at every call.
 import sys
 import tempfile
 
-import extension_discovery
 import pytest
 import run_config
 
 from conftest import load_script_module
+
+
+def _live(module_name: str):
+    """Return the module object currently registered under *module_name*.
+
+    Resolved at patch time rather than captured by a module-level ``import``: a
+    sibling test elsewhere in the tree loads these scripts through
+    ``load_script_module``, which re-registers a FRESH object in ``sys.modules``,
+    leaving a collection-time reference stale so that patching it silently does
+    nothing.
+    """
+    return sys.modules[module_name]
 
 _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core'
@@ -102,7 +113,7 @@ def _register(monkeypatch, *resolvers: _StubResolver) -> None:
     records = [
         {'origin': f'stub-{r.resolver_id}', 'id': r.resolver_id, 'module': r} for r in resolvers
     ]
-    monkeypatch.setattr(extension_discovery, 'discover_derivation_resolvers', lambda: records)
+    monkeypatch.setattr(_live('extension_discovery'), 'discover_derivation_resolvers', lambda: records)
 
 
 @pytest.fixture
@@ -154,6 +165,10 @@ def test_unconfigured_resolvers_are_all_reported_as_having_run(plan_context, two
     assert reports['beta']['edge_count'] == 1
     assert reports['alpha']['notes'] == []
     assert reports['beta']['notes'] == []
+    # The merge only ever reports resolvers it CALLED, so it stamps no marker:
+    # the ABSENCE of ``dispatched`` is the dispatched case.
+    assert 'dispatched' not in reports['alpha']
+    assert 'dispatched' not in reports['beta']
 
 
 def test_configuring_one_resolver_does_not_deactivate_the_others(plan_context, two_resolvers):
@@ -189,11 +204,14 @@ def test_disabled_resolver_contributes_no_edges(plan_context, two_resolvers):
     assert all('beta' not in edge['producers'] for edge in result['edges'])
 
 
-def test_disabling_every_resolver_yields_no_edges_but_a_full_report(plan_context, two_resolvers):
-    """The empty graph still explains itself — this is not the zero-resolver state.
+def test_disabling_every_resolver_yields_no_edges_and_a_zero_run_count(plan_context, two_resolvers):
+    """Nothing ran, so ``resolver_count`` is 0 — and the report still explains why.
 
-    ``resolver_count: 0`` means no resolver ran. Here two ran-or-were-considered,
-    so the count stays 2 and the notes say why the edges are absent.
+    The count is the anti-vacuity discriminator: ``0`` means no resolver ran.
+    Disabling every resolver genuinely means none ran, so counting the disabled
+    ones would report an edge-derivation capability this envelope does not have.
+    The suppression stays visible in ``resolvers[]`` instead, which is what keeps
+    this distinguishable from "no resolver was ever registered".
     """
     for resolver_id in ('alpha', 'beta'):
         run_config.cmd_derivation_resolver_set(_ns(resolver=resolver_id, enabled=False, disabled=True))
@@ -203,9 +221,65 @@ def test_disabling_every_resolver_yields_no_edges_but_a_full_report(plan_context
         result = get_module_graph(tmpdir)
 
     assert result['edges'] == []
-    assert result['resolver_count'] == 2
+    assert result['resolver_count'] == 0
+    # Both are still REPORTED — discovered, explained, but not run.
+    assert len(result['resolvers']) == 2
     for report in result['resolvers']:
+        assert report['dispatched'] is False, report['id']
         assert report['notes'], report['id']
+
+
+def test_resolver_count_excludes_only_the_disabled_ones(plan_context, two_resolvers):
+    """One disabled, one dispatched: the count is 1 while the roster stays 2."""
+    run_config.cmd_derivation_resolver_set(_ns(resolver='beta', enabled=False, disabled=True))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_triple(tmpdir)
+        result = get_module_graph(tmpdir)
+
+    assert result['resolver_count'] == 1
+    assert len(result['resolvers']) == 2
+    reports = _report_by_id(result)
+    # Absent marker = dispatched; the explicit False marks the withheld one.
+    assert 'dispatched' not in reports['alpha']
+    assert reports['beta']['dispatched'] is False
+
+
+def test_capabilities_reports_not_derivable_when_every_resolver_is_disabled(
+    plan_context, two_resolvers
+):
+    """⛔ A registered-but-unrun producer is never reported as a capability.
+
+    Disabling every resolver leaves the envelope genuinely unable to derive
+    edges. Reporting ``derivable`` would promise a capability the envelope does
+    not have — the precise invariant ``doc/concepts/code-intelligence.adoc``
+    states for this report.
+    """
+    for resolver_id in ('alpha', 'beta'):
+        run_config.cmd_derivation_resolver_set(_ns(resolver=resolver_id, enabled=False, disabled=True))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_triple(tmpdir)
+        report = _cmd_client.cmd_capabilities(_ns(project_dir=tmpdir))
+
+    edges = next(c for c in report['capabilities'] if c['capability'] == 'module_edges')
+    assert edges['status'] == 'not_derivable'
+    assert edges['producer_count'] == 0
+    assert edges['producers'] == []
+
+
+def test_capabilities_reports_only_dispatched_producers(plan_context, two_resolvers):
+    """A disabled resolver is not named as a producer of a capability it never ran for."""
+    run_config.cmd_derivation_resolver_set(_ns(resolver='beta', enabled=False, disabled=True))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_triple(tmpdir)
+        report = _cmd_client.cmd_capabilities(_ns(project_dir=tmpdir))
+
+    edges = next(c for c in report['capabilities'] if c['capability'] == 'module_edges')
+    assert edges['status'] == 'derivable'
+    assert edges['producers'] == ['alpha']
+    assert edges['producer_count'] == 1
 
 
 # =============================================================================
@@ -260,6 +334,44 @@ def test_report_order_is_stable_when_a_resolver_is_disabled(plan_context, two_re
 
 
 # =============================================================================
+# 3b. The rendered surface never credits a resolver that did not run
+# =============================================================================
+
+
+def test_overview_footer_does_not_credit_a_disabled_resolver(plan_context, two_resolvers):
+    """The rendered footer names derivers, and a withheld resolver derived nothing.
+
+    Crediting it would be the rendered form of the same false claim
+    ``resolver_count`` excludes it to avoid.
+    """
+    run_config.cmd_derivation_resolver_set(_ns(resolver='beta', enabled=False, disabled=True))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_triple(tmpdir)
+        rendered = _cmd_client.render_overview(tmpdir)
+
+    assert 'derived by 1 resolver(s) — alpha' in rendered
+    assert 'switched off by configuration — beta' in rendered
+
+
+def test_overview_footer_states_the_cause_when_every_resolver_is_disabled(
+    plan_context, two_resolvers
+):
+    """A sparse graph explains itself rather than reading as "nothing depends on anything"."""
+    for resolver_id in ('alpha', 'beta'):
+        run_config.cmd_derivation_resolver_set(_ns(resolver=resolver_id, enabled=False, disabled=True))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _seed_triple(tmpdir)
+        rendered = _cmd_client.render_overview(tmpdir)
+
+    assert 'switched off by the machine-local configuration' in rendered
+    assert 'No edges were derived' in rendered
+    # NOT the "no resolver is registered" wording — two ARE registered.
+    assert 'no derivation resolver is registered' not in rendered
+
+
+# =============================================================================
 # 4. Fail-open
 # =============================================================================
 
@@ -270,7 +382,7 @@ def test_unreadable_store_leaves_every_resolver_dispatched(plan_context, two_res
     def _boom() -> dict:
         raise OSError('store unreadable')
 
-    monkeypatch.setattr(run_config, 'read_derivation_resolvers_section', _boom)
+    monkeypatch.setattr(_live('run_config'), 'read_derivation_resolvers_section', _boom)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_triple(tmpdir)
@@ -285,7 +397,7 @@ def test_raising_enabled_check_treats_the_resolver_as_active(plan_context, two_r
     def _boom(resolver_id: str, section=None) -> bool:
         raise ValueError('bad entry')
 
-    monkeypatch.setattr(run_config, 'is_derivation_resolver_enabled', _boom)
+    monkeypatch.setattr(_live('run_config'), 'is_derivation_resolver_enabled', _boom)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_triple(tmpdir)

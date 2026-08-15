@@ -197,9 +197,14 @@ not chosen: resolvers that ran only once configured would leave a fresh checkout
 set — the zero-edge outcome this extension point exists to prevent, arriving as a configuration
 failure instead of a derivation one.
 
-**A disabled resolver is reported, not pruned.** It still appears on the per-resolver report with
-`edge_count: 0` and a `configuration:` note. Dropping the record would make "switched off by the
-operator" indistinguishable from "never registered" — precisely the vacuity
+**A disabled resolver is reported, not pruned — but it is not counted as having run.** It still
+appears in `resolvers[]` with `edge_count: 0`, a `configuration:` note, and the extra key
+`dispatched: false` (whose absence marks the ordinary dispatched case).
+`resolver_count` counts only `dispatched` records, so an envelope with every resolver switched off
+reports `resolver_count: 0` — which is the truth ("no resolver ran"), keeps the anti-vacuity
+discriminator's meaning intact, and stops `capabilities` from reporting `module_edges` as `derivable`
+on a registered-but-unrun producer. Dropping the record entirely would instead make "switched off by
+the operator" indistinguishable from "never registered" — precisely the vacuity
 [§ The anti-vacuity provenance property](#the-anti-vacuity-provenance-property) forbids, and the same
 reasoning [§ Suppression must be reported, never silent](#suppression-must-be-reported-never-silent)
 applies to merge-side drops.

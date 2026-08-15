@@ -95,7 +95,7 @@ The four graph-family verbs — [`graph`](#graph), [`path`](#path), [`neighbors`
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `resolvers` | list | One `{id, edge_count, status, notes[]}` record per derivation resolver that ran. `status` is `ok` or `error`; an errored resolver contributes zero edges without aborting the others. `notes[]` reports every condition that **suppressed** an edge (an ambiguous identity key, an unresolvable reference) — a resolver that drops an edge silently violates the contract. |
+| `resolvers` | list | One `{id, edge_count, status, notes[]}` record per **discovered** derivation resolver. `status` is `ok` or `error`; an errored resolver contributes zero edges without aborting the others. A resolver the machine-local `derivation_resolvers` binding switched off carries the extra key `dispatched: false` — it is reported rather than dropped, so "switched off here" stays distinguishable from "never registered", but it did NOT run and is excluded from `resolver_count`. The key's **absence** is the dispatched case. `notes[]` reports every condition that **suppressed** an edge (an ambiguous identity key, an unresolvable reference, a `configuration:` opt-out) — a resolver that drops an edge silently violates the contract. |
 | `resolver_count` | int | `len(resolvers)`. The discriminator below. |
 
 **Resolver discovery is registry-wide, not project-scoped.** Every registered resolver runs and gets a row, whatever the project's technology, so most rows on any given project report `edge_count: 0` — a Maven reactor still carries an `npm` row, and an npm workspace still carries a `maven` one. `resolver_count` therefore counts the resolvers that **ran**, never the ones that **contributed**; do not read a row's presence as evidence that its ecosystem is present, nor its `edge_count: 0` as a defect.
@@ -113,7 +113,7 @@ This is the same fail-closed reporting discipline [ADR-009](../../../../../../do
 
 **Edge producers**: every edge the `graph` verb emits carries a non-empty `producers[]` naming what derived it — the contributing resolver ids, or one of two reserved ids: `declared` (the edge came from a curated `enriched.internal_dependencies` or a discovered `derived.internal_dependencies` list, which take precedence over derivation) and `sibling-cross-link` (the edge was added by core's symmetric virtual-sibling augmentation after resolution). No edge in any response is producer-less.
 
-The rendered surfaces carry the same provenance as a one-line footer: [`overview`](#overview)'s Adjacency section and [`module --full --budget`](#module---full---budget)'s Internal Dependencies section each end with an `_Edge provenance: …_` line, which renders even when a module has no dependencies.
+The rendered surfaces carry the same provenance as a one-line footer: [`overview`](#overview)'s Adjacency section and [`module --full --budget`](#module---full---budget)'s Internal Dependencies section each end with an `_Edge provenance: …_` line, which renders even when a module has no dependencies. The line names only the resolvers that **ran**: a resolver switched off by the machine-local binding is named separately as switched off, never credited with deriving, and the all-switched-off case has its own wording so it cannot be read as "no resolver is registered".
 
 ---
 
@@ -462,7 +462,7 @@ architecture.py overview [--budget N]
 
 1. **Project header** — name + description (from `_project.json`)
 2. **Modules** — table of `Module | Purpose | Responsibility`
-3. **Adjacency** — table of `Module | Internal Dependencies`, followed by a one-line `_Edge provenance: …_` footer naming the contributing resolver ids (or stating that no resolver is registered) — see § [Resolver provenance](#resolver-provenance-the-graph-family)
+3. **Adjacency** — table of `Module | Internal Dependencies`, followed by a one-line `_Edge provenance: …_` footer naming the contributing resolver ids (or stating that no resolver is registered, or that every discovered resolver is switched off by the machine-local binding) — see § [Resolver provenance](#resolver-provenance-the-graph-family)
 4. **Skills by Profile** — per-module skill counts (omitted if no module has `skills_by_profile`)
 
 **Truncation rule**: when the rendered output would exceed `--budget` lines, trailing sections are dropped one at a time (Skills first, then Adjacency, etc.) until the output fits, leaving room for a single marker line:

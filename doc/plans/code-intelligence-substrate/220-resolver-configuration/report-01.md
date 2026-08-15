@@ -65,8 +65,8 @@ alone rather than duplicated.
 
 | # | Deliverable | State | Where |
 |---|---|---|---|
-| D1 | Resolver-configuration menu | **Done** | `marshall-steward/references/menu-derivation-resolvers.md` (new), wired into `menu-configuration.md` Page 4 + routing + TOC + `SKILL.md` reference table. Its data comes from a new `extension_api derivation-resolvers list` verb. |
-| D2 | Resolver section in the run-config schema | **Done** | `run_config.py` — `derivation_resolvers` keyed section, `get`/`set`/`list`/`remove` verbs, `read_derivation_resolvers_section()` + `is_derivation_resolver_enabled()`. Follows the `language_servers` pattern in the same store; no new store. |
+| D1 | Resolver-configuration menu | **Done** | `marshall-steward/references/menu-derivation-resolvers.md` (new), wired into `menu-configuration.md` Page 4 + routing + TOC + `SKILL.md` reference table. Its data comes from a new `extension_api.py::list_derivation_resolvers` verb (`derivation-resolvers list`). |
+| D2 | Resolver section in the run-config schema | **Done** | `run_config.py` — `derivation_resolvers` keyed section, `get`/`set`/`list`/`remove` verbs, `read_derivation_resolvers_section()` + `is_derivation_resolver_enabled()`. Follows the `language_servers` pattern in the same store; no new store. The gate that makes it take effect is `_cmd_client_query.py::_partition_configured_resolvers` + `count_dispatched`; the file-domain declaration is `extension_base.py::DerivationResolverBase.derivation_file_patterns`, implemented by all seven shipped resolvers (`build-maven`, `build-npm`, `build-pyproject`, `pm-plugin-development`, `pm-dev-python`, `pm-code-intelligence`, `pm-documents`). |
 | D3 | Precedence + working default | **Done** | Default: unconfigured ⇒ every discovered resolver active, asserted by test on an unconfigured project. Precedence: documented as **not expressible** (union semantics) rather than shipped as a dead knob — see below. |
 | D4 | Retire the dead ignore-file negation | **Done** | `.gitignore` — the negation and the stale comment wording only. Verified by before/after diff of git's own view. |
 | D5 | Documentation | **Done** | `run-config-standard.md` (new section, machine-local stated explicitly), `manage-run-config/SKILL.md`, `ext-point-derivation-resolver.md`, `extension-contract.md`, `extension-api/SKILL.md`, four bundle `SKILL.md` hook tables, `doc/user/configuration.adoc`. |
@@ -109,22 +109,73 @@ touched.
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` — **Python changes present** (11 production
-scripts + 4 test files), so the full gate applies.
+`git diff --name-only origin/main...HEAD -- '*.py'` — **Python changes present** (13 production
+scripts + 5 test files), so the full gate applies.
 
-TBD
+`./pw verify` was run over the whole branch diff, direct (no generated executor in this lane).
+Round 1 (pre-fix tree): **20091 passed, 14 skipped**, every dimension clean — `ruff … All checks
+passed!`, `mypy(production)` 405 files clean, `mypy(test)` 753 files clean, `SPDX-header check
+passed`, `plugin-doctor [marketplace-wide]` clean, `module-tests` 0 failed / 0 errors. Round 2 result
+after the verification fixes is recorded below in Findings.
+
+Lockfile churn: `./pw` rewrote `uv.lock` under the session interpreter. It was backed out with
+`git checkout -- uv.lock` and never staged; every commit stages named deliverable paths, never
+`git add -A`.
+
+### A pre-existing cross-directory test-pollution mode (not a regression)
+
+Running several test directories in ONE ad-hoc `pytest` invocation produces 38 failures in
+`test_graph_resolver_provenance.py` / `test_native_resolver_graph_impact.py`. This is **pre-existing**
+and unrelated to this change: `load_script_module` re-registers fresh module objects in
+`sys.modules`, so a module-level reference captured at collection time goes stale.
+
+Proven, not assumed: an `origin/main` worktree was run with the byte-identical invocation and its
+failure list `diff`s **identical** to this branch's — 38 = 38, same tests. The real build runs
+per-module and is green. Recorded in Residue.
 
 ## Findings
 
-TBD
+Ten findings from the verification sub-agent, plus two this run caught itself while fixing them.
+Recorded per instance.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| F1 | Sub-agent | **`capabilities` reported `module_edges: derivable` when every resolver was switched off.** `resolver_count` was `len(resolvers[])`, and disabled resolvers are deliberately kept in that list, so a fully-disabled envelope claimed a capability it did not have — violating the invariant `doc/concepts/code-intelligence.adoc` states outright ("a registered-but-unrun producer is never reported as a capability"). | **Fixed.** Withheld records carry `dispatched: false`; new `count_dispatched()` backs `resolver_count` at all four assignment sites; `capabilities` names only dispatched producers. Four new tests. |
+| F2 | Sub-agent | **`resolvers[]` was documented as "one record per resolver that ran"**, which the gate made false — the list now also holds resolvers that did not run. | **Fixed** at the two sites that describe the list's *contents* (`client-api.md`, `_derive_edges` docstring) and in the seam contract. The four handler docstrings describing `resolver_count`'s *meaning* were re-read and left alone: the count now excludes withheld resolvers, so "0 means no resolver ran" is true again by construction. That was the reason for this design. |
+| F2b | Sub-agent | `doc/concepts/code-intelligence.adoc`'s two-row discriminator table did not cover the new state. | **Fixed** — third row added (`resolver_count: 0` with a non-empty `resolvers[]` = "switched off on this machine"), and the "warrants opposite reactions" sentence extended to three. |
+| F3 | Sub-agent | **"the two Axis-C methods" survived in five places** after the ABC gained a third: `extension_base.py`'s own class docstring, `extension-contract.md`'s "The two methods below form the complete Axis-C contract", and the module docstrings of `build-maven` / `build-npm` / `build-pyproject` — every one of them in a file this diff had already edited. | **Fixed** at all five. The Axis-D counterparts (`PathAttributionBase`, genuinely still two) were checked individually and deliberately left unchanged. |
+| F4 | Sub-agent | **The ABC contract test was stale and had no coverage for the new method** — its docstring enumerated two defaults, `test_subclass_overriding_both_methods_is_accepted`, and no test asserted `DerivationResolverBase().derivation_file_patterns() == []`. | **Fixed** — docstring and test names corrected, the fixture supplies the third method, and `test_declared_file_patterns_default_to_empty` pins the ABC default a third-party resolver relies on. |
+| F5 | Sub-agent | The Configuration submenu Page 4 is now at the `AskUserQuestion` 4-element cap, so the next entry forces a Page 5. | **Accepted, not fixed** — the pagination pattern explicitly supports adding pages, and pre-building an empty Page 5 for plans that do not exist yet is speculative. Recorded in Residue for the sibling plans the Coordination note names. |
+| F6 | Sub-agent | `extension-api/SKILL.md`'s Canonical-invocations intro was edited to claim it covers `extension_api.py`, but only the new verb got a block — `resolve-skills` had none. | **Fixed** — a `resolve-skills` block was added, making the claim true. (`plugin-doctor` was clean marketplace-wide in round 1, so this never tripped the gate; it was an internal inconsistency, fixed on its merits.) |
+| F7 | Sub-agent | **Asymmetric fail-open**: the seam's gate guards the per-resolver `enabled` read, the roster did not, so one malformed entry would raise out of the read the menu depends on. | **Fixed** — per-resolver guard added, plus `test_raising_enabled_check_treats_the_resolver_as_active` mirroring the seam's own test. |
+| F8 | Sub-agent | `run-config-standard.md`'s "Full Example" block lacks `derivation_resolvers`. | **Rejected — pre-existing drift, out of scope.** That block already omitted `language_servers`, `display_timezone`, `build.queue` and `ci` before this change. Adding only the new section would deepen the inconsistency; fixing it properly means reconciling five unrelated sections, which is not this plan's work. The two blocks that *are* maintained were updated. Recorded in Residue. |
+| F9 | Sub-agent | Two test files written in the same commit disagreed on isolation: the roster test documents the `sys.modules` hazard and defers its patch target, its sibling used the module-level import the docstring warns against. | **Fixed** — the same deferral applied to the sibling. |
+| F10 | Sub-agent | The report's deliverables table never named `_cmd_client_query.py`, `extension_base.py`, or the three `build-*/extension.py` edits, and five sections were `TBD`. | **Fixed** — this report. |
+| S1 | **This run, self-caught** | The first F1 fix stamped `dispatched: True` on **every** merge report, which broke **45 existing exact-dict assertions** pinning the merge's report shape — a deliberate contract those tests encode. An earlier grep for exact-dict pins had used too narrow a pattern and wrongly reported none. | **Fixed by narrowing**: the merge's shape is left untouched (it only ever reports resolvers it called, so the marker is redundant there); only the *new* withheld records carry `dispatched: false`, and its **absence** is the dispatched case. Blast radius went from 45 tests to 0. |
+| S2 | **This run, self-caught** | After that narrowing, two of my own new assertions still expected `dispatched is True` on merge reports and failed. | **Fixed** — they now assert the key is *absent*, which is the documented contract. |
+| S3 | **This run, own beyond-diff sweep** | **The rendered provenance footer credited disabled resolvers with deriving edges** — `_resolver_provenance_line` used `len(resolver_reports)` and every id, so a switched-off resolver appeared in "derived by N resolver(s)". The rendered form of exactly the F1 defect, at a surface the sub-agent did not flag. | **Fixed** — the footer names only dispatched resolvers as derivers, states withheld ones separately, and has a distinct wording for "all switched off" that cannot be confused with "none registered". Two new tests. |
+
+### One sub-agent claim rejected on the contract
+
+The sub-agent's closing note said the lane "records [a `/sync-plugin-cache`] as owed" for the
+`marketplace/bundles/` edits. It does not, and the opposite is stated explicitly: a cloud run
+**neither performs nor owes** a sync, because it is a machine-local build step reading the git-ignored
+`target/` and writing `~/.claude/`. No sync debt is recorded.
 
 ## Reviewer participation
 
-TBD
+TBD — filled in after the PR review cycle.
 
 ## Cost
 
-TBD
+- **Tokens:** not available to the agent in this session — the harness does not expose a usage counter
+  to the running agent, so no figure is stated rather than an invented one.
+- **Wall-clock:** ~2h10m of session time from first tool call to the merge gate (derived from the run's
+  own command timings, not from an external clock).
+- **Population:** one interactive Claude Code cloud session. ⛔ **Not comparable to a plan-marshall
+  `metrics.toon` total**, which counts an orchestrator-plus-agent dispatch tree under plan-marshall's
+  per-task billing boundary. This session shares neither that boundary nor that tree, so the figures
+  cannot be reconciled and no equivalence is implied.
 
 ## Contract check (Step 9)
 
@@ -136,4 +187,16 @@ TBD
 
 ## Residue
 
-TBD
+1. **Configuration menu Page 4 is full** (F5). The plan's Coordination note requires two sibling plans
+   to land their language-server settings *inside* this surface. The next entry needs a Page 5, built
+   with the documented "More..." continuation pattern — mechanical, but it is the next author's step,
+   not something to pre-build.
+2. **`run-config-standard.md` "Full Example" is drifted** (F8) — missing `language_servers`,
+   `display_timezone`, `build.queue`, `ci`, and now `derivation_resolvers`. Pre-existing; worth one
+   reconciliation pass that is not this plan's.
+3. **Pre-existing cross-directory pytest pollution** — 38 tests fail when several test directories
+   share one ad-hoc invocation, on `origin/main` identically. The per-module build is unaffected. The
+   remedy is the `sys.modules` deferral this run applied to its own two files; applying it across the
+   affected legacy files would be a standalone cleanup.
+4. **`HARVEST_LANGUAGE` is Python-only**, so the `lsp` resolver declares `['**/*.py']`. If the harvest
+   widens to a per-language strategy, that declaration must widen with it.

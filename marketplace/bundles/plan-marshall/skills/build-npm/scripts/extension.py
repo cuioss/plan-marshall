@@ -14,7 +14,7 @@ Owns TWO axes of the extension contract for the npm build system:
   resolver joins on.
 
 Skill-loading (Axis-A) is NOT here — it lives on the JavaScript domain extension
-that subclasses ``ExtensionBase``. The two Axis-C methods are opted into by
+that subclasses ``ExtensionBase``. The three Axis-C methods are opted into by
 multiple inheritance, the only shape reachable from both otherwise-disjoint
 hierarchies.
 

@@ -494,6 +494,16 @@ python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery 
 
 Enumerates every component declaring `implements: {EXT_POINT}` — scans every bundle's `skills/*/SKILL.md`, the phase-6-finalize `workflow/*.md` + `standards/*.md` step docs, and project-local `.claude/skills/finalize-step-*/SKILL.md`. Global discovery; takes no project-dir / plan-id routing.
 
+### extension_api — resolve-skills
+
+```bash
+python3 .plan/execute-script.py plan-marshall:extension-api:extension_api resolve-skills \
+  --plan-id PLAN_ID --profile PROFILE
+```
+
+Aggregates each domain in the plan's `references.json` into one deduped
+`extra_security_skills` map for the named profile.
+
 ### extension_api — derivation-resolvers list
 
 ```bash

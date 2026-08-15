@@ -14,7 +14,7 @@ Owns TWO axes of the extension contract for the Python build system:
   what this resolver joins on.
 
 Skill-loading (Axis-A) is NOT here — it lives on the Python domain extension that
-subclasses ``ExtensionBase``. The two Axis-C methods are opted into by multiple
+subclasses ``ExtensionBase``. The three Axis-C methods are opted into by multiple
 inheritance, the only shape reachable from both otherwise-disjoint hierarchies.
 
 **This resolver is distinct from ``pm-dev-python``'s ``python`` resolver, and both
