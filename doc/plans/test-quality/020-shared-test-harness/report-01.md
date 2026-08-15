@@ -65,7 +65,12 @@ Renamed to `_manage_config_fixtures.py` (`git mv`, history preserved); all 23 im
 | | Collected modules scanned | Declaring zero tests |
 |---|---|---|
 | Before (`origin/main`) | 786 | **1** — `test/plan-marshall/manage-config/test_helpers.py` |
-| After | 785 | **0** |
+| After (at `dc7c2c9`, before D5 landed) | 785 | **0** |
+| After (at HEAD, D5's own module included) | 786 | **0** |
+
+The population returns to 786 because `test/test_shared_harness.py` replaces the
+retired module in the count. Both "after" rows are stated because a single figure
+would silently depend on which commit it was measured at.
 
 ### D4 — `test/README.md`
 
@@ -75,7 +80,7 @@ actually is, since it is navigation and ownership rather than full documentation
 
 ### D5 — harness meta-tests
 
-`test/test_shared_harness.py`, 20 tests, sibling of the existing `test_conftest_discipline.py`. The
+`test/test_shared_harness.py`, 21 tests, sibling of the existing `test_conftest_discipline.py`. The
 whole-tree guard follows `test/marketplace/test_prefix_strip_idiom_retired.py`: population asserted
 non-empty before the offender list is asserted empty.
 
@@ -121,8 +126,8 @@ deliverable buys evidence that the harness serves the shapes the tree has.
 
 `git diff --name-only origin/main...HEAD -- '*.py'` → **32 files**. Python changed, so the gate ran.
 
-`./pw verify` — **SUCCESS**, all three sub-steps green (quality-gate, test-compile, module-tests):
-`20065 passed, 14 skipped in 345.83s`.
+`./pw verify` — **SUCCESS**, all three sub-steps green (quality-gate, test-compile, module-tests).
+Final run at HEAD: `20066 passed, 14 skipped in 312.38s`.
 
 `test-compile` caught six `no-any-return` errors the quality gate does not run (fixed in `fcde820`).
 The per-commit `./pw quality-gate` ran clean before each `*.py` commit.
@@ -132,46 +137,77 @@ The per-commit `./pw quality-gate` ran clean before each `*.py` commit.
 | | Count |
 |---|---:|
 | Before, whole `test/` tree | **20059** |
-| After, whole `test/` tree | 20079 |
+| After, whole `test/` tree | 20080 |
 | After, excluding the new `test/test_shared_harness.py` | **20059** |
 
-Equal once D5's own 20 new tests are excluded, so **no module was dropped from collection** — which is
-the failure this check exists to catch.
+Equal once D5's own 21 new tests are excluded, so **no module was dropped from collection** — which is
+the failure this check exists to catch. Both figures were re-derived at HEAD, not carried forward from
+the earlier measurement.
 
 ## Findings
 
-> **This section is INCOMPLETE — the run is still in progress.** The pre-PR
-> verification sub-agent (§ Step 6) has not yet reported, and the PR has not been
-> opened. An empty findings list here means *not yet collected*, **not** *none
-> found*. The sections below are placeholders for the same reason.
+Recorded per instance. Sources: **S** = self-caught during implementation, **V** = pre-PR
+verification sub-agent (§ Step 6), **B** = `./pw verify`, **R** = the D4 reading test.
 
-### Findings already recorded (self-caught, before the sub-agent reported)
-
-| # | Source | Finding | Disposition |
+| # | Src | Finding | Disposition |
 |---|---|---|---|
-| 1 | Self, during D5 | `test_a_written_fixture_cannot_mutate_the_shared_baseline` claimed to guard the shallow-copy defect but **passed with the shallow copy reinstated** — the defect is unobservable through the builder's public API, which only assigns at the top level. | **Fixed** — replaced with `test_building_a_fixture_leaves_the_shared_baseline_untouched`, whose docstring states it is a forward-looking pin rather than a detector. Shipping the original would have been a vacuous green. |
-| 2 | Self, during D1 | An invalid `argv` on the interception seam raised `ParserSeamNotFound`, conflating "your command line is wrong" with "this script has no seam" — and differing from the builder seam, which raises `SystemExit` for the same mistake. | **Fixed** — the interception path tracks whether the real parser was entered and re-raises `SystemExit` when it was, so both seams fail identically. |
-| 3 | `./pw verify` (`test-compile`) | Six `no-any-return` errors: `conftest` is deliberately opaque to mypy (`ignore_missing_imports`), so `parse_ns(...)` reads as `Any` and every factory annotated `-> Namespace` tripped `warn_return_any`. Not caught by `./pw quality-gate`, which does not run mypy over `test/`. | **Fixed** in `fcde820` — bound through a declared local rather than six `type: ignore` comments. |
-| 4 | Self, during D6 | `conftest.load_script_module` resolves only `{bundle}/skills/{skill}/scripts/{file}`, so a domain bundle's **skill-root** `extension.py` (10 such files) cannot use it. | **Recorded as a proposal, not fixed** — widening the loader is outside D1/D2, the plan's declared `conftest.py` surface. The module uses `MARKETPLACE_ROOT` to kill the `Path(__file__).parent…` chain and keeps an explicit spec load. |
-| 5 | Self, during D6 | `test_cmd_domain_detect`'s dispatch-registration test built its **own** stand-in parser, registered the subcommand on it, and asserted the routing it had just configured — proving only that argparse works, not that manage-config registers the verb. | **Fixed** — routed through the real parser via `parse_ns`. |
-| 6 | D4 reading test (§ Verification) | The three-subtree row offered "`test/conftest.py` or `test/_shared/`" with no rule for choosing, and said to record a proposal without naming a channel — while the two-subtree row directly above it does name one. | **Fixed** — both stated in `test/README.md`. |
+| 1 | V | **`parse_ns`'s docstring asserted "The command body never runs on either path" — false for router scripts.** `platform_runtime.main()` resolves an operation, reads the marshal config, mutates `sys.path` and dispatches *before* any `parse_args`. Reproduced independently: `main()` emitted an `unknown_operation` error to stdout, then `parse_ns` raised. | **Fixed.** The docstring now states what is guaranteed (the handler the command line names never runs), names both breaking shapes, and steers those callers to the builder seam. `test_a_router_script_fails_loudly_rather_than_yielding_a_guess` pins it, so the caveat is checked rather than asserted. |
+| 2 | V | **`marketplace/bundles/pm-plugin-development/skills/plugin-script-architecture/standards/testing-standards.md` prescribes `test_helpers.py` for "Shared fixtures … No test functions"** (lines 461, 469, 478–479, including a worked directory example and a worked `from test_helpers` import). D5's whole-tree guard now makes that exact shape a failing build, and `test/README.md` says the opposite. An author following the standard produces a red suite. | **Recorded as a proposal, deliberately not fixed.** The file is under `marketplace/bundles/**`, which this plan's § Out of scope excludes and which plan `010` owns. See § What have we learned. |
+| 3 | V | Step 3's plan-file move left **eight dead links** to `020-shared-test-harness.md` in `doc/plans/test-quality/findings-test-corpus-review.md` (lines 72, 74, 76, 77, 303, 305, 307, 308). | **Fixed.** Repointed to `020-shared-test-harness/plan.md`. This was collateral from a lane-mandated move, not a record write, so repairing it does not breach the bridge rule. |
+| 4 | V | `_worktree_ns` built its namespace from **`git-workflow.py`'s** parser and fed it to `prepare_execute.run_prepare_execute` — a different script with its own parser. Faithful to the old hand-built namespace, but it borrows another script's defaults. | **Fixed.** Split into `_worktree_ns` / `_prepare_ns`, each using its own script's parser. |
+| 5 | V | The no-namespace error reported "main() returned without calling parse_args" even when the parser *had* been entered and `main()` caught the failure itself. | **Fixed.** `parser_entered` is now consulted on that branch. |
+| 6 | V | `parse_ns` re-executes the script module and re-registers it in `sys.modules` on **every call**, so the module instance the parser came from differs from the one the test holds. Pre-existing `load_script_module` behaviour, but `parse_ns` raises its frequency from once-per-module to once-per-call. | **Documented, not changed.** The docstring now states the cost and tells callers to hoist. Changing `load_script_module`'s caching is outside D1/D2. |
+| 7 | V | The D5 guard hardcoded pytest's *default* `python_files` and ignored `norecursedirs`, so a testless `test_*.py` under `test/fixtures/` would be a false positive. | **Fixed.** `fixtures` excluded; the `*_test.py` superset is now documented as deliberate (D3's done-when names both spellings). |
+| 8 | V | Report's D3 "after" count said 785; HEAD's actual population is 786. | **Fixed.** Both figures stated with the commit each was measured at. |
+| 9 | V | The report did not record the settled parser-seam hypothesis, which the plan's claim-label table required be settled before D1's design. | **Fixed.** See § Claim labels below. |
+| 10 | V | `test_pyproject_extension.py` swapped a bare `spec_from_file_location` (no `sys.modules` registration) for `load_script_module` (which registers). | **Accepted, not reverted.** A real behaviour delta, but registration is what `load_script_module` is *for*, the module's collision concern is handled by the explicit distinct `module_name`, and all 90 tests pass. |
+| 11 | V | Stale census statements in `findings-test-corpus-review.md` (lines 152, 211–220, 225–228, 232) assert the defects this plan just closed. | **Rejected as a defect.** That file is the epic's dated **evidence record** of a review, not current-state documentation — its own header calls it "the evidence this file is scoped from". Rewriting it would destroy the record the epic was scoped from. The dead links (#3) are different: a link is not a finding. |
+| 12 | S | `test_a_written_fixture_cannot_mutate_the_shared_baseline` claimed to guard the shallow-copy defect but **passed with the shallow copy reinstated** — the defect is unobservable through the builder's public API, which only assigns at the top level. | **Fixed.** Replaced with a test whose docstring states it is a forward-looking pin, not a detector. Shipping the original would have been a vacuous green. |
+| 13 | S | An invalid `argv` on the interception seam raised `ParserSeamNotFound`, conflating "your command line is wrong" with "this script has no seam" — and differing from the builder seam, which raises `SystemExit` for the same mistake. | **Fixed.** The interception path tracks whether the real parser was entered and re-raises `SystemExit` when it was, so both seams fail identically. |
+| 14 | B | Six `no-any-return` errors from `./pw verify`'s `test-compile`: `conftest` is deliberately opaque to mypy (`ignore_missing_imports`), so `parse_ns(...)` reads as `Any` and every factory annotated `-> Namespace` tripped `warn_return_any`. **Not caught by `./pw quality-gate`**, which does not run mypy over `test/`. | **Fixed** in `fcde820` — bound through a declared local rather than six `type: ignore` comments. |
+| 15 | S | `conftest.load_script_module` resolves only `{bundle}/skills/{skill}/scripts/{file}`, so a domain bundle's **skill-root** `extension.py` (10 such files) cannot use it. | **Recorded as a proposal.** Widening the loader is outside D1/D2, this plan's declared `conftest.py` surface. The module uses `MARKETPLACE_ROOT` to remove the `Path(__file__).parent…` chain and keeps an explicit spec load. |
+| 16 | S | `test_cmd_domain_detect`'s dispatch-registration test built its **own** stand-in parser, registered the subcommand on it, and asserted the routing it had just configured — proving only that argparse works. | **Fixed.** Routed through the real parser. This is the synthetic-double class the lane's sweep exists to catch; the change removes one rather than adding one. |
+| 17 | R | `test/README.md`'s three-subtree row offered "`test/conftest.py` or `test/_shared/`" with no rule for choosing, and said to record a proposal without naming a channel — while the two-subtree row directly above it does name one. | **Fixed.** Both now stated. |
+
+## Claim labels — settled
+
+| Claim | Label | What the run measured |
+|---|---|---|
+| `create_marshal_json` defined 3× incompatibly | OBSERVED | **Confirmed** — 3 definitions; now 1 |
+| `test_helpers.py` declares zero tests, ~23 importers | OBSERVED | **Confirmed** — 0 tests, exactly **23** importers |
+| `test/conftest.py` references a `test/README.md` that does not exist | OBSERVED | **Confirmed** — `ls test/*.md` was empty |
+| ~197 modules hand-roll the exported loader | OBSERVED | **Confirmed** — **204** `spec_from_file_location` occurrences |
+| No shared helper builds a namespace from a script's real parser | HYPOTHESIS (asserted absence) | **Confirmed absent.** `test/conftest.py` read end to end and `test/_shared/` enumerated (8 modules, none argparse-related). `script-shared/argparse_surface.py` derives a script's *accept-set* by running `--help`; it exposes no parser object and no defaults, so D1 builds new rather than extending it. |
+| ~2,900 namespaces / ~292 modules / ~150 `_ns_*` builders | HYPOTHESIS | **Confirmed** — **2909** / **296** / **148** |
+| **Every script exposes a reachable parser-builder seam** | HYPOTHESIS — the one that decides D1's shape | **REFUTED.** See below. |
+
+### The refuted hypothesis, and what it changed
+
+An AST classification of every `ArgumentParser` construction under `marketplace/bundles/**`:
+
+| Where the parser is built | Files |
+|---|---:|
+| Inside `main()` — **no reachable builder seam** | **69** |
+| `build_parser` | 16 |
+| `_build_arg_parser` | 6 |
+| `_build_parser` | 3 |
+| `_dispatch` / `build_main` / `create_workflow_cli` / `run_barrier_cli` | 4 |
+| **Total parser-constructing files** | **96** |
+
+**27 of 96 (28%) publish a named builder; 69 (72%) do not.** The plan anticipated this: *"If a
+meaningful fraction has no reachable seam, D1's error path is the primary path … say so in the report
+rather than forcing the helper onto scripts it cannot serve."*
+
+Taking the literal reading — error on anything without a published builder — would have left `parse_ns`
+unable to serve 72% of the tree, so B6 could never be adopted and the deliverable would be inert. The
+**`main()`-interception seam** was implemented instead. It is not the fallback D1 forbids: D1 forbids
+"silently falling back to a **hand-built** namespace", and interception returns the **production
+parser's own output**. The no-seam case still raises.
+
+Measured reachability across all 95 parser-bearing scripts: **24 resolve via a published builder, 66
+via interception, 5 have no seam** (all library modules, not CLI entry points). The independent
+verifier probed eight of the scripts this plan converted and found **all eight take the interception
+path** — so for the modules a consumer plan is most likely to touch, interception is the *primary*
+seam, not the exception. Consumer plans `030`–`080` should read it that way.
 
 ## Reviewer participation
-
-_Pending — the PR has not been opened._
-
-## Cost
-
-_Pending._
-
-## Contract check (Step 9)
-
-_Pending._
-
-## What have we learned (Step 9)
-
-_Pending._
-
-## Residue
-
-_Pending._
