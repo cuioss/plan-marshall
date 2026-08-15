@@ -208,9 +208,17 @@ def _restore_slot(src: Path, dst: Path) -> None:
 # The executor is per-tree DERIVED state, NOT a moved slot: main's copy stays
 # present and untouched, and the worktree gets its own copy with worktree-bound
 # mappings, generated here. This mirrors the worktree-fresh-executor pattern in
-# finalize-step-plugin-doctor. Generation is universal (every new worktree needs
-# a working executor) — distinct from the meta-project-only finalize REgeneration
-# of main's executor after a script-set change.
+# finalize-step-plugin-doctor.
+#
+# Three distinct executor-production points exist; this is the first:
+#   1. THIS one — universal generation for a NEW worktree at move-in. Every new
+#      worktree needs a working executor, meta-project or not.
+#   2. The worktree-side REgeneration after a script-set-changing rebase, in
+#      ``git-workflow worktree-rebase-to`` (see
+#      ``standards/worktree-handling.md`` § "Post-Rebase Executor Refresh").
+#      Also universal, but conditional on positively-detected drift.
+#   3. The meta-project-only, post-merge REgeneration of MAIN's executor by
+#      ``project:finalize-step-sync-plugin-cache``.
 
 _GENERATE_EXECUTOR_PATH = (
     _THIS_DIR.parent.parent / 'tools-script-executor' / 'scripts' / 'generate_executor.py'

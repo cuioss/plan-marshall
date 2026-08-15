@@ -351,11 +351,27 @@ Extract `phase_6.steps` — the ordered list of step IDs (e.g., `push`, `create-
 
 **If the manifest is missing** (`status: error, error: file_not_found`): abort finalize with an explicit error — the manifest is REQUIRED. Re-run `plan-marshall:manage-execution-manifest:compose` from outline phase to repair.
 
-#### Step 1.5: Manifest Loadability Check
+#### Step 1.5: Manifest Reconciliation and Loadability Check
 
-After reading `phase_6.steps` from the manifest but BEFORE dispatching any step in Step 3, walk the list once and verify each step's standards file is loadable. This is the manifest fail-fast guard: it converts a confusing mid-dispatch failure (a built-in step pointing at a deleted standards file) into an immediate, actionable error at phase entry.
+After reading `phase_6.steps` from the manifest but BEFORE dispatching any step in Step 3, reconcile the frozen list against live configuration, then verify each surviving step's standards file is loadable.
 
-For each `step_id` in `manifest.phase_6.steps`:
+**Reconcile first.** The manifest is a write-time snapshot composed at outline time (see [`manage-execution-manifest/SKILL.md`](../manage-execution-manifest/SKILL.md) § "Manifest-on-Write Semantics"), so a plan that edits finalize configuration during its own run reaches this point holding a view its own edits have invalidated. Reconciling before the loadability check is what makes that case survivable:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
+  reconcile --plan-id {plan_id} --apply
+```
+
+Parse the returned TOON and branch on `status`:
+
+- **`status: success`** — the frozen list now agrees with live configuration. When `reconciled: true`, **re-read the manifest** (the step list changed under you) and use the reconciled `phase_6.steps` for the loadability check and the Step 3 dispatch loop. The `stale[]` and `backfill[]` lists name what moved; both are already decision-logged by the verb.
+- **`status: error, error: unreconcilable_step`** — a frozen step's standards doc is missing AND live `marshal.json` still schedules it. That is the genuine defect (the plan deleted the file without sweeping `marshal.json`), not a stale snapshot. ABORT finalize with the returned `message` — do NOT enter Step 3, and do NOT reconcile it away.
+
+The reconcile verb is the single authority on that distinction; this skill does not re-derive it. See [`manage-execution-manifest/SKILL.md`](../manage-execution-manifest/SKILL.md) § `reconcile` for the fail-direction table and why backfill is deliberately narrow.
+
+**Then check loadability.** This is the manifest fail-fast guard: it converts a confusing mid-dispatch failure (a built-in step pointing at a deleted standards file) into an immediate, actionable error at phase entry. After a successful reconcile it is a cheap confirmation rather than the primary gate — it stays because it is the check that runs even when reconcile could not read live config at all.
+
+For each `step_id` in the (reconciled) `manifest.phase_6.steps`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest \
@@ -378,7 +394,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level ERROR --message "[ERROR] (plan-marshall:phase-6-finalize) Manifest loadability check failed — step `{step_id}` referenced by `marshal.json` is missing standards file `{standards_path}` — the plan likely deleted the file without sweeping `marshal.json`"
 ```
 
-The actionable message is fixed by [`standards/required-steps.md`](standards/required-steps.md) § "Loadability Contract" — the wording above is the canonical phrasing the contract guarantees. Self-modifying plans that delete a `phase-6-finalize/standards/{name}.md` without also pruning `marshal.json::plan.phase-6-finalize.steps` are the motivating failure mode.
+The actionable message is fixed by [`standards/required-steps.md`](standards/required-steps.md) § "Loadability Contract" — the wording above is the canonical phrasing the contract guarantees. Self-modifying plans that delete a `phase-6-finalize/standards/{name}.md` without also pruning `marshal.json::plan.phase-6-finalize.steps` are the motivating failure mode — and after the reconcile above, that is the ONLY failure this abort can now represent. A step whose doc is gone *and* which live config has also dropped was reconciled away rather than aborting here; one that survives to this point is still scheduled by live `marshal.json` and genuinely cannot run.
 
 **Scope**: the loadability check applies to **built-in** steps only (bare names that resolve to `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/{name}.md`). External steps (`project:` / `bundle:skill`) are not validated here — their loadability is the responsibility of the host plugin cache, and a missing project/skill step surfaces as a `Skill: {ref}` resolution error during dispatch, not as a missing standards file. The `validate-loadable` subcommand returns `loadable: true` with no further check for external step IDs so the bulk-form caller does not have to filter.
 

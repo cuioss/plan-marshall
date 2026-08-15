@@ -770,6 +770,153 @@ def _executor_path() -> Path | None:
     return candidate if candidate.exists() else None
 
 
+# ---------------------------------------------------------------------------
+# Post-rebase executor refresh
+# ---------------------------------------------------------------------------
+#
+# The per-tree executor is DERIVED state: it embeds a notation→path map
+# generated from the bundle tree as it stood when the worktree was materialised
+# (``prepare_execute._generate_worktree_executor``). A rebase replays the branch
+# onto a newly-fetched ``origin/{base}``, and when those upstream commits added,
+# removed, or renamed a bundle script the embedded map stops describing the
+# tree — every later dispatch in that worktree then resolves against a stale map
+# and a notation introduced upstream cannot resolve at all.
+#
+# The refresh lives here rather than in either caller because BOTH finalize
+# rebase sites route through ``worktree-rebase-to``
+# (``finalize-step-sync-baseline`` at ``order: 3`` and ``branch-cleanup`` at
+# ``order: 70``), and this verb already knows whether the rebase actually
+# replayed anything.
+
+_GENERATE_EXECUTOR_PATH = (
+    Path(__file__).resolve().parent.parent.parent
+    / 'tools-script-executor'
+    / 'scripts'
+    / 'generate_executor.py'
+)
+
+_EXECUTOR_REFRESH_TIMEOUT_SECONDS = 120
+
+#: The refresh verdict for a rebase that replayed nothing. Shared by both
+#: no-op paths (``state == 'clean'``, and a rebase whose pre/post SHAs match)
+#: so the two report identically: no replay means no upstream file entered the
+#: tree, so the embedded notation map cannot have drifted and the probe is
+#: skipped rather than paid for on every finalize entry.
+_EXECUTOR_REFRESH_NOT_REPLAYED: dict[str, Any] = {
+    'executor_drift': 'ok',
+    'executor_regenerated': False,
+    'executor_detail': 'no commits replayed; executor cannot have drifted',
+}
+
+
+def _run_generate_executor(worktree_path: Path, verb: str, *extra: str) -> tuple[int, str, str]:
+    """Invoke ``generate_executor.py {verb}`` against ``worktree_path``.
+
+    The subprocess seam for the post-rebase refresh — isolated as its own
+    function so the decision logic above it is testable without a vendored
+    bundle tree. ``cwd`` is pinned to the worktree because the generator
+    resolves its OUTPUT location by walking up from cwd; without the pin a
+    refresh would write main's executor instead (the same trap
+    ``prepare_execute`` documents). ``--marketplace-root`` pins bundle
+    DISCOVERY only.
+
+    Returns ``(returncode, stdout, stderr)``; never raises.
+    """
+    try:
+        result = subprocess.run(
+            [
+                'python3',
+                str(_GENERATE_EXECUTOR_PATH),
+                verb,
+                '--marketplace-root',
+                str(worktree_path),
+                *extra,
+            ],
+            cwd=str(worktree_path),
+            capture_output=True,
+            text=True,
+            timeout=_EXECUTOR_REFRESH_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError:
+        return 127, '', 'python3 executable not found on PATH'
+    except subprocess.TimeoutExpired:
+        return 124, '', f'generate_executor {verb} timed out'
+    return result.returncode, result.stdout, result.stderr
+
+
+def _refresh_worktree_executor(worktree_path: Path) -> dict[str, Any]:
+    """Regenerate the worktree executor when the rebase changed the script set.
+
+    Probes ``generate_executor drift`` — which compares the executor's EMBEDDED
+    mappings against the live bundle state, so it answers "did the script set
+    change?" precisely rather than by guessing from changed paths — and
+    regenerates only on a positive ``drift`` verdict.
+
+    **An indeterminate verdict regenerates nothing.** A tree with no vendored
+    ``marketplace/bundles`` (every consumer project of plan-marshall) cannot
+    produce a meaningful drift answer, and generating there can exit 0 having
+    written nothing — replacing a working executor with an empty one. That
+    outcome is strictly worse than the stale map this refresh guards against:
+    a stale map fails one dispatch loudly and is repairable via
+    ``/marshall-steward``, while an empty executor breaks every dispatch. So
+    ``unknown`` is REPORTED on the payload and acted on by nobody.
+
+    **Non-fatal by contract.** The rebase has already succeeded and moved HEAD
+    by the time this runs; converting a refresh failure into a rebase failure
+    would make callers abort a rebase that worked. Every failure mode is
+    reported in the return value and none is raised.
+
+    Returns ``{executor_drift, executor_regenerated, executor_detail}`` where
+    ``executor_drift`` is ``'ok'`` / ``'drift'`` / ``'unknown'``.
+    """
+    if not _GENERATE_EXECUTOR_PATH.exists():
+        return {
+            'executor_drift': 'unknown',
+            'executor_regenerated': False,
+            'executor_detail': f'generator not found at {_GENERATE_EXECUTOR_PATH}',
+        }
+
+    rc, stdout, stderr = _run_generate_executor(worktree_path, 'drift')
+    drift_status = ''
+    if rc == 0:
+        try:
+            drift_status = str(parse_toon(stdout).get('drift_status') or '')
+        except (ValueError, AttributeError):
+            drift_status = ''
+    if drift_status not in ('ok', 'drift'):
+        return {
+            'executor_drift': 'unknown',
+            'executor_regenerated': False,
+            'executor_detail': (
+                f'drift probe returned no usable verdict (rc={rc}): '
+                f'{(stderr or stdout).strip()[:200] or "no output"}'
+            ),
+        }
+    if drift_status == 'ok':
+        return {
+            'executor_drift': 'ok',
+            'executor_regenerated': False,
+            'executor_detail': 'script set unchanged by the rebase; executor left as-is',
+        }
+
+    gen_rc, gen_out, gen_err = _run_generate_executor(worktree_path, 'generate')
+    if gen_rc != 0:
+        return {
+            'executor_drift': 'drift',
+            'executor_regenerated': False,
+            'executor_detail': (
+                f'script set drifted but regeneration failed (rc={gen_rc}): '
+                f'{(gen_err or gen_out).strip()[:200] or "no output"} — '
+                'run /marshall-steward to repair the executor'
+            ),
+        }
+    return {
+        'executor_drift': 'drift',
+        'executor_regenerated': True,
+        'executor_detail': 'script set changed by the rebase; worktree executor regenerated',
+    }
+
+
 def _manage_status_call(
     subcommand: str,
     *extra_args: str,
@@ -1513,6 +1660,7 @@ def cmd_worktree_rebase_to(args):
             **base_payload,
             'status': 'success',
             'action': 'noop',
+            **_EXECUTOR_REFRESH_NOT_REPLAYED,
             'message': 'branch is already at base; no rebase needed',
         }
 
@@ -1534,12 +1682,19 @@ def cmd_worktree_rebase_to(args):
     if rc == 0:
         _rc_post, post_sha, _post_err = run_git(['-C', str(target), 'rev-parse', 'HEAD'])
         replayed = pre_sha != post_sha
+        # Only a rebase that actually replayed commits can have brought upstream
+        # script changes into the tree, so a ``noop`` skips the probe entirely
+        # rather than paying for it on every finalize entry.
+        executor_refresh = (
+            _refresh_worktree_executor(target) if replayed else _EXECUTOR_REFRESH_NOT_REPLAYED
+        )
         return {
             **base_payload,
             'status': 'success',
             'action': 'rebased' if replayed else 'noop',
             'pre_sha': pre_sha,
             'post_sha': post_sha,
+            **executor_refresh,
             'message': (
                 f'rebased {evidence.get("head_branch", "HEAD")} onto {rebase_base}'
                 if replayed
