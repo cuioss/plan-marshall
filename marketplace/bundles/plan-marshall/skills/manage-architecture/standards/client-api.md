@@ -95,10 +95,10 @@ The four graph-family verbs — [`graph`](#graph), [`path`](#path), [`neighbors`
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `resolvers` | list | One `{id, edge_count, status, notes[]}` record per derivation resolver that ran. `status` is `ok` or `error`; an errored resolver contributes zero edges without aborting the others. `notes[]` reports every condition that **suppressed** an edge (an ambiguous identity key, an unresolvable reference) — a resolver that drops an edge silently violates the contract. |
-| `resolver_count` | int | `len(resolvers)`. The discriminator below. |
+| `resolvers` | list | One `{id, edge_count, status, notes[]}` record per **discovered** derivation resolver. `status` is `ok`, `error`, or `not_dispatched`. An errored resolver contributes zero edges without aborting the others. A `not_dispatched` resolver was switched off by the machine-local `derivation_resolvers` binding: it is reported rather than dropped, so "switched off here" stays distinguishable from "never registered", but it did NOT run. `notes[]` reports every condition that **suppressed** an edge (an ambiguous identity key, an unresolvable reference, a `configuration:` opt-out) — a resolver that drops an edge silently violates the contract. |
+| `resolver_count` | int | The number of resolvers that **ran** — every record whose `status` is not `not_dispatched`. This is NOT `len(resolvers)` once the machine-local binding is used. The discriminator below. |
 
-**Resolver discovery is registry-wide, not project-scoped.** Every registered resolver runs and gets a row, whatever the project's technology, so most rows on any given project report `edge_count: 0` — a Maven reactor still carries an `npm` row, and an npm workspace still carries a `maven` one. `resolver_count` therefore counts the resolvers that **ran**, never the ones that **contributed**; do not read a row's presence as evidence that its ecosystem is present, nor its `edge_count: 0` as a defect.
+**Resolver discovery is registry-wide, not project-scoped.** Every discovered resolver gets a row, whatever the project's technology, so most rows on any given project report `edge_count: 0` — a Maven reactor still carries an `npm` row, and an npm workspace still carries a `maven` one. `resolver_count` counts the resolvers that **ran**, never the ones that **contributed**; do not read a row's presence as evidence that its ecosystem is present, nor its `edge_count: 0` as a defect. Every discovered resolver runs *unless* the machine-local `derivation_resolvers` binding switched it off, in which case its row carries `status: not_dispatched` and is excluded from the count — see [Configuration › Which derivation resolvers run](../../../../../../doc/user/configuration.adoc#derivation-resolvers).
 
 The live roster is whatever `discover_derivation_resolvers()` returns, enumerated once in [ext-point-derivation-resolver.md](../../extension-api/standards/ext-point-derivation-resolver.md) § Current implementations. The examples below deliberately write `resolvers[N]` and `resolver_count: N` with a couple of representative rows rather than transcribing the roster: a literal count here would silently go stale the moment a resolver is added, with no test to catch it — which is exactly what happened to these examples once already.
 
@@ -108,12 +108,13 @@ The live roster is whatever `discover_derivation_resolvers()` returns, enumerate
 |----------|---------|
 | `resolver_count: 0` + empty result | **No resolver ran.** The empty answer is an absence of capability, not a finding. |
 | `resolver_count: N` + empty result | **N resolvers ran and found nothing.** The empty answer is a real, positive result. |
+| `resolver_count: 0` + a **non-empty** `resolvers[]` | **Resolvers exist, but this machine switched them off.** Every record carries `status: not_dispatched`. Read the first row as "no resolver ran" only when `resolvers[]` is empty too. |
 
 This is the same fail-closed reporting discipline [ADR-009](../../../../../../doc/adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc) establishes and that `find` / `which-module` already apply via their `truncated` / `elided` flags: a confident-looking answer must carry the evidence that makes it confident.
 
 **Edge producers**: every edge the `graph` verb emits carries a non-empty `producers[]` naming what derived it — the contributing resolver ids, or one of two reserved ids: `declared` (the edge came from a curated `enriched.internal_dependencies` or a discovered `derived.internal_dependencies` list, which take precedence over derivation) and `sibling-cross-link` (the edge was added by core's symmetric virtual-sibling augmentation after resolution). No edge in any response is producer-less.
 
-The rendered surfaces carry the same provenance as a one-line footer: [`overview`](#overview)'s Adjacency section and [`module --full --budget`](#module---full---budget)'s Internal Dependencies section each end with an `_Edge provenance: …_` line, which renders even when a module has no dependencies.
+The rendered surfaces carry the same provenance as a one-line footer: [`overview`](#overview)'s Adjacency section and [`module --full --budget`](#module---full---budget)'s Internal Dependencies section each end with an `_Edge provenance: …_` line, which renders even when a module has no dependencies. The line names only the resolvers that **ran**: a resolver switched off by the machine-local binding is named separately as switched off, never credited with deriving, and the all-switched-off case has its own wording so it cannot be read as "no resolver is registered".
 
 ---
 
@@ -194,7 +195,7 @@ path[3]:
 resolvers[N]{id,edge_count,status,notes}:
   maven,7,ok,[]
   npm,0,ok,[]
-  ... one row per REGISTERED resolver, id-sorted
+  ... one row per DISCOVERED resolver, id-sorted (status: ok | error | not_dispatched)
 resolver_count: N
 ```
 
@@ -209,7 +210,7 @@ path: null
 resolvers[N]{id,edge_count,status,notes}:
   maven,7,ok,[]
   npm,0,ok,[]
-  ... one row per REGISTERED resolver, id-sorted
+  ... one row per DISCOVERED resolver, id-sorted (status: ok | error | not_dispatched)
 resolver_count: N
 ```
 
@@ -252,7 +253,7 @@ neighbors[4]:
 resolvers[N]{id,edge_count,status,notes}:
   maven,7,ok,[]
   npm,0,ok,[]
-  ... one row per REGISTERED resolver, id-sorted
+  ... one row per DISCOVERED resolver, id-sorted (status: ok | error | not_dispatched)
 resolver_count: N
 ```
 
@@ -292,7 +293,7 @@ impact[3]:
 resolvers[N]{id,edge_count,status,notes}:
   maven,7,ok,[]
   npm,0,ok,[]
-  ... one row per REGISTERED resolver, id-sorted
+  ... one row per DISCOVERED resolver, id-sorted (status: ok | error | not_dispatched)
 resolver_count: N
 ```
 
@@ -462,7 +463,7 @@ architecture.py overview [--budget N]
 
 1. **Project header** — name + description (from `_project.json`)
 2. **Modules** — table of `Module | Purpose | Responsibility`
-3. **Adjacency** — table of `Module | Internal Dependencies`, followed by a one-line `_Edge provenance: …_` footer naming the contributing resolver ids (or stating that no resolver is registered) — see § [Resolver provenance](#resolver-provenance-the-graph-family)
+3. **Adjacency** — table of `Module | Internal Dependencies`, followed by a one-line `_Edge provenance: …_` footer naming the contributing resolver ids (or stating that no resolver is registered, or that every discovered resolver is switched off by the machine-local binding) — see § [Resolver provenance](#resolver-provenance-the-graph-family)
 4. **Skills by Profile** — per-module skill counts (omitted if no module has `skills_by_profile`)
 
 **Truncation rule**: when the rendered output would exceed `--budget` lines, trailing sections are dropped one at a time (Skills first, then Adjacency, etc.) until the output fits, leaving room for a single marker line:

@@ -14,7 +14,7 @@ Owns TWO axes of the extension contract for the Python build system:
   what this resolver joins on.
 
 Skill-loading (Axis-A) is NOT here — it lives on the Python domain extension that
-subclasses ``ExtensionBase``. The two Axis-C methods are opted into by multiple
+subclasses ``ExtensionBase``. The three Axis-C methods are opted into by multiple
 inheritance, the only shape reachable from both otherwise-disjoint hierarchies.
 
 **This resolver is distinct from ``pm-dev-python``'s ``python`` resolver, and both
@@ -295,6 +295,18 @@ class BuildExtension(BuildExtensionBase, DerivationResolverBase):
         complete four-face contract this identity participates in.
         """
         return 'pyproject'
+
+    def derivation_file_patterns(self) -> list[str]:
+        """Return the build descriptor this resolver's distribution-name join reads.
+
+        Declared dependencies, not imports: the ``python`` resolver declares
+        ``**/*.py`` because it joins import statements, and the two answer
+        different questions over the same language.
+
+        Descriptive metadata for the resolver-configuration menu, never a filter
+        — see ``DerivationResolverBase.derivation_file_patterns``.
+        """
+        return ['**/pyproject.toml']
 
     @staticmethod
     def _distribution_name(module_data: dict) -> str | None:

@@ -122,6 +122,13 @@ def merge_resolver_edges(
         ``(from, to)`` for byte-stable output. ``resolver_reports`` is one
         ``{'id', 'edge_count', 'status', 'notes'}`` dict per resolver, in the
         order the resolvers were supplied.
+
+        ``status`` is ``ok`` or ``error`` on every report this function emits —
+        it only ever reports resolvers it CALLED, and an errored one still ran.
+        A caller that gates dispatch on configuration may fold in extra records
+        for resolvers it withheld, carrying the third status value
+        ``not_dispatched`` so they stay visible without being counted as having
+        run; see ``_cmd_client_query`` § ``count_dispatched``.
     """
     known_modules = set(derived_by_name)
     # Keyed on (from, to); value is the set of contributing resolver ids.

@@ -164,6 +164,14 @@ class Extension(ExtensionBase, DerivationResolverBase):
         """
         return 'python'
 
+    def derivation_file_patterns(self) -> list[str]:
+        """Return the file patterns this resolver's import join reads.
+
+        Descriptive metadata for the resolver-configuration menu, never a filter
+        — see ``DerivationResolverBase.derivation_file_patterns``.
+        """
+        return ['**/*.py']
+
     def derive_edges(
         self,
         derived_by_name: dict,

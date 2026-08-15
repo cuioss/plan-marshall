@@ -23,10 +23,9 @@ target/
 # Claude Code files
 .claude/*
 
-# But allow project skills, commands, and run configuration to be shared
+# But allow project skills and commands to be shared
 !.claude/skills/
 !.claude/commands/
-!.claude/run-configuration.json
 
 # Project settings are shared: cloud sessions install the plan-marshall plugin from the
 # enabledPlugins / extraKnownMarketplaces declaration in this file. Machine-specific settings

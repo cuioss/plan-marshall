@@ -13,6 +13,7 @@ Sub-menu for skill domains and project structure configuration.
 - [Configuration: Project Structure](#configuration-project-structure)
 - [Configuration: Terminal Title](#configuration-terminal-title)
 - [Configuration: Enforcement Hook](#configuration-enforcement-hook)
+- [Configuration: Derivation Resolvers](#configuration-derivation-resolvers)
 - [Configuration: Merge Queue](#configuration-merge-queue)
 - [Configuration: Recipes](#configuration-recipes)
 
@@ -20,7 +21,7 @@ Sub-menu for skill domains and project structure configuration.
 
 ## Configuration Submenu
 
-The Configuration submenu has 11 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a multi-page paginated menu following the "More actions..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): options are chunked into pages of ≤4, every non-final page reserves its 4th slot for a "More..." continuation that triggers the next page's `AskUserQuestion`, and the final page exposes a "Back" element returning to the Main Menu without quitting.
+The Configuration submenu has 12 options, which exceeds the `AskUserQuestion` 4-option cap. It is presented as a multi-page paginated menu following the "More actions..." pattern documented in `plan-marshall/workflow/planning.md` (§ Action: list): options are chunked into pages of ≤4, every non-final page reserves its 4th slot for a "More..." continuation that triggers the next page's `AskUserQuestion`, and the final page exposes a "Back" element returning to the Main Menu without quitting.
 
 **Page 1** — first 3 options plus the "More..." continuation:
 
@@ -85,13 +86,16 @@ AskUserQuestion:
       value: "more-3"
 ```
 
-**Page 4** — shown only when the user selects "More..." on Page 3 — the final 2 options plus the "Back" element:
+**Page 4** — shown only when the user selects "More..." on Page 3 — the final 3 options plus the "Back" element:
 
 ```text
 AskUserQuestion:
   question: "What would you like to configure?"
   header: "Configuration (continued)"
   options:
+    - label: "Derivation Resolvers"
+      description: "Which module-edge resolvers run in this checkout (machine-local)"
+      value: "derivation-resolvers"
     - label: "Merge Queue"
       description: "Probe and enable the platform merge queue (GitHub merge queue / GitLab merge train)"
       value: "merge-queue"
@@ -119,6 +123,7 @@ AskUserQuestion:
 | enforcement-hook | Load `Read references/menu-enforcement-hook.md` → Execute |
 | recipes | Load `Read references/menu-recipes.md` → Execute "Configuration: Recipes" below |
 | more-3 | Present Configuration Page 4 `AskUserQuestion` |
+| derivation-resolvers | Load `Read references/menu-derivation-resolvers.md` → Execute |
 | merge-queue | Load `Read references/merge-queue-setup.md` → Execute the provisioning flow |
 | wizard | Load `Read references/wizard-flow.md` — skip to Step 5 (bootstrap already done) |
 | back | Do nothing → Return to the Main Menu |
@@ -807,6 +812,20 @@ Load and execute the dedicated reference:
 
 ```text
 Read references/menu-enforcement-hook.md
+```
+
+After completion, return to Main Menu.
+
+---
+
+## Configuration: Derivation Resolvers
+
+Inspect and change which module-edge **derivation resolvers** run in this checkout — the resolvers whose `(from, to)` pairs become the edge set behind the `graph` / `path` / `neighbors` / `impact` queries. The binding is machine-local (a resolver's availability and cost depend on locally-installed tooling) and persists to the `derivation_resolvers` section of the git-ignored run-configuration store, beside `language_servers`. ⛔ An unconfigured project runs **every** discovered resolver: this menu switches a resolver off, it does not switch derivation on. See [`../../manage-run-config/standards/run-config-standard.md`](../../manage-run-config/standards/run-config-standard.md) § "Derivation-Resolvers Section".
+
+Load and execute the dedicated reference:
+
+```text
+Read references/menu-derivation-resolvers.md
 ```
 
 After completion, return to Main Menu.

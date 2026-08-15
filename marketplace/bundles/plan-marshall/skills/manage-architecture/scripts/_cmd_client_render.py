@@ -20,6 +20,7 @@ from _architecture_core import (
     merge_module_data,
 )
 from _cmd_client_query import (
+    STATUS_NOT_DISPATCHED,
     _build_internal_deps_map,
     _load_module_or_raise,
 )
@@ -73,11 +74,38 @@ def _resolver_provenance_line(resolver_reports: list[dict[str, Any]]) -> str:
 
     Shared verbatim by the overview Adjacency footer and the module deep-dive's
     Internal Dependencies footer so both surfaces state provenance identically.
+
+    A resolver the machine-local ``derivation_resolvers`` binding switched off is
+    reported but did NOT run, so it is never named as having derived anything —
+    crediting it would be the rendered form of the same false claim
+    ``resolver_count`` excludes it to avoid. It is named separately instead, so a
+    reader who wonders why the graph looks sparse is told the cause rather than
+    left to guess. Both branches use one wording for that cause, so the two
+    surfaces cannot drift into describing the same state differently.
     """
     if not resolver_reports:
         return '_Edge provenance: no derivation resolver is registered — no edges were derived._'
-    ids = ', '.join(sorted(str(rec.get('id', '')) for rec in resolver_reports))
-    return f'_Edge provenance: derived by {len(resolver_reports)} resolver(s) — {ids}._'
+
+    def _ids(records: list[dict[str, Any]]) -> str:
+        return ', '.join(sorted(str(rec.get('id', '')) for rec in records))
+
+    dispatched = [
+        rec for rec in resolver_reports if rec.get('status') != STATUS_NOT_DISPATCHED
+    ]
+    withheld = [rec for rec in resolver_reports if rec.get('status') == STATUS_NOT_DISPATCHED]
+
+    if not dispatched:
+        return (
+            f'_Edge provenance: {len(withheld)} resolver(s) discovered but switched off by the '
+            f'machine-local configuration — {_ids(withheld)}. No edges were derived._'
+        )
+
+    line = f'_Edge provenance: derived by {len(dispatched)} resolver(s) — {_ids(dispatched)}'
+    if withheld:
+        line += (
+            f'; {len(withheld)} switched off by the machine-local configuration — {_ids(withheld)}'
+        )
+    return line + '._'
 
 
 def _render_adjacency_section(

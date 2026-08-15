@@ -53,7 +53,9 @@ from _cmd_client_build import (
 )
 from _cmd_client_query import (
     NEIGHBORS_DEPTH_CAP,
+    STATUS_NOT_DISPATCHED,
     _load_module_or_raise,
+    count_dispatched,
     get_module_commands,
     get_module_graph,
     get_module_impact,
@@ -185,7 +187,18 @@ def cmd_capabilities(args: argparse.Namespace) -> dict[str, Any]:
         # and the verbs it describes can never disagree.
         graph_result = get_module_graph(args.project_dir)
         resolvers = graph_result.get('resolvers', [])
+        # The count of resolvers that RAN, never of those merely discovered: a
+        # resolver the machine-local configuration switched off is reported in
+        # ``resolvers[]`` (so the suppression is visible) but did not run, and
+        # counting it here would promise an edge-derivation capability this
+        # envelope does not have — the exact "registered-but-unrun producer"
+        # this report refuses to report as a capability.
         resolver_count = graph_result.get('resolver_count', 0)
+        dispatched_producers = [
+            report['id']
+            for report in resolvers
+            if report.get('status') != STATUS_NOT_DISPATCHED
+        ]
         edge_count = graph_result.get('graph', {}).get('edge_count', 0)
 
         # Path attribution (which-module rung 3). The probe path is immaterial: an
@@ -216,7 +229,7 @@ def cmd_capabilities(args: argparse.Namespace) -> dict[str, Any]:
                 'capability': 'module_edges',
                 'verbs': ['graph', 'path', 'neighbors', 'impact'],
                 'status': 'derivable' if resolver_count else 'not_derivable',
-                'producers': [report['id'] for report in resolvers],
+                'producers': dispatched_producers,
                 'producer_count': resolver_count,
                 'derived_count': edge_count,
             },
@@ -578,7 +591,7 @@ def cmd_path(args: argparse.Namespace) -> dict[str, Any]:
             'target': args.target,
             'path': path,
             'resolvers': resolvers,
-            'resolver_count': len(resolvers),
+            'resolver_count': count_dispatched(resolvers),
         }
     except DataNotFoundError:
         return require_project_meta_result(args.project_dir)
@@ -606,7 +619,7 @@ def cmd_neighbors(args: argparse.Namespace) -> dict[str, Any]:
             'depth': min(args.depth, NEIGHBORS_DEPTH_CAP),
             'neighbors': neighbors,
             'resolvers': resolvers,
-            'resolver_count': len(resolvers),
+            'resolver_count': count_dispatched(resolvers),
         }
     except DataNotFoundError:
         return require_project_meta_result(args.project_dir)
@@ -634,7 +647,7 @@ def cmd_impact(args: argparse.Namespace) -> dict[str, Any]:
             'module': args.module,
             'impact': impact,
             'resolvers': resolvers,
-            'resolver_count': len(resolvers),
+            'resolver_count': count_dispatched(resolvers),
         }
     except DataNotFoundError:
         return require_project_meta_result(args.project_dir)

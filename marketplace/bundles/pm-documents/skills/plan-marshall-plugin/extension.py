@@ -300,6 +300,20 @@ class Extension(ExtensionBase, PathAttributionBase, DerivationResolverBase):
         """
         return 'documentation'
 
+    def derivation_file_patterns(self) -> list[str]:
+        """Return the file patterns this resolver's cross-reference join reads.
+
+        The markdown patterns overlap the ``markdown`` resolver's, and that is
+        the intended shape: this resolver is scoped to documentation modules, so
+        the two see different corpora through the same extension. Where both do
+        see one reference the merge unions them into a single edge carrying both
+        producer ids.
+
+        Descriptive metadata for the resolver-configuration menu, never a filter
+        — see ``DerivationResolverBase.derivation_file_patterns``.
+        """
+        return ['**/*.adoc', '**/*.md']
+
     def derive_edges(
         self,
         derived_by_name: dict,

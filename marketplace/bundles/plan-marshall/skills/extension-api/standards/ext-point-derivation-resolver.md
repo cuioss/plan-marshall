@@ -8,6 +8,8 @@ A **derivation resolver** answers one question: which modules depend on which. I
 
 Edge derivation is an extension point rather than core logic because there is no domain-neutral way to derive it. A Maven reactor derives edges from `groupId:artifactId` coordinates, a documentation tree from cross-document references, a Python package from import statements — each is domain knowledge owned by the bundle that already understands that data. Core owns the merge, the provenance, and the traversal; it owns none of the derivation.
 
+Which of the discovered resolvers actually run is a **machine-local** decision, bound by resolver id in the run-configuration store — see [§ Which resolvers run](#which-resolvers-run-the-machine-local-activation-binding). An unconfigured project runs them all.
+
 The contract is **N-resolver by construction**: several resolvers are active at once and the graph is the union of their edge sets. The union needs no conflict rule — edges are unweighted booleans, so union is idempotent and commutative and no conflict is expressible (see § N-resolver union semantics).
 
 ## Mechanism choice: a sibling Axis-C ABC
@@ -23,7 +25,7 @@ The resolution is a third axis. `DerivationResolverBase` inherits from neither e
 ExtensionBase (Axis-A)        BuildExtensionBase (Axis-B)      DerivationResolverBase (Axis-C)
   skill loading                 file-to-build map                 module-edge derivation
   get_skill_domains()           classify_paths()                  derivation_resolver_id()
-  provides_triage() ...         classify_globs() ...              derive_edges()
+  provides_triage() ...         classify_globs() ...              derive_edges() ...
         ▲                              ▲                                  ▲
         │                              │                                  │
    pm-plugin-development          build-maven                    opted into from EITHER
@@ -39,7 +41,7 @@ This follows the precedent [ext-point-domain-verb.md](ext-point-domain-verb.md) 
 
 ### 1. Declaration
 
-A resolver subclasses `DerivationResolverBase` and implements both methods. Because the ABC has no abstract method (both carry safe defaults), a subclass that overrides nothing is a valid no-edge resolver.
+A resolver subclasses `DerivationResolverBase` and implements the two methods that carry its derivation; a third declares its file domain for display. Because the ABC has no abstract method (all three carry safe defaults), a subclass that overrides nothing is a valid no-edge resolver.
 
 ```python
 from extension_base import BuildExtensionBase, DerivationResolverBase
@@ -63,6 +65,7 @@ class BuildExtension(BuildExtensionBase, DerivationResolverBase):
 |--------|---------|----------|
 | `derivation_resolver_id()` | `''` | A short, stable, lower-case identity. It is stamped into every merged edge's `producers[]` and names the resolver on the per-resolver report. An empty id marks the resolver unidentifiable and discovery skips it — a producer-less edge is never emitted. |
 | `derive_edges(derived_by_name, enriched_by_name)` | `([], [])` | Returns `(edges, notes)`. `edges` is a list of `(from, to)` module-name pairs where `from` depends on `to`. `notes` is a list of short strings describing conditions that **suppressed** an edge. |
+| `derivation_file_patterns()` | `[]` | Glob patterns naming the files this resolver derives from. **Descriptive metadata, never a filter** — it answers "active over which files?" on the configuration menu, read from the resolver that owns the answer rather than transcribed into a menu document. The default `[]` asserts nothing: a resolver declaring no patterns is reported *not declared*, not as deriving from no files. |
 
 A resolver is a **pure function of its arguments**: no subprocess, no filesystem access. Both maps are pre-loaded by the caller and keyed by module name, so a resolver never re-derives module discovery.
 
@@ -133,14 +136,15 @@ The nearest thing to a conflict is duplicate **identity**, not duplicate value: 
 
 ## The anti-vacuity provenance property
 
-Every edge names its producers and every graph-family response names the resolvers that ran. The property this buys:
+Every edge names its producers and every graph-family response names the resolvers it discovered together with which of them actually ran. The property this buys:
 
 | Response | Meaning |
 |----------|---------|
 | `resolver_count: 0`, `edges: []` | **No resolver ran.** The empty graph is an absence of capability, not a finding. |
 | `resolver_count: N`, `edges: []` | **N resolvers ran and found nothing.** The empty graph is a real, positive answer. |
+| `resolver_count: 0`, `resolvers[]` non-empty | **Resolvers exist, but this machine switched them off.** Every record carries `status: not_dispatched` and a `configuration:` note — see [§ Which resolvers run](#which-resolvers-run-the-machine-local-activation-binding). |
 
-The two states MUST be distinguishable without inspecting the edge list. This is the same fail-closed reporting discipline [ADR-009](../../../../../../doc/adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc) establishes and that the `find` / `which-module` verbs already apply via their `truncated` / `elided` flags: a confident-looking answer must carry the evidence that makes it confident.
+The states MUST be distinguishable without inspecting the edge list. This is the same fail-closed reporting discipline [ADR-009](../../../../../../doc/adr/009-Status_reporting_fails_closed_with_an_explicit_unknown_state.adoc) establishes and that the `find` / `which-module` verbs already apply via their `truncated` / `elided` flags: a confident-looking answer must carry the evidence that makes it confident.
 
 Two obligations follow for implementors:
 
@@ -166,6 +170,52 @@ A resolver keys its derivation on some identity — a Maven `groupId:artifactId`
 3. **Reports the collision** in `notes[]`, so it rides the resolver's report into the response. A genuinely ambiguous key thereby stays distinguishable from an absent one — the same anti-vacuity principle applied one level down.
 
 This obligation is stated generically because it binds every resolver, not only Maven. The markdown resolver facing two documents that claim the same anchor, and the python resolver facing two modules that export the same package name, are bound by the identical rule. Both discharge it upstream: the `component_refs` materialization projects each reference onto a single owning bundle and stamps whether it resolved, so an unresolvable reference reaches the resolver already marked rather than being guessed at — and each resolver drops it and reports it under the `unresolved-target` category.
+
+## Which resolvers run: the machine-local activation binding
+
+Discovery answers which resolvers **exist**. A separate, machine-local binding answers which of them
+**run** in a given checkout: the `derivation_resolvers` section of the run-configuration store, keyed
+on the resolver **id**. See
+[`manage-run-config/standards/run-config-standard.md`](../../manage-run-config/standards/run-config-standard.md)
+§ "Derivation-Resolvers Section" for the schema and the operator verbs.
+
+The binding is machine-local rather than version-controlled because resolver availability and cost
+are machine-local facts — the `lsp` resolver's harvest needs a language server on `PATH` — so the
+same project can legitimately have a different active set on two machines. It lives beside the
+`language_servers` binding in that one store, not in a parallel one.
+
+**The key is the id, and it could not be a file pattern.** A resolver is handed module maps and
+returns `(module, module)` pairs carrying no file provenance, so there is no point in the dispatch at
+which a per-file binding could be applied and no edge attribute to match one against. Resolvers scope
+themselves by build system (`maven`, `npm`, `pyproject`), by module kind (`documentation`), by
+`component_refs` dep type (`markdown`, `python`), and by language (`lsp`) — none by a pattern an
+operator supplies. `derivation_file_patterns()` reports the file domain for display; it does not
+select on it.
+
+**Absent configuration means active.** A discovered resolver is dispatched unless an entry explicitly
+disables it, and every read failure fails open. The inverse default was rejected rather than merely
+not chosen: resolvers that ran only once configured would leave a fresh checkout with an empty edge
+set — the zero-edge outcome this extension point exists to prevent, arriving as a configuration
+failure instead of a derivation one.
+
+**A disabled resolver is reported, not pruned — but it is not counted as having run.** It still
+appears in `resolvers[]` with `edge_count: 0`, a `configuration:` note, and
+`status: not_dispatched` (the third `status` value beside `ok` and `error`).
+`resolver_count` counts every record whose status is not `not_dispatched`, so an envelope with every resolver switched off
+reports `resolver_count: 0` — which is the truth ("no resolver ran"), keeps the anti-vacuity
+discriminator's meaning intact, and stops `capabilities` from reporting `module_edges` as `derivable`
+on a registered-but-unrun producer. Dropping the record entirely would instead make "switched off by
+the operator" indistinguishable from "never registered" — precisely the vacuity
+[§ The anti-vacuity provenance property](#the-anti-vacuity-provenance-property) forbids, and the same
+reasoning [§ Suppression must be reported, never silent](#suppression-must-be-reported-never-silent)
+applies to merge-side drops.
+
+**No precedence knob exists, because none is expressible.** Configuration decides *whether* a
+resolver runs, never how its edges rank against another's: the graph is the union (see
+[§ N-resolver union semantics](#n-resolver-union-semantics)), edges are unweighted booleans, and two
+resolvers deriving one pair have corroborated rather than disagreed. The single real precedence is
+**declared-over-derived**, which core owns (see [§ 3 Dispatch](#3-dispatch)) and configuration cannot
+override.
 
 ## Current implementations
 

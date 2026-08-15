@@ -195,13 +195,50 @@ def test_the_expected_resolver_roster_is_discovered():
 
 
 def test_resolver_count_matches_the_expected_roster():
-    """resolver_count is the anti-vacuity numerator carried on every response.
+    """The DISCOVERED roster is the size ``EXPECTED_RESOLVER_IDS`` pins.
 
     The expected size comes from ``EXPECTED_RESOLVER_IDS`` — the roster pinned
     and asserted above — rather than from a second literal that would have to be
     remembered and updated alongside it.
+
+    This is the discovered count, which is what this pipeline exercises: it calls
+    ``discover_derivation_resolvers`` directly, with no configuration gate in
+    front of it. A response's ``resolver_count`` is a different quantity — the
+    number that actually RAN, excluding any the machine-local binding switched
+    off — and is pinned in
+    ``test/plan-marshall/manage-architecture/test_derivation_resolver_configuration.py``.
     """
     assert len(_pipeline()['resolvers']) == len(EXPECTED_RESOLVER_IDS)
+
+
+def test_every_shipped_resolver_declares_its_file_patterns():
+    """Every discovered resolver answers "over which files?" for the config menu.
+
+    Derived from real discovery rather than from a per-resolver literal, so a
+    newly-registered resolver that forgets the declaration fails here instead of
+    silently rendering as *not declared* on the resolver-configuration menu.
+
+    The ABC default is ``[]`` — deliberately, so a third-party resolver stays
+    valid without declaring — which is exactly why the SHIPPED roster needs its
+    own assertion: the default cannot distinguish "declined to declare" from
+    "forgot to".
+    """
+    undeclared = [
+        record['id']
+        for record in _pipeline()['resolvers']
+        if not record['module'].derivation_file_patterns()
+    ]
+
+    assert undeclared == [], f'shipped resolvers declaring no file patterns: {undeclared}'
+
+
+def test_declared_file_patterns_are_non_empty_glob_strings():
+    """A declaration is a list of usable patterns, not a placeholder."""
+    for record in _pipeline()['resolvers']:
+        patterns = record['module'].derivation_file_patterns()
+        assert isinstance(patterns, list), record['id']
+        for pattern in patterns:
+            assert isinstance(pattern, str) and pattern.strip(), (record['id'], pattern)
 
 
 def test_every_resolver_reports_ok():
@@ -295,7 +332,7 @@ def test_at_least_one_graph_edge_is_stamped_by_a_resolver_not_declared():
     )
 
 
-def test_graph_response_names_the_resolvers_that_ran():
+def test_graph_response_names_every_discovered_resolver():
     """The anti-vacuity numerator rides all the way to the consumer's response.
 
     Both sides are derived rather than pinned, and the claim survives that:
@@ -308,8 +345,20 @@ def test_graph_response_names_the_resolvers_that_ran():
     discovered_ids = sorted(record['id'] for record in pipeline['resolvers'])
     graph = pipeline['graph']
 
-    assert graph['resolver_count'] == len(discovered_ids)
+    # The ROSTER names every discovered resolver — that is the cross-stage
+    # agreement this test exists for.
     assert sorted(report['id'] for report in graph['resolvers']) == discovered_ids
+
+    # ``resolver_count`` is a DIFFERENT quantity: the number that actually ran.
+    # It equals the discovered count only while nothing is switched off, which is
+    # true of a fresh clone and of CI but NOT of a developer machine whose
+    # machine-local binding disables a resolver. Asserting the equivalence
+    # unconditionally would turn this red for that developer, so the count is
+    # checked against the dispatched population it actually describes.
+    dispatched_ids = [
+        report['id'] for report in graph['resolvers'] if report.get('status') != 'not_dispatched'
+    ]
+    assert graph['resolver_count'] == len(dispatched_ids)
 
 
 def test_merge_stage_produces_edges():

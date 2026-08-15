@@ -47,6 +47,7 @@ Axis-A (`ExtensionBase`):
 Axis-C (`DerivationResolverBase`, opted into by multiple inheritance):
 - `derivation_resolver_id()` - Returns the stable provenance id `lsp`, stamped onto every edge this resolver produces
 - `derive_edges()` - Pure join over the `component_refs` field discovery materializes, selecting only `lsp` entries. Reads the harvest's `lsp_harvest` status record and reports it, so a harvest that did not run is stated rather than collapsing into a zero-edge success. Unresolved targets, unknown endpoints, and self-edges are suppressed and reported as aggregated `notes[]` entries
+- `derivation_file_patterns()` - Declares the file patterns this resolver derives from (`['**/*.py']`). Descriptive metadata rendered by the resolver-configuration menu, never a filter: activation is bound by resolver **id** in the machine-local `derivation_resolvers` section, not by matching a file
 
 ## Configuration
 

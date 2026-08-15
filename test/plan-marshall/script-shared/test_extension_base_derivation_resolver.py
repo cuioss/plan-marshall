@@ -4,11 +4,15 @@
 
 Covers the four concerns the module-edge derivation extension point rests on:
 
-1. **Safe defaults** — ``derivation_resolver_id()`` returns ``''`` and
-   ``derive_edges()`` returns ``([], [])``, so a subclass that overrides nothing
-   is a valid no-edge resolver and the ABC declares no abstract method.
-2. **Subclass override** — a subclass supplying both methods is accepted and its
-   values ride through unchanged.
+1. **Safe defaults** — ``derivation_resolver_id()`` returns ``''``,
+   ``derive_edges()`` returns ``([], [])``, and ``derivation_file_patterns()``
+   returns ``[]``, so a subclass that overrides nothing is a valid no-edge
+   resolver and the ABC declares no abstract method. The pattern default is
+   load-bearing rather than incidental: it is what lets a third-party resolver
+   stay valid without declaring a file domain, and the menu reports it as *not
+   declared* rather than as "derives from no files".
+2. **Subclass override** — a subclass supplying all three methods is accepted
+   and its values ride through unchanged.
 3. **The disjointness invariant** — ``DerivationResolverBase`` is absent from
    ``ExtensionBase.__mro__`` and from ``BuildExtensionBase.__mro__``, and neither
    of those ABCs appears in ``DerivationResolverBase.__mro__``. This is the
@@ -39,7 +43,7 @@ class _DefaultResolver(DerivationResolverBase):
 
 
 class _OverridingResolver(DerivationResolverBase):
-    """DerivationResolverBase subclass that supplies both Axis-C methods."""
+    """DerivationResolverBase subclass that supplies all three Axis-C methods."""
 
     def derivation_resolver_id(self) -> str:
         return 'fixture'
@@ -50,6 +54,9 @@ class _OverridingResolver(DerivationResolverBase):
         enriched_by_name: dict,
     ) -> tuple[list[tuple[str, str]], list[str]]:
         return [('core', 'util')], ['suppressed edge for ambiguous key g:a']
+
+    def derivation_file_patterns(self) -> list[str]:
+        return ['**/*.fixture']
 
 
 class _BuildAndResolver(BuildExtensionBase, DerivationResolverBase):
@@ -100,12 +107,13 @@ def test_derivation_resolver_base_is_directly_instantiable():
     # Assert
     assert resolver.derivation_resolver_id() == ''
     assert resolver.derive_edges(_EMPTY_MAP, _EMPTY_MAP) == ([], [])
+    assert resolver.derivation_file_patterns() == []
 
 
 # --- 2. Subclass override ---------------------------------------------------
 
 
-def test_subclass_overriding_both_methods_is_accepted():
+def test_subclass_overriding_every_method_is_accepted():
     # Arrange
     resolver = _OverridingResolver()
 
@@ -117,6 +125,18 @@ def test_subclass_overriding_both_methods_is_accepted():
     assert resolver_id == 'fixture'
     assert edges == [('core', 'util')]
     assert notes == ['suppressed edge for ambiguous key g:a']
+    assert resolver.derivation_file_patterns() == ['**/*.fixture']
+
+
+def test_declared_file_patterns_default_to_empty():
+    """The ABC default asserts nothing about a resolver's file domain.
+
+    ``[]`` is *not declared*, never "derives from no files" — the null-on-absent
+    contract every face of this API shares. Pinned at the ABC because it is the
+    documented default a third-party resolver relies on, and no other test
+    exercises the ABC's own implementation.
+    """
+    assert _DefaultResolver().derivation_file_patterns() == []
 
 
 def test_derive_edges_receives_both_module_maps():

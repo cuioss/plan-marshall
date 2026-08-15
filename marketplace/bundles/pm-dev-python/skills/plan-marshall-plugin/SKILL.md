@@ -45,6 +45,7 @@ Axis-A (`ExtensionBase`):
 Axis-C (`DerivationResolverBase`, opted into by multiple inheritance):
 - `derivation_resolver_id()` - Returns the stable provenance id `python`, stamped onto every edge this resolver produces
 - `derive_edges()` - Pure join over the `component_refs` field module discovery materializes, selecting only `import` entries. The four markdown reference kinds belong to the sibling `markdown` resolver on `pm-plugin-development`. Unresolved targets, unknown endpoints, and self-edges are suppressed and reported as aggregated `notes[]` entries — one per category with a count and a bounded sample. The method performs no file I/O and runs no subprocess, and imports nothing from the bundle that materializes the field
+- `derivation_file_patterns()` - Declares the file patterns this resolver derives from (`['**/*.py']`). Descriptive metadata rendered by the resolver-configuration menu, never a filter: activation is bound by resolver **id** in the machine-local `derivation_resolvers` section, not by matching a file
 
 ## Detection
 

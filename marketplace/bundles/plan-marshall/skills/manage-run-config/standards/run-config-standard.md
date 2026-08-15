@@ -48,6 +48,9 @@ The run configuration file stores:
   "language_servers": {
     "python": {"enabled": true, "command": ["pyright-langserver", "--stdio"], "language_id": "python"}
   },
+  "derivation_resolvers": {
+    "lsp": {"enabled": false}
+  },
   "display_timezone": "UTC"
 }
 ```
@@ -67,6 +70,7 @@ The run configuration file stores:
 | architecture_refresh | Tier knobs consumed by the `phase-6-finalize` `architecture-refresh` step |
 | ci_durations | Bounded rolling window of observed successful CI-run durations (keyed by command) seeding the adaptive CI-wait first-sleep via `p50` |
 | language_servers | Machine-local binding of a language to its locally-installed language server, read by the `lsp-client` skill |
+| derivation_resolvers | Machine-local binding deciding which discovered derivation resolvers run in this checkout; an unconfigured resolver is **active** |
 | display_timezone | Display-only IANA zone name (default `UTC`) consumed at rendering surfaces to convert stored UTC timestamps for human reading; never consulted on a write or compare path |
 
 ---
@@ -252,6 +256,116 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config langu
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config language-server remove \
   --language python
+```
+
+---
+
+## Derivation-Resolvers Section
+
+The `derivation_resolvers` section decides **which derivation resolvers run** in this checkout. A
+resolver contributes `(from, to)` module edges to the graph query family; see
+[`ext-point-derivation-resolver.md`](../../extension-api/standards/ext-point-derivation-resolver.md)
+for the seam itself.
+
+The section is **machine-local**, for the same reason `language_servers` is: a resolver's
+availability and cost depend on locally-installed tooling — the `lsp` resolver's harvest needs a
+language server on `PATH` — so the same project can legitimately have a different active set on two
+machines. It therefore lives in the git-ignored run-configuration store rather than in a
+version-controlled project file, and it sits **beside** `language_servers` in that one store rather
+than forking a parallel one.
+
+### The key is the resolver id, not a file pattern
+
+A resolver is handed **module maps** and returns `(module, module)` pairs carrying no file
+provenance. There is consequently no point in the dispatch at which a per-file binding could be
+applied, and no edge attribute a file pattern could be matched against — so the resolver **id** is
+the only key core can act on.
+
+File patterns are still reported, as **descriptive** metadata: each resolver declares the files it
+derives from via `DerivationResolverBase.derivation_file_patterns()`, which the configuration menu
+renders to answer "active over which files?". That declaration is never a filter.
+
+### An unconfigured project runs every discovered resolver
+
+⛔ **Absent configuration means ACTIVE.** A discovered resolver runs unless an entry explicitly
+disables it, so a project that never opens this menu derives its edges with the full discovered set.
+
+The inverse default was rejected rather than merely not chosen: resolvers that only ran once
+configured would leave a fresh checkout with an empty edge set — the zero-edge defect arriving as a
+configuration failure instead of a derivation one, which is the same broken outcome one layer up. For
+the same reason every read failure fails **open**: an unreadable or malformed store leaves every
+resolver dispatched, because the alternative is a store problem silently blanking the graph.
+
+### A disabled resolver is reported, never silently dropped
+
+A resolver switched off here is still **discovered**; it is simply not dispatched, and it comes back
+on the per-resolver report with `edge_count: 0`, `status: not_dispatched`, and a `configuration:`
+note. Pruning it from the report instead would make "switched off by the operator" indistinguishable
+from "never registered", which is exactly the vacuity the seam's provenance contract exists to
+eliminate.
+
+It is **not** counted as having run: `resolver_count` excludes `not_dispatched` records, so disabling
+every resolver yields `resolver_count: 0` and a `capabilities` report of `module_edges:
+not_derivable`. That is accurate rather than alarming — the envelope genuinely cannot derive edges —
+and the non-empty `resolvers[]` is what tells the reader why.
+
+### Precedence among resolvers is not expressible — and that is the design
+
+Several resolvers are active at once and the graph is the **union** of their edge sets. No precedence
+rule ranks them, because none is expressible: an edge is an unweighted `(from, to)` boolean, so union
+is idempotent and commutative. Two resolvers deriving the same pair have not disagreed — they have
+**corroborated**, and the merge collapses them into one edge carrying both producer ids, which is
+what makes each contribution visible at all.
+
+No `precedence` knob is therefore offered here. The one precedence that genuinely exists is
+**declared-over-derived**: a module carrying a non-empty declared `internal_dependencies` (curated
+`enriched.json`, else crawl-time `derived.json`) has its resolver-derived edges discarded and stamped
+`declared`, and every such discard is reported on the losing resolver's report with a `declared:`
+prefix. That rule is core's, not this section's — configuration cannot override it.
+
+### Schema
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `derivation_resolvers.<resolver-id>.enabled` | boolean | Whether the resolver is dispatched. Absent section, absent entry, and malformed entry all default to `true`; only an explicit `false` switches the resolver off. |
+
+`<resolver-id>` is the resolver's stable provenance id — the value its `derivation_resolver_id()`
+returns, and the value that appears in an edge's `producers[]`.
+
+### Operations
+
+| Subcommand | Purpose |
+|------------|---------|
+| `derivation-resolver get --resolver <id>` | Read the effective state (`configured` reports whether an entry exists; `enabled` reports the effective answer) |
+| `derivation-resolver set --resolver <id> (--enabled \| --disabled)` | Persist the binding (exactly one of the two flags) |
+| `derivation-resolver list` | List the configured entries — an empty list means every discovered resolver is active |
+| `derivation-resolver remove --resolver <id>` | Drop the entry, returning the resolver to default-active |
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config derivation-resolver set \
+  --resolver lsp --disabled
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config derivation-resolver get \
+  --resolver markdown
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config derivation-resolver list
+```
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config derivation-resolver remove \
+  --resolver lsp
+```
+
+`derivation-resolver list` reports what the **store** holds. To see the **discovered** resolvers
+joined against it — the roster the configuration menu renders, carrying each resolver's origin and
+declared file patterns — use the extension-api read instead:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:extension-api:extension_api derivation-resolvers list
 ```
 
 ---

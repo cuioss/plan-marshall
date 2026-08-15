@@ -1359,8 +1359,8 @@ class DerivationResolverBase(ABC):  # noqa: B024 — ABC contract anchor; every 
     than one resolver collapses to one edge carrying every contributing
     resolver's id, which is exactly what the provenance contract needs.
 
-    There is no abstract method: both Axis-C methods have safe defaults, so a
-    subclass that overrides nothing is a valid (no-edge) resolver. The ``ABC``
+    There is no abstract method: all three Axis-C methods have safe defaults, so
+    a subclass that overrides nothing is a valid (no-edge) resolver. The ``ABC``
     base marks the class as the Axis-C contract anchor, matching
     :class:`BuildExtensionBase`.
 
@@ -1423,6 +1423,33 @@ class DerivationResolverBase(ABC):  # noqa: B024 — ABC contract anchor; every 
             reports no conditions.
         """
         return [], []
+
+    def derivation_file_patterns(self) -> list[str]:
+        """Return the glob patterns naming the files this resolver derives from.
+
+        **Descriptive, never a filter.** The value is operator-facing metadata:
+        it answers "this resolver is active — over which files?" on the
+        resolver-configuration menu, so that answer is read from the resolver
+        that owns it rather than transcribed into a menu document that would go
+        stale the moment a resolver changed. Core NEVER filters an edge by these
+        patterns, and a resolver is never dispatched per-file.
+
+        It could not be a filter even if core wanted one. :meth:`derive_edges`
+        is handed module maps and returns ``(module, module)`` pairs carrying no
+        file provenance, so there is no point in the dispatch at which a
+        per-file binding could be applied and no edge attribute against which it
+        could be matched. The activation binding is therefore keyed on the
+        resolver **id** — see the ``derivation_resolvers`` section in
+        ``manage-run-config/standards/run-config-standard.md``.
+
+        Returns:
+            Glob patterns relative to a module root (e.g. ``['**/*.py']``). The
+            default is ``[]``, which asserts nothing: a resolver that declares
+            no patterns is reported as *not declared* rather than as deriving
+            from no files, matching the null-on-absent contract every face of
+            this API shares.
+        """
+        return []
 
     @staticmethod
     def _aggregate_notes(suppressed: dict[str, list[str]]) -> list[str]:

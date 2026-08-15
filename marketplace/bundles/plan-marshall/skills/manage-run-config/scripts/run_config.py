@@ -802,6 +802,152 @@ def cmd_language_server_remove(args: argparse.Namespace) -> dict:
 
 
 # =============================================================================
+# Derivation-Resolvers Subcommands
+# =============================================================================
+
+# The machine-local binding deciding WHICH derivation resolvers run in this
+# checkout. Machine-local for the same reason ``language_servers`` is: a
+# resolver's cost and availability depend on locally-installed tooling (the
+# ``lsp`` harvest needs a language server on PATH), so the same project can
+# legitimately have a different active set on two machines. It sits beside
+# ``language_servers`` in that one store rather than forking a parallel one.
+#
+# Keyed on the RESOLVER ID, not on a file pattern. A resolver is handed module
+# maps and returns (module, module) pairs carrying no file provenance, so there
+# is no point in the dispatch at which a per-file binding could be applied — the
+# id is the only key core can act on. See run-config-standard.md
+# § "Derivation-Resolvers Section".
+
+#: Absent configuration means ACTIVE. A discovered resolver runs unless an entry
+#: explicitly disables it, so an unconfigured project derives its edges with the
+#: full discovered set rather than with none — a default of "off" would
+#: reintroduce the zero-edge defect as a configuration failure instead of a
+#: derivation one, which is the same broken outcome one layer up.
+DERIVATION_RESOLVER_ENABLED_DEFAULT = True
+
+
+def read_derivation_resolvers_section() -> dict[str, Any]:
+    """Read the ``derivation_resolvers`` section, or an empty mapping when absent.
+
+    Public because both consumers — the graph seam's dispatch gate and the
+    configuration menu's roster — read the state of SEVERAL resolvers at once,
+    and each would otherwise re-read the store once per resolver. They read the
+    section once and pass it to :func:`is_derivation_resolver_enabled`.
+    """
+    config = read_run_config(get_run_config_path())
+    section = config.get('derivation_resolvers')
+    return section if isinstance(section, dict) else {}
+
+
+def is_derivation_resolver_enabled(resolver_id: str, section: dict[str, Any] | None = None) -> bool:
+    """Return whether ``resolver_id`` is active in this checkout.
+
+    The public read the graph seam calls before dispatching a discovered
+    resolver. An absent section, an absent entry, and a malformed entry all
+    resolve to :data:`DERIVATION_RESOLVER_ENABLED_DEFAULT` — only an explicit
+    ``enabled: false`` switches a resolver off, so no failure to read the store
+    can silently blank the graph.
+
+    Args:
+        resolver_id: The resolver's stable provenance id (e.g. ``'markdown'``).
+        section: A pre-read section, for a caller resolving several resolvers
+            against one snapshot. ``None`` reads the store for this call.
+    """
+    if section is None:
+        section = read_derivation_resolvers_section()
+    entry = section.get(resolver_id)
+    if not isinstance(entry, dict):
+        return DERIVATION_RESOLVER_ENABLED_DEFAULT
+    return bool(entry.get('enabled', DERIVATION_RESOLVER_ENABLED_DEFAULT))
+
+
+def cmd_derivation_resolver_get(args: argparse.Namespace) -> dict:
+    """Get the binding for a resolver id.
+
+    ``configured`` reports whether an entry exists; ``enabled`` reports the
+    EFFECTIVE state, which is the default when no entry does.
+    """
+    try:
+        entry = read_derivation_resolvers_section().get(args.resolver)
+        configured = isinstance(entry, dict)
+        return {
+            'status': 'success',
+            'resolver': args.resolver,
+            'configured': configured,
+            'enabled': is_derivation_resolver_enabled(args.resolver),
+        }
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_derivation_resolver_set(args: argparse.Namespace) -> dict:
+    """Enable or disable a resolver (``--enabled`` / ``--disabled``, exactly one)."""
+    try:
+        if args.enabled == args.disabled:
+            return _output_error('pass exactly one of --enabled / --disabled')
+        enabled = bool(args.enabled)
+
+        config_path = get_run_config_path()
+        config = read_run_config(config_path)
+        section = config.get('derivation_resolvers')
+        if not isinstance(section, dict):
+            section = {}
+            config['derivation_resolvers'] = section
+        section[args.resolver] = {'enabled': enabled}
+        _write_json_file(config_path, config)
+        return _output_success('set', resolver=args.resolver, enabled=enabled)
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_derivation_resolver_list(args: argparse.Namespace) -> dict:
+    """List the configured resolver entries.
+
+    Reports what the STORE holds, not what is discovered — an empty list means
+    nothing is configured, which is the default-everything-active state. The
+    discovered set joined against this one is served by
+    ``extension-api:extension_api derivation-resolvers list``.
+    """
+    del args  # unused — fixed-shape verb
+    try:
+        # ONE snapshot for the whole roster, and a per-entry guard: a single
+        # malformed entry costs that entry's state, never the whole listing, and
+        # it fails OPEN so a store problem can never render as "disabled". Same
+        # discipline as the graph seam's dispatch gate.
+        section = read_derivation_resolvers_section()
+        resolvers = []
+        for key in sorted(section):
+            try:
+                enabled = is_derivation_resolver_enabled(key, section)
+            except Exception:
+                enabled = DERIVATION_RESOLVER_ENABLED_DEFAULT
+            resolvers.append({'id': key, 'enabled': enabled})
+        return {
+            'status': 'success',
+            'resolvers': resolvers,
+            'count': len(resolvers),
+            'unconfigured_default_enabled': DERIVATION_RESOLVER_ENABLED_DEFAULT,
+        }
+    except Exception as e:
+        return _output_error(str(e))
+
+
+def cmd_derivation_resolver_remove(args: argparse.Namespace) -> dict:
+    """Remove a resolver's entry, returning it to the default-active state."""
+    try:
+        config_path = get_run_config_path()
+        config = read_run_config(config_path)
+        section = config.get('derivation_resolvers')
+        if not isinstance(section, dict) or args.resolver not in section:
+            return _output_success('skipped', resolver=args.resolver, reason='Not configured')
+        del section[args.resolver]
+        _write_json_file(config_path, config)
+        return _output_success('removed', resolver=args.resolver)
+    except Exception as e:
+        return _output_error(str(e))
+
+
+# =============================================================================
 # Display-Timezone Subcommands
 # =============================================================================
 #
@@ -982,6 +1128,18 @@ Examples:
 
   # Set the display-only render timezone (IANA zone name)
   %(prog)s display-timezone set --value America/New_York
+
+  # Report whether a derivation resolver is active (unconfigured => enabled)
+  %(prog)s derivation-resolver get --resolver markdown
+
+  # Switch a derivation resolver off for this checkout (machine-local)
+  %(prog)s derivation-resolver set --resolver lsp --disabled
+
+  # List the configured resolver entries (empty => every resolver active)
+  %(prog)s derivation-resolver list
+
+  # Drop a resolver entry, returning it to the default-active state
+  %(prog)s derivation-resolver remove --resolver lsp
 
   # Clean .plan directories based on retention settings
   %(prog)s cleanup
@@ -1198,6 +1356,35 @@ Examples:
     p_ls_remove = ls_subparsers.add_parser('remove', help='Remove the binding for a language', allow_abbrev=False)
     p_ls_remove.add_argument('--language', required=True, help='Language key (e.g. python)')
     p_ls_remove.set_defaults(func=cmd_language_server_remove)
+
+    # derivation-resolver command with subcommands
+    p_dr = subparsers.add_parser(
+        'derivation-resolver',
+        help='Manage the machine-local derivation_resolvers binding (which resolvers run)',
+        allow_abbrev=False,
+    )
+    dr_subparsers = p_dr.add_subparsers(
+        dest='derivation_resolver_command', required=True, help='Derivation-resolver operation'
+    )
+
+    p_dr_get = dr_subparsers.add_parser('get', help='Get the binding for a resolver id', allow_abbrev=False)
+    p_dr_get.add_argument('--resolver', required=True, help='Resolver id (e.g. markdown)')
+    p_dr_get.set_defaults(func=cmd_derivation_resolver_get)
+
+    p_dr_set = dr_subparsers.add_parser('set', help='Enable or disable a resolver', allow_abbrev=False)
+    p_dr_set.add_argument('--resolver', required=True, help='Resolver id (e.g. markdown)')
+    p_dr_set.add_argument('--enabled', action='store_true', help='Activate the resolver')
+    p_dr_set.add_argument('--disabled', action='store_true', help='Deactivate the resolver')
+    p_dr_set.set_defaults(func=cmd_derivation_resolver_set)
+
+    p_dr_list = dr_subparsers.add_parser('list', help='List configured resolver entries', allow_abbrev=False)
+    p_dr_list.set_defaults(func=cmd_derivation_resolver_list)
+
+    p_dr_remove = dr_subparsers.add_parser(
+        'remove', help='Remove a resolver entry (returns it to default-active)', allow_abbrev=False
+    )
+    p_dr_remove.add_argument('--resolver', required=True, help='Resolver id (e.g. markdown)')
+    p_dr_remove.set_defaults(func=cmd_derivation_resolver_remove)
 
     # display-timezone command with subcommands
     p_dtz = subparsers.add_parser(

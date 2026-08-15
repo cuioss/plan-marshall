@@ -407,7 +407,7 @@ def get_module_graph(
         # ran and found nothing. The two states must stay distinguishable without
         # inspecting the edge list.
         'resolvers': resolver_reports,
-        'resolver_count': len(resolver_reports),
+        'resolver_count': count_dispatched(resolver_reports),
     }
 
 
@@ -828,6 +828,114 @@ def _declared_dependencies(
     return None
 
 
+#: The third ``status`` value a resolver report can carry, beside ``ok`` and
+#: ``error``: the resolver was discovered and reported, but the machine-local
+#: ``derivation_resolvers`` binding kept it from running.
+#:
+#: Carried as a ``status`` VALUE rather than a separate ``dispatched`` boolean
+#: because the report list is serialized as a uniform TOON array. A key present
+#: on only some records is materialized as an empty cell on the others, so a
+#: boolean would render a resolver that DID run as ``dispatched: ""`` beside a
+#: sibling row reading ``false`` — which reads as "not dispatched", the exact
+#: inversion this whole mechanism exists to prevent. It would also float the
+#: column's position, since the TOON header takes first-occurrence key order
+#: over an id-sorted list. Every report already carries ``status``, so encoding
+#: the state there keeps the wire uniform and unambiguous.
+STATUS_NOT_DISPATCHED = 'not_dispatched'
+
+
+def count_dispatched(resolver_reports: list[dict[str, Any]]) -> int:
+    """Count the resolvers that actually RAN, from their reports.
+
+    ``resolver_count`` is the anti-vacuity discriminator every graph-family
+    response carries: ``0`` means no resolver ran (an absence of capability),
+    ``N`` means N ran and found what they found. That meaning only holds if the
+    count excludes resolvers the machine-local configuration switched off — they
+    appear in ``resolvers[]`` so the suppression is visible, but they did not
+    run, and counting them would report an edge-derivation capability the
+    envelope does not have.
+
+    Only :data:`STATUS_NOT_DISPATCHED` excludes a report. Every other status —
+    including ``error`` — counts, because an errored resolver DID run; it ran
+    and failed, which is a different fact from never having been called.
+    """
+    return sum(1 for report in resolver_reports if report.get('status') != STATUS_NOT_DISPATCHED)
+
+
+#: Note prefix marking a resolver the machine-local configuration switched off,
+#: distinguishing an operator decision from a merge-side drop (``merge: ``) and
+#: from a note the resolver itself returned.
+_DISABLED_NOTE_PREFIX = 'configuration: '
+
+
+def _partition_configured_resolvers(
+    resolvers: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split discovered resolvers into those to dispatch and reports for the rest.
+
+    The machine-local ``derivation_resolvers`` binding decides which discovered
+    resolvers run in this checkout — resolver availability and cost depend on
+    locally-installed tooling, so the same project can legitimately have a
+    different active set on two machines. Absent configuration means ACTIVE, so
+    an unconfigured project dispatches every discovered resolver.
+
+    **A disabled resolver is REPORTED, never silently dropped.** It comes back as
+    a ``status: not_dispatched``, ``edge_count: 0`` report carrying a ``configuration:`` note,
+    because the seam's anti-vacuity property is exactly that a zero-edge answer
+    explains itself: dropping the record instead would make "switched off by the
+    operator" indistinguishable from "never registered", which is the vacuity
+    this extension point exists to eliminate (see the contract's § "Suppression
+    must be reported, never silent").
+
+    A run-config store that cannot be read at all leaves EVERY resolver
+    dispatched. Failing open is deliberate: the alternative — an unreadable store
+    blanking the graph — is the zero-edge defect arriving as a configuration
+    failure instead of a derivation one.
+
+    Args:
+        resolvers: Discovered ``{origin, id, module}`` records, sorted by id.
+
+    Returns:
+        An ``(enabled, disabled_reports)`` tuple preserving the input order.
+    """
+    try:
+        from run_config import is_derivation_resolver_enabled, read_derivation_resolvers_section
+
+        # ONE snapshot for the whole dispatch, not one store read per resolver.
+        section = read_derivation_resolvers_section()
+    except Exception:
+        return resolvers, []
+
+    enabled: list[dict[str, Any]] = []
+    disabled_reports: list[dict[str, Any]] = []
+    for record in resolvers:
+        resolver_id = record.get('id', '')
+        try:
+            active = is_derivation_resolver_enabled(resolver_id, section)
+        except Exception:
+            active = True
+        if active:
+            enabled.append(record)
+            continue
+        disabled_reports.append(
+            {
+                'id': resolver_id,
+                'edge_count': 0,
+                # Discovered and reported, but never called. ``resolver_count``
+                # counts dispatched resolvers only, so a fully disabled envelope
+                # reads as "no resolver ran" — which is the truth, and what keeps
+                # ``capabilities`` from promising an edge-derivation capability
+                # the envelope does not have.
+                'status': STATUS_NOT_DISPATCHED,
+                'notes': [
+                    f'{_DISABLED_NOTE_PREFIX}resolver disabled by the machine-local '
+                    f'derivation_resolvers binding — it was discovered but not dispatched'
+                ],
+            }
+        )
+    return enabled, disabled_reports
+
+
 def _derive_edges(
     derived_by_name: dict[str, dict[str, Any]],
     enriched_by_name: dict[str, dict[str, Any]],
@@ -874,8 +982,11 @@ def _derive_edges(
         A ``(edges, resolver_reports)`` tuple. ``edges`` is a list of
         ``{'from', 'to', 'producers'}`` dicts where ``from`` depends on ``to``.
         ``resolver_reports`` is one ``{'id', 'edge_count', 'status', 'notes'}``
-        record per resolver that ran — an EMPTY list means no resolver was
-        registered, which is what makes a zero-edge answer non-vacuous.
+        record per DISCOVERED resolver — an EMPTY list means no resolver was
+        registered, which is what makes a zero-edge answer non-vacuous. A record
+        carrying ``status: not_dispatched`` was discovered and reported but not
+        run (the machine-local binding switched it off), so it is excluded from
+        ``resolver_count`` — see :func:`count_dispatched`.
     """
     try:
         from _derivation_merge import merge_resolver_edges
@@ -894,6 +1005,10 @@ def _derive_edges(
     if not resolvers:
         return [], []
 
+    resolvers, disabled_reports = _partition_configured_resolvers(resolvers)
+    if not resolvers:
+        return [], disabled_reports
+
     # Materialize the resolved dependency list so resolvers stay pure. Skip the
     # Maven enrich for a module carrying a non-empty declaration — its resolver
     # edges would be discarded by _build_deps_and_producers anyway.
@@ -906,7 +1021,10 @@ def _derive_edges(
             module_view['dependencies'] = _enriched_dependencies(mod_name, mod_data, project_dir)
         resolver_input[mod_name] = module_view
 
-    return merge_resolver_edges(resolvers, resolver_input, enriched_by_name)
+    edges, reports = merge_resolver_edges(resolvers, resolver_input, enriched_by_name)
+    # Sorted by id so a disabled resolver lands where it would have run: the
+    # report list stays byte-stable regardless of which resolvers are switched off.
+    return edges, sorted(reports + disabled_reports, key=lambda report: report['id'])
 
 
 def _declared_suppression_notes(

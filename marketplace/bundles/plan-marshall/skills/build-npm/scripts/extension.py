@@ -14,7 +14,7 @@ Owns TWO axes of the extension contract for the npm build system:
   resolver joins on.
 
 Skill-loading (Axis-A) is NOT here — it lives on the JavaScript domain extension
-that subclasses ``ExtensionBase``. The two Axis-C methods are opted into by
+that subclasses ``ExtensionBase``. The three Axis-C methods are opted into by
 multiple inheritance, the only shape reachable from both otherwise-disjoint
 hierarchies.
 
@@ -162,6 +162,14 @@ class BuildExtension(BuildExtensionBase, DerivationResolverBase):
         complete four-face contract this identity participates in.
         """
         return 'npm'
+
+    def derivation_file_patterns(self) -> list[str]:
+        """Return the build descriptor this resolver's package-name join reads.
+
+        Descriptive metadata for the resolver-configuration menu, never a filter
+        — see ``DerivationResolverBase.derivation_file_patterns``.
+        """
+        return ['**/package.json']
 
     @staticmethod
     def _package_name(module_data: dict) -> str | None:

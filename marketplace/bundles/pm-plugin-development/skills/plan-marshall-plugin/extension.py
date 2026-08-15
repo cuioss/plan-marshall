@@ -213,6 +213,14 @@ class Extension(ExtensionBase, DerivationResolverBase, PathAttributionBase):
         """
         return 'markdown'
 
+    def derivation_file_patterns(self) -> list[str]:
+        """Return the file patterns this resolver's reference join reads.
+
+        Descriptive metadata for the resolver-configuration menu, never a filter
+        — see ``DerivationResolverBase.derivation_file_patterns``.
+        """
+        return ['**/*.md']
+
     def derive_edges(
         self,
         derived_by_name: dict,
