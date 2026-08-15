@@ -538,6 +538,25 @@ mechanism it renamed — and sweep each one's restatements the same way: by **co
 each kind a changed value can take — prose, docs, tests, `*.py` fixtures and stubs — and sweeping for
 each in turn, per the sub-agent instruction above), exactly as you did for the original change.
 
+**Sweep the previous round's fixes as a first-class surface, not only the original change.** By round
+N the highest-risk text is what round N−1 *wrote*: a docstring, a table row, or a decision record
+added to explain a fix, which is young, unreviewed, and not yet a consumer anyone thinks to grep for.
+Before re-dispatching, list the files the previous round edited and re-read each one against the
+current design — especially any prose it **added**. Where the fix amended a shared or governing
+document, check every sibling surface that cites it: a cross-surface record made true for the surface
+you fixed can be made false for the one you did not.
+
+⛔ This is not the same instruction as the paragraph above it, and reading it as a restatement is how
+the defect survives. That one says *sweep what your fix made false elsewhere in the tree*; this one
+says *the fix's own new text is itself a surface that the next fix will invalidate.* One observed run
+leaked this exact class four rounds running, each time obeying the paragraph above: round 1 wrote a
+docstring describing the marker it introduced, and round 2 replaced the marker without re-reading the
+docstring round 1 had just written; round 2 rewrote one test's docstring to disclaim an invariant and
+left the neighbouring assertion in the same file encoding it; round 3 amended a governing ADR and did
+not check the sibling extension axis that cites it, making that record false for a surface the fix
+never touched. Each round swept the surface the *original* change touched and missed the surface the
+*previous round's fix* touched.
+
 The two obligations below are part of that same per-round sweep, not a separate pass done once at
 the end. Both are checked **before every re-dispatch and again before the merge gate**.
 
