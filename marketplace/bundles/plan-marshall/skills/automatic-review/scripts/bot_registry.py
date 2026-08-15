@@ -33,6 +33,8 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
     ignore_patterns:
       - "## Walkthrough"
       - "No actionable comments were generated"
+    review_body_summary_patterns:     # a review_body OPENING with one of these is a status summary
+      - "Actionable comments posted:"
     refusal_patterns:
       - "Review limit reached"
     refusal_size_patterns:            # subset of refusal_patterns whose CAUSE is diff-size
@@ -52,8 +54,9 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
     ```
 
 Stdlib-only (no PyYAML): the block is a tightly-constrained subset — top-level
-scalars, lists (``ignore_patterns``, ``refusal_patterns``, ``refusal_size_patterns``,
-``refusal_size_cap_patterns``, ``contentless_review_markers``,
+scalars, lists (``ignore_patterns``, ``review_body_summary_patterns``,
+``refusal_patterns``, ``refusal_size_patterns``, ``refusal_size_cap_patterns``,
+``contentless_review_markers``,
 ``actionable_content_markers``, ``participation_evidence``,
 ``rate_limit_eta_patterns``), and one nested map
 (``severity_map``) — parsed by a small deterministic reader below. Load order is the sorted
@@ -400,6 +403,42 @@ class BotRegistry:
         value = self._by_kind.get(bot_kind, {}).get('contentless_review_markers', [])
         return list(value) if isinstance(value, list) else []
 
+    def review_body_summary_patterns(self, bot_kind: str) -> list[str]:
+        """Return the literals marking a ``review_body`` as a STATUS SUMMARY (``[]`` if absent).
+
+        A ``review_body`` is either the bot's consolidated findings or a status line
+        about them (``"Actionable comments posted: N"``). The counting rule
+        (``standards/bot-participation-contract.md`` § "The counting rule") excludes
+        the latter from every finding count, and WHICH literal marks it is a per-bot
+        fact — so it is registry data rather than a login literal baked into each
+        counter.
+
+        The body is a summary when it **BEGINS** with any entry, after leading
+        whitespace and markdown emphasis are stripped — a status summary is a body
+        that *opens* with its status line. A genuine review that merely mentions the
+        phrase further down is not one, and stays counted.
+
+        Do not read this as first-line-anchored. An earlier consumer tested whether
+        any later line followed, which inverted the result on both realistic shapes:
+        a real summary (status line, then a details block) was counted, while a
+        one-line body carrying the phrase plus same-line substance was dropped. Line
+        position does not carry *"is there review content"*; opening position does
+        carry *"is this a status line"*.
+
+        The accepted residual: a body that opens with the status line and continues
+        with substance **on the same line** is classified a summary. Narrowing that
+        needs a content predicate a literal match cannot supply — see
+        :meth:`contentless_review_markers` / :meth:`actionable_content_markers`,
+        which are that mechanism.
+
+        An empty list is the fail-closed default, and "closed" here means
+        **counted**: for a gate-escape count, dropping a substantive ``review_body``
+        under-counts escapes and makes the gates look better than they are, so a bot
+        that has not opted in keeps every ``review_body``.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('review_body_summary_patterns', [])
+        return list(value) if isinstance(value, list) else []
+
     def actionable_content_markers(self, bot_kind: str) -> list[str]:
         """Return the literals that DISQUALIFY a contentless drop (``[]`` if unknown/absent).
 
@@ -556,6 +595,37 @@ def contentless_review_markers(bot_kind: str) -> list[str]:
 def actionable_content_markers(bot_kind: str) -> list[str]:
     """The literals that disqualify a contentless drop for ``bot_kind`` (``[]`` if absent)."""
     return REGISTRY.actionable_content_markers(bot_kind)
+
+
+def review_body_summary_patterns(bot_kind: str) -> list[str]:
+    """The literals marking a ``bot_kind`` review_body a STATUS SUMMARY (``[]`` = counted)."""
+    return REGISTRY.review_body_summary_patterns(bot_kind)
+
+
+def bot_kind_for_login(author_login: str | None) -> str:
+    """Resolve an author login to its ``bot_kind`` (``''`` for a human or unknown).
+
+    The normalised counterpart to the raw :func:`login_to_bot_kind` map, and the
+    lookup a consumer should use: ``github_pr`` stores ``author`` VERBATIM, and real
+    author logins carry two drifts a raw exact match silently loses — the ``[bot]``
+    suffix some GraphQL logins carry, and non-canonical casing. Both resolve to no
+    bot_kind under an exact match, which disables every per-bot rule keyed off the
+    author for precisely the records that have no ``bot_kind`` to fall back on.
+
+    Lives here because the registry owns the login map. ``github_re_review`` carries
+    an equivalent (``bot_kind_for_author``, returning ``None`` rather than ``''``)
+    over its own derived copy of the same map; consolidating the two is a
+    worthwhile follow-up but is not required for either to be correct.
+    """
+    if not author_login:
+        return ''
+    normalized = author_login.lower()
+    if normalized.endswith('[bot]'):
+        normalized = normalized[: -len('[bot]')]
+    # Both sides normalised — a registry doc declaring a mixed-case author_login
+    # must resolve exactly as a lowercase one does.
+    lowered = {login.lower(): kind for login, kind in login_to_bot_kind().items()}
+    return lowered.get(normalized, '')
 
 
 def participation_evidence(bot_kind: str) -> list[str]:

@@ -2,8 +2,15 @@
 
 The rule governing the relationship between an **orchestrator plan spec** (machine-local, under
 `.plan/local/orchestrator/{epic}/plans/`) and a **cloud plan** (git-tracked, under
-`doc/plans/{epic}/`). It applies identically to all three epics — `truthful-signals`,
+`doc/plans/{epic}/`). It applies identically to all three ledger-backed epics — `truthful-signals`,
 `review-apparatus`, `code-intelligence-substrate`.
+
+A **standalone epic** — one authored directly in git with no orchestrator-ledger counterpart, such as
+`test-quality` — has no orchestrator plan spec to derive from and nothing to collect back into, so
+Path 1's derive-from-spec step and Path 3's collect step do not apply to it. Everything else here
+does: the `{NNN}-` prefix rule, the authoring template, the mandatory first-instruction block, and the
+status-is-the-filesystem model. Its scoping brief lives in the epic's own `README.md` and is
+git-tracked, which is what makes it executable without a ledger.
 
 It exists because the two halves cannot see each other. The orchestrator ledger is git-ignored, so a
 cloud session never sees it; a cloud session's working state is destroyed when its VM is reclaimed,
@@ -35,7 +42,7 @@ onto the other.
 | `{NNN}-{cloud-plan}.md`, a flat file | **Authored**, awaiting a run |
 | `{NNN}-{cloud-plan}/plan.md` | **A run has started** — Step 3 of the contract moved it into its directory, prefix and all |
 | `{NNN}-{cloud-plan}/report-NN.md` alongside it | That run produced a report; the report names its PR |
-| Nothing — the directory is gone | **Collected.** The orchestrator has ingested it (§ Path 3) |
+| Nothing — the directory is gone | **Collected.** The orchestrator has ingested it (§ Path 3). *Ledger-backed epics only* — a standalone epic has no collect step, so its terminal state is the plan directory **still present** with its report inside, and a missing directory there means deleted, not collected |
 
 The `{NNN}-` prefix is the priority order defined in § Path 1 — Create. It is part of the name at
 every stage, so a directory listing of an epic is also its hand-over order.
@@ -180,3 +187,8 @@ never a skill, which is code and is reviewed.
   why no index of open work is needed on this side.
 - **It does not carry the queue.** Ordering, dependencies, surface-disjointness, and parallelization
   remain the orchestrator's, because they are decisions about the epic rather than about one plan.
+  *Ledger-backed epics only.* A **standalone** epic has no orchestrator to hold them, so it carries
+  them in git — in the epic's own `README.md`, alongside the scoping brief. That is not an exception
+  to the reasoning above but its consequence: these are still decisions about the epic rather than
+  about one plan, so they live at the epic level, and the only question is whether the epic level is
+  a machine-local ledger or a git-tracked README.

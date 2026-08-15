@@ -129,16 +129,16 @@ Each entry in either list maps one-to-one to a machine-readable registry doc at
 `standards/{bot_kind}.md` under this skill's `standards/` directory — there is no hard-coded bot
 list in the pipeline. Each registry doc carries a fenced-YAML data block (`bot_kind`,
 `author_login`, `trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns[]`,
-`refusal_patterns[]`, `contentless_review_markers[]`, `actionable_content_markers[]`,
-`rate_limit_class`, `rate_limit_eta_patterns[]`, `severity_map`) plus the
+`review_body_summary_patterns[]`, `refusal_patterns[]`, `contentless_review_markers[]`,
+`actionable_content_markers[]`, `rate_limit_class`, `rate_limit_eta_patterns[]`, `severity_map`) plus the
 producer / consumer / trust boundary / disposition rationale for that bot, and links to the org
 signal/noise source-of-truth rather than duplicating it.
 
 The single generic loader `scripts/bot_registry.py` parses every `standards/{bot_kind}.md` data
 block at runtime and exposes the derived registry (`bot_kinds()`, the login→bot_kind map, each
 bot's `trigger_comment`, `completion_check_name`, `honors_skip_label`, `ignore_patterns`,
-`contentless_review_markers`, `actionable_content_markers`, `rate_limit_class`,
-`rate_limit_eta_patterns`, and `severity_map`). The producer
+`review_body_summary_patterns`, `contentless_review_markers`, `actionable_content_markers`,
+`rate_limit_class`, `rate_limit_eta_patterns`, and `severity_map`). The producer
 (`github_pr.py` noise pre-filter), the finding store (`_findings_core.BOT_KINDS`), the re-review
 strategy registry (`github_re_review.py` — both its trigger comments and the `refusal_class` /
 `refusal_eta` it surfaces on a detected refusal), and the per-bot rate-limit detector
@@ -959,7 +959,7 @@ The orchestrator-side handling of this return (reading `re_review_on_timeout`, b
 
 ## Canonical invocations
 
-The canonical argparse surface for the invocable script this skill registers: `review_completeness.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for the invocable scripts this skill registers: `review_completeness.py` and `review_gate_delta.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
 ### review_completeness — check
 
@@ -1051,3 +1051,50 @@ disagree with the classification. `cap_extractable` reports separately whether t
 recoverable from the bot's notice (`refusal_size_cap_patterns`), because the two are independent: a
 reviewer can have a ceiling nobody has taught the registry to read, and collapsing them would let
 "declares a ceiling" be misread as "the ceiling's value is known".
+
+### review_gate_delta — assess
+
+```bash
+python3 .plan/execute-script.py plan-marshall:automatic-review:review_gate_delta assess \
+  --plan-id PLAN_ID [--enabled-bots [ENABLED_BOTS]] [--reviewed-bots [REVIEWED_BOTS]] \
+  [--gates-green | --gates-red] [--gate-head-sha SHA] [--reviewed-head-sha SHA] \
+  [--partitions [PARTITIONS]]
+```
+
+Measures **what review caught that the in-house gates did not** — a signal about the GATES' reach,
+never about a reviewer and never a merge verdict (`proves: gate_escape_only`, `gates_merge: false`).
+It needs no per-finding gate attribution, because the gates run before review
+(`pre-push-quality-gate` at `order: 5`, `pre-submission-self-review` at `order: 7`, against this step
+at `order: 30`): a finding filed against a tree the gates already passed IS a gate escape. See
+[`standards/bot-participation-contract.md`](standards/bot-participation-contract.md) § "The
+review-versus-gate delta" for the governing contract, and § "The counting rule" for the definitions
+this verb applies.
+
+Five inputs decide whether the PR is evidence at all, and every absent one fails CLOSED to
+`verdict: excluded` rather than to a confident zero:
+
+- `--gates-green` / `--gates-red` — omitting BOTH leaves the gate state unsubstantiated
+  (`gate_state_unsubstantiated`). A red gate excludes too, as `gates_not_green`: nothing escaped a
+  gate that had not passed.
+- `--gate-head-sha` and `--reviewed-head-sha` — the tree the gates CERTIFIED and the tree review
+  REVIEWED. They must be supplied and must MATCH. ⚠ They routinely will not: `finalize-step-simplify`
+  (`order: 8`) and `finalize-step-security-audit` (`order: 9`) are `mutates_source: true` and run
+  between the gates and review, and a forward pass never returns to order 5 to re-gate their edits. A
+  mismatch is `gates_did_not_cover_reviewed_tree` and an absent SHA is `gate_tree_unsubstantiated` —
+  both honest exclusions, not failures of the caller.
+- `--enabled-bots` — the coverage DENOMINATOR (`required_bots ∪ optional_bots`). An empty roster is
+  `no_reviewer_roster`, never vacuously complete — `0/0` is not full coverage.
+- `--reviewed-bots` — `review_completeness`'s reviewed-at-all set. Coverage is its INTERSECTION with
+  the roster, so an off-roster reviewer cannot complete it; an empty intersection is
+  `no_reviewer_reviewed`.
+
+The return echoes `gate_head_sha` and `reviewed_head_sha` alongside `reviewer_coverage`,
+`enabled_bots`, `reviewed_bots` and `provenance`, so a reader sees which trees and which reviewers
+each figure was computed over rather than trusting that they were checked.
+
+`structural_share` (the share of escapes no in-house gate class could have caught) is emitted **only**
+at full coverage with every escape partitioned; otherwise it is `null` and `share_withheld` names the
+reason. Both withholding rules are structural rather than advisory — see § "The review-versus-gate
+delta" for why a partial collapse would otherwise report 100% ("the gates are perfect") exactly when
+the reviewer that finds the addressable defects went quiet. A withheld share is **not** a withheld
+observation: the escapes and their partition counts are still reported.

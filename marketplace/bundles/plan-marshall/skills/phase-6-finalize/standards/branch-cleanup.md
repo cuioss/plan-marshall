@@ -363,6 +363,8 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 Parse the returned TOON and branch on `status`:
 
 - `status: success` (including `action: noop` when the branch was already at the base, or `action: rebased` when the rebase produced a new history) → continue to force-push-with-lease below.
+
+  The payload also carries `executor_drift` / `executor_regenerated` / `executor_detail`: `worktree-rebase-to` refreshes the worktree's per-tree executor when the rebase changed the bundle script set. The refresh is non-fatal by contract, so an `executor_regenerated: false` alongside a non-empty `executor_detail` is a reported degradation, not a cleanup failure — log it and proceed. The full contract is [`../../workflow-integration-git/standards/worktree-handling.md`](../../workflow-integration-git/standards/worktree-handling.md) § "Post-Rebase Executor Refresh".
 - `status: conflict` → ABORT cleanup with a fatal error. The rebase is left in progress with conflict markers so the user can inspect or abort manually. The classifier's merge-tree probe is best-effort — overlapping renames and a few other rare cases produce a clean probe but a real-rebase conflict. Log the returned `conflicts[]` file list and the conflict state:
 
   ```bash
