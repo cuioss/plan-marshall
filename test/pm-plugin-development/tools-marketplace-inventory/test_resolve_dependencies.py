@@ -1101,3 +1101,192 @@ def test_skill_subdoc_dirs_constant_is_not_widened():
     avoided by walking name-free instead.
     """
     assert SKILL_SUBDOC_DIRS == ('references', 'standards', 'workflow', 'templates')
+
+
+# =============================================================================
+# Tests - Detector precision (the four non-reference colon-triple classes)
+# =============================================================================
+#
+# ``detect_script_notations`` scans for the bare ``a:b:c`` shape, which several
+# token families share without referencing any component. Each class below gets
+# its OWN case, and the genuinely-broken reference gets a case asserting it is
+# STILL reported — a precision fix that also suppressed real findings would have
+# made the gate worse rather than better.
+
+
+class TestNonReferenceColonTriples:
+    """Each false-positive class is suppressed, one case per class."""
+
+    @staticmethod
+    def _detect(content):
+        source = ComponentId(bundle='test', component_type='skill', name='test')
+        return detect_script_notations(content, source)
+
+    def test_documentation_placeholder_is_not_a_reference(self):
+        """Prose documenting the notation form produces no finding."""
+        content = 'Scripts are referenced as `bundle:skill:script` in documentation.\n'
+        assert self._detect(content) == []
+
+    def test_maven_placeholder_coordinate_is_not_a_reference(self):
+        """``groupId:artifactId:scope`` documents a coordinate, not a script."""
+        content = 'Each module names dependencies as `groupId:artifactId:scope`.\n'
+        assert self._detect(content) == []
+
+    def test_canonical_verification_step_is_not_a_reference(self):
+        """``default:verify:{canonical}`` is a build command, not a script."""
+        content = 'Set per_deliverable_build to default:verify:quality-gate here.\n'
+        assert self._detect(content) == []
+
+    def test_decision_log_prefix_is_not_a_reference(self):
+        """A parenthesised ``(bundle:skill:step)`` prefix names the emitting step."""
+        content = '--message "(plan-marshall:phase-6-finalize:qgate) Finding fixed"\n'
+        assert self._detect(content) == []
+
+    def test_dotted_build_coordinate_is_not_a_reference(self):
+        """A Maven coordinate preceded by its group prefix is not a script."""
+        content = 'Depend on "de.cuioss:cui-java-tools:compile" for the utilities.\n'
+        assert self._detect(content) == []
+
+    def test_gradle_task_path_is_not_a_reference(self):
+        """A Gradle task path (leading colon) is not a script notation."""
+        content = './gradlew :services:auth-service:build\n'
+        assert self._detect(content) == []
+
+    def test_subdocument_path_is_not_a_reference(self):
+        """``bundle:skill:dir/file.md`` addresses a document, not a script."""
+        content = 'Load `plan-marshall:manage-lessons:references/dedup-analysis.md` first.\n'
+        assert self._detect(content) == []
+
+    def test_dotted_document_suffix_is_not_a_reference(self):
+        """``bundle:skill:name.md`` addresses a workflow document, not a script."""
+        content = 'See `plan-marshall:plan-marshall:planning.md` for the contract.\n'
+        assert self._detect(content) == []
+
+    def test_real_notation_at_end_of_sentence_is_still_a_reference(self):
+        """A trailing sentence period must NOT be read as a document suffix."""
+        deps = self._detect('Run plan-marshall:manage-files:manage-files.\n')
+        assert len(deps) == 1
+        assert deps[0].target.to_notation() == 'plan-marshall:manage-files:manage-files'
+
+    def test_genuine_notation_is_still_detected(self):
+        """The precision guards leave an ordinary script reference untouched."""
+        content = 'python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add\n'
+        deps = self._detect(content)
+        assert len(deps) == 1
+        assert deps[0].target.to_notation() == 'plan-marshall:manage-files:manage-files'
+
+
+class TestPlaceholderSkillReferences:
+    """Placeholder segments are suppressed on the skill-reference detector too."""
+
+    def test_skill_pattern_placeholder_is_not_a_reference(self):
+        source = ComponentId(bundle='test', component_type='skill', name='test')
+        assert detect_skill_references('Skill: bundle:skill-name\n', {}, source) == []
+
+    def test_frontmatter_placeholder_is_not_a_reference(self):
+        source = ComponentId(bundle='test', component_type='skill', name='test')
+        frontmatter = {'skills': ['bundle-name:skill-name']}
+        assert detect_skill_references('', frontmatter, source) == []
+
+    def test_real_skill_reference_is_still_detected(self):
+        source = ComponentId(bundle='test', component_type='skill', name='test')
+        deps = detect_skill_references('Skill: plan-marshall:phase-1-init\n', {}, source)
+        assert len(deps) == 1
+        assert deps[0].target.to_notation() == 'plan-marshall:phase-1-init'
+
+
+# =============================================================================
+# Tests - Precision regression fixture (exact finding count)
+# =============================================================================
+#
+# ONE instance of each false-positive class PLUS ONE genuinely-broken reference,
+# asserting EXACTLY ONE finding. The count is the test: an "at least one"
+# assertion would pass against a detector that still reported every row.
+#
+# Graph shape (bundle ``precision-bundle``):
+#
+#   manage-thing  (skill) + manage-thing.py  (its same-named ENTRY script)
+#   phase-thing   (skill, NO entry script)
+#
+# ``manage-thing`` having an entry script is what lets the subcommand class
+# resolve; ``phase-thing`` having none is what keeps the genuinely-broken
+# reference unresolved.
+
+_PRECISION_PLUGIN_JSON = '{\n  "name": "precision-bundle",\n  "version": "0.1.0"\n}\n'
+
+
+def _build_precision_graph(root: Path) -> Path:
+    """Create the precision-fixture ``marketplace/bundles`` tree under ``root``."""
+    bundles = root / 'marketplace' / 'bundles'
+    pb = bundles / 'precision-bundle'
+    _write(pb / '.claude-plugin' / 'plugin.json', _PRECISION_PLUGIN_JSON)
+
+    _write(
+        pb / 'skills' / 'manage-thing' / 'SKILL.md',
+        '---\nname: manage-thing\ndescription: Entry-script-bearing skill\n---\n'
+        '# Manage Thing\n',
+    )
+    _write(
+        pb / 'skills' / 'manage-thing' / 'scripts' / 'manage-thing.py',
+        '#!/usr/bin/env python3\n"""Entry script dispatching subcommands."""\n',
+    )
+    _write(
+        pb / 'skills' / 'phase-thing' / 'SKILL.md',
+        '---\nname: phase-thing\ndescription: Skill with no entry script\n---\n'
+        '# Phase Thing\n\n'
+        '## Notation classes\n\n'
+        'A script is referenced as `bundle:skill:script` in documentation.\n'
+        'The subcommand `precision-bundle:manage-thing:compose` runs the verb.\n'
+        'The build step is `default:verify:quality-gate` for this phase.\n'
+        '--message "(precision-bundle:phase-thing:qgate) step emitted this"\n'
+        'The coordinate is "de.example:example-lib:compile" in the POM.\n'
+        'python3 .plan/execute-script.py precision-bundle:phase-thing:ghost-script run\n',
+    )
+    return bundles
+
+
+@pytest.fixture
+def precision_index():
+    """Build a ``DependencyIndex`` over the precision fixture (all dep types)."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        bundles = _build_precision_graph(Path(tmp))
+        yield build_dependency_index(bundles, set(DependencyType))
+
+
+class TestPrecisionRegressionFixture:
+    """The fixture holds five non-references and one real break; exactly one is reported."""
+
+    def test_exactly_one_finding(self, precision_index):
+        """EXACTLY one unresolved dependency — not 'at least one'."""
+        result = cmd_validate(precision_index, set(DependencyType))
+        assert result['unresolved_count'] == 1
+
+    def test_the_one_finding_is_the_genuinely_broken_reference(self, precision_index):
+        """The surviving finding is the ghost script, not a suppressed class."""
+        result = cmd_validate(precision_index, set(DependencyType))
+        assert result['unresolved'][0]['target'] == 'precision-bundle:phase-thing:ghost-script'
+
+    def test_subcommand_resolves_to_the_entry_script(self, precision_index):
+        """The subcommand reference resolves rather than reporting unresolved."""
+        targets = {
+            dep.target.to_notation()
+            for dep in precision_index.get_forward_deps('precision-bundle:phase-thing')
+        }
+        assert 'precision-bundle:manage-thing:manage-thing' in targets
+
+    def test_validation_fails_while_the_real_break_stands(self, precision_index):
+        """The gate still fails closed on the genuinely-broken reference."""
+        result = cmd_validate(precision_index, set(DependencyType))
+        assert result['validation_result'] == 'failed'
+
+
+class TestSubcommandResolution:
+    """A subcommand resolves only when the skill HAS a same-named entry script."""
+
+    def test_subcommand_without_entry_script_stays_unresolved(self, precision_index):
+        """``phase-thing`` has no entry script, so its third segment cannot resolve."""
+        result = cmd_validate(precision_index, set(DependencyType))
+        unresolved = {row['target'] for row in result['unresolved']}
+        assert 'precision-bundle:phase-thing:ghost-script' in unresolved

@@ -87,6 +87,89 @@ class Dependency:
     resolved: bool = True  # False if target doesn't exist
 
 
+# ---------------------------------------------------------------------------
+# Non-reference colon-triples
+#
+# ``detect_script_notations`` scans for the bare ``a:b:c`` shape, which is not
+# unique to script notation. Three distinct token families share it while
+# referencing no component at all; each is recognised here so the validator's
+# findings stay precise enough to gate on.
+# ---------------------------------------------------------------------------
+
+# Meta-syntactic segments used when DOCUMENTING the notation form rather than
+# referencing a component (``bundle:skill:script``, ``groupId:artifactId:scope``).
+# A notation carrying one of these in ANY segment is prose about a notation, not
+# an edge to a real component.
+NOTATION_PLACEHOLDER_SEGMENTS: frozenset[str] = frozenset(
+    {
+        'bundle',
+        'bundle-name',
+        'my-bundle',
+        'skill',
+        'skill-name',
+        'my-skill',
+        'script',
+        'script-name',
+        'subcommand',
+        'task_number',
+        'groupId',
+        'artifactId',
+    }
+)
+
+# Canonical verification-step IDs (``default:verify:{canonical}``) name a BUILD
+# COMMAND, not a script, and share the three-part colon shape. The prefix set
+# mirrors ``_CANONICAL_VERIFY_PREFIXES`` in
+# ``plan-marshall:manage-config`` (``scripts/_cmd_quality_phases.py``), which is
+# the authority for what a canonical-verify step ID looks like.
+CANONICAL_COMMAND_PREFIXES: tuple[str, ...] = ('default:verify:',)
+
+
+def _has_placeholder_segment(*segments: str) -> bool:
+    """True when any segment is a documentation placeholder rather than a name."""
+    return any(segment in NOTATION_PLACEHOLDER_SEGMENTS for segment in segments)
+
+
+def _is_canonical_command(notation: str) -> bool:
+    """True when ``notation`` is a canonical verification-step ID, not a script."""
+    return notation.startswith(CANONICAL_COMMAND_PREFIXES)
+
+
+def _is_decision_log_prefix(line: str, start: int, end: int) -> bool:
+    """True when the match is the parenthesised prefix of a decision-log entry.
+
+    Decision-log and ``[STATUS]`` messages carry a ``(bundle:skill:step)``
+    prefix naming the emitting workflow step. The step segment is a step id or a
+    subcommand, never a script filename, so the prefix is not a reference.
+    """
+    return start > 0 and line[start - 1] == '(' and end < len(line) and line[end] == ')'
+
+
+def _is_embedded_in_longer_token(line: str, start: int, end: int) -> bool:
+    """True when the match is a fragment of a longer, non-notation token.
+
+    Catches the two shapes that bracket a colon-triple without being one:
+
+    - a **build coordinate** (``de.cuioss:cui-java-tools:compile``) or a Gradle
+      task path (``:services:auth-service:build``), where the match is preceded
+      by ``.`` or ``:``;
+    - a **sub-document path** (``bundle:skill:references/dedup-analysis.md``,
+      ``bundle:skill:planning.md``) or a coordinate version
+      (``io.jsonwebtoken:jjwt-api:0.12.3``), where the match is followed by ``/``
+      or by ``.`` plus a further word character. A trailing sentence period is
+      deliberately NOT treated as embedding.
+    """
+    if start > 0 and line[start - 1] in '.:':
+        return True
+    if end < len(line):
+        following = line[end]
+        if following == '/':
+            return True
+        if following == '.' and end + 1 < len(line) and line[end + 1].isalnum():
+            return True
+    return False
+
+
 # Known Python module to skill mappings
 PYTHON_MODULE_MAPPINGS: dict[str, str] = {
     'toon_parser': 'plan-marshall:ref-toon-format:toon_parser',
@@ -205,6 +288,20 @@ def detect_script_notations(content: str, source: ComponentId) -> list[Dependenc
             # Skip if skill looks like a port number (all digits)
             if skill.isdigit():
                 continue
+            # Prose documenting the notation form is not a reference to a
+            # component named after the placeholder.
+            if _has_placeholder_segment(bundle, skill, script):
+                continue
+            # A canonical verification-step ID names a build command.
+            if _is_canonical_command(match.group(0)):
+                continue
+            # A parenthesised decision-log prefix names the emitting step.
+            if _is_decision_log_prefix(line, match.start(), match.end()):
+                continue
+            # A build coordinate, Gradle task path, or sub-document path is a
+            # longer token that merely contains a colon-triple.
+            if _is_embedded_in_longer_token(line, match.start(), match.end()):
+                continue
 
             target = ComponentId(
                 bundle=bundle,
@@ -241,6 +338,8 @@ def detect_skill_references(content: str, frontmatter: dict[str, Any], source: C
                 parts = skill_ref.split(':')
                 if len(parts) == 2:
                     bundle, name = parts
+                    if _has_placeholder_segment(bundle, name):
+                        continue
                     target = ComponentId(bundle=bundle, component_type='skill', name=name)
                     deps.append(
                         Dependency(
@@ -256,6 +355,8 @@ def detect_skill_references(content: str, frontmatter: dict[str, Any], source: C
     for line_num, line in enumerate(content.split('\n'), 1):
         for match in re.finditer(pattern, line):
             bundle, name = match.groups()
+            if _has_placeholder_segment(bundle, name):
+                continue
             target = ComponentId(bundle=bundle, component_type='skill', name=name)
             deps.append(
                 Dependency(

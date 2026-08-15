@@ -449,6 +449,37 @@ def iter_skill_subdoc_edge_sources(base_path: Path) -> list[tuple[ComponentId, P
     return sources
 
 
+def _entry_script_for_subcommand(index: DependencyIndex, target: ComponentId) -> ComponentId | None:
+    """Return the skill's entry script when ``target``'s final segment is a subcommand.
+
+    A skill exposes ONE entry script named after the skill itself
+    (``manage-execution-manifest:manage-execution-manifest``) and dispatches its
+    verbs as subcommands of it. Documentation names those verbs in the same
+    three-part shape — ``plan-marshall:manage-execution-manifest:compose`` — and
+    the detector, which builds a script ``ComponentId`` from any three-part
+    notation, then looks for a *script* called ``compose`` and finds none.
+
+    The reference is real; only the segment it lands on is a verb rather than a
+    filename. So it resolves to the entry script that owns the verb, and the
+    edge is recorded against that script. When the skill has NO same-named entry
+    script the notation is genuinely wrong (the script segment names neither a
+    script nor a dispatchable verb) and ``None`` is returned so it stays
+    unresolved — ``pm-plugin-development:plugin-doctor:validate`` is that case,
+    since plugin-doctor's entry script is ``doctor-marketplace``.
+    """
+    if target.component_type != 'script' or not target.parent_skill:
+        return None
+    entry = ComponentId(
+        bundle=target.bundle,
+        component_type='script',
+        name=target.parent_skill,
+        parent_skill=target.parent_skill,
+    )
+    if entry.to_notation() in index.components:
+        return entry
+    return None
+
+
 def _index_dependencies_from(
     index: DependencyIndex,
     file_path: Path,
@@ -459,11 +490,17 @@ def _index_dependencies_from(
 
     Shared by the per-component pass and the sub-document edge-source pass; the
     two differ only in whether the scanned file IS the component's own
-    definition. A target absent from the index is marked unresolved.
+    definition. A target absent from the index resolves to the owning skill's
+    entry script when its final segment is a subcommand of it
+    (:func:`_entry_script_for_subcommand`), and is marked unresolved otherwise.
     """
     for dep in detect_all_dependencies(file_path, component_id, dep_types):
         if dep.target.to_notation() not in index.components:
-            dep.resolved = False
+            entry = _entry_script_for_subcommand(index, dep.target)
+            if entry is not None:
+                dep.target = entry
+            else:
+                dep.resolved = False
         index.add_dependency(dep)
 
 
