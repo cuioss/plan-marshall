@@ -34,10 +34,11 @@
 > applies, and the concurrency contract. The landed skills are the authority where they and the README
 > disagree.
 >
-> ⚠️ **One narrow exclusion, because plan `010` owns it.** Plan `010` ships the tests for the new
-> `test-conventions` doctor rules in
-> `test/pm-plugin-development/plugin-doctor/test_analyze_test_conventions*.py`. **Do not touch those
-> modules.** Everything else under `test/pm-plugin-development/` is yours.
+> ⚠️ **One narrow exclusion, because plan `010` owns it.** Plan `010` ships the tests for the four new
+> `test-conventions` doctor rules it adds, and owns the three modules that already test that scope —
+> `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule1.py`, `rule2.py` and `rule3.py`
+> — plus whatever new module it adds beside them. **Do not touch those modules.** Everything else under
+> `test/pm-plugin-development/` is yours.
 
 ## Problem
 
@@ -145,9 +146,13 @@ property.
    hand-picked strings — is the worked case, and its property is a stated one: for any frontmatter
    block, parsing then re-serialising round-trips, and no value containing the fence delimiter
    truncates the block. That is a starting point, **not** the list. Derive it.
+   **Anchor on plan `010`, not on plan `060`.** Plan `010` § D6 derives the whole-tree candidate list
+   and lands **before** this plan, so its report is git-tracked and readable: use the column set it
+   fixed, and state which rows refine its and which are new. Plan `060` § D5 derives the same table
+   for its own slice, but `060` and this plan are **mutually parallel** — its report may not exist
+   when you run, so it cannot be the anchor.
    *Done when:* the report carries the derived table with one row per candidate and its example-row
-   count, and states the total. Coordinate the format with plan `060` § D5, which derives the same
-   table for its own slice, so the operator receives two halves of one list rather than two lists.
+   count, states the total, and names its relationship to plan `010`'s whole-tree list.
 
 6. **D6 — Report the measured deltas** — per-directory and slice-total line counts before and after;
    collected test count before and after; coverage before and after for the bundle paths the slice
@@ -157,7 +162,7 @@ property.
 
 ## Out of scope
 
-* **`test/pm-plugin-development/plugin-doctor/test_analyze_test_conventions*.py`.** Owned by plan
+* **`test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py`, plus any new module plan `010` adds beside them.** Owned by plan
   `010`, which ships the tests for the doctor rules it adds. Excluded because `010` may be running or
   may have just landed, and this is the one file path where the two plans' surfaces meet.
 * **`test/conftest.py` and `test/_shared/**`.** Owned by plan `020` and consumed read-only here.
@@ -182,7 +187,8 @@ property.
 
 Exactly these paths, and nothing else:
 
-- `test/pm-plugin-development/**` — **excluding** `plugin-doctor/test_analyze_test_conventions*.py`
+- `test/pm-plugin-development/**` — **excluding** `plugin-doctor/test_test_conventions_rule*.py` and any
+  new test-conventions module plan `010` adds beside them
 - `test/marketplace/**`
 - `test/sync-plugin-cache/`, `test/finalize-step-deploy-target/`,
   `test/finalize-step-sync-plugin-cache/`
@@ -216,33 +222,32 @@ Exactly these paths, and nothing else:
    violating (1) or (2), **report the shortfall and stop**.
 
 **A fourth check specific to this slice, and it outranks the line floor: the doctor must still catch
-what it caught.** Run the doctor over the full marketplace tree before the first commit and again
-before the PR, and diff the rule-id sets in the two outputs. They must be identical. Invoke the
-**git-tracked** script — the generated executor `.plan/execute-script.py` is git-ignored and absent
-from a fresh clone, so do not go looking for it:
+what it caught.** Run the doctor's whole-tree **rule-firing** sweep over the full marketplace tree
+before the first commit and again before the PR, and diff the rule-id sets in the two outputs. They
+must be identical. The subcommand is `quality-gate` — **not** `test-conventions`, which scopes to the
+test tree, and not a bare invocation, which only prints help and exits non-zero. Run it through the
+two-step recipe in `doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions
+scope", which carries the exact command:
 
 ```bash
-python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate
 ```
 
-Confirm the subcommand and argument spelling against that script's own `--help` before relying on it.
-If the doctor cannot be invoked at all, this check is **unavailable** and the plan reports that rather
-than proceeding as though it passed — it is the check that outranks the line floor. This slice's tests **are** the evidence that the linter fires; a refactor that quietly
-narrows what fires leaves every other slice's compliance unverifiable, and the suite-coverage
-meta-test alone will not show it if `EXEMPT_RULE_IDS` absorbed the loss.
+If the executor's generator cannot run, this check is **unavailable** and the plan reports that rather
+than proceeding as though it passed — it is the check that outranks the line floor. This slice's tests
+**are** the evidence that the linter fires; a refactor that quietly narrows what fires leaves every
+other slice's compliance unverifiable, and the suite-coverage meta-test alone will not show it if
+`EXEMPT_RULE_IDS` absorbed the loss.
 
 **Executable.** `./pw verify` (the lane's build gate; this plan changes Python). Plus the
 `plugin-doctor test-conventions` scope over each directory in the slice, before and after, with the
-per-rule counts recorded. Invoke the **git-tracked** script — `.plan/execute-script.py` is
-git-ignored and absent from a fresh clone, so do not go looking for it:
-
-```bash
-python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py test-conventions --test-root {directory}
-```
-
-Confirm the argument spelling against that script's own `--help` before relying on it. If the doctor
-cannot be invoked, report the affected measurement **unavailable** rather than substituting a weaker
-check.
+per-rule counts recorded. Use the two-step recipe in
+`doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" — a **direct**
+call to `doctor-marketplace.py` fails with `ModuleNotFoundError: No module named '_dep_detection'`,
+because the script has no `sys.path` bootstrap and the generated executor is what supplies the
+`PYTHONPATH` it needs. The executor is git-ignored but its generator is tracked, so the recipe
+generates it first. If the generator itself cannot run, report the affected measurement
+**unavailable** rather than substituting a weaker check.
 
 **By reading — cold read, required for D4.** D4 rewrites text whose value is what a later reader takes
 from it, and the risk is not that too much history is removed but that the **invariant** is removed

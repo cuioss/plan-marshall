@@ -54,9 +54,9 @@ The **build-system family** — `build-gradle`, `build-maven`, `build-npm`, `bui
 directories stage that contract's fixtures independently.
 `test/plan-marshall/build_test_helpers.py` exists to serve that family, but reaches only **four** of
 the six: `build-gradle`, `build-maven`, `build-npm` and `build-pyproject` import it;
-`build-operations` and `build-server` do not reference it at all. So D1 is two jobs, not one —
-consolidating four directories that already share a surface, and onboarding two that never did.
-Re-derive the importer set before scoping the work. The helper sits at the tree's root level and
+`build-operations` and `build-server` do not reference it at all. So D1's consolidation is two jobs,
+not one — four directories that already share a surface, and two that never did — on top of the two
+renames and the proposal it records. Re-derive the importer set before scoping the work. The helper sits at the tree's root level and
 carries no underscore prefix — so nothing marks it as non-collectable, the existing
 `unique-fixture-basenames` doctor rule does not inspect it, and its own module docstring records that
 loading it through `load_script_module` **re-registers `_build_execute_factory` in `sys.modules`**,
@@ -64,7 +64,8 @@ a hazard `test/conftest.py`'s daemon-routing fixture then has to work around by 
 `__globals__` dicts rather than a module object.
 
 The **plan-lifecycle phase directories** — `phase-1-init` through `phase-4-plan`, plus `execute-task`,
-`manage-lifecycle`, `manage-personas`, `manage-plan-documents` — are each small, each stage a plan
+`manage-lifecycle`, `manage-personas`, `manage-plan-documents` and `manage-terminal-title` (the nine
+D2 names) — are each small, each stage a plan
 directory by hand, and none shares that staging with the others even though it is the same plan
 directory.
 
@@ -72,8 +73,9 @@ directory.
 
 The slice's shared contracts have shared fixtures: one build-extension fixture surface serving all six
 build directories, one plan-lifecycle staging fixture serving the phase directories. Its modules are
-within budget, its preambles resolve through the shared loaders, and the root-level helper that leaks
-a `sys.modules` registration is named, prefixed, and documented where the hazard is visible.
+within budget, its preambles resolve through the shared loaders, and both unprefixed root-level
+helpers are renamed so the doctor's own rule can see them — with the `sys.modules` registration hazard
+documented at the fixture that causes it.
 
 ## Deliverables
 
@@ -182,8 +184,8 @@ a `sys.modules` registration is named, prefixed, and documented where the hazard
 
 ## Expected surface
 
-Exactly these directories under `test/plan-marshall/`, plus the two named root-level modules and the
-one rename, and nothing else:
+Exactly these directories under `test/plan-marshall/`, plus the two named root-level test modules and
+the two root-level helper renames, and nothing else:
 
 - `build-gradle/`, `build-maven/`, `build-npm/`, `build-operations/`, `build-pyproject/`,
   `build-server/`
@@ -237,16 +239,13 @@ happen.
 
 **Executable.** `./pw verify` (the lane's build gate; this plan changes Python). Plus the
 `plugin-doctor test-conventions` scope over each directory in the slice, before and after, with the
-per-rule counts recorded. Invoke the **git-tracked** script — `.plan/execute-script.py` is
-git-ignored and absent from a fresh clone, so do not go looking for it:
-
-```bash
-python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py test-conventions --test-root {directory}
-```
-
-Confirm the argument spelling against that script's own `--help` before relying on it. If the doctor
-cannot be invoked, report the affected measurement **unavailable** rather than substituting a weaker
-check.
+per-rule counts recorded. Use the two-step recipe in
+`doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" — a **direct**
+call to `doctor-marketplace.py` fails with `ModuleNotFoundError: No module named '_dep_detection'`,
+because the script has no `sys.path` bootstrap and the generated executor is what supplies the
+`PYTHONPATH` it needs. The executor is git-ignored but its generator is tracked, so the recipe
+generates it first. If the generator itself cannot run, report the affected measurement
+**unavailable** rather than substituting a weaker check.
 
 **By reading — cold read, required for D5.** D5 rewrites text whose value is what a later reader takes
 from it, and the risk is not that too much history is removed but that the **invariant** is removed

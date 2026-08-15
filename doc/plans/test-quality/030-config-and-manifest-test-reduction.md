@@ -208,17 +208,22 @@ Exactly these directories under `test/plan-marshall/`, and nothing else:
 
 **Executable.** `./pw verify` (the lane's build gate; this plan changes Python). Plus the doctor's
 `test-conventions` scope over each of the six directories, before and after, with the per-rule counts
-recorded. Invoke the **git-tracked** script — `.plan/execute-script.py` is git-ignored and absent from
-a fresh clone, so do not go looking for it:
+recorded. Use the two-step recipe in `doc/plans/test-quality/README.md` § "Running the plugin-doctor
+test-conventions scope" — a **direct** call to `doctor-marketplace.py` fails with
+`ModuleNotFoundError: No module named '_dep_detection'`, because the script has no `sys.path`
+bootstrap and the generated executor is what supplies the `PYTHONPATH` it needs. The executor is
+git-ignored but its generator is tracked, so the recipe generates it first. If the generator itself
+cannot run, report the D5 measurement **unavailable** rather than substituting a weaker check.
 
-```bash
-python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py test-conventions --test-root test/plan-marshall/manage-config
-```
+**By reading — cold read, required for D5.** D5 rewrites text whose value is what a later reader takes
+from it, and the risk is not that too much history is removed but that the **invariant** is removed
+along with it. Dispatch the lane's pre-PR verification sub-agent with **five rewritten test modules and
+no other context** — not this plan, not the originals — and ask, for each of ten named tests: "What
+contract does this test pin, and why does it matter?" A test whose rewritten docstring cannot answer
+both has been over-stripped; restore the invariant (not the history) and re-read. Record the answers
+verbatim.
 
-Confirm the argument spelling against that script's own `--help` before relying on it. If the doctor
-cannot be invoked, report the D5 measurement **unavailable** rather than substituting a weaker check.
-
-**By reading.** Pick the three largest parametrized tables D1 produced and read each `ids=` list cold:
+**By reading — D1's tables.** Pick the three largest parametrized tables D1 produced and read each `ids=` list cold:
 a reader who has never seen the pre-collapse functions must be able to say what each row asserts from
 its id alone. An `ids=` list of `case0, case1, …` has moved the prose out without putting the meaning
 back, and fails this check.

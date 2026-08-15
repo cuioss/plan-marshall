@@ -193,16 +193,13 @@ nothing else:
 
 **Executable.** `./pw verify` (the lane's build gate; this plan changes Python). Plus the
 `plugin-doctor test-conventions` scope over each directory in the slice, before and after, with the
-per-rule counts recorded. Invoke the **git-tracked** script — `.plan/execute-script.py` is
-git-ignored and absent from a fresh clone, so do not go looking for it:
-
-```bash
-python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py test-conventions --test-root {directory}
-```
-
-Confirm the argument spelling against that script's own `--help` before relying on it. If the doctor
-cannot be invoked, report the affected measurement **unavailable** rather than substituting a weaker
-check.
+per-rule counts recorded. Use the two-step recipe in
+`doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" — a **direct**
+call to `doctor-marketplace.py` fails with `ModuleNotFoundError: No module named '_dep_detection'`,
+because the script has no `sys.path` bootstrap and the generated executor is what supplies the
+`PYTHONPATH` it needs. The executor is git-ignored but its generator is tracked, so the recipe
+generates it first. If the generator itself cannot run, report the affected measurement
+**unavailable** rather than substituting a weaker check.
 
 **By reading — cold read, required for D5.** D5 rewrites text whose value is what a later reader takes
 from it, and the risk is not that too much history is removed but that the **invariant** is removed

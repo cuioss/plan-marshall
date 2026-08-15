@@ -48,7 +48,7 @@ gap.
 — `conftest.create_marshal_json(base_dir, skill_domains=None, extra=None)`,
 `test/plan-marshall/manage-config/test_helpers.py::create_marshal_json(fixture_dir, config=None)`,
 and `test/plan-marshall/phase-6-finalize/test_triage_extension.py::create_marshal_json(fixture_dir, config)`
-— against roughly 231 call sites in ~22 modules. Which one a module gets depends on which it imported.
+— against roughly 231 call sites in ~21 modules. Which one a module gets depends on which it imported.
 Beyond it, ninety-odd modules inline a `plan.phase-6-finalize` config literal by hand. Every figure in
 this paragraph is a lead — re-derive it (`grep -rn 'create_marshal_json(' test --include=*.py`, minus
 the three definitions).
@@ -172,7 +172,7 @@ instead of six.
 - `test/plan-marshall/manage-config/test_helpers.py` → `_manage_config_fixtures.py` — D3 (rename)
 - `test/plan-marshall/phase-6-finalize/test_triage_extension.py` — D2 (remove the duplicate definition)
 - `test/test_shared_harness.py` — D5 (new; sibling of the existing `test_conftest_discipline.py`)
-- The ~23 importers of `test_helpers` and the ~231 call sites of `create_marshal_json` across ~22
+- The ~23 importers of `test_helpers` and the ~231 call sites of `create_marshal_json` across ~21
   modules — D2, D3 (import-line updates only; both counts are leads, re-derive them)
 - Up to ten modules across four or more subtrees — D6
 

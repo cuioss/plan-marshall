@@ -26,7 +26,8 @@ anything you are about to act on. The commands are stated so re-derivation is me
 | Median file size | ~323 lines | sort the `wc -l` output |
 | Files over 400 lines | ~309 (40%) — holding ~73% of all lines | `wc -l $(find test -name 'test_*.py') \| awk '$1>400'` |
 | Files over 1000 lines | ~74 | same, `$1>1000` |
-| Files using `@pytest.mark.parametrize` | ~179 of 770; ~497 decorators total | `grep -rn '@pytest.mark.parametrize' test --include=test_*.py \| wc -l` |
+| Files using `@pytest.mark.parametrize` | ~179 of 770 | `grep -rl '@pytest.mark.parametrize' test --include=test_*.py \| wc -l` |
+| `@pytest.mark.parametrize` decorators | ~497 | `grep -rn '@pytest.mark.parametrize' test --include=test_*.py \| wc -l` |
 | Hypothesis usage | **zero** | `grep -rn 'hypothesis' test --include=*.py` |
 | `Namespace(` constructions | ~2,900 across ~292 files | `grep -rn 'Namespace(' test --include=test_*.py \| wc -l` |
 | Local ad-hoc namespace builders | ~150 | `grep -rn 'def _ns\|def _make_ns\|def .*_ns(' test --include=test_*.py \| wc -l` |
@@ -132,6 +133,42 @@ re-assert the logic.
 helper module that collects zero tests is a silent no-op in the run), never a nested `conftest.py`,
 never a bare `_fixtures.py` or `_helpers.py`.
 
+## Running the plugin-doctor test-conventions scope
+
+Every plan in this epic measures itself with the doctor's `test-conventions` scope, so the invocation
+is stated **once, here**, verified to run.
+
+**Calling the script directly does not work.** `doctor-marketplace.py` has no `sys.path` bootstrap: its
+import chain reaches into a *different* skill's scripts directory (`_doctor_shared` → `_dep_detection`,
+which lives under `tools-marketplace-inventory`), so a bare
+`python3 marketplace/bundles/.../doctor-marketplace.py test-conventions` fails with
+`ModuleNotFoundError: No module named '_dep_detection'`. It needs a `PYTHONPATH` assembled from every
+`marketplace/bundles/*/skills/*/scripts` directory — which is precisely what the generated executor
+supplies, and what `test/conftest.py::_setup_marketplace_pythonpath` reconstructs for pytest.
+
+**The generated executor is git-ignored, but its generator is tracked.** So generate it once, then
+invoke through it — the same two steps `test/conftest.py` performs automatically at session start:
+
+```bash
+python3 marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py generate
+```
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace test-conventions --test-root {path}
+```
+
+`{path}` is `test/` for a whole-tree sweep, or one directory for a per-directory count. The whole-tree
+**rule-firing** sweep that plan `080` diffs before and after is the sibling subcommand `quality-gate`,
+not `test-conventions`:
+
+```bash
+python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marketplace quality-gate
+```
+
+Generating the executor writes only to the git-ignored `.plan/`, so it leaves the working tree clean
+and nothing to stage. If the generator itself cannot run, the measurement is genuinely **unavailable**
+— report it as such rather than substituting a weaker check.
+
 ### What "reduce the line count" means here
 
 Every reduction plan carries the same three-part done-when, and **all three must hold**:
@@ -159,7 +196,7 @@ The floor is a target, not a licence.
 
 | Plan | Surface | May run concurrently with |
 |---|---|---|
-| `010` | `marketplace/bundles/pm-dev-python/skills/pytest-testing/**`, `marketplace/bundles/plan-marshall/skills/persona-module-tester/**`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**`, `test/pm-plugin-development/plugin-doctor/test_analyze_test_conventions*.py` | `020` only |
+| `010` | `marketplace/bundles/pm-dev-python/skills/pytest-testing/**`, `marketplace/bundles/plan-marshall/skills/persona-module-tester/**`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**`, `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` and the one new module it adds beside them | `020` only |
 | `020` | `test/conftest.py`, `test/_shared/**`, `test/README.md`, and the ≤10 modules it converts as proof-of-use | `010` only |
 | `030`–`080` | one disjoint slice of `test/` each, listed in the plan | each other, once `010` **and** `020` have landed |
 
@@ -180,11 +217,15 @@ to `test/plan-marshall/` between authoring and a run belongs to **no** plan and 
 skipped, with nothing positioned to notice. Each reduction plan therefore carries this as a **gating,
 halting derivation**, run before its first deliverable:
 
-1. List every directory under `test/plan-marshall/*/` and every top-level entry under `test/`.
-2. Confirm each appears in **exactly one** of `030`–`080`'s Expected surface — allowing for the two
-   deliberate exclusions, `test/_shared/` (plan `020`'s) and `test/fixtures/` (holds no `.py`).
-3. A directory in **two** lists, or in **none**, is a partition defect: **halt and report it** rather
-   than claiming or skipping it unilaterally. A directory claimed by no plan is the dangerous case,
+1. List every directory under `test/plan-marshall/*/`, **every file at the root of
+   `test/plan-marshall/`**, and every top-level entry under `test/`. The root-level files are not an
+   afterthought — they are exactly the category a slice boundary is most likely to mis-assign, since
+   they sit in one plan's tree while being imported from another's.
+2. Confirm each appears in **exactly one** of `030`–`080`'s Expected surface, allowing for these
+   three deliberate exclusions and no others: `test/_shared/` and `test/conftest.py` (both plan
+   `020`'s), and `test/fixtures/` (holds no `.py`).
+3. An entry in **two** lists, or in **none**, is a partition defect: **halt and report it** rather
+   than claiming or skipping it unilaterally. An entry claimed by no plan is the dangerous case,
    because it looks exactly like a clean run.
 
 Independently, the six slices' line totals must sum to the corpus total
@@ -204,6 +245,7 @@ reduction plan restates them:
   there. The neighbouring directory belongs to a concurrently-running sibling.
 
 One narrow carve-out, because two plans would otherwise collide: plan `010` owns
-`test/pm-plugin-development/plugin-doctor/test_analyze_test_conventions*.py` (it ships the tests for
+`test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` — the modules that already
+test this scope's three rules — plus the one new module it adds beside them (it ships the tests for
 the rules it adds). Plan `080` owns the rest of `test/pm-plugin-development/**` and excludes those
 modules explicitly.

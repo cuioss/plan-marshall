@@ -161,8 +161,23 @@ check rather than against a reviewer's memory.
      `incident-reference-in-docs` and `lesson-id-in-skill-prose` analyzers already use over
      `marketplace/bundles/**` rather than writing a second matcher.
    Ship the tests in `test/pm-plugin-development/plugin-doctor/test_analyze_test_conventions_budget.py`
-   (a new module — this plan owns `test_analyze_test_conventions*.py` and nothing else under that
-   directory), each rule with a positive fixture that fires it and a negative control that does not.
+   — a **new** module beside the three that already test this scope's existing rules
+   (`test_test_conventions_rule1.py`, `rule2.py`, `rule3.py`), which this plan also owns. Note that
+   **no file matching `test_analyze_test_conventions*.py` exists** — do not go looking for one; the
+   existing modules use the `test_test_conventions_rule{N}.py` spelling, and the new module should
+   follow the convention its siblings actually use rather than the one this sentence once assumed.
+   Give each rule a positive fixture that fires it and a negative control that does not.
+
+   **The doctor has a provenance contract for new rules, and it applies here.**
+   `references/rule-provenance.md` § "Provenance contract for new rules" requires, per rule: a
+   corpus-feasibility check recording the legitimate-occurrence count for the pattern; a **positive
+   unit test that actually fires the rule** (a rule firing on no positive test is presumed dead and
+   must be dropped or justified — mechanically enforced by the suite-coverage invariant in
+   `test_zero_match_suite_coverage.py`); a row in `references/rule-catalog.md`; a row in the
+   `rule-provenance.md` table; and a source citation. Complete all five per rule. Note the tension the
+   citation requirement creates with D3 — a citation may be a lesson id, and D3 forbids lesson ids in
+   *test prose*, not in the doctor's own provenance table, which is where they belong. Do not resolve
+   that by dropping the citation.
 
    Landing four `warning` rules into this scope **falsifies two blanket statements in the standards
    doc it lands in**: `doctor-test-conventions.md` currently opens its § Rules with "All three rules
@@ -175,13 +190,14 @@ check rather than against a reviewer's memory.
    severity statements are corrected to match the shipped rule set, and the run reports the per-rule
    finding counts.
 
-   > **Invoking the doctor in this lane.** The generated executor `.plan/execute-script.py` is
-   > **git-ignored and absent from a fresh clone** — do not go looking for it, and do not cite it as
-   > the way to run this. Call the git-tracked script directly from the repository root:
-   > `python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py test-conventions --test-root test/`.
-   > Confirm the argument spelling against that script's own `--help` before relying on it; if the
-   > script cannot be invoked directly, report the deliverable **blocked** rather than substituting a
-   > weaker check.
+   > **Invoking the doctor.** Calling `doctor-marketplace.py` directly fails with
+   > `ModuleNotFoundError: No module named '_dep_detection'` — it has no `sys.path` bootstrap and its
+   > import chain reaches into another skill's scripts directory. The generated executor supplies the
+   > `PYTHONPATH` it needs; the executor is git-ignored but **its generator is tracked**, so generate
+   > it once and invoke through it. `doc/plans/test-quality/README.md` § "Running the plugin-doctor
+   > test-conventions scope" carries the verified two-step recipe and the exact commands — follow it
+   > there rather than reconstructing it. If the generator itself cannot run, report the deliverable
+   > **blocked** rather than substituting a weaker check.
 
 6. **D6 — Record the two decisions this run may not take** — in the run report, as proposals for the
    operator, not as changes:
@@ -235,6 +251,8 @@ check rather than against a reviewer's memory.
 - `marketplace/bundles/pm-dev-python/skills/pytest-testing/SKILL.md` — Quick Reference rows (D4)
 - `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py` — D5
 - `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md` — D5
+- `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md` — D5 (one row per new rule, required by the provenance contract)
+- `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-provenance.md` — D5 (one row per new rule, with its class and source citation)
 - `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/SKILL.md` — Workflow 10 and the rule-index list (D5)
 - `test/pm-plugin-development/plugin-doctor/test_analyze_test_conventions_budget.py` — D5 (new)
 
@@ -258,12 +276,9 @@ Nothing under `test/` other than that one new module. Nothing under `test/confte
 
 **Executable.** `./pw verify` (the lane's build gate — this plan changes Python under
 `marketplace/bundles/`, so the gate is armed). Additionally run the doctor scope itself over the live
-tree and record the per-rule finding counts in the report, invoking the **git-tracked** script rather
-than the git-ignored executor (see the note under D5):
-
-```bash
-python3 marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/doctor-marketplace.py test-conventions --test-root test/
-```
+tree and record the per-rule finding counts in the report, using the two-step recipe in
+`doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" (see the note
+under D5 for why a direct call fails), with `--test-root test/`.
 
 A rule reporting **zero** findings over a tree the census says violates it is a broken detector, not a
 clean tree — treat a zero as a failure to investigate, not as a pass.
@@ -290,7 +305,8 @@ Record the sub-agent's answers verbatim in the report.
   concurrently with each other and must both land before any of `030`–`080` starts. See
   `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time".
 * **The one shared file with plan `080`.** Plan `080` refactors `test/pm-plugin-development/**` and
-  explicitly excludes `test_analyze_test_conventions*.py`, which this plan owns. Do not touch any other
+  explicitly excludes the `test_test_conventions_rule*.py` modules and the new module this plan adds
+  beside them, all of which this plan owns. Do not touch any other
   module under that directory.
 * **Plugin cache sync.** This plan edits `marketplace/bundles/`, so a local `/sync-plugin-cache` is
   owed on a developer machine afterwards. The lane cannot run it (it reads the git-ignored `target/`
