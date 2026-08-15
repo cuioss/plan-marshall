@@ -1,6 +1,6 @@
 # Run report — 210-native-coordinate-resolvers (run 01)
 
-**Date (UTC):** 2026-08-15    **Branch:** `claude/native-coordinate-resolvers-q919yv`    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-15    **Branch:** `claude/native-coordinate-resolvers-q919yv`    **PR:** [#1238](https://github.com/cuioss/plan-marshall/pull/1238)    **Outcome:** completed
 
 ## Skills loaded
 
@@ -258,18 +258,36 @@ D0 is therefore confirmed by a second party, not merely asserted by the run that
 
 ## Reviewer participation
 
-_Pending — PR not yet opened._
+Expected population derived from configuration — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(`coderabbit.md`, `pr-agent.md`, `sourcery.md`). **M = 3.** Not transcribed from any list.
 
-Expected population derived from configuration (the `author_login` of each
-`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc):
-`coderabbitai`, `cuioss-review-bot`, `sourcery-ai` — M = 3.
+Verdicts derived from the stored comment bodies across all three surfaces — `get_comments` (issue),
+`get_reviews` (review summaries), `get_review_comments` (inline threads) — never from a check state. The
+inline surface returned **0 threads**, so no reviewer filed a per-line finding.
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Issue comment "PR Reviewer Guide 🔍" over the diff: "PR contains tests", "No security concerns identified", "No major issues detected" — an explicit nothing-to-report verdict, which counts as a review. |
+| `coderabbitai` | `rate-limited` | Issue comment carrying **only** a quota refusal: "Review limit reached … you've reached your PR review limit, so we couldn't start this review. Next review available in: 20 minutes." It engaged but did not review this diff. |
+| `sourcery-ai` | `rate-limited` | Review-summary body carrying **only** a quota refusal: "you have reached your weekly rate limit of 500000 diff characters." Its `Sourcery review` check concluded `skipped`, but the verdict comes from the body, not the check. |
+
+**Coverage: 1 of 3.** Neither shortfall was caused by this run — no push aborted a review; both are
+account-level quotas (CodeRabbit's a rolling per-developer window, Sourcery's a weekly diff-character
+budget). The Step 8 shortfall disclosure **fired** and is recorded under the merge gate below.
+
+**Re-request attempted rather than banked.** CodeRabbit's notice named a ~20-minute window
+(from 12:50:54Z), so its review was re-requested rather than reading the refusal as coverage; the outcome of
+that re-request is recorded in the merge-gate section. Sourcery's is a weekly budget that will not reset
+inside this run, so no re-request was attempted for it.
 
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
-- **Wall-clock:** ~1h05m from first commit (`c820514`, 10:45:02Z) to the documentation commit
-  (`fc73d6a`, 11:15:36Z) plus the preceding investigation and the verification pass; source is the git
-  committer timestamps plus the session's own ordering.
+- **Wall-clock:** ~2h30m end to end — first commit `c820514` at 10:45:02Z, PR opened 12:50Z, merge gate
+  ~13:10Z — plus the preceding investigation (the D0 clones and measurements) which predates the first
+  commit. Source: git committer timestamps and the PR's own check-run timestamps. Roughly 30 minutes of that
+  is the four full `./pw verify` runs at ~7 minutes each.
 - **Population:** this single Claude Code cloud session's activity. ⛔ **Not comparable to a plan-marshall
   `metrics.toon` total**, which counts an orchestrator-plus-agent dispatch tree under plan-marshall's own
   per-task billing boundary. This run has no such boundary — one interactive session plus one verification
@@ -277,11 +295,84 @@ Expected population derived from configuration (the `author_login` of each
 
 ## Contract check (Step 9)
 
-_Pending._
+Re-read the lane skill and checked each step against what actually happened — both that the step ran and
+that its artifact exists.
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **done** | Named above, with the not-loaded set and its reason. Loaded by bundle path; the plugin notation was not attempted. |
+| 2 Branch | **done** | Harness-assigned `claude/native-coordinate-resolvers-q919yv` kept as-is (not run-created, so the closed prefix set does not govern it). It existed locally but **not** on `origin`, so it was pushed as the run's first action, before any edit. |
+| 3 Plan directory | **done** | `doc/plans/code-intelligence-substrate/210-native-coordinate-resolvers/plan.md` exists via `git mv` (history followed), numeric prefix preserved as the directory name. The first-instruction block was present and unmodified — checked, not assumed. |
+| 4 Implement | **done** | Six commits, every one carrying the `Co-Authored-By: Claude` trailer and no "Generated with" footer. All six deliverables addressed. |
+| 4 Per-commit gate | **done** | Every commit touching `*.py` was preceded by a clean gate (`./pw quality-gate` for the first, full `./pw verify` thereafter), each read from the tools' own output — `ruff … All checks passed!`, `mypy … Success`, `SPDX-header check passed` — not from an exit code. The two commits touching no source (the plan move and the first report commit) correctly ran none. |
+| 4 Pushed | **done** | `git status -sb` reports no `ahead`. Every commit was pushed immediately; the branch was never more than one commit ahead of `origin`. |
+| 5 Build gate | **done** | Git-derived verdict (10 `*.py` files at HEAD) and the final `./pw verify` result recorded, with an explicit note that earlier runs' figures do not cover the shipped tree. |
+| 6 Verification sub-agent | **done** | Two passes (re-dispatched after pass 1's fixes, as the contract requires). 34 findings, 32 fixed, 2 rejected with reasons — all recorded per instance. |
+| 7 PR cycle | **done** | PR [#1238](https://github.com/cuioss/plan-marshall/pull/1238). All three comment surfaces read; every comment dispositioned. No `skip-bot-review` label — correct, since the diff touches `*.py` and `marketplace/bundles/**`. |
+| 8 Merge gate | **done** | Conditions 1–3 met (see below); condition 4's shortfall disclosed. |
+| 8 Bridge | **done** | `git diff --name-only origin/main...HEAD -- doc/plans/` returns exactly this plan's own `plan.md` and `report-01.md` — no ledger, no status file, no other plan's directory. The report carries the PR number and per-deliverable outcome for the orchestrator to collect. |
+| 9 This check | **done** | This table. |
+| 9 What have we learned | **done** | Below — one proposal, presented to the operator and **not** self-approved. |
+
+**No `/sync-plugin-cache` is owed.** It is a machine-local build step reading the git-ignored `target/` and
+writing `~/.claude/`; a cloud run neither performs nor records it, even though this run edited
+`marketplace/bundles/`.
+
+**GitHub access path used:** the GitHub MCP server (the cloud path). No `gh` CLI is present in this session.
+
+### Merge-gate conditions
+
+1. **Required contexts green on the head SHA.** `verify / conclusion`, `verify / verify`, `verify / gate`,
+   `review / review`, `dependency-review`, `generate-check` all `success`. `Sourcery review` concluded
+   `skipped` and `auto-merge` `skipped`; neither is failing or absent-from-head, and required-ness is read
+   from GitHub's own `mergeable_state` computation rather than from this list.
+2. **Every PR comment handled.** Three comments exist: one clean review (nothing to action), and two quota
+   refusals (nothing actionable, and no thread to answer). Zero inline review threads.
+3. **Report finalized and pushed as the last pre-merge commit** — this commit.
+4. **Shortfall disclosed** (a disclosure, not a gate): coverage is **1 of 3**, stated in words to the
+   operator before arming.
 
 ## What have we learned (Step 9)
 
-_Pending._
+**One proposal, with evidence from this run. Presented to the operator; not self-approved, and not shipped.**
+
+### Proposal — the report's gate figures must be re-derived at finalization, not carried forward
+
+**What happened.** The lane's § Report requires a "Build gate" section stating "the build result". It does
+not say *which* run's result when the gate runs more than once. In this run it ran three times (after the
+implementation commit, the documentation commit, and the review-fix commit). The report was written after
+the first, and its figures — `19709 passed`, `mypy(test) … 739 source files` — were carried forward
+unchanged. Verification pass 2 caught it: those numbers are provably the pre-Gradle-test tree, and the
+report's *own* findings table, added in a later commit, described a gate run those figures could not
+include. The report presented stale evidence for a tree it did not cover, in the exact section a collector
+reads to decide whether the run's build claim is trustworthy.
+
+This is not a one-off slip. The contract *requires* writing the report as the run proceeds ("not
+reconstructed at the end"), and it *also* requires the report to land as the last pre-merge commit. Anything
+observed early and restated late is therefore structurally exposed to this, and the gate figures are the
+most consequential instance because they are the run's headline evidence.
+
+**Concrete proposed edit** — in `.claude/skills/cloud-plan-lane/SKILL.md` § Report, extend the Build gate
+bullet:
+
+> ## Build gate
+> The `git diff --name-only origin/main...HEAD -- '*.py'` verdict, and the build result — or
+> "no Python changes, build skipped".
+>
+> **Re-derive both at finalization.** The gate may have run several times; the figures recorded here MUST
+> come from the LAST run, over the tree the report ships with, and the diff verdict MUST be re-derived at
+> HEAD. A figure observed earlier in the run and carried forward describes a tree that no longer exists —
+> and because Step 8 condition 3 makes the report the last pre-merge commit, an early figure is guaranteed
+> not to cover the commits that followed it. State the count of gate runs when it exceeds one.
+
+**Why this is worth a contract change rather than a lesson.** The failure is silent and passes every gate: a
+stale-but-green figure looks exactly like a fresh-but-green one, so nothing but an explicit re-derivation
+rule catches it. It is the same "a count derived by looking is a sample — re-derive it at the moment of the
+claim" principle the contract already states under § Rules that outrank convenience; this makes it binding
+where it most matters instead of leaving it as general advice.
+
+**Operator decision: pending.** Per § Step 9 this would ship as a separate `chore/` PR touching only the
+skill, never in this plan's PR, and never on the run's own authority. No such PR was opened.
 
 ## Residue
 
