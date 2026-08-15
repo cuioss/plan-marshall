@@ -37,6 +37,8 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
       - "Review limit reached"
     refusal_size_patterns:            # subset of refusal_patterns whose CAUSE is diff-size
       - "your pull request is larger than the review limit of"
+    refusal_size_cap_patterns:        # regexes extracting the CAP the size refusal states
+      - "review limit of ([0-9][0-9,]*(?: [A-Za-z]+){0,2})"
     contentless_review_markers:
       - "## Review Guide"
       - "**Nothing to report**"
@@ -51,8 +53,9 @@ Data-block shape (one per ``standards/{bot_kind}.md``)::
 
 Stdlib-only (no PyYAML): the block is a tightly-constrained subset — top-level
 scalars, lists (``ignore_patterns``, ``refusal_patterns``, ``refusal_size_patterns``,
-``contentless_review_markers``, ``actionable_content_markers``,
-``participation_evidence``, ``rate_limit_eta_patterns``), and one nested map
+``refusal_size_cap_patterns``, ``contentless_review_markers``,
+``actionable_content_markers``, ``participation_evidence``,
+``rate_limit_eta_patterns``), and one nested map
 (``severity_map``) — parsed by a small deterministic reader below. Load order is the sorted
 ``standards/*.md`` filename order, so ``bot_kinds()`` is stable across runs.
 """
@@ -335,6 +338,50 @@ class BotRegistry:
         refusal = set(self.refusal_patterns(bot_kind))
         return [marker for marker in declared if marker in refusal]
 
+    def refusal_size_cap_patterns(self, bot_kind: str) -> list[str]:
+        """Return the per-bot CAP-extraction regexes for a size refusal (``[]`` if absent).
+
+        The exact counterpart of :meth:`rate_limit_eta_patterns`, one axis over: an
+        awaitable refusal states WHEN it reopens, a structural one states HOW BIG the
+        diff was allowed to be. Each entry is a regex applied to a body already
+        recognized as a size-caused refusal, and its first capturing group is the cap
+        the notice itself stated.
+
+        The value is taken from the notice rather than declared as a number here on
+        purpose. A declared figure is an assertion that goes stale silently the moment
+        the provider changes its budget, and it cannot be reconciled against the diff
+        that was actually refused; the notice's own figure is first-party evidence
+        captured at the moment of refusal, which is what makes the recorded gap
+        auditable rather than asserted. It is the same reason
+        :meth:`refusal_patterns` keeps its size marker deliberately number-free — the
+        marker must survive a changed budget, so the budget is read, never encoded.
+
+        An empty list — or a notice that states no figure — yields ``''`` at the
+        extraction seam, which the consumer reports as an UNKNOWN cap. It never
+        reports a default, because a wrong cap is worse than an absent one: a reader
+        auditing the gap against the real diff size would be reconciling against a
+        number nobody observed.
+        """
+        value = self._by_kind.get(bot_kind, {}).get('refusal_size_cap_patterns', [])
+        return list(value) if isinstance(value, list) else []
+
+    def has_structural_size_cap(self, bot_kind: str) -> bool:
+        """Whether ``bot_kind`` declares a diff-SIZE ceiling it refuses over.
+
+        DERIVED from :meth:`refusal_size_patterns` rather than stored as its own
+        flag, so the disclosure below can never disagree with the classification
+        above — one declaration, two readers. A bot declaring a size marker is a bot
+        that will refuse a diff over its ceiling; a bot declaring none refuses only
+        for rate/budget quotas.
+
+        This is the ADVANCE-disclosure predicate: it is answerable before any review
+        is requested, because it reads the registry rather than an observed refusal.
+        A structural ceiling is a property of the reviewer, not of the run, so a plan
+        whose footprint will exceed it can know at outline time that this reviewer
+        will not review it — as opposed to discovering it at the merge gate.
+        """
+        return bool(self.refusal_size_patterns(bot_kind))
+
     def contentless_review_markers(self, bot_kind: str) -> list[str]:
         """Return the literals a CONTENTLESS review body carries (``[]`` if unknown/absent).
 
@@ -489,6 +536,16 @@ def refusal_patterns(bot_kind: str) -> list[str]:
 def refusal_size_patterns(bot_kind: str) -> list[str]:
     """The refusal markers whose cause is a diff-SIZE ceiling for ``bot_kind`` (``[]`` if absent)."""
     return REGISTRY.refusal_size_patterns(bot_kind)
+
+
+def refusal_size_cap_patterns(bot_kind: str) -> list[str]:
+    """The CAP-extraction regexes for ``bot_kind``'s size refusal (``[]`` if absent)."""
+    return REGISTRY.refusal_size_cap_patterns(bot_kind)
+
+
+def has_structural_size_cap(bot_kind: str) -> bool:
+    """Whether ``bot_kind`` declares a diff-SIZE ceiling it refuses over."""
+    return REGISTRY.has_structural_size_cap(bot_kind)
 
 
 def contentless_review_markers(bot_kind: str) -> list[str]:

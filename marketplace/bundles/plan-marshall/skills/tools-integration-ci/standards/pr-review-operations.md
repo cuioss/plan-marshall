@@ -245,7 +245,7 @@ When the list is non-empty, the just-observed comment growth is a status notice 
 Every review operation on this surface feeds ONE downstream classification: the closed
 non-participation taxonomy owned by
 [`automatic-review/standards/bot-participation-contract.md`](../../automatic-review/standards/bot-participation-contract.md).
-That taxonomy has **nine** non-participation members, and this section records only which observation
+That taxonomy has **ten** non-participation members, and this section records only which observation
 on this surface feeds which member — the semantics, the severity rules, and the closure statement live
 in the contract and are not restated here (a member fed only by another surface, such as `declined`
 from the re-review await, is therefore absent from the table below).
@@ -254,7 +254,8 @@ from the re-review await, is therefore absent from the table below).
 |--------|--------|
 | `participated` / `participated_but_empty` | `github_pr fetch_findings` → `participated_bots[]` (evidence-typed publish shapes) |
 | `participated_stale` | `github_pr fetch_findings` → `stale_participation_bots[]` (publish shape matched, `participation_requires_update` currency test failed) |
-| `refused_awaitable` / `refused_hard` / `refused_unknown` | `github_pr fetch_findings` → `refused_bots[]`, unioned with `pr wait-for-comments` → `rate_limited_bots[]`; the split comes ONE-TO-ONE from each bot's three-valued registry `rate_limit_class` (`awaitable_window` / `hard_quota` / `unknown`) |
+| `refused_structural` | `github_pr fetch_findings` → `refused_bots[]` with an observed `refused_causes[]` cause of `size` (the diff is over a per-PR ceiling); the cause decides this member whatever the bot's `rate_limit_class` says. Its stated ceiling arrives alongside in `refused_size_caps[]` |
+| `refused_awaitable` / `refused_hard` / `refused_unknown` | `github_pr fetch_findings` → `refused_bots[]`, unioned with `pr wait-for-comments` → `rate_limited_bots[]`, for every refusal whose cause is NOT `size`; the split then comes ONE-TO-ONE from each bot's three-valued registry `rate_limit_class` (`awaitable_window` / `hard_quota` / `unknown`) |
 | `in_progress` | `github_pr bot_completion` → the non-terminal check state at the poll bound |
 | `not_triggered` | `checks pull-request-runs` → `not_triggered` (PR-wide: no `pull_request`-event run exists at all) |
 | `absent` | no observation of any kind — the fail-closed fall-through |
@@ -266,6 +267,12 @@ consumer must not flatten them back together:
   **re-trigger** the review.
 - `not_triggered` — nothing ran on account of the PR, so no bot was ever asked. Remedy: **trigger** the
   review at all.
+
+A third, `refused_structural`, refines the **refusal** branch the same way and for the same reason: the
+other three refusal members describe a limit that moves, so their remedy set is *wait or accept*, while
+a diff-size ceiling does not move and its remedy set is *split, accept, or disable this reviewer for
+this PR*. Flattening it into a temporal member does not merely mislabel it — it offers the operator a
+wait that is guaranteed not to work.
 
 `absent`, by contrast, means a reviewer was asked and did not answer — remedy: **escalate** the
 non-participation. A consumer that renders all three as "the bot did not review" prescribes escalation

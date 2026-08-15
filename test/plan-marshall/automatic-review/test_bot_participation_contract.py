@@ -115,6 +115,7 @@ _NON_PARTICIPATION_MEMBERS = (
     rc.STATE_REFUSED_AWAITABLE,
     rc.STATE_REFUSED_HARD,
     rc.STATE_REFUSED_UNKNOWN,
+    rc.STATE_REFUSED_STRUCTURAL,
     rc.STATE_PARTICIPATED_BUT_EMPTY,
     rc.STATE_DECLINED,
     rc.STATE_PARTICIPATED_STALE,
@@ -771,9 +772,19 @@ _NON_LIST_FLAG_COVERAGE = {
     ),
     '--refused-causes': (
         'the pair-form CAUSE overlay (bot_kind:cause) — a --*-causes flag OUTSIDE the '
-        '--*-bots family, and ADVISORY (it names the size-vs-quota remedy but gates '
-        'nothing and changes no member); its CLI boundary, the refusal_causes[] output, '
-        'and the malformed-shape rejection are owned by test_review_completeness.py'
+        '--*-bots family. STATE-DETERMINING for a size cause (it resolves the bot to '
+        'refused_structural whatever its rate_limit_class says) and advisory for every '
+        'other; it gates nothing either way. Its CLI boundary, the refusal_causes[] '
+        'output, and the malformed-shape rejection are owned by '
+        'test_review_completeness.py, and the structural member it can assign is swept '
+        'over the whole bot population by the taxonomy parametrize'
+    ),
+    '--refusal-size-caps': (
+        'the pair-form CAP overlay (bot_kind:cap) — a --*-caps flag OUTSIDE the '
+        '--*-bots family, carrying the ceiling a structural refusal stated so the gap '
+        'is auditable against the measured diff size. Purely reported: it assigns no '
+        'member and gates nothing. Its CLI boundary, the cap column in refusal_causes[], '
+        'and the unknown-cap rendering are owned by test_structural_refusal.py'
     ),
 }
 

@@ -217,6 +217,47 @@ def refusal_cause(body: str, bot_kind: str | None = None) -> str:
     return REFUSAL_CAUSE_QUOTA
 
 
+def refusal_size_cap(body: str, bot_kind: str | None = None) -> str:
+    """Return the diff-size CAP ``body`` states, or ``''`` when it states none.
+
+    The structural counterpart of :func:`_extract_rate_limit_eta`, and deliberately
+    its mirror image: an awaitable refusal states WHEN its window reopens, a
+    structural one states HOW BIG the diff was allowed to be. Both figures are read
+    off the notice through per-bot registry regexes rather than encoded here, so no
+    bot-name literal and no budget figure appears in this path.
+
+    The cap is what makes a recorded coverage gap AUDITABLE — it can be reconciled
+    against the diff that was actually refused — rather than merely asserted. That is
+    why it is extracted from the bot's own notice at the moment of refusal instead of
+    being declared as a constant: a declared figure goes stale silently when the
+    provider changes its budget, and nothing would detect the drift.
+
+    Returns ``''`` for a bot that declares no cap pattern, for a notice that states
+    no figure, and for a body that is not a size refusal at all. The caller reports
+    an empty cap as UNKNOWN and never substitutes a default — a cap nobody observed
+    would make the gap look audited when it was not. A malformed registry pattern is
+    skipped rather than raised, matching the ETA extractor: a bad registry edit must
+    not break the producer's return path.
+    """
+    if not body or not bot_kind:
+        return ''
+    for pattern in bot_registry.refusal_size_cap_patterns(bot_kind):
+        try:
+            match = re.search(pattern, body, re.IGNORECASE)
+        except re.error:
+            continue
+        if match is None:
+            continue
+        captured = (match.group(1) if match.groups() else match.group(0)).strip()
+        # Commas are stripped because the cap crosses a COMMA-SEPARATED CLI boundary
+        # (``--refusal-size-caps "bot:cap"``), where a thousands separator would split
+        # one record into two malformed ones. Removing it also leaves a figure that
+        # compares directly against a measured diff size, which is the whole point of
+        # recording it.
+        return captured.replace(',', '')
+    return ''
+
+
 def _extract_rate_limit_eta(body: str, bot_kind: str) -> str:
     """Return the reset ETA ``bot_kind`` stated in ``body``, or ``''`` when none.
 
