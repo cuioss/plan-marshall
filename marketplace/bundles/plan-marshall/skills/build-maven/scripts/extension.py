@@ -205,6 +205,18 @@ class BuildExtension(BuildExtensionBase, DerivationResolverBase):
         """
         return 'maven'
 
+    def derivation_file_patterns(self) -> list[str]:
+        """Return the build descriptors this resolver's coordinate join reads.
+
+        Gradle's descriptors are declared here too, because Gradle rides this
+        same join rather than registering a resolver of its own — see the
+        contract's "Gradle rides the Maven join".
+
+        Descriptive metadata for the resolver-configuration menu, never a filter
+        — see ``DerivationResolverBase.derivation_file_patterns``.
+        """
+        return ['**/pom.xml', '**/build.gradle', '**/build.gradle.kts']
+
     @staticmethod
     def _coordinate_owners(derived_by_name: dict) -> tuple[dict[str, str], list[str]]:
         """Map each UNAMBIGUOUS ``groupId:artifactId`` coordinate to its module.

@@ -474,7 +474,7 @@ class Extension(ExtensionBase):
 
 ## Canonical invocations
 
-The canonical argparse surface for the skill's CLI entry-points, `extension_discovery.py` and `configurable_contract.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for the skill's CLI entry-points, `extension_discovery.py`, `configurable_contract.py`, and `extension_api.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
 ### apply-config-defaults
 
@@ -493,6 +493,18 @@ python3 .plan/execute-script.py plan-marshall:extension-api:extension_discovery 
 ```
 
 Enumerates every component declaring `implements: {EXT_POINT}` — scans every bundle's `skills/*/SKILL.md`, the phase-6-finalize `workflow/*.md` + `standards/*.md` step docs, and project-local `.claude/skills/finalize-step-*/SKILL.md`. Global discovery; takes no project-dir / plan-id routing.
+
+### extension_api — derivation-resolvers list
+
+```bash
+python3 .plan/execute-script.py plan-marshall:extension-api:extension_api derivation-resolvers list
+```
+
+Reports every **discovered** Axis-C derivation resolver joined against the machine-local
+`derivation_resolvers` binding — one `{id, origin, enabled, configured, file_patterns}` record per
+resolver, sorted by id, plus `count` and `enabled_count`. This is the roster the
+`marshall-steward` resolver-configuration menu renders. Discovery is deliberately **not** filtered by
+the binding: a disabled resolver must still be listed for the menu to offer re-enabling it.
 
 ### configurable_contract — parse
 

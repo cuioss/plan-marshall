@@ -45,6 +45,7 @@ into by multiple inheritance:
 | A | `discover_modules()` | Discovers the `documentation` module when `doc/` (or `docs/`) holds `.adoc`/`.md` files **at any depth** — a nested-doc project has the same discovery seat as a top-level one |
 | D | `path_attributor_id()` / `claim_paths()` | Claims the documentation corpus for the `documentation` module |
 | C | `derivation_resolver_id()` / `derive_edges()` | Derives module edges from cross-document references and reports the unresolvable ones |
+| C | `derivation_file_patterns()` | Declares the file patterns this resolver derives from (`['**/*.adoc', '**/*.md']`). Descriptive metadata rendered by the resolver-configuration menu, never a filter: activation is bound by resolver **id** in the machine-local `derivation_resolvers` section |
 
 ## Documentation surface ownership
 

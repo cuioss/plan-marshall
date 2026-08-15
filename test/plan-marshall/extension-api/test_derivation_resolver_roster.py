@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# ruff: noqa: I001
+"""Tests for the resolver roster behind the configuration menu.
+
+``extension_api.list_derivation_resolvers()`` joins three surfaces the menu
+needs and cannot obtain from any one of them alone: the DISCOVERED resolvers
+(``discover_derivation_resolvers``), the machine-local activation binding
+(``run_config``), and each resolver's own declared file patterns
+(``derivation_file_patterns``).
+
+The properties pinned here:
+
+* **The roster is not pruned by the binding.** A disabled resolver must still be
+  listed, or the menu has no way to offer re-enabling it.
+* **``enabled`` and ``configured`` stay distinct.** "Active because nobody
+  changed it" and "active on purpose" are different facts, and collapsing them
+  would hide which resolvers the operator has actually decided about.
+* **The round-trip persists** — the plan's D1 is verified by changing a binding
+  and re-reading it through the roster, not by the menu rendering.
+* **File patterns come from the resolver**, so a menu can never carry a
+  transcribed list that outlives the resolver it describes.
+* **Every failure degrades to a truthful answer**, never to an error or an
+  invented one.
+
+Resolvers are injected by monkeypatching ``extension_discovery``, matching the
+seam's own tests — the deferred import does a fresh attribute lookup per call.
+
+⚠ The patch target is resolved from ``sys.modules`` at patch time, NOT captured
+by a module-level ``import``. A sibling test in this directory loads
+``extension_discovery.py`` through ``load_script_module``, which re-registers a
+FRESH module object in ``sys.modules``; a reference captured at collection time
+is then stale, and patching it silently does nothing. These tests passed in
+isolation and failed in the full suite until the lookup was deferred.
+"""
+
+import sys
+from argparse import Namespace
+
+import extension_api
+import pytest
+import run_config
+
+
+def _live(module_name: str):
+    """Return the module object currently registered under *module_name*."""
+    return sys.modules[module_name]
+
+
+class _StubResolver:
+    """A resolver declaring an id and a file domain."""
+
+    def __init__(self, resolver_id: str, patterns=None):
+        self.resolver_id = resolver_id
+        self._patterns = patterns if patterns is not None else []
+
+    def derivation_resolver_id(self) -> str:
+        return self.resolver_id
+
+    def derive_edges(self, derived_by_name, enriched_by_name):
+        return [], []
+
+    def derivation_file_patterns(self) -> list[str]:
+        return self._patterns
+
+
+def _register(monkeypatch, *resolvers: _StubResolver) -> None:
+    records = [
+        {'origin': f'bundle-{r.resolver_id}', 'id': r.resolver_id, 'module': r} for r in resolvers
+    ]
+    monkeypatch.setattr(_live('extension_discovery'), 'discover_derivation_resolvers', lambda: records)
+
+
+@pytest.fixture
+def roster(monkeypatch):
+    _register(
+        monkeypatch,
+        _StubResolver('python', ['**/*.py']),
+        _StubResolver('markdown', ['**/*.md']),
+    )
+
+
+def _by_id(result: dict) -> dict:
+    return {entry['id']: entry for entry in result['resolvers']}
+
+
+# ---------------------------------------------------------------------------
+# Shape
+# ---------------------------------------------------------------------------
+
+
+def test_lists_every_discovered_resolver_sorted_by_id(plan_context, roster):
+    result = extension_api.list_derivation_resolvers()
+    assert result['status'] == 'success'
+    assert [entry['id'] for entry in result['resolvers']] == ['markdown', 'python']
+    assert result['count'] == 2
+
+
+def test_reports_origin_and_declared_patterns_from_the_resolver(plan_context, roster):
+    """The file domain is read from the resolver, never transcribed into the menu."""
+    entries = _by_id(extension_api.list_derivation_resolvers())
+    assert entries['python']['file_patterns'] == ['**/*.py']
+    assert entries['python']['origin'] == 'bundle-python'
+    assert entries['markdown']['file_patterns'] == ['**/*.md']
+
+
+def test_resolver_declaring_no_patterns_reports_an_empty_list(plan_context, monkeypatch):
+    """Not-declared is an empty list, asserting nothing — never a fabricated domain."""
+    _register(monkeypatch, _StubResolver('bare'))
+    entries = _by_id(extension_api.list_derivation_resolvers())
+    assert entries['bare']['file_patterns'] == []
+
+
+# ---------------------------------------------------------------------------
+# The join against the binding
+# ---------------------------------------------------------------------------
+
+
+def test_unconfigured_resolvers_are_enabled_but_not_configured(plan_context, roster):
+    """The default state: active, and visibly untouched by the operator."""
+    result = extension_api.list_derivation_resolvers()
+    for entry in result['resolvers']:
+        assert entry['enabled'] is True, entry['id']
+        assert entry['configured'] is False, entry['id']
+    assert result['enabled_count'] == 2
+
+
+def test_disabled_resolver_stays_in_the_roster(plan_context, roster):
+    """⛔ Pruning it would leave the menu unable to offer re-enabling it."""
+    run_config.cmd_derivation_resolver_set(Namespace(resolver='python', enabled=False, disabled=True))
+
+    result = extension_api.list_derivation_resolvers()
+    assert [entry['id'] for entry in result['resolvers']] == ['markdown', 'python']
+    assert _by_id(result)['python']['enabled'] is False
+    assert result['enabled_count'] == 1
+
+
+def test_explicitly_enabled_resolver_is_marked_configured(plan_context, roster):
+    """Enabled-by-default and enabled-on-purpose stay distinguishable."""
+    run_config.cmd_derivation_resolver_set(Namespace(resolver='python', enabled=True, disabled=False))
+
+    entries = _by_id(extension_api.list_derivation_resolvers())
+    assert entries['python']['enabled'] is True
+    assert entries['python']['configured'] is True
+    assert entries['markdown']['enabled'] is True
+    assert entries['markdown']['configured'] is False
+
+
+# ---------------------------------------------------------------------------
+# The D1 round-trip: change a binding, re-read, confirm it persisted
+# ---------------------------------------------------------------------------
+
+
+def test_binding_change_round_trips_through_the_roster(plan_context, roster):
+    assert _by_id(extension_api.list_derivation_resolvers())['python']['enabled'] is True
+
+    run_config.cmd_derivation_resolver_set(Namespace(resolver='python', enabled=False, disabled=True))
+    assert _by_id(extension_api.list_derivation_resolvers())['python']['enabled'] is False
+
+    run_config.cmd_derivation_resolver_set(Namespace(resolver='python', enabled=True, disabled=False))
+    assert _by_id(extension_api.list_derivation_resolvers())['python']['enabled'] is True
+
+    run_config.cmd_derivation_resolver_remove(Namespace(resolver='python'))
+    entry = _by_id(extension_api.list_derivation_resolvers())['python']
+    assert entry['enabled'] is True
+    assert entry['configured'] is False
+
+
+def test_round_trip_persists_to_the_machine_local_store(plan_context, roster):
+    """The round-trip goes through the file, not through in-process state."""
+    run_config.cmd_derivation_resolver_set(Namespace(resolver='markdown', enabled=False, disabled=True))
+
+    config = run_config.read_run_config(run_config.get_run_config_path())
+    assert config['derivation_resolvers'] == {'markdown': {'enabled': False}}
+    assert _by_id(extension_api.list_derivation_resolvers())['markdown']['enabled'] is False
+
+
+# ---------------------------------------------------------------------------
+# Degradation — a truthful answer, never an error or an invented one
+# ---------------------------------------------------------------------------
+
+
+def test_zero_discovered_resolvers_is_a_success_with_an_empty_roster(plan_context, monkeypatch):
+    monkeypatch.setattr(_live('extension_discovery'), 'discover_derivation_resolvers', lambda: [])
+    result = extension_api.list_derivation_resolvers()
+    assert result['status'] == 'success'
+    assert result['resolvers'] == []
+    assert result['count'] == 0
+    assert result['enabled_count'] == 0
+
+
+def test_raising_discovery_degrades_to_an_empty_roster(plan_context, monkeypatch):
+    def _boom():
+        raise RuntimeError('discovery exploded')
+
+    monkeypatch.setattr(_live('extension_discovery'), 'discover_derivation_resolvers', _boom)
+    result = extension_api.list_derivation_resolvers()
+    assert result['status'] == 'success'
+    assert result['count'] == 0
+
+
+def test_raising_pattern_accessor_degrades_to_no_patterns(plan_context, monkeypatch):
+    """A broken resolver costs its patterns, not the whole roster."""
+
+    class _RaisingPatterns(_StubResolver):
+        def derivation_file_patterns(self) -> list[str]:
+            raise ValueError('bad declaration')
+
+    _register(monkeypatch, _RaisingPatterns('broken'), _StubResolver('fine', ['**/*.py']))
+    entries = _by_id(extension_api.list_derivation_resolvers())
+    assert entries['broken']['file_patterns'] == []
+    assert entries['fine']['file_patterns'] == ['**/*.py']
+
+
+def test_unreadable_store_reports_every_resolver_enabled(plan_context, roster, monkeypatch):
+    """Fail-open, matching the seam's gate: a store problem never reads as disabled."""
+
+    def _boom() -> dict:
+        raise OSError('store unreadable')
+
+    monkeypatch.setattr(_live('run_config'), 'read_derivation_resolvers_section', _boom)
+
+    result = extension_api.list_derivation_resolvers()
+    assert result['enabled_count'] == 2
+    for entry in result['resolvers']:
+        assert entry['enabled'] is True
+        assert entry['configured'] is False
+
+
+# ---------------------------------------------------------------------------
+# CLI boundary
+# ---------------------------------------------------------------------------
+
+
+def test_cli_verb_dispatches_to_the_roster(plan_context, roster):
+    result = extension_api.cmd_derivation_resolvers_list(Namespace())
+    assert result['status'] == 'success'
+    assert [entry['id'] for entry in result['resolvers']] == ['markdown', 'python']

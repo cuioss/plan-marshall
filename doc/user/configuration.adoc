@@ -22,7 +22,7 @@ Survey of every configuration surface a project author touches when running Plan
 
 | `.plan/run-configuration.json`
 | ❌ ignored
-| Per-developer command-execution state: adaptive build-command timeouts, acceptable-warning patterns, the `architecture_refresh` tier knobs, and last-execution metadata. Never committed.
+| Per-developer command-execution state: adaptive build-command timeouts, acceptable-warning patterns, the `architecture_refresh` tier knobs, the `language_servers` and `derivation_resolvers` machine-local bindings, and last-execution metadata. Never committed. See <<derivation-resolvers>>.
 
 | `CLAUDE.md`, `AGENTS.md`
 | project decision (usually ✅)
@@ -598,6 +598,43 @@ How a plan decides whether to allocate a feature branch + isolated worktree, whe
 `phase-1-init` records only `use_worktree`. The feature branch (`feature/{plan-id}`) and the worktree directory are created together during `phase-5-execute` Step 2.5, immediately before the first task dispatch. Phases 2-4 (refine, outline, plan) run against the main checkout because they only produce `.plan/` artifacts and have no source-code changes to isolate.
 
 The `.plan/*` exclusion in `.gitignore` covers `.plan/local/worktrees/{plan-id}/` automatically — no per-worktree carve-out is needed. The conceptual overview (why each plan runs in plan-bound isolation, and how the post-execute shipping flow lands the work on `main`) lives in xref:../concepts/branches-and-worktrees.adoc[Concepts › Branches and Worktrees]; the canonical contract (path resolution, dispatch protocol, cleanup ordering) lives in link:../../marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md[`workflow-integration-git/standards/worktree-handling.md`].
+
+[#derivation-resolvers]
+== Which derivation resolvers run
+
+A *derivation resolver* answers which modules depend on which. Its `(from, to)` module pairs become the edge set behind the `graph`, `path`, `neighbors`, and `impact` queries and the adjacency shown by `overview` and `module` / `info`. Several resolvers are active at once — a Maven coordinate join, a Python import join, a markdown cross-reference join, and so on — and the graph is the union of what they derive.
+
+Which of them run is a *machine-local* decision, and deliberately so: a resolver's availability and cost depend on locally-installed tooling, so the same project can legitimately have a different active set on two machines. The binding therefore lives in `.plan/run-configuration.json` — which is git-ignored — under the top-level `derivation_resolvers` key, beside the `language_servers` binding rather than in a store of its own. It is never committed, and a teammate's choices never reach your checkout.
+
+[IMPORTANT]
+====
+*An unconfigured project runs every discovered resolver.* Absent configuration means active, so a fresh clone derives its edges with the full discovered set and a project that never opens this menu loses nothing. The menu exists to switch a resolver *off* — it is not a switch that turns derivation on.
+====
+
+=== Changing the binding
+
+Through the wizard:
+
+[source]
+----
+/marshall-steward → Configuration → Derivation Resolvers
+----
+
+The menu lists every *discovered* resolver with its origin bundle, whether it is active, and the file patterns it derives from, then offers enable / disable / reset-to-default. A disabled resolver stays listed, so it can be switched back on.
+
+=== What it does not configure
+
+Precedence between resolvers:: There is none, and none is expressible. Edges are unweighted `(from, to)` booleans, so the union is idempotent and commutative — two resolvers deriving the same pair have *corroborated*, not disagreed, and the merged edge carries both producer ids. The one precedence that does exist is declared-over-derived: a module carrying a non-empty declared `internal_dependencies` has its derived edges discarded in favour of the declaration, which configuration cannot override.
+
+Binding a resolver to a file pattern:: The key is the resolver *id*. A resolver is handed module maps and returns module pairs carrying no file provenance, so there is no point at which a per-file binding could apply. The file patterns the menu shows are descriptive — what the resolver reads, not what selects it.
+
+Whether a language server runs:: The `lsp` resolver's harvest is additionally gated by the `language_servers` binding in the same store. Disabling the `lsp` resolver stops its edge derivation; it does not unbind the language server, which `lsp-client` still uses for symbol lookup and verified edits.
+
+=== Switching one off is visible, not silent
+
+A resolver you disable still appears on the per-resolver report a graph query returns, with an edge count of zero and a note saying it was discovered but not dispatched. That is deliberate: it keeps "switched off on this machine" distinguishable from "no such resolver is registered", so a graph that looks sparser than expected explains itself rather than leaving you guessing.
+
+The schema and the underlying commands are documented in link:../../marketplace/bundles/plan-marshall/skills/manage-run-config/standards/run-config-standard.md[`run-config-standard.md`] § Derivation-Resolvers Section; the seam itself in link:../../marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-derivation-resolver.md[`ext-point-derivation-resolver.md`].
 
 == Configuration outside `.plan/`
 

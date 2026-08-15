@@ -56,6 +56,9 @@ Run configuration handling for persistent command configuration storage.
   "ci": {
     "authenticated_tools": [],
     "verified_at": null
+  },
+  "derivation_resolvers": {
+    "<resolver-id>": {"enabled": false}
   }
 }
 ```
@@ -243,6 +246,24 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config langu
 ```
 
 `--disabled` on `set` stores the binding but leaves it inactive; `list` reports the configured language keys; `remove` deletes a binding.
+
+### derivation-resolver get / set / list / remove
+
+Manage the machine-local `derivation_resolvers` binding deciding **which derivation resolvers run** in this checkout. It is machine-local for the same reason `language_servers` is — a resolver's availability and cost depend on locally-installed tooling — and it lives beside that binding under the top-level `derivation_resolvers` map in the main-anchored `run-configuration.json`, not in a parallel store. See [run-config-standard.md](standards/run-config-standard.md) § "Derivation-Resolvers Section" for the schema and [`extension-api`](../extension-api/standards/ext-point-derivation-resolver.md) for the seam.
+
+⛔ **An unconfigured resolver is ACTIVE.** A discovered resolver runs unless an entry explicitly disables it, so a project that never configures anything still derives its edges. Every read failure fails open for the same reason.
+
+```bash
+# Switch a resolver off for this checkout
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config derivation-resolver set \
+  --resolver lsp --disabled
+
+# Read the effective state (configured: false when no entry exists)
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config derivation-resolver get \
+  --resolver markdown
+```
+
+The key is the resolver **id**, not a file pattern: a resolver returns `(module, module)` pairs carrying no file provenance, so there is no dispatch point at which a per-file binding could apply. `list` reports the configured entries (empty means everything is active); `remove` returns a resolver to default-active. To see the *discovered* resolvers joined against this binding — the roster the configuration menu renders — use [`extension-api:extension_api derivation-resolvers list`](../extension-api/SKILL.md).
 
 ### display-timezone get / set
 
@@ -436,6 +457,23 @@ python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config langu
 
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config language-server remove \
   --language LANGUAGE
+```
+
+### derivation-resolver
+
+`derivation-resolver` carries the nested sub-verbs `get`, `set`, `list`, and `remove`:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config derivation-resolver get \
+  --resolver markdown
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config derivation-resolver set \
+  --resolver lsp --disabled
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config derivation-resolver list
+
+python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config derivation-resolver remove \
+  --resolver lsp
 ```
 
 ### display-timezone

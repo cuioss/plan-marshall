@@ -828,6 +828,75 @@ def _declared_dependencies(
     return None
 
 
+#: Note prefix marking a resolver the machine-local configuration switched off,
+#: distinguishing an operator decision from a merge-side drop (``merge: ``) and
+#: from a note the resolver itself returned.
+_DISABLED_NOTE_PREFIX = 'configuration: '
+
+
+def _partition_configured_resolvers(
+    resolvers: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split discovered resolvers into those to dispatch and reports for the rest.
+
+    The machine-local ``derivation_resolvers`` binding decides which discovered
+    resolvers run in this checkout — resolver availability and cost depend on
+    locally-installed tooling, so the same project can legitimately have a
+    different active set on two machines. Absent configuration means ACTIVE, so
+    an unconfigured project dispatches every discovered resolver.
+
+    **A disabled resolver is REPORTED, never silently dropped.** It comes back as
+    a ``status: ok``, ``edge_count: 0`` report carrying a ``configuration:`` note,
+    because the seam's anti-vacuity property is exactly that a zero-edge answer
+    explains itself: dropping the record instead would make "switched off by the
+    operator" indistinguishable from "never registered", which is the vacuity
+    this extension point exists to eliminate (see the contract's § "Suppression
+    must be reported, never silent").
+
+    A run-config store that cannot be read at all leaves EVERY resolver
+    dispatched. Failing open is deliberate: the alternative — an unreadable store
+    blanking the graph — is the zero-edge defect arriving as a configuration
+    failure instead of a derivation one.
+
+    Args:
+        resolvers: Discovered ``{origin, id, module}`` records, sorted by id.
+
+    Returns:
+        An ``(enabled, disabled_reports)`` tuple preserving the input order.
+    """
+    try:
+        from run_config import is_derivation_resolver_enabled, read_derivation_resolvers_section
+
+        # ONE snapshot for the whole dispatch, not one store read per resolver.
+        section = read_derivation_resolvers_section()
+    except Exception:
+        return resolvers, []
+
+    enabled: list[dict[str, Any]] = []
+    disabled_reports: list[dict[str, Any]] = []
+    for record in resolvers:
+        resolver_id = record.get('id', '')
+        try:
+            active = is_derivation_resolver_enabled(resolver_id, section)
+        except Exception:
+            active = True
+        if active:
+            enabled.append(record)
+            continue
+        disabled_reports.append(
+            {
+                'id': resolver_id,
+                'edge_count': 0,
+                'status': 'ok',
+                'notes': [
+                    f'{_DISABLED_NOTE_PREFIX}resolver disabled by the machine-local '
+                    f'derivation_resolvers binding — it was discovered but not dispatched'
+                ],
+            }
+        )
+    return enabled, disabled_reports
+
+
 def _derive_edges(
     derived_by_name: dict[str, dict[str, Any]],
     enriched_by_name: dict[str, dict[str, Any]],
@@ -894,6 +963,10 @@ def _derive_edges(
     if not resolvers:
         return [], []
 
+    resolvers, disabled_reports = _partition_configured_resolvers(resolvers)
+    if not resolvers:
+        return [], disabled_reports
+
     # Materialize the resolved dependency list so resolvers stay pure. Skip the
     # Maven enrich for a module carrying a non-empty declaration — its resolver
     # edges would be discarded by _build_deps_and_producers anyway.
@@ -906,7 +979,10 @@ def _derive_edges(
             module_view['dependencies'] = _enriched_dependencies(mod_name, mod_data, project_dir)
         resolver_input[mod_name] = module_view
 
-    return merge_resolver_edges(resolvers, resolver_input, enriched_by_name)
+    edges, reports = merge_resolver_edges(resolvers, resolver_input, enriched_by_name)
+    # Sorted by id so a disabled resolver lands where it would have run: the
+    # report list stays byte-stable regardless of which resolvers are switched off.
+    return edges, sorted(reports + disabled_reports, key=lambda report: report['id'])
 
 
 def _declared_suppression_notes(

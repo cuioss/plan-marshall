@@ -92,6 +92,7 @@ Configuration in `extension.py` implements the Extension API contract:
 | `provides_retrospective_aspects()` | A | Returns the `wrapper-tangle` retrospective aspect (scans plan-marshall CI-wrapper sources for tangled gh/glab + local-git mutations) |
 | `derivation_resolver_id()` | C | Returns the stable provenance id `markdown`, stamped onto every edge this resolver produces |
 | `derive_edges()` | C | Pure join over `component_refs` yielding `(from, to)` module pairs from the four markdown reference kinds (`script`, `skill`, `path`, `implements`). `import` entries belong to the sibling python resolver. Unresolved targets, unknown endpoints, and self-edges are suppressed and reported as aggregated `notes[]` entries — one per category with a count and a bounded sample |
+| `derivation_file_patterns()` | C | Declares the file patterns this resolver derives from (`['**/*.md']`). Descriptive metadata rendered by the resolver-configuration menu, never a filter: activation is bound by resolver **id** in the machine-local `derivation_resolvers` section |
 | `path_attributor_id()` | D | Returns the stable provenance id `pm-plugin-development`, stamped onto the project-local artifact claim |
 | `claim_paths()` | D | Claims the whole `.claude` project-local tree for the `pm-plugin-development` module (see § Project-Local Artifact Ownership) |
 

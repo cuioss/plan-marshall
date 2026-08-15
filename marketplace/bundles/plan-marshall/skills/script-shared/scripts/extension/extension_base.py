@@ -1424,6 +1424,33 @@ class DerivationResolverBase(ABC):  # noqa: B024 — ABC contract anchor; every 
         """
         return [], []
 
+    def derivation_file_patterns(self) -> list[str]:
+        """Return the glob patterns naming the files this resolver derives from.
+
+        **Descriptive, never a filter.** The value is operator-facing metadata:
+        it answers "this resolver is active — over which files?" on the
+        resolver-configuration menu, so that answer is read from the resolver
+        that owns it rather than transcribed into a menu document that would go
+        stale the moment a resolver changed. Core NEVER filters an edge by these
+        patterns, and a resolver is never dispatched per-file.
+
+        It could not be a filter even if core wanted one. :meth:`derive_edges`
+        is handed module maps and returns ``(module, module)`` pairs carrying no
+        file provenance, so there is no point in the dispatch at which a
+        per-file binding could be applied and no edge attribute against which it
+        could be matched. The activation binding is therefore keyed on the
+        resolver **id** — see the ``derivation_resolvers`` section in
+        ``manage-run-config/standards/run-config-standard.md``.
+
+        Returns:
+            Glob patterns relative to a module root (e.g. ``['**/*.py']``). The
+            default is ``[]``, which asserts nothing: a resolver that declares
+            no patterns is reported as *not declared* rather than as deriving
+            from no files, matching the null-on-absent contract every face of
+            this API shares.
+        """
+        return []
+
     @staticmethod
     def _aggregate_notes(suppressed: dict[str, list[str]]) -> list[str]:
         """Render one aggregated ``notes[]`` entry per non-empty suppression category.

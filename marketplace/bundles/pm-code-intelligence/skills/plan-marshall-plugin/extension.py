@@ -88,6 +88,21 @@ class Extension(ExtensionBase, DerivationResolverBase):
         """Return the stable provenance identity stamped onto every lsp edge."""
         return 'lsp'
 
+    def derivation_file_patterns(self) -> list[str]:
+        """Return the file patterns this resolver's harvest reads.
+
+        The harvest drives one language end-to-end (``lsp_harvest``'s
+        ``HARVEST_LANGUAGE``), so the declared set is Python's. It is descriptive
+        only — whether the resolver runs at all is decided by the enabled
+        ``language_servers`` binding and by this resolver's own
+        ``derivation_resolvers`` entry, never by matching a file against these
+        patterns.
+
+        Descriptive metadata for the resolver-configuration menu, never a filter
+        — see ``DerivationResolverBase.derivation_file_patterns``.
+        """
+        return ['**/*.py']
+
     def derive_edges(
         self,
         derived_by_name: dict,

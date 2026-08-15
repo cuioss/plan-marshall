@@ -204,6 +204,36 @@ def test_resolver_count_matches_the_expected_roster():
     assert len(_pipeline()['resolvers']) == len(EXPECTED_RESOLVER_IDS)
 
 
+def test_every_shipped_resolver_declares_its_file_patterns():
+    """Every discovered resolver answers "over which files?" for the config menu.
+
+    Derived from real discovery rather than from a per-resolver literal, so a
+    newly-registered resolver that forgets the declaration fails here instead of
+    silently rendering as *not declared* on the resolver-configuration menu.
+
+    The ABC default is ``[]`` — deliberately, so a third-party resolver stays
+    valid without declaring — which is exactly why the SHIPPED roster needs its
+    own assertion: the default cannot distinguish "declined to declare" from
+    "forgot to".
+    """
+    undeclared = [
+        record['id']
+        for record in _pipeline()['resolvers']
+        if not record['module'].derivation_file_patterns()
+    ]
+
+    assert undeclared == [], f'shipped resolvers declaring no file patterns: {undeclared}'
+
+
+def test_declared_file_patterns_are_non_empty_glob_strings():
+    """A declaration is a list of usable patterns, not a placeholder."""
+    for record in _pipeline()['resolvers']:
+        patterns = record['module'].derivation_file_patterns()
+        assert isinstance(patterns, list), record['id']
+        for pattern in patterns:
+            assert isinstance(pattern, str) and pattern.strip(), (record['id'], pattern)
+
+
 def test_every_resolver_reports_ok():
     """No resolver errored — an errored one would contribute zero edges silently."""
     reports = _pipeline()['reports']

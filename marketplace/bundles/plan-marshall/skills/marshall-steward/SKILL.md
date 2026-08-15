@@ -247,6 +247,7 @@ Then execute the workflow described in that file. Each reference file is loaded 
 | `menu-configuration.md` | Build systems, skill domains, architecture refresh tier knobs | Menu option 3 |
 | `standards/effort-menu.md` | Per-phase effort configuration (Effort submenu) | Menu option 4 |
 | `menu-recipes.md` | Built-in recipes available in the wizard | Linked from `menu-configuration.md` |
+| `menu-derivation-resolvers.md` | Inspect and change which module-edge derivation resolvers run in this checkout; machine-local, keyed by resolver id, unconfigured means every discovered resolver is active | Linked from `menu-configuration.md` (Derivation Resolvers) |
 | `menu-terminal-title.md` | Two-action sub-menu: install render-hook wiring; override active-plan for the current session | Linked from `menu-configuration.md` (Terminal Title) |
 | `menu-enforcement-hook.md` | Detect→confirm→install sub-menu for the conditional PreToolUse enforcement hook (orthogonal `--enforcement` install) | Linked from `menu-configuration.md` (Enforcement Hook) |
 | `merge-queue-setup.md` | Idempotent probe→ask→configure provisioning of the platform merge queue (GitHub merge queue / GitLab merge train) via the `ci repo merge-queue` verbs | Linked from `wizard-flow.md` Step 13.5 and `menu-configuration.md` (Merge Queue) |

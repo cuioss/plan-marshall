@@ -163,6 +163,14 @@ class BuildExtension(BuildExtensionBase, DerivationResolverBase):
         """
         return 'npm'
 
+    def derivation_file_patterns(self) -> list[str]:
+        """Return the build descriptor this resolver's package-name join reads.
+
+        Descriptive metadata for the resolver-configuration menu, never a filter
+        — see ``DerivationResolverBase.derivation_file_patterns``.
+        """
+        return ['**/package.json']
+
     @staticmethod
     def _package_name(module_data: dict) -> str | None:
         """Return the module's published ``package.json`` name, or ``None``.

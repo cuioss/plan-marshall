@@ -296,6 +296,18 @@ class BuildExtension(BuildExtensionBase, DerivationResolverBase):
         """
         return 'pyproject'
 
+    def derivation_file_patterns(self) -> list[str]:
+        """Return the build descriptor this resolver's distribution-name join reads.
+
+        Declared dependencies, not imports: the ``python`` resolver declares
+        ``**/*.py`` because it joins import statements, and the two answer
+        different questions over the same language.
+
+        Descriptive metadata for the resolver-configuration menu, never a filter
+        — see ``DerivationResolverBase.derivation_file_patterns``.
+        """
+        return ['**/pyproject.toml']
+
     @staticmethod
     def _distribution_name(module_data: dict) -> str | None:
         """Return the module's published PEP 621 distribution name, or ``None``.
