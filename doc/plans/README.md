@@ -48,7 +48,8 @@ doc/plans/
 │       ├── plan.md                  # the plan
 │       └── report-NN.md             # one run report per run
 ├── review-apparatus/
-└── code-intelligence-substrate/
+├── code-intelligence-substrate/
+└── test-quality/                    # standalone epic — no orchestrator ledger counterpart
 ```
 
 A new plan starts as a copy of [`_template/plan.md`](_template/plan.md) at
@@ -75,9 +76,17 @@ handed over without them gets built against a thinner brief than its author imag
 
 ## Relationship to the orchestrator epics
 
-The three epic directories mirror the orchestrator epics whose ledgers live under
-`.plan/local/orchestrator/`. Those ledgers stay machine-local and authoritative for queue state; this
-tree carries only the plans handed off for standalone execution, plus their reports.
+`truthful-signals`, `review-apparatus` and `code-intelligence-substrate` mirror the orchestrator
+epics whose ledgers live under `.plan/local/orchestrator/`. Those ledgers stay machine-local and
+authoritative for queue state; this tree carries only the plans handed off for standalone execution,
+plus their reports.
+
+`test-quality` is a **standalone epic**: it has no orchestrator-ledger counterpart, because it was
+opened directly from a whole-corpus test review rather than derived from a staged orchestrator plan.
+Its own [`test-quality/README.md`](test-quality/README.md) carries the scoping brief its plans are
+written against — the corpus census, the house style, and the dependency graph that says which of its
+plans may run at the same time. An epic that carries its brief in git this way needs no ledger to be
+executable; the pattern generalises to any future epic authored the same way.
 
 The two halves cannot see each other — the orchestrator tree is git-ignored, and a cloud session's
 working state dies with its VM — so **git is the only shared medium**.

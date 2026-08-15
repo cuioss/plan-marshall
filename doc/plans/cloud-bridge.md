@@ -2,8 +2,15 @@
 
 The rule governing the relationship between an **orchestrator plan spec** (machine-local, under
 `.plan/local/orchestrator/{epic}/plans/`) and a **cloud plan** (git-tracked, under
-`doc/plans/{epic}/`). It applies identically to all three epics — `truthful-signals`,
+`doc/plans/{epic}/`). It applies identically to all three ledger-backed epics — `truthful-signals`,
 `review-apparatus`, `code-intelligence-substrate`.
+
+A **standalone epic** — one authored directly in git with no orchestrator-ledger counterpart, such as
+`test-quality` — has no orchestrator plan spec to derive from and nothing to collect back into, so
+Path 1's derive-from-spec step and Path 3's collect step do not apply to it. Everything else here
+does: the `{NNN}-` prefix rule, the authoring template, the mandatory first-instruction block, and the
+status-is-the-filesystem model. Its scoping brief lives in the epic's own `README.md` and is
+git-tracked, which is what makes it executable without a ledger.
 
 It exists because the two halves cannot see each other. The orchestrator ledger is git-ignored, so a
 cloud session never sees it; a cloud session's working state is destroyed when its VM is reclaimed,
