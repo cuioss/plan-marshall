@@ -166,11 +166,18 @@ For which resolvers consume the materialized field, see [`ext-point-derivation-r
 ### Component Notation
 
 ```text
-bundle:skill                    # Skill (e.g., plan-marshall:phase-1-init)
-bundle:skill:script             # Script (e.g., plan-marshall:manage-files:manage-files)
-bundle:agents:name              # Agent (e.g., plan-marshall:agents:execution-context)
-bundle:commands:name            # Command (e.g., plan-marshall:commands:tools-sync-agents-file)
+bundle:skill                    # Skill
+bundle:skill:script             # Script
+bundle:agents:name              # Agent
+bundle:commands:name            # Command
 ```
+
+The four segments are literal placeholders. Worked examples are deliberately
+**named rather than spelled** here — writing a real notation in this file makes
+this skill depend on whatever it names, and an example chosen for illustration
+then shows up as a dependency edge (or, when the example has gone stale, as a
+finding) in the very corpus this script measures. For a live example of each form,
+read the `Canonical invocations` section of any script-bearing skill.
 
 ### What counts as a reference
 
@@ -184,7 +191,9 @@ The `script` detector scans for a bare three-part colon-separated token, which i
 | Build coordinate or task path | `de.cuioss:cui-java-tools:compile`, `:services:auth-service:build` | A three-part token preceded by `.` or `:` is a fragment of a longer token |
 | Sub-document path | `bundle:skill:references/x.md`, `bundle:skill:planning.md` | A three-part token followed by `/`, or by `.` plus a word character, addresses a document. A trailing **sentence** period is not treated this way |
 
-**Every exclusion above is provisional, so the exclusions cannot hide a real reference.** Each recognises a *shape*, and a shape is evidence rather than proof — nothing stops a genuine reference from being written parenthetically, or with a `.py` suffix. So a match on an excluded shape is not discarded at detection: it is marked provisional, and the index drops it only when it also names no component in the graph. A provisional match that *does* name a real component is kept as an ordinary resolved edge. **Shape decides where to look; existence decides.**
+**Every exclusion in the table above is provisional, so none of them can hide a real reference.** Each recognises a *shape*, and a shape is evidence rather than proof — nothing stops a genuine reference from being written parenthetically, or with a `.py` suffix. So a match on an excluded shape is not discarded at detection: it is marked provisional, and the index drops it only when it also names no component in the graph. A provisional match that *does* name a real component is kept as an ordinary resolved edge. **Shape decides where to look; existence decides.**
+
+**Older, non-provisional skips remain, and they are fail-open.** Predating this contract, `detect_script_notations` also drops a match unconditionally when its line is a `#`/`//` comment, when the line contains a URL, or when the bundle segment is `http`/`https`/`file`/`mailto`, starts with a digit, or the skill segment is all digits. These are *not* provisional: a real reference on a comment line is discarded outright, and 9 resolvable notations in this marketplace (mostly markdown headings) currently sit there unseen. No genuinely-broken reference hides there today, but a broken notation written on a heading would not be reported. Closing them is deferred, not overlooked.
 
 **Subcommands resolve rather than reporting unresolved.** A skill exposes one entry script named after the skill and dispatches its verbs as subcommands. Documentation names those verbs in the same three-part shape — `plan-marshall:manage-execution-manifest:compose` — so the reference is real and only the segment it lands on is a verb rather than a filename. Such a reference resolves to the entry script that owns the verb.
 
@@ -198,7 +207,7 @@ What this validator does **not** check is whether a verb is one the entry script
 
 Two limits bound that claim, and both are properties of the analysis rather than of its scope:
 
-- **Findings outside the bundle namespace are not yet triaged.** A three-part token whose first segment names no indexed bundle — an npm script name, a time-format literal, a Gradle inter-project coordinate — is still reported. Nothing distinguishes these structurally from notation, so they are neither suppressed nor separated — suppressing them by bundle membership would silently drop a reference into a bundle that was deleted, which is the fail-open a gate must not take.
+- **Findings outside the bundle namespace are not yet triaged.** A three-part token whose first segment names no indexed bundle — an npm script name, a time-format literal, a Gradle inter-project coordinate — is still reported. Suppressing them by **bundle membership** would silently drop a reference into a bundle that was deleted, which is the fail-open a gate must not take. A fail-closed discriminator does exist and is not yet applied here: `plugin-doctor`'s `_analyze_notation_staleness.py` anchors on the executor prefix (`execute-script.py {notation}`), which separates a deliberate invocation from an incidental colon-joined token without dropping anything. Adopting it would narrow this class; doing so changes what the `script` detector counts as a reference, so it is a scoped decision rather than a tightening.
 - **Nested script modules are not components.** Component discovery globs `scripts/*.py`, so a module under `scripts/{subdir}/` (for example `script-shared/scripts/extension/extension_base.py`) can be imported but never resolved, and references to it report unresolved.
 
 Until both are addressed, `validation_result` is a **fail-closed report**, not a zero-tolerance gate: read the findings, do not wire `validation_result` to a build step that must stay green.

@@ -138,7 +138,7 @@ NOTATION_PLACEHOLDER_SEGMENTS: frozenset[str] = frozenset(
 # mirrors ``_CANONICAL_VERIFY_PREFIXES`` in
 # ``plan-marshall:manage-config`` (``scripts/_cmd_quality_phases.py``), which is
 # the authority for what a canonical-verify step ID looks like.
-CANONICAL_COMMAND_PREFIXES: tuple[str, ...] = ('default:verify:',)
+CANONICAL_COMMAND_PREFIXES: tuple[str, ...] = ('default:verify:', 'verify:')
 
 
 def _has_placeholder_segment(*segments: str) -> bool:

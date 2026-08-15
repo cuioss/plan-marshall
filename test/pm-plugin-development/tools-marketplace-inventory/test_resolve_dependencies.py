@@ -1104,7 +1104,7 @@ def test_skill_subdoc_dirs_constant_is_not_widened():
 
 
 # =============================================================================
-# Tests - Detector precision (the four non-reference colon-triple classes)
+# Tests - Detector precision (the non-reference colon-triple classes)
 # =============================================================================
 #
 # ``detect_script_notations`` scans for the bare ``a:b:c`` shape, which several
@@ -1115,7 +1115,7 @@ def test_skill_subdoc_dirs_constant_is_not_widened():
 
 
 class TestNonReferenceColonTriples:
-    """Each false-positive class is suppressed, one case per class."""
+    """Each false-positive class is excluded, one case per class."""
 
     @staticmethod
     def _detect(content):
@@ -1216,7 +1216,10 @@ class TestPlaceholderSkillReferences:
 # Graph shape (bundle ``precision-bundle``):
 #
 #   manage-thing  (skill) + manage-thing.py  (its same-named ENTRY script)
-#   (six excluded instances in total, one per documented class)
+#   (six excluded instances in total, one per documented class). The
+#   sub-document instance sits on `phase-thing` DELIBERATELY: on a skill
+#   with an entry script the subcommand retarget would absorb it, and the
+#   fixture would stay green with that arm disabled.
 #   phase-thing   (skill, NO entry script)
 #
 # ``manage-thing`` having an entry script is what lets the subcommand class
@@ -1251,7 +1254,7 @@ def _build_precision_graph(root: Path) -> Path:
         'The build step is `default:verify:quality-gate` for this phase.\n'
         '--message "(precision-bundle:phase-thing:qgate) step emitted this"\n'
         'The coordinate is "de.example:example-lib:compile" in the POM.\n'
-        'Load `precision-bundle:manage-thing:standards/detail.md` first.\n'
+        'Load `precision-bundle:phase-thing:standards/detail.md` first.\n'
         'python3 .plan/execute-script.py precision-bundle:phase-thing:ghost-script run\n',
     )
     return bundles
@@ -1332,7 +1335,7 @@ def _probe_reference(tmp_path, line):
         (dep.target.to_notation(), dep.resolved)
         for deps in index.forward_deps.values()
         for dep in deps
-        if 'real-skill' in dep.target.to_notation()
+        if dep.target.bundle == 'probe-bundle' and dep.target.component_type == 'script'
     ]
 
 
@@ -1349,13 +1352,23 @@ class TestExclusionsAreProvisional:
         edges = _probe_reference(tmp_path, 'Run probe-bundle:real-skill:real-skill.py now.')
         assert edges == [('probe-bundle:real-skill:real-skill', True)]
 
-    def test_parenthesised_non_reference_is_still_dropped(self, tmp_path):
-        """The decision-log prefix itself stays excluded — the control for the case above."""
-        assert _probe_reference(tmp_path, 'Emitted (probe-bundle:real-skill:some-step) here.') == []
+    def test_parenthesised_verb_of_a_real_script_resolves(self, tmp_path):
+        """An excluded shape must not hide a genuine SUBCOMMAND citation either.
+
+        A decision-log prefix naming a real verb is still a reference to the
+        script that owns the verb, so the subcommand retarget is attempted before
+        the provisional drop. Dropping on shape alone hid 59 such rows.
+        """
+        edges = _probe_reference(tmp_path, 'Emitted (probe-bundle:real-skill:compose) here.')
+        assert edges == [('probe-bundle:real-skill:real-skill', True)]
+
+    def test_parenthesised_prefix_without_an_entry_script_is_dropped(self, tmp_path):
+        """The control: no component, no verb to retarget onto — the one case that drops."""
+        assert _probe_reference(tmp_path, 'Emitted (probe-bundle:caller:some-step) here.') == []
 
     def test_dotted_coordinate_is_still_dropped(self, tmp_path):
         """A build coordinate stays excluded — the control for the `.py` case above."""
-        assert _probe_reference(tmp_path, 'Coordinate de.x:real-skill:compile in the POM.') == []
+        assert _probe_reference(tmp_path, 'Coordinate de.x:caller:compile in the POM.') == []
 
 
 class TestMisspelledScriptSegmentIsNotASubcommand:
@@ -1376,3 +1389,70 @@ class TestMisspelledScriptSegmentIsNotASubcommand:
         """The control: an ordinary verb still retargets onto the entry script."""
         edges = _probe_reference(tmp_path, 'Run probe-bundle:real-skill:compose now.')
         assert edges == [('probe-bundle:real-skill:real-skill', True)]
+
+    def test_underscored_entry_script_is_found(self, tmp_path):
+        """An entry script spelled `skill_name.py` still owns the skill's verbs.
+
+        Nine skills in this marketplace spell the entry script with underscores,
+        and assuming filename == skill name exactly is the assumption
+        plugin-doctor's own rule catalogue rejects.
+        """
+        root = tmp_path / 'marketplace' / 'bundles' / 'probe-bundle'
+        _write(root / '.claude-plugin' / 'plugin.json', '{\n  "name": "probe-bundle"\n}\n')
+        _write(
+            root / 'skills' / 'real-skill' / 'SKILL.md',
+            '---\nname: real-skill\ndescription: Underscored entry script\n---\n# Real\n',
+        )
+        _write(root / 'skills' / 'real-skill' / 'scripts' / 'real_skill.py', '#!/usr/bin/env python3\n')
+        _write(
+            root / 'skills' / 'caller' / 'SKILL.md',
+            '---\nname: caller\ndescription: Cites a verb\n---\n# C\n'
+            'Run probe-bundle:real-skill:compose now.\n',
+        )
+        index = build_dependency_index(root.parent, set(DependencyType))
+        edges = [
+            (dep.target.to_notation(), dep.resolved)
+            for deps in index.forward_deps.values()
+            for dep in deps
+            if dep.target.component_type == 'script'
+        ]
+        assert edges == [('probe-bundle:real-skill:real_skill', True)]
+
+
+class TestRetargetAppliesToWrittenNotationOnly:
+    """Only a written notation can carry a verb in its script segment."""
+
+    def test_python_import_is_not_retargeted_onto_a_same_named_entry_script(self, tmp_path):
+        """A stale module mapping must stay reported, not resolve to a sibling script.
+
+        `PYTHON_MODULE_MAPPINGS` maps `extension_base` to `extension-api`, whose
+        entry script is `extension_api`. Those are different FILES, not a verb and
+        its script, so retargeting the import would silently resolve a mapping
+        that is genuinely wrong — hiding 11 real findings in this marketplace.
+        """
+        root = tmp_path / 'marketplace' / 'bundles' / 'probe-bundle'
+        _write(root / '.claude-plugin' / 'plugin.json', '{\n  "name": "probe-bundle"\n}\n')
+        _write(
+            root / 'skills' / 'ref-toon-format' / 'SKILL.md',
+            '---\nname: ref-toon-format\ndescription: Owns a differently-named script\n---\n# T\n',
+        )
+        _write(
+            root / 'skills' / 'ref-toon-format' / 'scripts' / 'ref-toon-format.py',
+            '#!/usr/bin/env python3\n',
+        )
+        _write(
+            root / 'skills' / 'importer' / 'SKILL.md',
+            '---\nname: importer\ndescription: Imports a mapped module\n---\n# I\n',
+        )
+        _write(
+            root / 'skills' / 'importer' / 'scripts' / 'importer.py',
+            '#!/usr/bin/env python3\nfrom toon_parser import serialize_toon  # noqa: F401\n',
+        )
+        index = build_dependency_index(root.parent, set(DependencyType))
+        imports = [
+            (dep.target.to_notation(), dep.resolved)
+            for deps in index.forward_deps.values()
+            for dep in deps
+            if dep.dep_type == DependencyType.PYTHON_IMPORT
+        ]
+        assert imports == [('plan-marshall:ref-toon-format:toon_parser', False)]

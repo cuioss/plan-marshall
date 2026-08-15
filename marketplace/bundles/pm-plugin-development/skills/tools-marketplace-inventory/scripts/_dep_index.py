@@ -454,43 +454,63 @@ def _normalize_segment(segment: str) -> str:
     return segment.replace('_', '-')
 
 
-def _entry_script_for_subcommand(index: DependencyIndex, target: ComponentId) -> ComponentId | None:
+def _entry_script_for_subcommand(
+    index: DependencyIndex, target: ComponentId, dep_type: DependencyType
+) -> ComponentId | None:
     """Return the skill's entry script when ``target``'s final segment is a subcommand.
 
     A skill exposes ONE entry script named after the skill itself
     (``manage-execution-manifest:manage-execution-manifest``) and dispatches its
     verbs as subcommands of it. Documentation names those verbs in the same
-    three-part shape — ``plan-marshall:manage-execution-manifest:compose`` — and
-    the detector, which builds a script ``ComponentId`` from any three-part
-    notation, then looks for a *script* called ``compose`` and finds none.
+    three-part shape — a `compose` verb in the script segment — and the detector,
+    which builds a script ``ComponentId`` from any three-part notation, then
+    looks for a *script* of that name and finds none.
 
     The reference is real; only the segment it lands on is a verb rather than a
     filename. So it resolves to the entry script that owns the verb, and the
     edge is recorded against that script. When the skill has NO same-named entry
     script the notation is genuinely wrong (the script segment names neither a
     script nor a dispatchable verb) and ``None`` is returned so it stays
-    unresolved — ``pm-plugin-development:plugin-doctor:validate`` is that case,
-    since plugin-doctor's entry script is ``doctor-marketplace``.
+    unresolved — plugin-doctor is that case, since a `validate` verb in the
+    script segment names neither a script nor a dispatchable verb of its entry
+    script ``doctor-marketplace``.
     """
+    if dep_type is not DependencyType.SCRIPT_NOTATION:
+        # Only a written notation can carry a verb in its script segment. A
+        # PYTHON_IMPORT target names a MODULE — `extension_base` is a different
+        # file from `extension_api`, not a verb of it — so retargeting an import
+        # onto a same-named entry script would silently resolve a stale module
+        # mapping that ought to be reported.
+        return None
     if target.component_type != 'script' or not target.parent_skill:
         return None
     # A script segment that is the skill's own name in the WRONG CASE STYLE is a
     # misspelled script reference, not a verb. `plugin-doctor`'s
     # `manage-findings-invocation-invalid` rule names this exact defect — the
     # executor keys on the third segment literally, so
-    # `plan-marshall:manage-findings:manage_findings` does not resolve — and
+    # an underscored script segment does not resolve — and
     # retargeting it onto the entry script would suppress a finding the
     # repository deliberately raises.
     if _normalize_segment(target.name) == _normalize_segment(target.parent_skill):
         return None
-    entry = ComponentId(
-        bundle=target.bundle,
-        component_type='script',
-        name=target.parent_skill,
-        parent_skill=target.parent_skill,
-    )
-    if entry.to_notation() in index.components:
-        return entry
+    # The entry script carries the skill's name in EITHER case style — nine skills
+    # in this marketplace spell it with underscores (`plan-doctor:plan_doctor`,
+    # `extension-api:extension_api`, …). Assuming filename == skill name exactly
+    # is the assumption plugin-doctor's own rule catalogue rejects, so both
+    # spellings are tried before concluding the skill has no entry script.
+    for entry_name in (
+        target.parent_skill,
+        target.parent_skill.replace('-', '_'),
+        target.parent_skill.replace('_', '-'),
+    ):
+        entry = ComponentId(
+            bundle=target.bundle,
+            component_type='script',
+            name=entry_name,
+            parent_skill=target.parent_skill,
+        )
+        if entry.to_notation() in index.components:
+            return entry
     return None
 
 
@@ -510,15 +530,23 @@ def _index_dependencies_from(
     """
     for dep in detect_all_dependencies(file_path, component_id, dep_types):
         if dep.target.to_notation() not in index.components:
-            # A provisional match named a non-reference SHAPE and turned out to
-            # name no component either — drop it. One that DOES name a component
-            # never reaches here, so a genuine reference written parenthetically
-            # or with a file extension is kept rather than swallowed.
-            if dep.provisional:
-                continue
-            entry = _entry_script_for_subcommand(index, dep.target)
+            entry = _entry_script_for_subcommand(index, dep.target, dep.dep_type)
             if entry is not None:
+                # A genuine subcommand citation, whatever shape it wears. This is
+                # tried BEFORE the provisional drop: a decision-log prefix naming
+                # a real verb (`(bundle:skill:compose)`) is still a reference to
+                # the script that owns the verb, and dropping it on shape alone
+                # would hide exactly what this module calls real.
+                if entry.to_notation() == component_id.to_notation():
+                    # An entry script documenting its OWN verbs. Retargeting that
+                    # onto itself would manufacture a self-loop and report it as a
+                    # circular dependency; a script is not dependent on itself.
+                    continue
                 dep.target = entry
+            elif dep.provisional:
+                # An excluded SHAPE that names no component and no verb — the
+                # only case in which a match is discarded.
+                continue
             else:
                 dep.resolved = False
         index.add_dependency(dep)

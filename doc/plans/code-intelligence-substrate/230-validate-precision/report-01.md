@@ -103,7 +103,7 @@ carried forward on the plan's word.
 | Placeholders, subcommands and canonical commands each appear in the set | OBSERVED | **Confirmed** | 55 placeholder, 69 subcommand-of-entry-script, 75 canonical, all enumerated |
 | The **majority** of rows fall into these three classes | HYPOTHESIS (derived count) | **Confirmed — but only barely** | Union of the three = **199 of 380 = 52.4%**, and only when Maven meta-syntactic segments (`groupId`/`artifactId`) count as documentation placeholders. A bare majority materially understates the work: the other 47.6% is also mostly false positives, from classes the plan never named |
 | The three classes are separable in the existing parser without a redesign | HYPOTHESIS | **Confirmed** | Additive guards only; no structural change to detection or the output contract |
-| A genuinely-broken residue exists at all | HYPOTHESIS | **Confirmed** | 44 in-namespace rows were genuinely broken: 10 fixed, 34 remain. The plan's ⭐ empty-residue success path does not apply |
+| A genuinely-broken residue exists at all | HYPOTHESIS | **Confirmed** | 45 in-namespace rows were genuinely broken: 10 fixed, **35 remain**. The plan's ⭐ empty-residue success path does not apply |
 
 **An asserted absence was verified as an asserted presence would be.** The claim
 that the suppressed classes "are not real breakage" is not an argument from their
@@ -120,11 +120,11 @@ run over the same tree, and their **resolved-edge sets** were diffed.
 | | Resolved edges |
 |---|---:|
 | Pre-change detector | 4931 |
-| Current detector | 4936 |
+| Current detector | 4971 |
 | **Lost** (was resolved, now absent) | **0** |
-| Gained | 5 (the D2 retargets) |
+| Gained | the D2 retargets |
 
-Zero losses across 4931 edges is strong evidence that the guards removed only
+Zero losses across the pre-change resolved set is strong evidence that the guards removed only
 non-references — **in one direction**. It is not evidence in the other: a row that
 was *unresolved* and wrongly *became resolved* is invisible to this diff by
 construction, which is exactly the defect the verification sub-agent found (round-2
@@ -157,9 +157,10 @@ script that owns the verb instead of leaving a dangling node.
 it.** Most subcommand-shaped citations in this corpus are written as parenthesised
 decision-log prefixes, which the decision-log guard excludes at detection — so they
 never reach resolution and are absent from the graph rather than attributed to the
-entry script. Only **6 rows / 3 distinct targets** actually reach the retarget. The
-two mechanisms overlap heavily and the guard runs first; that ordering is a
-property of the design, not an accident, but it was unstated until review.
+entry script. That ordering was **wrong, and review caught it** — see round-3 finding R‑1. The
+retarget is now attempted *before* the provisional drop, so an excluded shape can no
+longer hide a genuine verb citation; 59 such rows that were being discarded are now
+resolved edges.
 
 The guard is what preserves real findings: `pm-plugin-development:plugin-doctor:validate`
 does **not** resolve, because plugin-doctor's entry script is `doctor-marketplace`.
@@ -191,9 +192,10 @@ one change that would have suppressed the rest, because it fails open.
 
 ### D4 — re-baseline and report the real unresolved set
 
-**Done.** 380 → **62**, with `resolved` rising 4921 → 4936 (the D2 retarget plus
-the references corrected below). `total_components` is unchanged at 306, so the
-comparison is like-for-like.
+**Done.** 380 → **62**, with `resolved` rising 4921 → **4971** and
+`total_dependencies` falling 5301 → 5033. `total_components` is unchanged at 306 and
+`circular_dependencies` is unchanged at 294, so the comparison is like-for-like on
+both axes the validator reports.
 
 Per the plan's Dependency note, the index's file coverage was confirmed before
 re-baselining: component discovery globs `scripts/*.py` (not `rglob`), so nested
@@ -245,13 +247,14 @@ genuinely-broken case is verified to **still** be reported
 (`TestSubcommandResolution`, plus `test_validation_fails_while_the_real_break_stands`).
 
 **Red-before-green was observed, not assumed.** With the two source files stashed
-and the tests unchanged, 13 of the 18 new tests failed; against the unfixed
+and the tests unchanged, 13 of the then-18 new tests failed; against the unfixed
 detector the fixture reported 6 unresolved targets rather than 1. The 5 that passed
 are the deliberate controls asserting real notation is still detected — correctly
 green both before and after.
 
-18 new test functions; the file's collected total is 83 (from 65). Whole-suite:
-20063 passed, 14 skipped.
+**25 new test functions**; the file's collected total is **90** (from 65). Whole-suite
+at this revision: **20072 passed, 14 skipped**. (Function count and collected-case
+count coincide here — none of these tests is parametrized.)
 
 ### D6 — documentation
 
@@ -300,12 +303,12 @@ another. Total diff is five source files plus docs.
 (`_dep_detection.py`, `_dep_index.py`, `test_resolve_dependencies.py`), so the
 Python path applies and the full gate ran.
 
-`./pw verify` — **SUCCESS**. All three sub-steps ran and were read from the tool
-output, not the exit code: `ruff … All checks passed!`,
-`mypy … Success: no issues found in 405 source files` (production),
-`mypy(test) [750 files]`, `SPDX-header check passed`, plugin-doctor marketplace-wide
-`total_issues: 0` with an empty `issues[]`, and `20063 passed, 14 skipped` with no
-failures or errors.
+`./pw verify` — **SUCCESS**, re-run after every round of fixes including the last.
+All three sub-steps ran and were read from the tool output, not the exit code:
+`ruff … All checks passed!`, `mypy … Success: no issues found in 405 source files`
+(production), `mypy(test) … 750 source files`, `SPDX-header check passed`,
+plugin-doctor marketplace-wide `total_issues: 0` with an empty `issues[]`, and
+**`20072 passed, 14 skipped`** with no failures or errors.
 
 `./pw quality-gate` was additionally run before each `*.py`-touching commit, clean
 each time.
@@ -380,6 +383,36 @@ in the opposite direction — a row that was **unresolved** and wrongly **became
 resolved** — which that diff cannot see by construction. The sub-agent caught what
 the run's self-check was structurally unable to. Post-fix the count is 62 rather
 than 61, and the extra row is the restored `manage_findings` finding.
+
+## Verification sub-agent — round 3 findings
+
+The round-2 fixes were re-verified by a second independent dispatch. It reproduced
+every figure, confirmed fixes 1, 2/3, 5, 7 outright, and found that three of the
+eight round-2 dispositions were **incomplete or wrong**. Two more defects were then
+found by this run's own re-measurement while fixing them.
+
+| # | Finding | Source | Disposition |
+|---|---|---|---|
+| R‑1 | The provisional drop ran **before** the subcommand retarget, so a genuine verb citation wearing an excluded shape was discarded — 59 rows in the live corpus. The shipped sentence "the exclusions cannot hide a real reference" was **false by the codebase's own definition of a real reference** | Sub-agent | **Fixed** — retarget is attempted first; the sentence is now true and scoped to the table it describes |
+| R‑2 | The retarget assumed the entry script is named *exactly* like the skill. Nine skills spell it with underscores (`plan-doctor:plan_doctor`, `extension-api:extension_api`, …), and plugin-doctor's own rule catalogue explicitly rejects that assumption | Sub-agent | **Fixed** — both case styles are tried |
+| R‑3 | Round-2 finding 8 was **not actually fixed**: the fixture's sub-document instance sat on the skill *with* an entry script, so disabling that arm left the count at 1. The disposition was literally true and functionally wrong | Sub-agent | **Fixed** — instance moved to the entry-script-less skill; all six arms now verified to bite |
+| R‑4 | `doc/adr/002-…adoc:249` still named `workflow-integration-git/scripts/merge_lock.py`, a path that does not exist — the *same* ADR the round-2 fix had already edited two paragraphs earlier | Sub-agent | **Fixed** |
+| R‑5 | `CANONICAL_COMMAND_PREFIXES` documented itself as mirroring manage-config's authority but carried one of its two prefixes | Sub-agent | **Fixed** — both mirrored |
+| R‑6 | `SKILL.md` claimed "nothing distinguishes these structurally from notation" for the 27 untriaged rows. False: `_analyze_notation_staleness.py` already ships an executor-anchored, fail-closed discriminator | Sub-agent | **Fixed** — claim corrected and the existing mechanism named |
+| R‑7 | Five **pre-existing** unconditional drops remain non-provisional (comment lines, URLs, `http`/digit segments). The comment-line skip alone discards 9 real resolvable notations. Not introduced here, but the new contract section omitted them | Sub-agent | **Disclosed** in `SKILL.md`; closing them deferred |
+| R‑8 | Six report figures were stale or self-contradictory (residue 34 vs 35, "6 rows / 3 targets" vs 5/2, test counts, and a `./pw verify` figure that predated the round-2 commits) | Sub-agent | **Fixed** — every figure re-derived at this revision |
+| R‑9 | **Third instance of the self-inflicted-noise pattern, in fields never measured.** The run had checked only *unresolved* rows. The round-2 finding-7 fix put a real command notation in `SKILL.md`, creating a 9-node **cycle** (`circular` 294 → 295), and four `notation-staleness` findings from a rule not wired into `quality-gate` | Sub-agent | **Fixed** — worked examples are now *named rather than spelled*; `circular` is back to the baseline 294 |
+| R‑10 | The R‑2 fix **introduced a false resolution**: applied to a `PYTHON_IMPORT`, it retargeted the stale `extension_base` mapping onto the sibling `extension_api` script, silently resolving 11 genuine findings | This run's re-measurement | **Fixed** — retarget restricted to written script notation; the 11 rows are findings again, with a regression test |
+| R‑11 | The R‑1 fix **introduced a spurious self-loop**: an entry script documenting its own verbs retargeted onto itself, manufacturing a circular dependency (`circular` 294 → 295) | This run's re-measurement | **Fixed** — self-edges are not recorded |
+
+**The pattern worth naming.** R‑10 and R‑11 were both *caused by the fixes for
+R‑1/R‑2* and caught only because every figure was re-measured after changing them —
+not by reasoning about the change. Three separate times in this run, a fix to the
+detector silently moved a number somewhere else. The lesson is mechanical rather
+than moral: **after touching a classifier, re-measure every field it feeds — not
+just the one the fix was about.** R‑9 is the same lesson in the reporting direction:
+"zero rows from my own docs" was verified against `unresolved` only, while
+`circular` and a second lint engine moved unwatched.
 
 ## Reviewer participation
 
