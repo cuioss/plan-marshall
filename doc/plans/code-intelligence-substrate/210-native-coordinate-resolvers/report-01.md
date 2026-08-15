@@ -330,7 +330,22 @@ writing `~/.claude/`; a cloud run neither performs nor records it, even though t
    refusals (nothing actionable, and no thread to answer). Zero inline review threads.
 3. **Report finalized and pushed as the last pre-merge commit** — this commit.
 4. **Shortfall disclosed** (a disclosure, not a gate): coverage is **1 of 3**, stated in words to the
-   operator before arming.
+   operator before arming — "1 of 3: `cuioss-review-bot` reviewed and reported no findings; `coderabbitai`
+   rate-limited, re-requested and refused again; `sourcery-ai` rate-limited on a weekly quota."
+
+**Outcome of the CodeRabbit re-request.** `@coderabbitai review` was posted at 13:12Z, after its stated
+~20-minute window had elapsed. It acknowledged ("I will perform a fresh review of PR #1238. I will inspect
+the native name joins and their build-system scoping") and then **did not perform one**: the same comment
+was edited in place to "⚠️ Action not completed — Review rate limited." Its own note explains why a
+re-request may not help regardless — "CodeRabbit is an incremental review system and does not re-review
+already reviewed commits. This command is applicable only when automatic reviews are paused."
+
+Its verdict therefore stays `rate-limited`, and coverage stays **1 of 3**. The attempt is recorded rather
+than the refusal being read as coverage, which is the whole point of making it: a run that tried and was
+refused is a different fact from one that never asked.
+
+Sourcery was not re-requested — its budget is a **weekly** diff-character quota that cannot reset inside
+this run, so a re-request would have been a pointless call with a predictable refusal.
 
 ## What have we learned (Step 9)
 
