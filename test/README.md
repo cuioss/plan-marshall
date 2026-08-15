@@ -100,6 +100,24 @@ build against before anyone reviews it. Write the helper locally, record the
 promotion as a proposal for the operator, and let the shared edit be made
 deliberately.
 
+**Which shared surface to propose**, once a helper has cleared that bar:
+
+- `test/_shared/` for a **self-contained primitive with no domain knowledge** that
+  a test imports when it needs it — `_poll_until.py` is the model.
+- `test/conftest.py` for something that must be **implicitly available to every
+  test**, or that belongs to the resolution machinery already there (script
+  loading, path resolution, fixture staging, an autouse fixture).
+
+If it would work as a plain import, propose `test/_shared/`. `conftest.py` is for
+what cannot.
+
+**Where to record the proposal.** State it in the change description of the work
+that needed it, alongside the local helper you wrote — the same channel the
+two-subtree row uses. A run executing a plan under `doc/plans/` records it in that
+run's report instead. "The operator" is whoever reviews that change; the point of
+the rule is that the shared edit is a separate, reviewed decision, not that any
+particular person makes it.
+
 The same rule binds in the other direction: if you are working inside one subtree
 and find that `test/conftest.py` or `test/_shared/` lacks something you need, add
 it to **your** subtree's `_{domain}_fixtures.py` and propose the promotion. Do not
