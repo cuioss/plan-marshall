@@ -259,6 +259,45 @@ as, or rendered as, `0%`: a `null` is the absence of a measurement, whereas `0%`
 asserts the reviewer got everything wrong. These numbers are authoritative; do NOT
 recompute them.
 
+### Step 2b: The review-versus-gate delta
+
+Step 2 compares reviewers **against each other**. It answers nothing about the
+question the whole apparatus exists for: *what did review catch that the in-house
+gates did not?* That delta is the only direct read on gate/review parity available,
+and it arrives free on every PR — the gates ran first and went green, so every
+finding review then filed is by construction a gate escape.
+
+Run it over the same populations Step 2 already derived — note it takes **`bot_kind`
+values**, not the `author_login`s Step 2 passes, since it reads `bot_kind` off the
+findings:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:automatic-review:review_gate_delta assess \
+  --plan-id {plan_id} --enabled-bots "{enabled_bot_kinds}" \
+  --reviewed-bots "{reviewed_bot_kinds}" --gates-green --partitions "{partitions}"
+```
+
+Pass `--gates-green` only when `pre-push-quality-gate` and `pre-submission-self-review`
+both recorded `done` for this run; pass `--gates-red` when either failed. **Omitting
+both is not a shortcut** — it leaves the gate state unsubstantiated and excludes the
+PR, which is the correct fail-closed outcome but produces no measurement.
+
+`--partitions` takes `hash_id:label` pairs classifying each escape as
+`gate_addressable` (an in-house gate could have caught it — a gate CONFIGURATION
+finding) or `gate_structural` (no gate class reaches it). This partition is a
+judgment, so it comes from the Step 3 qualitative pass on a run that performs one;
+supply it bare when no judgment is available. An unlabelled escape withholds the
+share rather than being bucketed by default.
+
+Read `verdict`, `escapes_total`, `by_partition`, `structural_share`, and
+`share_withheld`. **`structural_share: null` is never `0`**, and `verdict: excluded`
+is never "the gates caught everything" — both name a PR that is not evidence.
+Report the withheld reason verbatim rather than a number. See
+[`automatic-review/standards/bot-participation-contract.md`](../../../marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md)
+§ "The review-versus-gate delta" for why the withholding rules are structural, and
+[`automatic-review/SKILL.md`](../../../marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md)
+§ Canonical invocations → `review_gate_delta assess` for the argument surface.
+
 ### Step 3: LLM qualitative-judgment pass
 
 Reading the comment titles/bodies/details (from Step 1) + their resolutions + the

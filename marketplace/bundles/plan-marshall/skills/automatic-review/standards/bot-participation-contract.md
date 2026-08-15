@@ -504,6 +504,68 @@ changes the quantity being measured, so a deficit measured before such a change 
 are not the same number. Which charter a PR's reviewer was running is part of the population a deficit
 is reported over.
 
+## The review-versus-gate delta
+
+*"What did review catch that the in-house gates did not"* is the only direct read on gate/review parity
+available, and it arrives free on every PR. `review_gate_delta assess` is the measurement; this section
+is its contract. It is a signal about **the gates' reach** — never about a reviewer, and never a merge
+verdict (`proves: gate_escape_only`, `gates_merge: false`).
+
+**Every finding on a green-gate PR is a gate escape, by construction.** The in-house gates run FIRST —
+`pre-push-quality-gate` at `order: 5`, `pre-submission-self-review` immediately after — and the branch
+only reaches `push` / `create-pr` / `automatic-review` (`order: 30`) once they are green. So a finding
+review files on such a PR is something the gates ran over and did not report. No per-finding gate
+attribution is needed, which is what makes the signal free rather than a bespoke study. The gate state
+is therefore load-bearing input: a RED-gate PR escaped nothing, and an absent gate signal leaves the
+escape claim unsubstantiated.
+
+### Two properties, both structural rather than advisory
+
+**1. Refusal-PRs are excluded BY CONSTRUCTION.** The bots refuse frequently, so an absence of review
+findings is very often an absence of *review*, not of defects. ⛔ **A parity metric that does not
+exclude refusal-PRs will report improving parity as coverage collapses** — this epic's named failure
+mode, and the reason a metric that can produce it must not ship.
+
+The guard is that `structural_share` is emitted **only at full coverage** (every roster member in the
+reviewed-at-all set). A collapse can then only ever move the metric from *a number* to *no number*,
+never to a better number. **Partial** coverage is withheld for the same reason and it is the dangerous
+case: a collapse silently re-weights the partition. If the reviewer that finds the gate-addressable
+defects goes quiet, every surviving escape is structural and a naive share reports 100% — *"the gates
+are perfectly configured"* — when the only thing that changed is who spoke.
+
+**2. Partition BEFORE computing any rate.** The escape set is **mixed**, and conflating its halves is
+how a fixable configuration hole gets recorded as irreducible residual:
+
+| Partition | Meaning | What it is evidence of |
+|---|---|---|
+| `gate_addressable` | An in-house gate COULD have caught it — a lint family absent from the `select` list, an un-enabled check | A gate **configuration** finding. Actionable on our side |
+| `gate_structural` | No in-house gate CLASS reaches it however configured — documentation-prose semantics, report-claim consistency, behaviour under inputs no test supplies | The genuine residual the parity question is about |
+| `unpartitioned` | No admissible label supplied | Nothing. It **withholds** the share |
+
+An escape carrying no admissible label is never defaulted into a bucket — defaulting would let a typo
+move the number — so an unlabelled escape withholds the share exactly as partial coverage does.
+
+### A withheld share is not a withheld observation
+
+The escapes a partial or unlabelled round surfaced are real, and are still reported with their
+per-partition counts and their populations. Only the **ratio** — the thing a shrinking denominator
+corrupts — is withheld. Every figure publishes `reviewer_coverage`, `enabled_bots`, `reviewed_bots`,
+and a `provenance` string naming how the escape set was derived, because a rate reported without its
+population is the defect § "The counting rule" exists to remove.
+
+### What this measures and what it does not
+
+It measures the **gates**. A high `gate_addressable` share is a to-do list for the gate configuration;
+a high `gate_structural` share says the gates are configured about as well as their analysis classes
+allow and the residual is genuinely review-only. ⚠ It is **not** an argument that self-review or the
+gates should be trusted less: the two mechanisms have different and complementary reach, and the same
+run that produced this measurement's motivating evidence had self-review catch four instances of a
+stale-set defect the bots did not. Neither a volume nor a share is a coverage number.
+
+Whether the gate-green / review-finding pairing is a **recurring** signal rather than a single
+instance is a hypothesis this instrument exists to test, not one it assumes. Until enough measured PRs
+accumulate, the verb ships as a measurement with **no parity claim attached**.
+
 ## Consumers
 
 | Consumer | What it reads |
@@ -513,6 +575,7 @@ is reported over.
 | `github_pr pull_request_runs` / `ci checks pull-request-runs` | Nothing from this contract — it is the **observation channel for `not_triggered`**, answering the PR-wide question of whether any `pull_request`-event workflow run exists for the PR at all. Its verdict reaches the predicate as the single `--not-triggered` bool. |
 | `review_completeness check` | `required_bots` for the quorum; `optional_bots` for reporting only; `participation_evidence` to admit each evidence pair; `rate_limit_class` to split the THREE refusal states one-to-one (`refused_awaitable` / `refused_hard` / `refused_unknown`). Consumes `stale_participation_bots[]` via `--stale-participation-bots` to assign `participated_stale`, the bots that answered a re-review without reviewing the merge candidate via `--declined-bots` to assign `declined`, and the PR-wide `--not-triggered` bool to refine what would otherwise be `absent`, and the `--refused-causes` overlay (from `refused_causes[]`) to report each refusing bot's CAUSE in `refusal_causes[]` — advisory, gating nothing. Emits `review_state_summary` (the reviewer-state distribution) so `display_detail` can tell reviewed-clean from nobody-reviewed. |
 | `review_completeness deficit` | The same observation flags as `check`, to classify each bot and derive its reviewed-at-all predicate and filed finding count, then report the comparative deficit signal — a reviewer-quality observation that gates no merge (§ "The comparative deficit signal"). |
+| `review_gate_delta assess` | The enabled roster (`required_bots ∪ optional_bots`) via `--enabled-bots` as the coverage denominator, and the reviewed-at-all set via `--reviewed-bots` as its numerator; the filed-and-actionable finding count as the escape count. All three are § "The counting rule" definitions consumed verbatim, never re-derived. Reports what review caught that the in-house gates did not — a signal about the GATES that gates no merge (§ "The review-versus-gate delta"). |
 | `finalize-step-review-retrospective` (`review_retrospective`) | The enabled roster (`author_login` values) via `--enabled-reviewers`, to emit a row per ENABLED reviewer rather than per responding one, each carrying `participation: measured` / `unmeasurable` (§ "The counting rule" — the row-domain population); and the reviewed-at-all set (`participated` / `participated_but_empty` `author_login` values) via `--reviewed-reviewers`, to grade whether the review-quality comparison could be performed at all (`comparison: measured` / `clean` / `vacuous` / `indeterminate`) rather than reporting a benign no-op on a run where no reviewer produced content. |
 | `github_ops pr wait-for-comments` | Each bot's `participation_requires_update`, to select the `updated_at`-movement arm of its completion predicate over the count-growth arm; `participation_evidence` plus `bot_kinds()`, to decide whether the await is answerable at all (`detector_answerable`). |
 | `marshall-steward` | Both lists, to ask the wizard question and record the provenance. |

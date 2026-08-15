@@ -885,7 +885,7 @@ The orchestrator-side handling of this return (reading `re_review_on_timeout`, b
 
 ## Canonical invocations
 
-The canonical argparse surface for the invocable script this skill registers: `review_completeness.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
+The canonical argparse surface for the invocable scripts this skill registers: `review_completeness.py` and `review_gate_delta.py`. The plugin-doctor analyzer (`_analyze_manage_invocation.py`) reads this section as source-of-truth for the `manage-invocation-invalid` and `missing-canonical-block` rules. Consuming docs xref this section by name instead of restating the command inline. See [`pm-plugin-development:plugin-script-architecture` cross-skill-integration.md](../../../pm-plugin-development/skills/plugin-script-architecture/standards/cross-skill-integration.md) § "Script invocation in documentation".
 
 ### review_completeness — check
 
@@ -936,3 +936,38 @@ the run is evidence neither way). It never fires when every other reviewer refus
 `0 : 0`. The finding count is the number of FILED `pr-comment` findings per reviewer — never a raw
 comment count, which is wrong in both directions when one reviewer's findings arrive across several
 review bodies.
+
+### review_gate_delta — assess
+
+```bash
+python3 .plan/execute-script.py plan-marshall:automatic-review:review_gate_delta assess \
+  --plan-id PLAN_ID [--enabled-bots [ENABLED_BOTS]] [--reviewed-bots [REVIEWED_BOTS]] \
+  [--gates-green | --gates-red] [--partitions [PARTITIONS]]
+```
+
+Measures **what review caught that the in-house gates did not** — a signal about the GATES' reach,
+never about a reviewer and never a merge verdict (`proves: gate_escape_only`, `gates_merge: false`).
+It needs no per-finding gate attribution: the gates run first (`pre-push-quality-gate` at `order: 5`,
+self-review next) and the branch only reaches this step at `order: 30` once they are green, so on a
+green-gate PR every filed finding is by construction a gate escape. See
+[`standards/bot-participation-contract.md`](standards/bot-participation-contract.md) § "The
+review-versus-gate delta" for the governing contract, and § "The counting rule" for the definitions
+this verb consumes rather than re-derives.
+
+Three inputs decide whether the PR is evidence at all, and each absent one fails CLOSED to
+`verdict: excluded` rather than to a confident zero:
+
+- `--gates-green` / `--gates-red` — omitting BOTH leaves the gate state unsubstantiated
+  (`gate_state_unsubstantiated`). A red gate excludes too: nothing escaped a gate that had not passed.
+- `--enabled-bots` — the coverage DENOMINATOR (`required_bots ∪ optional_bots`). An empty roster is
+  `no_reviewer_roster`, never vacuously complete — `0/0` is not full coverage.
+- `--reviewed-bots` — `review_completeness`'s reviewed-at-all set. Coverage is its INTERSECTION with
+  the roster, so an off-roster reviewer cannot complete it; an empty intersection is
+  `no_reviewer_reviewed`.
+
+`structural_share` (the share of escapes no in-house gate class could have caught) is emitted **only**
+at full coverage with every escape partitioned; otherwise it is `null` and `share_withheld` names the
+reason. Both withholding rules are structural rather than advisory — see § "The review-versus-gate
+delta" for why a partial collapse would otherwise report 100% ("the gates are perfect") exactly when
+the reviewer that finds the addressable defects went quiet. A withheld share is **not** a withheld
+observation: the escapes and their partition counts are still reported.
