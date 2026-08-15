@@ -50,6 +50,10 @@ def _resolver():
 
 
 def _edges() -> list[tuple[str, str]]:
+    # The extension is loaded by file location, so it carries no type
+    # information; declaring the unpack target keeps the helper's contract
+    # explicit rather than propagating ``Any`` into every caller.
+    edges: list[tuple[str, str]]
     edges, _ = _resolver().derive_edges(_discovered(), {})
     return edges
 

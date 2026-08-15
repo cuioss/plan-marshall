@@ -122,8 +122,14 @@ def test_discover_modules_no_package_json():
 def test_metadata_extraction():
     """Test metadata extraction from package.json.
 
-    npm metadata includes planning-relevant fields: type, description.
-    NOT Maven fields (artifact_id, group_id, parent, profiles).
+    npm metadata includes planning-relevant fields: name, description, version,
+    scripts. NOT Maven fields (artifact_id, group_id, parent, profiles).
+
+    ``name`` is the published package identity — the key the npm derivation
+    resolver joins on. It is carried here rather than read back off the module's
+    own ``name``, which falls back to the directory when package.json declares
+    none, so only this field distinguishes a published package from an unnamed
+    one.
     """
     with BuildContext() as ctx:
         pkg = {
@@ -144,6 +150,7 @@ def test_metadata_extraction():
 
         metadata = modules[0]['metadata']
         # Planning-relevant npm metadata (delegated discovery includes version and scripts)
+        assert metadata['name'] == 'test-pkg'
         assert metadata['description'] == 'A test package'
         assert metadata['version'] == '3.2.1'
         assert 'scripts' in metadata  # list of script names
