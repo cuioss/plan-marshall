@@ -228,11 +228,11 @@ Reviews knowledge skill content quality. See [standards/doctor-skill-knowledge.m
 
 Test-tree conventions enforced across the `test/` directory, at two severities. See [standards/doctor-test-conventions.md](standards/doctor-test-conventions.md) for the full rule definitions and the validator registry schema.
 
-**Build-failing (`error`)** — three rules: unique fixture-module basenames, `subprocess.run` PYTHONPATH propagation (AST-based), and identifier-validator regex vs. corpus.
+**Build-failing (`error`)** — four rules: unique fixture-module basenames, `subprocess.run` PYTHONPATH propagation (AST-based), identifier-validator regex vs. corpus, and helper module given a collected name.
 
-**Reporting (`warning`)** — four structural house-style rules: test-module line budget (400 lines), helper module given a collected name, hand-rolled import preamble (`spec_from_file_location` / deep `Path(__file__).parent` chain), and historical citations in test docstrings and comments.
+**Reporting (`warning`)** — three structural house-style rules: test-module line budget (400 lines), hand-rolled import preamble (`spec_from_file_location` / deep `Path(__file__).parent` chain or `parents[N]`), and historical citations in test docstrings and comments.
 
-`status` is derived from **error-severity findings only**, so `warning_count` can be non-zero while `status: pass`. The warning rules ship at that severity because the tree violates all four at scale; flipping them to `error` is a follow-up conditioned on their violation counts reaching zero. This scope is not part of `quality-gate`.
+`status` is derived from **error-severity findings only**, so `warning_count` can be non-zero while `status: pass`. Severity is per rule and conditional: a rule ships at `warning` while the tree still violates it and is flipped to `error` once its own count reaches zero — `test-helper-module-misnamed` has already made that transition. This scope is not part of `quality-gate`.
 
 ---
 
@@ -370,8 +370,8 @@ Representative rule ids by category:
 - **Mirror-drift**: `provides-method-table-drift`, `literal-count-drift`, `broken-relative-link`, `fenced-code-no-language` (**build-failing** — registered in `cmd_quality_gate` so a drifted mirror fails the build, and also reported under `analyze`; `fenced-code-no-language` is auto-fixable; `provides-method-table-drift` detects drift between a `plan-marshall-plugin` extension.py `provides_*()` overrides and the SKILL.md "Extension API" table mirror — see [scripts/_analyze_provides_method_table.py](scripts/_analyze_provides_method_table.py))
 - **Content**: `checklist-pattern`
 - **PM-Workflow**: `pm-implicit-script-call` through `pm-contract-non-compliance`
-- **Test-Conventions** (`error`): `unique-fixture-basenames`, `subprocess-pythonpath`, `identifier-validator-corpus` (see [standards/doctor-test-conventions.md](standards/doctor-test-conventions.md))
-- **Test-Conventions** (`warning`): `test-module-line-budget`, `test-helper-module-misnamed`, `test-module-preamble-boilerplate`, `test-docstring-historical-prose` (same standard)
+- **Test-Conventions** (`error`): `unique-fixture-basenames`, `subprocess-pythonpath`, `identifier-validator-corpus`, `test-helper-module-misnamed` (see [standards/doctor-test-conventions.md](standards/doctor-test-conventions.md))
+- **Test-Conventions** (`warning`): `test-module-line-budget`, `test-module-preamble-boilerplate`, `test-docstring-historical-prose` (same standard)
 
 ---
 

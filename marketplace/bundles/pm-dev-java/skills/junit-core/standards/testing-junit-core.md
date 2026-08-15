@@ -5,7 +5,7 @@ For general testing principles (AAA pattern, test organization, coverage require
 ## Fundamental Rules
 
 * **Never introduce libraries** without asking the user first. This includes test utilities, assertion libraries, mocking frameworks, and any other dependency.
-* Use randomized generators (e.g., `Generators.nonEmptyStrings().next()`, `UUID.randomUUID()`) for test data. See `pm-dev-java-cui:cui-testing` for CUI generator framework.
+* Choose generated data or an exact literal by what the contract is. Where the contract is **universal** ("for all valid inputs, P holds" — parsers, validators, normalisers, round-trip encoders), use randomized generators (e.g., `Generators.nonEmptyStrings().next()`, `UUID.randomUUID()`); see `pm-dev-java-cui:cui-testing` for the CUI generator framework. Where **the literal *is* the contract** (a configuration default, a canonical id, a serialized field name, a documented exit code, a spec-defined boundary value), write the value exactly — a generator there replaces the one value that matters with an arbitrary one and asserts nothing. The full statement is `plan-marshall:persona-module-tester` § "Test Data Principles → The discriminator".
 * **Never use `Thread.sleep`** for waiting in tests. Use Awaitility for all async waiting — it provides readable, timeout-safe polling. See `standards/testing-async-patterns.md` for patterns.
 * **Never use reflection** to access private fields or methods in tests — this is always a bug, not a workaround. If code is hard to test, prefer these alternatives in order:
   1. **Refactor for testability** — extract logic into a testable collaborator or method
@@ -13,7 +13,7 @@ For general testing principles (AAA pattern, test organization, coverage require
 
 ## Test Class Requirements
 
-* At least one test class per production class — split into multiple at ~200 lines
+* At least one test class per production class — split into multiple when the class exceeds the **400-line budget**, by behaviour cluster (`{Name}Test`, `{Name}EdgeCaseTest`, `{Name}IntegrationTest`) rather than in arbitrary halves. The budget and its derivation are stated once in `plan-marshall:persona-module-tester` § "Module Budget: 400 lines"
 * Test class naming: `{ClassName}Test.java` for production class `{ClassName}.java`
 * Test classes in same package structure under `src/test/java`
 * **Exceptions:** Enums without custom methods (only constants).

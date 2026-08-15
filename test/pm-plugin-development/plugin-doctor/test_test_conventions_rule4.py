@@ -80,14 +80,19 @@ def test_uncollected_module_over_budget_is_not_flagged(tmp_path):
 
 
 def test_collected_module_without_tests_is_flagged(tmp_path):
-    """A module named test_*.py that declares no test is flagged."""
+    """A module named test_*.py that declares no test is flagged, build-failing.
+
+    This rule ships at ``error`` rather than ``warning``: its violation count
+    over the tree reached zero, so it guards a clean tree instead of describing
+    a non-compliant one.
+    """
     _write(tmp_path, 'test_helpers.py', 'def build_plan():\n    return {}\n')
 
     findings = analyze_test_helper_module_misnamed(tmp_path)
 
     assert len(findings) == 1
     assert findings[0]['rule_id'] == 'test-helper-module-misnamed'
-    assert findings[0]['severity'] == 'warning'
+    assert findings[0]['severity'] == 'error'
 
 
 def test_collected_module_with_test_function_is_not_flagged(tmp_path):

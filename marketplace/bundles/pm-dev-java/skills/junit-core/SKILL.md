@@ -27,8 +27,8 @@ Read: standards/testing-junit-core.md
 ```
 
 This provides foundational rules for:
-- Test class requirements (at least one per production class, splitting at 200+ lines)
-- AAA pattern with generated test data (no literals, no phase comments)
+- Test class requirements (at least one per production class, splitting by behaviour cluster above the 400-line budget)
+- AAA pattern, with test data chosen by the universal-contract / literal-is-the-contract discriminator, and no phase comments
 - Full JUnit 5 assertion API (`assertAll`, `assertInstanceOf`, `assertDoesNotThrow`)
 - @Nested for grouping (3+ related tests)
 - Corner case testing
