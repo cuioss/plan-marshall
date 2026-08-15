@@ -12,37 +12,19 @@ AskUserQuestion; there is no LLM dispatch fallback on this path.
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from argparse import Namespace
 from pathlib import Path
 
-from test_helpers import create_marshal_json, create_nested_marshal_json
+from _manage_config_fixtures import create_marshal_json, create_nested_marshal_json
 
-from conftest import PROJECT_ROOT
+from conftest import load_script_module, parse_ns
 
-_SCRIPTS_DIR = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+_MANAGE_CONFIG = ('plan-marshall', 'manage-config')
+_SCRIPT = (*_MANAGE_CONFIG, 'manage-config.py')
+
+_mod = load_script_module(
+    *_MANAGE_CONFIG, '_cmd_domain_detect.py', module_name='_cmd_domain_detect_under_test'
 )
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mod = _load_module('_cmd_domain_detect_under_test', '_cmd_domain_detect.py')
 cmd_domain_detect = _mod.cmd_domain_detect
 _glob_to_regex = _mod._glob_to_regex
 _extract_narrative_paths = _mod._extract_narrative_paths
@@ -53,11 +35,19 @@ def _ns(
     domain_override: str | None = None,
     affected_files: str | None = None,
 ) -> Namespace:
-    return Namespace(
-        plan_id=plan_id,
-        domain_override=domain_override,
-        affected_files=affected_files,
-    )
+    """Args for ``manage-config domain-detect``, built by the script's own parser.
+
+    Replaces a hand-built namespace: the three attributes below are what this
+    module happens to name, while the parser also supplies the routing attributes
+    the real CLI sets, so the handler sees what production hands it.
+    """
+    argv = ['domain-detect', '--plan-id', plan_id]
+    if domain_override is not None:
+        argv += ['--domain-override', domain_override]
+    if affected_files is not None:
+        argv += ['--affected-files', affected_files]
+    ns: Namespace = parse_ns(*_SCRIPT, *argv)
+    return ns
 
 
 def _write_request(plan_dir: Path, body: str) -> None:
@@ -466,16 +456,17 @@ def test_lesson_body_preferred_over_request_md(plan_context):
 
 def test_domain_detect_registered_in_manage_config_dispatch():
     """argparse routes 'domain-detect' to cmd_domain_detect."""
-    import argparse  # noqa: PLC0415
-
-    manage_config = _load_module('_manage_config_dispatch_check', 'manage-config.py')
+    manage_config = load_script_module(
+        *_MANAGE_CONFIG, 'manage-config.py', module_name='_manage_config_dispatch_check'
+    )
     assert manage_config.cmd_domain_detect is cmd_domain_detect or callable(
         manage_config.cmd_domain_detect
     )
 
-    parser = argparse.ArgumentParser()
-    sub = parser.add_subparsers(dest='noun')
-    leaf = sub.add_parser('domain-detect')
-    leaf.set_defaults(func=manage_config.cmd_domain_detect)
-    ns = parser.parse_args(['domain-detect'])
-    assert ns.func is manage_config.cmd_domain_detect
+    # The REAL parser accepts the verb, rather than a stand-in parser assembled
+    # here: a stand-in that registers the subcommand itself can only prove that
+    # argparse works. manage-config dispatches on the ``noun`` attribute, so that
+    # is what the routing assertion reads.
+    ns = parse_ns(*_SCRIPT, 'domain-detect', '--plan-id', 'dispatch-check')
+    assert ns.noun == 'domain-detect'
+    assert ns.plan_id == 'dispatch-check'

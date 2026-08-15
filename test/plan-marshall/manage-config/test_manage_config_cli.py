@@ -26,7 +26,7 @@ import json
 import sys
 
 import pytest
-from test_helpers import create_marshal_json, create_nested_marshal_json
+from _manage_config_fixtures import create_marshal_json, create_nested_marshal_json
 from toon_parser import parse_toon
 
 from conftest import load_script_module

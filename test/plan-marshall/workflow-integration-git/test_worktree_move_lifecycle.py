@@ -37,42 +37,46 @@ deterministically — the suite never contends for the real ``.plan/`` under
 
 from __future__ import annotations
 
-import importlib.util
 import subprocess
 from argparse import Namespace
 from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path
+from conftest import load_script_module, parse_ns
 
-_GW_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
-_gw_spec = importlib.util.spec_from_file_location('git_workflow', _GW_PATH)
-assert _gw_spec is not None and _gw_spec.loader is not None
-git_workflow = importlib.util.module_from_spec(_gw_spec)
-_gw_spec.loader.exec_module(git_workflow)
+_GIT_WF = ('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
 
-_PE_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'prepare_execute.py')
-_pe_spec = importlib.util.spec_from_file_location('prepare_execute', _PE_PATH)
-assert _pe_spec is not None and _pe_spec.loader is not None
-prepare_execute = importlib.util.module_from_spec(_pe_spec)
-_pe_spec.loader.exec_module(prepare_execute)
-
-_II_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'integrate_into_main.py')
-_ii_spec = importlib.util.spec_from_file_location('integrate_into_main', _II_PATH)
-assert _ii_spec is not None and _ii_spec.loader is not None
-integrate_into_main = importlib.util.module_from_spec(_ii_spec)
-_ii_spec.loader.exec_module(integrate_into_main)
-
-_RC_PATH = get_script_path('plan-marshall', 'manage-run-config', 'run_config.py')
-_rc_spec = importlib.util.spec_from_file_location('run_config', _RC_PATH)
-assert _rc_spec is not None and _rc_spec.loader is not None
-run_config = importlib.util.module_from_spec(_rc_spec)
-_rc_spec.loader.exec_module(run_config)
+git_workflow = load_script_module(*_GIT_WF)
+prepare_execute = load_script_module('plan-marshall', 'workflow-integration-git', 'prepare_execute.py')
+integrate_into_main = load_script_module('plan-marshall', 'workflow-integration-git', 'integrate_into_main.py')
+run_config = load_script_module('plan-marshall', 'manage-run-config', 'run_config.py')
 
 import marketplace_paths  # noqa: E402
 
 _PLAN_ID = 'lifecycle-plan'
+
+
+def _worktree_ns(plan_id: str) -> Namespace:
+    """Args for ``git-workflow worktree-create``, built by that script's own parser."""
+    ns: Namespace = parse_ns(*_GIT_WF, 'worktree-create', '--plan-id', plan_id, '--branch', f'feature/{plan_id}')
+    return ns
+
+
+def _prepare_ns(plan_id: str) -> Namespace:
+    """Args for ``prepare_execute prepare``, built by THAT script's own parser.
+
+    Separate from :func:`_worktree_ns` on purpose. The two scripts take the same
+    three arguments today, so one namespace would serve both — but it would carry
+    ``git-workflow``'s defaults into a ``prepare_execute`` call, which is the class
+    of drift this helper exists to remove. Each script's args come from its own
+    parser.
+    """
+    ns: Namespace = parse_ns(
+        'plan-marshall', 'workflow-integration-git', 'prepare_execute.py',
+        'prepare', '--plan-id', plan_id, '--branch', f'feature/{plan_id}',
+    )
+    return ns
 
 
 def _init_main_repo(repo: Path) -> None:
@@ -140,15 +144,11 @@ class TestWorktreeMoveLifecycle:
         main_local = real_repo['main_local']
         plan_id = real_repo['plan_id']
 
-        create = git_workflow.cmd_worktree_create(
-            Namespace(plan_id=plan_id, branch=f'feature/{plan_id}', base=None)
-        )
+        create = git_workflow.cmd_worktree_create(_worktree_ns(plan_id))
         assert create['status'] == 'success', create
         worktree = Path(create['worktree_path'])
 
-        result = prepare_execute.run_prepare_execute(
-            Namespace(plan_id=plan_id, branch=f'feature/{plan_id}', base=None)
-        )
+        result = prepare_execute.run_prepare_execute(_prepare_ns(plan_id))
         assert result['status'] == 'success', result
         assert result['action'] == 'moved'
 
@@ -203,15 +203,11 @@ class TestWorktreeMoveLifecycle:
         # Snapshot main's executor content before the round-trip.
         before = main_executor.read_text()
 
-        create = git_workflow.cmd_worktree_create(
-            Namespace(plan_id=plan_id, branch=f'feature/{plan_id}', base=None)
-        )
+        create = git_workflow.cmd_worktree_create(_worktree_ns(plan_id))
         assert create['status'] == 'success', create
         worktree = Path(create['worktree_path'])
 
-        move_in = prepare_execute.run_prepare_execute(
-            Namespace(plan_id=plan_id, branch=f'feature/{plan_id}', base=None)
-        )
+        move_in = prepare_execute.run_prepare_execute(_prepare_ns(plan_id))
         assert move_in['status'] == 'success', move_in
         # Main executor present + unchanged right after move-in (never moved).
         assert main_executor.is_file()
@@ -230,7 +226,9 @@ class TestWorktreeMoveLifecycle:
         )
 
         # Move the plan dir back into main.
-        move_back = integrate_into_main.run_integrate_into_main(Namespace(plan_id=plan_id))
+        move_back = integrate_into_main.run_integrate_into_main(
+            parse_ns('plan-marshall', 'workflow-integration-git', 'integrate_into_main.py', 'integrate', '--plan-id', plan_id)
+        )
         assert move_back['status'] == 'success', move_back
         assert move_back['action'] == 'integrated'
 
@@ -253,12 +251,8 @@ class TestWorktreeMoveLifecycle:
         main_local = real_repo['main_local']
         plan_id = real_repo['plan_id']
 
-        git_workflow.cmd_worktree_create(
-            Namespace(plan_id=plan_id, branch=f'feature/{plan_id}', base=None)
-        )
-        result = prepare_execute.run_prepare_execute(
-            Namespace(plan_id=plan_id, branch=f'feature/{plan_id}', base=None)
-        )
+        git_workflow.cmd_worktree_create(_worktree_ns(plan_id))
+        result = prepare_execute.run_prepare_execute(_prepare_ns(plan_id))
         worktree = Path(result['worktree_path'])
 
         # Pin cwd into the worktree — the phase-5 execution posture.
@@ -286,9 +280,7 @@ class TestWorktreeMoveLifecycle:
 
         # Materialize the worktree, then replace its real .plan/local with a
         # symlink back to main — the retired-symlink-residue scenario.
-        create = git_workflow.cmd_worktree_create(
-            Namespace(plan_id=plan_id, branch=f'feature/{plan_id}', base=None)
-        )
+        create = git_workflow.cmd_worktree_create(_worktree_ns(plan_id))
         worktree = Path(create['worktree_path'])
         wt_local = worktree / '.plan' / 'local'
         for entry in sorted(wt_local.rglob('*'), reverse=True):
@@ -299,9 +291,7 @@ class TestWorktreeMoveLifecycle:
         wt_local.rmdir()
         wt_local.symlink_to(main_local, target_is_directory=True)
 
-        result = prepare_execute.run_prepare_execute(
-            Namespace(plan_id=plan_id, branch=f'feature/{plan_id}', base=None)
-        )
+        result = prepare_execute.run_prepare_execute(_prepare_ns(plan_id))
 
         assert result['status'] == 'error'
         assert result.get('error_code') == prepare_execute.ErrorCode.INVALID_INPUT
