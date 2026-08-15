@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Extension API for the pm-code-intelligence bundle.
+
+Hosts Axis-C only in substance: the ``lsp`` derivation resolver, a pure join over
+the language-server references the discovery-time harvest materializes into
+``component_refs``.
+
+The bundle also subclasses :class:`ExtensionBase` (Axis-A) because that is the
+only way to be *discovered*: ``discover_derivation_resolvers()`` spans the Axis-A
+and Axis-B discovery paths, and a class inheriting ``DerivationResolverBase``
+alone would be reachable from neither. It registers no skill domain, which is the
+honest answer for a bundle that contributes an edge set rather than skills.
+
+Why this resolver is not on ``pm-dev-python``: a bundle registers at most one
+resolver, so its edges would be stamped ``python`` and become indistinguishable
+from that bundle's AST-import join. Keeping the ids distinct is the entire point
+— where both derive the same pair they have corroborated rather than disagreed,
+and the core merge unions them into one edge carrying both producer ids.
+"""
+
+from extension_base import DerivationResolverBase, ExtensionBase
+
+LSP_DEP_TYPE = 'lsp'
+"""The single reference kind this resolver owns.
+
+Declared as a literal rather than imported from the engine that writes it: a
+resolver imports nothing from the bundle materializing its field, so each
+registration stands alone. The sibling kinds (``script`` / ``skill`` / ``import``
+/ ``path`` / ``implements``) belong to the markdown, python, and documentation
+resolvers, so a non-``lsp`` entry is outside this resolver's scope rather than an
+edge it suppressed, and carries no note.
+"""
+
+HARVEST_STATUS_FIELD = 'lsp_harvest'
+"""Module-dict field carrying the harvest's ``{ran, reason, notes}`` record.
+
+The field is what makes a zero-edge answer non-vacuous. Without it, a server that
+never started and a workspace with genuinely no references both reach the caller
+as ``status: ok, edge_count: 0`` — the confident empty answer this substrate
+exists to eliminate.
+"""
+
+SUPPRESSION_CATEGORIES = ('unresolved-target', 'unknown-endpoint', 'self-edge')
+"""Suppression buckets reported in ``notes[]``, in emission order."""
+
+
+class Extension(ExtensionBase, DerivationResolverBase):
+    """Code-intelligence extension and ``lsp`` module-edge derivation resolver."""
+
+    def get_skill_domains(self) -> list[dict]:
+        """Return no skill domain.
+
+        This bundle contributes an edge set, not skills. Declaring a domain with
+        no skills would put an empty entry in front of every domain-selection
+        surface (``skill-domains get-available``, the steward wizard) and assert a
+        capability the bundle does not have. Resolver discovery is unaffected:
+        ``discover_derivation_resolvers()`` applies no domain filter.
+        """
+        return []
+
+    def applies_to_module(self, module_data: dict, active_profiles: set[str] | None = None) -> dict:
+        """Report non-applicability — the bundle registers no domain to apply.
+
+        Detection gates skill loading, not resolver registration, so this verdict
+        has no bearing on whether the ``lsp`` resolver runs.
+        """
+        return {
+            'applicable': False,
+            'confidence': 'none',
+            'signals': [],
+            'additive_to': None,
+            'skills_by_profile': {},
+        }
+
+    def config_defaults(self, project_root: str) -> None:
+        """Seed the harvest's defaults into the shared extension-defaults surface.
+
+        The harvest defaults to **off**. It boots a language server and indexes
+        the workspace, which is a cost every crawl would otherwise pay whether or
+        not the project wants symbol-derived edges; a capability that expensive is
+        opted into, not out of.
+
+        No parallel configuration mechanism is introduced: these are ordinary
+        extension-default keys in ``.plan/marshal.json``, written through the
+        shared helper, which only sets a key that does not already exist and so
+        never overrides a user's choice.
+        """
+        try:
+            from _config_core import ext_defaults_set_default
+        except ImportError:
+            return
+
+        ext_defaults_set_default('pm_code_intelligence.lsp.enabled', 'false', project_root)
+        ext_defaults_set_default('pm_code_intelligence.lsp.python.server', 'pyright-langserver --stdio', project_root)
+        ext_defaults_set_default('pm_code_intelligence.lsp.timeout_seconds', '300', project_root)
+
+    # =========================================================================
+    # Axis-C: module-edge derivation (the language-server symbol join)
+    # =========================================================================
+
+    def derivation_resolver_id(self) -> str:
+        """Return the stable provenance identity stamped onto every lsp edge."""
+        return 'lsp'
+
+    def derive_edges(
+        self,
+        derived_by_name: dict,
+        enriched_by_name: dict,
+    ) -> tuple[list[tuple[str, str]], list[str]]:
+        """Derive module edges from harvested language-server references.
+
+        A pure join over the ``component_refs`` field discovery materializes: the
+        language server ran at discovery time, its references were lifted to
+        module granularity through the path-attribution seam, and this method
+        performs no file I/O and runs no subprocess, as the Axis-C purity contract
+        requires.
+
+        The harvest's own status record is read first and reported. A harvest that
+        did not run yields a note naming the reason, so ``edge_count: 0`` from a
+        server that never started stays distinguishable from ``edge_count: 0`` on
+        a workspace with genuinely no references.
+
+        Args:
+            derived_by_name: Module name → derived data. A module carrying no
+                harvest record contributes nothing.
+            enriched_by_name: Module name → curated overlay. Unused: the
+                precedence of a declared ``internal_dependencies`` over a derived
+                edge set is core's decision, applied ahead of this call.
+
+        Returns:
+            An ``(edges, notes)`` tuple. ``notes`` carries the harvest status
+            first, then one aggregated entry per non-empty suppression category.
+        """
+        edges: set[tuple[str, str]] = set()
+        suppressed: dict[str, list[str]] = {category: [] for category in SUPPRESSION_CATEGORIES}
+        harvest_notes: list[str] = []
+        seen_notes: set[str] = set()
+
+        for module_name, module_data in derived_by_name.items():
+            self._collect_harvest_notes(module_data, harvest_notes, seen_notes)
+
+            for ref in module_data.get('component_refs') or []:
+                if ref.get('dep_type') != LSP_DEP_TYPE:
+                    continue
+
+                target = ref.get('target_bundle')
+                candidate = f'{module_name} -> {target} [{LSP_DEP_TYPE}]'
+
+                if not ref.get('resolved'):
+                    suppressed['unresolved-target'].append(candidate)
+                elif target not in derived_by_name:
+                    suppressed['unknown-endpoint'].append(candidate)
+                elif target == module_name:
+                    suppressed['self-edge'].append(candidate)
+                else:
+                    edges.add((module_name, target))
+
+        return sorted(edges), harvest_notes + self._aggregate_notes(suppressed)
+
+    @staticmethod
+    def _collect_harvest_notes(module_data: dict, notes: list[str], seen: set[str]) -> None:
+        """Fold one module's harvest record into the deduplicated note list.
+
+        Every module carries the same workspace-wide record, so the notes are
+        deduplicated on content rather than emitted once per module.
+        """
+        status = module_data.get(HARVEST_STATUS_FIELD)
+        if not isinstance(status, dict):
+            return
+
+        if not status.get('ran'):
+            reason = status.get('reason') or 'unstated reason'
+            note = f'harvest-did-not-run: {reason}'
+            if note not in seen:
+                seen.add(note)
+                notes.append(note)
+            return
+
+        for note in status.get('notes') or []:
+            if note not in seen:
+                seen.add(note)
+                notes.append(note)

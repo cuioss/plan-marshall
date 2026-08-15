@@ -384,8 +384,8 @@ def test_real_tree_corpus_has_the_expected_out_of_scripts_files():
     corpus = _real_production_py_outside_scripts()
     extension_files = [p for p in corpus if p.endswith('/plan-marshall-plugin/extension.py')]
     targets_files = [p for p in corpus if p.startswith('marketplace/targets/')]
-    # 10 production bundles each ship one extension.py; targets/ ships its package.
-    assert len(extension_files) >= 10
+    # 11 production bundles each ship one extension.py; targets/ ships its package.
+    assert len(extension_files) >= 11
     assert len(targets_files) >= 10
     assert len(corpus) >= 26
 
@@ -500,10 +500,11 @@ def test_plan_marshall_plugin_get_skill_domains_omits_build_domain():
 
 _DOMAIN_BUNDLE_ARCHETYPE = 'plan-marshall:extension-api/standards/ext-point-domain-bundle'
 
-# The 10 production bundles that each ship a domain-bundle manifest. The bundle
+# The 11 production bundles that each ship a domain-bundle manifest. The bundle
 # dir name is the manifest's bundle directory under marketplace/bundles/.
 _PRODUCTION_BUNDLES = (
     'plan-marshall',
+    'pm-code-intelligence',
     'pm-dev-java',
     'pm-dev-java-cui',
     'pm-dev-frontend',
