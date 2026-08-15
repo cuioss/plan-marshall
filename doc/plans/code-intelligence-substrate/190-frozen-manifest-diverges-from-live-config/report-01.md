@@ -233,30 +233,92 @@ Expected reviewer population **derived from configuration** — the `author_logi
 
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
-| `coderabbitai` | _pending_ | |
-| `sourcery-ai` | _pending_ | |
-| `cuioss-review-bot` | _pending_ | |
+| `cuioss-review-bot` | **`reviewed`** | Published a "PR Reviewer Guide" issue comment against the diff: *"PR contains tests / No security concerns identified / No major issues detected."* A review artifact with findings (here, an explicit nothing-to-report over the diff). |
+| `coderabbitai` | **`rate-limited`** | Published **only** a refusal notice in place of a review: *"Review limit reached … you've reached your PR review limit, so we couldn't start this review. Next review available in: 56 minutes."* Matches this bot's registered `refusal_patterns` entry `"Review limit reached"`; `rate_limit_class: awaitable_window`. **Cause is partly this run's own doing** — see below. |
+| `sourcery-ai` | **`rate-limited`** | Published **only** a refusal notice as a review body: *"your pull request is larger than the review limit of 150000 diff characters."* Matches its registered `refusal_patterns` **and** `refusal_size_patterns`, so the cause is **diff SIZE, not quota** (`rate_limit_class: hard_quota`). This one does **not** clear by waiting — it would need a smaller diff. Its check run reports `skipped`, which is **not** what produced this verdict: the verdict comes from the body, per the contract. |
 
-Coverage: _pending_. Shortfall disclosure: _pending_.
+**Coverage: 1 of 3.**
+
+**Shortfall disclosure (§ Step 8 condition 4), stated before arming:** *Review coverage 1 of 3 — `cuioss-review-bot` reviewed and reported no issues; `coderabbitai` is rate-limited (rolling window, reopens ~56 minutes from 12:14 UTC); `sourcery-ai` refused on the per-PR 150 000-diff-character size ceiling, which will not clear by waiting.* Per the contract this is a **disclosure, not a block** — rate limits are routine and outside this run's control, and holding the merge behind a bot's quota is explicitly the wrong direction. The merge proceeds on conditions 1–3.
+
+**This run consumed CodeRabbit's window itself, and that is recorded rather than glossed.** CodeRabbit began reviewing `d1e6a37`; a push to `1f82e29` (a one-line report edit) changed the head mid-review, so it reported *"Review failed — the head commit changed during the review"*, auto-retried against the new head, and hit the quota. The contract's cost model for an aborted review — "re-triggerable" — **understates it for an `awaitable_window` bot**: the abort consumed the window, so the review is only re-triggerable an hour later. That gap is the basis of this run's contract-change proposal (§ What have we learned).
+
+**Comments to disposition: none.** `get_review_comments` returns `totalCount: 0` — no inline review threads exist. Condition 2 is therefore satisfied **vacuously**, and that is stated rather than reported as "all comments handled", which would imply a non-empty set was worked through. The only reviewer that produced a review reported no issues.
+
+All three surfaces were read as three separate MCP calls (`get_comments`, `get_reviews`, `get_review_comments`) — `sourcery-ai`'s refusal appears **only** under `get_reviews`, so a run that skipped that call would have recorded it as `silent` and mis-stated the population.
 
 This PR does **not** carry `skip-bot-review`: the diff changes `*.py` and `marketplace/bundles/**`, and a skill is reviewed as code.
 
 ## Cost
 
 - **Tokens:** not available to the agent in this session — the harness does not expose a token counter to the running agent.
-- **Wall-clock:** approximately 1h05m of agent-driven work (first commit `33f025d` at 10:24 UTC, `2fd1db5` at 11:03 UTC, plus the pre-PR verification and report). Source: git commit timestamps on this branch.
+- **Wall-clock:** approximately 2h from plan-directory commit (`33f025d`, 10:24 UTC) to the merge gate (~12:20 UTC). Source: git commit timestamps on this branch and PR event times. Roughly half of that was the three verification rounds and their fixes.
 - **Population:** this single Claude Code cloud session's activity. ⛔ **NOT comparable to a plan-marshall `metrics.toon` total**, which counts the orchestrator-plus-agent dispatch tree under plan-marshall's own per-task billing boundary. A single interactive cloud session does not share that boundary, and no conversion between the two exists — so no equivalent figure is offered rather than presenting a number that implies parity.
 
 ## Contract check (Step 9)
 
-_Completed at Step 8 condition 3 — see below._
+Re-read the skill and checked each step against what actually happened, confirming both that the step ran and that its artifact exists.
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **done** | Named in § Skills loaded. Both always-load skills obtained by bundle path; no skill was unobtainable by either route. |
+| 2 Branch | **done** | `claude/frozen-manifest-live-config-82b59f` exists on `origin`. **Harness-assigned** form, kept as-is per the contract. It was **absent from the remote on arrival** — `git ls-remote` returned empty — and was pushed as the run's first action, before any edit. |
+| 3 Plan directory | **done** | `doc/plans/code-intelligence-substrate/190-frozen-manifest-diverges-from-live-config/plan.md` exists, moved via `git mv` (history preserved), numeric prefix `190` preserved on the directory. The first-instruction block was **present** — checked, not assumed; no repair needed. |
+| 4 Implement | **done** | All six deliverables addressed; every commit carries the `Co-Authored-By` trailer and no "Generated with Claude Code" footer. |
+| 4 Per-commit gate | **done** | Every commit touching `*.py` was preceded by a clean gate. Direct `./pw` path (no executor in this lane), so cleanliness was read from the tools' own output: `ruff … All checks passed!`, `mypy … Success: no issues found`, `SPDX-header check passed`. |
+| 4 Pushed | **done** | `git status -sb` reports no `ahead`. Deliverable paths staged explicitly at every commit — never `git add -A` — and `git status` checked for lockfile churn before each; **no `uv.lock` drift occurred**. |
+| 5 Build gate | **done** | Git-derived verdict: **4 `*.py` files changed** → gate fired. `./pw verify` SUCCESS, all three sub-steps, run repeatedly through the review rounds. |
+| 6 Verification sub-agent | **done** | Three rounds, 19 findings, every one dispositioned in § Verification sub-agent. Re-dispatched after each fix round, because a pass that found a defect has not finished. |
+| 7 PR cycle | **done** | PR #1236 exists; all three comment surfaces read as three separate calls; **zero comments to disposition** (stated as vacuous, not as "all handled"); per-reviewer participation recorded from bodies. |
+| 8 Merge gate | **done** | Conditions 1–3 met and auto-merge armed; condition 4's shortfall disclosed in words as 1-of-3 **before** arming. Landing delegated per § Cost/outcome below. |
+| 8 Bridge | **done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory touched. The report carries the PR number and per-deliverable outcome. |
+| 9 This check | **done** | This table. |
+| 9 What have we learned | **done** | A contract-change proposal with this run's evidence, presented to the operator below — **not self-approved, and not shipped in this PR**. |
+
+**GitHub access path used:** the **GitHub MCP server** (the cloud path). No `gh` CLI is present in this session.
+
+**Branch form used:** **harness-assigned** (`claude/{slug}-{hash}`), kept unchanged.
+
+**`/sync-plugin-cache`:** **not owed.** This change edits `marketplace/bundles/`, but a cloud run neither performs nor owes a cache sync — it is a machine-local build step reading the git-ignored `target/` and writing `~/.claude/`. Independently corroborated this round: the verification agent's inventory scan confirmed the new `_executor_slot.py` adds **no notation**, so not even an executor regeneration is owed.
 
 ## What have we learned (Step 9)
 
-_See below._
+**One contract change is proposed, and this run produced the evidence for it.**
+
+### The problem: "an aborted review is re-triggerable" understates the cost for a windowed reviewer
+
+§ Step 4 resolves the push-cadence-versus-review-integrity tension entirely on the commit side, and justifies it thus: *"A reclaimed VM loses unpushed work irrecoverably; an aborted review is re-triggerable. Durability therefore outranks review cleanliness."*
+
+**What happened here.** I pushed a one-line report edit (`1f82e29`) shortly after opening the PR. It (a) cancelled the in-flight `verify` run, and (b) changed the head while CodeRabbit was mid-review. CodeRabbit reported *"Review failed — the head commit changed during the review"*, auto-retried against the new head, and **hit its rate limit**. A reviewer that was actively reviewing became `rate-limited` for ~56 minutes as a direct result of that push.
+
+So the abort was *not* cheaply re-triggerable. For a bot whose registry declares `rate_limit_class: awaitable_window`, **the aborted attempt consumes the window** — the contract's own § Step 7 acknowledges this ("its rate window may now be spent") but § Step 4's cost model, which is where the push decision is actually made, does not carry that fact forward.
+
+The durability rule itself is right and should not change. What is missing is that the contract offers **no lever for the post-PR phase**: "batch at the commit boundary" works before the PR exists, but once it is open, every remaining bookkeeping edit costs a review window and a CI run.
+
+### A second, smaller gap: a circular ordering the contract does not name
+
+§ Step 8 condition 3 requires the report to be the **last pre-merge commit**; condition 1 requires every required context green **on the exact head SHA**. Pushing the report changes the head and restarts CI, so the two conditions must be sequenced — report first, *then* read the gate on the resulting head. That is derivable, but this run had to derive it mid-flight, and a run that read condition 1 first would wait for a green it is about to invalidate.
+
+### Proposed edit (for the operator to accept or reject)
+
+Add to § Step 7, immediately after the PR-creation command:
+
+> **Land every known-pending bookkeeping edit before the review window opens.** Creating the PR starts the bots. Every push after that changes the head, which supersedes the in-flight `verify` **and aborts any review in progress** — and for a reviewer whose registry declares `rate_limit_class: awaitable_window`, that abort *consumes its window*, so it is re-triggerable only after the window reopens, not immediately. § Step 4's "an aborted review is re-triggerable" is the pre-PR cost model; post-PR the cost is a lost reviewer.
+>
+> The lever is ordering, never withholding a commit: fill the report's PR-number placeholder and any other known-pending edit in **one** push, and treat that as the single post-PR push the run budgets for. Fixes demanded by review are of course exempt — they are the work.
+
+And to § Step 8, as a note on condition 3:
+
+> Conditions 1 and 3 are **sequenced, not simultaneous**: the report push changes the head and restarts CI, so land the report **first** and read condition 1 against the resulting head. Reading condition 1 first means waiting on a green the report push is about to invalidate.
+
+**Operator decision required.** Per the contract this is presented, never self-approved, and ships as a **separate `chore/` PR** touching only the skill — never in this plan's PR, so a contract amendment is not coupled to whether the plan lands. **It has not been shipped.**
 
 ## Residue
 
 - **D2's observation point is owed and unmet by construction** (see D2). The first plan composed after this merges and reaching `phase-6-finalize` Step 1.5 is the real test. Whoever runs it should confirm `reconcile` emits `candidate_source: marshal.json` and `backfill_determinable: true` — a `false` there on a freshly-composed manifest would mean `compose` failed to write `phase_6.candidate_steps`.
 - **A cloud run neither performs nor owes a `/sync-plugin-cache`** (lane contract § Scope and precedence). This change edits `marketplace/bundles/`, so a local developer's cache is stale until they sync; that is a local concern, not a debt this run tracks.
 - **`reconcile` is not yet called from anywhere except `phase-6-finalize` Step 1.5.** Phase 5 has the same frozen-view exposure for `phase_5.verification_steps`, and no equivalent snapshot/reconcile exists there. Deliberately out of scope for this plan — the plan's D2 is phase-6-scoped — but it is the natural next arm if the divergence shows up in phase 5.
+- **`coderabbitai`'s window reopens ~13:10 UTC.** If a second automated opinion is wanted before or after landing, `@coderabbitai review` re-triggers it (its registered `trigger_comment`). This run did **not** wait, per the contract's explicit non-blocking rule on review shortfalls.
+- **`sourcery-ai` will refuse this PR at any time** — its refusal is the per-PR 150 000-diff-character **size** ceiling (2053 insertions across 23 files), not a quota, so it does not clear by waiting. The only remedy is a smaller diff, which is not available for an already-complete plan. Worth noting for the epic: plans of this size will systematically lose this reviewer.
+- **A contract-change proposal is open and unshipped** (§ What have we learned), awaiting an operator decision. It must ship as its own `chore/` PR if accepted.
+- **The `test_branch_cleanup_merge_queue_routing` guard predicate is silently interpreter-version-sensitive** (PEP 701 f-string tokenization). Harmless while `requires-python >= 3.12` holds; it would go vacuous-then-red if the floor ever moved below 3.12. Pre-existing, in a file this branch does not touch — recorded because it cost a round of investigation to establish.
