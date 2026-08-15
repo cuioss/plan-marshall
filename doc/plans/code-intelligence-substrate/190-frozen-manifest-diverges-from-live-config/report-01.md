@@ -1,6 +1,6 @@
 # Run report — 190-frozen-manifest-diverges-from-live-config (run 01)
 
-**Date (UTC):** 2026-08-15    **Branch:** `claude/frozen-manifest-live-config-82b59f`    **PR:** _pending_    **Outcome:** completed
+**Date (UTC):** 2026-08-15    **Branch:** `claude/frozen-manifest-live-config-82b59f`    **PR:** [#1236](https://github.com/cuioss/plan-marshall/pull/1236)    **Outcome:** completed
 
 ## Skills loaded
 
