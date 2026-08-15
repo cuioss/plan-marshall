@@ -1,6 +1,6 @@
 # Run report — 220-resolver-configuration (run 01)
 
-**Date (UTC):** 2026-08-15    **Branch:** `claude/resolver-configuration-s8jcg5`    **PR:** TBD    **Outcome:** TBD
+**Date (UTC):** 2026-08-15    **Branch:** `claude/resolver-configuration-s8jcg5`    **PR:** [#1252](https://github.com/cuioss/plan-marshall/pull/1252)    **Outcome:** completed
 
 ## Skills loaded
 
