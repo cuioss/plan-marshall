@@ -174,6 +174,8 @@ Flag hand-rolled import preambles that resolve a module by the test file's own l
 
 **Suggested remediation**: Replace with the `conftest` helpers `load_script_module(bundle, skill, filename)` or `get_scripts_dir(bundle, skill)`, which resolve by `(bundle, skill, script)` identity.
 
+**One known-legitimate occurrence.** The rule fires on `test/conftest.py`'s own `load_script_module` implementation, whose `spec_from_file_location` call *is* the sanctioned helper the message points at — the suggested remediation there is circular. It ships unsuppressed on purpose: at `warning` severity one structurally-unfixable finding is cheaper than a path allowlist, which would also silence genuine defects elsewhere in the same file.
+
 **Why**: Both shapes hard-code the test module's position in the directory tree. Moving the file — which the line-budget rule above actively encourages — silently breaks the resolution, and the failure surfaces as an import error far from its cause. Resolution by identity survives the move.
 
 ### test-docstring-historical-prose

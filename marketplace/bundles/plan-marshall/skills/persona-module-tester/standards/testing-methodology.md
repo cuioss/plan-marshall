@@ -24,7 +24,7 @@ Tests that exercise the method as intended by its specification. Where the contr
 
 ### 2. Parameter Variants
 
-Systematic exploration of the valid input space using generators. Vary parameters across their specified types, ranges, and combinations. This is the rigorous form of happy-path testing — if the spec says "accepts strings of 1-255 characters", generate strings across that range.
+Systematic exploration of the valid input space using generators. Vary parameters across their specified types, ranges, and combinations. This is the rigorous form of happy-path testing — if the spec says "accepts strings of 1-255 characters", generate strings across that range. This category is by definition the universal-contract half of § "Test Data Principles → The discriminator"; where a parameter's specific value *is* the contract, that is a different category and takes an exact literal.
 
 ### 3. Corner Cases
 

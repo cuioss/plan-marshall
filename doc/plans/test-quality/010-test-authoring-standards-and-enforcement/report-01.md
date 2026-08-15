@@ -141,10 +141,24 @@ The three existing `error` rules keep their build-failing behaviour unchanged. T
 `git diff --name-only origin/main...HEAD -- '*.py'` → **4 files** (`_analyze_test_conventions.py`,
 `doctor-marketplace.py`, `_fixtures.py`, `test_test_conventions_rule4.py`). The gate is therefore armed.
 
-`UV_HTTP_TIMEOUT=600 ./pw verify` → **`=== verify: SUCCESS ===`**, `20066 passed, 14 skipped` in 389s.
-All three sub-steps ran: quality-gate (`ruff … All checks passed!`, `mypy … Success: no issues found in
-405 source files`, `SPDX-header check passed`, plugin-doctor `issues[0]`), test-compile (`mypy(test)`,
-751 files), and module-tests.
+`UV_HTTP_TIMEOUT=600 ./pw verify` was run after each commit that touched `*.py`:
+
+| Run | Result |
+|---|---|
+| After D5 (`5c31b15`) | `=== verify: SUCCESS ===`, `20066 passed, 14 skipped` in 389s |
+| After the verification fixes (`74e8693`) | `=== verify: SUCCESS ===`, `20069 passed, 14 skipped` in 334s — the +3 are the new command tests |
+| After the re-verification fixes (tip) | `=== verify: SUCCESS ===`, `20069 passed, 14 skipped` in 334s |
+
+All three sub-steps ran on every pass: quality-gate (`ruff … All checks passed!`, `mypy … Success: no
+issues found in 405 source files`, `SPDX-header check passed`, plugin-doctor `issues[0]`), test-compile
+(`mypy(test)`, 751 files), and module-tests.
+
+**The final run caught a defect the narrower calls would not have.** The first attempt at the tip failed
+`test-compile` with `test_doctor_marketplace_commands.py:315: error: Returning Any from function declared
+to return "str"` — `TEST_MODULE_LINE_BUDGET` read off a `load_script_module` module is `Any`, so the
+derived expression was too. `quality-gate` and `module-tests` were both green at that moment; only
+`test-compile` type-checks the test tree, which is exactly why the contract requires the full `verify`
+rather than the narrower pair. Fixed by annotating the constant `int`.
 
 Per-commit gate: the D1–D4 commit touched no `*.py` (gate not triggered); the D5 commit was preceded by a
 clean `./pw quality-gate`.
@@ -184,8 +198,15 @@ its registry is empty by design, which is its documented no-op behaviour and not
 | 11 | Verification sub-agent (F7, LOW) | `doc/plans/test-quality/README.md` L84 said the 400-line budget "replaces the `~200 lines` figure **currently in** `persona-module-tester`" — falsified by this plan's own change | **Fixed** — restated in the past tense |
 | 12 | Verification sub-agent (F9, LOW) | `fixtures/test_conventions/` has a `README.md` per rule directory for rules 1–3; `rule4/` did not exist | **Fixed** — added, matching the sibling convention and recording why dynamic `tmp_path` fixtures are used (static fixtures would trip three of these four rules against the real tree and inflate the counts this plan measures) |
 | 13 | Verification sub-agent (F4, MEDIUM) | `doctor-marketplace.py` is not in the plan's "Expected surface" list, which names the analyzer but not the runner that dispatches it | **Accepted, not changed** — the import/dispatch wiring is unavoidable for any new rule in this scope, and the severity derivation is declared and justified above. The epic README's ownership row for `010` covers `plugin-doctor/**`, so this is a plan-list omission rather than a scope breach. Recorded so the omission is visible rather than silent |
-| 15 | Cold read, second pass | **D3 created an internal contradiction in its own file.** `testing-methodology.md` § "Surfacing limitations without locking them in" models `@pytest.mark.xfail(reason="TODO: fix boundary matching — see LESSON-nnnn")` — a lesson-id citation in test prose, in the same document D3 had just made forbid them in docstrings. Before D3 the example was consistent, so this is collateral from this run's own change, not pre-existing drift | **Fixed** — the modelled reason now states the defect (`comparator uses substring matching where boundary matching is required`) instead of its tracking id, with a sentence reconciling the scope: the marker names what is wrong so the reader can act without leaving the file, and the tracking identifier lives in the step-3 lesson/PR/issue. Note the shipped rule would **not** have caught this — `reason=` is a string literal, not a docstring or comment — so it was reachable only by reading |
-| 14 | Verification sub-agent (F5, MEDIUM) | `pm-dev-java` carries the retired figures — `junit-core/standards/testing-junit-core.md:16` ("split into multiple at ~200 lines") and `junit-weld-testing/standards/weld-testing-autowired.md:144` ("split at ~200 lines") — plus unscoped generated-data statements at `junit-core/SKILL.md:31` and `testing-junit-core.md:8`. `testing-junit-core.md:3` explicitly defers to `persona-module-tester` for test organization, so it now contradicts the skill it defers to | **Rejected for this PR, escalated to the epic** — `pm-dev-java` is outside this plan's Expected surface, and D1/D2's "Done when" clauses are scoped to the named files. Editing another bundle here would be exactly the undeclared collateral change the verification pass exists to catch. This is a real defect and is recorded in Residue with file:line so it is actionable, not lost |
+| 14 | Cold read, second pass | **D3 created an internal contradiction in its own file.** `testing-methodology.md` § "Surfacing limitations without locking them in" models `@pytest.mark.xfail(reason="TODO: fix boundary matching — see LESSON-nnnn")` — a lesson-id citation in test prose, in the same document D3 had just made forbid them in docstrings. Before D3 the example was consistent, so this is collateral from this run's own change, not pre-existing drift | **Fixed** — the modelled reason now states the defect (`comparator uses substring matching where boundary matching is required`) instead of its tracking id, with a sentence reconciling the scope: the marker names what is wrong so the reader can act without leaving the file, and the tracking identifier lives in the step-3 lesson/PR/issue. Note the shipped rule would **not** have caught this — `reason=` is a string literal, not a docstring or comment — so it was reachable only by reading |
+| 16 | Re-verification (NEW-2, MEDIUM) | **The shipped CLI help still stated the retired severity contract.** `doctor-marketplace.py` `p_test_conventions` read `help='Run test-tree convention rules (exit 1 on findings)'` — false after the severity change, and user-visible on `--help`. It survived because the sweep for this defect class covered `.md` but not the Python CLI surface; `cmd_test_conventions`'s docstring *was* corrected, the argparse help beside it was not | **Fixed** — now reads "exit 1 on error-severity findings; warnings are reported only" |
+| 17 | Re-verification (NEW-1, MEDIUM) | **The F7 fix was incomplete** — the identical stale claim survived one section over, at `doc/plans/test-quality/README.md` § "House style" B8, still calling the blanket phrasing "current" and demanding scoping this PR had already delivered | **Fixed** — restated in the past tense. Confirms that fixing one instance of a claim is not fixing the claim |
+| 18 | Re-verification (NEW-3, LOW) | **`test-module-preamble-boilerplate` has a structurally-unfixable occurrence with a circular remediation.** It fires on `test/conftest.py`'s own `load_script_module` implementation, whose `spec_from_file_location` call *is* the sanctioned helper — so the message tells the canonical helper to call itself. Undocumented, and the provenance contract requires legitimate occurrences be recorded | **Documented, deliberately not suppressed** — recorded in both the standards doc and the rule-catalog false-positive policy. At `warning` severity one unfixable finding among 342 is cheaper than a path allowlist, which would also silence real defects elsewhere in that file. `test/conftest.py` is plan `020`'s surface and was not touched |
+| 19 | Re-verification (NEW-7, LOW) | `_over_budget_module()` in the new command test hardcoded `401` where the `_fixtures.py` entries derive from `TEST_MODULE_LINE_BUDGET`. Correct today; silently stops exercising the rule if the budget rises — the latent-decay shape the plan warns about in fixtures | **Fixed** — derived from the shipped constant |
+| 20 | Re-verification (F1 residual, LOW) | § "2. Parameter Variants" says "Systematic exploration of the valid input space using generators" with no cross-reference. The re-verification judged it non-breaching (it defines a test *category*, and § 1 above it carries the discriminator) | **Fixed anyway** — cross-referenced, since the cost is one clause and it removes the last unqualified generator sentence in the file |
+| 21 | Re-verification (NEW-4, LOW) | `rule-catalog.md:29` links `#rule-pack-zero-match-rule-detector`; the real heading is `## Zero-match coverage (test-layer, not a runtime rule)`. Dead anchor | **Rejected — pre-existing, not this diff.** Introduced by an earlier commit and invisible to the shipped `broken-relative-link` rule, which checks files rather than fragments. Recorded in Residue rather than fixed, on the same reasoning as Finding 15 |
+| 22 | Re-verification (NEW-5, LOW) | The report's Build gate section recorded `20066 passed` from the pre-fix run, one commit stale after three tests were added | **Fixed** — both runs now recorded |
+| 15 | Verification sub-agent (F5, MEDIUM) | `pm-dev-java` carries the retired figures — `junit-core/standards/testing-junit-core.md:16` ("split into multiple at ~200 lines") and `junit-weld-testing/standards/weld-testing-autowired.md:144` ("split at ~200 lines") — plus unscoped generated-data statements at `junit-core/SKILL.md:31` and `testing-junit-core.md:8`. `testing-junit-core.md:3` explicitly defers to `persona-module-tester` for test organization, so it now contradicts the skill it defers to | **Rejected for this PR, escalated to the epic** — `pm-dev-java` is outside this plan's Expected surface, and D1/D2's "Done when" clauses are scoped to the named files. Editing another bundle here would be exactly the undeclared collateral change the verification pass exists to catch. This is a real defect and is recorded in Residue with file:line so it is actionable, not lost |
 
 **Cold-read verification (the plan's mandated by-reading check).** A sub-agent was given the two amended
 standards files **and no other context** — not the plan, not the epic README — and asked the plan's three
@@ -216,7 +237,7 @@ still pointed the other way. The second pass was asked to answer Q2 twice — on
 alone, once from the complete documents — precisely to surface that split. Its verdict: *"**(a) and (b) do
 not disagree** — the discriminator is fully stated in the first 20 lines, so the skim-reader and the
 complete reader reach the same verdict of 'exact literal'."* It reported no contradiction on any of the
-three questions, and surfaced Finding 15 as an adjacent tension. That second pass is what a re-dispatch
+three questions, and surfaced Finding 14 as an adjacent tension. That second pass is what a re-dispatch
 after a real finding is for: the first cold read passed while the defect was live.
 
 ## Reviewer participation
@@ -314,7 +335,7 @@ _(completed at Step 8 condition 3)_
 
 ## Residue
 
-* **Finding 14 — `pm-dev-java` still carries the retired standards, and one of its files now
+* **Finding 15 — `pm-dev-java` still carries the retired standards, and one of its files now
   contradicts the skill it defers to.** This is the highest-value residue item, because it is the exact
   misleading-signal defect this epic exists to remove, sitting one bundle over:
   * `marketplace/bundles/pm-dev-java/skills/junit-core/standards/testing-junit-core.md:16` — "split into
@@ -330,6 +351,12 @@ _(completed at Step 8 condition 3)_
   D1/D2 edits applied to the Java bundle.
 * **Finding 4** — the Rule 3 validator registry is empty, making `identifier-validator-corpus` a
   permanent no-op. Belongs to whichever plan owns identifier-validator coverage; not this one.
+* **Finding 21** — `rule-catalog.md:29` carries a dead anchor
+  (`#rule-pack-zero-match-rule-detector`; the real heading is `## Zero-match coverage (test-layer, not a
+  runtime rule)`). Pre-existing, from an earlier commit. Worth noting *why* it survived: the shipped
+  `broken-relative-link` rule validates the **file** half of a link and not the **fragment**, so a dead
+  anchor is invisible to the gate. That is a rule gap, not just a typo, and is the more useful half of
+  this finding.
 * **Finding 5** — the three pre-existing test-conventions rules have no `rule-catalog.md` rows. A
   provenance-audit housekeeping item.
 * **Plugin cache sync** — per `CLAUDE.md` § Standalone Plan Lane, a cloud run neither performs nor owes

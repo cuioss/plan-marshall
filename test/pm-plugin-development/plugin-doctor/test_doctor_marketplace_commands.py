@@ -20,6 +20,9 @@ from conftest import load_script_module
 _doctor = load_script_module(
     'pm-plugin-development', 'plugin-doctor', 'doctor-marketplace.py', 'doctor_marketplace_cmds'
 )
+_analyze_test_conventions = load_script_module(
+    'pm-plugin-development', 'plugin-doctor', '_analyze_test_conventions.py', '_analyze_test_conventions'
+)
 
 
 def _ns(**overrides):
@@ -303,8 +306,13 @@ def test_cmd_test_conventions_flags_generic_fixture_basename(tmp_path):
 
 
 def _over_budget_module() -> str:
-    """Return a collected test module that trips only the line-budget rule."""
-    return 'def test_x():\n    assert True\n' + '# filler\n' * 401
+    """Return a collected test module that trips only the line-budget rule.
+
+    The filler is derived from the shipped budget rather than hardcoded, so the
+    module stays over budget if the budget is raised.
+    """
+    budget: int = _analyze_test_conventions.TEST_MODULE_LINE_BUDGET
+    return 'def test_x():\n    assert True\n' + '# filler\n' * (budget + 1)
 
 
 def test_cmd_test_conventions_warning_only_tree_passes(tmp_path):

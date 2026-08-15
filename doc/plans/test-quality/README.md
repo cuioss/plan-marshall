@@ -125,8 +125,9 @@ earns its place for text and format parsers, identifier validators, path normali
 encoders — the places where the contract really is "for all valid inputs". It is **actively wrong**
 for most of this corpus: a test asserting that `default:branch-cleanup` seeds
 `merge_queue_wait_budget_seconds: 1800` is asserting an exact contract value, and a generator there
-would assert nothing at all. `persona-module-tester`'s current "prefer generated test data over
-hardcoded literals" reads as a blanket preference and needs the scoping that says so. Hypothesis is a
+would assert nothing at all. `persona-module-tester` previously carried a "prefer generated test data
+over hardcoded literals" phrasing that read as a blanket preference; plan `010` replaced it with the
+universal-contract / literal-is-the-contract discriminator that scopes it. Hypothesis is a
 third-party dependency and therefore a **user-approval step** — plan `010` records the proposal and
 names the candidate call sites; it does not add the dependency.
 

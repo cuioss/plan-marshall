@@ -1199,7 +1199,7 @@ Examples:
     # test-conventions subcommand
     p_test_conventions = subparsers.add_parser(
         'test-conventions',
-        help='Run test-tree convention rules (exit 1 on findings)',
+        help='Run test-tree convention rules (exit 1 on error-severity findings; warnings are reported only)',
         allow_abbrev=False,
     )
     p_test_conventions.add_argument(
