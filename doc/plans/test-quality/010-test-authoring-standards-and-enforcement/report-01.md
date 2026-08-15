@@ -281,11 +281,54 @@ list transcribed here:
 
 | Reviewer (`author_login`) | Verdict | Body evidence / reason |
 |---|---|---|
-| `cuioss-review-bot` | _(pending)_ | — |
-| `coderabbitai` | _(pending)_ | — |
-| `sourcery-ai` | _(pending)_ | — |
+| `cuioss-review-bot` | **`reviewed`** | Published a review artifact over the diff — "PR Reviewer Guide 🔍": *PR contains tests* / *No security concerns identified* / *No major issues detected*. No findings, nothing to disposition |
+| `coderabbitai` | **`rate-limited`** | Published only a quota notice in place of a review: *"Review limit reached — you've reached your PR review limit, so we couldn't start this review. Next review available in: 57 minutes."* It engaged but did not review this diff |
+| `sourcery-ai` | **`rate-limited`** | Published only a refusal: *"your pull request is larger than the review limit of 150000 diff characters."* Its check run concluded `skipped` — but the check state is not the verdict; the body is |
 
-Coverage: _(pending — completed before the merge gate)_
+**Coverage: 1 of 3.**
+
+**`cuioss-review-bot` reviewed only because the run went looking for the reason it was silent.** The
+`PR Agent Review` workflow recorded **zero** runs for this PR — its `pull_request` trigger covers
+`[opened, reopened, ready_for_review]` and it fired normally for plan `020`'s PR (#1247) the same day,
+so the absence was specific to this PR, not a configuration that never runs. That workflow's own
+comment names the remedy — on-demand `/review` via `issue_comment` — so the run posted one, and the
+workflow completed `success` and the review landed four minutes later. Recording the reviewer as
+`silent` without checking would have been accurate about the symptom and wrong about the cause, and
+would have left coverage at 0 of 3 for no reason.
+
+The two `rate-limited` verdicts are read from the bodies, not from check states: `sourcery-ai`'s check
+concluded `skipped`, which on its own would look like a reviewer that was never asked.
+
+**Neither refusal was caused by a mid-review push.** `sourcery-ai` refused on diff size at 19:35:57,
+seconds after the PR opened; `coderabbitai` refused on account quota. Both are outside this run's
+control, so neither is re-triggerable within this session — `coderabbitai`'s window reopens in ~57
+minutes, after the merge gate.
+
+**§ Step 8 condition 4 disclosure fired**, and its text is in the Merge gate section below.
+
+## Merge gate (Step 8)
+
+| Condition | State |
+|---|---|
+| 1 — every required context present and successful on the head | **Met.** `verify / conclusion` = `success` on head `78128ff`, alongside `verify / gate`, `verify / verify`, `dependency-review`, `generate-check`, all `success`. `Sourcery review` concluded `skipped` and `auto-merge` `skipped` — both **non-required**, disclosed here rather than treated as blockers. Earlier in the cycle `mergeable_state` read `blocked`; the blocker was derived from *required ∩ non-green* and was the required `verify` context still `in_progress`, **not** the visibly-skipped Sourcery check |
+| 2 — every PR comment handled | **Met.** All three surfaces read (`get_reviews`, `get_comments`, `get_review_comments`). Zero inline review threads; zero actionable comments. The only bodies are two quota notices and one clean review verdict, none of which asks for a change |
+| 3 — report finalized and pushed | **Met.** This report, committed as the last pre-merge commit before arming |
+| 4 — review-coverage shortfall **disclosed** (not a gate) | **Fired.** See below |
+
+**Condition 4 disclosure, stated in words as the contract requires:**
+
+> **Review coverage: 1 of 3.** `cuioss-review-bot` reviewed and reported no major issues;
+> `coderabbitai` was rate-limited (account PR-review quota, window reopens in ~57 minutes);
+> `sourcery-ai` was rate-limited (the diff exceeds its 150,000-character review limit).
+
+This run merges on 1-of-3 and says so. Per § Step 8 the shortfall changes what the run **says**, never
+whether it **merges**: rate limits are routine and outside this run's control, and holding the merge
+for them would strand the landing behind a bot's quota. Conditions 1–3 are the only gates, and all
+three are met.
+
+One honest note on the `sourcery-ai` refusal: the diff exceeds its limit partly *because* four
+verification rounds added tests, fixture READMEs, and documentation. That is a real trade — more
+scrutiny from this run's own passes, less from that particular reviewer.
 
 ## Cost
 
