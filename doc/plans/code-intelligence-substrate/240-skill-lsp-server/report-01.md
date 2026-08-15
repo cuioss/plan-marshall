@@ -344,3 +344,4 @@ run, on two different error classes. No amendment needed; it worked as written.
   observed arbitrating two Markdown servers.
 - **Finding 19** (`CLAUDE.md` component counts) is deferred and unowned — it predates this plan.
 - **Finding 20**: no `manage-config` verb writes `code_intelligence`, unlike every other section.
+- ⚠ **`uv.lock` is stale relative to `pyproject.toml` on `main`, and this run did not fix it.** `pyproject.toml` declares `ruff>=0.16.2` while the committed `uv.lock` records `>=0.16.1`, so every `./pw` run rewrites the lockfile as a side effect. It was backed out of every commit here rather than shipped, per the lane contract's rule against sweeping generated-file churn into a deliverable commit — an unrelated dependency-specifier change does not belong in a plan PR. Recorded because it is a real pre-existing inconsistency that will keep surfacing in every branch until someone re-syncs the lockfile deliberately.
