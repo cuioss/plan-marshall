@@ -33,6 +33,7 @@ from typing import Any
 # the filter's domain-seeded membership check and the resolution gate's universe
 # in lock-step.
 import _manifest_validation
+from _decision_line_shapes import format_dropped_record
 from _manifest_core import (
     _CANONICAL_TO_ROLE,  # noqa: F401
     _CANONICAL_VERIFY_PREFIX,  # noqa: F401
@@ -512,6 +513,13 @@ def _log_dropped_records(
     candidates by that shape reports through here instead of re-deriving the same
     ``dropped {step}...: {reason}`` line at its own call site.
 
+    The line itself is rendered by
+    :func:`_decision_line_shapes.format_dropped_record`, which the retrospective's
+    routing-decisions aspect also parses through. Writer and reader share one
+    definition of the shape so a change to it cannot leave the reader silently
+    matching a retired form — the drift that made every posture-cutoff drop read
+    as a mis-prune.
+
     Args:
         plan_id: Plan identifier the log entry is written for.
         gate_name: The gate/rule name the ``[STATUS]`` line attributes the drop to.
@@ -522,11 +530,10 @@ def _log_dropped_records(
             applies.
     """
     for record in dropped_records:
-        message = (
-            f'(plan-marshall:manage-execution-manifest:compose) [STATUS] {gate_name} — '
-            f'dropped {record["step"]}{target}: {record["reason"]}'
+        _emit_decision_log(
+            plan_id,
+            format_dropped_record(gate_name, record['step'], record['reason'], target=target),
         )
-        _emit_decision_log(plan_id, message)
 
 
 def _log_commit_push_omitted(plan_id: str, step: str, reason: str) -> None:

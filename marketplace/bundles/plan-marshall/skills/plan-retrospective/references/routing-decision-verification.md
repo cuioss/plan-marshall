@@ -25,7 +25,9 @@ The predicate definitions (the closed `prunable_when` vocabulary, the class→de
 
 ## Removal cause precedes predicate re-evaluation
 
-**A removal fact never implies a removal cause.** A prunable step can leave `phase_6.steps` through several recorded mechanisms that are all orthogonal to the realized footprint — the posture-tier cutoff, an unresolved `lane: ask` with no provider, an inactive simplify step, and a ceremony-finalize selection resolving `never`. Inferring "the prune predicate fired" from the bare fact that the step is absent is therefore unsound, and it manufactured a false `fail` on every standard/minimal-posture plan whose footprint touched production code.
+**A removal fact never implies a removal cause.** A prunable step can leave `phase_6.steps` through several recorded mechanisms that are all orthogonal to the realized footprint — every gate that reports a subtraction through the composer's shared `[STATUS] … dropped …` record (the posture-tier cutoff and the narrowing decision-matrix rows among them), plus an unresolved `lane: ask` with no provider, an inactive simplify step, and a ceremony-finalize selection resolving `never`. Inferring "the prune predicate fired" from the bare fact that the step is absent is therefore unsound, and it manufactured a false `fail` on every standard/minimal-posture plan whose footprint touched production code.
+
+**Reader coverage is part of that soundness.** The script parses the shared subtraction-record shape through the same definition the composer writes it with, and matches it gate-agnostically, so a mechanism cannot become invisible by being added to the composer without a matching edit here. A mechanism the reader cannot parse reads exactly like one that was never recorded — which is the same false `fail`, arriving by a different route.
 
 The script consults the recorded decision log FIRST and re-evaluates a predicate only for a step whose removal no recorded mechanism explains. The verdicts are mutually exclusive and jointly exhaustive over an absent step:
 

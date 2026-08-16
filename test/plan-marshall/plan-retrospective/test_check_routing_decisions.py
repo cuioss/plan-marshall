@@ -19,6 +19,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
+from _decision_line_shapes import format_dropped_record
 from toon_parser import serialize_toon
 
 from conftest import load_script_module
@@ -28,22 +29,45 @@ _crd = load_script_module(
 )
 
 
-# The four recorded non-predicate removal mechanisms, copied verbatim from
-# manage-execution-manifest/standards/decision-rules.md. Keeping the literals
-# here (rather than importing the script's regexes) is what makes these tests a
-# real contract check against the emitter rather than a tautology over the
-# script's own patterns.
-LANE_RESOLUTION_LINE = (
-    "[2026-04-17T10:00:00Z] [INFO] [aaaaaa] "
-    "(plan-marshall:manage-execution-manifest:compose) lane_resolution — "
-    "execution_profile=minimal, dropped ['sonar-roundtrip', 'plan-retrospective'] "
-    'from phase_6.steps (tier above posture cutoff)'
+# The recorded non-predicate removal mechanisms.
+#
+# The composer's subtraction-record lines are rendered by the WRITER'S OWN
+# formatter, imported from production. Importing the writer (never the reader's
+# regexes) is what makes these a real contract check: the reader is exercised
+# against bytes the emitter actually produces, so a change to the shape breaks
+# writer and reader together instead of leaving the reader matching a form
+# nothing emits.
+#
+# These fixtures were previously hand-written from the standards document and had
+# drifted from it: they encoded a retired aggregate shape (a Python-list step
+# repr, `execution_profile=` before the verb, a `(tier above posture cutoff)`
+# trailing clause) that the composer had long since replaced with one line per
+# dropped step. The tests passed against a reader that could not match a single
+# real emission — the hand-written fixture drifted in lock-step with the wrong
+# copy, which is precisely what it could not catch.
+#
+# The three mechanisms below render their own line shapes rather than reporting
+# through the shared formatter, so their fixtures stay literal, each transcribed
+# from its own emitter.
+_LANE_TARGET = ' from phase_6.steps (execution_profile=minimal)'
+_TIER_REASON = 'effective tier full exceeds the minimal posture cutoff'
+
+LANE_RESOLUTION_LINE = '[2026-04-17T10:00:00Z] [INFO] [aaaaaa] ' + format_dropped_record(
+    'lane_resolution', 'sonar-roundtrip', _TIER_REASON, target=_LANE_TARGET
 )
-LANE_RESOLUTION_PREFIXED_LINE = (
-    "[2026-04-17T10:00:00Z] [INFO] [aaaaaa] "
-    "(plan-marshall:manage-execution-manifest:compose) lane_resolution — "
-    "execution_profile=minimal, dropped ['default:sonar-roundtrip'] "
-    'from phase_6.steps (tier above posture cutoff)'
+LANE_RESOLUTION_SECOND_STEP_LINE = (
+    '[2026-04-17T10:00:01Z] [INFO] [aaaaab] '
+    + format_dropped_record(
+        'lane_resolution', 'plan-retrospective', _TIER_REASON, target=_LANE_TARGET
+    )
+)
+LANE_RESOLUTION_PREFIXED_LINE = '[2026-04-17T10:00:00Z] [INFO] [aaaaaa] ' + format_dropped_record(
+    'lane_resolution', 'default:sonar-roundtrip', _TIER_REASON, target=_LANE_TARGET
+)
+DECISION_MATRIX_LINE = '[2026-04-17T10:00:02Z] [INFO] [ffffff] ' + format_dropped_record(
+    'decision_matrix',
+    'sonar-roundtrip',
+    "decide rule 'early_terminate_analysis' narrowed phase_6 to the analysis minimum",
 )
 UNRESOLVED_ASK_LINE = (
     '[2026-04-17T10:00:00Z] [INFO] [bbbbbb] '
@@ -254,16 +278,40 @@ class TestLoadDecisionLogLines:
 
 
 class TestResolveRemovalCauses:
-    """The pure cause resolver covers all four recorded mechanisms."""
+    """The pure cause resolver covers every recorded mechanism."""
 
-    def test_posture_cutoff_parses_python_list_repr(self):
-        causes = _crd.resolve_removal_causes([LANE_RESOLUTION_LINE])
-        assert causes['sonar-roundtrip'] == 'posture_cutoff'
-        assert causes['plan-retrospective'] == 'posture_cutoff'
+    def test_lane_resolution_drop_is_recorded_against_its_gate(self):
+        """The posture-cutoff drop the reader could previously never see."""
+        causes = _crd.resolve_removal_causes(
+            [LANE_RESOLUTION_LINE, LANE_RESOLUTION_SECOND_STEP_LINE]
+        )
+        assert causes['sonar-roundtrip'] == 'lane_resolution'
+        assert causes['plan-retrospective'] == 'lane_resolution'
+
+    def test_decision_matrix_drop_is_recorded(self):
+        """The matrix rows that narrow phase_6 to the analysis minimum.
+
+        Unrecognised before the shared shape was adopted, so a plan under
+        ``early_terminate_analysis`` or ``verification_no_files`` had both
+        prunable steps re-evaluated against a footprint that never removed them.
+        """
+        causes = _crd.resolve_removal_causes([DECISION_MATRIX_LINE])
+        assert causes == {'sonar-roundtrip': 'decision_matrix'}
 
     def test_prefixed_step_key_normalizes_to_bare(self):
         causes = _crd.resolve_removal_causes([LANE_RESOLUTION_PREFIXED_LINE])
-        assert causes == {'sonar-roundtrip': 'posture_cutoff'}
+        assert causes == {'sonar-roundtrip': 'lane_resolution'}
+
+    def test_unknown_future_gate_in_the_shared_shape_is_still_a_cause(self):
+        """Gate-agnostic by construction — a new composer gate needs no edit here.
+
+        This is the property that replaces the hand-written enumeration: the
+        reader's coverage follows the shape, not a list.
+        """
+        line = '[2026-04-17T10:00:03Z] [INFO] [gggggg] ' + format_dropped_record(
+            'some_future_gate', 'sonar-roundtrip', 'a reason', target=' from phase_6.steps'
+        )
+        assert _crd.resolve_removal_causes([line]) == {'sonar-roundtrip': 'some_future_gate'}
 
     def test_unresolved_ask_provider_drop(self):
         causes = _crd.resolve_removal_causes([UNRESOLVED_ASK_LINE])
@@ -305,13 +353,14 @@ class TestMisPruneRecordedCauses:
     @pytest.mark.parametrize(
         ('line', 'steps', 'step', 'expected_cause'),
         [
-            (LANE_RESOLUTION_LINE, _STEPS_WITHOUT_SONAR, 'sonar-roundtrip', 'posture_cutoff'),
+            (LANE_RESOLUTION_LINE, _STEPS_WITHOUT_SONAR, 'sonar-roundtrip', 'lane_resolution'),
             (
                 LANE_RESOLUTION_PREFIXED_LINE,
                 _STEPS_WITHOUT_SONAR,
                 'sonar-roundtrip',
-                'posture_cutoff',
+                'lane_resolution',
             ),
+            (DECISION_MATRIX_LINE, _STEPS_WITHOUT_SONAR, 'sonar-roundtrip', 'decision_matrix'),
             (
                 UNRESOLVED_ASK_LINE,
                 _STEPS_WITHOUT_SONAR,
