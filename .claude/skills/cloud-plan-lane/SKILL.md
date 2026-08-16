@@ -54,6 +54,7 @@ so the steps below rely on them instead of each run re-deriving them.
 | **Self-wake / polling** | `send_later` and `subscribe_pr_activity` may be **approval-gated** ("requires approval") **or absent entirely** — an observed run had both return "No such tool available" because the `claude-code-remote` MCP server was not connected, not merely gated. Either way, and because Bash cannot poll GitHub, a run **cannot** reliably block-until-green and re-check inside the session — Step 8's arm-and-hand-off completion exists for exactly this. The GitHub *read* surface (`pull_request_read`) is **not** gated, though, so a session that stays active may instead drive the cycle by manual read-polling on re-entry (§ Step 8, "Manual read-polling"). |
 | **Ruleset-config API** | **Not reachable** — the MCP server exposes no branch-protection / ruleset tool, and direct API access is `403`. Read required-ness from `mergeStateStatus` (GitHub applying the ruleset for you), never from a ruleset-config call — § Step 8 condition 1. |
 | **Auto-merge arming** | On this merge-queue repo, arming auto-merge while the required checks are green **queues the PR at once** and locks the branch — § Step 8's one-way-door rule. |
+| **Writing the tree** | Normally `git push`. The GitHub MCP server is **also** a write-the-tree surface (`create_or_update_file` / `push_files`), which matters only when push is unavailable — § Step 4, "When `git push` stops working mid-run". |
 | **Local build** | The build gate triggers on `*.py` only; the merge queue's `merge_group` run verifies docs-only changes before they land — § Step 5. |
 | **Plugin cache** | `/sync-plugin-cache` is a machine-local step a cloud run never performs or owes — § Scope and precedence. |
 
@@ -349,6 +350,33 @@ git push
 
 An unpushed commit is lost work the moment the VM is reclaimed (§ Step 2, "The remote is the only
 durable storage").
+
+### When `git push` stops working mid-run
+
+Every durability instruction above is a `git push`, so a run whose push stops working has no way to
+satisfy them as written. That state is real: an observed run pushed sixteen commits, then began failing
+every push with `fatal: could not read Username for 'https://github.com'` — inside the sandbox and
+outside it — with no credential helper in `.git/config`, no token in the environment, and `add_repo`
+`access: push` returning `already_present` for a workspace path that did not exist. Reads kept working
+throughout, because the git proxy serves them anonymously, so `git fetch` succeeding proves nothing
+about push.
+
+**Diagnose it, and do not let it become a reason to keep working locally.** A local commit is not
+storage (§ Step 2). Establish which cause holds — helper absent, token absent, attach record stale —
+and record it in the report as a finding.
+
+**The MCP API is the fallback write path, and its cost is asymmetric.** `create_or_update_file` and
+`push_files` take the **full content of every file written** as a parameter, so the price of a write
+scales with the size of the files touched, not with the size of the diff. A small diff over small files
+ships normally; the same diff over large files may not, because every line must pass through the
+agent's context twice — once read, once written. When the deliverable does not fit, ship the **diff**:
+a patch file committed to the plan directory costs a fraction of the files it reconstructs. Record in
+the report that it must be applied and then deleted. **A patch file is a durability workaround, never a
+deliverable, and must not reach `main`.**
+
+**Re-test the push before planning around its absence.** The same run recovered credentials later with
+no intervention, which retired the workaround entirely — so a run that plans around a dead push without
+re-checking may be paying for a constraint that has already lifted.
 
 ### The push cadence versus review integrity — resolved on the commit side
 
