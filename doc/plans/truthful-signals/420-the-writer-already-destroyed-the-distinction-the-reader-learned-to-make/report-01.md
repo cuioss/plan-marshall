@@ -1,6 +1,6 @@
 # Run report — 420-the-writer-already-destroyed-the-distinction-the-reader-learned-to-make (run 01)
 
-**Date (UTC):** 2026-08-14    **Branch:** `claude/truthful-signals-writer-reader-67t3to` (harness-assigned, kept)    **PR:** _pending_    **Outcome:** in progress
+**Date (UTC):** 2026-08-16    **Branch:** `claude/truthful-signals-writer-reader-67t3to` (harness-assigned, kept)    **PR:** [#1255](https://github.com/cuioss/plan-marshall/pull/1255)    **Outcome:** completed (auto-merge armed; landing delegated to the merge queue / orchestrator collect)
 
 ## Skills loaded
 
@@ -161,25 +161,81 @@ downloading a transitive `mypy` dep — not a build failure; the retry succeeded
     recover provenance reads an undatable `0` as a measured zero", so the standard is accurate. The
     docstring cross-reference will move when the audit.py follow-on (Residue) lands. Not fixed here to
     hold the plan's "one component" boundary.
+- **CI (PR #1255):** `verify / conclusion` (the required check) → **success**; every other check
+  (`verify / verify`, `verify / gate`, `dependency-review`, `review / review`, `generate-check`,
+  `Sourcery review`) → success; `auto-merge` skipped. No CI failures.
+- **PR review:** no actionable comments and no inline review threads. `cuioss-review-bot` posted
+  "PR Reviewer Guide — PR contains tests, no security concerns, no major issues detected";
+  `sourcery-ai` posted "reviewed your changes and they look great"; `coderabbitai` posted only a
+  rate-limit notice (no review). Nothing to fix or reply to.
 
 ## Reviewer participation
 
-_pending._
+Expected reviewer population, derived from the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(`pr-agent.md`, `coderabbit.md`, `sourcery.md`):
+
+| Reviewer (`author_login`) | Verdict | Body evidence / reason |
+|---|---|---|
+| `cuioss-review-bot` | `reviewed` | Issue comment "PR Reviewer Guide 🔍 — PR contains tests, No security concerns identified, No major issues detected" over the diff. |
+| `sourcery-ai` | `reviewed` | Review-summary body "I've reviewed your changes and they look great!" (no findings). |
+| `coderabbitai` | `rate-limited` | Issue comment "Review limit reached … Next review available in: 46 minutes" — engaged but did not review this diff. |
+
+**Coverage: 2 of 3.** The § Step 8 shortfall disclosure fired: "Review coverage 2 of 3 —
+`cuioss-review-bot` and `sourcery-ai` reviewed with no findings; `coderabbitai` rate-limited (window
+reopens ~46 min)." Per the contract this is a disclosure, not a block — rate limits are routine and
+the merge is not held for them.
 
 ## Cost
 
-- **Tokens:** not available to the agent in this session.
-- **Wall-clock:** _pending (run start/end)._
-- **Population:** this single Claude Code cloud session's usage; NOT comparable to a plan-marshall
-  `metrics.toon` total.
+- **Tokens:** not available to the agent in this session (a single interactive Claude Code cloud
+  session; the harness does not surface a token count to the agent).
+- **Wall-clock:** ~run within one session on 2026-08-16 (branch pushed 08:2x UTC; PR #1255 opened,
+  required `verify` green at 08:52 UTC). Source: PR check-run timestamps.
+- **Population:** this single Claude Code cloud session's usage. ⛔ NOT comparable to a plan-marshall
+  `metrics.toon` total, which counts the orchestrator-plus-agent dispatch tree under plan-marshall's
+  own per-task billing boundary — a boundary this single interactive session does not share. The
+  figures cannot be made comparable, so no parity number is presented.
 
 ## Contract check (Step 9)
 
-_pending._
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | Done — ref-code-quality, plugin-script-architecture, persona-implementer, python-core, pytest-testing (named in § Skills loaded), all read from bundle paths. |
+| 2 Branch | Done — harness-assigned `claude/truthful-signals-writer-reader-67t3to`, kept as-is; pushed to `origin` before any edit. |
+| 3 Plan directory | Done — `doc/plans/truthful-signals/420-…/plan.md` exists, opens with the first-instruction block (present on arrival, no repair needed). |
+| 4 Implement | Done — commits carry the `Co-Authored-By: Claude` trailer; all five deliverables addressed. |
+| 4 Per-commit gate | Done — each `*.py`-touching commit was preceded by a clean `./pw verify plan-marshall` (SUCCESS, 16475 passed). |
+| 4 Pushed | Done — no unpushed commit (this report is the last pre-merge commit). |
+| 5 Build gate | Done — `git diff --name-only origin/main...HEAD -- '*.py'` non-empty → full `./pw verify` path → SUCCESS. |
+| 6 Verification sub-agent | Done — findings F1–F3 fixed, F4 recorded as residue (§ Findings). |
+| 7 PR cycle | Done — PR #1255; all comment surfaces read; no actionable comments. |
+| 8 Merge gate | Conditions 1–3 met (required `verify` green; no open comments; report is the last pre-merge commit); coverage shortfall (2-of-3) disclosed; auto-merge armed. Landing delegated to the merge queue / orchestrator collect (this cloud session's self-wake tools are approval-gated, so it cannot block-until-landed). |
+| 8 Bridge | No status/bookkeeping write outside this plan's own directory. |
+| 9 This check | This table. |
+| 9 What have we learned | Below. |
+
+**GitHub access path used:** the GitHub MCP server (the cloud path; `gh` CLI is absent).
+**Branch form used:** harness-assigned `claude/*`, kept. **`/sync-plugin-cache`:** not owed (a
+machine-local build step a cloud run never performs or records).
 
 ## What have we learned (Step 9)
 
-_pending._
+**No contract change proposed.** The run exercised the lane end to end and every step's artifact was
+producible as written. Two friction points were encountered but are already covered by the contract,
+so neither is a gap:
+
+- The first `uv`/`./pw` invocations failed on an environmental fetch (a proxy stream error
+  downloading a transitive `mypy` dep), which the contract already names ("a `uv` HTTP timeout is an
+  environmental fetch failure, not a build failure") — the retry succeeded, exactly as documented.
+- The self-wake tools (`subscribe_pr_activity`, `send_later`) are approval-gated in this session, and
+  the contract already prescribes the response (arm-and-hand-off, or drive by read-polling the
+  un-gated read surface). Both were used as written.
+
+The one observation worth recording — not proposed as a change because the contract already handles
+it — is that the report-as-last-pre-merge-commit rule means the report commit re-triggers `verify`,
+so at arm time the required check is necessarily in_progress on the report SHA; the contract's "arm
+anyway; the merge queue is the enforcer" carve-out covers this exactly.
 
 ## Residue
 
