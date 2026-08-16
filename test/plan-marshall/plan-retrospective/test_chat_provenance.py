@@ -189,16 +189,52 @@ class TestOperatorBearingEnvelopes:
             text = f'{notice} …\n<command-args>rewrite the provenance filter</command-args>'
             assert _mod.is_operator_authored(text) is True, notice
 
-    def test_partition_separates_residue_from_recovered_text(self):
-        """The two halves are returned apart, not merged into one verdict."""
-        residue, recovered = _mod.partition_turn(SLASH_COMMAND)
-        assert recovered.strip() == 'fix the provenance filter'
-        assert 'plan-marshall is running' not in residue
+    def test_partition_returns_only_recovered_text_in_the_second_half(self):
+        """The second half is the recovered text ALONE, not the whole residue.
+
+        A turn mixing prose, a harness envelope and a command block separates
+        three ways. If the second half were merely the residue again, the early
+        return in `is_operator_authored` would fire on plain prose — admitting
+        any turn whose residue is a harness notice but which happens to carry
+        an envelope pair.
+        """
+        text = f'{OPERATOR_TEXT}\n{SYSTEM_REMINDER}\n<command-args>rerun verify</command-args>'
+        residue, recovered = _mod.partition_turn(text)
+
+        assert recovered.strip() == 'rerun verify'
+        assert OPERATOR_TEXT not in recovered
+        assert OPERATOR_TEXT in residue
+        assert 'claudeMd' not in residue
+
+    def test_partition_recovers_nothing_when_no_command_block_is_present(self):
+        """The pairs loop runs, strips an envelope, and recovers nothing."""
+        residue, recovered = _mod.partition_turn(f'keep this {SYSTEM_REMINDER} and this')
+        assert recovered == ''
+        assert 'keep this' in residue
+        assert 'claudeMd' not in residue
 
     def test_a_notice_alone_is_still_synthetic(self):
-        """The partition must not weaken the notice check when nothing was recovered."""
+        """The notice veto still applies when nothing was recovered."""
         for notice in _mod.HARNESS_NOTICE_PREFIXES:
             assert _mod.is_operator_authored(f'{notice} and then some body text') is False
+
+    def test_a_notice_is_matched_after_envelopes_are_stripped(self):
+        """The notice check reads the RESIDUE, not the raw turn.
+
+        The harness attaches envelopes ahead of its own notices, so a turn that
+        does not begin with a notice can still be one once the envelopes are
+        removed.
+        """
+        assert _mod.is_operator_authored(f'{SYSTEM_REMINDER}\n{STOP_HOOK_NOTICE}') is False
+
+    def test_a_skill_body_carrying_a_command_block_is_still_synthetic(self):
+        """The skill-load check runs BEFORE the recovered-text early return.
+
+        An injected skill body that quotes a command block must not be admitted
+        by the operator-bearing allow-list.
+        """
+        text = f'{SKILL_LOAD_TEXT}\n<command-args>do the thing</command-args>'
+        assert _mod.is_operator_authored(text) is False
 
 
 class TestEnvelopeStrippingIsLinear:

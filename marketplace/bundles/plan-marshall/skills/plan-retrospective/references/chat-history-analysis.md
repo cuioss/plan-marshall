@@ -35,13 +35,17 @@ The predicate does **not** enumerate the synthetic shapes it knows about. It ask
 
 - an **empty or whitespace-only** turn (a tool-result placeholder that carried no text block) — no residue;
 - a turn that is **wholly a harness envelope** — one or more XML-ish tag blocks with nothing outside them. The match is generic over the tag *name*, so an envelope introduced after this document was written is recognised without editing anything;
-- a **synthetic skill-load** turn — a loaded skill's body injected into the conversation, recognized by a `Base directory for this skill:` line followed by a markdown heading — or an **envelope-less harness notice** (session re-entry, the local-command caveat, stop-hook feedback), matched as a literal prefix because it carries no tag to key on. That prefix list is a sample, not a closed set — see [The residual gap](#the-residual-gap--envelope-less-injections).
+- a **synthetic skill-load** turn — a loaded skill's body injected into the conversation, recognized by a `Base directory for this skill:` line followed by a markdown heading — or an **envelope-less harness notice** (session re-entry, the local-command caveat, stop-hook feedback), matched as a literal prefix because it carries no tag to key on. The notice is matched against the **residue**, not the raw turn, so an envelope attached ahead of it does not hide it. That prefix list is a sample, not a closed set — see [The residual gap](#the-residual-gap--envelope-less-injections).
 
 Three rules keep the residue trustworthy:
 
 - **Only a matched open/close pair is an envelope.** Stray markup in operator prose (`List<Integer>`, a stray `</error>`) stays in the residue rather than swallowing the rest of the turn.
 - **Only the outermost pair is stripped.** An unmatched tag earlier in a turn therefore cannot suppress the stripping of a well-formed envelope that follows it — that would be a fail-toward-*operator* path, the direction this design exists to avoid.
 - **Some envelopes carry the operator's own words.** A slash command's `<command-args>` is the harness's wrapper around the operator's instruction, and it is this project's primary channel for driving a run; its inner text is kept as residue rather than dropped with the envelope. This allow-list is safe in the only direction an allow-list can be: an operator-bearing envelope nobody listed reads as synthetic, never the reverse.
+
+**Precedence — recovered operator text wins over the notice backstop.** When a turn yields text from an operator-bearing envelope, it is operator-authored, *even if the rest of the turn opens with a listed notice*. The harness attaches its notices to whatever turn follows them, so a stop-hook or local-command notice can sit in front of a command the operator typed; letting the notice veto the command would discard the instruction along with the wrapper. The skill-load check still runs **first**, so an injected skill body that merely quotes a command block stays synthetic.
+
+The precedence applies only to text recovered from an operator-bearing envelope — never to ordinary prose residue, which the notice backstop still vetoes.
 
 An envelope *attached to* an operator turn is not a drop either: the harness routinely annotates a genuine utterance, and the residue then still holds the operator's prose.
 
@@ -64,7 +68,7 @@ The classes below were derived by running the reducer over real session transcri
 
 #### The residual gap — envelope-less injections
 
-**The structural guarantee covers tag-wrapped injections only.** A harness turn that carries *no envelope* — the stop-hook feedback notice is the observed case — leaves full residue and is counted as an operator turn unless its exact wording is listed in `HARNESS_NOTICE_PREFIXES`. For that class the filter is back to an enumeration, and therefore back to being a sample.
+**The structural guarantee covers tag-wrapped injections only.** A harness turn that carries *no envelope* — the stop-hook feedback notice is the observed case — leaves full residue and is counted as an operator turn unless its exact wording is listed in `HARNESS_NOTICE_PREFIXES`. For that class the filter is back to an enumeration, and therefore back to being a sample. Listing a notice is necessary but **not sufficient** for the turn to be dropped: a turn that also yields operator-bearing text is kept, per the precedence rule above.
 
 This is published rather than papered over because the plan's own thesis is that a named list is a sample: an inventory that hid an observed miss would repeat the defect it documents. A new envelope-less notice is a false *operator* — the direction that inflates the verdict — so this list is the one part of the mechanism that needs updating when the harness adds a shape.
 

@@ -56,7 +56,7 @@ build-target *data* (per-target permission emission), not core code.
 | `manage-metrics.py:142` | `SESSION_ID_RE` Claude UUID shape |
 | `manage-metrics.py:77,81-89,1429-1473` | `<usage>` tag (`USAGE_TAG_RE`), `message.usage` four-field shape (Claude API) |
 | `manage-metrics.py:90-95` | `BILLING_WEIGHT_CACHE_*` Anthropic cache-pricing weights |
-| `plan-retrospective/scripts/extract-chat-signal.py`, `scripts/_chat_provenance.py`, `scripts/_chat_gate_decisions.py`, `references/chat-history-analysis.md`, `references/permission-prompt-analysis.md` | parse Claude session JSONL + settings/permission model. The harness-shape coupling itself — injected-envelope grammar, verbatim notice prefixes, the skill-load marker, the `AskUserQuestion` tool name and the operator-refusal wordings — lives in the two `_chat_*` modules |
+| `plan-retrospective/scripts/extract-chat-signal.py`, `scripts/_chat_provenance.py`, `scripts/_chat_gate_decisions.py`, `references/chat-history-analysis.md`, `references/permission-prompt-analysis.md` | parse Claude session JSONL + settings/permission model. The harness-shape coupling itself — injected-envelope grammar, verbatim notice prefixes, the skill-load marker and the operator-refusal wordings — lives in the two `_chat_*` modules; the `AskUserQuestion` tool name appears in BOTH `_chat_gate_decisions.py` (`OPERATOR_DECISION_TOOL`) and `extract-chat-signal.py` (`DECISION_MARKERS`) |
 
 Destination: transcript resolution + parse → PR-behavior; the metrics **storage/aggregation**
 layer is identical across targets and stays-agnostic (`manage-metrics` keeps it).

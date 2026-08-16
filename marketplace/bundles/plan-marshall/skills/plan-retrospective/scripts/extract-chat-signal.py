@@ -221,7 +221,8 @@ def reduce_transcript(lines: list[str]) -> Reduction:
     Dropped turns contribute nothing: unmarked assistant prose, tool-output,
     malformed lines, and every ``user`` turn that leaves no operator residue
     (empty or whitespace-only placeholders, whole-envelope harness injections,
-    injected skill bodies, and envelope-less harness notices).
+    injected skill bodies, and envelope-less harness notices that did not also
+    yield operator-bearing text).
     """
     result = Reduction()
     decision_ids: set[str] = set()
