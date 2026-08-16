@@ -1,6 +1,6 @@
 # Run report — 030-config-and-manifest-test-reduction (run 01)
 
-**Date (UTC):** 2026-08-16    **Branch:** `claude/config-manifest-test-reduction-0eod0y` (harness-assigned, kept as-is)    **PR:** _pending_    **Outcome:** partial — see § Verification verdict
+**Date (UTC):** 2026-08-16    **Branch:** `claude/config-manifest-test-reduction-0eod0y` (harness-assigned, kept as-is)    **PR:** [#1261](https://github.com/cuioss/plan-marshall/pull/1261)    **Outcome:** partial — see § Verification verdict
 
 ## Skills loaded
 
