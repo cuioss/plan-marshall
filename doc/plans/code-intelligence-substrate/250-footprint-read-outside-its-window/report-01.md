@@ -112,7 +112,10 @@ here because the plan's ⚠ asks for a derived set rather than a convenient one:
    counting it **fails closed** (the gate is kept). Filtering here would subtract a gate on the
    composer side — the exact direction D4 forbids.
 
-A **fifth** declaration surface (counting the four above) was found and is **deferred, not fixed** — see § Findings R2-D1.
+A further declaration surface — unimplemented, and carrying the same read-vs-modify semantic — was found
+and is **deferred, not fixed**. It is deliberately left **unnumbered**: it is not another consumer of this
+denominator but a separate declaration form, and numbering it alongside the consumers above is what let
+three different ordinals attach to one object across earlier revisions. See § Findings R2-D1.
 
 The declaration-**parseability** check still reads the unfiltered bullets, so a deliverable declaring
 only read-intent files is not mis-reported as a parse failure; that case became a `skip` carrying its
@@ -200,8 +203,8 @@ asserted.
 
   | Failure mode | Count | Why it is (or is not) evidence |
   |---|---|---|
-  | `AttributeError` | 4 | They call `extract_modification_intent_files`, which does not exist pre-branch — they cannot run at all |
-  | `KeyError: 'read_intent_excluded'` | 4 | They read a details key that does not exist pre-branch — likewise cannot reach an assertion |
+  | `AttributeError` | 4 | They reach the missing `extract_modification_intent_files` **after** passing an earlier assertion — and that passing assertion IS the parse-preservation property, so pre-branch they demonstrate the property held rather than failing to observe it |
+  | `KeyError: 'read_intent_excluded'` | 4 | They read a details key that does not exist pre-branch, likewise **after** passing at least one assertion. The red is the missing key, not a wrong answer |
   | genuine `AssertionError` on an observed answer | 2 | `test_only_a_declared_intent_token_is_treated_as_a_marker` and `test_published_on_the_unparseable_fail_branch` — these **are** red-pre-fix in the plan's sense |
 
   Only 2 of the 12 pass pre-branch (`test_parenthesis_inside_a_bare_path_is_preserved`,
@@ -220,10 +223,13 @@ divergences confined to bare bullets carrying a genuine `VALID_STEP_INTENTS` mar
 `src/a.py`. At merge-base it yields `src/a.py (delete)`, so the property it pins did **not** hold on
 `main` — it is a genuine red-pre-fix test miscategorised as preservation.
 
-Two earlier revisions of this report got this section wrong: the first claimed all 7 preservation tests
-were "green against pre-branch source by construction" (finding V1); the second attributed all 10
-red results to `AttributeError` and asserted the pinned property "held on `main`" for all 7 (round-4
-findings 1 and 2). The measured table above replaces both.
+Three earlier revisions of this report got this section wrong: the first claimed all 7 preservation
+tests were "green against pre-branch source by construction" (finding V1); the second attributed all 10
+red results to `AttributeError` and asserted the pinned property "held on `main`" for all 7 (findings
+W1, W2); the third said the 8 non-assertion failures "cannot run at all" / "cannot reach an assertion",
+when every one of them runs and passes an earlier assertion first (finding X3). The measured table
+above replaces all three, and the corrected reading is *stronger* than the claim it replaces: for the 4
+`AttributeError` tests, the assertion that passes at merge-base is the preservation property itself.
 
 ## Build gate
 
@@ -254,8 +260,9 @@ never `git add -A`.
 
 ## Findings
 
-Recorded **per instance**. Four independent verification rounds ran; each of the first three found real defects, so each
-was followed by fixes and a re-dispatch.
+Recorded **per instance**. Five independent verification rounds ran. Rounds 1-4 each found real defects, so
+each was followed by fixes and a re-dispatch; round 5 found no logic defect and is recorded below with the
+residue it did find.
 
 ### Round 1 — pre-PR verification sub-agent
 
@@ -316,7 +323,7 @@ pass branch mutated to report a bullet count, only
 of that test passes the same mutation, confirming the rewrite is non-vacuous. It also audited **24 file
 paths and 13 symbols** across both plan documents; all resolve.
 
-Every round-4 finding is in prose or in a count. **Two are rows I marked "Fixed" that were not.**
+Every round-4 finding is in prose or in a count. **W3 and W4 are rows I marked "Fixed" that were not.**
 
 | # | Source | Finding | Disposition |
 |---|---|---|---|
@@ -332,11 +339,39 @@ Every round-4 finding is in prose or in a count. **Two are rows I marked "Fixed"
 | W10 | sub-agent | "The **one** branch whose verdict is derived from the unfiltered declaration" — the no-declaration `skip` also reads `all_declared` | **Fixed** — two branches named, with why only one needs the extra field |
 | W11 | sub-agent | The `./pw verify` figure was not re-derived after `8164a24` changed source and tests | **Fixed** — re-run; see § Build gate |
 
-### Round 2 — findings deferred, with reasons
+### Round 5 — re-dispatch over round 4's fixes
+
+**Zero logic findings. The verifier assessed the code as converged**, having added a reproduction of
+the mutation test, a 7-branch duplicate-declaration sweep, and a full merge-base differential
+classification of all 21 tests — none of which found anything. It independently re-derived every number
+in the round-4 commit and confirmed each exact: the 6 obligation bullets, the 4/4/2 failure-mode split
+and both named `AssertionError` tests, 9 Python files of 19 changed with the quoted block matching the
+command's output, `20298 passed, 14 skipped` (re-run), 11 `W` rows over 4 round sections, 1 item under
+"One further consumer", and 3 conditions in `_manifest_decide.py`. It also confirmed **0** surviving
+copies of each wording round 4 corrected — the site-drift pattern did not recur.
+
+Three defects remain, all prose.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| X1 | sub-agent | "Four independent verification rounds ran; **each of the first three** found real defects" — round 4 found 11, all dispositioned Fixed 60 lines below. **Introduced by the edit that fixed W6**, the identical defect class — the third consecutive round in which a correction carried a new instance of its own defect | **Fixed** |
+| X2 | sub-agent | Three different ordinals named one object: the D3 reference said "fifth", R2-D1's own row said "fourth", § Residue said "second". Round 4 renumbered the referring site and not the target — the W4 pattern again | **Fixed by removing the ordinal entirely.** It is a separate declaration form, not another consumer of this denominator, so numbering it in that sequence was the category error that invited the drift |
+| X3 | sub-agent | The new D6(c) "Why" cells said the 8 non-assertion failures "cannot run at all" / "cannot reach an assertion". Every one runs and passes an earlier assertion first. The counts and the conclusion were exact; only the justification was false | **Fixed** — and the corrected reading is stronger: for the 4 `AttributeError` tests the passing assertion IS the preservation property |
+| X4 | sub-agent | Minor: a cross-reference used bare ordinals ("round-4 findings 1 and 2") where the table labels are `W1`/`W2`; a count ("Two are rows…") where naming them is unambiguous; and a `### Round 2 — findings deferred` heading trailing `### Round 4`, giving five round headings for four rounds | **Fixed** — labels used, rows named, heading renamed |
+
+**Stopping here is a decision, not a termination.** Round 5 did not come back clean, so the contract's
+"a pass that found a defect has not finished" is not literally satisfied. The judgement is that the
+loop has converged on what it can converge on: the code has produced zero logic findings across rounds
+3, 4 and 5 under progressively stronger empirical methods, while each round's prose corrections
+generate a smaller crop of prose findings (11 → 11 → 3, none of them changing what the code does or
+what a deliverable claims). A sixth round would very likely find another count. That is recorded as
+residue rather than chased, and § Residue names it.
+
+### Findings deferred, with reasons (raised in round 2)
 
 | # | Finding | Disposition |
 |---|---|---|
-| R2-D1 | **A fourth declaration surface, and it is a phantom.** `phase-3-outline/standards/outline-workflow-detail.md:824`, `phase-3-outline/SKILL.md:399`, and `manage-config/standards/domain-residency-audit.md:51` all state that `affected_files_recall` runs against `**Files expected to mutate:**` and not `**Files to survey:**`. No script reads either field — the extractor splits on `**Affected files:**` only — and `manage-solution-outline`'s Check 3 **rejects** a deliverable using that two-field form, so the contract is unimplementable as written. This is squarely the read-vs-modify semantic D3 addresses | **Deferred.** Pre-existing, and resolving it means deciding whether to *implement* the two-field form or *delete* the claim — a design decision beyond this plan's declared scope. Named precisely here and in § Residue so a follow-up can pick it up rather than rediscover it |
+| R2-D1 | **A further declaration surface, and it is a phantom.** `phase-3-outline/standards/outline-workflow-detail.md:824`, `phase-3-outline/SKILL.md:399`, and `manage-config/standards/domain-residency-audit.md:51` all state that `affected_files_recall` runs against `**Files expected to mutate:**` and not `**Files to survey:**`. No script reads either field — the extractor splits on `**Affected files:**` only — and `manage-solution-outline`'s Check 3 **rejects** a deliverable using that two-field form, so the contract is unimplementable as written. This is squarely the read-vs-modify semantic D3 addresses | **Deferred.** Pre-existing, and resolving it means deciding whether to *implement* the two-field form or *delete* the claim — a design decision beyond this plan's declared scope. Named precisely here and in § Residue so a follow-up can pick it up rather than rediscover it |
 | R2-D2 | `plan-retrospective` reads the worktree via `resolve_live_worktree` but declares no `reads: [worktree]`, so the band contract's checkable ordering rule would not catch the mis-ordering it describes | **Deferred, deliberately.** Adding the declaration would make the step *violate* that checkable rule (it is ordered after the destroyer) and likely fail the doctor gate. The correct resolution is part of the ordering design, not a metadata patch |
 | R2-D3 | `references/artifact-consistency.md`'s TOON fragment block shows no `details:` at all, so the newly-universal `read_intent_excluded` key has no worked example in prose | **Deferred** — low value; the fixture (N10) now carries the shape, and adding a full details example to the fragment block is scope growth |
 
@@ -389,7 +424,7 @@ _Completed before the merge gate._
 
 - **R2-D1 — the phantom `Files expected to mutate:` / `Files to survey:` contract.** Three documents
   describe a two-field declaration form that no script reads and that the outline validator rejects.
-  It is a second declaration surface for the same read-vs-modify semantic this plan fixed, so it
+  It is a further declaration surface for the same read-vs-modify semantic this plan fixed, so it
   belongs to this programme. A follow-up must decide whether to implement the split or delete the
   claim; it should not be resolved by silently editing prose to match whichever side is easier.
 - **R2-D2 — `plan-retrospective`'s undeclared `reads: [worktree]`.** The ordering defect this plan
@@ -399,3 +434,13 @@ _Completed before the merge gate._
   complete D5; the two bounds recorded under D5 above should be applied when it does.
 - **D6(b)'s red-before-green** is not re-checkable on this branch and would need a run based before the
   sibling composer plan landed.
+- **Prose-count residue.** Five verification rounds produced **44** numbered findings (F1-F8, N1-N10,
+  V1-V11, W1-W11, X1-X4), plus 3 deferred and 4 self-corrections — 51 rows in total, counted from the
+  tables above rather than tallied from memory. The last three rounds found **zero** in the code and
+  all of theirs in this run's own prose, concentrated in three signatures: a count of a
+  list the author had just edited, a correction applied at the referring site but not its target, and
+  an overstated claim about what a test does. Rounds 3, 4 and 5 each *introduced* a fresh instance of a
+  defect class while fixing that same class. The loop was stopped at round 5 by judgement (see the
+  round-5 section), so a reader should assume this document still contains an uncorrected count of that
+  kind. Nothing in that residue changes code behaviour or a deliverable verdict; the code findings were
+  exhausted at round 2.
