@@ -1,6 +1,6 @@
 # Run report — 260-chat-signal-provenance-filter-under-inclusive (run 01)
 
-**Date (UTC):** 2026-08-16    **Branch:** `claude/chat-signal-provenance-filter-agmptk` (harness-assigned, kept as-is)    **PR:** see **Merge gate** below    **Outcome:** completed
+**Date (UTC):** 2026-08-16    **Branch:** `claude/chat-signal-provenance-filter-agmptk` (harness-assigned, kept as-is)    **PR:** [#1271](https://github.com/cuioss/plan-marshall/pull/1271)    **Outcome:** completed
 
 ## Skills loaded
 
@@ -477,7 +477,9 @@ defect that remains, not about the absence of findings.
 
 ## Merge gate
 
-**PR:** _filled in when the PR is opened; this section is the single place the run records it._
+**PR:** [#1271](https://github.com/cuioss/plan-marshall/pull/1271) — `cuioss/plan-marshall`, base `main`,
+head `3224ea1`. Opened **without** `skip-bot-review`: the diff carries `*.py` and
+`marketplace/bundles/**` changes, and a skill is behavioural code that gets reviewed like any other.
 
 Conditions per the lane contract:
 
@@ -494,7 +496,25 @@ Population derived from configuration — the `author_login` of each
 `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc, not a
 list transcribed here: **`sourcery-ai`, `coderabbitai`, `cuioss-review-bot`** (M = 3).
 
-_Verdicts recorded below once the PR review cycle has run._
+Every verdict below is read from the **comment bodies** across all three surfaces
+(`get_comments`, `get_reviews`, `get_review_comments`) — never from a check state. `sourcery-ai`'s
+check run concluded `skipped`, which on its own says nothing; its body says what actually happened.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
+|---|---|---|---|
+| `cuioss-review-bot` | **reviewed** | — | Published a review over the diff: *"PR contains tests / No security concerns identified / No major issues detected"* |
+| `coderabbitai` | **rate-limited** | **yes** | *"Review limit reached … you've reached your PR review limit, so we couldn't start this review. Next review available in: 51 minutes"* — a countdown, so a later re-request would succeed |
+| `sourcery-ai` | **rate-limited** | **no** | *"your pull request is larger than the review limit of 150000 diff characters"* — a property of **this diff**, not of the clock. Waiting cannot clear it; the same request never succeeds at this size |
+
+**Coverage: 1 of 3.** The § Step 8 shortfall disclosure fired and is stated in words below.
+
+⭐ Note the two refusals are **not** the same kind, which is exactly why the `Reopens?` column exists:
+one clears on a timer, the other never clears for a diff this size. A table that rendered them
+identically would tell a reader nothing about whether re-requesting is worth doing.
+
+**Inline review threads:** none (`get_review_comments` → 0 threads). **Comments requiring
+disposition:** none — the one review that ran reported no issues, so there is no comment to fix or
+answer.
 
 ## Cost
 
@@ -518,8 +538,8 @@ _Verdicts recorded below once the PR review cycle has run._
 | 4 Pushed | **Done** | Pushed after every commit; `git status -sb` reports no `ahead` |
 | 5 Build gate | **Done** | Git-derived verdict (ten `*.py`) and full `./pw verify`, read in full rather than by exit code |
 | 6 Verification sub-agent | **Done** | Twelve rounds, each targeting the prior round's fixes; all findings and dispositions recorded above |
-| 7 PR cycle | See Reviewer participation |
-| 8 Merge gate | See **Merge gate** above |
+| 7 PR cycle | **Done** | PR [#1271](https://github.com/cuioss/plan-marshall/pull/1271); all three comment surfaces read; every reviewer carries a verdict and a `Reopens?` value; no comment required disposition |
+| 8 Merge gate | **Done** | Conditions 1–3 met, shortfall disclosed at 1-of-3, auto-merge armed — see **Merge gate** above |
 | 8 Bridge | **Done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory |
 | 9 This check | **Done** | This table |
 | 9 What have we learned | **Done** | Below |
