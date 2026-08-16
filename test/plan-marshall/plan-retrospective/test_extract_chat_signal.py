@@ -44,6 +44,9 @@ SCRIPT_PATH = (
 _mod = load_script_module(
     'plan-marshall', 'plan-retrospective', 'extract-chat-signal.py', 'extract_chat_signal'
 )
+# The provenance predicate moved to its own module; this file exercises it only
+# where the reduction's parsing behaviour depends on it.
+_prov = load_script_module('plan-marshall', 'plan-retrospective', '_chat_provenance.py')
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +136,7 @@ class TestIsSignalBearing:
         markdown heading following it, is real signal and must survive.
         """
         text = 'why does the log say Base directory for this skill: /tmp/x ?'
-        assert _mod.is_synthetic_skill_load(text) is False
+        assert _prov.is_synthetic_skill_load(text) is False
         assert _mod.is_signal_bearing('user', text) is True
 
     def test_assistant_turn_kept_with_decision_marker(self):

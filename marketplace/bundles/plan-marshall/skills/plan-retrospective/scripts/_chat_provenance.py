@@ -78,8 +78,8 @@ def is_synthetic_skill_load(text: str) -> bool:
     return _MARKDOWN_HEADING_RE.search(text, index) is not None
 
 
-def strip_harness_envelopes(text: str) -> str:
-    """Return ``text`` with every harness-injected tag block removed.
+def partition_turn(text: str) -> tuple[str, str]:
+    """Split ``text`` into (residue, text recovered from operator-bearing envelopes).
 
     The residue is what an operator wrote OUTSIDE the harness's envelopes. The
     harness routinely attaches an envelope to a genuine operator turn, so a
@@ -97,6 +97,12 @@ def strip_harness_envelopes(text: str) -> str:
     * An envelope named in :data:`OPERATOR_BEARING_TAGS` contributes its INNER
       text to the residue, because the wrapper is the harness's but the words
       inside it are the operator's.
+
+    The second element is only the operator-bearing text, returned separately
+    so a caller can tell *"prose survived"* from *"the operator typed a command"*
+    — :func:`is_operator_authored` needs that distinction, because a harness
+    notice opening the turn must not veto an instruction the operator explicitly
+    entered later in it.
 
     Runs in one linear pass: tags are tokenized once and paired through a
     stack, with an index from tag name to its open positions so a close tag
@@ -131,23 +137,34 @@ def strip_harness_envelopes(text: str) -> str:
             stack.append((tag, token.start(), token.end()))
 
     if not pairs:
-        return text
+        return text, ''
 
     # By start position: an outer pair opens before the pair it contains, so the
     # cursor below skips the nested one. Starts are unique — each open token
     # yields at most one pair — so no tiebreak is needed.
     pairs.sort(key=lambda pair: pair[0])
     parts: list[str] = []
+    recovered: list[str] = []
     cursor = 0
     for block_start, block_end, tag, inner_start, inner_end in pairs:
         if block_start < cursor:
             continue
         parts.append(text[cursor:block_start])
         if tag in OPERATOR_BEARING_TAGS:
-            parts.append(text[inner_start:inner_end])
+            inner = text[inner_start:inner_end]
+            parts.append(inner)
+            recovered.append(inner)
         cursor = block_end
     parts.append(text[cursor:])
-    return ''.join(parts)
+    return ''.join(parts), ''.join(recovered)
+
+
+def strip_harness_envelopes(text: str) -> str:
+    """Return ``text`` with every harness-injected tag block removed.
+
+    The residue in document order — what :func:`partition_turn` returns first.
+    """
+    return partition_turn(text)[0]
 
 
 def is_harness_notice(text: str) -> bool:
@@ -168,12 +185,20 @@ def is_operator_authored(text: str) -> bool:
     nobody enumerated — it asks whether operator prose SURVIVES once the
     harness's own injection markers are removed. A turn with no residue is
     synthetic, whatever wrapper produced it.
+
+    Text recovered from an operator-bearing envelope settles the question on
+    its own. The notice check runs on the residue, and the residue carries that
+    recovered text, so a turn opening with a harness notice and continuing into
+    a slash command would otherwise be discarded — taking the operator's
+    instruction with it.
     """
     if not text.strip():
         return False
     if is_synthetic_skill_load(text):
         return False
-    residue = strip_harness_envelopes(text)
+    residue, operator_bearing = partition_turn(text)
+    if operator_bearing.strip():
+        return True
     if not residue.strip():
         return False
     return not is_harness_notice(residue)

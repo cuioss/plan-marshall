@@ -37,6 +37,7 @@ from conftest import load_script_module, parse_ns  # noqa: E402
 _mod = load_script_module(
     'plan-marshall', 'plan-retrospective', 'extract-chat-signal.py', 'extract_chat_signal'
 )
+_gate = load_script_module('plan-marshall', 'plan-retrospective', '_chat_gate_decisions.py')
 
 BUNDLE = 'plan-marshall'
 SKILL = 'plan-retrospective'
@@ -66,7 +67,7 @@ class TestGateDecisionRecovery:
         """
         path = _write(
             tmp_path,
-            chat_tool_use(_mod.OPERATOR_DECISION_TOOL, 'tu_1'),
+            chat_tool_use(_gate.OPERATOR_DECISION_TOOL, 'tu_1'),
             chat_tool_result('tu_1', 'Approach: rewrite the filter'),
         )
         result = _run(path)
@@ -121,13 +122,13 @@ class TestGateDecisionRecovery:
         path = _write(
             tmp_path,
             chat_turn('user', OPERATOR_TEXT),
-            chat_tool_use(_mod.OPERATOR_DECISION_TOOL, 'tu_4'),
+            chat_tool_use(_gate.OPERATOR_DECISION_TOOL, 'tu_4'),
             chat_tool_result('tu_4', 'Option B'),
         )
         result = _run(path)
         assert result['operator_turn_count'] == 1
         assert result['gate_decision_count'] == 1
-        assert f'{_mod.OPERATOR_DECISION_ROLE}: Option B' in result['reduced_transcript']
+        assert f'{_gate.OPERATOR_DECISION_ROLE}: Option B' in result['reduced_transcript']
 
 
 class TestOperatorSignalCounters:
@@ -182,7 +183,7 @@ class TestOperatorSignalCounters:
         """
         path = _write(
             tmp_path,
-            chat_tool_use(_mod.OPERATOR_DECISION_TOOL, 'tu_6'),
+            chat_tool_use(_gate.OPERATOR_DECISION_TOOL, 'tu_6'),
             chat_tool_result('tu_6', 'Option A'),
             chat_turn('user', OPERATOR_TEXT),
         )
@@ -264,6 +265,31 @@ class TestNoSignalVerdict:
     def test_operator_turn_annotated_by_the_harness_still_routes(self, tmp_path):
         """An operator turn carrying an attached reminder is still signal."""
         path = _write(tmp_path, chat_turn('user', f'{OPERATOR_TEXT}\n{SYSTEM_REMINDER}'))
+        result = _run(path)
+        assert result['operator_turn_count'] == 1
+        assert result['no_signal'] is False
+
+    def test_argumentless_commands_alone_report_no_signal(self, tmp_path):
+        """A session of bare commands carries no analysable operator content.
+
+        The operator acted, but `/clear` and `/compact` say nothing this aspect
+        can analyse — it looks for pivots, clarifications and corrections. The
+        narrowing is deliberate and it fails toward refusal, so it is pinned
+        here at the verdict level rather than left to the predicate alone.
+        """
+        path = _write(
+            tmp_path,
+            chat_turn('user', '<command-name>/clear</command-name>'),
+            chat_turn('user', '<command-name>/compact</command-name>\n<command-args></command-args>'),
+        )
+        result = _run(path)
+        assert result['raw_turn_count'] == 2
+        assert result['operator_turn_count'] == 0
+        assert result['no_signal'] is True
+
+    def test_a_command_with_arguments_routes_normally(self, tmp_path):
+        """The counterpart: arguments are operator content, so the turn counts."""
+        path = _write(tmp_path, chat_turn('user', SLASH_COMMAND))
         result = _run(path)
         assert result['operator_turn_count'] == 1
         assert result['no_signal'] is False

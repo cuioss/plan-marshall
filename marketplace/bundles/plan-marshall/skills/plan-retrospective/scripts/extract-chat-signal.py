@@ -69,41 +69,14 @@ from typing import Any
 
 from _chat_gate_decisions import (
     OPERATOR_DECISION_ROLE,
-    OPERATOR_DECISION_TOOL,
-    OPERATOR_REFUSAL_MARKERS,
     decision_tool_use_ids,
     extract_gate_decisions,
-    flatten_tool_result,
 )
-from _chat_provenance import (
-    HARNESS_NOTICE_PREFIXES,
-    OPERATOR_BEARING_TAGS,
-    is_harness_notice,
-    is_operator_authored,
-    is_synthetic_skill_load,
-    strip_harness_envelopes,
-)
+from _chat_provenance import is_operator_authored
 from file_ops import output_toon, safe_main
 from input_validation import (
     parse_args_with_toon_errors,
 )
-
-# Re-exported so the reducer's own module surface still carries the provenance
-# vocabulary its callers and tests read.
-__all__ = [
-    'HARNESS_NOTICE_PREFIXES',
-    'OPERATOR_BEARING_TAGS',
-    'OPERATOR_DECISION_ROLE',
-    'OPERATOR_DECISION_TOOL',
-    'OPERATOR_REFUSAL_MARKERS',
-    'decision_tool_use_ids',
-    'extract_gate_decisions',
-    'flatten_tool_result',
-    'is_harness_notice',
-    'is_operator_authored',
-    'is_synthetic_skill_load',
-    'strip_harness_envelopes',
-]
 
 # The established plan-marshall decision-marker set. An assistant turn is
 # signal-bearing when its text contains at least one of these substrings.
@@ -248,7 +221,7 @@ def reduce_transcript(lines: list[str]) -> Reduction:
     Dropped turns contribute nothing: unmarked assistant prose, tool-output,
     malformed lines, and every ``user`` turn that leaves no operator residue
     (empty or whitespace-only placeholders, whole-envelope harness injections,
-    injected skill bodies, and re-entry notices).
+    injected skill bodies, and envelope-less harness notices).
     """
     result = Reduction()
     decision_ids: set[str] = set()

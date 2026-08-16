@@ -176,6 +176,30 @@ class TestOperatorBearingEnvelopes:
         nested = '<system-reminder><command-args>x</command-args></system-reminder>'
         assert _mod.is_operator_authored(nested) is False
 
+    def test_a_notice_prefix_does_not_veto_a_recovered_instruction(self):
+        """A turn can open with a harness notice AND carry an operator command.
+
+        The notice check runs on the residue, and the residue carries the text
+        recovered from `<command-args>`. Without partitioning the two apart, a
+        notice sitting at the front of the turn discards an instruction the
+        operator explicitly typed — and every prefix added to the backstop
+        widens that window.
+        """
+        for notice in _mod.HARNESS_NOTICE_PREFIXES:
+            text = f'{notice} …\n<command-args>rewrite the provenance filter</command-args>'
+            assert _mod.is_operator_authored(text) is True, notice
+
+    def test_partition_separates_residue_from_recovered_text(self):
+        """The two halves are returned apart, not merged into one verdict."""
+        residue, recovered = _mod.partition_turn(SLASH_COMMAND)
+        assert recovered.strip() == 'fix the provenance filter'
+        assert 'plan-marshall is running' not in residue
+
+    def test_a_notice_alone_is_still_synthetic(self):
+        """The partition must not weaken the notice check when nothing was recovered."""
+        for notice in _mod.HARNESS_NOTICE_PREFIXES:
+            assert _mod.is_operator_authored(f'{notice} and then some body text') is False
+
 
 class TestEnvelopeStrippingIsLinear:
     def test_unmatched_markup_does_not_blow_up_the_pre_pass(self):

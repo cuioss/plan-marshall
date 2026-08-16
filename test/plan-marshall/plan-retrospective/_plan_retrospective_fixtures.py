@@ -318,9 +318,23 @@ SYSTEM_REMINDER = (
     '</system-reminder>'
 )
 
+# The shape observed verbatim in a real session transcript: attribute-less, with
+# nested children, and multi-paragraph prose inside <result>. An invented flat
+# one-line variant would not exercise nested-envelope-containing-prose at all.
 TASK_NOTIFICATION = (
-    '<task-notification agent="general-purpose" status="completed">\n'
-    'The verification sub-agent finished and reported two findings.\n'
+    '<task-notification>\n'
+    '<task-id>a82b5c26048205450</task-id>\n'
+    '<tool-use-id>toolu_0152fq8UnwvZDd6aieSbPXJh</tool-use-id>\n'
+    '<output-file>/tmp/tasks/a82b5c26048205450.output</output-file>\n'
+    '<status>completed</status>\n'
+    '<summary>Agent "Verify work against plan" finished</summary>\n'
+    '<result>Verification complete.\n\n'
+    'The branch moved twice during the review; everything below is verified\n'
+    'against HEAD, working tree clean.\n\n'
+    '## Deliverable verdicts\n\n'
+    'D1 implemented as specified. D2 partially — an over-claiming comment was\n'
+    'reintroduced. Report every gap with file and symbol.\n'
+    '</result>\n'
     '</task-notification>'
 )
 

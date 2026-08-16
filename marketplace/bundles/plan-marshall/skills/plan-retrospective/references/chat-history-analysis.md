@@ -35,7 +35,7 @@ The predicate does **not** enumerate the synthetic shapes it knows about. It ask
 
 - an **empty or whitespace-only** turn (a tool-result placeholder that carried no text block) — no residue;
 - a turn that is **wholly a harness envelope** — one or more XML-ish tag blocks with nothing outside them. The match is generic over the tag *name*, so an envelope introduced after this document was written is recognised without editing anything;
-- a **synthetic skill-load** turn — a loaded skill's body injected into the conversation, recognized by a `Base directory for this skill:` line followed by a markdown heading — or a **verbatim harness re-entry notice**, matched as a literal prefix because it carries no tag to key on.
+- a **synthetic skill-load** turn — a loaded skill's body injected into the conversation, recognized by a `Base directory for this skill:` line followed by a markdown heading — or an **envelope-less harness notice** (session re-entry, the local-command caveat, stop-hook feedback), matched as a literal prefix because it carries no tag to key on. That prefix list is a sample, not a closed set — see [The residual gap](#the-residual-gap--envelope-less-injections).
 
 Three rules keep the residue trustworthy:
 
