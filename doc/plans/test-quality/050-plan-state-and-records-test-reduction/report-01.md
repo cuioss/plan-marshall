@@ -1,6 +1,6 @@
 # Run report — 050-plan-state-and-records-test-reduction (run 01)
 
-**Date (UTC):** 2026-08-16 **Branch:** `claude/test-quality-plan-execution-evap45` **PR:** _(see § PR)_ **Outcome:** partial
+**Date (UTC):** 2026-08-16 **Branch:** `claude/test-quality-plan-execution-evap45` **PR:** [#1258](https://github.com/cuioss/plan-marshall/pull/1258) **Outcome:** partial
 
 ⛔ **The line-count floor is NOT met, and the plan's Verification section says to report the
 shortfall and stop.** The slice fell from 79,763 to 79,304 lines — **−459 lines, −0.6%**, against a
