@@ -29,7 +29,6 @@ two-source split that is the actual migration.
 
 from __future__ import annotations
 
-import importlib.util
 import subprocess
 from argparse import Namespace
 from pathlib import Path
@@ -44,7 +43,7 @@ from _resolve_project_dir_fixtures import (
 )
 from toon_parser import parse_toon
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # ---------------------------------------------------------------------------
 # Load module under test
@@ -55,10 +54,9 @@ _PRUNE_REF_PATH = get_script_path(
 )
 _SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
 
-_spec = importlib.util.spec_from_file_location('_cmd_prune_ref', _PRUNE_REF_PATH)
-assert _spec is not None and _spec.loader is not None
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
+_mod = load_script_module(
+    'plan-marshall', 'workflow-integration-git', '_cmd_prune_ref.py', '_cmd_prune_ref'
+)
 
 cmd_prune_ref = _mod.cmd_prune_ref
 _resolve_project_dir_and_head = _mod._resolve_project_dir_and_head

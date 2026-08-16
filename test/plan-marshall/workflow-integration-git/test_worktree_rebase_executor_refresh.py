@@ -31,22 +31,17 @@ The refresh is:
 
 from __future__ import annotations
 
-import importlib.util
 import subprocess
 from argparse import Namespace
 from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path
+from conftest import load_script_module
 
-_spec = importlib.util.spec_from_file_location(
-    'git_workflow_exec_refresh',
-    get_script_path('plan-marshall', 'workflow-integration-git', 'git-workflow.py'),
+git_workflow = load_script_module(
+    'plan-marshall', 'workflow-integration-git', 'git-workflow.py', 'git_workflow_exec_refresh'
 )
-assert _spec is not None and _spec.loader is not None
-git_workflow = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(git_workflow)
 
 cmd_worktree_rebase_to = git_workflow.cmd_worktree_rebase_to
 

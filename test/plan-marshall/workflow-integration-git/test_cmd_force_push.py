@@ -27,7 +27,6 @@ resolver.
 
 from __future__ import annotations
 
-import importlib.util
 import subprocess
 from argparse import Namespace
 from pathlib import Path
@@ -41,7 +40,7 @@ from _resolve_project_dir_fixtures import (
 )
 from toon_parser import parse_toon
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # ---------------------------------------------------------------------------
 # Load module under test
@@ -50,10 +49,9 @@ from conftest import get_script_path, run_script
 _FORCE_PUSH_PATH = get_script_path('plan-marshall', 'workflow-integration-git', '_cmd_force_push.py')
 _SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
 
-_spec = importlib.util.spec_from_file_location('_cmd_force_push', _FORCE_PUSH_PATH)
-assert _spec is not None and _spec.loader is not None
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
+_mod = load_script_module(
+    'plan-marshall', 'workflow-integration-git', '_cmd_force_push.py', '_cmd_force_push'
+)
 
 cmd_force_push = _mod.cmd_force_push
 _verify_git_repo = _mod._verify_git_repo

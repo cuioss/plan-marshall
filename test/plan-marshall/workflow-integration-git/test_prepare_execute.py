@@ -24,7 +24,6 @@ under ``-n auto``.
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import shutil
 from argparse import Namespace
@@ -32,14 +31,13 @@ from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path
+from conftest import get_script_path, load_script_module
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'prepare_execute.py')
 
-_spec = importlib.util.spec_from_file_location('prepare_execute', SCRIPT_PATH)
-assert _spec is not None and _spec.loader is not None
-prepare_execute = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(prepare_execute)
+prepare_execute = load_script_module(
+    'plan-marshall', 'workflow-integration-git', 'prepare_execute.py', 'prepare_execute'
+)
 
 # Capture the REAL _generate_worktree_executor before any fixture monkeypatches
 # it away. The function-level post-assertion / copy-from-main tests exercise THIS

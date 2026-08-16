@@ -6,7 +6,6 @@ Tier 2 (direct import) tests with subprocess tests for CLI plumbing.
 
 from __future__ import annotations
 
-import importlib.util
 import subprocess
 from argparse import Namespace
 from pathlib import Path
@@ -14,17 +13,16 @@ from pathlib import Path
 import pytest
 from toon_parser import parse_toon
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script under test (for subprocess CLI plumbing tests)
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
 
 # The entrypoint filename is kebab-case (git-workflow.py), which is not a
 # valid Python module identifier — load it via importlib instead of `import`.
-_spec = importlib.util.spec_from_file_location('git_workflow', SCRIPT_PATH)
-assert _spec is not None and _spec.loader is not None
-git_workflow = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(git_workflow)
+git_workflow = load_script_module(
+    'plan-marshall', 'workflow-integration-git', 'git-workflow.py', 'git_workflow'
+)
 _SKIP_DIRS = git_workflow._SKIP_DIRS
 SAFE_ARTIFACT_PATTERNS = git_workflow.SAFE_ARTIFACT_PATTERNS
 UNCERTAIN_ARTIFACT_PATTERNS = git_workflow.UNCERTAIN_ARTIFACT_PATTERNS

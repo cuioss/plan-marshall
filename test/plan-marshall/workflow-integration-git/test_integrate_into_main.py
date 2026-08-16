@@ -39,7 +39,6 @@ contended — the suite never contends for the real ``.plan/`` under ``-n auto``
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 from argparse import Namespace
@@ -52,14 +51,13 @@ from _resolve_project_dir_fixtures import (
     patch_query_worktree_path,
 )
 
-from conftest import get_script_path
+from conftest import get_script_path, load_script_module
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'integrate_into_main.py')
 
-_spec = importlib.util.spec_from_file_location('integrate_into_main', SCRIPT_PATH)
-assert _spec is not None and _spec.loader is not None
-integrate_into_main = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(integrate_into_main)
+integrate_into_main = load_script_module(
+    'plan-marshall', 'workflow-integration-git', 'integrate_into_main.py', 'integrate_into_main'
+)
 
 
 # =============================================================================

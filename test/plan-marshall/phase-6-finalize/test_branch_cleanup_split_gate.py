@@ -17,7 +17,6 @@ so this suite pins:
 
 # ruff: noqa: I001, E402
 
-import importlib.util
 import sys
 from argparse import Namespace
 from pathlib import Path
@@ -25,13 +24,8 @@ from pathlib import Path
 _MARKETPLACE_ROOT = (
     Path(__file__).parent.parent.parent.parent / 'marketplace' / 'bundles'
 )
-_SCRIPTS_DIR = (
-    _MARKETPLACE_ROOT
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
-)
+from conftest import get_scripts_dir, load_script_module  # noqa: E402
+_SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'manage-config')
 _BRANCH_CLEANUP_DOC = (
     _MARKETPLACE_ROOT
     / 'plan-marshall'
@@ -46,12 +40,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 
 
 def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('plan-marshall', 'manage-config', filename, name)
 
 
 _cmd_init_mod = _load_module('_cmd_init_for_split_gate', '_cmd_init.py')

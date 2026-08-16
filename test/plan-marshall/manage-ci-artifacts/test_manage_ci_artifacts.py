@@ -23,9 +23,7 @@ keyword argument so no live CI / subprocess calls are required.
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
-import sys
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -40,25 +38,12 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 _REPO_ROOT = Path(__file__).parent.parent.parent.parent
-_SCRIPTS_DIR = (
-    _REPO_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-ci-artifacts'
-    / 'scripts'
-)
+from conftest import get_scripts_dir, load_script_module  # noqa: E402
+_SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'manage-ci-artifacts')
 
 
 def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None
-    assert spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('plan-marshall', 'manage-ci-artifacts', filename, name)
 
 
 _mod = _load_module('manage_ci_artifacts', 'manage-ci-artifacts.py')

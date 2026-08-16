@@ -39,11 +39,9 @@ Covered:
 
 from __future__ import annotations
 
-import importlib.util
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -52,26 +50,13 @@ import extension_discovery
 from _step_key_canonical import canonicalize_step_key
 from extension_discovery import find_implementors
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'scripts'
-)
+from conftest import get_scripts_dir, load_script_module  # noqa: E402
+_SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'phase-6-finalize')
 
 
 def _load_module(name: str, filename: str):
     """Load the executor from source so its seams are patchable in-process."""
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None
-    assert spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('plan-marshall', 'phase-6-finalize', filename, name)
 
 
 _mod = _load_module('verdict_currency', 'verdict_currency.py')

@@ -61,25 +61,12 @@ def _strip_ansi(text: str) -> str:
 # :func:`test_executor_invocation_with_scrubbed_pythonpath` below.
 # ---------------------------------------------------------------------------
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'scripts'
-)
+from conftest import get_scripts_dir, load_script_module  # noqa: E402
+_SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'phase-6-finalize')
 
 
 def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None
-    assert spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('plan-marshall', 'phase-6-finalize', filename, name)
 
 
 _resolver_mod = _load_module(
