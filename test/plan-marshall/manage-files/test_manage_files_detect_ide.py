@@ -13,10 +13,9 @@ from unittest import mock
 
 import pytest
 
-from conftest import get_scripts_dir, load_script_module
+from conftest import load_script_module
 
 # Tier 2 direct import - load hyphenated module
-_MANAGE_FILES_SCRIPT = get_scripts_dir('plan-marshall', 'manage-files') / 'manage-files.py'
 _mod = load_script_module('plan-marshall', 'manage-files', 'manage-files.py', 'manage_files_detect_ide')
 
 cmd_detect_ide = _mod.cmd_detect_ide

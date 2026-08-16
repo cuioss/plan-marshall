@@ -27,7 +27,7 @@ SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-script-execut
 SCRIPTS_DIR = SKILL_DIR / 'scripts'
 TEMPLATES_DIR = SKILL_DIR / 'templates'
 EXECUTOR_TEMPLATE = TEMPLATES_DIR / 'execute-script.py.template'
-LOGGING_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'logging' / 'scripts'
+LOGGING_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-logging' / 'scripts'
 
 # A simple script that we know exists for testing
 TEST_SCRIPT_BUNDLE = 'plan-marshall'

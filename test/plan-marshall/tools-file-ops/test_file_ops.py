@@ -570,8 +570,9 @@ def test_get_worktree_root_returns_plan_local_worktrees(tmp_path, no_plan_base_d
 
     get_worktree_root resolves through get_base_dir (the uniform cwd rule,
     ADR-002), so the production path is produced when no PLAN_BASE_DIR override
-    is active and the cwd walk-up resolves a .plan/local ancestor. delenv
-    PLAN_BASE_DIR + chdir into a tree with .plan/local pins the cwd-walk branch.
+    is active and the cwd walk-up resolves a .plan/local ancestor. Clearing
+    PLAN_BASE_DIR and running inside a tree that has .plan/local pins the
+    cwd-walk branch.
     """
     (tmp_path / '.plan' / 'local').mkdir(parents=True)
     result = get_worktree_root()

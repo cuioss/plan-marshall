@@ -2745,11 +2745,17 @@ class TestResolveArchivedStatusJson:
     """
 
     @pytest.fixture()
+    def plan_dir_name(self, monkeypatch):
+        """Pin the plan directory name the archived-status read resolves against."""
+        import claude_runtime as _cr
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+
+    @pytest.fixture()
     def in_tmp_cwd(self, tmp_path, monkeypatch):
         """Run with the process working directory inside an isolated tmp_path."""
         monkeypatch.chdir(tmp_path)
 
-    def test_resolves_archived_status_for_dated_dir(self, tmp_path, monkeypatch, in_tmp_cwd):
+    def test_resolves_archived_status_for_dated_dir(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """Returns the archived status.json path under {date}-{plan_id}/."""
         import claude_runtime as _cr
 
@@ -2759,21 +2765,19 @@ class TestResolveArchivedStatusJson:
         status_path = archived_dir / "status.json"
         status_path.write_text(json.dumps({"current_phase": "complete"}), encoding="utf-8")
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
 
         resolved = _cr._resolve_archived_status_json(plan_id)
         assert resolved is not None
         assert resolved.resolve() == status_path.resolve()
 
-    def test_returns_none_when_archived_base_absent(self, monkeypatch, in_tmp_cwd):
+    def test_returns_none_when_archived_base_absent(self, in_tmp_cwd, plan_dir_name):
         """No archived-plans/ directory at all → None (not an error)."""
         import claude_runtime as _cr
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
 
         assert _cr._resolve_archived_status_json("anything") is None
 
-    def test_does_not_match_unrelated_plan_dir(self, tmp_path, monkeypatch, in_tmp_cwd):
+    def test_does_not_match_unrelated_plan_dir(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """The ``*-{plan_id}`` glob must not resolve a directory for a different
         plan whose name does not end in the exact ``-{plan_id}`` suffix.
 
@@ -2785,12 +2789,11 @@ class TestResolveArchivedStatusJson:
         other_dir.mkdir(parents=True)
         (other_dir / "status.json").write_text(json.dumps({"current_phase": "complete"}), encoding="utf-8")
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
 
         # Only the unrelated -superplan dir exists → no resolution for 'plan'.
         assert _cr._resolve_archived_status_json("plan") is None
 
-    def test_resolves_exact_plan_when_sibling_prefixed_dir_present(self, tmp_path, monkeypatch, in_tmp_cwd):
+    def test_resolves_exact_plan_when_sibling_prefixed_dir_present(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """With both a ``{date}-superplan`` archive and a ``{date}-plan`` archive
         present, a request for plan_id 'plan' resolves ONLY the exact ``-plan``
         directory — the sibling whose suffix is ``superplan`` is ignored."""
@@ -2805,7 +2808,6 @@ class TestResolveArchivedStatusJson:
         exact_status = exact_dir / "status.json"
         exact_status.write_text(json.dumps({"current_phase": "complete"}), encoding="utf-8")
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
 
         resolved = _cr._resolve_archived_status_json("plan")
         assert resolved is not None
@@ -2825,11 +2827,17 @@ class TestReadTitleState:
     """
 
     @pytest.fixture()
+    def plan_dir_name(self, monkeypatch):
+        """Pin the plan directory name the runtime resolves titles against."""
+        import claude_runtime as _cr
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+
+    @pytest.fixture()
     def in_tmp_cwd(self, tmp_path, monkeypatch):
         """Run with the process working directory inside an isolated tmp_path."""
         monkeypatch.chdir(tmp_path)
 
-    def test_reads_live_status_fields(self, tmp_path, monkeypatch, in_tmp_cwd):
+    def test_reads_live_status_fields(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """Returns the {current_phase, short_description, title_token} dict from the live status.json."""
         import claude_runtime as _cr
 
@@ -2848,7 +2856,6 @@ class TestReadTitleState:
             encoding="utf-8",
         )
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
 
         state = _cr._read_title_state(plan_id)
         assert state == {
@@ -2857,7 +2864,7 @@ class TestReadTitleState:
             "title_token": record,
         }
 
-    def test_drops_an_aged_token_from_the_returned_state(self, tmp_path, monkeypatch, in_tmp_cwd):
+    def test_drops_an_aged_token_from_the_returned_state(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """The aged-token predicate is applied on EVERY read.
 
         A record past the staleness threshold is omitted from the state the
@@ -2886,12 +2893,11 @@ class TestReadTitleState:
             encoding="utf-8",
         )
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
 
         state = _cr._read_title_state(plan_id)
         assert state == {"current_phase": "5-execute", "short_description": "do-work"}
 
-    def test_keeps_a_fresh_token_in_the_returned_state(self, tmp_path, monkeypatch, in_tmp_cwd):
+    def test_keeps_a_fresh_token_in_the_returned_state(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """Positive control for the aged-token drop above: a record just inside
         the threshold survives the read, so the drop is age-driven rather than
         an unconditional strip."""
@@ -2908,11 +2914,10 @@ class TestReadTitleState:
             json.dumps({"current_phase": "5-execute", "title_token": record}), encoding="utf-8"
         )
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
 
         assert _cr._read_title_state(plan_id)["title_token"] == record
 
-    def test_drops_a_legacy_bare_string_token(self, tmp_path, monkeypatch, in_tmp_cwd):
+    def test_drops_a_legacy_bare_string_token(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """A status.json still carrying the retired bare-string shape reads as
         having no token, rather than propagating an unusable value downstream."""
         import claude_runtime as _cr
@@ -2925,11 +2930,10 @@ class TestReadTitleState:
             encoding="utf-8",
         )
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
 
         assert "title_token" not in _cr._read_title_state(plan_id)
 
-    def test_falls_back_to_archived_status(self, tmp_path, monkeypatch, in_tmp_cwd):
+    def test_falls_back_to_archived_status(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """Live status.json absent → reads the archived status.json."""
         import claude_runtime as _cr
 
@@ -2941,20 +2945,18 @@ class TestReadTitleState:
             encoding="utf-8",
         )
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
 
         state = _cr._read_title_state(plan_id)
         assert state == {"current_phase": "complete", "short_description": "done-task"}
 
-    def test_returns_none_when_no_status_anywhere(self, monkeypatch, in_tmp_cwd):
+    def test_returns_none_when_no_status_anywhere(self, in_tmp_cwd, plan_dir_name):
         """Neither live nor archived status.json present → None."""
         import claude_runtime as _cr
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
 
         assert _cr._read_title_state("ghost") is None
 
-    def test_omits_absent_optional_fields(self, tmp_path, monkeypatch, in_tmp_cwd):
+    def test_omits_absent_optional_fields(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """A status.json with only current_phase yields a dict without the optional keys."""
         import claude_runtime as _cr
 
@@ -2965,7 +2967,6 @@ class TestReadTitleState:
             json.dumps({"current_phase": "1-init"}), encoding="utf-8"
         )
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
 
         state = _cr._read_title_state(plan_id)
         assert state == {"current_phase": "1-init"}

@@ -30,7 +30,7 @@ def in_tmp_cwd(tmp_path, monkeypatch):
 @pytest.fixture()
 def project_skill_roots(monkeypatch):
     """Pin the project skill roots the layout resolver scans."""
-    monkeypatch.setattr( marketplace_paths, "get_project_skill_roots", lambda: (".claude/skills", ".opencode/skills"), )
+    monkeypatch.setattr(marketplace_paths, "get_project_skill_roots", lambda: (".claude/skills", ".opencode/skills"))
 
 def _parse(toon_str: str) -> dict:
     """Parse a TOON string and assert it is a non-empty dict."""

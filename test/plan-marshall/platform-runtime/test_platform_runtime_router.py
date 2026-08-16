@@ -843,11 +843,6 @@ class TestDispatch:
 class TestMain:
     """Integration tests for the main() entry point."""
 
-    @pytest.fixture()
-    def in_tmp_cwd(self, tmp_path, monkeypatch):
-        """Run with the process working directory inside an isolated tmp_path."""
-        monkeypatch.chdir(tmp_path)
-
     def test_main_no_args_returns_1(self, capsys):
         """main() with no arguments prints usage to stderr and returns exit code 1."""
         code = main([])

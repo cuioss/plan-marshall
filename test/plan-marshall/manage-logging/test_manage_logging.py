@@ -16,13 +16,12 @@ from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path, get_scripts_dir, load_script_module, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-logging', 'manage-logging.py')
 
 # Tier 2 direct imports - load hyphenated module via importlib
-_MANAGE_LOGGING_SCRIPT = get_scripts_dir('plan-marshall', 'manage-logging') / 'manage-logging.py'
 _mod = load_script_module('plan-marshall', 'manage-logging', 'manage-logging.py', 'manage_logging')
 
 handle_read = _mod.handle_read

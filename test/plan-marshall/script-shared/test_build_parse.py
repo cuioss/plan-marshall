@@ -8,9 +8,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from conftest import get_scripts_dir, load_script_module
-
-_SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'script-shared') / 'build'
+from conftest import load_script_module
 
 
 def _load_module(name, filename):

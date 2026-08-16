@@ -75,22 +75,19 @@ class TestScanLessonIdTokens:
     @pytest.fixture()
     def live_lesson_ids(self, monkeypatch):
         """Pin the live lesson-id set the scanner validates against."""
-        monkeypatch.setattr( _iv, '_list_live_lesson_ids', lambda: list(REAL_LESSON_IDS), )
+        monkeypatch.setattr(_iv, '_list_live_lesson_ids', lambda: list(REAL_LESSON_IDS))
 
     def test_empty_string_returns_empty_list(self, live_lesson_ids):
-
         result = scan_lesson_id_tokens('')
 
         assert result == []
 
     def test_text_with_no_matches_returns_empty(self, live_lesson_ids):
-
         result = scan_lesson_id_tokens('plain prose, no identifiers here')
 
         assert result == []
 
     def test_single_match_in_prose(self, live_lesson_ids):
-
         result = scan_lesson_id_tokens('see lesson 2026-04-29-10-001 for details')
 
         assert result == ['2026-04-29-10-001']
@@ -108,20 +105,17 @@ class TestScanLessonIdTokens:
         ]
 
     def test_match_at_start_and_end_of_text(self, live_lesson_ids):
-
         result = scan_lesson_id_tokens('2026-04-24-12-003 leads off, then trailing 2026-05-03-21-002')
 
         assert result == ['2026-04-24-12-003', '2026-05-03-21-002']
 
     def test_four_segment_token_does_not_match(self, live_lesson_ids):
-
         # 4-segment YYYY-MM-DD-NNN must NOT be picked up by a 5-segment scanner.
         result = scan_lesson_id_tokens('reference 2026-04-29-001 looks lessonish but is 4-segment')
 
         assert result == []
 
     def test_trailing_extra_segment_extracts_inner_5_segment(self, live_lesson_ids):
-
         # When an extra "-1" trails the 5-segment shape, the embedded boundary
         # uses non-digit lookarounds, and "-" is not a digit, so the canonical
         # 5-segment substring still matches. The trailing extension is rejected
@@ -131,7 +125,6 @@ class TestScanLessonIdTokens:
         assert result == ['2026-04-29-10-001']
 
     def test_adjacent_digit_prefix_blocks_match(self, live_lesson_ids):
-
         # A leading digit fused to the year (no separator) trips the negative
         # lookbehind in _LESSON_ID_EMBEDDED_RE: `(?<!\d)`.
         result = scan_lesson_id_tokens('garbage12026-04-29-10-001')
@@ -139,7 +132,6 @@ class TestScanLessonIdTokens:
         assert result == []
 
     def test_long_last_segment_matches_in_full(self, live_lesson_ids):
-
         # The last segment is greedy ([0-9]+), so additional trailing digits
         # before any boundary are absorbed into the same token rather than
         # yielding a partial 3-digit match.
@@ -195,10 +187,9 @@ class TestVerifyLessonIdsExist:
     @pytest.fixture()
     def live_lesson_ids(self, monkeypatch):
         """Pin the live lesson-id set the scanner validates against."""
-        monkeypatch.setattr( _iv, '_list_live_lesson_ids', lambda: list(REAL_LESSON_IDS), )
+        monkeypatch.setattr(_iv, '_list_live_lesson_ids', lambda: list(REAL_LESSON_IDS))
 
     def test_all_tokens_present_in_inventory(self, live_lesson_ids):
-
         result = verify_lesson_ids_exist(['2026-04-29-10-001', '2026-05-03-21-002'])
 
         assert result == {
@@ -207,13 +198,11 @@ class TestVerifyLessonIdsExist:
         }
 
     def test_phantom_token_marked_absent(self, live_lesson_ids):
-
         result = verify_lesson_ids_exist(['2099-12-31-23-999'])
 
         assert result == {'2099-12-31-23-999': False}
 
     def test_mixed_present_and_phantom(self, live_lesson_ids):
-
         result = verify_lesson_ids_exist(['2026-04-30-23-001', '2099-01-01-00-001'])
 
         assert result == {
@@ -222,13 +211,11 @@ class TestVerifyLessonIdsExist:
         }
 
     def test_empty_input_returns_empty_dict(self, live_lesson_ids):
-
         result = verify_lesson_ids_exist([])
 
         assert result == {}
 
     def test_duplicate_tokens_deduplicated(self, live_lesson_ids):
-
         result = verify_lesson_ids_exist(['2026-04-29-10-001', '2026-04-29-10-001', '2026-04-29-10-001'])
 
         # Single entry, not three duplicate keys.

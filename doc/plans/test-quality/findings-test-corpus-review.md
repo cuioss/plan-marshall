@@ -70,7 +70,7 @@ collected-test count and unchanged coverage *before* its line floor.
 | [F2](#f2--the-corpuss-own-module-size-standard-is-violated-by-three-quarters-of-it) | The ~200-line split standard is violated by ~75% of the tree and never enforced | A rule readers learn to skip | [`010`](010-test-authoring-standards-and-enforcement/plan.md) |
 | [F3](#f3--parametrization-is-the-corpuss-least-used-tool-against-its-most-tabular-content) | Parametrization in 179 of 770 modules | Largest available reduction; *strengthens* the suite | [`030`](030-config-and-manifest-test-reduction.md) |
 | [F4](#f4--hand-built-argument-namespaces-are-a-correctness-defect-not-just-bloat) | ~2,900 hand-built namespaces bypass the parsers' defaults | **Live correctness risk** — the suite cannot see the change it exists to catch | [`020`](020-shared-test-harness/plan.md), [`010`](010-test-authoring-standards-and-enforcement/plan.md) |
-| [F5](#f5--arrange-logic-is-inlined-roughly-eleven-times-more-often-than-it-is-fixtured) | `monkeypatch.setattr` outnumbers fixtures ~11:1 | Missing class-scoped fixtures, repeated | [`060`](060-runtime-and-script-substrate-test-reduction.md) |
+| [F5](#f5--arrange-logic-is-inlined-roughly-eleven-times-more-often-than-it-is-fixtured) | `monkeypatch.setattr` outnumbers fixtures ~11:1 | Missing class-scoped fixtures, repeated | [`060`](060-runtime-and-script-substrate-test-reduction/plan.md) |
 | [F6](#f6--197-modules-re-implement-a-loader-conftestpy-already-exports) | ~197 modules re-implement an exported loader | Duplication, and brittle to file moves | [`020`](020-shared-test-harness/plan.md) |
 | [F7](#f7--several-thousand-lines-of-test-prose-are-history-which-this-repository-forbids-everywhere-else) | Thousands of lines of prose are history, not invariant | Largest reduction in scenario slices; **highest deletion risk** | every reduction plan, each with a cold read |
 | [F8](#f8--one-shared-fixture-is-defined-three-times-incompatibly) | `create_marshal_json` defined 3× incompatibly | A test's baseline decided by an import line | [`020`](020-shared-test-harness/plan.md) |
@@ -299,9 +299,9 @@ contract ([**B8**](README.md#house-style)), rather than removing it.
 | Finding | Addressed by |
 |---|---|
 | F1, F2 | [`010`](010-test-authoring-standards-and-enforcement/plan.md) (module budget + enforcement), [`030`](030-config-and-manifest-test-reduction.md)–[`080`](080-plugin-development-and-generator-test-reduction.md) (splits) |
-| F3 | [`030`](030-config-and-manifest-test-reduction.md) primarily; [`050`](050-plan-state-and-records-test-reduction.md), [`060`](060-runtime-and-script-substrate-test-reduction.md), [`070`](070-architecture-and-orchestration-test-reduction.md) for their tabular families |
+| F3 | [`030`](030-config-and-manifest-test-reduction.md) primarily; [`050`](050-plan-state-and-records-test-reduction.md), [`060`](060-runtime-and-script-substrate-test-reduction/plan.md), [`070`](070-architecture-and-orchestration-test-reduction.md) for their tabular families |
 | F4 | [`020`](020-shared-test-harness/plan.md) (`parse_ns` helper), [`010`](010-test-authoring-standards-and-enforcement/plan.md) (the rule), all reduction plans (adoption) |
-| F5 | [`010`](010-test-authoring-standards-and-enforcement/plan.md) (thresholds), [`060`](060-runtime-and-script-substrate-test-reduction.md) primarily |
+| F5 | [`010`](010-test-authoring-standards-and-enforcement/plan.md) (thresholds), [`060`](060-runtime-and-script-substrate-test-reduction/plan.md) primarily |
 | F6 | [`010`](010-test-authoring-standards-and-enforcement/plan.md) (the rule), [`020`](020-shared-test-harness/plan.md) (harness), all reduction plans |
 | F7 | [`010`](010-test-authoring-standards-and-enforcement/plan.md) (rule + doctor lint), every reduction plan, each with a cold read |
 | F8 | [`020`](020-shared-test-harness/plan.md) (one builder, named presets) |

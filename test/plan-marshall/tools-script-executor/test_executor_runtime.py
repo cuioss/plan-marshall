@@ -56,7 +56,7 @@ EXECUTOR_TEMPLATE = TEMPLATES_DIR / 'execute-script.py.template'
 # Real marketplace dirs used purely so the rendered executor can import
 # ``plan_logging``. Path-rewrite logic only touches SCRIPTS values whose
 # embedded prefix matches ``{embedded_root}/marketplace/bundles/``.
-LOGGING_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'logging' / 'scripts'
+LOGGING_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-logging' / 'scripts'
 INPUT_VALIDATION_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-input-validation' / 'scripts'
 
 # The notation we'll register in the embedded SCRIPTS dict. Format is
