@@ -40,6 +40,34 @@ script_duration_p95_ms: NUM
 script_duration_max_ms: NUM
 slowest_scripts[3]{notation,duration_ms}:
   ...
+script_cost_rollup:
+  # CUMULATIVE cost over the SAME lines the percentiles above summarise per-call.
+  # `slowest_scripts` ranks by the largest SINGLE call; this ranks by total time
+  # owned, so a script that never appears in `slowest_scripts` can top this list.
+  # `ranked` is capped at 10 — compare `ranked_count` against `distinct_scripts`
+  # to see whether a tail was truncated; the totals always span the whole
+  # population, so the residual stays derivable.
+  population: plan_script_execution_log
+  ceiling_seconds: 30.0
+  calls_at_or_over_ceiling: N
+  total_calls: N
+  total_duration_ms: NUM
+  distinct_scripts: N
+  ranked_count: N
+  ranked[*]{notation,calls,cumulative_ms,share_pct,max_ms}:
+    ...
+context_position_cost:
+  # Cached-read cost per tool use BY PHASE — cost as a function of WHERE a step
+  # runs, not only what it does. A row whose `cache_read_input_tokens` was not
+  # measured, or whose `tool_uses` is 0, is EXCLUDED and counted in
+  # `unmeasured_rows` — never folded in as a zero.
+  total_rows: N
+  measured_rows: N
+  unmeasured_rows: N
+  by_phase[*]{phase,rows,measured_rows,cache_read_per_tool_use}:
+    ...
+  position_multiple: NUM|unmeasured
+  position_multiple_basis: "{highest_phase}/{lowest_phase}"|unmeasured
 top_error_tags[5]{tag,count}:
   ...
 global_log_signals:
@@ -50,6 +78,11 @@ global_log_signals:
   slow_call_count: N
   fixture_leak_count: N
   fixture_leak_signatures[*]: [...]
+  cost_rollup:
+    # The cumulative complement to `slow_call_count`, over the SAME lines. Same
+    # shape as `script_cost_rollup` above, different population.
+    population: folded_global_logs
+    ...
 ```
 
 ## Folded-in global logs
@@ -73,6 +106,9 @@ counts and `logs_present: false`.
 - `global_log_signals.error_count > 0` is surfaced as a `warning` finding by the script; treat a non-zero count as evidence the plan's own execution produced error/non-INFO lines worth tracing in the script-failure-analysis aspect.
 - `global_log_signals.fixture_leak_count > 0` is surfaced as an `error` finding — a synthetic test-fixture id in the plan's real folded-in logs means a test wrote to the real logs instead of an isolated `PLAN_BASE_DIR`; this is always a defect.
 - `global_log_signals.slow_call_count` rides the fragment for context; cross-read with `script_duration_p95_ms` and the LLM-to-script-opportunities aspect.
+- **Read the ceiling and the roll-up together — neither answers the other's question.** `slow_call_count` and the `script_duration_*` percentiles answer *"is any single call pathological?"*. They are structurally incapable of answering *"what dominates total time?"*: a call at a fraction of a percent of the 30s ceiling, repeated a hundred thousand times, is invisible to every one of them by construction, not by oversight. `script_cost_rollup` / `global_log_signals.cost_rollup` answer the second question. A script ranked first with `calls_at_or_over_ceiling: 0` is exactly that dominant-but-fast class — treat it as a finding even though no per-call signal fired.
+- ⛔ **The roll-up is WALL-CLOCK, not billing.** The script-execution log carries no per-call token measurement, so a `share_pct` here does **not** convert into a share of cost. A ranking from this roll-up is an operator-**latency** finding; say which currency you are quoting, and never restate a wall-clock share as a cost share.
+- `context_position_cost.position_multiple` reports how much more a tool use costs in the most expensive phase than in the cheapest — the same mechanical step late in a long phase re-reads a far larger accumulated context. Quote it only with `position_multiple_basis` (which two phases it compares) and `measured_rows` (how many rows it rests on). A literal `unmeasured` means the corpus could not support the figure — it is never a zero.
 
 ## Finding Shape
 

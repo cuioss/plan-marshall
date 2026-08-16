@@ -85,8 +85,25 @@ For each parsed line the script:
    separately from *slow* because for a deterministic call the **recording itself**
    is suspect, not merely the cost.
 6. **Flags high-frequency callers** — a `notation subcommand` key called
-   `>= high_frequency_calls` times across the whole corpus.
-7. **Detects test-fixture leaks** — a line whose body names a synthetic test
+   `>= high_frequency_calls` times across the whole corpus. This is a
+   **frequency** instrument: it answers *"who is called most often?"*, ranks by
+   count, and drops any key below the gate however much time that key owns.
+7. **Ranks callers by time owned** (`cost_rollup`) — the **cost** complement to
+   the two instruments above, and the only one that answers *"what dominates
+   total time?"*. Ungated by call count and ranked by cumulative seconds, with
+   each row's `share_pct` of the published `total_script_seconds`.
+   ⛔ **Read it beside the slow-call ceiling, never instead of it.** A call at a
+   fraction of a percent of `slow_call_seconds`, repeated a hundred thousand
+   times, is invisible to that ceiling **by construction** — a key ranked first
+   here while `slow_call_count` is `0` is exactly that dominant-but-fast class.
+   Conversely a key the ceiling flags that ranks low here is a rare outlier
+   rather than a cost centre.
+   ⛔ **Currency: these are WALL-CLOCK seconds.** The log carries no per-call
+   token measurement, so `share_pct` does **not** restate as a share of billed
+   cost — a ranking here is an operator-**latency** finding. Roll-up rows are
+   stamped `informational`, not `genuine`: some key is always the largest cost
+   owner, so counting them would inflate `genuine_signal_count` on every run.
+8. **Detects test-fixture leaks** — a line whose body names a synthetic test
    bundle / plan id (`fake-*-bundle`, `idem-bundle`, `raising-bundle`,
    `orphan-md-*`). These exist only inside the test suite's tmp fixtures; their
    presence in the **shared** corpus means a test run wrote to the real
@@ -101,13 +118,16 @@ no magic number is re-declared in the check body:
 |--------|--------|---------|
 | Slow call | `THRESHOLDS["slow_call_seconds"]` | `30.0` s |
 | High-frequency caller | `THRESHOLDS["high_frequency_calls"]` | `50` calls |
+| Cost roll-up depth | `THRESHOLDS["cost_rollup_top_n"]` | `10` keys |
 | Impossible / hang duration (deterministic per-plan-op call) | module constant `_IMPOSSIBLE_DURATION_SECONDS` | `600.0` s |
 | Impossible / hang duration (build / ci-wait class call, #849) | `_ratcheted_ci_wait_ceiling()` — inline read of `run-configuration.json`, `max(_IMPOSSIBLE_DURATION_SECONDS, ratcheted timeouts)` | ≥ `600.0` s |
 | Build / ci-wait call classifier | `_BUILD_CI_WAIT_KEY_RE` over the `{notation} {subcommand}` key | any match |
 | Fixture leak | `_FIXTURE_LEAK_RE` (no numeric threshold) | any match |
 
-The emitted block echoes the active `slow_ceiling_seconds` and
-`high_frequency_ceiling` so the read-out is self-describing.
+The emitted block echoes the active `slow_ceiling_seconds`,
+`high_frequency_ceiling` and `cost_rollup_top_n` so the read-out is
+self-describing. `distinct_call_keys` is published beside `cost_rollup_count` so
+a truncated roll-up tail is legible rather than silent.
 
 ## Emitted columns
 
@@ -121,9 +141,12 @@ error_count: E
 slow_call_count: SC
 impossible_count: IC
 high_frequency_count: HC
+cost_rollup_count: CC
+distinct_call_keys: DK
 fixture_leak_count: FL
 slow_ceiling_seconds: 30.0
 high_frequency_ceiling: 50
+cost_rollup_top_n: 10
 genuine_signal_count: G
 rows[G]{kind,detail,attributed_plans,severity}
 ```

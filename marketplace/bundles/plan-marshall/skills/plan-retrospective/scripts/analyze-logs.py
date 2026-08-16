@@ -111,7 +111,20 @@ _GLOBAL_LOG_FAIL_RE = re.compile(
 )
 
 # Slow-call ceiling (seconds): a folded-in script call at/over this is slow.
+#
+# This ceiling answers "is any single call pathological?" and NOTHING else. It is
+# structurally blind to a script whose cost is a fraction of a percent of the
+# ceiling repeated a hundred thousand times — that class is surfaced by the
+# CUMULATIVE roll-up (``summarize_script_cost``) instead. The two are neighbours,
+# not alternatives: changing this value redefines ``slow_call_count`` for every
+# plan already measured against it, so the roll-up was added beside it rather
+# than by moving it.
 _GLOBAL_LOG_SLOW_SECONDS = 30.0
+
+# How many scripts the cumulative roll-up ranks. The cap is never silent: the
+# fragment publishes ``distinct_scripts`` and ``ranked_count`` beside the
+# whole-population totals, so a truncated tail stays derivable.
+_COST_ROLLUP_TOP_N = 10
 
 # Test-fixture leak signatures: synthetic bundle/plan ids that must NEVER
 # appear in a real plan's folded-in global log. Their presence means a test run
@@ -352,6 +365,193 @@ def extract_script_durations(lines: list[str]) -> list[tuple[str, float]]:
             continue
         out.append((notation_match.group(1), seconds * 1000.0))
     return out
+
+
+def summarize_script_cost(
+    durations: list[tuple[str, float]],
+    population: str,
+    *,
+    ceiling_seconds: float = _GLOBAL_LOG_SLOW_SECONDS,
+    top_n_scripts: int = _COST_ROLLUP_TOP_N,
+) -> dict[str, Any]:
+    """Roll ``(notation, duration_ms)`` pairs up into per-script CUMULATIVE cost.
+
+    The per-call ceiling (``slow_call_count``) and the ``script_duration_*``
+    percentiles answer *"is any single call pathological?"*. They are
+    STRUCTURALLY incapable of answering *"what dominates total time?"*: a call at
+    a fraction of a percent of the ceiling, repeated a hundred thousand times, is
+    invisible to every one of them **by construction, not by oversight**. This
+    roll-up answers the second question, and it is an ADDITION — the ceiling is
+    untouched and both are reported.
+
+    READ THE TWO TOGETHER via ``calls_at_or_over_ceiling``, published here over
+    the SAME population as ``ranked``. A script ranked first with
+    ``calls_at_or_over_ceiling: 0`` is exactly the dominant-but-fast class the
+    ceiling cannot see; a script the ceiling flags that ranks low is a rare
+    outlier rather than a cost centre. Neither reading is available from one
+    instrument alone.
+
+    ⛔ CURRENCY. Every figure here is WALL-CLOCK. It is NOT a billing share and
+    does not convert into one: the script-execution log carries no per-call token
+    measurement at all, so no share computed here can be restated in tokens
+    without a measurement this corpus does not contain. A ranking from this
+    roll-up is an operator-LATENCY finding. Saying otherwise is the
+    partition-quoted-as-a-whole error this fragment exists to expose.
+
+    ``population`` NAMES the corpus these figures count and is required rather
+    than defaulted: a cumulative total is meaningless without it, and two
+    roll-ups over different corpora must never be added or compared as one.
+
+    ``ranked`` is capped at ``top_n_scripts`` and the cap is LEGIBLE — compare
+    ``ranked_count`` against ``distinct_scripts``. ``total_calls`` and
+    ``total_duration_ms`` always span the WHOLE population, so ``share_pct`` is a
+    share of the published denominator and the truncated residual stays derivable.
+    """
+    call_counts: Counter[str] = Counter()
+    cumulative: dict[str, float] = {}
+    maxima: dict[str, float] = {}
+    at_or_over_ceiling = 0
+    ceiling_ms = ceiling_seconds * 1000.0
+
+    for notation, ms in durations:
+        call_counts[notation] += 1
+        cumulative[notation] = cumulative.get(notation, 0.0) + ms
+        maxima[notation] = max(maxima.get(notation, 0.0), ms)
+        if ms >= ceiling_ms:
+            at_or_over_ceiling += 1
+
+    total_duration_ms = round(sum(cumulative.values()), 3)
+    # Deterministic ordering: cumulative DESC, then notation ASC to break ties.
+    ordered = sorted(cumulative, key=lambda n: (-cumulative[n], n))
+
+    ranked: list[dict[str, Any]] = []
+    for notation in ordered[:top_n_scripts]:
+        script_ms = round(cumulative[notation], 3)
+        ranked.append(
+            {
+                'notation': notation,
+                'calls': call_counts[notation],
+                'cumulative_ms': script_ms,
+                # Computed from the ROUNDED figures this fragment publishes, so a
+                # reader recomputing the share from the printed columns gets the
+                # printed share back rather than a near-miss.
+                'share_pct': (
+                    round(script_ms / total_duration_ms * 100.0, 3) if total_duration_ms > 0 else 0.0
+                ),
+                'max_ms': round(maxima[notation], 3),
+            }
+        )
+
+    return {
+        'population': population,
+        'ceiling_seconds': ceiling_seconds,
+        'calls_at_or_over_ceiling': at_or_over_ceiling,
+        'total_calls': sum(call_counts.values()),
+        'total_duration_ms': total_duration_ms,
+        'distinct_scripts': len(cumulative),
+        'ranked_count': len(ranked),
+        'ranked': ranked,
+    }
+
+
+def summarize_context_position_cost(
+    per_phase: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Report cached-read cost per tool use BY PHASE — cost as a function of POSITION.
+
+    Marginal cost scales with WHERE a step runs, not only with what it does: the
+    same mechanical step late in a long phase re-reads a far larger accumulated
+    context than it does early. A per-call view cannot see this, because the call
+    is identical in both places — only its position differs. Phase is the
+    coarsest honest proxy for position available from the dispatch-boundary
+    artifacts, which are written per phase.
+
+    The rate is WEIGHTED (``sum(cache_read) / sum(tool_uses)`` across the
+    contributing rows), not a mean of per-row ratios: a dispatch with 200 tool
+    uses must not weigh the same as one with 2.
+
+    POPULATION DISCIPLINE. A dispatch-boundary row carries
+    ``cache_read_input_tokens`` only when the writer MEASURED it — the reader
+    omits the key for unmeasured, unrecognised and indeterminate cells alike (see
+    ``_parse_dispatch_boundary_file``). Such a row is EXCLUDED and counted in
+    ``unmeasured_rows``; it is never folded in as a zero, which would silently
+    understate every rate it touched. A row with ``tool_uses == 0`` yields no
+    per-tool-use rate either — undefined, not zero — and is excluded the same way.
+
+    This publishes the DIMENSION and asserts no figure. Where a phase, or the
+    whole corpus, has no measured row, the rate is the literal
+    ``unmeasured`` token rather than a ``0.0`` a reader could mistake for a
+    measurement.
+
+    Returned dict shape:
+      - total_rows / measured_rows / unmeasured_rows: the population, always
+        published so a rate is never read without its denominator.
+      - by_phase: list of {phase, rows, measured_rows, cache_read_per_tool_use},
+        phase-ordered. ``cache_read_per_tool_use`` is a float or ``unmeasured``.
+      - position_multiple: highest phase rate / lowest phase rate — the
+        position effect expressed as a multiple. Requires at least TWO phases
+        with a measured rate; one phase is not a position signal, so it reports
+        ``unmeasured``.
+      - position_multiple_basis: ``{highest_phase}/{lowest_phase}`` naming the
+        two phases the multiple compares, so the figure cannot be quoted without
+        its endpoints.
+    """
+    by_phase: list[dict[str, Any]] = []
+    total_rows = 0
+    measured_rows = 0
+
+    for phase in sorted(per_phase):
+        rows = per_phase[phase].get('rows') or []
+        total_rows += len(rows)
+        cache_read_sum = 0
+        tool_use_sum = 0
+        phase_measured = 0
+        for row in rows:
+            # An ABSENT key is never a zero — see the population discipline above.
+            if 'cache_read_input_tokens' not in row:
+                continue
+            tool_uses = row.get('tool_uses') or 0
+            if tool_uses <= 0:
+                continue
+            cache_read_sum += row['cache_read_input_tokens']
+            tool_use_sum += tool_uses
+            phase_measured += 1
+        measured_rows += phase_measured
+        by_phase.append(
+            {
+                'phase': phase,
+                'rows': len(rows),
+                'measured_rows': phase_measured,
+                'cache_read_per_tool_use': (
+                    round(cache_read_sum / tool_use_sum, 3)
+                    if tool_use_sum > 0
+                    else _UNMEASURED_COLUMN_TOKEN
+                ),
+            }
+        )
+
+    rated = [
+        (row['phase'], row['cache_read_per_tool_use'])
+        for row in by_phase
+        if row['cache_read_per_tool_use'] != _UNMEASURED_COLUMN_TOKEN
+    ]
+    position_multiple: Any = _UNMEASURED_COLUMN_TOKEN
+    position_multiple_basis: str = _UNMEASURED_COLUMN_TOKEN
+    if len(rated) >= 2:
+        highest_phase, highest_rate = max(rated, key=lambda pair: pair[1])
+        lowest_phase, lowest_rate = min(rated, key=lambda pair: pair[1])
+        if lowest_rate > 0:
+            position_multiple = round(highest_rate / lowest_rate, 3)
+            position_multiple_basis = f'{highest_phase}/{lowest_phase}'
+
+    return {
+        'total_rows': total_rows,
+        'measured_rows': measured_rows,
+        'unmeasured_rows': total_rows - measured_rows,
+        'by_phase': by_phase,
+        'position_multiple': position_multiple,
+        'position_multiple_basis': position_multiple_basis,
+    }
 
 
 def percentile(values: list[float], pct: float) -> float:
@@ -1036,8 +1236,15 @@ def analyze_folded_global_logs(logs_dir: Path) -> dict[str, Any]:
     signals are surfaced here from its folded-in copies, while the audit check
     does the cross-plan live-corpus correlation).
 
+    Also returns ``cost_rollup`` — the CUMULATIVE per-script view over the SAME
+    lines (see ``summarize_script_cost``). ``slow_call_count`` discards every
+    duration below the ceiling, which makes it blind to a fast script called a
+    great many times; the roll-up recovers exactly that information. Reporting
+    both over one population is what lets them be read together.
+
     A plan with no folded-in global logs (live mode before finalize, pre-fold
-    archives) yields all-zero counts and ``logs_present: false``.
+    archives) yields all-zero counts, an empty ``cost_rollup`` and
+    ``logs_present: false``.
     """
     patterns = ('script-execution-*.log', 'work-*.log', 'decision-*.log')
     log_files: list[Path] = []
@@ -1050,6 +1257,10 @@ def analyze_folded_global_logs(logs_dir: Path) -> dict[str, Any]:
     slow_call_count = 0
     fixture_leak_count = 0
     fixture_leak_signatures: list[str] = []
+    # Every timed call, kept for the cumulative roll-up below. The ceiling
+    # consumes the same durations and discards all but the >= 30s ones, which is
+    # precisely the information loss the roll-up exists to recover.
+    folded_durations: list[tuple[str, float]] = []
 
     for log in sorted(log_files):
         try:
@@ -1072,6 +1283,9 @@ def analyze_folded_global_logs(logs_dir: Path) -> dict[str, Any]:
                     seconds = 0.0
                 if seconds >= _GLOBAL_LOG_SLOW_SECONDS:
                     slow_call_count += 1
+                notation_match = _NOTATION_RE.search(rest)
+                if notation_match:
+                    folded_durations.append((notation_match.group(1), seconds * 1000.0))
 
             if level != 'INFO' or _GLOBAL_LOG_FAIL_RE.search(rest):
                 error_count += 1
@@ -1089,6 +1303,9 @@ def analyze_folded_global_logs(logs_dir: Path) -> dict[str, Any]:
         'slow_call_count': slow_call_count,
         'fixture_leak_count': fixture_leak_count,
         'fixture_leak_signatures': sorted(set(fixture_leak_signatures)),
+        # The cumulative complement to ``slow_call_count``, over the SAME lines.
+        # Same population is what makes the two readable together.
+        'cost_rollup': summarize_script_cost(folded_durations, 'folded_global_logs'),
     }
 
 
@@ -1249,10 +1466,19 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'script_duration_p95_ms': round(percentile(duration_values, 95.0), 3),
         'script_duration_max_ms': round(max(duration_values) if duration_values else 0.0, 3),
         'slowest_scripts': [{'notation': notation, 'duration_ms': round(ms, 3)} for notation, ms in slowest],
+        # Cumulative cost over the SAME lines the percentiles and
+        # ``slowest_scripts`` summarise per-call. ``slowest_scripts`` ranks by
+        # the largest SINGLE call; this ranks by total time owned, so a script
+        # that never appears in ``slowest_scripts`` can top this list.
+        'script_cost_rollup': summarize_script_cost(durations, 'plan_script_execution_log'),
         'top_tags': top_n(tag_counter, 5),
         'top_error_tags': top_n(error_tags, 5),
         'phase5_logging_gaps': phase5_logging_gaps,
         'dispatch_boundaries': dispatch_boundaries,
+        # Cost as a function of context POSITION, derived from the same
+        # dispatch-boundary rows. Reports the dimension with its population;
+        # asserts no figure.
+        'context_position_cost': summarize_context_position_cost(dispatch_boundaries),
         'global_log_signals': global_log_signals,
         'findings': findings,
     }

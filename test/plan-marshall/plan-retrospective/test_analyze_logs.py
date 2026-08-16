@@ -1913,3 +1913,216 @@ class TestBuildTimeFromLedger:
         bt = result.toon()['build_time']
         assert float(bt['total_build_seconds']) == 100.0
         assert int(bt['build_count']) == 1
+
+
+# ---------------------------------------------------------------------------
+# Aggregate script cost (plan 270): the per-call ceiling answers "is any single
+# call pathological?" and is STRUCTURALLY incapable of answering "what dominates
+# total time?". These tests pin the complementary roll-up and assert the two are
+# readable together — the ceiling stays, the roll-up is an addition.
+
+
+def _hot_and_slow_log_lines() -> list[str]:
+    """A folded global log where a fast script dominates cumulative wall-clock.
+
+    ``pm:hot:hot``  — 100 calls x 0.2s  = 20.0s cumulative, max 0.2s
+    ``pm:slow:slow``—   1 call  x 5.0s  =  5.0s cumulative, max 5.0s
+
+    NEITHER call reaches the 30s per-call ceiling, so ``slow_call_count`` is 0
+    for this corpus while ``pm:hot:hot`` owns 80% of all recorded time. That is
+    the plan's thesis expressed as a fixture.
+    """
+    lines = [
+        _line(f'2026-06-01T10:00:{i % 60:02d}Z', 'INFO', 'pm:hot:hot run (0.2s)')
+        for i in range(100)
+    ]
+    lines.append(_line('2026-06-01T10:05:00Z', 'INFO', 'pm:slow:slow run (5.0s)'))
+    return lines
+
+
+class TestScriptCostRollup:
+    """D4(a): the roll-up ranks a many-fast-calls script above a few-slow-calls one."""
+
+    def test_ranks_many_fast_above_few_slow(self, tmp_path):
+        logs_dir = tmp_path / 'logs'
+        _write_folded_log(logs_dir, 'script-execution-2026-06-01.log', _hot_and_slow_log_lines())
+
+        rollup = _analyze_logs.analyze_folded_global_logs(logs_dir)['cost_rollup']
+
+        # The dominant-but-fast script outranks the rare-but-slow one.
+        assert rollup['ranked'][0]['notation'] == 'pm:hot:hot'
+        assert rollup['ranked'][0]['calls'] == 100
+        assert rollup['ranked'][0]['cumulative_ms'] == pytest.approx(20000.0)
+        assert rollup['ranked'][1]['notation'] == 'pm:slow:slow'
+        assert rollup['ranked'][1]['calls'] == 1
+
+    def test_ceiling_is_blind_to_the_script_the_rollup_ranks_first(self, tmp_path):
+        # The "read them together" assertion: the ceiling reports NOTHING slow
+        # while the roll-up reports one script owning the majority of the time.
+        logs_dir = tmp_path / 'logs'
+        _write_folded_log(logs_dir, 'script-execution-2026-06-01.log', _hot_and_slow_log_lines())
+
+        signals = _analyze_logs.analyze_folded_global_logs(logs_dir)
+
+        assert signals['slow_call_count'] == 0
+        assert signals['cost_rollup']['calls_at_or_over_ceiling'] == 0
+        assert signals['cost_rollup']['ranked'][0]['share_pct'] == pytest.approx(80.0)
+
+    def test_share_pct_is_a_share_of_the_published_total(self, tmp_path):
+        logs_dir = tmp_path / 'logs'
+        _write_folded_log(logs_dir, 'script-execution-2026-06-01.log', _hot_and_slow_log_lines())
+
+        rollup = _analyze_logs.analyze_folded_global_logs(logs_dir)['cost_rollup']
+
+        assert rollup['total_calls'] == 101
+        assert rollup['total_duration_ms'] == pytest.approx(25000.0)
+        assert rollup['distinct_scripts'] == 2
+        # Every ranked share is a share of the SAME published denominator.
+        recomputed = [
+            round(row['cumulative_ms'] / rollup['total_duration_ms'] * 100.0, 3)
+            for row in rollup['ranked']
+        ]
+        assert [row['share_pct'] for row in rollup['ranked']] == recomputed
+
+    def test_truncation_is_visible_never_silent(self, tmp_path):
+        # 15 distinct scripts, ranked list capped at 10: the cap must be legible
+        # from the fragment (distinct_scripts > ranked_count), never silent.
+        logs_dir = tmp_path / 'logs'
+        lines = [
+            _line('2026-06-01T10:00:00Z', 'INFO', f'pm:s{i:02d}:s{i:02d} run ({i + 1}.0s)')
+            for i in range(15)
+        ]
+        _write_folded_log(logs_dir, 'script-execution-2026-06-01.log', lines)
+
+        rollup = _analyze_logs.analyze_folded_global_logs(logs_dir)['cost_rollup']
+
+        assert rollup['distinct_scripts'] == 15
+        assert rollup['ranked_count'] == 10
+        assert len(rollup['ranked']) == 10
+        # The published total still spans ALL 15, so the residual is derivable.
+        assert rollup['total_calls'] == 15
+
+    def test_empty_corpus_publishes_zero_not_absence(self, tmp_path):
+        logs_dir = tmp_path / 'logs'
+        _write_folded_log(
+            logs_dir,
+            'work-2026-06-01.log',
+            [_line('2026-06-01T10:00:00Z', 'INFO', '[STATUS] (x) no duration here')],
+        )
+
+        rollup = _analyze_logs.analyze_folded_global_logs(logs_dir)['cost_rollup']
+
+        assert rollup['total_calls'] == 0
+        assert rollup['total_duration_ms'] == 0.0
+        assert rollup['ranked'] == []
+
+    def test_rollup_surfaces_in_the_toon_fragment(self, tmp_path, monkeypatch):
+        # End-to-end: the plan's own script-execution.log roll-up reaches output.
+        plan_id, _ = setup_live_plan(tmp_path, monkeypatch)
+        result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+
+        rollup = data['script_cost_rollup']
+        assert rollup['population'] == 'plan_script_execution_log'
+        assert int(rollup['total_calls']) == 3
+        # manage-status ran 2.5s of the 2.67s total -> it ranks first here too,
+        # but by CUMULATIVE time rather than by single-call duration.
+        assert rollup['ranked'][0]['notation'] == 'plan-marshall:manage-status:manage-status'
+
+
+class TestPerCallCeilingPreserved:
+    """D2: the ceiling is an addition's neighbour, not its casualty."""
+
+    def test_ceiling_constant_unchanged(self):
+        # D4(c) regression pin: the ceiling this plan proved blind is NOT the
+        # thing this plan changed. Moving it would silently redefine
+        # ``slow_call_count`` for every archived plan already measured against it.
+        assert _analyze_logs._GLOBAL_LOG_SLOW_SECONDS == 30.0
+
+    def test_slow_call_count_still_fires_at_the_ceiling(self, tmp_path):
+        logs_dir = tmp_path / 'logs'
+        _write_folded_log(
+            logs_dir,
+            'script-execution-2026-06-01.log',
+            [
+                _line('2026-06-01T10:00:00Z', 'INFO', 'pm:a:a run (30.0s)'),
+                _line('2026-06-01T10:00:01Z', 'INFO', 'pm:b:b run (1.0s)'),
+            ],
+        )
+
+        signals = _analyze_logs.analyze_folded_global_logs(logs_dir)
+
+        assert signals['slow_call_count'] == 1
+        assert signals['cost_rollup']['calls_at_or_over_ceiling'] == 1
+
+
+class TestContextPositionCost:
+    """D2's second dimension: marginal cost scales with WHERE a step runs."""
+
+    def _phase(self, rows):
+        return {'present': True, 'rows': rows}
+
+    def test_reports_per_phase_rate_and_position_multiple(self):
+        per_phase = {
+            '4-plan': self._phase([
+                {'tool_uses': 10, 'cache_read_input_tokens': 100_000},
+            ]),
+            '6-finalize': self._phase([
+                {'tool_uses': 10, 'cache_read_input_tokens': 1_000_000},
+            ]),
+        }
+
+        result = _analyze_logs.summarize_context_position_cost(per_phase)
+
+        by_phase = {row['phase']: row for row in result['by_phase']}
+        assert by_phase['4-plan']['cache_read_per_tool_use'] == pytest.approx(10_000.0)
+        assert by_phase['6-finalize']['cache_read_per_tool_use'] == pytest.approx(100_000.0)
+        # An order of magnitude between phases, which is the reported dimension.
+        assert result['position_multiple'] == pytest.approx(10.0)
+
+    def test_unmeasured_row_is_excluded_never_read_as_zero(self):
+        # A row whose cache_read column was unmeasured/indeterminate carries NO
+        # key. Folding it in as 0 would understate the rate; it is excluded and
+        # counted instead.
+        per_phase = {
+            '5-execute': self._phase([
+                {'tool_uses': 10, 'cache_read_input_tokens': 500_000},
+                {'tool_uses': 10},  # unmeasured -> excluded
+            ]),
+        }
+
+        result = _analyze_logs.summarize_context_position_cost(per_phase)
+
+        row = result['by_phase'][0]
+        assert row['rows'] == 2
+        assert row['measured_rows'] == 1
+        assert row['cache_read_per_tool_use'] == pytest.approx(50_000.0)
+        assert result['measured_rows'] == 1
+        assert result['unmeasured_rows'] == 1
+
+    def test_zero_tool_uses_cannot_yield_a_rate(self):
+        # tool_uses == 0 makes a per-tool-use rate undefined, not zero.
+        per_phase = {'6-finalize': self._phase([{'tool_uses': 0, 'cache_read_input_tokens': 900}])}
+
+        result = _analyze_logs.summarize_context_position_cost(per_phase)
+
+        assert result['by_phase'][0]['cache_read_per_tool_use'] == 'unmeasured'
+        assert result['measured_rows'] == 0
+
+    def test_single_measured_phase_cannot_yield_a_multiple(self):
+        # A multiple needs two phases to compare; one is not a position signal.
+        per_phase = {'5-execute': self._phase([{'tool_uses': 5, 'cache_read_input_tokens': 5_000}])}
+
+        result = _analyze_logs.summarize_context_position_cost(per_phase)
+
+        assert result['position_multiple'] == 'unmeasured'
+        assert result['position_multiple_basis'] == 'unmeasured'
+
+    def test_no_boundary_artifacts_publishes_an_empty_population(self):
+        result = _analyze_logs.summarize_context_position_cost({})
+
+        assert result['total_rows'] == 0
+        assert result['measured_rows'] == 0
+        assert result['by_phase'] == []
+        assert result['position_multiple'] == 'unmeasured'
