@@ -396,6 +396,11 @@ class TestSessionRenderTitleStatusline:
     mode.
     """
 
+    @pytest.fixture()
+    def session_cache_base(self, tmp_path, monkeypatch):
+        """Redirect the session cache root to an isolated tmp_path."""
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+
     def test_statusline_emits_plain_text_on_success(self, rt, tmp_path, monkeypatch, capsys):
         """In statusline mode, success branch writes plain ``{composed}`` — no JSON envelope, no OSC, no TOON tail."""
         session_id = "sess-statusline-ok"
@@ -472,15 +477,14 @@ class TestSessionRenderTitleStatusline:
         assert rt.session_render_title(statusline=True) == ""
         assert capsys.readouterr().out == ""
 
-    def test_statusline_no_active_plan_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
+    def test_statusline_no_active_plan_writes_nothing(self, rt, monkeypatch, capsys, session_cache_base):
         """statusline noop: session has no registered plan — nothing written to stdout, empty return."""
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-without-plan")
         capsys.readouterr()
         assert rt.session_render_title(statusline=True) == ""
         assert capsys.readouterr().out == ""
 
-    def test_statusline_missing_status_json_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
+    def test_statusline_missing_status_json_writes_nothing(self, rt, tmp_path, monkeypatch, capsys, session_cache_base):
         """statusline noop: session resolves to plan but status.json is missing — empty return."""
         import claude_runtime as _cr
 
@@ -490,7 +494,6 @@ class TestSessionRenderTitleStatusline:
         cache_dir.mkdir(parents=True)
         (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
 
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
         monkeypatch.chdir(tmp_path)
@@ -506,15 +509,14 @@ class TestSessionRenderTitleStatusline:
         assert rt.session_render_title(statusline=False) == ""
         assert capsys.readouterr().out == ""
 
-    def test_hook_mode_no_active_plan_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
+    def test_hook_mode_no_active_plan_writes_nothing(self, rt, monkeypatch, capsys, session_cache_base):
         """Hook mode noop (no plan mapping): empty stdout, empty return."""
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-no-plan-mapping")
         capsys.readouterr()
         assert rt.session_render_title(statusline=False) == ""
         assert capsys.readouterr().out == ""
 
-    def test_hook_mode_missing_status_json_writes_nothing(self, rt, tmp_path, monkeypatch, capsys):
+    def test_hook_mode_missing_status_json_writes_nothing(self, rt, tmp_path, monkeypatch, capsys, session_cache_base):
         """Hook mode noop (status.json missing): empty stdout, empty return."""
         import claude_runtime as _cr
 
@@ -524,7 +526,6 @@ class TestSessionRenderTitleStatusline:
         cache_dir.mkdir(parents=True)
         (cache_dir / "active-plan").write_text(plan_id, encoding="utf-8")
 
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
         monkeypatch.chdir(tmp_path)
@@ -1308,6 +1309,16 @@ class TestSessionBindResolveDoctor:
     ``session_binding._SESSION_CACHE_BASE``.
     """
 
+    @pytest.fixture()
+    def in_tmp_cwd(self, tmp_path, monkeypatch):
+        """Run with the process working directory inside an isolated tmp_path."""
+        monkeypatch.chdir(tmp_path)
+
+    @pytest.fixture()
+    def plan_dir_name(self, monkeypatch):
+        """Pin the plan directory name the session binder resolves against."""
+        monkeypatch.setattr(session_binding, "_PLAN_DIR_NAME", ".plan")
+
     def test_bind_writes_slot_from_env_session(self, rt, tmp_path, monkeypatch):
         """session bind resolves session id from $CLAUDE_CODE_SESSION_ID and writes the slot."""
         from toon_parser import parse_toon
@@ -1363,12 +1374,10 @@ class TestSessionBindResolveDoctor:
         assert parsed["resolved"] is False
         assert parsed["plan_id"] == ""
 
-    def test_doctor_reports_conflict(self, rt, tmp_path, monkeypatch):
+    def test_doctor_reports_conflict(self, rt, tmp_path, plan_dir_name, in_tmp_cwd):
         """session doctor reports a two-sessions-one-plan conflict."""
         from toon_parser import parse_toon
 
-        monkeypatch.setattr(session_binding, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.chdir(tmp_path)
         (tmp_path / ".plan" / "local" / "plans" / "shared-plan").mkdir(parents=True)
         session_binding.bind("sess-d-a", "shared-plan")
         session_binding.bind("sess-d-b", "shared-plan")
@@ -1376,12 +1385,10 @@ class TestSessionBindResolveDoctor:
         assert parsed["conflict_count"] == 1
         assert "shared-plan=" in parsed["conflicts"][0]
 
-    def test_doctor_fix_gcs_stale_slot(self, rt, tmp_path, monkeypatch):
+    def test_doctor_fix_gcs_stale_slot(self, rt, tmp_path, plan_dir_name, in_tmp_cwd):
         """session doctor --fix removes a stale slot whose plan is archived/deleted."""
         from toon_parser import parse_toon
 
-        monkeypatch.setattr(session_binding, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.chdir(tmp_path)
         (tmp_path / ".plan" / "local" / "plans" / "live-plan").mkdir(parents=True)
         session_binding.bind("sess-live", "live-plan")
         session_binding.bind("sess-gone", "gone-plan")
@@ -1390,10 +1397,8 @@ class TestSessionBindResolveDoctor:
         assert session_binding.resolve_plan("sess-gone") is None
         assert session_binding.resolve_plan("sess-live") == "live-plan"
 
-    def test_doctor_renders_orphan_rows_on_a_plain_scan(self, rt, tmp_path, monkeypatch):
+    def test_doctor_renders_orphan_rows_on_a_plain_scan(self, rt, tmp_path, plan_dir_name, in_tmp_cwd):
         """An orphan directory surfaces as a bare session-id row with a zero removal count."""
-        monkeypatch.setattr(session_binding, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.chdir(tmp_path)
         (tmp_path / "sessions" / "sess-orphan").mkdir(parents=True)
 
         parsed = parse_toon(rt.session_doctor())
@@ -1404,10 +1409,8 @@ class TestSessionBindResolveDoctor:
         # A plain scan reports without mutating.
         assert (tmp_path / "sessions" / "sess-orphan").is_dir()
 
-    def test_doctor_fix_prunes_orphan_directory(self, rt, tmp_path, monkeypatch):
+    def test_doctor_fix_prunes_orphan_directory(self, rt, tmp_path, plan_dir_name, in_tmp_cwd):
         """session doctor --fix prunes the orphan directory and counts it separately."""
-        monkeypatch.setattr(session_binding, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.chdir(tmp_path)
         (tmp_path / ".plan" / "local" / "plans" / "live-plan").mkdir(parents=True)
         session_binding.bind("sess-live", "live-plan")
         (tmp_path / "sessions" / "sess-orphan").mkdir(parents=True)
@@ -1587,6 +1590,16 @@ class TestSessionPushTitleTokenOrchestrator:
     A configured-OFF feature is the one reportable no-op (``feature_inactive``).
     """
 
+    @pytest.fixture()
+    def in_tmp_cwd(self, tmp_path, monkeypatch):
+        """Run with the process working directory inside an isolated tmp_path."""
+        monkeypatch.chdir(tmp_path)
+
+    @pytest.fixture()
+    def session_cache_base(self, tmp_path, monkeypatch):
+        """Redirect the session cache root to an isolated tmp_path."""
+        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+
     @staticmethod
     def _stub_orch_state(monkeypatch):
         import claude_runtime as _cr
@@ -1597,12 +1610,10 @@ class TestSessionPushTitleTokenOrchestrator:
             lambda s: {"kind": "orchestrator", "slug": s},
         )
 
-    def test_orchestrator_push_binds_the_epic(self, rt, tmp_path, monkeypatch):
+    def test_orchestrator_push_binds_the_epic(self, rt, tmp_path, monkeypatch, session_cache_base, in_tmp_cwd):
         """The orchestrator push establishes the session→epic binding so the
         PRIMARY hook channel resolves the epic on the next render."""
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-orch-push")
-        monkeypatch.chdir(tmp_path)
         _activate_terminal_title(tmp_path)
         self._stub_orch_state(monkeypatch)
         _patch_dev_tty(monkeypatch, openable=True)
@@ -1611,14 +1622,12 @@ class TestSessionPushTitleTokenOrchestrator:
 
         assert session_binding.resolve_orchestrator("sess-orch-push") == "my-epic"
 
-    def test_orchestrator_push_reports_feature_inactive_when_off(self, rt, tmp_path, monkeypatch):
+    def test_orchestrator_push_reports_feature_inactive_when_off(self, rt, monkeypatch, session_cache_base, in_tmp_cwd):
         """With the terminal-title feature configured OFF, the orchestrator call
         reports reason: feature_inactive — the one no-op outcome it can produce."""
         from toon_parser import parse_toon
 
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-orch-inactive")
-        monkeypatch.chdir(tmp_path)
         # NO _activate_terminal_title → _terminal_title_active() is False.
         self._stub_orch_state(monkeypatch)
         _patch_dev_tty(monkeypatch, openable=True)
@@ -1629,16 +1638,14 @@ class TestSessionPushTitleTokenOrchestrator:
         assert "pushed" not in result
         assert "delivery" not in result
 
-    def test_orchestrator_push_writes_no_escape_when_active(self, rt, tmp_path, monkeypatch):
+    def test_orchestrator_push_writes_no_escape_when_active(self, rt, tmp_path, monkeypatch, session_cache_base, in_tmp_cwd):
         """With the feature ACTIVE the call settles state and still writes nothing.
 
         A tty is deliberately available, so a surviving write would be captured.
         """
         from toon_parser import parse_toon
 
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-orch-active")
-        monkeypatch.chdir(tmp_path)
         _activate_terminal_title(tmp_path)
         self._stub_orch_state(monkeypatch)
         writes = _patch_dev_tty(monkeypatch, openable=True)
@@ -1650,13 +1657,11 @@ class TestSessionPushTitleTokenOrchestrator:
         assert writes == []
         assert "reason" not in result
 
-    def test_orchestrator_push_binds_even_when_feature_inactive(self, rt, tmp_path, monkeypatch):
+    def test_orchestrator_push_binds_even_when_feature_inactive(self, rt, monkeypatch, session_cache_base, in_tmp_cwd):
         """The epic binding is established BEFORE the feature gate, so it lands
         even when the push itself reports feature_inactive — the PRIMARY channel
         can then deliver once the feature is turned on."""
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-orch-bind-inactive")
-        monkeypatch.chdir(tmp_path)
         self._stub_orch_state(monkeypatch)
         _patch_dev_tty(monkeypatch, openable=True)
 

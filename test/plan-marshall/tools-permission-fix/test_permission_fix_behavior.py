@@ -15,6 +15,8 @@ for the ``--target project`` resolvers) — never the developer's real settings.
 import json
 from argparse import Namespace
 
+import pytest
+
 from conftest import load_script_module
 
 # Unique module name so the load is isolated and coverage is attributed to the
@@ -465,6 +467,11 @@ class TestGenerateWildcardsEdges:
 class TestExecutorSubcommandsInProcess:
     """Test executor-pattern subcommands against a chdir'd tmp project dir."""
 
+    @pytest.fixture()
+    def in_tmp_cwd(self, tmp_path, monkeypatch):
+        """Run with the process working directory inside an isolated tmp_path."""
+        monkeypatch.chdir(tmp_path)
+
     def _setup_project(self, tmp_path, allow):
         """Create tmp_path/.claude/settings.json and return its path."""
         claude_dir = tmp_path / '.claude'
@@ -473,10 +480,9 @@ class TestExecutorSubcommandsInProcess:
         _write_settings(settings_file, allow)
         return settings_file
 
-    def test_ensure_executor_dry_run_would_add(self, tmp_path, monkeypatch):
+    def test_ensure_executor_dry_run_would_add(self, tmp_path, in_tmp_cwd):
         """Dry-run reports 'would_add' and leaves the file untouched."""
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)'])
-        monkeypatch.chdir(tmp_path)
 
         result = pf.cmd_ensure_executor(Namespace(target='project', dry_run=True))
 
@@ -484,10 +490,9 @@ class TestExecutorSubcommandsInProcess:
         assert result['success'] is True
         assert pf.EXECUTOR_PERMISSION not in _read_allow(settings_file)
 
-    def test_cleanup_scripts_nothing_to_remove(self, tmp_path, monkeypatch):
+    def test_cleanup_scripts_nothing_to_remove(self, tmp_path, in_tmp_cwd):
         """With no individual script perms, cleanup reports nothing to remove."""
         self._setup_project(tmp_path, ['Bash(git:*)'])
-        monkeypatch.chdir(tmp_path)
 
         result = pf.cmd_cleanup_scripts(
             Namespace(target='project', remove_broad_python=False, dry_run=False)
@@ -496,11 +501,10 @@ class TestExecutorSubcommandsInProcess:
         assert result['action'] == 'nothing_to_remove'
         assert result['success'] is True
 
-    def test_cleanup_scripts_dry_run_would_remove(self, tmp_path, monkeypatch):
+    def test_cleanup_scripts_dry_run_would_remove(self, tmp_path, in_tmp_cwd):
         """Dry-run reports the would-remove count without modifying the file."""
         script_perm = 'Bash(python3 /x/marketplace/bundles/b/skills/s/scripts/run.py:*)'
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)', script_perm])
-        monkeypatch.chdir(tmp_path)
 
         result = pf.cmd_cleanup_scripts(
             Namespace(target='project', remove_broad_python=False, dry_run=True)
@@ -510,10 +514,9 @@ class TestExecutorSubcommandsInProcess:
         assert result['total_would_remove'] == 1
         assert script_perm in _read_allow(settings_file)
 
-    def test_cleanup_scripts_removes_broad_python(self, tmp_path, monkeypatch):
+    def test_cleanup_scripts_removes_broad_python(self, tmp_path, in_tmp_cwd):
         """With --remove-broad-python the overly broad python wildcard is removed."""
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)', pf.OVERLY_BROAD_PYTHON])
-        monkeypatch.chdir(tmp_path)
 
         result = pf.cmd_cleanup_scripts(
             Namespace(target='project', remove_broad_python=True, dry_run=False)
@@ -523,11 +526,10 @@ class TestExecutorSubcommandsInProcess:
         assert result['broad_python_removed'] is True
         assert pf.OVERLY_BROAD_PYTHON not in _read_allow(settings_file)
 
-    def test_migrate_executor_dry_run(self, tmp_path, monkeypatch):
+    def test_migrate_executor_dry_run(self, tmp_path, in_tmp_cwd):
         """Dry-run reports planned would-add/would-remove without writing."""
         script_perm = 'Bash(python3 /x/marketplace/bundles/b/skills/s/scripts/run.py:*)'
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)', script_perm])
-        monkeypatch.chdir(tmp_path)
 
         result = pf.cmd_migrate_executor(
             Namespace(target='project', remove_broad_python=False, dry_run=True)
@@ -539,12 +541,11 @@ class TestExecutorSubcommandsInProcess:
         # Dry-run leaves the file unchanged.
         assert pf.EXECUTOR_PERMISSION not in _read_allow(settings_file)
 
-    def test_migrate_executor_executor_already_present_removes_broad_python(self, tmp_path, monkeypatch):
+    def test_migrate_executor_executor_already_present_removes_broad_python(self, tmp_path, in_tmp_cwd):
         """When the executor perm already exists, migration only cleans up extras."""
         settings_file = self._setup_project(
             tmp_path, ['Bash(git:*)', pf.EXECUTOR_PERMISSION, pf.OVERLY_BROAD_PYTHON]
         )
-        monkeypatch.chdir(tmp_path)
 
         result = pf.cmd_migrate_executor(
             Namespace(target='project', remove_broad_python=True, dry_run=False)
@@ -565,6 +566,11 @@ class TestExecutorSubcommandsInProcess:
 class TestAddRemoveInProcess:
     """Test cmd_add / cmd_remove write and idempotent branches in-process."""
 
+    @pytest.fixture()
+    def in_tmp_cwd(self, tmp_path, monkeypatch):
+        """Run with the process working directory inside an isolated tmp_path."""
+        monkeypatch.chdir(tmp_path)
+
     def _setup_project(self, tmp_path, allow):
         claude_dir = tmp_path / '.claude'
         claude_dir.mkdir()
@@ -572,10 +578,9 @@ class TestAddRemoveInProcess:
         _write_settings(settings_file, allow)
         return settings_file
 
-    def test_add_writes_new_permission(self, tmp_path, monkeypatch):
+    def test_add_writes_new_permission(self, tmp_path, in_tmp_cwd):
         """Adding a new permission writes it and reports 'added'."""
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)'])
-        monkeypatch.chdir(tmp_path)
 
         result = pf.cmd_add(Namespace(permission='Bash(npm:*)', target='project'))
 
@@ -583,29 +588,26 @@ class TestAddRemoveInProcess:
         assert result['success'] is True
         assert 'Bash(npm:*)' in _read_allow(settings_file)
 
-    def test_add_existing_is_noop(self, tmp_path, monkeypatch):
+    def test_add_existing_is_noop(self, tmp_path, in_tmp_cwd):
         """Adding an existing permission reports 'already_exists'."""
         self._setup_project(tmp_path, ['Bash(git:*)'])
-        monkeypatch.chdir(tmp_path)
 
         result = pf.cmd_add(Namespace(permission='Bash(git:*)', target='project'))
 
         assert result['action'] == 'already_exists'
 
-    def test_remove_deletes_permission(self, tmp_path, monkeypatch):
+    def test_remove_deletes_permission(self, tmp_path, in_tmp_cwd):
         """Removing an existing permission deletes it and reports 'removed'."""
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)', 'Bash(npm:*)'])
-        monkeypatch.chdir(tmp_path)
 
         result = pf.cmd_remove(Namespace(permission='Bash(npm:*)', target='project'))
 
         assert result['action'] == 'removed'
         assert 'Bash(npm:*)' not in _read_allow(settings_file)
 
-    def test_remove_absent_is_noop(self, tmp_path, monkeypatch):
+    def test_remove_absent_is_noop(self, tmp_path, in_tmp_cwd):
         """Removing a missing permission reports 'not_found'."""
         self._setup_project(tmp_path, ['Bash(git:*)'])
-        monkeypatch.chdir(tmp_path)
 
         result = pf.cmd_remove(Namespace(permission='Bash(absent:*)', target='project'))
 

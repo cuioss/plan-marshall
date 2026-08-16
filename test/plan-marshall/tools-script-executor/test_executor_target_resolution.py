@@ -217,19 +217,24 @@ class TestGenerateTargetAwareResolverCode:
 class TestClaudeResolver:
     """Tests for the inline Claude resolver function."""
 
-    def test_returns_none_when_cache_dir_absent(self, tmp_path, monkeypatch):
+    @pytest.fixture()
+    def home_at_tmp(self, tmp_path, monkeypatch):
+        """Point HOME at an isolated tmp_path and yield that root."""
+        monkeypatch.setenv('HOME', str(tmp_path))
+        return tmp_path
+
+    def test_returns_none_when_cache_dir_absent(self, home_at_tmp):
         """Returns None when the plugin cache root does not exist."""
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('claude')
         ns = _exec_resolver(code)
 
         # Point HOME at tmp_path so ~/.claude/plugins/cache is absent
-        monkeypatch.setenv('HOME', str(tmp_path))
 
         result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result is None
 
-    def test_returns_none_for_unknown_notation(self, tmp_path, monkeypatch):
+    def test_returns_none_for_unknown_notation(self, tmp_path, home_at_tmp):
         """Returns None when the skill/script combination is not in the cache."""
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('claude')
@@ -239,12 +244,11 @@ class TestClaudeResolver:
         cache_dir = tmp_path / '.claude' / 'plugins' / 'cache' / 'plan-marshall' / '1.0.0' / 'skills'
         cache_dir.mkdir(parents=True)
 
-        monkeypatch.setenv('HOME', str(tmp_path))
 
         result = ns._resolve_notation_by_target('no-bundle:no-skill:no-script')
         assert result is None
 
-    def test_finds_script_in_cache_and_returns_absolute_path(self, tmp_path, monkeypatch):
+    def test_finds_script_in_cache_and_returns_absolute_path(self, tmp_path, home_at_tmp):
         """Discovers a script in the plugin cache and returns its absolute path."""
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('claude')
@@ -259,14 +263,13 @@ class TestClaudeResolver:
         script_file = scripts_dir / 'manage-status.py'
         script_file.write_text('# stub', encoding='utf-8')
 
-        monkeypatch.setenv('HOME', str(tmp_path))
 
         result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result is not None, 'Expected to find the script in the fake cache'
         assert os.path.isabs(result), f'Returned path must be absolute, got {result!r}'
         assert result.endswith('manage-status.py'), f'Expected manage-status.py, got {result!r}'
 
-    def test_skips_hidden_version_directories(self, tmp_path, monkeypatch):
+    def test_skips_hidden_version_directories(self, tmp_path, home_at_tmp):
         """Hidden directories (starting with '.') inside the cache are skipped."""
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('claude')
@@ -280,18 +283,16 @@ class TestClaudeResolver:
         scripts_dir.mkdir(parents=True)
         (scripts_dir / 'some_script.py').write_text('# hidden', encoding='utf-8')
 
-        monkeypatch.setenv('HOME', str(tmp_path))
 
         result = ns._resolve_notation_by_target('plan-marshall:some-skill:some_script')
         assert result is None, 'Hidden version directories must be skipped'
 
-    def test_invalid_notation_returns_none(self, tmp_path, monkeypatch):
+    def test_invalid_notation_returns_none(self, home_at_tmp):
         """A notation with fewer or more than 3 parts returns None."""
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('claude')
         ns = _exec_resolver(code)
 
-        monkeypatch.setenv('HOME', str(tmp_path))
 
         assert ns._resolve_notation_by_target('two:parts') is None
         assert ns._resolve_notation_by_target('too:many:parts:here') is None
@@ -301,26 +302,38 @@ class TestClaudeResolver:
 class TestOpenCodeResolver:
     """Tests for the inline OpenCode resolver function."""
 
-    def test_returns_none_when_no_roots_exist(self, tmp_path, monkeypatch):
+    @pytest.fixture()
+    def in_tmp_cwd(self, tmp_path, monkeypatch):
+        """Run with the process working directory inside an isolated tmp_path."""
+        monkeypatch.chdir(tmp_path)
+
+    @pytest.fixture()
+    def no_opencode_config_dir(self, monkeypatch):
+        """Clear OPENCODE_CONFIG_DIR so resolution falls through to its next source."""
+        monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
+
+    @pytest.fixture()
+    def home_at_tmp(self, tmp_path, monkeypatch):
+        """Point HOME at an isolated tmp_path and yield that root."""
+        monkeypatch.setenv('HOME', str(tmp_path))
+        return tmp_path
+
+    def test_returns_none_when_no_roots_exist(self, home_at_tmp, no_opencode_config_dir):
         """Returns None when none of the 7 roots contain the script."""
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('opencode')
         ns = _exec_resolver(code)
 
-        monkeypatch.setenv('HOME', str(tmp_path))
-        monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
 
         result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result is None
 
-    def test_finds_script_in_opencode_skills_dir(self, tmp_path, monkeypatch):
+    def test_finds_script_in_opencode_skills_dir(self, tmp_path, home_at_tmp, no_opencode_config_dir, in_tmp_cwd):
         """Discovers a script in the .opencode/skills root (project-local)."""
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('opencode')
         ns = _exec_resolver(code)
 
-        monkeypatch.setenv('HOME', str(tmp_path))
-        monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
 
         # Create the .opencode/skills/{bundle}-{skill}/scripts/{script}.py structure
         skill_dir = tmp_path / '.opencode' / 'skills' / 'plan-marshall-manage-status' / 'scripts'
@@ -329,20 +342,18 @@ class TestOpenCodeResolver:
         script_file.write_text('# stub', encoding='utf-8')
 
         # Change cwd to tmp_path so relative .opencode/skills resolves correctly
-        monkeypatch.chdir(tmp_path)
 
         result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result is not None, 'Expected to find the script in .opencode/skills'
         assert os.path.isabs(result), f'Returned path must be absolute, got {result!r}'
         assert result.endswith('manage-status.py'), f'Expected manage-status.py, got {result!r}'
 
-    def test_finds_script_via_env_var_override(self, tmp_path, monkeypatch):
+    def test_finds_script_via_env_var_override(self, tmp_path, monkeypatch, home_at_tmp, in_tmp_cwd):
         """$OPENCODE_CONFIG_DIR/skills root has highest priority."""
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('opencode')
         ns = _exec_resolver(code)
 
-        monkeypatch.setenv('HOME', str(tmp_path))
 
         # Set up OPENCODE_CONFIG_DIR root with the target script
         config_dir = tmp_path / 'opencode-config'
@@ -357,7 +368,6 @@ class TestOpenCodeResolver:
         (fallback_dir / 'manage-status.py').write_text('# fallback', encoding='utf-8')
 
         monkeypatch.setenv('OPENCODE_CONFIG_DIR', str(config_dir))
-        monkeypatch.chdir(tmp_path)
 
         result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result is not None
@@ -367,14 +377,12 @@ class TestOpenCodeResolver:
             f'Expected resolution through OPENCODE_CONFIG_DIR={config_dir}, got {result}'
         )
 
-    def test_finds_script_in_user_global_config_root(self, tmp_path, monkeypatch):
+    def test_finds_script_in_user_global_config_root(self, tmp_path, home_at_tmp, no_opencode_config_dir, in_tmp_cwd):
         """Discovers a script in ~/.config/opencode/skills (user-global root)."""
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('opencode')
         ns = _exec_resolver(code)
 
-        monkeypatch.setenv('HOME', str(tmp_path))
-        monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
 
         # Create the user-global root
         skill_dir = (
@@ -385,21 +393,17 @@ class TestOpenCodeResolver:
         (skill_dir / 'manage-status.py').write_text('# user-global', encoding='utf-8')
 
         # cwd has no local .opencode/skills root
-        monkeypatch.chdir(tmp_path)
 
         result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result is not None
         assert os.path.isabs(result)
 
-    def test_uses_dash_namespaced_directory(self, tmp_path, monkeypatch):
+    def test_uses_dash_namespaced_directory(self, tmp_path, home_at_tmp, no_opencode_config_dir, in_tmp_cwd):
         """Resolver constructs ``{bundle}-{skill}`` directory name, not ``{bundle}/{skill}``."""
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('opencode')
         ns = _exec_resolver(code)
 
-        monkeypatch.setenv('HOME', str(tmp_path))
-        monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
-        monkeypatch.chdir(tmp_path)
 
         # Create the WRONG (slash-namespaced) layout — must NOT be found
         wrong_dir = tmp_path / '.opencode' / 'skills' / 'plan-marshall' / 'manage-status' / 'scripts'
@@ -422,14 +426,12 @@ class TestOpenCodeResolver:
         assert result_correct is not None, 'Dash-namespaced layout must be found'
         assert os.path.isabs(result_correct)
 
-    def test_returns_absolute_path(self, tmp_path, monkeypatch):
+    def test_returns_absolute_path(self, tmp_path, home_at_tmp, no_opencode_config_dir, in_tmp_cwd):
         """Matched path is always converted to absolute before return."""
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('opencode')
         ns = _exec_resolver(code)
 
-        monkeypatch.setenv('HOME', str(tmp_path))
-        monkeypatch.delenv('OPENCODE_CONFIG_DIR', raising=False)
 
         # Create the dash-namespaced layout
         skill_dir = (
@@ -438,19 +440,17 @@ class TestOpenCodeResolver:
         skill_dir.mkdir(parents=True)
         (skill_dir / 'manage-status.py').write_text('# stub', encoding='utf-8')
 
-        monkeypatch.chdir(tmp_path)
 
         result = ns._resolve_notation_by_target('plan-marshall:manage-status:manage-status')
         assert result is not None
         assert os.path.isabs(result), f'Path must be absolute, got {result!r}'
 
-    def test_invalid_notation_returns_none(self, tmp_path, monkeypatch):
+    def test_invalid_notation_returns_none(self, home_at_tmp):
         """A notation with fewer or more than 3 parts returns None."""
         module = _load_generate_executor()
         code = module.generate_target_aware_resolver_code('opencode')
         ns = _exec_resolver(code)
 
-        monkeypatch.setenv('HOME', str(tmp_path))
 
         assert ns._resolve_notation_by_target('two:parts') is None
         assert ns._resolve_notation_by_target('too:many:parts:here') is None

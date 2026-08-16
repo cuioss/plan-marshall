@@ -33,7 +33,13 @@ from claude_runtime import ClaudeRuntime
 from opencode_runtime import OpenCodeRuntime
 from runtime_base import Runtime
 from toon_parser import parse_toon
+import pytest
 
+
+@pytest.fixture()
+def home_at_tmp(tmp_path, monkeypatch):
+    """Resolve Path.home() to an isolated tmp_path/home."""
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
 
 def _parse(toon_str: str) -> dict:
     """Parse a TOON string and assert it is a non-empty dict."""
@@ -203,7 +209,7 @@ def _write_jsonl(path: Path, entries: list[dict]) -> None:
 # =============================================================================
 
 
-def test_claude_normalized_tokens_writes_per_phase_json(tmp_path, monkeypatch):
+def test_claude_normalized_tokens_writes_per_phase_json(tmp_path, home_at_tmp):
     """The Claude op walks the transcript and writes per-phase normalized categories."""
     session_id = "22222222-2222-2222-2222-222222222201"
     projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
@@ -232,7 +238,6 @@ def test_claude_normalized_tokens_writes_per_phase_json(tmp_path, monkeypatch):
         ],
     )
 
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
 
     output_file = tmp_path / "normalized.json"
     result = _parse(
@@ -280,7 +285,7 @@ def test_claude_normalized_tokens_writes_per_phase_json(tmp_path, monkeypatch):
     assert int(result["unclassified_tool_calls"]) == 0
 
 
-def test_claude_normalized_tokens_unknown_tool_name_is_counted_not_dropped(tmp_path, monkeypatch):
+def test_claude_normalized_tokens_unknown_tool_name_is_counted_not_dropped(tmp_path, home_at_tmp):
     """A tool name outside the classifier's domain lands in unclassified, never dropped."""
     session_id = "22222222-2222-2222-2222-222222222204"
     projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
@@ -293,7 +298,6 @@ def test_claude_normalized_tokens_unknown_tool_name_is_counted_not_dropped(tmp_p
         ],
     )
 
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
 
     output_file = tmp_path / "normalized.json"
     result = _parse(
@@ -313,7 +317,7 @@ def test_claude_normalized_tokens_unknown_tool_name_is_counted_not_dropped(tmp_p
     assert int(result["unclassified_tool_calls"]) == 1
 
 
-def test_claude_normalized_tokens_tool_name_matched_casefolded(tmp_path, monkeypatch):
+def test_claude_normalized_tokens_tool_name_matched_casefolded(tmp_path, home_at_tmp):
     """A casing variant of a known tool name resolves to the same bucket."""
     session_id = "22222222-2222-2222-2222-222222222205"
     projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
@@ -326,7 +330,6 @@ def test_claude_normalized_tokens_tool_name_matched_casefolded(tmp_path, monkeyp
         ],
     )
 
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
 
     output_file = tmp_path / "normalized.json"
     result = _parse(
@@ -339,7 +342,7 @@ def test_claude_normalized_tokens_tool_name_matched_casefolded(tmp_path, monkeyp
     assert five["unclassified_tool_calls"] == 0
 
 
-def test_claude_normalized_tokens_subagent_transcript_summed(tmp_path, monkeypatch):
+def test_claude_normalized_tokens_subagent_transcript_summed(tmp_path, home_at_tmp):
     """A subagent transcript's four-field usage is summed and attributed by spawn window."""
     session_id = "22222222-2222-2222-2222-222222222202"
     projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
@@ -368,7 +371,6 @@ def test_claude_normalized_tokens_subagent_transcript_summed(tmp_path, monkeypat
         ],
     )
 
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
 
     output_file = tmp_path / "normalized.json"
     result = _parse(
@@ -385,7 +387,7 @@ def test_claude_normalized_tokens_subagent_transcript_summed(tmp_path, monkeypat
     assert five["cache_creation"] == 360
 
 
-def test_claude_normalized_tokens_subagent_keys_zero_without_subagent_usage(tmp_path, monkeypatch):
+def test_claude_normalized_tokens_subagent_keys_zero_without_subagent_usage(tmp_path, home_at_tmp):
     """A phase with no subagent usage still carries the four subagent_* keys at 0."""
     session_id = "22222222-2222-2222-2222-222222222203"
     projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
@@ -395,7 +397,6 @@ def test_claude_normalized_tokens_subagent_keys_zero_without_subagent_usage(tmp_
         [_main_context_entry("2026-03-27T10:10:00+00:00", input_tokens=100, output_tokens=20)],
     )
 
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
 
     output_file = tmp_path / "normalized.json"
     result = _parse(
@@ -411,9 +412,8 @@ def test_claude_normalized_tokens_subagent_keys_zero_without_subagent_usage(tmp_
     assert five["subagent_samples"] == 0
 
 
-def test_claude_normalized_tokens_missing_transcript_is_noop(tmp_path, monkeypatch):
+def test_claude_normalized_tokens_missing_transcript_is_noop(tmp_path, home_at_tmp):
     """No transcript on disk → the op returns a transcript_not_found no-op."""
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
     (tmp_path / "home" / ".claude" / "projects").mkdir(parents=True, exist_ok=True)
 
     output_file = tmp_path / "normalized.json"
@@ -628,9 +628,7 @@ def test_attribute_cache_read_zero_total_is_a_measured_zero_across_the_group():
     assert set(attributed.values()) == {0}
 
 
-def test_claude_normalized_tokens_attributes_cache_read_by_turn_weighted_residency(
-    tmp_path, monkeypatch
-):
+def test_claude_normalized_tokens_attributes_cache_read_by_turn_weighted_residency(tmp_path, home_at_tmp):
     """cache_read splits by how long each source's bytes stayed resident, not by byte share.
 
     The two payloads are the SAME size, so a split that merely restated
@@ -662,7 +660,6 @@ def test_claude_normalized_tokens_attributes_cache_read_by_turn_weighted_residen
         ],
     )
 
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
 
     output_file = tmp_path / "normalized.json"
     result = _parse(
@@ -691,9 +688,7 @@ def test_claude_normalized_tokens_attributes_cache_read_by_turn_weighted_residen
     assert sum(_attribution_group(five).values()) == five["cache_read"]
 
 
-def test_claude_normalized_tokens_zero_cache_read_phase_carries_the_full_attribution_group(
-    tmp_path, monkeypatch
-):
+def test_claude_normalized_tokens_zero_cache_read_phase_carries_the_full_attribution_group(tmp_path, home_at_tmp):
     """Matched negative control for the full-key-set rule: no cache_read, keys still present."""
     session_id = "22222222-2222-2222-2222-222222222211"
     projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
@@ -709,7 +704,6 @@ def test_claude_normalized_tokens_zero_cache_read_phase_carries_the_full_attribu
         ],
     )
 
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
 
     output_file = tmp_path / "normalized.json"
     result = _parse(
@@ -726,9 +720,7 @@ def test_claude_normalized_tokens_zero_cache_read_phase_carries_the_full_attribu
     assert set(_attribution_group(five).values()) == {0}
 
 
-def test_claude_normalized_tokens_unexplained_cache_read_lands_in_the_residual(
-    tmp_path, monkeypatch
-):
+def test_claude_normalized_tokens_unexplained_cache_read_lands_in_the_residual(tmp_path, home_at_tmp):
     """A phase billed for context it never sourced from a payload discloses the whole figure."""
     session_id = "22222222-2222-2222-2222-222222222212"
     projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
@@ -744,7 +736,6 @@ def test_claude_normalized_tokens_unexplained_cache_read_lands_in_the_residual(
         ],
     )
 
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
 
     output_file = tmp_path / "normalized.json"
     result = _parse(
@@ -768,7 +759,7 @@ def test_claude_normalized_tokens_unexplained_cache_read_lands_in_the_residual(
 # =============================================================================
 
 
-def test_exploration_subsources_partition_the_parent_bucket_exactly(tmp_path, monkeypatch):
+def test_exploration_subsources_partition_the_parent_bucket_exactly(tmp_path, home_at_tmp):
     """The three sub-sources sum to exploration_result_bytes — a re-cut, not an addition."""
     session_id = "22222222-2222-2222-2222-222222222220"
     projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
@@ -790,7 +781,6 @@ def test_exploration_subsources_partition_the_parent_bucket_exactly(tmp_path, mo
         ],
     )
 
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
 
     output_file = tmp_path / "normalized.json"
     result = _parse(
@@ -809,7 +799,7 @@ def test_exploration_subsources_partition_the_parent_bucket_exactly(tmp_path, mo
     assert min(subsources.values()) > 0, subsources
 
 
-def test_code_target_routes_to_index_answerable(tmp_path, monkeypatch):
+def test_code_target_routes_to_index_answerable(tmp_path, home_at_tmp):
     """A source-code target is a lookup an index could answer."""
     session_id = "22222222-2222-2222-2222-222222222221"
     projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
@@ -829,7 +819,6 @@ def test_code_target_routes_to_index_answerable(tmp_path, monkeypatch):
         ],
     )
 
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
 
     output_file = tmp_path / "normalized.json"
     assert (
@@ -846,7 +835,7 @@ def test_code_target_routes_to_index_answerable(tmp_path, monkeypatch):
     assert five["exploration_unattributed_bytes"] == 0
 
 
-def test_document_targets_route_to_doc_residency(tmp_path, monkeypatch):
+def test_document_targets_route_to_doc_residency(tmp_path, home_at_tmp):
     """Skill/standard markdown, doc/**, *.adoc and CLAUDE.md are all residency, not lookup."""
     session_id = "22222222-2222-2222-2222-222222222222"
     projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
@@ -872,7 +861,6 @@ def test_document_targets_route_to_doc_residency(tmp_path, monkeypatch):
         ],
     )
 
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
 
     output_file = tmp_path / "normalized.json"
     assert (
@@ -915,7 +903,7 @@ def test_live_tool_use_items_carry_input_so_the_fail_open_arm_is_the_control():
     assert claude_runtime._extract_target_path({"path": "a/b"}) == "a/b"
 
 
-def test_unrecognised_and_pathless_calls_land_in_exploration_unattributed(tmp_path, monkeypatch):
+def test_unrecognised_and_pathless_calls_land_in_exploration_unattributed(tmp_path, home_at_tmp):
     """A non-path-addressed tool and an inputless call both fail open, never guessed."""
     session_id = "22222222-2222-2222-2222-222222222223"
     projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
@@ -935,7 +923,6 @@ def test_unrecognised_and_pathless_calls_land_in_exploration_unattributed(tmp_pa
         ],
     )
 
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
 
     output_file = tmp_path / "normalized.json"
     assert (
@@ -954,7 +941,7 @@ def test_unrecognised_and_pathless_calls_land_in_exploration_unattributed(tmp_pa
     assert five["exploration_result_bytes"] == 100
 
 
-def test_phase_without_exploration_still_carries_the_subsource_keys(tmp_path, monkeypatch):
+def test_phase_without_exploration_still_carries_the_subsource_keys(tmp_path, home_at_tmp):
     """Matched negative control for the full-key-set rule on the sub-source group."""
     session_id = "22222222-2222-2222-2222-222222222224"
     projects_root = tmp_path / "home" / ".claude" / "projects" / "plan"
@@ -971,7 +958,6 @@ def test_phase_without_exploration_still_carries_the_subsource_keys(tmp_path, mo
         ],
     )
 
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
 
     output_file = tmp_path / "normalized.json"
     assert (
@@ -1005,7 +991,7 @@ def test_subsource_keys_are_not_members_of_the_exploration_counter_family():
     assert subsource_keys <= _contract_bucket_keys()
 
 
-def test_subagent_transcript_subsources_fold_into_the_parent_phase(tmp_path, monkeypatch):
+def test_subagent_transcript_subsources_fold_into_the_parent_phase(tmp_path, home_at_tmp):
     """A dispatched envelope's exploration keeps the partition invariant true.
 
     Without the sub-source fold on the subagent path, the parent's
@@ -1035,7 +1021,6 @@ def test_subagent_transcript_subsources_fold_into_the_parent_phase(tmp_path, mon
         ],
     )
 
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
 
     output_file = tmp_path / "normalized.json"
     result = _parse(
@@ -1057,7 +1042,7 @@ def test_subagent_transcript_subsources_fold_into_the_parent_phase(tmp_path, mon
 # =============================================================================
 
 
-def test_router_dispatches_normalized_tokens(tmp_path, monkeypatch):
+def test_router_dispatches_normalized_tokens(tmp_path, monkeypatch, home_at_tmp):
     """The router routes ``metrics normalized-tokens`` to the Claude runtime op."""
     # marshal.json selecting the claude target.
     marshal_dir = tmp_path / ".plan"
@@ -1073,7 +1058,6 @@ def test_router_dispatches_normalized_tokens(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     # No transcript exists for this session → the dispatched op returns a no-op,
     # which proves the router reached the runtime method with parsed arguments.
-    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "home"))
     (tmp_path / "home" / ".claude" / "projects").mkdir(parents=True, exist_ok=True)
 
     rc = platform_runtime.main(

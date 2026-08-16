@@ -36,6 +36,11 @@ from runtime_base import toon_success
 from toon_parser import parse_toon
 
 
+@pytest.fixture()
+def in_tmp_cwd(tmp_path, monkeypatch):
+    """Run with the process working directory inside an isolated tmp_path."""
+    monkeypatch.chdir(tmp_path)
+
 # =============================================================================
 # Helpers
 # =============================================================================
@@ -838,6 +843,11 @@ class TestDispatch:
 class TestMain:
     """Integration tests for the main() entry point."""
 
+    @pytest.fixture()
+    def in_tmp_cwd(self, tmp_path, monkeypatch):
+        """Run with the process working directory inside an isolated tmp_path."""
+        monkeypatch.chdir(tmp_path)
+
     def test_main_no_args_returns_1(self, capsys):
         """main() with no arguments prints usage to stderr and returns exit code 1."""
         code = main([])
@@ -858,11 +868,8 @@ class TestMain:
         assert parsed["status"] == "error"
         assert parsed["error"] == "marshal_not_found"
 
-    def test_main_unknown_target_in_marshal_returns_0_with_toon_error(
-        self, tmp_path, monkeypatch, capsys
-    ):
+    def test_main_unknown_target_in_marshal_returns_0_with_toon_error(self, tmp_path, capsys, in_tmp_cwd):
         """main() with an unknown runtime.target in marshal prints TOON error, exit 0."""
-        monkeypatch.chdir(tmp_path)
         _make_marshal_file(tmp_path, "unsupported-runtime")
         code = main(["session", "capture", "--plan-id", "p1"])
         assert code == 0
@@ -871,9 +878,8 @@ class TestMain:
         assert parsed["status"] == "error"
         assert parsed["error"] == "unknown_target"
 
-    def test_main_dispatches_to_runtime_and_prints_toon(self, tmp_path, monkeypatch, capsys):
+    def test_main_dispatches_to_runtime_and_prints_toon(self, tmp_path, capsys, in_tmp_cwd):
         """main() with a valid marshal dispatches correctly and prints TOON to stdout."""
-        monkeypatch.chdir(tmp_path)
         _make_marshal_file(tmp_path, "claude")
         with patch("platform_runtime._make_runtime") as mock_make:
             rt = _mock_runtime()
@@ -885,11 +891,8 @@ class TestMain:
         assert parsed["status"] == "success"
         rt.session_render_title.assert_called_once()
 
-    def test_main_project_initial_setup_without_marshal_uses_target_arg(
-        self, tmp_path, monkeypatch, capsys
-    ):
+    def test_main_project_initial_setup_without_marshal_uses_target_arg(self, tmp_path, capsys, in_tmp_cwd):
         """project initial-setup can run before marshal.json exists; uses --target arg."""
-        monkeypatch.chdir(tmp_path)
         with patch("platform_runtime._make_runtime") as mock_make:
             rt = _mock_runtime()
             mock_make.return_value = rt
@@ -899,11 +902,8 @@ class TestMain:
         assert code == 0
         mock_make.assert_called_once_with("opencode")
 
-    def test_main_marshal_with_missing_target_defaults_to_claude(
-        self, tmp_path, monkeypatch, capsys
-    ):
+    def test_main_marshal_with_missing_target_defaults_to_claude(self, tmp_path, capsys, in_tmp_cwd):
         """When marshal.json exists but lacks runtime.target, router defaults to 'claude'."""
-        monkeypatch.chdir(tmp_path)
         plan_dir = tmp_path / ".plan"
         plan_dir.mkdir()
         (plan_dir / "marshal.json").write_text(json.dumps({"runtime": {}}), encoding="utf-8")
@@ -914,9 +914,8 @@ class TestMain:
         assert code == 0
         mock_make.assert_called_once_with("claude")
 
-    def test_main_dispatches_wait_for(self, tmp_path, monkeypatch, capsys):
+    def test_main_dispatches_wait_for(self, tmp_path, capsys, in_tmp_cwd):
         """``wait for`` is reachable end-to-end through main()."""
-        monkeypatch.chdir(tmp_path)
         _make_marshal_file(tmp_path, "claude")
         with patch("platform_runtime._make_runtime") as mock_make:
             rt = _mock_runtime()
@@ -933,9 +932,8 @@ class TestMain:
         assert _parsed(capsys.readouterr().out)["status"] == "success"
         rt.wait_for.assert_called_once_with("build-job", "job-1", 60)
 
-    def test_main_uses_plan_dir_name_env_var(self, tmp_path, monkeypatch, capsys):
+    def test_main_uses_plan_dir_name_env_var(self, tmp_path, monkeypatch, capsys, in_tmp_cwd):
         """main() respects PLAN_DIR_NAME env var when locating marshal.json."""
-        monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("PLAN_DIR_NAME", ".custom-plan")
         import platform_runtime as _pr
 
@@ -982,10 +980,9 @@ def _claude_runtime_module():
     return claude_runtime
 
 
-def test_worktree_status_probe_spawns_no_subprocess(tmp_path, monkeypatch):
+def test_worktree_status_probe_spawns_no_subprocess(monkeypatch, in_tmp_cwd):
     """The hook-path probe resolves by layout alone — no subprocess, ever."""
     claude_runtime = _claude_runtime_module()
-    monkeypatch.chdir(tmp_path)
 
     def _forbidden(*_args, **_kwargs):
         raise AssertionError(
@@ -998,10 +995,9 @@ def test_worktree_status_probe_spawns_no_subprocess(tmp_path, monkeypatch):
     assert claude_runtime._resolve_worktree_status_json('some-plan') is None
 
 
-def test_worktree_status_probe_finds_the_moved_plan_dir(tmp_path, monkeypatch):
+def test_worktree_status_probe_finds_the_moved_plan_dir(tmp_path, in_tmp_cwd):
     """The probe resolves the ADR-002 moved plan dir purely from the layout."""
     claude_runtime = _claude_runtime_module()
-    monkeypatch.chdir(tmp_path)
 
     plan_id = 'moved-plan'
     resident = (
@@ -1024,7 +1020,7 @@ def test_worktree_status_probe_finds_the_moved_plan_dir(tmp_path, monkeypatch):
     assert Path(resolved).resolve() == (resident / 'status.json').resolve()
 
 
-def test_worktree_status_probe_reads_no_persisted_worktree_path(tmp_path, monkeypatch):
+def test_worktree_status_probe_reads_no_persisted_worktree_path(tmp_path, in_tmp_cwd):
     """The probe never consults ``status.metadata.worktree_path``.
 
     A metadata-reading probe would be a re-derivation of the worktree face and
@@ -1033,7 +1029,6 @@ def test_worktree_status_probe_reads_no_persisted_worktree_path(tmp_path, monkey
     the layout, not to the persisted value.
     """
     claude_runtime = _claude_runtime_module()
-    monkeypatch.chdir(tmp_path)
 
     decoy = tmp_path / 'decoy-worktree'
     decoy.mkdir()

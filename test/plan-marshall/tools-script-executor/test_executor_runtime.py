@@ -43,6 +43,12 @@ import pytest
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT
 
+
+@pytest.fixture()
+def no_pm_marketplace_root(monkeypatch):
+    """Clear PM_MARKETPLACE_ROOT so resolution falls through to its next source."""
+    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+
 SKILL_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-script-executor'
 TEMPLATES_DIR = SKILL_DIR / 'templates'
 EXECUTOR_TEMPLATE = TEMPLATES_DIR / 'execute-script.py.template'
@@ -185,13 +191,12 @@ def two_marketplace_trees(tmp_path):
     }
 
 
-def test_pm_marketplace_root_unset_uses_embedded_tree(two_marketplace_trees, monkeypatch):
+def test_pm_marketplace_root_unset_uses_embedded_tree(two_marketplace_trees, no_pm_marketplace_root):
     """
     Baseline: with PM_MARKETPLACE_ROOT unset, the executor invokes the script
     embedded at generation time (tree A).
     """
     # Defensive: ensure no inherited PM_MARKETPLACE_ROOT leaks from outer env.
-    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
 
     result = _run_executor(
         two_marketplace_trees['executor'],
@@ -349,9 +354,8 @@ def post_removal_executor(tmp_path):
     }
 
 
-def test_known_subcommand_dispatches_to_script(post_removal_executor, monkeypatch):
+def test_known_subcommand_dispatches_to_script(post_removal_executor, no_pm_marketplace_root):
     """A registered subcommand still reaches the script's argparse handler."""
-    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
 
     result = _run_executor(
         post_removal_executor['executor'],
@@ -368,12 +372,11 @@ def test_known_subcommand_dispatches_to_script(post_removal_executor, monkeypatc
     )
 
 
-def test_invented_subcommand_reaches_argparse_native_rejection(post_removal_executor, monkeypatch):
+def test_invented_subcommand_reaches_argparse_native_rejection(post_removal_executor, no_pm_marketplace_root):
     """With the pre-flight validator removed, an invented subcommand falls
     through to the target script's argparse. argparse exits 2 and emits its
     standard `invalid choice` error to stderr — never the legacy
     `invented_subcommand` TOON shape."""
-    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
 
     result = _run_executor(
         post_removal_executor['executor'],
@@ -402,9 +405,8 @@ def test_invented_subcommand_reaches_argparse_native_rejection(post_removal_exec
     assert 'lesson: "2026-04-29-23-002"' not in result.stderr
 
 
-def test_help_flag_reaches_script_help(post_removal_executor, monkeypatch):
+def test_help_flag_reaches_script_help(post_removal_executor, no_pm_marketplace_root):
     """`--help` flows through to the target script's argparse help path."""
-    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
 
     result = _run_executor(
         post_removal_executor['executor'],
@@ -465,13 +467,12 @@ def _render_executor_with_cwd_walk(target_path: Path, embedded_script_path: Path
     return target_path
 
 
-def test_stale_embedded_path_self_heals_via_cwd_walk(tmp_path, monkeypatch):
+def test_stale_embedded_path_self_heals_via_cwd_walk(tmp_path, no_pm_marketplace_root):
     """
     A non-existent embedded SCRIPTS path is NOT returned. With PM_MARKETPLACE_ROOT
     UNSET, resolution self-heals: the cwd-walk discovers the live script under a
     real ``marketplace/bundles`` tree the executor's cwd sits inside.
     """
-    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
 
     # Build a live marketplace tree the cwd-walk can discover. The script lives
     # at marketplace/bundles/fakebundle/skills/fakeskill/scripts/fakeskill.py.
@@ -518,13 +519,12 @@ def test_stale_embedded_path_self_heals_via_cwd_walk(tmp_path, monkeypatch):
     assert live_script.exists()
 
 
-def test_valid_embedded_path_returned_directly(tmp_path, monkeypatch):
+def test_valid_embedded_path_returned_directly(tmp_path, no_pm_marketplace_root):
     """
     A VALID (existing) embedded path is returned directly. The target-aware
     resolver and cwd-walk are stubbed/irrelevant — the direct hit wins because
     the embedded path exists on disk.
     """
-    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
 
     # The embedded script genuinely exists.
     embedded_root = tmp_path / 'embedded'
@@ -739,11 +739,8 @@ def _run_build_dispatch(tmp_path: Path, script_body: str) -> list[dict]:
         ('status: indeterminate\n', 0, 'unknown'),
     ],
 )
-def test_build_boundary_stamps_derived_status(
-    tmp_path, monkeypatch, stdout: str, exit_code: int, expected_status: str
-):
+def test_build_boundary_stamps_derived_status(tmp_path, stdout, exit_code, expected_status, no_pm_marketplace_root):
     """The kind=build row carries the truthfully derived `status`."""
-    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
 
     entries = _run_build_dispatch(
         tmp_path, BUILD_SCRIPT_TEMPLATE.format(stdout=stdout, exit_code=exit_code)
@@ -756,14 +753,13 @@ def test_build_boundary_stamps_derived_status(
     assert entry['exit_code'] == exit_code
 
 
-def test_build_boundary_stamps_killed_on_signal_death(tmp_path, monkeypatch):
+def test_build_boundary_stamps_killed_on_signal_death(tmp_path, no_pm_marketplace_root):
     """A child killed by a POSIX signal stamps `status: killed`.
 
     ``subprocess.run`` reports signal death as a negative returncode, so the
     surviving executor stamps the row truthfully (D1 detection); the recorded
     exit_code stays the negative diagnostic value.
     """
-    monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
 
     entries = _run_build_dispatch(tmp_path, SIGNAL_KILLED_SCRIPT)
 

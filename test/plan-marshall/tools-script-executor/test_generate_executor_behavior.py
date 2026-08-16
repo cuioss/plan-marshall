@@ -20,6 +20,23 @@ import pytest
 
 from conftest import _MARKETPLACE_SCRIPT_DIRS, load_script_module
 
+
+@pytest.fixture()
+def derived_surfaces(monkeypatch):
+    """Pin the surface-derivation result the generator consumes."""
+    monkeypatch.setattr(_gen, 'derive_script_surfaces', lambda *a, **k: ({}, _stats(1, 0, 0)))
+
+@pytest.fixture()
+def previous_surfaces(monkeypatch):
+    """Pin the previously-generated surface set the generator reads."""
+    monkeypatch.setattr(_gen, 'read_previous_surfaces', lambda executor: {'a:b:c': _surface_literal()})
+
+@pytest.fixture()
+def plan_base_dir_at_tmp(tmp_path, monkeypatch):
+    """Point PLAN_BASE_DIR at an isolated tmp_path and yield that root."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    return tmp_path
+
 # Unique module_name so the in-process load is distinct from the existing
 # test module's ``load_module()`` exec-based load (which traces as <string>
 # and does NOT count for coverage).
@@ -352,7 +369,7 @@ def _surface_literal() -> dict:
     return {'digest': 'd', 'surface': {'root': {'flags': []}}}
 
 
-def test_fail_open_guard_refuses_zero_surfaces_against_nonempty_previous(tmp_path, monkeypatch):
+def test_fail_open_guard_refuses_zero_surfaces_against_nonempty_previous(tmp_path, monkeypatch, previous_surfaces, derived_surfaces):
     """Previous executor had surfaces, this generation emits ZERO → status: error.
 
     This is the adversarial core of D1: a positive-only test (a normal
@@ -365,8 +382,6 @@ def test_fail_open_guard_refuses_zero_surfaces_against_nonempty_previous(tmp_pat
     """
     base = _prep_synthetic(tmp_path, monkeypatch)
     plan_dir = tmp_path / '.plan'
-    monkeypatch.setattr(_gen, 'read_previous_surfaces', lambda executor: {'a:b:c': _surface_literal()})
-    monkeypatch.setattr(_gen, 'derive_script_surfaces', lambda *a, **k: ({}, _stats(1, 0, 0)))
 
     result = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=False, target='claude')
 
@@ -378,7 +393,7 @@ def test_fail_open_guard_refuses_zero_surfaces_against_nonempty_previous(tmp_pat
     assert not (plan_dir / 'execute-script.py').exists()
 
 
-def test_fail_open_guard_allows_zero_surfaces_against_empty_previous(tmp_path, monkeypatch):
+def test_fail_open_guard_allows_zero_surfaces_against_empty_previous(tmp_path, monkeypatch, derived_surfaces):
     """A fresh install (empty previous) deriving zero is NOT a regression → success.
 
     Negative control for the guard: it must fire only when surfaces were LOST,
@@ -389,7 +404,6 @@ def test_fail_open_guard_allows_zero_surfaces_against_empty_previous(tmp_path, m
     base = _prep_synthetic(tmp_path, monkeypatch)
     plan_dir = tmp_path / '.plan'
     monkeypatch.setattr(_gen, 'read_previous_surfaces', lambda executor: {})
-    monkeypatch.setattr(_gen, 'derive_script_surfaces', lambda *a, **k: ({}, _stats(1, 0, 0)))
 
     result = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=False, target='claude')
 
@@ -399,7 +413,7 @@ def test_fail_open_guard_allows_zero_surfaces_against_empty_previous(tmp_path, m
 
 
 @pytest.mark.parametrize('derived,reused', [(1, 0), (0, 1)])
-def test_fail_open_guard_does_not_trip_when_surfaces_are_emitted(tmp_path, monkeypatch, derived, reused):
+def test_fail_open_guard_does_not_trip_when_surfaces_are_emitted(tmp_path, monkeypatch, derived, reused, previous_surfaces):
     """Either a derived OR a reused surface is a non-empty emission → no false trip.
 
     The guard keys on emitting ZERO (neither derived nor reused). A regeneration
@@ -408,7 +422,6 @@ def test_fail_open_guard_does_not_trip_when_surfaces_are_emitted(tmp_path, monke
     """
     base = _prep_synthetic(tmp_path, monkeypatch)
     plan_dir = tmp_path / '.plan'
-    monkeypatch.setattr(_gen, 'read_previous_surfaces', lambda executor: {'a:b:c': _surface_literal()})
     monkeypatch.setattr(
         _gen, 'derive_script_surfaces', lambda *a, **k: ({'a:b:c': _surface_literal()}, _stats(1, derived, reused))
     )
@@ -419,7 +432,7 @@ def test_fail_open_guard_does_not_trip_when_surfaces_are_emitted(tmp_path, monke
     assert (plan_dir / 'execute-script.py').exists()
 
 
-def test_surface_stats_line_emitted_on_both_fail_open_and_success(tmp_path, monkeypatch, capsys):
+def test_surface_stats_line_emitted_on_both_fail_open_and_success(tmp_path, monkeypatch, capsys, previous_surfaces, derived_surfaces):
     """The surface-stats line is present in BOTH the zero and the non-zero case.
 
     This is the assertion that would fail if the line were emitted only when the
@@ -431,8 +444,6 @@ def test_surface_stats_line_emitted_on_both_fail_open_and_success(tmp_path, monk
     base = _prep_synthetic(tmp_path, monkeypatch)
 
     # Zero case — fail-open refusal, yet the line is present with the zero value.
-    monkeypatch.setattr(_gen, 'read_previous_surfaces', lambda executor: {'a:b:c': _surface_literal()})
-    monkeypatch.setattr(_gen, 'derive_script_surfaces', lambda *a, **k: ({}, _stats(1, 0, 0)))
     result_zero = _gen.generate_executor({'a:b:c': '/p/c.py'}, base, dry_run=False, target='claude')
     out_zero = capsys.readouterr().out
     assert result_zero['status'] == 'error'
@@ -501,9 +512,8 @@ def test_cmd_generate_flattens_stats_into_fail_open_error(tmp_path, monkeypatch)
 # =============================================================================
 
 
-def test_update_state_writes_generation_metadata(tmp_path, monkeypatch):
+def test_update_state_writes_generation_metadata(tmp_path, plan_base_dir_at_tmp):
     """update_state writes a marshall-state.toon carrying count + checksum."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
     _gen.update_state(script_count=7, checksum='deadbeef', logs_cleaned=3)
 
@@ -538,9 +548,8 @@ def test_check_paths_exist_partitions_existing_and_missing(tmp_path):
 # =============================================================================
 
 
-def test_verify_executor_returns_false_when_executor_absent(tmp_path, monkeypatch):
+def test_verify_executor_returns_false_when_executor_absent(plan_base_dir_at_tmp):
     """verify_executor reports (False, 0) when no executor file exists."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
     valid, count = _gen.verify_executor()
 
@@ -548,9 +557,8 @@ def test_verify_executor_returns_false_when_executor_absent(tmp_path, monkeypatc
     assert count == 0
 
 
-def test_get_executor_mappings_empty_when_executor_absent(tmp_path, monkeypatch):
+def test_get_executor_mappings_empty_when_executor_absent(plan_base_dir_at_tmp):
     """get_executor_mappings swallows the load failure and returns {}."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
     assert _gen.get_executor_mappings() == {}
 
@@ -646,9 +654,8 @@ def test_notation_drift_zero_against_clean_marketplace_source():
 # =============================================================================
 
 
-def test_cmd_paths_error_when_no_mappings(tmp_path, monkeypatch):
+def test_cmd_paths_error_when_no_mappings(plan_base_dir_at_tmp):
     """cmd_paths returns an error result when the executor mappings are empty."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
     result = _gen.cmd_paths(types.SimpleNamespace())
 
@@ -656,9 +663,8 @@ def test_cmd_paths_error_when_no_mappings(tmp_path, monkeypatch):
     assert 'Could not read executor mappings' in result['error']
 
 
-def test_cmd_drift_error_when_no_mappings(tmp_path, monkeypatch):
+def test_cmd_drift_error_when_no_mappings(plan_base_dir_at_tmp):
     """cmd_drift returns an error result when the executor mappings are empty."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
     result = _gen.cmd_drift(types.SimpleNamespace(marketplace=False, marketplace_root=None))
 
@@ -666,9 +672,8 @@ def test_cmd_drift_error_when_no_mappings(tmp_path, monkeypatch):
     assert 'Could not read executor mappings' in result['error']
 
 
-def test_cmd_cleanup_reports_deleted_count(tmp_path, monkeypatch):
+def test_cmd_cleanup_reports_deleted_count(plan_base_dir_at_tmp):
     """cmd_cleanup returns the number of logs deleted (zero on an empty tree)."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
     result = _gen.cmd_cleanup(types.SimpleNamespace(max_age_days=7))
 
@@ -676,9 +681,8 @@ def test_cmd_cleanup_reports_deleted_count(tmp_path, monkeypatch):
     assert result['deleted'] == 0
 
 
-def test_main_cleanup_dispatch_returns_zero(tmp_path, monkeypatch, capsys):
+def test_main_cleanup_dispatch_returns_zero(monkeypatch, capsys, plan_base_dir_at_tmp):
     """main() routes the cleanup subcommand and emits a TOON success result."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     monkeypatch.setattr(_gen.sys, 'argv', ['generate_executor.py', 'cleanup', '--max-age-days', '30'])
 
     rc = _gen.main()

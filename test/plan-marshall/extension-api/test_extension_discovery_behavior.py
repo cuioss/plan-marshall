@@ -15,8 +15,15 @@ paths and skip branches are deterministic.
 import types
 
 import file_ops
+import pytest
 
 from conftest import load_script_module
+
+
+@pytest.fixture()
+def plan_root_at_tmp(tmp_path, monkeypatch):
+    """Resolve the plan root to an isolated tmp_path."""
+    monkeypatch.setattr(file_ops, '_resolve_plan_root', lambda: tmp_path)
 
 _disc = load_script_module(
     'plan-marshall', 'extension-api', 'extension_discovery.py', 'extension_discovery_behavior'
@@ -416,7 +423,7 @@ def _write_finalize_step(skills_root, dir_name, *, implements, name=None, order=
     (step_dir / 'SKILL.md').write_text('\n'.join(lines), encoding='utf-8')
 
 
-def test_scan_project_discovers_step_from_cwd_resolved_root(tmp_path, monkeypatch):
+def test_scan_project_discovers_step_from_cwd_resolved_root(tmp_path, plan_root_at_tmp):
     """Bug A regression: a project-local finalize step is discovered from the
     PROJECT root resolved by ``_resolve_plan_root``, independent of the scanning
     script's ``__file__``. The discovered record's ``path`` is anchored under the
@@ -428,7 +435,6 @@ def test_scan_project_discovers_step_from_cwd_resolved_root(tmp_path, monkeypatc
     _write_finalize_step(
         skills_root, 'finalize-step-foo', implements=_FINALIZE_STEP_EXT_POINT, name='foo', order=10
     )
-    monkeypatch.setattr(file_ops, '_resolve_plan_root', lambda: tmp_path)
 
     records = _disc._scan_project_for_implementors(_FINALIZE_STEP_EXT_POINT)
 
@@ -451,16 +457,15 @@ def test_scan_project_returns_empty_when_root_unresolvable(monkeypatch):
     assert _disc._scan_project_for_implementors(_FINALIZE_STEP_EXT_POINT) == []
 
 
-def test_scan_project_returns_empty_when_no_claude_skills_dir(tmp_path, monkeypatch):
+def test_scan_project_returns_empty_when_no_claude_skills_dir(plan_root_at_tmp):
     """A resolved project root without a ``.claude/skills/`` directory yields no
     records — the consumer-project case (no meta-project project-local steps).
     """
-    monkeypatch.setattr(file_ops, '_resolve_plan_root', lambda: tmp_path)
 
     assert _disc._scan_project_for_implementors(_FINALIZE_STEP_EXT_POINT) == []
 
 
-def test_scan_project_skips_step_not_declaring_ext_point(tmp_path, monkeypatch):
+def test_scan_project_skips_step_not_declaring_ext_point(tmp_path, plan_root_at_tmp):
     """Per-ext-point filtering keeps surfaces disjoint: a ``finalize-step-*`` dir
     declaring a DIFFERENT ext-point is not returned for a finalize-step query.
     """
@@ -471,14 +476,13 @@ def test_scan_project_skips_step_not_declaring_ext_point(tmp_path, monkeypatch):
     _write_finalize_step(
         skills_root, 'finalize-step-other', implements=_VERIFY_STEP_EXT_POINT, name='other'
     )
-    monkeypatch.setattr(file_ops, '_resolve_plan_root', lambda: tmp_path)
 
     records = _disc._scan_project_for_implementors(_FINALIZE_STEP_EXT_POINT)
 
     assert [rec['name'] for rec in records] == ['project:finalize-step-match']
 
 
-def test_scan_project_ignores_non_finalize_step_dirs(tmp_path, monkeypatch):
+def test_scan_project_ignores_non_finalize_step_dirs(tmp_path, plan_root_at_tmp):
     """Only ``finalize-step-*`` directories are scanned — a sibling skill dir that
     declares the ext-point but is not named ``finalize-step-*`` is ignored.
     """
@@ -486,7 +490,6 @@ def test_scan_project_ignores_non_finalize_step_dirs(tmp_path, monkeypatch):
     _write_finalize_step(
         skills_root, 'some-other-skill', implements=_FINALIZE_STEP_EXT_POINT, name='nope'
     )
-    monkeypatch.setattr(file_ops, '_resolve_plan_root', lambda: tmp_path)
 
     assert _disc._scan_project_for_implementors(_FINALIZE_STEP_EXT_POINT) == []
 
