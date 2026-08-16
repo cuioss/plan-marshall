@@ -1,0 +1,270 @@
+From aba82de76075eaea99771fae79d4153b1a6b88b2 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 16 Aug 2026 17:24:10 +0000
+Subject: [PATCH] test(test-quality): finish the slice's import-preamble
+ conversion
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Converts the remaining seven sites across five modules, completing D4 over
+the six slice directories: a grep for spec_from_file_location and
+Path(__file__).parent.parent.parent now returns nothing there.
+
+The two sibling-fixture loads (_execution_manifest_fixtures) become bare
+imports, which is the tree's actual convention — 530 uses across 389 files.
+Collapsing their two unique sys.modules registrations onto one shared module
+is safe: that fixture module defines only a class and four factories, with no
+module-level mutable state.
+
+Marketplace-script loads keep their original registration names, as in the
+previous commit.
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+---
+ .../manage-config/test_effort_read.py         |  1 +
+ .../test_classify_affected_files.py           | 39 ++++++-------------
+ .../test_manage_execution_manifest_compose.py | 14 +------
+ .../test_parse_verification_command.py        |  1 +
+ ...st_plan31_docs_only_deadlock_regression.py | 31 +++------------
+ .../manage-run-config/test_run_config.py      | 10 ++---
+ .../test_manage_solution_outline.py           | 15 +++----
+ 7 files changed, 33 insertions(+), 78 deletions(-)
+
+diff --git a/test/plan-marshall/manage-config/test_effort_read.py b/test/plan-marshall/manage-config/test_effort_read.py
+index d840cae..adf790b 100644
+--- a/test/plan-marshall/manage-config/test_effort_read.py
++++ b/test/plan-marshall/manage-config/test_effort_read.py
+@@ -18,6 +18,7 @@ from argparse import Namespace
+ 
+ import pytest
+ from _manage_config_fixtures import create_marshal_json
++
+ from conftest import add_skill_scripts_to_path, load_script_module
+ 
+ # `_cmd_effort` imports `effort_presets` at module level. Ensure the
+diff --git a/test/plan-marshall/manage-execution-manifest/test_classify_affected_files.py b/test/plan-marshall/manage-execution-manifest/test_classify_affected_files.py
+index 2b26581..ae04c26 100644
+--- a/test/plan-marshall/manage-execution-manifest/test_classify_affected_files.py
++++ b/test/plan-marshall/manage-execution-manifest/test_classify_affected_files.py
+@@ -20,40 +20,25 @@ The six plan-wide bucket values:
+ - ``unknown`` — at least one path is unclaimed
+ """
+ 
+-import importlib.util
+-from pathlib import Path
+-
+ # Import the FakeExtension fixture explicitly (per the _fixtures.py
+ # convention — sibling conftest.py is banned). The fixture basename is
+ # bundle-unique to avoid a collision in the plan-marshall test namespace.
+-_FIXTURES_PATH = Path(__file__).parent / '_execution_manifest_fixtures.py'
+-_fixtures_spec = importlib.util.spec_from_file_location(
+-    '_execution_manifest_fixtures_classifier_tests', _FIXTURES_PATH
++from _execution_manifest_fixtures import (
++    FakeExtension,
++    fake_documentation_extension,
++    fake_plugin_dev_extension,
++    fake_python_extension,
+ )
+-assert _fixtures_spec is not None and _fixtures_spec.loader is not None
+-_fixtures_mod = importlib.util.module_from_spec(_fixtures_spec)
+-_fixtures_spec.loader.exec_module(_fixtures_mod)
+-FakeExtension = _fixtures_mod.FakeExtension
+-fake_python_extension = _fixtures_mod.fake_python_extension
+-fake_documentation_extension = _fixtures_mod.fake_documentation_extension
+-fake_plugin_dev_extension = _fixtures_mod.fake_plugin_dev_extension
++
++from conftest import load_script_module
+ 
+ # Load the aggregator under test.
+-_SCRIPTS_DIR = (
+-    Path(__file__).parent.parent.parent.parent
+-    / 'marketplace'
+-    / 'bundles'
+-    / 'plan-marshall'
+-    / 'skills'
+-    / 'manage-execution-manifest'
+-    / 'scripts'
+-)
+-_manifest_spec = importlib.util.spec_from_file_location(
+-    '_manifest_classifier_tests', _SCRIPTS_DIR / 'manage-execution-manifest.py'
++_manifest_mod = load_script_module(
++    'plan-marshall',
++    'manage-execution-manifest',
++    'manage-execution-manifest.py',
++    module_name='_manifest_classifier_tests',
+ )
+-assert _manifest_spec is not None and _manifest_spec.loader is not None
+-_manifest_mod = importlib.util.module_from_spec(_manifest_spec)
+-_manifest_spec.loader.exec_module(_manifest_mod)
+ _classify = _manifest_mod._classify_paths_via_extensions
+ 
+ 
+diff --git a/test/plan-marshall/manage-execution-manifest/test_manage_execution_manifest_compose.py b/test/plan-marshall/manage-execution-manifest/test_manage_execution_manifest_compose.py
+index 59efd74..576f6e7 100644
+--- a/test/plan-marshall/manage-execution-manifest/test_manage_execution_manifest_compose.py
++++ b/test/plan-marshall/manage-execution-manifest/test_manage_execution_manifest_compose.py
+@@ -9,7 +9,6 @@ source-of-truth) plus the relevant CLI plumbing tests.
+ """
+ 
+ import contextlib
+-import importlib.util
+ import json
+ import re
+ from argparse import Namespace
+@@ -17,6 +16,7 @@ from collections.abc import Callable
+ from pathlib import Path
+ 
+ import pytest
++from _execution_manifest_fixtures import fake_lane_blocks
+ 
+ from conftest import get_script_path, load_script_module, run_script
+ 
+@@ -26,18 +26,6 @@ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-execution-manifest', 'man
+ # Tier 2 direct imports, resolved by (bundle, skill, script).
+ 
+ 
+-# Lane-block fixture, loaded via importlib per the _fixtures.py convention (a
+-# sibling conftest.py is banned). The basename is bundle-unique.
+-_FIXTURES_PATH = Path(__file__).parent / '_execution_manifest_fixtures.py'
+-_fixtures_spec = importlib.util.spec_from_file_location(
+-    '_execution_manifest_fixtures_compose_tests', _FIXTURES_PATH
+-)
+-assert _fixtures_spec is not None and _fixtures_spec.loader is not None
+-_fixtures_mod = importlib.util.module_from_spec(_fixtures_spec)
+-_fixtures_spec.loader.exec_module(_fixtures_mod)
+-fake_lane_blocks = _fixtures_mod.fake_lane_blocks
+-
+-
+ _mem = load_script_module(
+     'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_script'
+ )
+diff --git a/test/plan-marshall/manage-execution-manifest/test_parse_verification_command.py b/test/plan-marshall/manage-execution-manifest/test_parse_verification_command.py
+index c4caf3a..998aec9 100644
+--- a/test/plan-marshall/manage-execution-manifest/test_parse_verification_command.py
++++ b/test/plan-marshall/manage-execution-manifest/test_parse_verification_command.py
+@@ -16,6 +16,7 @@ subprocess spawn.
+ """
+ 
+ import pytest
++
+ from conftest import load_script_module
+ 
+ # Tier 2 direct import — resolution by (bundle, skill, script).
+diff --git a/test/plan-marshall/manage-execution-manifest/test_plan31_docs_only_deadlock_regression.py b/test/plan-marshall/manage-execution-manifest/test_plan31_docs_only_deadlock_regression.py
+index cd27bc7..9e50402 100644
+--- a/test/plan-marshall/manage-execution-manifest/test_plan31_docs_only_deadlock_regression.py
++++ b/test/plan-marshall/manage-execution-manifest/test_plan31_docs_only_deadlock_regression.py
+@@ -53,37 +53,18 @@ non-vacuity case at the bottom of this file exists to prevent. A plan whose
+ worktree could not be inspected has NOT demonstrated that no build was needed.
+ """
+ 
+-import importlib.util
+ import json
+ from argparse import Namespace
+-from pathlib import Path
+ 
+ from toon_parser import serialize_toon
+ 
+-from conftest import PROJECT_ROOT
++from conftest import load_script_module
+ 
+-_MANAGE_TASKS_SCRIPTS = (
+-    PROJECT_ROOT
+-    / 'marketplace'
+-    / 'bundles'
+-    / 'plan-marshall'
+-    / 'skills'
+-    / 'manage-tasks'
+-    / 'scripts'
+-)
+-
+-
+-def _load_module(name: str, path: Path):
+-    spec = importlib.util.spec_from_file_location(name, path)
+-    assert spec is not None and spec.loader is not None
+-    mod = importlib.util.module_from_spec(spec)
+-    spec.loader.exec_module(mod)
+-    return mod
+-
+-
+-_freshness = _load_module(
+-    '_cmd_pre_commit_verify_freshness_plan31_regression',
+-    _MANAGE_TASKS_SCRIPTS / '_cmd_pre_commit_verify_freshness.py',
++_freshness = load_script_module(
++    'plan-marshall',
++    'manage-tasks',
++    '_cmd_pre_commit_verify_freshness.py',
++    module_name='_cmd_pre_commit_verify_freshness_plan31_regression',
+ )
+ cmd_pre_commit_verify_freshness = _freshness.cmd_pre_commit_verify_freshness
+ 
+diff --git a/test/plan-marshall/manage-run-config/test_run_config.py b/test/plan-marshall/manage-run-config/test_run_config.py
+index 7d44d16..de07dc4 100644
+--- a/test/plan-marshall/manage-run-config/test_run_config.py
++++ b/test/plan-marshall/manage-run-config/test_run_config.py
+@@ -5,7 +5,6 @@
+ Tests run-configuration.json initialization, validation, and cleanup.
+ """
+ 
+-import importlib.util
+ import json
+ import os
+ import shutil
+@@ -15,16 +14,15 @@ from pathlib import Path
+ 
+ import pytest
+ 
+-from conftest import get_script_path, run_script
++from conftest import get_script_path, load_script_module, run_script
+ 
+ # Script under test
+ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-run-config', 'run_config.py')
+ 
+ # In-process handle for resolver-behaviour tests (mirrors test_git_merge_lock.py).
+-_spec = importlib.util.spec_from_file_location('run_config', SCRIPT_PATH)
+-assert _spec is not None and _spec.loader is not None
+-run_config = importlib.util.module_from_spec(_spec)
+-_spec.loader.exec_module(run_config)
++run_config = load_script_module(
++    'plan-marshall', 'manage-run-config', 'run_config.py', module_name='run_config'
++)
+ 
+ 
+ # =============================================================================
+diff --git a/test/plan-marshall/manage-solution-outline/test_manage_solution_outline.py b/test/plan-marshall/manage-solution-outline/test_manage_solution_outline.py
+index 9576fdc..363f4bc 100644
+--- a/test/plan-marshall/manage-solution-outline/test_manage_solution_outline.py
++++ b/test/plan-marshall/manage-solution-outline/test_manage_solution_outline.py
+@@ -7,21 +7,22 @@ Tier 2 (direct import) tests with 2-3 subprocess tests for CLI plumbing.
+ Solution outlines are written directly by agents, then validated via this script.
+ """
+ 
+-import importlib.util
+ from argparse import Namespace
+ 
+ import pytest
+ 
+-from conftest import get_script_path, run_script
++from conftest import get_script_path, load_script_module, run_script
+ 
+ # Script path for remaining subprocess (CLI plumbing) tests
+ SCRIPT_PATH = get_script_path('plan-marshall', 'manage-solution-outline', 'manage-solution-outline.py')
+ 
+-# Tier 2 direct imports via importlib (script filename has hyphens)
+-_spec = importlib.util.spec_from_file_location('manage_solution_outline', str(SCRIPT_PATH))
+-assert _spec is not None and _spec.loader is not None
+-_mod = importlib.util.module_from_spec(_spec)
+-_spec.loader.exec_module(_mod)
++# Tier 2 direct imports — resolution by (bundle, skill, script).
++_mod = load_script_module(
++    'plan-marshall',
++    'manage-solution-outline',
++    'manage-solution-outline.py',
++    module_name='manage_solution_outline',
++)
+ 
+ cmd_validate = _mod.cmd_validate
+ cmd_list_deliverables = _mod.cmd_list_deliverables
+-- 
+2.43.0
