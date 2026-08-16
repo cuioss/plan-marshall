@@ -425,6 +425,30 @@ def test_possessive_apostrophe_does_not_open_a_literal_span(tmp_path):
     assert [f['details']['kind'] for f in findings] == ['pr_reference']
 
 
+def test_two_apostrophes_on_one_line_do_not_open_a_literal_span(tmp_path):
+    """The same-line case, which the newline bound alone does NOT cover.
+
+    A possessive and a contraction in one sentence sit on the same line, so
+    bounding literals to a single line leaves them free to span the citation
+    between them. What separates an apostrophe from a quote delimiter is
+    adjacency: a possessive or contraction always sits against a word character,
+    an opening delimiter never does.
+    """
+    _write(
+        tmp_path,
+        'test_same_line.py',
+        '''
+        def test_x():
+            """The resolver's PR #515 guard doesn't fall through."""
+            assert True
+        ''',
+    )
+
+    findings = analyze_test_docstring_prose(tmp_path)
+
+    assert [f['details']['kind'] for f in findings] == ['pr_reference']
+
+
 def test_double_backticked_lesson_citation_is_still_flagged(tmp_path):
     """``lesson ``<id>`` `` is a citation: the prose word sits OUTSIDE the span.
 

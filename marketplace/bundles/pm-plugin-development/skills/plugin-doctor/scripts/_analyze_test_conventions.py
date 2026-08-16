@@ -877,14 +877,26 @@ def analyze_test_docstring_prose(test_root: Path) -> list[dict]:
 #: Double backticks are matched first so the inner single-backtick pattern
 #: cannot split a ``…`` span in half.
 #:
-#: ⛔ No alternative may cross a newline. A prose segment is handed over as ONE
-#: multi-line string, and English is full of apostrophes: without the newline
-#: bound, a possessive on one line and a contraction ten lines later open a
-#: single "literal" span swallowing everything between, silently exempting every
-#: citation inside it. That is a false negative — the direction that matters —
-#: and it was observed on this repository's own corpus before the bound existed.
+#: ⛔ Two bounds on the quote alternatives, and BOTH are needed. English prose is
+#: full of apostrophes, and an apostrophe is not a quote delimiter:
+#:
+#: 1. No alternative may cross a newline. A prose segment arrives as ONE
+#:    multi-line string, so without this a possessive on one line and a
+#:    contraction ten lines later open a single "literal" span swallowing
+#:    everything between.
+#: 2. A quote delimiter may not sit against a word character. The newline bound
+#:    alone does NOT fix the same-line case: in ``The resolver's PR #515 guard
+#:    doesn't fall through``, the two apostrophes are on one line and still span
+#:    the citation. A possessive or contraction apostrophe is always preceded by
+#:    a word character, while an opening delimiter never is.
+#:
+#: Both were observed silently exempting real citations on this repository's own
+#: corpus — a false negative, the direction that matters.
 _INLINE_LITERAL_RE = re.compile(
-    r"``[^`\n]+``|`[^`\n]+`|'[^'\n]+'|\"[^\"\n]+\""
+    r"``[^`\n]+``"
+    r"|`[^`\n]+`"
+    r"|(?<!\w)'[^'\n]+'(?!\w)"
+    r"|(?<!\w)\"[^\"\n]+\"(?!\w)"
 )
 
 

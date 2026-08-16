@@ -172,6 +172,7 @@ structured log.
 | 4 | This run, while fixing #38 | The directory executed `audit.py` twice under two `sys.modules` names | **Fixed** — one loader for the directory |
 | 5 | This run, while fixing #38 | Two incompatible `_write_log` helpers in one directory | **Fixed** — the near-duplicate is gone, not hoisted |
 | 6 | This run, verifying #28 | Run 01 recorded a *possible production defect*; the production docstring already documents the proxy | **Rejected as a production defect, with reason** — fixed test-side instead |
+| 7 | **PR review — `coderabbitai`** | `_INLINE_LITERAL_RE`'s newline bound does not cover the SAME-line case: two apostrophes in one sentence still span a citation between them | **Fixed** — quote delimiters may not sit against a word character; its text added verbatim as a negative control |
 
 ### Independent pre-PR verification (contract Step 6)
 
@@ -257,7 +258,69 @@ strong evidence rather than proof.
 
 ## Reviewer participation
 
-_(Completed at the merge gate.)_
+**Population derived from configuration**: the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc.
+**M = 3.** Each verdict is read from the author's own comment bodies across all three surfaces.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
+|---|---|---|---|
+| `coderabbitai` | **reviewed** | — | Initially refused ("Review limit reached … **next review available in 9 minutes**"). **Re-requested after the window elapsed, and it reviewed** — publishing one actionable finding against `_INLINE_LITERAL_RE`, reproduced and fixed below. |
+| `cuioss-review-bot` | **reviewed** | — | *"PR Reviewer Guide 🔍 — PR contains tests / No security concerns identified / No major issues detected."* An explicit nothing-to-report over the diff. |
+| `sourcery-ai` | **rate-limited** | **yes** | *"you have reached your **weekly** rate limit of 500000 diff characters. Please try again later."* Clears on the weekly reset; no specific time stated. |
+
+**Coverage: 2 of 3** — up from 1 of 3, because the `Reopens?` value was acted on rather than merely
+recorded.
+
+⭐ **The re-request is the whole point of the `Reopens?` column, and it paid out.** CodeRabbit's
+`Reopens? yes` carried a 9-minute countdown, so re-requesting was productive rather than futile —
+unlike `sourcery-ai`, whose refusal on #1258 was a per-diff size ceiling that would never clear.
+Waiting cost minutes and bought the one finding neither this run nor its own verification sub-agent
+had found.
+
+**Contrast worth recording:** the *same* reviewer, `sourcery-ai`, refused #1258 on a **per-diff** 150k
+ceiling (`Reopens? no`) and this PR on a **weekly** 500k quota (`Reopens? yes`). Same verdict, opposite
+handling — which is exactly why the verdict alone cannot carry the decision.
+
+### CodeRabbit's finding, and why it mattered
+
+**It found a residual false negative in the very fix that closed the previous one.** My own
+verification sub-agent found the *multi-line* case — quote alternatives crossing newlines — and I
+bounded them to a single line. CodeRabbit pointed out that the bound does nothing for the **same-line**
+case:
+
+```text
+The resolver's PR #515 guard doesn't fall through.
+```
+
+Two apostrophes, one line, and the span between them swallows the citation. Reproduced against the
+shipped analyzer before changing anything:
+
+```text
+spans : [(12, 35)] -> ["'s PR #515 guard doesn'"]
+result: nothing flagged
+```
+
+**Fixed:** a quote delimiter may no longer sit against a word character. That is the discriminating
+property — a possessive or contraction apostrophe is *always* preceded by a word character, an opening
+delimiter never is. Verified in all four directions: the citation flags; `key is '<id>',` and `writes
+"TASK-001.json" into` stay exempt; the mixed case still reports the bare citation beside a backticked
+value. Slice 050 remains at **0**.
+
+CodeRabbit asked for its text as a negative control; it is now
+`test_two_apostrophes_on_one_line_do_not_open_a_literal_span`, using the sentence verbatim, with a
+docstring recording that the newline bound alone does not cover this — so the two guards are not later
+collapsed into one. Answered on the thread.
+
+**Every comment on all three surfaces is dispositioned**: one actionable finding (fixed), one
+nothing-to-report review, one quota refusal, and this run's own two comments. `get_review_comments`
+returns `totalCount: 0` — no inline threads.
+
+**Shortfall disclosure (§ Step 8 condition 4) — it fired:**
+
+> Review coverage: **2 of 3**. `coderabbitai` reviewed after a re-request and its finding is fixed;
+> `cuioss-review-bot` reviewed and reported no issues. `sourcery-ai` is rate-limited on a **weekly**
+> 500,000-diff-character quota and **reopens** on the weekly reset, with no time stated. Merging on
+> 2-of-3.
 
 ## Cost
 
@@ -272,11 +335,82 @@ _(Completed at the merge gate.)_
 
 ## Contract check (Step 9)
 
-_(Completed before the merge gate.)_
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **DONE** | Five, all by bundle path — § Skills loaded. This is the correction of run 01's recorded deviation |
+| 2 Branch | **DONE** | `claude/test-quality-plan-execution-evap45`, **harness-assigned**, restarted from `origin/main`. The PR for it had merged, so the merged-PR rule and the lane's keep-the-assigned-branch rule agree: same name, new base. GitHub had auto-deleted the remote branch at merge, so publishing it was a fresh push, not a force-update — the first `--force-with-lease` failed on a stale ref, which is what surfaced the deletion |
+| 3 Plan directory | **N/A, and stated rather than assumed** | This run executes no plan file; `doc/plans/test-quality/050-…/plan.md` already exists from run 01 and carries the first-instruction block. Nothing was moved |
+| 4 Implement | **DONE** | Six commits, each carrying the trailer, none with a "Generated with Claude Code" footer |
+| 4 Per-commit gate | **DONE** | Every commit touching `*.py` was preceded by a clean direct `./pw quality-gate`, read from the tools' own output (`ruff … All checks passed!`, `mypy … Success: no issues found in 408 source files`, `SPDX-header check passed`). The final report-only commit touched no `*.py`, so the gate did not apply |
+| 4 Pushed | **DONE** | `git status -sb` reports nothing ahead. One lapse, caught and corrected: the PR-number edit was deliberately held to batch with the Step 9 sections, which is the one move the push-cadence rule forbids — a completed unit left uncommitted. Committed and pushed on the spot |
+| 5 Build gate | **DONE** | git-derived verdict: 39 of 42 changed files are `*.py`, `.claude/skills/**` or `marketplace/bundles/**`. `./pw verify` → `=== verify: SUCCESS ===`, 20,327 passed, 14 skipped |
+| 6 Verification sub-agent | **DONE, and it changed the outcome** | Found a blocking regression and a false-negative class, both closed — § Independent pre-PR verification. Nothing it raised was rejected |
+| 7 PR cycle | **DONE** | PR #1266. No `skip-bot-review`: 39 files are code, skill or bundle. All three comment surfaces read; participation below |
+| 8 Merge gate | **DONE** | `verify / conclusion` **success** on the head; every comment on all three surfaces dispositioned; report committed as the last pre-merge commit. The condition-4 disclosure fired at **2-of-3** and is quoted verbatim in § Reviewer participation |
+| 8 Bridge | **DONE** | Nothing written under `doc/plans/` outside this plan's own directory except **declared deliverables**: the epic `README.md` and `findings-test-corpus-review.md` edits ARE findings #35/#36, not bookkeeping |
+| 9 This check | **DONE** | this table |
+| 9 What have we learned | **DONE** | below |
+
+**GitHub access path:** the GitHub MCP server. No `gh` CLI in this session.
+**Branch form:** harness-assigned, restarted from `origin/main`.
+**Plugin cache sync:** not owed — a machine-local step a cloud run never performs, even though this run
+edited `marketplace/bundles/`.
 
 ## What have we learned (Step 9)
 
-_(Completed before the merge gate.)_
+### Run 01's proposal is still pending, and this run is evidence FOR it
+
+Run 01 proposed one change: *the site of a deletion is itself a defect surface, and a "pure move" is
+verified by diffing comments and prose as their own dimension, because an AST-faithful move is not a
+text-faithful move.* **The operator has not ruled on it.** This run applied it voluntarily — the
+`test_audit.py` split slices by line rather than by AST node, and the comment count was **measured**
+(290 → 276) instead of asserted. It worked: zero rationale blocks lost, against 8 lost by run 01's
+node-slicing. That is confirming evidence, not a new proposal.
+
+### One new proposal, and this run produced the evidence the hard way
+
+**A deletion has consumers, and they are not found by sweeping the changed value's restatements.**
+
+Step 6 tells the verifier to sweep beyond the diff "across the owning bundle/skill" for statements a
+change makes false, enumerating consumer kinds for a **changed value**. This run's blocking defect fit
+none of that shape:
+
+- The change was a **deletion** — `test_audit.py` ceased to exist. There was no changed value whose
+  restatements one could enumerate.
+- The consumer was a **hard-coded path constant in a different tree**: `.claude/skills/…/era_stamp_fill.py`.
+  "The owning bundle/skill" points at `marketplace/bundles/**` or the test directory; `.claude/skills/`
+  is neither, and is exactly the tree a sweep phrased that way skips.
+- The consumer's own 15-test suite **passed**, because it re-declared the constant instead of importing
+  it and its fixture created the path under `tmp_path`.
+
+Step 6 *does* name the last of those three ("a test stub that hardcodes the retired value and still
+passes"), and that instruction is what led the verifier to it. The gap is the first two: the sweep is
+written for a changed **value**, not a removed **path**, and its scope phrase does not reach `.claude/`.
+
+**Concrete proposed edit** to `.claude/skills/cloud-plan-lane/SKILL.md` § Step 6, as a bullet:
+
+> - when the change **deletes or renames a file**, the instruction to grep the **whole repository for
+>   the old path** — not only the owning bundle or skill, and explicitly including `.claude/`, which is
+>   neither `test/` nor `marketplace/bundles/` and is skipped by a sweep scoped to "the owning
+>   bundle/skill". A path is a consumer surface with no "changed value" to enumerate restatements of,
+>   so the value-oriented sweep above cannot reach it. Machine-read frontmatter (`verdict_inputs:`) and
+>   hard-coded path constants in scripts are the two kinds that fail silently: the first is never
+>   executed by a test, and the second is routinely shadowed by a test that re-declares it.
+
+Ship it together with run 01's pending proposal if both are accepted — they are the same class of
+defect (a change's blast radius exceeding the diff's own text) and one `chore/` PR should carry both.
+
+**Presented, not self-approved. No contract change has been made by this run.**
+
+### Considered and NOT proposed
+
+- **The per-commit push rule.** It caught a real lapse here (a completed unit held back to batch), via
+  the stop hook rather than via the contract. The contract's wording is already unambiguous — "batch
+  the commits is not delay the push" — so this is a compliance failure, not a contract gap. No change.
+- **The `Reopens?` column.** It paid out again and differently: `sourcery-ai` refused this PR on a
+  **weekly** 500k-diff-character quota, where on #1258 it refused the *same* reviewer on a **per-diff**
+  150k ceiling. Same verdict, different reopen semantics, and the column carried the distinction with
+  no amendment needed. Working as designed. No change.
 
 ## Residue
 
