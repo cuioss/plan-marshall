@@ -111,7 +111,7 @@ raw turns, so they are extra transcript entries counted by `gate_decision_count`
 
 ### D4 — tests
 
-**Done.** 144 tests across six modules (31 + 10 + 21 + 17 + 12 + 53 collected), carrying 282 assertions.
+**Done.** 152 tests across six modules (34 + 10 + 21 + 17 + 17 + 53 collected), carrying 290 assertions.
 
 | Plan requirement | Test |
 |---|---|
@@ -144,7 +144,7 @@ re-confirmed across every assertion in the six chat test modules by six verifica
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD` includes nine `*.py` files — three scripts, five test
+`git diff --name-only origin/main...HEAD` includes ten `*.py` files — three scripts, six test
 modules and the shared fixture helper (which pytest does not collect) ⇒ **Python changed, full
 `./pw verify` required and run.**
 
@@ -158,17 +158,17 @@ printed summary proves all three ran):
 | module-tests | **20363 passed, 14 skipped**, zero `FAILED`/`ERROR` lines |
 | Overall | `=== verify: SUCCESS ===` |
 
-Fourteen full `./pw verify` runs were performed across the run; this row is the last, at the commit named
+Fifteen full `./pw verify` runs were performed across the run; this row is the last, at the commit named
 above. Any commit landing after it is Markdown-only unless this line says otherwise.
 
 Per-commit gate: every commit touching `*.py` was preceded by a clean `./pw quality-gate`.
 
 ## Findings
 
-Ten verification rounds plus two defects caught by the run itself — 125 findings, 120 fixed, 3 accepted-and-disclosed and 2 rejected with reason. Each round targeted the
-**previous round's fixes** as a first-class surface, which is what caught most of these — **nine of the
-ten** rounds found that the prior round's fix had introduced or exposed a new defect: rounds 2 through
-10. Only round 1 had no prior round to check. Recorded per instance.
+Eleven verification rounds plus two defects caught by the run itself — 138 findings, 134 fixed, 2 accepted-and-disclosed and 2 rejected with reason. Each round targeted the
+**previous round's fixes** as a first-class surface, which is what caught most of these — **ten of the
+eleven** rounds found that the prior round's fix had introduced or exposed a new defect: rounds 2
+through 11. Only round 1 had no prior round to check. Recorded per instance.
 
 ### Self-caught during implementation (2 findings — both fixed)
 
@@ -303,7 +303,7 @@ Scoped to round 6's commit; classified **(a) behavioural** again, so the loop co
 | R7-14 | Round 6's header claimed all 11 fixed; two were not | **Fixed** |
 | R7-15 | The round-6 docstring edit left a 134-character line in a docstring wrapping at ~78; `E501` is in ruff's ignore list, so nothing caught it | **Fixed** |
 
-### Round 8 (15 findings — 13 fixed here, 2 accepted then closed by round 9)
+### Round 8 (15 findings — 13 fixed here, 2 accepted then closed by rounds 9 and 10)
 
 Classified **(a) behavioural**. Its value was in showing that the previous rounds' fixes were applied
 **per site rather than per class** — the same defect kept surviving in a sibling module.
@@ -333,7 +333,7 @@ the finding rather than to the class. The remedy adopted here is a per-module *p
 pinned to their literals* test, so the next constant added is covered by construction rather than by
 someone remembering.
 
-### Round 9 (17 findings — all fixed)
+### Round 9 (17 findings — 16 fixed, 1 noted)
 
 Asked a sharper question than its predecessors: **did round 8's per-class remedy close the class, or
 only the instances round 8 named?** It answered *partially*, and that answer is what produced the
@@ -385,7 +385,7 @@ non-equivalent**. The answer was *no*, and it falsified a claim this report had 
 | R10-7 | `errors='replace'` → `'ignore'` survived: silent content loss against a docstring that names the replacement character | **Fixed** |
 | R10-8 | `except FileNotFoundError` → `(FileNotFoundError, OSError)` survived. `FileNotFoundError` **is** an `OSError`, so the widened clause reports an unreadable transcript as an absent one — silently `no_signal: true` | **Fixed** |
 | R10-9 | The role type guard (`isinstance(role, str)`) unpinned — a numeric role inflated the raw and dropped denominators | **Fixed** |
-| R10-10 | `del stack[depth:]` → `depth+1:` recovers a `<command-args>` **nested inside** an outer envelope. Over-counting; 12 divergences in 60,000 fuzzed inputs | **Accepted** — requires a crafted nesting no harness emits; disclosed rather than closed |
+| R10-10 | `del stack[depth:]` → `depth+1:` survived. **Round 10 mis-stated both its mechanism and its blast radius**, and round 11 corrected them: the defect is stack-index corruption, needs no `<command-args>` at all, and its shortest witness is three-level same-name nesting — one level deeper than a shape already under test | **Closed in round 11** — see R11-1 |
 | R10-11 | `marker in text` → case-insensitive over-retains assistant context | **Accepted** — affects `reduced_turn_count`/`reduced_bytes` only; moves no operator counter and cannot change `no_signal` |
 | R10-12 | argparse `required=True` → `False` yields `TypeError` instead of a usage error | **Accepted** — both still exit non-zero; the CLI contract is unchanged in effect |
 | R10-13 | ⛔ The report claimed the round-9 sweep "removed every surviving non-equivalent mutant across all three production modules". **False — 18 survived.** The narrower claim was true; the generalisation was not | **Fixed** — corrected in place, quoting what it had said |
@@ -400,8 +400,40 @@ non-equivalent**. The answer was *no*, and it falsified a claim this report had 
 **crash paths** that would lose an entire transcript, and an encoding defect invisible to nine rounds
 because the whole suite was ASCII. It also caught this report asserting a whole-tree guarantee it had
 not earned — the same over-claim, in the same document, that the plan exists to remove from the code.
-The three accepted survivors are disclosed above with their reasons and their error directions; none
-can move an operator counter or change `no_signal`.
+⛔ **The sentence that stood here — "none can move an operator counter or change `no_signal`" — was
+false**, and round 11 falsified it. R10-10 moves `operator_turn_count` from 0 to 1 and flips
+`no_signal` from `true` to `false` on a wholly synthetic turn: a clean verdict over instruction text,
+the exact failure this plan removes. It is now closed rather than accepted. The two survivors that
+remain (R10-11, R10-12) were checked individually and are accurately characterised.
+
+### Round 11 (13 findings — all fixed)
+
+Asked whether the three survivors round 10 *accepted* were correctly characterised. One was not, and
+the sentence describing them was false. It also found a methodology trap that calls earlier rounds'
+kill results into question.
+
+| # | Finding | Disposition |
+|---|---|---|
+| R11-1 | ⛔ **The report's claim that none of the accepted trio "can move an operator counter or change `no_signal`" was FALSE.** R10-10 takes `operator_turn_count` 0 → 1 and flips `no_signal` true → false on a wholly synthetic turn. Round 10 also mis-stated its mechanism: it is stack-index corruption, needs no `<command-args>` at all, and its shortest witness is three-level same-name nesting — one level deeper than a shape already under test | **Fixed** — claim corrected, and the survivor **closed** rather than accepted |
+| R11-2 | ⚠ **A methodology trap.** `load_script_module` uses `SourceFileLoader`, which validates bytecode by mtime+size — so rapid same-second rewrites of similar-sized sources silently ran the *previous* mutant's code, producing **false kills**. Any earlier round that mutated in place without a guard may have recorded one | **Fixed** — every mutant re-verified with `PYTHONDONTWRITEBYTECODE=1` and `__pycache__` purged per run |
+| R11-3 | `extract_text`'s `block_type is None` guard widened lets a `tool_use` block carrying a `text` field become operator prose. **Over-counting** — moves `operator_turn_count` and `no_signal`. Sibling of R10-2, in the same three-line branch | **Fixed** |
+| R11-4 | ⛔ Narrowing `except (JSONDecodeError, ValueError)` to the subclass alone survived. `json.loads` raises a **plain `ValueError`** on an integer past CPython's digit limit, aborting the pre-pass — **total loss of the transcript**. The one guard whose deliberate breadth was pinned by nothing | **Fixed** |
+| R11-5 | The notice comparison made case-insensitive discards a genuine operator turn beginning with the same words in another case. **Under-counting** — R10-11's operator on the side where it *does* move counters | **Fixed** |
+| R11-6 | `--read-budget-bytes type=int` → `float` accepted `1.5` as a byte budget | **Fixed** |
+| R11-7 | The success payload's `transcript_path` could become a basename with nothing failing; the skipped branch's copy was asserted, this one was not — one half of a pair again | **Fixed** |
+| R11-8 | `add_subparsers(required=True)` → `False` turned a usage error into an `internal_error` | **Fixed** |
+| R11-9 | "nine `*.py` files" was ten, stale at **both** sites — the **fourth** recurrence of this exact count defect (R7-8 → R8-12 → R10-16) | **Fixed** |
+| R11-10 | Sub-agent count contradicted the round count at one of five sites, introduced by the commit whose message claimed "all four sites checked" — **R9-14's pattern, third recurrence** | **Fixed** |
+| R11-11 | Findings said "nine of the ten rounds" while What-have-we-learned still said "Eight of nine" and stopped at round 9 — **R9-13 verbatim, half-applied again** | **Fixed** |
+| R11-12 | Round 8's header credited round 9 with closing a class rounds 9 **and 10** closed between them; round 9's header said "all fixed" while one row reads "Noted" | **Fixed** |
+| R11-13 | The module split left a cross-reference naming two classes symmetrically when one lives in a sibling module | **Fixed** |
+
+⭐ **What round 11 settles.** Every non-equivalent mutant found across 204 probes is now closed — the
+two that remain accepted (R10-11, R10-12) were each re-checked individually and move no operator
+counter. More importantly, it caught the report making a **third** false claim, in the section
+cataloguing the first two. The pattern is now unmistakable and is the substance of the contract
+proposal below: *the author is the party motivated to stop, so the stopping decision cannot be the
+author's.*
 
 ### Accepted, not fixed
 
@@ -433,7 +465,7 @@ _Verdicts recorded below once the PR review cycle has run._
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
-- **Wall-clock:** one interactive cloud session; see the PR's commit timestamps. Fourteen full `./pw verify`
+- **Wall-clock:** one interactive cloud session; see the PR's commit timestamps. Fifteen full `./pw verify`
   runs at ~6–8 minutes each, and eleven verification sub-agents.
 - **Population:** this single Claude Code cloud session's usage as the harness counts it. ⛔ **Not
   comparable** to a plan-marshall `metrics.toon` total, which counts an orchestrator-plus-agent
@@ -450,8 +482,8 @@ _Verdicts recorded below once the PR review cycle has run._
 | 4 Implement | **Done** | Every commit carries the `Co-Authored-By` trailer and no "Generated with" footer; deliverable paths staged explicitly, never `git add -A`; no lockfile churn reached a commit |
 | 4 Per-commit gate | **Done** | Every commit touching `*.py` preceded by a clean direct `./pw quality-gate` — `ruff … All checks passed!`, `mypy … Success`, `SPDX-header check passed` |
 | 4 Pushed | **Done** | Pushed after every commit; `git status -sb` reports no `ahead` |
-| 5 Build gate | **Done** | Git-derived verdict (nine `*.py`) and full `./pw verify`, read in full rather than by exit code |
-| 6 Verification sub-agent | **Done** | Ten rounds, each targeting the prior round's fixes; all findings and dispositions recorded above |
+| 5 Build gate | **Done** | Git-derived verdict (ten `*.py`) and full `./pw verify`, read in full rather than by exit code |
+| 6 Verification sub-agent | **Done** | Eleven rounds, each targeting the prior round's fixes; all findings and dispositions recorded above |
 | 7 PR cycle | See Reviewer participation |
 | 8 Merge gate | See **Merge gate** above |
 | 8 Bridge | **Done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory |
@@ -465,7 +497,7 @@ build step (§ Scope and precedence). Stated explicitly because two verification
 about it.
 
 One deviation from the contract, recorded rather than narrated as compliance: the contract's Step 6
-describes dispatching *a* verification sub-agent, and this run dispatched **ten**. Each round was
+describes dispatching *a* verification sub-agent, and this run dispatched **eleven**. Each round was
 triggered by the previous round's fixes being a new, unreviewed surface — which the contract itself
 requires ("A verification pass that found a defect has not finished"). It is more than the minimum,
 not less.
@@ -474,20 +506,22 @@ not less.
 
 **One contract change is proposed, on evidence this run produced.**
 
-**The evidence.** Eight of nine verification rounds found that the *previous round's fix* had introduced
+**The evidence.** Ten of eleven verification rounds found that the *previous round's fix* had introduced
 or exposed a new defect, one per round: round 2 on round 1's `command-name` addition (R2-3); round 3 on
 round 2's `__all__`, which disowned its module's API (N1); round 4 on round 3's vacuous test, masking a
 live fail-toward-operator path (R4-1); round 5 on round 4's dangling rename reference (R5-1); round 6
 on round 5's rule pinned in a test but never written into the spec (R6-4); round 7 on round 6's two
 dispositions recorded as fixed before they were (R7-7, R7-9); round 8 on round 7's constant pinning,
-applied to one constant and not its three siblings (R8-1, R8-2, R8-5); and round 9 on round 8's
+applied to one constant and not its three siblings (R8-1, R8-2, R8-5); round 9 on round 8's
 remedy, which closed the public constants and left the two private regexes carrying live mutants
-(R9-1, R9-2). The contract's § Step 6 already says to sweep the previous round's fixes, and that
-instruction is what caught every one of them.
+(R9-1, R9-2); round 10 on round 9's heading-regex disposition, which claimed a class and closed one of
+six variants (R10-4, R10-14); and round 11 on round 10's own characterisation of what it had accepted,
+which was false (R11-1). The contract's § Step 6 already says to sweep the previous round's fixes, and
+that instruction is what caught every one of them.
 
-But the contract offers no way to tell when the loop should **stop**. This run ran ten rounds. Rounds 6 through 10
+But the contract offers no way to tell when the loop should **stop**. This run ran eleven rounds. Rounds 6 through 11
 were each dispatched with an explicit instruction to classify their findings as behavioural or
-records-only; all five returned **behavioural**, so the loop continued each time. Round 9 was asked a
+records-only; all six returned **behavioural**, so the loop continued each time. Round 9 was asked a
 sharper question — whether the previous round's *per-class* remedy had closed the class or only its
 named instances — and answered *partially*, which is what produced the final sweep. That
 classification was improvised for this run; nothing in the contract asks for it.

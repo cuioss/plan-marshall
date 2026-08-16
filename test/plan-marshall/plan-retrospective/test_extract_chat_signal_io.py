@@ -191,6 +191,52 @@ class TestContentBlockRobustness:
         assert _mod.parse_message(line) is None
 
 
+class TestPayloadAndCliContract:
+    def test_a_typed_block_carrying_text_is_not_treated_as_text(self):
+        """Only an explicit `text` block, or a typeless one, contributes.
+
+        The typeless allowance is defensive against shape drift; widening it to
+        any block with a `text` field lets a `tool_use` payload become operator
+        prose — a synthetic input raising `operator_turn_count`.
+        """
+        content = [{'type': 'tool_use', 'name': 'Bash', 'text': 'please revert that change'}]
+        assert _mod.extract_text(content) == ''
+
+    def test_a_json_value_error_is_not_a_turn(self):
+        """`json.loads` raises plain `ValueError`, not only `JSONDecodeError`.
+
+        An integer literal past CPython's digit-conversion limit raises the
+        base class. Catching only the subclass lets it escape and aborts the
+        whole pre-pass, losing every operator turn in the transcript.
+        """
+        assert _mod.parse_message('1' * 5000) is None
+
+    def test_the_success_payload_carries_the_full_transcript_path(self, tmp_path):
+        """The path is reported as given, not as a basename.
+
+        The skipped branch's copy of this field is asserted elsewhere; this is
+        its pair on the success branch.
+        """
+        path = _write(tmp_path, chat_turn('user', 'please revert that change'))
+        result = _run(path)
+        assert result['transcript_path'] == str(path)
+
+    def test_a_non_integer_read_budget_is_rejected(self):
+        """The budget is a byte count, so the parser must refuse a float."""
+        import pytest
+
+        with pytest.raises(SystemExit):
+            parse_ns(BUNDLE, SKILL, SCRIPT, 'run', '--transcript-path', '/x.jsonl',
+                     '--read-budget-bytes', '1.5')
+
+    def test_the_subcommand_is_required(self):
+        """Invoking with no subcommand is a usage error, not a crash."""
+        import pytest
+
+        with pytest.raises(SystemExit):
+            parse_ns(BUNDLE, SKILL, SCRIPT)
+
+
 class TestRoleGuards:
     def test_a_tool_result_on_an_assistant_turn_is_not_a_gate_decision(self, tmp_path):
         """Only a `user` turn carries the operator's side of the channel."""

@@ -31,11 +31,11 @@ class TestPublishedConstants:
     tests, and it is why each value below is written out rather than iterated.
 
     The module's other constants are pinned where their behaviour is exercised:
-    ``OPERATOR_BEARING_TAGS`` in :class:`TestOperatorBearingEnvelopes`, and
-    ``_SKILL_LOAD_MARKER``, ``_MARKDOWN_HEADING_RE`` and ``_TAG_RE`` in
-    :class:`TestRecogniserBoundaries`. Nothing enforces that this list stays
-    complete — it is maintained by hand, so a constant added later is covered
-    only if someone adds a case for it.
+    ``_SKILL_LOAD_MARKER`` and ``_MARKDOWN_HEADING_RE`` in
+    :class:`TestRecogniserBoundaries` below, and ``OPERATOR_BEARING_TAGS`` and
+    ``_TAG_RE``'s attribute class in ``test_chat_provenance.py``. Nothing
+    enforces that this list stays complete — it is maintained by hand, so a
+    constant added later is covered only if someone adds a case for it.
     """
 
     def test_harness_notice_prefixes_are_the_observed_literals(self):

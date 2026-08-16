@@ -70,6 +70,23 @@ class TestSyntheticClasses:
         assert _mod.strip_harness_envelopes('<a><a>x</a></a>').strip() == ''
         assert _mod.is_operator_authored('<a><a>x</a></a>') is False
 
+    def test_three_level_same_name_nesting_is_fully_stripped(self):
+        """Depth two is not enough to pin the stack bookkeeping.
+
+        Discarding one entry too few when unwinding leaves a stale index, so an
+        OUTER same-named tag's position is popped instead and its close tag no
+        longer pairs — the whole envelope stays in the residue and a wholly
+        synthetic turn scores an operator turn.
+        """
+        for text in ('<a><a><a></a></a></a>', '<a><b><a></a></b></a>'):
+            assert _mod.strip_harness_envelopes(text).strip() == '', text
+            assert _mod.is_operator_authored(text) is False, text
+
+    def test_a_nested_command_block_never_escapes_its_envelope(self):
+        """Operator-bearing recovery is top-level only, at any nesting depth."""
+        text = '<a><b><a>x</a></b><command-args>do the thing</command-args></a>'
+        assert _mod.is_operator_authored(text) is False
+
     def test_stacked_envelopes_leave_no_residue(self):
         """Several concatenated envelopes are still wholly synthetic."""
         assert _mod.is_operator_authored(f'{SYSTEM_REMINDER}\n\n{TASK_NOTIFICATION}') is False
@@ -92,6 +109,16 @@ class TestEnvelopelessNotices:
         verdict on its own.
         """
         assert _mod.is_operator_authored(STOP_HOOK_NOTICE) is False
+
+    def test_notice_matching_is_case_sensitive(self):
+        """The prefixes are verbatim harness strings, matched as written.
+
+        A case-insensitive compare would drop a genuine operator turn that
+        happens to begin with the same words in a different case — discarding
+        real signal, and able to carry a false `no_signal: true` alone.
+        """
+        assert _mod.is_operator_authored('stop hook feedback: what does this mean?') is True
+        assert _mod.is_operator_authored('Stop hook feedback: [hook] ran') is False
 
     def test_notice_matching_is_anchored_at_the_start(self):
         """A notice IS the turn; an operator QUOTING one is still signal.
