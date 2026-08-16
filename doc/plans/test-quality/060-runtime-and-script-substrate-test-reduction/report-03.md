@@ -1,6 +1,6 @@
 # Run report — 060-runtime-and-script-substrate-test-reduction (run 03)
 
-**Date (UTC):** 2026-08-16    **Branch:** `chore/060-residue-order-dependence`    **PR:** _(pending)_    **Outcome:** partial
+**Date (UTC):** 2026-08-16    **Branch:** `chore/060-residue-order-dependence`    **PR:** [#1272](https://github.com/cuioss/plan-marshall/pull/1272)    **Outcome:** partial
 
 A residue run against the open items left by runs 01 ([#1263](https://github.com/cuioss/plan-marshall/pull/1263))
 and 02 ([#1265](https://github.com/cuioss/plan-marshall/pull/1265)). It closes the two highest-priority
