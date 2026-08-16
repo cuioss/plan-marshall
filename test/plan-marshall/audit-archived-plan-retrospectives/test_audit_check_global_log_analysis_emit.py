@@ -16,8 +16,9 @@ from _audit_fixtures import (
 
 class TestEmitGlobalLogBlock:
     """``emit_global_log_block`` renders the result dict to a TOON block: every
-    flagged line is a genuine signal, ad-hoc attribution fills empty windows, and
-    the summary lines carry the level buckets and per-band counts."""
+    flagged line is a genuine signal and every cost-roll-up ranking row is
+    informational, ad-hoc attribution fills empty windows, and the summary lines
+    carry the level buckets and per-band counts."""
 
     def test_block_carries_summary_lines_and_genuine_count(self, tmp_path: Path):
         # one genuine ERROR failure (carries failure markers) + one slow call
@@ -45,7 +46,11 @@ class TestEmitGlobalLogBlock:
         assert 'genuine_signal_count: 2' in block
         assert 'error_count: 1' in block
         assert 'slow_call_count: 1' in block
-        assert 'rows[2]{kind,detail,attributed_plans,severity}:' in block
+        # 3 rows, 2 of them genuine: the third is the cost roll-up's ranking row
+        # for the one timed call, stamped `informational` so it does not inflate
+        # the genuine count above.
+        assert 'rows[3]{kind,detail,attributed_plans,severity}:' in block
+        assert 'dominant-cost-caller,1x 40.000s 100.0% pm:y:y run,,informational' in block
 
     def test_debug_and_benign_probes_excluded_from_error_count(self, tmp_path: Path):
         # The corrected flagger flags only elevated levels (>=WARNING) + real failure

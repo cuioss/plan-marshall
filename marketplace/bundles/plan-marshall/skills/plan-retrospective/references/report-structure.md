@@ -13,7 +13,7 @@ The compiler must emit exactly these sections in this order:
 1. Executive Summary — a 3-5 sentence narrative that synthesizes all aspects. It must lead with overall severity (all-green, N warnings, or errors) and the most important signals.
 2. Goals vs Outcomes — renders the `request_result_alignment` aspect fragment as a table.
 3. Artifact Consistency — renders the `artifact_consistency` aspect fragment as a check table plus a signal list.
-4. Log Analysis — renders the `log_analysis` aspect fragment as counts, slowest scripts, and top error tags.
+4. Log Analysis — renders the `log_analysis` aspect fragment as counts, slowest scripts, the cumulative `script_cost_rollup` (read beside the per-call slowest/percentile fields), `context_position_cost` (cached-read tokens per tool use by phase — a different currency from the wall-clock roll-up), and top error tags. See `log-analysis.md` for how the per-call and cumulative views are read together.
 5. Phase Dispatch Boundaries — conditional. Emit only when the `dispatch_boundaries` fragment carries at least one phase entry reporting `present: true`. Renders a per-phase table plus the full fragment data.
 6. Invariant Outcomes — renders the `invariant_summary` aspect fragment as a per-phase table plus a drift block.
 7. Plan Efficiency — renders the `plan_efficiency` aspect fragment as totals (including `total_build_seconds`, the ledger-derived total build time — a floor when suspect builds were seen) plus ratios plus a per-phase breakdown.

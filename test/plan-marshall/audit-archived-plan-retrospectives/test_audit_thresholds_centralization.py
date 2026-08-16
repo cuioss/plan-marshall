@@ -57,6 +57,7 @@ class TestThresholdsCentralization:
             'long_session_messages',
             'slow_call_seconds',
             'high_frequency_calls',
+            'cost_rollup_top_n',
             'scope_file_bands',
             'tasks_per_deliverable_low',
             'tasks_per_deliverable_high',
