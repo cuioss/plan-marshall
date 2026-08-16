@@ -19,14 +19,13 @@ finding (``reason: transcript_too_large``). A missing transcript yields
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
+from conftest import MARKETPLACE_ROOT, load_script_module, run_script  # noqa: E402
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT
@@ -38,10 +37,9 @@ SCRIPT_PATH = (
 )
 
 # Direct module load so unit tests can poke the pure helpers.
-_spec = importlib.util.spec_from_file_location('extract_chat_signal', str(SCRIPT_PATH))
-assert _spec is not None and _spec.loader is not None
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
+_mod = load_script_module(
+    'plan-marshall', 'plan-retrospective', 'extract-chat-signal.py', 'extract_chat_signal'
+)
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +208,8 @@ class TestReduceTranscript:
             _turn('assistant', _text_blocks('[DISPATCH] launching agent')),
             _turn('tool', 'tool output that must be dropped'),
         ]
-        kept, raw = _mod.reduce_transcript(lines)
+        reduction = _mod.reduce_transcript(lines)
+        kept, raw = reduction.turns, reduction.raw_turn_count
         assert kept == [
             {'role': 'user', 'text': 'do the thing'},
             {'role': 'assistant', 'text': '[DISPATCH] launching agent'},
@@ -225,7 +224,8 @@ class TestReduceTranscript:
             _turn('user', ''),
             _turn('user', '   \n  '),
         ]
-        kept, raw = _mod.reduce_transcript(lines)
+        reduction = _mod.reduce_transcript(lines)
+        kept, raw = reduction.turns, reduction.raw_turn_count
         assert kept == [{'role': 'user', 'text': 'rename the module please'}]
         assert raw == 4
 
@@ -235,7 +235,7 @@ class TestReduceTranscript:
             _turn('user', 'b'),
             _turn('assistant', '[ERROR] c'),
         ]
-        kept, _raw = _mod.reduce_transcript(lines)
+        kept = _mod.reduce_transcript(lines).turns
         assert [t['text'] for t in kept] == ['[STATUS] a', 'b', '[ERROR] c']
 
     def test_malformed_lines_dropped_silently(self):
@@ -245,13 +245,16 @@ class TestReduceTranscript:
             _turn('user', 'survives'),
             json.dumps({'type': 'summary'}),
         ]
-        kept, raw = _mod.reduce_transcript(lines)
+        reduction = _mod.reduce_transcript(lines)
+        kept, raw = reduction.turns, reduction.raw_turn_count
         assert kept == [{'role': 'user', 'text': 'survives'}]
         # Malformed and non-turn lines never parse, so they are not raw turns.
         assert raw == 1
 
     def test_empty_history_keeps_nothing(self):
-        assert _mod.reduce_transcript([]) == ([], 0)
+        reduction = _mod.reduce_transcript([])
+        assert reduction.turns == []
+        assert reduction.raw_turn_count == 0
 
     def test_all_unmarked_assistant_keeps_nothing(self):
         lines = [
@@ -259,7 +262,8 @@ class TestReduceTranscript:
             _turn('assistant', 'prose two'),
             _turn('tool', 'output'),
         ]
-        kept, raw = _mod.reduce_transcript(lines)
+        reduction = _mod.reduce_transcript(lines)
+        kept, raw = reduction.turns, reduction.raw_turn_count
         assert kept == []
         assert raw == 3
 

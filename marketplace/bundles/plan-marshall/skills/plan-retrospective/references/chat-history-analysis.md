@@ -16,26 +16,46 @@ The aspect resolves to exactly one of two tiers, gated by the `extract-chat-sign
 
 | Tier | Trigger | Aspect behaviour |
 |------|---------|------------------|
-| **Tier 1 — full analysis** | The reduced transcript is non-empty AND fits the read budget: `no_signal == false` AND `over_budget == false`. | Feed the reduced transcript (`reduced_transcript`) to the LLM analysis prompt and synthesize the `chat_history_analysis` fragment with `status: success` per the [TOON Fragment Shape](#toon-fragment-shape) below. |
-| **Tier 2 — graceful skip** | The transcript is missing, carries zero signal-bearing turns, OR the reduced transcript still exceeds the read budget (default 2 MiB / `2 * 1024 * 1024` bytes). | Do NOT feed any transcript to the LLM. Emit a fragment with `status: skipped` and the canonical skip-reason token per the [Skip-Reason Token Contract](#skip-reason-token-contract), plus a `severity: warning` finding so the skip is visible in the compiled report. |
+| **Tier 1 — full analysis** | The transcript carried operator-authored signal AND the reduced text fits the read budget: `no_signal == false` AND `over_budget == false`. | Feed the reduced transcript (`reduced_transcript`) to the LLM analysis prompt and synthesize the `chat_history_analysis` fragment with `status: success` per the [TOON Fragment Shape](#toon-fragment-shape) below. |
+| **Tier 2 — graceful skip** | The transcript is missing, carried no operator-authored signal, OR the reduced transcript still exceeds the read budget (default 2 MiB / `2 * 1024 * 1024` bytes). | Do NOT feed any transcript to the LLM. Emit a fragment with `status: skipped` and the canonical skip-reason token per the [Skip-Reason Token Contract](#skip-reason-token-contract), plus a `severity: warning` finding so the skip is visible in the compiled report. |
 
 The pre-pass is the single decision source — the orchestrator never inspects raw file size directly. The `extract-chat-signal.py run --transcript-path {abs} [--read-budget-bytes N]` invocation returns:
 
-- `no_signal` — `true` when the reduction kept zero turns, i.e. the transcript carried no operator-authored user turn and no marker-bearing assistant turn.
+- `no_signal` — `true` when the transcript carried **no operator-authored signal of either kind**: `operator_turn_count == 0` AND `gate_decision_count == 0`. It is deliberately **not** a count of survivors — see [Why the verdict is not a survivor count](#why-the-verdict-is-not-a-survivor-count).
 - `over_budget` — `true` when the reduced text still exceeds `--read-budget-bytes` (default 2 MiB).
 - `reduced_transcript` — the Tier-1 input; non-empty only when both flags are `false`.
 - `raw_turn_count` / `dropped_turn_count` — the parseable-turn count before reduction and how many the reduction removed, so the caller can see how much was boilerplate.
+- `operator_turn_count` / `gate_decision_count` — the two operator-signal counters, reported separately from the survivor count so a caller can tell *"kept 200 turns, 3 operator-authored"* from *"kept 200 operator turns"*. `operator_turn_count` counts free-form operator corrections; `gate_decision_count` counts operator decisions recovered from the tool-result channel.
 
-### The reduction filters by provenance, not by role
+### The reduction identifies provenance positively
 
-A `user` turn is kept only when it is **operator-authored**. The harness injects synthetic turns under the `user` role that carry no operator signal, and a role-only filter cannot tell them apart from a real utterance — so the reduction drops two structurally recognizable classes:
+A `user` turn is kept only when it is **operator-authored**. The harness injects synthetic turns under the `user` role that carry no operator signal, and a role-only filter cannot tell them apart from a real utterance.
 
-- an **empty or whitespace-only** turn (a tool-result placeholder that carried no text block);
-- a **synthetic skill-load** turn — a loaded skill's body injected into the conversation, recognized by a `Base directory for this skill:` line followed by a markdown heading.
+The predicate does **not** enumerate the synthetic shapes it knows about. It asks the opposite question: **does operator prose remain once every harness envelope is stripped?** A turn is dropped when the residue is empty.
 
-This distinction is load-bearing for the tier decision, not cosmetic. Under the earlier role-only filter a transcript could be ~90% verbatim framework markdown with fewer than 10 of 287 turns operator-authored, stay under the read budget, and be classified Tier 1 with confidence — the aspect then paid a full LLM read for boilerplate. Because the surviving set is operator-authored by construction, `no_signal` is now an honest "this session carried no operator signal" verdict and Tier 2 is reached honestly rather than never.
+- an **empty or whitespace-only** turn (a tool-result placeholder that carried no text block) — no residue;
+- a turn that is **wholly a harness envelope** — one or more XML-ish tag blocks with nothing outside them. The match is generic over the tag *name*, so an envelope introduced after this document was written is recognised without editing anything;
+- a **synthetic skill-load** turn — a loaded skill's body injected into the conversation, recognized by a `Base directory for this skill:` line followed by a markdown heading — or a **verbatim harness re-entry notice**, matched as a literal prefix because it carries no tag to key on.
 
-**The generalizable rule**: when a channel's producer injects synthetic entries under the same structural label real entries use, a filter keyed on that label measures the label, not the content. Key such a filter on provenance or content shape, and derive any downstream sufficiency flag from the surviving set — never from the raw count.
+An envelope *attached to* an operator turn is not a drop: the harness routinely annotates a genuine utterance, and the residue then still holds the operator's prose.
+
+**The direction of failure is the design.** An enumeration of synthetic shapes fails toward *"operator"* for any wrapper nobody listed — the direction that inflates the survivor count and manufactures a falsely healthy verdict. Residue-based classification fails toward *"synthetic"* instead. The accepted cost is that an operator turn consisting of nothing but a tag block is misread as synthetic.
+
+### Why the verdict is not a survivor count
+
+`no_signal` is derived from `operator_turn_count` and `gate_decision_count`, never from how many turns survived.
+
+A survivor count answers *"did the reduction keep anything?"* — and that number **rises** with every class of injected instruction text the filter fails to recognise. Signal quality and the reported verdict then move in opposite directions: the more boilerplate leaks through, the healthier the transcript is reported to be. Keying the flag on operator-authored counts breaks that coupling, so retaining more framework boilerplate can no longer move the verdict.
+
+This is why the surviving set must never be described as operator-authored *by construction*. It is not: the reduction keeps marker-bearing `assistant` turns for context, and those are not operator signal. The counters are what carry the claim, and the flag reads only them.
+
+### The gated-decision channel
+
+On a gated run the operator's decisions arrive as **tool results, not user turns** — a permission grant or refusal, or an `AskUserQuestion` selection. A reducer that keeps only free-form turns therefore measures only the channel the operator did not use, and a run with zero corrections and many gate decisions reads as silent when it is in fact well-instrumented.
+
+Such results are recovered into the reduced transcript under the `operator-decision` role and counted in `gate_decision_count`. Both tests are deliberately narrow — the answering tool-use id, or a verbatim operator-refusal notice — so a counter of operator signal fails toward *not* counting and ordinary tool output is never mistaken for a decision.
+
+**The generalizable rule**: when a channel's producer injects synthetic entries under the same structural label real entries use, a filter keyed on that label measures the label, not the content. Identify provenance positively, so an unrecognised producer shape fails toward *synthetic*; and derive any downstream sufficiency flag from what the surviving set **is**, never from how much of it there is.
 
 Either flag being `true` is the Tier-2 trigger. When BOTH are `false`, `reduced_transcript` is the Tier-1 input to the LLM prompt. The 2 MiB read budget is the canonical threshold and is owned by the script (`DEFAULT_READ_BUDGET_BYTES`); this document references it, it does not re-declare it.
 
