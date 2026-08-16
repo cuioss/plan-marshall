@@ -27,7 +27,7 @@ one, so the closed prefix set governs it. Pushed before the first edit; every co
 Run 01 recorded this as the highest-priority residue item and did not fix it. It is now fixed, and it
 was a **live** failure rather than a latent one:
 
-```
+```text
 pytest <the slice's 15 directories, reverse order>
 FAILED platform-runtime/test_layout_resolution.py::test_resolve_module_reimport_clean
 E   ImportError: module marketplace_paths not in sys.modules

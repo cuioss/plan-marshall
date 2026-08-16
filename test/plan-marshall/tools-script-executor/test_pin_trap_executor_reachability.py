@@ -115,16 +115,12 @@ def test_verify_executor_survives_quote_in_executor_path(tmp_path, monkeypatch):
         PROJECT_ROOT
         / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts'
     )
-    shared_dirs = [
-        MARKETPLACE_ROOT / 'plan-marshall/skills' / rel
-        for rel in (
-            'tools-file-ops/scripts',
-            'tools-input-validation/scripts',
-            'ref-toon-format/scripts',
-            'script-shared/scripts',
-            'manage-change-ledger/scripts',
-        )
-    ]
+    # Derived from the production function rather than restated. A hardcoded
+    # mirror of the shared-module set goes stale the moment a shared skill is
+    # added, and this test would then validate the quote-path case with
+    # incomplete import coverage while still passing.
+    shared_dirs = _gen.get_shared_module_dirs(MARKETPLACE_ROOT)
+    assert shared_dirs, 'no shared module dirs resolved; the stub would be vacuous'
 
     monkeypatch.setattr(_gen, 'executor_path', lambda: executor)
     monkeypatch.setattr(_gen, 'get_logging_scripts_dir', lambda base_path: logging_scripts)
