@@ -389,7 +389,15 @@ is reported as not done rather than approximated by the general verification pas
 
 ### Executable
 
-`./pw verify` — result recorded at § Findings after the pre-PR run.
+`./pw verify` — **`=== verify: SUCCESS ===`**, whole-tree: **20,272 passed, 14 skipped, 0 failed** in
+623s. All three sub-steps ran, which matters because two of them are the ones a narrower call would
+have skipped: `quality-gate` (ruff / mypy(production) over 408 files / SPDX / plugin-doctor),
+**`test-compile` (mypy over the whole test tree, 760 files)**, and `module-tests`. The lane warns that
+substituting `quality-gate` + a scoped `module-tests` lets a test-only type error through to CI; the
+full gate was run, so that class is covered here.
+
+`plugin-doctor test-conventions` over the slice ran clean at the documented invocation — see D6 figure
+6 for the per-rule counts.
 
 ## Findings
 
