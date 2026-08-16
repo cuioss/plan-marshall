@@ -157,7 +157,7 @@ _Completed after the PR review cycle._
 ## Cost
 
 - **Tokens:** not available to the agent in this session — the harness does not expose a token counter to the running agent, so no figure is stated rather than an estimated one.
-- **Wall-clock:** not precisely available; the single measured component is the `./pw verify` gate at **405.61 s** (reported by pytest), plus one earlier `./pw quality-gate`.
+- **Wall-clock:** not precisely available for the run as a whole. The measured components are the `./pw verify` gate, run once per verification round — **405.61 s**, **353.72 s**, **357.92 s** and a final pass — plus several `./pw quality-gate` calls. Each figure is the pytest-reported duration of that run; they are not summable into a run total, because the agent's own wall-clock between them is not instrumented.
 - **Population:** these figures count **this single Claude Code cloud session**, as the harness counts it. ⛔ **NOT comparable to a plan-marshall `metrics.toon` total**, which counts the orchestrator-plus-agent dispatch tree under plan-marshall's own per-task billing boundary — a boundary a single interactive cloud session does not share. The figures cannot be made comparable here, so no ratio against any such total is offered.
 
 ## Contract check (Step 9)

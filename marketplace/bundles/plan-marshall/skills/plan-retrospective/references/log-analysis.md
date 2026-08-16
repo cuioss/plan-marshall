@@ -78,6 +78,10 @@ context_position_cost:
   measured_rows: N
   unmeasured_rows: N
   no_tool_use_rows: N
+  # cache_read_per_tool_use is a float, or `undefined` when the phase has a
+  # zero-tool-use row and NO unmeasured row (record complete, ratio has no
+  # value), or `unmeasured` in every other no-contribution case — including a
+  # phase with no rows at all. `unmeasured` is the weaker claim and the default.
   by_phase[*]{phase,rows,measured_rows,cache_read_per_tool_use}:
     ...
   position_multiple: NUM|unmeasured|undefined
@@ -90,9 +94,9 @@ global_log_signals:
   slow_call_count: N
   fixture_leak_count: N
   fixture_leak_signatures[*]: [...]
-  # Duration-bearing lines with no parseable notation: counted by the ceiling,
-  # excluded from the roll-up (which cannot attribute a total to a script it
-  # cannot name). So `cost_rollup.calls_at_or_over_ceiling` can be lower than
+  # Duration-bearing lines with no parseable notation: evaluated against the
+  # ceiling like any other timed line, but excluded from the roll-up (which
+  # cannot attribute a total to a script it cannot name). So `cost_rollup.calls_at_or_over_ceiling` can be lower than
   # `slow_call_count` — and this field BOUNDS that gap rather than equalling it,
   # because it counts unnamed calls at every duration while the gap counts only
   # the unnamed calls at or over the ceiling.

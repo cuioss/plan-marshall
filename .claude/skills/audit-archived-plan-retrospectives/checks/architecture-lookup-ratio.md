@@ -34,7 +34,7 @@ every `manage-architecture:architecture {sub}` call. No other input is consulted
 > plan execution — so they land in the global logs, not a plan's
 > `logs/script-execution.log`. A plan's per-plan discovery breakdown is therefore
 > usually **all-zero**; the corpus-wide discovery volume (e.g. `enrich 88×`) is
-> surfaced by the `global-log-analysis` check (high-frequency-caller / error rows),
+> surfaced by the `global-log-analysis` check (high-frequency-caller / dominant-cost-caller / error rows),
 > not here. The per-plan and corpus breakdown exist for the rare plan that runs
 > in-plan discovery and to make the otherwise-lumped count legible.
 

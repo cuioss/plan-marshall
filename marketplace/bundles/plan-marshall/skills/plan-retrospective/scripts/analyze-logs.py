@@ -502,8 +502,9 @@ def summarize_context_position_cost(
       reader omits ``cache_read_input_tokens`` for unmeasured, unrecognised and
       indeterminate cells alike (see ``_parse_dispatch_boundary_file``), and a
       rate equally needs a ``tool_uses`` denominator, so a row lacking either key
-      — or carrying a non-integer or negative ``tool_uses`` — is a WRITER-side
-      gap: the measurement was never recorded. It is never folded in as a zero,
+      — or carrying a ``tool_uses`` that is not a usable count (``None``, a
+      non-integer, a bool, or negative) — is a WRITER-side gap: the measurement
+      was never recorded. It is never folded in as a zero,
       which would silently understate every rate it touched.
     * ``no_tool_use_rows`` — BOTH keys are present and ``tool_uses`` is exactly
       ``0``, so a per-tool-use rate is arithmetically UNDEFINED. Nothing is
@@ -1333,8 +1334,9 @@ def analyze_folded_global_logs(logs_dir: Path) -> dict[str, Any]:
     the roll-up recovers exactly that information.
 
     ⚠ The two populations are NEARLY but not exactly the same, and the difference
-    is published rather than glossed. ``slow_call_count`` counts every
-    duration-bearing line; the roll-up additionally requires a parseable notation,
+    is published rather than glossed. ``slow_call_count`` is drawn from every
+    duration-bearing line (counting the ones at or over the ceiling); the roll-up
+    is drawn from a strict subset, because it additionally requires a parseable notation,
     because a cumulative total cannot be attributed to a script it cannot name. A
     duration-bearing line with no notation is therefore counted in
     ``unattributable_calls`` and excluded from the roll-up — so
@@ -1372,7 +1374,9 @@ def analyze_folded_global_logs(logs_dir: Path) -> dict[str, Any]:
     folded_durations: list[tuple[str, float]] = []
     # Duration-bearing lines the roll-up cannot attribute to a script because no
     # notation parsed. Counted rather than dropped: it is the exact difference
-    # between the ceiling's population and the roll-up's.
+    # between the two POPULATION SIZES. It is NOT the difference between the two
+    # ceiling COUNTS — that gap counts only the unnamed calls at or over the
+    # ceiling, so this figure bounds it from above. See the docstring.
     unattributable_calls = 0
 
     for log in sorted(log_files):
@@ -1421,11 +1425,11 @@ def analyze_folded_global_logs(logs_dir: Path) -> dict[str, Any]:
         'slow_call_count': slow_call_count,
         'fixture_leak_count': fixture_leak_count,
         'fixture_leak_signatures': sorted(set(fixture_leak_signatures)),
-        # The cumulative complement to ``slow_call_count``. Its population is the
-        # ceiling's population MINUS ``unattributable_calls`` — published so the
-        # two can be read together without assuming an identity that does not
-        # hold (see this function's docstring).
+        # Published so the ceiling and the roll-up can be read together without
+        # assuming an identity that does not hold (see this function's docstring).
         'unattributable_calls': unattributable_calls,
+        # The cumulative complement to ``slow_call_count``. Its population is the
+        # ceiling's population MINUS ``unattributable_calls``.
         'cost_rollup': summarize_script_cost(folded_durations, 'folded_global_logs'),
     }
 
