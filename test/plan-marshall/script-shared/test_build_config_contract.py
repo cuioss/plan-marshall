@@ -8,11 +8,12 @@ API is actually consistent across Maven, Gradle, npm, and Python.
 """
 
 import importlib.util
-from pathlib import Path
 
 import pytest
 
-_BUNDLES_DIR = Path(__file__).parent.parent.parent.parent / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
+from conftest import MARKETPLACE_ROOT
+
+_BUNDLES_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
 
 
 def _load_module(name, filename, skill):

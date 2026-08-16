@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import _MARKETPLACE_SCRIPT_DIRS, load_script_module
+from conftest import _MARKETPLACE_SCRIPT_DIRS, PROJECT_ROOT, load_script_module
 
 
 @pytest.fixture()
@@ -49,7 +49,7 @@ _gen = load_script_module(
 # an importable module is the established pattern for unit-testing its dispatch
 # boundary helpers (mirrors ``_load_template_module`` in test_generate_executor.py).
 _TEMPLATE_PATH = (
-    Path(__file__).parent.parent.parent.parent
+    PROJECT_ROOT
     / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template'
 )
 
@@ -67,7 +67,7 @@ def _load_template_module() -> types.ModuleType:
     """
     source = _TEMPLATE_PATH.read_text(encoding='utf-8')
     logging_dir = str(
-        Path(__file__).parent.parent.parent.parent
+        PROJECT_ROOT
         / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts'
     )
     source = source.replace('{{SCRIPT_MAPPINGS}}', '')

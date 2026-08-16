@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT, get_scripts_dir
+from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT, PROJECT_ROOT, get_scripts_dir
 
 
 @pytest.fixture()
@@ -812,7 +812,7 @@ def test_pm_marketplace_root_env_var_anchors_discovery(tmp_path, monkeypatch):
 # test/plan-marshall/manage-status/test_merge_lock_removed.py.
 
 TEMPLATE_PATH = (
-    Path(__file__).parent.parent.parent.parent
+    PROJECT_ROOT
     / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template'
 )
 
@@ -832,7 +832,7 @@ def _load_template_module():
     # placeholder pointing at the real logging scripts so `from plan_logging
     # import ...` succeeds at module load.
     logging_dir = str(
-        Path(__file__).parent.parent.parent.parent
+        PROJECT_ROOT
         / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts'
     )
     source = source.replace('{{SCRIPT_MAPPINGS}}', '')

@@ -20,7 +20,7 @@ Each test is written to FAIL against the pre-fix code and pass against the fix.
 import types
 from pathlib import Path
 
-from conftest import load_script_module
+from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
 
 _gen = load_script_module('plan-marshall', 'tools-script-executor', 'generate_executor.py', 'gen_executor_pin_trap')
 
@@ -112,11 +112,11 @@ def test_verify_executor_survives_quote_in_executor_path(tmp_path, monkeypatch):
     # Point the logging-module verification at a real plan_logging.py so the
     # second probe subprocess succeeds; the executor path is the quote-carrying one.
     logging_scripts = (
-        Path(__file__).parent.parent.parent.parent
+        PROJECT_ROOT
         / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts'
     )
     shared_dirs = [
-        Path(__file__).parent.parent.parent.parent / 'marketplace/bundles/plan-marshall/skills' / rel
+        MARKETPLACE_ROOT / 'plan-marshall/skills' / rel
         for rel in (
             'tools-file-ops/scripts',
             'tools-input-validation/scripts',
