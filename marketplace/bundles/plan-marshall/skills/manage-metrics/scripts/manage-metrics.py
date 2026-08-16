@@ -117,10 +117,14 @@ _DISPATCH_CONTEXT_LOAD_COLUMNS = (
 # positional, so an unmeasured column cannot simply be dropped; it carries this
 # token instead.
 #
-# The token gives readers a THREE-way distinction that ``0`` alone destroyed:
-# a measured zero is ``0``, a deliberately-unmeasured column is this literal,
-# and any other unparseable cell is UNRECOGNISED — which a reader must report as
-# such rather than fold into either neighbour.
+# The token gives readers a distinction that ``0`` alone destroyed: a measured
+# zero is ``0``, a deliberately-unmeasured column is this literal, and any other
+# unparseable cell is UNRECOGNISED — reported as such rather than folded into
+# either neighbour. One residue the token cannot fix: a literal ``0`` this writer
+# wrote BEFORE the token existed is byte-identical to a measured zero, so a reader
+# adds a fourth state, INDETERMINATE, for a ``0`` in a row carrying no post-token
+# fingerprint (see standards/data-format.md § Per-Dispatch Context-Load
+# Attribution, "provenance of a measured zero").
 UNMEASURED_COLUMN_TOKEN = 'unmeasured'
 
 # ---------------------------------------------------------------------------

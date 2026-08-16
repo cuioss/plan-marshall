@@ -680,13 +680,13 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
     ``standards/data-format.md`` (Per-Dispatch Context-Load Attribution
     section); this reader consumes that contract.
 
-    **The four context-load columns read three ways, never two.** The writer
+    **The four context-load columns read FOUR ways, never two.** The writer
     distinguishes a measured value from a deliberately-unmeasured column, so
     this reader must preserve that distinction rather than folding either into a
     ``0``:
 
-    * an integer cell — MEASURED. Carried as an int, and a measured ``0`` stays
-      ``0``.
+    * an integer cell — MEASURED, with one gate below for a literal ``0``.
+      Carried as an int.
     * the literal ``unmeasured`` — recognised, and deliberately not measured.
       The key is OMITTED from the row dict; the column name is listed in the
       row's ``unmeasured_columns``.
@@ -694,6 +694,16 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
       key is omitted too, but the column name is listed in the row's
       ``unrecognised_columns``, which is a different fact: the writer made a
       statement this reader failed to parse, rather than declining to measure.
+    * a literal ``0`` the reader cannot date — INDETERMINATE. The pre-token
+      writer defaulted every omitted context-load column to a literal ``0``, so
+      "measured zero" and "wrote 0 because it had nothing" are byte-identical.
+      The reader dates the row by a post-token FINGERPRINT — an ``unmeasured``
+      token (only the current writer emits it) or a nonzero context-load cell
+      ("nothing to measure" never yields one). A ``0`` in a row carrying either
+      is a genuine measured zero and stays ``0``; a ``0`` in a row carrying
+      NEITHER cannot be dated, so its key is OMITTED and the column is listed in
+      the row's ``indeterminate_columns`` — distinct from ``unmeasured`` (the
+      writer said so) and ``unrecognised`` (the reader could not parse it).
 
     A LEGACY five-column row (written before the columns existed) reports all
     four as **unmeasured** — it recorded no context-load measurement at all — and
@@ -703,10 +713,11 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
     Returned dict shape:
       - present: bool
       - rows: list of {timestamp, termination_cause, total_tokens, tool_uses,
-            duration_ms, unmeasured_columns, unrecognised_columns} plus one key
-            per MEASURED context-load column. A consumer testing for a
-            context-load value MUST test for the key's presence — an absent key
-            is never a zero.
+            duration_ms, unmeasured_columns, unrecognised_columns,
+            indeterminate_columns} plus one key per MEASURED context-load
+            column. A consumer testing for a context-load value MUST test for the
+            key's presence — an absent key is never a zero, and a column named in
+            ``indeterminate_columns`` is never a measured zero either.
       - unknown_count: number of rows with ``termination_cause == "unknown"``
       - clean_exit_queue_empty_count: number of rows with
             ``termination_cause == "clean_exit_queue_empty"``
@@ -776,13 +787,39 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
             }
         except (ValueError, IndexError):
             continue
-        # Read the four appended context-load columns three ways — measured /
-        # unmeasured / unrecognised — per column, independently. Per-column
+        # Read the four appended context-load columns — measured / unmeasured /
+        # unrecognised / INDETERMINATE — per column, independently. Per-column
         # rather than per-row: a row whose third appended cell is corrupt still
         # carries two perfectly good measurements, and the old all-or-nothing
         # except-block discarded them along with the corrupt one.
+        #
+        # A literal `0` needs a ROW-LEVEL provenance gate, because the bytes on
+        # disk are IDENTICAL for "measured zero" and "wrote 0 because the column
+        # was never measured": the pre-token writer defaulted every omitted
+        # context-load column to a literal `0`, so a nine-column pre-token row
+        # reads as four measured zeros unless the reader can date it. There is no
+        # out-of-band discriminator (D0's verdict) — the disambiguator is an
+        # IN-band, post-token FINGERPRINT on the row itself: the `unmeasured`
+        # token, which ONLY the current writer emits, or a nonzero context-load
+        # cell, which "nothing to measure" never produces. A row carrying either
+        # was demonstrably written by the current writer, so its literal `0`s are
+        # genuine measured zeros (matches standards/data-format.md's row-3
+        # example `…,9100,0,0,0` — three genuine measured zeros). A row carrying
+        # NEITHER (every context-load cell a literal `0`, or `0`s beside
+        # unrecognised cells) cannot be dated: its `0`s are INDETERMINATE — the
+        # writer made no recoverable statement, so the reader asserts neither
+        # "measured" nor "unmeasured". This is D0's no-discriminator verdict
+        # surfaced per row (see standards/data-format.md § Per-Dispatch
+        # Context-Load Attribution, "provenance of a measured zero").
+        # First pass: measured (nonzero), unmeasured, and unrecognised are
+        # decided per cell here — none of them depends on the rest of the row.
+        # Only a literal `0` is deferred, because its verdict turns on whether
+        # the WHOLE row carries a post-token fingerprint.
         unmeasured_columns: list[str] = []
         unrecognised_columns: list[str] = []
+        indeterminate_columns: list[str] = []
+        zero_columns: list[str] = []
+        provably_post_change = False
         for offset, column in enumerate(_CONTEXT_LOAD_COLUMNS):
             index = _LEGACY_COLUMN_COUNT + offset
             if index >= len(parts):
@@ -792,17 +829,41 @@ def _parse_dispatch_boundary_file(artifact: Path) -> dict[str, Any]:
                 continue
             cell = parts[index].strip()
             if cell == _UNMEASURED_COLUMN_TOKEN:
+                # The token is a writer-guaranteed post-token fingerprint.
+                provably_post_change = True
                 unmeasured_columns.append(column)
                 continue
             try:
-                row[column] = int(cell)
+                value = int(cell)
             except ValueError:
                 # A shape this reader does not recognise. Reported as such —
-                # never defaulted, and never folded into `unmeasured`, which is
-                # a statement the writer made on purpose.
+                # never defaulted, and never folded into any neighbour.
                 unrecognised_columns.append(column)
+                continue
+            if value != 0:
+                # A nonzero is a real measurement under any writer, and it dates
+                # the row to the current writer.
+                provably_post_change = True
+                row[column] = value
+            else:
+                # A literal `0`; its provenance is decided in the second pass,
+                # once the whole row's fingerprint is known.
+                zero_columns.append(column)
+
+        # Second pass over the deferred zeros. A `0` is a genuine measured zero
+        # only when a post-token fingerprint (an `unmeasured` token or a nonzero
+        # cell) dates the row to the current writer. Otherwise it cannot be
+        # dated: reported as its own fourth state, INDETERMINATE — never folded
+        # into `unmeasured` (a statement the writer made on purpose) nor read as
+        # a measurement it never took.
+        for column in zero_columns:
+            if provably_post_change:
+                row[column] = 0
+            else:
+                indeterminate_columns.append(column)
         row['unmeasured_columns'] = unmeasured_columns
         row['unrecognised_columns'] = unrecognised_columns
+        row['indeterminate_columns'] = indeterminate_columns
         rows.append(row)
 
     unknown_count = sum(1 for row in rows if row['termination_cause'] == 'unknown')

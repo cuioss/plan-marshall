@@ -862,23 +862,39 @@ Each row carries **nine columns**: the **legacy five** followed by the **four co
 | 8 | `cache_read_input_tokens` | int \| `unmeasured` | `--cache-read-input-tokens` (dispatch `message.usage.cache_read_input_tokens`) | the literal `unmeasured` |
 | 9 | `cache_creation_input_tokens` | int \| `unmeasured` | `--cache-creation-input-tokens` (dispatch `message.usage.cache_creation_input_tokens`) | the literal `unmeasured` |
 
-#### The unmeasured token, and the three-way cell read
+#### The unmeasured token, and the cell read
 
 The four context-load columns are OPTIONAL — a caller with no `message.usage` figure to forward passes no flag. They therefore carry **no numeric default**: an omitted flag writes the literal `unmeasured`, never `0`. "The caller passed no measurement" and "the dispatch loaded zero context" are different facts, and writing `0` for both made them byte-identical rows. This is the module's own absent-is-not-zero rule (the one the exploration counters and the cache-read attribution group already follow — see § Exploration-share counters) applied to the ledger row; the positional row shape means the column cannot be dropped, so it carries a token instead.
 
 The legacy five columns keep their `0` default deliberately: no consumer distinguishes an absent from a zero on those, so introducing a second unmeasured surface there would add a distinction nothing reads.
 
-Every reader of columns 6–9 MUST implement the same **three-way** read, and MUST NOT collapse it to two:
+Every reader of columns 6–9 MUST implement the same cell read, and MUST NOT collapse it to two:
 
 | Cell | Reading | Required behaviour |
 |------|---------|--------------------|
-| an integer | **measured** — including a measured `0` | Carry the int. A measured `0` is a real measurement and stays `0` |
+| a nonzero integer | **measured** | Carry the int — a real value under any writer |
+| a literal `0` | **measured** when the row is datable to the current writer, else **indeterminate** | Carry `0` only when a post-token fingerprint dates the row; otherwise omit the key and name the column indeterminate — see *Provenance of a measured zero* below |
 | the literal `unmeasured` | **recognised, and deliberately not measured** | Carry the column as ABSENT. Never substitute `0` |
 | anything else (non-int, non-token, or a column the row does not have) | **unrecognised** | Report as unrecognised — distinct from unmeasured. Never default it, and never fold it into either neighbour |
 
 The distinction between *unmeasured* and *unrecognised* is load-bearing: the first is a statement the writer made on purpose, the second is a shape the reader failed to understand. Collapsing them would let a genuinely corrupt row read as a deliberate abstention.
 
-**Positional backward compatibility**: the four context-load columns are appended at the END so columns 1–5 are positionally unchanged. A legacy five-column row (written before the columns existed) still parses — the `plan-retrospective` reader uses a `len(parts) >= 5` floor — and its four missing columns read as **unmeasured** (absent), never as a measured `0`. That is the honest reading: a row written before the columns existed recorded no context-load measurement at all. A malformed appended cell reads as **unrecognised** and does not drop the whole row.
+#### Provenance of a measured zero (the fourth state)
+
+A cell parsed as an integer is a MEASUREMENT — except that a literal `0` cannot always be trusted as one. Before the `unmeasured` token existed, the writer defaulted every omitted context-load column to a literal `0`, so a nine-column row written by that pre-token writer is **byte-identical** to a genuine all-measured-zero row. "Measured zero" and "wrote 0 because the column was never measured" are the same bytes on disk: no reader-side change can separate them by looking at the cell alone. This is an information-loss property of the record, not a parsing gap — widening the column-count floor cannot recover a distinction the two-state writer already destroyed.
+
+There is **no out-of-band discriminator** that dates such a row: the format carries no schema stamp and no writer-emitted provenance field, and a row's own timestamp cannot be compared against a landing instant the record does not carry. What a reader *can* use is an IN-band, post-token **fingerprint** on the row itself:
+
+- an **`unmeasured` token** in any of columns 6–9 — only the current writer emits it, so the row was written by the current writer; or
+- a **nonzero** context-load cell — "nothing to measure" never yields a nonzero, so the cell is a real measurement and dates the row.
+
+A literal `0` in a row carrying **either** fingerprint is a genuine measured zero and is carried as `0` — this is why the row `2026-05-08T15:02:55Z,…,9100,0,0,0` above reads as three genuine measured zeros. A literal `0` in a row carrying **neither** — every context-load cell a literal `0`, or `0`s beside only unrecognised cells — cannot be dated, and is reported as a **fourth state, `indeterminate`**: the key is omitted and the column is named in the row's `indeterminate_columns`. It is distinct from `unmeasured` (a statement the writer made on purpose — collapsing to it would assert an abstention the writer never made) and from `unrecognised` (a shape the reader failed to parse).
+
+The `plan-retrospective` reader (`_parse_dispatch_boundary_file`) implements this row-level provenance gate. A reader that does not recover provenance still performs the cell read above, but reads an undatable `0` as a measured zero — the pre-fix behaviour whose correction this section documents.
+
+**Positional backward compatibility**: the four context-load columns are appended at the END so columns 1–5 are positionally unchanged. A legacy five-column row (written before the columns existed) still parses — the `plan-retrospective` reader uses a `len(parts) >= 5` floor — and its four **missing** columns read as **unmeasured** (absent), never as a measured `0`. That is the honest reading: a row written before the columns existed recorded no context-load measurement at all. A malformed appended cell reads as **unrecognised** and does not drop the whole row.
+
+The harder case is a **widened nine-column row written before the `unmeasured` token existed**: its four columns are PRESENT and carry a literal `0`, so a reader that trusts every integer records four measured zeros — the same over-claim positional compatibility exists to prevent, one floor lower than the five-column case. Such a row's zeros are of **indeterminate** provenance (see *Provenance of a measured zero* above) and read as the fourth state, never as measured `0`, unless the row carries a post-token fingerprint that dates it. A row written before the token existed recorded no *datable* context-load measurement, whether it omitted the columns (five-column) or defaulted them to `0` (nine-column).
 
 **Restating surfaces (lock-step obligation).** This section is the single source of truth; four surfaces restate it and MUST move together — the writer in `manage-metrics.py` (`cmd_record_dispatch_boundary` + `_DISPATCH_CONTEXT_LOAD_COLUMNS`), the `record-dispatch-boundary` operation block in `manage-metrics/SKILL.md`, the reader in `plan-retrospective/scripts/analyze-logs.py` (`_parse_dispatch_boundary_file`), and the hand-copied `_BC_LEDGER_COLUMNS` tuple in `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`. The last of those lives in a tree the architecture inventory does not crawl, so a drift there is invisible to a content sweep — it is named here so it is found by reading rather than by searching.
 
