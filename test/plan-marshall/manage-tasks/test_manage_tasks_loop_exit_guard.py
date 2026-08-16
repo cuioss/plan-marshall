@@ -6,9 +6,9 @@
 Split from test_manage_tasks.py: covers the script-level enforcement of the
 phase-5-execute "unfinished > 0 → must continue" invariant. The predicate
 is the union of `pending` AND `in_progress` task buckets, both of which
-block clean exit. Origin: lesson 2026-05-10-15-001 (pending-only predicate)
-broadened by plan execute-phase-resume-dispatches-with-empty-pending
-(in_progress added to the blocking set).
+block clean exit. A pending-only predicate is too narrow — it lets a plan with
+only in_progress work exit cleanly — which is why in_progress is in the
+blocking set.
 
 Contract:
   - pending > 0 OR in_progress > 0 → status: continue,
@@ -26,7 +26,7 @@ from argparse import Namespace
 
 from conftest import run_script
 
-from _helpers import (
+from _manage_tasks_fixtures import (
     SCRIPT_PATH,
     _finalize_step_ns,
     _list_ns,

@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from _helpers import (
+from _manage_tasks_fixtures import (
     _add_ns,
     _add_task,
     add_basic_task,

@@ -31,11 +31,11 @@ arms do.
 
 # ruff: noqa: I001
 import importlib.util
-from argparse import Namespace
 
 import pytest
 
 from conftest import get_script_path
+from _manage_metrics_fixtures import ns_generate
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
 
@@ -77,14 +77,10 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     return plan_context
 
 
-def _ns_generate(plan_id: str) -> Namespace:
-    return Namespace(plan_id=plan_id, command='generate', func=cmd_generate)
-
-
 def _render_report(plan_context, plan_id: str, phases: dict) -> str:
     """Seed a metrics.toon from ``phases``, run generate, return the metrics.md text."""
     write_metrics(plan_id, {'phases': phases})
-    result = cmd_generate(_ns_generate(plan_id))
+    result = cmd_generate(ns_generate(plan_id))
     assert result['status'] == 'success', result
     md_path = plan_context.plan_dir_for(plan_id) / 'metrics.md'
     content: str = md_path.read_text(encoding='utf-8')

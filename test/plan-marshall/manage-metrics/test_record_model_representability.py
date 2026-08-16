@@ -54,7 +54,14 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, get_script_path, load_script_module
+from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, get_script_path, load_script_module, parse_ns
+from _manage_metrics_fixtures import (
+    ns_end_phase,
+    ns_generate,
+    ns_phase_boundary,
+    ns_record_dispatch_boundary,
+    ns_start_phase,
+)
 
 # ---------------------------------------------------------------------------
 # Modules under composition
@@ -164,49 +171,6 @@ _HEAD_SHA = 'e' * 40
 # ---------------------------------------------------------------------------
 
 
-def _ns_start(plan_id: str, phase: str) -> Namespace:
-    return Namespace(plan_id=plan_id, phase=phase, command='start-phase', func=cmd_start_phase)
-
-
-def _ns_boundary(
-    plan_id: str,
-    prev_phase: str,
-    next_phase: str,
-    total_tokens: int | None = None,
-    tool_uses: int | None = None,
-) -> Namespace:
-    return Namespace(
-        plan_id=plan_id,
-        prev_phase=prev_phase,
-        next_phase=next_phase,
-        total_tokens=total_tokens,
-        duration_ms=None,
-        tool_uses=tool_uses,
-        retrospective_tokens=None,
-        command='phase-boundary',
-        func=cmd_phase_boundary,
-    )
-
-
-def _ns_end(
-    plan_id: str, phase: str, total_tokens: int | None = None, tool_uses: int | None = None
-) -> Namespace:
-    return Namespace(
-        plan_id=plan_id,
-        phase=phase,
-        total_tokens=total_tokens,
-        duration_ms=None,
-        tool_uses=tool_uses,
-        retrospective_tokens=None,
-        command='end-phase',
-        func=cmd_end_phase,
-    )
-
-
-def _ns_generate(plan_id: str) -> Namespace:
-    return Namespace(plan_id=plan_id, command='generate', func=cmd_generate)
-
-
 def _ns_dispatch(
     plan_id: str,
     termination_cause: str,
@@ -215,26 +179,21 @@ def _ns_dispatch(
     duration_ms: int,
     context_load: dict[str, int],
 ) -> Namespace:
-    """Build a `record-dispatch-boundary` Namespace.
+    """Build a `record-dispatch-boundary` Namespace from the script's own parser.
 
-    A context-load column absent from *context_load* is left UNSET on the
-    Namespace rather than set to `None`, which is exactly what the CLI produces
-    for an omitted flag — the writer reads it back with
-    `getattr(args, column, None)`.
+    A context-load column absent from *context_load* is left at the parser's own
+    default for an omitted flag, so the namespace matches what the real CLI
+    produces; the writer reads the column back with `getattr(args, column, None)`.
     """
-    namespace = Namespace(
-        plan_id=plan_id,
-        phase='5-execute',
-        termination_cause=termination_cause,
+    return ns_record_dispatch_boundary(
+        plan_id,
+        '5-execute',
+        termination_cause,
         total_tokens=total_tokens,
         tool_uses=tool_uses,
         duration_ms=duration_ms,
-        command='record-dispatch-boundary',
-        func=cmd_record_dispatch_boundary,
+        **context_load,
     )
-    for column, value in context_load.items():
-        setattr(namespace, column, value)
-    return namespace
 
 
 def _ns_mark_step(
@@ -245,17 +204,22 @@ def _ns_mark_step(
     head_at_completion: str | None = None,
     loop_back_target: str | None = None,
 ) -> Namespace:
-    return Namespace(
-        plan_id=plan_id,
-        phase='6-finalize',
-        step=_STEP,
-        outcome=outcome,
-        force=force,
-        display_detail=display_detail,
-        head_at_completion=head_at_completion,
-        loop_back_target=loop_back_target,
-        fact=None,
-    )
+    """A `mark-step-done` namespace from manage-status.py's own parser."""
+    argv = [
+        'mark-step-done', '--plan-id', plan_id, '--phase', '6-finalize',
+        '--step', _STEP, '--outcome', outcome,
+    ]
+    if force:
+        argv.append('--force')
+    for flag, value in (
+        ('--display-detail', display_detail),
+        ('--head-at-completion', head_at_completion),
+        ('--loop-back-target', loop_back_target),
+    ):
+        if value is not None:
+            argv += [flag, value]
+    parsed: Namespace = parse_ns('plan-marshall', 'manage-status', 'manage-status.py', *argv)
+    return parsed
 
 
 # ---------------------------------------------------------------------------
@@ -299,7 +263,7 @@ def _drive_scenario(plan_id: str) -> dict[str, Any]:
     plan_dir = Path(manage_metrics.get_plan_dir(plan_id))
     _seed_denominator_sources(plan_dir)
 
-    assert cmd_start_phase(_ns_start(plan_id, '1-init'))['status'] == 'success'
+    assert cmd_start_phase(ns_start_phase(plan_id, '1-init'))['status'] == 'success'
     # The three inline boundaries close usage-free — the sanctioned inline
     # recording mode, and the reason `end_time` presence is the only thing the
     # renamed verdict may claim to have checked.
@@ -308,10 +272,10 @@ def _drive_scenario(plan_id: str) -> dict[str, Any]:
         ('2-refine', '3-outline'),
         ('3-outline', '4-plan'),
     ):
-        assert cmd_phase_boundary(_ns_boundary(plan_id, prev_phase, next_phase))['status'] == 'success'
+        assert cmd_phase_boundary(ns_phase_boundary(plan_id, prev_phase, next_phase))['status'] == 'success'
     assert (
         cmd_phase_boundary(
-            _ns_boundary(plan_id, '4-plan', '5-execute', total_tokens=52000, tool_uses=18)
+            ns_phase_boundary(plan_id, '4-plan', '5-execute', total_tokens=52000, tool_uses=18)
         )['status']
         == 'success'
     )
@@ -334,7 +298,7 @@ def _drive_scenario(plan_id: str) -> dict[str, Any]:
     # non-zero token total — the row shape the old `partial: false` certified.
     assert (
         cmd_phase_boundary(
-            _ns_boundary(
+            ns_phase_boundary(
                 plan_id, '5-execute', '6-finalize', total_tokens=_EXEC_CLOSE_ONE_TOKENS, tool_uses=0
             )
         )['status']
@@ -353,10 +317,10 @@ def _drive_scenario(plan_id: str) -> dict[str, Any]:
     )
 
     # The loop-back re-enters 5-execute and closes it a SECOND time.
-    assert cmd_start_phase(_ns_start(plan_id, '5-execute'))['status'] == 'success'
+    assert cmd_start_phase(ns_start_phase(plan_id, '5-execute'))['status'] == 'success'
     assert (
         cmd_phase_boundary(
-            _ns_boundary(
+            ns_phase_boundary(
                 plan_id, '5-execute', '6-finalize', total_tokens=_EXEC_CLOSE_TWO_TOKENS, tool_uses=0
             )
         )['status']
@@ -388,11 +352,11 @@ def _drive_scenario(plan_id: str) -> dict[str, Any]:
     )
 
     assert (
-        cmd_end_phase(_ns_end(plan_id, '6-finalize', total_tokens=31000, tool_uses=12))['status']
+        cmd_end_phase(ns_end_phase(plan_id, '6-finalize', total_tokens=31000, tool_uses=12))['status']
         == 'success'
     )
 
-    generated = cmd_generate(_ns_generate(plan_id))
+    generated = cmd_generate(ns_generate(plan_id))
     assert generated['status'] == 'success', generated
 
     return {
@@ -411,11 +375,11 @@ def _drive_scenario(plan_id: str) -> dict[str, Any]:
 
 def _make_plan(plan_id: str) -> None:
     result = cmd_create(
-        Namespace(
-            plan_id=plan_id,
-            title='Record model representability',
-            phases='1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
-            force=False,
+        parse_ns(
+            'plan-marshall', 'manage-status', 'manage-status.py', 'create',
+            '--plan-id', plan_id,
+            '--title', 'Record model representability',
+            '--phases', '1-init,2-refine,3-outline,4-plan,5-execute,6-finalize',
         )
     )
     assert result['status'] == 'success', result

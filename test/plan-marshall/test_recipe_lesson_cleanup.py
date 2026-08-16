@@ -410,7 +410,7 @@ class TestRecipePathEndToEnd:
     def test_recipe_path_emits_slim_manifest(self, lesson_kind, change_type, plan_id, plan_context):
         """End-to-end: recipe inputs → manifest with the documented shape.
 
-        Under the new precondition-resolver contract (lesson 2026-05-15-14-002),
+        Under the precondition-resolver contract,
         Row 2 (recipe) RETAINS review gates — ``automatic-review`` and
         ``sonar-roundtrip`` are present in the composed manifest. Only the
         legacy ``ci-wait`` step ID is defensively narrowed out when present
@@ -492,7 +492,7 @@ class TestRecipePathEndToEnd:
         """Sanity check: even without recipe_key, surgical+bug_fix defensively
         drops the legacy ``ci-wait`` step ID from Phase 6.
 
-        Under the new precondition-resolver contract (lesson 2026-05-15-14-002),
+        Under the precondition-resolver contract,
         Row 5 (surgical_bug_fix / surgical_tech_debt) RETAINS the review
         gates — only the legacy ``ci-wait`` step ID is defensively narrowed
         out. The failsafe ensures that a recipe that forgets to set

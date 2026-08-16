@@ -71,10 +71,9 @@ def test_enrich_rejects_invalid_session_id(axis, bad_value):
 # =============================================================================
 # --termination-cause (record-dispatch-boundary)
 #
-# Lesson 2026-05-10-15-001: the recorder migrated from the overloaded
-# `unknown` fallback to the canonical `clean_exit_queue_empty` success-path
-# value. The legacy literal `unknown` is now rejected schema-wide via the
-# argparse ``choices=`` list; the canonical value is accepted.
+# The recorder uses the canonical `clean_exit_queue_empty` success-path
+# value. The literal `unknown` is rejected schema-wide via the argparse
+# ``choices=`` list; the canonical value is accepted.
 # =============================================================================
 
 

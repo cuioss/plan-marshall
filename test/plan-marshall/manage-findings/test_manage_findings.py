@@ -1070,13 +1070,13 @@ def test_qgate_add_different_titles_not_deduped(plan_context):
 
 
 # =============================================================================
-# Test: Content-discriminator dedup (lesson 2026-07-07-00-001)
+# Test: Content-discriminator dedup
 # =============================================================================
 
 
 def test_qgate_same_class_different_subject_not_reopened(plan_context):
     """A same-title finding with a DIFFERENT content discriminator never reopens a
-    resolved sibling — the core fix for lesson 2026-07-07-00-001.
+    resolved sibling.
     """
     pid = 'qgate-diff-subject-noreopen'
     first = cmd_qgate_add(
@@ -1203,7 +1203,7 @@ def test_raw_input_under_cap_stored_verbatim(plan_context):
 
 
 # =============================================================================
-# Test: raw_input parse-error sentinel collision (PR #852 review)
+# Test: raw_input parse-error sentinel collision
 # =============================================================================
 
 
@@ -1253,7 +1253,7 @@ def test_parse_raw_input_empty_field_returns_error_marker():
 
 
 # =============================================================================
-# Test: resolution_detail relational integrity (lesson 2026-06-30-21-001)
+# Test: resolution_detail relational integrity
 # =============================================================================
 
 

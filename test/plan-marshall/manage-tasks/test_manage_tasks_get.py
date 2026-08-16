@@ -9,7 +9,7 @@ the canonical TOON-error contract for malformed --task-number.
 
 from conftest import run_script
 
-from _helpers import (
+from _manage_tasks_fixtures import (
     SCRIPT_PATH,
     _add_ns,
     _exists_ns,
