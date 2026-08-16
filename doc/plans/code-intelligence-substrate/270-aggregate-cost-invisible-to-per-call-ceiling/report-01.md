@@ -306,7 +306,7 @@ That is also why #55 was worth chasing rather than caveating: the same input sha
 | 8 Merge gate | **Done** | Conditions 1–3 met before arming; this report is the last pre-merge commit. **The § Step 8 condition-4 shortfall disclosure fired** and is stated in § Reviewer participation and to the operator: *review coverage 2 of 3 — `cuioss-review-bot` and `coderabbitai` both reviewed and both found real defects, all fixed; `cuioss-review-bot` additionally re-reviewed the final fix commit clean, while CodeRabbit re-entered its quota before it could; `sourcery-ai` rate-limited on a weekly diff-character quota that did not clear within the run.* A shortfall is disclosed, never merged on silently, and never blocked on. ⚠ Auto-merge was armed once, then **disarmed** when CodeRabbit's late review arrived while the required check was still running — the branch had not yet queued, so the findings could be fixed in this PR rather than stranded in a follow-up. |
 | 8 Bridge | **Done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory. The merge commit brought in another plan's directory as ordinary merge content, not as a write by this run. |
 | 9 This check | **Done** | This table. |
-| 9 What have we learned | **Done** | Two proposals below, presented to the operator and **not** self-approved. |
+| 9 What have we learned | **Done** | Four proposals below, presented to the operator and **not** self-approved. |
 
 ### ⚠ A contract disagreement observed, and reported as the plan's preamble requires
 
@@ -316,7 +316,7 @@ The run followed **the skill**, because the plan's own first-instruction block m
 
 ## What have we learned (Step 9)
 
-Two proposals, each with evidence **from this run**. Both are **presented to the operator and not self-approved**; neither is shipped in this PR, and if accepted each belongs on its own `chore/` branch.
+Four proposals, each with evidence **from this run**. All are **presented to the operator and not self-approved**; none is shipped in this PR, and if accepted each belongs on its own `chore/` branch.
 
 ### Proposal 1 — a field added without a test is where the next round's false claim survives
 
