@@ -400,13 +400,16 @@ def check_affected_files_recall(
             f'Affected files heading present but no bullet parsed for deliverable(s): {named}',
             {
                 # ``declared`` means the SAME thing on every branch — the
-                # modification-intent count — so the identity
-                # ``declared + read_intent_excluded == total bullets`` holds
-                # everywhere and a consumer can reconstruct the unfiltered
-                # population without knowing which branch produced the verdict.
-                # This verdict is nonetheless derived from the UNFILTERED
-                # bullets, so that population is published under its own name
-                # rather than by overloading ``declared``.
+                # modification-intent count — so
+                # ``declared + read_intent_excluded`` reconstructs the
+                # DISTINCT declared paths on every branch, and a consumer needs
+                # no knowledge of which branch produced the verdict. Both
+                # operands are set cardinalities, so the reconstructed total is
+                # distinct paths, NOT the number of bullets: a path declared
+                # twice contributes one. This verdict is nonetheless derived
+                # from the UNFILTERED declaration, so that population is
+                # published under its own name rather than by overloading
+                # ``declared``.
                 'declared': len(declared),
                 'declared_unfiltered': len(all_declared),
                 'deliverables': len(deliverables),

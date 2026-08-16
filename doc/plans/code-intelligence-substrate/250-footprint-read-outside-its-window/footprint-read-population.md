@@ -48,7 +48,7 @@ Each already distinguishes the two states it can return.
 | 3 | `check-routing-decisions.py` → mis-prune check | reader / grades | **Yes** — same call site | ✅ reads via `footprint_resolved` |
 | 4 | `analyze-logs.py` → ARTIFACT-coverage floor | reader / grades | **Yes** — same call site | ❌ **collapsed** |
 | 5 | `verify_failure_scope.py` → `classify_failure_scope` | reader / decides | **Yes** — archived plan, or any git failure | ❌ **collapsed** |
-| 6 | `manage-execution-manifest.py` → `_apply_footprint_gated_canonical_prefilter` | composer / decides | **Yes** — composes at phase-4-plan, before the worktree exists | ✅ fails closed, keeps every step |
+| 6 | `manage-execution-manifest.py` → `_apply_canonical_verify_inactive` | composer / decides | **Yes** — composes at phase-4-plan, before the worktree exists | ✅ fails closed, keeps every step |
 | 7 | `manage-execution-manifest.py` → `_apply_security_class_inactive` | composer / decides | **Yes** — same call time | ✅ `None` is no evidence, keeps the step |
 | 8 | `extension_base.py` → `should_execute_build` | decider | **Yes** — same call time | ✅ three-valued `unknown` / `not_necessary` / `build` |
 | 9 | `manage-config/_cmd_build_map.py` → `build-decision` | decider | **Yes** — delegates to #8 | ✅ surfaces `decision: unknown` with a reason |

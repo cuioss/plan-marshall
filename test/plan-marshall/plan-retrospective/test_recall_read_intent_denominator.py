@@ -366,20 +366,32 @@ class TestReadIntentExcludedIsPublishedOnEveryBranch:
         assert status == 'skip'
         assert details['read_intent_excluded'] == 0
 
-    def test_the_reconstruction_identity_holds_on_every_branch(self, tmp_path):
-        """``declared + read_intent_excluded`` recovers the unfiltered total.
+    def test_the_reconstruction_identity_recovers_distinct_declared_paths(self, tmp_path):
+        """``declared + read_intent_excluded`` recovers the DISTINCT declared paths.
 
         The identity is what makes the key useful; a branch where ``declared``
-        silently means something else double-counts.
+        silently means something else double-counts. Both operands are set
+        cardinalities, so the reconstructed total counts distinct paths and NOT
+        bullets — this fixture declares one path twice to pin that difference,
+        which a fixture of all-unique paths cannot express.
         """
-        outline = _outline([('src/w.py', 'write-new'), ('src/r.py', 'read')])
+        outline = _outline(
+            [
+                ('src/w.py', 'write-new'),
+                ('src/w.py', 'write-new'),
+                ('src/r.py', 'read'),
+            ]
+        )
         plan_dir = _plan_dir(tmp_path, ['src/w.py'])
 
         _status, _message, details = _cac.check_affected_files_recall(
             outline, plan_dir, _ONE_DELIVERABLE
         )
 
-        assert details['declared'] + details['read_intent_excluded'] == 2
+        assert len(_cac.extract_affected_files_per_deliverable(outline)) == 3, 'three bullets'
+        assert details['declared'] + details['read_intent_excluded'] == 2, (
+            'two DISTINCT declared paths, not three bullets'
+        )
 
 
 class TestExactMatchSharesTheFilteredDenominator:

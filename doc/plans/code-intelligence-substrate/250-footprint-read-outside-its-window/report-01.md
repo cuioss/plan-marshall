@@ -99,22 +99,43 @@ denominator:
    *scope-creep* rule deliberately keeps the **full** declared list: a file the plan said it would
    touch at all is not a surprise, whatever intent it named.
 
-A **fourth** declaration surface was found and is **deferred, not fixed** — see § Findings R2-D1.
+Two further consumers of the same declaration exist and are **intentionally left unfiltered**, named
+here because the plan's ⚠ asks for a derived set rather than a convenient one:
+
+4. `manage-execution-manifest.py` → `affected_files_count`, consumed by `_apply_security_class_inactive`
+   and `simplify_inactive` (`_manifest_rules.py`) and by three rows of `_manifest_decide.py`. It asks
+   *"did the plan declare any surface at all?"*, not *"how much did it expect to modify"*, so including
+   read-intent declarations is correct: a plan that declared only reads still declared something, and
+   counting it **fails closed** (the gate is kept). Filtering here would subtract a gate on the
+   composer side — the exact direction D4 forbids.
+
+A **fifth** declaration surface was found and is **deferred, not fixed** — see § Findings R2-D1.
 
 The declaration-**parseability** check still reads the unfiltered bullets, so a deliverable declaring
 only read-intent files is not mis-reported as a parse failure; that case became a `skip` carrying its
 own distinct reason rather than a 0% recall. `details.read_intent_excluded` publishes the filtered
 count on **every** branch, and `declared` means the same thing on every branch, so
-`declared + read_intent_excluded` reconstructs the unfiltered total everywhere.
+`declared + read_intent_excluded` reconstructs the unfiltered population everywhere. Both operands are
+set cardinalities, so what it reconstructs is the **distinct declared paths**, not the bullet count — a
+path declared twice contributes one.
 
 ### D4 — the composer's decision fails CLOSED — **already satisfied; verified, not re-built**
+
+**Which option the code takes, stated precisely.** D4's body offers two: *"Either defer it to a point
+where the footprint is real, or state the predicate's precondition and **skip** when it is unmet."* The
+code takes the **second**. Its *Done when* line is written more strictly — *"no composition-time
+predicate reads the realized footprint"* — and taken literally that is **not** what the code does: the
+composer does call `_resolve_footprint` at compose time. What it does is treat an unresolvable result
+as **inadmissible** rather than false, which is the deliverable's own ⛔ requirement and its second
+offered option. Recording the discrepancy rather than reporting a clean fit against the stricter
+sentence.
 
 No code change was needed. Every composition-time predicate already reads the three-valued footprint
 and fails closed:
 
 | Predicate | Fail-closed read |
 |---|---|
-| `_apply_footprint_gated_canonical_prefilter` | `if footprint is None or not footprint: return phase_5_steps, []` — every canonical survives |
+| `_apply_canonical_verify_inactive` | `if footprint is None or not footprint: return phase_5_steps, []` — every canonical survives |
 | `_apply_security_class_inactive` | `if affected_files_count > 0 or live_footprint_count is None or …` — `None` is no evidence, step kept |
 | `extension_base.should_execute_build` / `manage-config build-decision` | three-valued `unknown` / `not_necessary` / `build`; a gate drops only on the positive `not_necessary` |
 | `pyproject_build.cmd_resolve_test_scope` | `footprint_resolvable = resolved_footprint is not None`, fails closed |
@@ -163,18 +184,32 @@ For (a) and (c), red-before-green was performed by stashing **only the source fi
 in place, running them, then restoring — so the red was observed against real pre-fix code, not
 asserted.
 
-**(c), re-derived at the moment of this claim.** `test_recall_read_intent_denominator.py` now holds
-**21** tests. Not all 21 are red-pre-fix tests, and the distinction matters:
+**(c), measured against pre-branch source at the moment of this claim** — not reasoned about.
+`test_recall_read_intent_denominator.py` holds **21** tests. Run against merge-base `5edca5a`:
+**18 failed, 3 passed.**
 
-- At the time of the D3 red-check the module held 9 tests, of which **8 failed** against stashed
-  pre-fix source; the headline case failed with the exact defect message *"Recall 40% below 70%
-  threshold"*. The 1 that passed pins pre-existing behaviour (the no-declaration skip branch) and is
-  correctly green on both sides.
-- The other 12 were added by verification rounds 1 and 2. **These are deliberately not red-pre-fix
-  tests**: 7 pin *parse-preservation* — properties that held on `origin/main`, were broken by this
-  branch's own intermediate designs, and must hold again — so they are green against pre-branch source
-  by construction. The remaining 5 pin the `read_intent_excluded` publication contract and the
-  reconstruction identity, which did not exist pre-fix.
+- At the time of the D3 red-check the module held 9 tests, of which **8 failed**; the headline case
+  failed with the exact defect message *"Recall 40% below 70% threshold"*. The 1 that passed pins
+  pre-existing behaviour (`test_no_declaration_keeps_its_distinct_skip_reason`) and is correctly green
+  on both sides.
+- The other 12 were added by verification rounds 1 and 2, and **10 of them are also red pre-branch** —
+  but for a reason that is NOT evidence of the defect they guard: they call
+  `extract_modification_intent_files`, which does not exist pre-branch, so they fail with
+  `AttributeError` rather than by observing a wrong answer. Only 2 pass pre-branch
+  (`test_parenthesis_inside_a_bare_path_is_preserved`,
+  `test_a_bullet_that_is_entirely_a_parenthetical_still_parses`) — the two that touch only the
+  pre-existing extractor.
+
+**The 7 parse-preservation tests are therefore NOT red-pre-fix tests in the plan's sense, and a red
+result from them must not be read as one.** They guard against *this branch's own intermediate
+regressions* (F3, N1), not against a defect on `main` — the property they pin **held** on `main`. Their
+evidence is the differential check, not a red-green transition: current extractor vs merge-base over
+241k fuzzed inputs and every real `**Affected files:**` bullet in the tree, **zero match divergences
+and zero lost bullets**, with path divergences confined to bare bullets carrying a genuine
+`VALID_STEP_INTENTS` marker.
+
+An earlier revision of this report claimed those 7 were "green against pre-branch source by
+construction". That was false and is recorded as finding V1.
 
 ## Build gate
 
@@ -233,6 +268,28 @@ was followed by fixes and a re-dispatch.
 | N8 | sub-agent | `analyze-logs` residue: stale tier-4 docstring, a bare `None` where the comment claims the sentinel is read by name, and an undocumented sort/dedup behaviour change in tier 4 | **Fixed** |
 | N9 | sub-agent | Commit `385f081`'s message says "2 of 5 return branches"; there are 7 returns / 6 details dicts | **Accepted, not corrected** — the commit is pushed and its message is immutable without a force-push that would discard a published history for a cosmetic count. Recorded here instead |
 | N10 | sub-agent | The production-shape TOON fixture predated the always-published `read_intent_excluded` key | **Fixed** |
+
+### Round 3 — re-dispatch over round 2's fixes and the rewritten report
+
+Round 3 confirmed round 2's core code fix **empirically clean**: 73 adversarial forms, **241,370**
+fuzzed inputs, and every real `**Affected files:**` bullet in the tree (42 files, 217 bullets) — **zero
+match divergences, zero lost bullets, zero empty paths**. The `constants` import was executed in all
+three load contexts (executor, in-process pytest, `run_script` subprocess). The defect class that
+recurred twice is closed.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| V1 | sub-agent | **False claim in the rewritten report**, D6(c): 7 verification-added tests were described as "green against pre-branch source by construction". Measured: **5 fail, 2 pass** — 4 error with `AttributeError` (they call a function that does not exist pre-branch, so they cannot run at all), and 1 genuinely pins new behaviour. Full module against pre-branch: **18 failed, 3 passed** | **Fixed** — replaced with the measured account; the section now states why a red from a parse-preservation test is *not* evidence of a defect on `main`, and points to the differential check as their real evidence |
+| V2 | sub-agent | The identity `declared + read_intent_excluded == total bullets`, asserted in a code comment, the report, and a commit message, is **false**: both operands are set cardinalities, so it reconstructs *distinct declared paths*. A path declared twice breaks it. The test used only unique paths, so it structurally could not catch this | **Fixed** at all three sites; the test now declares a path twice to pin the difference |
+| V3 | sub-agent | `artifact-consistency.md:75` said "**Two** obligations follow"; rounds 1 and 2 grew the list to five without touching the lead-in | **Fixed** |
+| V4 | sub-agent | `_apply_footprint_gated_canonical_prefilter` — named in both deliverable documents as D1 site #6 — **exists nowhere in the tree**. The real function is `_apply_canonical_verify_inactive`. The quoted code line was accurate; only the name was invented. It survived a commit that explicitly audited D1 paths *and* the full report rewrite | **Fixed** in both documents |
+| V5 | sub-agent | `declared_unfiltered`, added by round 2, appeared in no reference doc — while its sibling `read_intent_excluded` is documented. Round 2 filed R2-D3 about the details block lacking a worked example without noticing it had just added a second undocumented key to it | **Fixed** — both keys and the reconstruction identity are now documented |
+| V6 | sub-agent | "the split always leaves a non-empty path" is true for the bare branch (fuzz-proven) but false for the quoted branch: `` - ` ` `` yields `''`. Identical to pre-branch, so no regression — the sentence was simply wrong | **Fixed** — scoped to the bare branch, with the quoted case named as pre-existing |
+| V7 | sub-agent | "This reader's path pattern is deliberately WIDER than the owner's" is not a superset relation — the two diverge in **both** directions on annotated bullets | **Fixed** — reframed as a divergence, with an example each way. The load-bearing half (the owner's class excludes `(`) was verified TRUE |
+| V8 | sub-agent | `constants.py:316` still named two importers of `VALID_STEP_INTENTS`; round 2 added a third | **Fixed** |
+| V9 | sub-agent | Commit `8c1eafc`'s message says "all 18 verification findings"; the table holds 18 numbered findings **plus** 3 deferred **plus** 4 self-corrections = 25 rows | **Accepted, not corrected** — same reason as N9: the message is published and immutable without a force-push over shared history. The report body claims no total, so the error is confined to the message |
+| V10 | sub-agent | D3's derived consumer set omitted the composer's `affected_files_count`, an **unfiltered** consumer of the same declaration | **Fixed** — added to the set with its rationale: it asks "was any surface declared", and leaving it unfiltered fails closed. Filtering it would subtract a composer-side gate, the direction D4 forbids |
+| V11 | sub-agent | D4 was reported as "already satisfied" without naming which of the plan's two offered options the code takes. Taken literally, D4's *Done when* ("no composition-time predicate reads the realized footprint") is **not** what the code does — it reads it and treats unresolvable as inadmissible | **Fixed** — the discrepancy is now stated rather than smoothed over |
 
 ### Round 2 — findings deferred, with reasons
 
