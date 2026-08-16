@@ -111,7 +111,7 @@ raw turns, so they are extra transcript entries counted by `gate_decision_count`
 
 ### D4 — tests
 
-**Done.** 114 tests across four modules (26 + 19 + 16 + 53 collected), carrying 232 assertions.
+**Done.** 123 tests across four modules (32 + 21 + 17 + 53 collected), carrying 248 assertions.
 
 | Plan requirement | Test |
 |---|---|
@@ -140,7 +140,7 @@ signal".
 **The validation trap was respected.** No assertion validates by a retention ratio. Every test asserts
 the **classification of a known population of turns** — the plan's single most important verification
 instruction — and the ratio is treated as an output of the defect, not a check on it. Independently
-re-confirmed across every assertion in the three modules by three verification rounds.
+re-confirmed across every assertion in the four chat test modules by four verification rounds.
 
 ## Build gate
 
@@ -158,17 +158,17 @@ printed summary proves all three ran):
 | module-tests | **20333 passed, 14 skipped**, zero `FAILED`/`ERROR` lines |
 | Overall | `=== verify: SUCCESS ===` |
 
-Eight full `./pw verify` runs were performed across the run; this row is the last, at the commit named
+Nine full `./pw verify` runs were performed across the run; this row is the last, at the commit named
 above. Any commit landing after it is Markdown-only unless this line says otherwise.
 
 Per-commit gate: every commit touching `*.py` was preceded by a clean `./pw quality-gate`.
 
 ## Findings
 
-Seven verification rounds plus two defects caught by the run itself — 68 findings, 66 fixed and 2 rejected with reason. Each round targeted the
-**previous round's fixes** as a first-class surface, which is what caught most of these — **six of the
-seven** rounds found that the prior round's fix had introduced or exposed a new defect: rounds 2, 3, 4,
-5, 6 and 7. Only round 1 had no prior round to check. Recorded per instance.
+Eight verification rounds plus two defects caught by the run itself — 83 findings, 81 fixed and 2 rejected with reason. Each round targeted the
+**previous round's fixes** as a first-class surface, which is what caught most of these — **seven of the
+eight** rounds found that the prior round's fix had introduced or exposed a new defect: rounds 2, 3, 4,
+5, 6, 7 and 8. Only round 1 had no prior round to check. Recorded per instance.
 
 ### Self-caught during implementation (2 findings — both fixed)
 
@@ -297,11 +297,41 @@ Scoped to round 6's commit; classified **(a) behavioural** again, so the loop co
 | R7-8 | "seven `*.py` files" was eight | **Fixed** |
 | R7-9 | The PR and merge-gate pointers resolved to a section that does not exist. **R6-10 recorded this "Fixed"; the fix made it worse** — previously it pointed at a real section lacking the content | **Fixed** — a Merge gate section now exists and carries both |
 | R7-10 | "four of the six rounds" undercounted; the report's own rows show six of seven | **Fixed** |
-| R7-11 | The what-have-we-learned evidence cited instances spanning three rounds to support a "four rounds" claim, and named a different round set than the Findings header | **Fixed** — one instance per round, both statements reconciled |
+| R7-11 | The what-have-we-learned evidence cited instances spanning three rounds to support a "four rounds" claim, and named a different round set than the Findings header | **Fixed** — both statements now name the same six rounds |
 | R7-12 | The round count contradicted itself three ways across the document (six / five / four) | **Fixed** |
 | R7-13 | Round 6 was placed before round 5 in a per-round record | **Fixed** |
 | R7-14 | Round 6's header claimed all 11 fixed; two were not | **Fixed** |
 | R7-15 | The round-6 docstring edit left a 134-character line in a docstring wrapping at ~78; `E501` is in ruff's ignore list, so nothing caught it | **Fixed** |
+
+### Round 8 (15 findings — all fixed)
+
+Classified **(a) behavioural**. Its value was in showing that the previous rounds' fixes were applied
+**per site rather than per class** — the same defect kept surviving in a sibling module.
+
+| # | Finding | Disposition |
+|---|---|---|
+| R8-1 | `OPERATOR_DECISION_ROLE` entirely unpinned; mutating it to `'user'` survived all 746 tests, destroying the exact distinction the constant exists to make and breaking the label published in the aspect contract. **R7-4's class, one constant short** | **Fixed** — pinned to its literal |
+| R8-2 | `HARNESS_NOTICE_PREFIXES[1]` (the local-command caveat) unpinned: the two tests touching the tuple **iterate the constant under test**. R7-3's exact defect, fixed in one module and left standing in its sibling. Direction: over-counting — a harness caveat turn carrying `no_signal: false` alone | **Fixed** — all three prefixes named as literals |
+| R8-3 | Deleting `parts.append(text[cursor:])` survived: prose following the **last** envelope was never asserted. That is the commonest real turn shape — a reminder prepended to what the operator wrote — and losing it is under-counting, **this plan's headline failure direction** | **Fixed** |
+| R8-4 | `test_kept_and_dropped_counts_still_sum_to_the_raw_count` was **tautological**: `dropped` is defined as `raw − kept`, so the identity holds for any `kept`. The fold it was written to prevent survived it | **Fixed** — the counts themselves are asserted |
+| R8-5 | `DECISION_MARKERS[5]` unpinned — third instance of the iterate-the-constant class | **Fixed** |
+| R8-6 | Tool-name comparison exactness unpinned: a substring match would admit `mcp__srv__AskUserQuestion`. Mirror of the original F3 defect, fixed on the refusal side and never witnessed on the tool-name side | **Fixed** |
+| R8-7 | `decision_ids |= …` → `=` survived; no fixture placed a turn between a prompt and its answer, which is the normal case. Direction: under-counting | **Fixed** |
+| R8-8 | The heading-after-marker constraint the docstring states was unpinned | **Fixed** |
+| R8-9 | `_TAG_RE`'s attribute class unpinned; a looser pattern pairs `<a<b>` with `</a>` and empties the residue | **Fixed** |
+| R8-10 | Markdown-heading regex bounds unpinned (both directions, low realism) | **Accepted** — covered by R8-8's constraint test; the remaining variants need a skill body with only level-4+ headings |
+| R8-11 | Smaller survivors: `over_budget` boundary `>` vs `>=`, `errors='replace'`, the two role guards, within-turn decision order | **Accepted** — low realism, each documented here rather than silently dropped |
+| R8-12 | "seven `*.py` files" survived at a second site. **R7-8 recorded Fixed; the fix reached one of two places** — third occurrence of the half-applied-fix pattern | **Fixed** |
+| R8-13 | "Eight full `./pw verify` runs" vs "Seven" — a fresh contradiction introduced by the very commit that fixed R7-7 | **Fixed** |
+| R8-14 | "three modules" vs "four modules"; the suite has been four since round 4's rename | **Fixed** |
+| R8-15 | R7-11's disposition described its own fix inaccurately | **Fixed** |
+
+⭐ **The lesson this round paid for.** Rounds 1–7 fixed each finding *where it was reported*. R8-1, R8-2
+and R8-5 are the same defect in three different constants, and R8-6 is the original F3 defect in a
+second position — every one of them survived because the earlier fix was applied to the site named in
+the finding rather than to the class. The remedy adopted here is a per-module *published constants are
+pinned to their literals* test, so the next constant added is covered by construction rather than by
+someone remembering.
 
 ### Accepted, not fixed
 
@@ -333,8 +363,8 @@ _Verdicts recorded below once the PR review cycle has run._
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
-- **Wall-clock:** one interactive cloud session; see the PR's commit timestamps. Seven full `./pw verify`
-  runs at ~6–8 minutes each, and seven verification sub-agents.
+- **Wall-clock:** one interactive cloud session; see the PR's commit timestamps. Nine full `./pw verify`
+  runs at ~6–8 minutes each, and eight verification sub-agents.
 - **Population:** this single Claude Code cloud session's usage as the harness counts it. ⛔ **Not
   comparable** to a plan-marshall `metrics.toon` total, which counts an orchestrator-plus-agent
   dispatch tree under plan-marshall's own per-task billing boundary. This run has no such boundary, so
@@ -350,8 +380,8 @@ _Verdicts recorded below once the PR review cycle has run._
 | 4 Implement | **Done** | Every commit carries the `Co-Authored-By` trailer and no "Generated with" footer; deliverable paths staged explicitly, never `git add -A`; no lockfile churn reached a commit |
 | 4 Per-commit gate | **Done** | Every commit touching `*.py` preceded by a clean direct `./pw quality-gate` — `ruff … All checks passed!`, `mypy … Success`, `SPDX-header check passed` |
 | 4 Pushed | **Done** | Pushed after every commit; `git status -sb` reports no `ahead` |
-| 5 Build gate | **Done** | Git-derived verdict (seven `*.py`) and full `./pw verify`, read in full rather than by exit code |
-| 6 Verification sub-agent | **Done** | Seven rounds, each targeting the prior round's fixes; all findings and dispositions recorded above |
+| 5 Build gate | **Done** | Git-derived verdict (eight `*.py`) and full `./pw verify`, read in full rather than by exit code |
+| 6 Verification sub-agent | **Done** | Eight rounds, each targeting the prior round's fixes; all findings and dispositions recorded above |
 | 7 PR cycle | See Reviewer participation |
 | 8 Merge gate | See **Merge gate** below |
 | 8 Bridge | **Done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory |
@@ -365,7 +395,7 @@ build step (§ Scope and precedence). Stated explicitly because two verification
 about it.
 
 One deviation from the contract, recorded rather than narrated as compliance: the contract's Step 6
-describes dispatching *a* verification sub-agent, and this run dispatched **seven**. Each round was
+describes dispatching *a* verification sub-agent, and this run dispatched **eight**. Each round was
 triggered by the previous round's fixes being a new, unreviewed surface — which the contract itself
 requires ("A verification pass that found a defect has not finished"). It is more than the minimum,
 not less.

@@ -147,7 +147,15 @@ class TestIsSignalBearing:
         assert _mod.is_signal_bearing('assistant', 'just some prose') is False
 
     def test_each_marker_triggers_retention(self):
-        for marker in _mod.DECISION_MARKERS:
+        """Markers are named as literals, never read back from the constant.
+
+        Iterating ``DECISION_MARKERS`` makes the test shrink with the tuple:
+        deleting an entry leaves it green while marker-bearing context stops
+        reaching the Tier-1 prompt.
+        """
+        expected = ('[STATUS]', '[ERROR]', 'AskUserQuestion', '[DECISION]', '[DISPATCH]', '[SKILL]')
+        assert _mod.DECISION_MARKERS == expected
+        for marker in expected:
             assert _mod.is_signal_bearing('assistant', f'prefix {marker} suffix') is True
 
     def test_other_roles_dropped(self):

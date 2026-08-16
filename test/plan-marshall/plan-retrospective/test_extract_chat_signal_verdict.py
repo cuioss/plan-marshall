@@ -175,12 +175,13 @@ class TestOperatorSignalCounters:
         assert low['reduced_turn_count'] == high['reduced_turn_count']
         assert low['operator_turn_count'] != high['operator_turn_count']
 
-    def test_kept_and_dropped_counts_still_sum_to_the_raw_count(self, tmp_path):
-        """Recovered gate decisions were never raw turns, so the identity holds.
+    def test_gate_decisions_are_not_folded_into_the_kept_turn_count(self, tmp_path):
+        """`reduced_turn_count` counts RAW turns kept, never synthesised entries.
 
-        `reduced_turn_count + dropped_turn_count == raw_turn_count` is
-        arithmetic a caller may rely on; folding synthesised decision entries
-        into the kept count would silently break it.
+        The arithmetic identity alone cannot pin this: `dropped_turn_count` is
+        derived as `raw - kept`, so the sum holds for any value of `kept`.
+        The count itself has to be asserted — one operator turn survives here,
+        and the gate decision must not inflate it.
         """
         path = _write(
             tmp_path,
@@ -190,10 +191,26 @@ class TestOperatorSignalCounters:
         )
         result = _run(path)
         assert result['gate_decision_count'] == 1
-        assert (
-            result['reduced_turn_count'] + result['dropped_turn_count']
-            == result['raw_turn_count']
+        assert result['raw_turn_count'] == 3
+        assert result['reduced_turn_count'] == 1
+        assert result['dropped_turn_count'] == 2
+
+    def test_decision_ids_survive_an_intervening_turn(self, tmp_path):
+        """The id set accumulates across turns; it is not replaced per turn.
+
+        A prompt and its answer are rarely adjacent — anything the assistant
+        says in between would reset a replaced set, losing the decision and
+        under-counting operator signal.
+        """
+        path = _write(
+            tmp_path,
+            chat_tool_use(_gate.OPERATOR_DECISION_TOOL, 'tu_7'),
+            chat_turn('assistant', 'some prose between the prompt and the answer'),
+            chat_tool_result('tu_7', 'Option C'),
         )
+        result = _run(path)
+        assert result['gate_decision_count'] == 1
+        assert result['no_signal'] is False
 
 
 class TestNoSignalVerdict:

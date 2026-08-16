@@ -81,6 +81,20 @@ class TestDecisionToolUseIds:
         assert _mod.decision_tool_use_ids(None) == set()
         assert _mod.decision_tool_use_ids({'type': 'tool_use', 'id': 'x'}) == set()
 
+    def test_the_tool_name_must_match_exactly(self):
+        """A namespaced tool merely CONTAINING the name is not the decision tool.
+
+        A substring comparison would admit `mcp__srv__AskUserQuestion`, and any
+        later result answering that id would score a gate decision — a
+        synthetic input raising an operator-signal counter.
+        """
+        content = [{
+            'type': 'tool_use',
+            'name': f'mcp__srv__{_mod.OPERATOR_DECISION_TOOL}',
+            'id': 'tu_x',
+        }]
+        assert _mod.decision_tool_use_ids(content) == set()
+
     def test_only_tool_use_blocks_are_scanned(self):
         """The block type narrows the scan, independently of the tool name.
 
@@ -94,6 +108,18 @@ class TestDecisionToolUseIds:
             'id': 'mcp_1',
         }]
         assert _mod.decision_tool_use_ids(content) == set()
+
+
+class TestPublishedConstants:
+    def test_the_decision_role_label_is_pinned(self):
+        """The label is published in the aspect contract and read by the LLM.
+
+        Every other reference is symbolic, so mutating it — to `user` above
+        all — would destroy the very distinction the constant exists to make,
+        with the suite still green.
+        """
+        assert _mod.OPERATOR_DECISION_ROLE == 'operator-decision'
+        assert _mod.OPERATOR_DECISION_ROLE != 'user'
 
 
 class TestExtractGateDecisions:
