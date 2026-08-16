@@ -161,10 +161,38 @@ rather than assumed. Reverse-order collection is a sufficient reordering to have
 | H6 | Preamble conversion | Two findings are unfixable by the remedy their own rule names: a bundle `extension.py` is not under `scripts/`, and `get_scripts_dir` raises for a skill with no `scripts/` tree | **Recorded with a proposal** (widen the helper, or exempt the shape). Closes run 01's F7 as *not fixable as specified* |
 | H7 | D2 analysis | Exactly one class in the slice (663L) exceeds the module budget alone, so class-boundary splitting reaches 52 of 53 modules, not 53 | **Recorded** — a bounded exception a later run should know before starting |
 | H8 | Rewrite tooling | The chain rewrite produced `TEST_ROOT = TEST_ROOT` self-assignments in 3 modules, and its "locally defined" guard then suppressed the needed import | **Fixed** — caught by collection errors, not by review |
+| H9 | PR review (`sourcery-ai`) | `untrusted-ingestion/test_validate_struct.py` mutated `sys.path` at import time | **Fixed by removal.** The insert bought nothing — the module imports only `conftest` (importable because pytest makes it so) and `toon_parser` (resolved through the marketplace path `conftest` assembles). Deleting it leaves no mutation to scope or revert, which suits this PR's theme better than a fixture would |
+| H10 | PR review (`coderabbitai`) | The quote-path executor test stubbed `get_shared_module_dirs` with a hardcoded five-entry list **mirroring the production function's own `shared_skills`**. A mirror goes stale the moment a shared skill is added, and the test would then validate with incomplete import coverage **while still passing** | **Fixed** — the stub now derives from `_gen.get_shared_module_dirs(MARKETPLACE_ROOT)` with a non-vacuity assertion. Verified the derivation returns the same five directories. **Pre-existing**: the list was present at `02ced6f`; this PR only converted its `Path(__file__)` chain, which is what put it in the diff. The reviewer proposed `conftest._MARKETPLACE_SCRIPT_DIRS` as the source — that is *every* scripts dir in the marketplace, not the five-entry subset the stub represents, so the function being stubbed is the right authority |
 
 ## Reviewer participation
 
-_(completed at the merge gate)_
+Population derived from the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc.
+**M = 3.** Verdicts read from the authors' own comment bodies.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
+|---|---|---|---|
+| `sourcery-ai` | **`reviewed`** | — | Two high-level suggestions on path centralisation and `sys.path` scoping |
+| `cuioss-review-bot` | **`reviewed`** | — | "PR Reviewer Guide 🔍 — PR contains tests / No security concerns / No major issues detected" |
+| `coderabbitai` | **`reviewed`** | — | Rate-limited on first pass, then **re-requested and reviewed**: two findings, both fixed |
+
+**Coverage: 3 of 3 — no shortfall to disclose.**
+
+**The re-request is why, and it is worth recording as method rather than luck.** CodeRabbit's first
+response was a refusal whose notice read *"Next review available in: 46 seconds"* — a `Reopens? yes`
+refusal. Rather than bank a 2-of-3 and disclose it, the run posted the registry's declared
+`trigger_comment` (`@coderabbitai review`) once the window had passed. That converted the shortfall
+into full coverage **and** produced the single most substantive finding of the round (H10 below), which
+a disclosed 2-of-3 would have shipped without.
+
+**Comment disposition — 2 review threads plus a top-level review, all handled:**
+
+| Source | Finding | Disposition |
+|---|---|---|
+| `sourcery-ai` | Wrap the remaining `sys.path.insert` so mutations are scoped/reverted | **Fixed by deletion** (H9) — the insert was not needed at all, which is strictly better than scoping it |
+| `sourcery-ai` | Centralise deep marketplace paths into `conftest` helpers | **Replied, not actioned** — `test/conftest.py` is plan `020`'s surface and the epic forbids editing it here. Converges on this report's own H6 proposal, and the reply sharpens it: the gap is files *outside* `scripts/`, not the `scripts/` case `get_scripts_dir` already covers |
+| `coderabbitai` | `shared_dirs` mirrors the production shared-module set and can drift | **Fixed** (H10), with a different source than proposed |
+| `coderabbitai` | MD040 — fenced block without a language | **Fixed** |
 
 ## Cost
 
@@ -175,7 +203,28 @@ _(completed at the merge gate)_
 
 ## Contract check (Step 9)
 
-_(completed as the final pre-merge commit)_
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **done** | `cloud-plan-lane` governs; domain skills carried from runs 01–02 |
+| 2 Branch | **done** | `chore/060-residue-order-dependence`, **run-created** from `main` at `02ced6f` per operator instruction, prefix from the closed set. Pushed before the first edit |
+| 3 Plan directory | **done** | Established by run 01; this run adds `report-03.md` |
+| 4 Implement | **done** | 8 commits, each carrying the trailer |
+| 4 Per-commit gate | **done** | `./pw quality-gate` clean before every `*.py` commit |
+| 4 Pushed | **done** | No unpushed commits |
+| 5 Build gate | **done** | `=== verify: SUCCESS ===`, 20,329 passed / 0 failed |
+| 6 Verification sub-agent | **NOT DISPATCHED** | Reported as not done. The PR review substituted in practice and found two real defects, but it is not the same gate and this row does not pretend otherwise |
+| 7 PR cycle | **done** | PR #1272; all three surfaces read; every comment fixed or answered; participation 3-of-3 |
+| 7 Bot-review label | **correctly omitted** | Diff contains `*.py` |
+| 8 Merge gate | **done** | Required check green on head; no open comment; report committed last |
+| 8 Bridge | **done** | Nothing written under `doc/plans/` outside this plan's directory |
+| 9 This check | **done** | This table |
+
+**Scope discipline, checked mechanically rather than asserted:** after every edit, the changed set was
+diffed against the plan's Expected surface. It reported 37 out-of-scope files once (§ "A scope
+violation"), which were reverted, and **0** on every check since.
+
+**Reported as NOT done:** the Step 6 verification sub-agent; D2; D4 parametrization; the randomised
+hermeticity arm; D4's cold read.
 
 ## Residue
 
