@@ -153,7 +153,7 @@ vocabulary must walk:
 | `_build_shared.cmd_run_common` (emit choke point) | `DirectCommandResult.status` |
 | `build_server.py::_render_job_status` | daemon `job_status` |
 | `manage-change-ledger classify-outcome` | ledger `kind=build` `status` |
-| `manage-tasks pre-commit-verify-freshness` | ledger `kind=build` `status` |
+| `manage-tasks pre-commit-verify-freshness` | ledger `kind=build` `status` + `notation` |
 | The agent reading the emitted build TOON | wrapper TOON `status` / `errors[]` |
 | `plan-marshall/workflow/execution.md` § Orchestrator-tier phase-5 verification | the orchestrator-tier build's `status` |
 | `phase-5-execute/SKILL.md` Step 12a | the freshness verdict's `status` + `reason` |

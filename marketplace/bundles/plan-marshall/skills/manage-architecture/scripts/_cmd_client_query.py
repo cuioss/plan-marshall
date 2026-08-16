@@ -21,6 +21,7 @@ from _architecture_core import (
     GENERATION_FIELD,
     DataNotFoundError,
     ModuleNotFoundInProjectError,
+    crawl_all_modules,
     current_worktree_sha,
     derive_freshness,
     get_root_module,
@@ -30,6 +31,7 @@ from _architecture_core import (
     load_project_meta,
     merge_module_data,
 )
+from _cmd_client_build import build_notation_for_executable
 
 
 def _load_module_or_raise(module_name: str, project_dir: str) -> dict[str, Any]:
@@ -733,6 +735,53 @@ def resolve_command(command_name: str, module_name: str | None = None, project_d
             return _resolved_command_dict(root_commands, command_name, root_module_name, 'root')
 
     raise ValueError(f'Command not found: {command_name}')
+
+
+def resolve_project_build_notations(project_dir: str = '.') -> frozenset[str]:
+    """Return every build notation this project's architecture resolves to.
+
+    The set-valued form of :func:`resolve_command`: instead of resolving ONE
+    canonical command to its executable, it walks every module's whole command
+    map and keeps the executor notation each build executable dispatches. The
+    result answers "which build systems does this project actually build with,
+    according to the architecture" — the question a consumer needs when it holds
+    a build notation from some other source and must decide whether that
+    notation could have come from THIS project.
+
+    Deliberately **project-wide, not plan-scoped**. A narrower per-plan set
+    would refuse legitimate evidence: an orchestrator-tier build runs at the
+    root module with no plan at all, and a polyglot project legitimately builds
+    several modules with different tools. The set is the union over every module
+    the crawl reports, so every notation the project can legitimately dispatch
+    is in it. What it excludes is a notation no module resolves to — which is
+    exactly the unrelated-evidence case.
+
+    **Cost.** This runs the same live crawl ``architecture resolve`` runs
+    (memoized per process, but the first call pays for it, and for Maven that
+    means a per-module ``help:all-profiles dependency:tree``). Call it once per
+    process and reuse the result; do not call it per candidate.
+
+    Args:
+        project_dir: Project root to crawl. Defaults to the current directory.
+
+    Returns:
+        The frozenset of resolved build notations. **Empty means the question
+        could not be answered** — an un-crawled project, a project with no
+        modules, or modules whose commands resolve to no build executable — and
+        is NOT evidence that the project builds with nothing. A caller that
+        treats the empty set as a refutation converts "I do not know" into "I
+        know it is wrong"; branch on emptiness explicitly.
+    """
+    notations: set[str] = set()
+    for module_data in crawl_all_modules(project_dir).values():
+        commands = module_data.get('commands', {})
+        if not isinstance(commands, dict):
+            continue
+        for command_name in commands:
+            notation = build_notation_for_executable(_command_executable(commands, command_name))
+            if notation is not None:
+                notations.add(notation)
+    return frozenset(notations)
 
 
 # =============================================================================

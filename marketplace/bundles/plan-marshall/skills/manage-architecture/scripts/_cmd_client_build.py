@@ -192,6 +192,35 @@ def _classify_build_executable(executable: str) -> tuple[str, str] | None:
     return tool_name, command_args
 
 
+# Inverse of :data:`_BUILD_NOTATIONS` (tool_name -> notation), derived from that
+# one map rather than restated beside it, so registering a new build skill adds
+# both directions from a single edit and the two can never drift apart.
+_NOTATION_BY_TOOL: dict[str, str] = {tool: notation for notation, tool in _BUILD_NOTATIONS.items()}
+
+
+def build_notation_for_executable(executable: str) -> str | None:
+    """Return the build notation embedded in a resolved ``executable``, or ``None``.
+
+    The public half of :func:`_classify_build_executable`: same structural
+    detection, but it answers "which build notation does this resolved command
+    dispatch?" rather than "which tool and args does it carry". Callers that
+    need to compare an executor notation against what a project's architecture
+    actually resolves to use this instead of reaching for the private
+    classifier and re-inverting :data:`_BUILD_NOTATIONS` themselves.
+
+    Args:
+        executable: A resolved command string from ``architecture resolve``.
+
+    Returns:
+        The ``bundle:skill:script`` build notation, or ``None`` when
+        ``executable`` is not a build executable in the canonical shape.
+    """
+    classified = _classify_build_executable(executable)
+    if classified is None:
+        return None
+    return _NOTATION_BY_TOOL.get(classified[0])
+
+
 def _load_build_config(tool_name: str) -> Any | None:
     """Dynamically import the build skill's ``_CONFIG`` for ``tool_name``.
 

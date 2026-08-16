@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Notation cross-check for the ``pre-commit-verify-freshness`` gate.
+
+Notation: imported as a module (PYTHONPATH) — ``from _freshness_crosscheck
+import cross_check_candidates``. NOT an executor entry point.
+
+The gate's primary predicate answers *"is there a successful ``kind=build`` row
+against the current working-tree sha?"*. That predicate asserts a row EXISTS; it
+never asks whether the row is evidence of a build **this project performs**. The
+two are not the same question, and the gap between them is not theoretical: the
+gate has been satisfied by a row naming a package-manager build the project has
+no module for, written into the shared ledger by something other than a real
+build of this tree. The verdict happened to be right; the evidence did not
+support it. A gate that is right for the wrong reason produces no failure to
+learn from, so it can stay wrong indefinitely.
+
+This module closes that gap by comparing each candidate row's ``notation``
+against the set of build notations the project's architecture actually resolves
+to (``manage-architecture``'s ``resolve_project_build_notations``). The
+comparison target is deliberately the ARCHITECTURE, not the ledger: comparing
+ledger rows against other ledger rows would let a polluted ledger corroborate
+itself.
+
+Three-valued verdict, never collapsed
+=====================================
+
+:data:`CORROBORATED`
+    The row's notation is one the architecture resolves. The evidence is
+    auditable and related; the gate may pass on it.
+
+:data:`REFUTED`
+    The architecture resolved a non-empty notation set and the row's notation is
+    not in it — or the row carries no notation at all. Either way the row cannot
+    be evidence of a build of this project, and the gate MUST fail closed.
+
+:data:`UNVERIFIED`
+    The notation set could not be established (the crawl raised, or resolved no
+    build notation anywhere). Nothing is known about the row's relatedness.
+
+The fail-direction, and why it splits
+=====================================
+
+An uncross-checkable match must not *silently* pass; that leaves two candidate
+directions, and this module takes a different one for each of the two ways a
+cross-check can decline to corroborate — because they are different facts:
+
+* **A refutation is positive knowledge** ("the architecture resolves maven and
+  nothing else; this row says npm"), so it **fails closed**. This is the defect
+  class the gate exists to close, and admitting it with a warning would leave the
+  false-green in place while merely annotating it.
+* **An inability to resolve is the absence of knowledge**, so it **passes with
+  the inability recorded in the decision record** (``notation_cross_check:
+  unverified`` plus a ``notation_cross_check_reason``). Failing closed here would
+  block every legitimate pre-commit transition in a working tree whose
+  architecture has not been discovered — a project mid-onboarding, a fresh
+  clone, a synthetic fixture tree — none of which is evidence of anything wrong.
+  The gate's PRIMARY predicate has already been satisfied at that point; refusing
+  on a supplementary check that could not run trades a false-green for a
+  false-red on strictly less evidence.
+
+⛔ The two are never folded together. ``unverified`` is a stated sentinel, not a
+quiet ``corroborated``: it always reaches the decision record, so "passed
+uncross-checked" is visible to a reader rather than indistinguishable from
+"passed cross-checked" (ADR-015 — an absent identity is a stated sentinel, and
+every presence guard is a meaning guard).
+
+A doc-only carve-out was considered and REFUSED
+===============================================
+
+The obvious way to spend less on this check is to exempt a footprint that
+touched only markdown. That is refused here on a hard constraint, and the
+refusal is recorded in the shipped source rather than only in a run report,
+because an unexplained absence invites the next author to add it.
+
+**Markdown under the bundle tree is a build input in this repository.** Tests
+read and assert on the BODIES of bundle documents — ``test/plan-marshall/
+test_triage_loop_back_target.py`` parses ``marketplace/bundles/plan-marshall/
+skills/plan-marshall/workflow/triage.md`` and fails when its classification
+table changes — so a markdown-only edit can turn the suite red exactly as a
+``*.py`` edit can. A doc-only freshness exemption would therefore hand back a
+``fresh`` verdict for a tree whose tests were never run against it, which is the
+whole defect class this module exists to close, re-entering through the
+exemption. Build necessity is not this module's question in any case: it is
+owned by the single ``build-decision`` authority the gate consults BEFORE the
+ledger scan (see the caller's module docstring), and that authority reads the
+project's own ``build.map`` globs rather than a hard-coded notion of which
+suffixes matter.
+
+Structural stale verdicts are NOT this module's business
+========================================================
+
+A tree mutated after its last build is correctly ``stale``: the stamp was never
+wrong, the commit invalidated it. Nothing here re-stamps, relaxes the sha
+comparison, or otherwise softens that verdict — a candidate only reaches this
+module once it has ALREADY matched on ``kind``, ``status`` and ``worktree_sha``,
+so a mutated tree has no candidates and never gets here.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+#: The row's notation is one the project's architecture resolves.
+CORROBORATED = 'corroborated'
+#: The architecture resolved a notation set that does not contain the row's.
+REFUTED = 'refuted'
+#: The notation set could not be established; relatedness is unknown.
+UNVERIFIED = 'unverified'
+
+#: ``notation_cross_check_reason`` when the architecture resolver raised.
+REASON_RESOLUTION_FAILED = 'architecture_resolution_failed'
+#: ``notation_cross_check_reason`` when the resolver ran but resolved no build notation.
+REASON_NO_NOTATIONS_RESOLVED = 'architecture_resolved_no_build_notations'
+#: ``notation_cross_check_reason`` when every candidate row carried no notation.
+REASON_NOTATION_ABSENT = 'notation_absent'
+#: ``notation_cross_check_reason`` when candidate notations are all unresolved by the architecture.
+REASON_NOTATION_UNRELATED = 'notation_unrelated'
+
+
+def resolve_expected_notations(project_dir: str) -> tuple[frozenset[str], str | None]:
+    """Resolve the project's build-notation set, or say why it could not be.
+
+    Wraps ``manage-architecture``'s ``resolve_project_build_notations`` so the
+    gate never has to distinguish "the crawl raised" from "the crawl ran and
+    found nothing" at the call site. The cross-skill import is in-function, the
+    same discipline the caller uses for its ``build-decision`` consult: this
+    command module keeps no hard top-level dependency on another skill's scripts
+    dir, so it stays importable when ``manage-architecture`` is not on the path.
+
+    Args:
+        project_dir: Project root to resolve against — the gate's already
+            resolved worktree root.
+
+    Returns:
+        ``(notations, reason)``. Exactly one side is informative: a non-empty
+        ``notations`` with ``reason is None``, or an empty ``notations`` with a
+        non-``None`` reason naming which inability occurred. An empty set is
+        NEVER returned as a refutation-grade answer — see the module docstring.
+    """
+    try:
+        from _cmd_client_query import resolve_project_build_notations
+
+        notations = resolve_project_build_notations(project_dir)
+    except Exception:  # noqa: BLE001 — any resolver failure is an inability, not a refutation
+        return frozenset(), REASON_RESOLUTION_FAILED
+    if not notations:
+        return frozenset(), REASON_NO_NOTATIONS_RESOLVED
+    return notations, None
+
+
+def _candidate_notation(entry: dict[str, Any]) -> str:
+    """Return ``entry``'s notation as a string, or ``''`` when it carries none."""
+    notation = entry.get('notation')
+    return notation if isinstance(notation, str) else ''
+
+
+def cross_check_candidates(
+    candidates: list[dict[str, Any]],
+    project_dir: str,
+) -> dict[str, Any]:
+    """Cross-check already-matching build rows against the resolved notation set.
+
+    ``candidates`` are the rows that ALREADY satisfy the gate's primary
+    predicate (``kind == 'build'``, ``status == 'success'``,
+    ``worktree_sha == current``), in ledger file order. This function decides
+    which of them — if any — may be cited as the evidence for a ``fresh``
+    verdict.
+
+    The whole candidate list is examined rather than only the first match, and
+    that is load-bearing for precision in the passing direction: a project that
+    legitimately builds with several notations can have an unrelated row sitting
+    ahead of a related one in file order, and returning on the first match would
+    refuse a plan whose real evidence is two lines further down. A single
+    corroborated candidate is enough; only a list in which NONE corroborates is
+    a refusal.
+
+    Selection among corroborated candidates is by file order (the first one),
+    matching the pre-cross-check behaviour of the gate's scan. The ledger is
+    pure-append, so file order is write order.
+
+    Args:
+        candidates: Matching ``kind=build`` rows in ledger file order. Must be
+            non-empty; the caller has already handled the no-candidate case as
+            ``stale``.
+        project_dir: Project root the architecture is resolved against.
+
+    Returns:
+        A dict carrying ``verdict`` (:data:`CORROBORATED` / :data:`REFUTED` /
+        :data:`UNVERIFIED`), ``entry`` (the chosen row, or ``None`` on
+        :data:`REFUTED`), ``expected_notations`` (the sorted resolved set),
+        ``candidate_notations`` (the sorted distinct notations the candidates
+        carried, with a row carrying none contributing nothing), and ``reason``
+        (``None`` on :data:`CORROBORATED`, otherwise the naming constant).
+    """
+    expected, resolution_reason = resolve_expected_notations(project_dir)
+    candidate_notations = sorted({n for n in map(_candidate_notation, candidates) if n})
+
+    if resolution_reason is not None:
+        return {
+            'verdict': UNVERIFIED,
+            'entry': candidates[0],
+            'expected_notations': [],
+            'candidate_notations': candidate_notations,
+            'reason': resolution_reason,
+        }
+
+    for entry in candidates:
+        if _candidate_notation(entry) in expected:
+            return {
+                'verdict': CORROBORATED,
+                'entry': entry,
+                'expected_notations': sorted(expected),
+                'candidate_notations': candidate_notations,
+                'reason': None,
+            }
+
+    return {
+        'verdict': REFUTED,
+        'entry': None,
+        'expected_notations': sorted(expected),
+        'candidate_notations': candidate_notations,
+        # A row with no notation at all and a row naming an unresolved build are
+        # both refusals, but they need different remedies — one says "this row
+        # was not written by the dispatch boundary", the other says "this row is
+        # from a build this project does not perform" — so they are named apart
+        # rather than folded into one message.
+        'reason': REASON_NOTATION_UNRELATED if candidate_notations else REASON_NOTATION_ABSENT,
+    }
