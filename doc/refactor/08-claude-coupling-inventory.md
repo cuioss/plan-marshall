@@ -56,7 +56,7 @@ build-target *data* (per-target permission emission), not core code.
 | `manage-metrics.py:142` | `SESSION_ID_RE` Claude UUID shape |
 | `manage-metrics.py:77,81-89,1429-1473` | `<usage>` tag (`USAGE_TAG_RE`), `message.usage` four-field shape (Claude API) |
 | `manage-metrics.py:90-95` | `BILLING_WEIGHT_CACHE_*` Anthropic cache-pricing weights |
-| `plan-retrospective/scripts/extract-chat-signal.py`, `references/chat-history-analysis.md`, `references/permission-prompt-analysis.md` | parse Claude session JSONL + settings/permission model |
+| `plan-retrospective/scripts/extract-chat-signal.py`, `scripts/_chat_provenance.py`, `scripts/_chat_gate_decisions.py`, `references/chat-history-analysis.md`, `references/permission-prompt-analysis.md` | parse Claude session JSONL + settings/permission model. The harness-shape coupling itself — injected-envelope grammar, verbatim notice prefixes, the skill-load marker and the operator-refusal wordings — lives in the two `_chat_*` modules; the `AskUserQuestion` tool name appears in BOTH `_chat_gate_decisions.py` (`OPERATOR_DECISION_TOOL`) and `extract-chat-signal.py` (`DECISION_MARKERS`) |
 
 Destination: transcript resolution + parse → PR-behavior; the metrics **storage/aggregation**
 layer is identical across targets and stays-agnostic (`manage-metrics` keeps it).
@@ -301,7 +301,7 @@ Pass-2 net-new items (all fit existing homes):
 
 - `phase-5-execute/standards/operations.md:68` `mcp__sonarqube__*` tool name → build-target (route via the sonar/CI abstraction).
 - `phase-1-init/.../inject_project_dir.py` rewrites the executor command-DSL string → platform-runtime-layout (format dependency).
-- `plan-retrospective/scripts/extract-chat-signal.py` + `references/chat-history-analysis.md` parse raw Claude session JSONL → platform-runtime-behavior (the A2 transcript-format leak; consume normalized signal, not raw transcript).
+- `plan-retrospective/scripts/extract-chat-signal.py` (with `scripts/_chat_provenance.py` and `scripts/_chat_gate_decisions.py`, which hold the harness-shape recognisers) + `references/chat-history-analysis.md` parse raw Claude session JSONL → platform-runtime-behavior (the A2 transcript-format leak; consume normalized signal, not raw transcript).
 - **CORRECTION:** `workflow-integration-git/scripts/git-workflow.py` does **not** emit the `Co-Authored-By: Claude` trailer — only `SKILL.md:134,170` does (build-target); the script carries a comment only (prose-neutralize).
 - **CORRECTION:** the `frontend-design` skill pointer (pm-dev-frontend README/css/javascript) is **not** target-specific — only the "Anthropic ships" attribution is prose-neutralize.
 - The `ext-triage-*/pr-comment-disposition.md` `AskUserQuestion` block is byte-identical across all domains → neutralize uniformly (one build-target vocab decision).

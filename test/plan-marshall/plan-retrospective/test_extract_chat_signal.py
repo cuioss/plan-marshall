@@ -1,32 +1,36 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``extract-chat-signal.py``.
+"""Parsing, reduction and output-contract tests for ``extract-chat-signal.py``.
 
 The script reduces a Claude Code session JSONL transcript to its
 signal-bearing turns (Aspect 14 of ``plan-retrospective``). It keeps every
 OPERATOR-AUTHORED ``user`` turn and every ``assistant`` turn carrying a decision
-marker, dropping everything else — including the two classes of synthetic
-``user`` turn the harness injects (empty / whitespace-only tool-result
-placeholders, and skill bodies injected as ``user`` turns). It then emits a TOON
-payload carrying the two Tier-2 trigger flags:
+marker, dropping everything else. A ``user`` turn is operator-authored when
+prose remains after every harness envelope is stripped — a positive predicate,
+not an enumeration of the synthetic shapes anyone happened to have seen. It
+then emits a TOON payload carrying the two Tier-2 trigger flags:
 
-- ``no_signal`` — true when the reduction kept zero turns.
+- ``no_signal`` — true when the transcript carried no operator-authored signal
+  of either kind: ``operator_turn_count == 0`` AND ``gate_decision_count == 0``.
 - ``over_budget`` — true when the reduced text exceeds ``--read-budget-bytes``.
 
 Either flag is the orchestrator's signal to fall back to the Tier-2 WARNING
 finding (``reason: transcript_too_large``). A missing transcript yields
 ``status: skipped, reason: transcript_unavailable``.
+
+Provenance classification is covered by ``test_chat_provenance.py``; the two
+operator-signal counters and the routing verdict by
+``test_extract_chat_signal_verdict.py``.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
+from conftest import MARKETPLACE_ROOT, load_script_module, run_script  # noqa: E402
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT
@@ -38,10 +42,12 @@ SCRIPT_PATH = (
 )
 
 # Direct module load so unit tests can poke the pure helpers.
-_spec = importlib.util.spec_from_file_location('extract_chat_signal', str(SCRIPT_PATH))
-assert _spec is not None and _spec.loader is not None
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
+_mod = load_script_module(
+    'plan-marshall', 'plan-retrospective', 'extract-chat-signal.py', 'extract_chat_signal'
+)
+# The provenance predicate moved to its own module; this file exercises it only
+# where the reduction's parsing behaviour depends on it.
+_prov = load_script_module('plan-marshall', 'plan-retrospective', '_chat_provenance.py')
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +137,7 @@ class TestIsSignalBearing:
         markdown heading following it, is real signal and must survive.
         """
         text = 'why does the log say Base directory for this skill: /tmp/x ?'
-        assert _mod.is_synthetic_skill_load(text) is False
+        assert _prov.is_synthetic_skill_load(text) is False
         assert _mod.is_signal_bearing('user', text) is True
 
     def test_assistant_turn_kept_with_decision_marker(self):
@@ -141,7 +147,15 @@ class TestIsSignalBearing:
         assert _mod.is_signal_bearing('assistant', 'just some prose') is False
 
     def test_each_marker_triggers_retention(self):
-        for marker in _mod.DECISION_MARKERS:
+        """Markers are named as literals, never read back from the constant.
+
+        Iterating ``DECISION_MARKERS`` makes the test shrink with the tuple:
+        deleting an entry leaves it green while marker-bearing context stops
+        reaching the Tier-1 prompt.
+        """
+        expected = ('[STATUS]', '[ERROR]', 'AskUserQuestion', '[DECISION]', '[DISPATCH]', '[SKILL]')
+        assert _mod.DECISION_MARKERS == expected
+        for marker in expected:
             assert _mod.is_signal_bearing('assistant', f'prefix {marker} suffix') is True
 
     def test_other_roles_dropped(self):
@@ -210,7 +224,8 @@ class TestReduceTranscript:
             _turn('assistant', _text_blocks('[DISPATCH] launching agent')),
             _turn('tool', 'tool output that must be dropped'),
         ]
-        kept, raw = _mod.reduce_transcript(lines)
+        reduction = _mod.reduce_transcript(lines)
+        kept, raw = reduction.turns, reduction.raw_turn_count
         assert kept == [
             {'role': 'user', 'text': 'do the thing'},
             {'role': 'assistant', 'text': '[DISPATCH] launching agent'},
@@ -225,7 +240,8 @@ class TestReduceTranscript:
             _turn('user', ''),
             _turn('user', '   \n  '),
         ]
-        kept, raw = _mod.reduce_transcript(lines)
+        reduction = _mod.reduce_transcript(lines)
+        kept, raw = reduction.turns, reduction.raw_turn_count
         assert kept == [{'role': 'user', 'text': 'rename the module please'}]
         assert raw == 4
 
@@ -235,7 +251,7 @@ class TestReduceTranscript:
             _turn('user', 'b'),
             _turn('assistant', '[ERROR] c'),
         ]
-        kept, _raw = _mod.reduce_transcript(lines)
+        kept = _mod.reduce_transcript(lines).turns
         assert [t['text'] for t in kept] == ['[STATUS] a', 'b', '[ERROR] c']
 
     def test_malformed_lines_dropped_silently(self):
@@ -245,13 +261,16 @@ class TestReduceTranscript:
             _turn('user', 'survives'),
             json.dumps({'type': 'summary'}),
         ]
-        kept, raw = _mod.reduce_transcript(lines)
+        reduction = _mod.reduce_transcript(lines)
+        kept, raw = reduction.turns, reduction.raw_turn_count
         assert kept == [{'role': 'user', 'text': 'survives'}]
         # Malformed and non-turn lines never parse, so they are not raw turns.
         assert raw == 1
 
     def test_empty_history_keeps_nothing(self):
-        assert _mod.reduce_transcript([]) == ([], 0)
+        reduction = _mod.reduce_transcript([])
+        assert reduction.turns == []
+        assert reduction.raw_turn_count == 0
 
     def test_all_unmarked_assistant_keeps_nothing(self):
         lines = [
@@ -259,7 +278,8 @@ class TestReduceTranscript:
             _turn('assistant', 'prose two'),
             _turn('tool', 'output'),
         ]
-        kept, raw = _mod.reduce_transcript(lines)
+        reduction = _mod.reduce_transcript(lines)
+        kept, raw = reduction.turns, reduction.raw_turn_count
         assert kept == []
         assert raw == 3
 
