@@ -81,12 +81,16 @@ class TestSyntheticClasses:
 
 
 class TestPublishedConstants:
-    """Every published constant is pinned to its literal value.
+    """The notice prefixes are pinned to their literal values.
 
     A test that reads a constant back from the module under test cannot see
     that constant change — the list shrinks and the loop shrinks with it. That
     is this plan's own thesis ("a named list is a sample") applied to its own
     tests, and it is why each value below is written out rather than iterated.
+
+    The module's other constants are pinned where their behaviour is exercised:
+    ``OPERATOR_BEARING_TAGS`` in :class:`TestOperatorBearingEnvelopes`, and the
+    two private regexes in :class:`TestRecogniserBoundaries`.
     """
 
     def test_harness_notice_prefixes_are_the_observed_literals(self):
@@ -104,9 +108,6 @@ class TestPublishedConstants:
             'Stop hook feedback:',
         ):
             assert _mod.is_operator_authored(f'{notice} — and the rest of it') is False
-
-    def test_operator_bearing_tags_are_the_command_args_tag_alone(self):
-        assert _mod.OPERATOR_BEARING_TAGS == frozenset({'command-args'})
 
 
 class TestEnvelopelessNotices:
@@ -131,6 +132,38 @@ class TestEnvelopelessNotices:
         quoted = f'why did I get this? {REENTRY_NOTICE}'
         assert _mod.is_harness_notice(quoted) is False
         assert _mod.is_operator_authored(quoted) is True
+
+
+class TestRecogniserBoundaries:
+    """The two private regexes decide what counts as a heading and as a tag.
+
+    Neither is a published name, so neither is covered by the constant pinning
+    above; both nonetheless carry behaviour an operator turn depends on.
+    """
+
+    def test_a_hash_prefixed_non_heading_line_is_not_a_markdown_heading(self):
+        """A heading needs whitespace AND text after the hashes.
+
+        Without that, a shebang or a `#include` turns any turn quoting the
+        skill-load marker into an "injected skill body" — discarding a real
+        operator question.
+        """
+        text = (
+            'why does the log say "Base directory for this skill: /tmp/x"?\n'
+            'my hook starts with\n'
+            '#!/usr/bin/env bash\n'
+            'and never runs'
+        )
+        assert _mod.is_synthetic_skill_load(text) is False
+        assert _mod.is_operator_authored(text) is True
+
+    def test_a_tag_name_must_start_with_a_letter(self):
+        """`<2>…</2>` is prose, not a harness envelope.
+
+        Admitting digit-led names empties the residue of a turn whose only
+        markup is something like a numbered placeholder.
+        """
+        assert _mod.is_operator_authored('<2>revert the rename</2>') is True
 
 
 class TestOperatorProseSurvives:

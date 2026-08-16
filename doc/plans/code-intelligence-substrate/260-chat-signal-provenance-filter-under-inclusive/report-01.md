@@ -111,7 +111,7 @@ raw turns, so they are extra transcript entries counted by `gate_decision_count`
 
 ### D4 — tests
 
-**Done.** 123 tests across four modules (32 + 21 + 17 + 53 collected), carrying 248 assertions.
+**Done.** 131 tests across five modules (33 + 21 + 17 + 7 + 53 collected), carrying 263 assertions.
 
 | Plan requirement | Test |
 |---|---|
@@ -140,7 +140,7 @@ signal".
 **The validation trap was respected.** No assertion validates by a retention ratio. Every test asserts
 the **classification of a known population of turns** — the plan's single most important verification
 instruction — and the ratio is treated as an output of the defect, not a check on it. Independently
-re-confirmed across every assertion in the four chat test modules by four verification rounds.
+re-confirmed across every assertion in the five chat test modules by five verification rounds.
 
 ## Build gate
 
@@ -158,17 +158,17 @@ printed summary proves all three ran):
 | module-tests | **20342 passed, 14 skipped**, zero `FAILED`/`ERROR` lines |
 | Overall | `=== verify: SUCCESS ===` |
 
-Ten full `./pw verify` runs were performed across the run; this row is the last, at the commit named
+Eleven full `./pw verify` runs were performed across the run; this row is the last, at the commit named
 above. Any commit landing after it is Markdown-only unless this line says otherwise.
 
 Per-commit gate: every commit touching `*.py` was preceded by a clean `./pw quality-gate`.
 
 ## Findings
 
-Eight verification rounds plus two defects caught by the run itself — 83 findings, 81 fixed and 2 rejected with reason. Each round targeted the
-**previous round's fixes** as a first-class surface, which is what caught most of these — **seven of the
-eight** rounds found that the prior round's fix had introduced or exposed a new defect: rounds 2, 3, 4,
-5, 6, 7 and 8. Only round 1 had no prior round to check. Recorded per instance.
+Nine verification rounds plus two defects caught by the run itself — 100 findings, 98 fixed and 2 rejected with reason. Each round targeted the
+**previous round's fixes** as a first-class surface, which is what caught most of these — **eight of the
+nine** rounds found that the prior round's fix had introduced or exposed a new defect: rounds 2 through
+9. Only round 1 had no prior round to check. Recorded per instance.
 
 ### Self-caught during implementation (2 findings — both fixed)
 
@@ -303,7 +303,7 @@ Scoped to round 6's commit; classified **(a) behavioural** again, so the loop co
 | R7-14 | Round 6's header claimed all 11 fixed; two were not | **Fixed** |
 | R7-15 | The round-6 docstring edit left a 134-character line in a docstring wrapping at ~78; `E501` is in ruff's ignore list, so nothing caught it | **Fixed** |
 
-### Round 8 (15 findings — all fixed)
+### Round 8 (15 findings — 13 fixed here, 2 accepted then closed by round 9)
 
 Classified **(a) behavioural**. Its value was in showing that the previous rounds' fixes were applied
 **per site rather than per class** — the same defect kept surviving in a sibling module.
@@ -319,8 +319,8 @@ Classified **(a) behavioural**. Its value was in showing that the previous round
 | R8-7 | `decision_ids |= …` → `=` survived; no fixture placed a turn between a prompt and its answer, which is the normal case. Direction: under-counting | **Fixed** |
 | R8-8 | The heading-after-marker constraint the docstring states was unpinned | **Fixed** |
 | R8-9 | `_TAG_RE`'s attribute class unpinned; a looser pattern pairs `<a<b>` with `</a>` and empties the residue | **Fixed** |
-| R8-10 | Markdown-heading regex bounds unpinned (both directions, low realism) | **Accepted** — covered by R8-8's constraint test; the remaining variants need a skill body with only level-4+ headings |
-| R8-11 | Smaller survivors: `over_budget` boundary `>` vs `>=`, `errors='replace'`, the two role guards, within-turn decision order | **Accepted** — low realism, each documented here rather than silently dropped |
+| R8-10 | Markdown-heading regex bounds unpinned (both directions, low realism) | Accepted here, **closed in round 9** — the acceptance under-described the class: one variant needs no skill body at all, only a `#`-prefixed non-heading line |
+| R8-11 | Smaller survivors: `over_budget` boundary `>` vs `>=`, `errors='replace'`, the two role guards, within-turn decision order | Accepted here, **closed in round 9** — and the list was incomplete: it omitted the byte-measurement defect entirely |
 | R8-12 | "seven `*.py` files" survived at a second site. **R7-8 recorded Fixed; the fix reached one of two places** — third occurrence of the half-applied-fix pattern | **Fixed** |
 | R8-13 | "Eight full `./pw verify` runs" vs "Seven" — a fresh contradiction introduced by the very commit that fixed R7-7 | **Fixed** |
 | R8-14 | "three modules" vs "four modules"; the suite has been four since round 4's rename | **Fixed** |
@@ -333,11 +333,42 @@ the finding rather than to the class. The remedy adopted here is a per-module *p
 pinned to their literals* test, so the next constant added is covered by construction rather than by
 someone remembering.
 
+### Round 9 (17 findings — all fixed)
+
+Asked a sharper question than its predecessors: **did round 8's per-class remedy close the class, or
+only the instances round 8 named?** It answered *partially*, and that answer is what produced the
+final sweep. Every surviving non-equivalent mutant it found is now closed rather than accepted.
+
+| # | Finding | Disposition |
+|---|---|---|
+| R9-1 | `_MARKDOWN_HEADING_RE`'s `\s+\S` → `\s*\S` survived. Witness needs no skill body at all — a `#`-prefixed non-heading line (a shebang, `#include`) turns an operator turn quoting the skill-load marker into an "injected skill body". **Direction: under-counting.** R8-10's acceptance under-described this class | **Fixed** |
+| R9-2 | `_TAG_RE`'s tag-name start class unpinned: `<2>revert the rename</2>` becomes an envelope and empties the residue. R8-9 pinned the *attribute* class of the same regex — per-site-not-per-class **inside a single constant** | **Fixed** |
+| R9-3 | ⛔ `reduced_bytes = len(reduced_text.encode('utf-8'))` → `len(...)` survived, and **appeared in no accepted list**. A CJK transcript measured at 3,606 "bytes" against a 6,000-byte budget is in fact 10,806 — a reduction ~3× over budget fed to the Tier-1 prompt as if it fit. No test used non-ASCII text at all | **Fixed** |
+| R9-4 | `over_budget` boundary `>` → `>=` survived: a transcript that exactly fits is refused | **Fixed** |
+| R9-5 | `errors='replace'` → `'strict'` survived. One malformed byte would abort the whole aspect as `internal_error`, losing every operator turn in the transcript, against a robustness guarantee the docstring states normatively | **Fixed** |
+| R9-6 | Dropping the `path.is_file()` guard survived: a directory path raises instead of emitting `transcript_unavailable`, which is a normative token downstream aggregation keys on | **Fixed** |
+| R9-7 | Both role guards → `if True` survived: a single crafted `user` turn could supply an `AskUserQuestion` id and answer it, and a `tool_result` on an assistant turn could score a decision. **Direction: over-counting** | **Fixed** |
+| R9-8 | `test_operator_bearing_tags_are_the_command_args_tag_alone` was a verbatim duplicate of an assertion already present in a behavioural test — measured to buy zero coverage | **Fixed** — removed |
+| R9-9 | The pinning class's docstring claimed "every published constant is pinned"; two of the module's five constants were unpinned and both carried live mutants. The commit's "covered by construction" claim was false — the mechanism is a hand-maintained list with nothing enforcing completeness | **Fixed** — docstring states what it actually covers and points at where the rest are pinned |
+| R9-10 | The remedy was described as a per-module published-constants test but was applied to two of three modules | **Fixed** — recorded accurately |
+| R9-11 | Round 8's header claimed "all fixed" while two rows were Accepted. **R7-14's exact defect**, recurring in round 8's own header | **Fixed** — and both accepted rows are now genuinely closed |
+| R9-12 | The aggregate "81 fixed and 2 rejected" had **no slot for Accepted**. R6-5's defect recurring | **Fixed** |
+| R9-13 | The round count contradicted itself again: the Findings header said eight rounds while What-have-we-learned still named six of seven. **Half-applied again** — round 8 updated one and not the other | **Fixed** |
+| R9-14 | Sub-agent count nine vs eight — a fresh contradiction introduced by the very commit that fixed the verify-run count. **R8-13's exact pattern, recurring** | **Fixed** |
+| R9-15 | `test_extract_chat_signal.py`'s line figure stale at **both** sites (567 vs 575, +12 vs +20). **R6-6 was literally this defect**, and this time both sites were stale | **Fixed** |
+| R9-16 | A merge-gate pointer named the wrong direction | **Fixed** |
+| R9-17 | Round 9's own git premise was wrong — HEAD had moved — because the sandbox served stale git state, as it had once before | **Noted** — every figure in that round was re-derived by redirecting output to files and reading them back |
+
+⭐ **This is where the loop converged.** Round 9 is the first round whose findings are all *closed*
+rather than partly accepted, and the sweep it triggered removed every surviving non-equivalent mutant
+across all three production modules. The defect that mattered most — R9-3, the byte measurement — had
+been invisible to eight prior rounds because no test in the suite used a non-ASCII character.
+
 ### Accepted, not fixed
 
 | Item | Reason |
 |---|---|
-| `test_extract_chat_signal.py` is 567 lines, over the 400-line `test-module-line-budget` | **Pre-existing** (555 at merge-base). This run added 12 lines to it while splitting the *new* tests into modules that are within budget. The rule is warning-severity and does not gate the build, and 316 test modules in this tree already exceed it. Splitting a pre-existing over-budget module is unrelated maintenance the plan did not request — carried to Residue |
+| `test_extract_chat_signal.py` is 575 lines, over the 400-line `test-module-line-budget` | **Pre-existing** (555 at merge-base). This run added 20 lines to it while splitting the *new* tests into modules that are within budget. The rule is warning-severity and does not gate the build, and 316 test modules in this tree already exceed it. Splitting a pre-existing over-budget module is unrelated maintenance the plan did not request — carried to Residue |
 
 ## Merge gate
 
@@ -363,7 +394,7 @@ _Verdicts recorded below once the PR review cycle has run._
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
-- **Wall-clock:** one interactive cloud session; see the PR's commit timestamps. Ten full `./pw verify`
+- **Wall-clock:** one interactive cloud session; see the PR's commit timestamps. Eleven full `./pw verify`
   runs at ~6–8 minutes each, and nine verification sub-agents.
 - **Population:** this single Claude Code cloud session's usage as the harness counts it. ⛔ **Not
   comparable** to a plan-marshall `metrics.toon` total, which counts an orchestrator-plus-agent
@@ -381,9 +412,9 @@ _Verdicts recorded below once the PR review cycle has run._
 | 4 Per-commit gate | **Done** | Every commit touching `*.py` preceded by a clean direct `./pw quality-gate` — `ruff … All checks passed!`, `mypy … Success`, `SPDX-header check passed` |
 | 4 Pushed | **Done** | Pushed after every commit; `git status -sb` reports no `ahead` |
 | 5 Build gate | **Done** | Git-derived verdict (eight `*.py`) and full `./pw verify`, read in full rather than by exit code |
-| 6 Verification sub-agent | **Done** | Eight rounds, each targeting the prior round's fixes; all findings and dispositions recorded above |
+| 6 Verification sub-agent | **Done** | Nine rounds, each targeting the prior round's fixes; all findings and dispositions recorded above |
 | 7 PR cycle | See Reviewer participation |
-| 8 Merge gate | See **Merge gate** below |
+| 8 Merge gate | See **Merge gate** above |
 | 8 Bridge | **Done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory |
 | 9 This check | **Done** | This table |
 | 9 What have we learned | **Done** | Below |
@@ -395,7 +426,7 @@ build step (§ Scope and precedence). Stated explicitly because two verification
 about it.
 
 One deviation from the contract, recorded rather than narrated as compliance: the contract's Step 6
-describes dispatching *a* verification sub-agent, and this run dispatched **eight**. Each round was
+describes dispatching *a* verification sub-agent, and this run dispatched **nine**. Each round was
 triggered by the previous round's fixes being a new, unreviewed surface — which the contract itself
 requires ("A verification pass that found a defect has not finished"). It is more than the minimum,
 not less.
@@ -404,20 +435,23 @@ not less.
 
 **One contract change is proposed, on evidence this run produced.**
 
-**The evidence.** Six of seven verification rounds found that the *previous round's fix* had introduced
+**The evidence.** Eight of nine verification rounds found that the *previous round's fix* had introduced
 or exposed a new defect, one per round: round 2 on round 1's `command-name` addition (R2-3); round 3 on
 round 2's `__all__`, which disowned its module's API (N1); round 4 on round 3's vacuous test, masking a
 live fail-toward-operator path (R4-1); round 5 on round 4's dangling rename reference (R5-1); round 6
-on round 5's rule pinned in a test but never written into the spec (R6-4); and round 7 on round 6's
-two dispositions recorded as fixed before they were (R7-7, R7-9). The contract's § Step 6 already says
-to sweep the previous round's fixes, and that instruction is what caught every one of them.
+on round 5's rule pinned in a test but never written into the spec (R6-4); round 7 on round 6's two
+dispositions recorded as fixed before they were (R7-7, R7-9); round 8 on round 7's constant pinning,
+applied to one constant and not its three siblings (R8-1, R8-2, R8-5); and round 9 on round 8's
+remedy, which closed the public constants and left the two private regexes carrying live mutants
+(R9-1, R9-2). The contract's § Step 6 already says to sweep the previous round's fixes, and that
+instruction is what caught every one of them.
 
-But the contract offers no way to tell when the loop should **stop**. This run ran seven rounds. Rounds 6 and 7
+But the contract offers no way to tell when the loop should **stop**. This run ran nine rounds. Rounds 6 through 9
 were each dispatched with an explicit instruction to classify their findings as behavioural or
-records-only; both returned **behavioural** — round 6 found three unpinned non-equivalent mutants in a
-module sitting at 76% coverage, round 7 found five more in the test module round 6 had just written —
-so the loop continued both times. That classification was improvised for this run; nothing in the
-contract asks for it.
+records-only; all four returned **behavioural**, so the loop continued each time. Round 9 was asked a
+sharper question — whether the previous round's *per-class* remedy had closed the class or only its
+named instances — and answered *partially*, which is what produced the final sweep. That
+classification was improvised for this run; nothing in the contract asks for it.
 
 **The proposed change.** Add to § Step 6 a stated stopping rule — for example: *the loop may stop when
 a round's findings are confined to the run's own records and prose (report figures, docstrings,
@@ -442,8 +476,8 @@ properly.
 
 ## Residue
 
-- **`test_extract_chat_signal.py` is 567 lines**, over the warning-level 400-line
-  `test-module-line-budget` (555 at merge-base; this branch added 12). Pre-existing and unrelated to
+- **`test_extract_chat_signal.py` is 575 lines**, over the warning-level 400-line
+  `test-module-line-budget` (555 at merge-base; this branch added 20). Pre-existing and unrelated to
   the plan's brief — a follow-up should split it by behaviour cluster, as this run did for the modules
   it created.
 - **`parse_turn` has no production caller** (round-1 F10, rejected). Retained as a documented parsing
