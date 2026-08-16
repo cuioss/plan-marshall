@@ -135,31 +135,33 @@ class TestSafeRelativePath:
 
 
 class TestFindMarketplacePath:
-    def test_cwd_based_discovery(self, tmp_path, monkeypatch):
+    @pytest.fixture()
+    def no_pm_marketplace_root(self, monkeypatch):
+        """Clear PM_MARKETPLACE_ROOT so resolution falls through to its next source."""
+        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+
+    def test_cwd_based_discovery(self, tmp_path, monkeypatch, no_pm_marketplace_root):
         bundles = tmp_path / 'marketplace' / 'bundles'
         bundles.mkdir(parents=True)
-        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
         monkeypatch.chdir(tmp_path)
         result = find_marketplace_path()
         assert result == bundles
 
-    def test_parent_cwd_discovery(self, tmp_path, monkeypatch):
+    def test_parent_cwd_discovery(self, tmp_path, monkeypatch, no_pm_marketplace_root):
         bundles = tmp_path / 'marketplace' / 'bundles'
         bundles.mkdir(parents=True)
         child = tmp_path / 'subdir'
         child.mkdir()
-        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
         monkeypatch.chdir(child)
         result = find_marketplace_path()
         assert result == bundles
 
-    def test_not_found(self, outside_repo_dir, monkeypatch):
+    def test_not_found(self, outside_repo_dir, monkeypatch, no_pm_marketplace_root):
         # ``bare`` must be OUTSIDE the repo so the cwd walk-up finds no
         # marketplace/bundles ancestor. pytest's tmp_path now roots under the
         # repo-local --basetemp, which DOES have a marketplace/bundles ancestor.
         bare = outside_repo_dir / 'bare'
         bare.mkdir()
-        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
         monkeypatch.chdir(bare)
         result = find_marketplace_path()
         assert result is None
@@ -355,29 +357,30 @@ class TestMainAnchoredStoreOwnsBundle:
     constructing the path, returning False regardless of any active override.
     """
 
-    def test_empty_bundle_returns_false_even_under_override(self, tmp_path, monkeypatch):
+    @pytest.fixture()
+    def plan_base_dir_at_tmp(self, tmp_path, monkeypatch):
+        """Point PLAN_BASE_DIR at an isolated tmp_path and yield that root."""
+        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+        return tmp_path
+
+    def test_empty_bundle_returns_false_even_under_override(self, plan_base_dir_at_tmp):
         # The validation guard fires before the PLAN_BASE_DIR short-circuit, so
         # an empty bundle can never be reported as owned.
-        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
         assert main_anchored_store_owns_bundle('') is False
 
-    def test_bundle_with_forward_slash_returns_false(self, tmp_path, monkeypatch):
-        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    def test_bundle_with_forward_slash_returns_false(self, plan_base_dir_at_tmp):
         assert main_anchored_store_owns_bundle('a/b') is False
 
-    def test_absolute_path_bundle_returns_false(self, tmp_path, monkeypatch):
+    def test_absolute_path_bundle_returns_false(self, plan_base_dir_at_tmp):
         # An absolute-path bundle would make pathlib discard main_root; the
         # leading-separator hit in the guard rejects it first.
-        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
         assert main_anchored_store_owns_bundle('/etc') is False
 
-    def test_bundle_with_backslash_returns_false(self, tmp_path, monkeypatch):
-        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    def test_bundle_with_backslash_returns_false(self, plan_base_dir_at_tmp):
         assert main_anchored_store_owns_bundle('a\\b') is False
 
-    def test_current_dir_bundle_returns_false(self, tmp_path, monkeypatch):
+    def test_current_dir_bundle_returns_false(self, plan_base_dir_at_tmp):
         # '.' has no separator but resolves to the bundles directory itself.
-        monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
         assert main_anchored_store_owns_bundle('.') is False
 
     def test_parent_dir_bundle_returns_false_in_production(self, tmp_path, monkeypatch):
@@ -438,15 +441,28 @@ def _route_bundle_cache_to_patched_home(monkeypatch):
 
 @pytest.mark.usefixtures('_route_bundle_cache_to_patched_home')
 class TestGetBasePath:
-    def test_auto_prefers_marketplace(self, tmp_path, monkeypatch):
+    @pytest.fixture()
+    def in_tmp_cwd(self, tmp_path, monkeypatch):
+        """Run with the process working directory inside an isolated tmp_path."""
+        monkeypatch.chdir(tmp_path)
+
+    @pytest.fixture()
+    def no_pm_marketplace_root(self, monkeypatch):
+        """Clear PM_MARKETPLACE_ROOT so resolution falls through to its next source."""
+        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
+
+    @pytest.fixture()
+    def home_at_tmp(self, tmp_path, monkeypatch):
+        """Resolve Path.home() to an isolated tmp_path."""
+        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+
+    def test_auto_prefers_marketplace(self, tmp_path, no_pm_marketplace_root, in_tmp_cwd):
         bundles = tmp_path / 'marketplace' / 'bundles'
         bundles.mkdir(parents=True)
-        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
-        monkeypatch.chdir(tmp_path)
         result = get_base_path('auto')
         assert result == bundles
 
-    def test_auto_falls_back_to_cache_without_marketplace(self, tmp_path, outside_repo_dir, monkeypatch):
+    def test_auto_falls_back_to_cache_without_marketplace(self, tmp_path, outside_repo_dir, monkeypatch, home_at_tmp, no_pm_marketplace_root):
         """auto scope falls back to the plugin cache when no marketplace resolves.
 
         With no explicit anchor and no ``marketplace/bundles`` discoverable by the
@@ -459,15 +475,13 @@ class TestGetBasePath:
         # marketplace ancestor. The cache + patched home stay under tmp_path.
         bare = outside_repo_dir / 'bare'
         bare.mkdir()
-        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
         monkeypatch.chdir(bare)
         cache = tmp_path / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
         cache.mkdir(parents=True)
-        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
         result = get_base_path('auto')
         assert result == cache
 
-    def test_auto_explicit_param_raises_without_cache_fallback(self, tmp_path, monkeypatch):
+    def test_auto_explicit_param_raises_without_cache_fallback(self, tmp_path, monkeypatch, home_at_tmp, no_pm_marketplace_root):
         """An explicit anchor that does not resolve raises WITHOUT cache fallback.
 
         The explicit-anchor contract is preserved: passing ``marketplace_root``
@@ -477,15 +491,13 @@ class TestGetBasePath:
         explicit_anchor = tmp_path / 'does-not-exist'
         bare = tmp_path / 'bare'
         bare.mkdir()
-        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
         monkeypatch.chdir(bare)
         cache = tmp_path / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
         cache.mkdir(parents=True)
-        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
         with pytest.raises(FileNotFoundError):
             get_base_path('auto', marketplace_root=explicit_anchor)
 
-    def test_auto_prefers_marketplace_over_cache(self, tmp_path, monkeypatch):
+    def test_auto_prefers_marketplace_over_cache(self, tmp_path, home_at_tmp, no_pm_marketplace_root, in_tmp_cwd):
         """When both marketplace and cache resolve, auto returns the marketplace.
 
         The cache fallback only fires when the marketplace cannot be found; a
@@ -495,58 +507,45 @@ class TestGetBasePath:
         bundles.mkdir(parents=True)
         cache = tmp_path / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
         cache.mkdir(parents=True)
-        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
-        monkeypatch.chdir(tmp_path)
-        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
         result = get_base_path('auto')
         assert result == bundles
 
-    def test_auto_raises_when_nothing_found(self, tmp_path, outside_repo_dir, monkeypatch):
+    def test_auto_raises_when_nothing_found(self, outside_repo_dir, monkeypatch, home_at_tmp, no_pm_marketplace_root):
         # ``bare`` (cwd) must be OUTSIDE the repo so the walk-up finds no
         # marketplace; with no cache under the patched home either, auto raises.
         # pytest's tmp_path now roots under the repo-local --basetemp, which HAS
         # a marketplace ancestor and would otherwise resolve without raising.
         bare = outside_repo_dir / 'bare'
         bare.mkdir()
-        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
         monkeypatch.chdir(bare)
-        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
         with pytest.raises(FileNotFoundError):
             get_base_path('auto')
 
-    def test_cache_first_prefers_cache(self, tmp_path, monkeypatch):
+    def test_cache_first_prefers_cache(self, tmp_path, home_at_tmp, no_pm_marketplace_root, in_tmp_cwd):
         bundles = tmp_path / 'marketplace' / 'bundles'
         bundles.mkdir(parents=True)
         cache = tmp_path / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
         cache.mkdir(parents=True)
-        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
-        monkeypatch.chdir(tmp_path)
-        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
         result = get_base_path('cache-first')
         assert result == cache
 
-    def test_marketplace_scope(self, tmp_path, monkeypatch):
+    def test_marketplace_scope(self, tmp_path, no_pm_marketplace_root, in_tmp_cwd):
         bundles = tmp_path / 'marketplace' / 'bundles'
         bundles.mkdir(parents=True)
-        monkeypatch.delenv('PM_MARKETPLACE_ROOT', raising=False)
-        monkeypatch.chdir(tmp_path)
         result = get_base_path('marketplace')
         assert result == bundles
 
-    def test_plugin_cache_scope(self, tmp_path, monkeypatch):
+    def test_plugin_cache_scope(self, tmp_path, home_at_tmp):
         cache = tmp_path / CLAUDE_DIR / PLUGIN_CACHE_SUBPATH
         cache.mkdir(parents=True)
-        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
         result = get_base_path('plugin-cache')
         assert result == cache
 
-    def test_global_scope(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+    def test_global_scope(self, tmp_path, home_at_tmp):
         result = get_base_path('global')
         assert result == tmp_path / CLAUDE_DIR
 
-    def test_project_scope(self, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
+    def test_project_scope(self, tmp_path, in_tmp_cwd):
         result = get_base_path('project')
         assert result == tmp_path / CLAUDE_DIR
 
@@ -579,6 +578,11 @@ class TestResolveMainAnchoredPath:
     raises. The override-first branch keeps every PLAN_BASE_DIR-based consumer
     test green; the production branch resolves via the git common dir.
     """
+
+    @pytest.fixture()
+    def no_plan_base_dir(self, monkeypatch):
+        """Clear PLAN_BASE_DIR so resolution falls through to its next source."""
+        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
 
     def test_resolve_main_anchored_path_honours_plan_base_dir_override(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -616,13 +620,10 @@ class TestResolveMainAnchoredPath:
         assert resolved == main_base / 'build-queue.json'
         assert resolved != worktree / '.plan' / 'local' / 'build-queue.json'
 
-    def test_resolve_main_anchored_path_resolves_to_main_from_worktree_cwd(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_resolve_main_anchored_path_resolves_to_main_from_worktree_cwd(self, tmp_path, monkeypatch, no_plan_base_dir) -> None:
         # A REAL git repo with a REAL linked worktree; no override set, so the
         # production git-common-dir branch is exercised with cwd pinned into the
         # worktree.
-        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
         import file_ops
 
         monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
@@ -643,13 +644,10 @@ class TestResolveMainAnchoredPath:
         assert resolved.resolve() == expected
         assert resolved.resolve() != (worktree.resolve() / PLAN_DIR_NAME / 'local' / 'merge.lock')
 
-    def test_resolve_main_anchored_path_resolves_from_main_checkout_cwd(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_resolve_main_anchored_path_resolves_from_main_checkout_cwd(self, tmp_path, monkeypatch, no_plan_base_dir) -> None:
         # A REAL git repo, no override, cwd pinned at the main checkout itself
         # (not a linked worktree) — the production branch must anchor at the same
         # main root.
-        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
         import file_ops
 
         monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
@@ -685,14 +683,11 @@ class TestResolveMainAnchoredPath:
         module_top = src.split('def ', 1)[0]
         assert 'import file_ops' not in module_top
 
-    def test_resolve_main_anchored_path_raises_when_not_a_repo(
-        self, outside_repo_dir: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_resolve_main_anchored_path_raises_when_not_a_repo(self, outside_repo_dir, monkeypatch, no_plan_base_dir) -> None:
         # Outside any git repo, no override — the production branch must raise
         # RuntimeError (identical contract to merge_lock). ``bare`` must be
         # OUTSIDE the repo: pytest's tmp_path now roots under the repo-local
         # --basetemp, where the git resolution succeeds instead of raising.
-        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
         import file_ops
 
         monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
@@ -709,32 +704,28 @@ class TestHomeRoot:
     across every checkout, distinct from the per-repo main-anchored exception.
     """
 
-    def test_defaults_to_plan_marshall_under_home(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    @pytest.fixture()
+    def home_at_tmp(self, tmp_path, monkeypatch):
+        """Resolve Path.home() to an isolated tmp_path."""
+        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+
+    def test_defaults_to_plan_marshall_under_home(self, tmp_path, monkeypatch, home_at_tmp) -> None:
         # No PLAN_MARSHALL_HOME override → ~/.plan-marshall.
         monkeypatch.delenv('PLAN_MARSHALL_HOME', raising=False)
-        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
 
         assert home_root() == tmp_path / '.plan-marshall'
 
-    def test_plan_marshall_home_env_override_wins(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_plan_marshall_home_env_override_wins(self, tmp_path, monkeypatch, home_at_tmp) -> None:
         # PLAN_MARSHALL_HOME takes precedence over the ~/.plan-marshall default.
         custom = tmp_path / 'custom-home'
         monkeypatch.setenv('PLAN_MARSHALL_HOME', str(custom))
-        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
 
         assert home_root() == custom
 
-    def test_independent_of_cwd_and_not_main_anchored(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_independent_of_cwd_and_not_main_anchored(self, tmp_path, monkeypatch, home_at_tmp) -> None:
         # home_root() resolves to the host-wide directory regardless of cwd — it
         # does NOT walk up to a .plan/local ancestor and is NOT main-anchored.
         monkeypatch.delenv('PLAN_MARSHALL_HOME', raising=False)
-        monkeypatch.setattr(Path, 'home', lambda: tmp_path)
         worktree = tmp_path / 'wt'
         (worktree / '.plan' / 'local').mkdir(parents=True)
         monkeypatch.chdir(worktree)

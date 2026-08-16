@@ -113,26 +113,27 @@ class TestReadActiveOrchestrator:
     bound, so the orchestrator title reaches the PRIMARY hook channel.
     """
 
-    def test_returns_bound_epic_slug(self, tmp_path, monkeypatch):
-        """After bind_orchestrator, the helper returns the bound epic slug."""
+    @pytest.fixture()
+    def session_cache_base(self, tmp_path, monkeypatch):
+        """Redirect the session cache root to an isolated tmp_path."""
         monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
+
+    def test_returns_bound_epic_slug(self, session_cache_base):
+        """After bind_orchestrator, the helper returns the bound epic slug."""
         session_binding.bind_orchestrator("sess-orch-read", "my-epic")
         assert claude_runtime._read_active_orchestrator("sess-orch-read") == "my-epic"
 
-    def test_unbound_session_returns_none(self, tmp_path, monkeypatch):
+    def test_unbound_session_returns_none(self, session_cache_base):
         """An unbound session resolves to None."""
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         assert claude_runtime._read_active_orchestrator("sess-orch-none") is None
 
-    def test_malformed_session_id_returns_none(self, tmp_path, monkeypatch):
+    def test_malformed_session_id_returns_none(self, session_cache_base):
         """A malformed session id resolves to None without touching disk."""
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         assert claude_runtime._read_active_orchestrator("../evil") is None
 
-    def test_plan_binding_does_not_leak_into_orchestrator_read(self, tmp_path, monkeypatch):
+    def test_plan_binding_does_not_leak_into_orchestrator_read(self, session_cache_base):
         """A plan-bound session (no epic) resolves None on the orchestrator read —
         the two kind-disjoint slots do not cross-read."""
-        monkeypatch.setattr(session_binding, "_SESSION_CACHE_BASE", tmp_path / "sessions")
         session_binding.bind("sess-plan-only", "some-plan")
         assert claude_runtime._read_active_orchestrator("sess-plan-only") is None
 
@@ -1909,26 +1910,27 @@ class TestCaptureEntryOutcomeIsReported:
 class TestDisplayEnforcementLabel:
     """Tests for the dedicated ``PreToolUse:enforcement`` display present/MISSING label."""
 
-    def test_display_reports_enforcement_missing_before_install(self, rt, tmp_path, monkeypatch):
-        """The display check reports PreToolUse:enforcement MISSING before the install."""
+    @pytest.fixture()
+    def in_tmp_cwd(self, tmp_path, monkeypatch):
+        """Run with the process working directory inside an isolated tmp_path."""
         monkeypatch.chdir(tmp_path)
+
+    def test_display_reports_enforcement_missing_before_install(self, rt, in_tmp_cwd):
+        """The display check reports PreToolUse:enforcement MISSING before the install."""
         result = _parsed(rt.health_check("display"))
         display_result = next(r for r in result["results"] if r["check"] == "display")
         assert "PreToolUse:enforcement: MISSING" in display_result["detail"]
 
-    def test_display_reports_enforcement_present_after_install(self, rt, tmp_path, monkeypatch):
+    def test_display_reports_enforcement_present_after_install(self, rt, tmp_path, in_tmp_cwd):
         """The display check reports PreToolUse:enforcement present after the enforcement install."""
         target = tmp_path / ".claude" / "settings.local.json"
         rt.project_install_hook(str(target), enforcement=True)
-        monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("display"))
         display_result = next(r for r in result["results"] if r["check"] == "display")
         assert "PreToolUse:enforcement: present" in display_result["detail"]
 
-    def test_enforcement_only_install_keeps_display_unhealthy_for_terminal_title(
-        self, rt, tmp_path, monkeypatch
-    ):
+    def test_enforcement_only_install_keeps_display_unhealthy_for_terminal_title(self, rt, tmp_path, in_tmp_cwd):
         """An enforcement-only install does NOT make the terminal-title display healthy.
 
         The enforcement entry is orthogonal: installing it alone leaves every
@@ -1937,7 +1939,6 @@ class TestDisplayEnforcementLabel:
         """
         target = tmp_path / ".claude" / "settings.local.json"
         rt.project_install_hook(str(target), enforcement=True)
-        monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("display"))
         display_result = next(r for r in result["results"] if r["check"] == "display")
@@ -1946,9 +1947,7 @@ class TestDisplayEnforcementLabel:
         assert "PreToolUse:enforcement: present" in detail
         assert "SessionStart:matcher-less: MISSING" in detail
 
-    def test_display_reports_enforcement_present_when_entry_in_settings_json(
-        self, rt, tmp_path, monkeypatch
-    ):
+    def test_display_reports_enforcement_present_when_entry_in_settings_json(self, rt, tmp_path, in_tmp_cwd):
         """The display check detects the enforcement entry in settings.json too.
 
         Regression: the display check used to read ONLY settings.local.json, so an
@@ -1959,7 +1958,6 @@ class TestDisplayEnforcementLabel:
         """
         target = tmp_path / ".claude" / "settings.json"
         rt.project_install_hook(str(target), enforcement=True)
-        monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("display"))
         display_result = next(r for r in result["results"] if r["check"] == "display")
@@ -2746,7 +2744,18 @@ class TestResolveArchivedStatusJson:
     similarly named plans.
     """
 
-    def test_resolves_archived_status_for_dated_dir(self, tmp_path, monkeypatch):
+    @pytest.fixture()
+    def plan_dir_name(self, monkeypatch):
+        """Pin the plan directory name the archived-status read resolves against."""
+        import claude_runtime as _cr
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+
+    @pytest.fixture()
+    def in_tmp_cwd(self, tmp_path, monkeypatch):
+        """Run with the process working directory inside an isolated tmp_path."""
+        monkeypatch.chdir(tmp_path)
+
+    def test_resolves_archived_status_for_dated_dir(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """Returns the archived status.json path under {date}-{plan_id}/."""
         import claude_runtime as _cr
 
@@ -2756,23 +2765,19 @@ class TestResolveArchivedStatusJson:
         status_path = archived_dir / "status.json"
         status_path.write_text(json.dumps({"current_phase": "complete"}), encoding="utf-8")
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.chdir(tmp_path)
 
         resolved = _cr._resolve_archived_status_json(plan_id)
         assert resolved is not None
         assert resolved.resolve() == status_path.resolve()
 
-    def test_returns_none_when_archived_base_absent(self, tmp_path, monkeypatch):
+    def test_returns_none_when_archived_base_absent(self, in_tmp_cwd, plan_dir_name):
         """No archived-plans/ directory at all → None (not an error)."""
         import claude_runtime as _cr
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.chdir(tmp_path)
 
         assert _cr._resolve_archived_status_json("anything") is None
 
-    def test_does_not_match_unrelated_plan_dir(self, tmp_path, monkeypatch):
+    def test_does_not_match_unrelated_plan_dir(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """The ``*-{plan_id}`` glob must not resolve a directory for a different
         plan whose name does not end in the exact ``-{plan_id}`` suffix.
 
@@ -2784,13 +2789,11 @@ class TestResolveArchivedStatusJson:
         other_dir.mkdir(parents=True)
         (other_dir / "status.json").write_text(json.dumps({"current_phase": "complete"}), encoding="utf-8")
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.chdir(tmp_path)
 
         # Only the unrelated -superplan dir exists → no resolution for 'plan'.
         assert _cr._resolve_archived_status_json("plan") is None
 
-    def test_resolves_exact_plan_when_sibling_prefixed_dir_present(self, tmp_path, monkeypatch):
+    def test_resolves_exact_plan_when_sibling_prefixed_dir_present(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """With both a ``{date}-superplan`` archive and a ``{date}-plan`` archive
         present, a request for plan_id 'plan' resolves ONLY the exact ``-plan``
         directory — the sibling whose suffix is ``superplan`` is ignored."""
@@ -2805,8 +2808,6 @@ class TestResolveArchivedStatusJson:
         exact_status = exact_dir / "status.json"
         exact_status.write_text(json.dumps({"current_phase": "complete"}), encoding="utf-8")
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.chdir(tmp_path)
 
         resolved = _cr._resolve_archived_status_json("plan")
         assert resolved is not None
@@ -2825,7 +2826,18 @@ class TestReadTitleState:
     from the live ``status.json`` first, falling back to the archived one.
     """
 
-    def test_reads_live_status_fields(self, tmp_path, monkeypatch):
+    @pytest.fixture()
+    def plan_dir_name(self, monkeypatch):
+        """Pin the plan directory name the runtime resolves titles against."""
+        import claude_runtime as _cr
+        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
+
+    @pytest.fixture()
+    def in_tmp_cwd(self, tmp_path, monkeypatch):
+        """Run with the process working directory inside an isolated tmp_path."""
+        monkeypatch.chdir(tmp_path)
+
+    def test_reads_live_status_fields(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """Returns the {current_phase, short_description, title_token} dict from the live status.json."""
         import claude_runtime as _cr
 
@@ -2844,8 +2856,6 @@ class TestReadTitleState:
             encoding="utf-8",
         )
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.chdir(tmp_path)
 
         state = _cr._read_title_state(plan_id)
         assert state == {
@@ -2854,7 +2864,7 @@ class TestReadTitleState:
             "title_token": record,
         }
 
-    def test_drops_an_aged_token_from_the_returned_state(self, tmp_path, monkeypatch):
+    def test_drops_an_aged_token_from_the_returned_state(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """The aged-token predicate is applied on EVERY read.
 
         A record past the staleness threshold is omitted from the state the
@@ -2883,13 +2893,11 @@ class TestReadTitleState:
             encoding="utf-8",
         )
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.chdir(tmp_path)
 
         state = _cr._read_title_state(plan_id)
         assert state == {"current_phase": "5-execute", "short_description": "do-work"}
 
-    def test_keeps_a_fresh_token_in_the_returned_state(self, tmp_path, monkeypatch):
+    def test_keeps_a_fresh_token_in_the_returned_state(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """Positive control for the aged-token drop above: a record just inside
         the threshold survives the read, so the drop is age-driven rather than
         an unconditional strip."""
@@ -2906,12 +2914,10 @@ class TestReadTitleState:
             json.dumps({"current_phase": "5-execute", "title_token": record}), encoding="utf-8"
         )
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.chdir(tmp_path)
 
         assert _cr._read_title_state(plan_id)["title_token"] == record
 
-    def test_drops_a_legacy_bare_string_token(self, tmp_path, monkeypatch):
+    def test_drops_a_legacy_bare_string_token(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """A status.json still carrying the retired bare-string shape reads as
         having no token, rather than propagating an unusable value downstream."""
         import claude_runtime as _cr
@@ -2924,12 +2930,10 @@ class TestReadTitleState:
             encoding="utf-8",
         )
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.chdir(tmp_path)
 
         assert "title_token" not in _cr._read_title_state(plan_id)
 
-    def test_falls_back_to_archived_status(self, tmp_path, monkeypatch):
+    def test_falls_back_to_archived_status(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """Live status.json absent → reads the archived status.json."""
         import claude_runtime as _cr
 
@@ -2941,22 +2945,18 @@ class TestReadTitleState:
             encoding="utf-8",
         )
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.chdir(tmp_path)
 
         state = _cr._read_title_state(plan_id)
         assert state == {"current_phase": "complete", "short_description": "done-task"}
 
-    def test_returns_none_when_no_status_anywhere(self, tmp_path, monkeypatch):
+    def test_returns_none_when_no_status_anywhere(self, in_tmp_cwd, plan_dir_name):
         """Neither live nor archived status.json present → None."""
         import claude_runtime as _cr
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.chdir(tmp_path)
 
         assert _cr._read_title_state("ghost") is None
 
-    def test_omits_absent_optional_fields(self, tmp_path, monkeypatch):
+    def test_omits_absent_optional_fields(self, tmp_path, in_tmp_cwd, plan_dir_name):
         """A status.json with only current_phase yields a dict without the optional keys."""
         import claude_runtime as _cr
 
@@ -2967,8 +2967,6 @@ class TestReadTitleState:
             json.dumps({"current_phase": "1-init"}), encoding="utf-8"
         )
 
-        monkeypatch.setattr(_cr, "_PLAN_DIR_NAME", ".plan")
-        monkeypatch.chdir(tmp_path)
 
         state = _cr._read_title_state(plan_id)
         assert state == {"current_phase": "1-init"}
@@ -3812,12 +3810,17 @@ class TestSubagentDispatch:
 class TestHealthCheck:
     """Tests for ClaudeRuntime.health_check."""
 
+    @pytest.fixture()
+    def in_tmp_cwd(self, tmp_path, monkeypatch):
+        """Run with the process working directory inside an isolated tmp_path."""
+        monkeypatch.chdir(tmp_path)
+
     def test_invalid_check_returns_error(self, rt):
         result = _parsed(rt.health_check("invalid-check"))
         assert result["status"] == "error"
         assert result["error"] == "invalid_check"
 
-    def test_permissions_check_included_in_all(self, rt, tmp_path, monkeypatch):
+    def test_permissions_check_included_in_all(self, rt, tmp_path, monkeypatch, in_tmp_cwd):
         """checks='all' includes permissions, display, mcp-diagnostics, and hook.
 
         ``checks_run`` is asserted on the ERROR return: the display check is
@@ -3830,7 +3833,6 @@ class TestHealthCheck:
         fake_settings = tmp_path / "settings.json"
         _write_settings(fake_settings, [])
         monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: fake_settings)
-        monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("all"))
         assert "permissions" in result["checks_run"]
@@ -3853,14 +3855,13 @@ class TestHealthCheck:
         assert result["status"] == "success"
         assert result["all_healthy"] is False
 
-    def test_permissions_healthy_when_settings_present(self, rt, tmp_path, monkeypatch):
+    def test_permissions_healthy_when_settings_present(self, rt, tmp_path, monkeypatch, in_tmp_cwd):
         """permissions check is healthy when project settings.json exists."""
         import claude_runtime as _cr
 
         fake_settings = tmp_path / "project_settings.json"
         _write_settings(fake_settings, ["Read(**)"])
         monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: fake_settings)
-        monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("permissions"))
         perm_result = next(r for r in result["results"] if r["check"] == "permissions")
@@ -3899,7 +3900,7 @@ class TestHealthCheck:
             "PostToolUse:Bash",
         )
 
-    def test_display_healthy_when_fully_wired(self, rt, tmp_path, monkeypatch):
+    def test_display_healthy_when_fully_wired(self, rt, tmp_path, in_tmp_cwd):
         """display check is healthy when every required terminal-title entry is present.
 
         A fresh terminal-title project install-hook writes the complete render
@@ -3912,7 +3913,6 @@ class TestHealthCheck:
         """
         target = tmp_path / ".claude" / "settings.local.json"
         rt.project_install_hook(str(target))
-        monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("display"))
         assert result["status"] == "success"
@@ -3925,7 +3925,7 @@ class TestHealthCheck:
         # install — so it is the ONLY MISSING line and the display stays healthy.
         assert "PreToolUse:enforcement: MISSING" in detail
 
-    def test_display_unhealthy_returns_status_error(self, rt, tmp_path, monkeypatch):
+    def test_display_unhealthy_returns_status_error(self, rt, in_tmp_cwd):
         """An unhealthy display FAILS the verb — it does not report at exit 0.
 
         The retired contract returned ``status: success`` with
@@ -3933,19 +3933,17 @@ class TestHealthCheck:
         on status; that is how a missing render entry could sit unnoticed. The
         status is the assertion here.
         """
-        monkeypatch.chdir(tmp_path)
         result = _parsed(rt.health_check("display"))
         assert result["status"] == "error"
         assert result["error"] == "display_unhealthy"
 
-    def test_display_failure_preserves_the_full_report(self, rt, tmp_path, monkeypatch):
+    def test_display_failure_preserves_the_full_report(self, rt, in_tmp_cwd):
         """Failing closed costs the caller NO diagnostic information.
 
         The error carries the same ``results`` / ``all_healthy`` payload a
         success would. A failure that stripped the report would push callers
         back toward ignoring the status to keep the detail.
         """
-        monkeypatch.chdir(tmp_path)
         result = _parsed(rt.health_check("display"))
         assert result["status"] == "error"
         assert result["all_healthy"] is False
@@ -3954,7 +3952,7 @@ class TestHealthCheck:
         for label in self._display_labels():
             assert f"{label}: MISSING" in display_result["detail"]
 
-    def test_display_partial_install_names_each_missing_entry(self, rt, tmp_path, monkeypatch):
+    def test_display_partial_install_names_each_missing_entry(self, rt, tmp_path, in_tmp_cwd):
         """A partial install (only SessionStart wired) reports the missing entries by label.
 
         Only the SessionStart matcher-less render entry is present; every other
@@ -3976,7 +3974,6 @@ class TestHealthCheck:
             }
         }
         settings_path.write_text(json.dumps(settings_data), encoding="utf-8")
-        monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("display"))
         assert result["status"] == "error"
@@ -3993,7 +3990,7 @@ class TestHealthCheck:
                 continue
             assert f"{label}: MISSING" in detail
 
-    def test_removing_a_single_entry_flips_the_verdict_to_error(self, rt, tmp_path, monkeypatch):
+    def test_removing_a_single_entry_flips_the_verdict_to_error(self, rt, tmp_path, in_tmp_cwd):
         """Removing ONE installed entry from a healthy install fails the check.
 
         The paired positive control for the healthy case: without it, a check
@@ -4002,7 +3999,6 @@ class TestHealthCheck:
         """
         target = tmp_path / ".claude" / "settings.local.json"
         rt.project_install_hook(str(target))
-        monkeypatch.chdir(tmp_path)
         assert _parsed(rt.health_check("display"))["status"] == "success"
 
         settings = json.loads(target.read_text())
@@ -4019,20 +4015,17 @@ class TestHealthCheck:
         display_result = next(r for r in result["results"] if r["check"] == "display")
         assert "PostToolUse:Bash: MISSING" in display_result["detail"]
 
-    def test_display_detail_contains_missing_token_when_any_entry_absent(
-        self, rt, tmp_path, monkeypatch
-    ):
+    def test_display_detail_contains_missing_token_when_any_entry_absent(self, rt, in_tmp_cwd):
         """The literal token MISSING is present whenever any required entry is absent.
 
         Load-bearing for the menu-terminal-title.md diagnosis guidance, which
         tells the user to grep the detail field for MISSING.
         """
-        monkeypatch.chdir(tmp_path)
         result = _parsed(rt.health_check("display"))
         display_result = next(r for r in result["results"] if r["check"] == "display")
         assert "MISSING" in display_result["detail"]
 
-    def test_hook_check_healthy_when_session_start_entry_present(self, rt, tmp_path, monkeypatch):
+    def test_hook_check_healthy_when_session_start_entry_present(self, rt, tmp_path, in_tmp_cwd):
         """hook check is healthy when .claude/settings.json contains SessionStart hook."""
         settings_path = tmp_path / ".claude" / "settings.json"
         settings_path.parent.mkdir(parents=True)
@@ -4044,7 +4037,6 @@ class TestHealthCheck:
             }
         }
         settings_path.write_text(json.dumps(settings_data), encoding="utf-8")
-        monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("all"))
         hook_result = next((r for r in result["results"] if r["check"] == "hook"), None)
@@ -4064,40 +4056,36 @@ class TestHealthCheck:
         }
         path.write_text(json.dumps(settings_data), encoding="utf-8")
 
-    def test_hook_check_healthy_when_in_settings_json_only(self, rt, tmp_path, monkeypatch):
+    def test_hook_check_healthy_when_in_settings_json_only(self, rt, tmp_path, in_tmp_cwd):
         """hook check is healthy when the hook lives only in .claude/settings.json."""
         self._write_hook_settings(tmp_path / ".claude" / "settings.json")
-        monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("all"))
         hook_result = next(r for r in result["results"] if r["check"] == "hook")
         assert hook_result["healthy"] is True
         assert "settings.json" in hook_result["detail"]
 
-    def test_hook_check_healthy_when_in_settings_local_json_only(self, rt, tmp_path, monkeypatch):
+    def test_hook_check_healthy_when_in_settings_local_json_only(self, rt, tmp_path, in_tmp_cwd):
         """hook check is healthy when the hook lives only in .claude/settings.local.json."""
         self._write_hook_settings(tmp_path / ".claude" / "settings.local.json")
-        monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("all"))
         hook_result = next(r for r in result["results"] if r["check"] == "hook")
         assert hook_result["healthy"] is True
         assert "settings.local.json" in hook_result["detail"]
 
-    def test_hook_check_unhealthy_when_in_neither_file(self, rt, tmp_path, monkeypatch):
+    def test_hook_check_unhealthy_when_in_neither_file(self, rt, in_tmp_cwd):
         """hook check is unhealthy when the hook is absent from both settings files."""
-        monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("all"))
         hook_result = next(r for r in result["results"] if r["check"] == "hook")
         assert hook_result["healthy"] is False
         assert "missing" in hook_result["detail"]
 
-    def test_hook_check_healthy_when_in_both_files(self, rt, tmp_path, monkeypatch):
+    def test_hook_check_healthy_when_in_both_files(self, rt, tmp_path, in_tmp_cwd):
         """hook check is healthy when the hook is present in both settings files."""
         self._write_hook_settings(tmp_path / ".claude" / "settings.json")
         self._write_hook_settings(tmp_path / ".claude" / "settings.local.json")
-        monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("all"))
         hook_result = next(r for r in result["results"] if r["check"] == "hook")
@@ -4105,14 +4093,13 @@ class TestHealthCheck:
         assert "settings.json" in hook_result["detail"]
         assert "settings.local.json" in hook_result["detail"]
 
-    def test_all_healthy_reflects_individual_results(self, rt, tmp_path, monkeypatch):
+    def test_all_healthy_reflects_individual_results(self, rt, tmp_path, monkeypatch, in_tmp_cwd):
         """all_healthy is False when any single check is unhealthy."""
         import claude_runtime as _cr
 
         # No settings file → permissions check fails.
         fake_settings = tmp_path / "nonexistent_settings.json"
         monkeypatch.setattr(_cr, "_claude_project_settings_path", lambda *_: fake_settings)
-        monkeypatch.chdir(tmp_path)
 
         result = _parsed(rt.health_check("permissions"))
         assert result["all_healthy"] is False

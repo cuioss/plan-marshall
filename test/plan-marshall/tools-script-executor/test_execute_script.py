@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from conftest import _MARKETPLACE_SCRIPT_DIRS, PlanContext
+from conftest import _MARKETPLACE_SCRIPT_DIRS, PlanContext, get_scripts_dir
 
 
 def _subprocess_env() -> dict[str, str]:
@@ -28,7 +28,7 @@ SKILL_DIR = (
 )
 TEMPLATE_DIR = SKILL_DIR / 'templates'
 SCRIPTS_DIR = SKILL_DIR / 'scripts'
-LOGGING_DIR = Path(__file__).parent.parent.parent.parent / 'marketplace/bundles/plan-marshall/skills/logging/scripts'
+LOGGING_DIR = get_scripts_dir('plan-marshall', 'manage-logging')
 
 # resolve_notation existence-checks embedded SCRIPTS paths (self-healing contract),
 # so the mapped targets must be real files on disk for the direct-hit branch to return

@@ -439,7 +439,7 @@ class TestProviderConfig:
 class TestApplyExtraPassthroughDenylist:
     """Tests for apply_extra_passthrough() — the case-normalized secret/reserved denylist.
 
-    Regression for lesson 2026-06-30-16-001 (CWE-178, improper case handling): a
+    Improper case handling (CWE-178) is the hazard this pins: a
     caller-controlled ``--extra KEY=VALUE`` key is lower-cased BEFORE the
     secret/reserved denylist membership test, so a mixed-case variant of a secret
     key can never smuggle a secret into the git-tracked marshal.json.
@@ -606,9 +606,13 @@ class TestCheckCompletenessSystem:
 class TestGetAuthenticatedClientSystem:
     """Tests for get_authenticated_client with auth_type=system."""
 
-    def test_system_auth_with_url_returns_client(self, tmp_path, monkeypatch):
-        """System auth with URL configured returns a RestClient with no auth headers."""
+    @pytest.fixture()
+    def in_tmp_cwd(self, tmp_path, monkeypatch):
+        """Run with the process working directory inside an isolated tmp_path."""
         monkeypatch.chdir(tmp_path)
+
+    def test_system_auth_with_url_returns_client(self, tmp_path, monkeypatch, in_tmp_cwd):
+        """System auth with URL configured returns a RestClient with no auth headers."""
         (tmp_path / '.plan').mkdir()
         creds_dir = tmp_path / 'creds'
         monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
@@ -630,9 +634,8 @@ class TestGetAuthenticatedClientSystem:
         assert client.url == 'https://api.example.com'
         client.close()
 
-    def test_system_auth_without_url_raises(self, tmp_path, monkeypatch):
+    def test_system_auth_without_url_raises(self, tmp_path, monkeypatch, in_tmp_cwd):
         """System auth without URL raises ValueError with helpful message."""
-        monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
         # Write empty provider config (no URL)
         (tmp_path / '.plan' / 'marshal.json').write_text('{}')
@@ -648,9 +651,8 @@ class TestGetAuthenticatedClientSystem:
         with pytest.raises(ValueError, match='no URL configured'):
             get_authenticated_client(skill)
 
-    def test_system_auth_no_secrets_in_credential(self, tmp_path, monkeypatch):
+    def test_system_auth_no_secrets_in_credential(self, tmp_path, monkeypatch, in_tmp_cwd):
         """System auth credential file should not contain token/username/password."""
-        monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
         creds_dir = tmp_path / 'creds'
         monkeypatch.setattr('_providers_core.CREDENTIALS_DIR', creds_dir)
@@ -945,7 +947,7 @@ class TestCredentialsHomeMigration:
     def test_rename_eexist_is_treated_as_lost_race(self, tmp_path, monkeypatch):
         """A sibling claiming new_dir (EEXIST) during os.rename is a lost race.
 
-        Reproduces the PR #923 gap: a concurrent migrator creates CREDENTIALS_DIR
+        A concurrent migrator creates CREDENTIALS_DIR
         between our new_dir.exists() check and the os.rename, so os.rename raises
         FileExistsError (errno EEXIST). This must resolve to already_migrated,
         never crash.

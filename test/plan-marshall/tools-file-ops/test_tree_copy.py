@@ -127,8 +127,7 @@ class TestCopyTreeSymlinkHandling:
     def test_directory_symlink_is_skipped_not_traversed(self, tmp_path):
         """A symlink pointing at a directory MUST NOT be followed.
 
-        Regression for PR #317 review (gemini-code-assist, high priority): the
-        previous ``copy_function``-based filter only blocked file symlinks.
+        A ``copy_function``-based filter blocks only FILE symlinks.
         ``shutil.copytree`` decides whether to recurse into a directory entry
         before invoking ``copy_function`` on its children, so a directory
         symlink would be silently traversed and its target's contents copied

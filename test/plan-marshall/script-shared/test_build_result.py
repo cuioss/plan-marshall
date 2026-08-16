@@ -2,30 +2,18 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for build_result.py module."""
 
-import importlib.util
 from pathlib import Path
 
 import pytest
 from file_ops import get_build_results_dir
 from marketplace_paths import NO_PLAN_SENTINEL
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'script-shared'
-    / 'scripts'
-    / 'build'
-)
+from conftest import load_script_module
 
 
 def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    """Load a script-shared script by (bundle, skill, file) identity."""
+    return load_script_module('plan-marshall', 'script-shared', f'build/{filename}', name)
 
 
 _build_result_mod = _load_module('_build_result', '_build_result.py')

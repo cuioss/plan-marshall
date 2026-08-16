@@ -11,32 +11,18 @@ Write API: manage-log {type} --plan-id {plan_id} --level {level} --message "{mes
 No stdout output, exit code only.
 """
 
-import importlib.util
 from argparse import Namespace
 from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-logging', 'manage-logging.py')
 
 # Tier 2 direct imports - load hyphenated module via importlib
-_MANAGE_LOGGING_SCRIPT = str(
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-logging'
-    / 'scripts'
-    / 'manage-logging.py'
-)
-_spec = importlib.util.spec_from_file_location('manage_logging', _MANAGE_LOGGING_SCRIPT)
-assert _spec is not None and _spec.loader is not None
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
+_mod = load_script_module('plan-marshall', 'manage-logging', 'manage-logging.py', 'manage_logging')
 
 handle_read = _mod.handle_read
 handle_write = _mod.handle_write

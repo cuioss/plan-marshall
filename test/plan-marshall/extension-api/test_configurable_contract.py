@@ -218,159 +218,68 @@ class TestMalformedDeclarations:
         with pytest.raises(ValueError, match='step body doc not found'):
             parse_configurable(tmp_path / 'does-not-exist.md')
 
-    def test_no_frontmatter_fence(self):
-        """A doc with no '---' frontmatter fence raises ValueError."""
-        doc = create_temp_file('# No frontmatter here\n\nJust prose.', suffix='.md')
-        try:
-            with pytest.raises(ValueError, match="no '---'-fenced frontmatter"):
-                parse_configurable(doc)
-        finally:
-            doc.unlink()
-
-    def test_unterminated_frontmatter(self):
-        """An opening fence with no closing fence raises ValueError."""
-        doc = create_temp_file('---\nname: demo\nconfigurable:\n  - key: x\n', suffix='.md')
-        try:
-            with pytest.raises(ValueError, match="no '---'-fenced frontmatter"):
-                parse_configurable(doc)
-        finally:
-            doc.unlink()
-
-    def test_no_configurable_block(self):
-        """Frontmatter without a configurable: block raises ValueError."""
-        doc = create_temp_file('---\nname: demo\norder: 10\n---\n\n# Body\n', suffix='.md')
-        try:
-            with pytest.raises(ValueError, match="declares no 'configurable:'"):
-                parse_configurable(doc)
-        finally:
-            doc.unlink()
-
-    def test_empty_configurable_block(self):
-        """A configurable: block with no entries raises ValueError."""
-        doc = create_temp_file(
-            '---\nname: demo\norder: 10\nconfigurable:\n---\n\n# Body\n', suffix='.md'
-        )
-        try:
-            with pytest.raises(ValueError, match="'configurable:' block is empty"):
-                parse_configurable(doc)
-        finally:
-            doc.unlink()
-
-    def test_missing_key_subfield(self):
-        """An entry missing 'key' raises ValueError naming 'key'."""
-        doc = create_temp_file(
-            _doc(
-                'configurable:\n'
-                '  - default: bar\n'
-                '    description: A param.'
+    @pytest.mark.parametrize(
+        ('body', 'match'),
+        [
+            ('# No frontmatter here\n\nJust prose.', "no '---'-fenced frontmatter"),
+            ('---\nname: demo\nconfigurable:\n  - key: x\n', "no '---'-fenced frontmatter"),
+            ('---\nname: demo\norder: 10\n---\n\n# Body\n', "declares no 'configurable:'"),
+            (
+                '---\nname: demo\norder: 10\nconfigurable:\n---\n\n# Body\n',
+                "'configurable:' block is empty",
             ),
-            suffix='.md',
-        )
-        try:
-            with pytest.raises(ValueError, match="missing required sub-field 'key'"):
-                parse_configurable(doc)
-        finally:
-            doc.unlink()
-
-    def test_missing_default_subfield(self):
-        """An entry missing 'default' raises ValueError naming 'default'."""
-        doc = create_temp_file(
-            _doc(
-                'configurable:\n'
-                '  - key: foo\n'
-                '    description: A param.'
+            (
+                _doc('configurable:\n  - default: bar\n    description: A param.'),
+                "missing required sub-field 'key'",
             ),
-            suffix='.md',
-        )
-        try:
-            with pytest.raises(ValueError, match="missing required sub-field 'default'"):
-                parse_configurable(doc)
-        finally:
-            doc.unlink()
-
-    def test_missing_description_subfield(self):
-        """An entry missing 'description' raises ValueError naming 'description'."""
-        doc = create_temp_file(
-            _doc(
-                'configurable:\n'
-                '  - key: foo\n'
-                '    default: bar'
+            (
+                _doc('configurable:\n  - key: foo\n    description: A param.'),
+                "missing required sub-field 'default'",
             ),
-            suffix='.md',
-        )
-        try:
-            with pytest.raises(ValueError, match="missing required sub-field 'description'"):
-                parse_configurable(doc)
-        finally:
-            doc.unlink()
-
-    def test_empty_description(self):
-        """An entry with an empty 'description' raises ValueError."""
-        doc = create_temp_file(
-            _doc(
-                'configurable:\n'
-                '  - key: foo\n'
-                '    default: bar\n'
-                '    description: ""'
+            (
+                _doc('configurable:\n  - key: foo\n    default: bar'),
+                "missing required sub-field 'description'",
             ),
-            suffix='.md',
-        )
-        try:
-            with pytest.raises(ValueError, match='empty'):
-                parse_configurable(doc)
-        finally:
-            doc.unlink()
-
-    def test_non_string_key(self):
-        """A numeric (non-string) 'key' raises ValueError."""
-        doc = create_temp_file(
-            _doc(
-                'configurable:\n'
-                '  - key: 42\n'
-                '    default: bar\n'
-                '    description: A param.'
+            (
+                _doc('configurable:\n  - key: foo\n    default: bar\n    description: ""'),
+                'empty',
             ),
-            suffix='.md',
-        )
-        try:
-            with pytest.raises(ValueError, match="'key' must be a string"):
-                parse_configurable(doc)
-        finally:
-            doc.unlink()
-
-    def test_non_string_description(self):
-        """A numeric (non-string) 'description' raises ValueError."""
-        doc = create_temp_file(
-            _doc(
-                'configurable:\n'
-                '  - key: foo\n'
-                '    default: bar\n'
-                '    description: 99'
+            (
+                _doc('configurable:\n  - key: 42\n    default: bar\n    description: A param.'),
+                "'key' must be a string",
             ),
-            suffix='.md',
-        )
-        try:
-            with pytest.raises(ValueError, match="'description' must be a string"):
-                parse_configurable(doc)
-        finally:
-            doc.unlink()
-
-    def test_duplicate_key(self):
-        """A key declared twice raises ValueError naming the duplicate."""
-        doc = create_temp_file(
-            _doc(
-                'configurable:\n'
-                '  - key: foo\n'
-                '    default: a\n'
-                '    description: First.\n'
-                '  - key: foo\n'
-                '    default: b\n'
-                '    description: Second.'
+            (
+                _doc('configurable:\n  - key: foo\n    default: bar\n    description: 99'),
+                "'description' must be a string",
             ),
-            suffix='.md',
-        )
+            (
+                _doc(
+                    'configurable:\n'
+                    '  - key: foo\n    default: a\n    description: First.\n'
+                    '  - key: foo\n    default: b\n    description: Second.'
+                ),
+                "duplicate key 'foo'",
+            ),
+        ],
+        ids=[
+            'no-frontmatter-fence',
+            'unterminated-frontmatter',
+            'no-configurable-block',
+            'empty-configurable-block',
+            'missing-key-subfield',
+            'missing-default-subfield',
+            'missing-description-subfield',
+            'empty-description',
+            'non-string-key',
+            'non-string-description',
+            'duplicate-key',
+        ],
+    )
+    def test_malformed_declaration_raises(self, body, match):
+        """Each malformed declaration raises ValueError naming its own defect."""
+        doc = create_temp_file(body, suffix='.md')
         try:
-            with pytest.raises(ValueError, match="duplicate key 'foo'"):
+            with pytest.raises(ValueError, match=match):
                 parse_configurable(doc)
         finally:
             doc.unlink()

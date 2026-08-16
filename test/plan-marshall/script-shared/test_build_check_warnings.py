@@ -8,32 +8,16 @@ and exit code semantics.
 import importlib
 import json
 import sys
-from pathlib import Path
 from types import SimpleNamespace
 
+from conftest import get_scripts_dir
+
 # Add script path for imports
-_SCRIPT_DIR = (
-    Path(__file__).resolve().parents[3]
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'script-shared'
-    / 'scripts'
-    / 'build'
-)
+_SCRIPT_DIR = get_scripts_dir('plan-marshall', 'script-shared') / 'build'
 sys.path.insert(0, str(_SCRIPT_DIR))
 
 # Also add toon_parser path
-_TOON_DIR = (
-    Path(__file__).resolve().parents[3]
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'ref-toon-format'
-    / 'scripts'
-)
+_TOON_DIR = get_scripts_dir('plan-marshall', 'ref-toon-format')
 sys.path.insert(0, str(_TOON_DIR))
 
 _bcw = importlib.import_module('_build_check_warnings')

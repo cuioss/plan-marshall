@@ -49,6 +49,22 @@ from marketplace_paths import NO_PLAN_SENTINEL
 from toon_parser import parse_toon
 
 
+@pytest.fixture()
+def in_tmp_cwd(tmp_path, monkeypatch):
+    """Run with the process working directory inside an isolated tmp_path."""
+    monkeypatch.chdir(tmp_path)
+
+@pytest.fixture()
+def no_plan_base_dir(monkeypatch):
+    """Clear PLAN_BASE_DIR so resolution falls through to its next source."""
+    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+
+@pytest.fixture()
+def plan_base_dir_at_tmp(tmp_path, monkeypatch):
+    """Point PLAN_BASE_DIR at an isolated tmp_path and yield that root."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
+    return tmp_path
+
 @pytest.fixture(autouse=True)
 def _reset_base_dir_override():
     """Ensure no test leaks file_ops._BASE_DIR_OVERRIDE across tests.
@@ -68,23 +84,20 @@ def _reset_base_dir_override():
 # =============================================================================
 
 
-def test_get_temp_dir_default(tmp_path, monkeypatch):
+def test_get_temp_dir_default(tmp_path, plan_base_dir_at_tmp):
     """Test get_temp_dir returns .plan/temp by default."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     result = get_temp_dir()
     assert result == tmp_path / 'temp'
 
 
-def test_get_temp_dir_with_subdir(tmp_path, monkeypatch):
+def test_get_temp_dir_with_subdir(tmp_path, plan_base_dir_at_tmp):
     """Test get_temp_dir with subdirectory appends correctly."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     result = get_temp_dir('tools-marketplace-inventory')
     assert result == tmp_path / 'temp' / 'tools-marketplace-inventory'
 
 
-def test_get_temp_dir_without_subdir_is_none(tmp_path, monkeypatch):
+def test_get_temp_dir_without_subdir_is_none(tmp_path, plan_base_dir_at_tmp):
     """Test get_temp_dir with None subdir returns temp root."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     result = get_temp_dir(None)
     assert result == tmp_path / 'temp'
 
@@ -552,60 +565,53 @@ def test_base_path_respects_custom_base():
 # (compatibility: breaking).
 
 
-def test_get_worktree_root_returns_plan_local_worktrees(tmp_path, monkeypatch):
+def test_get_worktree_root_returns_plan_local_worktrees(tmp_path, no_plan_base_dir, in_tmp_cwd):
     """get_worktree_root anchors at <root>/.plan/local/worktrees.
 
     get_worktree_root resolves through get_base_dir (the uniform cwd rule,
     ADR-002), so the production path is produced when no PLAN_BASE_DIR override
-    is active and the cwd walk-up resolves a .plan/local ancestor. delenv
-    PLAN_BASE_DIR + chdir into a tree with .plan/local pins the cwd-walk branch.
+    is active and the cwd walk-up resolves a .plan/local ancestor. Clearing
+    PLAN_BASE_DIR and running inside a tree that has .plan/local pins the
+    cwd-walk branch.
     """
-    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
     (tmp_path / '.plan' / 'local').mkdir(parents=True)
-    monkeypatch.chdir(tmp_path)
     result = get_worktree_root()
     assert result == tmp_path.resolve() / '.plan' / 'local' / 'worktrees'
 
 
-def test_get_worktree_root_path_segments_match_new_constant(tmp_path, monkeypatch):
+def test_get_worktree_root_path_segments_match_new_constant(tmp_path, no_plan_base_dir, in_tmp_cwd):
     """The trailing segments are exactly ('.plan', 'local', 'worktrees')."""
-    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
     (tmp_path / '.plan' / 'local').mkdir(parents=True)
-    monkeypatch.chdir(tmp_path)
     result = get_worktree_root()
     assert result.parts[-3:] == ('.plan', 'local', 'worktrees')
 
 
-def test_get_worktree_root_does_not_use_claude_worktrees(tmp_path, monkeypatch):
+def test_get_worktree_root_does_not_use_claude_worktrees(tmp_path, no_plan_base_dir, in_tmp_cwd):
     """The legacy .claude/worktrees/ path is no longer produced."""
-    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
     (tmp_path / '.plan' / 'local').mkdir(parents=True)
-    monkeypatch.chdir(tmp_path)
     result = get_worktree_root()
     # No segment of the resolved path may be ``.claude`` — that prefix is
     # gone now that worktrees live under ``.plan/local/``.
     assert '.claude' not in result.parts
 
 
-def test_get_worktree_root_honors_plan_base_dir(tmp_path, monkeypatch):
+def test_get_worktree_root_honors_plan_base_dir(tmp_path, plan_base_dir_at_tmp):
     """With PLAN_BASE_DIR set, get_worktree_root isolates under it.
 
     This is the test-isolation contract: get_worktree_root resolves through
     get_base_dir, so a PLAN_BASE_DIR override redirects the worktree root to
     ``<PLAN_BASE_DIR>/worktrees`` — no leakage into the real repo tree.
     """
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     result = get_worktree_root()
     assert result == tmp_path / 'worktrees'
 
 
-def test_get_worktree_root_without_plan_root_raises(outside_repo_dir, monkeypatch):
+def test_get_worktree_root_without_plan_root_raises(outside_repo_dir, monkeypatch, no_plan_base_dir):
     """When no .plan/local ancestor of cwd resolves, get_worktree_root raises."""
     # cwd must be OUTSIDE the repo AND outside any git repo: pytest's tmp_path
     # now roots under the repo-local --basetemp, whose ancestry HAS a .plan/local
     # (and a git toplevel), so neither the plan-root nor the git-toplevel
     # fallback would raise.
-    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
     bare = outside_repo_dir / 'bare'
     bare.mkdir()
     monkeypatch.chdir(bare)
@@ -625,28 +631,24 @@ def test_get_worktree_root_without_plan_root_raises(outside_repo_dir, monkeypatc
 # cwd is main (the finalize regenerate-on-main path).
 
 
-def test_get_executor_path_plan_base_dir_override(tmp_path, monkeypatch):
+def test_get_executor_path_plan_base_dir_override(tmp_path, plan_base_dir_at_tmp):
     """With PLAN_BASE_DIR set, the executor anchors at <override>/execute-script.py."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     result = get_executor_path()
     assert result == tmp_path / 'execute-script.py'
 
 
-def test_get_executor_path_cwd_walk_up(tmp_path, monkeypatch):
+def test_get_executor_path_cwd_walk_up(tmp_path, no_plan_base_dir, in_tmp_cwd):
     """In production, the executor anchors at <plan-root>/.plan/execute-script.py."""
-    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
     (tmp_path / '.plan' / 'local').mkdir(parents=True)
-    monkeypatch.chdir(tmp_path)
     result = get_executor_path()
     assert result == tmp_path.resolve() / '.plan' / 'execute-script.py'
     assert result.parts[-2:] == ('.plan', 'execute-script.py')
 
 
-def test_get_executor_path_pinned_in_worktree_resolves_worktree_resident(tmp_path, monkeypatch):
+def test_get_executor_path_pinned_in_worktree_resolves_worktree_resident(tmp_path, monkeypatch, no_plan_base_dir):
     """With cwd pinned inside a moved-in worktree (its own .plan/local), the
     executor resolves to the worktree-resident copy — never the main checkout
     above it."""
-    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
     main = tmp_path / 'main'
     (main / '.plan' / 'local').mkdir(parents=True)
     worktree = main / '.plan' / 'local' / 'worktrees' / 'plan-x'
@@ -656,13 +658,12 @@ def test_get_executor_path_pinned_in_worktree_resolves_worktree_resident(tmp_pat
     assert result == worktree.resolve() / '.plan' / 'execute-script.py'
 
 
-def test_get_executor_path_without_plan_root_raises(outside_repo_dir, monkeypatch):
+def test_get_executor_path_without_plan_root_raises(outside_repo_dir, monkeypatch, no_plan_base_dir):
     """When no .plan/local ancestor of cwd resolves AND cwd is not inside a git
     repository, get_executor_path raises."""
     # cwd must be OUTSIDE the repo AND outside any git repo: pytest's tmp_path
     # now roots under the repo-local --basetemp, whose ancestry HAS a .plan/local
     # (and a git toplevel), so neither fallback would raise.
-    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
     bare = outside_repo_dir / 'bare'
     bare.mkdir()
     monkeypatch.chdir(bare)
@@ -682,16 +683,14 @@ def _git_toplevel(cwd):
     )
 
 
-def test_get_base_dir_git_toplevel_fallback(outside_repo_dir, monkeypatch):
+def test_get_base_dir_git_toplevel_fallback(outside_repo_dir, monkeypatch, no_plan_base_dir):
     """In a clean git checkout with NO .plan/local ancestor (CI runners, fresh
     clones, consumer installs — .plan/ is gitignored), get_base_dir falls back
     to <git-toplevel>/.plan/local rather than raising. The git-toplevel fallback
-    in _resolve_plan_root restores the clean-environment robustness the prior
-    git_main_checkout_root resolver provided (regression guard for PR #556 CI)."""
+    in _resolve_plan_root is what keeps a clean environment resolvable."""
     # ``repo`` must be OUTSIDE the repo: pytest's tmp_path now roots under the
     # repo-local --basetemp, so the walk-up would find the OUTER worktree's
     # .plan/local before ever reaching the git-toplevel fallback under test.
-    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
     repo = outside_repo_dir / 'repo'
     repo.mkdir()
     subprocess.run(['git', 'init', '-q'], cwd=repo, check=True)
@@ -699,13 +698,12 @@ def test_get_base_dir_git_toplevel_fallback(outside_repo_dir, monkeypatch):
     assert get_base_dir() == _git_toplevel(repo) / '.plan' / 'local'
 
 
-def test_get_executor_path_git_toplevel_fallback(outside_repo_dir, monkeypatch):
+def test_get_executor_path_git_toplevel_fallback(outside_repo_dir, monkeypatch, no_plan_base_dir):
     """In a clean git checkout with NO .plan/local ancestor, get_executor_path
     falls back to <git-toplevel>/.plan/execute-script.py instead of raising."""
     # ``repo`` must be OUTSIDE the repo: pytest's tmp_path now roots under the
     # repo-local --basetemp, so the walk-up would find the OUTER worktree's
     # .plan/local before ever reaching the git-toplevel fallback under test.
-    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
     repo = outside_repo_dir / 'repo'
     repo.mkdir()
     subprocess.run(['git', 'init', '-q'], cwd=repo, check=True)
@@ -732,22 +730,20 @@ def test_get_executor_path_git_toplevel_fallback(outside_repo_dir, monkeypatch):
 # goes stale silently, whereas a broken invariant fails here for every caller.
 
 
-def test_get_plan_dir_matches_the_direct_base_path_computation(tmp_path, monkeypatch):
+def test_get_plan_dir_matches_the_direct_base_path_computation(tmp_path, plan_base_dir_at_tmp):
     """(a) The delegate returns exactly what base_path('plans', id) returns."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
     assert get_plan_dir('some-plan') == base_path('plans', 'some-plan')
     assert get_plan_dir('some-plan') == tmp_path / 'plans' / 'some-plan'
 
 
-def test_get_plan_dir_has_no_filesystem_side_effect(tmp_path, monkeypatch):
+def test_get_plan_dir_has_no_filesystem_side_effect(tmp_path, plan_base_dir_at_tmp):
     """(b) Naming a path must never create it.
 
     Call sites routinely name the directory of a plan that does not exist yet
     (that is exactly what require_plan_exists is then asked to reject). If the
     delegate materialized, every such call would silently create an orphan plan.
     """
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     plans_dir = tmp_path / 'plans'
     assert not plans_dir.exists()
 
@@ -757,14 +753,13 @@ def test_get_plan_dir_has_no_filesystem_side_effect(tmp_path, monkeypatch):
     assert not plans_dir.exists()
 
 
-def test_get_plan_dir_does_not_materialize_the_sentinel(tmp_path, monkeypatch):
+def test_get_plan_dir_does_not_materialize_the_sentinel(tmp_path, plan_base_dir_at_tmp):
     """(b) The NO_PLAN sentinel is no exception — ensure=False means ensure=False.
 
     resolve_plan_context DOES auto-create the sentinel under ensure=True. The
     delegate must pass ensure=False, or every incidental get_plan_dir call would
     create the shared sentinel directory as a side effect of naming a path.
     """
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
     resolved = get_plan_dir(file_ops.NO_PLAN_SENTINEL)
 
@@ -772,9 +767,8 @@ def test_get_plan_dir_does_not_materialize_the_sentinel(tmp_path, monkeypatch):
     assert not resolved.exists()
 
 
-def test_get_plan_dir_does_not_shell_out_to_manage_status(tmp_path, monkeypatch):
+def test_get_plan_dir_does_not_shell_out_to_manage_status(tmp_path, monkeypatch, plan_base_dir_at_tmp):
     """(c) The worktree face stays lazy — no subprocess behind a path join."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
     def _explode(_plan_id):
         raise AssertionError(
@@ -788,9 +782,8 @@ def test_get_plan_dir_does_not_shell_out_to_manage_status(tmp_path, monkeypatch)
     assert get_plan_dir('some-plan') == tmp_path / 'plans' / 'some-plan'
 
 
-def test_get_plan_dir_is_stable_across_repeated_calls(tmp_path, monkeypatch):
+def test_get_plan_dir_is_stable_across_repeated_calls(plan_base_dir_at_tmp):
     """(a) Repeated calls agree — no hidden per-call state in the delegate."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
     assert get_plan_dir('some-plan') == get_plan_dir('some-plan')
 
@@ -805,9 +798,8 @@ def test_get_plan_dir_is_stable_across_repeated_calls(tmp_path, monkeypatch):
 # directory on the filesystem.
 
 
-def test_require_plan_exists_unknown_plan_id_raises_plan_not_found(tmp_path, monkeypatch):
+def test_require_plan_exists_unknown_plan_id_raises_plan_not_found(tmp_path, plan_base_dir_at_tmp):
     """Unknown plan_id: directory does not exist → PlanNotFoundError, no mkdir."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     plans_dir = tmp_path / 'plans'
     # Pre-condition: the plans/ tree does not exist yet.
     assert not plans_dir.exists()
@@ -825,11 +817,8 @@ def test_require_plan_exists_unknown_plan_id_raises_plan_not_found(tmp_path, mon
     assert not err.plan_dir.exists()
 
 
-def test_require_plan_exists_dir_without_status_json_raises_plan_not_found(
-    tmp_path, monkeypatch
-):
+def test_require_plan_exists_dir_without_status_json_raises_plan_not_found(tmp_path, plan_base_dir_at_tmp):
     """Plan dir exists but lacks status.json → PlanNotFoundError, no mkdir."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     plan_dir = tmp_path / 'plans' / 'half-initialized'
     plan_dir.mkdir(parents=True)
     # Sanity: directory exists but no status.json yet.
@@ -850,9 +839,8 @@ def test_require_plan_exists_dir_without_status_json_raises_plan_not_found(
     assert not (plan_dir / 'status.json').exists()
 
 
-def test_require_plan_exists_with_status_json_returns_resolved_path(tmp_path, monkeypatch):
+def test_require_plan_exists_with_status_json_returns_resolved_path(tmp_path, plan_base_dir_at_tmp):
     """Plan dir with status.json → returns resolved Path (happy path)."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     plan_dir = tmp_path / 'plans' / 'initialized-plan'
     plan_dir.mkdir(parents=True)
     (plan_dir / 'status.json').write_text('{}', encoding='utf-8')
@@ -864,9 +852,8 @@ def test_require_plan_exists_with_status_json_returns_resolved_path(tmp_path, mo
     assert (result / 'status.json').is_file()
 
 
-def test_plan_not_found_error_carries_plan_id_plan_dir_reason(tmp_path, monkeypatch):
+def test_plan_not_found_error_carries_plan_id_plan_dir_reason(plan_base_dir_at_tmp):
     """PlanNotFoundError surfaces structured attributes for TOON envelopes."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
     with pytest.raises(PlanNotFoundError) as excinfo:
         require_plan_exists('absent')
@@ -920,18 +907,16 @@ def _make_worktree(tmp_path: Path, plan_id: str) -> Path:
     return worktree
 
 
-def test_guard_passes_when_cwd_is_the_worktree(tmp_path, monkeypatch):
+def test_guard_passes_when_cwd_is_the_worktree(tmp_path, monkeypatch, plan_base_dir_at_tmp):
     """cwd == canonical worktree root → assertion passes (returns None)."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     worktree = _make_worktree(tmp_path, 'plan-cwd-ok')
     monkeypatch.chdir(worktree)
 
     assert guard_worktree_cwd('plan-cwd-ok') is None
 
 
-def test_guard_returns_error_when_cwd_left_worktree(tmp_path, monkeypatch):
+def test_guard_returns_error_when_cwd_left_worktree(tmp_path, monkeypatch, plan_base_dir_at_tmp):
     """cwd is NOT the worktree (but the worktree exists) → error envelope."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     worktree = _make_worktree(tmp_path, 'plan-cwd-left')
     elsewhere = tmp_path / 'somewhere-else'
     elsewhere.mkdir()
@@ -947,13 +932,12 @@ def test_guard_returns_error_when_cwd_left_worktree(tmp_path, monkeypatch):
     assert result['actual_cwd'] == str(elsewhere.resolve())
 
 
-def test_guard_never_mutates_process_cwd(tmp_path, monkeypatch):
+def test_guard_never_mutates_process_cwd(tmp_path, monkeypatch, plan_base_dir_at_tmp):
     """The guard ASSERTS but never SETS cwd — process cwd is unchanged.
 
     Exercised on the failure path (cwd left the worktree), which is the only
     place a SETs-cwd bug could plausibly hide (a naive "restore" branch).
     """
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     _make_worktree(tmp_path, 'plan-no-mutate')
     elsewhere = tmp_path / 'outside'
     elsewhere.mkdir()
@@ -964,13 +948,12 @@ def test_guard_never_mutates_process_cwd(tmp_path, monkeypatch):
     assert os.getcwd() == cwd_before, 'guard_worktree_cwd must not mutate the process cwd'
 
 
-def test_guard_not_applicable_when_worktree_dir_absent(tmp_path, monkeypatch):
+def test_guard_not_applicable_when_worktree_dir_absent(tmp_path, monkeypatch, plan_base_dir_at_tmp):
     """Worktree dir does not exist (main-checkout / pre-materialization) → None.
 
     No worktree to be pinned to, so the guard must not fire a false positive
     even when cwd is somewhere unrelated.
     """
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     # Deliberately do NOT create tmp_path/worktrees/{plan_id}.
     elsewhere = tmp_path / 'main-checkout'
     elsewhere.mkdir()
@@ -979,14 +962,13 @@ def test_guard_not_applicable_when_worktree_dir_absent(tmp_path, monkeypatch):
     assert guard_worktree_cwd('plan-no-worktree') is None
 
 
-def test_guard_not_applicable_when_base_dir_unresolvable(tmp_path, monkeypatch):
+def test_guard_not_applicable_when_base_dir_unresolvable(tmp_path, monkeypatch, no_plan_base_dir):
     """No resolvable base dir → None (not applicable), no exception.
 
     Clears PLAN_BASE_DIR and the set_base_dir override, and runs from an
     isolated non-.plan/local cwd so get_worktree_root() raises RuntimeError
     internally; the guard swallows it and returns None.
     """
-    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
     monkeypatch.delenv('PLAN_TRACKED_CONFIG_DIR', raising=False)
     file_ops._BASE_DIR_OVERRIDE = None
     isolated = tmp_path / 'no-plan-root'
@@ -1075,9 +1057,8 @@ def test_read_json_unreadable_path_degrades_to_supplied_default(tmp_path):
 # cannot stand in for one here.
 
 
-def test_get_build_results_dir_for_real_plan_is_under_that_plans_dir(tmp_path, monkeypatch):
+def test_get_build_results_dir_for_real_plan_is_under_that_plans_dir(tmp_path, plan_base_dir_at_tmp):
     """A real plan id resolves to ``{plan_dir}/build-results``."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
     result = get_build_results_dir('some-plan')
 
@@ -1085,25 +1066,22 @@ def test_get_build_results_dir_for_real_plan_is_under_that_plans_dir(tmp_path, m
     assert result == tmp_path / 'plans' / 'some-plan' / 'build-results'
 
 
-def test_get_build_results_dir_separates_two_plans(tmp_path, monkeypatch):
+def test_get_build_results_dir_separates_two_plans(plan_base_dir_at_tmp):
     """Two plans never share a build-results directory."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
     assert get_build_results_dir('plan-alpha') != get_build_results_dir('plan-beta')
 
 
-def test_get_build_results_dir_for_sentinel_uses_the_sentinel_plan_dir(tmp_path, monkeypatch):
+def test_get_build_results_dir_for_sentinel_uses_the_sentinel_plan_dir(tmp_path, plan_base_dir_at_tmp):
     """The sentinel resolves under a ``NO_PLAN`` plan directory, not a bare root."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
     result = get_build_results_dir(NO_PLAN_SENTINEL)
 
     assert result == tmp_path / 'plans' / NO_PLAN_SENTINEL / 'build-results'
 
 
-def test_get_build_results_dir_does_not_create_the_directory(tmp_path, monkeypatch):
+def test_get_build_results_dir_does_not_create_the_directory(plan_base_dir_at_tmp):
     """The resolver is a pure path computation — writers create the directory."""
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
     result = get_build_results_dir('some-plan')
 
@@ -1165,7 +1143,7 @@ def real_main_checkout_and_worktree(tmp_path):
     return main_root, worktree
 
 
-def test_sentinel_is_main_anchored_not_cwd_anchored(real_main_checkout_and_worktree, monkeypatch):
+def test_sentinel_is_main_anchored_not_cwd_anchored(real_main_checkout_and_worktree, monkeypatch, no_plan_base_dir):
     """The sentinel path follows the MAIN checkout, not the current directory.
 
     This is the assertion the PLAN_BASE_DIR-based tests above structurally
@@ -1194,7 +1172,6 @@ def test_sentinel_is_main_anchored_not_cwd_anchored(real_main_checkout_and_workt
     """
     main_root, worktree = real_main_checkout_and_worktree
 
-    monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
     monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
     monkeypatch.chdir(worktree)
 
@@ -1229,7 +1206,7 @@ def test_sentinel_is_main_anchored_not_cwd_anchored(real_main_checkout_and_workt
         'a/../../outside',
     ],
 )
-def test_get_build_results_dir_rejects_traversal_plan_id(tmp_path, monkeypatch, escaping_plan_id):
+def test_get_build_results_dir_rejects_traversal_plan_id(escaping_plan_id, plan_base_dir_at_tmp):
     """A plan id that walks out of the plans root is refused, not resolved.
 
     Parametrized across four traversal shapes rather than one, because they fail
@@ -1239,13 +1216,12 @@ def test_get_build_results_dir_rejects_traversal_plan_id(tmp_path, monkeypatch, 
     spelling would pass a single-case test while leaving the normalizing shape
     open.
     """
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
     with pytest.raises(ValueError, match='escapes the plans root'):
         get_build_results_dir(escaping_plan_id)
 
 
-def test_get_build_results_dir_rejects_absolute_plan_id(tmp_path, monkeypatch):
+def test_get_build_results_dir_rejects_absolute_plan_id(tmp_path, plan_base_dir_at_tmp):
     """An ABSOLUTE plan id is refused rather than silently discarding the root.
 
     Distinct from the traversal cases above and not covered by them: pathlib
@@ -1254,13 +1230,12 @@ def test_get_build_results_dir_rejects_absolute_plan_id(tmp_path, monkeypatch):
     segment-inspecting guard to notice. Only a containment check on the RESOLVED
     result catches it.
     """
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
 
     with pytest.raises(ValueError, match='escapes the plans root'):
         get_build_results_dir(str(tmp_path / 'outside-the-store'))
 
 
-def test_get_build_results_dir_rejects_plan_dir_symlinked_out_of_the_store(tmp_path, monkeypatch):
+def test_get_build_results_dir_rejects_plan_dir_symlinked_out_of_the_store(tmp_path, plan_base_dir_at_tmp):
     """A plan directory symlinked outside the store is refused.
 
     The escape here is on DISK, not in the string: the plan id is ordinary
@@ -1269,7 +1244,6 @@ def test_get_build_results_dir_rejects_plan_dir_symlinked_out_of_the_store(tmp_p
     character blacklist over the id would wave this through; resolving before
     comparing is what catches it.
     """
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     outside = tmp_path / 'outside-the-store'
     outside.mkdir()
     plans_root = tmp_path / 'plans'
@@ -1280,14 +1254,13 @@ def test_get_build_results_dir_rejects_plan_dir_symlinked_out_of_the_store(tmp_p
         get_build_results_dir('escaped-plan')
 
 
-def test_get_build_results_dir_allows_a_contained_symlinked_plan_dir(tmp_path, monkeypatch):
+def test_get_build_results_dir_allows_a_contained_symlinked_plan_dir(tmp_path, plan_base_dir_at_tmp):
     """A symlinked plan directory that stays INSIDE the store is still allowed.
 
     The negative control for the case above. It pins the guard as a containment
     check rather than a blanket "no symlinks" rule, so the rejection above is
     attributable to the escape and not merely to the indirection.
     """
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     plans_root = tmp_path / 'plans'
     real_plan = plans_root / 'real-plan'
     real_plan.mkdir(parents=True)
@@ -1299,7 +1272,7 @@ def test_get_build_results_dir_allows_a_contained_symlinked_plan_dir(tmp_path, m
     assert result == plans_root / 'aliased-plan' / 'build-results'
 
 
-def test_get_build_results_dir_accepts_every_plan_id_the_validator_accepts(tmp_path, monkeypatch):
+def test_get_build_results_dir_accepts_every_plan_id_the_validator_accepts(plan_base_dir_at_tmp):
     """No id the canonical validator admits is rejected by the containment guard.
 
     The guard sits downstream of `validate_plan_id`, so the two must not
@@ -1308,7 +1281,6 @@ def test_get_build_results_dir_accepts_every_plan_id_the_validator_accepts(tmp_p
     character, digits, repeated and trailing hyphens) plus the sentinel, which
     takes the other branch of the resolver entirely.
     """
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path))
     accepted = ['a', 'a1', 'plan-1', 'a--b', 'trailing-', NO_PLAN_SENTINEL]
 
     resolved = [get_build_results_dir(plan_id) for plan_id in accepted]

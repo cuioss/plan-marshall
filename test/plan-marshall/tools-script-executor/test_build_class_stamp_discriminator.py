@@ -65,6 +65,12 @@ from _build_class_roster import build_class_domain, build_class_prefixes, build_
 
 from conftest import _MARKETPLACE_SCRIPT_DIRS, PROJECT_ROOT
 
+
+@pytest.fixture()
+def in_project_root(monkeypatch):
+    """Run with the process working directory at the repository root."""
+    monkeypatch.chdir(PROJECT_ROOT)
+
 _SKILL_DIR = PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'tools-script-executor'
 _TEMPLATE_PATH = _SKILL_DIR / 'templates' / 'execute-script.py.template'
 _LOGGING_DIR = PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-logging' / 'scripts'
@@ -581,7 +587,7 @@ def test_a_short_flag_without_a_help_spelling_still_appends_its_row(tmp_path):
     )
 
 
-def test_help_probe_leaves_the_freshness_gate_unable_to_report_fresh(tmp_path, monkeypatch):
+def test_help_probe_leaves_the_freshness_gate_unable_to_report_fresh(tmp_path, monkeypatch, in_project_root):
     """End of the chain: the probe contributes nothing the gate can read as a build.
 
     Its matched positive control is
@@ -598,7 +604,6 @@ def test_help_probe_leaves_the_freshness_gate_unable_to_report_fresh(tmp_path, m
     import file_ops
 
     monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', ledger_root, raising=False)
-    monkeypatch.chdir(PROJECT_ROOT)
 
     _dispatch(tmp_path, notation, [subcommand, '--help'], ledger_root=ledger_root)
 
@@ -630,7 +635,7 @@ def _freshness_verdict(monkeypatch, plan_id: str) -> dict:
     return gate.cmd_pre_commit_verify_freshness(args)
 
 
-def test_freshness_gate_cannot_report_fresh_after_a_query_dispatch(tmp_path, monkeypatch):
+def test_freshness_gate_cannot_report_fresh_after_a_query_dispatch(tmp_path, monkeypatch, in_project_root):
     """The gate has nothing to match after a query dispatch, so it cannot pass.
 
     Fail-first against the prefix-only predicate: that boundary stamped the query
@@ -645,7 +650,6 @@ def test_freshness_gate_cannot_report_fresh_after_a_query_dispatch(tmp_path, mon
     import file_ops
 
     monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', ledger_root, raising=False)
-    monkeypatch.chdir(PROJECT_ROOT)
 
     _dispatch(tmp_path, notation, [subcommand], ledger_root=ledger_root)
 
@@ -657,7 +661,7 @@ def test_freshness_gate_cannot_report_fresh_after_a_query_dispatch(tmp_path, mon
     )
 
 
-def test_freshness_gate_reports_fresh_after_a_build_executing_dispatch(tmp_path, monkeypatch):
+def test_freshness_gate_reports_fresh_after_a_build_executing_dispatch(tmp_path, monkeypatch, in_project_root):
     """Matched positive control: the gate DOES pass on a real build-executing row.
 
     This is what proves the negative above fails for the right reason -- the
@@ -673,7 +677,6 @@ def test_freshness_gate_reports_fresh_after_a_build_executing_dispatch(tmp_path,
     import file_ops
 
     monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', ledger_root, raising=False)
-    monkeypatch.chdir(PROJECT_ROOT)
 
     _dispatch(tmp_path, notation, [subcommand], ledger_root=ledger_root)
 
@@ -792,7 +795,7 @@ def test_exit_zero_dispatch_with_an_unreadable_payload_stamps_unknown(tmp_path):
     )
 
 
-def test_freshness_gate_is_not_fresh_after_an_unknown_stamped_dispatch(tmp_path, monkeypatch):
+def test_freshness_gate_is_not_fresh_after_an_unknown_stamped_dispatch(tmp_path, monkeypatch, in_project_root):
     """The gate refuses an ``unknown`` row stamped at the CURRENT worktree sha.
 
     This is the property the derived-only value exists for: the row matches the
@@ -812,7 +815,6 @@ def test_freshness_gate_is_not_fresh_after_an_unknown_stamped_dispatch(tmp_path,
     import file_ops
 
     monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', ledger_root, raising=False)
-    monkeypatch.chdir(PROJECT_ROOT)
 
     entries = _dispatch(
         tmp_path,

@@ -9,6 +9,7 @@ Tests connectivity verification with mocked HTTP and system auth routing.
 from _providers_fixtures import stage_marshal
 
 from conftest import get_script_path, run_script
+import pytest
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-providers', 'credentials.py')
 
@@ -45,12 +46,16 @@ class TestVerifyCLI:
 class TestVerifySystemAuth:
     """Tests for verify subcommand with auth_type=system via direct import."""
 
-    def test_system_auth_routes_to_verify_command(self, tmp_path, monkeypatch):
+    @pytest.fixture()
+    def in_tmp_cwd(self, tmp_path, monkeypatch):
+        """Run with the process working directory inside an isolated tmp_path."""
+        monkeypatch.chdir(tmp_path)
+
+    def test_system_auth_routes_to_verify_command(self, tmp_path, monkeypatch, in_tmp_cwd):
         """Verify with system auth runs verify_command instead of HTTP check."""
         from _cred_verify import run_verify
         from _providers_core import save_credential
 
-        monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
         (tmp_path / '.plan' / 'marshal.json').write_text('{}')
         creds_dir = tmp_path / 'creds'
@@ -90,12 +95,11 @@ class TestVerifySystemAuth:
         assert captured_output.get('auth_type') == 'system'
         assert captured_output.get('verified') is True
 
-    def test_system_auth_failed_verify_command(self, tmp_path, monkeypatch):
+    def test_system_auth_failed_verify_command(self, tmp_path, monkeypatch, in_tmp_cwd):
         """Verify with system auth reports failure when verify_command fails."""
         from _cred_verify import run_verify
         from _providers_core import save_credential
 
-        monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
         (tmp_path / '.plan' / 'marshal.json').write_text('{}')
         creds_dir = tmp_path / 'creds'
@@ -135,12 +139,11 @@ class TestVerifySystemAuth:
         assert captured_output.get('verified') is False
         assert captured_output.get('auth_type') == 'system'
 
-    def test_system_auth_no_provider_extension(self, tmp_path, monkeypatch):
+    def test_system_auth_no_provider_extension(self, tmp_path, monkeypatch, in_tmp_cwd):
         """Verify without provider extension reports error (convention inference fails gracefully)."""
         from _cred_verify import run_verify
         from _providers_core import save_credential
 
-        monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
         (tmp_path / '.plan' / 'marshal.json').write_text('{}')
         creds_dir = tmp_path / 'creds'
@@ -170,12 +173,11 @@ class TestVerifySystemAuth:
         # so it falls through to HTTP path and fails
         assert captured_output.get('status') == 'error'
 
-    def test_system_auth_does_not_call_get_authenticated_client(self, tmp_path, monkeypatch):
+    def test_system_auth_does_not_call_get_authenticated_client(self, tmp_path, monkeypatch, in_tmp_cwd):
         """Verify with system auth must NOT attempt HTTP connectivity check."""
         from _cred_verify import run_verify
         from _providers_core import save_credential
 
-        monkeypatch.chdir(tmp_path)
         (tmp_path / '.plan').mkdir()
         (tmp_path / '.plan' / 'marshal.json').write_text('{}')
         creds_dir = tmp_path / 'creds'

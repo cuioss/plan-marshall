@@ -27,9 +27,8 @@ Coverage:
   a stated root cause co-occurring with an exact-change / file anchor lifts the
   ``recipe-surgical-fix`` recipe above the keyword-only ceiling, a
   discovery-demand narrative is vetoed, and the shape arm never perturbs any
-  other recipe. Fixtures are the REAL archived request strings of the
-  pre-diagnosed surgical plans (#860/#866/#869/#871) and the broad
-  structural-review plan (#856), per lesson ``2026-07-09-14-001``;
+  other recipe. Fixtures are the REAL archived request strings of four
+  pre-diagnosed surgical plans and one broad structural-review plan;
 * ``load_registry`` — returns ``[]`` when the discovery helper is absent and
   tolerates discovery exceptions / non-list returns without raising.
 """
@@ -336,12 +335,11 @@ def test_load_registry_returns_discovered_list(monkeypatch):
 #
 # The fixtures below are the ACTUAL archived "Original Input" request strings of
 # the pre-diagnosed surgical plans (must MATCH) and the broad
-# structural-review/consolidation plan (must NOT match). Per lesson
-# 2026-07-09-14-001 the scorer is only trustworthy against the real corpus it
-# will see in production, so these are verbatim excerpts of the real requests,
-# NOT synthetic prose.
+# structural-review/consolidation plan (must NOT match). The scorer is only
+# trustworthy against the real corpus it will see in production, so these are
+# verbatim excerpts of the real requests, NOT synthetic prose.
 
-# PR #866 — fix-check-era-stamps (root cause + exact change known, single file).
+# Surgical: root cause and exact change known, single file.
 _REQ_CHECK_ERA_STAMPS = (
     'Fix the owed CHECK_ERA era stamps in the audit skill (root cause known, '
     'exact change known, single file): in '
@@ -355,7 +353,7 @@ _REQ_CHECK_ERA_STAMPS = (
     'Bounded footprint, no behavior change beyond era attribution.'
 )
 
-# PR #860 — fix-missing-get-deliverable-subcommand (root cause known, exact change).
+# Surgical: root cause known, exact change stated.
 _REQ_GET_DELIVERABLE = (
     'Fix the missing get-deliverable subcommand in manage-solution-outline '
     '(plan-marshall bundle): root cause known — the argparse choices lack the '
@@ -365,7 +363,7 @@ _REQ_GET_DELIVERABLE = (
     'module, bounded footprint.'
 )
 
-# PR #869 — fix-manifest-composer-archive-order (root cause known, 2 recurrences).
+# Surgical: root cause known, two recurrences cited.
 _REQ_MANIFEST_ORDER = (
     'Fix the manifest composer emitting finalize steps after archive-plan in '
     'defiance of their frontmatter order (root cause known, 2 recurrences: #860 '
@@ -377,7 +375,7 @@ _REQ_MANIFEST_ORDER = (
     'footprint.'
 )
 
-# PR #871 — fix-pr-safe-merge-queue-required (root cause known, two halves).
+# Surgical: root cause known, fix has two halves.
 _REQ_SAFE_MERGE = (
     'Fix pr safe-merge closing PRs without merging when the platform merge queue '
     'is required but use_merge_queue=false (observed on PR #866: safe-merge '
@@ -390,8 +388,8 @@ _REQ_SAFE_MERGE = (
     'Single bundle, bounded footprint.'
 )
 
-# PR #856 — fix-terminal-title-repaint-binding: a BROAD consolidation /
-# full-structural-review request. Diagnosis is complete AND file paths are
+# A BROAD consolidation / full-structural-review request. Diagnosis is
+# complete AND file paths are
 # named, but the request demands a discovery-driven structural review, so it is
 # NOT a pre-diagnosed surgical change and MUST be vetoed.
 _REQ_TERMINAL_TITLE = (

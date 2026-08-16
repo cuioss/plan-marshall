@@ -12,13 +12,28 @@ import time
 from datetime import date
 from pathlib import Path
 
-from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT
+import pytest
+
+from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT, get_scripts_dir
+
+
+@pytest.fixture()
+def in_tmp_cwd(tmp_path, monkeypatch):
+    """Run with the process working directory inside an isolated tmp_path."""
+    monkeypatch.chdir(tmp_path)
+
+@pytest.fixture()
+def plan_base_dir_at_tmp(tmp_path, monkeypatch):
+    """Point PLAN_BASE_DIR at an isolated tmp_path/.plan root."""
+    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
+
+@pytest.fixture()
+def no_pm_dist_manifest(monkeypatch):
+    """Clear PM_DIST_MANIFEST so resolution falls through to its next source."""
+    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
 
 # Path to the script
-SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts'
-)
+SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'tools-script-executor')
 GENERATE_SCRIPT = SCRIPTS_DIR / 'generate_executor.py'
 
 #: Fixed date used to name a "recent" global log fixture. Cleanup selects by
@@ -890,10 +905,9 @@ def test_template_carries_no_session_binding_code():
         )
 
 
-# AST subcommand extractor removed (lesson 2026-05-26-09-001 / plan
-# fix-generate-executor-ast-subcommands). The generator no longer emits a
-# SUBCOMMANDS dict; drift is now detected at dev-time via plugin-doctor and
-# post-hoc via plan-retrospective.
+# The generator emits no SUBCOMMANDS dict and carries no AST subcommand
+# extractor; drift is detected at dev-time via plugin-doctor and post-hoc via
+# plan-retrospective.
 def test_ast_subcommand_extractor_symbols_removed():
     """Removed AST extractor symbols must be absent — guards against reintroduction."""
     module = load_module()
@@ -1260,11 +1274,10 @@ def test_generate_uses_empty_sentinel_on_fresh_install(tmp_path, monkeypatch):
     assert "MAPPINGS_FINGERPRINT = ''" in text, 'fresh install must stamp the empty fingerprint sentinel'
 
 
-def test_find_installed_manifest_path_uses_resolved_target(tmp_path, monkeypatch):
+def test_find_installed_manifest_path_uses_resolved_target(tmp_path, no_pm_dist_manifest):
     """The meta-project target-tree fallback looks under target/<target>/, not
     a hard-coded target/claude/ — so an opencode preflight reads the opencode
     manifest instead of falling back to (or missing) claude's."""
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
 
     module = load_module()
 
@@ -1284,9 +1297,8 @@ def test_find_installed_manifest_path_uses_resolved_target(tmp_path, monkeypatch
     assert resolved == opencode_manifest, 'opencode target must resolve target/opencode/dist-manifest.json'
 
 
-def test_find_installed_manifest_path_defaults_to_claude(tmp_path, monkeypatch):
+def test_find_installed_manifest_path_defaults_to_claude(tmp_path, no_pm_dist_manifest):
     """Omitting ``target`` preserves the pre-existing claude-only behavior."""
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
 
     module = load_module()
 
@@ -1302,7 +1314,7 @@ def test_find_installed_manifest_path_defaults_to_claude(tmp_path, monkeypatch):
     assert resolved == claude_manifest
 
 
-def test_find_installed_manifest_path_resolves_cache_root_manifest(tmp_path, monkeypatch):
+def test_find_installed_manifest_path_resolves_cache_root_manifest(tmp_path, no_pm_dist_manifest):
     """A plugin-cache-root-shaped base_path (no ``/marketplace/bundles`` marker)
     resolves its own ``base_path/dist-manifest.json`` candidate.
 
@@ -1314,7 +1326,6 @@ def test_find_installed_manifest_path_resolves_cache_root_manifest(tmp_path, mon
     ``base_path/dist-manifest.json`` candidate the fix relies on, guarding
     against its silent removal.
     """
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
 
     module = load_module()
 
@@ -1333,7 +1344,7 @@ def test_find_installed_manifest_path_resolves_cache_root_manifest(tmp_path, mon
     assert resolved == manifest, 'a plugin-cache-root base_path must resolve base_path/dist-manifest.json'
 
 
-def test_find_installed_manifest_path_resolves_marketplace_clone_root(tmp_path, monkeypatch):
+def test_find_installed_manifest_path_resolves_marketplace_clone_root(tmp_path, no_pm_dist_manifest):
     """A plugin-cache-INSTALL base_path (``.../plugins/cache/<marketplace>/...``)
     resolves the manifest at the marketplace CLONE ROOT
     (``.../plugins/marketplaces/<marketplace>/dist-manifest.json``).
@@ -1346,7 +1357,6 @@ def test_find_installed_manifest_path_resolves_marketplace_clone_root(tmp_path, 
     of the real version. This pins the (4) clone-root candidate against silent
     removal.
     """
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
 
     module = load_module()
 
@@ -1382,7 +1392,7 @@ def test_find_installed_manifest_path_resolves_marketplace_clone_root(tmp_path, 
     )
 
 
-def test_find_installed_manifest_path_rejects_traversal_marketplace_segment(tmp_path, monkeypatch):
+def test_find_installed_manifest_path_rejects_traversal_marketplace_segment(tmp_path, no_pm_dist_manifest):
     """The clone-root candidate (4) must reject a ``..``-shaped marketplace-name
     segment rather than mapping it into a path outside ``plugins/marketplaces/``.
 
@@ -1392,7 +1402,6 @@ def test_find_installed_manifest_path_rejects_traversal_marketplace_segment(tmp_
     shaped ``base_path`` (however it arose) can never make candidate (4) climb
     outside the intended ``plugins/marketplaces/<marketplace>/`` directory.
     """
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
 
     module = load_module()
 
@@ -1416,7 +1425,7 @@ def test_find_installed_manifest_path_rejects_traversal_marketplace_segment(tmp_
     assert resolved is None, 'a .. marketplace-name segment must never resolve to a candidate path'
 
 
-def test_find_installed_manifest_path_highest_version_wins_over_stale_cache_root(tmp_path, monkeypatch):
+def test_find_installed_manifest_path_highest_version_wins_over_stale_cache_root(tmp_path, no_pm_dist_manifest):
     """Highest-version-wins: a stale cache-root manifest must NOT shadow a newer
     clone-root manifest merely because the cache-root candidate is iterated
     first. The resolver reads every existing candidate's ``version`` and returns
@@ -1429,7 +1438,6 @@ def test_find_installed_manifest_path_highest_version_wins_over_stale_cache_root
     first — first-hit-wins would return the stale ``0.1.1144``; highest-version
     selection returns the newer clone-root ``0.1.1152``.
     """
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
 
     module = load_module()
 
@@ -1451,11 +1459,10 @@ def test_find_installed_manifest_path_highest_version_wins_over_stale_cache_root
     )
 
 
-def test_find_installed_manifest_path_resolves_lone_stale_cache_root(tmp_path, monkeypatch):
+def test_find_installed_manifest_path_resolves_lone_stale_cache_root(tmp_path, no_pm_dist_manifest):
     """With only a (stale) cache-root manifest present and no newer sibling, the
     resolver still resolves it — highest-version selection over a single
     candidate returns that candidate, so the single-manifest path is unchanged."""
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
 
     module = load_module()
 
@@ -1469,12 +1476,11 @@ def test_find_installed_manifest_path_resolves_lone_stale_cache_root(tmp_path, m
     assert resolved == lone, 'a lone stale cache-root manifest must still resolve'
 
 
-def test_find_installed_manifest_path_none_when_no_candidate_resolvable(tmp_path, monkeypatch):
+def test_find_installed_manifest_path_none_when_no_candidate_resolvable(tmp_path, no_pm_dist_manifest):
     """Fail-closed preserved: with no resolvable manifest at any candidate, the
     resolver returns ``None`` (→ ``unknown`` downstream), never a fabricated
     path. Highest-version selection over an empty existing-candidate set yields
     ``None``."""
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
 
     module = load_module()
 
@@ -1574,7 +1580,7 @@ def test_preflight_fails_closed_on_unresolvable_manifest(outside_repo_dir, monke
     )
 
 
-def test_preflight_reports_executor_fresh_when_embedded_not_older(tmp_path, monkeypatch):
+def test_preflight_reports_executor_fresh_when_embedded_not_older(tmp_path, monkeypatch, in_tmp_cwd):
     """When the embedded MARSHALL_VERSION is not older than the manifest's
     executor_changed_at_version, the executor is fresh (no regeneration)."""
     import json
@@ -1593,7 +1599,6 @@ def test_preflight_reports_executor_fresh_when_embedded_not_older(tmp_path, monk
     # Seed an executor stamped at a newer version than the changed_at gate.
     (plan_dir / 'execute-script.py').write_text("MARSHALL_VERSION = '0.1.99'\n", encoding='utf-8')
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
-    monkeypatch.chdir(tmp_path)
     result = module.cmd_preflight(_preflight_args())
 
     assert result['status'] == 'success'
@@ -1602,7 +1607,7 @@ def test_preflight_reports_executor_fresh_when_embedded_not_older(tmp_path, monk
     assert result['installed_version'] == '0.1.99'
 
 
-def test_preflight_reports_marshal_stale_advisory_without_mutation(tmp_path, monkeypatch):
+def test_preflight_reports_marshal_stale_advisory_without_mutation(tmp_path, monkeypatch, in_tmp_cwd):
     """A provisioned_version older than config_changed_at_version reports
     marshal_status=stale (advisory) and never mutates marshal.json."""
     import json
@@ -1623,7 +1628,6 @@ def test_preflight_reports_marshal_stale_advisory_without_mutation(tmp_path, mon
     marshal_body = {'system': {'provisioned_version': '0.1.3'}}
     marshal.write_text(json.dumps(marshal_body), encoding='utf-8')
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
-    monkeypatch.chdir(tmp_path)
     result = module.cmd_preflight(_preflight_args())
 
     assert result['status'] == 'success'
@@ -1633,7 +1637,7 @@ def test_preflight_reports_marshal_stale_advisory_without_mutation(tmp_path, mon
     assert json.loads(marshal.read_text(encoding='utf-8')) == marshal_body, 'preflight must NOT mutate marshal.json'
 
 
-def test_preflight_int_tuple_version_compare_avoids_lexical_bug(tmp_path, monkeypatch):
+def test_preflight_int_tuple_version_compare_avoids_lexical_bug(tmp_path, monkeypatch, in_tmp_cwd):
     """Version comparison is int-tuple, not lexical: 0.1.9 < 0.1.10 (a lexical
     compare would wrongly rank '0.1.9' above '0.1.10')."""
     import json
@@ -1652,13 +1656,12 @@ def test_preflight_int_tuple_version_compare_avoids_lexical_bug(tmp_path, monkey
     marshal = plan_dir / 'marshal.json'
     marshal.write_text(json.dumps({'system': {'provisioned_version': '0.1.9'}}), encoding='utf-8')
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
-    monkeypatch.chdir(tmp_path)
     result = module.cmd_preflight(_preflight_args())
 
     assert result['marshal_status'] == 'stale', '0.1.9 < 0.1.10 under int-tuple compare must be stale'
 
 
-def test_preflight_regenerates_stale_executor_in_place(tmp_path, monkeypatch):
+def test_preflight_regenerates_stale_executor_in_place(tmp_path, monkeypatch, in_tmp_cwd):
     """When the embedded MARSHALL_VERSION is older than executor_changed_at_version,
     preflight regenerates the executor in place and reports the new version.
 
@@ -1684,7 +1687,6 @@ def test_preflight_regenerates_stale_executor_in_place(tmp_path, monkeypatch):
     executor = plan_dir / 'execute-script.py'
     executor.write_text("MARSHALL_VERSION = '0.1.10'\n", encoding='utf-8')
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
-    monkeypatch.chdir(tmp_path)
 
     def _fake_cmd_generate(args):
         # Simulate a successful in-place regeneration stamping the published version.
@@ -1700,7 +1702,7 @@ def test_preflight_regenerates_stale_executor_in_place(tmp_path, monkeypatch):
     assert result['executor_version'] == '0.1.42'
 
 
-def test_preflight_surfaces_error_when_regeneration_fails(tmp_path, monkeypatch):
+def test_preflight_surfaces_error_when_regeneration_fails(tmp_path, monkeypatch, in_tmp_cwd):
     """A failed in-place regeneration surfaces a structured error instead of
     silently reporting a stale executor as fresh."""
     import json
@@ -1718,7 +1720,6 @@ def test_preflight_surfaces_error_when_regeneration_fails(tmp_path, monkeypatch)
     plan_dir.mkdir()
     (plan_dir / 'execute-script.py').write_text("MARSHALL_VERSION = '0.1.10'\n", encoding='utf-8')
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
-    monkeypatch.chdir(tmp_path)
 
     monkeypatch.setattr(module, 'cmd_generate', lambda args: {'status': 'error', 'error': 'discovery failed'})
 
@@ -1943,10 +1944,9 @@ def _seed_pre_existing_executor(tmp_path: Path) -> tuple[Path, str]:
     return executor, sentinel
 
 
-def test_generate_executor_wellformed_writes_compilable_and_reports_success(tmp_path, monkeypatch):
+def test_generate_executor_wellformed_writes_compilable_and_reports_success(tmp_path, monkeypatch, no_pm_dist_manifest):
     """(a) A well-formed generation writes a compilable executor and reports
     status: success — the happy path through all three guards + atomic write."""
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
     module = load_module()
     bundles_root = _fake_bundles_root(tmp_path)
 
@@ -1963,11 +1963,10 @@ def test_generate_executor_wellformed_writes_compilable_and_reports_success(tmp_
     compile(generated.read_text(encoding='utf-8'), str(generated), 'exec')
 
 
-def test_generate_executor_format_skew_refuses_write_and_preserves_existing(tmp_path, monkeypatch):
+def test_generate_executor_format_skew_refuses_write_and_preserves_existing(tmp_path, monkeypatch, no_pm_dist_manifest, plan_base_dir_at_tmp):
     """(b) A template whose TEMPLATE_FORMAT_VERSION marker mismatches the
     generator's supported version returns status: error, writes no executor, and
     leaves any pre-existing executor byte-identical."""
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
     module = load_module()
     bundles_root = _fake_bundles_root(tmp_path)
 
@@ -1991,7 +1990,6 @@ def test_generate_executor_format_skew_refuses_write_and_preserves_existing(tmp_
     monkeypatch.setattr(module, 'get_templates_dir', lambda base_path: template.parent)
 
     executor, sentinel = _seed_pre_existing_executor(tmp_path)
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
 
     result = module.generate_executor({'a:b:c': '/x/y/z.py'}, bundles_root, dry_run=False, target='claude')
 
@@ -2000,11 +1998,10 @@ def test_generate_executor_format_skew_refuses_write_and_preserves_existing(tmp_
     assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing executor must be byte-identical after refusal'
 
 
-def test_generate_executor_placeholder_residue_refuses_write_and_preserves_existing(tmp_path, monkeypatch):
+def test_generate_executor_placeholder_residue_refuses_write_and_preserves_existing(tmp_path, monkeypatch, no_pm_dist_manifest, plan_base_dir_at_tmp):
     """(c) A substituted content carrying a residual {{...}} placeholder token
     (a placeholder the generator never fills) is refused with no write and the
     pre-existing executor preserved."""
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
     module = load_module()
     bundles_root = _fake_bundles_root(tmp_path)
 
@@ -2024,7 +2021,6 @@ def test_generate_executor_placeholder_residue_refuses_write_and_preserves_exist
     monkeypatch.setattr(module, 'get_templates_dir', lambda base_path: template.parent)
 
     executor, sentinel = _seed_pre_existing_executor(tmp_path)
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
 
     result = module.generate_executor({'a:b:c': '/x/y/z.py'}, bundles_root, dry_run=False, target='claude')
 
@@ -2033,11 +2029,10 @@ def test_generate_executor_placeholder_residue_refuses_write_and_preserves_exist
     assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing executor must be byte-identical after refusal'
 
 
-def test_generate_executor_py_compile_failure_refuses_write_and_preserves_existing(tmp_path, monkeypatch):
+def test_generate_executor_py_compile_failure_refuses_write_and_preserves_existing(tmp_path, monkeypatch, no_pm_dist_manifest, plan_base_dir_at_tmp):
     """(d) A substitution that produces non-compiling Python returns status: error
     and preserves the pre-existing working executor untouched — the direct Leg B
     acceptance assertion (a broken executor can never be emitted)."""
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
     module = load_module()
     bundles_root = _fake_bundles_root(tmp_path)
 
@@ -2058,7 +2053,6 @@ def test_generate_executor_py_compile_failure_refuses_write_and_preserves_existi
     monkeypatch.setattr(module, 'get_templates_dir', lambda base_path: template.parent)
 
     executor, sentinel = _seed_pre_existing_executor(tmp_path)
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
 
     result = module.generate_executor({'a:b:c': '/x/y/z.py'}, bundles_root, dry_run=False, target='claude')
 
@@ -2087,15 +2081,13 @@ def _cache_script_path(cache_root: Path, bundle: str, version: str, script: str)
     return str(cache_root / bundle / version / 'skills' / 'skill-x' / 'scripts' / f'{script}.py')
 
 
-def test_guard4_two_version_dirs_for_one_bundle_refuses_write_and_preserves_existing(tmp_path, monkeypatch):
+def test_guard4_two_version_dirs_for_one_bundle_refuses_write_and_preserves_existing(tmp_path, no_pm_dist_manifest, plan_base_dir_at_tmp):
     """A mapping set spanning two version dirs of ONE bundle is refused, and the
     pre-existing executor is left byte-identical."""
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
     module = load_module()
     bundles_root = _fake_bundles_root(tmp_path)
 
     executor, sentinel = _seed_pre_existing_executor(tmp_path)
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
 
     mappings = {
         'split-bundle:skill-x:one': _cache_script_path(bundles_root, 'split-bundle', '1.0.0', 'one'),
@@ -2113,9 +2105,8 @@ def test_guard4_two_version_dirs_for_one_bundle_refuses_write_and_preserves_exis
     )
 
 
-def test_guard4_single_version_mapping_set_still_writes(tmp_path, monkeypatch):
+def test_guard4_single_version_mapping_set_still_writes(tmp_path, monkeypatch, no_pm_dist_manifest):
     """Two paths under the SAME version dir are consistent — generation proceeds."""
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
     module = load_module()
     bundles_root = _fake_bundles_root(tmp_path)
 
@@ -2133,10 +2124,9 @@ def test_guard4_single_version_mapping_set_still_writes(tmp_path, monkeypatch):
     assert (plan_dir / 'execute-script.py').is_file()
 
 
-def test_guard4_no_ops_in_marketplace_mode(tmp_path, monkeypatch):
+def test_guard4_no_ops_in_marketplace_mode(tmp_path, monkeypatch, no_pm_dist_manifest):
     """Marketplace-layout paths carry no version-dir segment, so the guard has
     nothing to compare and must not fail — different bundles are also fine."""
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
     module = load_module()
     bundles_root = _fake_bundles_root(tmp_path)
 
@@ -2154,10 +2144,9 @@ def test_guard4_no_ops_in_marketplace_mode(tmp_path, monkeypatch):
     assert (plan_dir / 'execute-script.py').is_file()
 
 
-def test_guard4_allows_different_version_dirs_across_different_bundles(tmp_path, monkeypatch):
+def test_guard4_allows_different_version_dirs_across_different_bundles(tmp_path, monkeypatch, no_pm_dist_manifest):
     """The invariant is PER BUNDLE: the cache legitimately holds one version dir
     per bundle, so two bundles at different versions are not a split."""
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
     module = load_module()
     bundles_root = _fake_bundles_root(tmp_path)
 
@@ -2177,7 +2166,7 @@ def test_guard4_allows_different_version_dirs_across_different_bundles(tmp_path,
 # ============================================================================
 # Guard 4 anchoring: the split is taken against the KNOWN cache root
 # ============================================================================
-# PR #1013 review findings. Selecting the FIRST version-shaped path segment
+# Selecting the FIRST version-shaped path segment
 # anywhere in the path (instead of relativizing against base_path) mis-splits on
 # two real inputs: (a) a version-shaped ANCESTOR directory above the cache root,
 # and (b) a bundle whose own name starts with ``N.N`` — the supported naming
@@ -2236,15 +2225,13 @@ def test_split_bundle_version_returns_none_for_marketplace_layout():
     assert split is None, f'marketplace-layout paths carry no version dir, got {split}'
 
 
-def test_guard4_detects_split_for_digit_prefixed_bundle_name(tmp_path, monkeypatch):
+def test_guard4_detects_split_for_digit_prefixed_bundle_name(tmp_path, no_pm_dist_manifest, plan_base_dir_at_tmp):
     """(b) end-to-end: a genuine version split of a digit-prefixed bundle is
     still refused — the bundle-name segment never masquerades as the version."""
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
     module = load_module()
     bundles_root = _fake_bundles_root(tmp_path)
 
     executor, sentinel = _seed_pre_existing_executor(tmp_path)
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
 
     mappings = {
         '1.0-my-bundle:skill-x:one': _cache_script_path(bundles_root, '1.0-my-bundle', '0.1.100', 'one'),
@@ -2260,11 +2247,10 @@ def test_guard4_detects_split_for_digit_prefixed_bundle_name(tmp_path, monkeypat
     assert executor.read_text(encoding='utf-8') == sentinel, 'pre-existing executor must survive the refusal'
 
 
-def test_guard4_digit_prefixed_bundles_in_marketplace_layout_are_not_a_split(tmp_path, monkeypatch):
+def test_guard4_digit_prefixed_bundles_in_marketplace_layout_are_not_a_split(tmp_path, monkeypatch, no_pm_dist_manifest):
     """(b) false-positive direction: two sibling digit-prefixed bundles in the
     version-less marketplace layout are distinct bundles, not one bundle at two
     versions — generation must proceed."""
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
     module = load_module()
     bundles_root = _fake_bundles_root(tmp_path)
 
@@ -2284,18 +2270,16 @@ def test_guard4_digit_prefixed_bundles_in_marketplace_layout_are_not_a_split(tmp
     assert (plan_dir / 'execute-script.py').is_file()
 
 
-def test_guard4_detects_split_under_version_shaped_ancestor_directory(tmp_path, monkeypatch):
+def test_guard4_detects_split_under_version_shaped_ancestor_directory(tmp_path, no_pm_dist_manifest, plan_base_dir_at_tmp):
     """(a) end-to-end: with a version-shaped ancestor ABOVE the cache root, a
     genuine per-bundle version split is still detected — the ancestor segment is
     relativized away instead of being read as the version dir for every path."""
-    monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
     module = load_module()
     ancestor = tmp_path / '1.0-workspace'
     ancestor.mkdir()
     bundles_root = _fake_bundles_root(ancestor)
 
     executor, sentinel = _seed_pre_existing_executor(tmp_path)
-    monkeypatch.setenv('PLAN_BASE_DIR', str(tmp_path / '.plan'))
 
     mappings = {
         'split-bundle:skill-x:one': _cache_script_path(bundles_root, 'split-bundle', '0.1.100', 'one'),
@@ -2323,7 +2307,7 @@ def test_guard4_detects_split_under_version_shaped_ancestor_directory(tmp_path, 
 # NEWEST (0.1.1116) template, producing a version-mismatched SyntaxError-bricked
 # executor. Binding the template to the executing generator closes that class
 # structurally. get_shared_module_dirs() is the INVERSE — it correctly STAYS
-# newest-cache-version (PR #894 FIX C / GC-prune self-heal) and must not regress.
+# newest-cache-version (the GC-prune self-heal contract) and must not regress.
 
 
 def test_get_templates_dir_is_script_relative_sibling_of_generator():
@@ -2389,8 +2373,8 @@ def test_get_templates_dir_ignores_cache_newest_base_path(tmp_path):
 def test_get_shared_module_dirs_stays_base_path_newest_version(tmp_path):
     """Regression guard: get_shared_module_dirs MUST remain base_path-dependent
     (newest-cache-version) resolution — the INVERSE of get_templates_dir. This
-    preserves the PR #894 FIX C / GC-prune self-heal contract governing the
-    executor's OWN runtime sys.path bootstrap.
+    preserves the GC-prune self-heal contract governing the executor's OWN
+    runtime sys.path bootstrap.
     """
     module = load_module()
 

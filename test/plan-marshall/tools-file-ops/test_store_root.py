@@ -114,13 +114,19 @@ def linked_worktree_repo(tmp_path):
 class TestRealResolverE2E:
     """Real-resolver E2E leg: git-common-dir resolution, no mocking."""
 
-    def test_should_resolve_orchestrator_store_to_main_from_linked_worktree_cwd(
-        self, monkeypatch, linked_worktree_repo
-    ):
+    @pytest.fixture()
+    def no_plan_base_dir(self, monkeypatch):
+        """Clear PLAN_BASE_DIR so resolution falls through to its next source."""
+        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
+
+    @pytest.fixture()
+    def no_base_dir_override(self, monkeypatch):
+        """Clear the in-process base-directory override."""
+        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
+
+    def test_should_resolve_orchestrator_store_to_main_from_linked_worktree_cwd(self, monkeypatch, linked_worktree_repo, no_base_dir_override, no_plan_base_dir):
         main_repo, worktree = linked_worktree_repo
         epic_id = _random_id('epic')
-        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
-        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
         monkeypatch.chdir(worktree)
 
         store_root = get_store_dir('orchestrator', epic_id)
@@ -128,13 +134,9 @@ class TestRealResolverE2E:
         expected = (main_repo / '.plan' / 'local' / 'orchestrator' / epic_id).resolve()
         assert store_root.resolve() == expected
 
-    def test_should_resolve_orchestrator_store_to_main_from_main_checkout_cwd(
-        self, monkeypatch, linked_worktree_repo
-    ):
+    def test_should_resolve_orchestrator_store_to_main_from_main_checkout_cwd(self, monkeypatch, linked_worktree_repo, no_base_dir_override, no_plan_base_dir):
         main_repo, _worktree = linked_worktree_repo
         epic_id = _random_id('epic')
-        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
-        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
         monkeypatch.chdir(main_repo)
 
         store_root = get_store_dir('orchestrator', epic_id)
@@ -142,13 +144,9 @@ class TestRealResolverE2E:
         expected = (main_repo / '.plan' / 'local' / 'orchestrator' / epic_id).resolve()
         assert store_root.resolve() == expected
 
-    def test_should_support_real_directory_creation_under_resolved_root(
-        self, monkeypatch, linked_worktree_repo
-    ):
+    def test_should_support_real_directory_creation_under_resolved_root(self, monkeypatch, linked_worktree_repo, no_base_dir_override, no_plan_base_dir):
         main_repo, worktree = linked_worktree_repo
         epic_id = _random_id('epic')
-        monkeypatch.delenv('PLAN_BASE_DIR', raising=False)
-        monkeypatch.setattr(file_ops, '_BASE_DIR_OVERRIDE', None)
         monkeypatch.chdir(worktree)
 
         store_root = get_store_dir('orchestrator', epic_id)

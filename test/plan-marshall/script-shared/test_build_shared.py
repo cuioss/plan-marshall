@@ -5,21 +5,13 @@ import importlib
 import json
 import os
 import sys
-from pathlib import Path
 
 import pytest
 
+from conftest import get_scripts_dir
+
 # Add script path for imports
-_SCRIPT_DIR = (
-    Path(__file__).resolve().parents[3]
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'script-shared'
-    / 'scripts'
-    / 'build'
-)
+_SCRIPT_DIR = get_scripts_dir('plan-marshall', 'script-shared') / 'build'
 sys.path.insert(0, str(_SCRIPT_DIR))
 
 # resolve_project_dir.py lives in the script-shared scripts/ dir (one level up

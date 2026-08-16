@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Population-derived surface guard (deliverable D2).
+"""Population-derived surface guard.
 
 The pre-spawn validator embedded in the generated executor rejects an invalid
 invocation against a DERIVED argparse surface. Four defects in that validator

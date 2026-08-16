@@ -2,11 +2,9 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for extension_base.py module (public API)."""
 
-import importlib.util
 import json
 import subprocess
 import typing
-from pathlib import Path
 
 import extension_base
 import pytest
@@ -24,23 +22,12 @@ from extension_base import (
     validate_tree_completeness,
 )
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'script-shared'
-    / 'scripts'
-    / 'extension'
-)
+from conftest import load_script_module
 
 
 def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    """Load a script-shared script by (bundle, skill, file) identity."""
+    return load_script_module('plan-marshall', 'script-shared', f'extension/{filename}', name)
 
 
 _extension_constants_mod = _load_module('_extension_constants', '_extension_constants.py')
