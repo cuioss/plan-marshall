@@ -1,6 +1,6 @@
 # Run report — 250-footprint-read-outside-its-window (run 01)
 
-**Date (UTC):** 2026-08-16    **Branch:** `claude/code-intelligence-footprint-window-8vro66` (harness-assigned, kept as-is)    **PR:** _see § PR_    **Outcome:** completed
+**Date (UTC):** 2026-08-16    **Branch:** `claude/code-intelligence-footprint-window-8vro66` (harness-assigned, kept as-is)    **PR:** [#1268](https://github.com/cuioss/plan-marshall/pull/1268)    **Outcome:** completed
 
 ## Skills loaded
 
