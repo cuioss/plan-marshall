@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from _dep_detection import (
+    VERB_BEARING_EXCLUSIONS,
     ComponentId,
     Dependency,
     DependencyType,
@@ -449,6 +450,85 @@ def iter_skill_subdoc_edge_sources(base_path: Path) -> list[tuple[ComponentId, P
     return sources
 
 
+def _normalize_segment(segment: str) -> str:
+    """Fold a notation segment to one case style so `_`/`-` variants compare equal."""
+    return segment.replace('_', '-')
+
+
+def _is_misspelled_script_segment(target: ComponentId) -> bool:
+    """True when the script segment is the skill's own name in the wrong case style.
+
+    `plugin-doctor`'s `manage-findings-invocation-invalid` rule names this defect:
+    the executor keys on the third segment literally, so an underscored spelling of
+    the script does not resolve. It is a misspelling, never a verb.
+    """
+    return bool(target.parent_skill) and _normalize_segment(target.name) == _normalize_segment(
+        target.parent_skill or ''
+    )
+
+
+def _entry_script_candidates(skill: str) -> tuple[str, ...]:
+    """Return the names an entry script may carry for `skill`, in probe order.
+
+    Nine skills in this marketplace spell the entry script with underscores
+    (`plan-doctor:plan_doctor`, `extension-api:extension_api`, …), so assuming
+    filename == skill name exactly is the assumption plugin-doctor's own rule
+    catalogue rejects.
+    """
+    return (skill, skill.replace('-', '_'), skill.replace('_', '-'))
+
+
+def _entry_script_for_subcommand(
+    index: DependencyIndex, target: ComponentId, dep_type: DependencyType
+) -> ComponentId | None:
+    """Return the skill's entry script when ``target``'s final segment is a subcommand.
+
+    A skill exposes ONE entry script named after the skill itself
+    (``manage-execution-manifest:manage-execution-manifest``) and dispatches its
+    verbs as subcommands of it. Documentation names those verbs in the same
+    three-part shape — a `compose` verb in the script segment — and the detector,
+    which builds a script ``ComponentId`` from any three-part notation, then
+    looks for a *script* of that name and finds none.
+
+    The reference is real; only the segment it lands on is a verb rather than a
+    filename. So it resolves to the entry script that owns the verb, and the
+    edge is recorded against that script. When the skill has NO same-named entry
+    script the notation is genuinely wrong (the script segment names neither a
+    script nor a dispatchable verb) and ``None`` is returned so it stays
+    unresolved — plugin-doctor is that case, since a `validate` verb in the
+    script segment names neither a script nor a dispatchable verb of its entry
+    script ``doctor-marketplace``.
+    """
+    if dep_type is not DependencyType.SCRIPT_NOTATION:
+        # Only a written notation can carry a verb in its script segment. A
+        # PYTHON_IMPORT target names a MODULE — `extension_base` is a different
+        # file from `extension_api`, not a verb of it — so retargeting an import
+        # onto a same-named entry script would silently resolve a stale module
+        # mapping that ought to be reported.
+        return None
+    if target.component_type != 'script' or not target.parent_skill:
+        return None
+    # A script segment that is the skill's own name in the WRONG CASE STYLE is a
+    # misspelled script reference, not a verb. `plugin-doctor`'s
+    # `manage-findings-invocation-invalid` rule names this exact defect — the
+    # executor keys on the third segment literally, so
+    # an underscored script segment does not resolve — and
+    # retargeting it onto the entry script would suppress a finding the
+    # repository deliberately raises.
+    if _is_misspelled_script_segment(target):
+        return None
+    for entry_name in _entry_script_candidates(target.parent_skill):
+        entry = ComponentId(
+            bundle=target.bundle,
+            component_type='script',
+            name=entry_name,
+            parent_skill=target.parent_skill,
+        )
+        if entry.to_notation() in index.components:
+            return entry
+    return None
+
+
 def _index_dependencies_from(
     index: DependencyIndex,
     file_path: Path,
@@ -459,11 +539,39 @@ def _index_dependencies_from(
 
     Shared by the per-component pass and the sub-document edge-source pass; the
     two differ only in whether the scanned file IS the component's own
-    definition. A target absent from the index is marked unresolved.
+    definition. A target absent from the index resolves to the owning skill's
+    entry script when its final segment is a subcommand of it
+    (:func:`_entry_script_for_subcommand`), and is marked unresolved otherwise.
     """
     for dep in detect_all_dependencies(file_path, component_id, dep_types):
         if dep.target.to_notation() not in index.components:
-            dep.resolved = False
+            # The retarget is attempted before the drop, but ONLY for a shape whose
+            # third segment can still be a verb. A plain notation qualifies, and so
+            # does a decision-log prefix — a step id is very often a verb of the
+            # skill's entry script, and dropping it on shape alone hid exactly what
+            # this module calls a real reference. A sub-document path, placeholder,
+            # or build coordinate never qualifies: its third segment is a directory
+            # or a meta-variable, and letting those retarget manufactured five false
+            # edges onto `manage-lessons`.
+            may_be_verb = not dep.exclusion or dep.exclusion in VERB_BEARING_EXCLUSIONS
+            entry = (
+                _entry_script_for_subcommand(index, dep.target, dep.dep_type)
+                if may_be_verb
+                else None
+            )
+            if entry is not None:
+                if entry.to_notation() == component_id.to_notation():
+                    # An entry script documenting its OWN verbs. Retargeting that
+                    # onto itself would manufacture a self-loop and report it as a
+                    # circular dependency; a script is not dependent on itself.
+                    continue
+                dep.target = entry
+            elif dep.exclusion:
+                # An excluded SHAPE that names no component and no verb — the
+                # only case in which a match is discarded.
+                continue
+            else:
+                dep.resolved = False
         index.add_dependency(dep)
 
 

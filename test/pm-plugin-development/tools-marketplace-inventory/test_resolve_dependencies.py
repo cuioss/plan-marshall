@@ -44,6 +44,8 @@ _resolve_mod = _load_module('resolve_dependencies', 'resolve-dependencies.py')
 
 ComponentId = _dep_detection_mod.ComponentId
 DependencyType = _dep_detection_mod.DependencyType
+Exclusion = _dep_detection_mod.Exclusion
+VERB_BEARING_EXCLUSIONS = _dep_detection_mod.VERB_BEARING_EXCLUSIONS
 detect_implements = _dep_detection_mod.detect_implements
 detect_python_imports = _dep_detection_mod.detect_python_imports
 detect_script_notations = _dep_detection_mod.detect_script_notations
@@ -107,11 +109,11 @@ class TestComponentId:
 
     def test_from_notation_command(self):
         """Test parsing command notation."""
-        comp = ComponentId.from_notation('plan-marshall:commands:tools-fix')
+        comp = ComponentId.from_notation('plan-marshall:commands:tools-sync-agents-file')
         assert comp is not None
         assert comp.bundle == 'plan-marshall'
         assert comp.component_type == 'command'
-        assert comp.name == 'tools-fix'
+        assert comp.name == 'tools-sync-agents-file'
 
     def test_to_notation_skill(self):
         """Test converting skill to notation."""
@@ -1101,3 +1103,402 @@ def test_skill_subdoc_dirs_constant_is_not_widened():
     avoided by walking name-free instead.
     """
     assert SKILL_SUBDOC_DIRS == ('references', 'standards', 'workflow', 'templates')
+
+
+# =============================================================================
+# Tests - Detector precision (the non-reference colon-triple classes)
+# =============================================================================
+#
+# ``detect_script_notations`` scans for the bare ``a:b:c`` shape, which several
+# token families share without referencing any component. Each class below gets
+# its OWN case, and the genuinely-broken reference gets a case asserting it is
+# STILL reported — a precision fix that also suppressed real findings would have
+# made the gate worse rather than better.
+
+
+class TestNonReferenceColonTriples:
+    """Each false-positive class is excluded, one case per class."""
+
+    @staticmethod
+    def _detect(content):
+        source = ComponentId(bundle='test', component_type='skill', name='test')
+        return detect_script_notations(content, source)
+
+    @classmethod
+    def _excluded_as(cls, content, exclusion):
+        """Every match records `exclusion` — the arm that excluded it, not just that one did.
+
+        Asserted against the `Exclusion` members rather than their string values, so
+        renaming a member is a load-time error here instead of a test that quietly
+        stops tracking the real exclusions.
+        """
+        deps = cls._detect(content)
+        return bool(deps) and all(d.exclusion is exclusion for d in deps)
+
+    def test_documentation_placeholder_is_not_a_reference(self):
+        """Prose documenting the notation form produces no finding."""
+        content = 'Scripts are referenced as `bundle:skill:script` in documentation.\n'
+        assert self._excluded_as(content, Exclusion.PLACEHOLDER)
+
+    def test_maven_placeholder_coordinate_is_not_a_reference(self):
+        """``groupId:artifactId:scope`` documents a coordinate, not a script."""
+        content = 'Each module names dependencies as `groupId:artifactId:scope`.\n'
+        assert self._excluded_as(content, Exclusion.PLACEHOLDER)
+
+    def test_canonical_verification_step_is_not_a_reference(self):
+        """``default:verify:{canonical}`` is a build command, not a script."""
+        content = 'Set per_deliverable_build to default:verify:quality-gate here.\n'
+        assert self._excluded_as(content, Exclusion.CANONICAL_COMMAND)
+
+    def test_decision_log_prefix_is_not_a_reference(self):
+        """A parenthesised ``(bundle:skill:step)`` prefix names the emitting step."""
+        content = '--message "(plan-marshall:phase-6-finalize:qgate) Finding fixed"\n'
+        assert self._excluded_as(content, Exclusion.DECISION_LOG)
+
+    def test_dotted_build_coordinate_is_not_a_reference(self):
+        """A Maven coordinate preceded by its group prefix is not a script."""
+        content = 'Depend on "de.cuioss:cui-java-tools:compile" for the utilities.\n'
+        assert self._excluded_as(content, Exclusion.EMBEDDED_TOKEN)
+
+    def test_gradle_task_path_is_not_a_reference(self):
+        """A Gradle task path (leading colon) is not a script notation."""
+        content = './gradlew :services:auth-service:build\n'
+        assert self._excluded_as(content, Exclusion.EMBEDDED_TOKEN)
+
+    def test_subdocument_path_is_not_a_reference(self):
+        """``bundle:skill:dir/file.md`` addresses a document, not a script."""
+        content = 'Load `plan-marshall:manage-lessons:references/dedup-analysis.md` first.\n'
+        assert self._excluded_as(content, Exclusion.EMBEDDED_TOKEN)
+
+    def test_dotted_document_suffix_is_not_a_reference(self):
+        """``bundle:skill:name.md`` addresses a workflow document, not a script."""
+        content = 'See `plan-marshall:plan-marshall:planning.md` for the contract.\n'
+        assert self._excluded_as(content, Exclusion.EMBEDDED_TOKEN)
+
+    def test_real_notation_at_end_of_sentence_is_still_a_reference(self):
+        """A trailing sentence period must NOT be read as a document suffix."""
+        deps = self._detect('Run plan-marshall:manage-files:manage-files.\n')
+        assert len(deps) == 1
+        assert not deps[0].exclusion
+        assert deps[0].target.to_notation() == 'plan-marshall:manage-files:manage-files'
+
+    def test_genuine_notation_is_still_detected(self):
+        """The precision guards leave an ordinary script reference untouched."""
+        content = 'python3 .plan/execute-script.py plan-marshall:manage-files:manage-files add\n'
+        deps = self._detect(content)
+        assert len(deps) == 1
+        assert not deps[0].exclusion
+        assert deps[0].target.to_notation() == 'plan-marshall:manage-files:manage-files'
+
+
+class TestPlaceholderSkillReferences:
+    """Placeholder segments are suppressed on the skill-reference detector too."""
+
+    def test_skill_pattern_placeholder_is_not_a_reference(self):
+        source = ComponentId(bundle='test', component_type='skill', name='test')
+        deps = detect_skill_references('Skill: bundle:skill-name\n', {}, source)
+        assert deps and all(d.exclusion is Exclusion.PLACEHOLDER for d in deps)
+
+    def test_frontmatter_placeholder_is_not_a_reference(self):
+        source = ComponentId(bundle='test', component_type='skill', name='test')
+        frontmatter = {'skills': ['bundle-name:skill-name']}
+        deps = detect_skill_references('', frontmatter, source)
+        assert deps and all(d.exclusion is Exclusion.PLACEHOLDER for d in deps)
+
+    def test_real_skill_reference_is_still_detected(self):
+        source = ComponentId(bundle='test', component_type='skill', name='test')
+        deps = detect_skill_references('Skill: plan-marshall:phase-1-init\n', {}, source)
+        assert len(deps) == 1
+        assert deps[0].target.to_notation() == 'plan-marshall:phase-1-init'
+
+
+# =============================================================================
+# Tests - Precision regression fixture (exact finding count)
+# =============================================================================
+#
+# ONE instance of each false-positive class PLUS ONE genuinely-broken reference,
+# asserting EXACTLY ONE finding. The count is the test: an "at least one"
+# assertion would pass against a detector that still reported every row.
+#
+# Graph shape (bundle ``precision-bundle``):
+#
+#   manage-thing  (skill) + manage-thing.py  (its same-named ENTRY script)
+#   (seven excluded instances in total, one per documented class AND one per
+#   arm of the embedded-token guard). The
+#   sub-document instance sits on `phase-thing` DELIBERATELY: on a skill
+#   with an entry script the subcommand retarget would absorb it, and the
+#   fixture would stay green with that arm disabled.
+#   phase-thing   (skill, NO entry script)
+#
+# ``manage-thing`` having an entry script is what lets the subcommand class
+# resolve; ``phase-thing`` having none is what keeps the genuinely-broken
+# reference unresolved.
+
+_PRECISION_PLUGIN_JSON = '{\n  "name": "precision-bundle",\n  "version": "0.1.0"\n}\n'
+
+
+def _build_precision_graph(root: Path) -> Path:
+    """Create the precision-fixture ``marketplace/bundles`` tree under ``root``."""
+    bundles = root / 'marketplace' / 'bundles'
+    pb = bundles / 'precision-bundle'
+    _write(pb / '.claude-plugin' / 'plugin.json', _PRECISION_PLUGIN_JSON)
+
+    _write(
+        pb / 'skills' / 'manage-thing' / 'SKILL.md',
+        '---\nname: manage-thing\ndescription: Entry-script-bearing skill\n---\n'
+        '# Manage Thing\n',
+    )
+    _write(
+        pb / 'skills' / 'manage-thing' / 'scripts' / 'manage-thing.py',
+        '#!/usr/bin/env python3\n"""Entry script dispatching subcommands."""\n',
+    )
+    _write(
+        pb / 'skills' / 'phase-thing' / 'SKILL.md',
+        '---\nname: phase-thing\ndescription: Skill with no entry script\n---\n'
+        '# Phase Thing\n\n'
+        '## Notation classes\n\n'
+        'A script is referenced as `bundle:skill:script` in documentation.\n'
+        'The subcommand `precision-bundle:manage-thing:compose` runs the verb.\n'
+        'The build step is `default:verify:quality-gate` for this phase.\n'
+        '--message "(precision-bundle:phase-thing:qgate) step emitted this"\n'
+        'The coordinate is "de.example:example-lib:compile" in the POM.\n'
+        'Load `precision-bundle:phase-thing:standards/detail.md` first.\n'
+        'See `precision-bundle:phase-thing:planning.md` for the contract.\n'
+        'python3 .plan/execute-script.py precision-bundle:phase-thing:ghost-script run\n',
+    )
+    return bundles
+
+
+@pytest.fixture
+def precision_index():
+    """Build a ``DependencyIndex`` over the precision fixture (all dep types)."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        bundles = _build_precision_graph(Path(tmp))
+        yield build_dependency_index(bundles, set(DependencyType))
+
+
+class TestPrecisionRegressionFixture:
+    """The fixture holds seven non-references and one real break; exactly one is reported."""
+
+    def test_exactly_one_finding(self, precision_index):
+        """EXACTLY one unresolved dependency — not 'at least one'."""
+        result = cmd_validate(precision_index, set(DependencyType))
+        assert result['unresolved_count'] == 1
+
+    def test_the_one_finding_is_the_genuinely_broken_reference(self, precision_index):
+        """The surviving finding is the ghost script, not a suppressed class."""
+        result = cmd_validate(precision_index, set(DependencyType))
+        assert result['unresolved'][0]['target'] == 'precision-bundle:phase-thing:ghost-script'
+
+    def test_subcommand_resolves_to_the_entry_script(self, precision_index):
+        """The subcommand reference resolves rather than reporting unresolved."""
+        targets = {
+            dep.target.to_notation()
+            for dep in precision_index.get_forward_deps('precision-bundle:phase-thing')
+        }
+        assert 'precision-bundle:manage-thing:manage-thing' in targets
+
+    def test_validation_fails_while_the_real_break_stands(self, precision_index):
+        """The gate still fails closed on the genuinely-broken reference."""
+        result = cmd_validate(precision_index, set(DependencyType))
+        assert result['validation_result'] == 'failed'
+
+
+class TestSubcommandResolution:
+    """A subcommand resolves only when the skill HAS a same-named entry script."""
+
+    def test_subcommand_without_entry_script_stays_unresolved(self, precision_index):
+        """``phase-thing`` has no entry script, so its third segment cannot resolve."""
+        result = cmd_validate(precision_index, set(DependencyType))
+        unresolved = {row['target'] for row in result['unresolved']}
+        assert 'precision-bundle:phase-thing:ghost-script' in unresolved
+
+
+# =============================================================================
+# Tests - Exclusions are conditional (fail-closed)
+# =============================================================================
+#
+# Every exclusion recognises a SHAPE, and a shape is evidence rather than proof:
+# a genuine reference can be written parenthetically or with a file extension.
+# Dropping on shape alone would put a hole in the gate, so a match on an excluded
+# shape records which shape it was, and the index keeps it when it names a real
+# component.
+
+
+def _probe_reference(tmp_path, line):
+    """Index a synthetic bundle whose caller cites `line`; return edges to the real script."""
+    root = tmp_path / 'marketplace' / 'bundles' / 'probe-bundle'
+    _write(root / '.claude-plugin' / 'plugin.json', '{\n  "name": "probe-bundle"\n}\n')
+    _write(
+        root / 'skills' / 'real-skill' / 'SKILL.md',
+        '---\nname: real-skill\ndescription: Has a same-named entry script\n---\n# Real\n',
+    )
+    _write(root / 'skills' / 'real-skill' / 'scripts' / 'real-skill.py', '#!/usr/bin/env python3\n')
+    _write(
+        root / 'skills' / 'caller' / 'SKILL.md',
+        '---\nname: caller\ndescription: Cites the probe line\n---\n# Caller\n' + line + '\n',
+    )
+    index = build_dependency_index(root.parent, set(DependencyType))
+    return [
+        (dep.target.to_notation(), dep.resolved)
+        for deps in index.forward_deps.values()
+        for dep in deps
+        if dep.target.bundle == 'probe-bundle' and dep.target.component_type == 'script'
+    ]
+
+
+class TestExclusionsAreConditional:
+    """An excluded shape that names a REAL component is kept, not swallowed."""
+
+    def test_parenthesised_real_reference_is_kept(self, tmp_path):
+        """A genuine reference written parenthetically must not vanish."""
+        edges = _probe_reference(tmp_path, 'See (probe-bundle:real-skill:real-skill) for details.')
+        assert edges == [('probe-bundle:real-skill:real-skill', True)]
+
+    def test_real_reference_with_py_suffix_is_kept(self, tmp_path):
+        """A genuine reference carrying a `.py` suffix must not vanish."""
+        edges = _probe_reference(tmp_path, 'Run probe-bundle:real-skill:real-skill.py now.')
+        assert edges == [('probe-bundle:real-skill:real-skill', True)]
+
+    def test_parenthesised_verb_of_a_real_script_resolves(self, tmp_path):
+        """An excluded shape must not hide a genuine SUBCOMMAND citation either.
+
+        A decision-log prefix naming a real verb is still a reference to the
+        script that owns the verb, so the subcommand retarget is attempted before
+        the drop. Dropping on shape alone hid 33 such citations in this marketplace.
+        """
+        edges = _probe_reference(tmp_path, 'Emitted (probe-bundle:real-skill:compose) here.')
+        assert edges == [('probe-bundle:real-skill:real-skill', True)]
+
+    def test_parenthesised_prefix_without_an_entry_script_is_dropped(self, tmp_path):
+        """The control: no component, no verb to retarget onto — the one case that drops."""
+        assert _probe_reference(tmp_path, 'Emitted (probe-bundle:caller:some-step) here.') == []
+
+    def test_dotted_coordinate_is_still_dropped(self, tmp_path):
+        """A build coordinate stays excluded — the control for the `.py` case above."""
+        assert _probe_reference(tmp_path, 'Coordinate de.x:caller:compile in the POM.') == []
+
+
+class TestMisspelledScriptSegmentIsNotASubcommand:
+    """A script segment that is the skill name in the wrong case style is a defect."""
+
+    def test_underscored_script_segment_stays_unresolved(self, tmp_path):
+        """`bundle:skill:skill_name` is a misspelling, not a verb, and must be reported.
+
+        plugin-doctor's `manage-findings-invocation-invalid` rule exists to raise
+        exactly this: the executor keys on the third segment literally, so the
+        underscored spelling does not resolve. Retargeting it onto the entry
+        script would suppress a finding the repository deliberately makes.
+        """
+        edges = _probe_reference(tmp_path, 'Run probe-bundle:real-skill:real_skill add now.')
+        assert edges == [('probe-bundle:real-skill:real_skill', False)]
+
+    def test_genuine_verb_still_resolves_to_the_entry_script(self, tmp_path):
+        """The control: an ordinary verb still retargets onto the entry script."""
+        edges = _probe_reference(tmp_path, 'Run probe-bundle:real-skill:compose now.')
+        assert edges == [('probe-bundle:real-skill:real-skill', True)]
+
+    def test_underscored_entry_script_is_found(self, tmp_path):
+        """An entry script spelled `skill_name.py` still owns the skill's verbs.
+
+        Nine skills in this marketplace spell the entry script with underscores,
+        and assuming filename == skill name exactly is the assumption
+        plugin-doctor's own rule catalogue rejects.
+        """
+        root = tmp_path / 'marketplace' / 'bundles' / 'probe-bundle'
+        _write(root / '.claude-plugin' / 'plugin.json', '{\n  "name": "probe-bundle"\n}\n')
+        _write(
+            root / 'skills' / 'real-skill' / 'SKILL.md',
+            '---\nname: real-skill\ndescription: Underscored entry script\n---\n# Real\n',
+        )
+        _write(root / 'skills' / 'real-skill' / 'scripts' / 'real_skill.py', '#!/usr/bin/env python3\n')
+        _write(
+            root / 'skills' / 'caller' / 'SKILL.md',
+            '---\nname: caller\ndescription: Cites a verb\n---\n# C\n'
+            'Run probe-bundle:real-skill:compose now.\n',
+        )
+        index = build_dependency_index(root.parent, set(DependencyType))
+        edges = [
+            (dep.target.to_notation(), dep.resolved)
+            for deps in index.forward_deps.values()
+            for dep in deps
+            if dep.target.component_type == 'script'
+        ]
+        assert edges == [('probe-bundle:real-skill:real_skill', True)]
+
+
+class TestRetargetAppliesToWrittenNotationOnly:
+    """Only a written notation can carry a verb in its script segment."""
+
+    def test_python_import_is_not_retargeted_onto_a_same_named_entry_script(self, tmp_path):
+        """A stale module mapping must stay reported, not resolve to a sibling script.
+
+        `PYTHON_MODULE_MAPPINGS` maps `extension_base` to `extension-api`, whose
+        entry script is `extension_api`. Those are different FILES, not a verb and
+        its script, so retargeting the import would silently resolve a mapping
+        that is genuinely wrong — hiding 11 real findings in this marketplace.
+        """
+        root = tmp_path / 'marketplace' / 'bundles' / 'probe-bundle'
+        _write(root / '.claude-plugin' / 'plugin.json', '{\n  "name": "probe-bundle"\n}\n')
+        _write(
+            root / 'skills' / 'ref-toon-format' / 'SKILL.md',
+            '---\nname: ref-toon-format\ndescription: Owns a differently-named script\n---\n# T\n',
+        )
+        _write(
+            root / 'skills' / 'ref-toon-format' / 'scripts' / 'ref-toon-format.py',
+            '#!/usr/bin/env python3\n',
+        )
+        _write(
+            root / 'skills' / 'importer' / 'SKILL.md',
+            '---\nname: importer\ndescription: Imports a mapped module\n---\n# I\n',
+        )
+        _write(
+            root / 'skills' / 'importer' / 'scripts' / 'importer.py',
+            '#!/usr/bin/env python3\nfrom toon_parser import serialize_toon  # noqa: F401\n',
+        )
+        index = build_dependency_index(root.parent, set(DependencyType))
+        imports = [
+            (dep.target.to_notation(), dep.resolved)
+            for deps in index.forward_deps.values()
+            for dep in deps
+            if dep.dep_type == DependencyType.PYTHON_IMPORT
+        ]
+        assert imports == [('plan-marshall:ref-toon-format:toon_parser', False)]
+
+
+class TestOnlyVerbBearingShapesRetarget:
+    """The retarget is attempted for a decision-log prefix, never for a path."""
+
+    def test_subdocument_path_never_retargets_onto_the_entry_script(self, tmp_path):
+        """A sub-document path's third segment is a DIRECTORY, never a verb.
+
+        Attempting the retarget for every excluded shape manufactured five false
+        edges onto `manage-lessons`, whose entry script registers no `references`
+        or `standards` subcommand.
+        """
+        assert _probe_reference(
+            tmp_path, 'Load `probe-bundle:real-skill:references/detail.md` first.'
+        ) == []
+
+    def test_placeholder_never_retargets_onto_the_entry_script(self, tmp_path):
+        """A placeholder segment names nothing, so it cannot be a verb either."""
+        assert _probe_reference(
+            tmp_path, 'Referenced as `probe-bundle:real-skill:script` in docs.'
+        ) == []
+
+    def test_decision_log_prefix_still_retargets(self, tmp_path):
+        """The control: the one excluded shape whose segment CAN be a verb."""
+        edges = _probe_reference(tmp_path, 'Emitted (probe-bundle:real-skill:compose) here.')
+        assert edges == [('probe-bundle:real-skill:real-skill', True)]
+
+
+def test_only_the_decision_log_shape_may_carry_a_verb():
+    """`VERB_BEARING_EXCLUSIONS` holds exactly the one shape whose segment can be a verb.
+
+    Guards the distinction the index depends on: widening this set would let a
+    sub-document path retarget onto an entry script, which is how five false edges
+    onto `manage-lessons` were manufactured.
+    """
+    assert VERB_BEARING_EXCLUSIONS == frozenset({Exclusion.DECISION_LOG})

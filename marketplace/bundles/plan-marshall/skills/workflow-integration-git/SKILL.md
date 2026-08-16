@@ -189,7 +189,7 @@ pushed: true
 |---------|------------|-------------|
 | `prepare` | `--plan-id [--branch] [--base]` | Atomic phase-5 move-in: materializes the worktree (delegating to `worktree-create`), then MOVES the plan directory (`.plan/local/plans/{plan_id}`) from main into its worktree-resident location and GENERATES a worktree-bound executor (`.plan/execute-script.py`) into the worktree — the executor is per-tree derived state, NOT moved; main's copy stays present and untouched. Returns the canonical `worktree_path`. Atomic-with-rollback (a partial-move failure leaves plan state WHOLLY on main), idempotent (already-moved-in → no-op success), and never changes the caller's cwd — the phase-5 orchestrator pins its own cwd to the returned `worktree_path`. `--branch` is required only on first run (when the worktree has not yet been materialized); on re-entry it is ignored. See ADR-002. |
 
-**Script**: `plan-marshall:workflow-integration-git:merge_lock`
+**Script**: `plan-marshall:manage-locks:merge_lock`
 
 | Command | Parameters | Description |
 |---------|------------|-------------|
@@ -656,7 +656,7 @@ executor_detail: "worktree executor generated at /repo/.plan/local/worktrees/EXA
 
 ### merge_lock — acquire / release
 
-Cooperative merge lock (notation `plan-marshall:workflow-integration-git:merge_lock`) — the SINGLE main-anchored coordination file serializing concurrent `integrate_into_main` (D5) finalizes. One lock file at the MAIN checkout's `.plan/local/merge.lock` records the holder `plan-id`; concurrent finalizes serialize their merge + write-back to main.
+Cooperative merge lock (notation `plan-marshall:manage-locks:merge_lock`) — the SINGLE main-anchored coordination file serializing concurrent `integrate_into_main` (D5) finalizes. One lock file at the MAIN checkout's `.plan/local/merge.lock` records the holder `plan-id`; concurrent finalizes serialize their merge + write-back to main.
 
 **Main-anchored resolution — the single deliberate exception (ADR-002).** This script — and ONLY this script — always resolves its lock file against the MAIN checkout regardless of the caller's cwd, because cross-session coordination is inherently main-scoped (phase-5+ callers run with cwd pinned to their own worktree, yet must all contend for one shared lock). It MUST remain the only main-anchored resolver so the codebase cannot regrow a pervasive git-common-dir-style hack. See ADR-002 and `tools-script-executor/standards/cwd-policy.md` (D6).
 
@@ -665,9 +665,9 @@ Cooperative merge lock (notation `plan-marshall:workflow-integration-git:merge_l
 `integrate_into_main` (D5) acquires before move-back/merge and releases after, on every exit path.
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:merge_lock acquire \
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock acquire \
   --plan-id PLAN_ID [--timeout 30]
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:merge_lock release \
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
   --plan-id PLAN_ID
 ```
 
@@ -878,9 +878,9 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:prepare_e
 ### merge_lock — acquire / release
 
 ```bash
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:merge_lock acquire \
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock acquire \
   --plan-id PLAN_ID [--timeout SECONDS]
-python3 .plan/execute-script.py plan-marshall:workflow-integration-git:merge_lock release \
+python3 .plan/execute-script.py plan-marshall:manage-locks:merge_lock release \
   --plan-id PLAN_ID
 ```
 

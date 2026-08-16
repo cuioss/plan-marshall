@@ -137,7 +137,7 @@ are exactly SIX such corpora:
 
 * `merge.lock` — the cooperative finalize lock (a single lock file whose contents record the
   holder `plan_id` / session). `merge_lock.py`
-  (notation `plan-marshall:workflow-integration-git:merge_lock`) provides `acquire` (atomic
+  (notation `plan-marshall:manage-locks:merge_lock`) provides `acquire` (atomic
   `O_EXCL` create writing the holder, simple-backoff retry, minimal stale-holder reclamation)
   and `release`; `integrate_into_main.py` acquires it before move-back/merge and
   releases it on every exit path.
@@ -246,7 +246,7 @@ is expected behaviour.
 * `marketplace/bundles/plan-marshall/skills/script-shared/scripts/marketplace_paths.py` — `resolve_main_anchored_path`, the single sanctioned main-anchored resolver utility.
 * `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/prepare_execute.py` — the atomic move-in script.
 * `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/integrate_into_main.py` — the atomic move-back script.
-* `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/merge_lock.py` — the cooperative merge lock, one of six consumers of the shared resolver utility.
+* `marketplace/bundles/plan-marshall/skills/manage-locks/scripts/merge_lock.py` — the cooperative merge lock, one of six consumers of the shared resolver utility.
 * `marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/file_ops.py` — `get_store_dir`, the parameterized store-root mechanism routing the `orchestrator` store through the shared resolver utility.
 * `marketplace/bundles/plan-marshall/skills/manage-run-config/scripts/run_config.py` — main-anchors `run-configuration.json` via the shared resolver utility.
 * `marketplace/bundles/plan-marshall/skills/manage-lessons/scripts/manage-lessons.py` — main-anchors the lessons corpus via the shared resolver utility.
