@@ -69,7 +69,9 @@ module-level mutable state, so the hazard above does not apply to it.
 | # | Source | Finding | Disposition |
 |---|---|---|---|
 | F1 | Re-measurement | D2's scope is **39** modules over the landed 400-line budget, not the ~8 the plan lists. The plan flags its list as a lead to re-derive; re-derived it is nearly 5× larger. | Reported; operator scoped it to the campaign |
-| F2 | This run | `_execution_manifest_fixtures.py`'s docstring documents the import form `from test.plan_marshall.manage_execution_manifest._execution_manifest_fixtures import …`, which **cannot work** — the directories contain hyphens, illegal in a Python package path. | **Open** — the docstring was not edited |
+| F2 | This run; independently by `sourcery-ai` | `_execution_manifest_fixtures.py`'s docstring documents the import form `from test.plan_marshall.manage_execution_manifest._execution_manifest_fixtures import …`, which **cannot work** — the directories contain hyphens, illegal in a Python package path. | **Fixed** — docstring now shows the bare form and says why it is the only one that works |
+| F6 | `sourcery-ai` review | Centralize the scattered `add_skill_scripts_to_path(…)` calls into a shared fixture. | **Rejected** — the shared helper *is* `add_skill_scripts_to_path`; centralizing further means editing `test/conftest.py`, which this plan's Out of scope excludes (owned by plan `020`, with five sibling plans running concurrently against it) |
+| F7 | `sourcery-ai` review | Add a guard test asserting `_execution_manifest_fixtures` stays free of mutable module-level state, so the shared-registration collapse cannot silently regress. | **Rejected** — the proposed guard inspects only *public, non-callable* module attributes, so it would miss the two shapes that actually matter: a mutable default bound inside a function, and mutable state in the marketplace script a test registers under a shared name. A partial guard on this invariant reads as assurance it does not provide. The invariant is real; a check worth having would have to target the registration/state pair, not one module's globals |
 | F3 | Self-inflicted | Removing `import sys` from `test_get_module_context.py` broke 3 tests: the usage check grepped `sys\.` and missed `monkeypatch.setattr(sys, 'argv', …)`, which has no trailing dot. | Fixed before commit |
 | F4 | Environment | Push credentials failed mid-session, then recovered without intervention. Cost the run its D1 window. | Closed; shipped as the § Step 9 proposal, PR #1269 |
 | F5 | Re-measurement | **D1's named targets no longer carry a collapsible family.** See below. | Reported; no code change made |
@@ -109,9 +111,23 @@ body-shape work needs re-specifying before anyone attempts it.
 
 ## Reviewer participation
 
-To be completed on PR #1270 before the merge gate. The expected population is derived from the
-`author_login` of each `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`
-registry doc — not transcribed here.
+Population derived from the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc — not
+transcribed here.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
+|---|---|---|---|
+| `sourcery-ai[bot]` | `reviewed` | — | Published a review on head `32c4a67` with 1 inline issue and 2 overall comments; dispositioned as F2 (fixed), F6 and F7 (rejected with reasons) |
+| `coderabbitai[bot]` | `silent` | `unknown` | No review, no notice, on either surface |
+| `cuioss-review-bot` | `silent` | `unknown` | No review, no notice |
+
+**Coverage: 1 of 3.** The two `silent` verdicts are recorded **without** the § Step 7 recovery check
+having been run — the `trigger_comment` re-invite was not attempted, so this is an unexplained silence
+that was not investigated, not one established as unrecoverable. That is a gap in this run, disclosed
+rather than papered over.
+
+The § Step 8 shortfall disclosure fired before arming: stated to the operator as 1-of-3 with both
+silences flagged as un-recovered.
 
 ## Cost
 
@@ -132,9 +148,9 @@ registry doc — not transcribed here.
 | 4 Per-commit gate | Done — `./pw quality-gate` clean before each `*.py` commit |
 | 4 Pushed | Done — after the credential failure recovered (F4) |
 | 5 Build gate | Done — full `./pw verify` SUCCESS |
-| 6 Verification sub-agent | **NOT DONE** |
-| 7 PR cycle | PR #1270 opened; comment cycle pending |
-| 8 Merge gate | Pending |
+| 6 Verification sub-agent | **NOT DONE** — the independent pre-PR verification dispatch was skipped |
+| 7 PR cycle | Done — PR #1270; all three comment surfaces read, every finding dispositioned, participation table above. The `silent` recovery check was **not** run |
+| 8 Merge gate | Conditions 1–3 met; coverage shortfall disclosed at 1-of-3; auto-merge armed (SQUASH) |
 | 9 This check | Done (this section) |
 
 **GitHub access path:** GitHub MCP server for PR operations; `git push` directly once credentials
@@ -162,7 +178,9 @@ scales with file size rather than diff size.
   attempted; it is not the deliverable D1 describes.
 - **D2:** 39 modules over budget — operator-scoped to the campaign.
 - **D3:** not started; the `parse_ns` exception list remains empty **by non-attempt**.
-- **F2:** the false import path in `_execution_manifest_fixtures.py`'s docstring is still there.
+- **F7:** the mutable-state invariant behind the shared-registration collapse has no automated guard.
+  The reviewer's proposed guard was rejected as too narrow to protect it; a real one would key on the
+  registration/state pair, and does not exist.
 - Run 01's line-floor recommendation for `040`–`080` stands, and F1 and F5 both strengthen it: this
   plan's D2 scope was under-derived and its D1 scope over-derived. Both were flagged in the plan as
   leads to re-derive, and both were wrong in the direction the plan warned about.
