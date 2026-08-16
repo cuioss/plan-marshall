@@ -8710,7 +8710,7 @@ class TestBillingCompositionEmit:
 
 
 # =============================================================================
-# Aggregate script cost across the corpus (plan 270)
+# Aggregate script cost across the corpus
 # =============================================================================
 # The corpus-wide view already carried `call_seconds` and `total_script_seconds`
 # but ranked ONLY by call count behind a `>= high_frequency_calls` gate. That
@@ -8748,8 +8748,8 @@ class TestGlobalLogCostRollup:
         assert result['cost_rollup'][1]['key'] == 'pm:hot:hot run'
 
     def test_dominant_fast_caller_is_visible_though_no_call_is_slow(self, tmp_path: Path):
-        # The plan's thesis: 100 calls at 0.2s own 20s of wall-clock while NO
-        # single call comes near the 30s ceiling.
+        # 100 calls at 0.2s own 20s of wall-clock while NO single call comes
+        # anywhere near the 30s ceiling.
         lines = [
             _line(f'2026-06-01T10:00:{i % 60:02d}Z', 'INFO', 'pm:hot:hot run (0.2s)')
             for i in range(100)

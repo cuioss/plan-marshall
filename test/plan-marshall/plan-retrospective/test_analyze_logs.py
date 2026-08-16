@@ -1916,9 +1916,9 @@ class TestBuildTimeFromLedger:
 
 
 # ---------------------------------------------------------------------------
-# Aggregate script cost (plan 270): the per-call ceiling answers "is any single
-# call pathological?" and is STRUCTURALLY incapable of answering "what dominates
-# total time?". These tests pin the complementary roll-up and assert the two are
+# Aggregate script cost: the per-call ceiling answers "is any single call
+# pathological?" and is STRUCTURALLY incapable of answering "what dominates total
+# time?". These tests pin the complementary roll-up and assert the two are
 # readable together — the ceiling stays, the roll-up is an addition.
 
 
@@ -1941,7 +1941,7 @@ def _hot_and_slow_log_lines() -> list[str]:
 
 
 class TestScriptCostRollup:
-    """D4(a): the roll-up ranks a many-fast-calls script above a few-slow-calls one."""
+    """The roll-up ranks a many-fast-calls script above a few-slow-calls one."""
 
     def test_ranks_many_fast_above_few_slow(self, tmp_path):
         logs_dir = tmp_path / 'logs'
@@ -2032,11 +2032,11 @@ class TestScriptCostRollup:
 
 
 class TestPerCallCeilingPreserved:
-    """D2: the ceiling is an addition's neighbour, not its casualty."""
+    """The per-call ceiling keeps its predicate and its count when the roll-up lands."""
 
     def test_ceiling_constant_unchanged(self):
-        # D4(c) regression pin: the ceiling this plan proved blind is NOT the
-        # thing this plan changed. Moving it would silently redefine
+        # The ceiling is blind to the dominant-but-fast class, and it is still
+        # not the thing to move. Changing this value would silently redefine
         # ``slow_call_count`` for every archived plan already measured against it.
         assert _analyze_logs._GLOBAL_LOG_SLOW_SECONDS == 30.0
 
@@ -2058,7 +2058,7 @@ class TestPerCallCeilingPreserved:
 
 
 class TestContextPositionCost:
-    """D2's second dimension: marginal cost scales with WHERE a step runs."""
+    """Marginal cost scales with WHERE a step runs, not only with what it does."""
 
     def _phase(self, rows):
         return {'present': True, 'rows': rows}
