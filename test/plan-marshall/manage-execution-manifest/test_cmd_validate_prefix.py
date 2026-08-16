@@ -209,9 +209,9 @@ def test_validate_non_string_step_element_reports_error_not_crash(plan_context, 
     """A hand-edited manifest with a non-string step element yields a clean
     ``invalid_manifest`` verdict, not an ``AttributeError`` crash.
 
-    Regression for PR #961: ``canonicalize_step_key`` calls ``.startswith()`` on
-    its argument, which raised ``AttributeError`` on a non-string element parsed
-    from the externally-editable ``execution.toon``. The ``isinstance`` guard now
+    ``canonicalize_step_key`` calls ``.startswith()`` on its argument, which
+    would raise ``AttributeError`` on a non-string element parsed from the
+    externally-editable ``execution.toon``. The ``isinstance`` guard
     treats a non-string element as an unknown/invalid ID so ``validate`` reports
     it rather than crashing. Loaded via the fresh ``_val`` module so the patched
     ``read_manifest`` is the one ``cmd_validate`` resolves.

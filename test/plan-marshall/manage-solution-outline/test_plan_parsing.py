@@ -203,9 +203,8 @@ class TestParseDocumentSectionsRoundTrip:
         )
 
     def test_lesson_regression_suggested_fix_two_options(self):
-        # exact regression case from the lesson
-        # `lesson-2026-04-26-22-005`: a "Suggested fix (two options)" heading
-        # was producing the un-slugified key, breaking section lookups.
+        # A heading carrying a parenthesised clause must still slugify, else
+        # section lookups against it silently miss.
         content = '## Suggested fix (two options)\nbody'
 
         sections = parse_document_sections(content)

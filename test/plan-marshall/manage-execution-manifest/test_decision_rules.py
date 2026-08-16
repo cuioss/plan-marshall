@@ -690,7 +690,7 @@ def result_phase_6_steps(result: dict) -> list[str]:
 
 
 # =============================================================================
-# Test: task-queue-aware early_terminate predicate (lesson 2026-05-24-17-001)
+# Test: task-queue-aware early_terminate predicate
 # =============================================================================
 
 
@@ -717,15 +717,13 @@ def _seed_task_file(plan_id: str, task_number: int, status: str) -> None:
 
 
 class TestEarlyTerminateTaskQueueGuard:
-    """Rule 1 (early_terminate_analysis) now requires the task queue to be empty.
+    """Rule 1 (early_terminate_analysis) requires the task queue to be empty.
 
-    Lesson ``2026-05-24-17-001``: an analysis-only plan that produces zero
-    affected files but still queues at least one deliverable task must NOT
-    short-circuit phase-5 before TASK-001 runs. The composer reads
-    ``tasks/TASK-*.json`` directly and ANDs the existing
-    ``affected_files_count==0`` condition with "no pending or in-progress
-    task". Genuine no-op plans (no task files on disk) preserve the prior
-    early-terminate behaviour.
+    An analysis-only plan that produces zero affected files but still queues at
+    least one deliverable task must NOT short-circuit phase-5 before that task
+    runs. The composer reads ``tasks/TASK-*.json`` directly and ANDs the
+    ``affected_files_count==0`` condition with "no pending or in-progress task".
+    A genuine no-op plan, with no task files on disk, still early-terminates.
     """
 
     def test_early_terminate_when_task_queue_empty(self):

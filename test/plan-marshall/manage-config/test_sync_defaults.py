@@ -853,7 +853,7 @@ def test_sync_defaults_materializes_freshly_merged_default_step_to_off(plan_cont
 def test_sync_defaults_materializes_wholesale_copied_steps_subtree_to_off(plan_context):
     """A wholesale-copied default `steps` subtree materializes each new step to `off`.
 
-    Regression for the ancestor-added-rows bug (PR #896): when a live config's
+    When a live config's
     `phase-6-finalize` dict has NO `steps` key at all, the deep-merge copies the
     entire default `steps` map in ONE shot (the ancestor-added-subtree case,
     distinct from the per-step recursion the sibling test exercises). The prior

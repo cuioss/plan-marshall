@@ -16,11 +16,11 @@ prefix set is the source of truth for what plans may create, and the workflow is
 the source of truth for what CI runs. This test only enforces the one-way
 implication that matters: a working prefix with no CI trigger.
 
-Lesson ``2026-05-21-18-002`` / PR #441: a PR whose branch prefix falls outside
-the CI push allowlist silently receives no ``verify / verify`` status check and
-is structurally unmergeable. A ``working_prefix`` not covered by any workflow
-trigger fails this test, forcing the workflow file (or the prefix set) to be
-updated. ``docs/`` is explicitly retired and asserted absent.
+A PR whose branch prefix falls outside the CI push allowlist silently receives
+no ``verify / verify`` status check and is structurally unmergeable. A
+``working_prefix`` not covered by any workflow trigger fails this test, forcing
+the workflow file (or the prefix set) to be updated. ``docs/`` is not a working
+prefix and is asserted absent.
 """
 
 # ruff: noqa: I001, E402
@@ -120,8 +120,8 @@ def test_every_working_prefix_is_ci_push_triggered():
     uncovered = [p for p in prefixes if not _prefix_is_covered(p, triggers)]
 
     # subset coverage: a working prefix with no CI trigger makes its
-    # PRs structurally unmergeable (no verify / verify check). See lesson
-    # 2026-05-21-18-002 / CLAUDE.md Branch Naming.
+    # PRs structurally unmergeable (no verify / verify check).
+    # See CLAUDE.md § Branch Naming.
     assert not uncovered, (
         'Working prefix(es) not covered by any python-verify.yml on.push.branches '
         'trigger — a PR on such a branch silently receives no verify / verify '

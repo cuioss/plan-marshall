@@ -25,8 +25,7 @@ FIXTURE PROVENANCE. ``_PLAN_31_VERIFICATION_STEPS`` below is PLAN-31's REAL
 composed shape, read verbatim — not a hand-built approximation — from the
 archived plan's own manifest artifact:
 
-    plan id : 2026-07-21-orchestrator-dispatch-ruleset  (WS-10 PLAN-31,
-              "orchestrator dispatch ruleset", shipped as PR #968)
+    plan id : 2026-07-21-orchestrator-dispatch-ruleset
     artifact: .plan/local/archived-plans/2026-07-21-orchestrator-dispatch-ruleset/
               execution.toon
     field   : phase_5.verification_steps

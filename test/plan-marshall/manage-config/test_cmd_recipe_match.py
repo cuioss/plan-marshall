@@ -117,9 +117,9 @@ def _seed_surgical_fix_recipe(skills_dir: Path) -> None:
     )
 
 
-# Real archived request narratives (lesson 2026-07-09-14-001) — a pre-diagnosed
-# surgical request (PR #866, must MATCH) and a broad structural-review request
-# (PR #856, must NOT match).
+# Two real archived request narratives: a pre-diagnosed surgical request, which
+# must MATCH, and a broad structural-review request, which must NOT. The pair is a
+# positive/negative control — a matcher that fired on both would pass either alone.
 _REQ_PREDIAGNOSED_SURGICAL = (
     'Fix the owed CHECK_ERA era stamps in the audit skill (root cause known, '
     'exact change known, single file): in '

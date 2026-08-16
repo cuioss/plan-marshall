@@ -20,12 +20,10 @@ Orthogonal assertions per knob:
    ``ceremony_policy`` key survives in ``get_default_config()``; the flat knobs live in
    ``DEFAULT_PLAN_FINALIZE`` and the step-owned knob is declared in its step's
    ``configurable:`` frontmatter (resolved via the ``configurable_contract`` parser).
-3. **Post-migration defaults are exact** — the distributed defaults match their intended
-   post-migration values (forward auto-continue ``True``, reverse halt ``False``,
-   final-merge-without-asking ``False``). The first two preserve the historical
-   ``ceremony_policy`` defaults; the merge gate's default was deliberately flipped from the
-   historical ``auto_merge_after_ci: True`` to ``final_merge_without_asking: False``
-   (lesson 2026-06-16-10-001) so new projects prompt before the irreversible merge.
+3. **The distributed defaults are exact** — forward auto-continue ``True``, reverse
+   halt ``False``, ``final_merge_without_asking`` ``False``. The merge gate defaults to
+   prompting because the merge it guards is irreversible, so a fresh project must opt
+   in to unattended merging rather than out of it.
 
 The handlers are exercised via direct importlib loading (the manage-config test
 convention); read-only round-trip stability of marshal.json is asserted by hashing
@@ -53,11 +51,9 @@ _cmd_init = load_script_module(
 import conftest  # noqa: E402, F401
 
 
-# The two flat auto-continuation knobs that remain phase-level fields, with their
-# post-migration defaults (preserved from the historical ceremony_policy values).
-# final_merge_without_asking is NOT here — it became a step-owned param nested under
-# default:branch-cleanup and is covered by the dedicated step-shape tests below
-# (its default was deliberately flipped True->False, lesson 2026-06-16-10-001).
+# The two flat auto-continuation knobs that are phase-level fields, with their
+# defaults. final_merge_without_asking is NOT here — it is a step-owned param nested
+# under default:branch-cleanup, covered by the dedicated step-shape tests below.
 _MIGRATED_KNOBS = (
     ('finalize_without_asking', True),
     ('loop_back_without_asking', False),
