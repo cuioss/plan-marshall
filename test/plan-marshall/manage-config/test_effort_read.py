@@ -134,26 +134,140 @@ def test_flat_group_set_returns_role_value(plan_context):
     assert _hash_marshal(plan_context.fixture_dir) == before
 
 
-def test_flat_group_unset_with_default_returns_default(plan_context):
-    """Flat group absent: falls through to effort."""
-    _write_marshal_with_models(plan_context.fixture_dir, {'default': 'level-2'})
+#: The effort-resolution cascade, one row per rung: (the `models` block seeded into
+#: marshal.json, the `models read` flags, the level that must resolve, the source path
+#: that must be reported). `source` is asserted as well as `level` because two rungs can
+#: agree on the level while disagreeing on where it came from, and the source is what
+#: tells an operator which knob to edit.
+_EFFORT_RESOLUTIONS = [
+    ({'default': 'level-2'}, {'role': 'phase-2-refine'}, 'level-2', 'plan.effort'),
+    (None, {'role': 'phase-2-refine'}, 'inherit', 'implicit_default'),
+    (
+        {'default': 'level-2', 'roles': {'phase-6-finalize': {'verification-feedback': 'level-3'}}},
+        {'role': 'phase-6-finalize.verification-feedback'},
+        'level-3',
+        'plan.phase-6-finalize.effort.verification-feedback',
+    ),
+    (
+        {
+            'default': 'level-2',
+            'roles': {'phase-6-finalize': {'default': 'level-1', 'verification-feedback': 'level-3'}},
+        },
+        {'role': 'phase-6-finalize.post-run-review'},
+        'level-1',
+        'plan.phase-6-finalize.effort.default',
+    ),
+    (
+        {'default': 'level-2', 'roles': {'phase-6-finalize': {'verification-feedback': 'level-3'}}},
+        {'role': 'phase-6-finalize.post-run-review'},
+        'level-2',
+        'plan.effort',
+    ),
+    (
+        {
+            'default': 'level-2',
+            'roles': {'phase-6-finalize': {'default': 'level-3', 'verification-feedback': 'level-4'}},
+        },
+        {'role': 'phase-6-finalize'},
+        'level-3',
+        'plan.phase-6-finalize.effort.default',
+    ),
+    (
+        {'default': 'level-2', 'roles': {'phase-6-finalize': {'verification-feedback': 'level-3'}}},
+        {'role': 'phase-6-finalize'},
+        'level-2',
+        'plan.effort',
+    ),
+    (
+        {'default': 'level-2', 'roles': {'phase-3-outline': 'level-3'}},
+        {'phase': 'phase-3-outline'},
+        'level-3',
+        'plan.phase-3-outline.effort',
+    ),
+    (
+        {'default': 'level-2', 'roles': {'phase-6-finalize': {'verification-feedback': 'level-3'}}},
+        {'role': 'verification-feedback', 'phase': 'phase-6-finalize'},
+        'level-3',
+        'plan.phase-6-finalize.effort.verification-feedback',
+    ),
+    (
+        {'default': 'level-3', 'roles': {'phase-2-refine': 'level-1'}},
+        {'default': True},
+        'level-3',
+        'plan.effort',
+    ),
+]
 
-    result = cmd_effort(_ns(role='phase-2-refine'))
+
+@pytest.mark.parametrize(
+    ('models_block', 'flags', 'level', 'source'),
+    _EFFORT_RESOLUTIONS,
+    ids=[
+        'flat-group-unset-falls-to-plan-effort',
+        'flat-group-and-default-both-unset-falls-to-implicit-inherit',
+        'dotted-lookup-resolves-the-nested-subkey',
+        'dotted-subkey-unset-walks-to-the-in-group-default-slot',
+        'dotted-subkey-unset-without-in-group-default-falls-to-plan-effort',
+        'bare-group-on-an-object-walks-to-its-default-slot',
+        'bare-group-on-an-object-without-default-falls-to-plan-effort',
+        'phase-flag-alone-is-a-bare-group-lookup',
+        'two-flag-form-resolves-the-same-subkey-as-the-dotted-form',
+        'default-flag-short-circuits-to-plan-effort',
+    ],
+)
+def test_effort_read_resolves_level_and_source(plan_context, models_block, flags, level, source):
+    """`models read` resolves a level and reports the config path it came from."""
+    _write_marshal_with_models(plan_context.fixture_dir, models_block)
+
+    result = cmd_effort(_ns(**flags))
 
     assert result['status'] == 'success'
-    assert result['level'] == 'level-2'
-    assert result['source'] == 'plan.effort'
+    assert result['level'] == level
+    assert result['source'] == source
 
 
-def test_flat_group_unset_no_default_returns_inherit(plan_context):
-    """Flat group absent and default absent: implicit `inherit` fallback."""
-    _write_marshal_with_models(plan_context.fixture_dir, models_block=None)
+#: (models block, flags, fragments the error message must carry). The message is
+#: asserted, not just the error status: it is the only thing that tells the operator
+#: which key in which block is wrong.
+_EFFORT_READ_ERRORS = [
+    (
+        {'default': 'level-2'},
+        {'role': 'phase-6-finalize.not-a-real-subkey'},
+        ('not-a-real-subkey', 'phase-6-finalize'),
+    ),
+    (
+        {'default': 'level-2'},
+        {'role': 'verification-feedback.extra', 'phase': 'phase-6-finalize'},
+        ('bare subkey',),
+    ),
+    (
+        {'roles': {'phase-2-refine': 'gigaultra'}},
+        {'role': 'phase-2-refine'},
+        ('gigaultra', 'plan.phase-2-refine.effort'),
+    ),
+    ({'default': 'gigaultra'}, {'role': 'phase-2-refine'}, ('gigaultra', 'plan.effort')),
+]
 
-    result = cmd_effort(_ns(role='phase-2-refine'))
 
-    assert result['status'] == 'success'
-    assert result['level'] == 'inherit'
-    assert result['source'] == 'implicit_default'
+@pytest.mark.parametrize(
+    ('models_block', 'flags', 'fragments'),
+    _EFFORT_READ_ERRORS,
+    ids=[
+        'unregistered-subkey-names-the-subkey-and-its-group',
+        'two-flag-form-rejects-a-dotted-role',
+        'invalid-level-at-a-role-names-the-role-path',
+        'invalid-level-at-the-default-names-the-default-path',
+    ],
+)
+def test_effort_read_rejects_invalid_lookup(plan_context, models_block, flags, fragments):
+    """An invalid lookup or an invalid stored level errors, naming the offending path."""
+    _write_marshal_with_models(plan_context.fixture_dir, models_block)
+
+    result = cmd_effort(_ns(**flags))
+
+    assert result['status'] == 'error'
+    for fragment in fragments:
+        assert fragment in result['error']
 
 
 def test_models_block_present_but_empty_returns_inherit(plan_context):
@@ -171,149 +285,9 @@ def test_models_block_present_but_empty_returns_inherit(plan_context):
 # =============================================================================
 
 
-def test_dotted_lookup_returns_subkey_value(plan_context):
-    """`--role phase-6-finalize.verification-feedback` resolves the nested object's subkey."""
-    _write_marshal_with_models(
-        plan_context.fixture_dir,
-        {
-            'default': 'level-2',
-            'roles': {'phase-6-finalize': {'verification-feedback': 'level-3'}},
-        },
-    )
-
-    result = cmd_effort(_ns(role='phase-6-finalize.verification-feedback'))
-
-    assert result['status'] == 'success'
-    assert result['level'] == 'level-3'
-    assert result['source'] == 'plan.phase-6-finalize.effort.verification-feedback'
-
-
-def test_dotted_lookup_subkey_unset_walks_to_default_slot(plan_context):
-    """Subkey absent within a multi-workflow group: walks to <group>.default."""
-    _write_marshal_with_models(
-        plan_context.fixture_dir,
-        {
-            'default': 'level-2',
-            'roles': {'phase-6-finalize': {
-                'default': 'level-1',
-                'verification-feedback': 'level-3',
-            }},
-        },
-    )
-
-    result = cmd_effort(_ns(role='phase-6-finalize.post-run-review'))
-
-    assert result['status'] == 'success'
-    assert result['level'] == 'level-1'
-    assert result['source'] == 'plan.phase-6-finalize.effort.default'
-
-
-def test_dotted_lookup_subkey_unset_no_default_slot_falls_to_models_default(plan_context):
-    """Subkey absent + no in-group `default` slot: falls through to effort."""
-    _write_marshal_with_models(
-        plan_context.fixture_dir,
-        {'default': 'level-2', 'roles': {'phase-6-finalize': {'verification-feedback': 'level-3'}}},
-    )
-
-    result = cmd_effort(_ns(role='phase-6-finalize.post-run-review'))
-
-    assert result['status'] == 'success'
-    assert result['level'] == 'level-2'
-    assert result['source'] == 'plan.effort'
-
-
-def test_dotted_unknown_subkey_errors(plan_context):
-    """Subkey not registered in the group's schema produces an error."""
-    _write_marshal_with_models(
-        plan_context.fixture_dir,
-        {'default': 'level-2'},
-    )
-
-    result = cmd_effort(_ns(role='phase-6-finalize.not-a-real-subkey'))
-
-    assert result['status'] == 'error'
-    assert 'not-a-real-subkey' in result['error']
-    assert 'phase-6-finalize' in result['error']
-
-
-def test_bare_group_lookup_with_object_default_slot_resolves(plan_context):
-    """Bare-group lookup on an object value walks to the `default` slot."""
-    _write_marshal_with_models(
-        plan_context.fixture_dir,
-        {
-            'default': 'level-2',
-            'roles': {'phase-6-finalize': {
-                'default': 'level-3',
-                'verification-feedback': 'level-4',
-            }},
-        },
-    )
-
-    result = cmd_effort(_ns(role='phase-6-finalize'))
-
-    assert result['status'] == 'success'
-    assert result['level'] == 'level-3'
-    assert result['source'] == 'plan.phase-6-finalize.effort.default'
-
-
-def test_bare_group_lookup_with_object_no_default_falls_to_models_default(plan_context):
-    """Bare-group on an object missing `default` slot: walks to effort."""
-    _write_marshal_with_models(
-        plan_context.fixture_dir,
-        {
-            'default': 'level-2',
-            'roles': {'phase-6-finalize': {'verification-feedback': 'level-3'}},
-        },
-    )
-
-    result = cmd_effort(_ns(role='phase-6-finalize'))
-
-    assert result['status'] == 'success'
-    assert result['level'] == 'level-2'
-    assert result['source'] == 'plan.effort'
-
-
-def test_bare_phase_via_two_flag_form(plan_context):
-    """`--phase phase-N` alone (no --role) is equivalent to bare-group lookup."""
-    _write_marshal_with_models(
-        plan_context.fixture_dir,
-        {'default': 'level-2', 'roles': {'phase-3-outline': 'level-3'}},
-    )
-
-    result = cmd_effort(_ns(phase='phase-3-outline'))
-
-    assert result['status'] == 'success'
-    assert result['level'] == 'level-3'
-    assert result['source'] == 'plan.phase-3-outline.effort'
-
-
 # =============================================================================
 # Two-flag form (--phase <group> --role <subkey>)
 # =============================================================================
-
-
-def test_two_flag_form_resolves_subkey(plan_context):
-    """`--phase phase-6-finalize --role verification-feedback` is equivalent to the dotted form."""
-    _write_marshal_with_models(
-        plan_context.fixture_dir,
-        {'default': 'level-2', 'roles': {'phase-6-finalize': {'verification-feedback': 'level-3'}}},
-    )
-
-    result = cmd_effort(_ns(role='verification-feedback', phase='phase-6-finalize'))
-
-    assert result['status'] == 'success'
-    assert result['level'] == 'level-3'
-    assert result['source'] == 'plan.phase-6-finalize.effort.verification-feedback'
-
-
-def test_two_flag_form_rejects_dotted_role(plan_context):
-    """In two-flag mode, --role must be a bare subkey (no dot)."""
-    _write_marshal_with_models(plan_context.fixture_dir, {'default': 'level-2'})
-
-    result = cmd_effort(_ns(role='verification-feedback.extra', phase='phase-6-finalize'))
-
-    assert result['status'] == 'error'
-    assert 'bare subkey' in result['error']
 
 
 # =============================================================================
@@ -337,20 +311,6 @@ def test_string_at_flat_group_with_any_subkey_resolves_to_same(plan_context):
 # =============================================================================
 # --default short-circuit
 # =============================================================================
-
-
-def test_default_flag_returns_models_default(plan_context):
-    """`--default` returns effort without role lookup."""
-    _write_marshal_with_models(
-        plan_context.fixture_dir,
-        {'default': 'level-3', 'roles': {'phase-2-refine': 'level-1'}},
-    )
-
-    result = cmd_effort(_ns(default=True))
-
-    assert result['status'] == 'success'
-    assert result['level'] == 'level-3'
-    assert result['source'] == 'plan.effort'
 
 
 def test_default_flag_without_default_set_returns_inherit(plan_context):
@@ -415,34 +375,6 @@ def test_resolve_target_each_level(plan_context, level):
 # =============================================================================
 # Level enum coverage
 # =============================================================================
-
-
-def test_invalid_level_at_role_errors(plan_context):
-    """Invalid level value at a role: error with full source path."""
-    _write_marshal_with_models(
-        plan_context.fixture_dir,
-        {'roles': {'phase-2-refine': 'gigaultra'}},
-    )
-
-    result = cmd_effort(_ns(role='phase-2-refine'))
-
-    assert result['status'] == 'error'
-    assert 'gigaultra' in result['error']
-    assert 'plan.phase-2-refine.effort' in result['error']
-
-
-def test_invalid_level_at_default_errors(plan_context):
-    """Invalid level value at effort: error."""
-    _write_marshal_with_models(
-        plan_context.fixture_dir,
-        {'default': 'gigaultra'},
-    )
-
-    result = cmd_effort(_ns(role='phase-2-refine'))
-
-    assert result['status'] == 'error'
-    assert 'gigaultra' in result['error']
-    assert 'plan.effort' in result['error']
 
 
 def test_level_6_resolves_to_level_6_variant(plan_context):
