@@ -828,8 +828,7 @@ def plan_base_env(tmp_path, monkeypatch):
 
     Also seeds an initialized plan directory for the conventional ``my-plan``
     plan_id used by the body-store happy-path tests. The
-    ``ci_base.prepare_body`` script-side guard (lesson 2026-05-15-X) now
-    requires the plan dir to contain a ``status.json`` sentinel before any
+    ``ci_base.prepare_body`` script-side guard requires the plan dir to contain a ``status.json`` sentinel before any
     scratch path is materialised; without this seed every existing
     prepare-body test would fail.
 

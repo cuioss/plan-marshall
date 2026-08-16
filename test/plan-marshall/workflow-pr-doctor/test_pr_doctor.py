@@ -648,7 +648,7 @@ def test_invalid_category():
 
 
 # =============================================================================
-# --project-dir forwarding tests (TASK-7/8)
+# --project-dir forwarding tests
 #
 # The contract is:
 #   - main() pre-parses --project-dir via ci_base.extract_project_dir,

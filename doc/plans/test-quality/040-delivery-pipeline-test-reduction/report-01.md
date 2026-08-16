@@ -2,7 +2,7 @@
 
 **Date (UTC):** 2026-08-16    **Branch:** `claude/delivery-pipeline-test-reduction-igiwmw`    **PR:** #1259    **Outcome:** partial
 
-The line-reduction floor was **not** reached: the slice dropped **0.58%** against a stated **25%**
+The line-reduction floor was **not** reached: the slice dropped **0.578%** against a stated **25%**
 floor. The operator was consulted at the point the shortfall became measurable and directed the run
 to proceed on best effort rather than halt. D1's own done-when **is** met, and both non-negotiable
 guards (collected count, coverage) hold exactly.
@@ -48,11 +48,12 @@ one — an entry claimed by no plan looks exactly like a clean run.
 
 | # | Deliverable | Outcome | Commit |
 |---|---|---|---|
-| D1 | Strip history from docstrings and comments | **done** (done-when met) | `6a8729b`, `48910a0`, `115a5df` |
+| D1 | Strip history from docstrings and comments | **done** against its done-when; **partial** against its own prose (92 citations remain in shapes the rule does not match) | `6a8729b`, `48910a0`, `115a5df` |
 | D2 | One fixture corpus and one driver per module | **not done** | — |
-| D3 | Collapse the duplicated assertion layer | **partial** | `7544567` |
+| D3 | Collapse the duplicated assertion layer | **not done** | — |
 | D4 | Split every module over the budget | **not done** | — |
 | D5 | Normalise preambles and argument construction | **partial** | `bfffa68` |
+| — | (B5 parametrization of two CLI smoke tables — sanctioned by the plan's out-of-scope § but **not** a deliverable) | done | `7544567` |
 | D6 | Report the measured deltas | **done** | this report |
 
 ### D1 — done
@@ -60,34 +61,71 @@ one — an entry claimed by no plan looks exactly like a clean run.
 `plugin-doctor test-docstring-historical-prose` over the slice: **48 → 0**. Plan ids, deliverable
 ids, `TASK-NNN`, `PR #NNN`, `plan-marshall#NNNN` and lesson ids were removed from docstrings,
 comments and assert messages across 25 modules, each invariant restated in the present tense.
-Two tests named after a PR number were renamed for what they assert
-(`test_pr_410_regression_three_successes_one_skipped_is_success` →
-`test_three_successes_one_skipped_is_success`, and the GitLab mirror).
+Two tests named after an incident were renamed for what they assert (one after a PR number, one after a lesson)
+(`test_pr_410_regression_three_successes_one_skipped_is_success` and
+`test_lesson_regression_three_successes_one_skipped_is_success` → both
+`test_three_successes_one_skipped_is_success`).
 
-**D1's line delta, stated separately as the plan requires: −159 lines** (66,146 → 65,987 across the
-three D1 commits, before D3/D5). That is far below what the plan's problem statement anticipated,
-and the reason is the single most useful finding of this run — see § "What the measurement says".
+**D1's done-when is met; D1's deliverable text is not fully satisfied — reported, not glossed.**
+The done-when names one rule and that rule is clean. But the deliverable also names "plan ids,
+deliverable ids, PR numbers, lesson ids", and the rule's regexes are narrower than that text
+(`deliverable\s+D\d+`, `PR #\d+`, `TASK-\d{3}`), so shapes outside them survive a zero finding
+count. Swept over docstrings and `#` comments only — string-literal test DATA excluded by
+construction, so a synthetic comment titled `'PR #42 review_body comment by coderabbitai'` cannot
+appear here:
 
-### D3 — partial
-
-Only the two provider CLI-smoke tables were collapsed, because only they cleared the plan's gating
-rule that a collapse must name the in-process test that subsumes it.
-
-| Module | Collapsed | Into | Case count |
+| Shape | Before | After | Why the rule does not see it |
 |---|---|---|---|
-| `workflow-integration-github/test_github.py` | 31 subprocess smokes | 3 parametrized tables (help surface, missing-required exit, either-or structured refusal) | 40 → 40 |
-| `workflow-integration-gitlab/test_gitlab.py` | 28 subprocess smokes | 3 parametrized tables | 31 → 31 |
+| `deliverable N` (bare digit) | 55 | **46** | rule matches `deliverable D\d+` |
+| bare `#NNNN` incident ref | 37 | **25** | rule matches `PR #\d+` |
+| `this plan` | 22 | **21** | not a rule pattern |
+| `TASK-N` (1–2 digit) | 9 | **0** | rule matches `TASK-\d{3}`; cleared in this run's final pass |
+| `lesson-…` | 12 | **0** | — |
+| `PR #N` / `plan-marshall#N` | 12 / 5 | **0** / **0** | — |
 
-One param per original test, so no case was lost. Every assertion is preserved including the
-negative ones (`--body-file` and `--body` must NOT be advertised). 251 lines removed.
+So **92 prose citations remain**, roughly half of them in files this run edited for D1. The three
+shapes the rule *does* cover are at zero; the three it does not are largely untouched. This is the
+honest state: **D1 done against its done-when, partial against its own prose.**
 
-**The remaining 117 subprocess tests across 26 modules were surveyed and deliberately NOT
-collapsed.** The survey (`run_script` call sites listed beside each module's in-process tests) is
-the plan's gating derivation, and it did not produce the pairing evidence a collapse requires: the
-largest remaining populations — `tools-integration-ci/test_ci.py` (22), `test_review_completeness.py`
-(21), `test_structural_refusal.py` (8) — are router- and handler-behaviour tests driven through the
+**D1's line delta, stated separately as the plan requires: −40 lines.** Derived per-commit with
+`git diff --numstat <prev> <commit> -- test/`: `6a8729b` −31, `48910a0` −22, `115a5df` **+13** (the
+cold-read restorations add text back). The five commits sum to the verified −385 slice total
+(`bfffa68` −94, `7544567` −251).
+
+An earlier draft of this report stated −159 here. That figure was not reproducible from the commits
+cited and is corrected; it is exactly the number the plan singles out as "the deliverable whose yield
+this epic most needs to know", so the correction matters more than the direction. The smaller figure
+**strengthens** the conclusion in § "What the measurement says" rather than weakening it.
+
+### D3 — not done
+
+**This deliverable was not performed, and an earlier draft of this report wrongly called it
+"partial".** The correction is the most important one in this report, because the earlier wording
+claimed a gating rule had been cleared when it had not been applied at all.
+
+What was actually done is **B5 parametrization**: `test_github.py`'s 31 CLI smokes and
+`test_gitlab.py`'s 28 became three parametrized tables each. That is legitimate and explicitly
+sanctioned — the plan's out-of-scope § says to "parametrize the genuinely tabular cases in this
+slice … status-code tables" — and it is where 251 of the run's 385 removed lines come from. But it
+is **not** D3:
+
+| D3 requires | What happened |
+|---|---|
+| Subprocess coverage collapses to a **single per-script CLI-plumbing smoke** | 31 and 28 subprocess **executions** remain — each parametrized case still calls `run_script`, so only the *call sites* fell (31→3, 28→3), not the executions |
+| Every collapse **names the in-process test that now carries the contract** | **No in-process test is named**, and none could be: nothing was subsumed |
+
+So the assertion layer was not reduced; it was re-expressed more compactly. Case counts are
+preserved exactly (40→40, 31→31) and every assertion survives — see the verification findings — but
+the deliverable's own done-when ("each collapsed subprocess test is listed in the report beside the
+in-process test that subsumes it") has an empty list, which is the correct signal that D3 did not run.
+
+**The gating derivation D3 requires was performed and did not license any collapse.** A survey listed
+every `run_script` call site beside its module's in-process tests. The largest remaining populations
+— `tools-integration-ci/test_ci.py` (22), `automatic-review/test_review_completeness.py` (21),
+`test_structural_refusal.py` (8) — are router- and handler-behaviour tests driven through the
 subprocess boundary, not smokes duplicating a same-module in-process test. Collapsing them without
-that pairing would be deletion, which the plan forbids.
+pairing evidence would be deletion, which the plan forbids. **124 `run_script` call sites across the
+slice remain** (177 before), and the pairing evidence for them was not produced.
 
 ### D5 — partial
 
@@ -100,7 +138,7 @@ The 24 remaining are preamble shapes the AST transformer did not match (a script
 consumed by an inline spec, loaders nested inside a test function). They are listed by
 `plugin-doctor test-conventions` and are mechanical follow-up work.
 
-**The `parse_ns` half of D5 was not started.** Census: the slice carries **384** `Namespace(`
+**The `parse_ns` half of D5 was not started.** Census: the slice carries **391** `Namespace(`
 constructions; `parse_ns` is used **9** times across all of `test/plan-marshall/`. The plan asks for
 every hand-built namespace to be converted and every exception recorded with its script; neither was
 done, so there is no exception list to report. This is the largest single piece of unstarted work
@@ -126,41 +164,57 @@ what the plan estimated.
 
 All seven figures, each with the command that produced it.
 
-**1–2. Per-directory and slice-total line counts** — `wc -l` equivalent over the Expected surface,
-before = `git show origin/main:<path>`:
+**Population, stated once and used everywhere below:** all **106** `.py` files in the plan's
+Expected surface — the twelve directories, the four named root modules, **and** `_ci_wait_contract.py`,
+which the Expected surface explicitly lists. An earlier draft ran the line table over 105 files
+(omitting the helper) while the composition table used all 106, giving two populations for one slice;
+that is corrected, and every figure below is on the 106-file population.
 
-| Directory | Before | After | Delta | % |
-|---|---|---|---|---|
-| `automatic-review` | 6291 | 6290 | 1 | 0.0% |
-| `manage-ci-artifacts` | 812 | 796 | 16 | 2.0% |
-| `phase-5-execute` | 2067 | 2067 | 0 | 0.0% |
-| `phase-6-finalize` | 18371 | 18317 | 54 | 0.3% |
-| `tools-integration-ci` | 5857 | 5857 | 0 | 0.0% |
-| `workflow-integration-git` | 8200 | 8175 | 25 | 0.3% |
-| `workflow-integration-github` | 16398 | 16234 | 164 | 1.0% |
-| `workflow-integration-gitlab` | 3301 | 3188 | 113 | 3.4% |
-| `workflow-integration-sonar` | 1521 | 1519 | 2 | 0.1% |
-| `workflow-permission-web` | 615 | 615 | 0 | 0.0% |
-| `workflow-pr-doctor` | 891 | 891 | 0 | 0.0% |
-| `workflow-shared` | 134 | 134 | 0 | 0.0% |
-| (root-level modules) | 1688 | 1687 | 1 | 0.1% |
-| **SLICE TOTAL** | **66146** | **65761** | **385** | **0.58%** |
+**1–2. Per-directory and slice-total line counts** — line count per file, before =
+`git show origin/main:<path>`:
 
-The plan's HYPOTHESIS of ~62,200 lines re-derives to **66,146** — the lead was ~6% low.
+| Directory | Before | After | Delta |
+|---|---|---|---|
+| `automatic-review` | 6291 | 6290 | 1 |
+| `manage-ci-artifacts` | 812 | 796 | 16 |
+| `phase-5-execute` | 2067 | 2067 | 0 |
+| `phase-6-finalize` | 18371 | 18307 | 64 |
+| `tools-integration-ci` | 5857 | 5857 | 0 |
+| `workflow-integration-git` | 8200 | 8175 | 25 |
+| `workflow-integration-github` | 16398 | 16234 | 164 |
+| `workflow-integration-gitlab` | 3301 | 3189 | 112 |
+| `workflow-integration-sonar` | 1521 | 1519 | 2 |
+| `workflow-permission-web` | 615 | 615 | 0 |
+| `workflow-pr-doctor` | 891 | 891 | 0 |
+| `workflow-shared` | 134 | 134 | 0 |
+| (root modules + `_ci_wait_contract.py`) | 2158 | 2157 | 1 |
+| **SLICE TOTAL** | **66616** | **66231** | **385** |
+
+**Reduction: 0.578%.** The 25% floor on this population is **16,654** lines.
+
+The plan's HYPOTHESIS of ~62,200 lines re-derives to **66,616** — the lead was ~7% low.
 
 **3. Collected test count** — `pytest <slice> --collect-only -q`: **3038 → 3038**. No decrease.
 
-**4. Coverage** — `pytest <slice> --cov=<11 skill paths> --cov-report=term`, precise figure from
+**4. Coverage** — `pytest <the 16 slice targets> -o addopts="" -p no:randomly --cov-report=term`
+with one `--cov=` per exercised skill, the eleven being
+`marketplace/bundles/plan-marshall/skills/{automatic-review, manage-ci-artifacts, phase-5-execute,
+phase-6-finalize, tools-integration-ci, workflow-integration-git, workflow-integration-github,
+workflow-integration-gitlab, workflow-integration-sonar, workflow-permission-web,
+workflow-pr-doctor}` (`workflow-shared` has no matching skill directory). Precise figure from
 `coverage report --precision=4`: **77.8270% → 77.8270%**, with statements/missing/branch/partial
 identical at 8430 / 1760 / 3084 / 393. No decrease.
 
-**5. D1 line delta, stated separately:** **−159 lines**.
+**5. D1 line delta, stated separately:** **−40 lines** (per-commit `git diff --numstat`; see § D1).
 
-**6. D3 collapse list:** the two modules in the D3 table above. No other collapse performed.
+**6. D3 collapse list:** **empty — no collapse was performed** (§ D3). The list is empty because the
+deliverable did not run, not because it ran and found nothing to collapse. 124 `run_script` call
+sites remain across the slice.
 
 **7. `parse_ns` exception list:** **not produced** — the `parse_ns` conversion was not started
-(384 `Namespace(` sites remain). Reported as unavailable rather than as an empty list, because an
-empty list would falsely imply every call site converted cleanly.
+(**391** `Namespace(` sites remain, counted over the 106-file population). Reported as unavailable
+rather than as an empty list, because an empty list would falsely imply every call site converted
+cleanly.
 
 **Per-rule `test-conventions` counts** — invocation from
 `doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope", run
@@ -183,7 +237,7 @@ per-directory and summed:
 |---|---|---|
 | 1 | Collected test count does not decrease | **HOLDS** — 3038 → 3038 |
 | 2 | Coverage does not decrease | **HOLDS** — 77.8270% → 77.8270%, identical to the statement |
-| 3 | Line count drops ≥25% | **FAILS** — 0.58% (385 of 16,536 required); shortfall 16,151 lines |
+| 3 | Line count drops ≥25% | **FAILS** — 0.578% (385 of 16,654 required); shortfall 16,269 lines |
 
 ## What the measurement says about the 25% floor
 
@@ -200,12 +254,15 @@ The slice's line composition, measured by AST over all 106 files:
 | Code | 36,499 | 54.8% |
 | **Prose (docstring + comment)** | **18,279** | **27.4%** |
 
-The 25% floor is 16,536 lines. **Total prose is 18,279 lines.** So the floor is only reachable by
+The 25% floor is 16,654 lines. **Total prose is 18,279 lines.** So the floor is only reachable by
 deleting roughly 90% of every docstring and comment in the slice — or by removing code.
 
 The plan's problem statement asserts that "a large share of that text is history, not invariant".
-Re-derived, that share is small. The raw marker grep the plan specifies returns **175 lines** across
-57 files, and the doctor's precise citation rule returns **48**. Once those are removed, what remains
+Re-derived, that share is small. The plan's own marker grep, run case-sensitively exactly as the plan
+writes it (`once derived|used to |no longer|the fix |PR #[0-9]|lesson-20|this plan`) over the
+106-file population, returns **126 lines across 53 files**; the doctor's precise citation rule
+returns **48**. (An earlier draft reported 175/57 from a case-insensitive variant of the same
+pattern — a different measurement, corrected here to the one the plan specifies.) Once those are removed, what remains
 is overwhelmingly present-tense rationale explaining why an invariant is load-bearing — which B3
 explicitly says to **keep**, and which the plan's own D1 text says this slice "has a lot of … worth
 keeping".
@@ -223,6 +280,10 @@ layer, which the gating survey shows is mostly *not* duplicated), and D4 (splitt
 line-neutral to slightly positive). A revised floor for this slice should be set against code, not
 prose, and probably in the 5–10% range unless D2 proves unusually productive.
 
+The one measured data point on code-side yield supports that range: B5 parametrization of two
+genuinely tabular modules returned **251 lines**, which is 65% of everything this run removed, from
+2 of 106 files. That is the productive lever on this slice — not prose.
+
 ## Findings
 
 Recorded per instance.
@@ -231,7 +292,7 @@ Recorded per instance.
 |---|---|---|---|
 | 1 | Gating partition derivation | `test/pm-code-intelligence/` is claimed by no plan in `030`–`080` | **Reported, not claimed.** Operator dispositioned as handled elsewhere. README exclusion list is stale. |
 | 2 | Gating partition derivation | `test/test_shared_harness.py` is a fourth 020-owned exclusion the README's three-item list does not name | **Reported.** Same disposition. |
-| 3 | Measurement | The plan's ~62,200-line HYPOTHESIS re-derives to 66,146 (~6% low) | Recorded; all figures use the re-derived total. |
+| 3 | Measurement | The plan's ~62,200-line HYPOTHESIS re-derives to 66,616 (~7% low) | Recorded; all figures use the re-derived total on the 106-file population. |
 | 4 | Cold read | `test_same_comment_id_distinct_bots_not_collided` docstring stated mechanism, not consequence | **Fixed** (`115a5df`) |
 | 5 | Cold read | `test_second_fetch_dedupes_all_bot_kinds` docstring stated no consequence | **Fixed** (`115a5df`) |
 | 6 | Cold read | `test_fixture_green_success_resolves_to_success` said what a red test implies, not what breaks | **Fixed** (`115a5df`) |
@@ -243,6 +304,17 @@ Recorded per instance.
 | 12 | Build (pre-existing) | `github_ops` ↔ `_github_pr` circular import: collecting `phase-6-finalize` + `workflow-integration-github` together yields 20 collection errors | **Recorded, not fixed.** Reproduced identically on a clean `origin/main` worktree (same 20-file error set), so it is pre-existing and NOT introduced here. It is a `marketplace/bundles/**` defect, which the plan places out of scope. It does not affect `./pw verify`, which collects the whole tree in an order that resolves the import. |
 | 13 | Own process | The contract's Step 1 conditional skills were not loaded | **Reported** in § Skills loaded. |
 | 14 | Own process | An automated D5 rewrite initially placed a `from conftest import` below its first use and duplicated a name past a `# noqa` comment, breaking collection in 1 file | **Fixed before commit** — reverted, transformer corrected to check first-use position and strip trailing comments, re-applied, re-verified. |
+| 15 | Pre-PR verification | Report claimed D1's line delta was **−159**; the reproducible per-commit figure is **−40** | **Fixed** — corrected in § D1 and § D6. This is the figure the plan singles out as most needed, so the error mattered. |
+| 16 | Pre-PR verification | Report called D3 **partial** and claimed its gating rule was cleared; D3 was **not performed** — the parametrized cases each still spawn a subprocess, and no in-process test is named | **Fixed** — D3 reclassified **not done**, the work relabelled as B5 parametrization, and the empty collapse list explained. |
+| 17 | Pre-PR verification | Two populations were used for one slice — the line table over 105 files, the composition table over 106 (omitting `_ci_wait_contract.py`, which the Expected surface lists) | **Fixed** — one 106-file population declared once and used throughout; totals restated as 66,616 → 66,231, floor 16,654. |
+| 18 | Pre-PR verification | Two per-directory "after" cells were wrong and the column did not sum to its own stated total | **Fixed** — table re-derived; `phase-6-finalize` 18,307 and `workflow-integration-gitlab` 3,189. |
+| 19 | Pre-PR verification | 92 prose citations remain in shapes the doctor rule does not match, ~half in files this run edited | **Partly fixed** (`TASK-N` and the last lesson id cleared), **rest recorded** — see § D1 and § Residue. |
+| 20 | Pre-PR verification | Marker-grep figure 175/57 came from a case-insensitive variant of the plan's pattern | **Fixed** — restated as **126 lines across 53 files**, case-sensitive exactly as the plan writes it. |
+| 21 | Pre-PR verification | `Namespace(` count stated as 384; correct count on the declared population is 391 | **Fixed** throughout. |
+| 22 | Pre-PR verification | D6 requires each figure labelled with its producing command; the coverage row elided its eleven `--cov` targets | **Fixed** — all eleven skill paths named in § D6. |
+| 23 | Pre-PR verification | The Verification § requires the cold-read answers recorded **verbatim**; the report summarised them | **Fixed** — verbatim answers appended as § Appendix. |
+| 24 | Pre-PR verification | "Two tests named after a PR number" — one was named after a lesson | **Fixed** — both names now given. |
+| 25 | Pre-PR verification | `fixtures/ci-wait/README.md` still carries a plan slug, a lesson id, `TASK-002`/`TASK-004`, a Q-Gate finding id, and an "Authored 2026-05-24" line (also a "No timestamps" breach) | **Recorded, not fixed** — outside the remaining budget of this run; listed in § Residue. |
 
 ## Reviewer participation
 
@@ -316,7 +388,7 @@ this report is the last pre-merge commit. Condition 1 is not — `verify / verif
 `in_progress` at the gate, so `mergeable_state` read `blocked`. The contract permits arming anyway
 when a run cannot self-wake, on the ground that the merge queue is the real enforcer. **This run does
 not take that permission**, for a reason the contract does not cover: arming is a one-way door, and
-the question here is not whether the change is *safe* to land but whether a plan that hit **0.58% of
+the question here is not whether the change is *safe* to land but whether a plan that hit **0.578% of
 a 25% target** should land at all, or be re-scoped first. That is an operator decision about scope,
 not a CI-readiness decision, and it is not this run's to make unilaterally. The PR is left open and
 green-pending with the shortfall disclosed.
@@ -356,12 +428,83 @@ lands.
 |---|---|
 | D2 not started | A follow-up run on this slice, or a re-scoped `040`. |
 | D4 not started — 55 modules still over the 400-line budget | Same; D4 is correctly last, and D1/D2 did not shrink modules enough to reduce its scope. |
-| D5 `parse_ns` half not started — 384 `Namespace(` sites, 9 `parse_ns` uses tree-wide | Highest-value mechanical follow-up; also produces the exception list the plan wants for widening `parse_ns`. |
+| D5 `parse_ns` half not started — 391 `Namespace(` sites, 9 `parse_ns` uses tree-wide | Highest-value mechanical follow-up; also produces the exception list the plan wants for widening `parse_ns`. |
 | D5 preamble remainder — 24 findings in shapes the transformer did not match | Mechanical; the doctor lists every site. |
-| D3 — 117 subprocess tests surveyed, not paired | Needs per-module in-process pairing before any further collapse. |
+| **D3 not performed at all** — 124 `run_script` call sites remain, none paired | The deliverable's gating derivation ran and licensed nothing. Needs per-module in-process pairing before any collapse. |
+| 92 prose citations remain (46 `deliverable N`, 25 bare `#NNNN`, 21 `this plan`) | Shapes the doctor rule does not match. Either widen the rule or finish the sweep by hand; ~half are in files this run already edited. |
+| `fixtures/ci-wait/README.md` still carries a plan slug, lesson id, `TASK-002`/`TASK-004`, a Q-Gate id, and an `Authored 2026-05-24` line | The last is also a CLAUDE.md "No timestamps" breach. |
+| `test_gitlab_ops_mr_merge.py` subprocess trip-wire guards only `subprocess.run` | Widening it to `Popen`/`check_call` changes test behaviour, so it is a proposal, not a silent edit. |
 | Finding 11 — three near-identical CI-aggregation tests | Redundancy candidate pending pairing evidence. |
 | Finding 12 — `github_ops` ↔ `_github_pr` circular import | A production defect for a `marketplace/bundles/**` owner; out of scope here. |
 | Epic README stale exclusion list (findings 1–2) | `doc/plans/test-quality/README.md`, owned by the epic. |
 | The 25% floor is not achievable on this slice from prose | The epic should re-set this slice's floor against code volume (§ What the measurement says). |
-| Merge decision | PR #1259 is open, disclosed, and NOT armed. Whether a 0.58%-of-target run should land, or the plan be re-scoped first, is the operator call this run deliberately did not make. |
+| Merge decision | PR #1259 is open, disclosed, and NOT armed. Whether a 0.578%-of-target run should land, or the plan be re-scoped first, is the operator call this run deliberately did not make. |
 | Two reviewers rate-limited | `coderabbitai` reopens in ~57 min; `sourcery-ai` on the weekly reset. A re-request on either would raise coverage above 1 of 3. |
+
+## Appendix — cold-read answers, verbatim
+
+The plan's Verification § requires the cold-read answers recorded verbatim. Two rounds ran: the
+first over ten named tests in five modules, the second over the four the first round failed, after
+the restorations in `115a5df`. Both sub-agents were given the modules and nothing else — not the
+plan, not the originals.
+
+### Round 1 — ten tests
+
+**1. `test_github_pr.py::test_a_deduped_comment_is_still_credited_as_participating` — PASS**
+> **(a)** Participation credit is computed from the raw comment scan (unioned with the currency ledger for `participation_requires_update` bots) *before and independently of* the storage dedup. On a re-fetch at an unchanged HEAD where every comment is deduped (`count_stored == 0`, `count_skipped_duplicate == len(comments)`), `participated_bots` must be byte-identical to the first fetch — and this must hold for both credit shapes (presence-credited bots and currency-credited `requires_update` bots).
+> **(b)** Stated outright: "the pre-merge barrier feeds `participated_bots` to the participation predicate, so coupling it to the dedup would read a proven reviewer as `absent` on any re-fetch." The body comment sharpens it: "a storage-hygiene drop can no longer flip a merge verdict." A maintainer knows exactly what merge-gate behaviour is at stake. — *the best docstring of the ten.*
+
+**2. `test_github_pr.py::test_same_comment_id_distinct_bots_not_collided` — PARTIAL**
+> **(a)** The dedup key is the composite `(bot_kind, comment_id)`, not `comment_id` alone. Two different bots publishing the same numeric id are stored as two findings; the second is not counted as a duplicate, and both coexist in the store under the shared id.
+> **(b)** **CANNOT ANSWER (b)** from the prose. … That second sentence looks like a "why" but is not one — it restates the mechanism and then restates the assertion. "Stored instead of skipped as a duplicate" is the *observable*, not the *consequence*. What actually breaks (a genuine second-bot review comment is silently swallowed, never reaches triage, and the pre-merge barrier never sees it) is never said. … Second gap: nothing justifies the *premise*. Why would two bots ever reuse a numeric comment_id?
+
+**3. `test_github_pr.py::test_second_fetch_dedupes_all_bot_kinds` — PARTIAL**
+> **(a)** Re-fetch idempotence across *every* comment shape: thread-bearing (coderabbit, pr-agent) and thread_id-less (sourcery, human) comments alike dedupe on `(bot_kind, comment_id)`. Second fetch stores zero, counts all as duplicates, leaves the store size unchanged, and does not raise a `producer-mismatch` Q-Gate.
+> **(b)** Weak. The docstring's only forward-looking clause is "the deduped comments — legitimate non-stores — do not trip the producer-mismatch Q-Gate," which is a *second contract clause*, not a consequence. It never says why re-fetch idempotence matters (unbounded finding accretion across barrier re-fetches; a pending queue that can never drain).
+
+**4. `test_ci_complete_precondition.py::test_fixture_dir_present` — PASS**
+> **(a)** The `.toon` fixture set on disk equals the pinned expected set exactly — both directions, no missing files and no extras (the assert diffs both ways).
+> **(b)** Stated: "a fixture added without updating this list, or removed while still referenced, fails here rather than silently narrowing what the fixture-driven tests below cover." Silent coverage loss is a real, specific harm, and it explains why the check is bidirectional rather than a mere existence check.
+
+**5. `test_ci_complete_precondition.py::test_fixture_green_success_resolves_to_success` — PARTIAL**
+> **(a)** A captured all-green `ci wait` TOON envelope, parsed by the real `parse_toon` and fed through `resolve()`, classifies as `wait_succeeded` / `ci_final_status: success`.
+> **(b)** Only half-answered. … That says what a red test *implies* (diagnostic value), not what breaks in production if the contract is violated. The operational consequence — green CI misread as failed, blocking finalize on every passing PR — is never written down.
+
+**6. `test_ci_complete_precondition.py::test_fixture_check_name_special_chars_preserves_all_rows` — PASS**
+> **(a)** `parse_toon` preserves all five rows of a `checks[]` inline table when check names contain special characters — specifically a colon (`lint:strict`) and an `=` (`coverage = 95%`) — and preserves those names verbatim. This is asserted at the parser level, deliberately bypassing `resolve()`.
+> **(b)** Answered concretely, with mechanism: a key/value detection heuristic that ignores tabs reads `lint:strict\tcompleted\t…` as a new key/value pair …, breaks out of the array, and **silently truncates downstream rows**. "Silently" is doing real work — it names why this needs a test rather than being caught in the field.
+
+**7. `test_pre_merge_barrier.py::test_absent_required_bot_blocks_merge_though_no_comment_is_pending` — PASS**
+> **(a)** The participation predicate is independent of, and can veto, the pending-comment predicate. With zero pending `pr-comment` findings, `check_completeness` for a required bot that published nothing returns `participation_complete: False`, `unproven_bots: ['pr-agent']`, `bot_states['pr-agent'] == 'absent'`, and `proves == 'participation_only'`.
+> **(b)** Stated clearly: "on the pending count alone the barrier would proceed to merge… its silence is indistinguishable from a clean review to any count of comments." The failure is unambiguous — a PR merges having never been reviewed by the bot that was required to review it.
+
+**8. `test_pre_merge_barrier.py::test_stale_override_does_not_satisfy_barrier_after_head_advances` — PASS**
+> **(a)** Merge authorizations are HEAD-bound. A `barrier-ask-override` granted at HEAD A yields, when checked at HEAD B: `any_authorized: False`, `any_admissible: False`, `barrier-ask-override` in `lapsed_kinds`, `authorized_kinds: []`. A re-grant at HEAD B restores authorized + admissible with an empty `lapsed_kinds` — the hatch is bound, not removed.
+> **(b)** Answered. The docstring frames HEAD B as "carrying production commits the ruling never covered," and the second half explains the counter-risk it deliberately avoids ("the operator is never locked out, only re-asked about a tree they have actually seen").
+
+**9. `test_workflow_integration_github_ci_aggregation.py::test_three_successes_one_skipped_is_success` — PASS**
+> **(a)** `_derive_overall_status([SUCCESS, SUCCESS, SUCCESS, SKIPPED])` returns `'success'` with empty `failing` and `wait` lists. `mixed` is not a reachable outcome.
+> **(b)** Best consequence statement in the set: "forcing the precondition resolver to report `ci_failure` on every green PR with at least one skipped check." Precise, quantified blast radius, names the downstream consumer.
+> *Flagged:* this test is not visibly distinct from `test_derive_success_plus_skipped_returns_success` and `test_derive_success_plus_skipped_plus_neutral_returns_success`, which pin the same partition rule with fewer rows.
+
+**10. `test_gitlab_ops_mr_merge.py::test_mr_merge_delete_branch_does_not_touch_local_git` — PARTIAL**
+> **(b)** Half-answered. The mechanism is named … but the docstring never says what that actually costs … "Must not emit it" is asserted, never justified.
+> *Two further defects:* the docstring says "**both halves**" and then enumerates **three** items; and the test sits under the section header `# Worktree error case (symmetric with the GitHub side)` … but the body contains **no worktree and no error case**.
+
+### Round 2 — the four restored tests, re-read after `115a5df`
+
+All four **PASS**.
+
+**1. `test_same_comment_id_distinct_bots_not_collided`**
+> **(b)** Answerable. Comment ids are provider-assigned per comment surface and are not unique across bots, so a `comment_id`-only key silently swallows the second bot's comment as a duplicate — "a genuine review finding that never reaches triage, and never reaches the pre-merge barrier that reads the store." That is a real outcome: a reviewer's finding is lost, and the PR clears the pre-merge barrier without it ever being seen.
+
+**2. `test_second_fetch_dedupes_all_bot_kinds`**
+> **(b)** Answerable, and specific: without the dedup, "every barrier re-fetch re-stores the same comments as fresh `pending` findings, so the queue accretes duplicates faster than triage can drain it and the completeness gate never closes." Two named downstream failures … Not a mechanism restatement.
+
+**3. `test_fixture_green_success_resolves_to_success`**
+> **(b)** Answerable: "a green CI run read as a failure blocks finalize on every passing PR, so the precondition resolver reports `ci_failure` for a tree that is in fact ready to merge." That names the user-visible damage — finalize is blocked on every passing PR, not just an edge case.
+
+**4. `test_mr_merge_delete_branch_does_not_touch_local_git`**
+> **(b)** Answerable, and the strongest of the four. … "it mutates whatever tree the caller happens to be standing in, and in an isolated worktree it targets a branch that is still checked out, so the delete fails and the merge is reported against a tree the caller never asked to touch."
+> **Section-header accuracy: ACCURATE.** … **Stated count vs. listed count: MATCHES.**
+> *Real defect found:* part (2) is stated broader than it is enforced — the trip-wire patches only `subprocess.run`, so `Popen` / `check_call` / `os.system` are unguarded. *(Disposition: the docstring claim was narrowed to the seam actually guarded; widening the trip-wire is left as a proposal, since it changes test behaviour.)*
