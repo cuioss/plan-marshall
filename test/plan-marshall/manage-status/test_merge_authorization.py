@@ -211,9 +211,9 @@ def test_regrant_at_new_head_reauthorizes(plan_context):
 def test_check_at_the_granting_head_is_valid(plan_context):
     """An authorization checked at the HEAD it was granted against is valid.
 
-    The negative control for the lapse rule: without this, a check that returned
-    ``lapsed`` unconditionally would satisfy the lapse test while re-prompting
-    the operator on every ordinary merge.
+    The matched positive control for the lapse rule: without this, a check that
+    returned ``lapsed`` unconditionally would satisfy the lapse test while
+    re-prompting the operator on every ordinary merge.
     """
     plan_id = 'merge-auth-same-head'
     _make_plan(plan_id)

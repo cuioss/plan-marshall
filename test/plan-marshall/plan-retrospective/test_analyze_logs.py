@@ -90,14 +90,14 @@ class TestArchivedMode:
 
 
 class TestRegression:
-    """Regression tests that lock in the production-shape bug fixes.
+    """Lock in the production-shape reading contracts.
 
-    The parent plan was triggered by four concrete defects: among them,
-    ``analyze-logs`` was reading the wrong filename so ``errors_script``
-    came back zero even when the script-execution log had ERROR entries,
-    and ``read_log`` silently returned [] for missing log files which hid
-    log-source drift from the retrospective. These tests fail whenever
-    either regression reappears.
+    Two of them carry the whole class: ``analyze-logs`` MUST read the
+    script-execution log under its real filename, or ``errors_script`` comes
+    back zero even when that log holds ERROR entries; and ``read_log`` MUST
+    distinguish a missing log file from an empty one, or log-source drift is
+    invisible to the retrospective. The rest pin the tag, level and artifact
+    readers those two feed.
     """
 
     def test_errors_script_counts_three_error_entries(self, tmp_path, monkeypatch):
@@ -276,7 +276,7 @@ class TestRegression:
 
 
 class TestPhase5LoggingGapExtractors:
-    """Pin down the four phase-5-execute fact extractors.
+    """Pin down the three phase-5-execute fact extractors.
 
     The extractors are pure counting/pairing — never judging. These tests
     therefore assert the shape of the returned dicts on (a) clean fixtures
@@ -304,13 +304,20 @@ class TestPhase5LoggingGapExtractors:
         assert result['unpaired_outcome'] == []
 
     def test_pair_outcome_emissions_regression_missing_outcome(self):
-        """Regression fixture: TASK-002 closed but [OUTCOME] line lost on re-dispatch."""
+        """A task closed with no [OUTCOME] line lands in ``unpaired_completed``.
+
+        The pairing is pure counting — it never judges. The residue is what
+        matters downstream: ``unpaired_completed`` is the evidence that a
+        dispatch closed a task without emitting its outcome, so an inflated
+        ``paired`` count would report clean logging discipline over a phase that
+        lost records.
+        """
         lines = [
             '[2026-05-08T14:00:00Z] [INFO] [abc] [MANAGE-TASKS] Completed TASK-001',
             '[2026-05-08T14:00:01Z] [INFO] [def] [OUTCOME] (plan-marshall:phase-5-execute) '
             'Completed TASK-001: Title (3 steps)',
             '[2026-05-08T14:01:00Z] [INFO] [ghi] [MANAGE-TASKS] Completed TASK-002',
-            # No [OUTCOME] line for TASK-002 — the gap pattern.
+            # TASK-002 closes with no [OUTCOME] line — the gap under test.
         ]
         result = _analyze_logs.pair_outcome_emissions(lines)
         assert result['paired'] == 1
@@ -475,7 +482,13 @@ class TestPhase5LoggingGapExtractors:
         assert result['tasks_with_diff_no_outcome'] == []
 
     def test_detect_outcome_for_diffed_tasks_regression(self, tmp_path):
-        """Done task with no [OUTCOME] line — the logging gap."""
+        """A ``done`` task with no [OUTCOME] line is flagged; a pending one is not.
+
+        The status filter is the load-bearing half. A task that was never closed
+        has no outcome to emit, so flagging it would report a logging gap for
+        work that simply has not finished — noise that makes the real gaps
+        unreadable.
+        """
         plan_dir = tmp_path / 'plans' / 'gap'
         (plan_dir / 'tasks').mkdir(parents=True)
         (plan_dir / 'tasks' / 'TASK-001.json').write_text(
@@ -514,10 +527,11 @@ class TestPhase5LoggingGapExtractors:
     def test_read_dispatch_boundaries_per_phase_present(self, tmp_path):
         """Glob discovers every per-phase artifact and keys the result by phase name.
 
-        The reader covers phase-4-plan and phase-6-finalize boundary
-        artifacts as well as phase-5. The
-        per-file shape (``present``, ``rows``, ``unknown_count``,
-        ``clean_exit_queue_empty_count``) is unchanged.
+        The reader globs the artifacts rather than reading a single phase-5
+        path, so phase-4-plan and phase-6-finalize dispatches are accounted for
+        too; a single-path reader reports those phases as having no boundaries
+        rather than as unmeasured. The per-file shape (``present``, ``rows``,
+        ``unknown_count``, ``clean_exit_queue_empty_count``) is unchanged.
         """
         plan_dir = tmp_path / 'plans' / 'with-boundary'
         (plan_dir / 'work').mkdir(parents=True)
@@ -531,7 +545,7 @@ class TestPhase5LoggingGapExtractors:
             '2026-05-08T14:02:00Z,clean_exit_queue_empty,300,6,3000\n',
             encoding='utf-8',
         )
-        # Phase-4-plan artifact — new dispatch surface in this lesson.
+        # Phase-4-plan artifact — a non-phase-5 dispatch surface.
         (plan_dir / 'work' / 'metrics-dispatch-boundaries-4-plan.toon').write_text(
             'plan_id: with-boundary\n'
             'phase: 4-plan\n'
@@ -583,9 +597,9 @@ class TestPhase5LoggingGapExtractors:
         """End-to-end: cmd_run emits phase5_logging_gaps (three extractors) and
         a top-level dispatch_boundaries per-phase dict.
 
-        ``dispatch_boundaries`` is a top-level fragment rather than a sub-key
-        of ``phase5_logging_gaps``, so the
-        compile-report renderer can emit a dedicated section keyed by phase.
+        ``dispatch_boundaries`` is a top-level fragment rather than a sub-key of
+        ``phase5_logging_gaps``, so the compile-report renderer can emit a
+        dedicated section keyed by phase.
         """
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
 
@@ -923,10 +937,10 @@ class TestDispatchBoundaryContextLoadColumns:
         """The `unmeasured` literal omits the key and names the column.
 
         This is the distinction the token exists for: contrast with
-        ``test_measured_zero_context_load_stays_zero`` above, whose row carries
-        `0` cells and yields `input_tokens == 0`. Collapsing the two would make
-        "the caller measured nothing" indistinguishable from "the dispatch
-        loaded nothing".
+        ``test_nonzero_fingerprint_keeps_measured_zeros_measured`` above, whose
+        row carries genuinely measured `0` cells and yields `input_tokens == 0`.
+        Collapsing the two would make "the caller measured nothing"
+        indistinguishable from "the dispatch loaded nothing".
         """
         plan_dir = tmp_path / 'plans' / 'ctx-unmeasured'
         plan_dir.mkdir(parents=True)

@@ -4,7 +4,10 @@
 
 phase-5-execute loses log coverage on agent-initiated re-dispatch without a
 per-dispatch audit trail. That trail is captured by this subcommand.
-These six tests pin the contract:
+
+A leading block pins the boundary MEASURE: the reader returns its row count
+beside its token sum, because a sum cannot state its own coverage. The lettered
+sections below pin the subcommand's own contract:
 
   (a) first invocation creates the artifact file with one row,
   (b) subsequent invocations append rows in order with monotonic timestamps,
@@ -72,8 +75,8 @@ def _seed_status_json(plan_dir: Path) -> None:
     """Seed status.json so cmd_record_dispatch_boundary's require_plan_exists guard accepts the plan.
 
     The `PlanContext` helper creates the plan directory but does NOT write
-    status.json — the per-plan sentinel that `require_plan_exists` checks for
-    (lesson 2026-05-15-X: script-side guard against orphan-plan-dir creation).
+    status.json — the per-plan sentinel that `require_plan_exists` checks for,
+    the script-side guard against orphan-plan-dir creation.
     Tests that exercise the happy path of `cmd_record_dispatch_boundary` must
     call this helper after entering the context.
     """
