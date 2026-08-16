@@ -383,7 +383,19 @@ token usage is inside the same session population.
 | 9 This check | done — recorded here |
 | 9 What have we learned | done — below |
 
-**Why auto-merge is not armed.** Conditions 2 and 3 are met: every PR comment is dispositioned, and
+**Merge decision — operator directed landing.** Asked whether the goals could sensibly be shifted
+rather than the PR held, the operator's instruction was to re-scope if sensible and otherwise land
+now. A re-scope **is** well-founded on this run's evidence (the floor belongs against code, not
+prose — § "What the measurement says"), but writing it is out of this run's reach: the lane forbids
+writing outside this plan's own directory, so neither a sibling plan's floor nor a new follow-up plan
+may be authored here. The deferral record this run *can* own is § Residue, which itemises every
+unstarted deliverable. Holding the PR therefore buys nothing, and auto-merge was armed on that
+instruction.
+
+The paragraph below records why the run had *declined* to arm before being asked, and is kept so the
+reversal is visible rather than silent.
+
+**Why auto-merge was not armed before that instruction.** Conditions 2 and 3 are met: every PR comment is dispositioned, and
 this report is the last pre-merge commit. Condition 1 is not — `verify / verify` was still
 `in_progress` at the gate, so `mergeable_state` read `blocked`. The contract permits arming anyway
 when a run cannot self-wake, on the ground that the merge queue is the real enforcer. **This run does
