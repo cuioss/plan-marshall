@@ -3,7 +3,7 @@
 **Date (UTC):** 2026-08-16 **Branch:** `claude/test-quality-plan-execution-evap45` **PR:** _(see § PR)_ **Outcome:** partial
 
 ⛔ **The line-count floor is NOT met, and the plan's Verification section says to report the
-shortfall and stop.** The slice fell from 79,763 to 79,284 lines — **−479 lines, −0.6%**, against a
+shortfall and stop.** The slice fell from 79,763 to 79,304 lines — **−459 lines, −0.6%**, against a
 stated floor of **−20%**. The two guards the floor is subordinate to both hold exactly (collected
 count unchanged, coverage unchanged), so nothing was traded away to get here; the shortfall is
 entirely unfinished scope, not a quality compromise. D4 — the deliverable that would have produced
@@ -154,11 +154,11 @@ plan/deliverable ids — plus a few narration phrases the rule does not match at
 fix", "generalised the prior", "is now", "new subcommand"). Each docstring's rationale was kept and
 re-stated in the present tense.
 
-`test-docstring-historical-prose` over the slice: **66 → 25**. Of those 41 cleared, **one** was
-cleared by D1's module-docstring rewrite and **40** by this deliverable; the file count is from
-`git show --stat 984c257`.
+`test-docstring-historical-prose` over the slice: **66 → 24**. Of those 42 cleared, **one** was
+cleared by D1's module-docstring rewrite, **40** by this deliverable's own commit (`984c257`, 22
+files per `git show --stat`), and **one** by the cold-read repair commit (`19c7a69`).
 
-**The done-when says "zero findings", and zero is not reachable without deleting contract.** The 25
+**The done-when says "zero findings", and zero is not reachable without deleting contract.** The 24
 that remain were each read and deliberately kept. Every one is a lesson-id- or `TASK`-shaped string
 that **is the test's data**, not a citation of history:
 
@@ -172,7 +172,7 @@ that **is the test's data**, not a citation of history:
 
 **Finding (recorded, not fixed):** `plugin-doctor`'s `test-docstring-historical-prose` rule cannot
 separate a *citation* of a lesson/task id from a *datum* of the same shape. Its `lesson_id` and
-`plan_deliverable_id` kinds match on shape alone. Over this slice that is a **25/25 false-positive
+`plan_deliverable_id` kinds match on shape alone. Over this slice that is a **24/24 false-positive
 rate on the residue** — every finding left is a false positive. The rule lives under
 `marketplace/bundles/**`, which this plan may not edit, so it is recorded here per the plan's
 "records it; does not fix it" rule. A plan that takes the rule up should consider whether a match
@@ -188,7 +188,7 @@ Slice = the plan's Expected surface: ten directories plus three named root modul
 
 | Measure | Before | After | Δ | Command |
 |---|---|---|---|---|
-| Slice lines | 79,763 | 79,284 | **−479 (−0.6%)** | `wc -l` over the Expected-surface `test_*.py` set |
+| Slice lines | 79,763 | 79,304 | **−459 (−0.58%)** | `wc -l` over the Expected-surface `test_*.py` set |
 | Slice modules | 128 | 176 | +48 | same |
 | Modules over 400-line budget | 60 | 59 | −1 | same, `$1>400` |
 | Collected items, slice | 3,707 | **3,707** | **0** | `pytest <slice> --collect-only -q -o addopts=""` |
@@ -202,14 +202,14 @@ per-directory and aggregated):
 
 | Rule | Before | After |
 |---|---|---|
-| `test-docstring-historical-prose` | 66 | **25** |
+| `test-docstring-historical-prose` | 66 | **24** |
 | `test-module-line-budget` | 60 | **59** |
 | `test-module-preamble-boilerplate` | 40 | 40 |
 | `unique-fixture-basenames` | 1 | **0** |
 | `identifier-validator-corpus` | 0 | 0 |
 | `subprocess-pythonpath` | 0 | 0 |
 | `test-helper-module-misnamed` | 0 | 0 |
-| **total** | **167** | **124** |
+| **total** | **167** | **123** |
 
 `test-module-preamble-boilerplate` is unchanged at 40, and one of those 40 moved rather than cleared:
 `test_audit_checks.py`'s hand-rolled `spec_from_file_location` now lives in `_audit_fixtures.py`. It
@@ -298,7 +298,7 @@ Recorded per instance.
 | 10 | D2 `parse_ns` conversion | `duration_ms`/`tool_uses` transposed between two per-module builders | **Fixed** — shared builders keyword-only |
 | 11 | D2 `parse_ns` conversion | 4 handler-validation tests cannot use `parse_ns` (parser rejects the value first) | **Accepted as exception** — documented `raw_ns` hatch; a new exception class beyond what `020` documents |
 | 12 | Build gate (`test-compile`) | 3 × `no-any-return` from `parse_ns` resolving as `Any` | **Fixed** (`3e217ae`) |
-| 13 | D5 prose pass | `test-docstring-historical-prose` cannot separate a lesson/task-id **citation** from a **datum** of the same shape; 25/25 residual findings are false positives | **Recorded, not fixed** — rule lives in `marketplace/bundles/**`, out of this plan's scope |
+| 13 | D5 prose pass | `test-docstring-historical-prose` cannot separate a lesson/task-id **citation** from a **datum** of the same shape; 24/24 residual findings are false positives | **Recorded, not fixed** — rule lives in `marketplace/bundles/**`, out of this plan's scope |
 | 14 | D5 self-review | A rewrite in `test_manage_tasks_loop_exit_guard.py` left a dangling sentence | **Fixed** before commit |
 | 15 | D5 self-review | Residual "is now" / "new subcommand" narration survived the first pass in 2 modules | **Fixed** before commit |
 | 16 | D5 cold read | Citation strip left 5 sentences un-re-flowed, breaking at the excision point | **Fixed** (`19c7a69`) |
