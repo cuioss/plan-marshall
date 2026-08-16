@@ -122,10 +122,17 @@ is recorded because five sibling plans are about to make the same conversion.
 
 `git diff --name-only origin/main...HEAD -- '*.py'` → **58 files**. Python changed, so the gate ran.
 
-`UV_HTTP_TIMEOUT=600 ./pw verify` → **`=== verify: SUCCESS ===`**, `20275 passed, 14 skipped in
-418.05s`, with the quality-gate coverage line reporting all six dimensions clean (mypy production 408
-files, ruff, SPDX, plugin-doctor marketplace-wide, mypy test 760 files, whole-tree pytest). Working
-tree clean afterwards — no `uv.lock` churn reached a commit.
+`UV_HTTP_TIMEOUT=600 ./pw verify`, run against the **final** tree (`65da950`), not an intermediate
+one → **`=== verify: SUCCESS ===`**, `20279 passed, 14 skipped in 368.06s`, with the quality-gate
+coverage line reporting all six dimensions clean (mypy production 408 files, ruff, SPDX,
+plugin-doctor marketplace-wide, mypy test 760 files, whole-tree pytest). Working tree clean afterwards
+— no `uv.lock` churn reached a commit.
+
+**One intermediate run went red, and on this report rather than on the code.**
+`test_lane_refactor_cleanup_sweep.py` sweeps `doc/` for retired tokens, and an earlier revision of the
+findings table below named a test file whose *filename* contains one. Recorded as finding 8: a run
+report lives inside the scanned tree and is subject to the same guards as the documentation it
+describes.
 
 ## Measured deltas (D6)
 
@@ -325,12 +332,89 @@ _pending PR_
 
 ## Contract check (Step 9)
 
-_pending_
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **Done** | Named in § Skills loaded, with the route used for each. |
+| 2 Branch | **Done** | `claude/config-manifest-test-reduction-0eod0y` — **harness-assigned, kept as-is**, on `origin` before the first edit (`git ls-remote` was empty; pushed as the first action). |
+| 3 Plan directory | **Done** | `doc/plans/test-quality/030-config-and-manifest-test-reduction/plan.md`, moved by `git mv`, numeric prefix preserved, opening first-instruction block verified intact after the move. |
+| 4 Implement | **Done** | 6 test commits, each carrying the `Co-Authored-By` trailer and no "Generated with Claude Code" footer. |
+| 4 Per-commit gate | **Done** | Every commit touching `*.py` was preceded by `ruff check` clean plus a green pytest run over the affected directories; the direct `./pw` path emits no TOON log, so cleanliness was read from the tools' own output. |
+| 4 Pushed | **Done** | Pushed after every commit; `git status -sb` reports no `ahead`. |
+| 5 Build gate | **Done** | Git-derived verdict (58 `*.py` files) and the `./pw verify` result recorded in § Build gate, re-run against the final tree. |
+| 6 Verification sub-agent | **Done** | Two rounds dispatched, plus the plan's separate D5 cold-read dispatch. All findings and dispositions in § Findings. |
+| 7 PR cycle | see § Reviewer participation | |
+| 8 Merge gate | see § Reviewer participation | |
+| 8 Bridge | **Done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory; the only files touched there are this plan's `plan.md` (rename) and `report-01.md`. |
+| 9 This check | **Done** | This table. |
+| 9 What have we learned | **Done** | Below. |
+
+**GitHub access path:** the GitHub MCP server (the cloud path). **Branch form:** harness-assigned.
+A cloud run neither performs nor owes a `/sync-plugin-cache`, and this run edited no
+`marketplace/bundles/**` file in any case.
+
+**Staging discipline:** every commit staged explicit paths (`git add -A test/`, `git add -A doc/`) —
+never a bare `git add -A`. This caught real churn once: a full-slice run made while 173 tests were
+failing left `.plan/marshal.json` rewritten, and the scoped staging kept it out of the commit
+(finding 6).
 
 ## What have we learned (Step 9)
 
-_pending_
+**One contract change is proposed, and this run produced the evidence for it.**
+
+§ Step 6 tells the run to sweep "beyond the diff" for statements a change made false, and — after an
+earlier run paid for it — to treat *the previous round's own fixes* as a first-class surface. Both
+rounds here obeyed that and still shipped a **false statement about production code** into a docstring
+(W1: a fail-closed provisioning whitelist that does not govern the knobs in question, with the
+accept/reject direction inverted). Round 2 caught it only because its brief explicitly said "verify
+this claim against the actual provisioning code, and say plainly if it cannot be verified".
+
+The gap is specific. The contract's sweep is oriented toward text the change made **stale** — a value
+that moved, a mechanism that was renamed. It has no instruction covering text the change **invents**:
+a rationale written to explain a fix, asserting a mechanism the author did not read. Stale text was at
+least true once; invented text never was, and no gate in the lane can see it — not `./pw verify`, not
+plugin-doctor, not a green suite.
+
+**Proposed edit** — add to § Step 6, beside the existing "sweep the previous round's fixes" paragraph:
+
+> **A rationale you *wrote* is a claim about code you may not have read.** The beyond-diff sweep asks
+> what your change made false. This asks the other question: of the prose this round *added*, which
+> sentences assert a mechanism — "rejected by the whitelist", "these can disagree", "`''` would
+> satisfy this comparison" — rather than restating the assertion beside them? For each, name the file
+> and symbol that makes it true and confirm it there, or delete the clause. A docstring that explains
+> *why* is worth more than one that repeats *what*, which is exactly why an unverified one is worse
+> than none: it is the sentence a later reader will trust instead of checking.
+
+**This has not been shown to the operator, and is not self-approved.** Per § Step 9 it must be
+presented for approval and, if accepted, shipped as its own `chore/` PR touching only the skill —
+never folded into this plan's diff.
+
+**No change is proposed to the plan-authoring side**, though this run refuted one of its claim-labelled
+HYPOTHESES by measurement (see § Verification verdict): that is the claim-label mechanism working as
+designed, not a contract defect.
 
 ## Residue
 
-_pending_
+**Ordered by what the next run should pick up first.**
+
+1. **D2 — not started.** 39 modules remain over the 400-line budget, led by
+   `test_manage_execution_manifest_compose.py` (5,349) and `test_config_defaults.py` (~3,700). The plan
+   sequences D2 after D1 deliberately, and D1 did not complete.
+2. **D3 — not started.** The `monkeypatch.setattr`:`@pytest.fixture` ratio is untouched at **19.8:1**
+   (257:13). No `parse_ns` call site was evaluated, so **the `parse_ns` exception list is empty by
+   non-attempt, not by finding none** — it tells the operator nothing about whether `parse_ns` needs
+   widening, and a later run must not read it as a clean result.
+3. **D1 — ~100 families remain**, including `test_decision_rules.py`, which the plan names explicitly
+   and which received no table. `test_cmd_quality_phases.py` (~366 collapsible lines),
+   `test_cmd_skill_domains.py` (~285) and `test_manage_config_cli.py` (~239) are the next largest.
+4. **D4 — 22 sites in 15 files.** The shapes left are the ones no single transformer handled: loaders
+   that also load a *local* fixture module (not a marketplace script, so `load_script_module` does not
+   apply), and `get_script_path(...).parent` idioms. Each needs reading, not sweeping.
+5. **The line floor.** 2.56% against 30%. § Verification verdict carries the measurement that refutes
+   the floor's premise and the recommendation to re-derive it — for `040`–`080` as well as this plan.
+6. **Two defects recorded, not fixed** (both out of this plan's scope): the plugin-doctor
+   `test-docstring-historical-prose` false positive on `TASK-001` (finding 5), and the
+   `subprocess-pythonpath` pair in `marshall-steward/test_steward_determine_mode.py` (untouched by this
+   diff, and the reason that directory reports `status: fail`).
+7. **A promotion proposal for plan `020`.** No helper was added to a `_{domain}_fixtures.py` this run,
+   so there is nothing to promote. Recorded so the absence is legible as a non-event rather than an
+   omission.
