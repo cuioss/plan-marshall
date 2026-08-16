@@ -149,10 +149,14 @@ it is the direct cause of the floor shortfall. The list is re-derived in § Resi
 
 The **prose half is done**; the **parametrization half was not started**.
 
-**42 historical citations removed across 22 modules** — lesson ids, PR numbers, plan/deliverable ids,
-and superseded-behaviour narration ("before the fix", "generalised the prior", "is now"). Each
-docstring's rationale was kept and re-stated in the present tense. `test-docstring-historical-prose`
-over the slice: **66 → 25**.
+**40 rule-flagged citations removed across 22 modules** — lesson ids, PR numbers, and
+plan/deliverable ids — plus a few narration phrases the rule does not match at all ("before the
+fix", "generalised the prior", "is now", "new subcommand"). Each docstring's rationale was kept and
+re-stated in the present tense.
+
+`test-docstring-historical-prose` over the slice: **66 → 25**. Of those 41 cleared, **one** was
+cleared by D1's module-docstring rewrite and **40** by this deliverable; the file count is from
+`git show --stat 984c257`.
 
 **The done-when says "zero findings", and zero is not reachable without deleting contract.** The 25
 that remain were each read and deliberately kept. Every one is a lesson-id- or `TASK`-shaped string
