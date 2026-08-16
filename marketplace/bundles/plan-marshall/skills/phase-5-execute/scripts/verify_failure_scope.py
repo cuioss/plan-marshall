@@ -19,18 +19,21 @@ Subcommands:
 Return TOON shape:
     status: success
     footprint_resolved: true|false
+    unresolved_reason: <token>          # only when footprint_resolved: false
     total: N
     in_scope_count: I
     out_of_scope_count: O
     exclusively_out_of_scope: true|false
     out_of_scope_paths[O]: [paths]
-    unclassified_paths[N]: [paths]     # only when footprint_resolved: false
+    unclassified_paths[N]: [paths]      # only when footprint_resolved: false
 
 ``footprint_resolved: false`` means the live footprint could not be derived, so
 NO path was classified: both scope counts are zero, every error path is listed
-under ``unclassified_paths``, and ``exclusively_out_of_scope`` is ``false``
-because nothing substantiates it. An unmeasurable footprint is never reported as
-an empty one — that read classified every failure as foreign to the plan.
+under ``unclassified_paths``, ``exclusively_out_of_scope`` is ``false`` because
+nothing substantiates it, and ``unresolved_reason`` names WHY in a stable token
+(:data:`UNRESOLVED_REASON_FOOTPRINT`) so a consumer learns what to repair rather
+than only that something was missing. An unmeasurable footprint is never reported
+as an empty one — that read classified every failure as foreign to the plan.
 """
 
 from __future__ import annotations
@@ -46,6 +49,13 @@ from _references_core import (
     resolve_base_ref,
 )
 from file_ops import WorktreeResolutionError, get_plan_dir, resolve_plan_context
+
+#: Named reason accompanying ``footprint_resolved: false``. The D2 contract asks
+#: for an explicit unknown state **with a reason token**, so the state field
+#: alone is one half of it: a consumer that sees only ``false`` learns that no
+#: classification happened but not what to repair. Every unresolved return
+#: carries this token, so an absent one is a defect rather than a variant.
+UNRESOLVED_REASON_FOOTPRINT = 'plan_footprint_unresolvable'
 
 
 def _resolve_declared_footprint(plan_dir: Path, plan_id: str) -> set[str] | None:
@@ -83,7 +93,15 @@ def _resolve_declared_footprint(plan_dir: Path, plan_id: str) -> set[str] | None
     try:
         worktree = Path(resolve_plan_context(plan_id, ensure=False).worktree_path)
     except WorktreeResolutionError:
-        worktree = Path.cwd()
+        # UNMEASURABLE, not "use whatever tree we happen to be standing in".
+        # Falling back to ``Path.cwd()`` here derived a diff from an unrelated
+        # checkout — this repository's own root, in every practical case, since
+        # the classifier runs from it — and returned it as though it were the
+        # plan's footprint. Every error path would then be classified against a
+        # stranger's diff, in or out of scope by coincidence. That is exactly the
+        # defect this module was changed to remove: a footprint read outside the
+        # window in which the footprint exists, rendered as a measurement.
+        return None
     try:
         return compute_plan_branch_diff(worktree, base_ref)
     except subprocess.CalledProcessError:
@@ -135,6 +153,7 @@ def classify_failure_scope(
         return {
             'status': 'success',
             'footprint_resolved': False,
+            'unresolved_reason': UNRESOLVED_REASON_FOOTPRINT,
             'total': len(cleaned),
             'in_scope_count': 0,
             'out_of_scope_count': 0,
@@ -176,6 +195,8 @@ def _emit_toon(payload: dict) -> None:
     # classification from one that could not be performed, and an absent field
     # would read as the measured case.
     print('footprint_resolved: ' + ('true' if payload.get('footprint_resolved') else 'false'))
+    if not payload.get('footprint_resolved'):
+        print(f'unresolved_reason: {payload.get("unresolved_reason", UNRESOLVED_REASON_FOOTPRINT)}')
     print(f'total: {payload["total"]}')
     print(f'in_scope_count: {payload["in_scope_count"]}')
     print(f'out_of_scope_count: {payload["out_of_scope_count"]}')

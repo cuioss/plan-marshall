@@ -236,7 +236,7 @@ above replaces all three, and the corrected reading is *stronger* than the claim
 `git diff --name-only origin/main...HEAD -- '*.py'` → **9 Python files** (4 sources, 5 test modules) of
 **19** changed files, so the gate applies:
 
-```
+```text
 marketplace/bundles/plan-marshall/skills/phase-5-execute/scripts/verify_failure_scope.py
 marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/analyze-logs.py
 marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/check-artifact-consistency.py
@@ -248,8 +248,9 @@ test/plan-marshall/plan-retrospective/test_check_artifact_consistency.py
 test/plan-marshall/plan-retrospective/test_recall_read_intent_denominator.py
 ```
 
-`./pw verify` re-run after the **round-4** fix round, the last to change source → **SUCCESS**:
-`20298 passed, 14 skipped in 473.99s`.
+`./pw verify` re-run after the **PR-review** fix round, the last to change source → **SUCCESS**:
+`20299 passed, 14 skipped in 418.71s`. (One test more than the round-4 figure: the CodeRabbit fixes
+added a worktree-unresolvable regression test.)
 All three sub-steps ran: quality-gate (`ruff … All checks passed!`, `mypy … Success: no issues found in
 408 source files`, `SPDX-header check passed`, plugin-doctor `issues[0]`), test-compile (`mypy …
 Success: no issues found in 760 source files`), and module-tests.
@@ -350,7 +351,7 @@ command's output, `20298 passed, 14 skipped` (re-run), 11 `W` rows over 4 round 
 "One further consumer", and 3 conditions in `_manifest_decide.py`. It also confirmed **0** surviving
 copies of each wording round 4 corrected — the site-drift pattern did not recur.
 
-Three defects remain, all prose.
+Four defects remain, all prose (X1-X4 below).
 
 | # | Source | Finding | Disposition |
 |---|---|---|---|
@@ -366,6 +367,24 @@ loop has converged on what it can converge on: the code has produced zero logic 
 generate a smaller crop of prose findings (11 → 11 → 3, none of them changing what the code does or
 what a deliverable claims). A sixth round would very likely find another count. That is recorded as
 residue rather than chased, and § Residue names it.
+
+### PR review — `coderabbitai`, after the re-request
+
+The recovered review found **two genuine code defects that five sub-agent rounds missed**, which is
+the strongest argument in this report for re-requesting a rate-limited reviewer rather than banking
+the refusal.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| P1 | `coderabbitai` | **`verify_failure_scope._resolve_declared_footprint` fell back to `Path.cwd()`** when the plan context would not resolve. The cwd is a different checkout — this repository's root in practice — so `compute_plan_branch_diff` succeeded against it and returned an unrelated diff as the plan's footprint. Every error path was then classified in or out of scope by coincidence. **This is the plan's own defect class**, in the file this plan changed, and I had seen the line during D1 exploration and left it, citing test-seam risk | **Fixed** — returns `None`. The test that pinned the old behaviour is replaced by one asserting `compute_plan_branch_diff` is never reached, since a return-value-only test would still pass if the resolver diffed the cwd and discarded the result |
+| P2 | `coderabbitai` | **The unresolved payload carried no reason token.** D2's wording is "`unknown` / `skipped` **with a reason token**"; `footprint_resolved: false` is the state, not the reason. I had implemented half the requirement and reported it as met | **Fixed** — `unresolved_reason: plan_footprint_unresolvable`, emitted in the TOON on every unresolved return and asserted in both unresolved tests |
+| P3 | `coderabbitai` | "Three prose defects remain" over a four-row table (X1-X4) | **Fixed.** Notable: this is the very defect class whose eight instances are the evidence for the § Step 9 proposal — a ninth, written into the paragraph introducing the count |
+| P4 | `coderabbitai` | `fulfilled` and `partial` were not mutually exclusive: a completed goal touching one of five declared files satisfied both | **Fixed** — the three verdicts are now ordered and `fulfilled` requires the same 70% bar |
+| P5 | `coderabbitai` | The production-shape TOON fixture declared `checks[5]` and `passed: 5` without the `affected_files_exact_match` row the script always emits | **Fixed** — six checks, six passed |
+| P6 | `coderabbitai` | Fenced block without a language (MD040) | **Fixed** |
+| P7 | `coderabbitai` | `_resolve_footprint` in `manage-execution-manifest.py`: "`resolve_plan_context` runs outside the `try`, so `WorktreeResolutionError` escapes" | **Rejected — false positive, verified.** `resolve_plan_context(ensure=False)` cannot raise it: it constructs a `PlanContext` and returns. The raising operations are the lazy properties `has_worktree` and `worktree_path` (`file_ops.py`, both documenting `Raises: WorktreeResolutionError`), and **both are inside the `try`**. The documented `None` contract holds |
+| P8 | `coderabbitai` | Make the worktree dependency enforceable — declare `reads: [worktree]` on `plan-retrospective` | **Deferred, not rejected** — this is R2-D2, already recorded. The reviewer's own wording concedes the shape: *"Resolve the lifecycle design, then … declare the dependency only if its ordering is valid."* Declaring it today makes the step violate the very rule, since it is ordered ~925 units after the destroyer |
+| P9 | `coderabbitai` | Wire the Step 11 classification into the orchestrator triage path — `workflow/execution.md` reads neither `footprint_resolved` nor `exclusively_out_of_scope` | **Deferred** — a pre-existing integration gap. `exclusively_out_of_scope` was documented and unread by the orchestrator before this change; this PR corrected what the classifier *reports*, and wiring a consumer that never existed is a separate deliverable. Recorded in § Residue |
 
 ### Findings deferred, with reasons (raised in round 2)
 
@@ -517,6 +536,12 @@ that is worth removing the ambiguity.
   complete D5; the two bounds recorded under D5 above should be applied when it does.
 - **D6(b)'s red-before-green** is not re-checkable on this branch and would need a run based before the
   sibling composer plan landed.
+- **P9 — the Step 11 classification has no orchestrator consumer.** `workflow/execution.md` handles
+  `triage_required` but reads neither `footprint_resolved` nor `exclusively_out_of_scope`, and
+  `verification-feedback.md` has no stash-remedy branch. The flag this PR corrected is therefore
+  reported accurately and acted on by nobody. Pre-existing and out of scope here; a follow-up should
+  wire the guard so the stash option is offered only when the footprint resolved AND the failures are
+  exclusively foreign.
 - **Prose-count residue.** Five verification rounds produced **44** numbered findings (F1-F8, N1-N10,
   V1-V11, W1-W11, X1-X4), plus 3 deferred and 4 self-corrections — 51 rows in total, counted from the
   tables above rather than tallied from memory. The last three rounds found **zero** in the code and
