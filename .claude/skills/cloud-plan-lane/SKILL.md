@@ -694,14 +694,14 @@ more mutation, one more boundary, one more restatement. An observed run reached 
 eleven of which found a defect in the previous round's fix, and concluded that *"no findings" is not
 a state this process reaches*.
 
-Two conditions govern what a round may leave open. Call them **A** and **B** (§ Step 8's merge gate
-has its own numbered conditions; these are not those).
+Two conditions govern what may be left open when the loop ends. Call them **A** and **B** (§ Step 8's
+merge gate has its own numbered conditions; these are not those).
 
-**A — nothing false is left.** A finding that some STATEMENT is false — a comment, a docstring, a
-bundle doc, a test's own description, a report figure, the PR description — is **never** left open,
-wherever it lives and whether or not it executes. Those are fixed. This step's beyond-diff sweep and
-its ⛔ on invented rationales exist to produce exactly these findings, and a rule that let them ship
-would cancel both.
+**A — nothing false is left, ever.** A finding that some STATEMENT is false — a comment, a docstring,
+a bundle doc, a test's own description, a report figure, the PR description — is fixed, wherever it
+lives and whether or not it executes. This step's beyond-diff sweep and its ⛔ on invented rationales
+exist to produce exactly these findings. **A is not subject to the budget below**: running out of
+rounds bounds how often you *verify*, never whether you *fix* what verification already found.
 
 **B — every behavioural finding left open is a characterised survivor.** For a finding about
 behaviour under some input — a mutant, an edge case, a shape no test covers — the loop may leave it
@@ -711,27 +711,29 @@ open only when the run can state either
 > **(b)** the bound on what it *can* reach, and the promise it stays outside of — that promise named
 > in the plan's own terms.
 
-Survivors are listed individually; a bulk mention is not a disclosure. **A finding that is both — a
-false statement AND a behavioural defect, which the commonest ones are — is governed by A.**
+Survivors are listed individually; a bulk mention is not a disclosure. **A finding that is both a
+false statement and a behavioural defect is governed by A** — it is fixed, not characterised.
 
 ⛔ **Whether A and B are met is the VERIFIER's call, not the author's.** The dispatch checklist above
-puts it to the round directly: *does anything you found remain that A or B forbids leaving open?* A
-**no** is what permits the stop; a **yes** earns another round. Honour the answer either way. The
-author is the party motivated to stop, and in the run above **three** of the tests written to close
-previously-found gaps were themselves vacuous — they passed against the fixed code *and* against the
-defect they named. An author polling their own work for permission to stop will get it.
+puts it to the round directly: *does anything remain open that A or B forbids?* Honour the answer.
+The author is the party motivated to stop, and in the run above **three** of the tests written to
+close previously-found gaps were themselves vacuous — they passed against the fixed code *and*
+against the defect they named. An author polling their own work for permission to stop will get it.
 
-**A round budget, declared before the first dispatch.** A and B can go unmet round after round; on
-the run above they still were at round twelve, and its own conclusion was that continuing would find
-more. So the run states its maximum number of rounds **up front**, before it knows what the rounds
-will say — a budget chosen at the moment of wanting to stop is not a budget.
+**A round budget, declared before the first dispatch.** Be honest about what this is: given the
+premise above, a verifier answering "nothing new" is the *rare* exit, not the expected one. The
+budget is what usually ends the loop, so it is stated **up front**, before the run knows what the
+rounds will say — a number chosen at the moment of wanting to stop is not a budget.
 
-Exhausting it with the verifier still answering **yes** is a **STOP CONDITION**, and this is its
-stated autonomous fallback: **end the loop, record `Outcome: partial`, and disclose per instance every
-finding A or B forbids, each with what closing it would take.** A run whose operator is reachable MAY
-instead escalate the choice (§ "Rules that outrank convenience" — permitted there, never required).
-Either way the round budget, the verifier's last answer, and every still-open finding are on the
-record.
+When it is exhausted the run still **fixes everything A forbids**, then stops with B's survivors
+characterised and disclosed per instance. Nothing false ships because the rounds ran out. `Outcome`
+keeps its ordinary meaning — a verdict on the **deliverables** (§ Report), not on the loop — so a run
+whose deliverables are complete records `completed` and discloses its survivors, exactly as one that
+exited on a verifier's "nothing left" would.
+
+A run that wants more rounds than it declared MAY ask a reachable operator (§ "Rules that outrank
+convenience" — permitted there, never required). The budget, the round that ended the loop, the
+verifier's last answer, and every survivor go in the report either way.
 
 ## GitHub access
 
@@ -1135,7 +1137,7 @@ that its artifact exists on disk:
 | 4 Per-commit gate | Every commit touching `*.py` was preceded by a clean quality gate — a `total_issues: 0` / empty `errors[]` executor log, or the direct `./pw` tools each reporting clean (`ruff`/`mypy`/SPDX passed) |
 | 4 Pushed | No unpushed commit remains (`git status -sb` reports no `ahead`) |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
-| 6 Verification sub-agent | Findings and dispositions in the report; the **round budget declared up front**, the round that stopped the loop, and **the verifier's own last answer** — never the author's verdict; each survivor listed individually with its (a) proof or (b) bound, and confirmation that every still-open survivor was **re-put to the verifier** in that round; a loop that ended on the exhausted budget recorded as `Outcome: partial` with every forbidden finding disclosed (§ Step 6, "When the loop stops") |
+| 6 Verification sub-agent | Findings and dispositions in the report; the **round budget declared up front**, the round that stopped the loop, and **the verifier's own last answer** — never the author's verdict; each survivor listed individually with its (a) proof or (b) bound, and confirmation that every still-open survivor was **re-put to the verifier** in that round; a loop that ended on the exhausted budget recorded as such, with everything A forbids **fixed** and B's survivors disclosed — `Outcome` still reports the deliverables, not the loop (§ Step 6, "When the loop stops") |
 | 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict **and** a `Reopens?` value per reviewer, and every `silent` verdict records what its recovery check found |
 | 8 Merge gate | Conditions 1–3 met and auto-merge armed. Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
 | 8 Bridge | No **status or bookkeeping** write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory was touched; a **declared-deliverable** edit to a shared lane doc (e.g. `cloud-bridge.md`, `README.md`, the plan template) is permitted — and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
@@ -1231,8 +1233,9 @@ Then the stop record (§ Step 6, "When the loop stops"):
 - one row per **survivor**, each either (a) proved equivalent, with the proof, or (b) bounded, with
   the bound and the promise it stays outside of, and each confirmed **re-put to the verifier** in the
   stopping round rather than carried forward unread;
-- when the loop ended on the exhausted budget instead, that fact, and what closing each still-open
-  finding would take. That run's `Outcome` is `partial`.
+- when the loop ended on the exhausted budget instead, that fact — with everything A forbids fixed
+  regardless, and what closing each remaining B survivor would take. `Outcome` is unaffected: it
+  reports the deliverables, not the loop.
 
 A run that fixed everything says so, and has no survivor rows.
 
