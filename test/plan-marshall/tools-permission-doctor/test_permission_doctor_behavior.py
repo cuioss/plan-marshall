@@ -13,9 +13,8 @@ no real ``~/.claude`` or project settings are read.
 """
 
 import json
-from argparse import Namespace
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
 
 pd = load_script_module('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'pd_behavior')
 
@@ -143,7 +142,7 @@ class TestDetectRedundantBranches:
         _write_settings(local_file, ['Read(src/lib/file.txt)'])
 
         result = pd.cmd_detect_redundant(
-            Namespace(scope=None, global_settings=str(global_file), local_settings=str(local_file))
+            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file))
         )
 
         assert result['status'] == 'success'
@@ -157,7 +156,7 @@ class TestDetectRedundantBranches:
         _write_settings(local_file, [])
 
         result = pd.cmd_detect_redundant(
-            Namespace(scope=None, global_settings=str(tmp_path / 'missing.json'), local_settings=str(local_file))
+            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-redundant', '--global-settings', str(tmp_path / 'missing.json'), '--local-settings', str(local_file))
         )
 
         assert result['status'] == 'error'
@@ -169,7 +168,7 @@ class TestDetectRedundantBranches:
         _write_settings(global_file, [])
 
         result = pd.cmd_detect_redundant(
-            Namespace(scope=None, global_settings=str(global_file), local_settings=str(tmp_path / 'missing.json'))
+            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-redundant', '--global-settings', str(global_file), '--local-settings', str(tmp_path / 'missing.json'))
         )
 
         assert result['status'] == 'error'
@@ -196,7 +195,7 @@ class TestDetectSuspiciousBranches:
         )
 
         result = pd.cmd_detect_suspicious(
-            Namespace(scope=None, settings=str(settings_file), approved_file=str(approved))
+            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-suspicious', '--settings', str(settings_file), '--approved-file', str(approved))
         )
 
         assert result['status'] == 'success'
@@ -208,7 +207,7 @@ class TestDetectSuspiciousBranches:
     def test_error_on_missing_settings(self, tmp_path):
         """A missing settings file surfaces a structured error."""
         result = pd.cmd_detect_suspicious(
-            Namespace(scope=None, settings=str(tmp_path / 'missing.json'), approved_file=None)
+            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-suspicious', '--settings', str(tmp_path / 'missing.json'))
         )
 
         assert result['status'] == 'error'
@@ -220,7 +219,7 @@ class TestDetectSuspiciousBranches:
         _write_settings(settings_file, ['Bash(sudo:*)', 'Bash(curl:*)', 'Bash(git:*)'])
 
         result = pd.cmd_detect_suspicious(
-            Namespace(scope=None, settings=str(settings_file), approved_file=None)
+            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-suspicious', '--settings', str(settings_file))
         )
 
         assert result['status'] == 'success'
@@ -242,7 +241,7 @@ def test_detect_missing_settings_load_error(tmp_path):
     )
 
     result = pd.cmd_detect_missing_project_step_permissions(
-        Namespace(marshal=str(marshal_file), settings=str(tmp_path / 'missing.json'), scope=None)
+        parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-missing-project-step-permissions', '--marshal', str(marshal_file), '--settings', str(tmp_path / 'missing.json'))
     )
 
     assert result['status'] == 'error'

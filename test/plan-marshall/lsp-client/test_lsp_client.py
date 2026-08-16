@@ -11,11 +11,10 @@ all without a live language server.
 
 from __future__ import annotations
 
-import argparse
 import sys
 from typing import Any
 
-from conftest import get_script_path
+from conftest import get_script_path, parse_ns
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'lsp-client', 'lsp_client.py')
 SCRIPTS_DIR = SCRIPT_PATH.parent
@@ -141,13 +140,10 @@ def test_three_states_are_distinguishable(plan_context):
     # ran-and-found-nothing (server ran)
     ran = client._run_lookup(_session({'workspace/symbol': []}), 'python', 'workspace-symbol', None, 0, 0, 'x')
     # not configured (empty store)
-    not_configured = client.cmd_lookup(argparse.Namespace(
-        language='python', project_path='.', kind='workspace-symbol', file=None, line=0, character=0, symbol='x'))
+    not_configured = client.cmd_lookup(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'lookup', '--language', 'python', '--project-path', '.', '--kind', 'workspace-symbol', '--line', '0', '--character', '0', '--symbol', 'x'))
     # configured but unreachable
-    run_config.cmd_language_server_set(argparse.Namespace(
-        language='python', command='["/nonexistent/definitely-not-a-real-lsp"]', language_id='python', disabled=False))
-    unreachable = client.cmd_lookup(argparse.Namespace(
-        language='python', project_path='.', kind='workspace-symbol', file=None, line=0, character=0, symbol='x'))
+    run_config.cmd_language_server_set(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'language-server', 'set', '--language', 'python', '--command', '["/nonexistent/definitely-not-a-real-lsp"]', '--language-id', 'python'))
+    unreachable = client.cmd_lookup(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'lookup', '--language', 'python', '--project-path', '.', '--kind', 'workspace-symbol', '--line', '0', '--character', '0', '--symbol', 'x'))
 
     triples = {
         (ran['status'], ran['state'], ran['provider_count']),
@@ -167,16 +163,15 @@ def test_three_states_are_distinguishable(plan_context):
 
 
 def test_preflight_not_configured(plan_context):
-    result = client.cmd_preflight(argparse.Namespace(language='python', project_path='.'))
+    result = client.cmd_preflight(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'preflight', '--language', 'python', '--project-path', '.'))
     assert result['state'] == client.STATE_NOT_CONFIGURED
     assert result['configured'] is False
     assert result['reachable'] is False
 
 
 def test_preflight_unreachable(plan_context):
-    run_config.cmd_language_server_set(argparse.Namespace(
-        language='python', command='["/nonexistent/definitely-not-a-real-lsp"]', language_id='python', disabled=False))
-    result = client.cmd_preflight(argparse.Namespace(language='python', project_path='.'))
+    run_config.cmd_language_server_set(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'language-server', 'set', '--language', 'python', '--command', '["/nonexistent/definitely-not-a-real-lsp"]', '--language-id', 'python'))
+    result = client.cmd_preflight(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'preflight', '--language', 'python', '--project-path', '.'))
     assert result['state'] == client.STATE_UNREACHABLE
     assert result['configured'] is True
     assert result['reachable'] is False
@@ -233,8 +228,7 @@ def test_edit_no_workspace_edit(tmp_path):
 def test_edit_degraded_when_not_configured(plan_context, tmp_path):
     target = tmp_path / 'm.py'
     target.write_text('foo = 1\n')
-    result = client.cmd_edit(argparse.Namespace(
-        language='python', project_path='.', file=str(target), line=0, character=0, new_name='bar'))
+    result = client.cmd_edit(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'edit', '--language', 'python', '--project-path', '.', '--file', str(target), '--line', '0', '--character', '0', '--new-name', 'bar'))
     assert result['status'] == 'degraded'
     assert result['state'] == client.STATE_NOT_CONFIGURED
     assert result['fallback'] == 'read_edit'

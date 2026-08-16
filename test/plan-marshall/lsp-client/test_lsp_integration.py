@@ -16,14 +16,13 @@ it); the CI-portable logic coverage lives in ``test_lsp_client.py`` and
 
 from __future__ import annotations
 
-import argparse
 import json
 import shutil
 import sys
 from pathlib import Path
 
 import pytest
-from conftest import get_script_path
+from conftest import get_script_path, parse_ns
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'lsp-client', 'lsp_client.py')
 SCRIPTS_DIR = SCRIPT_PATH.parent
@@ -46,8 +45,7 @@ pytestmark = pytest.mark.skipif(_PYRIGHT is None, reason='pyright-langserver not
 
 
 def _configure(project: Path) -> None:
-    run_config.cmd_language_server_set(argparse.Namespace(
-        language='python', command=json.dumps([_PYRIGHT, '--stdio']), language_id='python', disabled=False))
+    run_config.cmd_language_server_set(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'language-server', 'set', '--language', 'python', '--command', str(json.dumps([_PYRIGHT, '--stdio'])), '--language-id', 'python'))
 
 
 def _sample_project(tmp_path: Path) -> Path:
@@ -62,7 +60,7 @@ def _sample_project(tmp_path: Path) -> Path:
 def test_real_preflight_ready(plan_context, tmp_path):
     project = _sample_project(tmp_path)
     _configure(project)
-    result = client.cmd_preflight(argparse.Namespace(language='python', project_path=str(project)))
+    result = client.cmd_preflight(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'preflight', '--language', 'python', '--project-path', str(project)))
     assert result['state'] == client.STATE_READY  # the reachable sentinel the consumer wiring gates on
     assert result['configured'] is True
     assert result['reachable'] is True
@@ -73,17 +71,13 @@ def test_real_document_symbol_and_references(plan_context, tmp_path):
     _configure(project)
     target = str(project / 'sample.py')
 
-    docsym = client.cmd_lookup(argparse.Namespace(
-        language='python', project_path=str(project), kind='document-symbol',
-        file=target, line=0, character=0, symbol=None))
+    docsym = client.cmd_lookup(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'lookup', '--language', 'python', '--project-path', str(project), '--kind', 'document-symbol', '--file', str(target), '--line', '0', '--character', '0'))
     assert docsym['state'] == client.STATE_OK
     assert docsym['provider_count'] == 1
     names = {row['name'] for row in docsym['locations']}
     assert {'compute', 'caller'} <= names
 
-    refs = client.cmd_lookup(argparse.Namespace(
-        language='python', project_path=str(project), kind='references',
-        file=target, line=0, character=4, symbol=None))
+    refs = client.cmd_lookup(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'lookup', '--language', 'python', '--project-path', str(project), '--kind', 'references', '--file', str(target), '--line', '0', '--character', '4'))
     assert refs['provider_count'] == 1
     assert refs['location_count'] >= 2  # definition + two call sites
 
@@ -91,9 +85,7 @@ def test_real_document_symbol_and_references(plan_context, tmp_path):
 def test_real_workspace_symbol_after_indexing(plan_context, tmp_path):
     project = _sample_project(tmp_path)
     _configure(project)
-    result = client.cmd_lookup(argparse.Namespace(
-        language='python', project_path=str(project), kind='workspace-symbol',
-        file=None, line=0, character=0, symbol='compute'))
+    result = client.cmd_lookup(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'lookup', '--language', 'python', '--project-path', str(project), '--kind', 'workspace-symbol', '--line', '0', '--character', '0', '--symbol', 'compute'))
     assert result['state'] == client.STATE_OK
     assert result['provider_count'] == 1
     assert result['location_count'] >= 1
@@ -104,9 +96,7 @@ def test_real_clean_rename_edit(plan_context, tmp_path):
     project = _sample_project(tmp_path)
     _configure(project)
     target = project / 'sample.py'
-    result = client.cmd_edit(argparse.Namespace(
-        language='python', project_path=str(project), file=str(target),
-        line=0, character=4, new_name='renamed'))
+    result = client.cmd_edit(parse_ns('plan-marshall', 'lsp-client', 'lsp_client.py', 'edit', '--language', 'python', '--project-path', str(project), '--file', str(target), '--line', '0', '--character', '4', '--new-name', 'renamed'))
     assert result['status'] == 'success'
     assert result['applied'] is True
     assert result['file_count'] == 1

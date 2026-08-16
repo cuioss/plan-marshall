@@ -20,10 +20,9 @@ Tier 3 (subprocess) retained for CLI plumbing, --scope, and --target tests.
 """
 
 import json
-from argparse import Namespace
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import MARKETPLACE_ROOT, run_script
+from conftest import MARKETPLACE_ROOT, parse_ns, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'tools-permission-fix' / 'scripts' / 'permission_fix.py'
@@ -67,7 +66,7 @@ class TestConsolidate:
             )
         )
 
-        result = cmd_consolidate(Namespace(settings=str(settings_file), scope=None, dry_run=True))
+        result = cmd_consolidate(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'consolidate', '--settings', str(settings_file), '--dry-run'))
 
         assert result['status'] == 'success'
         assert 'consolidated' in result
@@ -91,7 +90,7 @@ class TestConsolidate:
             )
         )
 
-        result = cmd_consolidate(Namespace(settings=str(settings_file), scope=None, dry_run=True))
+        result = cmd_consolidate(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'consolidate', '--settings', str(settings_file), '--dry-run'))
 
         assert result['status'] == 'success'
         assert 'wildcards_added' in result
@@ -106,7 +105,7 @@ class TestConsolidate:
         settings_file = tmp_path / 'settings.json'
         settings_file.write_text(original_content)
 
-        cmd_consolidate(Namespace(settings=str(settings_file), scope=None, dry_run=True))
+        cmd_consolidate(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'consolidate', '--settings', str(settings_file), '--dry-run'))
 
         assert settings_file.read_text() == original_content
 
@@ -137,7 +136,7 @@ class TestEnsureWildcards:
         )
 
         result = cmd_ensure_wildcards(
-            Namespace(settings=str(settings_file), marketplace_json=str(marketplace_file), dry_run=True)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--settings', str(settings_file), '--marketplace-json', str(marketplace_file), '--dry-run')
         )
 
         assert result['status'] == 'success'
@@ -167,7 +166,7 @@ class TestEnsureWildcards:
         )
 
         result = cmd_ensure_wildcards(
-            Namespace(settings=str(settings_file), marketplace_json=str(marketplace_file), dry_run=True)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--settings', str(settings_file), '--marketplace-json', str(marketplace_file), '--dry-run')
         )
 
         assert result['status'] == 'success'
@@ -200,7 +199,7 @@ class TestEnsureWildcards:
         )
 
         result = cmd_ensure_wildcards(
-            Namespace(settings=str(settings_file), marketplace_json=str(marketplace_file), dry_run=True)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--settings', str(settings_file), '--marketplace-json', str(marketplace_file), '--dry-run')
         )
 
         assert result['status'] == 'success'
@@ -230,7 +229,7 @@ class TestEnsureWildcards:
         )
 
         result = cmd_ensure_wildcards(
-            Namespace(settings=str(settings_file), marketplace_json=str(marketplace_file), dry_run=True)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--settings', str(settings_file), '--marketplace-json', str(marketplace_file), '--dry-run')
         )
 
         assert result['status'] == 'success'
@@ -259,7 +258,7 @@ class TestApplyFixes:
             json.dumps({'permissions': {'allow': ['Bash(git:*)', 'Bash(git:*)', 'Bash(npm:*)'], 'deny': [], 'ask': []}})
         )
 
-        result = cmd_apply_fixes(Namespace(settings=str(settings_file), scope=None, dry_run=True))
+        result = cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file), '--dry-run'))
 
         assert result['status'] == 'success'
         assert 'duplicates_removed' in result
@@ -272,7 +271,7 @@ class TestApplyFixes:
             json.dumps({'permissions': {'allow': ['Write(**)', 'Bash(git:*)', 'Edit(**)'], 'deny': [], 'ask': []}})
         )
 
-        result = cmd_apply_fixes(Namespace(settings=str(settings_file), scope=None, dry_run=True))
+        result = cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file), '--dry-run'))
 
         assert result['status'] == 'success'
         assert 'sorted' in result
@@ -283,7 +282,7 @@ class TestApplyFixes:
         settings_file = tmp_path / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
-        result = cmd_apply_fixes(Namespace(settings=str(settings_file), scope=None, dry_run=True))
+        result = cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file), '--dry-run'))
 
         assert result['status'] == 'success'
         assert 'defaults_added' in result
@@ -316,13 +315,7 @@ class TestRemoveRedundant:
         self._write_settings(local_file, ['Bash(git:*)', 'Bash(npm:*)'])
 
         result = cmd_remove_redundant(
-            Namespace(
-                scope=None,
-                global_settings=str(global_file),
-                local_settings=str(local_file),
-                move_marketplace=True,
-                dry_run=True,
-            )
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file), '--dry-run')
         )
 
         assert result['status'] == 'success'
@@ -339,13 +332,7 @@ class TestRemoveRedundant:
         self._write_settings(local_file, ['Bash(git:*)', 'Edit(.plan/**)'])
 
         result = cmd_remove_redundant(
-            Namespace(
-                scope=None,
-                global_settings=str(global_file),
-                local_settings=str(local_file),
-                move_marketplace=False,
-                dry_run=False,
-            )
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file), '--no-move-marketplace')
         )
 
         assert result['status'] == 'success'
@@ -363,13 +350,7 @@ class TestRemoveRedundant:
         self._write_settings(local_file, ['Bash(git:*)', 'Skill(pm-dev-java:*)', 'Edit(.plan/**)'])
 
         result = cmd_remove_redundant(
-            Namespace(
-                scope=None,
-                global_settings=str(global_file),
-                local_settings=str(local_file),
-                move_marketplace=True,
-                dry_run=False,
-            )
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file))
         )
 
         assert result['status'] == 'success'
@@ -391,13 +372,7 @@ class TestRemoveRedundant:
         self._write_settings(local_file, ['Bash(git:*)', 'Skill(pm-dev-java:*)'])
 
         result = cmd_remove_redundant(
-            Namespace(
-                scope=None,
-                global_settings=str(global_file),
-                local_settings=str(local_file),
-                move_marketplace=False,
-                dry_run=False,
-            )
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file), '--no-move-marketplace')
         )
 
         assert result['status'] == 'success'
@@ -413,13 +388,7 @@ class TestRemoveRedundant:
         self._write_settings(local_file, ['Skill(pm-dev-java:*)'])
 
         result = cmd_remove_redundant(
-            Namespace(
-                scope=None,
-                global_settings=str(global_file),
-                local_settings=str(local_file),
-                move_marketplace=True,
-                dry_run=False,
-            )
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file))
         )
 
         assert result['status'] == 'success'
@@ -437,13 +406,7 @@ class TestRemoveRedundant:
         self._write_settings(local_file, ['Edit(.plan/**)', 'Write(.plan/**)'])
 
         result = cmd_remove_redundant(
-            Namespace(
-                scope=None,
-                global_settings=str(global_file),
-                local_settings=str(local_file),
-                move_marketplace=True,
-                dry_run=False,
-            )
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file))
         )
 
         assert result['status'] == 'success'
@@ -476,7 +439,7 @@ class TestGenerateWildcards:
             )
         )
 
-        result = cmd_generate_wildcards(Namespace(input=str(inventory_file), marketplace_dir=None))
+        result = cmd_generate_wildcards(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'generate-wildcards', '--input', str(inventory_file)))
 
         assert result['status'] == 'success'
         assert 'permissions' in result
@@ -500,7 +463,7 @@ class TestGenerateWildcards:
             )
         )
 
-        result = cmd_generate_wildcards(Namespace(input=str(inventory_file), marketplace_dir=None))
+        result = cmd_generate_wildcards(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'generate-wildcards', '--input', str(inventory_file)))
 
         assert result['status'] == 'success'
         assert 'permissions' in result
@@ -516,7 +479,7 @@ class TestGenerateWildcards:
             )
         )
 
-        result = cmd_generate_wildcards(Namespace(input=str(inventory_file), marketplace_dir=None))
+        result = cmd_generate_wildcards(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'generate-wildcards', '--input', str(inventory_file)))
 
         assert result['status'] == 'success'
         assert 'statistics' in result
@@ -649,7 +612,7 @@ class TestScanMarketplaceDir:
             },
         )
 
-        result = cmd_generate_wildcards(Namespace(marketplace_dir=mkt_dir, input=None))
+        result = cmd_generate_wildcards(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'generate-wildcards', '--marketplace-dir', str(mkt_dir)))
 
         assert result['status'] == 'success'
         skill_wildcards = result['permissions']['skill_wildcards']
@@ -660,7 +623,7 @@ class TestScanMarketplaceDir:
 
     def test_generate_wildcards_marketplace_dir_error(self):
         """generate-wildcards --marketplace-dir with bad path should return error."""
-        result = cmd_generate_wildcards(Namespace(marketplace_dir='/nonexistent/path', input=None))
+        result = cmd_generate_wildcards(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'generate-wildcards', '--marketplace-dir', '/nonexistent/path'))
 
         assert result['status'] == 'error'
         assert 'marketplace.json not found' in result['error']
@@ -1096,7 +1059,7 @@ class TestApplyProjectStepPermissions:
         settings = self._write_settings(tmp_path, ['Edit(.plan/**)'])
         original = self._read_settings(settings)
 
-        result = cmd_apply_project_step_permissions(Namespace(marshal=marshal, settings=settings, dry_run=True))
+        result = cmd_apply_project_step_permissions(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-project-step-permissions', '--marshal', str(marshal), '--settings', str(settings), '--dry-run'))
 
         assert result['status'] == 'success'
         assert result['added'] == ['Skill(finalize-step-plugin-doctor)']
@@ -1108,7 +1071,7 @@ class TestApplyProjectStepPermissions:
         marshal = self._write_marshal(tmp_path, {'phase-6-finalize': ['project:finalize-step-plugin-doctor']})
         settings = self._write_settings(tmp_path, ['Edit(.plan/**)', 'Bash(git:*)'])
 
-        result = cmd_apply_project_step_permissions(Namespace(marshal=marshal, settings=settings, dry_run=False))
+        result = cmd_apply_project_step_permissions(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-project-step-permissions', '--marshal', str(marshal), '--settings', str(settings)))
 
         assert result['status'] == 'success'
         assert result['applied']
@@ -1121,8 +1084,8 @@ class TestApplyProjectStepPermissions:
         marshal = self._write_marshal(tmp_path, {'phase-6-finalize': ['project:finalize-step-plugin-doctor']})
         settings = self._write_settings(tmp_path, [])
 
-        cmd_apply_project_step_permissions(Namespace(marshal=marshal, settings=settings, dry_run=False))
-        result = cmd_apply_project_step_permissions(Namespace(marshal=marshal, settings=settings, dry_run=False))
+        cmd_apply_project_step_permissions(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-project-step-permissions', '--marshal', str(marshal), '--settings', str(settings)))
+        result = cmd_apply_project_step_permissions(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-project-step-permissions', '--marshal', str(marshal), '--settings', str(settings)))
 
         assert result['status'] == 'success'
         assert result['added'] == []
@@ -1135,7 +1098,7 @@ class TestApplyProjectStepPermissions:
         marshal = self._write_marshal(tmp_path, {'phase-5-execute': ['project:example-step']})
         settings = self._write_settings(tmp_path, ['Skill(example-step:*)'])
 
-        result = cmd_apply_project_step_permissions(Namespace(marshal=marshal, settings=settings, dry_run=False))
+        result = cmd_apply_project_step_permissions(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-project-step-permissions', '--marshal', str(marshal), '--settings', str(settings)))
 
         assert result['status'] == 'success'
         assert result['added'] == []

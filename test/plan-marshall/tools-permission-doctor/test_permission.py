@@ -13,7 +13,6 @@ Tier 3 (subprocess) retained for CLI plumbing and --scope tests.
 
 import json
 import os
-from argparse import Namespace
 
 from permission_doctor import (
     cmd_detect_missing_project_step_permissions,
@@ -22,7 +21,7 @@ from permission_doctor import (
 )
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import MARKETPLACE_ROOT, run_script
+from conftest import MARKETPLACE_ROOT, parse_ns, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = (
@@ -52,7 +51,7 @@ class TestDetectRedundant:
         )
 
         result = cmd_detect_redundant(
-            Namespace(scope=None, global_settings=str(global_file), local_settings=str(local_file))
+            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file))
         )
 
         assert result['status'] == 'success'
@@ -72,7 +71,7 @@ class TestDetectRedundant:
         )
 
         result = cmd_detect_redundant(
-            Namespace(scope=None, global_settings=str(global_file), local_settings=str(local_file))
+            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file))
         )
 
         assert result['status'] == 'success'
@@ -128,7 +127,7 @@ This is a project-local command.
         try:
             os.chdir(tmp_path)
             result = cmd_detect_redundant(
-                Namespace(scope=None, global_settings=str(global_file), local_settings=str(local_file))
+                parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file))
             )
         finally:
             os.chdir(original_cwd)
@@ -154,7 +153,7 @@ This is a project-local command.
         )
 
         result = cmd_detect_redundant(
-            Namespace(scope=None, global_settings=str(global_file), local_settings=str(local_file))
+            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-redundant', '--global-settings', str(global_file), '--local-settings', str(local_file))
         )
 
         assert result['status'] == 'success'
@@ -176,7 +175,7 @@ class TestDetectSuspicious:
         settings_file = tmp_path / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(sudo:*)'], 'deny': [], 'ask': []}}))
 
-        result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
+        result = cmd_detect_suspicious(parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-suspicious', '--settings', str(settings_file)))
 
         assert result['status'] == 'success'
         assert 'suspicious' in result
@@ -188,7 +187,7 @@ class TestDetectSuspicious:
         settings_file = tmp_path / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Write(/etc/**)'], 'deny': [], 'ask': []}}))
 
-        result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
+        result = cmd_detect_suspicious(parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-suspicious', '--settings', str(settings_file)))
 
         assert result['status'] == 'success'
         suspicious_perms = [s['permission'] for s in result['suspicious']]
@@ -199,7 +198,7 @@ class TestDetectSuspicious:
         settings_file = tmp_path / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(rm:-rf:*)'], 'deny': [], 'ask': []}}))
 
-        result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
+        result = cmd_detect_suspicious(parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-suspicious', '--settings', str(settings_file)))
 
         assert result['status'] == 'success'
         if result['suspicious']:
@@ -213,7 +212,7 @@ class TestDetectSuspicious:
             json.dumps({'permissions': {'allow': ['Bash(dd:if=/dev/zero)'], 'deny': [], 'ask': []}})
         )
 
-        result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
+        result = cmd_detect_suspicious(parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-suspicious', '--settings', str(settings_file)))
 
         assert result['status'] == 'success'
         suspicious_perms = [s['permission'] for s in result['suspicious']]
@@ -224,7 +223,7 @@ class TestDetectSuspicious:
         settings_file = tmp_path / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Write(//Users/**)'], 'deny': [], 'ask': []}}))
 
-        result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
+        result = cmd_detect_suspicious(parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-suspicious', '--settings', str(settings_file)))
 
         assert result['status'] == 'success'
         suspicious_perms = [s['permission'] for s in result['suspicious']]
@@ -239,7 +238,7 @@ class TestDetectSuspicious:
             )
         )
 
-        result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
+        result = cmd_detect_suspicious(parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-suspicious', '--settings', str(settings_file)))
 
         assert result['status'] == 'success'
         assert len(result.get('suspicious', [])) == 0
@@ -249,7 +248,7 @@ class TestDetectSuspicious:
         settings_file = tmp_path / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(env:*)'], 'deny': [], 'ask': []}}))
 
-        result = cmd_detect_suspicious(Namespace(scope=None, settings=str(settings_file), approved_file=None))
+        result = cmd_detect_suspicious(parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-suspicious', '--settings', str(settings_file)))
 
         assert result['status'] == 'success'
         # env access may or may not be flagged depending on patterns
@@ -321,7 +320,7 @@ class TestDetectMissingProjectStepPermissions:
         marshal = self._write_marshal(tmp_path, {'phase-6-finalize': ['project:finalize-step-plugin-doctor']})
         settings = self._write_settings(tmp_path, ['Edit(.plan/**)'])
 
-        result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))
+        result = cmd_detect_missing_project_step_permissions(parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-missing-project-step-permissions', '--marshal', str(marshal), '--settings', str(settings)))
 
         assert result['status'] == 'success'
         assert len(result['missing']) == 1
@@ -333,7 +332,7 @@ class TestDetectMissingProjectStepPermissions:
         marshal = self._write_marshal(tmp_path, {'phase-6-finalize': ['project:sync-plugin-cache']})
         settings = self._write_settings(tmp_path, ['Skill(sync-plugin-cache)'])
 
-        result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))
+        result = cmd_detect_missing_project_step_permissions(parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-missing-project-step-permissions', '--marshal', str(marshal), '--settings', str(settings)))
 
         assert result['status'] == 'success'
         assert len(result['missing']) == 0
@@ -345,7 +344,7 @@ class TestDetectMissingProjectStepPermissions:
         marshal = self._write_marshal(tmp_path, {'phase-5-execute': ['project:example-step']})
         settings = self._write_settings(tmp_path, ['Skill(example-step:*)'])
 
-        result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))
+        result = cmd_detect_missing_project_step_permissions(parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-missing-project-step-permissions', '--marshal', str(marshal), '--settings', str(settings)))
 
         assert result['status'] == 'success'
         assert len(result['missing']) == 0
@@ -356,7 +355,7 @@ class TestDetectMissingProjectStepPermissions:
         marshal = self._write_marshal(tmp_path, {'phase-6-finalize': ['default:push', 'default:create-pr']})
         settings = self._write_settings(tmp_path, [])
 
-        result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))
+        result = cmd_detect_missing_project_step_permissions(parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-missing-project-step-permissions', '--marshal', str(marshal), '--settings', str(settings)))
 
         assert result['status'] == 'success'
         assert len(result['missing']) == 0
@@ -374,7 +373,7 @@ class TestDetectMissingProjectStepPermissions:
         )
         settings = self._write_settings(tmp_path, ['Skill(example-step)'])
 
-        result = cmd_detect_missing_project_step_permissions(Namespace(marshal=marshal, settings=settings, scope=None))
+        result = cmd_detect_missing_project_step_permissions(parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-missing-project-step-permissions', '--marshal', str(marshal), '--settings', str(settings)))
 
         assert result['status'] == 'success'
         assert result['summary']['project_steps_checked'] == 2
@@ -390,7 +389,7 @@ class TestDetectMissingProjectStepPermissions:
         settings = self._write_settings(tmp_path, [])
 
         result = cmd_detect_missing_project_step_permissions(
-            Namespace(marshal=str(marshal_file), settings=settings, scope=None)
+            parse_ns('plan-marshall', 'tools-permission-doctor', 'permission_doctor.py', 'detect-missing-project-step-permissions', '--marshal', str(marshal_file), '--settings', str(settings))
         )
 
         assert result['status'] == 'error'

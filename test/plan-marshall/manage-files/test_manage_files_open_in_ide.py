@@ -22,13 +22,12 @@ Covers:
 import ast
 import json
 import re
-from argparse import Namespace
 from pathlib import Path
 from unittest import mock
 
 import pytest
 
-from conftest import get_scripts_dir, load_script_module
+from conftest import get_scripts_dir, load_script_module, parse_ns
 
 # Tier 2 direct import - load hyphenated module
 _MANAGE_FILES_SCRIPT = get_scripts_dir('plan-marshall', 'manage-files') / 'manage-files.py'
@@ -332,7 +331,7 @@ def test_cmd_open_in_ide_mode_a_macos_vscode_success(plan_context):
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
     )
-    args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
+    args = parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'open-in-ide', '--path', '/abs/path/file.md')
 
     completed = mock.MagicMock(returncode=0, stdout='', stderr='')
     # Clear env so the host's __CFBundleIdentifier does not leak in and
@@ -357,7 +356,7 @@ def test_cmd_open_in_ide_disabled_by_config_short_circuits(plan_context):
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {'open_in_ide': False}}), encoding='utf-8'
     )
-    args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
+    args = parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'open-in-ide', '--path', '/abs/path/file.md')
 
     with (
         mock.patch.object(_mod, 'detect_ide') as mock_detect,
@@ -377,7 +376,7 @@ def test_cmd_open_in_ide_missing_key_acts_as_enabled(plan_context):
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {}}), encoding='utf-8'
     )
-    args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
+    args = parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'open-in-ide', '--path', '/abs/path/file.md')
 
     completed = mock.MagicMock(returncode=0, stdout='', stderr='')
     with (
@@ -398,7 +397,7 @@ def test_cmd_open_in_ide_unknown_ide_returns_ide_not_detected(plan_context):
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
     )
-    args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
+    args = parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'open-in-ide', '--path', '/abs/path/file.md')
 
     with (
         mock.patch.object(_mod.sys, 'platform', 'darwin'),
@@ -414,7 +413,7 @@ def test_cmd_open_in_ide_launcher_missing_returns_launcher_missing(plan_context)
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
     )
-    args = Namespace(path='/abs/path/file.md', plan_id=None, document=None)
+    args = parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'open-in-ide', '--path', '/abs/path/file.md')
 
     with (
         mock.patch.object(_mod.sys, 'platform', 'darwin'),
@@ -435,7 +434,7 @@ def test_cmd_open_in_ide_mode_b_without_document_returns_invalid_arguments(plan_
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
     )
-    args = Namespace(path=None, plan_id='some-plan', document=None)
+    args = parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'open-in-ide', '--plan-id', 'some-plan')
 
     result = cmd_open_in_ide(args)
 
@@ -447,7 +446,7 @@ def test_cmd_open_in_ide_mode_b_document_resolution_failure(plan_context):
     (plan_context.fixture_dir / 'marshal.json').write_text(
         json.dumps({'plan': {'open_in_ide': True}}), encoding='utf-8'
     )
-    args = Namespace(path=None, plan_id='e2e-mode-b-resolver-fail', document='solution_outline')
+    args = parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'open-in-ide', '--plan-id', 'e2e-mode-b-resolver-fail', '--document', 'solution_outline')
 
     # Simulate resolver returning non-zero
     proc = mock.MagicMock(returncode=2, stdout='', stderr='no outline found')
