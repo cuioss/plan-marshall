@@ -639,10 +639,10 @@ recalled:
 
 | Lines | Module |
 |---|---|
-| 4,782 | `manage-metrics/test_manage_metrics.py` |
+| 4,787 | `manage-metrics/test_manage_metrics.py` |
 | 2,526 | `manage-locks/test_manage_locks_merge_lock.py` |
 | 2,029 | `manage-status/test_manage_status_transition.py` |
-| 1,914 | `plan-retrospective/test_analyze_logs.py` |
+| 1,928 | `plan-retrospective/test_analyze_logs.py` |
 | 1,679 | `manage-findings/test_manage_findings.py` |
 | 1,669 | `manage-status/test_planning_lane.py` |
 | 1,545 | `manage-locks/test_build_queue.py` |
