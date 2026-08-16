@@ -24,7 +24,7 @@ The pre-pass is the single decision source — the orchestrator never inspects r
 - `no_signal` — `true` when the transcript carried **no operator-authored signal of either kind**: `operator_turn_count == 0` AND `gate_decision_count == 0`. It is deliberately **not** a count of survivors — see [Why the verdict is not a survivor count](#why-the-verdict-is-not-a-survivor-count).
 - `over_budget` — `true` when the reduced text still exceeds `--read-budget-bytes` (default 2 MiB).
 - `reduced_transcript` — the Tier-1 input; non-empty only when both flags are `false`.
-- `raw_turn_count` / `dropped_turn_count` — the parseable-turn count before reduction and how many the reduction removed, so the caller can see how much was boilerplate.
+- `raw_turn_count` / `reduced_turn_count` / `dropped_turn_count` — the parseable-turn count before reduction, the raw turns kept, and how many the reduction removed, so the caller can see how much was boilerplate. `reduced_turn_count + dropped_turn_count == raw_turn_count` holds; recovered gate decisions were never raw turns, so they appear as extra entries in `reduced_transcript` and are counted by `gate_decision_count` alone.
 - `operator_turn_count` / `gate_decision_count` — the two operator-signal counters, reported separately from the survivor count so a caller can tell *"kept 200 turns, 3 operator-authored"* from *"kept 200 operator turns"*. `operator_turn_count` counts free-form operator corrections; `gate_decision_count` counts operator decisions recovered from the tool-result channel.
 
 ### The reduction identifies provenance positively
@@ -37,9 +37,29 @@ The predicate does **not** enumerate the synthetic shapes it knows about. It ask
 - a turn that is **wholly a harness envelope** — one or more XML-ish tag blocks with nothing outside them. The match is generic over the tag *name*, so an envelope introduced after this document was written is recognised without editing anything;
 - a **synthetic skill-load** turn — a loaded skill's body injected into the conversation, recognized by a `Base directory for this skill:` line followed by a markdown heading — or a **verbatim harness re-entry notice**, matched as a literal prefix because it carries no tag to key on.
 
-An envelope *attached to* an operator turn is not a drop: the harness routinely annotates a genuine utterance, and the residue then still holds the operator's prose.
+Three rules keep the residue trustworthy:
 
-**The direction of failure is the design.** An enumeration of synthetic shapes fails toward *"operator"* for any wrapper nobody listed — the direction that inflates the survivor count and manufactures a falsely healthy verdict. Residue-based classification fails toward *"synthetic"* instead. The accepted cost is that an operator turn consisting of nothing but a tag block is misread as synthetic.
+- **Only a matched open/close pair is an envelope.** Stray markup in operator prose (`List<Integer>`, a stray `</error>`) stays in the residue rather than swallowing the rest of the turn.
+- **Only the outermost pair is stripped.** An unmatched tag earlier in a turn therefore cannot suppress the stripping of a well-formed envelope that follows it — that would be a fail-toward-*operator* path, the direction this design exists to avoid.
+- **Some envelopes carry the operator's own words.** A slash command's `<command-args>` is the harness's wrapper around the operator's instruction, and it is this project's primary channel for driving a run; its inner text is kept as residue rather than dropped with the envelope. This allow-list is safe in the only direction an allow-list can be: an operator-bearing envelope nobody listed reads as synthetic, never the reverse.
+
+An envelope *attached to* an operator turn is not a drop either: the harness routinely annotates a genuine utterance, and the residue then still holds the operator's prose.
+
+**The direction of failure is the design.** An enumeration of synthetic shapes fails toward *"operator"* for any wrapper nobody listed — the direction that inflates the survivor count and manufactures a falsely healthy verdict. Residue-based classification fails toward *"synthetic"* instead. The accepted cost is that an operator turn consisting of nothing but a matched tag block is misread as synthetic.
+
+### The harness-injection marker inventory
+
+The classes below were derived by running the reducer over real session transcripts and classifying the survivors. **The inventory is evidence for the positive predicate, not a list the predicate consults** — no code keys on it.
+
+| Injected class | Reaches the reducer as | Recognised by |
+|---|---|---|
+| Skill body injected as a `user` turn | A `text` block | The `Base directory for this skill:` + heading signature |
+| Tool-result placeholder carrying no text | A `user` turn with empty text | Empty residue |
+| Tag-wrapped instruction blocks (`<system-reminder>`, `<task-notification>`, `<wake>`/`<event>`, command expansions) | A `text` block, on harness surfaces that persist them inline | Empty residue after envelope stripping |
+| Harness metadata (tool/agent/skill listings, permission and mode notices) | `attachment` events carrying **no `message`** | Never parsed as a turn at all |
+| Verbatim re-entry / local-command notices | A `text` block | Literal prefix match |
+
+⚠ **The decisive finding is that this inventory cannot be completed by enumeration.** The same logical injection is persisted differently by different harness surfaces and versions — a block rendered inline in one surface arrives as an `attachment` in another — so any list keyed on the shapes one transcript happens to contain is a sample. That is why the predicate is residue-based: it needs no entry here to classify a wrapper correctly.
 
 ### Why the verdict is not a survivor count
 

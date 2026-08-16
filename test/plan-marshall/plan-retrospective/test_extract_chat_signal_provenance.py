@@ -74,6 +74,12 @@ REENTRY_NOTICE = (
     'context. The conversation is summarized below.'
 )
 
+SLASH_COMMAND = (
+    '<command-name>/plan-marshall</command-name>\n'
+    '<command-message>plan-marshall is running…</command-message>\n'
+    '<command-args>fix the provenance filter</command-args>'
+)
+
 OPERATOR_TEXT = 'stop using the ratio as the check — validate by classification instead'
 
 
@@ -177,6 +183,33 @@ class TestOperatorAuthoredPredicate:
         """A close tag with no open tag is prose, not an envelope."""
         assert _mod.is_operator_authored('the build printed </error> — why?') is True
 
+    def test_slash_command_carries_operator_intent(self):
+        """A slash command is the operator's primary channel in this project.
+
+        The envelope is the harness's, but the words inside `<command-args>`
+        are the operator's. Dropping the block wholesale zeroes the channel
+        through which runs are actually driven — a false refusal, which is the
+        mirror of the defect this plan fixes.
+        """
+        assert _mod.is_operator_authored(SLASH_COMMAND) is True
+        residue = _mod.strip_harness_envelopes(SLASH_COMMAND)
+        assert 'fix the provenance filter' in residue
+        assert 'plan-marshall is running' not in residue
+
+    def test_stray_open_tag_does_not_suppress_a_later_envelope(self):
+        """An unmatched tag must not turn off stripping for the rest of the turn.
+
+        Only the outermost MATCHED pair is removed, so a stray `<Integer>` in
+        operator prose cannot keep a well-formed reminder that follows it in
+        the residue — a fail-toward-operator path, the direction that
+        manufactures the false clean verdict.
+        """
+        text = f'List<Integer>\n{SYSTEM_REMINDER}'
+        residue = _mod.strip_harness_envelopes(text)
+        assert 'List<Integer>' in residue
+        assert 'claudeMd' not in residue
+        assert _mod.is_operator_authored(text) is True
+
     def test_envelope_stripping_is_linear_on_unmatched_markup(self):
         """A transcript of unmatched ``<`` markup must not blow up the pre-pass.
 
@@ -240,6 +273,46 @@ class TestGateDecisionRecovery:
         result = _run(path)
         assert result['gate_decision_count'] == 0
         assert result['no_signal'] is True
+
+    def test_tool_result_quoting_a_refusal_marker_is_not_a_decision(self, tmp_path):
+        """A file body that merely CONTAINS a refusal notice is not a decision.
+
+        The reducer runs over this project's own retrospective sessions, so a
+        session that read the module declaring these markers would otherwise
+        count that read as operator signal and report a clean verdict — a
+        synthetic input raising an operator-signal counter, which is exactly
+        the defect the reduction exists to remove. The notice must be the
+        payload, not a substring of it.
+        """
+        quoted = (
+            'OPERATOR_REFUSAL_MARKERS = (\n'
+            '    "The user doesn\'t want to proceed with this tool use",\n'
+            ')\n'
+        )
+        path = _write(tmp_path, _tool_use('Read', 'tu_5'), _tool_result('tu_5', quoted))
+        result = _run(path)
+        assert result['gate_decision_count'] == 0
+        assert result['no_signal'] is True
+
+    def test_kept_and_dropped_counts_still_sum_to_the_raw_count(self, tmp_path):
+        """Recovered gate decisions were never raw turns, so the identity holds.
+
+        `reduced_turn_count + dropped_turn_count == raw_turn_count` is arithmetic
+        a caller may rely on; folding synthesised decision entries into the kept
+        count would silently break it.
+        """
+        path = _write(
+            tmp_path,
+            _tool_use(_mod.OPERATOR_DECISION_TOOL, 'tu_6'),
+            _tool_result('tu_6', 'Option A'),
+            _turn('user', OPERATOR_TEXT),
+        )
+        result = _run(path)
+        assert result['gate_decision_count'] == 1
+        assert (
+            result['reduced_turn_count'] + result['dropped_turn_count']
+            == result['raw_turn_count']
+        )
 
     def test_gate_decisions_render_under_a_distinct_role(self, tmp_path):
         """A reader can tell a gate decision from a free-form correction."""
@@ -363,6 +436,7 @@ class TestNoSignalVerdict:
             _turn('user', OPERATOR_TEXT),
             _turn('user', SYSTEM_REMINDER),
             _turn('assistant', '[DECISION] chose the positive predicate'),
+            _turn('user', SLASH_COMMAND),
             _turn('user', 'also update the aspect contract in lock-step'),
             _turn('user', SKILL_LOAD_TEXT),
         )
@@ -370,7 +444,7 @@ class TestNoSignalVerdict:
 
         assert result['no_signal'] is False
         assert result['over_budget'] is False
-        assert result['operator_turn_count'] == 2
+        assert result['operator_turn_count'] == 3
         assert OPERATOR_TEXT in result['reduced_transcript']
         assert 'Base directory for this skill:' not in result['reduced_transcript']
 

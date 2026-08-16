@@ -1,20 +1,24 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``extract-chat-signal.py``.
+"""Parsing, reduction and output-contract tests for ``extract-chat-signal.py``.
 
 The script reduces a Claude Code session JSONL transcript to its
 signal-bearing turns (Aspect 14 of ``plan-retrospective``). It keeps every
 OPERATOR-AUTHORED ``user`` turn and every ``assistant`` turn carrying a decision
-marker, dropping everything else — including the two classes of synthetic
-``user`` turn the harness injects (empty / whitespace-only tool-result
-placeholders, and skill bodies injected as ``user`` turns). It then emits a TOON
-payload carrying the two Tier-2 trigger flags:
+marker, dropping everything else. A ``user`` turn is operator-authored when
+prose remains after every harness envelope is stripped — a positive predicate,
+not an enumeration of the synthetic shapes anyone happened to have seen. It
+then emits a TOON payload carrying the two Tier-2 trigger flags:
 
-- ``no_signal`` — true when the reduction kept zero turns.
+- ``no_signal`` — true when the transcript carried no operator-authored signal
+  of either kind: ``operator_turn_count == 0`` AND ``gate_decision_count == 0``.
 - ``over_budget`` — true when the reduced text exceeds ``--read-budget-bytes``.
 
 Either flag is the orchestrator's signal to fall back to the Tier-2 WARNING
 finding (``reason: transcript_too_large``). A missing transcript yields
 ``status: skipped, reason: transcript_unavailable``.
+
+Provenance classification and the two operator-signal counters are covered by
+``test_extract_chat_signal_provenance.py``.
 """
 
 from __future__ import annotations
