@@ -569,6 +569,40 @@ Then:
   dismissed finding is still evidence.
 - Every finding, accepted or rejected, goes in the run report (§ Report).
 
+### When the loop has converged — and what "converged" may NOT mean
+
+"A pass that found a defect has not finished" is the rule, and it is deliberately strict. But taken
+without a terminating condition it implies looping until a round returns literally nothing, and that
+is not always reachable: each round's *fixes* are new unreviewed prose, so a round can keep producing
+findings about the previous round's corrections indefinitely while the artefact under review stops
+improving. An observed run went five rounds; rounds 3-5 produced **zero** findings against the code
+and every finding against the run's own report.
+
+**The loop MAY be stopped short of a clean round, under all four of these conditions:**
+
+1. **No finding in the last round changed code behaviour, a test's meaning, or a deliverable's
+   verdict.** A single finding of any of those kinds resets this — fix and re-dispatch.
+2. **The code was verified by something stronger than another read.** A differential run against the
+   merge base, a fuzz sweep, a mutation test that proves a new guard non-vacuous, an exhaustive
+   enumeration of a function's return branches. "Three agents read it and found nothing" is not this.
+3. **The findings are declining and confined to the run's own prose.** Not merely fewer — *narrower*:
+   about the report and the plan documents rather than the shipped change.
+4. **The report says the loop was stopped by judgement**, names the round, and records that the
+   document should be assumed to still contain residue of the kind the last round found.
+
+⛔ **Stopping is a decision the run discloses, never a state it reports.** "Verification converged" and
+"I chose to stop at round 5 with prose findings outstanding" are different claims, and only the second
+is true in this situation. Writing the first is the same unmeasurable-rendered-as-measured defect this
+lane exists to catch, applied to the lane's own process.
+
+⭐ **Converged code is not defect-free code, and the report must not blur them.** In the run that
+produced this rule, the sub-agent loop was correctly assessed as converged — and an external reviewer
+then found **two real code defects** in the same diff, one of them a `Path.cwd()` fallback the run had
+seen and consciously left. What convergence licenses is stopping *this* loop; it licenses no claim
+about the code's correctness. Where a reviewer is still owed a look (§ Step 7), give it to them:
+convergence is not a substitute for review coverage, and a rate-limited reviewer whose window reopens
+is worth re-requesting precisely because its method differs from the loop that just converged.
+
 **A fix is a change, so it gets the same beyond-diff sweep the original change got.** The sweep above
 is written against the diff under review; by the second round the diff under review is largely the
 *previous round's fixes*, and the sweep that matters is over what those fixes made false elsewhere. So
@@ -676,9 +710,39 @@ re-run the query) every time you state it, and say which unit you are stating �
 *functions* and a count of *collected cases* are different numbers, and a reader who runs the suite
 sees only the second.
 
-These three exist because one run paid for them: across four verification rounds, each round's fixes
-landed at the site the finding named and not at the sites restating the same claim — twice in the run
-report's own findings table.
+⛔ **An enumeration lead-in is a figure.** "Two obligations follow", "three consumers", "N of M rounds
+ran", a numbered list's introducing count, and an ordinal that names an object described elsewhere
+("a **fourth** declaration surface") are all figures that move the moment the run edits the thing they
+count — and they do **not read as figures**, which is exactly why they survive a sweep that catches
+test totals. Count the items in the file as it now stands, at the moment of the claim. **A correction
+to a count is itself a count**: re-count after editing it, because the corrected value is as easily
+guessed as the original was.
+
+The failure this closes is mechanical, not careless. One run applied this rule diligently to a
+`20298 passed` figure and to a five-number population table — every one of which survived five rounds
+of audit intact — while walking twice past a "Two obligations follow" lead-in over a six-item list,
+"correcting" it to "Five". Across that run the same shape recurred **nine** times: a one-item list
+introduced as "Two further consumers"; "Two independent verification rounds" standing above three
+sections; a build-gate count the same commit had just invalidated; one object called "fourth",
+"fifth", and "second" in three places. Three consecutive rounds introduced a fresh instance of this
+defect *while fixing the previous one*.
+
+Two corollaries follow from that pattern:
+
+- **Prefer naming to counting.** "W3 and W4 are rows that were not actually fixed" cannot go stale;
+  "Two rows were not actually fixed" goes stale the moment a third is found. Where a count carries no
+  information the names do not, drop it.
+- **Do not number an object across category boundaries.** The "fourth/fifth/second" drift above came
+  from numbering a *declaration surface* into a sequence of *denominator consumers*. Once an ordinal
+  spans two kinds of thing, every later edit to either kind invalidates it somewhere. Describe the
+  object; let the reader count if they need to.
+
+The run-report, PR-description, and moving-figure obligations above all exist because runs paid for
+them: across one run's four verification rounds, each round's fixes landed at the site the finding
+named and not at the sites restating the same claim — twice in the run report's own findings table.
+(They are named rather than counted here for the reason the enumeration rule gives: a count in this
+position goes stale the moment an obligation is added to the list, which is how it read "three" while
+standing above four blocks.)
 
 ## GitHub access
 
