@@ -498,11 +498,94 @@ _(Completed at the merge gate — see § PR.)_
 
 ## Contract check (Step 9)
 
-_(Completed before the merge gate.)_
+Re-read against what actually happened, per step, with the artifact that proves it.
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **NOT DONE as specified** | Only `cloud-plan-lane`. The two always-load skills and the Python-test conditional were not loaded — see § Skills loaded, where it is recorded rather than narrated as equivalent |
+| 2 Branch | **DONE** | Harness-assigned `claude/test-quality-plan-execution-evap45`, kept as-is per the cloud rule. It was **absent from `origin`** on arrival and pushed as the run's first action, before any edit |
+| 3 Plan directory | **DONE** | `doc/plans/test-quality/050-plan-state-and-records-test-reduction/plan.md` exists via `git mv`, numeric prefix preserved; the first-instruction block was present and needed no repair |
+| 4 Implement | **DONE** | 14 commits, each with the trailer, no "Generated with Claude Code" footer. Deliverables addressed to the extent recorded above |
+| 4 Per-commit gate | **DONE** | Every commit touching `*.py` preceded by a clean direct `./pw quality-gate` — read from the tools' own output (`ruff … All checks passed!`, `mypy … Success: no issues found in 408 source files`, `SPDX-header check passed`), since the direct path emits no TOON log |
+| 4 Pushed | **DONE** | Pushed after every commit; `git status -sb` reports no `ahead` |
+| 5 Build gate | **DONE** | git-derived verdict: 89 `*.py` of 91 changed files → gate applies. `./pw verify` → `=== verify: SUCCESS ===`, 20,272 passed. First run was RED (3 × `no-any-return` under `test-compile`); fixed and re-run |
+| 6 Verification sub-agent | **DONE, and it found real defects** | Two passes. The independent pre-PR verifier (§ Independent pre-PR verification) and the plan-mandated D5 cold read (§ D5 cold-read verification). 15 + 10 findings, dispositions in § Findings |
+| 7 PR cycle | **DONE** | PR #1258. No `skip-bot-review` — 89 `*.py` files, so it keeps full review. Comment surfaces and participation below |
+| 8 Merge gate | see § Reviewer participation | conditions 1–3 and the condition-4 disclosure recorded there |
+| 8 Bridge | **DONE** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory. The two stale epic-brief references were **deliberately not edited** (§ Findings 35–36) — which also keeps this clause clean |
+| 9 This check | **DONE** | this table |
+| 9 What have we learned | **DONE** | below |
+
+**GitHub access path:** the GitHub MCP server (the cloud path). No `gh` CLI in this session.
+**Branch form:** harness-assigned, kept.
+**Plugin cache sync:** not owed. This run edited no `marketplace/bundles/` file, and a cloud run neither
+performs nor owes a sync in any case.
+
+**Two steps are reported as not fully done**, per the rule that a skipped step is reported as skipped:
+Step 1 (skills), and D1's budget clause inside Step 4 (§ Deliverables).
 
 ## What have we learned (Step 9)
 
-_(Completed before the merge gate.)_
+**One proposal, and this run produced the evidence for it twice.**
+
+### Proposal: an AST-faithful move is not a text-faithful move, and the contract's Step 6 sub-agent instruction should say so
+
+**What happened.** D1 moved 92 classes by slicing source between `node.lineno` and `node.end_lineno`.
+That is exact for every construct the AST models — and **silently drops every comment that precedes a
+top-level definition**, because a leading comment is not part of the node. 162 column-0 comments went
+missing from a commit whose message called it a pure move. Eight of them carried fixture invariants
+that survive nowhere else: why a constant is Maven rather than pyproject, why a request body passes S5
+concreteness, a `data-format.md` cross-reference, and the table mapping each upstream check to the
+structured shape the synthesis critic consumes.
+
+**Why nothing caught it.** Every check this run ran was AST- or behaviour-shaped and all of them were
+green: 542 = 542 collected items with byte-identical node-id sets, 446 = 446 test functions, identical
+coverage down to the partial-branch count, `ruff` clean, `./pw verify` SUCCESS. **A pure-move check
+built on the AST cannot see a comment, because the AST does not contain one.** The defect was found
+only because an independent verifier chose to diff comments as a separate dimension — a choice the
+contract does not currently ask for.
+
+**The same root cause, second instance.** D5's citation strip removed text *inside* sentences. Five
+sentences were left semantically correct and mechanically broken — a clause with no subject, a tense
+that no longer agrees, a line wrapped at the excision point. `ruff`, `mypy`, and the doctor rule were
+all green over every one, and re-reading my own edits did not surface them; a cold reader with no
+context found all five and identified the pattern before knowing its cause: *"all five sit at exactly
+the point where a citation would have been."*
+
+**The generalisation, which is what makes it worth a contract change:** *the site of a deletion is
+itself a defect surface.* Step 6 currently directs the sub-agent to sweep for statements a change makes
+**false** — stale claims, retired values, restatements by consumer kind. That is a *semantic* sweep,
+and it is aimed at text the change did not touch. Neither instance above is a false statement. Both are
+**text the change damaged in place**: still true, no longer coherent, and invisible to every automated
+gate because no gate reads prose for coherence.
+
+**Concrete proposed edit** to `.claude/skills/cloud-plan-lane/SKILL.md` § Step 6, as a bullet in the
+sub-agent's instruction list:
+
+> - when the change **removes** text rather than adding it — a citation struck from a sentence, a
+>   clause deleted, a block relocated by line range — the instruction to check the **removal sites
+>   themselves**, not only what the removal made false elsewhere. A deletion leaves two failure modes
+>   no build gate can see: prose that is still true but no longer coherent (a clause with no subject,
+>   a tense that no longer agrees, a line wrapped at the excision point), and **content the tool
+>   carrying the change could not represent** — a line-range or AST-based move silently drops comments
+>   that precede a definition, because a leading comment belongs to no node. Verify a "pure move" by
+>   diffing **comments and prose as their own dimension**, not only the AST: an AST-faithful move is
+>   not a text-faithful move.
+
+**Per the contract, this is presented, not self-approved.** Shipping it is a separate `chore/` PR
+touching only the skill, kept out of this plan's PR so the two changes do not share a review audience.
+**Operator decision pending; no contract change has been made by this run.**
+
+### Considered and NOT proposed
+
+- **The `./pw verify` vs narrower-calls trap.** It fired exactly as the contract documents —
+  `quality-gate` and `module-tests` green, `test-compile` red on three `no-any-return` errors. That is
+  the contract **working**, not a gap. No change.
+- **"A claim is not an outcome."** A stale generated module survived a regeneration and inflated the
+  collected count 542 → 566; checking the count against the baseline rather than assuming it caught the
+  defect immediately. Again the contract working. No change.
+- **Step 1 skill loading.** This run did not load the named skills. That is a deviation by the run, not
+  a defect in the contract, and it is recorded as such. No change proposed.
 
 ## Residue
 
