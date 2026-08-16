@@ -2063,6 +2063,27 @@ class TestScriptCostRollup:
         assert rollup['distinct_scripts'] == 12
         assert rollup['calls_at_or_over_ceiling'] == 12
 
+    def test_malformed_duration_is_refused_not_counted_as_zero(self, tmp_path):
+        # A malformed body like `(1.2.3s)` carries no usable duration. Matching
+        # it and coercing the parse failure to 0.0 would put a call that
+        # contributed nothing measured into the total it was counted in — the
+        # absent-read-as-zero defect this roll-up exists to avoid.
+        logs_dir = tmp_path / 'logs'
+        _write_folded_log(
+            logs_dir,
+            'script-execution-2026-06-01.log',
+            [
+                _line('2026-06-01T10:00:00Z', 'INFO', 'pm:good:good run (2.0s)'),
+                _line('2026-06-01T10:00:01Z', 'INFO', 'pm:bad:bad run (1.2.3s)'),
+            ],
+        )
+
+        rollup = _analyze_logs.analyze_folded_global_logs(logs_dir)['cost_rollup']
+
+        assert rollup['total_calls'] == 1
+        assert rollup['total_duration_ms'] == pytest.approx(2000.0)
+        assert [row['notation'] for row in rollup['ranked']] == ['pm:good:good']
+
     def test_empty_corpus_publishes_zero_not_absence(self, tmp_path):
         logs_dir = tmp_path / 'logs'
         _write_folded_log(
@@ -2225,6 +2246,41 @@ class TestContextPositionCost:
 
         assert result['unmeasured_rows'] == 1
         assert result['no_tool_use_rows'] == 0
+        assert result['by_phase'][0]['cache_read_per_tool_use'] == 'unmeasured'
+
+    def test_null_tool_uses_is_a_recording_gap_not_a_complete_record(self):
+        # `undefined` asserts the record is complete, so a null denominator must
+        # not reach it: folding None into 0 would claim completeness on the
+        # strength of a value the writer failed to record.
+        per_phase = {
+            '5-execute': self._phase([{'cache_read_input_tokens': 900, 'tool_uses': None}]),
+        }
+
+        result = _analyze_logs.summarize_context_position_cost(per_phase)
+
+        assert result['unmeasured_rows'] == 1
+        assert result['no_tool_use_rows'] == 0
+        assert result['by_phase'][0]['cache_read_per_tool_use'] == 'unmeasured'
+
+    def test_negative_tool_uses_is_a_recording_gap(self):
+        # A negative call count is corruption, not an undefined ratio.
+        per_phase = {
+            '5-execute': self._phase([{'cache_read_input_tokens': 900, 'tool_uses': -3}]),
+        }
+
+        result = _analyze_logs.summarize_context_position_cost(per_phase)
+
+        assert result['unmeasured_rows'] == 1
+        assert result['no_tool_use_rows'] == 0
+
+    def test_phase_with_no_rows_reports_the_weaker_token(self):
+        # An empty phase has no zero-tool-use row to justify `undefined`, which
+        # would assert a complete record. `unmeasured` is the honest default.
+        per_phase = {'5-execute': self._phase([])}
+
+        result = _analyze_logs.summarize_context_position_cost(per_phase)
+
+        assert result['by_phase'][0]['rows'] == 0
         assert result['by_phase'][0]['cache_read_per_tool_use'] == 'unmeasured'
 
     def test_zero_denominator_multiple_is_undefined_not_unmeasured(self):

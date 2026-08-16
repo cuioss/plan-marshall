@@ -99,7 +99,15 @@ _GLOBAL_LOG_LINE_RE = re.compile(
 )
 
 # Trailing ``(0.22s)`` script-call duration, anchored to end-of-line.
-_GLOBAL_LOG_DUR_RE = re.compile(r'\(([0-9.]+)s\)\s*$')
+#
+# The digit group is deliberately as strict as the cross-plan reader's
+# (`audit.py` `_LOG_DUR_RE`) rather than a loose ``[0-9.]+``: a malformed body
+# like ``(1.2.3s)`` must NOT match. Under the loose form it matched, ``float()``
+# raised, the duration became ``0.0``, and the line still joined the roll-up —
+# publishing a call that contributed nothing measured to the total it was
+# counted in. That is the same absent-read-as-zero defect the cross-plan roll-up
+# had, and the fix is to refuse the match rather than to invent a zero.
+_GLOBAL_LOG_DUR_RE = re.compile(r'\((\d+(?:\.\d+)?)s\)\s*$')
 
 # Body signals a failure even when the LEVEL cell is INFO (a script can exit
 # non-zero while the logging wrapper stamps INFO).
@@ -490,15 +498,18 @@ def summarize_context_position_cost(
     POPULATION DISCIPLINE. A row is excluded for either of TWO distinct reasons,
     counted SEPARATELY because they call for different remedies:
 
-    * ``unmeasured_rows`` — the row carries no ``cache_read_input_tokens`` key at
-      all. The reader omits the key for unmeasured, unrecognised and
-      indeterminate cells alike (see ``_parse_dispatch_boundary_file``), so this
-      is a WRITER-side gap: the measurement was never recorded. It is never
-      folded in as a zero, which would silently understate every rate it touched.
-    * ``no_tool_use_rows`` — the row was measured but reports ``tool_uses == 0``,
-      so a per-tool-use rate is arithmetically UNDEFINED. Nothing is missing from
-      the record; the ratio simply does not exist. Folding this into
-      ``unmeasured_rows`` would report a recording gap where there is none.
+    * ``unmeasured_rows`` — the row is missing EITHER half of the rate. The
+      reader omits ``cache_read_input_tokens`` for unmeasured, unrecognised and
+      indeterminate cells alike (see ``_parse_dispatch_boundary_file``), and a
+      rate equally needs a ``tool_uses`` denominator, so a row lacking either key
+      — or carrying a non-integer or negative ``tool_uses`` — is a WRITER-side
+      gap: the measurement was never recorded. It is never folded in as a zero,
+      which would silently understate every rate it touched.
+    * ``no_tool_use_rows`` — BOTH keys are present and ``tool_uses`` is exactly
+      ``0``, so a per-tool-use rate is arithmetically UNDEFINED. Nothing is
+      missing from the record; the ratio simply does not exist. Folding this into
+      ``unmeasured_rows`` would report a recording gap where there is none — and
+      folding the reverse would claim a complete record that is not.
 
     This publishes the DIMENSION and asserts no figure. Where a rate cannot be
     computed one of two literal tokens is emitted rather than a ``0.0`` a reader
@@ -512,11 +523,14 @@ def summarize_context_position_cost(
         denominator. The four are reconcilable: measured + unmeasured +
         no_tool_use == total.
       - by_phase: list of {phase, rows, measured_rows, cache_read_per_tool_use},
-        phase-ordered. ``cache_read_per_tool_use`` is a float, ``unmeasured``
-        (the phase has at least one row the writer did not measure and no
-        contributing row), or ``undefined`` (every non-contributing row in the
-        phase WAS measured and reported zero tool uses, so the record is complete
-        and the ratio still has no value).
+        phase-ordered. ``cache_read_per_tool_use`` is a float, or one of two
+        tokens when no row contributed: ``undefined`` when the phase has at least
+        one zero-tool-use row and NO unmeasured row — the record is complete and
+        the ratio still has no value — and ``unmeasured`` in every other
+        no-contribution case, which covers both a phase carrying a recording gap
+        and a phase with no rows at all. ``unmeasured`` is the weaker claim and
+        is therefore the default: only a demonstrably complete phase earns
+        ``undefined``.
       - position_multiple: highest phase rate / lowest phase rate — the position
         effect expressed as a multiple. Requires at least TWO phases with a
         measured rate; one phase is not a position signal.
@@ -548,9 +562,16 @@ def summarize_context_position_cost(
             # a writer-side gap, not an undefined ratio.
             if 'cache_read_input_tokens' not in row or 'tool_uses' not in row:
                 continue
-            tool_uses = row['tool_uses'] or 0
-            if tool_uses <= 0:
-                # Measured, but the ratio is undefined — a DIFFERENT fact from
+            tool_uses = row['tool_uses']
+            # A present-but-unusable denominator is a recording gap, NOT an
+            # undefined ratio: `None` and a negative count are both things the
+            # writer failed to record properly, and `or 0` would quietly fold
+            # them into the zero bucket — asserting a complete record on the
+            # strength of a null. Only an exact `0` earns `no_tool_use`.
+            if not isinstance(tool_uses, int) or isinstance(tool_uses, bool) or tool_uses < 0:
+                continue
+            if tool_uses == 0:
+                # Recorded, but the ratio is undefined — a DIFFERENT fact from
                 # "not measured", so it is counted under its own name.
                 no_tool_use_rows += 1
                 phase_no_tool_use += 1
@@ -1372,7 +1393,10 @@ def analyze_folded_global_logs(logs_dir: Path) -> dict[str, Any]:
                 try:
                     seconds = float(dur_match.group(1))
                 except ValueError:
-                    seconds = 0.0
+                    # Unreachable under the strict pattern above; if it ever
+                    # fires, the line carries no usable duration and is dropped
+                    # rather than counted as a zero-second call.
+                    continue
                 if seconds >= _GLOBAL_LOG_SLOW_SECONDS:
                     slow_call_count += 1
                 notation_match = _NOTATION_RE.search(rest)

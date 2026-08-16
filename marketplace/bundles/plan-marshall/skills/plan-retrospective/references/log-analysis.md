@@ -69,10 +69,11 @@ context_position_cost:
   # a share of, or a ratio over, the token total.
   #
   # Two DISTINCT exclusion causes, counted apart because they need different
-  # remedies: `unmeasured_rows` (the writer recorded no cache-read value) and
-  # `no_tool_use_rows` (it did, but `tool_uses` is 0 so the ratio is undefined).
-  # Neither is ever folded in as a zero. measured + unmeasured + no_tool_use
-  # reconciles to total_rows.
+  # remedies: `unmeasured_rows` (the row is missing either half of the rate — a
+  # cache-read value or a usable `tool_uses` denominator) and `no_tool_use_rows`
+  # (both recorded, `tool_uses` exactly 0, so the ratio is undefined). Neither is
+  # ever folded in as a zero. measured + unmeasured + no_tool_use reconciles to
+  # total_rows.
   total_rows: N
   measured_rows: N
   unmeasured_rows: N
@@ -91,8 +92,10 @@ global_log_signals:
   fixture_leak_signatures[*]: [...]
   # Duration-bearing lines with no parseable notation: counted by the ceiling,
   # excluded from the roll-up (which cannot attribute a total to a script it
-  # cannot name). This is the EXACT difference between the two populations, so
-  # `cost_rollup.calls_at_or_over_ceiling` can be lower than `slow_call_count`.
+  # cannot name). So `cost_rollup.calls_at_or_over_ceiling` can be lower than
+  # `slow_call_count` — and this field BOUNDS that gap rather than equalling it,
+  # because it counts unnamed calls at every duration while the gap counts only
+  # the unnamed calls at or over the ceiling.
   unattributable_calls: N
   cost_rollup:
     # The cumulative complement to `slow_call_count`. Same shape as
