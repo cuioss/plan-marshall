@@ -131,6 +131,15 @@ def test_metrics_check_carries_this_plan_pr_boundary():
     assert audit.CHECK_ERA["metrics"] == "#922"
 
 
+def test_global_log_analysis_carries_this_plan_pr_boundary():
+    # The cumulative cost roll-up reworks this check's aggregation and
+    # signal-precision mechanics: it adds the `dominant-cost-caller` row kind and
+    # ends the `genuine_signal_count == row count` identity, so a reader of an
+    # archived row needs to know which side of that boundary it was recorded on.
+    # Bumped from #849. Co-changing mirror of the audit.py CHECK_ERA constant.
+    assert audit.CHECK_ERA["global-log-analysis"] == "#1260"
+
+
 def test_merge_window_accounting_carries_this_plan_pr_boundary():
     # Plan-14 reworked the merge-window-accounting mechanics — D1 strips
     # --delete-branch/--strategy from the pr merge-queue enqueue path and D3 fixes the

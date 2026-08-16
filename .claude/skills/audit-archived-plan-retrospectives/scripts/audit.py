@@ -349,7 +349,9 @@ CROSS_PLAN_CHECKS = {
 # merge-lock stale-holder liveness fix alter), `#884` (plan-17's boundary — the
 # `finalize-flow-conformance` check plan-17 reworks, whose finalize merge-
 # completeness mechanics plan-17's D1 pre-merge comment barrier and D2
-# completion-aware polling alter), `plan-10` (the roadmap head this plan
+# completion-aware polling alter), `#1260` (the `global-log-analysis` boundary —
+# the cumulative cost roll-up added beside the per-call ceiling, which adds a row
+# kind and ends the `genuine_signal_count == row count` identity), `plan-10` (the roadmap head this plan
 # re-confirms the general checks accurate against), and `PR-PENDING` (this plan's
 # own boundary, a placeholder resolved to the real PR at finalize by
 # project:finalize-step-era-stamp-fill AFTER create-pr — this plan reworks the
@@ -377,7 +379,17 @@ CHECK_ERA: dict[str, str] = {
     # classify-before-route lane signals (change_type + scope_estimate
     # pre-classified before the router runs). Unaffected by this plan.
     "track-selection-accuracy": "#875",
-    "global-log-analysis": "#849",
+    # global-log-analysis — #1260 (this plan's boundary, bumped from #849): this
+    # plan adds a CUMULATIVE cost roll-up beside the per-call slow-call ceiling
+    # and the per-count high-frequency gate, adds the `dominant-cost-caller` row
+    # kind, renames `distinct_call_keys` to `distinct_timed_call_keys` and adds
+    # `untimed_call_keys`, and — the semantic change a reader most needs dated —
+    # breaks the former `genuine_signal_count == row count` identity, because the
+    # roll-up rows are stamped `informational`. Those ARE the aggregation and
+    # signal-precision mechanics this check's rows are read against, so
+    # pre-boundary rows read as era-expected and post-boundary rows carry the
+    # cost view.
+    "global-log-analysis": "#1260",
     # sequence-and-build-minimality — PR-PENDING (this plan's own boundary, a
     # placeholder resolved to the real PR at finalize by
     # project:finalize-step-era-stamp-fill AFTER create-pr, bumped from #887): this
