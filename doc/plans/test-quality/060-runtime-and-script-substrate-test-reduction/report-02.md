@@ -93,8 +93,12 @@ published `build_parser()` would make all 14 convertible at a stroke.
 
 `git diff --name-only origin/main...HEAD -- '*.py'` non-empty (12 test modules) → the gate applies.
 `./pw quality-gate` clean: `ruff … All checks passed!`, `mypy … Success: no issues found in 408 source
-files`, `SPDX-header check passed`. Full `./pw verify` result recorded at § Findings after the pre-PR
-run.
+files`, `SPDX-header check passed`.
+
+Full `./pw verify`: **`=== verify: SUCCESS ===`**, whole-tree **20,322 passed, 14 skipped, 0 failed**
+in 461s, with all three sub-steps including `test-compile` (mypy over the whole test tree). The
+whole-tree total is higher than run 01's 20,272 because `main` gained tests from other merges in
+between — the figure counts the tree at this run's base, not a delta attributable to this change.
 
 ## Verification
 
