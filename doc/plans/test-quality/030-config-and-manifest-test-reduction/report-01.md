@@ -70,7 +70,7 @@ bodies before any collapse. It is FALSE, in the run's favour:**
 
 | # | Deliverable | Verdict | Evidence |
 |---|---|---|---|
-| D1 | Parametrize the contract tables | **Partial** | 9 families collapsed across 3 modules (below). The slice-wide family population is ~113; most remain. |
+| D1 | Parametrize the contract tables | **Partial** | 11 families collapsed across 3 modules (below). Done-when 1 is met for `test_config_defaults.py`; the slice-wide family population is ~113, and `test_decision_rules.py` — named in D1 — received no table. |
 | D2 | Split every module over budget | **Not done** | `test-module-line-budget` 41 → 39. Sequenced after D1 by the plan; D1 did not complete. |
 | D3 | Arrange into fixtures and factories | **Not done** | setattr:fixture ratio unchanged at 257:13. No `parse_ns` call sites converted, so the exception list is empty by non-attempt, not by finding none. |
 | D4 | One import preamble | **Partial** | 137 → 30 doctor findings (78% closed); 50 modules converted. Done-when (grep returns nothing) **not met**: 22 sites in 15 files remain. |
@@ -90,10 +90,19 @@ bodies before any collapse. It is FALSE, in the run's favour:**
 | " | recipe-provenance decision-matrix rows | 6 → 6 |
 | `manage-config/test_effort_read.py` | effort-resolution cascade | 10 → 10 |
 | " | effort-read rejection cases | 4 → 4 |
+| `manage-config/test_config_defaults.py` | `DEFAULT_PLAN_{EXECUTE,INIT}` knob registration | 5 → 5 |
+| " | `get_default_config` surfacing of the same five | 5 → 5 (+1 named round-trip test) |
 
-`test_flat_group_set_returns_role_value` was deliberately **left out** of the effort cascade table: it
-carries a marshal.json hash-stability assertion the other rungs do not, and the plan requires such an
-assertion to survive rather than be folded away.
+**Two deliberate non-collapses, each recorded rather than silently skipped:**
+
+- `test_flat_group_set_returns_role_value` stays out of the effort cascade table: it carries a
+  marshal.json hash-stability assertion the other rungs do not.
+- The three `test_init_includes_*` functions in `test_cmd_init.py` share only a name **prefix**. They
+  assert three different section contracts, one of which carries an ordering invariant
+  (`archive-plan` last, `record-metrics` before it) that a shared table would contort. The plan
+  anticipates exactly this — such members "belong in a single-accessor table **or in no table at
+  all**" — so they are left alone. Their repeated `cmd_init` + read-marshal arrange **is** a genuine
+  B4 fixture candidate, and is left to D3.
 
 ### D4 — the isolation hazard this deliverable carries
 
@@ -125,20 +134,21 @@ tree clean afterwards — no `uv.lock` churn reached a commit.
 
 | Directory | Before | After | Δ |
 |---|---:|---:|---:|
-| `manage-config` | 22,648 | 21,826 | −822 |
-| `manage-execution-manifest` | 20,069 | 19,578 | −491 |
+| `manage-config` | 22,648 | 21,795 | −853 |
+| `manage-execution-manifest` | 20,069 | 19,584 | −485 |
 | `manage-run-config` | 4,113 | 4,113 | 0 |
 | `manage-references` | 1,403 | 1,402 | −1 |
 | `manage-solution-outline` | 2,595 | 2,594 | −1 |
 | `marshall-steward` | 3,788 | 3,788 | 0 |
-| **Slice total** | **54,616** | **53,301** | **−1,315 (−2.41%)** |
+| **Slice total** | **54,616** | **53,276** | **−1,340 (−2.45%)** |
 
 ### Collected test count
 
 `uv run python -m pytest <six dirs> --collect-only -q -o addopts=""`
 
-**2,711 → 2,714 (+3).** The increase is the `_role_of` collapse, which split two multi-assert
-functions into one row per step id. **No decrease** — Verification condition 1 holds.
+**2,711 → 2,715 (+4).** The increase is the `_role_of` collapse splitting two multi-assert functions
+into one row per step id (+3), plus the token-magnitude round-trip kept as its own named test when the
+phase-knob pairs collapsed (+1). **No decrease** — Verification condition 1 holds.
 
 ### Coverage
 
@@ -150,8 +160,9 @@ run once against `origin/main`'s test tree and once against this branch's, same 
 | Before | 7782 | 1297 | 3202 | 403 | **81%** |
 | After | 7782 | 1297 | 3202 | 403 | **81%** |
 
-**Byte-identical.** Verification condition 2 holds — not merely "same rounded percentage", the same
-miss and partial-branch counts.
+**Byte-identical**, and re-measured against the FINAL tree after the round-1 fix commit, not only
+against an intermediate state. Verification condition 2 holds — not merely "same rounded percentage",
+the same miss and partial-branch counts.
 
 ### plugin-doctor `test-conventions`, per rule
 
@@ -163,11 +174,21 @@ Invocation: the epic README's five-directory `PYTHONPATH` form. Finding rows onl
 | `test-docstring-historical-prose` | 24 | **0** | −24 |
 | `test-module-preamble-boilerplate` | 137 | 30 | −107 |
 | `test-module-line-budget` | 41 | 39 | −2 |
+| `subprocess-pythonpath` | 2 | 2 | 0 |
 | `test-helper-module-misnamed` | 0 | 0 | 0 |
 
 Per directory after: `manage-config` 17 budget / 7 preamble · `manage-execution-manifest` 13 / 9 ·
 `manage-run-config` 3 / 2 · `manage-references` 2 / 0 · `manage-solution-outline` 3 / 4 ·
-`marshall-steward` 1 / 8.
+`marshall-steward` 1 / 8 / 2 `subprocess-pythonpath`.
+
+⚠️ **A correction to this run's own baseline.** The first baseline sweep counted rows matching
+`^  test-[a-z-]+,/`, which silently excluded every rule whose id does not start with `test-`. That hid
+`subprocess-pythonpath` (2 findings, both in `marshall-steward/test_steward_determine_mode.py`, a file
+this diff does not touch — pre-existing, unchanged, and the reason that directory reports
+`status: fail`). Both columns above are re-derived with the general `,/home/` row filter, on
+`origin/main` and on this branch, so before and after are counted the same way. A rule-name-shaped
+filter is exactly the "filtered query believed without a positive control" failure the lane contract
+warns about.
 
 ### `parse_ns` exception list
 
@@ -185,12 +206,12 @@ started.
 
 | # | Condition | Verdict |
 |---|---|---|
-| 1 | Collected test count does not decrease | **HOLDS** — 2,711 → 2,714 |
+| 1 | Collected test count does not decrease | **HOLDS** — 2,711 → 2,715 |
 | 2 | Coverage does not decrease | **HOLDS** — identical to the statement |
-| 3 | Line count drops ≥ 30% of the starting total | **FAILS** — 2.41% against a 30% floor |
+| 3 | Line count drops ≥ 30% of the starting total | **FAILS** — 2.45% against a 30% floor |
 
 **The floor was not reached, and the plan's instruction on that is to report the shortfall rather than
-reach it another way.** Shortfall: **15,070 lines** (30% of 54,616 is 16,385; achieved 1,315).
+reach it another way.** Shortfall: **15,045 lines** (30% of 54,616 is 16,385; achieved 1,340; target ≤ 38,231).
 
 ### Why — the plan's premise for this floor is refuted by measurement
 
@@ -229,9 +250,34 @@ they run — five sibling plans are carrying floors set the same way.
 | 6 | This run | Running the slice while 173 tests were failing left `.plan/marshal.json` modified (66 insertions, 267 deletions) — a test mutates the committed file and only restores it on its success path. | **Recorded, not fixed.** Confirmed collateral of the broken intermediate state, not a standing defect: a clean full-slice run afterwards leaves the file untouched. `.plan/` is outside this plan's surface. The hazard is real — a test that restores state only when it passes turns one failure into a dirty tree. |
 | 7 | `test_cmd_ceremony_policy.py` | `conftest.get_script_path` raises `FileNotFoundError` for an absent script, so it cannot express "assert this script is deleted". | **Fixed** — that assertion uses `get_scripts_dir(...) / name` instead. Noted because it is an easy mis-substitution during a D4 sweep. |
 
-### Sub-agent verification findings
+### Sub-agent verification findings (round 1)
 
-_appended below after dispatch_
+The verifier confirmed, by row-by-row diff against `git show origin/main:<path>` for all nine tables
+then present: **no assertion was dropped in any collapse**; all four Out-of-scope constraints hold
+(`git diff --diff-filter=D` empty — no test deleted); removed/added `def test_` counts reconcile
+exactly; `ids=` cold-read passes on all three largest tables. It raised 8 defects, all real:
+
+| # | Finding | Disposition |
+|---|---|---|
+| V1 | The branch-cleanup collapse dropped per-knob present-tense rationale D5 says to KEEP — why 1800 s, what `admin_merge_on_stuck_state` gates, the cross-plan merge-lock. A reader could say what the row pins but not why the value matters. | **Fixed** — restored as row comments in `_BRANCH_CLEANUP_PARAM_DEFAULTS`. |
+| V2 | `# D4/D5 new-knob seed assertions — this deliverable (6) …` left heading a section whose three tests had moved into the table. Both orphaned AND the exact deliverable-id prose D5 strips; the doctor rule does not catch it in comments. | **Fixed** — header rewritten. |
+| V3 | 16 comments in 15 touched files still described the removed hand-rolled importlib preamble as the current convention; two were dangling directly above a `load_script_module` call. | **Fixed** — all 16 rewritten. Cross-document sweep was already clean (`test/README.md` prescribes `load_script_module`). |
+| V4 | Two section headers in `test_effort_read.py` left containing zero tests — the file asserted a partition that no longer existed. | **Fixed** — removed. |
+| V5 | `_BRANCH_CLEANUP_ROUND_TRIP = _BRANCH_CLEANUP_PARAM_DEFAULTS[1:4]` encoded the gating "crossed against both accessors" derivation as a slice index: inserting a row silently re-points which knobs get round-trip coverage, with nothing failing. | **Fixed** — the three knobs are named in a frozenset, with a length assertion that fires if one is renamed out of the table. |
+| V6 | `TestRoleLoader` collapse weakened three `is None` assertions to `== role`. | **Fixed** — identity restored for the None rows. |
+| V7 | A de-historicizing rewrite converted one clause and not the next: "such a comparison silently fails **and the gate steps survived**". | **Fixed** — paragraph rewritten in one tense. |
+| V8 | `test_lesson_regression_suggested_fix_two_options` kept the lesson id in its NAME after the comment was rewritten. | **Fixed** — renamed to `test_heading_with_parenthesised_clause_slugifies`. |
+
+The verifier also found D1's done-when 1 unmet in `test_config_defaults.py`: five further
+`DEFAULT_PLAN_{EXECUTE,INIT}` / `get_default_config` crossed pairs of the same shape as the
+branch-cleanup family, which the first pass missed because the family derivation was run only against
+the `phase-6-finalize` prefix. **Fixed** — collapsed into two 5-row tables plus one named round-trip
+test. This is a defect in *this run's* derivation, not in the plan's lead: the plan named the
+`phase-6-finalize` pair as the exemplar and said to re-derive membership; the re-derivation was scoped
+to that exemplar rather than to the whole module.
+
+Its D6 and coverage remarks read a report snapshot still marked `_in progress_`; both are now measured
+and recorded above.
 
 ## Reviewer participation
 
