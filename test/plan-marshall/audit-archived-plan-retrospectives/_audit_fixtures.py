@@ -48,6 +48,10 @@ def _load_audit():
 
 audit = _load_audit()
 
+#: The audit skill's ``scripts/`` directory. Derived from the loaded script's own
+#: path so the two cannot drift.
+AUDIT_SCRIPTS_DIR = _AUDIT_SCRIPT.parent
+
 def _inputs(phase_5: list[str]) -> Any:
     """Build a minimal PlanInputs carrying only the phase_5 manifest list."""
     return audit.PlanInputs(
@@ -641,3 +645,14 @@ def _write_billing_plan(
 
 def _billing_row(result: dict[str, Any], plan_id: str) -> dict[str, Any]:
     return next(r for r in result['rows'] if r['plan_id'] == plan_id)
+
+
+def minimal_corpus(repo_root: Path) -> list:
+    """Build a one-plan archived corpus and return its collected inputs."""
+    plan_dir = repo_root / ".plan" / "local" / "archived-plans" / "sample-plan"
+    plan_dir.mkdir(parents=True)
+    (plan_dir / "references.json").write_text('{"scope_estimate": "surgical"}', encoding="utf-8")
+    (plan_dir / "status.json").write_text(
+        '{"metadata": {"change_type": "bug_fix"}}', encoding="utf-8"
+    )
+    return [audit.collect_inputs(plan_dir)]
