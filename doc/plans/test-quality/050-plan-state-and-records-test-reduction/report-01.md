@@ -3,7 +3,7 @@
 **Date (UTC):** 2026-08-16 **Branch:** `claude/test-quality-plan-execution-evap45` **PR:** [#1258](https://github.com/cuioss/plan-marshall/pull/1258) **Outcome:** partial
 
 ⛔ **The line-count floor is NOT met, and the plan's Verification section says to report the
-shortfall and stop.** The slice fell from 79,763 to 79,304 lines — **−459 lines, −0.6%**, against a
+shortfall and stop.** The slice fell from 79,763 to 79,352 lines — **−411 lines, −0.52%**, against a
 stated floor of **−20%**. The two guards the floor is subordinate to both hold exactly (collected
 count unchanged, coverage unchanged), so nothing was traded away to get here; the shortfall is
 entirely unfinished scope, not a quality compromise. D4 — the deliverable that would have produced
@@ -224,7 +224,7 @@ Slice = the plan's Expected surface: ten directories plus three named root modul
 
 | Measure | Before | After | Δ | Command |
 |---|---|---|---|---|
-| Slice lines | 79,763 | 79,304 | **−459 (−0.58%)** | `wc -l` over the Expected-surface `test_*.py` set |
+| Slice lines | 79,763 | 79,352 | **−411 (−0.52%)** | `wc -l` over the Expected-surface `test_*.py` set |
 | Slice modules | 128 | 176 | +48 | same |
 | Modules over 400-line budget | 60 | 59 | −1 | same, `$1>400` |
 | Collected items, slice | 3,707 | **3,707** | **0** | `pytest <slice> --collect-only -q -o addopts=""` |
@@ -485,16 +485,59 @@ re-derived figure.
 
 ## Reviewer participation
 
-_(Completed at the merge gate — see § PR.)_
+**Population derived from configuration, not transcribed**: the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(`sourcery.md`, `coderabbit.md`, `pr-agent.md`), cross-named by `.github/workflows/pr-agent.yml`.
+**M = 3.** Each verdict below is read from the author's own comment body across all three surfaces
+(`get_reviews`, `get_comments`, `get_review_comments`) — never from a check state.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
+|---|---|---|---|
+| `cuioss-review-bot` | **reviewed** | — | Published a review artifact over the diff: *"PR Reviewer Guide 🔍 — PR contains tests / No security concerns identified / No major issues detected."* An explicit nothing-to-report, which is a review. |
+| `coderabbitai` | **rate-limited** | **yes** | *"Review limit reached … you've reached your PR review limit, so we couldn't start this review. **Next review available in: 57 minutes.** … You've used all 1 included review currently available under your plan."* A countdown that clears on its own. |
+| `sourcery-ai` | **rate-limited** | **no** | *"Sorry @cuioss-oliver, your pull request is larger than the review limit of **150000 diff characters**."* A property of this diff, not of the clock — the same request never succeeds at this size, so waiting is futile. |
+
+**Coverage: 1 of 3.**
+
+⭐ **This PR is the exact case the `Reopens?` column exists for.** Two reviewers refused the *same* PR
+at the *same moment*, and a verdict column alone renders them identically — yet one clears in 57
+minutes and the other never clears for a diff of this size. Only one of the two is worth re-requesting,
+and without this column a reader of the table could not tell which. The `sourcery-ai` refusal is also
+a direct consequence of D1: decomposing an 8,705-line module produces a diff far past a 150,000-char
+ceiling, so a decomposition of this shape is *structurally* unreviewable by that bot.
+
+**No `silent` verdict**, so the § Step 7 recovery check did not fire: every expected reviewer
+published a body, and two of those bodies were refusals rather than reviews.
+
+**Actionable comments: zero.** All three surfaces read: `get_reviews` → one body (the Sourcery
+refusal); `get_comments` → two (the CodeRabbit limit notice, the cuioss-review-bot review);
+`get_review_comments` → `totalCount: 0`, no threads. Nothing to fix and nothing requiring a reply, so
+merge-gate condition 2 is met against a genuinely empty actionable set rather than an unread one.
+
+**Shortfall disclosure (§ Step 8 condition 4) — it fired, and this is what it said:**
+
+> Review coverage: **1 of 3**. `cuioss-review-bot` reviewed and reported no issues. `coderabbitai` is
+> rate-limited on a per-developer quota and **reopens in 57 minutes**. `sourcery-ai` is rate-limited on
+> a **150,000-diff-character size ceiling and does not reopen** for a diff of this size. Merging on
+> 1-of-3.
+
+Per the contract this changes only what the run **says**, never whether it merges: rate limits are
+routine and outside our control, and holding a landing behind a bot's quota is explicitly the wrong
+direction. The disclosure is the requirement; the shortfall is not a block.
 
 ## Cost
 
-- **Tokens:** not available to the agent in this session.
-- **Wall-clock:** not separately instrumented; the run was a single continuous interactive session.
-- **Population:** whatever is reported here would count **one interactive Claude Code cloud session**.
-  ⛔ Not comparable to a plan-marshall `metrics.toon` total, which counts the orchestrator-plus-agent
-  dispatch tree under plan-marshall's own per-task billing boundary. This session does not share that
-  boundary, so no comparable figure can be given.
+- **Tokens:** not available to the agent in this session. The harness does not expose a per-session
+  token figure to the running agent, so no number is given rather than an estimated one.
+- **Wall-clock:** not separately instrumented. The run was one continuous interactive cloud session;
+  the only durable timestamps are the commit times on the branch (first commit `dcc202f` through the
+  final report commit) and the PR's `created_at` of 2026-08-16T11:54:15Z.
+- **Population:** any figure here would count **one interactive Claude Code cloud session** — a single
+  agent loop plus two dispatched verification sub-agents. ⛔ **Not comparable to a plan-marshall
+  `metrics.toon` total**, which counts the orchestrator-plus-agent dispatch tree under plan-marshall's
+  own per-task billing boundary. This session does not share that boundary and emits no `metrics.toon`,
+  so the two cannot be reconciled. Stating that plainly rather than presenting a number that would
+  imply parity.
 
 ## Contract check (Step 9)
 
@@ -511,7 +554,7 @@ Re-read against what actually happened, per step, with the artifact that proves 
 | 5 Build gate | **DONE** | git-derived verdict: 89 `*.py` of 91 changed files → gate applies. `./pw verify` → `=== verify: SUCCESS ===`, 20,272 passed. First run was RED (3 × `no-any-return` under `test-compile`); fixed and re-run |
 | 6 Verification sub-agent | **DONE, and it found real defects** | Two passes. The independent pre-PR verifier (§ Independent pre-PR verification) and the plan-mandated D5 cold read (§ D5 cold-read verification). 15 + 10 findings, dispositions in § Findings |
 | 7 PR cycle | **DONE** | PR #1258. No `skip-bot-review` — 89 `*.py` files, so it keeps full review. Comment surfaces and participation below |
-| 8 Merge gate | see § Reviewer participation | conditions 1–3 and the condition-4 disclosure recorded there |
+| 8 Merge gate | **DONE** | Conditions 1–3 met; the condition-4 disclosure fired at **1-of-3** coverage and is quoted verbatim in § Reviewer participation. Auto-merge armed as the final action |
 | 8 Bridge | **DONE** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory. The two stale epic-brief references were **deliberately not edited** (§ Findings 35–36) — which also keeps this clause clean |
 | 9 This check | **DONE** | this table |
 | 9 What have we learned | **DONE** | below |
