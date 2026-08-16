@@ -141,7 +141,26 @@ downloading a transitive `mypy` dep — not a build failure; the retry succeeded
 - **Self-review (mypy):** the initial two-pass tuple design assigned `int | None` into the row dict —
   caught by the build gate, fixed by deferring only the literal-zero decision. Recorded as a run
   finding, fixed.
-- Verification sub-agent findings: _pending (Step 6)._
+- **Verification sub-agent (Step 6, independent, read-only):** all five deliverables confirmed
+  implemented-as-specified, with an empirical five-case trace run through the actual parser
+  (`…,9100,0,0,0` → four measured; `…,unmeasured,0,0,0` → three measured zeros + input unmeasured;
+  `…,0,0,0,0` → four indeterminate; `…,0,not-an-int,0,0` → three indeterminate + one unrecognised;
+  legacy → four unmeasured). D3's absence-of-undoing-consumer claim (the plan's flagged high-risk
+  half) held. The sub-agent's beyond-diff sweep surfaced stale lock-step "three-way" claims:
+  - **F1 (fixed):** `manage-metrics/SKILL.md` `record-dispatch-boundary` block called the reader
+    contract "three-way" — a named lock-step restating surface. Corrected to "four-way (measured /
+    unmeasured / unrecognised / indeterminate)".
+  - **F2 (fixed):** `data-format.md` subsection header still read "three-way cell read" directly above
+    the table this change rewrote to four rows. Corrected to "the cell read".
+  - **F3 (fixed):** the `UNMEASURED_COLUMN_TOKEN` comment in `manage-metrics.py` (a lock-step
+    restating surface) asserted a flat "THREE-way distinction". Rewritten to note the reader's fourth
+    state for an undatable zero.
+  - **F4 (deferred → residue):** `audit.py`'s `_parse_dispatch_boundary_totals` docstring cites the
+    standard's section as "reads three ways". `audit.py` genuinely reads three ways and is a separate,
+    out-of-surface component; the corrected standard already acknowledges "a reader that does not
+    recover provenance reads an undatable `0` as a measured zero", so the standard is accurate. The
+    docstring cross-reference will move when the audit.py follow-on (Residue) lands. Not fixed here to
+    hold the plan's "one component" boundary.
 
 ## Reviewer participation
 
@@ -168,7 +187,9 @@ _pending._
   fingerprint-free literal `0` as a measured zero (marks the field `measured`), the same information-loss
   over-claim as the pre-fix plan-retrospective reader, in a separate component
   (`.claude/skills/audit-archived-plan-retrospectives/`) outside this plan's stated surface. Natural
-  follow-on: extend the same row-level provenance gate to that parallel reader.
+  follow-on: extend the same row-level provenance gate to that parallel reader, and update its docstring
+  cross-reference (currently "reads three ways per data-format.md § Per-Dispatch Context-Load
+  Attribution") to four ways at the same time (verification F4).
 - **Adjacent (named in the plan's Out-of-scope):** a denominator that states WHEN it was sampled but
   not WHAT it counted; a partiality verdict that cannot see a *stale-closed* phase. Recorded, not
   addressed here.

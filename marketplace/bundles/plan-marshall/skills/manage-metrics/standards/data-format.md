@@ -862,7 +862,7 @@ Each row carries **nine columns**: the **legacy five** followed by the **four co
 | 8 | `cache_read_input_tokens` | int \| `unmeasured` | `--cache-read-input-tokens` (dispatch `message.usage.cache_read_input_tokens`) | the literal `unmeasured` |
 | 9 | `cache_creation_input_tokens` | int \| `unmeasured` | `--cache-creation-input-tokens` (dispatch `message.usage.cache_creation_input_tokens`) | the literal `unmeasured` |
 
-#### The unmeasured token, and the three-way cell read
+#### The unmeasured token, and the cell read
 
 The four context-load columns are OPTIONAL — a caller with no `message.usage` figure to forward passes no flag. They therefore carry **no numeric default**: an omitted flag writes the literal `unmeasured`, never `0`. "The caller passed no measurement" and "the dispatch loaded zero context" are different facts, and writing `0` for both made them byte-identical rows. This is the module's own absent-is-not-zero rule (the one the exploration counters and the cache-read attribution group already follow — see § Exploration-share counters) applied to the ledger row; the positional row shape means the column cannot be dropped, so it carries a token instead.
 
