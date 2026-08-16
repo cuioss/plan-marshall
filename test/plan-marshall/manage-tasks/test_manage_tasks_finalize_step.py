@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from _helpers import _finalize_step_ns, add_basic_task, cmd_finalize_step
+from _manage_tasks_fixtures import _finalize_step_ns, add_basic_task, cmd_finalize_step
 
 
 @pytest.fixture(autouse=True)

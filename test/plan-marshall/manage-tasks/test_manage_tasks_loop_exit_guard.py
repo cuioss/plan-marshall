@@ -26,7 +26,7 @@ from argparse import Namespace
 
 from conftest import run_script
 
-from _helpers import (
+from _manage_tasks_fixtures import (
     SCRIPT_PATH,
     _finalize_step_ns,
     _list_ns,

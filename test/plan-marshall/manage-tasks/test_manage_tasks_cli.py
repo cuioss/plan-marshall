@@ -9,7 +9,7 @@ add removal, and the prepare-add → commit-add CLI roundtrip.
 
 from pathlib import Path
 
-from _helpers import SCRIPT_PATH
+from _manage_tasks_fixtures import SCRIPT_PATH
 from conftest import run_script
 
 

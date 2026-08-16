@@ -32,7 +32,7 @@ from argparse import Namespace
 
 from conftest import load_script_module
 
-from _helpers import (
+from _manage_tasks_fixtures import (
     _commit_add_ns,
     _prepare_add_ns,
     _read_ns,
@@ -46,7 +46,7 @@ from _helpers import (
     cmd_update,
 )
 
-# cmd_batch_add is not re-exported by _helpers; load _tasks_crud directly. The
+# cmd_batch_add is not re-exported by _manage_tasks_fixtures; load _tasks_crud directly. The
 # duplicate module object shares the same source file, so coverage merges.
 _crud = load_script_module('plan-marshall', 'manage-tasks', '_tasks_crud.py', 'crud_branch_mod')
 cmd_batch_add = _crud.cmd_batch_add

@@ -22,7 +22,7 @@ import pytest
 
 from conftest import load_script_module
 
-from _helpers import add_basic_task
+from _manage_tasks_fixtures import add_basic_task
 
 # In-process dispatcher module (unique name) — coverage attributed to manage-tasks.py.
 _mt = load_script_module('plan-marshall', 'manage-tasks', 'manage-tasks.py', 'inproc_manage_tasks_main')

@@ -9,7 +9,7 @@ list --ready, the failed-count surfacing, and the progress calculation column.
 
 from argparse import Namespace
 
-from _helpers import (
+from _manage_tasks_fixtures import (
     _add_ns,
     _finalize_step_ns,
     _list_ns,
