@@ -84,10 +84,24 @@ each has a concrete reason rather than "not done":
 | 1 | `manage-files/test_manage_files_cli.py` | `manage-files/manage-files.py` | The namespace is built for a **helper**, not a subcommand invocation |
 | 1 | `tools-permission-fix/test_permission_fix_behavior.py` | `tools-permission-fix/permission_fix.py` | `resolve_settings_arg(...)` takes a namespace but **is not a CLI entry point** — there is no subcommand it corresponds to, so there is no argv that would produce it |
 
-**The dominant reason is one thing, and it is worth naming: 14 of the 29 are the `script-shared` build
-CLI, whose modules expose no parser seam at all.** That is a property of the production code, not of
-this sweep — and it is the shape of proposal a later run could act on: giving `_build_cli.py` a
-published `build_parser()` would make all 14 convertible at a stroke.
+**Subtotals, re-derived from the table rather than eyeballed** — an earlier draft of this paragraph
+said "14" and "26", both of which are wrong against the rows above:
+
+| Grouping | Sites |
+|---|---:|
+| `script-shared` (build CLI) | **15** |
+| `manage-providers` | **12** |
+| `manage-files` (helper) | 1 |
+| `tools-permission-fix` (not a CLI entry point) | 1 |
+| **blocked on a missing parser seam** | **27** |
+| **not a CLI invocation at all** | **2** |
+| **TOTAL** | **29** |
+
+**The dominant reason is one thing, and it is worth naming: 27 of the 29 are blocked on production
+modules that expose no parser seam at all, and 15 of those are the `script-shared` build CLI.** That is
+a property of the production code, not of this sweep — and it is the shape of proposal a later run
+could act on: giving `_build_cli.py` a published `build_parser()` would make all 15 convertible at a
+stroke.
 
 ## Build gate
 
@@ -149,5 +163,7 @@ open: the order-dependent failure (run 01 F10), the six new `sys.modules` regist
 D2 in full, D4's parametrization beyond one family, `test/pm-code-intelligence/`'s own D3 finding,
 run 01's third D1 group, the randomised hermeticity arm, and D4's cold read.
 
-**New from this run:** the 29 recorded `parse_ns` exceptions above — 26 of which are blocked on two
-production modules lacking a parser seam, and would be unblocked by publishing one.
+**New from this run:** the 29 recorded `parse_ns` exceptions above — **27** of which are blocked on
+production modules lacking a parser seam (15 in the `script-shared` build CLI, 12 in
+`manage-providers`), and would be unblocked by publishing one. The remaining 2 are not CLI invocations
+at all.
