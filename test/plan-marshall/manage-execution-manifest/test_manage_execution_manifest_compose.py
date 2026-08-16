@@ -23,7 +23,7 @@ from conftest import get_script_path, load_script_module, run_script
 # Script path for subprocess (CLI plumbing) tests.
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py')
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime).
+# Tier 2 direct imports, resolved by (bundle, skill, script).
 
 
 # Lane-block fixture, loaded via importlib per the _fixtures.py convention (a
@@ -1520,15 +1520,14 @@ def test_commit_and_push_false_with_recipe_still_drops_commit_push(plan_context)
 def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_push(plan_context):
     """Regression — _apply_commit_push_disabled drops both gates with prefixed input.
 
-    Without boundary normalization ``_apply_commit_push_disabled`` would compare
-    candidate entries
-    against the bare-name set ``{push, pre-push-quality-gate,
-    pre-submission-self-review}``. When ``marshal.json`` emits prefixed
-    candidates (e.g., ``default:push``), such a comparison silently fails
-    and the gate steps survived in the manifest despite ``commit_and_push=false``.
+    ``_apply_commit_push_disabled`` compares candidate entries against the
+    bare-name set ``{push, pre-push-quality-gate, pre-submission-self-review}``.
+    Without boundary normalization, a ``marshal.json`` that emits prefixed
+    candidates (e.g. ``default:push``) would fail that comparison silently and
+    leave the gate steps in the manifest despite ``commit_and_push=false``.
 
     Boundary normalization in ``cmd_compose`` strips the ``default:`` prefix
-    once at intake, so ``_apply_commit_push_disabled`` now sees bare strings
+    once at intake, so ``_apply_commit_push_disabled`` sees bare strings
     and the membership check works regardless of how the caller spelled the
     candidate IDs. This test feeds a fully prefixed candidate list to
     ``cmd_compose`` with ``commit_and_push=false`` and asserts both gate steps
@@ -3348,7 +3347,14 @@ class TestRoleLoader:
         """
         cache: dict[str, str | None] = {}
 
-        assert _role_of(step_id, cache) == role
+        resolved = _role_of(step_id, cache)
+
+        if role is None:
+            # identity, not equality: a falsy sentinel such as '' would satisfy
+            # `== None`-style comparison chains while not being "no role at all".
+            assert resolved is None
+        else:
+            assert resolved == role
 
     def test_cache_returns_same_value_on_second_lookup(self):
         """The per-compose cache short-circuits the second call for the same step."""

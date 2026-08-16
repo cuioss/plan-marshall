@@ -185,17 +185,36 @@ def test_finalize_step_params_constant_is_deleted():
 #: Each is declared in that step's `configurable:` body-doc frontmatter and folded
 #: into the step's nested param object by the get_default_config() finalize seed.
 _BRANCH_CLEANUP_PARAM_DEFAULTS = [
+    # Interactive by default: prompt the operator before the final merge. Set True
+    # to merge unattended, serialized via the cross-plan merge-lock.
     ('final_merge_without_asking', False),
     ('auto_rebase_threshold', 'no_overlap_only'),
+    # Seconds (~30 min) bounding the Pre-Merge Gate FIFO merge-queue poll loop
+    # before it gives up to the last-resort AskUserQuestion.
     ('merge_queue_wait_budget_seconds', 1800),
+    # Gates the GitHub-only stuck-state `--admin` fallback inside `ci pr safe-merge`.
+    # False refuses the admin merge and surfaces the stuck PR to the operator.
     ('admin_merge_on_stuck_state', False),
     ('merge_hold_window', 'full_window_release_at_waits'),
+    # Seconds (~60 min): the maximum a merge may be held.
     ('merge_hold_budget_seconds', 3600),
+    # The platform merge queue is an opt-in complement, not the default path.
     ('use_merge_queue', False),
 ]
 
-#: The subset re-asserted through the assembled config (see the round-trip test).
-_BRANCH_CLEANUP_ROUND_TRIP = _BRANCH_CLEANUP_PARAM_DEFAULTS[1:4]
+#: The three knobs re-asserted through the assembled config (see the round-trip
+#: test). Named rather than sliced out of the table above: a slice index would
+#: silently re-point at different knobs the moment a row is inserted or reordered,
+#: and nothing would fail.
+_BRANCH_CLEANUP_ROUND_TRIP_KNOBS = frozenset(
+    {'auto_rebase_threshold', 'merge_queue_wait_budget_seconds', 'admin_merge_on_stuck_state'}
+)
+_BRANCH_CLEANUP_ROUND_TRIP = [
+    row for row in _BRANCH_CLEANUP_PARAM_DEFAULTS if row[0] in _BRANCH_CLEANUP_ROUND_TRIP_KNOBS
+]
+assert len(_BRANCH_CLEANUP_ROUND_TRIP) == len(_BRANCH_CLEANUP_ROUND_TRIP_KNOBS), (
+    'a round-trip knob was renamed out of _BRANCH_CLEANUP_PARAM_DEFAULTS'
+)
 
 
 def _branch_cleanup_params():
@@ -403,10 +422,8 @@ def test_seed_finalize_steps_default_on_non_infra_steps_have_no_lane_key():
 
 
 # ---------------------------------------------------------------------------
-# D4/D5 new-knob seed assertions — this deliverable (6) is the SINGLE owner of
-# the seed test for the three finalize-flow-hardening knobs declared in
-# default:branch-cleanup's configurable: frontmatter: merge_hold_window and
-# merge_hold_budget_seconds (D4), plus use_merge_queue (D5).
+# The three finalize-flow-hardening knobs, asserted together as one nested group.
+# Their individual seeds are covered by the branch-cleanup param table above.
 # ---------------------------------------------------------------------------
 
 
@@ -448,59 +465,6 @@ _EXPECTED_COST_SIZE_TOKEN_TABLE = {
     'XL': '260K',
     'XXL': '520K',
 }
-
-
-def test_default_plan_execute_includes_cost_size_token_table():
-    """DEFAULT_PLAN_EXECUTE must declare cost_size_token_table with the six-size default.
-
-    The four original magnitudes (S/M/L/XL) are UNCHANGED; XS and XXL widen the
-    scale at both ends.
-    """
-    execute_defaults = _config_defaults_mod.DEFAULT_PLAN_EXECUTE
-
-    assert 'cost_size_token_table' in execute_defaults, (
-        'cost_size_token_table must be schema-registered in DEFAULT_PLAN_EXECUTE'
-    )
-    assert execute_defaults['cost_size_token_table'] == _EXPECTED_COST_SIZE_TOKEN_TABLE, (
-        'cost_size_token_table default must map XS/S/M/L/XL/XXL to '
-        '5K/25K/60K/130K/260K/520K (the S/M/L/XL magnitudes calibrated to the '
-        'forensic 134K-392K per-dispatch range are unchanged)'
-    )
-    # Every magnitude round-trips through the shared parser to the documented int.
-    parsed = {k: parse_sensible_int(v) for k, v in execute_defaults['cost_size_token_table'].items()}
-    assert parsed == {'XS': 5000, 'S': 25000, 'M': 60000, 'L': 130000, 'XL': 260000, 'XXL': 520000}
-
-
-def test_get_default_config_includes_cost_size_token_table():
-    """get_default_config() must surface plan.phase-5-execute.cost_size_token_table."""
-    config = _config_defaults_mod.get_default_config()
-
-    execute = config['plan']['phase-5-execute']
-    assert execute.get('cost_size_token_table') == _EXPECTED_COST_SIZE_TOKEN_TABLE
-
-
-def test_default_plan_execute_includes_per_envelope_budget_tokens():
-    """DEFAULT_PLAN_EXECUTE must declare per_envelope_budget_tokens with default "400K"."""
-    execute_defaults = _config_defaults_mod.DEFAULT_PLAN_EXECUTE
-
-    assert 'per_envelope_budget_tokens' in execute_defaults, (
-        'per_envelope_budget_tokens must be schema-registered in DEFAULT_PLAN_EXECUTE'
-    )
-    assert execute_defaults['per_envelope_budget_tokens'] == '400K', (
-        'per_envelope_budget_tokens default must be the human-friendly "400K" '
-        '(plan-time bin-packer packing budget)'
-    )
-    # The human-friendly string round-trips to the documented int via the shared parser.
-    assert parse_sensible_int(execute_defaults['per_envelope_budget_tokens']) == 400000
-
-
-def test_get_default_config_includes_per_envelope_budget_tokens():
-    """get_default_config() must surface plan.phase-5-execute.per_envelope_budget_tokens == "400K"."""
-    config = _config_defaults_mod.get_default_config()
-
-    execute = config['plan']['phase-5-execute']
-    assert execute.get('per_envelope_budget_tokens') == '400K'
-    assert parse_sensible_int(execute['per_envelope_budget_tokens']) == 400000
 
 
 def test_cost_size_labels_enumerates_the_six_tshirt_sizes():
@@ -709,25 +673,6 @@ _EXPECTED_LANE_PRUNE_THRESHOLDS = {
 }
 
 
-def test_default_plan_init_includes_lane_selection_ask():
-    """DEFAULT_PLAN_INIT must declare lane_selection with default 'ask'."""
-    init_defaults = _config_defaults_mod.DEFAULT_PLAN_INIT
-
-    assert 'lane_selection' in init_defaults, (
-        'lane_selection must be schema-registered in DEFAULT_PLAN_INIT'
-    )
-    assert init_defaults['lane_selection'] == 'ask', (
-        "lane_selection default must be 'ask' (surface the posture dialogue at init)"
-    )
-
-
-def test_get_default_config_includes_lane_selection():
-    """get_default_config() must surface plan.phase-1-init.lane_selection == 'ask'."""
-    config = _config_defaults_mod.get_default_config()
-
-    assert config['plan']['phase-1-init'].get('lane_selection') == 'ask'
-
-
 def test_valid_lane_selection_enumerates_ask_and_auto():
     """VALID_LANE_SELECTION must enumerate exactly ('ask', 'auto')."""
     assert _config_defaults_mod.VALID_LANE_SELECTION == ('ask', 'auto')
@@ -749,26 +694,6 @@ def test_default_lane_prune_thresholds_carries_expected_defaults():
     """DEFAULT_LANE_PRUNE_THRESHOLDS must map the two numeric predicate thresholds."""
     assert (
         _config_defaults_mod.DEFAULT_LANE_PRUNE_THRESHOLDS
-        == _EXPECTED_LANE_PRUNE_THRESHOLDS
-    )
-
-
-def test_default_plan_init_includes_lane_prune_thresholds():
-    """DEFAULT_PLAN_INIT must declare lane_prune_thresholds with the expected defaults."""
-    init_defaults = _config_defaults_mod.DEFAULT_PLAN_INIT
-
-    assert 'lane_prune_thresholds' in init_defaults, (
-        'lane_prune_thresholds must be schema-registered in DEFAULT_PLAN_INIT'
-    )
-    assert init_defaults['lane_prune_thresholds'] == _EXPECTED_LANE_PRUNE_THRESHOLDS
-
-
-def test_get_default_config_includes_lane_prune_thresholds():
-    """get_default_config() must surface plan.phase-1-init.lane_prune_thresholds."""
-    config = _config_defaults_mod.get_default_config()
-
-    assert (
-        config['plan']['phase-1-init'].get('lane_prune_thresholds')
         == _EXPECTED_LANE_PRUNE_THRESHOLDS
     )
 
@@ -806,27 +731,82 @@ def test_plan_phase_1_init_get_lane_selection_returns_ask_default(plan_context):
 _EXPECTED_PER_DELIVERABLE_BUILD = ['default:verify:compile', 'default:verify:module-tests']
 
 
-def test_default_plan_execute_includes_per_deliverable_build():
-    """DEFAULT_PLAN_EXECUTE must declare per_deliverable_build as the canonical-verify list."""
+#: (the DEFAULT_PLAN_* constant that must schema-register the knob, the knob, its
+#: default, the path get_default_config() must surface it at). Both halves are
+#: asserted because they can disagree: a knob registered in the constant but lost
+#: during assembly, or assembled from somewhere other than the registered default,
+#: each pass one half and fail the other.
+_PHASE_KNOB_SEEDS = [
+    (
+        'DEFAULT_PLAN_EXECUTE',
+        'cost_size_token_table',
+        _EXPECTED_COST_SIZE_TOKEN_TABLE,
+        ('plan', 'phase-5-execute'),
+    ),
+    ('DEFAULT_PLAN_EXECUTE', 'per_envelope_budget_tokens', '400K', ('plan', 'phase-5-execute')),
+    (
+        'DEFAULT_PLAN_EXECUTE',
+        'per_deliverable_build',
+        _EXPECTED_PER_DELIVERABLE_BUILD,
+        ('plan', 'phase-5-execute'),
+    ),
+    ('DEFAULT_PLAN_INIT', 'lane_selection', 'ask', ('plan', 'phase-1-init')),
+    (
+        'DEFAULT_PLAN_INIT',
+        'lane_prune_thresholds',
+        _EXPECTED_LANE_PRUNE_THRESHOLDS,
+        ('plan', 'phase-1-init'),
+    ),
+]
+
+_PHASE_KNOB_IDS = [f'{constant}.{knob}' for constant, knob, _v, _p in _PHASE_KNOB_SEEDS]
+
+
+@pytest.mark.parametrize(
+    ('constant', 'knob', 'expected', 'path'), _PHASE_KNOB_SEEDS, ids=_PHASE_KNOB_IDS
+)
+def test_phase_defaults_constant_registers_knob(constant, knob, expected, path):
+    """The phase's DEFAULT_PLAN_* constant schema-registers the knob at its default.
+
+    Registration is asserted separately from the value: an unregistered knob is
+    invisible to the fail-closed provisioning whitelist, so it would be rejected on
+    an operator `set` even while reading back correctly from a seeded config.
+    """
+    defaults = getattr(_config_defaults_mod, constant)
+
+    assert knob in defaults, f'{knob} must be schema-registered in {constant}'
+    assert defaults[knob] == expected
+
+
+@pytest.mark.parametrize(
+    ('constant', 'knob', 'expected', 'path'), _PHASE_KNOB_SEEDS, ids=_PHASE_KNOB_IDS
+)
+def test_get_default_config_surfaces_phase_knob(constant, knob, expected, path):
+    """get_default_config() surfaces the knob at its phase path, carrying the default."""
+    node = _config_defaults_mod.get_default_config()
+    for key in path:
+        node = node[key]
+
+    assert node.get(knob) == expected
+
+
+def test_token_magnitudes_round_trip_through_the_shared_parser():
+    """Every seeded token magnitude parses to its documented integer.
+
+    The seeds are human-friendly strings ('400K', '5K'), so the contract is not the
+    string but the number a consumer gets from it. A magnitude that stopped parsing
+    would degrade silently to whatever the parser returns for an unparseable value.
+    """
     execute_defaults = _config_defaults_mod.DEFAULT_PLAN_EXECUTE
+    execute_config = _config_defaults_mod.get_default_config()['plan']['phase-5-execute']
 
-    assert 'per_deliverable_build' in execute_defaults, (
-        'per_deliverable_build must be schema-registered in DEFAULT_PLAN_EXECUTE'
-    )
-    # The knob is now a LIST of default:verify:{canonical} step IDs (the former
-    # 'compile+scoped-test' enum expanded to compile + module-tests rungs).
-    assert execute_defaults['per_deliverable_build'] == _EXPECTED_PER_DELIVERABLE_BUILD, (
-        "per_deliverable_build default must be ['default:verify:compile',"
-        "'default:verify:module-tests'] (focused per-deliverable build)"
-    )
-
-
-def test_get_default_config_includes_per_deliverable_build():
-    """get_default_config() must surface plan.phase-5-execute.per_deliverable_build as the list default."""
-    config = _config_defaults_mod.get_default_config()
-
-    execute = config['plan']['phase-5-execute']
-    assert execute.get('per_deliverable_build') == _EXPECTED_PER_DELIVERABLE_BUILD
+    parsed = {
+        size: parse_sensible_int(value)
+        for size, value in execute_defaults['cost_size_token_table'].items()
+    }
+    assert parsed == {'XS': 5000, 'S': 25000, 'M': 60000, 'L': 130000, 'XL': 260000, 'XXL': 520000}
+    assert parse_sensible_int(execute_defaults['per_envelope_budget_tokens']) == 400000
+    assert parse_sensible_int(execute_config['per_envelope_budget_tokens']) == 400000
 
 
 def test_retired_per_deliverable_build_enum_names_the_old_vocabulary():

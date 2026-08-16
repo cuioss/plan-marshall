@@ -19,7 +19,7 @@ sibling modules ``test_canonical_verify_inactive.py`` and
 
 import pytest
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime).
+# Tier 2 direct imports, resolved by (bundle, skill, script).
 from conftest import load_script_module
 
 _mem = load_script_module(

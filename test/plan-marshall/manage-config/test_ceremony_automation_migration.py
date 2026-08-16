@@ -25,8 +25,7 @@ Orthogonal assertions per knob:
    prompting because the merge it guards is irreversible, so a fresh project must opt
    in to unattended merging rather than out of it.
 
-The handlers are exercised via direct importlib loading (the manage-config test
-convention); read-only round-trip stability of marshal.json is asserted by hashing
+The handlers are exercised as directly-loaded modules; read-only round-trip stability of marshal.json is asserted by hashing
 the file before and after each ``get``.
 """
 

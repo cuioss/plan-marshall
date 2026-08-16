@@ -15,7 +15,7 @@ from conftest import get_script_path, load_script_module, run_script
 # Script path for subprocess (CLI plumbing) tests.
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py')
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime).
+# Tier 2 direct imports, resolved by (bundle, skill, script).
 
 
 _mem = load_script_module(

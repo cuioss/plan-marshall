@@ -30,7 +30,7 @@ from argparse import Namespace
 from collections.abc import Callable
 from pathlib import Path
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime).
+# Tier 2 direct imports, resolved by (bundle, skill, script).
 from conftest import load_script_module
 
 _mem = load_script_module(

@@ -23,7 +23,7 @@ from argparse import Namespace
 from pathlib import Path
 
 # =============================================================================
-# Module loading (script has hyphens in filename → load via importlib)
+# Module loading (the script filename has hyphens, so it is loaded by identity)
 # =============================================================================
 from conftest import load_script_module
 

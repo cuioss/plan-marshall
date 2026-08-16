@@ -27,7 +27,7 @@ This module pins the post-dissolution contract:
 4. ``VALID_GATE_MODE`` enumerates exactly ``auto|always|never`` and the three
    planning gates reject an out-of-enum value at their ``set`` boundary.
 
-The handlers are exercised via per-file ``importlib`` loading (the manage-config
+The handlers are exercised as per-file directly-loaded modules (the manage-config
 test convention).
 """
 

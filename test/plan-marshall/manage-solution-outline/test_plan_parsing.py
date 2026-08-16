@@ -202,7 +202,7 @@ class TestParseDocumentSectionsRoundTrip:
             'parse_document_sections must call _slugify_section_name on headings.'
         )
 
-    def test_lesson_regression_suggested_fix_two_options(self):
+    def test_heading_with_parenthesised_clause_slugifies(self):
         # A heading carrying a parenthesised clause must still slugify, else
         # section lookups against it silently miss.
         content = '## Suggested fix (two options)\nbody'

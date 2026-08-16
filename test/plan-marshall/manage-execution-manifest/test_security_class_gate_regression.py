@@ -42,7 +42,7 @@ import pytest
 from conftest import PlanContext, load_script_module  # noqa: F401  (PlanContext re-exported for fixture discovery)
 
 # =============================================================================
-# Module loading (script has hyphens in filename → load via importlib)
+# Module loading (the script filename has hyphens, so it is loaded by identity)
 # =============================================================================
 
 

@@ -31,7 +31,7 @@ deterministically without a live worktree or git history. ``_footprint_has_role`
 is also covered directly.
 """
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime).
+# Tier 2 direct imports, resolved by (bundle, skill, script).
 
 
 from conftest import load_script_module
