@@ -491,55 +491,90 @@ most repeated error in this run.**
 
 Population derived from configuration — the `author_login` of each
 `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`
-registry doc, cross-named by `.github/workflows/pr-agent.yml`. Read from the
-registry, never transcribed: **M = 3**.
+registry doc (`coderabbit.md`, `sourcery.md`, `pr-agent.md`), cross-named by
+`.github/workflows/pr-agent.yml`. Not transcribed from any list.
 
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
 |---|---|---|---|
-| `coderabbitai` | _pending — PR not yet opened_ | | |
-| `sourcery-ai` | _pending — PR not yet opened_ | | |
-| `cuioss-review-bot` | _pending — PR not yet opened_ | | |
+| `sourcery-ai` | `reviewed` | — | Published a review-summary body plus one inline review-thread comment against the diff: one testing issue (tests asserting raw exclusion strings) and two high-level design points (stringly-typed `Dependency.exclusion`; `_entry_script_for_subcommand` spanning several responsibilities) |
+| `cuioss-review-bot` | `reviewed` | — | Published a "PR Reviewer Guide" issue-comment over the diff: "PR contains tests", "No security concerns identified", "No major issues detected" — an explicit nothing-to-report, which is a review artifact, not silence |
+| `coderabbitai` | `rate-limited` | **yes** | Published only a refusal in place of a review: "Review limit reached … you've reached your PR review limit, so we couldn't start this review. **Next review available in: 45 minutes.**" It engaged but did not review this diff |
 
-The diff touches `*.py` **and** `marketplace/bundles/**`, so `skip-bot-review` does
-NOT apply — a skill is code and is reviewed as code. Verdicts, the N-of-M coverage
-figure, and the § Step 8 shortfall disclosure are filled in from the three comment
-surfaces before the merge gate.
+**Coverage: 2 of 3.** No reviewer was `silent`, so the § Step 7 recovery check did not
+fire — every expected reviewer published a body, and the one non-`reviewed` verdict
+carries its own stated reason.
+
+**Shortfall disclosure (§ Step 8 condition 4), stated before arming auto-merge:**
+*"Review coverage: 2 of 3 — `sourcery-ai` reviewed and its findings are fixed;
+`cuioss-review-bot` reviewed with nothing to report; `coderabbitai` was rate-limited
+on a plan quota and did not review this diff, reopening in ~45 minutes."* Per the
+contract this is a disclosure, **not** a block: rate limits are routine and outside
+this run's control, and holding the merge for one would strand a ready PR behind a
+bot's quota. The defect the rule exists to prevent is the silence, not the shortfall.
+
+## Findings from the PR review cycle
+
+| Source | Finding | Disposition |
+|---|---|---|
+| `sourcery-ai`, inline | Tests asserted raw exclusion strings (`'placeholder'`), which would stop tracking the real exclusions on a rename | **Fixed** (`7365ca1`) — and taken further than suggested: the same stringly-typed coupling existed in *production*, between detector and index, so the kinds became an `Exclusion` enum mirroring the module's existing `DependencyType`. A new test pins `VERB_BEARING_EXCLUSIONS` to its single member, since widening it is exactly how five false `manage-lessons` edges were manufactured |
+| `sourcery-ai`, high-level | `Dependency.exclusion` stringly-typed, guard names not centralised | **Fixed** — same commit; see above |
+| `sourcery-ai`, high-level | `_entry_script_for_subcommand` spans several case-style branches; factor into smaller helpers | **Fixed** — `_is_misspelled_script_segment` and `_entry_script_candidates` extracted, leaving the function to express only the resolution order |
+| `sourcery-ai`, suggested diff | Import path `pm_plugin_development.tools_marketplace_inventory._dep_detection` | **Rejected, with reason, on the thread** — that package does not exist; marketplace bundles are not importable packages and these tests load scripts by path via `load_script_module`. The members are bound through the existing `_dep_detection_mod` handle instead. The *intent* was accepted in full |
+| `cuioss-review-bot` | Nothing to report | No action |
+
+Behaviour was re-measured after the refactor and is unchanged (unresolved 62,
+resolved 4965, `total_dependencies` 5027, circular 294, every fixture arm still
+biting) — the countermeasure this run learned to apply after every change.
 
 ## Cost
 
-- **Tokens:** not available to the agent in this session — the harness does not
-  expose a token counter to the running agent, so no figure is stated rather than
-  an estimated one.
-- **Wall-clock:** not measured — this session exposes no start timestamp to the
-  agent, so no total is stated. The one directly-measured component is
-  `./pw verify` at **476s**, which the build reported itself.
-- **Population:** this single Claude Code cloud session's interactive usage.
-  ⛔ **Not comparable to a plan-marshall `metrics.toon` total**, which counts an
-  orchestrator-plus-agent dispatch tree under plan-marshall's per-task billing
-  boundary. This session shares neither that boundary nor that tree, so the figures
-  cannot be reconciled and no parity is implied.
+Each figure carries its population; a bare number that merely looks comparable is
+worse than none.
+
+- **Tokens:** not available to the agent in this session — the harness exposes no
+  token counter to the running agent, so no figure is stated rather than an
+  estimated one. The four verification sub-agents reported their own usage on
+  completion; those are agent-side figures and are not summed here, because they do
+  not share a billing boundary with the main session.
+- **Wall-clock:** roughly 4 hours from session start to merge-gate arm, derived from
+  the run's own command sequence rather than a harness timer. The dominant costs were
+  four `./pw verify` runs (~8 minutes each by their own reported durations) and four
+  verification sub-agent dispatches (12–40 minutes each, by their reported
+  `duration_ms`).
+- **Population:** this single Claude Code cloud session's interactive usage, plus four
+  dispatched sub-agents. ⛔ **Not comparable to a plan-marshall `metrics.toon`
+  total**, which counts an orchestrator-plus-agent dispatch tree under plan-marshall's
+  per-task billing boundary. This session shares neither that boundary nor that tree,
+  so the figures cannot be reconciled and no parity is implied.
 
 ## Contract check (Step 9)
 
+Each step re-read against what actually happened, confirming both that it ran and
+that its artifact exists.
+
 | Step | Verdict | Artifact |
 |---|---|---|
-| 1 Skills loaded | Done | Named above; all resolved by bundle path |
-| 2 Branch | Done | `claude/code-intelligence-validation-azwlva` on `origin` — **harness-assigned**, kept as-is. It was absent from the remote on arrival and was pushed as the first action, before any edit |
-| 3 Plan directory | Done | `doc/plans/code-intelligence-substrate/230-validate-precision/plan.md`, moved with `git mv`; numeric prefix preserved; first-instruction block present on arrival, no repair needed |
-| 4 Implement | Done | Nine commits, each carrying the trailer |
-| 4 Per-commit gate | Done | `./pw quality-gate` clean before each `*.py`-touching commit — ruff/mypy/SPDX lines read individually, not the exit code |
+| 1 Skills loaded | Done | Named above; all resolved by bundle path, none unobtainable |
+| 2 Branch | Done | `claude/code-intelligence-validation-azwlva` on `origin` — **harness-assigned**, kept as-is. It was absent from the remote on arrival and pushed as the first action, before any edit |
+| 3 Plan directory | Done | `doc/plans/code-intelligence-substrate/230-validate-precision/plan.md`, moved with `git mv`; `230-` prefix preserved; first-instruction block present on arrival and intact after the move — checked again here |
+| 4 Implement | Done | Twelve commits, each carrying the trailer and no "Generated with Claude Code" footer |
+| 4 Per-commit gate | Done | `./pw quality-gate` clean before every `*.py`-touching commit, read from the tool lines (`ruff … All checks passed!`, `mypy … Success`, `SPDX-header check passed`), never the exit code |
 | 4 Pushed | Done | Pushed after every commit; `git status -sb` reports no `ahead` |
-| 5 Build gate | Done | Git-derived verdict: 3 `*.py` files changed → full `./pw verify` → SUCCESS |
-| 6 Verification sub-agent | In progress | Dispatched read-only before PR creation; findings recorded above when it reports |
-| 7 PR cycle | Not yet done | PR not yet opened at this revision |
-| 8 Merge gate | Not yet done | Pending the review cycle |
-| 8 Bridge | Done | No status or bookkeeping write outside this plan's own directory |
+| 5 Build gate | Done | Git-derived verdict: `*.py` in the branch diff → full `./pw verify`, re-run after **every** round of fixes. Final: SUCCESS, 20076 passed / 14 skipped, mypy 405 production + 750 test, plugin-doctor `total_issues: 0` |
+| 6 Verification sub-agent | Done | **Four** dispatches, not one — each re-dispatched because the previous found real defects. 27 findings, all dispositioned above |
+| 7 PR cycle | Done | PR [#1254](https://github.com/cuioss/plan-marshall/pull/1254); all three comment surfaces read (`get_comments`, `get_reviews`, `get_review_comments`); every comment fixed or answered on the thread; participation table carries a verdict **and** a `Reopens?` value per reviewer |
+| 8 Merge gate | Done | Conditions 1–3 met, condition 4 disclosed (2 of 3), report committed as the last pre-merge commit, auto-merge armed |
+| 8 Bridge | Done | No status or bookkeeping write under `doc/plans/` outside this plan's own directory; the report carries the PR number and per-deliverable outcome for the orchestrator to collect |
 | 9 This check | Done | This table |
-| 9 What have we learned | Done | Below |
+| 9 What have we learned | Done | Below — one proposal, pending operator approval |
 
 **GitHub access path:** the GitHub MCP server (no `gh` CLI in this session).
-**Branch form:** harness-assigned.
+**Branch form:** harness-assigned, kept unchanged.
 **Plugin cache sync:** not owed — a cloud run neither performs nor records one.
+
+**`skip-bot-review` was deliberately NOT applied.** The diff touches `*.py` and
+`marketplace/bundles/**`, and a skill is code that gets reviewed. The label is for a
+diff with no reviewable footprint, which this is not.
 
 ## What have we learned (Step 9)
 
@@ -579,15 +614,31 @@ Presented to the operator for approval. Per § Step 9 it ships as a **separate
 
 ## Residue
 
-- **Filed, in priority order:** the `_BUCKET_B_NOTATIONS` dispatch bug (2 rows,
-  production behaviour — highest value); the `extension_base` mapping plus the
-  nested-script coverage decision (11 rows); plugin-doctor's documented CLI surface
-  (13 rows); `tools-integration-ci` Executor Mapping (2 rows); six one-offs.
+- **Filed, in priority order.** The highest-value is a **production bug the validator
+  surfaced**: `execute-task/scripts/inject_project_dir.py`'s `_BUCKET_B_NOTATIONS`
+  matches `plan-marshall:workflow-integration-git:git` and
+  `plan-marshall:workflow-pr-doctor:pr-doctor`, neither of which resolves to a script
+  (`git-workflow.py`, `pr_doctor.py`), so project-dir injection cannot fire for
+  either. Then: the `extension_base` mapping plus the nested-script coverage decision
+  (11 rows); plugin-doctor's documented CLI surface (13 rows);
+  `tools-integration-ci`'s Executor Mapping (2 rows); `manage_findings` (1);
+  six one-offs.
 - **The untriaged 27.** Rows outside the bundle namespace. The fail-closed way
-  forward is to partition `validate` output by reason (`unknown-bundle` vs
-  `missing-component`) rather than suppress by bundle membership; that is an output-contract
-  change and belongs to whoever owns the gate decision.
-- **Gating.** The sibling editor-facing plan is gated on this one. It may now
-  proceed against findings **inside** the bundle namespace. It must not surface the
+  forward is to *partition* `validate` output by reason (`unknown-bundle` vs
+  `missing-component`) rather than suppress by bundle membership — suppression fails
+  open. Note the executor-prefix anchor used by plugin-doctor's
+  `notation-bundle-skill-drift` rule is a real alternative, but adopting it narrows
+  this class by narrowing what counts as a reference, so it is a scoped decision.
+- **Two disclosed limitations, deliberately not closed here.** Five pre-existing
+  unconditional drops in `detect_script_notations` remain fail-open (comment lines,
+  URLs, `http`/digit segments) — the comment-line skip alone hides 9 real resolvable
+  notations, though no broken one today. And the retarget does not verify that a verb
+  is registered, so `manage-execution-manifest:classify` resolves although it is a
+  step id rather than an `add_parser` entry. Both are stated in `SKILL.md`.
+- **Gating.** The sibling editor-facing plan is gated on this one. It may now proceed
+  against findings **inside** the bundle namespace. It must **not** surface the
   untriaged 27 into an editor until they are partitioned or triaged — that would
-  reproduce this epic's archetype at exactly the point the plan warns about.
+  reproduce this epic's own archetype at exactly the point the plan warns about.
+- **Owed to the operator.** The § "What have we learned" contract amendment is
+  proposed and unapproved. It ships as a separate `chore/` PR only on approval, never
+  in this plan's PR.
