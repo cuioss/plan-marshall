@@ -268,10 +268,8 @@ def test_pm_marketplace_root_matching_embedded_root_is_noop(two_marketplace_tree
     )
 
 
-# Post-removal contract: lesson 2026-04-29-23-002 originally drove a runtime
-# pre-flight validator (SUBCOMMANDS dict + structured TOON rejection). That
-# validator was removed in plan fix-generate-executor-ast-subcommands — drift is
-# now detected at dev-time via plugin-doctor and post-hoc via plan-retrospective.
+# The executor carries no runtime pre-flight validator: subcommand drift is
+# detected at dev-time via plugin-doctor and post-hoc via plan-retrospective.
 # The executor itself stays dumb and delegates to the target script's argparse,
 # which produces its own well-formed `invalid choice` error on stderr with
 # exit code 2.

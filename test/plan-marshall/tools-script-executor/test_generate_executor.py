@@ -905,10 +905,9 @@ def test_template_carries_no_session_binding_code():
         )
 
 
-# AST subcommand extractor removed (lesson 2026-05-26-09-001 / plan
-# fix-generate-executor-ast-subcommands). The generator no longer emits a
-# SUBCOMMANDS dict; drift is now detected at dev-time via plugin-doctor and
-# post-hoc via plan-retrospective.
+# The generator emits no SUBCOMMANDS dict and carries no AST subcommand
+# extractor; drift is detected at dev-time via plugin-doctor and post-hoc via
+# plan-retrospective.
 def test_ast_subcommand_extractor_symbols_removed():
     """Removed AST extractor symbols must be absent — guards against reintroduction."""
     module = load_module()
@@ -2167,7 +2166,7 @@ def test_guard4_allows_different_version_dirs_across_different_bundles(tmp_path,
 # ============================================================================
 # Guard 4 anchoring: the split is taken against the KNOWN cache root
 # ============================================================================
-# PR #1013 review findings. Selecting the FIRST version-shaped path segment
+# Selecting the FIRST version-shaped path segment
 # anywhere in the path (instead of relativizing against base_path) mis-splits on
 # two real inputs: (a) a version-shaped ANCESTOR directory above the cache root,
 # and (b) a bundle whose own name starts with ``N.N`` — the supported naming
@@ -2308,7 +2307,7 @@ def test_guard4_detects_split_under_version_shaped_ancestor_directory(tmp_path, 
 # NEWEST (0.1.1116) template, producing a version-mismatched SyntaxError-bricked
 # executor. Binding the template to the executing generator closes that class
 # structurally. get_shared_module_dirs() is the INVERSE — it correctly STAYS
-# newest-cache-version (PR #894 FIX C / GC-prune self-heal) and must not regress.
+# newest-cache-version (the GC-prune self-heal contract) and must not regress.
 
 
 def test_get_templates_dir_is_script_relative_sibling_of_generator():
@@ -2374,8 +2373,8 @@ def test_get_templates_dir_ignores_cache_newest_base_path(tmp_path):
 def test_get_shared_module_dirs_stays_base_path_newest_version(tmp_path):
     """Regression guard: get_shared_module_dirs MUST remain base_path-dependent
     (newest-cache-version) resolution — the INVERSE of get_templates_dir. This
-    preserves the PR #894 FIX C / GC-prune self-heal contract governing the
-    executor's OWN runtime sys.path bootstrap.
+    preserves the GC-prune self-heal contract governing the executor's OWN
+    runtime sys.path bootstrap.
     """
     module = load_module()
 

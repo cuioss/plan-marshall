@@ -686,8 +686,7 @@ def test_get_base_dir_git_toplevel_fallback(outside_repo_dir, monkeypatch, no_pl
     """In a clean git checkout with NO .plan/local ancestor (CI runners, fresh
     clones, consumer installs — .plan/ is gitignored), get_base_dir falls back
     to <git-toplevel>/.plan/local rather than raising. The git-toplevel fallback
-    in _resolve_plan_root restores the clean-environment robustness the prior
-    git_main_checkout_root resolver provided (regression guard for PR #556 CI)."""
+    in _resolve_plan_root is what keeps a clean environment resolvable."""
     # ``repo`` must be OUTSIDE the repo: pytest's tmp_path now roots under the
     # repo-local --basetemp, so the walk-up would find the OUTER worktree's
     # .plan/local before ever reaching the git-toplevel fallback under test.

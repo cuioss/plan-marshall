@@ -285,7 +285,7 @@ def test_generate_executor_writes_substituted_executor(tmp_path, monkeypatch):
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
     # get_templates_dir() deliberately ignores base_path and resolves the REAL
-    # script-relative production template (TASK-008's fix). Monkeypatch it back to
+    # script-relative production template. Monkeypatch it back to
     # the synthetic base's templates dir so the isolated _TEMPLATE_BODY fixture is
     # what gets read and asserted on, keeping the test's deterministic-content
     # intent rather than coupling the assertions to the real template's shape.
@@ -310,7 +310,7 @@ def test_generate_executor_returns_error_when_template_missing(tmp_path, monkeyp
     plan_dir.mkdir()
     monkeypatch.setenv('PLAN_BASE_DIR', str(plan_dir))
 
-    # Post-TASK-008 get_templates_dir() ignores base_path and always resolves the
+    # get_templates_dir() ignores base_path and always resolves the
     # real script-relative template, so a base_path with no templates/ tree can no
     # longer reach the missing-template branch. Monkeypatch get_templates_dir to a
     # directory that carries no template file, so generate_executor() still

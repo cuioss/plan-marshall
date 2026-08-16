@@ -14,10 +14,9 @@ LessonRegexAnchoringError. Blank-line separation conveys the AAA structure
 and the tests use module-private helpers (no conftest.py per the repo's
 _fixtures.py convention).
 
-Per lesson 2026-04-29-10-001, the inventory fixtures here are
-copy-pasted from the live ``manage-lessons list`` output rather than
-hand-typed, so the regex shape is asserted against real data even at
-test-collection time.
+The inventory fixtures here are copied from live ``manage-lessons list``
+output rather than hand-typed, so the regex shape is asserted against real
+data even at test-collection time.
 """
 
 import re
@@ -35,8 +34,8 @@ from input_validation import (
 )
 
 # =============================================================================
-# Fixture data — sample IDs sourced from real `manage-lessons list` output
-# (see lesson 2026-04-29-10-001). Hand-typed shapes go in BAD_TOKENS only.
+# Fixture data — sample IDs sourced from real `manage-lessons list` output.
+# Hand-typed shapes go in BAD_TOKENS only.
 # =============================================================================
 
 REAL_LESSON_IDS = (

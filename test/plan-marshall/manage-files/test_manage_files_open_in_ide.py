@@ -275,9 +275,8 @@ def test_is_open_in_ide_enabled_no_marshal_file_defaults_true(plan_context):
 def test_is_open_in_ide_enabled_non_dict_top_level_raises_value_error(plan_context, top_level_value):
     """Non-dict top-level JSON in marshal.json raises ValueError naming the file.
 
-    Regression guard for PR #380 gemini-code-assist finding 8be141: the previous
-    implementation called `data.get('plan')` directly, which raises AttributeError
-    when `data` is a list/scalar. The guard turns that into a clear ValueError.
+    Calling `data.get('plan')` on a list or scalar raises AttributeError. The
+    isinstance guard turns that into a ValueError naming the file instead.
     """
     marshal_path = plan_context.fixture_dir / 'marshal.json'
     marshal_path.write_text(top_level_value, encoding='utf-8')
@@ -306,8 +305,7 @@ def test_is_open_in_ide_enabled_non_dict_top_level_raises_value_error(plan_conte
 def test_is_open_in_ide_enabled_non_bool_value_raises_value_error(plan_context, open_in_ide_value):
     """Non-bool value at plan.open_in_ide raises ValueError naming the file.
 
-    Regression guard for PR #384 gemini-code-assist finding: silent coercion
-    via `bool(...)` would misclassify the legacy wrapped shape
+    Silent coercion via `bool(...)` would misclassify the wrapped shape
     (`{"enabled": False}` -> `True` because non-empty dicts are truthy) and
     string values (`bool("false")` -> `True`). The strict isinstance check
     fails loudly instead.
