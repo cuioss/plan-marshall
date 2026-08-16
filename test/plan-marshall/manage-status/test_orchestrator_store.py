@@ -410,7 +410,7 @@ class TestPlansStoreRegression:
 
 
 # =============================================================================
-# Concurrency: serialized read-modify-write (PR #915 finding 63cf41)
+# Concurrency: serialized read-modify-write
 # =============================================================================
 
 

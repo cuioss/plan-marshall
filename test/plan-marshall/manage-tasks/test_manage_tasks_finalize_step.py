@@ -5,8 +5,7 @@
 
 Split from test_manage_tasks.py: covers finalize-step outcomes (done /
 skipped / failed), task-status derivation from step outcomes, progress
-indicator, and the script-level [OUTCOME] emission contract pinned by
-lesson 2026-05-08-14-001.
+indicator, and the script-level [OUTCOME] emission contract.
 """
 
 from argparse import Namespace
@@ -240,8 +239,8 @@ def test_finalize_step_all_done_no_failed_marks_task_done(plan_context):
 # Tests: finalize-step script-level [OUTCOME] emission
 # =============================================================================
 #
-# Lesson 2026-05-08-14-001: phase-5-execute lost log coverage on agent-initiated
-# re-dispatch because [OUTCOME] emissions lived in skill prose. The cure was to
+# phase-5-execute loses log coverage on agent-initiated re-dispatch when
+# [OUTCOME] emissions live in skill prose. The remedy is to
 # move [OUTCOME] emission into manage-tasks finalize-step itself, where it
 # fires unconditionally inside the script boundary on the task-closing call.
 # These four tests pin down the contract.

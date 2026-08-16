@@ -583,7 +583,7 @@ class TestFragmentBundleCleanup:
 
 
 # =============================================================================
-# Phase Dispatch Boundaries section (lesson 2026-05-20-12-002)
+# Phase Dispatch Boundaries section
 # =============================================================================
 
 

@@ -271,7 +271,7 @@ class TestRegression:
 
 
 # =============================================================================
-# Phase-5 logging-gap fact extractors (lesson 2026-05-08-14-001)
+# Phase-5 logging-gap fact extractors
 # =============================================================================
 
 
@@ -280,9 +280,8 @@ class TestPhase5LoggingGapExtractors:
 
     The extractors are pure counting/pairing — never judging. These tests
     therefore assert the shape of the returned dicts on (a) clean fixtures
-    and (b) regression fixtures that mirror the cluster-02 gap pattern that
-    motivated lesson 2026-05-08-14-001 (missing OUTCOME, ghost dispatches,
-    no dispatch-boundary file).
+    and (b) fixtures that mirror the gap pattern (missing OUTCOME, ghost
+    dispatches, no dispatch-boundary file).
     """
 
     # ------------------------------------------------------------------
@@ -311,7 +310,7 @@ class TestPhase5LoggingGapExtractors:
             '[2026-05-08T14:00:01Z] [INFO] [def] [OUTCOME] (plan-marshall:phase-5-execute) '
             'Completed TASK-001: Title (3 steps)',
             '[2026-05-08T14:01:00Z] [INFO] [ghi] [MANAGE-TASKS] Completed TASK-002',
-            # No [OUTCOME] line for TASK-002 — the lesson-2026-05-08-14-001 gap pattern.
+            # No [OUTCOME] line for TASK-002 — the gap pattern.
         ]
         result = _analyze_logs.pair_outcome_emissions(lines)
         assert result['paired'] == 1
@@ -476,7 +475,7 @@ class TestPhase5LoggingGapExtractors:
         assert result['tasks_with_diff_no_outcome'] == []
 
     def test_detect_outcome_for_diffed_tasks_regression(self, tmp_path):
-        """Done task with no [OUTCOME] line — the lesson 2026-05-08-14-001 gap."""
+        """Done task with no [OUTCOME] line — the logging gap."""
         plan_dir = tmp_path / 'plans' / 'gap'
         (plan_dir / 'tasks').mkdir(parents=True)
         (plan_dir / 'tasks' / 'TASK-001.json').write_text(
@@ -515,8 +514,8 @@ class TestPhase5LoggingGapExtractors:
     def test_read_dispatch_boundaries_per_phase_present(self, tmp_path):
         """Glob discovers every per-phase artifact and keys the result by phase name.
 
-        Lesson 2026-05-20-12-002 generalised the prior phase-5-only reader to
-        cover phase-4-plan and phase-6-finalize boundary artifacts. The
+        The reader covers phase-4-plan and phase-6-finalize boundary
+        artifacts as well as phase-5. The
         per-file shape (``present``, ``rows``, ``unknown_count``,
         ``clean_exit_queue_empty_count``) is unchanged.
         """
@@ -584,8 +583,8 @@ class TestPhase5LoggingGapExtractors:
         """End-to-end: cmd_run emits phase5_logging_gaps (three extractors) and
         a top-level dispatch_boundaries per-phase dict.
 
-        Lesson 2026-05-20-12-002 restructured ``dispatch_boundaries`` from a
-        sub-key of ``phase5_logging_gaps`` to a top-level fragment so the
+        ``dispatch_boundaries`` is a top-level fragment rather than a sub-key
+        of ``phase5_logging_gaps``, so the
         compile-report renderer can emit a dedicated section keyed by phase.
         """
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)

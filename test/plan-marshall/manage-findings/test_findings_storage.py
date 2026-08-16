@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Storage-layout tests for the per-type findings JSONL split.
 
-These tests pin the contract for the post-split storage layer described in
-deliverable 1 of plan ``lesson-2026-05-05-11-001``:
+These tests pin the contract for the per-type storage layer:
 
 * findings live under ``findings/{type}.jsonl`` (one file per finding type),
 * Q-Gate findings live under ``findings/qgate-{phase}.jsonl``,

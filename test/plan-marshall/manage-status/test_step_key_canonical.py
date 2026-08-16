@@ -64,8 +64,8 @@ def test_default_strip_precedes_promoted_alias_map():
 def test_doubly_prefixed_promoted_alias_resolves_in_one_call():
     """A ``default:``-prefixed promoted-alias id fully resolves in a single call.
 
-    Regression for the non-idempotence flagged on PR #961: with the map checked
-    before the strip, ``default:plan-marshall:automatic-review`` only reduced to
+    The map must be checked after the strip. Checked before it,
+    ``default:plan-marshall:automatic-review`` only reduces to
     ``plan-marshall:automatic-review`` and needed a second call. Stripping first
     resolves it to ``automatic-review`` in one pass.
     """

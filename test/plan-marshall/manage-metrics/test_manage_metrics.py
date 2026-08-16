@@ -742,7 +742,7 @@ class TestEndPhaseAccumulatorFallback:
 class TestRetrospectiveTokensAccumulatorCarry:
     """retrospective_tokens flows accumulate-agent-usage → accumulator file → end-phase / phase-boundary.
 
-    Anchored to lesson 2026-06-08-19-003: the plan-retrospective dispatches under
+    The plan-retrospective dispatches under
     `--phase phase-6-finalize`, so its spend is otherwise folded silently into the
     [6-finalize] total. The finalize retrospective step seeds the per-phase
     accumulator with `accumulate-agent-usage --retrospective-tokens`; the

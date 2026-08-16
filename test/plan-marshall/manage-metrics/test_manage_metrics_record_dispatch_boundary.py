@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the `record-dispatch-boundary` subcommand of manage_metrics.
 
-Lesson 2026-05-08-14-001: phase-5-execute lost log coverage on agent-initiated
-re-dispatch. Part of the cure is a per-dispatch audit trail captured by this
-new subcommand. These six tests pin the contract:
+phase-5-execute loses log coverage on agent-initiated re-dispatch without a
+per-dispatch audit trail. That trail is captured by this subcommand.
+These six tests pin the contract:
 
   (a) first invocation creates the artifact file with one row,
   (b) subsequent invocations append rows in order with monotonic timestamps,

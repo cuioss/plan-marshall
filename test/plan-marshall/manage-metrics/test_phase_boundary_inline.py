@@ -19,8 +19,7 @@ row matches the dispatched-phase `<usage>` total definition), so an inline phase
 DOES count toward the breakdown Tokens column and the report reads `n=6/6` (not
 `n=5/6`). These tests drive the REAL
 enrich production path (with a fixture that mirrors the runtime's
-post-normalization per-phase bucket shape, per lesson `2026-07-09-14-001`) and
-lock that contract:
+post-normalization per-phase bucket shape) and lock that contract:
   - the inline **1-init** window and the recipe-inline **2-refine** / **3-outline**
     windows, closed usage-free, carry a real `total_tokens` after enrich;
   - a dispatched phase's `<usage>`-sourced `total_tokens` is never overwritten
@@ -62,7 +61,7 @@ cmd_enrich = manage_metrics.cmd_enrich
 # Production-shaped per-phase enrich buckets — the exact shape the runtime's
 # ``metrics normalized-tokens`` op returns for the three inline phases (the
 # canonical ``message.usage`` four-field keys plus the billing-weighted total),
-# NOT a synthetic pre-normalization transcript shape (lesson 2026-07-09-14-001).
+# NOT a synthetic pre-normalization transcript shape.
 _INLINE_ENRICH_BUCKETS = {
     # cache_read DOMINATES 1-init (11M) — two orders above the comparable
     # input+output+cache_creation (60K). enrich's inline total_tokens EXCLUDES

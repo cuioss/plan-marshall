@@ -77,7 +77,7 @@ class TestNameDriftRoleResolution:
         assert cache['build_verify'] == 'module-tests'
 
     def test_namespaced_legacy_step_ids_resolve_to_roles_and_not_flagged(self):
-        # the lesson-2026-05-29-13-001 sub-lesson 13-002 namespaced shape
+        # the ``default:``-namespaced legacy shape
         inputs = _inputs(['default:quality_check', 'default:build_verify'])
         cache: dict[str, str | None] = {}
 

@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """End-to-end regression tests for the dispatch-loop correctness fixes.
 
-Lesson ``2026-05-10-15-001`` shipped two structural fixes for the
-phase-5-execute dispatch loop:
+Two structural properties of the phase-5-execute dispatch loop:
 
-D1 (Defect 1): The loop must drive on ``pending_count > 0`` rather than
+D1: The loop must drive on ``pending_count > 0`` rather than
 on a single ``task_complete`` return — TASK-001 added
 ``manage-tasks loop-exit-guard`` as the script-level enforcement of the
 "pending > 0 → must continue" invariant.
@@ -219,9 +218,7 @@ class TestDispatchTerminationCauseCleanExitReplay:
         assert result.success, result.stderr
         data = result.toon()
 
-        # `dispatch_boundaries` is now a top-level per-phase-keyed dict
-        # (lesson 2026-05-20-12-002 generalised the prior phase-5-only
-        # nested fragment).
+        # `dispatch_boundaries` is a top-level per-phase-keyed dict.
         boundaries = data['dispatch_boundaries']['5-execute']
 
         # Precondition for the LLM rule — the artifact exists.
@@ -297,9 +294,7 @@ class TestDispatchTerminationCauseLegacyUnknownWarning:
         assert result.success, result.stderr
         data = result.toon()
 
-        # `dispatch_boundaries` is now a top-level per-phase-keyed dict
-        # (lesson 2026-05-20-12-002 generalised the prior phase-5-only
-        # nested fragment).
+        # `dispatch_boundaries` is a top-level per-phase-keyed dict.
         boundaries = data['dispatch_boundaries']['5-execute']
 
         # Precondition for the LLM warning branch — the artifact exists.

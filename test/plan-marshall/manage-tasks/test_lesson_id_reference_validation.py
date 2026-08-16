@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for at-write-time lesson-ID reference validation in manage-tasks.
 
-Covers the validation surface added to ``cmd_commit_add`` and
-``cmd_batch_add`` in ``_tasks_crud.py`` per lesson 2026-05-03-21-002:
+Covers the validation surface in ``cmd_commit_add`` and ``cmd_batch_add``
+(``_tasks_crud.py``):
 tasks that cite lesson IDs MUST resolve against the live manage-lessons
 inventory at write time. A miss aborts the entire write atomically — no
 ``TASK-NNN.json`` file is created.
@@ -53,8 +53,8 @@ _iv = sys.modules[_input_validation]
 
 
 # =============================================================================
-# Fixture data — sample IDs sourced from real `manage-lessons list` output
-# (per lesson 2026-04-29-10-001). PHANTOM_IDS are syntactically valid lesson
+# Fixture data — sample IDs sourced from real `manage-lessons list` output.
+# PHANTOM_IDS are syntactically valid lesson
 # IDs that do NOT exist in the live inventory.
 # =============================================================================
 

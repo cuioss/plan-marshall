@@ -455,8 +455,8 @@ def test_phase_boundary_status_json_malformed_no_exception(plan_context):
 
 def test_phase_boundary_clamps_worked_to_wall_for_1init_bootstrap(plan_context):
     """1-init bootstrap ordering: a forwarded worked window longer than the
-    created→end wall span is clamped so worked <= wall (the worked>wall row from
-    lesson 2026-05-29-17-001 can no longer be persisted)."""
+    created→end wall span is clamped so worked <= wall (a worked>wall row can
+    never be persisted)."""
     # status.json.created at "now" makes the backfilled wall span near-zero;
     # the forwarded worked window is deliberately huge.
     created_ts = manage_metrics.now_utc_iso()

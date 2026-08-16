@@ -498,8 +498,8 @@ def test_canonical_exact_match_wins_over_stale_legacy_prefixed_key(plan_context)
     side must prefer the exact canonical match and report the FRESH outcome, not
     the stale legacy one the ordered scan would hit first.
 
-    Regression for the shadowing defect flagged on PR #961: the prior scan broke
-    on the first canonical match, so the earlier-inserted ``default:push`` entry
+    The scan must not break on the first canonical match, or the
+    earlier-inserted ``default:push`` entry
     (a pre-migration write) shadowed the newer ``push`` write.
     """
     plan_id = 'assert-legacy-shadow'
