@@ -155,7 +155,7 @@ immutable history; run 01's report already carries the re-derived figure. Record
 `git diff --name-only origin/main...HEAD -- '*.py'` → **32 files** of 35 changed. Python footprint
 present, so the gate applies.
 
-`./pw verify` → **`=== verify: SUCCESS ===`**, 20,327 passed, 14 skipped, whole tree.
+`./pw verify` → **`=== verify: SUCCESS ===`**, 20,329 passed, 14 skipped, whole tree.
 
 Per-commit gates: both commits touch `*.py` and both were preceded by a clean direct
 `./pw quality-gate`, read from the tools' own output (`ruff … All checks passed!`, `mypy … Success: no
@@ -363,7 +363,7 @@ refusal from `sourcery-ai`, and this run's own two comments.
 | 4 Implement | **DONE** | Six commits, each carrying the trailer, none with a "Generated with Claude Code" footer |
 | 4 Per-commit gate | **DONE** | Every commit touching `*.py` was preceded by a clean direct `./pw quality-gate`, read from the tools' own output (`ruff … All checks passed!`, `mypy … Success: no issues found in 408 source files`, `SPDX-header check passed`). The final report-only commit touched no `*.py`, so the gate did not apply |
 | 4 Pushed | **DONE** | `git status -sb` reports nothing ahead. One lapse, caught and corrected: the PR-number edit was deliberately held to batch with the Step 9 sections, which is the one move the push-cadence rule forbids — a completed unit left uncommitted. Committed and pushed on the spot |
-| 5 Build gate | **DONE** | git-derived verdict: 39 of 42 changed files are `*.py`, `.claude/skills/**` or `marketplace/bundles/**`. `./pw verify` → `=== verify: SUCCESS ===`, 20,327 passed, 14 skipped |
+| 5 Build gate | **DONE** | git-derived verdict: 39 of 42 changed files are `*.py`, `.claude/skills/**` or `marketplace/bundles/**`. `./pw verify` → `=== verify: SUCCESS ===`, 20,329 passed, 14 skipped |
 | 6 Verification sub-agent | **DONE, and it changed the outcome** | Found a blocking regression and a false-negative class, both closed — § Independent pre-PR verification. Nothing it raised was rejected |
 | 7 PR cycle | **DONE** | PR #1266. No `skip-bot-review`: 39 files are code, skill or bundle. All three comment surfaces read; participation below |
 | 8 Merge gate | **DONE** | `verify / conclusion` **success** on the head; every comment on all three surfaces dispositioned; report committed as the last pre-merge commit. The condition-4 disclosure fired at **2-of-3** and is quoted verbatim in § Reviewer participation |
