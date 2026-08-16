@@ -192,8 +192,16 @@ def resolve_logs_dir(mode: str, plan_id: str | None, archived_plan_path: str | N
     return resolve_plan_dir(mode, plan_id, archived_plan_path) / 'logs'
 
 
-def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> list[str]:
+def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> list[str] | None:
     """Resolve the plan footprint for the ARTIFACT-coverage regression check.
+
+    Returns the resolved paths (possibly an empty list — a genuinely empty
+    footprint) or ``None`` when NO tier answered. The two are materially
+    different and callers MUST NOT collapse them: an empty list is "we looked and
+    the plan touched nothing", while ``None`` is "we could not look". Reading the
+    unresolvable state as an empty footprint silently disables the ARTIFACT
+    regression check below, which is the defect the sentinel removes — a check
+    that cannot run must say so, not report nothing to report.
 
     Five-tier resolution, in order:
 
@@ -210,8 +218,10 @@ def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> list[str]:
        {sha}^1 {sha}``). A post-merge-only fallback below the deterministic capture.
     4. **Legacy key** — fall back to ``references.modified_files`` when present
        (archived plans created before the ledger was removed still carry it).
-    5. **Empty** — when nothing resolves, return an empty list so the regression
-       check cannot falsely fire for plans that recorded no footprint.
+    5. **Unresolvable** — when nothing resolves, return ``None``. The regression
+       check then reports the gap instead of grading it: it neither fires (which
+       would be a finding derived from an input nobody measured) nor passes
+       silently (which would present an un-run check as a clean one).
 
     Archived mode passes ``plan_id=None`` and therefore skips tier 1 entirely:
     an archived plan's recorded worktree names a directory finalize has already
@@ -258,11 +268,17 @@ def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> list[str]:
     # shim-owner: plan-retrospective
     # shim-floor: the change-ledger removal that stopped persisting references.modified_files; the current writer no longer emits the key (predates this shallow clone's history root dcd3c00 / #1105, so not PR-pinnable here).
     # shim-remove-when: no archived plan predating the ledger removal is retained (i.e. such archives are purged/aged out).
-    raw = refs.get('modified_files', [])
+    # Key ABSENT and key present-but-empty are different answers, mirroring
+    # ``_footprint_resolver._coerce_path_set``: an absent (or unusable) key means
+    # no tier answered, which is the unresolvable sentinel; a present empty list
+    # is a resolved, genuinely-empty footprint.
+    raw = refs.get('modified_files')
+    if raw is None:
+        return None
     if isinstance(raw, str):
         raw = [raw]
     if not isinstance(raw, list):
-        return []
+        return None
     return [str(p).strip() for p in raw if p]
 
 
@@ -1114,9 +1130,28 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # Build slowest-scripts list deterministically: sort by duration desc, then notation.
     slowest = sorted(durations, key=lambda x: (-x[1], x[0]))[:3]
 
+    # The ARTIFACT-coverage floor is a three-way read, not a truthiness test.
+    # ``None`` (no tier resolved) is NOT an absent footprint: collapsing it into
+    # the falsy branch silently disabled this check, presenting an un-run check
+    # as a clean one. The unmeasurable case gets its own finding carrying a
+    # reason token, so a reader can tell "nothing to report" from "could not
+    # look".
     footprint = resolve_footprint(plan_dir, args.plan_id if args.mode == 'live' else None)
     findings: list[dict[str, str]] = []
-    if footprint and artifact_entries == 0:
+    if footprint is None:
+        findings.append(
+            {
+                'severity': 'warning',
+                'message': (
+                    'ARTIFACT_COVERAGE_UNMEASURABLE: the plan footprint could not be '
+                    'resolved from any tier (no live worktree diff, no realized-footprint '
+                    'capture, no merge-commit, no modified_files key), so ARTIFACT '
+                    f'coverage could not be graded (artifact_entries={artifact_entries}). '
+                    'This is an unmeasured check, not a clean one.'
+                ),
+            }
+        )
+    elif footprint and artifact_entries == 0:
         findings.append(
             {
                 'severity': 'error',

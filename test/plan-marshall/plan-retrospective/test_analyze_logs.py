@@ -1454,11 +1454,29 @@ class TestResolveFootprintTiers:
         footprint = _analyze_logs.resolve_footprint(plan_dir)
         assert sorted(footprint) == ['legacy/a.py', 'legacy/b.py']
 
-    def test_tier3_empty_when_neither_resolves(self, tmp_path):
-        """No worktree and no legacy key → empty footprint."""
+    def test_unresolvable_when_no_tier_answers(self, tmp_path):
+        """No worktree and no footprint key at all → ``None``, not an empty list.
+
+        The empty list this used to return is a MEASURED answer ("the plan
+        touched nothing"), and returning it here silently disabled the
+        ARTIFACT-coverage floor that reads this footprint.
+        """
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
         (plan_dir / 'references.json').write_text(json.dumps({'domains': []}))
+
+        footprint = _analyze_logs.resolve_footprint(plan_dir)
+        assert footprint is None
+
+    def test_present_but_empty_key_is_a_resolved_empty_footprint(self, tmp_path):
+        """A present, empty ``modified_files`` resolves to ``[]`` — measured, not unknown.
+
+        The peer direction of the test above: emptiness that was actually
+        observed must stay distinguishable from emptiness nobody observed.
+        """
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'references.json').write_text(json.dumps({'modified_files': []}))
 
         footprint = _analyze_logs.resolve_footprint(plan_dir)
         assert footprint == []

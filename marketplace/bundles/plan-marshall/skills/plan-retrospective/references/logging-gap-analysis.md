@@ -52,6 +52,7 @@ findings[*]{severity,message}:
 - The ratio `observed / expected_min < 0.5` is a `warning`.
 - Zero `DECISION` entries in phases that made visible choices (outline packaging, plan task ordering) is always a `warning`.
 - Zero `ARTIFACT` entries is an `error` — artifacts were produced but not announced. `phase-5-execute` is expected to emit one `[ARTIFACT]` entry per file operation at task completion, so the canonical check is `counts.artifact_entries > 0` whenever the plan footprint is non-empty (resolved through the shared footprint resolver: live worktree diff, else the realized-footprint capture / merge-commit / legacy key); this is enforced programmatically by the retrospective pipeline rather than being treated as a known offender.
+- The floor is a **three-way** read of that footprint, not a truthiness test. A footprint no tier resolved is `None`, and it emits `ARTIFACT_COVERAGE_UNMEASURABLE` at `severity: warning` instead of the `error` above: nothing was measured, so nothing failed — but the check did not run, and an un-run check must not present as a clean one. A resolved-but-**empty** footprint is a genuine measurement (the plan touched nothing, so no `[ARTIFACT]` entry is expected) and emits no finding at all. Reading the unresolvable state as an empty footprint silently disables this floor, which is the defect the sentinel removes.
 - `ERROR` entries are expected to be zero; count them but do not flag count itself — the errors surface via log-analysis / script-failure-analysis.
 
 ### Phase-5 invariants (precondition-guarded)

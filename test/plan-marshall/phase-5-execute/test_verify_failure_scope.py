@@ -126,6 +126,55 @@ def test_empty_error_paths(plan_context, monkeypatch):
     assert result['out_of_scope_paths'] == []
 
 
+def test_unmeasurable_footprint_does_not_attribute_failures_as_foreign(
+    plan_context, monkeypatch
+):
+    """An unresolvable footprint classifies NOTHING — it never claims "all foreign".
+
+    Returning the empty set here used to put every error path in
+    ``out_of_scope`` and set ``exclusively_out_of_scope``, which drives
+    phase-5-execute Step 11 to offer "Stash foreign files and re-verify" as the
+    DEFAULT remedy. That is a real action recommended off an input nobody
+    measured. The unmeasured state is now explicit and the flag stays false.
+    """
+    plan_dir = plan_context.plan_dir_for('vfs-unmeasurable')
+    _write_refs(plan_dir)
+    monkeypatch.setattr(vfs, '_resolve_declared_footprint', lambda plan_dir, plan_id: None)
+
+    result = vfs.classify_failure_scope(
+        'vfs-unmeasurable', ['foreign/x.py', 'foreign/y.py'], plan_dir=plan_dir
+    )
+
+    assert result['status'] == 'success'
+    assert result['footprint_resolved'] is False
+    assert result['exclusively_out_of_scope'] is False
+    assert result['in_scope_count'] == 0
+    assert result['out_of_scope_count'] == 0
+    assert result['out_of_scope_paths'] == []
+    assert sorted(result['unclassified_paths']) == ['foreign/x.py', 'foreign/y.py']
+    assert result['total'] == 2
+
+
+def test_measured_empty_footprint_still_classifies_as_foreign(plan_context, monkeypatch):
+    """The peer direction: an OBSERVED-empty footprint keeps its measured verdict.
+
+    A plan that genuinely touched no files has every verify failure originating
+    outside it, and that conclusion is substantiated. The fix must not suppress
+    it — only the unmeasured case loses the claim.
+    """
+    plan_dir = plan_context.plan_dir_for('vfs-measured-empty')
+    _write_refs(plan_dir)
+    _stub_footprint(monkeypatch, [])
+
+    result = vfs.classify_failure_scope(
+        'vfs-measured-empty', ['foreign/x.py'], plan_dir=plan_dir
+    )
+
+    assert result['footprint_resolved'] is True
+    assert result['exclusively_out_of_scope'] is True
+    assert result['out_of_scope_paths'] == ['foreign/x.py']
+
+
 def test_missing_references_returns_error(tmp_path):
     # Point at an empty plan_dir with no references.json present. The footprint
     # resolver raises FileNotFoundError, which the classifier maps to an error.
