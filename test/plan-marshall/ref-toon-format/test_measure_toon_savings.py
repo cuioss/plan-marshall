@@ -6,12 +6,11 @@ Migrated from test/measure-toon-savings.sh - measures token savings
 from TOON format vs estimated JSON equivalent.
 """
 
-from pathlib import Path
+from conftest import TEST_ROOT
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 
 # Test root directory
-TEST_ROOT = Path(__file__).parent.parent.parent
 
 # Expected TOON files to measure (relative to test root)
 # Note: cui-task-workflow was renamed to planning

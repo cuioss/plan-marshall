@@ -11,11 +11,8 @@ rejected), and the TOON output contract for both success and error.
 """
 
 import json
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from conftest import get_script_path, run_script  # noqa: E402
+from conftest import get_script_path, run_script
 
 from toon_parser import parse_toon  # noqa: E402
 

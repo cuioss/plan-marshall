@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from conftest import _MARKETPLACE_SCRIPT_DIRS, PlanContext, get_scripts_dir
+from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT, PROJECT_ROOT, PlanContext, get_scripts_dir
 
 
 def _subprocess_env() -> dict[str, str]:
@@ -24,7 +24,7 @@ def _subprocess_env() -> dict[str, str]:
 
 # Path to templates and scripts
 SKILL_DIR = (
-    Path(__file__).parent.parent.parent.parent / 'marketplace/bundles/plan-marshall/skills/tools-script-executor'
+    MARKETPLACE_ROOT / 'plan-marshall/skills/tools-script-executor'
 )
 TEMPLATE_DIR = SKILL_DIR / 'templates'
 SCRIPTS_DIR = SKILL_DIR / 'scripts'
@@ -640,7 +640,7 @@ def _run_build_class_dispatch(
         capture_output=True,
         text=True,
         env=env,
-        cwd=str(Path(__file__).parent.parent.parent.parent),
+        cwd=str(PROJECT_ROOT),
     )
     assert result.returncode == stub_exit_code, (
         f'the executor must propagate the stub exit code {stub_exit_code} unchanged, '

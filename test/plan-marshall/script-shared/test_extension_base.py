@@ -6,6 +6,7 @@ import json
 import subprocess
 import typing
 
+import _extension_constants as _extension_constants_mod
 import extension_base
 import pytest
 from extension_base import (
@@ -21,16 +22,6 @@ from extension_base import (
     should_execute_build,
     validate_tree_completeness,
 )
-
-from conftest import load_script_module
-
-
-def _load_module(name, filename):
-    """Load a script-shared script by (bundle, skill, file) identity."""
-    return load_script_module('plan-marshall', 'script-shared', f'extension/{filename}', name)
-
-
-_extension_constants_mod = _load_module('_extension_constants', '_extension_constants.py')
 
 ALL_CANONICAL_COMMANDS = _extension_constants_mod.ALL_CANONICAL_COMMANDS
 APPLICABLE_PROFILES = _extension_constants_mod.APPLICABLE_PROFILES
