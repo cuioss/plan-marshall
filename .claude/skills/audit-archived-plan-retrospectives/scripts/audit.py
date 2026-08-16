@@ -1228,11 +1228,26 @@ def collect_inputs(plan_dir: Path) -> PlanInputs:
     metadata = status.get("metadata", {})
     inputs.change_type = metadata.get("change_type")
 
-    plan_source = metadata.get("plan_source")
-    # `plan_source` populated by phase-1-init when sourced from a lesson;
-    # equivalent to `recipe_key` for matrix purposes.
-    if isinstance(plan_source, str) and plan_source.strip():
-        inputs.recipe_key = plan_source.strip()
+    # Recipe / lesson provenance rides on EITHER of two metadata fields, and both
+    # are read here. `plan_source` is seeded by phase-1-init (the raw lesson id for
+    # a lesson-derived plan, the literal `"recipe"` for a recipe-routed one);
+    # `recipe_key` is written separately by phase-1-init Step 5c when
+    # `manage-lessons auto-suggest` clears the auto-accept floor. The two are NOT
+    # synonyms and neither implies the other, so reading only `plan_source` made
+    # Row 2 (`recipe`) unreachable for every plan routed through the auto-suggest
+    # path — the row could never fire, whatever the corpus contained.
+    #
+    # The field order mirrors the canonical resolver this check must agree with,
+    # `manage-execution-manifest/scripts/_manifest_decide.py::_read_recipe_source`
+    # (`for field in ('plan_source', 'recipe_key')`), so the audit's re-derivation
+    # of Row 2 and the composer's live decision read the same inputs in the same
+    # precedence. A change to that resolver's field set obliges the same change
+    # here.
+    for provenance_field in ("plan_source", "recipe_key"):
+        value = metadata.get(provenance_field)
+        if isinstance(value, str) and value.strip():
+            inputs.recipe_key = value.strip()
+            break
 
     inputs.scope_estimate = refs.get("scope_estimate")
     inputs.affected_files_count = len(refs.get("affected_files") or [])
