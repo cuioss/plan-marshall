@@ -1,6 +1,6 @@
 # Run report — 230-validate-precision (run 01)
 
-**Date (UTC):** 2026-08-15    **Branch:** `claude/code-intelligence-validation-azwlva`    **PR:** _not yet opened at the time of this revision_    **Outcome:** in progress
+**Date (UTC):** 2026-08-15    **Branch:** `claude/code-intelligence-validation-azwlva`    **PR:** [#1254](https://github.com/cuioss/plan-marshall/pull/1254)    **Outcome:** completed
 
 ## Skills loaded
 
