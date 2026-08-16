@@ -77,9 +77,12 @@ sample named placeholders, subcommands and canonical commands. The full set show
 2. **The plan's "subcommand" class was a partial description of it.** The plan
    hypothesised "a three-part notation whose final segment is a subcommand of the
    skill's entry script". Measured against the corpus, the subcommand-of-entry-script
-   rule covers 69 rows and the decision-log-prefix rule covers 147; they overlap on
-   59 and **neither subsumes the other**. Of the 145 decision-log rows, only 59 sit
-   on a skill that has a same-named entry script. Two distinct mechanisms share one
+   rule covers 68 rows and the decision-log-prefix rule matches 147; they overlap and
+   **neither subsumes the other**. (147 is the count of rows *matching* the
+   decision-log shape; the table above attributes **145** to it, because two rows
+   also carry a placeholder segment and the partition gives placeholder precedence.
+   Both numbers are correct under their stated convention.) Only a minority of the
+   decision-log rows sit on a skill with a same-named entry script. Two distinct mechanisms share one
    surface.
 3. **Two further false-positive families exist** — build coordinates and foreign
    namespaces — that no part of the plan anticipated.
@@ -100,8 +103,8 @@ carried forward on the plan's word.
 | Plan claim | Label | Verdict | Artifact |
 |---|---|---|---|
 | Validator reports a large unresolved set against a much larger total | OBSERVED | **Confirmed** | Re-run live: 380 unresolved / 5301 dependencies / 306 components |
-| Placeholders, subcommands and canonical commands each appear in the set | OBSERVED | **Confirmed** | 55 placeholder, 69 subcommand-of-entry-script, 75 canonical, all enumerated |
-| The **majority** of rows fall into these three classes | HYPOTHESIS (derived count) | **Confirmed — but only barely** | Union of the three = **199 of 380 = 52.4%**, and only when Maven meta-syntactic segments (`groupId`/`artifactId`) count as documentation placeholders. A bare majority materially understates the work: the other 47.6% is also mostly false positives, from classes the plan never named |
+| Placeholders, subcommands and canonical commands each appear in the set | OBSERVED | **Confirmed** | 55 placeholder, **68** subcommand-of-entry-script, 75 canonical, all enumerated |
+| The **majority** of rows fall into these three classes | HYPOTHESIS (derived count) | **Confirmed — but only barely** | Union of the three = **198 of 380 = 52.1%**, and only when Maven meta-syntactic segments (`groupId`/`artifactId`) count as documentation placeholders. A bare majority materially understates the work: the other 47.6% is also mostly false positives, from classes the plan never named |
 | The three classes are separable in the existing parser without a redesign | HYPOTHESIS | **Confirmed** | Additive guards only; no structural change to detection or the output contract |
 | A genuinely-broken residue exists at all | HYPOTHESIS | **Confirmed** | 45 in-namespace rows were genuinely broken: 10 fixed, **35 remain**. The plan's ⭐ empty-residue success path does not apply |
 
@@ -129,7 +132,7 @@ non-references — **in one direction**. It is not evidence in the other: a row 
 was *unresolved* and wrongly *became resolved* is invisible to this diff by
 construction, which is exactly the defect the verification sub-agent found (round-2
 finding 1). Both directions are now covered — this diff for losses, and
-`TestExclusionsAreProvisional` / `TestMisspelledScriptSegmentIsNotASubcommand` for
+`TestExclusionsAreConditional` / `TestMisspelledScriptSegmentIsNotASubcommand` for
 wrongful resolution.
 
 ### D1 — documentation placeholders are no longer references
@@ -153,14 +156,17 @@ same-named entry script when one exists. Retargeting rather than merely flagging
 resolved keeps the graph honest: `rdeps` and `tree` attribute the reference to the
 script that owns the verb instead of leaving a dangling node.
 
-**The reach of that retarget is narrow, and the report's first version overstated
-it.** Most subcommand-shaped citations in this corpus are written as parenthesised
-decision-log prefixes, which the decision-log guard excludes at detection — so they
-never reach resolution and are absent from the graph rather than attributed to the
-entry script. That ordering was **wrong, and review caught it** — see round-3 finding R‑1. The
-retarget is now attempted *before* the provisional drop, so an excluded shape can no
-longer hide a genuine verb citation; 59 such rows that were being discarded are now
-resolved edges.
+**The reach of that retarget took three rounds to get right, and every intermediate
+figure this report published for it was wrong.** Most subcommand-shaped citations in
+this corpus are parenthesised decision-log prefixes. Excluding them at detection hid
+genuine verb citations (R‑1); attempting the retarget for *every* excluded shape then
+manufactured false edges onto `manage-lessons` (R‑12). The shipped rule attempts the
+retarget only for a shape whose third segment *can* be a verb — a decision-log prefix
+— and **33** citations that were being discarded are resolved edges as a result.
+(Earlier revisions of this report said 59, then 38. Both were counts at superseded
+revisions, carried forward rather than re-derived; 59 counts every decision-log row on
+an entry-script-bearing skill, 26 of which are the script citing its own verbs and
+become no edge at all.)
 
 The guard is what preserves real findings: `pm-plugin-development:plugin-doctor:validate`
 does **not** resolve, because plugin-doctor's entry script is `doctor-marketplace`.
@@ -186,8 +192,8 @@ mechanism as D1/D3 (suppress a shape that references nothing):
 Rationale, since this is past the plan's letter: the plan's Goal is that findings
 be "precise enough to gate on", and its Out-of-scope excludes *redesigning the
 detection layer*, not *recognising more members of the same family*. Shipping only
-the three named classes would have left 181 of 380 rows (47.6%) as noise — the
-union of those three is 199 rows — and made D6's own question unanswerable. **What was deliberately NOT done** — see D6 — is the
+the three named classes would have left **182 of 380 rows (47.9%)** as noise — the
+union of those three is 198 rows — and made D6's own question unanswerable. **What was deliberately NOT done** — see D6 — is the
 one change that would have suppressed the rest, because it fails open.
 
 ### D4 — re-baseline and report the real unresolved set
@@ -325,7 +331,7 @@ deliverable paths were staged explicitly. No commit in this branch touches `uv.l
 | # | Source | Finding | Disposition |
 |---|---|---|---|
 | 1 | D0 enumeration | The plan's three-class model is incomplete: the largest class (decision-log prefixes, 38.2%) is unnamed by the plan | **Reported + fixed** — two further guards implemented; scope decision stated above |
-| 2 | D0 enumeration | The plan's "subcommand of the entry script" and the actual decision-log-prefix mechanism are distinct, overlapping rules (69 vs 147 rows, 59 shared) | **Reported + both implemented** |
+| 2 | D0 enumeration | The plan's "subcommand of the entry script" and the actual decision-log-prefix mechanism are distinct, overlapping rules (68 vs 147 rows under the shipped guards) | **Reported + both implemented** |
 | 3 | D0 enumeration | The plan's ⚠ "one branch may be the whole of this class" pointer names a real branch (`from_notation`) that is not on the detector's path at all | **Reported** — checked first, as instructed; hypothesis refuted |
 | 4 | D4 residue | `PYTHON_MODULE_MAPPINGS['extension_base']` names the wrong skill (11 rows) | **Filed** — needs the nested-script coverage decision |
 | 5 | D4 residue | `_BUCKET_B_NOTATIONS` holds two notations that resolve to no script, so project-dir injection cannot fire for them | **Filed** — production behaviour change, out of scope |
@@ -374,11 +380,12 @@ requires typesetting the example, every time.*
 an exclusion that fires on **shape alone** cannot distinguish a non-reference from a
 genuine reference that merely looks like one. Exclusions are now **provisional** —
 a match on an excluded shape is marked rather than discarded, and the index drops it
-only when it also names no component. A provisional match that names a real
+only when it also names no component. An excluded match that names a real
 component is kept as an ordinary resolved edge. Shape decides where to look;
 existence decides. This makes every guard fail-closed by construction rather than by
 the absence of a counter-example in today's corpus, and it is directly asserted by
-`TestExclusionsAreProvisional` (two fail-open cases plus two controls).
+`TestExclusionsAreConditional` (two fail-open cases plus two controls) and
+`TestOnlyVerbBearingShapesRetarget` (which shape may resolve as a verb).
 
 **A blind spot in this run's own regression evidence.** The resolved-edge diff
 reported above checks for edges that were resolved and are now gone. Finding 1 ran
@@ -396,7 +403,7 @@ found by this run's own re-measurement while fixing them.
 
 | # | Finding | Source | Disposition |
 |---|---|---|---|
-| R‑1 | The provisional drop ran **before** the subcommand retarget, so a genuine verb citation wearing an excluded shape was discarded — 59 rows in the live corpus. The shipped sentence "the exclusions cannot hide a real reference" was **false by the codebase's own definition of a real reference** | Sub-agent | **Fixed** — retarget is attempted first; the sentence is now true and scoped to the table it describes |
+| R‑1 | The provisional drop ran **before** the subcommand retarget, so a genuine verb citation wearing an excluded shape was discarded (reported as 59 rows; **33** under the finally-shipped rule). The shipped sentence "the exclusions cannot hide a real reference" was **false by the codebase's own definition of a real reference** | Sub-agent | **Fixed** — retarget is attempted first; the sentence is now true and scoped to the table it describes |
 | R‑2 | The retarget assumed the entry script is named *exactly* like the skill. Nine skills spell it with underscores (`plan-doctor:plan_doctor`, `extension-api:extension_api`, …), and plugin-doctor's own rule catalogue explicitly rejects that assumption | Sub-agent | **Fixed** — both case styles are tried |
 | R‑3 | Round-2 finding 8 was **not actually fixed**: the fixture's sub-document instance sat on the skill *with* an entry script, so disabling that arm left the count at 1. The disposition was literally true and functionally wrong | Sub-agent | **Fixed** — instance moved to the entry-script-less skill; all six arms now verified to bite |
 | R‑4 | `doc/adr/002-…adoc:249` still named `workflow-integration-git/scripts/merge_lock.py`, a path that does not exist — the *same* ADR the round-2 fix had already edited two paragraphs earlier | Sub-agent | **Fixed** |
@@ -428,11 +435,11 @@ reporting defects.
 
 | # | Finding | Disposition |
 |---|---|---|
-| R‑12 | **The R‑1 reorder bypassed every detection guard for any skill with an entry script.** 38 of 43 retargets were guard-bypassing, and 6 were wrong — five sub-document paths became false edges onto `manage-lessons` (whose entry script registers no `references`/`standards` verb), plus one step id | **Fixed** — the retarget is now attempted only for a shape whose third segment *can* be a verb. A decision-log prefix qualifies; a placeholder, canonical command, or sub-document path never does, because its third segment is a directory or a meta-variable. `Dependency.provisional` became `Dependency.exclusion`, recording *which* shape matched, so the distinction is data rather than a comment |
+| R‑12 | **The R‑1 reorder bypassed every detection guard for any skill with an entry script.** Of the retargets then in effect, 6 were wrong — five sub-document paths became false edges onto `manage-lessons` (whose entry script registers no `references`/`standards` verb), plus one step id. ⚠ **The fix reached 5 of those 6** — see F‑1 below | **Fixed** — the retarget is now attempted only for a shape whose third segment *can* be a verb. A decision-log prefix qualifies; a placeholder, canonical command, or sub-document path never does, because its third segment is a directory or a meta-variable. `Dependency.provisional` became `Dependency.exclusion`, recording *which* shape matched, so the distinction is data rather than a comment |
 | R‑13 | The D5 fixture was **still vacuous for the `.`+word arm** — the recurrence round-2 #8 and R‑3 had each aimed at and missed | **Fixed** — a seventh instance added; each of the two embedded sub-arms is now disabled *separately* and both raise the count |
 | R‑14 | **Fourth instance of self-inflicted noise**: `SKILL.md` spelled a real notation 26 lines below this run's own newly-added rule against doing so, creating both an edge and a lint finding | **Fixed** — measured against `origin/main` in a worktree: both revisions now report the **same two** notation findings, so this run adds zero |
 | R‑15 | **The R‑6 fix replaced one false claim with another.** `_EXECUTOR_NOTATION_RE` belongs to the `notation-bundle-skill-drift` rule, not `notation-staleness`; and `notation-staleness` itself skips notations whose `scripts/` directory is absent — the very membership-based fail-open the same paragraph rejects | **Fixed** — the correct rule is named, and the paragraph now records that adopting it narrows the class by narrowing what counts as a reference |
-| R‑16 | Three report figures stale (`59` retargets → 38; pre-change edge count `4931` → 4928; test counts), and the D4 Filed table enumerated 34 of 35 rows | **Fixed** — every figure re-derived at this revision; the missing row now has its own entry |
+| R‑16 | Three report figures stale (retarget count; pre-change edge count `4931` → 4928; test counts), and the D4 Filed table enumerated 34 of 35 rows | **Partly fixed** — the Filed table and edge count were corrected, but the retarget figure was replaced with another superseded number rather than re-derived, and four further figures were missed. All are corrected in the round-5 pass below |
 | R‑17 | **The "what have we learned" proposal named the wrong root cause.** It attributed `uv.lock` churn to an old session interpreter; the real cause is that `origin/main`'s lockfile pins `ruff>=0.16.1` while `pyproject.toml` requires `>=0.16.2`, so *any* `uv run` re-syncs it | **Fixed** — the proposal now states the actual mechanism |
 
 **R‑12 is the third time a fix in this run introduced a defect**, after R‑10 and
@@ -440,6 +447,45 @@ R‑11. All three were over-corrections of the previous round's finding, and all
 were found by *measuring the corpus after the change* rather than by reasoning about
 it. The countermeasure that actually worked, every time, was enumerating what the
 change did to the whole corpus — not inspecting the diff.
+
+
+## Verification sub-agent — round 5 findings
+
+A fourth dispatch was made specifically to test whether the over-correction pattern
+was still running. **It is not.** The round-4 fix was verified to remove exactly the
+five false `manage-lessons` edges and nothing else: zero resolved edges lost, the
+294-cycle set byte-identical to `origin/main`, and every headline figure reproduced
+independently (baseline, HEAD, residue split 35/27, D0 table summing to 380, suite
+counts, and the 4928 → 4965 edge diff). It also confirmed the fail-closed path is
+intact for every exclusion, because the `target in index.components` check runs
+*before* the verb-eligibility gate.
+
+Eight defects remained. One is a correctness footnote; the rest are this report's own
+accuracy.
+
+| # | Finding | Disposition |
+|---|---|---|
+| F‑1 | **R‑12's disposition overstated its own fix.** It claimed all six wrong retargets were corrected; measurement says **five**. `manage-execution-manifest:classify` still retargets — the shipped rule asks whether a *shape* may bear a verb, never whether the *segment* is a registered one (`classify` is a `[STATUS]` label, not an `add_parser` entry) | **Corrected above.** The edge is benign and the behaviour deliberate and tested, but it falls under the limitation `SKILL.md` discloses, and the honest count is 5 of 6 |
+| F‑2 | `Dependency.provisional` survived the round-4 refactor as a property with **zero read sites** anywhere in the repository | **Fixed** — removed, along with the comment and class name still using the retired word |
+| F‑3 | The precision fixture's class docstring shipped stale in the previous commit — "five non-references" where it holds seven | **Fixed** |
+| F‑4 | The retarget figure was **wrong in all three revisions that published it** (59, then 38, now measured **33**). R‑16 claimed to have re-derived it and instead substituted another superseded number | **Fixed** — re-derived, with the discrepancy and its cause stated inline |
+| F‑5 | D0's narrative said the decision-log rule "covers 147" two sentences before "the 145 decision-log rows" | **Fixed** — both are right under different conventions (147 *match* the shape; 145 are *attributed* after placeholder precedence), and the convention is now stated |
+| F‑6 | The claim table's `69 / 199 / 52.4% / 181 / 47.6%` predated the round-2 misspelling guard and was never re-derived; the 69 counted a row the same report classifies as a misspelling | **Fixed** — re-derived under the shipped rules: **68 / 198 / 52.1% / 182 / 47.9%** |
+| F‑7 | Contract check said "Four commits" | **Fixed** — nine |
+| F‑8 | The zero-noise result is **contingent, not structural**: this run's own reference table would add 8 unresolved rows under the pre-change detector, and passes only because the guards it documents absorb them | **Recorded** below |
+
+**F‑8 — the zero-noise result is contingent.** The check "zero rows attributable to
+this run's docs" passes today because the guards hold, not because the page is inert.
+Loosen any guard and this page becomes a finding source. That is worth knowing before
+anyone relaxes a guard.
+
+**What the four verification rounds cost, and what they were worth.** Every round
+found real defects, and three of them found a defect *created by the previous round's
+fix*. Two of the findings were false claims shipped in `SKILL.md` — the contract this
+plan exists to write. Roughly half of all findings across the four rounds were stale
+figures in this report rather than defects in the code, which is its own signal: **a
+number is a claim, and carrying one forward instead of re-deriving it is the single
+most repeated error in this run.**
 
 ## Reviewer participation
 
@@ -480,7 +526,7 @@ surfaces before the merge gate.
 | 1 Skills loaded | Done | Named above; all resolved by bundle path |
 | 2 Branch | Done | `claude/code-intelligence-validation-azwlva` on `origin` — **harness-assigned**, kept as-is. It was absent from the remote on arrival and was pushed as the first action, before any edit |
 | 3 Plan directory | Done | `doc/plans/code-intelligence-substrate/230-validate-precision/plan.md`, moved with `git mv`; numeric prefix preserved; first-instruction block present on arrival, no repair needed |
-| 4 Implement | Done | Four commits, each carrying the trailer |
+| 4 Implement | Done | Nine commits, each carrying the trailer |
 | 4 Per-commit gate | Done | `./pw quality-gate` clean before each `*.py`-touching commit — ruff/mypy/SPDX lines read individually, not the exit code |
 | 4 Pushed | Done | Pushed after every commit; `git status -sb` reports no `ahead` |
 | 5 Build gate | Done | Git-derived verdict: 3 `*.py` files changed → full `./pw verify` → SUCCESS |

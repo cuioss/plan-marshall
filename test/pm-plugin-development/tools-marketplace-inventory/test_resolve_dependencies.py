@@ -1273,7 +1273,7 @@ def precision_index():
 
 
 class TestPrecisionRegressionFixture:
-    """The fixture holds five non-references and one real break; exactly one is reported."""
+    """The fixture holds seven non-references and one real break; exactly one is reported."""
 
     def test_exactly_one_finding(self, precision_index):
         """EXACTLY one unresolved dependency — not 'at least one'."""
@@ -1310,13 +1310,14 @@ class TestSubcommandResolution:
 
 
 # =============================================================================
-# Tests - Exclusions are provisional (fail-closed)
+# Tests - Exclusions are conditional (fail-closed)
 # =============================================================================
 #
 # Every exclusion recognises a SHAPE, and a shape is evidence rather than proof:
 # a genuine reference can be written parenthetically or with a file extension.
 # Dropping on shape alone would put a hole in the gate, so a match on an excluded
-# shape is provisional and the index keeps it when it names a real component.
+# shape records which shape it was, and the index keeps it when it names a real
+# component.
 
 
 def _probe_reference(tmp_path, line):
@@ -1341,7 +1342,7 @@ def _probe_reference(tmp_path, line):
     ]
 
 
-class TestExclusionsAreProvisional:
+class TestExclusionsAreConditional:
     """An excluded shape that names a REAL component is kept, not swallowed."""
 
     def test_parenthesised_real_reference_is_kept(self, tmp_path):
@@ -1359,7 +1360,7 @@ class TestExclusionsAreProvisional:
 
         A decision-log prefix naming a real verb is still a reference to the
         script that owns the verb, so the subcommand retarget is attempted before
-        the provisional drop. Dropping on shape alone hid 59 such rows.
+        the drop. Dropping on shape alone hid 33 such citations in this marketplace.
         """
         edges = _probe_reference(tmp_path, 'Emitted (probe-bundle:real-skill:compose) here.')
         assert edges == [('probe-bundle:real-skill:real-skill', True)]

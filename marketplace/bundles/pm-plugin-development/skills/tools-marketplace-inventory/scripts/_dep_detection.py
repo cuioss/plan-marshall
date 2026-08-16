@@ -87,11 +87,6 @@ class Dependency:
     resolved: bool = True  # False if target doesn't exist
     exclusion: str = ''  # Name of the non-reference shape matched; see below
 
-    @property
-    def provisional(self) -> bool:
-        """True when this match wore an excluded shape rather than a plain notation."""
-        return bool(self.exclusion)
-
 
 # ``exclusion`` is how the non-reference exclusions below stay FAIL-CLOSED.
 #
@@ -324,7 +319,7 @@ def detect_script_notations(content: str, source: ComponentId) -> list[Dependenc
             # Skip if skill looks like a port number (all digits)
             if skill.isdigit():
                 continue
-            # Non-reference shapes. Marked provisional, never dropped here —
+            # Non-reference shapes. The ARM is recorded, never dropped here —
             # the index keeps any that turn out to name a real component.
             if _has_placeholder_segment(bundle, skill, script):
                 exclusion = EXCLUSION_PLACEHOLDER
