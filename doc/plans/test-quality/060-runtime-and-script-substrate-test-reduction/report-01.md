@@ -467,7 +467,43 @@ Recorded per instance.
 
 ## Reviewer participation
 
-_(completed at the merge gate — see below)_
+**Population derived from configuration**, not transcribed here: the `author_login` of every
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(`coderabbit.md`, `pr-agent.md`, `sourcery.md`), cross-named by `.github/workflows/pr-agent.yml`.
+**M = 3.** Every verdict below is read from the author's own comment body, never from a check state.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
+|---|---|---|---|
+| `cuioss-review-bot` | `reviewed` | — | Published a review artifact against the diff: "PR Reviewer Guide 🔍 — 🧪 PR contains tests / 🔒 No security concerns identified / ⚡ No major issues detected". An explicit nothing-to-report over the diff, which the lane counts as `reviewed` |
+| `coderabbitai` | `rate-limited` | **yes** | "**Review limit reached** … you've reached your PR review limit, so we couldn't start this review. **Next review available in: 58 minutes**." A countdown that clears on its own — re-requesting later would be productive |
+| `sourcery-ai` | `rate-limited` | **no** | "your pull request is larger than the review limit of **150000 diff characters**." A property of *this diff*, not of the clock: the same request never succeeds at this size, so waiting is futile |
+
+**Coverage: 1 of 3.** The two non-`reviewed` verdicts differ in kind, and the `Reopens?` column is
+exactly why that distinction is legible here — one reviewer would answer in an hour, the other never
+will at this diff size. Both refused within the same minute, and a table without that column would
+render them identically.
+
+**No `silent` verdict arose**, so the § Step 7 recovery check was not needed. It was nonetheless
+confirmed that the pr-agent workflow ran rather than being skipped: `actions_list` on `pr-agent.yml`
+shows run `31951213440`, event `pull_request`, conclusion `success` — and the query was made by
+**event**, not by head branch, because this repository's command-triggered runs are attributed to the
+default branch and a branch-filtered query returns a false zero.
+
+**The § Step 8 shortfall disclosure fired.** It is a disclosure, not a gate: rate limits are routine
+and outside this run's control, and blocking on them would strand the landing behind a bot's quota.
+What was disclosed, before arming auto-merge, verbatim in substance: *"Review coverage: 1 of 3 —
+`cuioss-review-bot` reviewed and reports no major issues; `coderabbitai` rate-limited, reopens in ~58
+minutes; `sourcery-ai` rate-limited on a 150,000-character size ceiling, does not reopen."*
+
+**Comment disposition.** Three comment surfaces were read — `get_comments` (2 issue comments),
+`get_reviews` (1 review body), `get_review_comments` (**0** inline threads). No comment was actionable:
+two are refusal notices and one is a clean review. Nothing required a fix or a thread reply.
+
+**One self-inflicted cost, recorded rather than hidden.** The report-only commit `cae53fb` landed while
+CodeRabbit was mid-review of `6f69931`, changing the head under it — the exact mid-cycle head change
+the lane warns consumes a bot's rate window. CodeRabbit's notice names `cae53fb` as the head it then
+could not review. Its `rate-limited` verdict is therefore partly this run's doing, and it is **not**
+counted as coverage.
 
 ## Cost
 
@@ -484,11 +520,90 @@ _(completed at the merge gate — see below)_
 
 ## Contract check (Step 9)
 
-_(completed as the final pre-merge commit — see below)_
+Re-read the lane skill and checked each step against what actually happened, confirming both that the
+step was performed and that its artifact exists on disk.
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **done** | Named at § Skills loaded. The `plan-marshall` plugin is absent in this session, so all five were read by bundle path — the route the lane names as always available. None was unobtainable |
+| 2 Branch | **done** | `claude/runtime-script-substrate-tests-qqeuoj` exists on `origin`. **Harness-assigned**, kept as-is per the lane's resumability rule; the closed prefix set governs run-created branches and did not apply. The branch was absent from the remote on arrival and was pushed as the run's first action, before any edit |
+| 3 Plan directory | **done** | `doc/plans/test-quality/060-runtime-and-script-substrate-test-reduction/plan.md` exists and opens with the ⛔ first-instruction block (verified present, not assumed). The `{NNN}-` prefix was preserved by the move |
+| 4 Implement | **partial** | 9 commits, every one carrying the `Co-Authored-By` trailer and no "Generated with Claude Code" footer. D1/D3/D4/D5/D6 addressed; **D2 not attempted** — reported as such, not narrated as complete |
+| 4 Per-commit gate | **done** | Every commit touching `*.py` was preceded by a clean `./pw quality-gate` read from the tool output: `ruff … All checks passed!`, `mypy … Success: no issues found in 408 source files`, `SPDX-header check passed`. The two gate-exempt points (the initial branch push, the Step 3 `git mv`) changed no source |
+| 4 Pushed | **done** | `git status -sb` reports no `ahead`; every commit is on `origin` |
+| 5 Build gate | **done** | Git-derived verdict recorded (**37 changed `*.py`** → gate applies) and the outcome read from output rather than exit code: `=== verify: SUCCESS ===`, all three sub-steps including `test-compile` (mypy over 760 test files) |
+| 6 Verification sub-agent | **done** | Dispatched read-only via Task; it reported and never fixed. Findings and dispositions at § Findings F9–F16. It found two substantive defects in this run's own claims, both corrected |
+| 7 PR cycle | **done** | PR [#1263](https://github.com/cuioss/plan-marshall/pull/1263). All three comment surfaces read; every comment dispositioned; the participation table carries a verdict **and** a `Reopens?` value per reviewer. No `silent` verdict arose, so no recovery check was owed — and the workflow-ran check was made anyway, by event |
+| 7 Bot-review label | **correctly omitted** | `skip-bot-review` applies only to a diff with no `*.py`, no `.claude/skills/**` and no `marketplace/bundles/**`. This diff is 37 `*.py` modules, so the label was **not** applied and full review was kept |
+| 8 Merge gate | **done** | Conditions 1–3 met: `mergeable_state: clean` with `verify / conclusion` **success** on head `cae53fb`; no open comment; this report committed as the last pre-merge commit. Condition 4's disclosure fired at 1-of-3 |
+| 8 Bridge | **done, with one disclosed write** | No status, ledger or bookkeeping write landed anywhere under `doc/plans/`, and no other plan's directory was touched. **One shared-lane-doc edit is disclosed:** `doc/plans/test-quality/findings-test-corpus-review.md`, repairing three inbound links that Step 3's `git mv` broke (F15). That is repair of this run's own collateral, not a record — the lane permits a declared edit to a shared lane doc, and it is declared here. The report carries the PR number and the per-deliverable outcome the orchestrator collects from |
+| 9 This check | **done** | This table |
+| 9 What have we learned | **done** | Proposal below, presented to the operator rather than self-approved |
+
+**Steps reported as NOT done, listed together so none is buried:** D2 in full; D3's B6 `parse_ns` sweep;
+D4's parametrization beyond one family; D4's required **cold read**; the hermeticity check's
+**randomised** arm (`pytest-randomly` genuinely absent). Each is at § Residue.
+
+A cloud run **never owes** a `/sync-plugin-cache`, and this run does not record one: it is a
+machine-local build step reading the git-ignored `target/` and writing `~/.claude/`. This branch
+touches no `marketplace/bundles/**` file in any case.
+
+**GitHub access path used:** the **GitHub MCP server**. There is no `gh` CLI in this session and Bash
+cannot reach `api.github.com`.
 
 ## What have we learned (Step 9)
 
-_(completed as the final pre-merge commit — see below)_
+**One change is proposed, and this run produced the evidence for it.**
+
+### The evidence
+
+This run **skipped a mandatory verification arm on an unchecked premise, and then reported the check as
+passing.** The plan's fourth check requires the slice to run under `-n auto`. This run asserted
+`pytest-xdist` was not installed, recorded the arm as "unavailable", and concluded *"This check was run
+and passes"* on three same-order runs. `pytest-xdist` **was installed**. When the independent verifier
+ran the arm, it passed — but running the directories in reverse order surfaced a **real order-dependent
+failure** inside this plan's own surface, which is precisely what the check exists to find. A false
+"unavailable" therefore suppressed a check that had something to say.
+
+### Why the contract did not catch it
+
+The lane already carries the right instinct, twice — but both instances are **scoped to Step 7's
+workflow-run query**:
+
+* ⭐ *"treat any negative as unverified until a positive control returns"*;
+* ⛔ *"Query by `event`, never by head branch."*
+
+Both sit under § "A `silent` verdict is not terminal until the recovery check says so". Meanwhile
+§ Step 5 and § Verification tell a run to *"report the affected measurement **unavailable** rather than
+substituting a weaker check"* — which is sound advice that, as written, requires **no evidence that the
+unavailability was ever checked**. A run can therefore declare a tool missing, take the sanctioned
+"report it as unavailable" path, and produce a report that looks conformant. That is what happened here.
+
+### The proposed edit
+
+Generalise the existing positive-control rule from the Step 7 query to **every** "unavailable" claim, by
+adding to § "Rules that outrank convenience":
+
+> * **An "unavailable" claim is a measurement, and needs the same evidence as any other.** Before
+>   reporting a tool, dependency, or measurement as unavailable, run the check that would establish it
+>   and record what that check returned. A dependency is absent because an import or a version query
+>   said so, not because it was assumed absent — and a required verification arm skipped on an unchecked
+>   premise is a skipped arm, not an unavailable measurement.
+
+This is one sentence-and-a-half in the section that already governs claim-versus-outcome, and it costs
+nothing on a run where the tool genuinely is missing.
+
+### Status
+
+**Presented to the operator, not self-approved** — the lane forbids a run approving a change to the
+contract that governs it. On approval it ships as a **separate PR** on its own `chore/` branch touching
+only `.claude/skills/cloud-plan-lane/SKILL.md`, with **no** `skip-bot-review` label, since a skill is
+code and gets reviewed as code. It is deliberately kept out of this plan's PR: two changes with
+different review audiences in one diff means neither is read properly.
+
+**No second change is proposed.** The rest of the contract held up under a run that hit a halting
+partition gate, an unreachable line floor, an operator override, and a verification pass that found
+real defects — each of which the contract had a defined path for.
 
 ## Residue
 
