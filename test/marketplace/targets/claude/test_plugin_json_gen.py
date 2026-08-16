@@ -32,6 +32,18 @@ def bundle_dir(tmp_path: Path) -> Path:
         'homepage': 'https://example.com',
         'repository': 'https://example.com/repo.git',
         'keywords': ['demo'],
+        # A runtime-governing top-level key that is NOT one of the component
+        # arrays. Without one in the fixture, the passthrough test below passes
+        # vacuously — which is exactly how `lspServers` was silently dropped at
+        # build while every gate stayed green.
+        'lspServers': {
+            'demo-server': {
+                'command': 'python3',
+                'args': ['${CLAUDE_PLUGIN_ROOT}/scripts/server.py', 'serve'],
+                'extensionToLanguage': {'.demo': 'demo'},
+                'diagnostics': False,
+            }
+        },
         'agents': ['./agents/zeta-agent.md'],
         # Intentionally listed out of alphabetical order.
         'skills': ['./skills/zeta-skill', './skills/alpha-skill'],
@@ -104,3 +116,43 @@ def test_missing_committed_plugin_json_raises(tmp_path: Path):
     empty_bundle.mkdir()
     with pytest.raises(FileNotFoundError):
         build_plugin_json(empty_bundle)
+
+
+def test_lsp_servers_survive_regeneration(bundle_dir: Path):
+    """A declared language server must reach the generated artifact intact.
+
+    The deploy path is `marketplace/bundles/` → `target/claude/` →
+    `~/.claude/plugins/cache/`, and the middle hop is this generated file — the
+    committed manifest is never copied verbatim. A server declared in the source
+    manifest but dropped here is declared to nobody: no client ever starts it,
+    and nothing reports the loss.
+    """
+    output = build_plugin_json(bundle_dir)
+
+    assert 'lspServers' in output, 'lspServers must not be dropped at build'
+    assert output['lspServers'] == {
+        'demo-server': {
+            'command': 'python3',
+            'args': ['${CLAUDE_PLUGIN_ROOT}/scripts/server.py', 'serve'],
+            'extensionToLanguage': {'.demo': 'demo'},
+            'diagnostics': False,
+        }
+    }
+
+
+def test_non_component_top_level_keys_are_not_silently_dropped(bundle_dir: Path):
+    """The general rule behind the case above.
+
+    `PASSTHROUGH_FIELDS` is an allowlist and a key outside it is discarded with
+    no error, invisible to the emitter (which excludes the source manifest) and
+    to the equality check (which compares regenerated against emitted, both
+    missing it). This pins the contract that every allowlisted key round-trips,
+    so the next runtime-governing key added to a manifest fails loudly here
+    rather than silently at deploy.
+    """
+    committed = json.loads((bundle_dir / '.claude-plugin' / 'plugin.json').read_text())
+    output = build_plugin_json(bundle_dir)
+
+    for field in PASSTHROUGH_FIELDS:
+        if field in committed:
+            assert output[field] == committed[field], f'{field} must round-trip unchanged'

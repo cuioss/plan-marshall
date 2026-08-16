@@ -15,6 +15,7 @@ Working on Plan Marshall itself: build, test, generate, distribute. If you are o
 * xref:distribution.adoc[Distribution] — publish triggers, versioning, source-vs-dist tag semantics, the `dist-claude` orphan branch, multi-target architecture, what is *not* shipped.
 * xref:testing.adoc[Testing] — pytest infrastructure, shared fixtures, the `ScriptTestCase` base class, test-isolation patterns.
 * xref:measurement-protocol.adoc[Measurement Protocol] — repeatable methodology for measuring test-suite duration and coverage, the CI-history-median and per-test `--durations` methods, and the stated detection limit.
+* xref:corpus-language-server-protocol.adoc[Corpus Language Server — the protocol decision] — why the corpus reference intelligence is presented as a resident language server: the latency measurement that eliminated the one-shot shape, the options rejected, and where opt-in is enforced.
 * link:../../marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md[Plan Retrospective] — the opt-in retrospective skill that audits plan artifacts, logs, metrics, and invariants.
 
 == Workflow discipline

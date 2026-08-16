@@ -261,6 +261,30 @@ Three properties make it trustworthy, and each comes from a recorded failure:
 
 The three states stay distinct exactly as they do per-verb: `not_derivable` with `producer_count: 0` is an absence of capability; `derivable` with `derived_count: 0` is a producer that ran and found nothing; `derivable` with `derived_count: N` is a real answer. It is the same fail-closed discipline the provenance contract applies, one level up — a caller can tell "install a resolver" from "there are genuinely no edges here" for the surface as a whole.
 
+== A presentation surface, not a tier
+
+Everything above concerns the *module* graph: build modules, their edges, and the resolvers that derive them. The skill corpus carries a second, smaller graph over a different node set — marketplace components, related by script notation, skill reference, Python import, relative path, and `implements` declaration — built by the marketplace inventory rather than by the crawl.
+
+The corpus language server presents that second graph. It answers definition, references, and hover for a notation under a cursor, from the index the inventory already builds.
+
+Two properties place it, and both are deliberate.
+
+*It adds no tier.* It derives nothing, persists nothing, and widens no claim: every answer it gives is an answer the index already contained. A presentation surface that invented an edge would be making a claim its substrate does not support, which is the failure the provenance contract exists to prevent one graph over.
+
+*It is an accelerator, never a prerequisite.* Nothing depends on it. No phase, verb, or workflow becomes unavailable, slower, or less correct when it is off — and off is the default. It makes an editor better at navigating the corpus, and that is the entire extent of what turning it on changes. A capability that quietly became load-bearing would convert an optional convenience into a hidden requirement for every project that never asked for it; this one is structurally prevented from doing so, because it starts disabled, advertises no capabilities when disabled, and no other component reads it.
+
+=== Why residency, and why that decided the protocol
+
+Building the corpus index costs roughly 1.9 seconds, and that cost is paid *per process*. Against a warm index the same questions are cheap — forward and reverse edges in well under a millisecond, a depth-10 transitive closure in about 1.5, whole-graph cycle detection in about 4, and a full provenance-verified reference set in under 5 once the citing components' file lists are cached.
+
+That gap — roughly 400-fold against a full provenance-verified reference set, and far larger against the cheapest verbs — is what settled the shape, not a preference between protocols. A surface that starts a process per request pays the build every time and is a two-second surface whichever protocol it speaks; a resident one pays it once at startup. A language server is resident by construction, which is why the presentation surface is a server rather than another verb.
+
+=== The bound it inherits, and the one thing it withholds
+
+Find-references is exactly as complete as the index's detectors are: a reference expressed in a form no detector matches is not in the index and therefore not in the answer. The surface states that bound in every references payload rather than implying completeness — the same discipline as reporting `derived_count: 0` from a resolver that ran.
+
+It also withholds diagnostics. The corpus validator's unresolved set is presently dominated by references that are not broken at all — documentation placeholders, build-command and Maven coordinates borrowed into prose, and notations whose final segment names a subcommand rather than a script. Surfacing that set as editor diagnostics would ship confidently wrong warnings at the most visible surface the substrate has, so the capability is not advertised until the validator can separate those classes. Withholding a signal that cannot yet be trusted is the same fail-closed choice as refusing to report an unrun producer as a capability.
+
 == The honest limit
 
 [CAUTION]
