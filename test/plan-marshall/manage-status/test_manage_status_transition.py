@@ -58,7 +58,7 @@ def test_delete_plan_success(plan_context):
     assert result['status'] == 'success'
     assert result['action'] == 'deleted'
     assert result['plan_id'] == 'delete-test'
-    assert result['files_removed'] == 3  # request.md, references.json, TASK-001.toon
+    assert result['files_removed'] == 3  # request.md, references.json, ``TASK-001.toon``
     # Verify directory was deleted
     assert not plan_dir.exists()
 

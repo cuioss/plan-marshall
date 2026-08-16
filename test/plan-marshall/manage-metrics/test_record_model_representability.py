@@ -108,7 +108,7 @@ _analyze_spec.loader.exec_module(analyze_logs)
 
 # The `.claude` audit skill is a project-local script, not a marketplace-bundle
 # script, so `conftest.get_script_path` does not resolve it — its `scripts/` dir
-# goes on sys.path the same way `test_audit.py` does it. `import_module` (rather
+# goes on sys.path directly. `import_module` (rather
 # than a second file-location load) reuses the one canonical module instance, so
 # the schema constants compared below are the same objects the reader returns.
 _AUDIT_SCRIPTS_DIR = PROJECT_ROOT / '.claude' / 'skills' / 'audit-archived-plan-retrospectives' / 'scripts'

@@ -136,8 +136,14 @@ _LESSON_ID_RE = re.compile(
 # is outside the backtick and the ID is inside. Two format families.
 # This is a narrative citation regardless of the backtick — the prose word
 # "lesson" establishes the context.
+#
+# One or TWO backticks. The RST double-backtick spelling is this repository's
+# house convention, so a matcher that understood only the single form would miss
+# the citations it exists to catch — and, since the match starts at the bare word
+# "lesson" (outside the span), it is what keeps a narrative citation flagged when
+# a consumer exempts inline literals.
 _LESSON_BACKTICK_ID_RE = re.compile(
-    r'\blesson[- ]`(\d{4}-\d{2}-\d{2}(?:-\d{2})?-\d{3})`',
+    r'\blesson[- ]`{1,2}(\d{4}-\d{2}-\d{2}(?:-\d{2})?-\d{3})`{1,2}',
     re.IGNORECASE,
 )
 

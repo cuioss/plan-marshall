@@ -3,7 +3,7 @@
 """Resolve the PR-PENDING era-stamp sentinel to the real PR number, in lock-step.
 
 This is the backing executor for `project:finalize-step-era-stamp-fill`. It scans
-`audit.py`'s `CHECK_ERA` map (and its `test_audit.py` mirror) for the double-quoted
+`audit.py`'s `CHECK_ERA` map (and its `test_audit_check_era_model.py` mirror) for the double-quoted
 ``"PR-PENDING"`` sentinel and rewrites it to ``"#{pr_number}"`` in both files, so the
 era stamp of the check this plan reworks resolves to the plan's own PR number. The
 step is ordered post-`create-pr` / pre-merge (order 21) so the correction is
@@ -14,7 +14,7 @@ Design:
   ``"PR-PENDING"`` is matched, so prose mentions of PR-PENDING in comments are never
   touched and an already-resolved concrete ``"#NNN"`` is never re-resolved.
 - **Lock-step.** The identical substitution is applied to both `audit.py` and its
-  `test_audit.py` mirror, and the writes are staged then flushed together (nothing
+  `test_audit_check_era_model.py` mirror, and the writes are staged then flushed together (nothing
   is written when the token is absent).
 - **No-op / skipped.** When no ``"PR-PENDING"`` token is present the step is a
   clean no-op (`skipped: true`), so it is safe to register unconditionally, and a
@@ -34,7 +34,7 @@ import sys
 
 # Paths relative to the worktree root.
 AUDIT_REL = '.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py'
-TEST_REL = 'test/plan-marshall/audit-archived-plan-retrospectives/test_audit.py'
+TEST_REL = 'test/plan-marshall/audit-archived-plan-retrospectives/test_audit_check_era_model.py'
 
 # The double-quoted map-value sentinel. Matching the quoted form guarantees prose
 # mentions of PR-PENDING (in comments/backticks) and a concrete "#NNN" are untouched.

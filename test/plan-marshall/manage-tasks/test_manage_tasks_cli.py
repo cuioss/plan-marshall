@@ -33,7 +33,7 @@ def test_cli_legacy_add_subcommand_removed():
 
 
 def test_cli_prepare_add_then_commit_add_roundtrip(plan_context):
-    """End-to-end CLI: prepare-add → write TOON → commit-add creates TASK-001."""
+    """End-to-end CLI: prepare-add → write TOON → commit-add creates ``TASK-001``."""
     from toon_parser import parse_toon
 
     prep = run_script(

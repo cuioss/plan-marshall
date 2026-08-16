@@ -81,7 +81,7 @@ def _entry(
 
 
 def test_batch_add_three_tasks_sequential_numbering(plan_context):
-    """A three-entry batch creates TASK-001/002/003 in order."""
+    """A three-entry batch creates ``TASK-001``, ``TASK-002`` and ``TASK-003`` in order."""
     entries = [
         _entry(title='First', deliverable=1, steps=['src/A.java']),
         _entry(title='Second', deliverable=1, steps=['src/B.java']),
@@ -132,7 +132,7 @@ def test_batch_add_empty_array_is_noop(plan_context):
 
 def test_batch_add_appends_after_existing_tasks(plan_context):
     """Sequential numbering picks up after existing TASK-NNN files."""
-    # Pre-seed TASK-001 via direct write (mimics earlier add)
+    # Pre-seed ``TASK-001`` via direct write (mimics earlier add)
     task_dir = plan_context.plan_dir_for('batch-append') / 'tasks'
     task_dir.mkdir(parents=True, exist_ok=True)
     (task_dir / 'TASK-001.json').write_text(

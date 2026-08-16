@@ -577,7 +577,7 @@ def test_qgate_mechanical_structural_token_gap(plan_context):
 
 
 def test_qgate_mechanical_structural_token_does_not_start_at_001(plan_context):
-    """Lowest task being TASK-002 is flagged."""
+    """Lowest task being ``TASK-002`` is flagged."""
     plan_dir = plan_context.plan_dir_for('qgate-numbering-start')
     _write_outline(
         plan_dir,
@@ -593,7 +593,7 @@ def test_qgate_mechanical_structural_token_does_not_start_at_001(plan_context):
     )
 
     result = cmd_qgate_mechanical(_ns('qgate-numbering-start'))
-    # Both "doesn't start at 001" and the gap at TASK-001 are reported.
+    # Both "doesn't start at 001" and the gap at ``TASK-001`` are reported.
     assert result['checks']['structural_token_drift']['failed'] >= 1
 
 

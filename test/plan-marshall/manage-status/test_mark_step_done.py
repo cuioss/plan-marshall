@@ -306,7 +306,7 @@ def test_mark_step_force_migrates_legacy_bare_string_preserving_prior_outcome(pl
     nothing, so this test cannot pass by the migration branch firing everywhere.
     """
     # Arrange: seed the legacy bare-string shape.
-    plan_id = 'mark-step-legacy-force'
+    plan_id = 'mark-step-legacy-force-bare-string'
     _make_plan(plan_id)
     status = read_status(plan_id)
     status.setdefault('metadata', {})['phase_steps'] = {'1-init': {'step-a': 'done'}}

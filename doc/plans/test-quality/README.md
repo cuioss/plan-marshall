@@ -68,8 +68,12 @@ Two structural exceptions worth naming, because they are the shape a plan should
   `merge_queue_wait_budget_seconds`) are genuinely crossed against both accessors. Those three are the
   collapse target; the remaining functions share the naming shape while several test unrelated
   subjects. Re-derive the pairing before collapsing anything — the naming shape is not the evidence.
-* `test/plan-marshall/audit-archived-plan-retrospectives/test_audit_checks.py` is a single ~8,700-line
-  module covering ~24 independent audit checks with ~90 test classes. That is ~24 modules.
+* `test/plan-marshall/audit-archived-plan-retrospectives/` carried two oversized modules —
+  `test_audit_checks.py` at ~8,700 lines over ~90 test classes, and `test_audit.py` at ~1,500. Plan
+  `050` decomposed the first into **49** check-named modules and the second into **15**, with the
+  shared builders in `_audit_fixtures.py`. Every check in the skill's 24-entry inventory is now
+  reachable by filename, so the directory is the worked example of what this shape looks like when it
+  lands.
 
 ## House style
 
@@ -99,6 +103,12 @@ and it is the same rule the `plugin-doctor` `historical-prose-in-skills` /
 `marketplace/bundles/**`. The rationale a docstring legitimately carries is *why this invariant is
 load-bearing*, which is present-tense and survives the edit; the narrative of how it was discovered
 is not.
+
+**"Never cite" is not "never name".** A docstring frequently has to state the exact identifier the
+test asserts on, and that is the contract rather than a citation. Write such a value in an inline
+literal (``` ``TASK-001`` ```) and leave a citation bare; the `test-docstring-historical-prose` rule
+exempts matches inside a backtick span or a quoted string, so the formatting is what carries the
+distinction.
 
 **B4 — Arrange goes in a fixture or a factory.** A literal repeated in three or more tests in a module
 becomes a module constant. A setup sequence repeated in three or more tests becomes a fixture. An

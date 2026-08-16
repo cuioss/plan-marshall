@@ -34,7 +34,7 @@ class TestExplorationShareRegistration:
         )
 
     def test_era_stamp_rides_the_emitted_block(self, tmp_path: Path):
-        # The stamp VALUE is pinned in test_audit.py, the mirror
+        # The stamp VALUE is pinned in test_audit_check_era_model.py, the mirror
         # project:finalize-step-era-stamp-fill rewrites in lock-step with audit.py;
         # pinning the literal here too would go stale the moment the fill resolves
         # it, so this asserts only that whatever CHECK_ERA holds reaches the block.

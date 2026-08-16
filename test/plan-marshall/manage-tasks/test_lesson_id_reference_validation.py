@@ -253,7 +253,7 @@ def test_commit_add_no_lesson_id_tokens_succeeds(plan_context, patch_inventory):
 
         result = cmd_commit_add(_commit_ns('lesson-ref-no-tokens'))
 
-        # result is success and TASK-001.json exists.
+        # result is success and ``TASK-001.json`` exists.
         assert result['status'] == 'success'
         assert result['file'] == 'TASK-001.json'
         assert (plan_dir / 'tasks' / 'TASK-001.json').is_file()
@@ -475,7 +475,7 @@ def test_batch_add_phantom_in_title_only_aborts(plan_context, patch_inventory):
 # A lesson ID absent from the active inventory but present on disk at
 # ``{plan_dir}/lesson-{id}.md`` resolves and the write proceeds. A token
 # absent from BOTH tiers still hard-fails with the unchanged
-# ``lesson_id_not_found`` payload. (Covers the TASK-003 exemption added to
+# ``lesson_id_not_found`` payload. (Covers the plan-dir exemption in
 # ``_scan_unresolved_lesson_ids``.)
 # =============================================================================
 

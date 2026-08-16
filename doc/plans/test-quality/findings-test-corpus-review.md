@@ -89,11 +89,13 @@ Rules **B1**–**B10** are defined in [`README.md`](README.md#house-style); the 
 ~40% of modules exceed 400 lines and hold **~73% of all lines**; ~74 exceed 1,000. The median module
 is ~323 lines. Re-derive by sorting `wc -l $(find test -name 'test_*.py')`.
 
-The extreme case is `test/plan-marshall/audit-archived-plan-retrospectives/test_audit_checks.py`:
+The extreme case was `test/plan-marshall/audit-archived-plan-retrospectives/test_audit_checks.py`:
 **~8,700 lines, ~90 test classes**, covering roughly two dozen *independent* audit checks — name
 drift, dormation, token economics, quality chain, exploration share, input integrity, cross-check
-synthesis, and more. Each check brings its own fixture builders, defined inline at first use. The
-tests are good; the file is twenty-four modules wearing one filename.
+synthesis, and more. Each check brought its own fixture builders, defined inline at first use. The
+tests were good; the file was twenty-four modules wearing one filename. Plan `050` split it into
+**49** check-named modules, with the shared builders in `_audit_fixtures.py`, and split the
+directory's other oversized module, `test_audit.py` (~1,500 lines), into **15** more.
 
 **Impact.** Navigability, not correctness. But it compounds every other finding: a fixture defined
 mid-file at line 2,280 is invisible to the sibling module that needs it, so the sibling writes its

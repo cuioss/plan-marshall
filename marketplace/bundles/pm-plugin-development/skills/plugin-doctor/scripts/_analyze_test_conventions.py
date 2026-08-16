@@ -842,6 +842,16 @@ def analyze_test_docstring_prose(test_root: Path) -> list[dict]:
     a lesson id fed to a validator under test is the corpus the test exists to
     check, not a citation — and flagging those would make the rule unusable.
     That prose-vs-data split is the rule's structural discriminator.
+
+    A second discriminator runs *inside* prose, because the first one is not
+    enough: prose also has to name values. A docstring saying ``get_next_id``
+    returns ``<YYYY-MM-DD-HH-NNN>`` states the contract under test, and a comment
+    naming the ``TASK-<NNN>`` file a command creates names a product artifact —
+    neither cites a record. Both are distinguishable from a citation by
+    formatting rather than by shape: **an identifier named as a value is written
+    in an inline literal** (backticks or quotes), while a citation appears bare
+    in the narrative. So a match inside an inline literal is exempt, and the
+    convention that makes the rule teachable is "backtick the value you name".
     """
     findings: list[dict] = []
     for path in _iter_test_tree_modules(test_root):
@@ -849,8 +859,9 @@ def analyze_test_docstring_prose(test_root: Path) -> list[dict]:
         if source is None:
             continue
         for lineno, text in _iter_prose_segments(source, path):
+            literal_spans = _inline_literal_spans(text)
             for kind, pattern in _HISTORICAL_PROSE_PATTERNS:
-                match = pattern.search(text)
+                match = _first_bare_match(pattern, text, literal_spans)
                 if match:
                     # Offset to the citation's own line, not the segment's first
                     # line — the finding exists to be navigated to.
@@ -859,6 +870,56 @@ def analyze_test_docstring_prose(test_root: Path) -> list[dict]:
                     break
     findings.sort(key=lambda f: (f['file'], f.get('line', 0)))
     return findings
+
+
+#: Inline-literal spellings that mark an identifier as a *named value* rather
+#: than a citation: double- and single-backtick code spans, and quoted strings.
+#: Double backticks are matched first so the inner single-backtick pattern
+#: cannot split a ``…`` span in half.
+#:
+#: ⛔ Two bounds on the quote alternatives, and BOTH are needed. English prose is
+#: full of apostrophes, and an apostrophe is not a quote delimiter:
+#:
+#: 1. No alternative may cross a newline. A prose segment arrives as ONE
+#:    multi-line string, so without this a possessive on one line and a
+#:    contraction ten lines later open a single "literal" span swallowing
+#:    everything between.
+#: 2. A quote delimiter may not sit against a word character. The newline bound
+#:    alone does NOT fix the same-line case: in ``The resolver's PR #515 guard
+#:    doesn't fall through``, the two apostrophes are on one line and still span
+#:    the citation. A possessive or contraction apostrophe is always preceded by
+#:    a word character, while an opening delimiter never is.
+#:
+#: Both were observed silently exempting real citations on this repository's own
+#: corpus — a false negative, the direction that matters.
+_INLINE_LITERAL_RE = re.compile(
+    r"``[^`\n]+``"
+    r"|`[^`\n]+`"
+    r"|(?<!\w)'[^'\n]+'(?!\w)"
+    r"|(?<!\w)\"[^\"\n]+\"(?!\w)"
+)
+
+
+def _inline_literal_spans(text: str) -> list[tuple[int, int]]:
+    """Return ``(start, end)`` for every inline literal in ``text``."""
+    return [m.span() for m in _INLINE_LITERAL_RE.finditer(text)]
+
+
+def _first_bare_match(
+    pattern: re.Pattern, text: str, literal_spans: list[tuple[int, int]]
+) -> re.Match | None:
+    """Return the first match of ``pattern`` that is not inside an inline literal.
+
+    A match inside a literal is an identifier the prose is *naming* — the value
+    a function returns, the fixture a test seeds, the file a command creates —
+    not a record the prose cites.
+    """
+    for match in pattern.finditer(text):
+        start = match.start()
+        if any(lo <= start < hi for lo, hi in literal_spans):
+            continue
+        return match
+    return None
 
 
 def _iter_prose_segments(source: str, path: Path) -> list[tuple[int, str]]:
