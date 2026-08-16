@@ -23,7 +23,7 @@ from argparse import Namespace
 import pytest
 from toon_parser import parse_toon
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
 
 # Distinct sys.modules name so this load never clobbers the 'manage_files'
 # module the sibling test files register.
@@ -194,7 +194,7 @@ def test_list_subdir_marks_nested_directories(plan_context):
     (sub / 'file.md').write_text('x')
     (sub / 'nested').mkdir()
 
-    result = _mod.cmd_list(Namespace(plan_id=plan_context.plan_id, dir='area'))
+    result = _mod.cmd_list(parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'list', '--plan-id', str(plan_context.plan_id), '--dir', 'area'))
     assert result['status'] == 'success'
     assert 'file.md' in result['files']
     assert 'nested/' in result['files']
@@ -202,14 +202,14 @@ def test_list_subdir_marks_nested_directories(plan_context):
 
 def test_list_invalid_dir_path(plan_context):
     """A traversal dir path returns the invalid_path discriminator."""
-    result = _mod.cmd_list(Namespace(plan_id=plan_context.plan_id, dir='../escape'))
+    result = _mod.cmd_list(parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'list', '--plan-id', str(plan_context.plan_id), '--dir', '../escape'))
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_path'
 
 
 def test_list_dir_not_found(plan_context):
     """A non-existent subdir returns the dir_not_found discriminator."""
-    result = _mod.cmd_list(Namespace(plan_id=plan_context.plan_id, dir='absent'))
+    result = _mod.cmd_list(parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'list', '--plan-id', str(plan_context.plan_id), '--dir', 'absent'))
     assert result['status'] == 'error'
     assert result['error'] == 'dir_not_found'
 
@@ -221,7 +221,7 @@ def test_list_dir_not_found(plan_context):
 
 def test_mkdir_invalid_path(plan_context):
     """A traversal dir path returns the invalid_path discriminator."""
-    result = _mod.cmd_mkdir(Namespace(plan_id=plan_context.plan_id, dir='../escape'))
+    result = _mod.cmd_mkdir(parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'mkdir', '--plan-id', str(plan_context.plan_id), '--dir', '../escape'))
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_path'
 
@@ -235,7 +235,7 @@ def test_create_or_reference_malformed_status_json_sets_has_status(plan_context)
     """A corrupt status.json falls into the has_status branch (no current_phase)."""
     (plan_context.plan_dir / 'status.json').write_text('{ not valid json')
 
-    result = _mod.cmd_create_or_reference(Namespace(plan_id=plan_context.plan_id))
+    result = _mod.cmd_create_or_reference(parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'create-or-reference', '--plan-id', str(plan_context.plan_id)))
     assert result['status'] == 'success'
     assert result['action'] == 'exists'
     assert result['has_status'] is True
@@ -251,7 +251,7 @@ def test_write_reads_content_from_stdin(plan_context, monkeypatch):
     """``--stdin`` reads the payload from sys.stdin and writes it verbatim."""
     monkeypatch.setattr(_mod.sys, 'stdin', io.StringIO('from stdin\n'))
     result = _mod.cmd_write(
-        Namespace(plan_id=plan_context.plan_id, file='in.md', content=None, content_file=None, stdin=True)
+        parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'write', '--plan-id', str(plan_context.plan_id), '--file', 'in.md', '--stdin')
     )
     assert result['status'] == 'success'
     assert (plan_context.plan_dir / 'in.md').read_text() == 'from stdin\n'
@@ -261,7 +261,7 @@ def test_write_empty_stdin_returns_empty_content_error(plan_context, monkeypatch
     """Empty stdin content is rejected with the empty_content discriminator."""
     monkeypatch.setattr(_mod.sys, 'stdin', io.StringIO(''))
     result = _mod.cmd_write(
-        Namespace(plan_id=plan_context.plan_id, file='in.md', content=None, content_file=None, stdin=True)
+        parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'write', '--plan-id', str(plan_context.plan_id), '--file', 'in.md', '--stdin')
     )
     assert result['status'] == 'error'
     assert result['error'] == 'empty_content'

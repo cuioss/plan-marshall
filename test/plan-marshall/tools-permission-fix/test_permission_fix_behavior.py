@@ -17,7 +17,7 @@ from argparse import Namespace
 
 import pytest
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
 
 # Unique module name so the load is isolated and coverage is attributed to the
 # permission_fix.py source file in this session.
@@ -89,7 +89,7 @@ class TestApplyFixesApplied:
         _write_settings(settings_file, ['Read(src/)', 'Bash(git:*)'])
 
         # Act
-        result = pf.cmd_apply_fixes(Namespace(settings=str(settings_file), scope=None, dry_run=False))
+        result = pf.cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file)))
 
         # Assert
         assert result['status'] == 'success'
@@ -102,7 +102,7 @@ class TestApplyFixesApplied:
     def test_error_on_missing_settings_file(self, tmp_path):
         """A non-existent settings path surfaces a structured error."""
         result = pf.cmd_apply_fixes(
-            Namespace(settings=str(tmp_path / 'nope.json'), scope=None, dry_run=False)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(tmp_path / 'nope.json'))
         )
 
         assert result['status'] == 'error'
@@ -117,7 +117,7 @@ class TestApplyFixesApplied:
             sorted(['Bash(git:*)', 'Edit(.plan/**)', 'Write(.plan/**)', 'Read(~/.claude/plugins/cache/**)']),
         )
 
-        result = pf.cmd_apply_fixes(Namespace(settings=str(settings_file), scope=None, dry_run=False))
+        result = pf.cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file)))
 
         assert result['status'] == 'success'
         assert result['changes_made'] is False
@@ -211,7 +211,7 @@ class TestConsolidateApplied:
         )
 
         # Act
-        result = pf.cmd_consolidate(Namespace(settings=str(settings_file), scope=None, dry_run=False))
+        result = pf.cmd_consolidate(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'consolidate', '--settings', str(settings_file)))
 
         # Assert
         assert result['status'] == 'success'
@@ -230,7 +230,7 @@ class TestConsolidateApplied:
             ['Read(logs/app-2025-11-20.log)', 'Read(logs/app-2025-11-21.log)'],
         )
 
-        result = pf.cmd_consolidate(Namespace(settings=str(settings_file), scope=None, dry_run=True))
+        result = pf.cmd_consolidate(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'consolidate', '--settings', str(settings_file), '--dry-run'))
 
         assert result['status'] == 'success'
         assert result['consolidated'] == 2
@@ -239,7 +239,7 @@ class TestConsolidateApplied:
     def test_error_on_missing_settings(self, tmp_path):
         """A non-existent settings path surfaces a structured error."""
         result = pf.cmd_consolidate(
-            Namespace(settings=str(tmp_path / 'missing.json'), scope=None, dry_run=False)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'consolidate', '--settings', str(tmp_path / 'missing.json'))
         )
 
         assert result['status'] == 'error'
@@ -301,7 +301,7 @@ class TestEnsureWildcardsApplied:
         marketplace_file.write_text(json.dumps({'bundles': {'foo': {'skills': ['s'], 'commands': ['c']}}}))
 
         result = pf.cmd_ensure_wildcards(
-            Namespace(settings=str(settings_file), marketplace_json=str(marketplace_file), dry_run=False)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--settings', str(settings_file), '--marketplace-json', str(marketplace_file))
         )
 
         assert result['status'] == 'success'
@@ -313,7 +313,7 @@ class TestEnsureWildcardsApplied:
     def test_error_on_missing_settings(self, tmp_path):
         """A missing settings file surfaces a structured error before reading the marketplace."""
         result = pf.cmd_ensure_wildcards(
-            Namespace(settings=str(tmp_path / 'none.json'), marketplace_json=str(tmp_path / 'm.json'), dry_run=True)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--settings', str(tmp_path / 'none.json'), '--marketplace-json', str(tmp_path / 'm.json'), '--dry-run')
         )
 
         assert result['status'] == 'error'
@@ -325,7 +325,7 @@ class TestEnsureWildcardsApplied:
         _write_settings(settings_file, [])
 
         result = pf.cmd_ensure_wildcards(
-            Namespace(settings=str(settings_file), marketplace_json=str(tmp_path / 'missing.json'), dry_run=True)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--settings', str(settings_file), '--marketplace-json', str(tmp_path / 'missing.json'), '--dry-run')
         )
 
         assert result['status'] == 'error'
@@ -339,7 +339,7 @@ class TestEnsureWildcardsApplied:
         marketplace_file.write_text('{not json')
 
         result = pf.cmd_ensure_wildcards(
-            Namespace(settings=str(settings_file), marketplace_json=str(marketplace_file), dry_run=True)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-wildcards', '--settings', str(settings_file), '--marketplace-json', str(marketplace_file), '--dry-run')
         )
 
         assert result['status'] == 'error'
@@ -433,7 +433,7 @@ class TestGenerateWildcardsEdges:
         inventory = tmp_path / 'inv.json'
         inventory.write_text(json.dumps({'bundles': []}))
 
-        result = pf.cmd_generate_wildcards(Namespace(input=str(inventory), marketplace_dir=None))
+        result = pf.cmd_generate_wildcards(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'generate-wildcards', '--input', str(inventory)))
 
         assert result['status'] == 'success'
         assert result['error'] == 'No bundles found in inventory'
@@ -442,7 +442,7 @@ class TestGenerateWildcardsEdges:
     def test_missing_input_file_errors(self, tmp_path):
         """A non-existent input file surfaces an input-not-found error."""
         result = pf.cmd_generate_wildcards(
-            Namespace(input=str(tmp_path / 'nope.json'), marketplace_dir=None)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'generate-wildcards', '--input', str(tmp_path / 'nope.json'))
         )
 
         assert result['status'] == 'error'
@@ -453,7 +453,7 @@ class TestGenerateWildcardsEdges:
         inventory = tmp_path / 'inv.json'
         inventory.write_text('{broken json')
 
-        result = pf.cmd_generate_wildcards(Namespace(input=str(inventory), marketplace_dir=None))
+        result = pf.cmd_generate_wildcards(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'generate-wildcards', '--input', str(inventory)))
 
         assert result['status'] == 'error'
         assert 'Invalid JSON' in result['error']
@@ -484,7 +484,7 @@ class TestExecutorSubcommandsInProcess:
         """Dry-run reports 'would_add' and leaves the file untouched."""
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)'])
 
-        result = pf.cmd_ensure_executor(Namespace(target='project', dry_run=True))
+        result = pf.cmd_ensure_executor(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'ensure-executor', '--target', 'project', '--dry-run'))
 
         assert result['action'] == 'would_add'
         assert result['success'] is True
@@ -495,7 +495,7 @@ class TestExecutorSubcommandsInProcess:
         self._setup_project(tmp_path, ['Bash(git:*)'])
 
         result = pf.cmd_cleanup_scripts(
-            Namespace(target='project', remove_broad_python=False, dry_run=False)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'cleanup-scripts', '--target', 'project')
         )
 
         assert result['action'] == 'nothing_to_remove'
@@ -507,7 +507,7 @@ class TestExecutorSubcommandsInProcess:
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)', script_perm])
 
         result = pf.cmd_cleanup_scripts(
-            Namespace(target='project', remove_broad_python=False, dry_run=True)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'cleanup-scripts', '--target', 'project', '--dry-run')
         )
 
         assert result['action'] == 'would_remove'
@@ -519,7 +519,7 @@ class TestExecutorSubcommandsInProcess:
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)', pf.OVERLY_BROAD_PYTHON])
 
         result = pf.cmd_cleanup_scripts(
-            Namespace(target='project', remove_broad_python=True, dry_run=False)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'cleanup-scripts', '--target', 'project', '--remove-broad-python')
         )
 
         assert result['success'] is True
@@ -532,7 +532,7 @@ class TestExecutorSubcommandsInProcess:
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)', script_perm])
 
         result = pf.cmd_migrate_executor(
-            Namespace(target='project', remove_broad_python=False, dry_run=True)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'migrate-executor', '--target', 'project', '--dry-run')
         )
 
         assert result['success'] is True
@@ -548,7 +548,7 @@ class TestExecutorSubcommandsInProcess:
         )
 
         result = pf.cmd_migrate_executor(
-            Namespace(target='project', remove_broad_python=True, dry_run=False)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'migrate-executor', '--target', 'project', '--remove-broad-python')
         )
 
         assert result['success'] is True
@@ -582,7 +582,7 @@ class TestAddRemoveInProcess:
         """Adding a new permission writes it and reports 'added'."""
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)'])
 
-        result = pf.cmd_add(Namespace(permission='Bash(npm:*)', target='project'))
+        result = pf.cmd_add(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'add', '--permission', 'Bash(npm:*)', '--target', 'project'))
 
         assert result['action'] == 'added'
         assert result['success'] is True
@@ -592,7 +592,7 @@ class TestAddRemoveInProcess:
         """Adding an existing permission reports 'already_exists'."""
         self._setup_project(tmp_path, ['Bash(git:*)'])
 
-        result = pf.cmd_add(Namespace(permission='Bash(git:*)', target='project'))
+        result = pf.cmd_add(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'add', '--permission', 'Bash(git:*)', '--target', 'project'))
 
         assert result['action'] == 'already_exists'
 
@@ -600,7 +600,7 @@ class TestAddRemoveInProcess:
         """Removing an existing permission deletes it and reports 'removed'."""
         settings_file = self._setup_project(tmp_path, ['Bash(git:*)', 'Bash(npm:*)'])
 
-        result = pf.cmd_remove(Namespace(permission='Bash(npm:*)', target='project'))
+        result = pf.cmd_remove(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove', '--permission', 'Bash(npm:*)', '--target', 'project'))
 
         assert result['action'] == 'removed'
         assert 'Bash(npm:*)' not in _read_allow(settings_file)
@@ -609,7 +609,7 @@ class TestAddRemoveInProcess:
         """Removing a missing permission reports 'not_found'."""
         self._setup_project(tmp_path, ['Bash(git:*)'])
 
-        result = pf.cmd_remove(Namespace(permission='Bash(absent:*)', target='project'))
+        result = pf.cmd_remove(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove', '--permission', 'Bash(absent:*)', '--target', 'project'))
 
         assert result['action'] == 'not_found'
 
@@ -628,13 +628,7 @@ class TestRemoveRedundantErrors:
         _write_settings(local_file, ['Bash(git:*)'])
 
         result = pf.cmd_remove_redundant(
-            Namespace(
-                scope=None,
-                global_settings=str(tmp_path / 'missing-global.json'),
-                local_settings=str(local_file),
-                move_marketplace=True,
-                dry_run=False,
-            )
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--global-settings', str(tmp_path / 'missing-global.json'), '--local-settings', str(local_file))
         )
 
         assert result['status'] == 'error'
@@ -646,13 +640,7 @@ class TestRemoveRedundantErrors:
         _write_settings(global_file, ['Bash(git:*)'])
 
         result = pf.cmd_remove_redundant(
-            Namespace(
-                scope=None,
-                global_settings=str(global_file),
-                local_settings=str(tmp_path / 'missing-local.json'),
-                move_marketplace=True,
-                dry_run=False,
-            )
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'remove-redundant', '--global-settings', str(global_file), '--local-settings', str(tmp_path / 'missing-local.json'))
         )
 
         assert result['status'] == 'error'
@@ -672,7 +660,7 @@ class TestApplyProjectStepPermissionsErrors:
         _write_settings(settings_file, [])
 
         result = pf.cmd_apply_project_step_permissions(
-            Namespace(marshal=str(tmp_path / 'missing.json'), settings=str(settings_file), dry_run=True)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-project-step-permissions', '--marshal', str(tmp_path / 'missing.json'), '--settings', str(settings_file), '--dry-run')
         )
 
         assert result['status'] == 'error'
@@ -683,7 +671,7 @@ class TestApplyProjectStepPermissionsErrors:
         marshal_file.write_text(json.dumps({'plan': {'phase-6-finalize': {'steps': []}}}))
 
         result = pf.cmd_apply_project_step_permissions(
-            Namespace(marshal=str(marshal_file), settings=str(tmp_path / 'missing.json'), dry_run=True)
+            parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-project-step-permissions', '--marshal', str(marshal_file), '--settings', str(tmp_path / 'missing.json'), '--dry-run')
         )
 
         assert result['status'] == 'error'

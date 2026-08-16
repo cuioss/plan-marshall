@@ -8,12 +8,11 @@ shape (`status`, `detected`, `name`, `launcher_argv`, `platform`,
 `signal`) rather than the launch side-effect.
 """
 
-from argparse import Namespace
 from unittest import mock
 
 import pytest
 
-from conftest import load_script_module
+from conftest import load_script_module, parse_ns
 
 # Tier 2 direct import - load hyphenated module
 _mod = load_script_module('plan-marshall', 'manage-files', 'manage-files.py', 'manage_files_detect_ide')
@@ -37,7 +36,7 @@ def test_cmd_detect_ide_macos_jetbrains_bundle(bundle_id, expected_app):
         mock.patch.object(_mod.sys, 'platform', 'darwin'),
         mock.patch.dict(_mod.os.environ, {'__CFBundleIdentifier': bundle_id}, clear=True),
     ):
-        result = cmd_detect_ide(Namespace())
+        result = cmd_detect_ide(parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'detect-ide'))
 
     assert result['status'] == 'success'
     assert result['detected'] is True
@@ -52,7 +51,7 @@ def test_cmd_detect_ide_macos_vscode():
         mock.patch.object(_mod.sys, 'platform', 'darwin'),
         mock.patch.dict(_mod.os.environ, {'TERM_PROGRAM': 'vscode'}, clear=True),
     ):
-        result = cmd_detect_ide(Namespace())
+        result = cmd_detect_ide(parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'detect-ide'))
 
     assert result['status'] == 'success'
     assert result['detected'] is True
@@ -67,7 +66,7 @@ def test_cmd_detect_ide_macos_cursor():
         mock.patch.object(_mod.sys, 'platform', 'darwin'),
         mock.patch.dict(_mod.os.environ, {'TERM_PROGRAM': 'cursor'}, clear=True),
     ):
-        result = cmd_detect_ide(Namespace())
+        result = cmd_detect_ide(parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'detect-ide'))
 
     assert result['status'] == 'success'
     assert result['detected'] is True
@@ -82,7 +81,7 @@ def test_cmd_detect_ide_macos_no_signal_returns_undetected():
         mock.patch.object(_mod.sys, 'platform', 'darwin'),
         mock.patch.dict(_mod.os.environ, {}, clear=True),
     ):
-        result = cmd_detect_ide(Namespace())
+        result = cmd_detect_ide(parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'detect-ide'))
 
     assert result['status'] == 'success'
     assert result['detected'] is False
@@ -106,7 +105,7 @@ def test_cmd_detect_ide_linux_vscode_with_code_on_path():
         mock.patch.dict(_mod.os.environ, {'TERM_PROGRAM': 'vscode'}, clear=True),
         mock.patch.object(_mod.shutil, 'which', side_effect=which_side_effect),
     ):
-        result = cmd_detect_ide(Namespace())
+        result = cmd_detect_ide(parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'detect-ide'))
 
     assert result['status'] == 'success'
     assert result['detected'] is True
@@ -127,7 +126,7 @@ def test_cmd_detect_ide_linux_jetbrains_path_probe(launcher):
         mock.patch.dict(_mod.os.environ, {}, clear=True),
         mock.patch.object(_mod.shutil, 'which', side_effect=which_side_effect),
     ):
-        result = cmd_detect_ide(Namespace())
+        result = cmd_detect_ide(parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'detect-ide'))
 
     assert result['status'] == 'success'
     assert result['detected'] is True
@@ -143,7 +142,7 @@ def test_cmd_detect_ide_linux_no_launchers_returns_undetected():
         mock.patch.dict(_mod.os.environ, {}, clear=True),
         mock.patch.object(_mod.shutil, 'which', return_value=None),
     ):
-        result = cmd_detect_ide(Namespace())
+        result = cmd_detect_ide(parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'detect-ide'))
 
     assert result['status'] == 'success'
     assert result['detected'] is False
@@ -163,7 +162,7 @@ def test_cmd_detect_ide_unknown_platform_returns_undetected():
         mock.patch.object(_mod.sys, 'platform', 'win32'),
         mock.patch.dict(_mod.os.environ, {'TERM_PROGRAM': 'vscode'}, clear=True),
     ):
-        result = cmd_detect_ide(Namespace())
+        result = cmd_detect_ide(parse_ns('plan-marshall', 'manage-files', 'manage-files.py', 'detect-ide'))
 
     assert result['status'] == 'success'
     assert result['detected'] is False
