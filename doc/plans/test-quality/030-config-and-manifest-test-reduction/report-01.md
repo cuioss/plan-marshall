@@ -434,9 +434,10 @@ plugin-doctor, not a green suite.
 > *why* is worth more than one that repeats *what*, which is exactly why an unverified one is worse
 > than none: it is the sentence a later reader will trust instead of checking.
 
-**This has not been shown to the operator, and is not self-approved.** Per § Step 9 it must be
-presented for approval and, if accepted, shipped as its own `chore/` PR touching only the skill —
-never folded into this plan's diff.
+**Presented to the operator and approved.** Shipped as
+[#1262](https://github.com/cuioss/plan-marshall/pull/1262) on its own `chore/` branch, touching only
+the skill — deliberately not folded into this plan's diff, since a contract amendment and a test
+refactor have different review audiences and must not be coupled to each other's landing.
 
 **No change is proposed to the plan-authoring side**, though this run refuted one of its claim-labelled
 HYPOTHESES by measurement (see § Verification verdict): that is the claim-label mechanism working as
