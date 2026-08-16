@@ -83,7 +83,9 @@ capture group, which cannot change what matches); the marker is split off **afte
 and a bullet that stops parsing is reported as `fail` at `severity: error`. Two intermediate designs
 each converted previously-parsing bullets into hard errors — see § Findings F3 and N1. A marker is
 recognised only when its token is in the closed `VALID_STEP_INTENTS` vocabulary, imported from
-`tools-file-ops` constants rather than restated, and the split always leaves a non-empty path.
+`tools-file-ops` constants rather than restated, and the split never reduces a **bare** path to
+nothing. (A backticked bullet whose span is only whitespace still yields an empty path and is dropped —
+pre-existing behaviour, unchanged by the split.)
 
 An **unannotated** bullet states no intent and is still counted, so the filter cannot manufacture the
 opposite error (a vacuously high recall).
@@ -99,17 +101,18 @@ denominator:
    *scope-creep* rule deliberately keeps the **full** declared list: a file the plan said it would
    touch at all is not a surprise, whatever intent it named.
 
-Two further consumers of the same declaration exist and are **intentionally left unfiltered**, named
+One further consumer of the same declaration exists and is **intentionally left unfiltered**, named
 here because the plan's ⚠ asks for a derived set rather than a convenient one:
 
 4. `manage-execution-manifest.py` → `affected_files_count`, consumed by `_apply_security_class_inactive`
-   and `simplify_inactive` (`_manifest_rules.py`) and by three rows of `_manifest_decide.py`. It asks
+   and `_apply_simplify_inactive` (`_manifest_rules.py`) and by three conditions in
+   `_manifest_decide.py`. It asks
    *"did the plan declare any surface at all?"*, not *"how much did it expect to modify"*, so including
    read-intent declarations is correct: a plan that declared only reads still declared something, and
    counting it **fails closed** (the gate is kept). Filtering here would subtract a gate on the
    composer side — the exact direction D4 forbids.
 
-A **fifth** declaration surface was found and is **deferred, not fixed** — see § Findings R2-D1.
+A **fifth** declaration surface (counting the four above) was found and is **deferred, not fixed** — see § Findings R2-D1.
 
 The declaration-**parseability** check still reads the unfiltered bullets, so a deliverable declaring
 only read-intent files is not mis-reported as a parse failure; that case became a `skip` carrying its
@@ -193,33 +196,45 @@ asserted.
   pre-existing behaviour (`test_no_declaration_keeps_its_distinct_skip_reason`) and is correctly green
   on both sides.
 - The other 12 were added by verification rounds 1 and 2, and **10 of them are also red pre-branch** —
-  but for a reason that is NOT evidence of the defect they guard: they call
-  `extract_modification_intent_files`, which does not exist pre-branch, so they fail with
-  `AttributeError` rather than by observing a wrong answer. Only 2 pass pre-branch
-  (`test_parenthesis_inside_a_bare_path_is_preserved`,
+  but mostly for reasons that are NOT evidence of the defect they guard. Measured failure modes:
+
+  | Failure mode | Count | Why it is (or is not) evidence |
+  |---|---|---|
+  | `AttributeError` | 4 | They call `extract_modification_intent_files`, which does not exist pre-branch — they cannot run at all |
+  | `KeyError: 'read_intent_excluded'` | 4 | They read a details key that does not exist pre-branch — likewise cannot reach an assertion |
+  | genuine `AssertionError` on an observed answer | 2 | `test_only_a_declared_intent_token_is_treated_as_a_marker` and `test_published_on_the_unparseable_fail_branch` — these **are** red-pre-fix in the plan's sense |
+
+  Only 2 of the 12 pass pre-branch (`test_parenthesis_inside_a_bare_path_is_preserved`,
   `test_a_bullet_that_is_entirely_a_parenthetical_still_parses`) — the two that touch only the
   pre-existing extractor.
 
-**The 7 parse-preservation tests are therefore NOT red-pre-fix tests in the plan's sense, and a red
-result from them must not be read as one.** They guard against *this branch's own intermediate
-regressions* (F3, N1), not against a defect on `main` — the property they pin **held** on `main`. Their
-evidence is the differential check, not a red-green transition: current extractor vs merge-base over
-241k fuzzed inputs and every real `**Affected files:**` bullet in the tree, **zero match divergences
-and zero lost bullets**, with path divergences confined to bare bullets carrying a genuine
-`VALID_STEP_INTENTS` marker.
+**Most of the parse-preservation tests are therefore NOT red-pre-fix tests in the plan's sense, and a
+red result from them must not be read as one.** They guard against *this branch's own intermediate
+regressions* (F3, N1) rather than a defect on `main`. Their evidence is the differential check, not a
+red-green transition: current extractor vs merge-base over 241k fuzzed inputs and every real
+`**Affected files:**` bullet in the tree, **zero match divergences and zero lost bullets**, with path
+divergences confined to bare bullets carrying a genuine `VALID_STEP_INTENTS` marker.
 
-An earlier revision of this report claimed those 7 were "green against pre-branch source by
-construction". That was false and is recorded as finding V1.
+**One exception, stated because the blanket claim was wrong:**
+`test_only_a_declared_intent_token_is_treated_as_a_marker` pins that `- src/a.py (delete)` yields path
+`src/a.py`. At merge-base it yields `src/a.py (delete)`, so the property it pins did **not** hold on
+`main` — it is a genuine red-pre-fix test miscategorised as preservation.
+
+Two earlier revisions of this report got this section wrong: the first claimed all 7 preservation tests
+were "green against pre-branch source by construction" (finding V1); the second attributed all 10
+red results to `AttributeError` and asserted the pinned property "held on `main`" for all 7 (round-4
+findings 1 and 2). The measured table above replaces both.
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` → **8 Python files** (3 sources, 5 test modules) of
-18 changed files, so the gate applies:
+`git diff --name-only origin/main...HEAD -- '*.py'` → **9 Python files** (4 sources, 5 test modules) of
+**19** changed files, so the gate applies:
 
 ```
 marketplace/bundles/plan-marshall/skills/phase-5-execute/scripts/verify_failure_scope.py
 marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/analyze-logs.py
 marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/check-artifact-consistency.py
+marketplace/bundles/plan-marshall/skills/tools-file-ops/scripts/constants.py
 test/plan-marshall/phase-5-execute/test_verify_failure_scope.py
 test/plan-marshall/plan-retrospective/test_analyze_logs.py
 test/plan-marshall/plan-retrospective/test_analyze_logs_behavior.py
@@ -227,7 +242,8 @@ test/plan-marshall/plan-retrospective/test_check_artifact_consistency.py
 test/plan-marshall/plan-retrospective/test_recall_read_intent_denominator.py
 ```
 
-`./pw verify` re-run after the final fix round → **SUCCESS**: `20298 passed, 14 skipped in 318.39s`.
+`./pw verify` re-run after the **round-4** fix round, the last to change source → **SUCCESS**:
+`20298 passed, 14 skipped in 473.99s`.
 All three sub-steps ran: quality-gate (`ruff … All checks passed!`, `mypy … Success: no issues found in
 408 source files`, `SPDX-header check passed`, plugin-doctor `issues[0]`), test-compile (`mypy …
 Success: no issues found in 760 source files`), and module-tests.
@@ -238,7 +254,7 @@ never `git add -A`.
 
 ## Findings
 
-Recorded **per instance**. Two independent verification rounds ran; each found real defects, so each
+Recorded **per instance**. Four independent verification rounds ran; each of the first three found real defects, so each
 was followed by fixes and a re-dispatch.
 
 ### Round 1 — pre-PR verification sub-agent
@@ -290,6 +306,31 @@ recurred twice is closed.
 | V9 | sub-agent | Commit `8c1eafc`'s message says "all 18 verification findings"; the table holds 18 numbered findings **plus** 3 deferred **plus** 4 self-corrections = 25 rows | **Accepted, not corrected** — same reason as N9: the message is published and immutable without a force-push over shared history. The report body claims no total, so the error is confined to the message |
 | V10 | sub-agent | D3's derived consumer set omitted the composer's `affected_files_count`, an **unfiltered** consumer of the same declaration | **Fixed** — added to the set with its rationale: it asks "was any surface declared", and leaving it unfiltered fails closed. Filtering it would subtract a composer-side gate, the direction D4 forbids |
 | V11 | sub-agent | D4 was reported as "already satisfied" without naming which of the plan's two offered options the code takes. Taken literally, D4's *Done when* ("no composition-time predicate reads the realized footprint") is **not** what the code does — it reads it and treats unresolvable as inadmissible | **Fixed** — the discrepancy is now stated rather than smoothed over |
+
+### Round 4 — re-dispatch over round 3's fixes
+
+Round 4 independently re-verified the corrected identity on all **7** return branches with
+duplicate-declaration fixtures (8/8 cases hold), and **mutation-tested** the rewritten guard: with the
+pass branch mutated to report a bullet count, only
+`test_the_reconstruction_identity_recovers_distinct_declared_paths` fails — and the pre-round-3 version
+of that test passes the same mutation, confirming the rewrite is non-vacuous. It also audited **24 file
+paths and 13 symbols** across both plan documents; all resolve.
+
+Every round-4 finding is in prose or in a count. **Two are rows I marked "Fixed" that were not.**
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| W1 | sub-agent | The D6(c) replacement text attributed all 10 red pre-branch results to `AttributeError`. Measured: **4** `AttributeError`, **4** `KeyError`, **2** genuine `AssertionError`. Six of the ten do not call `extract_modification_intent_files` at all, and two fail exactly by observing a wrong answer — the thing the sentence denied. V1's own defect class, recurring inside V1's replacement | **Fixed** — replaced with the measured failure-mode table |
+| W2 | sub-agent | "the property they pin **held** on `main`" was applied to all 7 preservation tests; false for `test_only_a_declared_intent_token_is_treated_as_a_marker`, which pins new behaviour. It also contradicted the report's own V1 row | **Fixed** — the exception is now named explicitly |
+| W3 | sub-agent | **V3 replaced a wrong count with another wrong count.** The lead-in became "Five obligations follow"; the list has **six** bullets, and had six before the edit too — I renumbered without counting, missing the pre-existing "fail loudly" bullet | **Fixed** — counted, now "Six" |
+| W4 | sub-agent | **V6 was fixed at 1 of 3 sites.** The corrected branch-scoped wording landed only in `artifact-consistency.md`; the unqualified false claim survived in `check-artifact-consistency.py` and in the report's own D3 section — the same report whose V6 row claimed the fix had landed | **Fixed** at both remaining sites |
+| W5 | sub-agent | "Two further consumers" introduced exactly one item | **Fixed** |
+| W6 | sub-agent | "Two independent verification rounds ran" sat above three round sections — structurally the same defect as W3, in the same commit that was fixing W3's predecessor | **Fixed** — now four |
+| W7 | sub-agent | The V2 fix stopped one clause short **inside the sentence it edited**: "publishes how many declarations were filtered" is false in exactly the set-vs-bullet way V2 corrected, and contradicted the corrected clause beside it. An untouched sibling carried the same error in the docstring | **Fixed** at both sites |
+| W8 | sub-agent | The build-gate section was made stale **by the commit that wrote it**: `8164a24` added `constants.py`, so the figures are 9 Python files / 19 total, not 8 / 18, and the quoted `git diff` output omitted the file | **Fixed** — re-derived |
+| W9 | sub-agent | `simplify_inactive` (a rule name) was paired with `_apply_security_class_inactive` (a code symbol) and both attributed to `_manifest_rules.py`; the code symbol is `_apply_simplify_inactive`. Mixed register, not invented | **Fixed** |
+| W10 | sub-agent | "The **one** branch whose verdict is derived from the unfiltered declaration" — the no-declaration `skip` also reads `all_declared` | **Fixed** — two branches named, with why only one needs the extra field |
+| W11 | sub-agent | The `./pw verify` figure was not re-derived after `8164a24` changed source and tests | **Fixed** — re-run; see § Build gate |
 
 ### Round 2 — findings deferred, with reasons
 

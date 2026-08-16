@@ -107,8 +107,10 @@ _RECALL_THRESHOLD = 0.70
 # previously-parsing forms — ``- src/a.py (New file)``, ``- src/mod(1).py``, and
 # ``- src/a.py (read) - trailing prose`` — into hard errors. Intent extraction
 # therefore happens in :func:`_split_intent_suffix`, never by constraining what
-# the path may contain; that function also guarantees a non-empty path, so a
-# bullet cannot be dropped by reducing to nothing either.
+# the path may contain; that function also never reduces a BARE path to nothing,
+# so a bare bullet cannot be dropped that way either. (A backticked bullet whose
+# span is only whitespace still yields an empty path and is dropped — pre-existing
+# behaviour, unchanged by the split.)
 _AFFECTED_FILE_BULLET_RE = re.compile(
     r'^[ \t]*-[ \t]+(?:`(?P<quoted>[^`\n]+)`(?P<qtail>[^\n]*)|(?P<bare>[^`\n]+?))[ \t]*$',
     re.MULTILINE,
@@ -356,8 +358,10 @@ def check_affected_files_recall(
     The footprint is a diff, so a ``(read)``-intent declaration can never appear
     in it; counting one as an expected modification caps achievable recall below
     the threshold by construction. ``details['read_intent_excluded']`` publishes
-    how many declarations were excluded, so a reader can tell a small denominator
-    from a filtered one.
+    how many DISTINCT declared paths were excluded — a set difference, so a path
+    declared twice contributes one and a path declared under both a read and a
+    modification intent contributes none — letting a reader tell a small
+    denominator from a filtered one.
 
     The skip-vs-fail head reads the declaration state **per deliverable** (via
     :func:`_declaration_state_per_deliverable`) rather than off the flattened
