@@ -341,15 +341,31 @@ Population derived from configuration — the `author_login` of each
 
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
 |---|---|---|---|
-| `coderabbitai` | _pending_ | — | PR not yet opened at the time this report was committed |
-| `cuioss-review-bot` | _pending_ | — | PR not yet opened at the time this report was committed |
-| `sourcery-ai` | _pending_ | — | PR not yet opened at the time this report was committed |
+| `coderabbitai` | `rate-limited` | **yes** | *"Review limit reached … you've reached your PR review limit, so we couldn't start this review. **Next review available in: 50 minutes.** You've used all 1 included review currently available under your plan."* A clock, not a property of this diff. |
+| `cuioss-review-bot` | `reviewed` | — | Published a *"PR Reviewer Guide"* against the diff carrying one finding: an unhandled negative `Content-Length` in `read_message`. ⭐ **Real, reproduced, and fixed** — finding #21. |
+| `sourcery-ai` | `rate-limited` | **no** | *"your pull request is larger than the review limit of 150000 diff characters."* A size ceiling on **this** diff, not a clock — re-requesting is futile at this size. |
 
-⚠ This table is **necessarily incomplete in this file**, and the reason is structural, not an
-omission: the lane contract requires the report to be committed as the **last pre-merge commit**,
-before the PR is armed — so no review has happened when it is written. The coverage figure and the
-§ Step 8 shortfall disclosure are reported to the operator in-session, where they can still be acted
-on.
+**Coverage: 1 of 3.** The § Step 8 condition-4 shortfall disclosure **fired**, and was made to the
+operator in-session before auto-merge was armed: *"1 of 3 — `cuioss-review-bot` reviewed and its one
+finding is fixed; `coderabbitai` rate-limited, reopens in ~50 minutes; `sourcery-ai` refused on a
+150 000-character size ceiling, which does not reopen for this diff."*
+
+⭐ **This is precisely the two-kinds-of-refusal case the `Reopens?` column exists for, observed live on
+one PR.** Both non-reviewing bots are `rate-limited`, and without that column they would read
+identically — while one clears on a timer and the other never clears at this diff size.
+
+⚠ **Two pushes landed after `coderabbitai` began reviewing** — the finalized report, then the
+negative-`Content-Length` fix. Its first attempt was against `032ea70`; by the time it retried, its
+quota was spent. Part of that window was consumed by this run's own pushes, and it is recorded as
+such rather than attributed purely to the quota. The contract's ordering is what forced it: the fix
+was a real defect and durability outranks review cleanliness, so the push was correct — but the cost
+was real and is not hidden here.
+
+⚠ **One row of this table was written after the report's "last pre-merge commit".** The lane contract
+wants the report finalized before arming; it also wants participation recorded from the bodies, which
+do not exist until the PR does. Both were satisfied here only because a review finding forced a
+further commit anyway. Had the review been clean, this table would have shipped saying `_pending_` —
+a structural tension in the contract, recorded under § What have we learned.
 
 ## Cost
 
@@ -431,6 +447,15 @@ proposal, and I *did* drive it — in the source tree, every time. The defect li
 - ⚠ **A fix is a change, and its own tests are part of the sweep.** Round 4's fix contained a defect
   (lexical version sort) caught only by a test written *for* that fix. Writing the test first is what
   found it; review would not have.
+
+⚠ **A second, smaller tension surfaced at the merge gate, and is recorded rather than proposed.**
+Step 8 condition 3 requires the report to be the **last pre-merge commit**; § Reviewer participation
+requires a verdict per reviewer **derived from the comment bodies**. Those bodies do not exist until
+the PR does, which is after that commit. This run only satisfied both because a review finding forced
+another commit anyway — had the review been clean, the table would have shipped reading `_pending_`
+for every reviewer, which is exactly the silence the participation rule exists to prevent. Not
+proposed as an amendment because the right resolution is unclear (a post-merge report addendum
+weakens the "lands in this PR" guarantee), but the tension is real and reproducible.
 
 ⛔ **This is a proposal, not a change.** It is not self-approved and has not been applied — the
 contract requires that ask to be a separate `chore/` PR, uncoupled from this plan's landing.
