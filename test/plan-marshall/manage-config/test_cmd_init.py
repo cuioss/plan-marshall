@@ -280,7 +280,7 @@ def test_cli_init_force_overwrites(plan_context):
 
 
 # =============================================================================
-# Provisioning stamps (this plan, D2)
+# Provisioning stamps
 # =============================================================================
 
 

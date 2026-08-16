@@ -260,12 +260,12 @@ def test_branch_cleanup_step_param_seeds_its_default(param, expected):
     ids=[f'{name}={value}' for name, value in _BRANCH_CLEANUP_ROUND_TRIP],
 )
 def test_get_default_config_round_trips_branch_cleanup_param(param, expected):
-    """get_default_config() carries the knob through into the assembled config.
+    """The three knobs crossed against both accessors keep their seeded defaults.
 
-    The seed table above pins the default against DEFAULT_PLAN_FINALIZE; this
-    pins that the config a caller actually receives still carries it, so a seed
-    that computes the value and then drops it during assembly fails here instead
-    of passing silently.
+    These three carried duplicate coverage before the collapse. Both tables read
+    through the same `get_default_config()` accessor, so this one adds no
+    independent path — it pins the three by name, so a row removed from the seed
+    table above cannot silently drop them.
     """
     branch_cleanup = _branch_cleanup_params()
 
@@ -347,7 +347,7 @@ def test_default_plan_finalize_ceremony_gates_have_no_run_at_all_params():
 
 
 # ---------------------------------------------------------------------------
-# Materialize-all seed + lane:off / lane:ask overrides (this plan, D1)
+# Materialize-all seed + lane:off / lane:ask overrides
 # ---------------------------------------------------------------------------
 #
 # _seed_finalize_steps() now materializes EVERY built-in finalize-step implementor
@@ -655,7 +655,7 @@ def test_cost_size_token_table_seed_matches_consumer_default():
 
 
 # =============================================================================
-# Execution-profile lane config knobs (this plan, D3)
+# Execution-profile lane config knobs
 # =============================================================================
 #
 # Three operator-facing knobs added to the lane mechanism:
@@ -731,11 +731,14 @@ def test_plan_phase_1_init_get_lane_selection_returns_ask_default(plan_context):
 _EXPECTED_PER_DELIVERABLE_BUILD = ['default:verify:compile', 'default:verify:module-tests']
 
 
-#: (the DEFAULT_PLAN_* constant that must schema-register the knob, the knob, its
-#: default, the path get_default_config() must surface it at). Both halves are
-#: asserted because they can disagree: a knob registered in the constant but lost
-#: during assembly, or assembled from somewhere other than the registered default,
-#: each pass one half and fail the other.
+#: (the DEFAULT_PLAN_* constant that schema-registers the knob, the knob, its
+#: default, the path get_default_config() must surface it at).
+#:
+#: `get_default_config` currently deep-copies each DEFAULT_PLAN_* constant wholesale
+#: into its phase section, so for these knobs the constant and the assembled config
+#: cannot disagree today. The pair is asserted anyway as a regression guard: the day
+#: assembly stops being a straight copy for any one of them — a computed override, a
+#: post-copy filter — the two halves diverge and exactly one fails.
 _PHASE_KNOB_SEEDS = [
     (
         'DEFAULT_PLAN_EXECUTE',
@@ -757,37 +760,57 @@ _PHASE_KNOB_SEEDS = [
         _EXPECTED_LANE_PRUNE_THRESHOLDS,
         ('plan', 'phase-1-init'),
     ),
+    ('DEFAULT_PLAN_INIT', 'auto_route_recipe', True, ('plan', 'phase-1-init')),
+    # Keyword-overlap-only confidence for a domain/scope-less free-form request caps
+    # at 0.6, which is also the recipe-match verb's --threshold default. Not 0.7.
+    ('DEFAULT_PLAN_INIT', 'auto_route_recipe_threshold', 0.6, ('plan', 'phase-1-init')),
+    ('DEFAULT_PLAN_OUTLINE', 'q_gate_validation', 'once', ('plan', 'phase-3-outline')),
+    ('DEFAULT_PLAN_PLAN', 'q_gate_validation', 'once', ('plan', 'phase-4-plan')),
 ]
 
 _PHASE_KNOB_IDS = [f'{constant}.{knob}' for constant, knob, _v, _p in _PHASE_KNOB_SEEDS]
 
+#: The same table projected per test, so neither test takes an argument it never reads.
+_PHASE_KNOB_REGISTRATIONS = [(c, k, v) for c, k, v, _p in _PHASE_KNOB_SEEDS]
+_PHASE_KNOB_SURFACINGS = [(p, k, v) for _c, k, v, p in _PHASE_KNOB_SEEDS]
+
 
 @pytest.mark.parametrize(
-    ('constant', 'knob', 'expected', 'path'), _PHASE_KNOB_SEEDS, ids=_PHASE_KNOB_IDS
+    ('constant', 'knob', 'expected'), _PHASE_KNOB_REGISTRATIONS, ids=_PHASE_KNOB_IDS
 )
-def test_phase_defaults_constant_registers_knob(constant, knob, expected, path):
+def test_phase_defaults_constant_registers_knob(constant, knob, expected):
     """The phase's DEFAULT_PLAN_* constant schema-registers the knob at its default.
 
-    Registration is asserted separately from the value: an unregistered knob is
-    invisible to the fail-closed provisioning whitelist, so it would be rejected on
-    an operator `set` even while reading back correctly from a seeded config.
+    Membership is asserted separately from the value because the constant is the
+    schema: `get_default_config` seeds a phase section by copying it, so a knob
+    missing from the constant never reaches a fresh project's marshal.json at all,
+    whatever the rest of the code believes its default to be.
     """
     defaults = getattr(_config_defaults_mod, constant)
 
     assert knob in defaults, f'{knob} must be schema-registered in {constant}'
     assert defaults[knob] == expected
+    assert type(defaults[knob]) is type(expected)
 
 
-@pytest.mark.parametrize(
-    ('constant', 'knob', 'expected', 'path'), _PHASE_KNOB_SEEDS, ids=_PHASE_KNOB_IDS
-)
-def test_get_default_config_surfaces_phase_knob(constant, knob, expected, path):
+@pytest.mark.parametrize(('path', 'knob', 'expected'), _PHASE_KNOB_SURFACINGS, ids=_PHASE_KNOB_IDS)
+def test_get_default_config_surfaces_phase_knob(path, knob, expected):
     """get_default_config() surfaces the knob at its phase path, carrying the default."""
     node = _config_defaults_mod.get_default_config()
     for key in path:
         node = node[key]
 
     assert node.get(knob) == expected
+    assert type(node[knob]) is type(expected)
+
+
+def test_get_default_config_drops_the_retired_outline_qgate_knob():
+    """The retired `qgate` knob must not surface on phase-3-outline.
+
+    `q_gate_validation` replaced it. A config carrying both would let an operator
+    edit the dead one and see no effect.
+    """
+    assert 'qgate' not in _config_defaults_mod.get_default_config()['plan']['phase-3-outline']
 
 
 def test_token_magnitudes_round_trip_through_the_shared_parser():
@@ -988,7 +1011,7 @@ def test_project_set_then_get_roundtrip_default_base_branch(plan_context):
 
 
 # =============================================================================
-# orchestrator noun — orchestrator.auto_emit knob (this plan, PLAN-48 D1)
+# orchestrator noun — orchestrator.auto_emit knob
 # =============================================================================
 #
 # The orchestrator-tier autonomy knob mirrors the plan-tier autonomy family
@@ -2160,7 +2183,7 @@ def test_marshal_build_queue_max_slots_override_wins(plan_context, monkeypatch):
 
     Seeds a fresh marshal.json (which carries the default build.queue block),
     rewrites build.queue.max_slots to a custom value, and proves load_config()
-    reads the override back rather than the 5 default. The importlib-loaded
+    reads the override back rather than the 5 default. The directly-loaded
     `_config_core_mod` is a distinct module object from the conftest-imported
     `_config_core` that plan_context monkeypatches, so MARSHAL_PATH must be
     redirected on `_config_core_mod` itself for its load_config() to resolve the
@@ -2334,50 +2357,6 @@ def test_effort_resolve_target_default_resolves_plan_wide_level_on_fresh_config(
     assert result['source'] == 'plan.effort'
 
 
-def test_default_plan_init_includes_auto_route_recipe():
-    """DEFAULT_PLAN_INIT must declare auto_route_recipe with default True.
-
-    The Tier 1 recipe-match auto-route gate mirrors the sibling
-    init_without_asking boolean-knob pattern: true ⇒ a high-confidence recipe
-    match auto-routes without prompting.
-    """
-    init_defaults = _config_defaults_mod.DEFAULT_PLAN_INIT
-
-    assert 'auto_route_recipe' in init_defaults, (
-        'auto_route_recipe must be schema-registered in DEFAULT_PLAN_INIT'
-    )
-    assert init_defaults['auto_route_recipe'] is True, (
-        'auto_route_recipe default must be True (auto-route high-confidence matches)'
-    )
-
-
-def test_default_plan_init_includes_auto_route_recipe_threshold_0_6():
-    """DEFAULT_PLAN_INIT must declare auto_route_recipe_threshold with default 0.6.
-
-    Free-form requests carry no plan domain/scope, so keyword-overlap-only
-    confidence caps at 0.6 — the threshold the recipe-match verb's `--threshold`
-    default and the aspect classifier share. The default is 0.6, NOT 0.7.
-    """
-    init_defaults = _config_defaults_mod.DEFAULT_PLAN_INIT
-
-    assert 'auto_route_recipe_threshold' in init_defaults, (
-        'auto_route_recipe_threshold must be schema-registered in DEFAULT_PLAN_INIT'
-    )
-    assert init_defaults['auto_route_recipe_threshold'] == 0.6, (
-        'auto_route_recipe_threshold default must be 0.6 — keyword-only confidence '
-        'for a domain/scope-less free-form request caps at 0.6'
-    )
-
-
-def test_get_default_config_phase_1_init_includes_auto_route_recipe_knobs():
-    """get_default_config() must surface both recipe-match knobs under plan.phase-1-init."""
-    config = _config_defaults_mod.get_default_config()
-
-    init_block = config['plan']['phase-1-init']
-    assert init_block.get('auto_route_recipe') is True
-    assert init_block.get('auto_route_recipe_threshold') == 0.6
-
-
 def test_plan_phase_1_init_get_auto_route_recipe_returns_true_default(plan_context):
     """`plan phase-1-init get --field auto_route_recipe` returns True from the merged default.
 
@@ -2407,7 +2386,7 @@ def test_plan_phase_1_init_get_auto_route_recipe_threshold_returns_0_6_default(p
 
 
 # =============================================================================
-# Planning-time q_gate_validation knob (this plan, D2)
+# Planning-time q_gate_validation knob
 # =============================================================================
 #
 # The planning-time `qgate` run-at-all gate on the outline step was retired
@@ -2416,18 +2395,6 @@ def test_plan_phase_1_init_get_auto_route_recipe_threshold_returns_0_6_default(p
 # The finalize-time `qgate` run-at-all gate is a different gate and stays
 # untouched (covered by the finalize-gate tests above). These tests pin the new
 # knob's defaults, the validator, and the seed on both planning phases.
-
-
-def test_default_plan_outline_includes_q_gate_validation_once():
-    """DEFAULT_PLAN_OUTLINE must declare q_gate_validation == 'once'."""
-    outline_defaults = _config_defaults_mod.DEFAULT_PLAN_OUTLINE
-
-    assert 'q_gate_validation' in outline_defaults, (
-        'q_gate_validation must be schema-registered in DEFAULT_PLAN_OUTLINE'
-    )
-    assert outline_defaults['q_gate_validation'] == 'once', (
-        "DEFAULT_PLAN_OUTLINE.q_gate_validation default must be 'once'"
-    )
 
 
 def test_default_plan_outline_drops_retired_qgate_gate():
@@ -2440,28 +2407,6 @@ def test_default_plan_outline_drops_retired_qgate_gate():
     assert 'qgate' not in _config_defaults_mod.DEFAULT_PLAN_OUTLINE, (
         'the retired outline qgate run-at-all gate must not survive'
     )
-
-
-def test_default_plan_plan_includes_q_gate_validation_once():
-    """DEFAULT_PLAN_PLAN must seed q_gate_validation == 'once'."""
-    plan_defaults = _config_defaults_mod.DEFAULT_PLAN_PLAN
-
-    assert 'q_gate_validation' in plan_defaults, (
-        'q_gate_validation must be schema-registered in DEFAULT_PLAN_PLAN'
-    )
-    assert plan_defaults['q_gate_validation'] == 'once', (
-        "DEFAULT_PLAN_PLAN.q_gate_validation default must be 'once'"
-    )
-
-
-def test_get_default_config_includes_q_gate_validation_on_both_planning_phases():
-    """get_default_config() must surface q_gate_validation on phase-3-outline and phase-4-plan."""
-    config = _config_defaults_mod.get_default_config()
-
-    assert config['plan']['phase-3-outline'].get('q_gate_validation') == 'once'
-    assert config['plan']['phase-4-plan'].get('q_gate_validation') == 'once'
-    # the retired outline qgate gate must not surface either
-    assert 'qgate' not in config['plan']['phase-3-outline']
 
 
 def test_valid_q_gate_validation_enumerates_expected_values():
@@ -2491,7 +2436,7 @@ def test_plan_phase_3_outline_get_q_gate_validation_returns_once_default(plan_co
 
 
 # =============================================================================
-# Config-seed provisioning fingerprint + stamps (this plan, D2)
+# Config-seed provisioning fingerprint + stamps
 # =============================================================================
 #
 # compute_config_seed_fingerprint() hashes the canonical JSON of
@@ -3460,8 +3405,7 @@ class TestFinalizeStepDescriptionDrift:
 
     _READABILITY_BOUND_OVERRIDES = {
         # ``default:sonar-roundtrip`` carries the longest description in the set
-        # by design. The ``unified-finalize-triage`` plan (deliverable 4)
-        # rewrote it to encode the FIND-only producer role, the dispatcher-owned
+        # by design: it encodes the FIND-only producer role, the dispatcher-owned
         # unified wait-region triage hand-off, AND the per-signal barrier-arm
         # gate (``requires: [ci-complete]`` resolved with ``--signal-arm sonar``)
         # plus the TokenSheriff-572 deadlock rationale. That richer semantic

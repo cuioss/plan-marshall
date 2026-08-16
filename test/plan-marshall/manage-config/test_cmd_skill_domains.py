@@ -1384,7 +1384,7 @@ def test_list_verify_steps_discovers_project_skills(plan_context):
 
 
 # =============================================================================
-# Order field discovery tests (deliverable 5)
+# Order field discovery tests
 # =============================================================================
 
 

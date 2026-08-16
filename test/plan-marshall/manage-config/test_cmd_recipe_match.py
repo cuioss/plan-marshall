@@ -451,7 +451,7 @@ def test_keyword_arm_unaffected_by_shape_for_non_surgical_recipe(plan_context, t
 
 
 # =============================================================================
-# Recipe lane seed (deliverable 8)
+# Recipe lane seed
 # =============================================================================
 #
 # A recipe may declare an execution-profile lane seed in its SKILL.md frontmatter

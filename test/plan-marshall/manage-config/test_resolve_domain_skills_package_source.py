@@ -6,7 +6,7 @@ Covers the data-driven per-profile ``package_source`` declaration added to the
 domain extension manifests (``pm-dev-java`` / ``pm-dev-frontend`` ``extension.py``)
 and surfaced by ``cmd_resolve_domain_skills`` in ``_cmd_skill_resolution.py``.
 
-Contract under test (deliverable 2):
+Contract under test:
 - The ``implementation`` profile declares ``package_source: packages`` and the
   resolved result surfaces ``package_source == 'packages'``.
 - The ``module_testing`` profile declares ``package_source: test_packages`` and

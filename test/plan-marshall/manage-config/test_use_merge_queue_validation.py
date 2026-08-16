@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for probe-backed ``use_merge_queue`` set-time validation (deliverable 4).
+"""Tests for probe-backed ``use_merge_queue`` set-time validation.
 
 The ``step set`` path for ``default:branch-cleanup``'s ``use_merge_queue`` param
 runs a live ``ci repo merge-queue probe`` when enabling and rejects the set (with

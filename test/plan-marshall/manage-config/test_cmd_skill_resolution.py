@@ -508,7 +508,7 @@ def test_list_finalize_steps_ordered_ascending_by_order(tmp_path):
 
 
 # =============================================================================
-# Order field discovery tests (deliverable 5)
+# Order field discovery tests
 # =============================================================================
 
 

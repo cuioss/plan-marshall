@@ -173,7 +173,7 @@ def test_project_non_dict_project_block_set_returns_structured_error(plan_contex
 
 
 # =============================================================================
-# plan phase q_gate_validation validator dispatch (this plan, D2)
+# plan phase q_gate_validation validator dispatch
 # =============================================================================
 #
 # `cmd_plan` delegates phase-based sub-nouns to `cmd_phase`, which routes the
@@ -247,7 +247,7 @@ def test_plan_q_gate_validation_set_rejects_invalid_value(plan_context):
 
 
 # =============================================================================
-# project set field-name whitelist (this plan, D1)
+# project set field-name whitelist
 # =============================================================================
 #
 # `cmd_project`'s set branch rejects any field not in DEFAULT_PROJECT with

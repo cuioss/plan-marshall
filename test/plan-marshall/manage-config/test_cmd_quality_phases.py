@@ -467,7 +467,7 @@ def test_finalize_set_max_iterations(plan_context):
 
 
 # =============================================================================
-# Order-driven set-steps / add-step / overrides Tests (deliverable 6)
+# Order-driven set-steps / add-step / overrides Tests
 # =============================================================================
 
 

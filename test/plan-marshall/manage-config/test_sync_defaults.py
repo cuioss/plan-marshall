@@ -495,7 +495,7 @@ def test_sync_defaults_seeds_auto_route_recipe_knobs_into_legacy_config(plan_con
 
 
 # =============================================================================
-# Provisioning-stamp refresh on the reconcile path (this plan, D2)
+# Provisioning-stamp refresh on the reconcile path
 # =============================================================================
 #
 # sync-defaults is the deep-merge reconcile marshall-steward invokes. Beyond
@@ -543,7 +543,7 @@ def test_sync_defaults_refreshes_stale_provisioning_fields(plan_context):
 
 
 # =============================================================================
-# Retired step-key rename migration (this plan, D2)
+# Retired step-key rename migration
 # =============================================================================
 #
 # sync-defaults migrates retired step keys to their canonicals BEFORE the
@@ -764,7 +764,7 @@ def test_sync_defaults_no_renames_reported_for_clean_config(plan_context):
 
 
 # =============================================================================
-# Finalize-lane materialization (this plan, D1)
+# Finalize-lane materialization
 # =============================================================================
 #
 # sync-defaults materializes an explicit `lane` on every lane-less
@@ -973,7 +973,7 @@ def test_sync_defaults_leaves_unresolvable_frontmatter_step_lane_less(plan_conte
 
 
 # =============================================================================
-# Fresh-wizard Step 16 materialization (this plan, D2)
+# Fresh-wizard Step 16 materialization
 # =============================================================================
 #
 # The first-run wizard's Step 16 now runs `sync-defaults` BEFORE `steps-sort`, so

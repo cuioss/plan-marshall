@@ -50,7 +50,7 @@ round-trip as a TOON object key (``parse_toon`` mis-splits on the first colon),
 whereas a quoted string value inside a uniform array round-trips exactly. The
 round-trip regression test at the bottom of this file guards that design choice.
 
-These tests drive the transform functions directly via importlib (Tier 2),
+These tests drive the transform functions directly (Tier 2),
 mirroring ``test_manage_execution_manifest_compose.py``. No live worktree, git history, or
 architecture-resolve subprocess is involved: the resolver is monkeypatched, and the
 ceiling-boundary tests obtain their resolve envelope from the REAL production

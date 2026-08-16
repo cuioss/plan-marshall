@@ -49,7 +49,7 @@ DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 DEFAULT_ENVELOPE_COUNT = _mem.DEFAULT_ENVELOPE_COUNT
 _role_of = _mem._role_of
 
-# Execution-profile lane resolver surface (deliverable 5).
+# Execution-profile lane resolver surface.
 cmd_lanes_preview = _mem.cmd_lanes_preview
 _apply_lane_resolution = _mem._apply_lane_resolution
 _lane_keep_decision = _mem._lane_keep_decision
@@ -705,7 +705,7 @@ def test_verification_no_files_keeps_full_phase_5_trims_phase_6(plan_context):
 
 
 # =============================================================================
-# adr-propose registration tests (deliverable 3)
+# adr-propose registration tests
 #
 # adr-propose is the writing-hook sibling of lessons-capture: both turn what
 # the plan settled into a durable artefact. They no longer share a pipeline
@@ -3290,7 +3290,7 @@ def test_compose_reads_keyed_map_phase_5_verification_steps(plan_context):
 
 
 # =============================================================================
-# Role-loader and role-based intersection (deliverable 2)
+# Role-loader and role-based intersection
 #
 # The composer derives a phase-5 candidate step's ``role:`` purely in-code from
 # the trailing ``{canonical}`` segment of its ``verify:{canonical}`` step ID via
@@ -3350,8 +3350,8 @@ class TestRoleLoader:
         resolved = _role_of(step_id, cache)
 
         if role is None:
-            # identity, not equality: a falsy sentinel such as '' would satisfy
-            # `== None`-style comparison chains while not being "no role at all".
+            # identity, not equality: None is a singleton sentinel, and `==` would
+            # admit any object whose __eq__ returns True against it.
             assert resolved is None
         else:
             assert resolved == role
@@ -4343,7 +4343,7 @@ def test_envelope_count_absent_reads_cleanly_round_trip(plan_context):
 
 
 # =============================================================================
-# Execution-profile lane resolution (deliverable 5)
+# Execution-profile lane resolution
 # =============================================================================
 #
 # The lane resolver projects the operator posture (minimal / standard / full) over
@@ -4848,7 +4848,7 @@ def test_read_execution_profile_reads_persisted_posture(plan_context):
 
 
 # =============================================================================
-# Compose-time step-resolution gate (deliverable 1)
+# Compose-time step-resolution gate
 #
 # `compose` resolves every FINAL emitted phase-5/6 step id and fails loud
 # (`status: error`, `error: unresolvable_step`) on the first that resolves to no
