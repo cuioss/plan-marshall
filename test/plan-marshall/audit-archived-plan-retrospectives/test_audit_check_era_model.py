@@ -12,6 +12,9 @@ from _audit_fixtures import audit, minimal_corpus
 def test_check_era_covers_exactly_all_checks():
     # The single CHECK_ERA table must stamp every registered check — no more, no
     # less — so no check inline-duplicates or misses a boundary stamp.
+    # Non-vacuity: an empty registry would satisfy every assertion below
+    # without examining a single check.
+    assert audit.CHECK_NAMES, 'CHECK_NAMES is empty — the sweep would pass vacuously'
     assert set(audit.CHECK_ERA) == set(audit.CHECK_NAMES)
 
 
@@ -140,6 +143,9 @@ def test_execution_context_manifest_era_stamped_to_promotion_boundary():
 
 def test_full_run_stamps_every_check_block(tmp_path):
     # Arrange
+    # Non-vacuity: an empty registry would satisfy every assertion below
+    # without examining a single check.
+    assert audit.CHECK_NAMES, 'CHECK_NAMES is empty — the sweep would pass vacuously'
     inputs = minimal_corpus(tmp_path)
 
     # Act

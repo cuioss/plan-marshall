@@ -155,7 +155,7 @@ immutable history; run 01's report already carries the re-derived figure. Record
 `git diff --name-only origin/main...HEAD -- '*.py'` → **32 files** of 35 changed. Python footprint
 present, so the gate applies.
 
-`./pw verify` → **`=== verify: SUCCESS ===`**, 20,325 passed, 14 skipped, whole tree.
+`./pw verify` → **`=== verify: SUCCESS ===`**, 20,327 passed, 14 skipped, whole tree.
 
 Per-commit gates: both commits touch `*.py` and both were preceded by a clean direct
 `./pw quality-gate`, read from the tools' own output (`ruff … All checks passed!`, `mypy … Success: no
@@ -173,6 +173,13 @@ structured log.
 | 5 | This run, while fixing #38 | Two incompatible `_write_log` helpers in one directory | **Fixed** — the near-duplicate is gone, not hoisted |
 | 6 | This run, verifying #28 | Run 01 recorded a *possible production defect*; the production docstring already documents the proxy | **Rejected as a production defect, with reason** — fixed test-side instead |
 | 7 | **PR review — `coderabbitai`** | `_INLINE_LITERAL_RE`'s newline bound does not cover the SAME-line case: two apostrophes in one sentence still span a citation between them | **Fixed** — quote delimiters may not sit against a word character; its text added verbatim as a negative control |
+| 8 | **PR review — `coderabbitai`** | Binding the era-stamp test to `era.TEST_REL` fixes divergence but leaves the fixture *creating whatever path production names* — a typo would still pass | **Fixed** — an independent oracle derives the mirror path from the test module's own location and asserts both targets exist. Proved non-vacuous by injecting a typo and watching it go red |
+| 9 | **PR review — `coderabbitai`** | Four `CHECK_NAMES`-derived sweeps pass vacuously over an empty registry (two empty sets compare equal) | **Fixed** — non-vacuity guard at each of the four sites |
+| 10 | **PR review — `coderabbitai`** | `report-02.md`'s build-gate line said 20,325 where the contract table said 20,327 | **Fixed** — reconciled to the final count |
+| 11 | **PR review — `coderabbitai`** | The two epic briefs describe the split imprecisely | **Fixed, but NOT as suggested** — the suggested "15 modules / 24 checks" conflates the two splits. `test_audit_checks.py` became **49** modules and `test_audit.py` **15**; both briefs now state that |
+| 12 | **PR review — `coderabbitai`** | `test_audit_check_exploration_share.py` hardcodes the coupling count `10` twice rather than deriving it | **Rejected with reason** — deriving it needs a coupling registry added to `audit.py`, which this plan places out of scope. The literal is pre-existing and arrived by pure move; changing it is new scope, not findings closure. Recorded in § Residue |
+| 13 | **PR review — `coderabbitai`** | `test_audit_check_finalize_flow_conformance.py` makes timeout and unresolved true in one fixture, so an implementation deriving one from the other would pass | **Rejected with reason** — a real coverage gap, but the fixture arrived by pure move and adding a case is new coverage rather than closing a recorded finding. Recorded in § Residue |
+| 14 | **PR review — `coderabbitai`** | `_cmd_step.py` should persist `task_start_sha` so the diff guard can distinguish empty task diffs | **Rejected with reason** — a production feature request in `manage-tasks`, several steps beyond this PR's scope and outside the plan's surface. Recorded in § Residue |
 
 ### Independent pre-PR verification (contract Step 6)
 
@@ -264,7 +271,7 @@ strong evidence rather than proof.
 
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
 |---|---|---|---|
-| `coderabbitai` | **reviewed** | — | Initially refused ("Review limit reached … **next review available in 9 minutes**"). **Re-requested after the window elapsed, and it reviewed** — publishing one actionable finding against `_INLINE_LITERAL_RE`, reproduced and fixed below. |
+| `coderabbitai` | **reviewed** | — | Initially refused ("Review limit reached … **next review available in 9 minutes**"). **Re-requested after the window elapsed, and it reviewed twice** — first a targeted finding against `_INLINE_LITERAL_RE`, then a full review posting **7 inline findings**. Eight actionable in total: 5 fixed, 3 rejected with reasons. |
 | `cuioss-review-bot` | **reviewed** | — | *"PR Reviewer Guide 🔍 — PR contains tests / No security concerns identified / No major issues detected."* An explicit nothing-to-report over the diff. |
 | `sourcery-ai` | **rate-limited** | **yes** | *"you have reached your **weekly** rate limit of 500000 diff characters. Please try again later."* Clears on the weekly reset; no specific time stated. |
 
@@ -311,9 +318,22 @@ CodeRabbit asked for its text as a negative control; it is now
 docstring recording that the newline bound alone does not cover this — so the two guards are not later
 collapsed into one. Answered on the thread.
 
-**Every comment on all three surfaces is dispositioned**: one actionable finding (fixed), one
-nothing-to-report review, one quota refusal, and this run's own two comments. `get_review_comments`
-returns `totalCount: 0` — no inline threads.
+**A second, fuller CodeRabbit review landed after the first fix** — it posted **7 inline findings**
+across `get_review_comments`, having consumed its next rolling-hour slot. Four are fixed (findings
+8–11 above) and three are rejected with reasons (12–14), each recorded rather than silently dropped.
+
+**The most valuable was finding 8, and it is a defect in my own fix.** Binding the era-stamp test to
+the production constants closed the *divergence* problem but left a second one open: `_seed_worktree`
+creates whatever path the step names, so a typo in `era.TEST_REL` would be faithfully created under
+`tmp_path` and all sixteen tests would still pass. A test bound to production is not the same as a
+test that can *check* production. The fix adds an oracle derived independently — the era mirror is the
+test module's own sibling, so its repository-relative path is computable from `__file__` without
+consulting the step — and asserts both targets exist on disk. Proved non-vacuous by injecting a typo
+into `era.TEST_REL` and confirming the new test goes red.
+
+**Every comment on all three surfaces is dispositioned**: 8 actionable findings from `coderabbitai`
+(5 fixed, 3 rejected with reasons), one nothing-to-report review from `cuioss-review-bot`, one quota
+refusal from `sourcery-ai`, and this run's own two comments.
 
 **Shortfall disclosure (§ Step 8 condition 4) — it fired:**
 
@@ -421,7 +441,19 @@ and D5's unstarted parametrization. This run closed findings, not deliverables.
 One figure moved: `test-module-line-budget` over the slice is **58**, down from 59, because
 `test_audit.py` was the module #38 split. Every other residue figure in run 01 stands.
 
-Two items recorded here for a future plan, neither actionable within this run's scope:
+Three items came from CodeRabbit's second review and are rejected here as new scope rather than
+findings closure, each with its reason recorded above (findings 12–14). They are real and worth doing:
+
+- **`test_audit_check_exploration_share.py` hardcodes the coupling count `10` twice.** Deriving it
+  needs a coupling registry exposed by `audit.py`.
+- **`test_audit_check_finalize_flow_conformance.py` makes timeout and unresolved true in one
+  fixture**, so an implementation deriving `ci_unresolved` solely from `wait_outcome ==
+  "deadline_exceeded"` would pass while missing an unresolved status after a completed wait. Needs a
+  second case.
+- **`_cmd_step.py` does not persist `task_start_sha`** at the `in_progress` transition, so the
+  logging-gap rule cannot distinguish a genuinely empty task diff. A `manage-tasks` production change.
+
+Two further items recorded for a future plan, neither actionable within this run's scope:
 
 - **`no-lesson-id-in-skill-prose` has rule 7's old gap.** The same citation-versus-datum confusion
   applies over `marketplace/bundles/**`. Fixing it needs a measured false-positive rate over bundle

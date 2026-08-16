@@ -121,6 +121,9 @@ def test_module_docstring_enumerates_every_registered_check():
     # makes this guard fail on the NEXT check added too instead of pinning today's
     # number. Both directions are asserted: no registered check lacks a bullet, and
     # no bullet names something that is not a registered check.
+    # Non-vacuity: two empty sets compare equal, so an empty registry would
+    # satisfy this guard without examining a single check.
+    assert audit.CHECK_NAMES, 'CHECK_NAMES is empty — the sweep would pass vacuously'
     bullets = _docstring_bullet_checks(audit.__doc__ or "")
 
     assert set(bullets) == set(audit.CHECK_NAMES), (
@@ -178,6 +181,9 @@ def test_skill_md_available_checks_table_names_every_registered_check():
     # first). Population-derived from CHECK_NAMES, and it asserts two things that
     # can fail independently: the table links the sub-document, and that
     # sub-document actually exists on disk.
+    # Non-vacuity: an empty registry would satisfy every assertion below
+    # without examining a single check.
+    assert audit.CHECK_NAMES, 'CHECK_NAMES is empty — the sweep would pass vacuously'
     text = _SKILL_MD.read_text(encoding="utf-8")
     for check in audit.CHECK_NAMES:
         assert f"checks/{check}.md" in text, f"{check} missing from the Available checks table"

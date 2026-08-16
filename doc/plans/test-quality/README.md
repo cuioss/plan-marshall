@@ -68,9 +68,12 @@ Two structural exceptions worth naming, because they are the shape a plan should
   `merge_queue_wait_budget_seconds`) are genuinely crossed against both accessors. Those three are the
   collapse target; the remaining functions share the naming shape while several test unrelated
   subjects. Re-derive the pairing before collapsing anything — the naming shape is not the evidence.
-* `test/plan-marshall/audit-archived-plan-retrospectives/` was a single ~8,700-line module covering
-  ~24 independent audit checks with ~90 test classes. Plan `050` decomposed it into one module per
-  check; the directory is the worked example of what that shape looks like when it lands.
+* `test/plan-marshall/audit-archived-plan-retrospectives/` carried two oversized modules —
+  `test_audit_checks.py` at ~8,700 lines over ~90 test classes, and `test_audit.py` at ~1,500. Plan
+  `050` decomposed the first into **49** check-named modules and the second into **15**, with the
+  shared builders in `_audit_fixtures.py`. Every check in the skill's 24-entry inventory is now
+  reachable by filename, so the directory is the worked example of what this shape looks like when it
+  lands.
 
 ## House style
 

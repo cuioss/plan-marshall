@@ -43,12 +43,28 @@ era = _load_era_module()
 # Fixtures — synthetic audit.py + test mirror under a tmp worktree root
 # =============================================================================
 
-# Bound to the production constants, never re-declared. A local copy makes every
-# test here pass against a synthetic worktree it seeds itself, so a repoint of
-# either path in the step would leave this suite green while the real step failed
-# its existence check on the first finalize run.
+# Seeded from the production constants, never re-declared. A local copy makes
+# every test here pass against a synthetic worktree it seeds itself, so a repoint
+# of either path in the step would leave this suite green while the real step
+# failed its existence check on the first finalize run.
 _AUDIT_REL = era.AUDIT_REL
 _TEST_REL = era.TEST_REL
+
+# Binding to the production constants alone is NOT enough, and the gap is easy to
+# miss: `_seed_worktree` creates whatever path the step names, so a typo in
+# `era.TEST_REL` would be faithfully created under `tmp_path` and every test would
+# still pass. The suite therefore also needs an oracle it derives INDEPENDENTLY —
+# the era mirror is this module's own sibling, so its repository-relative path is
+# computable from `__file__` without consulting the step at all.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_EXPECTED_TEST_REL = (
+    (Path(__file__).resolve().parent / 'test_audit_check_era_model.py')
+    .relative_to(_REPO_ROOT)
+    .as_posix()
+)
+_EXPECTED_AUDIT_REL = (
+    '.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py'
+)
 
 # A realistic CHECK_ERA snippet: the PR-PENDING sentinel on one check, a concrete
 # #NNN on another, and a PR-PENDING mention in a COMMENT (must NOT be rewritten).
@@ -63,6 +79,23 @@ _TEST_WITH_PENDING = (
     'def test_era():\n'
     '    assert audit.CHECK_ERA["execution-context-manifest"] == "PR-PENDING"\n'
 )
+
+
+def test_step_targets_resolve_against_the_real_repository():
+    """The step's two target paths name files that actually exist in this tree.
+
+    Every other test in this module runs against a synthetic worktree the fixture
+    seeds from ``era.AUDIT_REL`` / ``era.TEST_REL``, so a typo in either constant
+    is created under ``tmp_path`` and passes unnoticed — the step would then fail
+    its existence check on the first real finalize run, which is a pre-merge,
+    source-mutating step. This is the one test that consults the repository
+    instead, and it derives the mirror path from this module's own location
+    rather than from the constant it is checking.
+    """
+    assert era.TEST_REL == _EXPECTED_TEST_REL
+    assert era.AUDIT_REL == _EXPECTED_AUDIT_REL
+    assert (_REPO_ROOT / era.TEST_REL).is_file()
+    assert (_REPO_ROOT / era.AUDIT_REL).is_file()
 
 
 def _seed_worktree(root: Path, audit_text: str, test_text: str) -> tuple[Path, Path]:
