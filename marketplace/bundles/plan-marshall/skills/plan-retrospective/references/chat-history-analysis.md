@@ -23,7 +23,7 @@ The pre-pass is the single decision source — the orchestrator never inspects r
 
 - `no_signal` — `true` when the transcript carried **no operator-authored signal of either kind**: `operator_turn_count == 0` AND `gate_decision_count == 0`. It is deliberately **not** a count of survivors — see [Why the verdict is not a survivor count](#why-the-verdict-is-not-a-survivor-count).
 - `over_budget` — `true` when the reduced text still exceeds `--read-budget-bytes` (default 2 MiB).
-- `reduced_transcript` — the Tier-1 input; non-empty only when both flags are `false`.
+- `reduced_transcript` — the Tier-1 input. It is fed to the LLM only when both flags are `false`; it is **not** empty whenever they are not. A transcript with no operator signal can still retain marker-bearing `assistant` turns, so a Tier-2 skip may carry a non-empty reduction. The flags decide the tier — never the emptiness of this field.
 - `raw_turn_count` / `reduced_turn_count` / `dropped_turn_count` — the parseable-turn count before reduction, the raw turns kept, and how many the reduction removed, so the caller can see how much was boilerplate. `reduced_turn_count + dropped_turn_count == raw_turn_count` holds; recovered gate decisions were never raw turns, so they appear as extra entries in `reduced_transcript` and are counted by `gate_decision_count` alone.
 - `operator_turn_count` / `gate_decision_count` — the two operator-signal counters, reported separately from the survivor count so a caller can tell *"kept 200 turns, 3 operator-authored"* from *"kept 200 operator turns"*. `operator_turn_count` counts free-form operator corrections; `gate_decision_count` counts operator decisions recovered from the tool-result channel.
 
@@ -45,7 +45,7 @@ Three rules keep the residue trustworthy:
 
 An envelope *attached to* an operator turn is not a drop either: the harness routinely annotates a genuine utterance, and the residue then still holds the operator's prose.
 
-**The direction of failure is the design.** An enumeration of synthetic shapes fails toward *"operator"* for any wrapper nobody listed — the direction that inflates the survivor count and manufactures a falsely healthy verdict. Residue-based classification fails toward *"synthetic"* instead. The accepted cost is that an operator turn consisting of nothing but a matched tag block is misread as synthetic.
+**The direction of failure is the design.** An enumeration of synthetic shapes fails toward *"operator"* for any wrapper nobody listed — the direction that inflates the survivor count and manufactures a falsely healthy verdict. Residue-based classification fails toward *"synthetic"* instead, **for any injection that carries an envelope**; an envelope-less notice is outside that guarantee and is covered only by the literal-prefix backstop (see [The residual gap](#the-residual-gap--envelope-less-injections)). The accepted cost is that an operator turn consisting of nothing but a matched tag block is misread as synthetic.
 
 ### The harness-injection marker inventory
 
@@ -55,11 +55,18 @@ The classes below were derived by running the reducer over real session transcri
 |---|---|---|
 | Skill body injected as a `user` turn | A `text` block | The `Base directory for this skill:` + heading signature |
 | Tool-result placeholder carrying no text | A `user` turn with empty text | Empty residue |
-| Tag-wrapped instruction blocks (`<system-reminder>`, `<task-notification>`, `<wake>`/`<event>`, command expansions) | A `text` block, on harness surfaces that persist them inline | Empty residue after envelope stripping |
+| Tag-wrapped instruction blocks (`<system-reminder>`, `<task-notification>`, `<wake>`/`<event>`) | A `text` block, on harness surfaces that persist them inline | Empty residue after envelope stripping |
+| Slash-command expansions (`<command-name>` / `<command-message>` / `<command-args>`) | A `text` block | **Kept, not dropped** — `<command-args>` is operator-bearing, so its inner text is the residue. An expansion with no arguments leaves no residue and is dropped |
 | Harness metadata (tool/agent/skill listings, permission and mode notices) | `attachment` events carrying **no `message`** | Never parsed as a turn at all |
-| Verbatim re-entry / local-command notices | A `text` block | Literal prefix match |
+| Verbatim envelope-less notices (re-entry, local-command caveat, stop-hook feedback) | A `text` block with **no tag at all** | Literal prefix match — a **sample**, see the gap below |
 
 ⚠ **The decisive finding is that this inventory cannot be completed by enumeration.** The same logical injection is persisted differently by different harness surfaces and versions — a block rendered inline in one surface arrives as an `attachment` in another — so any list keyed on the shapes one transcript happens to contain is a sample. That is why the predicate is residue-based: it needs no entry here to classify a wrapper correctly.
+
+#### The residual gap — envelope-less injections
+
+**The structural guarantee covers tag-wrapped injections only.** A harness turn that carries *no envelope* — the stop-hook feedback notice is the observed case — leaves full residue and is counted as an operator turn unless its exact wording is listed in `HARNESS_NOTICE_PREFIXES`. For that class the filter is back to an enumeration, and therefore back to being a sample.
+
+This is published rather than papered over because the plan's own thesis is that a named list is a sample: an inventory that hid an observed miss would repeat the defect it documents. A new envelope-less notice is a false *operator* — the direction that inflates the verdict — so this list is the one part of the mechanism that needs updating when the harness adds a shape.
 
 ### Why the verdict is not a survivor count
 

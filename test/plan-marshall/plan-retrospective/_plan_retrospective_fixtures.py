@@ -302,3 +302,70 @@ def write_captured_real_log(plan_dir: Path) -> Path:
     path = logs_dir / 'script-execution.log'
     path.write_text(_CAPTURED_REAL_LOG, encoding='utf-8')
     return path
+
+# ---------------------------------------------------------------------------
+# Harness-injection block shapes (chat-signal reduction)
+#
+# The shapes the harness actually injects, shared by the chat-signal test
+# modules so one definition backs both the predicate tests and the reducer's
+# output-contract tests.
+# ---------------------------------------------------------------------------
+
+SYSTEM_REMINDER = (
+    '<system-reminder>\n'
+    "As you answer the user's questions, you can use the following context:\n"
+    '# claudeMd\nCodebase and user instructions are shown below.\n'
+    '</system-reminder>'
+)
+
+TASK_NOTIFICATION = (
+    '<task-notification agent="general-purpose" status="completed">\n'
+    'The verification sub-agent finished and reported two findings.\n'
+    '</task-notification>'
+)
+
+WAKE_ENVELOPE = (
+    '<wake reason="external-event">'
+    '<event source="github" kind="check_run" trust="relay">'
+    '{"check": "verify / conclusion", "conclusion": "failure"}'
+    '</event></wake>'
+)
+
+SLASH_COMMAND = (
+    '<command-name>/plan-marshall</command-name>\n'
+    '<command-message>plan-marshall is running…</command-message>\n'
+    '<command-args>fix the provenance filter</command-args>'
+)
+
+SKILL_LOAD_TEXT = (
+    'Base directory for this skill: /Users/x/.claude/plugins/cache/demo/skills/demo\n\n'
+    '# Demo Skill\n\n'
+    'Long injected skill body. ' * 40
+)
+
+REENTRY_NOTICE = (
+    'This session is being continued from a previous conversation that ran out of '
+    'context. The conversation is summarized below.'
+)
+
+STOP_HOOK_NOTICE = (
+    'Stop hook feedback:\n'
+    '[~/.claude/stop-hook-git-check.sh]: There are uncommitted changes in the repository.'
+)
+
+OPERATOR_TEXT = 'stop using the ratio as the check — validate by classification instead'
+
+
+def chat_turn(role: str, content) -> str:
+    """Produce one JSONL event line carrying a ``message`` with ``role``/``content``."""
+    return json.dumps({'type': 'turn', 'message': {'role': role, 'content': content}})
+
+
+def chat_tool_use(name: str, use_id: str) -> str:
+    """Produce an assistant turn issuing a ``tool_use`` call."""
+    return chat_turn('assistant', [{'type': 'tool_use', 'name': name, 'id': use_id}])
+
+
+def chat_tool_result(use_id: str, text: str) -> str:
+    """Produce a user turn carrying a ``tool_result`` — the gated-decision channel."""
+    return chat_turn('user', [{'type': 'tool_result', 'tool_use_id': use_id, 'content': text}])

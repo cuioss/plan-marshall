@@ -4,88 +4,42 @@
 
 Pure deterministic fact reducer for the ``plan-retrospective`` chat-history
 aspect (Aspect 14). Reads the session JSONL at a passed transcript path and
-emits a reduced text transcript keeping ONLY signal-bearing turns, so the
-orchestrator can feed a dense, budget-fitting transcript to the LLM analysis
-prompt instead of the raw multi-megabyte JSONL.
+emits a reduced text transcript, so the orchestrator can feed a dense,
+budget-fitting transcript to the LLM analysis prompt instead of the raw
+multi-megabyte JSONL.
 
-Reduction contract (positive provenance predicate + decision-marker scan):
+The reduction contract — what counts as operator provenance, why the verdict
+is not a survivor count, the gated-decision channel, and the published
+harness-injection marker inventory — is specified in
+``references/chat-history-analysis.md``. It is NOT restated here. What follows
+is only what a reader of this module needs to follow the code:
 
-- A ``"role": "user"`` turn is kept only when :func:`is_operator_authored`
-  says operator prose survives the harness envelopes. The predicate is
-  POSITIVE and STRUCTURAL rather than an enumeration of known synthetic
-  shapes: every harness-injected envelope is stripped, and the turn is kept
-  only if prose REMAINS. The three synthetic classes it recognises are
+- A ``user`` turn is kept when :func:`is_operator_authored` finds operator
+  prose remaining after every harness envelope is stripped. The predicate is
+  positive and structural, so an envelope shape introduced later is
+  recognised without editing this file.
+- An ``assistant`` turn is kept when its text carries a decision marker from
+  :data:`DECISION_MARKERS`. Assistant turns are context, never operator
+  signal: they move neither operator counter, so they cannot affect
+  ``no_signal``.
+- Operator GATE DECISIONS are recovered from ``tool_result`` blocks and
+  rendered under :data:`OPERATOR_DECISION_ROLE`.
+- Everything else is dropped.
 
-  * an EMPTY or whitespace-only turn (a tool-result placeholder that carried
-    no text block);
-  * a turn that is WHOLLY a harness envelope — one or more XML-ish tag blocks
-    with nothing outside them. The match is generic over the tag NAME, so a
-    wrapper the harness introduces later is recognised without editing this
-    file;
-  * a SYNTHETIC SKILL-LOAD turn — a skill body injected into the
-    conversation, recognized by its structural signature (a ``Base directory
-    for this skill:`` line followed by a markdown heading) — or a verbatim
-    harness re-entry notice.
+The script never judges — it reduces facts. It returns the two Tier-2 trigger
+flags the orchestrator routes on:
 
-  ⚠ The direction of failure is deliberate. An enumeration of synthetic
-  shapes fails toward "operator" when the harness adds a wrapper nobody
-  listed, which inflates the survivor count and manufactures a falsely
-  healthy verdict. This predicate fails toward "synthetic" instead: a
-  WELL-FORMED envelope leaves no residue and is dropped whatever its tag name,
-  so a wrapper introduced later needs no code change. The cost is that an
-  operator turn consisting of nothing but a matched tag block is misread as
-  synthetic; that trade is intentional.
-
-  Stray markup is NOT an envelope. Only a matched open/close pair is stripped,
-  so an unmatched ``<tag>`` in operator prose stays in the residue instead of
-  swallowing the turn — and an envelope whose content is the operator's own
-  (:data:`OPERATOR_BEARING_TAGS`, e.g. a slash command's ``<command-args>``)
-  contributes that content to the residue rather than being dropped.
-
-- A ``"role": "assistant"`` turn is kept ONLY when its text contains at least
-  one of the established plan-marshall decision markers:
-  ``[STATUS]``, ``[ERROR]``, ``AskUserQuestion``, ``[DECISION]``,
-  ``[DISPATCH]``, ``[SKILL]``. An assistant turn is NEVER operator signal —
-  it is retained for context and counted separately.
-- OPERATOR GATE DECISIONS are recovered from the tool-result channel. On a
-  gated run the operator answers with a permission decision or an
-  ``AskUserQuestion`` selection, and those arrive as ``tool_result`` blocks —
-  not as ``user`` prose — so a reducer that reads only free-form turns
-  measures only the channel the operator did not use. Such results are
-  rendered into the reduced transcript under the ``operator-decision`` role
-  and counted in ``gate_decision_count``.
-- Every other turn (tool-output, assistant prose without a marker, build logs
-  echoed into the transcript) is dropped.
-
-The script never judges — it reduces facts. It provides the signal that lets
-the orchestrator decide Tier 1 (reduced transcript → LLM) vs Tier 2 (WARNING
-finding + ``reason: transcript_too_large``):
-
-- ``no_signal`` — true when the transcript carried NO OPERATOR-AUTHORED
-  SIGNAL of either kind: zero operator-authored ``user`` turns AND zero
-  operator gate decisions. It is deliberately NOT a count of survivors.
-  A survivor count answers "did the reduction keep anything?", which grows
-  with every class of injected instruction text the filter fails to
-  recognise — so the verdict strengthened as the signal it measured
-  degraded. Keying the flag on operator-authored counts breaks that coupling:
-  retaining more framework boilerplate can no longer move it.
-- ``over_budget`` — true when the reduced text still exceeds the read budget
-  (``--read-budget-bytes``, default 2 MiB). The orchestrator emits the same
-  WARNING finding + ``reason: transcript_too_large``.
-
-Either flag (``no_signal`` OR ``over_budget``) is the Tier-2 trigger; when both
-are false the reduced transcript is the Tier-1 input to the LLM prompt.
-
-The returned TOON also carries ``raw_turn_count`` and ``dropped_turn_count`` so
-the caller can see how much the reduction removed, plus the two operator-signal
-counters (``operator_turn_count``, ``gate_decision_count``) that distinguish
-"kept 200 turns, 3 operator-authored" from "kept 200 operator turns".
+- ``no_signal`` — the transcript carried no operator-authored signal of either
+  kind (``operator_turn_count == 0`` AND ``gate_decision_count == 0``).
+  Deliberately NOT a survivor count: a survivor count rises with every class
+  of injected instruction text the filter fails to recognise, so keying the
+  verdict on it made reported health strengthen as measured signal degraded.
+- ``over_budget`` — the reduced text still exceeds ``--read-budget-bytes``.
 
 ``reduced_turn_count`` counts the RAW turns kept, so
 ``reduced_turn_count + dropped_turn_count == raw_turn_count`` holds. Recovered
-gate decisions are additional entries in ``reduced_transcript`` and are counted
-by ``gate_decision_count`` alone — they were never raw turns, so folding them
-into the kept count would break that identity for every existing caller.
+gate decisions were never raw turns: they are extra entries in
+``reduced_transcript`` counted by ``gate_decision_count`` alone.
 
 Like sibling fact extractors (``script-failure-analysis.py``,
 ``analyze-logs.py``), this script reads the file from disk directly and does
@@ -94,11 +48,10 @@ NOT invoke ``manage-logging`` — archived plans do not participate in
 
 Transcript shape:
     Each JSONL line is one event. A conversational turn carries a ``message``
-    object with a ``role`` (``user`` / ``assistant``) and ``content``. Content
-    is either a plain string or a list of typed blocks; only ``text`` blocks
-    contribute to the reduced transcript and to the decision-marker scan,
-    while ``tool_use`` / ``tool_result`` blocks feed the gate-decision scan.
-    Non-turn events (summaries, meta lines) and malformed lines are skipped at
+    object with a ``role`` and ``content``. Content is either a plain string
+    or a list of typed blocks; ``text`` blocks feed the reduced transcript and
+    the decision-marker scan, while ``tool_use`` / ``tool_result`` blocks feed
+    the gate-decision scan. Non-turn events and malformed lines are skipped at
     the boundary.
 
 Usage:
@@ -110,15 +63,47 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from _chat_gate_decisions import (
+    OPERATOR_DECISION_ROLE,
+    OPERATOR_DECISION_TOOL,
+    OPERATOR_REFUSAL_MARKERS,
+    decision_tool_use_ids,
+    extract_gate_decisions,
+    flatten_tool_result,
+)
+from _chat_provenance import (
+    HARNESS_NOTICE_PREFIXES,
+    OPERATOR_BEARING_TAGS,
+    is_harness_notice,
+    is_operator_authored,
+    is_synthetic_skill_load,
+    strip_harness_envelopes,
+)
 from file_ops import output_toon, safe_main
 from input_validation import (
     parse_args_with_toon_errors,
 )
+
+# Re-exported so the reducer's own module surface still carries the provenance
+# vocabulary its callers and tests read.
+__all__ = [
+    'HARNESS_NOTICE_PREFIXES',
+    'OPERATOR_BEARING_TAGS',
+    'OPERATOR_DECISION_ROLE',
+    'OPERATOR_DECISION_TOOL',
+    'OPERATOR_REFUSAL_MARKERS',
+    'decision_tool_use_ids',
+    'extract_gate_decisions',
+    'flatten_tool_result',
+    'is_harness_notice',
+    'is_operator_authored',
+    'is_synthetic_skill_load',
+    'strip_harness_envelopes',
+]
 
 # The established plan-marshall decision-marker set. An assistant turn is
 # signal-bearing when its text contains at least one of these substrings.
@@ -134,69 +119,6 @@ DECISION_MARKERS: tuple[str, ...] = (
 # Default read budget for the reduced transcript: 2 MiB. When the reduced text
 # still exceeds this, the orchestrator falls back to the Tier-2 WARNING finding.
 DEFAULT_READ_BUDGET_BYTES = 2 * 1024 * 1024
-
-# Structural signature of a synthetic skill-load turn: the harness injects a
-# loaded skill's body as a ``user`` turn whose text opens with the base-directory
-# line and continues into the skill's markdown body.
-_SKILL_LOAD_MARKER = 'Base directory for this skill:'
-_MARKDOWN_HEADING_RE = re.compile(r'^#{1,6}\s+\S', re.MULTILINE)
-
-# One XML-ish tag. Envelopes are recognised GENERICALLY over the tag name —
-# the point being that a wrapper introduced after this file was written is
-# still recognised, which is exactly what an enumeration of known tag names
-# cannot do.
-#
-# ⚠ Deliberately matches ONE TAG, not a whole block. A single-regex
-# ``<tag>.*?</tag>`` pattern is quadratic on a transcript carrying unmatched
-# ``<`` markup: every unmatched open tag rescans to end-of-text before failing.
-# Measured at 0.5 s for 0.06 MB of unclosed tags, which extrapolates to minutes
-# at the 2 MiB read budget — a hang in a pre-pass whose whole purpose is to be
-# cheap. :func:`strip_harness_envelopes` pairs these tokens in a single linear
-# pass instead.
-_TAG_RE = re.compile(r'<(?P<close>/)?(?P<tag>[A-Za-z][-\w.]*)(?P<attrs>[^<>]*)>')
-
-# Verbatim harness re-entry notices. Unlike the envelopes above these carry no
-# tag to key on, so they are matched as literal prefixes of the residue.
-REENTRY_NOTICES: tuple[str, ...] = (
-    'This session is being continued from a previous conversation',
-    'Caveat: The messages below were generated by the user while running local commands',
-)
-
-# Harness envelopes whose CONTENT is operator-authored. The wrapper is the
-# harness's; the text inside is the operator's, so the inner text is kept as
-# residue instead of being stripped with the envelope. A slash command is the
-# case that matters here: the operator's whole instruction rides inside
-# ``<command-args>``, and dropping the envelope wholesale discards the primary
-# channel through which this project's operators drive a run.
-#
-# This is an allow-list, and it is safe in the direction an allow-list can be:
-# an operator-bearing envelope nobody listed reads as synthetic, never the
-# reverse.
-OPERATOR_BEARING_TAGS: frozenset[str] = frozenset({'command-args', 'command-name'})
-
-# The tool through which the harness asks the operator to decide. A
-# ``tool_result`` answering one of its calls carries an operator decision.
-OPERATOR_DECISION_TOOL = 'AskUserQuestion'
-
-# Verbatim harness notices reporting that the OPERATOR refused or interrupted a
-# tool call. These are gate decisions: the operator acted, through the
-# permission channel rather than through prose.
-#
-# ⚠ Matched only as a PREFIX of the whole result payload, never as a substring.
-# A refusal notice IS the entire payload; matching anywhere would count any
-# tool result that merely quotes the phrase — a `Read` of this very file — as
-# an operator decision, which is the synthetic-input-raises-the-counter defect
-# this module exists to remove.
-OPERATOR_REFUSAL_MARKERS: tuple[str, ...] = (
-    "The user doesn't want to proceed with this tool use",
-    "The user doesn't want to take this action right now",
-    '[Request interrupted by user',
-)
-
-# Role label under which recovered gate decisions are rendered. Distinct from
-# ``user`` so a reader can tell a free-form correction from a gate decision.
-OPERATOR_DECISION_ROLE = 'operator-decision'
-
 
 @dataclass
 class Reduction:
@@ -232,115 +154,6 @@ class Reduction:
         return bool(self.operator_turn_count or self.gate_decision_count)
 
 
-def is_synthetic_skill_load(text: str) -> bool:
-    """Return True when ``text`` is a skill body injected as a synthetic user turn.
-
-    Recognized structurally rather than by any single substring: the text must
-    carry the ``Base directory for this skill:`` line AND a markdown heading
-    somewhere after it — the shape of an injected SKILL.md body. Requiring both
-    keeps an operator who merely quotes the marker line from being dropped.
-    """
-    index = text.find(_SKILL_LOAD_MARKER)
-    if index == -1:
-        return False
-    return _MARKDOWN_HEADING_RE.search(text, index) is not None
-
-
-def strip_harness_envelopes(text: str) -> str:
-    """Return ``text`` with every harness-injected tag block removed.
-
-    The residue is what an operator wrote OUTSIDE the harness's envelopes. The
-    harness routinely attaches an envelope to a genuine operator turn, so a
-    turn is synthetic only when the residue is empty — not merely because an
-    envelope is present.
-
-    Three rules make the residue trustworthy:
-
-    * Only a MATCHED open/close pair is an envelope. Stray markup in operator
-      prose stays in the residue rather than swallowing the rest of the turn.
-    * Only the OUTERMOST pair is removed; a nested pair is already inside it.
-      An unmatched open tag earlier in the turn therefore cannot suppress the
-      stripping of a well-formed envelope that follows it — a fail-toward-
-      *operator* path, the direction that manufactures a false clean verdict.
-    * An envelope named in :data:`OPERATOR_BEARING_TAGS` contributes its INNER
-      text to the residue, because the wrapper is the harness's but the words
-      inside it are the operator's.
-
-    Runs in one linear pass: tags are tokenized once and paired through a
-    stack, with an index from tag name to its open positions so a close tag
-    pairs in amortized constant time. No pattern ever rescans the text.
-    """
-    stack: list[tuple[str, int, int]] = []
-    open_positions: dict[str, list[int]] = {}
-    pairs: list[tuple[int, int, str, int, int]] = []
-
-    def _drop_above(depth: int) -> None:
-        """Discard stack entries at or above ``depth``, keeping the index in step."""
-        for tag, _, _ in stack[depth:]:
-            positions = open_positions.get(tag)
-            if positions:
-                positions.pop()
-        del stack[depth:]
-
-    for token in _TAG_RE.finditer(text):
-        tag = token.group('tag')
-        if token.group('close'):
-            positions = open_positions.get(tag)
-            if not positions:
-                continue  # An unmatched close tag is ordinary text.
-            depth = positions[-1]
-            _, block_start, inner_start = stack[depth]
-            _drop_above(depth)
-            pairs.append((block_start, token.end(), tag, inner_start, token.start()))
-        elif token.group('attrs').endswith('/'):
-            pairs.append((token.start(), token.end(), tag, token.end(), token.end()))
-        else:
-            open_positions.setdefault(tag, []).append(len(stack))
-            stack.append((tag, token.start(), token.end()))
-
-    if not pairs:
-        return text
-
-    # Outermost first, so a nested pair is skipped by the cursor below.
-    pairs.sort(key=lambda pair: (pair[0], -pair[1]))
-    parts: list[str] = []
-    cursor = 0
-    for block_start, block_end, tag, inner_start, inner_end in pairs:
-        if block_start < cursor:
-            continue
-        parts.append(text[cursor:block_start])
-        if tag in OPERATOR_BEARING_TAGS:
-            parts.append(text[inner_start:inner_end])
-        cursor = block_end
-    parts.append(text[cursor:])
-    return ''.join(parts)
-
-
-def is_reentry_notice(text: str) -> bool:
-    """Return True when ``text`` opens with a verbatim harness re-entry notice."""
-    head = text.lstrip()
-    return any(head.startswith(notice) for notice in REENTRY_NOTICES)
-
-
-def is_operator_authored(text: str) -> bool:
-    """Return True when ``text`` carries operator-authored prose.
-
-    The positive predicate behind the whole reduction: rather than asking
-    "does this match a known synthetic shape?" — which admits every shape
-    nobody enumerated — it asks whether operator prose SURVIVES once the
-    harness's own injection markers are removed. A turn with no residue is
-    synthetic, whatever wrapper produced it.
-    """
-    if not text.strip():
-        return False
-    if is_synthetic_skill_load(text):
-        return False
-    residue = strip_harness_envelopes(text)
-    if not residue.strip():
-        return False
-    return not is_reentry_notice(residue)
-
-
 def extract_text(content: Any) -> str:
     """Return the plain-text payload of a turn's ``content``.
 
@@ -369,72 +182,6 @@ def extract_text(content: Any) -> str:
                 parts.append(text)
         return '\n'.join(parts)
     return ''
-
-
-def _iter_blocks(content: Any) -> list[dict[str, Any]]:
-    """Return ``content``'s dict blocks, or an empty list for any other shape."""
-    if not isinstance(content, list):
-        return []
-    return [block for block in content if isinstance(block, dict)]
-
-
-def decision_tool_use_ids(content: Any) -> set[str]:
-    """Return the ids of :data:`OPERATOR_DECISION_TOOL` calls in ``content``.
-
-    Correlating on the tool-use id is structural: it identifies the operator's
-    answer without matching on any phrasing the tool happens to emit.
-    """
-    ids: set[str] = set()
-    for block in _iter_blocks(content):
-        if block.get('type') != 'tool_use':
-            continue
-        if block.get('name') != OPERATOR_DECISION_TOOL:
-            continue
-        use_id = block.get('id')
-        if isinstance(use_id, str) and use_id:
-            ids.add(use_id)
-    return ids
-
-
-def flatten_tool_result(content: Any) -> str:
-    """Return a ``tool_result`` block's payload as plain text.
-
-    A result payload is a bare string or a list of typed blocks; anything else
-    yields the empty string.
-    """
-    if isinstance(content, str):
-        return content
-    parts: list[str] = []
-    for block in _iter_blocks(content):
-        text = block.get('text')
-        if isinstance(text, str):
-            parts.append(text)
-    return '\n'.join(parts)
-
-
-def extract_gate_decisions(content: Any, decision_ids: set[str]) -> list[str]:
-    """Return the operator gate decisions carried by a ``user`` turn's blocks.
-
-    A ``tool_result`` is an operator decision when it answers an
-    :data:`OPERATOR_DECISION_TOOL` call (matched by tool-use id) or when it
-    carries one of the verbatim :data:`OPERATOR_REFUSAL_MARKERS`. Both tests
-    are narrow on purpose: a counter of operator signal must fail toward NOT
-    counting, so ordinary tool output is never mistaken for a decision.
-    """
-    decisions: list[str] = []
-    for block in _iter_blocks(content):
-        if block.get('type') != 'tool_result':
-            continue
-        text = flatten_tool_result(block.get('content'))
-        if not text.strip():
-            continue
-        use_id = block.get('tool_use_id')
-        answered_prompt = isinstance(use_id, str) and use_id in decision_ids
-        head = text.lstrip()
-        refused = any(head.startswith(marker) for marker in OPERATOR_REFUSAL_MARKERS)
-        if answered_prompt or refused:
-            decisions.append(text)
-    return decisions
 
 
 def is_signal_bearing(role: str, text: str) -> bool:
