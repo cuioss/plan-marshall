@@ -722,6 +722,7 @@ class TestThresholdsCentralization:
             'long_session_messages',
             'slow_call_seconds',
             'high_frequency_calls',
+            'cost_rollup_top_n',
             'scope_file_bands',
             'tasks_per_deliverable_low',
             'tasks_per_deliverable_high',
@@ -2003,8 +2004,9 @@ class TestGlobalLogAnalysisFixtureLeak:
 
 class TestEmitGlobalLogBlock:
     """``emit_global_log_block`` renders the result dict to a TOON block: every
-    flagged line is a genuine signal, ad-hoc attribution fills empty windows, and
-    the summary lines carry the level buckets and per-band counts."""
+    flagged line is a genuine signal and every cost-roll-up ranking row is
+    informational, ad-hoc attribution fills empty windows, and the summary lines
+    carry the level buckets and per-band counts."""
 
     def test_block_carries_summary_lines_and_genuine_count(self, tmp_path: Path):
         # one genuine ERROR failure (carries failure markers) + one slow call
@@ -8782,7 +8784,7 @@ class TestGlobalLogCostRollup:
         assert result['total_script_seconds'] == pytest.approx(40.0)
         assert result['cost_rollup'][0]['share_pct'] == pytest.approx(75.0)
         assert result['cost_rollup'][1]['share_pct'] == pytest.approx(25.0)
-        assert result['distinct_call_keys'] == 2
+        assert result['distinct_timed_call_keys'] == 2
 
     def test_no_script_lines_yields_an_empty_rollup(self, tmp_path: Path):
         _write_log(
@@ -8794,7 +8796,7 @@ class TestGlobalLogCostRollup:
         result = audit.cross_global_log_analysis(tmp_path)
 
         assert result['cost_rollup'] == []
-        assert result['distinct_call_keys'] == 0
+        assert result['distinct_timed_call_keys'] == 0
 
     def test_rollup_rows_and_denominator_reach_the_emitted_block(self, tmp_path: Path):
         lines = [
@@ -8806,11 +8808,55 @@ class TestGlobalLogCostRollup:
         output = audit.run_checks([], ['global-log-analysis'], tmp_path)
 
         assert 'cost_rollup_count: 1' in output
-        assert 'distinct_call_keys: 1' in output
+        assert 'distinct_timed_call_keys: 1' in output
         # The signal row names the share, so the read-out cannot be quoted
         # without its denominator.
         assert 'dominant-cost-caller' in output
         assert '100x 20.0s 100.0% pm:hot:hot run' in output
+
+    def test_calls_counts_only_timed_calls_not_every_notation_line(self, tmp_path: Path):
+        # `call_counts` counts EVERY notation-headed line; only some carry a
+        # trailing duration. Pairing an all-lines count with timed-only seconds
+        # would publish "2x 5.0s" for a key where one call contributed all 5.0s
+        # and the other contributed nothing measured — an absent duration read
+        # as a zero, inside the roll-up's own denominator.
+        _write_log(
+            tmp_path,
+            'script-execution-2026-06-01.log',
+            [
+                _line('2026-06-01T10:00:00Z', 'INFO', 'pm:x:x run (5.0s)'),
+                # Same key, no trailing duration: a failure header whose timing
+                # lives in a continuation block.
+                _line('2026-06-01T10:00:01Z', 'ERROR', 'pm:x:x run -> status: error exit_code=1'),
+            ],
+        )
+
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        row = result['cost_rollup'][0]
+        assert row['key'] == 'pm:x:x run'
+        assert row['calls'] == 1
+        assert row['cumulative_seconds'] == pytest.approx(5.0)
+
+    def test_untimed_keys_are_named_not_folded_into_the_timed_population(self, tmp_path: Path):
+        # A key that never carried a duration cannot be ranked by time owned. It
+        # is excluded from `distinct_timed_call_keys` and counted separately, so
+        # the roll-up's truncation denominator is not silently inflated by keys
+        # the roll-up was never eligible to carry.
+        _write_log(
+            tmp_path,
+            'script-execution-2026-06-01.log',
+            [
+                _line('2026-06-01T10:00:00Z', 'INFO', 'pm:timed:timed run (1.0s)'),
+                _line('2026-06-01T10:00:01Z', 'ERROR', 'pm:untimed:untimed run -> status: error'),
+            ],
+        )
+
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        assert result['distinct_timed_call_keys'] == 1
+        assert result['untimed_call_keys'] == 1
+        assert [r['key'] for r in result['cost_rollup']] == ['pm:timed:timed run']
 
     def test_rollup_rows_are_informational_not_genuine_signals(self, tmp_path: Path):
         # Some key is ALWAYS the corpus's largest cost owner, so a roll-up row is

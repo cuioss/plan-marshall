@@ -126,8 +126,11 @@ no magic number is re-declared in the check body:
 
 The emitted block echoes the active `slow_ceiling_seconds`,
 `high_frequency_ceiling` and `cost_rollup_top_n` so the read-out is
-self-describing. `distinct_call_keys` is published beside `cost_rollup_count` so
-a truncated roll-up tail is legible rather than silent.
+self-describing. `distinct_timed_call_keys` — every key that carried a duration
+— is published beside `cost_rollup_count` so a truncated roll-up tail is legible
+rather than silent. It is deliberately **not** the `high-frequency-caller`
+denominator: that view is derived from *all* notation-headed lines, timed or not,
+and `untimed_call_keys` names the difference.
 
 ## Emitted columns
 
@@ -142,7 +145,8 @@ slow_call_count: SC
 impossible_count: IC
 high_frequency_count: HC
 cost_rollup_count: CC
-distinct_call_keys: DK
+distinct_timed_call_keys: DK
+untimed_call_keys: UK
 fixture_leak_count: FL
 slow_ceiling_seconds: 30.0
 high_frequency_ceiling: 50
@@ -153,14 +157,23 @@ rows[G]{kind,detail,attributed_plans,severity}
 
 | Column | Meaning |
 |--------|---------|
-| `kind` | The signal class: `error:{LEVEL}`, `slow-call`, `impossible-duration`, `high-frequency-caller`, or `fixture-leak`. |
-| `detail` | The signal payload — truncated line body for errors/leaks, `{seconds}s {notation subcommand}` for slow/impossible calls, `{count}x {total}s {key}` for high-frequency callers. |
-| `attributed_plans` | `;`-joined plan ids whose execution window contains the line's timestamp, or `ad-hoc` when it falls outside every window (empty for high-frequency rows, which are corpus-wide aggregates). |
-| `severity` | Uniform D1 severity column. Every surfaced row is `genuine` by construction — a row only appears when its flag fired. |
+| `kind` | The signal class: `error:{LEVEL}`, `slow-call`, `impossible-duration`, `high-frequency-caller`, `dominant-cost-caller`, or `fixture-leak`. |
+| `detail` | The signal payload — truncated line body for errors/leaks, `{seconds}s {notation subcommand}` for slow/impossible calls, `{count}x {total}s {key}` for high-frequency callers, `{calls}x {seconds}s {share}% {key}` for dominant-cost-caller rows. |
+| `attributed_plans` | `;`-joined plan ids whose execution window contains the line's timestamp, or `ad-hoc` when it falls outside every window (empty for high-frequency **and** dominant-cost-caller rows, which are corpus-wide aggregates rather than single lines). |
+| `severity` | Uniform severity column. Every surfaced row is `genuine` — a row only appears when its flag fired — **except `dominant-cost-caller`, which is always `informational`** (see below). |
 
-`genuine_signal_count` equals the row count: this check only emits flagged
-(actionable) rows. The summary counters above the table carry the informational
-context (corpus size, level buckets) so the table stays signal-only.
+⛔ **`genuine_signal_count` is NOT the row count.** It counts only the `genuine`
+rows, and the table additionally carries up to `cost_rollup_top_n`
+`dominant-cost-caller` rows stamped `informational`. A reader comparing the two
+numbers is reading the intended signal: the difference is the size of the cost
+roll-up, not a discrepancy.
+
+The reason those rows are informational is structural, not a severity judgement:
+**some key is always the corpus's largest cost owner**, so a roll-up row fires
+for every non-empty corpus. Counting them as genuine would report a "signal" on
+every run and train the reader to dismiss the count — which is exactly when a
+real signal goes unexamined. The summary counters above the table carry the rest
+of the informational context (corpus size, level buckets).
 
 ## How the orchestrator interprets the rows
 
@@ -189,13 +202,34 @@ context (corpus size, level buckets) so the table stays signal-only.
   Usually a workflow-shape signal (a polling loop, a redundant re-resolve), not a
   defect on its own; pair it with the slow-call read-out before drawing a
   conclusion.
+- **`dominant-cost-caller`** — the cumulative cost roll-up: the keys that own
+  the most recorded wall-clock, ranked by seconds owned with each row's share of
+  `total_script_seconds`. **Read it against `slow-call` and
+  `high-frequency-caller`, because it answers a question neither can.** A key
+  ranked at the top here while `slow_call_count` is `0` is a *dominant-but-fast*
+  caller — cost accumulated below the per-call ceiling, invisible to it by
+  construction rather than by oversight. A key here that does *not* appear under
+  `high-frequency-caller` owns its share through few expensive calls rather than
+  many cheap ones, and the two remedies differ (make the call cheaper vs. make
+  fewer calls). A key the slow ceiling flags that ranks *low* here is a rare
+  outlier, not a cost centre.
+  ⛔ **Currency: these are WALL-CLOCK seconds.** The corpus carries no per-call
+  token measurement, so `share_pct` does **not** restate as a share of billed
+  cost — a ranking here is an operator-**latency** finding. Never quote it as a
+  cost or token share.
+  These rows are `informational` and are **exempt from the per-row adjudication
+  rule below** — a ranking has no verdict to state. Adjudicate what the ranking
+  *reveals* (a dominant-but-fast caller worth a lesson), not the ranking itself.
 - **`level_counts` / `total_*`** — informational summary only; a healthy corpus
   is dominated by `INFO`. A non-trivial `ERROR` / `WARNING` bucket count that the
   rows do not already enumerate is itself a prompt to widen the scan.
 
-Per the SKILL.md Step-3 contract, EVERY emitted row is adjudicated with a stated
-verdict and cited evidence; a row may be dismissed as informational/expected
-ONLY with a cited reason.
+Per the SKILL.md Step-3 contract, every emitted **`genuine`** row is adjudicated
+with a stated verdict and cited evidence; such a row may be dismissed as
+informational/expected ONLY with a cited reason. Rows the script already stamps
+`informational` — the `dominant-cost-caller` roll-up — carry no per-row verdict
+obligation, because they are a ranking rather than a flag; the obligation is to
+read them, and to raise what they reveal.
 
 ## Critical rules
 
@@ -203,7 +237,7 @@ ONLY with a cited reason.
   aggregation keys, and every threshold. Do not re-grep the logs or re-derive a
   signal in chat.
 - Thresholds live in the `THRESHOLDS` table (`slow_call_seconds`,
-  `high_frequency_calls`); the flat impossible-duration ceiling, the build/ci-wait
+  `high_frequency_calls`, `cost_rollup_top_n`); the flat impossible-duration ceiling, the build/ci-wait
   classifier (`_BUILD_CI_WAIT_KEY_RE`), the ratcheted-ceiling reader
   (`_ratcheted_ci_wait_ceiling`), and the fixture-leak signatures are module-level
   constants/helpers. If a threshold or the call-class boundary changes, edit

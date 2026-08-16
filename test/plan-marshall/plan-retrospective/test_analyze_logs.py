@@ -2101,14 +2101,53 @@ class TestContextPositionCost:
         assert result['measured_rows'] == 1
         assert result['unmeasured_rows'] == 1
 
-    def test_zero_tool_uses_cannot_yield_a_rate(self):
-        # tool_uses == 0 makes a per-tool-use rate undefined, not zero.
+    def test_zero_tool_uses_is_undefined_not_unmeasured(self):
+        # The row WAS measured; the ratio simply cannot be formed. Reporting it
+        # as `unmeasured` would claim a recording gap that does not exist.
         per_phase = {'6-finalize': self._phase([{'tool_uses': 0, 'cache_read_input_tokens': 900}])}
 
         result = _analyze_logs.summarize_context_position_cost(per_phase)
 
-        assert result['by_phase'][0]['cache_read_per_tool_use'] == 'unmeasured'
+        assert result['by_phase'][0]['cache_read_per_tool_use'] == 'undefined'
         assert result['measured_rows'] == 0
+        assert result['no_tool_use_rows'] == 1
+        assert result['unmeasured_rows'] == 0
+
+    def test_absent_key_and_zero_tool_uses_are_counted_apart(self):
+        # The two exclusion causes need different remedies, so they are never
+        # summed into one bucket. The three counts reconcile against total_rows.
+        per_phase = {
+            '5-execute': self._phase([
+                {'tool_uses': 4, 'cache_read_input_tokens': 4_000},
+                {'tool_uses': 9},                                   # writer recorded nothing
+                {'tool_uses': 0, 'cache_read_input_tokens': 700},   # recorded, ratio undefined
+            ]),
+        }
+
+        result = _analyze_logs.summarize_context_position_cost(per_phase)
+
+        assert result['total_rows'] == 3
+        assert result['measured_rows'] == 1
+        assert result['unmeasured_rows'] == 1
+        assert result['no_tool_use_rows'] == 1
+        assert (
+            result['measured_rows'] + result['unmeasured_rows'] + result['no_tool_use_rows']
+            == result['total_rows']
+        )
+
+    def test_zero_denominator_multiple_is_undefined_not_unmeasured(self):
+        # Two phases DO carry rates, so nothing is missing — but the lowest is
+        # 0.0 and the division cannot be performed.
+        per_phase = {
+            '4-plan': self._phase([{'tool_uses': 5, 'cache_read_input_tokens': 0}]),
+            '6-finalize': self._phase([{'tool_uses': 5, 'cache_read_input_tokens': 5_000}]),
+        }
+
+        result = _analyze_logs.summarize_context_position_cost(per_phase)
+
+        assert result['by_phase'][0]['cache_read_per_tool_use'] == 0.0
+        assert result['position_multiple'] == 'undefined'
+        assert result['position_multiple_basis'] == 'undefined'
 
     def test_single_measured_phase_cannot_yield_a_multiple(self):
         # A multiple needs two phases to compare; one is not a position signal.

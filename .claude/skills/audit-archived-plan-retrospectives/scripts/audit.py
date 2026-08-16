@@ -34,7 +34,9 @@ suite of deterministic checks:
   corpus (script-execution / work / decision logs), buckets by level, aggregates
   per notation+subcommand, and flags error/warning lines, slow calls,
   high-frequency callers, impossible/hang durations, and test-fixture leaks —
-  each correlated to the archived-plan execution window it falls inside.
+  each correlated to the archived-plan execution window it falls inside. Also
+  ranks callers by cumulative wall-clock owned (`cost_rollup`), the cost view
+  the per-call and per-count instruments above cannot supply.
 - `token-economics` (cross-plan) — joins each plan's per-phase `metrics.toon`
   tokens to `references.json` (scope_estimate, footprint) and
   `status.json::metadata` (change_type), computes per-plan token shares and
@@ -2409,15 +2411,17 @@ def cross_token_trend(all_inputs: list[PlanInputs]) -> dict[str, Any]:
 # Parses the global `.plan/local/logs/` corpus — `script-execution-*.log`,
 # `work-*.log`, and `decision-*.log` — and surfaces operational signals the
 # per-plan checks cannot see because they read only a single plan's artifacts:
-# error/warning lines, slow script calls, high-frequency callers, impossible or
-# hang-shaped durations, and test-fixture leaks (synthetic bundle/plan ids that
+# error/warning lines, slow script calls, high-frequency callers, dominant cost
+# owners (the cumulative roll-up), impossible or hang-shaped durations, and
+# test-fixture leaks (synthetic bundle/plan ids that
 # escaped a test run into the shared corpus). Every flagged line is correlated to
 # the archived-plan execution window(s) it falls inside (per-phase start/end times
 # from each plan's `work/metrics.toon`) so a signal can be attributed to the plan
 # that produced it, or marked ad-hoc when it falls outside every window.
 #
-# Thresholds (`slow_call_seconds`, `high_frequency_calls`) come from the
-# centralized `THRESHOLDS` table; no magic number is re-declared here.
+# Thresholds (`slow_call_seconds`, `high_frequency_calls`, `cost_rollup_top_n`)
+# come from the centralized `THRESHOLDS` table; no magic number is re-declared
+# here.
 
 # `[2026-05-31T22:00:01Z] [INFO] [3befe7] <rest>` — shared line grammar across
 # script-execution / work / decision logs. The trailing `Z` and the bracketed
@@ -2635,6 +2639,13 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
     (`>= high_frequency_calls`), and test-fixture leaks. Each flagged line is
     correlated to the archived-plan execution window(s) it falls within.
 
+    Also returns `cost_rollup` / `cost_rollup_count` / `distinct_timed_call_keys`
+    / `untimed_call_keys` — the CUMULATIVE cost view. The high-frequency flag
+    above is a FREQUENCY instrument: it gates on call count and orders by call
+    count, so it cannot answer "what owns the time?". The roll-up is ungated and
+    ranked by seconds owned. Both are reported; neither substitutes for the
+    other, and neither substitutes for the per-call `slow_call_seconds` ceiling.
+
     Returns a result dict consumed by `emit_global_log_block`. Best-effort: a
     missing logs directory yields an empty (all-zero) result rather than raising.
     """
@@ -2655,6 +2666,13 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
     call_counts: dict[str, int] = defaultdict(int)
     call_seconds: dict[str, float] = defaultdict(float)
     call_max_seconds: dict[str, float] = defaultdict(float)
+    # Calls that actually carried a duration. DISTINCT from `call_counts`, which
+    # counts every notation-headed line whether or not it was timed (a failure
+    # line with a continuation block carries no trailing `(N.Ns)`). The cost
+    # roll-up MUST pair its call count with its seconds over ONE population:
+    # dividing all-lines-count into timed-only seconds would report e.g.
+    # "2x 5.0s" where only one of the two calls contributed any of that 5.0s.
+    timed_call_counts: dict[str, int] = defaultdict(int)
     error_lines: list[dict[str, Any]] = []
     slow_calls: list[dict[str, Any]] = []
     impossible_calls: list[dict[str, Any]] = []
@@ -2697,6 +2715,7 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
                         seconds = float(dur_m.group(1))
                         call_seconds[key] += seconds
                         call_max_seconds[key] = max(call_max_seconds[key], seconds)
+                        timed_call_counts[key] += 1
                         total_seconds += seconds
                         # Deterministic per-plan-op calls keep the flat 600 s
                         # ceiling; build / ci-wait class calls are bounded by the
@@ -2795,7 +2814,9 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
         cost_rollup.append(
             {
                 "key": key,
-                "calls": call_counts[key],
+                # TIMED calls only — the same population `cumulative_seconds`
+                # sums over. See `timed_call_counts`.
+                "calls": timed_call_counts[key],
                 "cumulative_seconds": key_seconds,
                 "share_pct": (
                     round(key_seconds / rollup_total * 100.0, 1) if rollup_total > 0 else 0.0
@@ -2821,10 +2842,16 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
         "impossible_calls": impossible_calls,
         "high_frequency_count": len(high_frequency),
         "high_frequency": high_frequency,
-        # `distinct_call_keys` spans the WHOLE corpus while `cost_rollup` is
-        # capped at `cost_rollup_top_n`; publishing both keeps the truncated
-        # tail derivable rather than silent.
-        "distinct_call_keys": len(call_seconds),
+        # `distinct_timed_call_keys` spans every TIMED key in the corpus while
+        # `cost_rollup` is capped at `cost_rollup_top_n`; publishing both keeps
+        # the truncated tail derivable rather than silent. It is deliberately
+        # NOT `len(call_counts)`: that set includes untimed keys the roll-up
+        # cannot rank, so comparing it against `cost_rollup_count` would imply a
+        # tail the roll-up was never eligible to carry. It is therefore also not
+        # the denominator for `high_frequency`, which is derived from
+        # `call_counts`.
+        "distinct_timed_call_keys": len(call_seconds),
+        "untimed_call_keys": len(set(call_counts) - set(call_seconds)),
         "cost_rollup_count": len(cost_rollup),
         "cost_rollup": cost_rollup,
         "fixture_leak_count": len(fixture_leaks),
@@ -5425,12 +5452,20 @@ def emit_global_log_block(result: dict[str, Any]) -> str:
 
     Every flagged line — error/non-INFO, slow call, impossible duration,
     high-frequency caller, or fixture leak — is a genuine signal, so it is
-    stamped `severity: genuine` via the shared `_severity_summary` helper (D1
-    infra). The block carries summary counts (level bucket totals, corpus size)
-    followed by one `rows[N]{kind,detail,attributed_plans,severity}` table over
-    the consolidated signals. Informational context (level_counts,
-    total_log_lines) rides the summary lines, not the table, so the
-    `genuine_signal_count` reflects only actionable rows.
+    stamped `severity: genuine` via the shared `_severity_summary` helper.
+
+    ONE row kind is the exception: `dominant-cost-caller`, the cumulative cost
+    roll-up, is stamped `informational`. Those rows are a RANKING rather than a
+    flag — some key is always the corpus's largest cost owner — so counting them
+    would report a "signal" for every non-empty corpus. `genuine_signal_count`
+    is therefore NO LONGER equal to the row count: the table can carry up to
+    `cost_rollup_top_n` more rows than the count.
+
+    The block carries summary counts (level bucket totals, corpus size) followed
+    by one `rows[N]{kind,detail,attributed_plans,severity}` table over the
+    consolidated signals. Informational context (level_counts, total_log_lines)
+    rides the summary lines, not the table, so the `genuine_signal_count`
+    reflects only actionable rows.
     """
     signals: list[dict[str, Any]] = []
 
@@ -5517,7 +5552,8 @@ def emit_global_log_block(result: dict[str, Any]) -> str:
         f"impossible_count: {result['impossible_count']}",
         f"high_frequency_count: {result['high_frequency_count']}",
         f"cost_rollup_count: {result['cost_rollup_count']}",
-        f"distinct_call_keys: {result['distinct_call_keys']}",
+        f"distinct_timed_call_keys: {result['distinct_timed_call_keys']}",
+        f"untimed_call_keys: {result['untimed_call_keys']}",
         f"fixture_leak_count: {result['fixture_leak_count']}",
         f"slow_ceiling_seconds: {result['slow_ceiling']}",
         f"high_frequency_ceiling: {result['high_frequency_ceiling']}",
