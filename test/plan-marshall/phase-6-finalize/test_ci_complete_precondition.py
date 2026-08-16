@@ -1456,8 +1456,11 @@ def test_fixture_green_success_resolves_to_success(plan_context):
     """An all-green fixture classifies as ``wait_succeeded`` /
     ``ci_final_status: success``.
 
-    This is the headline mis-classification risk: a failure here means the
-    parse-and-extract pipeline is broken.
+    This is the headline mis-classification risk: a green CI run read as a
+    failure blocks finalize on every passing PR, so the precondition resolver
+    reports ``ci_failure`` for a tree that is in fact ready to merge. A failure
+    here means the parse-and-extract pipeline is broken end to end, not that one
+    field drifted.
     """
     fixture = _FIXTURE_DIR / 'green-success.toon'
     plan_id = 'ci-fixture-green-success'
@@ -1465,8 +1468,8 @@ def test_fixture_green_success_resolves_to_success(plan_context):
     assert result['status'] == 'wait_succeeded', (
         f"green-success.toon expected wait_succeeded, got "
         f"{result['status']} (ci_final_status="
-        f"{result.get('ci_final_status')!r}). This is the headline "
-        f"regression from PR #454."
+        f"{result.get('ci_final_status')!r}). A green run read as a failure "
+        f"blocks finalize on every passing PR."
     )
     assert result['ci_final_status'] == 'success'
 
@@ -1730,8 +1733,8 @@ def test_parse_toon_inline_table_handles_colon_in_first_column():
     rows = parsed.get('rows') or []
     assert len(rows) == 3, (
         f'Parser truncated colon-bearing tab-separated rows: got '
-        f'{len(rows)}/3 rows. Heuristic regression in '
-        '`_parse_uniform_array` — see TASK-004 fix.'
+        f'{len(rows)}/3 rows. The `_parse_uniform_array` key/value heuristic '
+        'must not treat a tab-separated row as a new key/value pair.'
     )
     assert [r['name'] for r in rows] == [
         'lint:strict',

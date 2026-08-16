@@ -136,8 +136,11 @@ def test_second_fetch_dedupes_all_bot_kinds(plan_context, monkeypatch):
     """A re-fetch of an already-staged PR stores zero new findings for every bot kind.
 
     Thread-bearing (coderabbit/pr-agent) AND thread_id-less (sourcery/human)
-    comments are all deduped on ``(bot_kind, comment_id)``, and the deduped
-    comments — legitimate non-stores — do not trip the producer-mismatch Q-Gate.
+    comments are all deduped on ``(bot_kind, comment_id)``. Without that, every
+    barrier re-fetch re-stores the same comments as fresh ``pending`` findings,
+    so the queue accretes duplicates faster than triage can drain it and the
+    completeness gate never closes. The deduped comments are legitimate
+    non-stores, so they must also not trip the producer-mismatch Q-Gate.
     """
     plan_id = 'gh-pr-dedup-refetch'
     _patch_provider(monkeypatch, _COMMENTS)
@@ -206,9 +209,12 @@ def test_a_deduped_comment_is_still_credited_as_participating(plan_context, monk
 def test_same_comment_id_distinct_bots_not_collided(plan_context, monkeypatch):
     """Two bots reusing the same numeric comment_id stay distinct across fetches.
 
-    Keying on ``(bot_kind, comment_id)`` rather than ``comment_id`` alone keeps
-    them apart, so the second bot's identically-numbered comment is stored on the
-    follow-up fetch instead of being skipped as a duplicate.
+    Comment ids are provider-assigned per comment surface, so they are not
+    unique across bots — two reviewers can legitimately arrive carrying the same
+    numeric id. A ``comment_id``-only dedup key therefore silently swallows the
+    second bot's comment as a duplicate: a genuine review finding that never
+    reaches triage, and never reaches the pre-merge barrier that reads the
+    store. Keying on ``(bot_kind, comment_id)`` keeps them apart.
     """
     plan_id = 'gh-pr-dedup-collision'
     coderabbit_999 = {

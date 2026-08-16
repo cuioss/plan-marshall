@@ -516,8 +516,8 @@ def test_barrier_checks_the_authorization_verb():
             f'The barrier subsection does not state the D4 rule containing {marker!r}: '
             'the ONLY admissible evidence is a check verdict at the CURRENT HEAD, and a '
             'decision-log entry is NEVER admissible authorization evidence. Without the '
-            'rule stated, a later reader can reintroduce log-recall as evidence — which '
-            'is how plan-marshall#1067 merged five unreviewed commits.'
+            'rule stated, a later reader can reintroduce log-recall as evidence, '
+            'which admits unreviewed commits behind a stale authorization.'
         )
 
 
