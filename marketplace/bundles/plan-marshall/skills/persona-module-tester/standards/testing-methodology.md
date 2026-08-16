@@ -148,6 +148,14 @@ A test docstring does **not** narrate the incident that produced the test, and d
 * a lesson id
 * a superseded behaviour ("used to", "no longer", "the old behaviour", "previously")
 
+**Citing a record is the prohibition; naming a value is not.** A docstring often has to state the
+exact identifier a test asserts on — the id a generator returns, the fixture file it seeds, the task
+file a command creates — and that *is* the contract, so removing it would empty the docstring of the
+thing it exists to say. The two are told apart by formatting rather than by shape: **write a value you
+name in an inline literal** (``` ``TASK-001`` ```), and leave a citation bare so it reads as one. The
+`test-docstring-historical-prose` rule enforces exactly that split, exempting a match inside a
+backtick span or a quoted string.
+
 ### Where this rule comes from
 
 This is not a new standard. It is `CLAUDE.md` § Documentation Standards — "No version history", "No

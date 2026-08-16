@@ -43,8 +43,12 @@ era = _load_era_module()
 # Fixtures — synthetic audit.py + test mirror under a tmp worktree root
 # =============================================================================
 
-_AUDIT_REL = '.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py'
-_TEST_REL = 'test/plan-marshall/audit-archived-plan-retrospectives/test_audit.py'
+# Bound to the production constants, never re-declared. A local copy makes every
+# test here pass against a synthetic worktree it seeds itself, so a repoint of
+# either path in the step would leave this suite green while the real step failed
+# its existence check on the first finalize run.
+_AUDIT_REL = era.AUDIT_REL
+_TEST_REL = era.TEST_REL
 
 # A realistic CHECK_ERA snippet: the PR-PENDING sentinel on one check, a concrete
 # #NNN on another, and a PR-PENDING mention in a COMMENT (must NOT be rewritten).

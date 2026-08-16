@@ -397,6 +397,57 @@ def test_bare_id_beside_a_backticked_one_is_still_flagged(tmp_path):
     assert findings[0]['details']['matched'] == 'lesson 2026-07-09-04-001'
 
 
+def test_possessive_apostrophe_does_not_open_a_literal_span(tmp_path):
+    """An apostrophe in ordinary prose must not exempt the rest of the docstring.
+
+    A prose segment reaches the matcher as ONE multi-line string, so a quote
+    alternative that crossed newlines would let a possessive on one line and a
+    contraction further down open a single span swallowing every citation
+    between them. That is a false negative, which is the direction that matters:
+    the rule would report clean over prose it never actually examined.
+    """
+    _write(
+        tmp_path,
+        'test_possessive.py',
+        '''
+        def test_x():
+            """The resolver's exact-match guard runs first.
+
+            It doesn't fall through to the prefix scan, so the cache tree stays
+            addressable. Regression for PR #515.
+            """
+            assert True
+        ''',
+    )
+
+    findings = analyze_test_docstring_prose(tmp_path)
+
+    assert [f['details']['kind'] for f in findings] == ['pr_reference']
+
+
+def test_double_backticked_lesson_citation_is_still_flagged(tmp_path):
+    """``lesson ``<id>`` `` is a citation: the prose word sits OUTSIDE the span.
+
+    The house convention is RST double backticks, so a narrative-citation guard
+    that understood only the single-backtick form would hand every such citation
+    to the inline-literal exemption and report clean.
+    """
+    _write(
+        tmp_path,
+        'test_double.py',
+        '''
+        def test_x():
+            """Lesson ``2026-05-02-01-001`` documents the originating incident."""
+            assert True
+        ''',
+    )
+
+    findings = analyze_test_docstring_prose(tmp_path)
+
+    assert len(findings) == 1
+    assert findings[0]['details']['kind'] == 'lesson_id_backtick'
+
+
 def test_finding_reports_the_citation_line_not_the_declaration(tmp_path):
     """The reported line is the citation's own line inside a multi-line docstring.
 

@@ -7,10 +7,7 @@ is still flagged.
 """
 
 
-from _audit_fixtures import _write_log, audit
-
-#: The globbed ``script-execution-*.log`` name the probe fixtures write to.
-_PROBE_LOG_NAME = "script-execution-2026-06-29.log"
+from _audit_fixtures import PROBE_LOG_NAME, _write_log, audit
 
 # A completed read-only ``resolve`` probe stamped at ERROR with a trailing
 # duration and NO failure marker — the benign non-zero-exit "not found" answer.
@@ -29,7 +26,7 @@ _RESOLVE_LINE_WITH_MARKER = (
 
 def test_resolve_probe_excluded_from_error_lines(tmp_path):
     # Arrange: a marker-free `resolve` call stamped at ERROR.
-    _write_log(tmp_path, _PROBE_LOG_NAME, [_BENIGN_RESOLVE_LINE])
+    _write_log(tmp_path, PROBE_LOG_NAME, [_BENIGN_RESOLVE_LINE])
 
     # Act
     result = audit.cross_global_log_analysis(tmp_path)
@@ -43,7 +40,7 @@ def test_resolve_probe_excluded_from_error_lines(tmp_path):
 
 def test_resolve_with_failure_marker_included_in_error_lines(tmp_path):
     # Arrange: the same `resolve` call carrying a `status: error` failure marker.
-    _write_log(tmp_path, _PROBE_LOG_NAME, [_RESOLVE_LINE_WITH_MARKER])
+    _write_log(tmp_path, PROBE_LOG_NAME, [_RESOLVE_LINE_WITH_MARKER])
 
     # Act
     result = audit.cross_global_log_analysis(tmp_path)

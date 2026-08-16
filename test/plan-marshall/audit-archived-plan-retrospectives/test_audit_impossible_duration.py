@@ -5,10 +5,7 @@ the flat ceiling is flagged, while a ci-wait call is measured against its own
 ratcheted ceiling and degrades to the flat one when no config supplies it.
 """
 
-from _audit_fixtures import _write_log, audit
-
-#: The globbed ``script-execution-*.log`` name these fixtures write to.
-_PROBE_LOG_NAME = "script-execution-2026-06-29.log"
+from _audit_fixtures import PROBE_LOG_NAME, _write_log, audit
 
 
 def _log_line(notation_sub: str, seconds: float, level: str = "INFO") -> str:
@@ -23,7 +20,7 @@ def test_impossible_duration_flags_deterministic_call_over_600(tmp_path):
     # ceiling (no build / ci-wait class match) and NO run-configuration.
     _write_log(
         tmp_path,
-        _PROBE_LOG_NAME,
+        PROBE_LOG_NAME,
         [_log_line("plan-marshall:manage-tasks:manage-tasks read --task-number 3", 700.0)],
     )
 
@@ -41,7 +38,7 @@ def test_impossible_duration_spares_ratcheted_ci_wait_call(tmp_path):
     # ratcheted build-queue ceiling (1200s) covers it — #849's adaptive ratchet.
     _write_log(
         tmp_path,
-        _PROBE_LOG_NAME,
+        PROBE_LOG_NAME,
         [_log_line("plan-marshall:build-pyproject:pyproject_build run --command-args verify", 700.0)],
     )
     config_dir = tmp_path / ".plan"
@@ -65,7 +62,7 @@ def test_impossible_duration_flags_ci_wait_over_ratcheted_ceiling(tmp_path):
     # (1300 > 1200) — a real hang past the adaptive budget, still flagged.
     _write_log(
         tmp_path,
-        _PROBE_LOG_NAME,
+        PROBE_LOG_NAME,
         [_log_line("plan-marshall:build-pyproject:pyproject_build run --command-args verify", 1300.0)],
     )
     config_dir = tmp_path / ".plan"

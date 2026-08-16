@@ -111,7 +111,7 @@ contract exists to prevent.
 `project:finalize-step-era-stamp-fill` (order 21, between `create-pr` and
 `ci-verify`) is the reference implementation of this contract. It resolves the
 `PR-PENDING` era-stamp sentinel in `audit.py`'s `CHECK_ERA` map (and its
-`test_audit.py` mirror) to the real PR number, then commits and pushes the
+`test_audit_check_era_model.py` mirror) to the real PR number, then commits and pushes the
 correction pre-merge so it rides the PR and is CI-covered. It exists precisely
 because the prior convention — a prose instruction to hand-edit the PR number after
 merge — was the guessed-PR-number / post-merge-unpushable era-stamp defect: an edit

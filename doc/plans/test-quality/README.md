@@ -101,6 +101,12 @@ and it is the same rule the `plugin-doctor` `historical-prose-in-skills` /
 load-bearing*, which is present-tense and survives the edit; the narrative of how it was discovered
 is not.
 
+**"Never cite" is not "never name".** A docstring frequently has to state the exact identifier the
+test asserts on, and that is the contract rather than a citation. Write such a value in an inline
+literal (``` ``TASK-001`` ```) and leave a citation bare; the `test-docstring-historical-prose` rule
+exempts matches inside a backtick span or a quoted string, so the formatting is what carries the
+distinction.
+
 **B4 — Arrange goes in a fixture or a factory.** A literal repeated in three or more tests in a module
 becomes a module constant. A setup sequence repeated in three or more tests becomes a fixture. An
 object built in three or more tests becomes a factory with keyword overrides. The corpus's ~11:1 ratio

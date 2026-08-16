@@ -81,7 +81,7 @@ def _entry(
 
 
 def test_batch_add_three_tasks_sequential_numbering(plan_context):
-    """A three-entry batch creates ``TASK-001``/002/003 in order."""
+    """A three-entry batch creates ``TASK-001``, ``TASK-002`` and ``TASK-003`` in order."""
     entries = [
         _entry(title='First', deliverable=1, steps=['src/A.java']),
         _entry(title='Second', deliverable=1, steps=['src/B.java']),

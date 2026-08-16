@@ -132,8 +132,8 @@ class TestLoopExitGuardBlocksPrematureTransition:
         The guard MUST emit ``status: continue`` with ``pending_count: 2``
         and ``pending_ids: [2, 3]`` — never ``status: success`` while
         pending tasks remain. This is the script-level enforcement of
-        the property-1 invariant; the test fails if any future refactor drops
-        the ``continue`` branch or mis-orders the ID list.
+        the "pending > 0 → must continue" invariant; the test fails if any
+        future refactor drops the ``continue`` branch or mis-orders the ID list.
         """
         plan_id = 'loop-exit-guard-pending'
         _stage_plan(tmp_path, monkeypatch, plan_id)

@@ -208,7 +208,7 @@ The second runs **inside prose**, because scoping to prose is not enough: prose 
 
 The exemption is **per occurrence, not per segment**: a docstring that names a value and cites a record still reports the citation, so backticking one identifier cannot launder the rest of the sentence.
 
-Applied to one measured slice, this is the difference between a usable rule and an ignored one: over the ten `plan-marshall` plan-state directories, every one of the 24 findings that survived a full citation strip was an id-shaped *value* — an expected return, a seeded fixture filename, an ordering key, a created task file — i.e. a 24/24 false-positive rate on the residue.
+Applied to one measured slice, this is the difference between a usable rule and an ignored one: over the ten `plan-marshall` plan-state directories, 24 findings survived a full citation strip, and **22 of them were id-shaped *values*** — an expected return, a seeded fixture filename, an ordering key, a created task file. The other two were genuine citations the strip had missed. So the residue was overwhelmingly, but not entirely, false positives; the two real ones were rewritten rather than exempted.
 
 **Violation message format**:
 

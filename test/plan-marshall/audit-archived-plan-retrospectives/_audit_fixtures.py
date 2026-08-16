@@ -52,6 +52,11 @@ audit = _load_audit()
 #: path so the two cannot drift.
 AUDIT_SCRIPTS_DIR = _AUDIT_SCRIPT.parent
 
+#: The globbed ``script-execution-*.log`` name the probe fixtures write to.
+#: ``cross_global_log_analysis`` only picks up files matching that glob, so the
+#: name is part of the fixture contract rather than an arbitrary label.
+PROBE_LOG_NAME = "script-execution-2026-06-29.log"
+
 def _inputs(phase_5: list[str]) -> Any:
     """Build a minimal PlanInputs carrying only the phase_5 manifest list."""
     return audit.PlanInputs(

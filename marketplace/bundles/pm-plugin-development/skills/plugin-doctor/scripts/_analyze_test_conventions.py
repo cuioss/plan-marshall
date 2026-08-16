@@ -876,7 +876,16 @@ def analyze_test_docstring_prose(test_root: Path) -> list[dict]:
 #: than a citation: double- and single-backtick code spans, and quoted strings.
 #: Double backticks are matched first so the inner single-backtick pattern
 #: cannot split a ``…`` span in half.
-_INLINE_LITERAL_RE = re.compile(r"``[^`]+``|`[^`]+`|'[^']+'|\"[^\"]+\"")
+#:
+#: ⛔ No alternative may cross a newline. A prose segment is handed over as ONE
+#: multi-line string, and English is full of apostrophes: without the newline
+#: bound, a possessive on one line and a contraction ten lines later open a
+#: single "literal" span swallowing everything between, silently exempting every
+#: citation inside it. That is a false negative — the direction that matters —
+#: and it was observed on this repository's own corpus before the bound existed.
+_INLINE_LITERAL_RE = re.compile(
+    r"``[^`\n]+``|`[^`\n]+`|'[^'\n]+'|\"[^\"\n]+\""
+)
 
 
 def _inline_literal_spans(text: str) -> list[tuple[int, int]]:

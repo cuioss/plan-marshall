@@ -116,8 +116,15 @@ owner-drift") while the filename did not.
 
 ⭐ **This split slices by LINE range between section banners, not by AST node range** — directly
 applying run 01's own lesson. That run's decomposition sliced by node and silently dropped 162 column-0
-comments including 8 rationale blocks, because **a leading comment belongs to no AST node**. Slicing by
-line carries every comment along with the code it explains.
+comments including 8 rationale blocks, because **a leading comment belongs to no AST node**.
+
+**Measured, not asserted:** 290 comments before, 276 after — 44 occurrences did not carry over, and
+every one is information-free or deliberately replaced. 28 are `# ---` separator rules, meaningless
+once each section is its own file; 2 are `noqa` pragmas suppressing the import preamble that no longer
+exists (`ruff check` passes without them); 14 are the section banners themselves, replaced by module
+docstrings stating the same contract. **No fixture invariant and no cross-reference was lost** — the
+class run 01's finding #30 was about. What did not survive is issue-number provenance (`#849`, `#812`,
+`#852 D6`), which lived only in those banners; that is a deliberate B3 strip, not an accident.
 
 Three changes beyond the move, each a consequence of it:
 
@@ -166,7 +173,87 @@ structured log.
 | 5 | This run, while fixing #38 | Two incompatible `_write_log` helpers in one directory | **Fixed** — the near-duplicate is gone, not hoisted |
 | 6 | This run, verifying #28 | Run 01 recorded a *possible production defect*; the production docstring already documents the proxy | **Rejected as a production defect, with reason** — fixed test-side instead |
 
-_(Independent pre-PR verification findings are appended below.)_
+### Independent pre-PR verification (contract Step 6)
+
+Dispatched read-only against run 01's findings table. It wrote its own AST and probe scripts rather
+than reading, and it found a **blocking regression this run introduced** plus a real false-negative
+class in the rule-7 fix. Both are closed; nothing it raised was rejected.
+
+**⛔ BLOCKING — the split broke `finalize-step-era-stamp-fill`, and that step's own test passed anyway.**
+
+`era_stamp_fill.py:37` hard-coded `TEST_REL = '…/test_audit.py'`, the file commit `386066b` deleted.
+`run()` checks existence before the token check, so the step returned **`status: error`, exit 1, on
+every invocation** — where it previously returned exit 0 / `skipped: true`. It is a registered
+project-local finalize step at **order 21, pre-merge, `mutates_source: true`**, so the next plan
+running finalize in this repository would have hit it.
+
+**Why no test caught it is the more important half:** `test_era_stamp_fill.py:47` *re-declared* the
+constant instead of importing `era_stamp_fill.TEST_REL`, and the fixture **creates** that path under
+`tmp_path`. All 15 tests therefore passed against a synthetic worktree regardless of the real tree —
+precisely the "fixture hardcodes a retired value and still passes" class the contract's Step 6
+instruction names.
+
+Fixed: `TEST_REL` repointed at `test_audit_check_era_model.py` (where the era mirror actually landed),
+and **the test now binds to `era.AUDIT_REL` / `era.TEST_REL`** so a future repoint cannot diverge from
+production again. Verified **empirically**, not by inspection: the step now returns `status: success`,
+`skipped: true`, exit 0, mutating nothing. Four further surfaces naming the deleted file were repointed
+— the step's `verdict_inputs:` frontmatter (machine-read), its SKILL.md prose and `git add` line,
+`phase-6-finalize/standards/source-edit-pushability.md`, and two test comments.
+
+**⛔ Rule 7's fix had a false-negative class — the serious direction.** Two independent bugs, both
+closed:
+
+| Bug | Effect | Fix |
+|---|---|---|
+| `_INLINE_LITERAL_RE`'s quote alternatives matched across newlines, and a prose segment arrives as ONE multi-line string | An English **possessive apostrophe** opened a "literal" span swallowing everything to the next apostrophe — 7 lines in one observed case — silently exempting every citation inside. Verified live on this corpus: `PR #515` and `PR #887` were being silenced | No alternative may cross a newline (`'[^'\n]+'`) |
+| `_LESSON_BACKTICK_ID_RE` understood only **single** backticks, while this repo's house convention is RST double backticks | The one guard designed to keep narrative lesson citations flagged was defeated by the house style, so 6 genuine citations became exempt | Matcher accepts `` `{1,2} `` |
+
+Both named citations are confirmed flagged again, and two **negative-control tests** now pin the
+hazards — the verifier's point that the three original tests pinned only the intended behaviour, never
+the failure mode. Slice 050 remains at **0** after both fixes, so the exemption still does its job.
+
+**Quality defects in the corpus edits — all fixed.** The verifier read them as "the edit followed the
+regex rather than the meaning", which is fair: ``` ``TASK-001``.toon ``` and ``` ``TASK-001``.json ```
+backticked *half a filename* when the value is the whole name (the assertion two lines below reads
+`'TASK-001.json'`); ``` ``TASK-001``/002/003 ``` named only the first element of a sequence; and
+`property-1` — which I introduced replacing `D1` — was defined nowhere in its file, the same dangling
+class as run 01's finding #33, and arguably worse since `D1` at least resolved to something.
+
+**Documentation contradictions — all fixed**, including one false claim of my own:
+
+| Surface | Defect | Fix |
+|---|---|---|
+| `doctor-test-conventions.md` | Asserted a "**24/24** false-positive rate", inherited unverified from run 01 — contradicted by this report's own "2 genuine citations rewritten" | Corrected to **22 of 24**, with the two real ones named |
+| `rule-catalog.md` | Still taught only the prose-vs-data discriminator; a reader would not learn the backtick convention exists | Both discriminators documented, including the newline bound and why it exists |
+| `doc/plans/test-quality/README.md` § B3 | Unconditional "**Never**: … a lesson id" — would classify this run's own corpus fix as a violation, and plans `030`–`080` read this brief | "Never cite" is not "never name": the formatting distinction is stated |
+| `persona-module-tester/standards/testing-methodology.md` | Same unconditional list, and it is the teaching surface `rule-catalog.md` points at | Same clarification |
+
+**Accepted and acted on, minor:** `_PROBE_LOG_NAME` was duplicated verbatim in two modules, which
+`_audit_fixtures.py`'s own stated rule ("helpers more than one test module needs") says belongs in the
+fixture module — hoisted. And this report's claim that line-slicing "carries **every** comment along"
+was false as written: 290 → 276, and the corrected passage now gives the measured split.
+
+**Confirmed clean by the verifier**, recorded so its verdict is not read as unexamined: the split is a
+pure move at AST level (82/82 callables, 0 docstring diffs, 555/555 collected, free names resolve);
+all twelve textual definition changes are value-preserving, each traced individually; the 24 → 0
+decomposition matches its own independent 2×2 measurement exactly; **zero** remaining duplicate
+`plan_id` literals across all ten directories, swept by AST; `test-module-line-budget` for the audit
+directory is **0**; and every file in the diff maps to one of the findings, with `test/conftest.py` and
+`test/_shared/**` untouched.
+
+**Recorded, not fixed:**
+
+- `test_test_conventions_rule6.py` is named for rule 6 but holds tests for rules 6 **and** 7; this run
+  added 5 more rule-7 tests to it. Pre-existing, mildly aggravated. Renaming it is plan `010`'s
+  surface, and a rename mid-flight would collide with any concurrent work there.
+- `ruff format --check` fails on 3 of the 15 new modules — and on 48 pre-existing files at `main`.
+  `build.py` runs `ruff check`, not `ruff format`, so this is not a regression and not a gate.
+
+**What the verifier could not establish**, carried forward rather than presented as clean: it could
+not execute the mutating finalize step (permission-blocked), so its regression finding was derived by
+inspection — **this run closed that gap by running the step**; and it did not re-derive that each test
+still exercises the same production path under the new fixture import, treating the green run as
+strong evidence rather than proof.
 
 ## Reviewer participation
 

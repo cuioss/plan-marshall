@@ -15,7 +15,7 @@ mutates_source: true
 head_dependent: true
 verdict_inputs:
   - '.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py'
-  - 'test/plan-marshall/audit-archived-plan-retrospectives/test_audit.py'
+  - 'test/plan-marshall/audit-archived-plan-retrospectives/test_audit_check_era_model.py'
   - '.claude/skills/finalize-step-era-stamp-fill/scripts/era_stamp_fill.py'
 ---
 
@@ -24,7 +24,7 @@ verdict_inputs:
 Project-local executor for `project:finalize-step-era-stamp-fill`. Resolves the
 `PR-PENDING` era-stamp sentinel in the `audit-archived-plan-retrospectives`
 `CHECK_ERA` map to this plan's real PR number, rewriting `audit.py` and its
-`test_audit.py` mirror in lock-step and pushing the correction onto the feature
+`test_audit_check_era_model.py` mirror in lock-step and pushing the correction onto the feature
 branch **before the merge gate** so it rides the PR.
 
 This step is **project-local** (like `project:finalize-step-sync-plugin-cache`)
@@ -52,7 +52,7 @@ correction pre-merge so it rides the PR and is CI-covered.
 ## HEAD-dependency
 
 `head_dependent: true` — this step's `done` record asserts a property of **tracked source**: that
-`audit.py` and its `test_audit.py` mirror carry no unresolved `PR-PENDING` sentinel. That is a
+`audit.py` and its `test_audit_check_era_model.py` mirror carry no unresolved `PR-PENDING` sentinel. That is a
 verdict over the tree, not a record of an action performed, so it goes stale exactly the way the
 governing discriminator predicts — *would this verdict change if HEAD changed?* Yes: a loop-back
 commit landing after this step recorded `done` can introduce or restore a `PR-PENDING` token, and the
@@ -71,7 +71,7 @@ forward it via `--head-at-completion {sha}` on the `done` outcome (Step 4).
 The paired `verdict_inputs` declaration names that surface **by full path, and nothing else**:
 
 - `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` — the `CHECK_ERA` map
-- `test/plan-marshall/audit-archived-plan-retrospectives/test_audit.py` — its lock-step mirror
+- `test/plan-marshall/audit-archived-plan-retrospectives/test_audit_check_era_model.py` — its lock-step mirror
 - `.claude/skills/finalize-step-era-stamp-fill/scripts/era_stamp_fill.py` — the executor whose
   matcher DEFINES what "unresolved" means
 
@@ -161,7 +161,7 @@ The script returns a flat TOON document. On the `status: success` path it carrie
 (`#NNN`); on the `status: error` path it carries only `status` and a `message`
 (the `filled_count` / `skipped` / `pr_number` fields are omitted). See the Step 2
 table below for the per-outcome field set. It rewrites `"PR-PENDING"` →
-`"#{pr_number}"` in both `audit.py` and `test_audit.py` in lock-step; it matches
+`"#{pr_number}"` in both `audit.py` and `test_audit_check_era_model.py` in lock-step; it matches
 only the double-quoted map-value form, so prose mentions and an already-resolved
 concrete `"#NNN"` are never touched.
 
@@ -180,7 +180,7 @@ edited files and push to the branch's upstream (the same push seam the `push` st
 uses):
 
 ```bash
-git -C {worktree_path} add .claude/skills/audit-archived-plan-retrospectives/scripts/audit.py test/plan-marshall/audit-archived-plan-retrospectives/test_audit.py
+git -C {worktree_path} add .claude/skills/audit-archived-plan-retrospectives/scripts/audit.py test/plan-marshall/audit-archived-plan-retrospectives/test_audit_check_era_model.py
 ```
 
 ```bash
