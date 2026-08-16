@@ -1,0 +1,454 @@
+From e032a64646cf2b190a8bec1a7584eea5ebaee29f Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 16 Aug 2026 15:43:33 +0000
+Subject: [PATCH] test(test-quality): resolve slice import preambles through
+ the shared loaders
+
+Replaces bespoke _load_module helpers, spec_from_file_location blocks and
+Path(__file__).parent chains across ten modules in the configuration and
+manifest slice with conftest.load_script_module / get_script_path /
+add_skill_scripts_to_path / PROJECT_ROOT.
+
+Every converted call preserves its original sys.modules registration name.
+The marketplace config modules carry mutable module-level default dicts, so
+collapsing distinct registration names onto a shared one makes tests
+order-dependent.
+
+Also removes a dead _REPO_ROOT in test_derive_verification_outcomes.py.
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+---
+ .../manage-config/test_cmd_skill_domains.py   |  4 +-
+ .../manage-config/test_effort_read.py         | 39 +++----------------
+ .../test_derive_verification_outcomes.py      |  4 --
+ .../test_no_orphaned_advisory_refs.py         | 13 ++++---
+ .../test_parse_verification_command.py        | 27 ++++---------
+ .../test_get_module_context.py                | 38 +++++++-----------
+ .../marshall-steward/test_bootstrap_plugin.py | 12 +++---
+ .../test_default_step_detection.py            | 32 ++++-----------
+ .../marshall-steward/test_effort_menu.py      | 24 ++----------
+ .../test_steward_determine_mode.py            | 27 +++++--------
+ 10 files changed, 61 insertions(+), 159 deletions(-)
+
+diff --git a/test/plan-marshall/manage-config/test_cmd_skill_domains.py b/test/plan-marshall/manage-config/test_cmd_skill_domains.py
+index 31b8a84..cd15d4a 100644
+--- a/test/plan-marshall/manage-config/test_cmd_skill_domains.py
++++ b/test/plan-marshall/manage-config/test_cmd_skill_domains.py
+@@ -18,7 +18,7 @@ from unittest.mock import patch
+ import pytest
+ from _manage_config_fixtures import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json
+ 
+-from conftest import load_script_module, run_script
++from conftest import PROJECT_ROOT, load_script_module, run_script
+ 
+ _cmd_skill_domains = load_script_module(
+     'plan-marshall', 'manage-config', '_cmd_skill_domains.py', module_name='_cmd_skill_domains'
+@@ -581,7 +581,7 @@ def test_get_available_domain_only_extensions_use_applies_to_module():
+ 
+     # Run against real plan-marshall repo — build extensions discover modules,
+     # domain extensions should be checked via applies_to_module()
+-    result = discover_available(project_root=Path(__file__).parent.parent.parent.parent)
++    result = discover_available(project_root=PROJECT_ROOT)
+     domains = result.get('domains', [])
+ 
+     # plan-marshall-plugin-dev should be applicable (build extension with discover_modules)
+diff --git a/test/plan-marshall/manage-config/test_effort_read.py b/test/plan-marshall/manage-config/test_effort_read.py
+index 31516f7..d840cae 100644
+--- a/test/plan-marshall/manage-config/test_effort_read.py
++++ b/test/plan-marshall/manage-config/test_effort_read.py
+@@ -13,49 +13,20 @@ asserted by hashing marshal.json before and after each call.
+ """
+ 
+ import hashlib
+-import importlib.util
+ import json
+-import sys
+ from argparse import Namespace
+-from pathlib import Path
+ 
+ import pytest
+ from _manage_config_fixtures import create_marshal_json
+-
+-_MANAGE_CONFIG_SCRIPTS_DIR = (
+-    Path(__file__).parent.parent.parent.parent
+-    / 'marketplace'
+-    / 'bundles'
+-    / 'plan-marshall'
+-    / 'skills'
+-    / 'manage-config'
+-    / 'scripts'
+-)
+-_PLAN_MARSHALL_SCRIPTS_DIR = (
+-    Path(__file__).parent.parent.parent.parent
+-    / 'marketplace'
+-    / 'bundles'
+-    / 'plan-marshall'
+-    / 'skills'
+-    / 'plan-marshall'
+-    / 'scripts'
+-)
++from conftest import add_skill_scripts_to_path, load_script_module
+ 
+ # `_cmd_effort` imports `effort_presets` at module level. Ensure the
+ # plan-marshall scripts directory is importable BEFORE loading _cmd_effort.
+-if str(_PLAN_MARSHALL_SCRIPTS_DIR) not in sys.path:
+-    sys.path.insert(0, str(_PLAN_MARSHALL_SCRIPTS_DIR))
+-
++add_skill_scripts_to_path('plan-marshall', 'plan-marshall')
+ 
+-def _load_module(name, filename, scripts_dir=_MANAGE_CONFIG_SCRIPTS_DIR):
+-    spec = importlib.util.spec_from_file_location(name, scripts_dir / filename)
+-    mod = importlib.util.module_from_spec(spec)
+-    sys.modules[name] = mod
+-    spec.loader.exec_module(mod)
+-    return mod
+-
+-
+-_cmd_models_mod = _load_module('_cmd_effort', '_cmd_effort.py')
++_cmd_models_mod = load_script_module(
++    'plan-marshall', 'manage-config', '_cmd_effort.py', module_name='_cmd_effort'
++)
+ cmd_effort = _cmd_models_mod.cmd_effort
+ cmd_effort_resolve_target = _cmd_models_mod.cmd_effort_resolve_target
+ 
+diff --git a/test/plan-marshall/manage-execution-manifest/test_derive_verification_outcomes.py b/test/plan-marshall/manage-execution-manifest/test_derive_verification_outcomes.py
+index 7ec7e86..cf9acdf 100644
+--- a/test/plan-marshall/manage-execution-manifest/test_derive_verification_outcomes.py
++++ b/test/plan-marshall/manage-execution-manifest/test_derive_verification_outcomes.py
+@@ -35,10 +35,6 @@ from pathlib import Path
+ 
+ from conftest import load_script_module
+ 
+-_REPO_ROOT = Path(__file__).parent.parent.parent.parent
+-
+-
+-
+ _architecture_core = load_script_module(
+     'plan-marshall', 'manage-architecture', '_architecture_core.py', module_name='_architecture_core'
+ )
+diff --git a/test/plan-marshall/manage-execution-manifest/test_no_orphaned_advisory_refs.py b/test/plan-marshall/manage-execution-manifest/test_no_orphaned_advisory_refs.py
+index 916ede4..23b1b9a 100644
+--- a/test/plan-marshall/manage-execution-manifest/test_no_orphaned_advisory_refs.py
++++ b/test/plan-marshall/manage-execution-manifest/test_no_orphaned_advisory_refs.py
+@@ -42,13 +42,14 @@ files that legitimately reference the retired tokens. Every other file in
+ 
+ from pathlib import Path
+ 
++from conftest import PROJECT_ROOT
++
+ # =============================================================================
+ # Tree roots and scan configuration
+ # =============================================================================
+ 
+-_REPO_ROOT = Path(__file__).parent.parent.parent.parent
+-_MARKETPLACE_ROOT = _REPO_ROOT / 'marketplace'
+-_TEST_ROOT = _REPO_ROOT / 'test'
++_MARKETPLACE_ROOT = PROJECT_ROOT / 'marketplace'
++_TEST_ROOT = PROJECT_ROOT / 'test'
+ 
+ # File suffixes worth scanning. Retired tokens only ever lived in Python sources,
+ # markdown skill/standards bodies, and JSON manifests.
+@@ -118,7 +119,7 @@ def _iter_scanned_files() -> list[Path]:
+         for path in root.rglob('*'):
+             if not path.is_file() or path.suffix not in _SCANNED_SUFFIXES:
+                 continue
+-            rel = path.relative_to(_REPO_ROOT).as_posix()
++            rel = path.relative_to(PROJECT_ROOT).as_posix()
+             if rel in _ALLOWED_RETIRED_TOKEN_FILES:
+                 continue
+             files.append(path)
+@@ -133,7 +134,7 @@ def _find_orphaned_references() -> list[tuple[str, str, str]]:
+             text = path.read_text(encoding='utf-8')
+         except (UnicodeDecodeError, OSError):
+             continue
+-        rel = path.relative_to(_REPO_ROOT).as_posix()
++        rel = path.relative_to(PROJECT_ROOT).as_posix()
+         for needle, surface in _RETIRED_TOKENS:
+             if needle in text:
+                 hits.append((rel, needle, surface))
+@@ -193,6 +194,6 @@ def test_production_manifest_script_clean_of_classify_family():
+ def test_allow_list_files_exist():
+     """Every allow-listed path must exist — a stale allow-list silently widens the sweep gap."""
+     for rel in _ALLOWED_RETIRED_TOKEN_FILES:
+-        assert (_REPO_ROOT / rel).is_file(), (
++        assert (PROJECT_ROOT / rel).is_file(), (
+             f'Allow-listed file {rel!r} does not exist; prune or correct the allow-list.'
+         )
+diff --git a/test/plan-marshall/manage-execution-manifest/test_parse_verification_command.py b/test/plan-marshall/manage-execution-manifest/test_parse_verification_command.py
+index e170aef..c4caf3a 100644
+--- a/test/plan-marshall/manage-execution-manifest/test_parse_verification_command.py
++++ b/test/plan-marshall/manage-execution-manifest/test_parse_verification_command.py
+@@ -15,27 +15,16 @@ Tier 2 (direct import) — all assertions run against the loaded module with no
+ subprocess spawn.
+ """
+ 
+-import importlib.util
+-from pathlib import Path
+-
+ import pytest
+-
+-# Tier 2 direct import via importlib (kebab-case filename).
+-_SCRIPTS_DIR = (
+-    Path(__file__).parent.parent.parent.parent
+-    / 'marketplace'
+-    / 'bundles'
+-    / 'plan-marshall'
+-    / 'skills'
+-    / 'manage-execution-manifest'
+-    / 'scripts'
+-)
+-_spec = importlib.util.spec_from_file_location(
+-    '_mem_parse_verb', _SCRIPTS_DIR / 'manage-execution-manifest.py'
++from conftest import load_script_module
++
++# Tier 2 direct import — resolution by (bundle, skill, script).
++_mem = load_script_module(
++    'plan-marshall',
++    'manage-execution-manifest',
++    'manage-execution-manifest.py',
++    module_name='_mem_parse_verb',
+ )
+-assert _spec is not None and _spec.loader is not None
+-_mem = importlib.util.module_from_spec(_spec)
+-_spec.loader.exec_module(_mem)
+ 
+ _parse_verification_command = _mem._parse_verification_command
+ _verb_to_phase_5_step = _mem._verb_to_phase_5_step
+diff --git a/test/plan-marshall/manage-solution-outline/test_get_module_context.py b/test/plan-marshall/manage-solution-outline/test_get_module_context.py
+index 0c95054..863e9d3 100644
+--- a/test/plan-marshall/manage-solution-outline/test_get_module_context.py
++++ b/test/plan-marshall/manage-solution-outline/test_get_module_context.py
+@@ -22,7 +22,6 @@ Covers three branches:
+   from.
+ """
+ 
+-import importlib.util
+ import sys
+ from argparse import Namespace
+ from pathlib import Path
+@@ -31,41 +30,30 @@ import file_ops
+ import pytest
+ from toon_parser import parse_toon
+ 
+-from conftest import get_script_path
++from conftest import load_script_module
+ 
+ # =============================================================================
+ # Module Loading
+ # =============================================================================
+ 
+-# manage-solution-outline.py has hyphens, so importlib is required.
+-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-solution-outline', 'manage-solution-outline.py')
+-_spec = importlib.util.spec_from_file_location('manage_solution_outline', str(SCRIPT_PATH))
+-assert _spec is not None and _spec.loader is not None
+-_mod = importlib.util.module_from_spec(_spec)
+-_spec.loader.exec_module(_mod)
++_mod = load_script_module(
++    'plan-marshall',
++    'manage-solution-outline',
++    'manage-solution-outline.py',
++    module_name='manage_solution_outline',
++)
+ 
+ cmd_get_module_context = _mod.cmd_get_module_context
+ 
+ # _architecture_core helpers — used to seed the per-module layout under the
+ # fixture's project_dir without round-tripping through the discover/init
+-# commands. The conftest PYTHONPATH bootstrap puts the scripts/ directories on
+-# sys.path so a normal import resolves the module.
+-_ARCH_SCRIPTS_DIR = (
+-    Path(__file__).parent.parent.parent.parent
+-    / 'marketplace'
+-    / 'bundles'
+-    / 'plan-marshall'
+-    / 'skills'
+-    / 'manage-architecture'
+-    / 'scripts'
+-)
+-_arch_spec = importlib.util.spec_from_file_location(
+-    '_architecture_core_test_module', str(_ARCH_SCRIPTS_DIR / '_architecture_core.py')
++# commands.
++_arch_core = load_script_module(
++    'plan-marshall',
++    'manage-architecture',
++    '_architecture_core.py',
++    module_name='_architecture_core_test_module',
+ )
+-assert _arch_spec is not None and _arch_spec.loader is not None
+-_arch_core = importlib.util.module_from_spec(_arch_spec)
+-sys.modules.setdefault('_architecture_core_test_module', _arch_core)
+-_arch_spec.loader.exec_module(_arch_core)
+ 
+ save_project_meta = _arch_core.save_project_meta
+ save_module_derived = _arch_core.save_module_derived
+diff --git a/test/plan-marshall/marshall-steward/test_bootstrap_plugin.py b/test/plan-marshall/marshall-steward/test_bootstrap_plugin.py
+index 5655ee1..8b7e1af 100644
+--- a/test/plan-marshall/marshall-steward/test_bootstrap_plugin.py
++++ b/test/plan-marshall/marshall-steward/test_bootstrap_plugin.py
+@@ -5,23 +5,21 @@
+ Tier 2 (direct import) tests with 3 subprocess tests for CLI plumbing.
+ """
+ 
+-import importlib.util
+ import os
+ import subprocess
+ import sys
+ from pathlib import Path
+ 
+-from conftest import get_script_path, run_script
++from conftest import get_script_path, load_script_module, run_script
+ 
+ # Get script path — use base directory for all steward scripts
+ _SCRIPTS_DIR = Path(get_script_path('plan-marshall', 'marshall-steward', 'bootstrap_plugin.py')).parent
+ SCRIPT_PATH = _SCRIPTS_DIR / 'bootstrap_plugin.py'
+ 
+-# Tier 2 direct import via importlib
+-_spec = importlib.util.spec_from_file_location('bootstrap_plugin', SCRIPT_PATH)
+-assert _spec is not None and _spec.loader is not None
+-_mod = importlib.util.module_from_spec(_spec)
+-_spec.loader.exec_module(_mod)
++# Tier 2 direct import — resolution by (bundle, skill, script).
++_mod = load_script_module(
++    'plan-marshall', 'marshall-steward', 'bootstrap_plugin.py', module_name='bootstrap_plugin'
++)
+ 
+ read_state = _mod.read_state
+ write_state = _mod.write_state
+diff --git a/test/plan-marshall/marshall-steward/test_default_step_detection.py b/test/plan-marshall/marshall-steward/test_default_step_detection.py
+index 8167e6a..77ac356 100644
+--- a/test/plan-marshall/marshall-steward/test_default_step_detection.py
++++ b/test/plan-marshall/marshall-steward/test_default_step_detection.py
+@@ -21,36 +21,20 @@ set is derived from the reusable ``extension_discovery.find_implementors`` query
+ 
+ from __future__ import annotations
+ 
+-import importlib.util
+ import json
+-import sys
+ from pathlib import Path
+ 
+-from conftest import MARKETPLACE_ROOT
++from conftest import add_skill_scripts_to_path, load_script_module
+ 
+-_SCRIPTS_DIR = (
+-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts'
+-)
+-_DETERMINE_MODE = _SCRIPTS_DIR / 'determine_mode.py'
++add_skill_scripts_to_path('plan-marshall', 'manage-config')
++add_skill_scripts_to_path('plan-marshall', 'marshall-steward')
+ 
+-_MANAGE_CONFIG_SCRIPTS_DIR = (
+-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
++_dm = load_script_module(
++    'plan-marshall',
++    'marshall-steward',
++    'determine_mode.py',
++    module_name='_marshall_steward_determine_mode',
+ )
+-if str(_MANAGE_CONFIG_SCRIPTS_DIR) not in sys.path:
+-    sys.path.insert(0, str(_MANAGE_CONFIG_SCRIPTS_DIR))
+-if str(_SCRIPTS_DIR) not in sys.path:
+-    sys.path.insert(0, str(_SCRIPTS_DIR))
+-
+-
+-def _load_module(name: str, path: Path):
+-    spec = importlib.util.spec_from_file_location(name, path)
+-    assert spec is not None and spec.loader is not None
+-    mod = importlib.util.module_from_spec(spec)
+-    spec.loader.exec_module(mod)
+-    return mod
+-
+-
+-_dm = _load_module('_marshall_steward_determine_mode', _DETERMINE_MODE)
+ detect_missing_default_finalize_steps = _dm.detect_missing_default_finalize_steps
+ 
+ 
+diff --git a/test/plan-marshall/marshall-steward/test_effort_menu.py b/test/plan-marshall/marshall-steward/test_effort_menu.py
+index eb4f381..1b66024 100644
+--- a/test/plan-marshall/marshall-steward/test_effort_menu.py
++++ b/test/plan-marshall/marshall-steward/test_effort_menu.py
+@@ -22,32 +22,16 @@ the underlying read/write round-trip behaviour the wizard depends on:
+ 
+ from __future__ import annotations
+ 
+-import importlib.util
+ import json
+-import sys
+ from argparse import Namespace
+ from pathlib import Path
+ 
+-from conftest import MARKETPLACE_ROOT
+-
+-_MANAGE_CONFIG_SCRIPTS_DIR = (
+-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
+-)
+-if str(_MANAGE_CONFIG_SCRIPTS_DIR) not in sys.path:
+-    sys.path.insert(0, str(_MANAGE_CONFIG_SCRIPTS_DIR))
+-
+-
+-def _load_module(name: str, path: Path):
+-    spec = importlib.util.spec_from_file_location(name, path)
+-    assert spec is not None and spec.loader is not None
+-    mod = importlib.util.module_from_spec(spec)
+-    sys.modules[name] = mod
+-    spec.loader.exec_module(mod)
+-    return mod
++from conftest import add_skill_scripts_to_path, load_script_module
+ 
++add_skill_scripts_to_path('plan-marshall', 'manage-config')
+ 
+-_cmd_models_mod = _load_module(
+-    '_cmd_effort', _MANAGE_CONFIG_SCRIPTS_DIR / '_cmd_effort.py'
++_cmd_models_mod = load_script_module(
++    'plan-marshall', 'manage-config', '_cmd_effort.py', module_name='_cmd_effort'
+ )
+ cmd_effort = _cmd_models_mod.cmd_effort
+ 
+diff --git a/test/plan-marshall/marshall-steward/test_steward_determine_mode.py b/test/plan-marshall/marshall-steward/test_steward_determine_mode.py
+index 98349a4..997be02 100644
+--- a/test/plan-marshall/marshall-steward/test_steward_determine_mode.py
++++ b/test/plan-marshall/marshall-steward/test_steward_determine_mode.py
+@@ -20,32 +20,23 @@ This suite pins that contract:
+ 
+ from __future__ import annotations
+ 
+-import importlib.util
+ import json
+ import subprocess
+ import sys
+ from pathlib import Path
+ 
+-from conftest import MARKETPLACE_ROOT
+-
+-_SCRIPTS_DIR = (
+-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts'
+-)
+-_DETERMINE_MODE = _SCRIPTS_DIR / 'determine_mode.py'
+-
+-if str(_SCRIPTS_DIR) not in sys.path:
+-    sys.path.insert(0, str(_SCRIPTS_DIR))
++from conftest import add_skill_scripts_to_path, get_script_path, load_script_module
+ 
++_DETERMINE_MODE = get_script_path('plan-marshall', 'marshall-steward', 'determine_mode.py')
+ 
+-def _load_module(name: str, path: Path):
+-    spec = importlib.util.spec_from_file_location(name, path)
+-    assert spec is not None and spec.loader is not None
+-    mod = importlib.util.module_from_spec(spec)
+-    spec.loader.exec_module(mod)
+-    return mod
++add_skill_scripts_to_path('plan-marshall', 'marshall-steward')
+ 
+-
+-_dm = _load_module('_marshall_steward_determine_mode_guard', _DETERMINE_MODE)
++_dm = load_script_module(
++    'plan-marshall',
++    'marshall-steward',
++    'determine_mode.py',
++    module_name='_marshall_steward_determine_mode_guard',
++)
+ check_worktree_plan_local = _dm.check_worktree_plan_local
+ is_worktree_repo_root = _dm.is_worktree_repo_root
+ discover_shipped_project_finalize_steps = _dm.discover_shipped_project_finalize_steps
+-- 
+2.43.0
