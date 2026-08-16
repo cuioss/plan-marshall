@@ -52,7 +52,36 @@ Derived from the `resolution` field, refined by a `resolution_detail` regex:
 | `rerun_flake` | `resolution == fixed` whose detail names a transient / re-run / flake cause. Not a real defect — a flaky precondition. |
 | `accepted` | `resolution == accepted`. Acknowledged, not actioned. |
 | `suppressed` | `resolution == suppressed`. |
-| `pending` | `resolution` is `pending` / `none` / empty — unresolved at archive time. |
+| `pending` | `resolution` is `pending` / `none` / empty — unresolved at archive time. Partitioned into an ACTIONABLE and a STRUCTURAL half — see below. |
+
+### The pending column is two populations, not one
+
+`manage-findings.add_finding` seeds **every** record with `resolution: 'pending'`,
+so the raw pending column mixes two things that must not be added together:
+
+| Half | What it is | What would make it zero |
+|------|-----------|-------------------------|
+| **actionable** | A defect-shaped finding nobody closed — real chain debt. | Resolving the findings. |
+| **structural** | A knowledge-type finding (`tip` / `insight` / `best-practice` / `improvement`). Filed to be read, never to be closed; no action resolves one. | **Nothing.** |
+
+Only the actionable half is counted as a genuine signal. Counting the structural
+half made the pending population one no action could empty — and a pending count
+that cannot reach zero is not a backlog, it is a mislabelled population. That is
+worse than a false zero: a false zero invites a check, while a large permanent
+backlog invites resignation.
+
+The partition membership mirrors the fixed actionable-vs-knowledge split already
+shipped at `plan-marshall/scripts/_invariants.py` (`_ACTIONABLE_FINDING_TYPES`
+plus the knowledge types its comment names as never counted) — the blocking gate's
+own rule. Both consumers are asking "would an action resolve this?", so they
+answer it the same way; a change to that partition obliges the same change here.
+
+Structural rows stay in the `corpus_matrix` census. They are **labelled, not
+deleted**: the matrix answers "what was filed", the split answers "what could be
+cleared", and subtracting them from the matrix would trade one untrue number for
+another. A finding whose record carries a real disposition is never structural,
+whatever its type — an operator who dispositioned a `tip` has made it a resolved
+finding, and the partition never overrules the record.
 
 ## Matrix
 
@@ -107,8 +136,12 @@ plans_in_corpus: P
 plan_genuine_signal_count: G1
 finding_genuine_signal_count: G2
 shift_left_tiers: "tier1=N1;tier2=N2;tier3=N3;tier4=N4"
+pending_total: T
+pending_actionable: A
+pending_structural: S
+pending_structural_note: {why the structural half is excluded}
 corpus_matrix[5]{mechanism,direct_fix,loop_back,rerun_flake,accepted,suppressed,pending,lesson,total}
-plans[P]{plan_id,build,self_review,auto_review,human_review,other,total,flags,severity}
+plans[P]{plan_id,build,self_review,auto_review,human_review,other,total,structural_pending,flags,severity}
 findings[F]{plan_id,mechanism,resolution,source_file,shift_left_tier,title,severity}
 ```
 
@@ -117,7 +150,9 @@ findings[F]{plan_id,mechanism,resolution,source_file,shift_left_tier,title,sever
 | `corpus_matrix` rows | One per mechanism; a cell per resolution bucket plus the row `total`. The chain's overall shape. Informational context. |
 | `plans` rows | Per-plan mechanism totals + the chain anti-pattern `flags` list. `severity` is `genuine` when the plan carries ≥1 flag. |
 | `findings` rows | The per-finding rows. `shift_left_tier` is populated (1-4) only for `auto-review` findings, empty otherwise. `severity` is the D1 column. |
-| `severity` | Uniform D1 severity column. A per-finding row is `genuine` when it is an `auto-review` finding (shift-left subject) OR still `pending` (unresolved chain debt); `informational` otherwise. |
+| `pending_total` / `pending_actionable` / `pending_structural` | The pending column split. `actionable + structural == total`, exhaustively. Both halves are published: reporting only the net actionable figure would hide that part of the census is permanent, and reporting only the gross figure is the mislabelled population the split exists to end. |
+| `plans.structural_pending` | How many of that plan's findings are pending by construction. |
+| `severity` | Uniform D1 severity column. A per-finding row is `genuine` when it is an `auto-review` finding (shift-left subject) OR still ACTIONABLY `pending` (unresolved chain debt); `informational` otherwise. A structurally-pending row is not genuine on the pending leg — but a knowledge-type finding surfaced by the PR bot is still genuine on the `auto-review` leg, because what it cost to catch is the point, not whether anyone closes it. |
 
 `finding_genuine_signal_count` counts the genuine per-finding rows;
 `plan_genuine_signal_count` counts the flagged plans.

@@ -3355,6 +3355,53 @@ _QC_BOT_RE = re.compile(r"gemini|copilot|bot|automated", re.IGNORECASE)
 
 # Canonical axis orderings — the matrix columns/rows read off these so every
 # plan's matrix and the corpus totals share one stable shape.
+#: Finding types that are PENDING BY CONSTRUCTION — the knowledge partition.
+#:
+#: `manage-findings.add_finding` seeds EVERY record with `resolution: 'pending'`,
+#: and nothing ever resolves a knowledge finding: a `tip` is a suggestion, an
+#: `insight` is an observation, a `best-practice` is a note. They are filed to be
+#: read, not to be closed. Counting them as unresolved chain debt made the pending
+#: population one no action could empty — and a pending count that cannot reach
+#: zero is not a backlog, it is a mislabelled population. It is worse than a false
+#: zero: a false zero invites a check, while a large permanent backlog invites
+#: resignation.
+#:
+#: The membership mirrors the FIXED actionable-vs-knowledge partition already
+#: shipped at `plan-marshall/scripts/_invariants.py` (`_ACTIONABLE_FINDING_TYPES`
+#: and the knowledge types its comment names as never counted), which is the
+#: blocking gate's own rule. The two are the same question — "would an action
+#: resolve this?" — asked by two consumers, so they answer it the same way. A
+#: change to that partition obliges the same change here.
+_QC_STRUCTURAL_PENDING_TYPES = frozenset(
+    {"tip", "insight", "best-practice", "improvement"}
+)
+
+#: `{type}.jsonl` filenames whose whole population is structurally pending.
+_QC_STRUCTURAL_PENDING_FILES = frozenset(
+    f"{t}.jsonl" for t in _QC_STRUCTURAL_PENDING_TYPES
+)
+
+
+def _qc_structural_pending(obj: dict[str, Any], fname: str) -> bool:
+    """Is this finding pending BY CONSTRUCTION rather than as chain debt?
+
+    True for a knowledge-type finding — read from the record's own `type` field
+    when it carries one, else from the per-type JSONL filename it was stored
+    under. Both routes are needed: the per-type file layout is the normal case,
+    and a record that names its own type is authoritative when the two disagree.
+
+    A finding already carrying a real disposition is never structural, whatever
+    its type: an operator who resolved a `tip` has made it a resolved finding, and
+    this predicate must not overrule the record.
+    """
+    if str(obj.get("resolution") or "").strip().lower() not in {"", "pending", "none"}:
+        return False
+    declared = str(obj.get("type") or "").strip().lower()
+    if declared:
+        return declared in _QC_STRUCTURAL_PENDING_TYPES
+    return fname in _QC_STRUCTURAL_PENDING_FILES
+
+
 _QC_MECHANISMS = ["build", "self-review", "auto-review", "human-review", "other"]
 _QC_RESOLUTIONS = [
     "direct_fix",
@@ -3471,6 +3518,12 @@ class _QualityChainPlan:
     matrix: dict[str, dict[str, int]]
     mech_total: dict[str, int]
     findings: list[dict[str, Any]]
+    # Count of this plan's findings that are pending BY CONSTRUCTION (knowledge
+    # types no action resolves). Reported in its own bucket rather than removed
+    # from the matrix: the matrix stays a faithful census of what was filed, and
+    # this names how much of its `pending` column no backlog work could ever
+    # clear. Subtracting them silently would trade one untrue number for another.
+    structural_pending: int = 0
 
 
 def _collect_quality_chain(all_inputs: list[PlanInputs]) -> list[_QualityChainPlan]:
@@ -3491,19 +3544,24 @@ def _collect_quality_chain(all_inputs: list[PlanInputs]) -> list[_QualityChainPl
             m: dict.fromkeys(_QC_RESOLUTIONS, 0) for m in _QC_MECHANISMS
         }
         mech_total: dict[str, int] = dict.fromkeys(_QC_MECHANISMS, 0)
+        structural_pending = 0
         records: list[dict[str, Any]] = []
         for jsonl in sorted(findings_dir.glob("*.jsonl")):
             for obj in read_jsonl(jsonl):
                 mech = _qc_mechanism(jsonl.name, obj)
                 res = _qc_resolution(obj)
+                structural = _qc_structural_pending(obj, jsonl.name)
                 matrix[mech][res] += 1
                 mech_total[mech] += 1
+                if structural:
+                    structural_pending += 1
                 tier = _qc_shift_left_tier(obj) if mech == "auto-review" else 0
                 records.append(
                     {
                         "plan_id": inputs.plan_id,
                         "mechanism": mech,
                         "resolution": res,
+                        "structural_pending": structural,
                         "source_file": jsonl.name,
                         "title": str(obj.get("title") or obj.get("type") or "")[:80],
                         "shift_left_tier": tier,
@@ -3519,6 +3577,7 @@ def _collect_quality_chain(all_inputs: list[PlanInputs]) -> list[_QualityChainPl
                 matrix=matrix,
                 mech_total=mech_total,
                 findings=records,
+                structural_pending=structural_pending,
             )
         )
     return plans
@@ -3528,7 +3587,11 @@ def _quality_chain_flags(plan: _QualityChainPlan) -> list[str]:
     """Compute the chain anti-pattern flags for one plan.
 
     - `build_pending_pile` — a pile of build findings left `pending` at archive
-      time (a build-failure backlog the plan never cleared).
+      time (a build-failure backlog the plan never cleared). Needs no
+      structural-pending exclusion: the `build` mechanism is exactly
+      `build-error.jsonl` / `test-failure.jsonl`, both actionable types, so no
+      pending-by-construction row can reach this count. Clearing the backlog does
+      drive it to zero.
     - `auto_review_only` — the plan carries auto-review findings but recorded ZERO
       build and ZERO self-review findings: the PR bot was the only quality gate
       that fired, so everything shifted right to the most expensive stage.
@@ -3606,6 +3669,7 @@ def cross_quality_chain(all_inputs: list[PlanInputs]) -> dict[str, Any]:
                 "human_review": plan.mech_total["human-review"],
                 "other": plan.mech_total["other"],
                 "total": sum(plan.mech_total.values()),
+                "structural_pending": plan.structural_pending,
                 "flags": flags,
             }
         )
@@ -3614,6 +3678,12 @@ def cross_quality_chain(all_inputs: list[PlanInputs]) -> dict[str, Any]:
             if f["mechanism"] == "auto-review" and f["shift_left_tier"] in tier_histogram:
                 tier_histogram[f["shift_left_tier"]] += 1
 
+    # The corpus `pending` column, split into the part an action could clear and
+    # the part no action could. Reported as two numbers rather than one net figure
+    # so the read-out can answer "what would make this zero?" for each: the
+    # actionable half by resolving the findings, the structural half never.
+    corpus_structural_pending = sum(p.structural_pending for p in plans)
+    corpus_pending = sum(corpus[mech]["pending"] for mech in _QC_MECHANISMS)
     return {
         "plans_in_corpus": len(plans),
         "rows": plan_rows,
@@ -3622,6 +3692,9 @@ def cross_quality_chain(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         "tier_histogram": tier_histogram,
         "mechanisms": _QC_MECHANISMS,
         "resolutions": _QC_RESOLUTIONS,
+        "corpus_pending": corpus_pending,
+        "corpus_structural_pending": corpus_structural_pending,
+        "corpus_actionable_pending": corpus_pending - corpus_structural_pending,
     }
 
 
@@ -5737,15 +5810,26 @@ def _qc_finding_genuine(row: dict[str, Any]) -> bool:
     """Genuine-signal predicate for one quality-chain per-finding row.
 
     Genuine (actionable): an `auto-review` finding (shift-left subject — caught
-    only at the most expensive stage), OR a build/self/auto finding still
-    `pending` at archive time (unresolved chain debt). Informational: a finding
-    cleanly resolved by an earlier mechanism (`direct_fix` / `lesson`) or a
-    human-review row, which is the expected disposition rather than a signal.
+    only at the most expensive stage), OR a finding still `pending` at archive
+    time (unresolved chain debt). Informational: a finding cleanly resolved by an
+    earlier mechanism (`direct_fix` / `lesson`) or a human-review row, which is
+    the expected disposition rather than a signal.
+
+    A STRUCTURALLY pending finding is never genuine on the pending leg. A
+    knowledge-type record (`tip` / `insight` / `best-practice` / `improvement`) is
+    seeded `pending` by `add_finding` and no action ever resolves it, so counting
+    it as chain debt puts rows in the genuine population that nothing could remove.
+    The answer to "what would make this count zero?" has to be a real action; for
+    these rows there is none, so they are not counted.
+
+    The auto-review leg is unaffected: a knowledge-type finding surfaced by the PR
+    bot is still a genuine shift-left signal — what it cost to catch is the point,
+    not whether anyone closes it.
     """
     if row["mechanism"] == "auto-review":
         return True
     if row["resolution"] == "pending":
-        return True
+        return not row.get("structural_pending", False)
     return False
 
 
@@ -5794,6 +5878,17 @@ def emit_quality_chain_block(result: dict[str, Any]) -> str:
         f"plan_genuine_signal_count: {plan_genuine_count}",
         f"finding_genuine_signal_count: {finding_genuine_count}",
         f"shift_left_tiers: {_cell(tier_summary)}",
+        # The `pending` column split into what an action could clear and what it
+        # could not. Both are published: reporting only the net actionable figure
+        # would hide that part of the census is permanent, and reporting only the
+        # gross figure is the mislabelled population this split exists to end.
+        f"pending_total: {result['corpus_pending']}",
+        f"pending_actionable: {result['corpus_actionable_pending']}",
+        f"pending_structural: {result['corpus_structural_pending']}",
+        "pending_structural_note: knowledge-type findings (tip/insight/"
+        "best-practice/improvement) are seeded pending and no action resolves "
+        "them — excluded from the genuine count because nothing could make that "
+        "part of the count zero",
     ]
 
     # 1. Corpus mechanism×resolution matrix.
@@ -5805,7 +5900,8 @@ def emit_quality_chain_block(result: dict[str, Any]) -> str:
 
     # 2. Per-plan mechanism totals + flags.
     out.append(
-        f"plans[{len(plan_rows)}]{{plan_id,build,self_review,auto_review,human_review,other,total,flags,severity}}:"
+        f"plans[{len(plan_rows)}]{{plan_id,build,self_review,auto_review,human_review,"
+        f"other,total,structural_pending,flags,severity}}:"
     )
     for r in plan_rows:
         out.append(
@@ -5820,6 +5916,7 @@ def emit_quality_chain_block(result: dict[str, Any]) -> str:
                     r["human_review"],
                     r["other"],
                     r["total"],
+                    r["structural_pending"],
                     r["flags_str"],
                     r["severity"],
                 ]
