@@ -568,13 +568,15 @@ Give it, at minimum:
 Then:
 
 - **Findings that are real** → fix them, then re-dispatch. A verification pass that found a defect
-  has not finished — unless conditions **A** and **B** permit that finding to be left open, which is
-  narrow and separately justified (§ "When the loop stops", at the end of this step).
+  has not finished — unless conditions **A** and **B** permit that finding to be left open, or the
+  round budget is spent, in which case the findings are still **fixed** and the loop ends there
+  (§ "When the loop stops", at the end of this step).
 - **Findings you reject** → record the finding *and the reason for rejecting it* in the report. A
   dismissed finding is still evidence.
 - Every finding — fixed, rejected-with-reason, deferred to a named follow-up, or left open as a
   **survivor** — goes in the run report (§ Report). A *deferred* finding is real and unfixed here;
-  a *survivor* is one the run argues needs no fixing at all (§ "When the loop stops").
+  a *survivor* is one the run argues needs no fixing at all (§ "When the loop stops"). Neither is
+  available to a finding condition **A** governs: a false statement is fixed, not deferred.
 
 **A fix is a change, so it gets the same beyond-diff sweep the original change got.** The sweep above
 is written against the diff under review; by the second round the diff under review is largely the
@@ -715,15 +717,16 @@ Survivors are listed individually; a bulk mention is not a disclosure. **A findi
 false statement and a behavioural defect is governed by A** — it is fixed, not characterised.
 
 ⛔ **Whether A and B are met is the VERIFIER's call, not the author's.** The dispatch checklist above
-puts it to the round directly: *does anything remain open that A or B forbids?* Honour the answer.
+puts the question to the round, over its own findings *and* every survivor still open from earlier
+rounds. Honour the answer.
 The author is the party motivated to stop, and in the run above **three** of the tests written to
 close previously-found gaps were themselves vacuous — they passed against the fixed code *and*
 against the defect they named. An author polling their own work for permission to stop will get it.
 
-**A round budget, declared before the first dispatch.** Be honest about what this is: given the
-premise above, a verifier answering "nothing new" is the *rare* exit, not the expected one. The
-budget is what usually ends the loop, so it is stated **up front**, before the run knows what the
-rounds will say — a number chosen at the moment of wanting to stop is not a budget.
+**A round budget, declared before the first dispatch.** The plan states it where it has one; otherwise
+the run does, **up front** — before it knows what the rounds will say, because a number chosen at the
+moment of wanting to stop is not a budget. Exhausting it is a **STOP CONDITION**, and what follows is
+its stated **autonomous fallback**.
 
 When it is exhausted the run still **fixes everything A forbids**, then stops with B's survivors
 characterised and disclosed per instance. Nothing false ships because the rounds ran out. `Outcome`
