@@ -6716,18 +6716,42 @@ def _parse_dispatch_boundary_totals(path: Path) -> dict[str, int]:
     Column indices come from the `rows[...]{...}:` header when it declares them and
     from the canonical `_BC_LEDGER_COLUMNS` order otherwise. A row carrying fewer
     than the legacy five columns is skipped. Within a row, each context-load cell
-    reads three ways per `data-format.md` § Per-Dispatch Context-Load Attribution:
+    reads FOUR ways per `data-format.md` § Per-Dispatch Context-Load Attribution
+    (including its "Provenance of a measured zero" subsection):
 
-    * an integer — MEASURED, and summed (a measured `0` counts as measured).
+    * a NONZERO integer — MEASURED, and summed.
     * the `unmeasured` literal, or a column the row is too short to have —
       UNMEASURED. Contributes nothing and does not mark the field measured, so a
       ledger of only-unmeasured rows omits the field entirely.
     * anything else — UNRECOGNISED. Contributes nothing either; it is a shape this
       reader failed to parse, and defaulting it to `0` would silently pull the
       reconciliation maximum down toward a number no dispatch reported.
+    * a literal `0` — decided by the row-level PROVENANCE GATE below, because the
+      bytes alone cannot say which of two facts it records.
+
+    THE PROVENANCE GATE. The pre-token writer defaulted every omitted context-load
+    column to a literal `0`, so "measured zero" and "wrote 0 because it had nothing
+    to measure" are byte-identical on disk. The disambiguator is an IN-band,
+    post-token FINGERPRINT on the row itself: an `unmeasured` token (only the
+    current writer emits it) or a nonzero context-load cell ("nothing to measure"
+    never yields one). A `0` in a row carrying EITHER is a genuine measured zero —
+    summed, and the field marked measured (the standard's row-3 example
+    `…,9100,0,0,0` is three genuine measured zeros). A `0` in a row carrying
+    NEITHER is UNDATABLE: it contributes nothing and does NOT mark the field
+    measured, so a ledger whose only rows are fingerprint-free all-zero rows omits
+    those fields entirely rather than reporting a measurement it cannot date.
+
+    This is the same row-level gate the `plan-retrospective` reader
+    (`analyze-logs.py` `_parse_dispatch_boundary_file`) applies; the two readers
+    parse the same on-disk ledger in separate processes, so the two definitions of
+    "datable" MUST stay identical. That reader names the state `indeterminate` and
+    reports it per column; this one sums rather than emitting per-row states, so an
+    undatable `0` surfaces here only as the field's ABSENCE from the totals — the
+    same absent-is-not-zero signal an all-unmeasured ledger already produces.
 
     The legacy five columns are unaffected: they carry a numeric default, so a
-    non-int there stays the historical degrade-to-`0`.
+    non-int there stays the historical degrade-to-`0`, and their zeros are never
+    gated.
     """
     if not path.is_file():
         return {}
@@ -6757,6 +6781,13 @@ def _parse_dispatch_boundary_totals(path: Path) -> dict[str, int]:
         parts = [cell.strip() for cell in stripped.split(",")]
         if len(parts) < _BC_LEDGER_MIN_COLUMNS:
             continue
+        # FIRST PASS — every verdict that depends on the CELL alone. Only a
+        # literal `0` is deferred, because its verdict turns on whether the WHOLE
+        # row carries a post-token fingerprint (see the provenance gate in this
+        # function's docstring, and `data-format.md` § Per-Dispatch Context-Load
+        # Attribution → "Provenance of a measured zero").
+        datable = False
+        deferred_zeros: list[str] = []
         for ledger_field in _BC_LEDGER_FIELDS:
             if ledger_field not in columns:
                 continue
@@ -6764,17 +6795,37 @@ def _parse_dispatch_boundary_totals(path: Path) -> dict[str, int]:
             if index >= len(parts):
                 continue
             cell = parts[index]
-            if ledger_field in _BC_LEDGER_UNMEASURABLE_FIELDS:
-                if cell == _BC_LEDGER_UNMEASURED_TOKEN:
-                    continue
-                try:
-                    totals[ledger_field] += int(cell)
-                except ValueError:
-                    continue
+            if ledger_field not in _BC_LEDGER_UNMEASURABLE_FIELDS:
+                totals[ledger_field] += _to_int(cell)
                 measured.add(ledger_field)
                 continue
-            totals[ledger_field] += _to_int(cell)
+            if cell == _BC_LEDGER_UNMEASURED_TOKEN:
+                # Only the current writer emits the token, so it dates the row —
+                # while itself measuring nothing.
+                datable = True
+                continue
+            try:
+                value = int(cell)
+            except ValueError:
+                # UNRECOGNISED. It dates nothing: this reader could not parse it,
+                # so it is no evidence about which writer wrote the row.
+                continue
+            if value == 0:
+                deferred_zeros.append(ledger_field)
+                continue
+            # A nonzero is a real measurement under any writer, and "nothing to
+            # measure" never yields one — so it dates the row too.
+            datable = True
+            totals[ledger_field] += value
             measured.add(ledger_field)
+        # SECOND PASS — the deferred zeros, now that the row's fingerprint is
+        # known. A `0` is a genuine measured zero only in a row a post-token
+        # fingerprint dates; otherwise it is UNDATABLE and this reader asserts
+        # neither "measured" nor "unmeasured" about it. Either way the summed
+        # value is unchanged (`+= 0`); what the gate decides is whether the field
+        # is reported as MEASURED at all.
+        if datable:
+            measured.update(deferred_zeros)
     return {field: value for field, value in totals.items() if field in measured}
 
 

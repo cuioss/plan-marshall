@@ -33,12 +33,16 @@ the sampling point — and never only a terminal pass/fail or a bare "no error
 raised". A test that asserts only the outcome cannot distinguish a record that
 stated its uncertainty from one that examined nothing.
 
-Two fixture-backed companions close the reader side, where the archived history
-lives and cannot be migrated:
+Fixture-backed companions close the reader side, where the archived history lives
+and cannot be migrated. Each is read by BOTH the ``plan-retrospective`` reader and
+the ``.claude`` audit skill's ledger reader, which hand-mirror one contract from
+separate trees, so a change that moved only one of them fails here:
 
-* the new ``unmeasured/`` dispatch-boundary fixture carries unmeasured columns
-  ALONGSIDE measured zeros on one file, and is read by BOTH the
-  ``plan-retrospective`` reader and the ``.claude`` audit skill's ledger reader;
+* the ``unmeasured/`` dispatch-boundary fixture carries unmeasured columns
+  ALONGSIDE measured zeros on one file;
+* the ``undatable/`` fixture carries the pre-token writer's shape — nine columns,
+  every context-load cell a literal ``0``, nothing on the row dating it — so both
+  readers must decline to report those zeros as measurements;
 * the read-only ``legacy/`` five-column fixture is asserted byte-identical and
   still parses in both readers, proving the positional-backward-compatibility
   floor survived the representation change.
@@ -862,5 +866,71 @@ def test_legacy_fixture_still_parses_in_both_readers():
 
     totals = audit._parse_dispatch_boundary_totals(_LEGACY_FIXTURE)
     assert totals['total_tokens'] == 80000
+    for column in _CONTEXT_COLUMNS:
+        assert column not in totals, column
+
+
+# =============================================================================
+# The undatable-zero fixture: one artifact, both readers, one provenance gate
+# =============================================================================
+
+_UNDATABLE_FIXTURE = (
+    _FIXTURES_DIR / 'undatable' / 'work' / 'metrics-dispatch-boundaries-5-execute.toon'
+)
+
+#: The undatable fixture's exact bytes — the pre-token writer's row shape, which
+#: defaulted every omitted context-load column to a literal `0`. Pinned as a
+#: literal because the claim under test is what THESE bytes mean; a fixture
+#: compared only to itself could never falsify a drift in them.
+_UNDATABLE_FIXTURE_BYTES = (
+    'plan_id: dispatch-loop-replay-undatable\n'
+    'phase: 5-execute\n'
+    'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
+    'input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens}:\n'
+    '2026-03-02T09:00:00Z,clean_exit_queue_empty,90000,45,100000,0,0,0,0\n'
+    '2026-03-02T09:05:00Z,clean_exit_queue_empty,70000,30,80000,0,0,0,0\n'
+)
+
+
+def test_undatable_fixture_carries_no_post_token_fingerprint():
+    """The fixture is the pre-token writer's shape: nine columns, all zeros.
+
+    Asserted on the BYTES rather than through either reader, so the premise both
+    reader tests below rest on — that nothing in this file dates it to the
+    current writer — is established independently of the code under test.
+    """
+    assert _UNDATABLE_FIXTURE.read_text(encoding='utf-8') == _UNDATABLE_FIXTURE_BYTES
+    assert 'unmeasured' not in _UNDATABLE_FIXTURE_BYTES
+
+
+def test_undatable_zeros_are_not_measurements_in_either_reader():
+    """One artifact, both readers, one verdict: an undatable `0` is not measured.
+
+    The two readers parse the same on-disk ledger from separate trees and cannot
+    share a constant, so they are exercised against the SAME file here. The
+    retrospective reader names the state per column (`indeterminate_columns`);
+    the audit ledger reader sums rather than emitting per-row states, so the same
+    verdict surfaces there as the field's ABSENCE from the totals. A change that
+    moved only one reader fails this test.
+    """
+    parsed = analyze_logs._parse_dispatch_boundary_file(_UNDATABLE_FIXTURE)
+
+    assert parsed['present'] is True
+    assert len(parsed['rows']) == 2
+    for row in parsed['rows']:
+        for column in _CONTEXT_COLUMNS:
+            assert column not in row, column
+        assert row['indeterminate_columns'] == list(_CONTEXT_COLUMNS)
+        # Never folded into either neighbour: the writer made no statement, and
+        # the reader parsed the cells fine.
+        assert row['unmeasured_columns'] == []
+        assert row['unrecognised_columns'] == []
+
+    totals = audit._parse_dispatch_boundary_totals(_UNDATABLE_FIXTURE)
+
+    # The legacy five columns are outside the gate and still sum.
+    assert totals['total_tokens'] == 90000 + 70000
+    # ABSENT, not `0` — the same fact the retrospective reader names
+    # `indeterminate`, in the shape this reader can express.
     for column in _CONTEXT_COLUMNS:
         assert column not in totals, column

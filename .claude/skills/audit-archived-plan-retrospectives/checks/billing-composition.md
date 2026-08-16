@@ -31,18 +31,38 @@ re-derived from the raw per-phase fields.
 | `work/metrics.toon` | top-level `any_phase_missing_end_time`, `phases_missing_end_time` | the `omitted_row` under-count and the floor label |
 | `work/metrics-dispatch-boundaries-{phase}.toon` | the `total_tokens` and four context-load columns, summed per phase | the same-population reconciliation (see below) |
 
-**The ledger's four context-load columns read three ways.** A cell is MEASURED (an
-integer, including a measured `0`), UNMEASURED (the literal `unmeasured`, or a
-column a legacy five-column row does not have), or UNRECOGNISED (any other
-shape). Only measured cells are summed, and a field NO row measured is OMITTED
-from the per-phase ledger totals rather than returned as `0` — the same
-absent-is-not-zero rule the per-phase reader already applies. An unmeasured or
-unrecognised cell therefore contributes nothing and never pulls the
-reconciliation maximum down toward a number no dispatch reported. The canonical
-column order and the token are owned by `manage-metrics/standards/data-format.md`
-§ Per-Dispatch Context-Load Attribution; `_BC_LEDGER_COLUMNS` and
-`_BC_LEDGER_UNMEASURED_TOKEN` in `scripts/audit.py` are hand-mirrors of it, in a
-tree the architecture inventory does not crawl, and MUST move with it.
+**The ledger's four context-load columns read four ways.** A cell is MEASURED (a
+nonzero integer), UNMEASURED (the literal `unmeasured`, or a column a legacy
+five-column row does not have), UNRECOGNISED (any other shape), or a literal `0`,
+whose reading the provenance gate below decides. Only measured cells are summed,
+and a field NO row measured is OMITTED from the per-phase ledger totals rather
+than returned as `0` — the same absent-is-not-zero rule the per-phase reader
+already applies. An unmeasured or unrecognised cell therefore contributes nothing
+and never pulls the reconciliation maximum down toward a number no dispatch
+reported. The canonical column order and the token are owned by
+`manage-metrics/standards/data-format.md` § Per-Dispatch Context-Load
+Attribution; `_BC_LEDGER_COLUMNS` and `_BC_LEDGER_UNMEASURED_TOKEN` in
+`scripts/audit.py` are hand-mirrors of it, in a tree the architecture inventory
+does not crawl, and MUST move with it.
+
+**A literal `0` is summed as a measurement only when the row can be dated.** The
+writer that predates the `unmeasured` token defaulted every omitted context-load
+column to a literal `0`, so "measured zero" and "wrote 0 because it had nothing to
+measure" are byte-identical on disk — the archived corpus is the audit record and
+cannot be rewritten to separate them. The reader dates a row by an IN-band,
+post-token FINGERPRINT on the row itself: an `unmeasured` token (only the current
+writer emits it) or a nonzero context-load cell ("nothing to measure" never yields
+one). A `0` in a row carrying either is a genuine measured zero and sums; a `0` in
+a row carrying neither is UNDATABLE, contributes nothing, and does not mark the
+field measured — so a ledger whose only rows are fingerprint-free all-zero rows
+omits those fields entirely rather than reporting a measurement no dispatch can be
+shown to have taken. The gate is per ROW, never per file: one dated row does not
+date its neighbours. This is the same gate the `plan-retrospective` reader
+(`analyze-logs.py` `_parse_dispatch_boundary_file`) applies to the same bytes,
+where it surfaces per column as `indeterminate`; the two readers parse one ledger
+in separate processes, so their definitions of "datable" MUST stay identical. See
+`data-format.md` § Per-Dispatch Context-Load Attribution → "Provenance of a
+measured zero".
 
 The per-phase fields are written by `manage-metrics enrich` from the transcript
 engine's `message.usage` four-field walk and its tool-call walk; the ledger rows
@@ -293,9 +313,12 @@ may be dismissed as informational/expected ONLY with a cited reason.
   is outside this check's remit and unsupported by its inputs.
 - **Absent is not zero.** A plan measuring neither family is excluded and named,
   never admitted at a zero share. A measured zero is a real observation and stays
-  in. The same rule binds one level down, inside the ledger: an `unmeasured` or
-  unrecognised context-load cell contributes nothing and its field is omitted from
-  the per-phase totals — it is never summed as a `0`.
+  in. The same rule binds one level down, inside the ledger: an `unmeasured`
+  cell, an unrecognised one, and an UNDATABLE literal `0` alike contribute nothing
+  and their field is omitted from the per-phase totals — never summed as a `0`. An
+  undatable zero is the sharpest form: it is the only one whose bytes look exactly
+  like a measurement, which is why the row-level provenance gate, not the cell,
+  decides it.
 - **An unknown is a floor, never a clean verdict.** A marker record this reader
   could not interpret floors the plan. The predecessor of this reader degraded BOTH
   unreadable states to "not partial", which would have certified every post-rename
