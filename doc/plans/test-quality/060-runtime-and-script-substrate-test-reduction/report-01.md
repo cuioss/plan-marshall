@@ -1,6 +1,6 @@
 # Run report — 060-runtime-and-script-substrate-test-reduction (run 01)
 
-**Date (UTC):** 2026-08-16    **Branch:** `claude/runtime-script-substrate-tests-qqeuoj`    **PR:** _(pending)_    **Outcome:** partial
+**Date (UTC):** 2026-08-16    **Branch:** `claude/runtime-script-substrate-tests-qqeuoj`    **PR:** [#1263](https://github.com/cuioss/plan-marshall/pull/1263)    **Outcome:** partial
 
 The slice's house-style deliverables (D1, D3, D4, D5) landed and are measured below. **D2 did not
 land**, and the plan's 25% line floor was not reached — by a wide margin. Both are stated in full at
