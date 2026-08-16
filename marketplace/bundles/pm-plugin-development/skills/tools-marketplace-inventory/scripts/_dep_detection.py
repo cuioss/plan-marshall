@@ -32,6 +32,25 @@ class DependencyType(Enum):
     IMPLEMENTS = 'implements'  # implements: frontmatter interface refs
 
 
+class Exclusion(Enum):
+    """The non-reference shape a colon-triple matched, if any.
+
+    A typed member rather than a bare string so the detector and the index cannot
+    drift apart on a spelling: the index asks whether a match is in
+    :data:`VERB_BEARING_EXCLUSIONS`, and a renamed member is a load-time error
+    instead of a silently-never-true comparison.
+    """
+
+    PLACEHOLDER = 'placeholder'
+    CANONICAL_COMMAND = 'canonical-command'
+    DECISION_LOG = 'decision-log'
+    EMBEDDED_TOKEN = 'embedded-token'
+
+
+# The only excluded shape whose third segment can still name a verb.
+VERB_BEARING_EXCLUSIONS: frozenset[Exclusion] = frozenset({Exclusion.DECISION_LOG})
+
+
 @dataclass
 class ComponentId:
     """Identifier for a marketplace component."""
@@ -85,7 +104,7 @@ class Dependency:
     dep_type: DependencyType
     context: str  # Location (line number, field name)
     resolved: bool = True  # False if target doesn't exist
-    exclusion: str = ''  # Name of the non-reference shape matched; see below
+    exclusion: Exclusion | None = None  # Non-reference shape matched; see below
 
 
 # ``exclusion`` is how the non-reference exclusions below stay FAIL-CLOSED.
@@ -109,13 +128,7 @@ class Dependency:
 # canonical command names a build step, and a sub-document path's third segment is
 # a DIRECTORY (``manage-lessons:references/dedup-analysis.md``), never a verb.
 # Letting those retarget manufactured five false edges onto ``manage-lessons``.
-EXCLUSION_PLACEHOLDER = 'placeholder'
-EXCLUSION_CANONICAL_COMMAND = 'canonical-command'
-EXCLUSION_DECISION_LOG = 'decision-log'
-EXCLUSION_EMBEDDED_TOKEN = 'embedded-token'
 
-# The only excluded shape whose third segment can still name a verb.
-VERB_BEARING_EXCLUSIONS: frozenset[str] = frozenset({EXCLUSION_DECISION_LOG})
 
 
 # ---------------------------------------------------------------------------
@@ -322,15 +335,15 @@ def detect_script_notations(content: str, source: ComponentId) -> list[Dependenc
             # Non-reference shapes. The ARM is recorded, never dropped here —
             # the index keeps any that turn out to name a real component.
             if _has_placeholder_segment(bundle, skill, script):
-                exclusion = EXCLUSION_PLACEHOLDER
+                exclusion = Exclusion.PLACEHOLDER
             elif _is_canonical_command(match.group(0)):
-                exclusion = EXCLUSION_CANONICAL_COMMAND
+                exclusion = Exclusion.CANONICAL_COMMAND
             elif _is_decision_log_prefix(line, match.start(), match.end()):
-                exclusion = EXCLUSION_DECISION_LOG
+                exclusion = Exclusion.DECISION_LOG
             elif _is_embedded_in_longer_token(line, match.start(), match.end()):
-                exclusion = EXCLUSION_EMBEDDED_TOKEN
+                exclusion = Exclusion.EMBEDDED_TOKEN
             else:
-                exclusion = ''
+                exclusion = None
 
             target = ComponentId(
                 bundle=bundle,
@@ -376,9 +389,9 @@ def detect_skill_references(content: str, frontmatter: dict[str, Any], source: C
                             dep_type=DependencyType.SKILL_REFERENCE,
                             context='frontmatter:skills',
                             exclusion=(
-                                EXCLUSION_PLACEHOLDER
+                                Exclusion.PLACEHOLDER
                                 if _has_placeholder_segment(bundle, name)
-                                else ''
+                                else None
                             ),
                         )
                     )
@@ -396,7 +409,7 @@ def detect_skill_references(content: str, frontmatter: dict[str, Any], source: C
                     dep_type=DependencyType.SKILL_REFERENCE,
                     context=f'line:{line_num}',
                     exclusion=(
-                        EXCLUSION_PLACEHOLDER if _has_placeholder_segment(bundle, name) else ''
+                        Exclusion.PLACEHOLDER if _has_placeholder_segment(bundle, name) else None
                     ),
                 )
             )

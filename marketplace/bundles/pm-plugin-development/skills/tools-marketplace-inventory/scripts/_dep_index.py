@@ -455,6 +455,29 @@ def _normalize_segment(segment: str) -> str:
     return segment.replace('_', '-')
 
 
+def _is_misspelled_script_segment(target: ComponentId) -> bool:
+    """True when the script segment is the skill's own name in the wrong case style.
+
+    `plugin-doctor`'s `manage-findings-invocation-invalid` rule names this defect:
+    the executor keys on the third segment literally, so an underscored spelling of
+    the script does not resolve. It is a misspelling, never a verb.
+    """
+    return bool(target.parent_skill) and _normalize_segment(target.name) == _normalize_segment(
+        target.parent_skill or ''
+    )
+
+
+def _entry_script_candidates(skill: str) -> tuple[str, ...]:
+    """Return the names an entry script may carry for `skill`, in probe order.
+
+    Nine skills in this marketplace spell the entry script with underscores
+    (`plan-doctor:plan_doctor`, `extension-api:extension_api`, …), so assuming
+    filename == skill name exactly is the assumption plugin-doctor's own rule
+    catalogue rejects.
+    """
+    return (skill, skill.replace('-', '_'), skill.replace('_', '-'))
+
+
 def _entry_script_for_subcommand(
     index: DependencyIndex, target: ComponentId, dep_type: DependencyType
 ) -> ComponentId | None:
@@ -492,18 +515,9 @@ def _entry_script_for_subcommand(
     # an underscored script segment does not resolve — and
     # retargeting it onto the entry script would suppress a finding the
     # repository deliberately raises.
-    if _normalize_segment(target.name) == _normalize_segment(target.parent_skill):
+    if _is_misspelled_script_segment(target):
         return None
-    # The entry script carries the skill's name in EITHER case style — nine skills
-    # in this marketplace spell it with underscores (`plan-doctor:plan_doctor`,
-    # `extension-api:extension_api`, …). Assuming filename == skill name exactly
-    # is the assumption plugin-doctor's own rule catalogue rejects, so both
-    # spellings are tried before concluding the skill has no entry script.
-    for entry_name in (
-        target.parent_skill,
-        target.parent_skill.replace('-', '_'),
-        target.parent_skill.replace('_', '-'),
-    ):
+    for entry_name in _entry_script_candidates(target.parent_skill):
         entry = ComponentId(
             bundle=target.bundle,
             component_type='script',

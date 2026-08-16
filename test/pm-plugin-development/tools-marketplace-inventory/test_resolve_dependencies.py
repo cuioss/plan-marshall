@@ -44,6 +44,8 @@ _resolve_mod = _load_module('resolve_dependencies', 'resolve-dependencies.py')
 
 ComponentId = _dep_detection_mod.ComponentId
 DependencyType = _dep_detection_mod.DependencyType
+Exclusion = _dep_detection_mod.Exclusion
+VERB_BEARING_EXCLUSIONS = _dep_detection_mod.VERB_BEARING_EXCLUSIONS
 detect_implements = _dep_detection_mod.detect_implements
 detect_python_imports = _dep_detection_mod.detect_python_imports
 detect_script_notations = _dep_detection_mod.detect_script_notations
@@ -1124,49 +1126,54 @@ class TestNonReferenceColonTriples:
 
     @classmethod
     def _excluded_as(cls, content, exclusion):
-        """Every match records `exclusion` — the arm that excluded it, not just that one did."""
+        """Every match records `exclusion` — the arm that excluded it, not just that one did.
+
+        Asserted against the `Exclusion` members rather than their string values, so
+        renaming a member is a load-time error here instead of a test that quietly
+        stops tracking the real exclusions.
+        """
         deps = cls._detect(content)
-        return bool(deps) and all(d.exclusion == exclusion for d in deps)
+        return bool(deps) and all(d.exclusion is exclusion for d in deps)
 
     def test_documentation_placeholder_is_not_a_reference(self):
         """Prose documenting the notation form produces no finding."""
         content = 'Scripts are referenced as `bundle:skill:script` in documentation.\n'
-        assert self._excluded_as(content, 'placeholder')
+        assert self._excluded_as(content, Exclusion.PLACEHOLDER)
 
     def test_maven_placeholder_coordinate_is_not_a_reference(self):
         """``groupId:artifactId:scope`` documents a coordinate, not a script."""
         content = 'Each module names dependencies as `groupId:artifactId:scope`.\n'
-        assert self._excluded_as(content, 'placeholder')
+        assert self._excluded_as(content, Exclusion.PLACEHOLDER)
 
     def test_canonical_verification_step_is_not_a_reference(self):
         """``default:verify:{canonical}`` is a build command, not a script."""
         content = 'Set per_deliverable_build to default:verify:quality-gate here.\n'
-        assert self._excluded_as(content, 'canonical-command')
+        assert self._excluded_as(content, Exclusion.CANONICAL_COMMAND)
 
     def test_decision_log_prefix_is_not_a_reference(self):
         """A parenthesised ``(bundle:skill:step)`` prefix names the emitting step."""
         content = '--message "(plan-marshall:phase-6-finalize:qgate) Finding fixed"\n'
-        assert self._excluded_as(content, 'decision-log')
+        assert self._excluded_as(content, Exclusion.DECISION_LOG)
 
     def test_dotted_build_coordinate_is_not_a_reference(self):
         """A Maven coordinate preceded by its group prefix is not a script."""
         content = 'Depend on "de.cuioss:cui-java-tools:compile" for the utilities.\n'
-        assert self._excluded_as(content, 'embedded-token')
+        assert self._excluded_as(content, Exclusion.EMBEDDED_TOKEN)
 
     def test_gradle_task_path_is_not_a_reference(self):
         """A Gradle task path (leading colon) is not a script notation."""
         content = './gradlew :services:auth-service:build\n'
-        assert self._excluded_as(content, 'embedded-token')
+        assert self._excluded_as(content, Exclusion.EMBEDDED_TOKEN)
 
     def test_subdocument_path_is_not_a_reference(self):
         """``bundle:skill:dir/file.md`` addresses a document, not a script."""
         content = 'Load `plan-marshall:manage-lessons:references/dedup-analysis.md` first.\n'
-        assert self._excluded_as(content, 'embedded-token')
+        assert self._excluded_as(content, Exclusion.EMBEDDED_TOKEN)
 
     def test_dotted_document_suffix_is_not_a_reference(self):
         """``bundle:skill:name.md`` addresses a workflow document, not a script."""
         content = 'See `plan-marshall:plan-marshall:planning.md` for the contract.\n'
-        assert self._excluded_as(content, 'embedded-token')
+        assert self._excluded_as(content, Exclusion.EMBEDDED_TOKEN)
 
     def test_real_notation_at_end_of_sentence_is_still_a_reference(self):
         """A trailing sentence period must NOT be read as a document suffix."""
@@ -1190,13 +1197,13 @@ class TestPlaceholderSkillReferences:
     def test_skill_pattern_placeholder_is_not_a_reference(self):
         source = ComponentId(bundle='test', component_type='skill', name='test')
         deps = detect_skill_references('Skill: bundle:skill-name\n', {}, source)
-        assert deps and all(d.exclusion == 'placeholder' for d in deps)
+        assert deps and all(d.exclusion is Exclusion.PLACEHOLDER for d in deps)
 
     def test_frontmatter_placeholder_is_not_a_reference(self):
         source = ComponentId(bundle='test', component_type='skill', name='test')
         frontmatter = {'skills': ['bundle-name:skill-name']}
         deps = detect_skill_references('', frontmatter, source)
-        assert deps and all(d.exclusion == 'placeholder' for d in deps)
+        assert deps and all(d.exclusion is Exclusion.PLACEHOLDER for d in deps)
 
     def test_real_skill_reference_is_still_detected(self):
         source = ComponentId(bundle='test', component_type='skill', name='test')
@@ -1485,3 +1492,13 @@ class TestOnlyVerbBearingShapesRetarget:
         """The control: the one excluded shape whose segment CAN be a verb."""
         edges = _probe_reference(tmp_path, 'Emitted (probe-bundle:real-skill:compose) here.')
         assert edges == [('probe-bundle:real-skill:real-skill', True)]
+
+
+def test_only_the_decision_log_shape_may_carry_a_verb():
+    """`VERB_BEARING_EXCLUSIONS` holds exactly the one shape whose segment can be a verb.
+
+    Guards the distinction the index depends on: widening this set would let a
+    sub-document path retarget onto an entry script, which is how five false edges
+    onto `manage-lessons` were manufactured.
+    """
+    assert VERB_BEARING_EXCLUSIONS == frozenset({Exclusion.DECISION_LOG})
