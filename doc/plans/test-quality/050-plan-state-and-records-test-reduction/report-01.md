@@ -301,8 +301,87 @@ Recorded per instance.
 | 13 | D5 prose pass | `test-docstring-historical-prose` cannot separate a lesson/task-id **citation** from a **datum** of the same shape; 25/25 residual findings are false positives | **Recorded, not fixed** — rule lives in `marketplace/bundles/**`, out of this plan's scope |
 | 14 | D5 self-review | A rewrite in `test_manage_tasks_loop_exit_guard.py` left a dangling sentence | **Fixed** before commit |
 | 15 | D5 self-review | Residual "is now" / "new subcommand" narration survived the first pass in 2 modules | **Fixed** before commit |
+| 16 | D5 cold read | Citation strip left 5 sentences un-re-flowed, breaking at the excision point | **Fixed** (`19c7a69`) |
+| 17 | D5 cold read | `test_mark_step_migrates_stale_legacy_key_on_detail_refresh` states the contract, not its cost — PARTIAL | **Fixed** — names what a duplicate key breaks |
+| 18 | D5 cold read | `test_pair_outcome_emissions_regression_missing_outcome` names no consumer — PARTIAL | **Fixed** |
+| 19 | D5 cold read | `test_detect_outcome_for_diffed_tasks_regression` docstring is a 7-word fragment — PARTIAL | **Fixed** — states why pending is excluded |
+| 20 | D5 cold read | `test_read_dispatch_boundaries_per_phase_present` gives no motivation — PARTIAL | **Fixed** |
+| 21 | D5 cold read | Cross-reference to `test_measured_zero_context_load_stays_zero`, which does not exist, describing a model the block contradicts | **Fixed** — re-pointed at the real test |
+| 22 | D5 cold read | "the four phase-5-execute fact extractors"; the class's own test asserts three | **Fixed** |
+| 23 | D5 cold read | "These six tests pin the contract" over a module carrying ~25 | **Fixed** |
+| 24 | D5 cold read | "four concrete defects: among them" naming two | **Fixed** |
+| 25 | D5 cold read | Comment citing "this lesson" with no lesson named in the file | **Fixed** |
+| 26 | D5 cold read | Lesson id written as the placeholder `2026-05-15-X` | **Fixed** |
+| 27 | D5 cold read | Two tests in the same role captioned "negative control" and "positive control" | **Fixed** — both are positive controls |
+| 28 | D5 cold read | `detect_outcome_for_diffed_tasks` name and return key say *diff*; selector is `status == 'done'` | **Recorded, not fixed** — resolving it needs `_analyze_logs.py`, a `marketplace/bundles/**` file out of scope. Possible production defect |
+| 29 | D5 cold read | `plan_id = 'mark-step-legacy-force'` reused by two tests | **Recorded** — safe under current `plan_context` isolation; would misreport as a canonicalization bug if that weakens |
 
-_(Verification sub-agent and D5 cold-read findings are appended below.)_
+### D5 cold-read verification (the plan's required "By reading — cold read")
+
+Dispatched per the plan: **five rewritten modules and no other context** — no plan, no diff, no
+originals, no git access — asked, for each of **ten named tests**, "what contract does this test pin,
+and why does it matter?" Ratings and answers recorded; the full verbatim answers are in the agent
+transcript, and the ratings are reproduced here.
+
+| # | Test | Rating |
+|---|---|---|
+| 1 | `test_mark_step_failed_happy_path` | ANSWERABLE |
+| 2 | `test_mark_step_force_migrates_legacy_bare_string_preserving_prior_outcome` | ANSWERABLE ("the best-argued docstring in the five modules") |
+| 3 | `test_mark_step_default_prefixed_records_under_bare_key` | ANSWERABLE |
+| 4 | `test_mark_step_migrates_stale_legacy_key_on_detail_refresh` | **PARTIAL** |
+| 5 | `test_check_lapses_when_head_advances` | ANSWERABLE |
+| 6 | `test_reader_returns_the_row_count_alongside_the_sum` + module docstring | ANSWERABLE |
+| 7 | `test_manage_tasks_loop_exit_guard` module docstring | ANSWERABLE |
+| 8 | `test_pair_outcome_emissions_regression_missing_outcome` | **PARTIAL** |
+| 9 | `test_detect_outcome_for_diffed_tasks_regression` | **PARTIAL** |
+| 10 | `test_read_dispatch_boundaries_per_phase_present` | **PARTIAL** |
+
+**Six of ten ANSWERABLE, four PARTIAL, none UNANSWERABLE.** Per the plan — *"a test whose rewritten
+docstring cannot answer both has been over-stripped; restore the invariant (not the history) and
+re-read"* — all four PARTIALs were repaired in commit `19c7a69`, each by naming the **consequence**
+rather than the shape.
+
+The read found **15 defects in total**, all fixed in `19c7a69`:
+
+**Five caused by the citation strip itself.** Removing a mid-sentence reference left the line
+un-re-flowed, so the prose broke at exactly the point the citation had occupied. The cold reader
+identified the pattern before its cause: *"all five sit at exactly the point where a citation, a
+PR/issue reference, or a defect id would have been."* This is the single clearest lesson of the run —
+see § What have we learned.
+
+**Six pre-existing false or dangling statements**, none of which the doctor rule can see and none of
+which any count-based check would catch:
+
+| Defect | Why it matters |
+|---|---|
+| Cross-reference to `test_measured_zero_context_load_stays_zero` — **no such test exists**, and the two-state model it describes contradicts the four-state model the surrounding block asserts | a reader following it is led to the wrong model |
+| "the **four** phase-5-execute fact extractors" — the class's own end-to-end test asserts **three** sub-keys and that `dispatch_boundaries` is *not* among them | the class docstring counts as phase-5 an extractor the class itself proves is not |
+| "These **six** tests pin the contract" over a module carrying ~25, whose first test sits in a block the docstring does not admit exists | the reader's first encounter with the file is undocumented |
+| "four concrete defects: among them" naming **two**, over a class whose nine tests do not map onto the enumeration | promises a census it does not deliver |
+| a comment citing "this lesson" with no lesson named anywhere in the file | unresolvable from the module |
+| a lesson id written as `2026-05-15-X` — an unfilled placeholder | not an identifier |
+
+**One terminology defect:** two tests playing the identical role were captioned "negative control" and
+"positive control". Both are positive controls.
+
+**Two recorded, not fixed** (neither is prose, and neither is in this plan's remit):
+
+- `test_analyze_logs.py::detect_outcome_for_diffed_tasks` — the function name and its return key
+  `tasks_with_diff_no_outcome` both say *diff*, but the selector is purely `status == 'done'`; nothing
+  in the test involves a diff or a footprint. Either the name is stale or the test under-specifies the
+  real selector. Resolving it requires reading `_analyze_logs.py`, which is a `marketplace/bundles/**`
+  file this plan may not edit — **recorded as a possible production defect**.
+- `test_mark_step_done.py` reuses `plan_id = 'mark-step-legacy-force'` in two tests (lines ~309 and
+  ~834). Safe today because `plan_context` gives each test a fresh plan root, but if that isolation
+  ever weakens the second `cmd_create` collides and the failure will present as a canonicalization bug
+  rather than a fixture-name collision.
+
+**Worth recording as a positive:** the cold reader named `test_merge_authorization.py` as the model
+for the corpus — module docstring stating the binding, every non-obvious test carrying both the rule
+and the concrete fail-open scenario it forecloses, every control labelled as a control. *"If the other
+four modules were held to this standard, [six of the findings] would not exist."*
+
+_(Independent pre-PR verification sub-agent findings are appended below.)_
 
 ## Reviewer participation
 
