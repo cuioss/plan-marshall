@@ -313,7 +313,10 @@ VALID_STEP_STATUSES = (
 #   write-new     -> existence forbidden pre-execution (finding fires if present)
 #   write-replace -> no existence check
 #   delete        -> existence required pre-execution (cannot remove an absent file)
-# Single source of truth, imported by manage-tasks and manage-solution-outline.
+# Single source of truth, imported by manage-tasks, manage-solution-outline, and
+# plan-retrospective (check-artifact-consistency, which reads the same markers
+# back out of outline prose to separate declared modifications from declared
+# reads).
 # ---------------------------------------------------------------------------
 STEP_INTENT_READ = 'read'
 STEP_INTENT_WRITE_NEW = 'write-new'

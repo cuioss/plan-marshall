@@ -306,6 +306,56 @@ class TestCmdRunInProcess:
             for f in result['findings']
         )
 
+    def test_unresolvable_footprint_reports_unmeasurable_not_silence(self, tmp_path):
+        """A footprint no tier could resolve makes the check UNMEASURABLE, not clean.
+
+        The plan's references carry no footprint key at all, so the resolver
+        answers ``None``. Previously that arrived as an empty list and the
+        ``if footprint and ...`` guard fell through silently — an un-run check
+        presented as a passing one. It must now name the gap and its reason.
+        """
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        self._write_logs(
+            plan_dir,
+            [_line('2026-04-17T10:00:00Z', 'INFO', '[STATUS] (plan-marshall:phase-1-init) Starting')],
+        )
+        (plan_dir / 'references.json').write_text(json.dumps({'domains': []}), encoding='utf-8')
+
+        result = _al.cmd_run(_run_args(plan_dir))
+
+        assert int(result['counts']['artifact_entries']) == 0
+        unmeasurable = [
+            f for f in result['findings'] if 'ARTIFACT_COVERAGE_UNMEASURABLE' in f['message']
+        ]
+        assert len(unmeasurable) == 1, 'the unmeasurable state must be reported, not skipped'
+        assert unmeasurable[0]['severity'] == 'warning'
+        # It is NOT the graded failure: nothing was measured, so nothing failed.
+        assert not any('ARTIFACT entries missing' in f['message'] for f in result['findings'])
+
+    def test_resolved_empty_footprint_stays_a_measured_zero(self, tmp_path):
+        """The peer direction: an observed-empty footprint grades normally.
+
+        A present-but-empty ``modified_files`` IS a measurement — the plan
+        touched nothing, so no ARTIFACT entry is expected and there is no gap to
+        report. A fix that routed every empty footprint to the unmeasurable
+        finding would trade one false signal for another.
+        """
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        self._write_logs(
+            plan_dir,
+            [_line('2026-04-17T10:00:00Z', 'INFO', '[STATUS] (plan-marshall:phase-1-init) Starting')],
+        )
+        (plan_dir / 'references.json').write_text(
+            json.dumps({'modified_files': []}), encoding='utf-8'
+        )
+
+        result = _al.cmd_run(_run_args(plan_dir))
+
+        assert not any('ARTIFACT_COVERAGE_UNMEASURABLE' in f['message'] for f in result['findings'])
+        assert not any('ARTIFACT entries missing' in f['message'] for f in result['findings'])
+
     def test_voluntary_checkpoint_polling_finding(self, tmp_path):
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()

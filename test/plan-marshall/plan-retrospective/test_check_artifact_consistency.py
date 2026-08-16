@@ -595,8 +595,16 @@ class TestAffectedFilesBulletParsing:
     downstream verdicts then compounded into a false green.
     """
 
-    def test_annotated_canonical_bullets_extract_with_intent_stripped(self, tmp_path, monkeypatch):
-        """``- `path` (intent)`` yields the bare path, annotation discarded."""
+    def test_annotated_canonical_bullets_extract_the_bare_path(self, tmp_path, monkeypatch):
+        """``- `path` (intent)`` yields the bare path; the marker does not leak into it.
+
+        The marker itself is READ, not discarded — it drives the recall
+        denominator's read-intent filter. This fixture annotates every path
+        ``write-replace``, a modification intent, so all three stay in the
+        denominator and the filter is not what this test measures; the
+        read-intent behaviour is pinned in
+        ``test_recall_read_intent_denominator.py``.
+        """
         files = ['src/foo.py', 'src/bar.py', 'src/baz.py']
         plan_id, _ = _setup_exact_match_plan(
             tmp_path,

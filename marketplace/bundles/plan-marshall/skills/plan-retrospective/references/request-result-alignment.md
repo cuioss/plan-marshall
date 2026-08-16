@@ -31,10 +31,13 @@ findings[*]{severity,message}:
 ## LLM Interpretation Rules
 
 - Extract goals from the `Summary` and `Deliverables` sections of `solution_outline.md`. Each deliverable heading is a top-level goal.
-- A goal is `fulfilled` when `affected_files` intersects its declared `Affected files` list AND task status is `done`.
-- A goal is `partial` when task is `done` but `affected_files` coverage is < 70% of declared Affected files.
+- Every coverage judgement below compares against the deliverable's **modification-intent** declarations — its `Affected files` bullets except those annotated `(read)`. `affected_files` is a diff, so a path the deliverable declared it would only read can never appear in it; counting one as an expected modification caps achievable coverage below the 70% bar **by construction**, grading the declaration style rather than the execution. A bullet with no annotation states no intent and is counted.
+- The three verdicts below are **mutually exclusive and are evaluated in order** — the first that matches wins. Without an explicit order, a completed goal touching one of its five declared files satisfied both `fulfilled` (a non-empty intersection) and `partial` (coverage below 70%), and the verdict depended on which rule the reader happened to apply first.
+- A goal is `fulfilled` when task status is `done` AND `affected_files` covers **at least 70%** of its declared modification-intent files. Intersection alone is not sufficient: one file out of five is not a fulfilled goal.
+- A goal is `partial` when task status is `done` but that coverage is **< 70%** — including the case where the intersection is empty.
+- A goal whose declarations are **entirely** read-intent has no expected modification, so coverage is not applicable: judge it on task status alone and say so — never render it as 0% coverage.
 - A goal is `missed` when no task with matching deliverable index reached `done`.
-- Scope creep = modified files NOT covered by any deliverable's declared Affected files. Small amounts (< 5 files) are acceptable; larger amounts indicate outline drift.
+- Scope creep = modified files NOT covered by any deliverable's declared Affected files. This one comparison uses the **full** declared list, read-intent entries included: a file the plan declared it would touch at all is not a surprise, whatever intent it named. Small amounts (< 5 files) are acceptable; larger amounts indicate outline drift.
 
 ## Finding Shape
 
