@@ -465,6 +465,22 @@ def summarize_script_cost(
     }
 
 
+def _is_usable_count(value: Any) -> bool:
+    """True when ``value`` is a non-negative plain integer.
+
+    Both halves of a per-tool-use rate need this and neither may assume it: a
+    ``None``, a float, a numeric string, or a negative is something the writer
+    failed to record properly, and folding any of them into a zero would assert a
+    measurement that was never taken. ``bool`` is excluded explicitly because it
+    is an ``int`` subclass, so ``True`` would otherwise pass as the count ``1``.
+
+    Shared rather than inlined twice: guarding only the denominator is exactly the
+    asymmetry that let a null NUMERATOR raise ``TypeError`` instead of being
+    classified as the recording gap it is.
+    """
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
 def summarize_context_position_cost(
     per_phase: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
@@ -502,9 +518,10 @@ def summarize_context_position_cost(
       reader omits ``cache_read_input_tokens`` for unmeasured, unrecognised and
       indeterminate cells alike (see ``_parse_dispatch_boundary_file``), and a
       rate equally needs a ``tool_uses`` denominator, so a row lacking either key
-      — or carrying a ``tool_uses`` that is not a usable count (``None``, a
-      non-integer, a bool, or negative) — is a WRITER-side gap: the measurement
-      was never recorded. It is never folded in as a zero,
+      — or carrying EITHER value as something other than a usable count (``None``,
+      a non-integer, a bool, or negative) — is a WRITER-side gap: the measurement
+      was never recorded. The check is symmetric by construction; guarding only
+      the denominator would let a null numerator raise rather than classify. It is never folded in as a zero,
       which would silently understate every rate it touched.
     * ``no_tool_use_rows`` — BOTH keys are present and ``tool_uses`` is exactly
       ``0``, so a per-tool-use rate is arithmetically UNDEFINED. Nothing is
@@ -563,13 +580,16 @@ def summarize_context_position_cost(
             # a writer-side gap, not an undefined ratio.
             if 'cache_read_input_tokens' not in row or 'tool_uses' not in row:
                 continue
+            cache_read = row['cache_read_input_tokens']
             tool_uses = row['tool_uses']
-            # A present-but-unusable denominator is a recording gap, NOT an
-            # undefined ratio: `None` and a negative count are both things the
-            # writer failed to record properly, and `or 0` would quietly fold
-            # them into the zero bucket — asserting a complete record on the
-            # strength of a null. Only an exact `0` earns `no_tool_use`.
-            if not isinstance(tool_uses, int) or isinstance(tool_uses, bool) or tool_uses < 0:
+            # A present-but-unusable value on EITHER side is a recording gap, not
+            # an undefined ratio. Both are checked, and by the same predicate: a
+            # null numerator would otherwise reach the accumulator and raise
+            # ``TypeError``, crashing log analysis on a row this function is
+            # supposed to classify as a gap. Only an exact `0` denominator earns
+            # `no_tool_use` — `or 0` would fold a null into that bucket and assert
+            # a complete record on the strength of a value nobody recorded.
+            if not _is_usable_count(cache_read) or not _is_usable_count(tool_uses):
                 continue
             if tool_uses == 0:
                 # Recorded, but the ratio is undefined — a DIFFERENT fact from
@@ -577,7 +597,7 @@ def summarize_context_position_cost(
                 no_tool_use_rows += 1
                 phase_no_tool_use += 1
                 continue
-            cache_read_sum += row['cache_read_input_tokens']
+            cache_read_sum += cache_read
             tool_use_sum += tool_uses
             phase_measured += 1
         measured_rows += phase_measured

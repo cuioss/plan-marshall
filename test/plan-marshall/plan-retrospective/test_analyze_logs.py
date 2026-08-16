@@ -2275,6 +2275,42 @@ class TestContextPositionCost:
         assert result['no_tool_use_rows'] == 0
         assert result['by_phase'][0]['cache_read_per_tool_use'] == 'unmeasured'
 
+    def test_null_cache_read_is_a_recording_gap_not_a_crash(self):
+        # The numerator needs the same guard as the denominator. Unguarded, a
+        # null here reaches the accumulator and raises TypeError, crashing log
+        # analysis on a row this function exists to classify as a gap.
+        per_phase = {
+            '5-execute': self._phase([{'cache_read_input_tokens': None, 'tool_uses': 5}]),
+        }
+
+        result = _analyze_logs.summarize_context_position_cost(per_phase)
+
+        assert result['unmeasured_rows'] == 1
+        assert result['measured_rows'] == 0
+        assert result['by_phase'][0]['cache_read_per_tool_use'] == 'unmeasured'
+
+    def test_non_numeric_cache_read_is_a_recording_gap(self):
+        # A string that looks like a number is still not a recorded measurement.
+        per_phase = {
+            '5-execute': self._phase([{'cache_read_input_tokens': '900', 'tool_uses': 5}]),
+        }
+
+        result = _analyze_logs.summarize_context_position_cost(per_phase)
+
+        assert result['unmeasured_rows'] == 1
+        assert result['measured_rows'] == 0
+
+    def test_negative_cache_read_is_a_recording_gap(self):
+        # A negative token count is corruption, not a measurement.
+        per_phase = {
+            '5-execute': self._phase([{'cache_read_input_tokens': -5, 'tool_uses': 5}]),
+        }
+
+        result = _analyze_logs.summarize_context_position_cost(per_phase)
+
+        assert result['unmeasured_rows'] == 1
+        assert result['measured_rows'] == 0
+
     def test_negative_tool_uses_is_a_recording_gap(self):
         # A negative call count is corruption, not an undefined ratio.
         per_phase = {

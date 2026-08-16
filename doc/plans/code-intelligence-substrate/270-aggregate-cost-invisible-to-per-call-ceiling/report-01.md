@@ -148,11 +148,117 @@ A per-commit `./pw quality-gate` was run and read clean before the implementatio
 
 ## Findings
 
-_Completed after the verification sub-agent and the PR review cycle report._
+Recorded **per instance**, not bundled. Four independent verification-sub-agent rounds ran before the PR; each round targeted the **previous round's fixes**, because that is where this run's defects actually lived.
+
+### Round 1 — against the original change (14 confirmed, 9 suspicions)
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| 1 | sub-agent | `cost_rollup` row paired `calls` from `call_counts` (all notation-headed lines) with `cumulative_seconds` from `call_seconds` (timed lines only) — an absent duration read as zero inside the roll-up's own denominator | **Fixed** — `timed_call_counts` accumulator + regression test |
+| 2 | sub-agent | `global-log-analysis.md` column table: "Every surfaced row is `genuine` by construction" — false once informational rows exist | **Fixed** |
+| 3 | sub-agent | Same doc: "`genuine_signal_count` equals the row count" — false | **Fixed** |
+| 4 | sub-agent | `kind` enumeration missing `dominant-cost-caller` | **Fixed** |
+| 5 | sub-agent | `detail` enumeration missing the roll-up row shape | **Fixed** |
+| 6 | sub-agent | `attributed_plans` note did not cover roll-up rows | **Fixed** |
+| 7 | sub-agent | No orchestrator interpretation entry for the new row kind, while the doc mandates every row be adjudicated | **Fixed** |
+| 8 | sub-agent | `emit_global_log_block` docstring falsified by its own body | **Fixed** |
+| 9 | sub-agent | `audit.py` threshold-provenance comment missing `cost_rollup_top_n` | **Fixed** |
+| 10 | sub-agent | `global-log-analysis.md` Critical-rules threshold list, same omission | **Fixed** |
+| 11 | sub-agent | `audit.py` module docstring signal enumeration incomplete | **Fixed** |
+| 12 | sub-agent | audit `SKILL.md` check-table enumeration incomplete | **Fixed** |
+| 13 | sub-agent | `cross_global_log_analysis` docstring did not mention the new returned keys | **Fixed** |
+| 14 | sub-agent | `TestEmitGlobalLogBlock` class docstring falsified (test file — CI cannot catch it) | **Fixed** |
+| 15 | sub-agent (S1) | `distinct_call_keys` mis-named: it is timed keys only, not the `high_frequency` denominator | **Fixed** — renamed `distinct_timed_call_keys`, added `untimed_call_keys` |
+| 16 | sub-agent (S2) | `position_multiple` reported `unmeasured` for a measured-but-undefined ratio | **Fixed** — new `undefined` token |
+| 17 | sub-agent (S3) | `unmeasured_rows` folded two exclusion causes needing different remedies | **Fixed** — split out `no_tool_use_rows` |
+| 18 | sub-agent (S4) | `test_thresholds_table_carries_every_documented_constant` enumeration incomplete (passes on `<=`) | **Fixed** |
+| 19 | sub-agent (S5) | D4(c) pins a constant rather than a measured quantity | **Accepted, reasoned in the open** — D1's numeric half is blocked, so no measured target exists; the pin is the most that blocked state allows |
+| 20 | sub-agent (S6) | `CHECK_ERA["global-log-analysis"]` not bumped though the check's semantics changed | **Fixed** — bumped to `#1260` with a mirror test |
+| 21 | sub-agent (S7) | `fragment-log-analysis.toon` fixture now lacks the new keys | **Rejected as a defect, recorded as residue** — the fixture was already partial before this branch, and `retro_sections.py` renders the fragment generically with no shape assumption, so nothing breaks. The real gap is render coverage; see Residue |
+| 22 | sub-agent (S8) | `log-analysis.md` key order did not match emission order | **Fixed** |
+| 23 | sub-agent (S9) | Context-position figure's unit not named beside the currency warning | **Fixed** |
+
+### Round 2 — against round 1's fixes (8 confirmed, 5 suspicions)
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| 24 | sub-agent | `unattributable_calls` documented as "the gap is exactly that field" — it is an upper **bound** (it counts unnamed calls at every duration; the gap counts only those at or over the ceiling) | **Fixed** |
+| 25 | sub-agent | `rows[G]` in the emitted schema — false once informational rows join the table | **Fixed** — `rows[N]` |
+| 26 | sub-agent | `by_phase` rate described as two-valued after the third token was added | **Fixed** |
+| 27 | sub-agent | Second site with the same two-valued residue | **Fixed** |
+| 28 | sub-agent | `calls_at_or_over_ceiling` documented as computed "over exactly the calls `ranked` summarises" — it spans the whole population | **Fixed** + pinning test |
+| 29 | sub-agent | The check doc's adjudication carve-out **contradicted** the `SKILL.md` contract it cited | **Fixed** — aligned the check doc to `SKILL.md` (one-line cited dismissal) rather than weakening the broader contract; `SKILL.md` Step-3 enumeration now names the kind |
+| 30 | sub-agent | `undefined` emitted whenever a phase had any zero-tool-use row, asserting a completeness the phase lacked | **Fixed** — gated on `phase_unmeasured == 0` |
+| 31 | sub-agent | `unattributable_calls` shipped with **zero** test coverage — the one field round 1 added without one, and precisely where its false claim survived | **Fixed** — two tests, covering the strict-inequality and equality cases |
+| 32 | sub-agent (S-a) | A row missing `tool_uses` classified as `no_tool_use` though the record is incomplete | **Fixed** |
+| 33 | sub-agent (S-b) | `context_position_cost` quoted a **partition as a whole** — cache-read is one of four context-load columns. The plan's own claim-label table demands establishing this before quoting any ratio | **Fixed** — partition warning at both sites |
+| 34 | sub-agent (S-c) | Report's "zero hits" sweep claim not scoped | **Fixed** in the report |
+| 35 | sub-agent (S-d) | Report called an `audit.py` inline comment a docstring | **Fixed** in the report |
+| 36 | sub-agent (S-e) | Over-long line in the check doc | **Fixed** |
+
+### Round 3 — against round 2's fixes (4 confirmed, 2 suspicions)
+
+Round 3 verified round 2's substantive work by **mutation testing** (six mutations, all killed) and a **3,970-corpus brute force** of the bound inequality. All held.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| 37 | sub-agent | `unmeasured_rows` docstring still said "carries no `cache_read_input_tokens` key at all" after the filter was broadened to require both keys — contradicting a test in the same commit | **Fixed** |
+| 38 | sub-agent | Same claim mirrored in `log-analysis.md` | **Fixed** |
+| 39 | sub-agent | `by_phase` `unmeasured` description false for an empty-rows phase | **Fixed** + test |
+| 40 | sub-agent | `references/log-analysis.md` retained the "EXACT difference" framing after the docstring was corrected to "bound" | **Fixed** |
+| 41 | sub-agent (S-a) | `row['tool_uses'] or 0` folds `None` into the zero bucket, routing a **null denominator** to `undefined` — which asserts a complete record. Same absent-read-as-zero shape, one layer down, inside the function whose comment forbids it | **Fixed** + two tests |
+| 42 | sub-agent (S-b) | `_GLOBAL_LOG_DUR_RE` looser than the cross-plan reader's: `(1.2.3s)` matched, `float()` raised, the duration became `0.0`, and the line **still joined the roll-up** | **Fixed** — pattern refuses the match; parse guard drops rather than zeroes; + test |
+
+### Round 4 — against round 3's fixes (2 confirmed, 6 nits) — **convergence**
+
+Round 4 mutation-tested every round-3 claim and enumerated all 0x110000 codepoints against the regex/`float()` boundary. It found **no code defect** and reported the change ready.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| 43 | sub-agent | Docstring said `slow_call_count` "counts every duration-bearing line" — it is *drawn from* them and counts only those at or over the ceiling | **Fixed** |
+| 44 | sub-agent | Same population-vs-count conflation in `log-analysis.md` ("counted by the ceiling") | **Fixed** |
+| 45 | sub-agent (N1) | "exact difference" framing survived in an inline comment | **Fixed** — clarified as population **sizes**, not ceiling counts |
+| 46 | sub-agent (N2) | Comment describing `cost_rollup` attached to the key above it | **Fixed** |
+| 47 | sub-agent (N3) | Docstring said "non-integer or negative", but a bool is an int and non-negative yet correctly excluded | **Fixed** — "not a usable count" |
+| 48 | sub-agent (N4) | `by_phase` rate column shipped without a value legend | **Fixed** |
+| 49 | sub-agent (N5) | Sibling check doc's discovery-volume pointer incomplete | **Fixed** |
+| 50 | sub-agent (N6) | Report's two wall-clock figures disagreed | **Fixed** |
+
+### From PR review — the finding four verification rounds missed
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| 53 | `cuioss-review-bot` (PR #1260) | `summarize_context_position_cost` guards `tool_uses` against `None` / non-integer / negative but does **not** guard `cache_read_input_tokens`. A row carrying a null numerator beside a valid denominator reaches the accumulator and raises `TypeError`, **crashing log analysis** on exactly the row this function exists to classify as a recording gap | **Fixed** — one `_is_usable_count` predicate applied to both halves, plus three tests (null, non-numeric, negative numerator) |
+
+⭐ **This is the most valuable finding of the run, and no verification round found it.** It is the *same defect class* the rounds had already fixed twice — an unusable value folded into a measurement — but applied **asymmetrically**: round 3 hardened the denominator against a null and left the numerator, one line away, unguarded. Every round after that read the hardened line and saw the guard it expected.
+
+Two things follow, both recorded rather than smoothed over:
+
+- **The recovery check earned its place.** This reviewer's verdict was provisionally `silent`; the finding arrived only because § Step 7's recovery posted the registry's `trigger_comment`. Had the run disclosed `silent` and merged, this defect would have landed.
+- **A guard added to one side of a pair is a defect surface.** The verification rounds sweep what a fix made false *elsewhere*; none of them asks whether a fix was applied to *every* member of the symmetric pair it belongs to. That is a narrower and more mechanical check than the sweeps already in the contract.
+
+### From CI / the merge queue
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| 51 | local build | `ruff I001` — import block un-sorted in the new test module created during merge resolution | **Fixed** — aligned to the sibling convention |
+| 52 | GitHub | `mergeable_state: dirty` — #1258 decomposed `test_audit_checks.py` into 49 modules while this branch was editing it | **Fixed** — see Deliverables/merge note; each change placed in the home the new layout gives it |
 
 ## Reviewer participation
 
-_Completed after the PR review cycle._
+**Population derived from configuration**, not transcribed: the `author_login` of each `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc — `coderabbit.md`, `pr-agent.md`, `sourcery.md`.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
+|---|---|---|---|
+| `coderabbitai` | `rate-limited` | **yes** | *"Review limit reached … you've reached your PR review limit, so we couldn't start this review. **Next review available in: 26 minutes**."* A per-developer rolling quota — clears on the clock. |
+| `sourcery-ai` | `rate-limited` | **yes (weekly)** | *"you have reached your **weekly rate limit of 500000 diff characters**."* A weekly quota, not a per-PR size ceiling — it clears at the week boundary, but the notice states no time, so it is not re-requestable on a useful horizon for this run. |
+| `cuioss-review-bot` | **`reviewed`** (after recovery) | — | Initially published nothing. After the recovery below, filed a *"PR Reviewer Guide"* issue-comment with one **Possible Issue** — the unguarded `cache_read_input_tokens` numerator (finding #53), which was real and is fixed. |
+
+**Recovery check for the `silent` verdict** (§ Step 7). Queried the Actions API **by event, not by head branch** — the documented false-negative trap, since an `issue_comment`-triggered run is attributed to the default branch. One `PR Agent Review` run exists for this PR (`display_title` matches), `event: issue_comment`, `head_branch: main`, **`conclusion: skipped`** — triggered by CodeRabbit's own rate-limit comment rather than by a `/review` command, and correctly skipped. `.github/workflows/pr-agent.yml` deliberately does **not** subscribe to `synchronize`, so no push can trigger it; the only automatic chance was the `opened` event. The registry's declared `trigger_comment` (`/review`) was therefore posted as the recovery action, and the outcome is recorded above.
+
+**Coverage: 1 of 3 — and the 1 is the recovered reviewer.** `cuioss-review-bot` reviewed and its single finding was real, actionable, and fixed. `coderabbitai` and `sourcery-ai` both refused on quota and neither reviewed this diff. The § Step 8 shortfall disclosure fired and is stated there in words.
+
+⚠ **The recovery changed the outcome of this run.** Had the provisional `silent` verdict been disclosed and the PR merged on 0-of-3 actual reviews, finding #53 would have shipped. The recovery step is the reason coverage is 1 rather than 0.
 
 ## Cost
 
@@ -162,12 +268,59 @@ _Completed after the PR review cycle._
 
 ## Contract check (Step 9)
 
-_Completed at Step 8 condition 3, as the final pre-merge commit._
+**GitHub access path:** the GitHub MCP server (the cloud path). No `gh` CLI in this session.
+**Branch form:** **harness-assigned** — `claude/aggregate-cost-per-call-ceiling-wxrfms`, kept as-is per the lane contract; no prefixed branch was created.
+**Plugin cache sync:** a cloud run neither performs nor owes one (§ Scope and precedence).
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **Done, with an ordering defect** | Named in § Skills loaded. The two `pm-dev-python` skills were loaded *after* implementation began; that late load is what surfaced the deliverable-id citations in the test docstrings. Recorded, not smoothed over. |
+| 2 Branch | **Done** | Branch exists on `origin`. ⚠ **The Step 2 `git fetch origin main` was skipped**, which made the first build-gate diff derive against a stale ref (~250 files instead of 9). It over-fired rather than under-fired, so the gate was not weakened — but the diff was not the branch's diff. Corrected on discovery. |
+| 3 Plan directory | **Done** | `doc/plans/code-intelligence-substrate/270-aggregate-cost-invisible-to-per-call-ceiling/plan.md` exists and opens with the first-instruction block (verified present on receipt — no repair needed — and re-verified after the move). |
+| 4 Implement | **Done** | Commits carry the trailer; deliverables addressed per § Deliverables. |
+| 4 Per-commit gate | **Done** | Every commit touching `*.py` was preceded by a `./pw quality-gate` read clean on the tool lines (`ruff … All checks passed!`, `mypy … Success`, `SPDX-header check passed`, plugin-doctor `issues[0]`). |
+| 4 Pushed | **Done** | Pushed after every commit; no unpushed commit remains. |
+| 5 Build gate | **Done** | Git-derived verdict and outcome in § Build gate. Full `./pw verify` re-run after every verification round and after the merge resolution. |
+| 6 Verification sub-agent | **Done — four rounds** | 52 findings with dispositions in § Findings. Two rejected with reasons recorded (#19, #21). |
+| 7 PR cycle | **Done** | PR #1260. Every comment dispositioned (finding #53 fixed; the two quota notices are not actionable). All **three** comment surfaces read (`get_comments`, `get_reviews`, `get_review_comments`) — the review-summary surface carried Sourcery's notice and nothing else would have shown it. Participation table carries a verdict **and** a `Reopens?` value per reviewer; the `silent` verdict records what its recovery check found. |
+| 8 Merge gate | See § Step 8 disclosure below | Conditions 1–3 met before arming. |
+| 8 Bridge | **Done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory. The merge commit brought in another plan's directory as ordinary merge content, not as a write by this run. |
+| 9 This check | **Done** | This table. |
+| 9 What have we learned | **Done** | Two proposals below, presented to the operator and **not** self-approved. |
+
+### ⚠ A contract disagreement observed, and reported as the plan's preamble requires
+
+`CLAUDE.md` § Standalone Plan Lane says a lane plan that edits `marketplace/bundles/` "records in its run report that a local sync is owed." The `cloud-plan-lane` skill says the opposite in bold: a cloud run "**neither performs nor owes**" a sync, and it is "not a debt this run tracks or records." This branch edits four files under `marketplace/bundles/`, so the two rules give opposite instructions.
+
+The run followed **the skill**, because the plan's own first-instruction block makes the contract authoritative where the two disagree — and requires the disagreement to be reported. This is that report. The contradiction is **pre-existing** and not introduced by this branch.
 
 ## What have we learned (Step 9)
 
-_Completed at Step 8 condition 3._
+Two proposals, each with evidence **from this run**. Both are **presented to the operator and not self-approved**; neither is shipped in this PR, and if accepted each belongs on its own `chore/` branch.
+
+### Proposal 1 — a field added without a test is where the next round's false claim survives
+
+**Evidence.** The contract already says to sweep the previous round's fixes as a first-class surface, and that is what caught rounds 2–4. But it does not say *where inside those fixes to look first*. This run produced a sharp answer. Round 1 added five fields; four got pinning tests and one — `unattributable_calls` — did not. That is precisely the field whose docstring round 2 got wrong, and the error survived until round 3. Round 2's own commit message had already made "with a regression test that would have caught it" its stated standard, and then did not apply it to the field it was adding.
+
+**Proposed edit** to § Step 6, in the per-round sweep: before re-dispatching, list the fields, constants, or return keys the round added, and check each has a test that would fail if its documented behaviour regressed. An untested addition is the highest-risk item in the round's own diff, because nothing but prose describes it.
+
+### Proposal 3 — a guard applied to one half of a symmetric pair
+
+**Evidence.** Round 3 hardened `tool_uses` against `None` / non-integer / negative and left `cache_read_input_tokens`, one line away and part of the same rate, unguarded. A null numerator therefore raised `TypeError` instead of being classified as the recording gap the function exists to classify. **Four verification rounds read that line and none caught it** — each saw a guard and confirmed the guard was correct. It took the PR reviewer, and it took the § Step 7 recovery firing to get that reviewer to speak at all.
+
+The existing per-round sweep asks what a fix made false *elsewhere in the tree*. It does not ask whether a fix was applied to *every member of the symmetric pair it belongs to*, which is a narrower and far more mechanical question — a numerator and its denominator, a reader and its writer, a getter and its setter.
+
+**Proposed edit** to § Step 6: when a fix hardens, validates, or normalises one value, name the values that must hold the same property and check each. A guard on one half of a pair is the shape a whole round can read past.
+
+### Proposal 2 — the run's own build mutates the tree the report describes
+
+**Evidence.** This report stated that `.plan/` carried "only `marshal.json` and `project-architecture` — no `logs/`, no `local/`". True when written. By the time the build gate had run, `./pw verify` had created `.plan/execute-script.py`, `.plan/temp/`, and `.plan/local/logs/script-execution-2026-08-16.log` — in the very tree the sentence described. A verification round caught it; no gate could have, because the claim is about the filesystem rather than the code.
+
+**Proposed edit** to § Report or § Step 9: a report claim about the state of the working tree is re-verified at finalize, because the run's own build gate mutates that tree. Only claims about the *tree* need this — claims about the diff are already re-derived.
 
 ## Residue
 
-_Completed at Step 8 condition 3._
+- **D1's numeric re-derivation and D3 remain open**, blocked on corpus availability. When an archived-plan corpus is reachable, the roll-up shipped here is the instrument that answers D1(b)'s "which path is reducible" — that was the point of shipping observability first. D4(b) becomes live at the same moment and is **genuinely undischarged**, not satisfied.
+- **No end-to-end render coverage for the new fragment keys.** `report-structure.md`'s section-4 contract now names `script_cost_rollup` and `context_position_cost`, but the archived-plan fixture `test/plan-marshall/plan-retrospective/fixtures/archived-plan/work/fragment-log-analysis.toon` is a hand-written partial that predates this branch (it already omitted `build_time`, `global_log_signals`, `dispatch_boundaries`, `findings`). Nothing breaks — `retro_sections.py` renders the fragment generically — so this is a coverage gap, not a defect. Widening the fixture is a clean follow-up.
+- **`CLAUDE.md` ↔ `cloud-plan-lane` contradiction on plugin-cache sync** (§ Contract check). Pre-existing; needs one of the two documents amended so a future run is not left choosing.
+- **Pre-existing deliverable-id citations in the two touched test modules.** The test-prose convention forbids them; this run removed its own but did not sweep the files, which carry others from earlier plans. Out of scope here.
