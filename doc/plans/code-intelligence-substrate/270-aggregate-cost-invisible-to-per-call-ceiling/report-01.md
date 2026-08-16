@@ -115,7 +115,9 @@ FAILED ...::TestContextPositionCost::...  -> AttributeError: module 'analyze_log
 | `test_analyze_logs.py -k "ScriptCostRollup or ContextPositionCost or PerCallCeilingPreserved"` | **23 failed, 1 passed** |
 | `test_audit_checks.py` (whole file) | **10 failed, 445 passed** |
 
-The two passes are the ceiling pins (`test_ceiling_constant_unchanged`, `test_cross_plan_ceiling_constant_unchanged`) — correct, since they pin behaviour that already existed and that this change deliberately does not move. The cross-plan 10 is 8 added tests plus the 2 pre-existing tests this change legitimately modified.
+**Reading the cross-plan row correctly:** its `445 passed` is the whole module, almost all of it pre-existing and untouched here. Among the tests **this change added or modified**, exactly two pass against `origin/main` — the ceiling pins (`test_ceiling_constant_unchanged` per-plan, `test_cross_plan_ceiling_constant_unchanged` cross-plan) — and they pass correctly, since they pin behaviour that already existed and that this change deliberately does not move. The cross-plan `10 failed` is 8 added tests plus the 2 pre-existing tests this change legitimately modified.
+
+⚠ **The `#1258` decomposition is NOT verified by this report.** The branch merges `main`, which brings in #1258's split of `test_audit_checks.py`. Collection parity, coverage parity and behaviour preservation for that decomposition are **#1258's** measurements and belong to its own report; nothing here re-derives them, and this report makes no claim about them. What it does assert about the merge is narrower and was checked: the three changes this branch had made to the deleted monolith were re-placed in the modules the new layout gives them, and `./pw verify` is green on the merged tree.
 
 The cross-plan assertion is the sharper of the two, because it fails **against a view that already existed**: the fixture puts 60 calls × 0.5 s (most calls) against 4 calls × 20 s (most time), then asserts the frequency view ranks the former first and **drops the latter entirely**, while the cost view ranks by time owned.
 
@@ -238,6 +240,23 @@ Two things follow, both recorded rather than smoothed over:
 - **The recovery check earned its place.** This reviewer's verdict was provisionally `silent`; the finding arrived only because § Step 7's recovery posted the registry's `trigger_comment`. Had the run disclosed `silent` and merged, this defect would have landed.
 - **A guard added to one side of a pair is a defect surface.** The verification rounds sweep what a fix made false *elsewhere*; none of them asks whether a fix was applied to *every* member of the symmetric pair it belongs to. That is a narrower and more mechanical check than the sweeps already in the contract.
 
+### From PR review — `coderabbitai`, after its quota window reopened
+
+Its verdict began as `rate-limited`; the window cleared mid-run and the report push re-triggered it. It filed 5 findings, **all legitimate**, one of them Major.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| 54 | `coderabbitai` (Major) | The cross-plan roll-up rounded to **deciseconds** before dividing. Two `0.06 s` keys each published `0.1 s` and **both reported a 100 % share**; a lone `0.04 s` call published `0.0 s` / `0.0 %`. Reproduced first-party before fixing | **Fixed** — millisecond precision throughout, shares still recomputable from the printed columns; 2 tests using the reviewer's exact cases |
+| 55 | (found while fixing #54) | Deeper than the rounding: the writer formats durations `%.2f`, so a call under 5 ms is logged as `0.00s` and contributes **nothing** to any cumulative total. A high-volume, very fast script — the exact class this plan exists to surface — accumulates these, and its cumulative total would read near-zero while it did real work | **Fixed** — `sub_precision_calls` counted per script and per corpus at both tiers, so the total is legible as a **FLOOR**; 2 tests |
+| 56 | `coderabbitai` (Minor) | The report's *"the two passes are the ceiling pins"* conflated the added-test passes with the module's 445 pre-existing passes | **Fixed** — scoped to the tests this change added or modified |
+| 57 | `coderabbitai` (Minor) | The report should either cite #1258's preservation measurements or mark them out of scope | **Marked out of scope, explicitly** — collection/coverage/behaviour parity for that decomposition are #1258's measurements and belong to its report; this report now says so and states the narrower claim it *does* make about the merge |
+| 58 | `coderabbitai` (Nitpick) | `position_multiple_basis` could name one phase twice — `max`/`min` both return the first maximal element, so tied rates gave `4-plan/4-plan` beside a correct `1.0` | **Fixed** — tie-break on phase name; 1 test |
+| 59 | `coderabbitai` (Nitpick) | `_is_usable_count` excludes `bool` deliberately, but no test pinned it: removing the clause would make a `True` numerator a silent measured `1` | **Fixed** — 1 test |
+
+⭐ **Finding #54 is the second defect a human-facing reviewer caught that four verification rounds did not**, and it is the most consequential of the run: it made the roll-up *misreport the very class of script the plan was written about*. A dominant-but-fast script is one with many small durations — exactly the input decisecond rounding destroys. The instrument would have shipped reporting `0.0 s` and `0.0 %` for the script it exists to surface.
+
+That is also why #55 was worth chasing rather than caveating: the same input shape hits the log's own `%.2f` floor, and a cumulative total that silently absorbs sub-5 ms calls is the identical measured-zero defect one layer further out.
+
 ### From CI / the merge queue
 
 | # | Source | Finding | Disposition |
@@ -251,15 +270,15 @@ Two things follow, both recorded rather than smoothed over:
 
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
 |---|---|---|---|
-| `coderabbitai` | `rate-limited` | **yes** | *"Review limit reached … you've reached your PR review limit, so we couldn't start this review. **Next review available in: 26 minutes**."* A per-developer rolling quota — clears on the clock. |
+| `coderabbitai` | **`reviewed`** (after its window cleared) | — | Initially *"Review limit reached … **Next review available in: 26 minutes**"* — a per-developer rolling quota. The window cleared mid-run and the report push re-triggered it; it then filed 5 findings (1 Major, 2 Minor, 2 nitpicks), all legitimate. See findings #54–#59. |
 | `sourcery-ai` | `rate-limited` | **yes (weekly)** | *"you have reached your **weekly rate limit of 500000 diff characters**."* A weekly quota, not a per-PR size ceiling — it clears at the week boundary, but the notice states no time, so it is not re-requestable on a useful horizon for this run. |
 | `cuioss-review-bot` | **`reviewed`** (after recovery) | — | Initially published nothing. After the recovery below, filed a *"PR Reviewer Guide"* issue-comment with one **Possible Issue** — the unguarded `cache_read_input_tokens` numerator (finding #53), which was real and is fixed. |
 
 **Recovery check for the `silent` verdict** (§ Step 7). Queried the Actions API **by event, not by head branch** — the documented false-negative trap, since an `issue_comment`-triggered run is attributed to the default branch. One `PR Agent Review` run exists for this PR (`display_title` matches), `event: issue_comment`, `head_branch: main`, **`conclusion: skipped`** — triggered by CodeRabbit's own rate-limit comment rather than by a `/review` command, and correctly skipped. `.github/workflows/pr-agent.yml` deliberately does **not** subscribe to `synchronize`, so no push can trigger it; the only automatic chance was the `opened` event. The registry's declared `trigger_comment` (`/review`) was therefore posted as the recovery action, and the outcome is recorded above.
 
-**Coverage: 1 of 3 — and the 1 is the recovered reviewer.** `cuioss-review-bot` reviewed and its single finding was real, actionable, and fixed. `coderabbitai` and `sourcery-ai` both refused on quota and neither reviewed this diff. The § Step 8 shortfall disclosure fired and is stated there in words.
+**Coverage: 2 of 3.** `cuioss-review-bot` reviewed after the recovery trigger; `coderabbitai` reviewed after its quota window cleared. `sourcery-ai` never reviewed this diff — it refused on a weekly diff-character quota that did not clear within the run. The § Step 8 shortfall disclosure fired for the 1 reviewer that did not participate.
 
-⚠ **The recovery changed the outcome of this run.** Had the provisional `silent` verdict been disclosed and the PR merged on 0-of-3 actual reviews, finding #53 would have shipped. The recovery step is the reason coverage is 1 rather than 0.
+⚠ **Both participating reviewers found defects that four verification rounds missed, and both participated only because the run did not settle for the first answer.** Had the provisional `silent` verdict been disclosed and the PR merged, finding #53 would have shipped; had the run armed and walked away when CodeRabbit was rate-limited, findings #54–#59 would have shipped — including a Major defect that made the roll-up misreport the exact class of script the plan was written about. Coverage is 2 rather than 0 because of the recovery step and because the merge gate was re-opened when a late review arrived.
 
 ## Cost
 
@@ -284,7 +303,7 @@ Two things follow, both recorded rather than smoothed over:
 | 5 Build gate | **Done** | Git-derived verdict and outcome in § Build gate. Full `./pw verify` re-run after every verification round and after the merge resolution. |
 | 6 Verification sub-agent | **Done — four rounds** | 52 findings with dispositions in § Findings. Two rejected with reasons recorded (#19, #21). |
 | 7 PR cycle | **Done** | PR #1260. Every comment dispositioned (finding #53 fixed; the two quota notices are not actionable). All **three** comment surfaces read (`get_comments`, `get_reviews`, `get_review_comments`) — the review-summary surface carried Sourcery's notice and nothing else would have shown it. Participation table carries a verdict **and** a `Reopens?` value per reviewer; the `silent` verdict records what its recovery check found. |
-| 8 Merge gate | **Done** | Conditions 1–3 met before arming; this report is the last pre-merge commit. **The § Step 8 condition-4 shortfall disclosure fired**, and is stated verbatim in the § Reviewer participation section and to the operator: *review coverage 1 of 3 — `cuioss-review-bot` reviewed (after recovery) and its finding is fixed; `coderabbitai` rate-limited, reopens on a per-developer quota; `sourcery-ai` rate-limited on a weekly diff-character quota.* A shortfall is disclosed, never merged on silently, and never blocked on. |
+| 8 Merge gate | **Done** | Conditions 1–3 met before arming; this report is the last pre-merge commit. **The § Step 8 condition-4 shortfall disclosure fired** and is stated in § Reviewer participation and to the operator: *review coverage 2 of 3 — `cuioss-review-bot` and `coderabbitai` both reviewed and both found real defects, all fixed; `sourcery-ai` rate-limited on a weekly diff-character quota that did not clear within the run.* A shortfall is disclosed, never merged on silently, and never blocked on. ⚠ Auto-merge was armed once, then **disarmed** when CodeRabbit's late review arrived while the required check was still running — the branch had not yet queued, so the findings could be fixed in this PR rather than stranded in a follow-up. |
 | 8 Bridge | **Done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory. The merge commit brought in another plan's directory as ordinary merge content, not as a write by this run. |
 | 9 This check | **Done** | This table. |
 | 9 What have we learned | **Done** | Two proposals below, presented to the operator and **not** self-approved. |
@@ -313,6 +332,14 @@ The existing per-round sweep asks what a fix made false *elsewhere in the tree*.
 
 **Proposed edit** to § Step 6: when a fix hardens, validates, or normalises one value, name the values that must hold the same property and check each. A guard on one half of a pair is the shape a whole round can read past.
 
+### Proposal 4 — a rounding choice inside a new metric is a correctness decision, not a formatting one
+
+**Evidence.** The cross-plan roll-up rounded to deciseconds before dividing. Two `0.06 s` keys each published `0.1 s` and **both reported 100 %**; a lone `0.04 s` call published `0.0 s`. Four verification rounds read that arithmetic — one of them brute-forced 3,970 corpora against a *different* property of the same function — and none tested it with inputs below the rounding granularity. Every round used whole- or tenth-second fixtures, so the defect was invisible to all of them by construction.
+
+It matters more than a generic rounding bug: a *dominant-but-fast* script is by definition one with many small durations, so the instrument misreported precisely the class it was built to surface. The reviewer found it; the automated rounds could not, because they inherited the fixture scale of the change under review.
+
+**Proposed edit** to § Step 6's sub-agent brief: when a change introduces a computed metric, test it at the boundaries of its own precision — one unit below the rounding granularity, and the smallest value the producing format can express — not only at the scale the implementation's examples use. A fixture set that shares the implementation's scale cannot see a scale defect.
+
 ### Proposal 2 — the run's own build mutates the tree the report describes
 
 **Evidence.** This report stated that `.plan/` carried "only `marshal.json` and `project-architecture` — no `logs/`, no `local/`". True when written. By the time the build gate had run, `./pw verify` had created `.plan/execute-script.py`, `.plan/temp/`, and `.plan/local/logs/script-execution-2026-08-16.log` — in the very tree the sentence described. A verification round caught it; no gate could have, because the claim is about the filesystem rather than the code.
@@ -323,5 +350,6 @@ The existing per-round sweep asks what a fix made false *elsewhere in the tree*.
 
 - **D1's numeric re-derivation and D3 remain open**, blocked on corpus availability. When an archived-plan corpus is reachable, the roll-up shipped here is the instrument that answers D1(b)'s "which path is reducible" — that was the point of shipping observability first. D4(b) becomes live at the same moment and is **genuinely undischarged**, not satisfied.
 - **No end-to-end render coverage for the new fragment keys.** `report-structure.md`'s section-4 contract now names `script_cost_rollup` and `context_position_cost`, but the archived-plan fixture `test/plan-marshall/plan-retrospective/fixtures/archived-plan/work/fragment-log-analysis.toon` is a hand-written partial that predates this branch (it already omitted `build_time`, `global_log_signals`, `dispatch_boundaries`, `findings`). Nothing breaks — `retro_sections.py` renders the fragment generically — so this is a coverage gap, not a defect. Widening the fixture is a clean follow-up.
+- **The log's `%.2f` duration precision is a real ceiling on this instrument.** `sub_precision_calls` now makes it legible, but it does not remove it: a script whose calls are all under 5 ms reports a cumulative total of `0.0 s` however many times it runs. If D1's corpus work later shows the hot paths sit below that floor, widening the writer's format is the prerequisite for measuring them at all — and it is a `manage-logging` change, out of scope here.
 - **`CLAUDE.md` ↔ `cloud-plan-lane` contradiction on plugin-cache sync** (§ Contract check). Pre-existing; needs one of the two documents amended so a future run is not left choosing.
 - **Pre-existing deliverable-id citations in the two touched test modules.** The test-prose convention forbids them; this run removed its own but did not sweep the files, which carry others from earlier plans. Out of scope here.

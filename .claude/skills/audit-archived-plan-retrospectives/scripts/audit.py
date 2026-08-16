@@ -2685,6 +2685,9 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
     # dividing all-lines-count into timed-only seconds would report e.g.
     # "2x 5.0s" where only one of the two calls contributed any of that 5.0s.
     timed_call_counts: dict[str, int] = defaultdict(int)
+    # Timed calls the log recorded as `0.00s` — under the writer's `%.2f`
+    # precision floor. Counted, never silently summed as a measured zero.
+    sub_precision_calls: dict[str, int] = defaultdict(int)
     error_lines: list[dict[str, Any]] = []
     slow_calls: list[dict[str, Any]] = []
     impossible_calls: list[dict[str, Any]] = []
@@ -2728,6 +2731,8 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
                         call_seconds[key] += seconds
                         call_max_seconds[key] = max(call_max_seconds[key], seconds)
                         timed_call_counts[key] += 1
+                        if seconds == 0.0:
+                            sub_precision_calls[key] += 1
                         total_seconds += seconds
                         # Deterministic per-plan-op calls keep the flat 600 s
                         # ceiling; build / ci-wait class calls are bounded by the
@@ -2818,11 +2823,20 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
     # CURRENCY: every figure here is WALL-CLOCK. The log carries no per-call
     # token measurement, so no share computed here restates as a billing share.
     # A ranking from this roll-up is an operator-LATENCY finding.
-    rollup_total = round(total_seconds, 1)
+    # MILLISECOND precision, not decisecond. The roll-up exists to surface scripts
+    # whose cost is many small calls, so its own rounding must not destroy them:
+    # at `round(x, 1)` two 0.06 s keys both published `0.1 s` and BOTH reported a
+    # 100% share, and a lone 0.04 s call published `0.0 s` — nonzero work rendered
+    # as a measured zero, in the instrument built to stop exactly that.
+    #
+    # `share_pct` is still computed from the ROUNDED figures the block emits, so a
+    # reader recomputing it from the printed columns gets the printed value back;
+    # at 1 ms that rounding no longer moves the answer.
+    rollup_total = round(total_seconds, 3)
     ranked_keys = sorted(call_seconds, key=lambda k: (-call_seconds[k], k))
     cost_rollup: list[dict[str, Any]] = []
     for key in ranked_keys[: int(THRESHOLDS["cost_rollup_top_n"])]:
-        key_seconds = round(call_seconds[key], 1)
+        key_seconds = round(call_seconds[key], 3)
         cost_rollup.append(
             {
                 "key": key,
@@ -2830,10 +2844,18 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
                 # sums over. See `timed_call_counts`.
                 "calls": timed_call_counts[key],
                 "cumulative_seconds": key_seconds,
+                # Calls the LOG could not resolve: the writer formats durations
+                # `%.2f`, so anything under 5 ms is recorded as `0.00s`. Those
+                # calls contribute nothing to `cumulative_seconds`, which is
+                # therefore a FLOOR whenever this is nonzero — not a measurement.
+                # A high-volume, very fast script is precisely the shape that
+                # accumulates them, and precisely the shape this roll-up exists
+                # to surface, so the count is published rather than caveated.
+                "sub_precision_calls": sub_precision_calls.get(key, 0),
                 "share_pct": (
                     round(key_seconds / rollup_total * 100.0, 1) if rollup_total > 0 else 0.0
                 ),
-                "max_seconds": round(call_max_seconds.get(key, 0.0), 1),
+                "max_seconds": round(call_max_seconds.get(key, 0.0), 3),
             }
         )
 
@@ -2866,6 +2888,9 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
         "untimed_call_keys": len(set(call_counts) - set(call_seconds)),
         "cost_rollup_count": len(cost_rollup),
         "cost_rollup": cost_rollup,
+        # Corpus-wide count of calls recorded below the log's precision floor.
+        # `total_script_seconds` is a FLOOR when this is nonzero.
+        "sub_precision_call_count": sum(sub_precision_calls.values()),
         "fixture_leak_count": len(fixture_leaks),
         "fixture_leaks": fixture_leaks,
         "slow_ceiling": slow_ceiling,
@@ -5522,8 +5547,13 @@ def emit_global_log_block(result: dict[str, Any]) -> str:
             {
                 "kind": "dominant-cost-caller",
                 "detail": (
-                    f"{r['calls']}x {r['cumulative_seconds']:.1f}s "
+                    f"{r['calls']}x {r['cumulative_seconds']:.3f}s "
                     f"{r['share_pct']:.1f}% {r['key']}"
+                    + (
+                        f" (+{r['sub_precision_calls']} sub-precision)"
+                        if r["sub_precision_calls"]
+                        else ""
+                    )
                 ),
                 "attributed_plans": "",
             }
@@ -5565,6 +5595,7 @@ def emit_global_log_block(result: dict[str, Any]) -> str:
         f"high_frequency_count: {result['high_frequency_count']}",
         f"cost_rollup_count: {result['cost_rollup_count']}",
         f"distinct_timed_call_keys: {result['distinct_timed_call_keys']}",
+        f"sub_precision_call_count: {result['sub_precision_call_count']}",
         f"untimed_call_keys: {result['untimed_call_keys']}",
         f"fixture_leak_count: {result['fixture_leak_count']}",
         f"slow_ceiling_seconds: {result['slow_ceiling']}",

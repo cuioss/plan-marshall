@@ -146,6 +146,7 @@ impossible_count: IC
 high_frequency_count: HC
 cost_rollup_count: CC
 distinct_timed_call_keys: DK
+sub_precision_call_count: SP
 untimed_call_keys: UK
 fixture_leak_count: FL
 slow_ceiling_seconds: 30.0
@@ -158,7 +159,7 @@ rows[N]{kind,detail,attributed_plans,severity}
 | Column | Meaning |
 |--------|---------|
 | `kind` | The signal class: `error:{LEVEL}`, `slow-call`, `impossible-duration`, `high-frequency-caller`, `dominant-cost-caller`, or `fixture-leak`. |
-| `detail` | The signal payload — truncated line body for errors/leaks, `{seconds}s {notation subcommand}` for slow/impossible calls, `{count}x {total}s {key}` for high-frequency callers, `{calls}x {seconds}s {share}% {key}` for dominant-cost-caller rows. |
+| `detail` | The signal payload — truncated line body for errors/leaks, `{seconds}s {notation subcommand}` for slow/impossible calls, `{count}x {total}s {key}` for high-frequency callers, `{calls}x {seconds}s {share}% {key}` for dominant-cost-caller rows, with a trailing `(+N sub-precision)` when the key carries calls the log could not resolve. |
 | `attributed_plans` | `;`-joined plan ids whose execution window contains the line's timestamp, or `ad-hoc` when it falls outside every window (empty for high-frequency **and** dominant-cost-caller rows, which are corpus-wide aggregates rather than single lines). |
 | `severity` | Uniform severity column. Every surfaced row is `genuine` — a row only appears when its flag fired — **except `dominant-cost-caller`, which is always `informational`** (see below). |
 
@@ -213,6 +214,13 @@ of the informational context (corpus size, level buckets).
   many cheap ones, and the two remedies differ (make the call cheaper vs. make
   fewer calls). A key the slow ceiling flags that ranks *low* here is a rare
   outlier, not a cost centre.
+  ⛔ **`cumulative_seconds` is a FLOOR, not a measurement, wherever
+  `sub_precision_calls` is nonzero.** The writer formats durations `%.2f`, so a
+  call under 5 ms is logged as `0.00s` and adds nothing to the sum although it
+  really ran. A many-tiny-calls script — the class this roll-up exists to
+  surface — is exactly the one that accumulates them, so the count rides beside
+  the figure rather than being caveated away. `sub_precision_call_count` is the
+  corpus-wide total, and makes `total_script_seconds` a floor too.
   ⛔ **Currency: these are WALL-CLOCK seconds.** The corpus carries no per-call
   token measurement, so `share_pct` does **not** restate as a share of billed
   cost — a ranking here is an operator-**latency** finding. Never quote it as a

@@ -85,6 +85,62 @@ class TestGlobalLogCostRollup:
         assert result['cost_rollup'][1]['share_pct'] == pytest.approx(25.0)
         assert result['distinct_timed_call_keys'] == 2
 
+    def test_two_short_calls_do_not_both_report_the_whole_share(self, tmp_path: Path):
+        # At decisecond rounding both 0.06s keys published 0.1s and BOTH reported
+        # 100%. Shares must reconcile against the published denominator.
+        _write_log(
+            tmp_path,
+            'script-execution-2026-06-01.log',
+            [
+                _line('2026-06-01T10:00:00Z', 'INFO', 'pm:a:a run (0.06s)'),
+                _line('2026-06-01T10:00:01Z', 'INFO', 'pm:b:b run (0.06s)'),
+            ],
+        )
+
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        rows = result['cost_rollup']
+        assert [r['cumulative_seconds'] for r in rows] == [pytest.approx(0.06)] * 2
+        assert [r['share_pct'] for r in rows] == [pytest.approx(50.0)] * 2
+        assert sum(r['share_pct'] for r in rows) == pytest.approx(100.0)
+
+    def test_a_single_short_call_is_not_rendered_as_zero_seconds(self, tmp_path: Path):
+        # A 0.04s call is real work. Publishing it as 0.0s / 0.0% is the
+        # measured-nonzero-as-zero defect this roll-up exists to prevent.
+        _write_log(
+            tmp_path,
+            'script-execution-2026-06-01.log',
+            [_line('2026-06-01T10:00:00Z', 'INFO', 'pm:a:a run (0.04s)')],
+        )
+
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        row = result['cost_rollup'][0]
+        assert row['cumulative_seconds'] == pytest.approx(0.04)
+        assert row['share_pct'] == pytest.approx(100.0)
+
+    def test_calls_below_the_log_precision_floor_are_counted_not_absorbed(self, tmp_path: Path):
+        # The writer formats `%.2f`, so a sub-5ms call is logged as `0.00s`. It
+        # contributes nothing to the total, making the total a FLOOR — so the
+        # calls are counted rather than silently summed as measured zeros.
+        lines = [
+            _line(f'2026-06-01T10:00:{i % 60:02d}Z', 'INFO', 'pm:tiny:tiny run (0.00s)')
+            for i in range(50)
+        ]
+        lines.append(_line('2026-06-01T11:00:00Z', 'INFO', 'pm:real:real run (2.00s)'))
+        _write_log(tmp_path, 'script-execution-2026-06-01.log', lines)
+
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        assert result['sub_precision_call_count'] == 50
+        tiny = next(r for r in result['cost_rollup'] if r['key'] == 'pm:tiny:tiny run')
+        assert tiny['calls'] == 50
+        assert tiny['cumulative_seconds'] == pytest.approx(0.0)
+        assert tiny['sub_precision_calls'] == 50
+        # The real call carries no sub-precision debt.
+        real = next(r for r in result['cost_rollup'] if r['key'] == 'pm:real:real run')
+        assert real['sub_precision_calls'] == 0
+
     def test_no_script_lines_yields_an_empty_rollup(self, tmp_path: Path):
         _write_log(
             tmp_path,
@@ -111,7 +167,7 @@ class TestGlobalLogCostRollup:
         # The signal row names the share, so the read-out cannot be quoted
         # without its denominator.
         assert 'dominant-cost-caller' in output
-        assert '100x 20.0s 100.0% pm:hot:hot run' in output
+        assert '100x 20.000s 100.0% pm:hot:hot run' in output
 
     def test_cross_plan_ceiling_constant_unchanged(self):
         # The roll-up was added BESIDE this ceiling precisely so the ceiling need
@@ -179,5 +235,5 @@ class TestGlobalLogCostRollup:
         block = audit.emit_global_log_block(result)
 
         assert 'cost_rollup_count: 1' in block
-        assert 'dominant-cost-caller,1x 1.0s 100.0% pm:a:a run,,informational' in block
+        assert 'dominant-cost-caller,1x 1.000s 100.0% pm:a:a run,,informational' in block
         assert 'genuine_signal_count: 0' in block

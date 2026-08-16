@@ -413,6 +413,14 @@ def summarize_script_cost(
     than defaulted: a cumulative total is meaningless without it, and two
     roll-ups over different corpora must never be added or compared as one.
 
+    ⚠ ``total_duration_ms`` and every ``cumulative_ms`` are FLOORS wherever
+    ``sub_precision_calls`` is nonzero. The log writes durations at ``%.2f``
+    precision, so a call under 5 ms is recorded as ``0.00s`` and adds nothing to
+    the sum although it really ran. The count is published per script and in
+    total so the shortfall is legible rather than silently absorbed — and a
+    many-tiny-calls script, the class this roll-up exists to surface, is the one
+    most affected.
+
     ``ranked`` is capped at ``top_n_scripts`` and the cap is LEGIBLE — compare
     ``ranked_count`` against ``distinct_scripts``. ``total_calls`` and
     ``total_duration_ms`` always span the WHOLE population, so ``share_pct`` is a
@@ -421,6 +429,14 @@ def summarize_script_cost(
     call_counts: Counter[str] = Counter()
     cumulative: dict[str, float] = {}
     maxima: dict[str, float] = {}
+    # Calls the LOG could not resolve. ``manage-logging`` formats durations
+    # ``%.2f``, so anything under 5 ms is written as ``0.00s``. Such a call
+    # contributes nothing to the cumulative total, which is therefore a FLOOR
+    # rather than a measurement wherever this is nonzero. A high-volume, very
+    # fast script is exactly the shape that accumulates them — and exactly the
+    # shape this roll-up exists to surface — so they are counted, never quietly
+    # summed as a measured zero.
+    sub_precision: Counter[str] = Counter()
     at_or_over_ceiling = 0
     ceiling_ms = ceiling_seconds * 1000.0
 
@@ -428,6 +444,8 @@ def summarize_script_cost(
         call_counts[notation] += 1
         cumulative[notation] = cumulative.get(notation, 0.0) + ms
         maxima[notation] = max(maxima.get(notation, 0.0), ms)
+        if ms == 0.0:
+            sub_precision[notation] += 1
         if ms >= ceiling_ms:
             at_or_over_ceiling += 1
 
@@ -443,6 +461,8 @@ def summarize_script_cost(
                 'notation': notation,
                 'calls': call_counts[notation],
                 'cumulative_ms': script_ms,
+                # A FLOOR, not a measurement, whenever this is nonzero.
+                'sub_precision_calls': sub_precision.get(notation, 0),
                 # Computed from the ROUNDED figures this fragment publishes, so a
                 # reader recomputing the share from the printed columns gets the
                 # printed share back rather than a near-miss.
@@ -459,6 +479,7 @@ def summarize_script_cost(
         'calls_at_or_over_ceiling': at_or_over_ceiling,
         'total_calls': sum(call_counts.values()),
         'total_duration_ms': total_duration_ms,
+        'sub_precision_calls': sum(sub_precision.values()),
         'distinct_scripts': len(cumulative),
         'ranked_count': len(ranked),
         'ranked': ranked,
@@ -636,8 +657,12 @@ def summarize_context_position_cost(
     position_multiple: Any = _UNMEASURED_COLUMN_TOKEN
     position_multiple_basis: str = _UNMEASURED_COLUMN_TOKEN
     if len(rated) >= 2:
-        highest_phase, highest_rate = max(rated, key=lambda pair: pair[1])
-        lowest_phase, lowest_rate = min(rated, key=lambda pair: pair[1])
+        # Tie-break on phase name so the basis names two DISTINCT phases. With
+        # equal rates both ``max`` and ``min`` return the FIRST maximal element,
+        # so the basis would read ``{phase}/{phase}`` — a label contradicting its
+        # own contract, beside a perfectly correct multiple of 1.0.
+        highest_phase, highest_rate = max(rated, key=lambda pair: (pair[1], pair[0]))
+        lowest_phase, lowest_rate = min(rated, key=lambda pair: (pair[1], pair[0]))
         if lowest_rate > 0:
             position_multiple = round(highest_rate / lowest_rate, 3)
             position_multiple_basis = f'{highest_phase}/{lowest_phase}'

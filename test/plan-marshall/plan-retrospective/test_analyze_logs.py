@@ -2097,6 +2097,31 @@ class TestScriptCostRollup:
         assert rollup['total_duration_ms'] == pytest.approx(2000.0)
         assert [row['notation'] for row in rollup['ranked']] == ['pm:good:good']
 
+    def test_sub_precision_calls_are_counted_so_the_total_reads_as_a_floor(self, tmp_path):
+        # `manage-logging` formats durations `%.2f`, so a sub-5ms call is written
+        # as `0.00s` and adds nothing to the cumulative total. Counting them is
+        # what makes the total legible as a FLOOR rather than a measurement.
+        logs_dir = tmp_path / 'logs'
+        _write_folded_log(
+            logs_dir,
+            'script-execution-2026-06-01.log',
+            [
+                _line('2026-06-01T10:00:00Z', 'INFO', 'pm:tiny:tiny run (0.00s)'),
+                _line('2026-06-01T10:00:01Z', 'INFO', 'pm:tiny:tiny run (0.00s)'),
+                _line('2026-06-01T10:00:02Z', 'INFO', 'pm:real:real run (1.00s)'),
+            ],
+        )
+
+        rollup = _analyze_logs.analyze_folded_global_logs(logs_dir)['cost_rollup']
+
+        assert rollup['sub_precision_calls'] == 2
+        tiny = next(r for r in rollup['ranked'] if r['notation'] == 'pm:tiny:tiny')
+        assert tiny['calls'] == 2
+        assert tiny['cumulative_ms'] == pytest.approx(0.0)
+        assert tiny['sub_precision_calls'] == 2
+        real = next(r for r in rollup['ranked'] if r['notation'] == 'pm:real:real')
+        assert real['sub_precision_calls'] == 0
+
     def test_empty_corpus_publishes_zero_not_absence(self, tmp_path):
         logs_dir = tmp_path / 'logs'
         _write_folded_log(
@@ -2311,6 +2336,18 @@ class TestContextPositionCost:
         assert result['unmeasured_rows'] == 1
         assert result['measured_rows'] == 0
 
+    def test_bool_value_is_a_recording_gap_not_the_count_one(self):
+        # `bool` is an `int` subclass, so `True` would otherwise pass as the
+        # count 1 and assert a measurement nobody recorded.
+        per_phase = {
+            '5-execute': self._phase([{'cache_read_input_tokens': True, 'tool_uses': 5}]),
+        }
+
+        result = _analyze_logs.summarize_context_position_cost(per_phase)
+
+        assert result['unmeasured_rows'] == 1
+        assert result['measured_rows'] == 0
+
     def test_negative_tool_uses_is_a_recording_gap(self):
         # A negative call count is corruption, not an undefined ratio.
         per_phase = {
@@ -2331,6 +2368,21 @@ class TestContextPositionCost:
 
         assert result['by_phase'][0]['rows'] == 0
         assert result['by_phase'][0]['cache_read_per_tool_use'] == 'unmeasured'
+
+    def test_basis_names_two_distinct_phases_when_rates_tie(self):
+        # `max` and `min` both return the first maximal element, so equal rates
+        # would make the basis read `{phase}/{phase}` — a label contradicting its
+        # own contract beside a perfectly correct multiple of 1.0.
+        per_phase = {
+            '4-plan': self._phase([{'tool_uses': 5, 'cache_read_input_tokens': 500}]),
+            '6-finalize': self._phase([{'tool_uses': 5, 'cache_read_input_tokens': 500}]),
+        }
+
+        result = _analyze_logs.summarize_context_position_cost(per_phase)
+
+        assert result['position_multiple'] == pytest.approx(1.0)
+        highest, lowest = result['position_multiple_basis'].split('/')
+        assert highest != lowest
 
     def test_zero_denominator_multiple_is_undefined_not_unmeasured(self):
         # Two phases DO carry rates, so nothing is missing — but the lowest is

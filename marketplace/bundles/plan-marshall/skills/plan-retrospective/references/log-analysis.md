@@ -54,7 +54,11 @@ script_cost_rollup:
   total_duration_ms: NUM
   distinct_scripts: N
   ranked_count: N
-  ranked[*]{notation,calls,cumulative_ms,share_pct,max_ms}:
+  # cumulative_ms and total_duration_ms are FLOORS wherever sub_precision_calls
+  # is nonzero: the log writes durations at `%.2f`, so a call under 5ms records
+  # as `0.00s` and adds nothing to the sum although it really ran.
+  sub_precision_calls: N
+  ranked[*]{notation,calls,cumulative_ms,share_pct,max_ms,sub_precision_calls}:
     ...
 top_error_tags[5]{tag,count}:
   ...
@@ -133,6 +137,7 @@ a missing key.
 - `global_log_signals.fixture_leak_count > 0` is surfaced as an `error` finding — a synthetic test-fixture id in the plan's real folded-in logs means a test wrote to the real logs instead of an isolated `PLAN_BASE_DIR`; this is always a defect.
 - `global_log_signals.slow_call_count` rides the fragment for context; cross-read with `script_duration_p95_ms` and the LLM-to-script-opportunities aspect.
 - **Read the ceiling and the roll-up together — neither answers the other's question.** `slow_call_count` and the `script_duration_*` percentiles answer *"is any single call pathological?"*. They are structurally incapable of answering *"what dominates total time?"*: a call at a fraction of a percent of the 30s ceiling, repeated a hundred thousand times, is invisible to every one of them by construction, not by oversight. `script_cost_rollup` / `global_log_signals.cost_rollup` answer the second question. A script ranked first with `calls_at_or_over_ceiling: 0` is exactly that dominant-but-fast class — treat it as a finding even though no per-call signal fired.
+- ⛔ **A cumulative total is a FLOOR when `sub_precision_calls` is nonzero** — those calls ran but recorded as `0.00s` under the log's `%.2f` precision, so they contribute nothing. A script with a large `calls` count and a near-zero `cumulative_ms` is not cheap; it is unresolved. Read the two together.
 - ⛔ **The roll-up is WALL-CLOCK, not billing.** The script-execution log carries no per-call token measurement, so a `share_pct` here does **not** convert into a share of cost. A ranking from this roll-up is an operator-**latency** finding; say which currency you are quoting, and never restate a wall-clock share as a cost share.
 - `context_position_cost.position_multiple` reports how many times more **cached-read input tokens** a tool use consumes in the most expensive phase than in the cheapest — a **token** figure, and so a different currency from the wall-clock roll-up above; never add or compare the two — the same mechanical step late in a long phase re-reads a far larger accumulated context. Quote it only with `position_multiple_basis` (which two phases it compares) and `measured_rows` (how many rows it rests on). ⛔ It is also a **partition, not a whole** — cached-read is one of four context-load columns, so a 10x multiple is 10x on cached-read tokens, never 10x on billed cost. A literal `unmeasured` means the corpus could not support the figure — it is never a zero. A literal `undefined` means something different and must not be read as a recording gap: the record is COMPLETE and the ratio still cannot be formed (fewer than two rated phases is `unmeasured`; a zero denominator is `undefined`).
 

@@ -50,7 +50,7 @@ class TestEmitGlobalLogBlock:
         # for the one timed call, stamped `informational` so it does not inflate
         # the genuine count above.
         assert 'rows[3]{kind,detail,attributed_plans,severity}:' in block
-        assert 'dominant-cost-caller,1x 40.0s 100.0% pm:y:y run,,informational' in block
+        assert 'dominant-cost-caller,1x 40.000s 100.0% pm:y:y run,,informational' in block
 
     def test_debug_and_benign_probes_excluded_from_error_count(self, tmp_path: Path):
         # The corrected flagger flags only elevated levels (>=WARNING) + real failure
