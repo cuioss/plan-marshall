@@ -70,14 +70,14 @@ bodies before any collapse. It is FALSE, in the run's favour:**
 
 | # | Deliverable | Verdict | Evidence |
 |---|---|---|---|
-| D1 | Parametrize the contract tables | **Partial** | 11 families collapsed across 3 modules (below). Done-when 1 is met for `test_config_defaults.py`; the slice-wide family population is ~113, and `test_decision_rules.py` — named in D1 — received no table. |
+| D1 | Parametrize the contract tables | **Partial** | 13 families collapsed across 3 modules (below). Done-when 1 holds for `test_config_defaults.py` **as re-derived over the whole module** (see the residue note); the slice-wide family population is ~113, and `test_decision_rules.py` — named in D1 — received no table. |
 | D2 | Split every module over budget | **Not done** | `test-module-line-budget` 41 → 39. Sequenced after D1 by the plan; D1 did not complete. |
 | D3 | Arrange into fixtures and factories | **Not done** | setattr:fixture ratio unchanged at 257:13. No `parse_ns` call sites converted, so the exception list is empty by non-attempt, not by finding none. |
 | D4 | One import preamble | **Partial** | 137 → 30 doctor findings (78% closed); 50 modules converted. Done-when (grep returns nothing) **not met**: 22 sites in 15 files remain. |
 | D5 | Docstrings state the invariant | **Done** | `test-docstring-historical-prose` 24 → **0** across all six directories. |
 | D6 | Report the measured deltas | **Done** | This report; every figure carries its command. |
 
-### D1 — families collapsed (commits `b606c76`, `a848353`, `9e6a1c1`)
+### D1 — families collapsed (commits `b606c76`, `a848353`, `0143118`, `85d1007`, `65da950`)
 
 | Module | Collapsed family | Functions → cases |
 |---|---|---|
@@ -90,8 +90,9 @@ bodies before any collapse. It is FALSE, in the run's favour:**
 | " | recipe-provenance decision-matrix rows | 6 → 6 |
 | `manage-config/test_effort_read.py` | effort-resolution cascade | 10 → 10 |
 | " | effort-read rejection cases | 4 → 4 |
-| `manage-config/test_config_defaults.py` | `DEFAULT_PLAN_{EXECUTE,INIT}` knob registration | 5 → 5 |
-| " | `get_default_config` surfacing of the same five | 5 → 5 (+1 named round-trip test) |
+| `manage-config/test_config_defaults.py` | `DEFAULT_PLAN_*` knob registration (9 knobs) | 9 → 9 |
+| " | `get_default_config` surfacing of the same nine | 9 → 9 |
+| " | plus two named tests keeping extra assertions: the token round-trips, and the retired-`qgate` negative | — |
 
 **Two deliberate non-collapses, each recorded rather than silently skipped:**
 
@@ -119,7 +120,7 @@ is recorded because five sibling plans are about to make the same conversion.
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` → **52 files**. Python changed, so the gate ran.
+`git diff --name-only origin/main...HEAD -- '*.py'` → **58 files**. Python changed, so the gate ran.
 
 `UV_HTTP_TIMEOUT=600 ./pw verify` → **`=== verify: SUCCESS ===`**, `20275 passed, 14 skipped in
 418.05s`, with the quality-gate coverage line reporting all six dimensions clean (mypy production 408
@@ -134,21 +135,22 @@ tree clean afterwards — no `uv.lock` churn reached a commit.
 
 | Directory | Before | After | Δ |
 |---|---:|---:|---:|
-| `manage-config` | 22,648 | 21,795 | −853 |
+| `manage-config` | 22,648 | 21,739 | −909 |
 | `manage-execution-manifest` | 20,069 | 19,584 | −485 |
 | `manage-run-config` | 4,113 | 4,113 | 0 |
 | `manage-references` | 1,403 | 1,402 | −1 |
 | `manage-solution-outline` | 2,595 | 2,594 | −1 |
 | `marshall-steward` | 3,788 | 3,788 | 0 |
-| **Slice total** | **54,616** | **53,276** | **−1,340 (−2.45%)** |
+| **Slice total** | **54,616** | **53,220** | **−1,396 (−2.56%)** |
 
 ### Collected test count
 
 `uv run python -m pytest <six dirs> --collect-only -q -o addopts=""`
 
-**2,711 → 2,715 (+4).** The increase is the `_role_of` collapse splitting two multi-assert functions
-into one row per step id (+3), plus the token-magnitude round-trip kept as its own named test when the
-phase-knob pairs collapsed (+1). **No decrease** — Verification condition 1 holds.
+**2,711 → 2,718 (+7).** Every increase is a multi-assert function expanding into one row per case, or
+an extra assertion preserved as its own named test: the `_role_of` collapse (+3), the token-magnitude
+round-trip (+1), and the phase-knob table absorbing four more knobs while keeping the retired-`qgate`
+negative separate (+3). **No decrease** — Verification condition 1 holds.
 
 ### Coverage
 
@@ -198,7 +200,7 @@ list from an unrun check tells the operator nothing about whether `parse_ns` nee
 
 ### Other ratios
 
-`@pytest.mark.parametrize` decorators 67 → 76. `monkeypatch.setattr` 257 (unchanged),
+`@pytest.mark.parametrize` decorators 67 → 78. `monkeypatch.setattr` 257 (unchanged),
 `@pytest.fixture` 13 (unchanged) — ratio **19.8:1** before and after, untouched because D3 was not
 started.
 
@@ -206,12 +208,12 @@ started.
 
 | # | Condition | Verdict |
 |---|---|---|
-| 1 | Collected test count does not decrease | **HOLDS** — 2,711 → 2,715 |
+| 1 | Collected test count does not decrease | **HOLDS** — 2,711 → 2,718 |
 | 2 | Coverage does not decrease | **HOLDS** — identical to the statement |
-| 3 | Line count drops ≥ 30% of the starting total | **FAILS** — 2.45% against a 30% floor |
+| 3 | Line count drops ≥ 30% of the starting total | **FAILS** — 2.56% against a 30% floor |
 
 **The floor was not reached, and the plan's instruction on that is to report the shortfall rather than
-reach it another way.** Shortfall: **15,045 lines** (30% of 54,616 is 16,385; achieved 1,340; target ≤ 38,231).
+reach it another way.** Shortfall: **14,989 lines** (30% of 54,616 is 16,385; achieved 1,396; target ≤ 38,231).
 
 ### Why — the plan's premise for this floor is refuted by measurement
 
@@ -279,6 +281,34 @@ to that exemplar rather than to the whole module.
 
 Its D6 and coverage remarks read a report snapshot still marked `_in progress_`; both are now measured
 and recorded above.
+
+### Sub-agent verification findings (round 2 — re-dispatched after the round-1 fixes)
+
+Round 2's brief made the round-1 *fixes* the primary surface, because by then the youngest and least
+reviewed text in the diff was the prose round 1 had written. That is exactly where it found the worst
+defect. It confirmed 7 of 8 round-1 fixes fully landed, re-derived every report figure, and
+re-confirmed the invariants (Out-of-scope, collected count, coverage, ruff).
+
+| # | Finding | Disposition |
+|---|---|---|
+| W1 | **A docstring I wrote in round 1 states something false about production code.** `test_phase_defaults_constant_registers_knob` claimed an unregistered knob "is invisible to the fail-closed provisioning whitelist, so it would be rejected on an operator `set`". Verified against source: `reject_unknown_provisioning_field` has three call sites (retention, project, orchestrator blocks) and is never passed `DEFAULT_PLAN_EXECUTE` or `DEFAULT_PLAN_INIT`; and the direction is inverted — `cmd_phase` writes on `set` with no whitelist check, it is `get` that rejects. | **Fixed** — replaced with what is true: the constant is the schema `get_default_config` copies, so an unregistered knob never reaches a fresh marshal.json. |
+| W2 | The `_PHASE_KNOB_SEEDS` header claimed the two halves "can disagree". They cannot, for these knobs: assembly deep-copies each constant wholesale. | **Fixed** — the comment now says so, and frames the pair as a regression guard for the day assembly stops being a straight copy. |
+| W3 | The branch-cleanup round-trip docstring credited itself with catching a "computes then drops during assembly" failure. Both tables read the same accessor, so it cannot — and my own report already said so. | **Fixed** — the docstring now states what the table actually adds. |
+| W4 | The identity-check comment I added in round 1 justified `is None` with "a falsy sentinel such as `''` would satisfy `== None`-style chains". `'' == None` is `False`; the counterexample does not exist. | **Fixed** — replaced with the real reason (None is a singleton; `==` admits any overloaded `__eq__`). |
+| W5 | Two "via importlib" claims survived the round-1 sweep, both describing a preamble their file no longer has. | **Fixed.** |
+| W6 | Round 1 removed one deliverable-id section header and left structurally identical ones — the principle applied unevenly. | **Fixed, and widened**: all **27** remaining plan/deliverable ids stripped across 12 files. The doctor rule does not read comments, so D5's measured zero never covered these. |
+| W7 | An over-long docstring line (124 chars) in `test_ceremony_automation_migration.py`. | **Not fixed** — `E501` is in the project's ruff `ignore` list, so this is a style preference the repository has explicitly declined to enforce. |
+| C2 | Both phase-knob tests took one parameter each that they never read (`path`, then `constant`). | **Fixed** — the table is projected per test. |
+| E1 | **My report overstated D1.** It claimed done-when 1 was met for `test_config_defaults.py`; two more `_includes_`-shaped families of three remained (`auto_route_recipe` pair, planning-phase `q_gate_validation`). Same scoping defect as round 1's: the re-derivation was again run against part of the module rather than all of it. | **Fixed** — both collapsed into the same table, the retired-`qgate` negative kept as its own named test. |
+| E2 | The report cited a commit `9e6a1c1` that exists nowhere in the repository. | **Fixed** — real hashes substituted. |
+| E3 | Two stale re-derivable figures: parametrize decorators stated 76 (actual 78), changed `*.py` files stated 52 (actual 58). | **Fixed** — both re-derived at the moment of the claim, along with every line and count figure. |
+| E4 | The build-gate section reported a `./pw verify` run measured before the final commits, and did not say so. | **Fixed** — re-run against the final tree; see § Build gate. |
+
+**The pattern worth naming.** Across both rounds, every defect that a green suite could not catch was
+in *prose*, and the worst of them (W1) was prose the previous round had just written to fix an earlier
+finding. Three rounds of fixes each landed at the site the finding named; twice the same *scoping*
+mistake recurred — re-deriving a family over the part of the module the exemplar pointed at instead of
+over the whole module. Neither the build gate nor the doctor can see either failure mode.
 
 ## Reviewer participation
 
