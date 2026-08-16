@@ -11,6 +11,8 @@ from _audit_fixtures import audit
 
 from conftest import PROJECT_ROOT
 
+# A request body that PASSES S5 concreteness (names a file path) so S5/S1 do not
+# fire — lets the other signals drive the counterfactual in isolation.
 _CONCRETE_REQUEST = (
     '# Request\n\n## Clarified Request\n\n'
     'Update `marketplace/bundles/plan-marshall/skills/x/scripts/x.py` to fix it.\n'
@@ -61,6 +63,9 @@ def _write_track_plan(
     return audit.collect_inputs(plan_dir)
 
 
+# The project marshal.json compatibility (S4) used for the counterfactual. A
+# non-breaking value keeps S4 from firing so the test's chosen signal drives the
+# verdict.
 _NON_BREAKING_COMPAT = 'deprecation'
 
 

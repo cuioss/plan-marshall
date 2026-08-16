@@ -3,6 +3,23 @@
 """``cross-check-synthesis`` couplings (a)-(c) and the flagged-plans helper —
 ``trend_empty_untrustworthy``, ``churn_explains_walltime``, and
 ``qgate_gap_chain``.
+
+``cross_check_synthesis`` reads the OTHER checks' RETAINED structured results
+(never their emitted strings) and computes ten cross-facet couplings. The
+fixture helpers build the structured per-check result shapes the critic
+consumes::
+
+  token-efficiency-trend        -> {regression: str}
+  input-integrity               -> [{plan_id, data_confidence}]
+  sequence-and-build-minimality -> {rows: [{plan_id, flags:[...]}]}
+  token-economics               -> {rows: [{plan_id, flags:[...], tokens_per_file}]}
+  metrics                       -> [{plan_id, disproportionate_token}]
+  quality-chain                 -> {rows: [{plan_id, flags:[...]}]}
+  recurring-pattern-detector    -> {rows: [{signature}]}
+  global-log-analysis           -> {error_count}
+  quality-verification-report   -> [{unfiled_lessons}]
+  scope-estimate-accuracy       -> [{plan_id, mismatch}]
+  task-count-efficiency         -> [{plan_id, outlier}]
 """
 
 from _audit_fixtures import (

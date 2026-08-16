@@ -3,6 +3,17 @@
 """The ``metrics_blind`` predicate against the inline-phase carve-out — a matched
 positive/negative control pair pinning that an inline phase block is not read as
 metrics-blind while a genuinely absent one still is.
+
+``metrics_blind`` reads ``total_tokens`` as the evidence a phase recorded
+something. That field is population-discriminated: on a phase that dispatched
+nothing, ``manage-metrics enrich`` folds the main-context sum into it and stamps
+``total_tokens_population: inline``. The fold is what keeps such a phase off this
+flag — the check gets its inline carve-out FROM THE RECORDER and deliberately
+carries no inline branch of its own.
+
+These tests pin that coupling from the consumer side, where removing the fold
+would surface as a corpus-wide false positive. The negative control keeps the
+positive one honest: a phase that genuinely recorded nothing must still flag.
 """
 
 from pathlib import Path

@@ -1,19 +1,18 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""End-to-end regression tests for the dispatch-loop correctness fixes.
+"""End-to-end tests for two dispatch-loop correctness properties.
 
-Two structural properties of the phase-5-execute dispatch loop:
+Property 1: the loop drives on ``pending_count > 0`` rather than on a
+single ``task_complete`` return. ``manage-tasks loop-exit-guard`` is the
+script-level enforcement of the "pending > 0 → must continue" invariant;
+without it a loop exits on the first task that reports complete, stranding
+every task behind it.
 
-D1: The loop must drive on ``pending_count > 0`` rather than
-on a single ``task_complete`` return — TASK-001 added
-``manage-tasks loop-exit-guard`` as the script-level enforcement of the
-"pending > 0 → must continue" invariant.
-
-D2 (Defect 2): ``manage-metrics record-dispatch-boundary`` no longer
-overloads ``unknown`` as the fallback ``termination_cause``. The
-canonical clean-exit value is ``clean_exit_queue_empty``, and the
-retrospective rule emits a warning if the legacy ``unknown`` token ever
-appears in a recorded boundary file (which only happens on
-pre-migration plans).
+Property 2: ``manage-metrics record-dispatch-boundary`` does not overload
+``unknown`` as the fallback ``termination_cause``. The canonical clean-exit
+value is ``clean_exit_queue_empty``, and the retrospective rule warns when
+the ``unknown`` token appears in a recorded boundary file — a reader must
+still parse such rows, which pre-migration plans carry, even though the
+writer no longer emits them.
 
 These tests replay recorded multi-task fixtures end-to-end against the
 production scripts:

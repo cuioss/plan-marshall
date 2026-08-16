@@ -16,6 +16,9 @@ from _audit_fixtures import (
     audit,
 )
 
+# A NON-pyproject build notation, used to prove the single-tool blindness closed:
+# the re-base reads `command` per build system, so a Maven row exercises the path
+# a pyproject-only fixture cannot reach.
 _LEDGER_NOTATION_MAVEN = 'plan-marshall:build-maven:maven_build'
 
 

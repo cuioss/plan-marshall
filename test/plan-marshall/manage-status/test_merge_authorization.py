@@ -172,7 +172,7 @@ def test_regrant_at_new_head_overwrites_the_record(plan_context):
 
 
 def test_check_lapses_when_head_advances(plan_context):
-    """D5(a): an authorization granted at HEAD A does not authorize HEAD B.
+    """The lapse rule: an authorization granted at HEAD A does not authorize HEAD B.
 
     A ruling made over one tree must not be recalled to merge a different one.
     """
@@ -190,7 +190,7 @@ def test_check_lapses_when_head_advances(plan_context):
 
 
 def test_regrant_at_new_head_reauthorizes(plan_context):
-    """D5(b): the re-seek at the advanced HEAD restores authorization.
+    """The re-grant rule: a re-seek at the advanced HEAD restores authorization.
 
     The escape hatch is BOUND, not removed — proving the lapse rule does not
     simply delete the operator's ability to proceed.

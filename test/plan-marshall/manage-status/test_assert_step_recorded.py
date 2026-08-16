@@ -498,9 +498,9 @@ def test_canonical_exact_match_wins_over_stale_legacy_prefixed_key(plan_context)
     side must prefer the exact canonical match and report the FRESH outcome, not
     the stale legacy one the ordered scan would hit first.
 
-    The scan must not break on the first canonical match, or the
-    earlier-inserted ``default:push`` entry
-    (a pre-migration write) shadowed the newer ``push`` write.
+    A scan that breaks on the first canonical match lets the earlier-inserted
+    ``default:push`` entry (a pre-migration write) shadow the newer ``push``
+    write, so the read reports a stale outcome as the current one.
     """
     plan_id = 'assert-legacy-shadow'
     _make_plan(plan_id)

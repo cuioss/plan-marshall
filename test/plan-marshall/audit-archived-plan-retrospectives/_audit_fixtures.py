@@ -285,6 +285,8 @@ def _sbm_dispatch(ts: str, role: str) -> str:
     """
     return f'[{ts}Z] [INFO] [3befe7] [DISPATCH] (orchestrator) role={role} dispatched'
 
+# Build notation for a staged kind=build ledger row. The re-base derives build
+# time from the change-ledger, which records `command` per build system.
 _LEDGER_NOTATION_PYPROJECT = 'plan-marshall:build-pyproject:pyproject_build'
 
 def _sbm_ledger_row(

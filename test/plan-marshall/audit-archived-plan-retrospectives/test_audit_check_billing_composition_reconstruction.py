@@ -15,6 +15,8 @@ from _audit_fixtures import (
     audit,
 )
 
+# The canonical nine-column dispatch-boundary ledger header
+# (`data-format.md` § Per-Dispatch Context-Load Attribution).
 _LEDGER_HEADER = (
     'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
     'input_tokens,output_tokens,cache_read_input_tokens,'

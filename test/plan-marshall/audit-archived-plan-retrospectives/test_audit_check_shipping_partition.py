@@ -33,9 +33,15 @@ _SKILL_DOC = (
 )
 
 
+# The prose annotation a SKILL.md summary-table row carries when its check runs
+# over the shipping partition. Matched case-insensitively so both the leading
+# `Runs over ...` and the mid-sentence `Also runs over ...` phrasings count.
 _SHIPPING_ANNOTATION = 'runs over the shipping partition'
 
 
+# Each summary-table row links its sub-document as `checks/{check-name}.md`; the
+# link is the row's machine-readable identity (the leading prose cell is a title,
+# not a check name).
 _CHECK_DOC_LINK_RE = re.compile(r'checks/([a-z0-9-]+)\.md')
 
 

@@ -3019,7 +3019,12 @@ class TestRecordDispatchBoundaryRejectsInvalidCause:
         assert 'not_a_real_cause' in str(result.get('message', ''))
 
     def test_legacy_unknown_value_still_rejected(self, plan_context):
-        """The legacy fallback value 'unknown' was removed and must continue to reject."""
+        """The value 'unknown' is not a valid termination cause and is rejected.
+
+        It is not in the parser's ``choices``, so the CLI refuses it outright;
+        this pins that the handler refuses it too, for the programmatic callers
+        that reach ``cmd_record_dispatch_boundary`` with no parser in front.
+        """
         result = cmd_record_dispatch_boundary(
             raw_ns(
                 'record-dispatch-boundary',
