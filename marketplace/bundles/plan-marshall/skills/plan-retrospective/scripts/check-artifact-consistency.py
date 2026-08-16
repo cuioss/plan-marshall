@@ -90,32 +90,54 @@ _RECALL_THRESHOLD = 0.70
 #
 # Two tolerated bullet forms, in alternation order:
 #   1. Backtick-delimited, optionally annotated — ``- `path/to/file` (intent)``.
-#      Group ``quoted`` captures the span between the backticks; group
-#      ``qintent`` captures the annotation when one follows the closing
-#      backtick. Trailing prose after the annotation is tolerated and ignored.
-#   2. Bare, un-backticked, optionally annotated — ``- path/to/file (intent)``.
-#      Group ``bare`` captures the trimmed line body and group ``bintent`` the
-#      annotation. The ``bare`` class excludes backticks so a backticked line
-#      can never fall through to this branch, and excludes ``(`` so an
-#      annotation can never be swallowed into the path.
+#      Group ``quoted`` captures only the span between the backticks; group
+#      ``qtail`` captures everything after the closing backtick, from which the
+#      intent annotation is read.
+#   2. Bare, un-backticked — ``- path/to/file``. Group ``bare`` captures the
+#      whole trimmed line body, annotation included; the annotation is split off
+#      afterwards. The class excludes backticks so a backticked line can never
+#      fall through to this branch.
 #
-# The intent marker is CAPTURED rather than discarded because the declared
-# intent is what separates a path the deliverable intends to MODIFY from one it
-# only intends to READ. A read-intent declaration can never appear in a diff, so
-# counting it as an expected modification caps achievable recall below the pass
-# threshold by construction — see :func:`extract_modification_intent_files`.
-# Only a parenthesised all-lowercase token is read as an annotation, so ordinary
-# trailing prose in parentheses is left as prose and yields no intent.
+# The MATCHING shape is deliberately unchanged from the pre-intent version: this
+# regex decides whether a bullet parses AT ALL, and a bullet that stops matching
+# is reported as "Affected files heading present but no bullet parsed" — a
+# ``fail`` at ``severity: error``. Narrowing the ``bare`` class (e.g. excluding
+# ``(`` so an annotation could not be swallowed) silently converted three
+# previously-parsing forms — ``- src/a.py (New file)``, ``- src/mod(1).py``, and
+# ``- src/a.py (read) - trailing prose`` — into hard errors. Intent extraction
+# therefore happens in :func:`_split_intent_suffix`, never by constraining what
+# the path may contain.
 _AFFECTED_FILE_BULLET_RE = re.compile(
-    r'^[ \t]*-[ \t]+'
-    r'(?:'
-    r'`(?P<quoted>[^`\n]+)`(?:[ \t]*\((?P<qintent>[a-z-]+)\))?[^\n]*'
-    r'|'
-    r'(?P<bare>[^`\n(]+?)(?:[ \t]*\((?P<bintent>[a-z-]+)\))?'
-    r')'
-    r'[ \t]*$',
+    r'^[ \t]*-[ \t]+(?:`(?P<quoted>[^`\n]+)`(?P<qtail>[^\n]*)|(?P<bare>[^`\n]+?))[ \t]*$',
     re.MULTILINE,
 )
+
+#: A trailing ``(intent)`` marker on a bare bullet body. Only an all-lowercase
+#: parenthesised token at the very END of the body is an annotation; anything
+#: else — ``(New file)``, ``mod(1).py``, a parenthetical mid-line — stays part of
+#: the path and yields no intent, exactly as before intents were read.
+_BARE_INTENT_SUFFIX_RE = re.compile(r'^(?P<head>.*?)[ \t]*\((?P<intent>[a-z-]+)\)$')
+
+#: A leading ``(intent)`` marker in the text following a backticked path.
+_QUOTED_INTENT_PREFIX_RE = re.compile(r'^[ \t]*\((?P<intent>[a-z-]+)\)')
+
+
+def _split_intent_suffix(quoted: str | None, qtail: str | None, bare: str | None) -> tuple[str, str | None]:
+    """Return ``(path, intent)`` for one matched bullet.
+
+    Intent is read WITHOUT narrowing what a path may contain, so no bullet that
+    parsed before an intent was looked for stops parsing now. A parenthetical
+    that is not an all-lowercase token is left in the path untouched.
+    """
+    if quoted is not None:
+        marker = _QUOTED_INTENT_PREFIX_RE.match(qtail or '')
+        return quoted.strip(), (marker.group('intent') if marker else None)
+
+    body = (bare or '').strip()
+    marker = _BARE_INTENT_SUFFIX_RE.match(body)
+    if marker:
+        return marker.group('head').strip(), marker.group('intent')
+    return body, None
 
 #: The one declared intent that names a NON-modification. A path declared with
 #: this intent is expected to be read, never written, so it can never appear in
@@ -210,10 +232,10 @@ def _extract_bullet_entries(block_content: str) -> list[dict[str, str | None]]:
         # Stop at the next bold heading (next deliverable field).
         chunk = re.split(r'\*\*[A-Z][^*]+:\*\*', block, maxsplit=1)[0]
         for match in _AFFECTED_FILE_BULLET_RE.finditer(chunk):
-            raw = match.group('quoted') or match.group('bare') or ''
-            path = raw.strip()
+            path, intent = _split_intent_suffix(
+                match.group('quoted'), match.group('qtail'), match.group('bare')
+            )
             if path:
-                intent = match.group('qintent') or match.group('bintent')
                 entries.append({'path': path, 'intent': intent})
     return entries
 
@@ -362,9 +384,13 @@ def check_affected_files_recall(
             'fail',
             f'Affected files heading present but no bullet parsed for deliverable(s): {named}',
             {
-                'declared': len(declared),
+                # This verdict is derived from the UNFILTERED bullets, so it
+                # reports the unfiltered count. Publishing the filtered one here
+                # would describe a population the verdict never consulted.
+                'declared': len(all_declared),
                 'deliverables': len(deliverables),
                 'unparseable_deliverables': [state['number'] for state in unparseable],
+                'read_intent_excluded': read_intent_excluded,
             },
         )
 
@@ -372,7 +398,11 @@ def check_affected_files_recall(
         return (
             'skip',
             'No deliverable declares an Affected files section — nothing to compare',
-            {'declared': 0, 'deliverables': len(deliverables)},
+            {
+                'declared': 0,
+                'deliverables': len(deliverables),
+                'read_intent_excluded': 0,
+            },
         )
 
     # Every declared path carries read intent. The plan declared its surface, so
@@ -396,7 +426,14 @@ def check_affected_files_recall(
         try:
             json.loads(references_path.read_text(encoding='utf-8'))
         except (OSError, json.JSONDecodeError) as e:
-            return 'fail', f'references.json unreadable: {e}', {'declared': len(declared)}
+            return (
+                'fail',
+                f'references.json unreadable: {e}',
+                {
+                    'declared': len(declared),
+                    'read_intent_excluded': read_intent_excluded,
+                },
+            )
 
     actual = _resolve_footprint(plan_dir, plan_id)
     if footprint_resolved(actual):
@@ -431,6 +468,7 @@ def check_affected_files_recall(
             'declared': len(declared),
             'deliverables': len(deliverables),
             'footprint_resolved': False,
+            'read_intent_excluded': read_intent_excluded,
         },
     )
 

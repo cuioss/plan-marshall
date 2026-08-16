@@ -164,6 +164,54 @@ class TestReadIntentExcludedFromDenominator:
         assert _cac.extract_modification_intent_files(outline) == ['src/w.py']
 
 
+class TestIntentCaptureNeverBreaksParsing:
+    """Reading an intent must not narrow what a path is allowed to contain.
+
+    This regex decides whether a bullet parses AT ALL, and a bullet that stops
+    matching is reported as "Affected files heading present but no bullet
+    parsed" — a ``fail`` at ``severity: error``. So a bullet that parsed before
+    intents were read must still parse, with the same path, and yield no intent.
+    An intermediate fix excluded ``(`` from the bare path class, which silently
+    turned each of these into a hard error.
+    """
+
+    def test_parenthetical_that_is_not_an_intent_stays_in_the_path(self):
+        outline = _outline([('src/a.py (New file)', None)], backticked=False)
+        assert _cac.extract_affected_files_per_deliverable(outline) == ['src/a.py (New file)']
+        assert _cac.extract_modification_intent_files(outline) == ['src/a.py (New file)']
+
+    def test_parenthesis_inside_a_bare_path_is_preserved(self):
+        outline = _outline([('src/mod(1).py', None)], backticked=False)
+        assert _cac.extract_affected_files_per_deliverable(outline) == ['src/mod(1).py']
+
+    def test_trailing_prose_after_a_bare_annotation_does_not_break_the_match(self):
+        """Not an annotation — the marker must end the body to be read as one."""
+        content = (
+            '# Solution\n\n## Summary\n\ns\n\n## Overview\n\no\n\n## Deliverables\n\n'
+            '### 1. One\n\n**Affected files:**\n- src/a.py (read) - trailing prose\n'
+        )
+        assert _cac.extract_affected_files_per_deliverable(content) == [
+            'src/a.py (read) - trailing prose'
+        ]
+        # No intent was read, so it is NOT filtered out as a read declaration.
+        assert _cac.extract_modification_intent_files(content) == [
+            'src/a.py (read) - trailing prose'
+        ]
+
+    def test_uppercase_parenthetical_after_a_backticked_path_yields_no_intent(self):
+        outline = _outline([('src/a.py', 'New file')])
+        assert _cac.extract_affected_files_per_deliverable(outline) == ['src/a.py']
+        assert _cac.extract_modification_intent_files(outline) == ['src/a.py']
+
+    def test_backticked_path_keeps_trailing_prose_tolerance(self):
+        content = (
+            '# Solution\n\n## Summary\n\ns\n\n## Overview\n\no\n\n## Deliverables\n\n'
+            '### 1. One\n\n**Affected files:**\n- `src/a.py` (read) — see note\n'
+        )
+        assert _cac.extract_affected_files_per_deliverable(content) == ['src/a.py']
+        assert _cac.extract_modification_intent_files(content) == []
+
+
 class TestAllReadIntentIsSkippedNotFailed:
     def test_all_read_intent_yields_skip_with_its_own_reason(self, tmp_path):
         """No expected modification is not a 0% recall — it is nothing to compare.
@@ -213,6 +261,58 @@ class TestAllReadIntentIsSkippedNotFailed:
 
         assert status == 'skip'
         assert 'No deliverable declares an Affected files section' in message
+
+
+class TestReadIntentExcludedIsPublishedOnEveryBranch:
+    """The docs state this key lets a reader tell a small denominator from a
+    filtered one. That is only true if every branch publishes it — an absent key
+    reads as "nothing was filtered", which is the same absent-vs-zero collapse
+    this plan exists to remove.
+    """
+
+    def test_published_on_the_unresolvable_footprint_branch(self, tmp_path):
+        """The branch this plan is centrally about."""
+        outline = _outline([('src/w.py', 'write-new'), ('src/r.py', 'read')])
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'references.json').write_text(json.dumps({'domains': []}), encoding='utf-8')
+
+        status, _message, details = _cac.check_affected_files_recall(
+            outline, plan_dir, _ONE_DELIVERABLE
+        )
+
+        assert status == 'inconclusive'
+        assert details['read_intent_excluded'] == 1
+
+    def test_published_on_the_unparseable_fail_branch_with_the_unfiltered_count(self, tmp_path):
+        """That verdict reads the UNFILTERED bullets, so it reports the unfiltered count."""
+        outline = (
+            '# Solution\n\n## Summary\n\ns\n\n## Overview\n\no\n\n## Deliverables\n\n'
+            '### 1. One\n\n**Affected files:**\n\n### 2. Two\n\n'
+            '**Affected files:**\n- `src/r.py` (read)\n'
+        )
+        plan_dir = _plan_dir(tmp_path, ['src/w.py'])
+
+        status, _message, details = _cac.check_affected_files_recall(
+            outline, plan_dir, _ONE_DELIVERABLE
+        )
+
+        assert status == 'fail'
+        assert details['declared'] == 1, 'the unfiltered count, matching the verdict'
+        assert details['read_intent_excluded'] == 1
+
+    def test_published_on_the_no_declaration_skip_branch(self, tmp_path):
+        outline = (
+            '# Solution\n\n## Summary\n\ns\n\n## Overview\n\no\n\n'
+            '## Deliverables\n\n### 1. One\n\nNo files.\n'
+        )
+        plan_dir = _plan_dir(tmp_path, ['src/a.py'])
+
+        _status, _message, details = _cac.check_affected_files_recall(
+            outline, plan_dir, _ONE_DELIVERABLE
+        )
+
+        assert details['read_intent_excluded'] == 0
 
 
 class TestExactMatchSharesTheFilteredDenominator:

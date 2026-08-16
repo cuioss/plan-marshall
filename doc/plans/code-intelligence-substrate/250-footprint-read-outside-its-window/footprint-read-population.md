@@ -62,6 +62,50 @@ Each already distinguishes the two states it can return.
 | `ext-self-review-plan-marshall/_self_review_diff.py` + `self_review.py` | Collapses unresolvable into empty, but the collapse is **benign by direction**: both states yield "do not filter", which surfaces *more* diff to the reviewer rather than grading anything. Recorded, not fixed — no verdict is derived from it. |
 | `automatic-review/review_completeness.py` | Mentions footprint only as prose about reviewer diff-size ceilings. |
 
+## The two independent causes, and how each is discharged
+
+The plan's ⛔⛔ section binds this document to address **both** causes of the coverage failure, or to
+split them and say so. Neither is split out; both are discharged, by different means.
+
+**Cause 1 — ordering: the measurement runs after the worktree it derives from is deleted.**
+The ordering is **structurally unchanged and was not changed here**. `default:branch-cleanup` is the
+merge gate at order **70** and declares `destroys: [worktree]`; the retrospective is a
+`post_run_review` step in the **900–999** band (existing members cluster at 990–999). The worktree is
+therefore destroyed roughly 900 order-units before the step that reads it.
+
+The plan's ⚠ asks whether that order is the DEFAULT or per-plan, because a per-plan order would
+narrow the "fires on every plan" claim and shrink D5. It is the **DEFAULT**, and structurally so: the
+bands are a fixed contract in `extension-api/standards/finalize-step-order-bands.md`, the merge gate's
+slot is "Shared bundle (fixed)" and "not a member of any insertable band", and the band contract
+states the rule this violates in its own words — *"a step that `reads: [worktree]` is mis-ordered if
+it runs after the gate."* So the claim holds unnarrowed, and D5's scope was not reduced on this
+ground.
+
+What discharges cause 1 is not a re-ordering but two remedies already landed on `main` by sibling
+plans, which this run verified rather than rebuilt:
+
+1. A **capture-while-true** producer. `branch-cleanup` now calls
+   `manage-references capture-footprint` in the step immediately BEFORE removing the worktree —
+   "the last moment the plan's realized changes exist on disk as a worktree diff" — persisting
+   `references.realized_footprint`. The retrospective then resolves from a recorded fact instead of
+   re-deriving from a substrate that has since changed. This also closes the plan's "neither
+   documented footprint state" gap: a plan between worktree removal and archival now resolves at
+   tier 2.
+2. The **`FOOTPRINT_UNRESOLVED` sentinel** at the reader (`_footprint_resolver`), so that when even
+   the capture is absent the verdict is `inconclusive` rather than a confident 0%.
+
+**Cause 2 — vacuity: the recall denominator counts read-intent files as expected modifications.**
+Discharged by this run (D3). It was **confirmed first-party before being fixed**, and the confirmation
+is the point: a fixture of two realized modification-intent files plus three read-intent declarations
+scored *"Recall 40% below 70% threshold"* — unpassable by construction, on a perfectly-executed plan.
+
+**Why the trap was real.** Cause 1 was already fixed when this run began. A run that read the plan as
+an ordering fix would have found the ordering remedies in place, reported success, and shipped
+nothing — while cause 2 stayed live on **every** plan declaring a read-intent file. That population is
+not marginal: `manage-solution-outline` *requires* an intent marker on every declared path
+(`manage-solution-outline.py` Check 3b), so every validated outline carries intents. The green from
+cause 1 is exactly what would have destroyed the evidence for cause 2.
+
 ## The one line, repeated
 
 The mechanism the plan predicted holds at every defective site: the predicate is a truthiness test —

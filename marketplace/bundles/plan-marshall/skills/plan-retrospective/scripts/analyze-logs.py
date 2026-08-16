@@ -41,7 +41,9 @@ from pathlib import Path
 from typing import Any
 
 from _footprint_resolver import (
+    FOOTPRINT_UNRESOLVED,
     read_captured_footprint,
+    read_legacy_footprint,
     resolve_merge_commit_footprint,
 )
 from _ledger_core import read_entries
@@ -264,22 +266,17 @@ def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> list[str] |
     if merge_set is not None:
         return sorted(merge_set)
 
-    # SHIM(B): archived plans' references.modified_files key, written before the change-ledger was removed.
-    # shim-owner: plan-retrospective
-    # shim-floor: the change-ledger removal that stopped persisting references.modified_files; the current writer no longer emits the key (predates this shallow clone's history root dcd3c00 / #1105, so not PR-pinnable here).
-    # shim-remove-when: no archived plan predating the ledger removal is retained (i.e. such archives are purged/aged out).
-    # Key ABSENT and key present-but-empty are different answers, mirroring
-    # ``_footprint_resolver._coerce_path_set``: an absent (or unusable) key means
-    # no tier answered, which is the unresolvable sentinel; a present empty list
-    # is a resolved, genuinely-empty footprint.
-    raw = refs.get('modified_files')
-    if raw is None:
-        return None
-    if isinstance(raw, str):
-        raw = [raw]
-    if not isinstance(raw, list):
-        return None
-    return [str(p).strip() for p in raw if p]
+    # Tier 4 comes from the shared helper rather than a private re-implementation:
+    # it already owns the SHIM(B) declaration for the legacy key AND the
+    # absent-vs-present-but-empty distinction (an absent or unusable key is the
+    # unresolvable sentinel; a present empty list is a resolved, genuinely-empty
+    # footprint). Re-implementing it here duplicated the shim marker and gave one
+    # bundle two spellings of one concept.
+    legacy = read_legacy_footprint(refs)
+    if legacy is not None:
+        return sorted(legacy)
+
+    return None
 
 
 def read_log(path: Path) -> list[str]:
@@ -1138,7 +1135,11 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # look".
     footprint = resolve_footprint(plan_dir, args.plan_id if args.mode == 'live' else None)
     findings: list[dict[str, str]] = []
-    if footprint is None:
+    # Read by the shared sentinel's NAME, never by emptiness. The
+    # ``footprint_resolved`` TypeGuard is typed for the ``set[str]`` whole-chain
+    # resolver; this scope-deviation resolver returns a list, so it names the
+    # sentinel directly rather than misusing a guard that would narrow to a set.
+    if footprint is FOOTPRINT_UNRESOLVED:
         findings.append(
             {
                 'severity': 'warning',
