@@ -15,27 +15,17 @@ Tier 2 (direct import) — all assertions run against the loaded module with no
 subprocess spawn.
 """
 
-import importlib.util
-from pathlib import Path
-
 import pytest
 
-# Tier 2 direct import via importlib (kebab-case filename).
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+from conftest import load_script_module
+
+# Tier 2 direct import — resolution by (bundle, skill, script).
+_mem = load_script_module(
+    'plan-marshall',
+    'manage-execution-manifest',
+    'manage-execution-manifest.py',
+    module_name='_mem_parse_verb',
 )
-_spec = importlib.util.spec_from_file_location(
-    '_mem_parse_verb', _SCRIPTS_DIR / 'manage-execution-manifest.py'
-)
-assert _spec is not None and _spec.loader is not None
-_mem = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mem)
 
 _parse_verification_command = _mem._parse_verification_command
 _verb_to_phase_5_step = _mem._verb_to_phase_5_step

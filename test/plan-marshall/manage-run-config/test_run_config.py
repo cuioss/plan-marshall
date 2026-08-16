@@ -5,7 +5,6 @@
 Tests run-configuration.json initialization, validation, and cleanup.
 """
 
-import importlib.util
 import json
 import os
 import shutil
@@ -15,16 +14,15 @@ from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-run-config', 'run_config.py')
 
 # In-process handle for resolver-behaviour tests (mirrors test_git_merge_lock.py).
-_spec = importlib.util.spec_from_file_location('run_config', SCRIPT_PATH)
-assert _spec is not None and _spec.loader is not None
-run_config = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(run_config)
+run_config = load_script_module(
+    'plan-marshall', 'manage-run-config', 'run_config.py', module_name='run_config'
+)
 
 
 # =============================================================================

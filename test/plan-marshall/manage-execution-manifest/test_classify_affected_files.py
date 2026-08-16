@@ -20,40 +20,25 @@ The six plan-wide bucket values:
 - ``unknown`` — at least one path is unclaimed
 """
 
-import importlib.util
-from pathlib import Path
-
 # Import the FakeExtension fixture explicitly (per the _fixtures.py
 # convention — sibling conftest.py is banned). The fixture basename is
 # bundle-unique to avoid a collision in the plan-marshall test namespace.
-_FIXTURES_PATH = Path(__file__).parent / '_execution_manifest_fixtures.py'
-_fixtures_spec = importlib.util.spec_from_file_location(
-    '_execution_manifest_fixtures_classifier_tests', _FIXTURES_PATH
+from _execution_manifest_fixtures import (
+    FakeExtension,
+    fake_documentation_extension,
+    fake_plugin_dev_extension,
+    fake_python_extension,
 )
-assert _fixtures_spec is not None and _fixtures_spec.loader is not None
-_fixtures_mod = importlib.util.module_from_spec(_fixtures_spec)
-_fixtures_spec.loader.exec_module(_fixtures_mod)
-FakeExtension = _fixtures_mod.FakeExtension
-fake_python_extension = _fixtures_mod.fake_python_extension
-fake_documentation_extension = _fixtures_mod.fake_documentation_extension
-fake_plugin_dev_extension = _fixtures_mod.fake_plugin_dev_extension
+
+from conftest import load_script_module
 
 # Load the aggregator under test.
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+_manifest_mod = load_script_module(
+    'plan-marshall',
+    'manage-execution-manifest',
+    'manage-execution-manifest.py',
+    module_name='_manifest_classifier_tests',
 )
-_manifest_spec = importlib.util.spec_from_file_location(
-    '_manifest_classifier_tests', _SCRIPTS_DIR / 'manage-execution-manifest.py'
-)
-assert _manifest_spec is not None and _manifest_spec.loader is not None
-_manifest_mod = importlib.util.module_from_spec(_manifest_spec)
-_manifest_spec.loader.exec_module(_manifest_mod)
 _classify = _manifest_mod._classify_paths_via_extensions
 
 

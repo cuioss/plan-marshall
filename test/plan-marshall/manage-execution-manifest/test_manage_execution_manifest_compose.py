@@ -9,7 +9,6 @@ source-of-truth) plus the relevant CLI plumbing tests.
 """
 
 import contextlib
-import importlib.util
 import json
 import re
 from argparse import Namespace
@@ -17,6 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from _execution_manifest_fixtures import fake_lane_blocks
 
 from conftest import get_script_path, load_script_module, run_script
 
@@ -24,18 +24,6 @@ from conftest import get_script_path, load_script_module, run_script
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py')
 
 # Tier 2 direct imports, resolved by (bundle, skill, script).
-
-
-# Lane-block fixture, loaded via importlib per the _fixtures.py convention (a
-# sibling conftest.py is banned). The basename is bundle-unique.
-_FIXTURES_PATH = Path(__file__).parent / '_execution_manifest_fixtures.py'
-_fixtures_spec = importlib.util.spec_from_file_location(
-    '_execution_manifest_fixtures_compose_tests', _FIXTURES_PATH
-)
-assert _fixtures_spec is not None and _fixtures_spec.loader is not None
-_fixtures_mod = importlib.util.module_from_spec(_fixtures_spec)
-_fixtures_spec.loader.exec_module(_fixtures_mod)
-fake_lane_blocks = _fixtures_mod.fake_lane_blocks
 
 
 _mem = load_script_module(

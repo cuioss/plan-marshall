@@ -7,21 +7,22 @@ Tier 2 (direct import) tests with 2-3 subprocess tests for CLI plumbing.
 Solution outlines are written directly by agents, then validated via this script.
 """
 
-import importlib.util
 from argparse import Namespace
 
 import pytest
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-solution-outline', 'manage-solution-outline.py')
 
-# Tier 2 direct imports via importlib (script filename has hyphens)
-_spec = importlib.util.spec_from_file_location('manage_solution_outline', str(SCRIPT_PATH))
-assert _spec is not None and _spec.loader is not None
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
+# Tier 2 direct imports — resolution by (bundle, skill, script).
+_mod = load_script_module(
+    'plan-marshall',
+    'manage-solution-outline',
+    'manage-solution-outline.py',
+    module_name='manage_solution_outline',
+)
 
 cmd_validate = _mod.cmd_validate
 cmd_list_deliverables = _mod.cmd_list_deliverables

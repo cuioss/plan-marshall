@@ -42,13 +42,14 @@ files that legitimately reference the retired tokens. Every other file in
 
 from pathlib import Path
 
+from conftest import PROJECT_ROOT
+
 # =============================================================================
 # Tree roots and scan configuration
 # =============================================================================
 
-_REPO_ROOT = Path(__file__).parent.parent.parent.parent
-_MARKETPLACE_ROOT = _REPO_ROOT / 'marketplace'
-_TEST_ROOT = _REPO_ROOT / 'test'
+_MARKETPLACE_ROOT = PROJECT_ROOT / 'marketplace'
+_TEST_ROOT = PROJECT_ROOT / 'test'
 
 # File suffixes worth scanning. Retired tokens only ever lived in Python sources,
 # markdown skill/standards bodies, and JSON manifests.
@@ -118,7 +119,7 @@ def _iter_scanned_files() -> list[Path]:
         for path in root.rglob('*'):
             if not path.is_file() or path.suffix not in _SCANNED_SUFFIXES:
                 continue
-            rel = path.relative_to(_REPO_ROOT).as_posix()
+            rel = path.relative_to(PROJECT_ROOT).as_posix()
             if rel in _ALLOWED_RETIRED_TOKEN_FILES:
                 continue
             files.append(path)
@@ -133,7 +134,7 @@ def _find_orphaned_references() -> list[tuple[str, str, str]]:
             text = path.read_text(encoding='utf-8')
         except (UnicodeDecodeError, OSError):
             continue
-        rel = path.relative_to(_REPO_ROOT).as_posix()
+        rel = path.relative_to(PROJECT_ROOT).as_posix()
         for needle, surface in _RETIRED_TOKENS:
             if needle in text:
                 hits.append((rel, needle, surface))
@@ -193,6 +194,6 @@ def test_production_manifest_script_clean_of_classify_family():
 def test_allow_list_files_exist():
     """Every allow-listed path must exist — a stale allow-list silently widens the sweep gap."""
     for rel in _ALLOWED_RETIRED_TOKEN_FILES:
-        assert (_REPO_ROOT / rel).is_file(), (
+        assert (PROJECT_ROOT / rel).is_file(), (
             f'Allow-listed file {rel!r} does not exist; prune or correct the allow-list.'
         )

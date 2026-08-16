@@ -22,32 +22,16 @@ the underlying read/write round-trip behaviour the wizard depends on:
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT
+from conftest import add_skill_scripts_to_path, load_script_module
 
-_MANAGE_CONFIG_SCRIPTS_DIR = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
-)
-if str(_MANAGE_CONFIG_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_MANAGE_CONFIG_SCRIPTS_DIR))
+add_skill_scripts_to_path('plan-marshall', 'manage-config')
 
-
-def _load_module(name: str, path: Path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_cmd_models_mod = _load_module(
-    '_cmd_effort', _MANAGE_CONFIG_SCRIPTS_DIR / '_cmd_effort.py'
+_cmd_models_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_effort.py', module_name='_cmd_effort'
 )
 cmd_effort = _cmd_models_mod.cmd_effort
 

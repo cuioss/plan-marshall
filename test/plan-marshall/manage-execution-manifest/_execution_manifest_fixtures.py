@@ -18,9 +18,12 @@ plan-marshall test-collection namespace. See
 
 Tests import the fixtures explicitly::
 
-    from test.plan_marshall.manage_execution_manifest._execution_manifest_fixtures import (
-        FakeExtension, fake_extensions,
-    )
+    from _execution_manifest_fixtures import FakeExtension, fake_extensions
+
+The bare form is the one that works. pytest puts the test file's own directory
+on ``sys.path``, and a dotted package path cannot address these directories at
+all — ``manage-execution-manifest`` contains hyphens, which are not legal in a
+Python identifier.
 """
 
 from extension_base import ExtensionBase

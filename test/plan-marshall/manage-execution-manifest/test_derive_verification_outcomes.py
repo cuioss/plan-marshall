@@ -35,10 +35,6 @@ from pathlib import Path
 
 from conftest import load_script_module
 
-_REPO_ROOT = Path(__file__).parent.parent.parent.parent
-
-
-
 _architecture_core = load_script_module(
     'plan-marshall', 'manage-architecture', '_architecture_core.py', module_name='_architecture_core'
 )

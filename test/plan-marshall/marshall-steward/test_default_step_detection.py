@@ -21,36 +21,20 @@ set is derived from the reusable ``extension_discovery.find_implementors`` query
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT
+from conftest import add_skill_scripts_to_path, load_script_module
 
-_SCRIPTS_DIR = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts'
+add_skill_scripts_to_path('plan-marshall', 'manage-config')
+add_skill_scripts_to_path('plan-marshall', 'marshall-steward')
+
+_dm = load_script_module(
+    'plan-marshall',
+    'marshall-steward',
+    'determine_mode.py',
+    module_name='_marshall_steward_determine_mode',
 )
-_DETERMINE_MODE = _SCRIPTS_DIR / 'determine_mode.py'
-
-_MANAGE_CONFIG_SCRIPTS_DIR = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-config' / 'scripts'
-)
-if str(_MANAGE_CONFIG_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_MANAGE_CONFIG_SCRIPTS_DIR))
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
-
-
-def _load_module(name: str, path: Path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_dm = _load_module('_marshall_steward_determine_mode', _DETERMINE_MODE)
 detect_missing_default_finalize_steps = _dm.detect_missing_default_finalize_steps
 
 
