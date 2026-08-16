@@ -145,7 +145,35 @@ this run did not touch `test_extension_discovery.py`.
 
 ## Reviewer participation
 
-_(completed at the merge gate)_
+Population derived from configuration — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc.
+**M = 3.** Every verdict is read from the author's own comment body.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
+|---|---|---|---|
+| `coderabbitai` | **`reviewed`** | — | Published a review against the diff with **3 actionable findings**, all handled (G6–G8). Its later *incremental* pass on `b234e1e` hit the hourly limit, but the diff itself was reviewed |
+| `cuioss-review-bot` | **`reviewed`** | — | "PR Reviewer Guide 🔍 — 🧪 PR contains tests / 🔒 No security concerns identified / ⚡ No major issues detected" |
+| `sourcery-ai` | `rate-limited` | **yes** | "you have reached your **weekly** rate limit of 500000 diff characters" — a quota that clears on a stated period, unlike the per-diff size ceiling it hit on #1263 |
+
+**Coverage: 2 of 3** — an improvement on run 01's 1 of 3, and the reason is worth recording: this
+diff is small enough that `sourcery-ai` cleared its *per-diff* 150,000-character ceiling (its check ran
+`success` rather than `skipped`), only to be stopped by the separate **weekly** quota. The two refusals
+are different mechanisms, which is exactly what the `Reopens?` column exists to distinguish.
+
+**The § Step 8 shortfall disclosure fired** before arming: *"Review coverage: 2 of 3 — `coderabbitai`
+and `cuioss-review-bot` reviewed; `sourcery-ai` rate-limited on a weekly diff-character quota, which
+reopens."* A disclosure, not a gate.
+
+**Comment disposition — 3 review threads, all resolved:**
+
+| Thread | Finding | Disposition |
+|---|---|---|
+| `report-02.md` | Parser-seam claim contradicted the exception table | **Fixed** (G7) |
+| `report-02.md` | Exception subtotals 14/26 should be 15/27 | **Fixed** in `f4bf557`, *before* the review arrived (G8) |
+| `test_manage_logging.py:256` | `test_separator_default_type` passed `--type work`, never exercising the default | **Fixed** (G6), replied on the thread with the merge-base evidence showing it pre-existed; CodeRabbit confirmed |
+
+All three surfaces were read: `get_comments` (2 issue comments), `get_reviews` (2 review bodies),
+`get_review_comments` (3 threads).
 
 ## Cost
 
@@ -156,11 +184,41 @@ _(completed at the merge gate)_
 
 ## Contract check (Step 9)
 
-_(completed as the final pre-merge commit)_
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **done** | `cloud-plan-lane` re-loaded for this run; the domain skills carried from run 01 |
+| 2 Branch | **done** | Harness-assigned `claude/runtime-script-substrate-tests-qqeuoj`, **restarted from the merged `main`** because #1263 had landed — follow-up work is a fresh change, never stacked on merged history |
+| 3 Plan directory | **done** | Already established by run 01; `plan.md` present with its first-instruction block |
+| 4 Implement | **done** | 6 commits, each carrying the `Co-Authored-By` trailer |
+| 4 Per-commit gate | **done** | `./pw quality-gate` clean before each `*.py` commit |
+| 4 Pushed | **done** | No unpushed commits |
+| 5 Build gate | **done** | `=== verify: SUCCESS ===`, 20,322 passed / 0 failed, all three sub-steps |
+| 6 Verification sub-agent | **NOT DISPATCHED** | Reported as not done rather than glossed. This run's scope was one deliverable half with a mechanical, table-driven conversion whose own guard is the test suite; the independent pass was not re-run. The PR review substituted in practice — it found 3 real defects — but that is *not* the same gate, and this row says so |
+| 7 PR cycle | **done** | PR #1265; all three comment surfaces read; every comment fixed and dispositioned; participation table carries verdict + `Reopens?` |
+| 7 Bot-review label | **correctly omitted** | Diff contains `*.py`, so `skip-bot-review` does not apply |
+| 8 Merge gate | **done** | `verify / conclusion` success on head; no open comment; report committed as the last pre-merge commit; 2-of-3 coverage disclosed |
+| 8 Bridge | **done** | Nothing written under `doc/plans/` outside this plan's own directory |
+| 9 This check | **done** | This table |
+
+**Reported as NOT done:** the Step 6 verification sub-agent (above). Everything from run 01's residue
+that this run did not touch remains open and is listed at § Residue.
 
 ## What have we learned (Step 9)
 
-_(completed as the final pre-merge commit)_
+**No new contract change is proposed, and the reason is specific rather than a shrug.**
+
+Run 01 proposed one amendment (generalising the positive-control rule to every "unavailable" claim),
+which remains with the operator. This run produced no *second* gap in the contract: the lane's
+merged-PR rule — *"treat follow-up work as a fresh change … restart your designated branch from the
+latest default branch"* — was exercised for the first time here and worked exactly as written, and the
+review cycle, merge gate and disclosure steps all behaved as specified.
+
+**What this run did produce is evidence for the run-01 proposal, from a different direction.** Run 01's
+defect was asserting a tool was unavailable without checking. This run's two conversion defects
+(`store_false` inverted, `int` in argv) have the same shape one level down: a **hand-maintained table
+asserting facts about a parser**, believed without deriving them from the parser. Both are "a claim
+about a system, not read from the system". That is the same rule the run-01 proposal states, so it
+strengthens that proposal rather than adding a new one.
 
 ## Residue
 
