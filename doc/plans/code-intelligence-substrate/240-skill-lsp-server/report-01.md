@@ -1,6 +1,6 @@
 # Run report — 240-skill-lsp-server (run 01)
 
-**Date (UTC):** 2026-08-15    **Branch:** `claude/skill-lsp-server-2oqo3r`    **PR:** _(opened after this report is committed — see Contract check)_    **Outcome:** completed
+**Date (UTC):** 2026-08-15 – 2026-08-16    **Branch:** `claude/skill-lsp-server-2oqo3r`    **PR:** [#1256](https://github.com/cuioss/plan-marshall/pull/1256)    **Outcome:** completed
 
 ## Skills loaded
 
@@ -377,9 +377,9 @@ on.
 | 4 Per-commit gate | **Done** — every `*.py`-touching commit preceded by a clean gate (`ruff` passed, `mypy` clean, SPDX passed, plugin-doctor `issues[0]`) |
 | 4 Pushed | **Done** — pushed after every commit; no unpushed commit remains |
 | 5 Build gate | **Done** — Python changes present, so owed; `./pw verify` SUCCESS at every gate point; the pass count is not restated here because it rises with each verification round (see § Build gate) |
-| 6 Verification sub-agent | **Done** — four rounds. Rounds 1–3 each returned NOT READY (17, 2 and 9 substantive findings); round 4 returned NOT READY on a **demonstrated start-up failure in the deployed layout**. Every finding fixed, escalated-and-resolved, or explicitly deferred with a reason |
-| 7 PR cycle | See § Reviewer participation — the PR is opened after this commit, so participation is reported to the operator in-session |
-| 8 Merge gate | Conditions 1–3 driven after this commit; disclosure per § Step 8 condition 4 |
+| 6 Verification sub-agent | **Done** — four rounds. Rounds 1–3 each returned NOT READY (17, 2 and 9 substantive findings); round 4 returned NOT READY on a **demonstrated start-up failure in the deployed layout**. Every finding fixed, escalated-and-resolved, or explicitly deferred with a reason. ⚠ **A fifth round was NOT run**, at the operator's direction to land: every prior round found defects the previous round's fixes had introduced, so the same question about round 4's fixes is **unanswered**. Recorded as a coverage gap, not as a clean result |
+| 7 PR cycle | **Done** — PR [#1256](https://github.com/cuioss/plan-marshall/pull/1256) opened without `skip-bot-review` (the diff touches `*.py` and `marketplace/bundles/**`, so review is owed). Participation is reported to the operator in-session, because this report lands as the last pre-merge commit and no review can have happened yet |
+| 8 Merge gate | Conditions 1–3 driven immediately after this commit; the condition-4 shortfall disclosure is made to the operator in-session |
 | 8 Bridge | **Clean** — every write landed inside `doc/plans/code-intelligence-substrate/240-skill-lsp-server/`; no status file, ledger, or other plan's directory touched |
 | 9 This check | **Done** — this table |
 | 9 What have we learned | **Done** — below |
@@ -395,36 +395,44 @@ operator chose otherwise.
 
 ## What have we learned (Step 9)
 
-⭐ **One contract change is proposed, and this run produced the evidence twice.**
+⭐ **One contract change is proposed, and this run paid for the evidence four times over.**
 
-**The problem.** Step 5's build gate and Step 6's sub-agent both read *committed* state, and the
-contract is explicit about that. But neither reaches the defect class that cost this run the most: a
-surface that passes every static gate and every synthetic-fixture test, and is **broken the moment
-anything real drives it**. Two of this run's three most serious findings were exactly that shape:
+**The problem.** Step 5's build gate and Step 6's sub-agent both read committed state, and both read it
+*statically*. Neither reaches the defect class that dominated this run: **a surface that passes every
+gate and every test, and is broken the moment something real drives it.** Four instances, escalating:
 
-- `references()` verified almost nothing for `path` and `import` edges. 55 green tests, clean
-  `./pw verify` — found only by running the verb against the real corpus and *looking at the output*.
-- `serve`, invoked the way its own `SKILL.md` documented, could never have worked. The in-process
-  protocol tests passed **because** the server's lenient reader round-tripped its own corrupted
-  output — the test structurally could not fail.
+| Round | Defect | Why every gate missed it |
+|---|---|---|
+| — | `references` verified almost nothing for `path`/`import` edges | 55 green tests; found by running the verb on the real corpus and *reading the output* |
+| 1 | `serve` via the executor could never work (`capture_output` buffers, `text=True` corrupts the header) | The in-process test passed **because** the server's lenient reader round-tripped its own corrupted output |
+| 2 | The generator silently dropped `lspServers` | The passthrough test's fixture had no such key, so it passed **vacuously**; emitter and equality-check are both blind to it |
+| 4 | ⛔ `serve` **crashed** in the deployed versioned cache | Three rounds, a green `./pw verify` and 75 tests all exercised only the **flat** tree |
 
-Both were caught by executing the shipped entry point against real data, not by any gate the contract
-names.
+**The proposed change**, sharpened by round 4 from what I would have written after round 1. Add to
+Step 5, after the build gate:
 
-**The proposed change.** Add to Step 5, after the build gate: *when a run ships an executable surface
-(a script verb, a server, an entry point), drive that surface end to end against real repository data,
-through the same invocation its own documentation gives, before dispatching the verification
-sub-agent — and paste the actual output into the report.* A synthetic fixture answers "does the code
-do what the test says"; only the real corpus answers "does the documented invocation produce a real
-answer".
+> When a run ships an executable surface (a script verb, a server, an entry point), **drive it end to
+> end against real data, through its own documented invocation, in every layout it will actually run
+> in** — and paste the real output into the report. A synthetic fixture answers "does the code do what
+> the test says". Only the real artifact, in the real layout, answers "does the shipped thing work".
 
-⚠ **This is a proposal, not a change.** ⛔ It is not self-approved and has not been applied — the
-operator has not been asked, because the contract requires that ask to be a separate `chore/` PR that
-must not be coupled to this plan's landing. It is recorded here as the evidence-bearing candidate.
+The second clause is the one round 4 bought. "Drive the real entry point" was already my round-1
+proposal, and I *did* drive it — in the source tree, every time. The defect lived one layout over.
 
-**Also learned, not proposed as a contract change:** the contract's warning that `test-compile` catches
-what `quality-gate` and `module-tests` cannot is *correct and load-bearing* — it fired twice in this
-run, on two different error classes. No amendment needed; it worked as written.
+**Also learned, not proposed:**
+
+- The contract's warning that `test-compile` catches what `quality-gate` and `module-tests` cannot is
+  **correct and load-bearing** — it fired twice, on two different error classes. No amendment needed.
+- The re-dispatch rule ("a round that found a defect has not finished") is **the single highest-value
+  rule in this contract**, and this run is its proof: rounds 2, 3 and 4 each found defects *created by
+  the previous round's fix*, and round 4's would have shipped a feature that crashed on start-up in
+  every installed project. A single-round review would have shipped it.
+- ⚠ **A fix is a change, and its own tests are part of the sweep.** Round 4's fix contained a defect
+  (lexical version sort) caught only by a test written *for* that fix. Writing the test first is what
+  found it; review would not have.
+
+⛔ **This is a proposal, not a change.** It is not self-approved and has not been applied — the
+contract requires that ask to be a separate `chore/` PR, uncoupled from this plan's landing.
 
 ## Residue
 
