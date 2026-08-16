@@ -127,7 +127,11 @@ forbids collapsing and which scan as duplicates. Each family needs reading.
 ## Build gate
 
 `git diff --name-only origin/main...HEAD -- '*.py'` non-empty → the gate applies. `./pw quality-gate`
-ran clean before every commit. Full `./pw verify` result recorded at § Verification.
+ran clean before every commit (`ruff … All checks passed!`, `mypy … Success: no issues found in 408
+source files`, `SPDX-header check passed`).
+
+Full `./pw verify`: **`=== verify: SUCCESS ===`**, whole-tree **20,329 passed, 14 skipped, 0 failed**
+in 359s, all three sub-steps including `test-compile` (mypy over the whole test tree).
 
 ## Verification
 
