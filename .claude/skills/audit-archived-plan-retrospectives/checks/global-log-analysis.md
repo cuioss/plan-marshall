@@ -129,8 +129,8 @@ The emitted block echoes the active `slow_ceiling_seconds`,
 self-describing. `distinct_timed_call_keys` — every key that carried a duration
 — is published beside `cost_rollup_count` so a truncated roll-up tail is legible
 rather than silent. It is deliberately **not** the `high-frequency-caller`
-denominator: that view is derived from *all* notation-headed lines, timed or not,
-and `untimed_call_keys` names the difference.
+denominator: that view is derived from *all* notation-headed lines, timed or
+not, and `untimed_call_keys` names the difference.
 
 ## Emitted columns
 
@@ -152,7 +152,7 @@ slow_ceiling_seconds: 30.0
 high_frequency_ceiling: 50
 cost_rollup_top_n: 10
 genuine_signal_count: G
-rows[G]{kind,detail,attributed_plans,severity}
+rows[N]{kind,detail,attributed_plans,severity}
 ```
 
 | Column | Meaning |
@@ -217,19 +217,21 @@ of the informational context (corpus size, level buckets).
   token measurement, so `share_pct` does **not** restate as a share of billed
   cost — a ranking here is an operator-**latency** finding. Never quote it as a
   cost or token share.
-  These rows are `informational` and are **exempt from the per-row adjudication
-  rule below** — a ranking has no verdict to state. Adjudicate what the ranking
-  *reveals* (a dominant-but-fast caller worth a lesson), not the ranking itself.
+  These rows are `informational`, so under the SKILL.md Step-3 contract each
+  takes a **one-line cited dismissal** rather than a full verdict-plus-evidence
+  treatment — cite "informational per `checks/global-log-analysis.md` § How the
+  orchestrator interprets the rows". The substantive adjudication is of what the
+  ranking *reveals* — a dominant-but-fast caller worth a lesson — not of the
+  ranking itself, which has no verdict to state.
 - **`level_counts` / `total_*`** — informational summary only; a healthy corpus
   is dominated by `INFO`. A non-trivial `ERROR` / `WARNING` bucket count that the
   rows do not already enumerate is itself a prompt to widen the scan.
 
-Per the SKILL.md Step-3 contract, every emitted **`genuine`** row is adjudicated
-with a stated verdict and cited evidence; such a row may be dismissed as
-informational/expected ONLY with a cited reason. Rows the script already stamps
-`informational` — the `dominant-cost-caller` roll-up — carry no per-row verdict
-obligation, because they are a ranking rather than a flag; the obligation is to
-read them, and to raise what they reveal.
+Per the SKILL.md Step-3 contract, EVERY emitted row is adjudicated: a `genuine`
+row with a stated verdict and cited evidence, and an `informational` row — the
+`dominant-cost-caller` roll-up — with a one-line cited dismissal. Neither may be
+skipped silently. What differs is the depth of the treatment, not whether the row
+is addressed.
 
 ## Critical rules
 

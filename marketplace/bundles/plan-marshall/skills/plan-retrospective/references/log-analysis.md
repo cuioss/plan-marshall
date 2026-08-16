@@ -63,6 +63,11 @@ context_position_cost:
   # WHERE a step runs, not only what it does. A different currency from
   # `script_cost_rollup` above (which is wall-clock); never add or compare them.
   #
+  # And a PARTITION, not a whole: cache-read is ONE of four context-load columns
+  # (input, output, cache-read, cache-creation). Every figure here is over that
+  # one partition, so a multiple is a multiple on cached-read tokens and is NOT
+  # a share of, or a ratio over, the token total.
+  #
   # Two DISTINCT exclusion causes, counted apart because they need different
   # remedies: `unmeasured_rows` (the writer recorded no cache-read value) and
   # `no_tool_use_rows` (it did, but `tool_uses` is 0 so the ratio is undefined).
@@ -122,7 +127,7 @@ a missing key.
 - `global_log_signals.slow_call_count` rides the fragment for context; cross-read with `script_duration_p95_ms` and the LLM-to-script-opportunities aspect.
 - **Read the ceiling and the roll-up together — neither answers the other's question.** `slow_call_count` and the `script_duration_*` percentiles answer *"is any single call pathological?"*. They are structurally incapable of answering *"what dominates total time?"*: a call at a fraction of a percent of the 30s ceiling, repeated a hundred thousand times, is invisible to every one of them by construction, not by oversight. `script_cost_rollup` / `global_log_signals.cost_rollup` answer the second question. A script ranked first with `calls_at_or_over_ceiling: 0` is exactly that dominant-but-fast class — treat it as a finding even though no per-call signal fired.
 - ⛔ **The roll-up is WALL-CLOCK, not billing.** The script-execution log carries no per-call token measurement, so a `share_pct` here does **not** convert into a share of cost. A ranking from this roll-up is an operator-**latency** finding; say which currency you are quoting, and never restate a wall-clock share as a cost share.
-- `context_position_cost.position_multiple` reports how many times more **cached-read input tokens** a tool use consumes in the most expensive phase than in the cheapest — a **token** figure, and so a different currency from the wall-clock roll-up above; never add or compare the two — the same mechanical step late in a long phase re-reads a far larger accumulated context. Quote it only with `position_multiple_basis` (which two phases it compares) and `measured_rows` (how many rows it rests on). A literal `unmeasured` means the corpus could not support the figure — it is never a zero. A literal `undefined` means something different and must not be read as a recording gap: the record is COMPLETE and the ratio still cannot be formed (fewer than two rated phases is `unmeasured`; a zero denominator is `undefined`).
+- `context_position_cost.position_multiple` reports how many times more **cached-read input tokens** a tool use consumes in the most expensive phase than in the cheapest — a **token** figure, and so a different currency from the wall-clock roll-up above; never add or compare the two — the same mechanical step late in a long phase re-reads a far larger accumulated context. Quote it only with `position_multiple_basis` (which two phases it compares) and `measured_rows` (how many rows it rests on). ⛔ It is also a **partition, not a whole** — cached-read is one of four context-load columns, so a 10x multiple is 10x on cached-read tokens, never 10x on billed cost. A literal `unmeasured` means the corpus could not support the figure — it is never a zero. A literal `undefined` means something different and must not be read as a recording gap: the record is COMPLETE and the ratio still cannot be formed (fewer than two rated phases is `unmeasured`; a zero denominator is `undefined`).
 
 ## Finding Shape
 

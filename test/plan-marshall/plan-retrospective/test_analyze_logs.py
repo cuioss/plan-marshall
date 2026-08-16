@@ -2002,6 +2002,67 @@ class TestScriptCostRollup:
         # The published total still spans ALL 15, so the residual is derivable.
         assert rollup['total_calls'] == 15
 
+    def test_unattributable_calls_bounds_the_population_gap(self, tmp_path):
+        # A duration-bearing line with no parseable notation is counted by the
+        # ceiling but cannot be attributed to any script, so the roll-up excludes
+        # it. The count BOUNDS the ceiling/roll-up gap rather than equalling it:
+        # here the only unnamed call is fast, so the gap is 0 while the count is 1.
+        logs_dir = tmp_path / 'logs'
+        _write_folded_log(
+            logs_dir,
+            'script-execution-2026-06-01.log',
+            [
+                _line('2026-06-01T10:00:00Z', 'INFO', 'pm:named:named run (40.0s)'),
+                _line('2026-06-01T10:00:01Z', 'INFO', 'no notation here at all (1.0s)'),
+            ],
+        )
+
+        signals = _analyze_logs.analyze_folded_global_logs(logs_dir)
+
+        assert signals['unattributable_calls'] == 1
+        assert signals['slow_call_count'] == 1
+        assert signals['cost_rollup']['calls_at_or_over_ceiling'] == 1
+        gap = signals['slow_call_count'] - signals['cost_rollup']['calls_at_or_over_ceiling']
+        assert gap == 0
+        assert gap <= signals['unattributable_calls']
+        # The unnamed call contributes to neither the ranking nor its total.
+        assert signals['cost_rollup']['total_calls'] == 1
+
+    def test_unattributable_slow_call_is_seen_by_the_ceiling_only(self, tmp_path):
+        # When the unnamed call IS over the ceiling, the ceiling counts it and
+        # the roll-up cannot — this is the case where the gap is nonzero.
+        logs_dir = tmp_path / 'logs'
+        _write_folded_log(
+            logs_dir,
+            'script-execution-2026-06-01.log',
+            [_line('2026-06-01T10:00:00Z', 'INFO', 'no notation here at all (40.0s)')],
+        )
+
+        signals = _analyze_logs.analyze_folded_global_logs(logs_dir)
+
+        assert signals['slow_call_count'] == 1
+        assert signals['cost_rollup']['calls_at_or_over_ceiling'] == 0
+        assert signals['unattributable_calls'] == 1
+        gap = signals['slow_call_count'] - signals['cost_rollup']['calls_at_or_over_ceiling']
+        assert gap <= signals['unattributable_calls']
+
+    def test_ceiling_count_spans_the_whole_population_not_the_ranked_cap(self, tmp_path):
+        # `ranked` is capped; `calls_at_or_over_ceiling` is not. A ceiling-crossing
+        # call belonging to a script the cap excluded is still counted, so the
+        # count can exceed what the visible rows account for.
+        logs_dir = tmp_path / 'logs'
+        lines = [
+            _line('2026-06-01T10:00:00Z', 'INFO', f'pm:s{i:02d}:s{i:02d} run (31.0s)')
+            for i in range(12)
+        ]
+        _write_folded_log(logs_dir, 'script-execution-2026-06-01.log', lines)
+
+        rollup = _analyze_logs.analyze_folded_global_logs(logs_dir)['cost_rollup']
+
+        assert rollup['ranked_count'] == 10
+        assert rollup['distinct_scripts'] == 12
+        assert rollup['calls_at_or_over_ceiling'] == 12
+
     def test_empty_corpus_publishes_zero_not_absence(self, tmp_path):
         logs_dir = tmp_path / 'logs'
         _write_folded_log(
@@ -2134,6 +2195,37 @@ class TestContextPositionCost:
             result['measured_rows'] + result['unmeasured_rows'] + result['no_tool_use_rows']
             == result['total_rows']
         )
+
+    def test_undefined_requires_a_complete_phase_record(self):
+        # `undefined` asserts the record is complete. A phase carrying BOTH an
+        # unmeasured row and a zero-tool-use row is NOT complete, so the weaker
+        # `unmeasured` is the honest token — claiming `undefined` here would
+        # assert completeness the phase does not have.
+        per_phase = {
+            '5-execute': self._phase([
+                {'tool_uses': 5},                                  # writer recorded nothing
+                {'tool_uses': 0, 'cache_read_input_tokens': 10},   # recorded, ratio undefined
+            ]),
+        }
+
+        result = _analyze_logs.summarize_context_position_cost(per_phase)
+
+        assert result['by_phase'][0]['cache_read_per_tool_use'] == 'unmeasured'
+        assert result['unmeasured_rows'] == 1
+        assert result['no_tool_use_rows'] == 1
+
+    def test_missing_tool_uses_key_is_a_recording_gap_not_an_undefined_ratio(self):
+        # A rate needs a numerator the writer measured AND a denominator it
+        # recorded. A row missing `tool_uses` entirely is a writer-side gap, so
+        # it belongs in `unmeasured_rows` — not in `no_tool_use_rows`, whose
+        # contract states that nothing is missing from the record.
+        per_phase = {'5-execute': self._phase([{'cache_read_input_tokens': 900}])}
+
+        result = _analyze_logs.summarize_context_position_cost(per_phase)
+
+        assert result['unmeasured_rows'] == 1
+        assert result['no_tool_use_rows'] == 0
+        assert result['by_phase'][0]['cache_read_per_tool_use'] == 'unmeasured'
 
     def test_zero_denominator_multiple_is_undefined_not_unmeasured(self):
         # Two phases DO carry rates, so nothing is missing — but the lowest is

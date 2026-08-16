@@ -384,11 +384,11 @@ def summarize_script_cost(
     roll-up answers the second question, and it is an ADDITION — the ceiling is
     untouched and both are reported.
 
-    READ THE TWO TOGETHER via ``calls_at_or_over_ceiling``, which is computed
-    over exactly the calls ``ranked`` summarises — so the comparison is internally
-    consistent even where a caller's population differs from some other counter's
-    (the folded-log caller publishes ``unattributable_calls`` for that gap). A
-    script ranked first with
+    READ THE TWO TOGETHER via ``calls_at_or_over_ceiling``, which — like
+    ``total_calls`` and ``total_duration_ms``, and UNLIKE the truncated ``ranked``
+    list — spans the WHOLE population passed in. It can therefore exceed the
+    ceiling-crossing calls visible in ``ranked``, because a ceiling-crossing call
+    may belong to a script the cap excluded. A script ranked first with
     ``calls_at_or_over_ceiling: 0`` is exactly the dominant-but-fast class the
     ceiling cannot see; a script the ceiling flags that ranks low is a rare
     outlier rather than a cost centre. Neither reading is available from one
@@ -478,6 +478,15 @@ def summarize_context_position_cost(
     genuinely different currency from ``summarize_script_cost``, and the two must
     never be added or compared.
 
+    ⛔ AND IT IS A PARTITION, NOT A WHOLE. ``cache_read_input_tokens`` is ONE of
+    the four context-load columns (``_CONTEXT_LOAD_COLUMNS``: input, output,
+    cache-read, cache-creation). Every figure here is therefore computed over the
+    cached-read partition ALONE — a ``position_multiple`` of 10x is 10x on
+    cached-read tokens, NOT 10x on the token total, and it is not a share of
+    anything. Quoting it as an all-in cost ratio is the partition-quoted-as-a-whole
+    error, and cached-read tokens are additionally the CHEAPEST of the four per
+    token, so the substitution overstates in the expensive direction.
+
     POPULATION DISCIPLINE. A row is excluded for either of TWO distinct reasons,
     counted SEPARATELY because they call for different remedies:
 
@@ -492,8 +501,10 @@ def summarize_context_position_cost(
       ``unmeasured_rows`` would report a recording gap where there is none.
 
     This publishes the DIMENSION and asserts no figure. Where a rate cannot be
-    computed the literal ``unmeasured`` token is emitted rather than a ``0.0`` a
-    reader could mistake for a measurement.
+    computed one of two literal tokens is emitted rather than a ``0.0`` a reader
+    could mistake for a measurement: ``unmeasured`` when the record has a gap, and
+    ``undefined`` when the record is complete and the arithmetic still has no
+    answer. Both are strings; a consumer tests the type, not the value.
 
     Returned dict shape:
       - total_rows / measured_rows / unmeasured_rows / no_tool_use_rows: the
@@ -501,7 +512,11 @@ def summarize_context_position_cost(
         denominator. The four are reconcilable: measured + unmeasured +
         no_tool_use == total.
       - by_phase: list of {phase, rows, measured_rows, cache_read_per_tool_use},
-        phase-ordered. ``cache_read_per_tool_use`` is a float or ``unmeasured``.
+        phase-ordered. ``cache_read_per_tool_use`` is a float, ``unmeasured``
+        (the phase has at least one row the writer did not measure and no
+        contributing row), or ``undefined`` (every non-contributing row in the
+        phase WAS measured and reported zero tool uses, so the record is complete
+        and the ratio still has no value).
       - position_multiple: highest phase rate / lowest phase rate — the position
         effect expressed as a multiple. Requires at least TWO phases with a
         measured rate; one phase is not a position signal.
@@ -528,9 +543,12 @@ def summarize_context_position_cost(
         phase_no_tool_use = 0
         for row in rows:
             # An ABSENT key is never a zero — see the population discipline above.
-            if 'cache_read_input_tokens' not in row:
+            # BOTH keys are required: a rate needs a numerator the writer
+            # measured AND a denominator it recorded, so a row missing either is
+            # a writer-side gap, not an undefined ratio.
+            if 'cache_read_input_tokens' not in row or 'tool_uses' not in row:
                 continue
-            tool_uses = row.get('tool_uses') or 0
+            tool_uses = row['tool_uses'] or 0
             if tool_uses <= 0:
                 # Measured, but the ratio is undefined — a DIFFERENT fact from
                 # "not measured", so it is counted under its own name.
@@ -541,22 +559,27 @@ def summarize_context_position_cost(
             tool_use_sum += tool_uses
             phase_measured += 1
         measured_rows += phase_measured
+        phase_unmeasured = len(rows) - phase_measured - phase_no_tool_use
         by_phase.append(
             {
                 'phase': phase,
                 'rows': len(rows),
                 'measured_rows': phase_measured,
                 # Three-valued, not two: a rate, or the reason there is none.
-                # A phase whose only measured rows reported zero tool uses has a
-                # COMPLETE record and an undefined ratio; a phase with no
-                # measured row at all has a recording gap. Same blank cell,
-                # different facts, so they get different tokens.
+                #
+                # ``undefined`` asserts the phase's record is COMPLETE, so it is
+                # emitted ONLY when nothing in the phase is missing — every
+                # non-contributing row was measured and reported zero tool uses.
+                # A single unmeasured row makes the phase a recording gap, and
+                # the weaker ``unmeasured`` is the honest token even when a
+                # zero-tool-use row sits beside it. Testing ``phase_no_tool_use``
+                # alone would claim completeness the phase does not have.
                 'cache_read_per_tool_use': (
                     round(cache_read_sum / tool_use_sum, 3)
                     if tool_use_sum > 0
                     else (
                         _UNDEFINED_RATIO_TOKEN
-                        if phase_no_tool_use > 0
+                        if phase_no_tool_use > 0 and phase_unmeasured == 0
                         else _UNMEASURED_COLUMN_TOKEN
                     )
                 ),
@@ -1295,8 +1318,15 @@ def analyze_folded_global_logs(logs_dir: Path) -> dict[str, Any]:
     duration-bearing line with no notation is therefore counted in
     ``unattributable_calls`` and excluded from the roll-up — so
     ``cost_rollup.calls_at_or_over_ceiling`` can be LOWER than
-    ``slow_call_count``, and the gap is exactly that field. Reading the two
-    together means reading that field too.
+    ``slow_call_count``.
+
+    ``unattributable_calls`` bounds that difference; it does NOT equal it.
+    It counts unattributable lines at EVERY duration, while the
+    ``slow_call_count``-minus-``calls_at_or_over_ceiling`` gap counts only the
+    unattributable lines at or over the ceiling. So
+    ``0 <= slow_call_count - calls_at_or_over_ceiling <= unattributable_calls``,
+    and a nonzero ``unattributable_calls`` with a zero gap simply means every
+    unnamed call was fast. Quote it as the bound it is.
 
     A plan with no folded-in global logs (live mode before finalize, pre-fold
     archives) yields all-zero counts and ``logs_present: false``. Its

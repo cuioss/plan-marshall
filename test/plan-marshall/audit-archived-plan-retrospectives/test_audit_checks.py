@@ -8814,6 +8814,13 @@ class TestGlobalLogCostRollup:
         assert 'dominant-cost-caller' in output
         assert '100x 20.0s 100.0% pm:hot:hot run' in output
 
+    def test_cross_plan_ceiling_constant_unchanged(self):
+        # The roll-up was added BESIDE this ceiling precisely so the ceiling need
+        # not move. Lowering it would silently redefine `slow_call_count` for
+        # every archived plan already measured against it — and every other test
+        # here reads the value dynamically, so nothing else would fail.
+        assert audit.THRESHOLDS['slow_call_seconds'] == 30.0
+
     def test_calls_counts_only_timed_calls_not_every_notation_line(self, tmp_path: Path):
         # `call_counts` counts EVERY notation-headed line; only some carry a
         # trailing duration. Pairing an all-lines count with timed-only seconds

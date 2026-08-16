@@ -291,7 +291,9 @@ For EVERY row that is a potential signal — `drift`, a populated `name_drift`,
 `impossible_value`, a scope mismatch, unfiled proposed lessons, a systemic
 recurring pattern, a PR-velocity flag, a task-count outlier, a global-log
 signal (error/non-INFO line, slow call, impossible-duration call, high-frequency
-caller, or fixture leak), a token-economics anti-pattern flag
+caller, fixture leak, or a `dominant-cost-caller` roll-up row — the last is
+always `severity: informational`, so it takes the one-line cited dismissal below
+rather than a full verdict), a token-economics anti-pattern flag
 (`fixed_overhead_floor`, `planning_gt_exec`, `outline_heavy` / `refine_heavy` /
 `finalize_heavy`, `big_spend_tiny_footprint`, `long_session`,
 `exec_metrics_blind`), a quality-chain signal (a chain anti-pattern flag —
