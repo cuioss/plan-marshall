@@ -218,7 +218,8 @@ def _ns_mark_step(
     ):
         if value is not None:
             argv += [flag, value]
-    return parse_ns('plan-marshall', 'manage-status', 'manage-status.py', *argv)
+    parsed: Namespace = parse_ns('plan-marshall', 'manage-status', 'manage-status.py', *argv)
+    return parsed
 
 
 # ---------------------------------------------------------------------------

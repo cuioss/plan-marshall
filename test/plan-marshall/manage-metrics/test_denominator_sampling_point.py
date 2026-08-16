@@ -58,10 +58,11 @@ def ns_list_deliverables(plan_id: str) -> Namespace:
     The handler under test belongs to ``manage-solution-outline``, not to
     ``manage-metrics``, so the namespace comes from that script's parser.
     """
-    return parse_ns(
+    parsed: Namespace = parse_ns(
         'plan-marshall', 'manage-solution-outline', 'manage-solution-outline.py',
         'list-deliverables', '--plan-id', plan_id,
     )
+    return parsed
 
 
 def _recorded_row() -> dict:

@@ -30,7 +30,8 @@ SCRIPT = 'manage-metrics.py'
 
 def ns(*argv: str) -> Namespace:
     """Return the namespace ``manage-metrics.py``'s parser produces for ``argv``."""
-    return parse_ns(BUNDLE, SKILL, SCRIPT, *argv)
+    parsed: Namespace = parse_ns(BUNDLE, SKILL, SCRIPT, *argv)
+    return parsed
 
 
 def _opt(flag: str, value: object) -> list[str]:
