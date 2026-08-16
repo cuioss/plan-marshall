@@ -1,6 +1,6 @@
 # Run report — 060-runtime-and-script-substrate-test-reduction (run 02)
 
-**Date (UTC):** 2026-08-16    **Branch:** `claude/runtime-script-substrate-tests-qqeuoj`    **PR:** _(pending)_    **Outcome:** completed
+**Date (UTC):** 2026-08-16    **Branch:** `claude/runtime-script-substrate-tests-qqeuoj`    **PR:** [#1265](https://github.com/cuioss/plan-marshall/pull/1265)    **Outcome:** completed
 
 A follow-up run closing the one deliverable half that run 01 left unstarted: **D3's B6 sweep**,
 building argument namespaces from the real parser instead of by hand.
