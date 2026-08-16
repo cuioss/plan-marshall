@@ -12,36 +12,17 @@ Covers the non-destructive deep-merge contract:
 
 # ruff: noqa: I001, E402
 
-import importlib.util
-import json
-import sys
-from argparse import Namespace
 from pathlib import Path
+import json
+from argparse import Namespace
+from conftest import load_script_module
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+_sync_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_sync_defaults.py', module_name='_cmd_sync_defaults'
 )
-
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_sync_mod = _load_module('_cmd_sync_defaults', '_cmd_sync_defaults.py')
-_config_defaults_mod = _load_module('_config_defaults_for_sync_provisioning_test', '_config_defaults.py')
+_config_defaults_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults_for_sync_provisioning_test'
+)
 
 cmd_sync_defaults = _sync_mod.cmd_sync_defaults
 
@@ -514,7 +495,7 @@ def test_sync_defaults_seeds_auto_route_recipe_knobs_into_legacy_config(plan_con
 
 
 # =============================================================================
-# Provisioning-stamp refresh on the reconcile path (this plan, D2)
+# Provisioning-stamp refresh on the reconcile path
 # =============================================================================
 #
 # sync-defaults is the deep-merge reconcile marshall-steward invokes. Beyond
@@ -562,7 +543,7 @@ def test_sync_defaults_refreshes_stale_provisioning_fields(plan_context):
 
 
 # =============================================================================
-# Retired step-key rename migration (this plan, D2)
+# Retired step-key rename migration
 # =============================================================================
 #
 # sync-defaults migrates retired step keys to their canonicals BEFORE the
@@ -783,7 +764,7 @@ def test_sync_defaults_no_renames_reported_for_clean_config(plan_context):
 
 
 # =============================================================================
-# Finalize-lane materialization (this plan, D1)
+# Finalize-lane materialization
 # =============================================================================
 #
 # sync-defaults materializes an explicit `lane` on every lane-less
@@ -872,7 +853,7 @@ def test_sync_defaults_materializes_freshly_merged_default_step_to_off(plan_cont
 def test_sync_defaults_materializes_wholesale_copied_steps_subtree_to_off(plan_context):
     """A wholesale-copied default `steps` subtree materializes each new step to `off`.
 
-    Regression for the ancestor-added-rows bug (PR #896): when a live config's
+    When a live config's
     `phase-6-finalize` dict has NO `steps` key at all, the deep-merge copies the
     entire default `steps` map in ONE shot (the ancestor-added-subtree case,
     distinct from the per-step recursion the sibling test exercises). The prior
@@ -992,7 +973,7 @@ def test_sync_defaults_leaves_unresolvable_frontmatter_step_lane_less(plan_conte
 
 
 # =============================================================================
-# Fresh-wizard Step 16 materialization (this plan, D2)
+# Fresh-wizard Step 16 materialization
 # =============================================================================
 #
 # The first-run wizard's Step 16 now runs `sync-defaults` BEFORE `steps-sort`, so

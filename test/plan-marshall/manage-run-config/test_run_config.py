@@ -810,7 +810,7 @@ def test_cleanup_status_help():
 
 
 # =============================================================================
-# Main-anchored resolution via the shared utility (deliverable 2)
+# Main-anchored resolution via the shared utility
 # =============================================================================
 
 
@@ -827,7 +827,7 @@ def _init_repo(repo: Path) -> None:
 
 class TestRunConfigMainAnchoring:
     """run-configuration.json resolves to the MAIN checkout via
-    ``resolve_main_anchored_path`` regardless of caller cwd (deliverable 2).
+    ``resolve_main_anchored_path`` regardless of caller cwd.
 
     The override-first branch keeps every PLAN_BASE_DIR-based test green; the
     production branch (real ``git worktree add``) proves a worktree-cwd resolve
@@ -903,7 +903,7 @@ class TestRunConfigMainAnchoring:
 
 
 # =============================================================================
-# Build-queue-limit knob — main-anchored round-trip (deliverable 5)
+# Build-queue-limit knob — main-anchored round-trip
 # =============================================================================
 
 

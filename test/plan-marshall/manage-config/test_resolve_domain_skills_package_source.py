@@ -6,7 +6,7 @@ Covers the data-driven per-profile ``package_source`` declaration added to the
 domain extension manifests (``pm-dev-java`` / ``pm-dev-frontend`` ``extension.py``)
 and surfaced by ``cmd_resolve_domain_skills`` in ``_cmd_skill_resolution.py``.
 
-Contract under test (deliverable 2):
+Contract under test:
 - The ``implementation`` profile declares ``package_source: packages`` and the
   resolved result surfaces ``package_source == 'packages'``.
 - The ``module_testing`` profile declares ``package_source: test_packages`` and
@@ -20,38 +20,19 @@ Contract under test (deliverable 2):
 Tier 2 (direct import) tests with 1 subprocess test for CLI plumbing.
 """
 
-import importlib.util
-import sys
 from argparse import Namespace
-from pathlib import Path
 
 from _manage_config_fixtures import SCRIPT_PATH, create_nested_marshal_json
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+from conftest import load_script_module, run_script
+
+_cmd_skill_resolution = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_skill_resolution.py', module_name='_cmd_skill_resolution'
 )
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_cmd_skill_resolution = _load_module('_cmd_skill_resolution', '_cmd_skill_resolution.py')
 
 cmd_resolve_domain_skills = _cmd_skill_resolution.cmd_resolve_domain_skills
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script  # noqa: E402
 
 # =============================================================================
 # Implementation profile -> package_source: packages

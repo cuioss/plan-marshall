@@ -31,31 +31,14 @@ deterministically without a live worktree or git history. ``_footprint_has_role`
 is also covered directly.
 """
 
-import importlib.util
-from pathlib import Path
+# Tier 2 direct imports, resolved by (bundle, skill, script).
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime).
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+
+from conftest import load_script_module
+
+_mem = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_canonical_inactive'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None, f'Failed to load module spec for {filename}'
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mem = _load_module('_mem_canonical_inactive', 'manage-execution-manifest.py')
 _apply_canonical_verify_inactive = _mem._apply_canonical_verify_inactive
 _footprint_has_role = _mem._footprint_has_role
 _FOOTPRINT_GATED_CANONICAL_ROLES = _mem._FOOTPRINT_GATED_CANONICAL_ROLES

@@ -17,33 +17,16 @@ Covers:
 - The absent-step-id / missing-manifest / invalid-phase error paths.
 """
 
-import importlib.util
 import json
 from argparse import Namespace
 from pathlib import Path
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime).
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+# Tier 2 direct imports, resolved by (bundle, skill, script).
+from conftest import load_script_module
+
+_mem = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_script'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None, f'Failed to load module spec for {filename}'
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mem = _load_module('_mem_script', 'manage-execution-manifest.py')
 cmd_compose = _mem.cmd_compose
 cmd_step_params_get = _mem.cmd_step_params_get
 cmd_step_params_set = _mem.cmd_step_params_set

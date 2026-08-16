@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for probe-backed ``use_merge_queue`` set-time validation (deliverable 4).
+"""Tests for probe-backed ``use_merge_queue`` set-time validation.
 
 The ``step set`` path for ``default:branch-cleanup``'s ``use_merge_queue`` param
 runs a live ``ci repo merge-queue probe`` when enabling and rejects the set (with
@@ -9,38 +9,17 @@ The probe is isolated behind ``_run_merge_queue_probe`` so tests monkeypatch the
 discriminator without shelling out.
 """
 
-import importlib.util
 import json
-import sys
 from argparse import Namespace
 from pathlib import Path
 
 from _manage_config_fixtures import create_marshal_json
 
-_MANAGE_CONFIG_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+from conftest import load_script_module
+
+_qp = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_quality_phases.py', module_name='_cmd_quality_phases'
 )
-
-if str(_MANAGE_CONFIG_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_MANAGE_CONFIG_SCRIPTS_DIR))
-
-
-def _load_module(name: str, filename: str, scripts_dir: Path):
-    spec = importlib.util.spec_from_file_location(name, scripts_dir / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_qp = _load_module('_cmd_quality_phases', '_cmd_quality_phases.py', _MANAGE_CONFIG_SCRIPTS_DIR)
 
 
 def _probe(**fields):

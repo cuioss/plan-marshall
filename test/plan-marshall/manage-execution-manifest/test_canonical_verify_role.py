@@ -17,33 +17,14 @@ sibling modules ``test_canonical_verify_inactive.py`` and
 ``test_manage_execution_manifest_compose.py`` (``TestRoleLoader``).
 """
 
-import importlib.util
-from pathlib import Path
-
 import pytest
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime).
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+# Tier 2 direct imports, resolved by (bundle, skill, script).
+from conftest import load_script_module
+
+_mem = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_canonical_role'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None, f'Failed to load module spec for {filename}'
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mem = _load_module('_mem_canonical_role', 'manage-execution-manifest.py')
 _role_of = _mem._role_of
 
 

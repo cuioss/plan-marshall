@@ -8,10 +8,8 @@ including nested structure variants and edge cases.
 Tier 2 (direct import) tests with subprocess tests for CLI plumbing.
 """
 
-import importlib.util
 import json
 import os
-import sys
 from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,34 +18,20 @@ from unittest.mock import patch
 import pytest
 from _manage_config_fixtures import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+from conftest import load_script_module, run_script
+
+_cmd_skill_domains = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_skill_domains.py', module_name='_cmd_skill_domains'
 )
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_cmd_skill_domains = _load_module('_cmd_skill_domains', '_cmd_skill_domains.py')
-_config_defaults = _load_module('_config_defaults', '_config_defaults.py')
+_config_defaults = load_script_module(
+    'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults'
+)
 
 cmd_list_verify_steps = _cmd_skill_domains.cmd_list_verify_steps
 cmd_skill_domains = _cmd_skill_domains.cmd_skill_domains
 validate_domain_inclusion = _config_defaults.validate_domain_inclusion
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script  # noqa: E402
 
 _BUILD_VERIFY_STEP_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-build-verify-step'
 
@@ -1400,7 +1384,7 @@ def test_list_verify_steps_discovers_project_skills(plan_context):
 
 
 # =============================================================================
-# Order field discovery tests (deliverable 5)
+# Order field discovery tests
 # =============================================================================
 
 
@@ -1529,7 +1513,9 @@ def test_discover_all_verify_steps_empty_implementors_yields_no_built_ins(tmp_pa
 
 def test_seed_verify_steps_empty_implementors_yields_empty_map(tmp_path):
     """_seed_verify_steps with no implementors yields an empty keyed map (fallback path)."""
-    config_defaults = _load_module('_config_defaults', '_config_defaults.py')
+    config_defaults = load_script_module(
+    'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults'
+)
     with patch('extension_discovery.find_implementors', return_value=[]):
         seeded = config_defaults._seed_verify_steps()
 

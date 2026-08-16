@@ -25,34 +25,17 @@ These tests drive ``cmd_compose`` + ``cmd_validate`` directly (tier 2), staging
 a ``marshal.json`` whose step registry carries ``default:``-prefixed IDs.
 """
 
-import importlib.util
 import json
 from argparse import Namespace
 from collections.abc import Callable
 from pathlib import Path
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime).
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+# Tier 2 direct imports, resolved by (bundle, skill, script).
+from conftest import load_script_module
+
+_mem = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_validate_prefix'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None, f'Failed to load module spec for {filename}'
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mem = _load_module('_mem_validate_prefix', 'manage-execution-manifest.py')
 cmd_compose = _mem.cmd_compose
 cmd_validate = _mem.cmd_validate
 read_manifest = _mem.read_manifest
@@ -61,7 +44,9 @@ DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 # Loaded fresh so cmd_validate resolves ``read_manifest`` / ``MANIFEST_VERSION``
 # from this module's own globals — lets a test monkeypatch ``read_manifest`` to
 # hand cmd_validate a synthetic manifest without a disk round-trip.
-_val = _load_module('_mem_validation_direct', '_manifest_validation.py')
+_val = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', '_manifest_validation.py', module_name='_mem_validation_direct'
+)
 
 # Quiet down the best-effort decision-log subprocess.
 _mem._log_decision = lambda *a, **kw: None
@@ -224,9 +209,9 @@ def test_validate_non_string_step_element_reports_error_not_crash(plan_context, 
     """A hand-edited manifest with a non-string step element yields a clean
     ``invalid_manifest`` verdict, not an ``AttributeError`` crash.
 
-    Regression for PR #961: ``canonicalize_step_key`` calls ``.startswith()`` on
-    its argument, which raised ``AttributeError`` on a non-string element parsed
-    from the externally-editable ``execution.toon``. The ``isinstance`` guard now
+    ``canonicalize_step_key`` calls ``.startswith()`` on its argument, which
+    would raise ``AttributeError`` on a non-string element parsed from the
+    externally-editable ``execution.toon``. The ``isinstance`` guard
     treats a non-string element as an unknown/invalid ID so ``validate`` reports
     it rather than crashing. Loaded via the fresh ``_val`` module so the patched
     ``read_manifest`` is the one ``cmd_validate`` resolves.

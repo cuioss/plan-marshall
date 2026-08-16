@@ -16,33 +16,15 @@ Covers the loadability fail-fast guard consumed by phase-6-finalize Step 1.5:
 
 # ruff: noqa: I001, E402
 
-import importlib.util
 from argparse import Namespace
-from pathlib import Path
-
-
 # Tier 2 direct import — match the test layout used by sibling tests.
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+
+
+from conftest import load_script_module
+
+_mem = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_validate_loadable'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mem = _load_module('_mem_validate_loadable', 'manage-execution-manifest.py')
 cmd_compose = _mem.cmd_compose
 cmd_validate_loadable = _mem.cmd_validate_loadable
 DEFAULT_PHASE_5_STEPS = _mem.DEFAULT_PHASE_5_STEPS

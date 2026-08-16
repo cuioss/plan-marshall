@@ -18,36 +18,18 @@ steps (no advisory suppression). The seed-source aggregator
 ``test_classify_paths_via_extensions.py``.
 """
 
-import importlib.util
 import json
 from argparse import Namespace
 from pathlib import Path
 
 # =============================================================================
-# Module loading (script has hyphens in filename → load via importlib)
+# Module loading (the script filename has hyphens, so it is loaded by identity)
 # =============================================================================
+from conftest import load_script_module
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+_mem = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_script_compose_docs_only'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None, f'Failed to load module spec for {filename}'
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mem = _load_module('_mem_script_compose_docs_only', 'manage-execution-manifest.py')
 cmd_compose = _mem.cmd_compose
 read_manifest = _mem.read_manifest
 DEFAULT_PHASE_5_STEPS = _mem.DEFAULT_PHASE_5_STEPS

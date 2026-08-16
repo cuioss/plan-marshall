@@ -24,7 +24,6 @@ Covers:
 - The task-queue-aware ``early_terminate`` predicate.
 """
 
-import importlib.util
 import json
 from argparse import Namespace
 from pathlib import Path
@@ -32,33 +31,16 @@ from pathlib import Path
 import extension_base
 import pytest
 
-from conftest import PlanContext
+from conftest import PlanContext, load_script_module
 
 # =============================================================================
-# Module loading (script has hyphens in filename → load via importlib)
+# Module loading (the script filename has hyphens, so it is loaded by identity)
 # =============================================================================
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+
+_mem = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_script_decision_rules'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None, f'Failed to load module spec for {filename}'
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mem = _load_module('_mem_script_decision_rules', 'manage-execution-manifest.py')
 cmd_compose = _mem.cmd_compose
 read_manifest = _mem.read_manifest
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
@@ -708,7 +690,7 @@ def result_phase_6_steps(result: dict) -> list[str]:
 
 
 # =============================================================================
-# Test: task-queue-aware early_terminate predicate (lesson 2026-05-24-17-001)
+# Test: task-queue-aware early_terminate predicate
 # =============================================================================
 
 
@@ -735,15 +717,13 @@ def _seed_task_file(plan_id: str, task_number: int, status: str) -> None:
 
 
 class TestEarlyTerminateTaskQueueGuard:
-    """Rule 1 (early_terminate_analysis) now requires the task queue to be empty.
+    """Rule 1 (early_terminate_analysis) requires the task queue to be empty.
 
-    Lesson ``2026-05-24-17-001``: an analysis-only plan that produces zero
-    affected files but still queues at least one deliverable task must NOT
-    short-circuit phase-5 before TASK-001 runs. The composer reads
-    ``tasks/TASK-*.json`` directly and ANDs the existing
-    ``affected_files_count==0`` condition with "no pending or in-progress
-    task". Genuine no-op plans (no task files on disk) preserve the prior
-    early-terminate behaviour.
+    An analysis-only plan that produces zero affected files but still queues at
+    least one deliverable task must NOT short-circuit phase-5 before that task
+    runs. The composer reads ``tasks/TASK-*.json`` directly and ANDs the
+    ``affected_files_count==0`` condition with "no pending or in-progress task".
+    A genuine no-op plan, with no task files on disk, still early-terminates.
     """
 
     def test_early_terminate_when_task_queue_empty(self):

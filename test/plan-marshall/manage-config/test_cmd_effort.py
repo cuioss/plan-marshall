@@ -10,55 +10,21 @@ CLI plumbing (subprocess) since argparse validation runs before the
 handler.
 """
 
-import importlib.util
 import json
-import sys
 from argparse import Namespace
 from pathlib import Path
 
 from _manage_config_fixtures import SCRIPT_PATH, create_marshal_json
 
-_MANAGE_CONFIG_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
-)
-_PLAN_MARSHALL_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-marshall'
-    / 'scripts'
-)
+from conftest import load_script_module
 
-# `_cmd_effort` imports `effort_presets` at module level. Make sure the
-# plan-marshall scripts directory is importable BEFORE we load _cmd_effort.
-if str(_PLAN_MARSHALL_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_PLAN_MARSHALL_SCRIPTS_DIR))
-
-
-def _load_module(name: str, filename: str, scripts_dir: Path):
-    spec = importlib.util.spec_from_file_location(name, scripts_dir / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_effort_presets_mod = _load_module(
-    'effort_presets', 'effort_presets.py', _PLAN_MARSHALL_SCRIPTS_DIR
+_effort_presets_mod = load_script_module(
+    'plan-marshall', 'plan-marshall', 'effort_presets.py', module_name='effort_presets'
 )
 EffortPresets = _effort_presets_mod.EffortPresets
 
-_cmd_effort_mod = _load_module(
-    '_cmd_effort', '_cmd_effort.py', _MANAGE_CONFIG_SCRIPTS_DIR
+_cmd_effort_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_effort.py', module_name='_cmd_effort'
 )
 cmd_effort = _cmd_effort_mod.cmd_effort
 cmd_effort_apply_preset = _cmd_effort_mod.cmd_effort_apply_preset

@@ -20,32 +20,14 @@ the assertions do not depend on real domain wiring.
 """
 
 import contextlib
-import importlib.util
 from argparse import Namespace
 from functools import lru_cache
-from pathlib import Path
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+from conftest import load_script_module
+
+_mem = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_domain_seeded'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None, f'Failed to load module spec for {filename}'
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mem = _load_module('_mem_domain_seeded', 'manage-execution-manifest.py')
 cmd_compose = _mem.cmd_compose
 read_manifest = _mem.read_manifest
 

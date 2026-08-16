@@ -22,47 +22,26 @@ unchanged. The anti-leak assertion — marshal.json is unchanged by a
 not leak into every later plan.
 """
 
-import importlib.util
 import json
-import sys
 from argparse import Namespace
 from pathlib import Path
 
 from _manage_config_fixtures import SCRIPT_PATH, create_marshal_json
 
-_MANAGE_CONFIG_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
-)
+from conftest import load_script_module
 
 # `_cmd_finalize_steps` imports `finalize_step_presets` and `_config_defaults`
 # at module level. Make sure the manage-config scripts directory is importable
 # BEFORE we load the handler module.
-if str(_MANAGE_CONFIG_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_MANAGE_CONFIG_SCRIPTS_DIR))
 
 
-def _load_module(name: str, filename: str, scripts_dir: Path):
-    spec = importlib.util.spec_from_file_location(name, scripts_dir / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_presets_mod = _load_module(
-    'finalize_step_presets', 'finalize_step_presets.py', _MANAGE_CONFIG_SCRIPTS_DIR
+_presets_mod = load_script_module(
+    'plan-marshall', 'manage-config', 'finalize_step_presets.py', module_name='finalize_step_presets'
 )
 FinalizeStepPresets = _presets_mod.FinalizeStepPresets
 
-_cmd_mod = _load_module(
-    '_cmd_finalize_steps', '_cmd_finalize_steps.py', _MANAGE_CONFIG_SCRIPTS_DIR
+_cmd_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_finalize_steps.py', module_name='_cmd_finalize_steps'
 )
 cmd_finalize_steps_apply_preset = _cmd_mod.cmd_finalize_steps_apply_preset
 cmd_finalize_steps_set_lane = _cmd_mod.cmd_finalize_steps_set_lane

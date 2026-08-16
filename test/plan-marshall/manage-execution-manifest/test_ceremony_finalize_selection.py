@@ -48,40 +48,22 @@ the only one available to the steps this transform does not cover — see
 ``test_decision_rules.py`` for its coverage.
 """
 
-import importlib.util
 import json
 from argparse import Namespace
 from pathlib import Path
 
 import pytest
 
-from conftest import PlanContext  # noqa: F401  (re-exported for fixture discovery)
+from conftest import PlanContext, load_script_module  # noqa: F401  (PlanContext re-exported for fixture discovery)
 
 # =============================================================================
-# Module loading (script has hyphens in filename → load via importlib)
+# Module loading (the script filename has hyphens, so it is loaded by identity)
 # =============================================================================
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+
+_mem = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_script_ceremony_finalize'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None, f'Failed to load module spec for {filename}'
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mem = _load_module('_mem_script_ceremony_finalize', 'manage-execution-manifest.py')
 cmd_compose = _mem.cmd_compose
 read_manifest = _mem.read_manifest
 DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS

@@ -17,36 +17,16 @@ build_map seeding path; the advisory docs-only compose branch that previously
 also consumed it has been removed (see ``test_compose_docs_only_branch.py``).
 """
 
-import importlib.util
-from pathlib import Path
-
 from extension_base import BuildExtensionBase
 
 # =============================================================================
 # Module loading
 # =============================================================================
+from conftest import load_script_module
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+_manifest_mod = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='manage_execution_manifest'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_manifest_mod = _load_module('manage_execution_manifest', 'manage-execution-manifest.py')
 _classify_paths_via_extensions = _manifest_mod._classify_paths_via_extensions
 _is_infrastructure_config_path = _manifest_mod._is_infrastructure_config_path
 _is_template_path = _manifest_mod._is_template_path

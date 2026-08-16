@@ -32,33 +32,14 @@ reported INDETERMINATE rather than guessed.
 
 # ruff: noqa: I001, E402
 
-import importlib.util
+from pathlib import Path
 import json
 from argparse import Namespace
-from pathlib import Path
+from conftest import load_script_module
 
-
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+_mem = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_reconcile'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mem = _load_module('_mem_reconcile', 'manage-execution-manifest.py')
 cmd_compose = _mem.cmd_compose
 cmd_reconcile = _mem.cmd_reconcile
 read_manifest = _mem.read_manifest

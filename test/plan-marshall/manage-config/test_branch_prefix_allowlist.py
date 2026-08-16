@@ -16,11 +16,11 @@ prefix set is the source of truth for what plans may create, and the workflow is
 the source of truth for what CI runs. This test only enforces the one-way
 implication that matters: a working prefix with no CI trigger.
 
-Lesson ``2026-05-21-18-002`` / PR #441: a PR whose branch prefix falls outside
-the CI push allowlist silently receives no ``verify / verify`` status check and
-is structurally unmergeable. A ``working_prefix`` not covered by any workflow
-trigger fails this test, forcing the workflow file (or the prefix set) to be
-updated. ``docs/`` is explicitly retired and asserted absent.
+A PR whose branch prefix falls outside the CI push allowlist silently receives
+no ``verify / verify`` status check and is structurally unmergeable. A
+``working_prefix`` not covered by any workflow trigger fails this test, forcing
+the workflow file (or the prefix set) to be updated. ``docs/`` is not a working
+prefix and is asserted absent.
 """
 
 # ruff: noqa: I001, E402
@@ -28,7 +28,6 @@ updated. ``docs/`` is explicitly retired and asserted absent.
 import importlib.util
 import json
 import re
-import sys
 from pathlib import Path
 
 # repo_root/test/plan-marshall/manage-config/test_branch_prefix_allowlist.py
@@ -37,31 +36,11 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _WORKFLOW_PATH = _REPO_ROOT / '.github' / 'workflows' / 'python-verify.yml'
 _MARSHAL_PATH = _REPO_ROOT / '.plan' / 'marshal.json'
 
-_SCRIPTS_DIR = (
-    _REPO_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
-)
 
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
+from conftest import load_script_module
 
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_config_defaults_mod = _load_module(
-    '_config_defaults_for_branch_prefix_allowlist_test', '_config_defaults.py'
+_config_defaults_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults_for_branch_prefix_allowlist_test'
 )
 
 
@@ -141,8 +120,8 @@ def test_every_working_prefix_is_ci_push_triggered():
     uncovered = [p for p in prefixes if not _prefix_is_covered(p, triggers)]
 
     # subset coverage: a working prefix with no CI trigger makes its
-    # PRs structurally unmergeable (no verify / verify check). See lesson
-    # 2026-05-21-18-002 / CLAUDE.md Branch Naming.
+    # PRs structurally unmergeable (no verify / verify check).
+    # See CLAUDE.md § Branch Naming.
     assert not uncovered, (
         'Working prefix(es) not covered by any python-verify.yml on.push.branches '
         'trigger — a PR on such a branch silently receives no verify / verify '

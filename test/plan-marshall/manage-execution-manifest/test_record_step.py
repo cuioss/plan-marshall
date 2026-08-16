@@ -19,37 +19,19 @@ Mirrors the tier-2 direct-import + CLI-subprocess split used by the sibling
 ``test_manage_execution_manifest_read.py`` / ``_validate.py`` suites.
 """
 
-import importlib.util
 from argparse import Namespace
-from pathlib import Path
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script path for subprocess (CLI plumbing) tests.
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py')
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime).
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+# Tier 2 direct imports, resolved by (bundle, skill, script).
+
+
+_mem = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_script'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None, f'Failed to load module spec for {filename}'
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mem = _load_module('_mem_script', 'manage-execution-manifest.py')
 cmd_compose = _mem.cmd_compose
 cmd_record_step = _mem.cmd_record_step
 read_manifest = _mem.read_manifest
@@ -61,7 +43,9 @@ DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 # Step-ownership routing primitives live in _manifest_core (loaded directly:
 # the hyphenated entry does not re-export them). See the "Step ownership"
 # section in _manifest_core.py.
-_core = _load_module('_mem_core', '_manifest_core.py')
+_core = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', '_manifest_core.py', module_name='_mem_core'
+)
 owner_of = _core.owner_of
 is_leaf_dispatchable = _core.is_leaf_dispatchable
 validate_step_owner = _core.validate_step_owner

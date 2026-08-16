@@ -13,35 +13,17 @@ Covers deliverables D1-D4 of
 ``doc/plans/truthful-signals/350-change-type-is-one-word-for-two-different-scopes``.
 """
 
-import importlib.util
 import json
 from argparse import Namespace
-from pathlib import Path
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py')
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+
+_mem = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_reconcile'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None, f'Failed to load {filename}'
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mem = _load_module('_mem_reconcile', 'manage-execution-manifest.py')
 cmd_compose = _mem.cmd_compose
 
 # Silence the best-effort per-rule decision-log subprocess so the tests do not

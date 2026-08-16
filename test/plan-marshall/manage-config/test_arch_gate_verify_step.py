@@ -16,33 +16,16 @@ deterministic fake extensions, so the assertions do not depend on any real domai
 bundle wiring up an arch-gate tool.
 """
 
-import importlib.util
 import json
-import sys
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+from conftest import load_script_module
+
+_cmd_skill_domains = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_skill_domains.py', module_name='_cmd_skill_domains'
 )
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_cmd_skill_domains = _load_module('_cmd_skill_domains', '_cmd_skill_domains.py')
 
 cmd_skill_domains = _cmd_skill_domains.cmd_skill_domains
 

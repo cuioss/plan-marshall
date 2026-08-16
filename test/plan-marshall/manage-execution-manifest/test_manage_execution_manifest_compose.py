@@ -11,36 +11,19 @@ source-of-truth) plus the relevant CLI plumbing tests.
 import contextlib
 import importlib.util
 import json
+import re
 from argparse import Namespace
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script path for subprocess (CLI plumbing) tests.
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py')
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime).
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
-)
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None, f'Failed to load module spec for {filename}'
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
+# Tier 2 direct imports, resolved by (bundle, skill, script).
 
 
 # Lane-block fixture, loaded via importlib per the _fixtures.py convention (a
@@ -55,7 +38,9 @@ _fixtures_spec.loader.exec_module(_fixtures_mod)
 fake_lane_blocks = _fixtures_mod.fake_lane_blocks
 
 
-_mem = _load_module('_mem_script', 'manage-execution-manifest.py')
+_mem = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_script'
+)
 cmd_compose = _mem.cmd_compose
 read_manifest = _mem.read_manifest
 get_manifest_path = _mem.get_manifest_path
@@ -64,7 +49,7 @@ DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 DEFAULT_ENVELOPE_COUNT = _mem.DEFAULT_ENVELOPE_COUNT
 _role_of = _mem._role_of
 
-# Execution-profile lane resolver surface (deliverable 5).
+# Execution-profile lane resolver surface.
 cmd_lanes_preview = _mem.cmd_lanes_preview
 _apply_lane_resolution = _mem._apply_lane_resolution
 _lane_keep_decision = _mem._lane_keep_decision
@@ -164,10 +149,9 @@ def test_early_terminate_analysis_with_empty_files(plan_context):
 def test_early_terminate_analysis_falls_through_when_task_queue_pending(plan_context):
     """Row 1 task-queue guard — analysis + 0 files + pending task → Rule 7 default.
 
-    End-to-end exercise of the task-queue-aware predicate (lesson
-    ``2026-05-24-17-001``): a pending TASK-001 on disk forces Rule 1 to fall
-    through to Rule 7 so phase-5 iterates the queue normally. The fixture
-    seeds a stub task file in ``{plan_dir}/tasks/TASK-001.json``.
+    End-to-end exercise of the task-queue-aware predicate: one pending task file
+    on disk forces Rule 1 to fall through to Rule 7, so phase-5 iterates the queue
+    instead of short-circuiting past work that is still owed.
     """
     plan_id = 'matrix-analysis-pending-task'
     tasks_dir = plan_context.plan_dir_for(plan_id) / 'tasks'
@@ -354,8 +338,8 @@ def test_surgical_tech_debt_retains_review_gates(plan_context):
 # Boundary-Normalization Regression Tests
 #
 # `phase_6_candidates` may arrive prefixed (`default:foo` from marshal.json's
-# step registry) or bare (`foo` from DEFAULT_PHASE_6_STEPS). Lesson
-# ``2026-04-27-23-004`` closed the prefix-handling gap by normalizing both
+# step registry) or bare (`foo` from DEFAULT_PHASE_6_STEPS). The composer
+# normalizes both
 # ``phase_5_candidates`` and ``phase_6_candidates`` once at the
 # ``cmd_compose`` boundary — every leading ``default:`` is stripped a single
 # time at intake, so the six-row matrix and the pre-filter helpers all see
@@ -598,8 +582,8 @@ def test_prefix_normalization_no_op_for_bare_candidates(plan_context):
 def test_boundary_normalization_strips_prefix_for_all_downstream_consumers(plan_context):
     """Boundary contract — every entry the cascade-rule layer + downstream output sees is bare.
 
-    Pins the boundary-normalization invariant introduced by lesson
-    ``2026-04-27-23-004``: ``cmd_compose`` strips a single leading ``default:``
+    Pins the boundary-normalization invariant: ``cmd_compose`` strips a single
+    leading ``default:``
     from each ``phase_5_candidates`` and ``phase_6_candidates`` entry once at
     intake (via ``canonicalize_step_key``), and every downstream site — the
     six-row matrix, ``_apply_commit_push_disabled``,
@@ -721,7 +705,7 @@ def test_verification_no_files_keeps_full_phase_5_trims_phase_6(plan_context):
 
 
 # =============================================================================
-# adr-propose registration tests (deliverable 3)
+# adr-propose registration tests
 #
 # adr-propose is the writing-hook sibling of lessons-capture: both turn what
 # the plan settled into a durable artefact. They no longer share a pipeline
@@ -965,101 +949,61 @@ def _write_status_metadata(plan_context, plan_id: str, metadata: dict) -> None:
     )
 
 
-def test_recipe_detected_from_status_plan_source_lesson_id(plan_context):
-    """Lesson-derived plan (plan_source=lesson_id, no --recipe-key) fires Row 2.
+#: (status.json metadata to seed, or None for no status.json; compose-arg overrides
+#: on top of a plain feature/multi_module/4-file plan with no --recipe-key; the rule
+#: that must fire). The `default` rows are the load-bearing negatives: a detector
+#: that fired on the presence of ANY metadata would pass every `recipe` row here.
+_RECIPE_PROVENANCE_CASES = [
+    (
+        {'plan_source': '2026-06-01-10-001'},
+        {'change_type': 'enhancement', 'scope_estimate': 'single_module', 'affected_files_count': 3},
+        'recipe',
+    ),
+    ({'recipe_key': 'lesson_cleanup'}, {}, 'recipe'),
+    ({'plan_source': 'recipe'}, {}, 'recipe'),
+    ({'change_type': 'feature'}, {}, 'default'),
+    (None, {}, 'default'),
+    (None, {'recipe_key': 'lesson_cleanup'}, 'recipe'),
+]
 
-    Reproduces the archived-plan audit's recipe→default drift: phase-1-init seeds
-    ``status.metadata.plan_source`` with a raw lesson id, but the phase-4-plan
-    agent omitted ``--recipe-key``. The composer now reads the provenance itself.
+
+@pytest.mark.parametrize(
+    ('metadata', 'overrides', 'expected_rule'),
+    _RECIPE_PROVENANCE_CASES,
+    ids=[
+        'plan_source-holding-a-lesson-id-fires-the-recipe-row',
+        'metadata-recipe_key-fires-the-recipe-row',
+        'plan_source-set-to-the-literal-recipe-fires-the-recipe-row',
+        'metadata-carrying-no-provenance-key-falls-to-default',
+        'no-status-json-at-all-falls-to-default',
+        'an-explicit-recipe-key-fires-the-recipe-row-without-status-json',
+    ],
+)
+def test_compose_reads_recipe_provenance(
+    plan_context, request, metadata, overrides, expected_rule
+):
+    """The composer reads recipe provenance from status metadata, not only from --recipe-key.
+
+    A lesson-derived plan carries its provenance in `status.metadata` even when the
+    planning agent omitted `--recipe-key`. Reading only the flag drops exactly those
+    plans onto the default row, which is the drift this pins shut.
     """
-    plan_id = 'recipe-from-plan-source'
-    _write_status_metadata(plan_context, plan_id, {'plan_source': '2026-06-01-10-001'})
-    result = cmd_compose(
-        _compose_ns(
-            plan_id=plan_id,
-            change_type='enhancement',
-            scope_estimate='single_module',
-            recipe_key=None,
-            affected_files_count=3,
-        )
-    )
-    assert result is not None and result['rule_fired'] == 'recipe'
+    slug = re.sub(r'[^a-z0-9]+', '-', request.node.callspec.id.lower()).strip('-')
+    plan_id = f'provenance-{slug}'[:60].rstrip('-')
+    if metadata is not None:
+        _write_status_metadata(plan_context, plan_id, metadata)
 
+    args = {
+        'change_type': 'feature',
+        'scope_estimate': 'multi_module',
+        'recipe_key': None,
+        'affected_files_count': 4,
+        **overrides,
+    }
+    result = cmd_compose(_compose_ns(plan_id=plan_id, **args))
 
-def test_recipe_detected_from_status_recipe_key_fallback(plan_context):
-    """metadata.recipe_key (no plan_source) also fires Row 2 via the fallback."""
-    plan_id = 'recipe-from-recipe-key'
-    _write_status_metadata(plan_context, plan_id, {'recipe_key': 'lesson_cleanup'})
-    result = cmd_compose(
-        _compose_ns(
-            plan_id=plan_id,
-            change_type='feature',
-            scope_estimate='multi_module',
-            recipe_key=None,
-            affected_files_count=4,
-        )
-    )
-    assert result is not None and result['rule_fired'] == 'recipe'
-
-
-def test_recipe_literal_plan_source_fires_row_2(plan_context):
-    """plan_source set to the literal 'recipe' string also selects Row 2."""
-    plan_id = 'recipe-literal-source'
-    _write_status_metadata(plan_context, plan_id, {'plan_source': 'recipe'})
-    result = cmd_compose(
-        _compose_ns(
-            plan_id=plan_id,
-            change_type='feature',
-            scope_estimate='multi_module',
-            recipe_key=None,
-            affected_files_count=4,
-        )
-    )
-    assert result is not None and result['rule_fired'] == 'recipe'
-
-
-def test_no_plan_source_falls_to_default(plan_context):
-    """Status metadata without provenance keys does NOT spuriously fire Row 2."""
-    plan_id = 'no-provenance-default'
-    _write_status_metadata(plan_context, plan_id, {'change_type': 'feature'})
-    result = cmd_compose(
-        _compose_ns(
-            plan_id=plan_id,
-            change_type='feature',
-            scope_estimate='multi_module',
-            recipe_key=None,
-            affected_files_count=4,
-        )
-    )
-    assert result is not None and result['rule_fired'] == 'default'
-
-
-def test_missing_status_json_falls_to_default(plan_context):
-    """A plan with no status.json reads no provenance and falls to Row 7."""
-    result = cmd_compose(
-        _compose_ns(
-            plan_id='no-status-default',
-            change_type='feature',
-            scope_estimate='multi_module',
-            recipe_key=None,
-            affected_files_count=4,
-        )
-    )
-    assert result is not None and result['rule_fired'] == 'default'
-
-
-def test_explicit_recipe_key_overrides_absent_status(plan_context):
-    """An explicit --recipe-key still fires Row 2 with no status metadata present."""
-    result = cmd_compose(
-        _compose_ns(
-            plan_id='explicit-recipe-key',
-            change_type='feature',
-            scope_estimate='multi_module',
-            recipe_key='lesson_cleanup',
-            affected_files_count=4,
-        )
-    )
-    assert result is not None and result['rule_fired'] == 'recipe'
+    assert result is not None
+    assert result['rule_fired'] == expected_rule
 
 
 def test_read_recipe_source_unit(plan_context):
@@ -1576,15 +1520,14 @@ def test_commit_and_push_false_with_recipe_still_drops_commit_push(plan_context)
 def test_commit_and_push_false_with_prefixed_input_drops_commit_push_and_pre_push(plan_context):
     """Regression — _apply_commit_push_disabled drops both gates with prefixed input.
 
-    Pins the latent bug fixed by lesson ``2026-04-27-23-004``: before boundary
-    normalization, ``_apply_commit_push_disabled`` compared candidate entries
-    against the bare-name set ``{push, pre-push-quality-gate,
-    pre-submission-self-review}``. When ``marshal.json`` emitted prefixed
-    candidates (e.g., ``default:push``), the comparison silently failed
-    and the gate steps survived in the manifest despite ``commit_and_push=false``.
+    ``_apply_commit_push_disabled`` compares candidate entries against the
+    bare-name set ``{push, pre-push-quality-gate, pre-submission-self-review}``.
+    Without boundary normalization, a ``marshal.json`` that emits prefixed
+    candidates (e.g. ``default:push``) would fail that comparison silently and
+    leave the gate steps in the manifest despite ``commit_and_push=false``.
 
     Boundary normalization in ``cmd_compose`` strips the ``default:`` prefix
-    once at intake, so ``_apply_commit_push_disabled`` now sees bare strings
+    once at intake, so ``_apply_commit_push_disabled`` sees bare strings
     and the membership check works regardless of how the caller spelled the
     candidate IDs. This test feeds a fully prefixed candidate list to
     ``cmd_compose`` with ``commit_and_push=false`` and asserts both gate steps
@@ -2356,7 +2299,7 @@ class TestPrePushQualityGatePreFilter:
         assert 'pre-push-quality-gate' not in manifest['phase_6']['steps']
 
     # =========================================================================
-    # Boundary-normalization regression cases (lesson 2026-04-27-23-004)
+    # Boundary-normalization cases
     #
     # The activation-failure branches of ``_apply_pre_push_quality_gate_inactive``
     # compare candidate entries against the bare literal
@@ -2871,7 +2814,7 @@ def test_read_ci_provider_returns_none_when_no_providers(plan_context):
 
 
 # =============================================================================
-# Compose-time frontmatter-order sort (lesson 2026-04-28-13-002)
+# Compose-time frontmatter-order sort
 #
 # ``automatic-review`` (frontmatter order 30) must land before every
 # plan-mutating step (``archive-plan``, ``record-metrics``, ``branch-cleanup``,
@@ -3058,9 +3001,8 @@ def _write_full_marshal(
 def test_marshal_json_preferred_over_csv_preserves_project_prefixes(plan_context):
     """When marshal.json declares project: steps, the manifest preserves them even if CSV strips them.
 
-    Regression for the lesson-2026-05-15-21-002 finalize abort: the phase-4-plan
-    agent built a CSV with prefixes stripped, producing a manifest of bare names
-    the dispatcher then mis-routed as built-in default: steps. The composer now
+    An agent-built CSV with prefixes stripped would produce a manifest of bare
+    names the dispatcher mis-routes as built-in default: steps. The composer
     treats marshal.json as the source of truth — agent CSV is fallback only.
     """
     full_phase_6 = [
@@ -3348,7 +3290,7 @@ def test_compose_reads_keyed_map_phase_5_verification_steps(plan_context):
 
 
 # =============================================================================
-# Role-loader and role-based intersection (deliverable 2)
+# Role-loader and role-based intersection
 #
 # The composer derives a phase-5 candidate step's ``role:`` purely in-code from
 # the trailing ``{canonical}`` segment of its ``verify:{canonical}`` step ID via
@@ -3374,40 +3316,45 @@ class TestRoleLoader:
     ``build_verify`` / ``coverage_check``) are gone and now resolve to None.
     """
 
-    def test_verify_quality_gate_resolves_to_quality_gate_role(self):
-        cache: dict[str, str | None] = {}
-        assert _role_of('verify:quality-gate', cache) == 'quality-gate'
+    #: (step id, the role it resolves to). ``None`` means the id carries no derived
+    #: role at all, which is how external steps, retired fixed-name ids, and
+    #: unrecognised canonicals must all behave.
+    CANONICAL_ROLES = [
+        ('verify:quality-gate', 'quality-gate'),
+        ('verify:module-tests', 'module-tests'),
+        ('verify:coverage', 'coverage'),
+        ('default:verify:quality-gate', 'quality-gate'),
+        ('quality_check', None),
+        ('build_verify', None),
+        ('coverage_check', None),
+        ('project:finalize-step-plugin-doctor', None),
+        ('my-bundle:my-verify-step', None),
+        ('verify:does-not-exist', None),
+    ]
 
-    def test_verify_module_tests_resolves_to_module_tests_role(self):
-        cache: dict[str, str | None] = {}
-        assert _role_of('verify:module-tests', cache) == 'module-tests'
+    @pytest.mark.parametrize(
+        ('step_id', 'role'),
+        CANONICAL_ROLES,
+        ids=[f'{s}-resolves-to-{r}' for s, r in CANONICAL_ROLES],
+    )
+    def test_step_id_resolves_to_its_role(self, step_id, role):
+        """Each step id resolves to its derived role, or to None when it has none.
 
-    def test_verify_coverage_resolves_to_coverage_role(self):
+        The `default:` prefix is stripped before lookup, so the prefixed and bare
+        forms of a canonical must agree. A None row is the load-bearing half: an
+        id that gained a role by accident would silently join a verification
+        intersection it does not belong in.
+        """
         cache: dict[str, str | None] = {}
-        assert _role_of('verify:coverage', cache) == 'coverage'
 
-    def test_default_prefix_is_stripped_during_resolution(self):
-        """``default:verify:quality-gate`` resolves to the same role as the bare form."""
-        cache: dict[str, str | None] = {}
-        assert _role_of('default:verify:quality-gate', cache) == 'quality-gate'
+        resolved = _role_of(step_id, cache)
 
-    def test_legacy_fixed_name_id_resolves_to_none(self):
-        """The retired fixed-name IDs no longer resolve to a role."""
-        cache: dict[str, str | None] = {}
-        assert _role_of('quality_check', cache) is None
-        assert _role_of('build_verify', cache) is None
-        assert _role_of('coverage_check', cache) is None
-
-    def test_external_step_resolves_to_none(self):
-        """``project:`` / ``bundle:skill`` candidates have no derived role."""
-        cache: dict[str, str | None] = {}
-        assert _role_of('project:finalize-step-plugin-doctor', cache) is None
-        assert _role_of('my-bundle:my-verify-step', cache) is None
-
-    def test_unknown_canonical_resolves_to_none(self):
-        """A ``verify:{canonical}`` whose canonical is not in the table → None."""
-        cache: dict[str, str | None] = {}
-        assert _role_of('verify:does-not-exist', cache) is None
+        if role is None:
+            # identity, not equality: None is a singleton sentinel, and `==` would
+            # admit any object whose __eq__ returns True against it.
+            assert resolved is None
+        else:
+            assert resolved == role
 
     def test_cache_returns_same_value_on_second_lookup(self):
         """The per-compose cache short-circuits the second call for the same step."""
@@ -3650,7 +3597,7 @@ def test_marshal_json_phase_5_steps_also_preferred(plan_context):
 
 
 # =============================================================================
-# execution_tier Routing Tests (lesson 2026-05-27-20-003)
+# execution_tier Routing Tests
 # =============================================================================
 #
 # The composer walks plan tasks and classifies each ``verification.commands``
@@ -4065,7 +4012,7 @@ class TestScopeGatedFinalizePreFilter:
         """drop_review_on_scope_gate=true is INERT on a non-scope-gated plan:
         automatic-review is retained on multi_module scope even with the
         override set, so flipping the project-wide knob cannot silently disable
-        bot review on a large plan (PR #551 reviewer finding)."""
+        bot review on a large plan."""
         _write_drop_review_marshal(plan_context.fixture_dir, override=True)
         result = cmd_compose(
             _compose_ns(
@@ -4396,7 +4343,7 @@ def test_envelope_count_absent_reads_cleanly_round_trip(plan_context):
 
 
 # =============================================================================
-# Execution-profile lane resolution (deliverable 5)
+# Execution-profile lane resolution
 # =============================================================================
 #
 # The lane resolver projects the operator posture (minimal / standard / full) over
@@ -4460,49 +4407,48 @@ def test_lane_keep_decision_cutoff(lane, posture, expected_keep):
     assert warning is None
 
 
-def test_lane_keep_off_override_immune_for_derived_state_floor():
-    """An ``off`` override of a derived-state floor element is IMMUNE — the element
-    is KEPT and an informational warning records the neutralized override."""
-    keep, warning = _lane_keep_decision({'class': 'derived-state', 'tier': 'minimal'}, 'off', 'minimal')
-
-    assert keep is True
-    assert warning is not None
-    assert 'derived-state' in warning
-    assert 'immune' in warning
-
-
-def test_lane_keep_off_override_immune_for_core_floor():
-    """An ``off`` override of a core floor element is IMMUNE — KEPT with a warning."""
-    keep, warning = _lane_keep_decision({'class': 'core', 'tier': 'minimal'}, 'off', 'minimal')
-
-    assert keep is True
-    assert warning is not None
-    assert 'core' in warning
-    assert 'immune' in warning
+#: (element lane, operator override, posture, kept?, fragments the warning must carry).
+#: An empty fragment tuple means the decision carries NO warning. The immune rows
+#: are the reason the warning is asserted at all: a floor element silently ignoring
+#: an `off` override, with nothing said, is indistinguishable from one that honoured it.
+_LANE_OVERRIDE_DECISIONS = [
+    ({'class': 'derived-state', 'tier': 'minimal'}, 'off', 'minimal', True, ('derived-state', 'immune')),
+    ({'class': 'core', 'tier': 'minimal'}, 'off', 'minimal', True, ('core', 'immune')),
+    ({'class': 'adversarial', 'tier': 'standard'}, 'off', 'standard', False, ()),
+    ({'class': 'prunable', 'tier': 'standard'}, 'off', 'standard', False, ()),
+    ({'class': 'adversarial', 'tier': 'full'}, 'minimal', 'minimal', True, ()),
+]
 
 
-def test_lane_keep_off_override_drops_adversarial_cleanly():
-    """An ``off`` override of a non-floor adversarial element drops it — no warning (real opt-out)."""
-    keep, warning = _lane_keep_decision({'class': 'adversarial', 'tier': 'standard'}, 'off', 'standard')
+@pytest.mark.parametrize(
+    ('lane', 'override', 'posture', 'expected_keep', 'warning_fragments'),
+    _LANE_OVERRIDE_DECISIONS,
+    ids=[
+        'off-override-of-derived-state-floor-is-immune-and-warns',
+        'off-override-of-core-floor-is-immune-and-warns',
+        'off-override-drops-non-floor-adversarial-silently',
+        'off-override-drops-non-floor-prunable-silently',
+        'minimal-override-force-keeps-a-full-tier-element',
+    ],
+)
+def test_lane_keep_decision_honours_override(
+    lane, override, posture, expected_keep, warning_fragments
+):
+    """An operator lane override is honoured unless the element sits on the floor.
 
-    assert keep is False
-    assert warning is None
+    A floor element (derived-state or core at tier minimal) is immune to `off`:
+    it stays, and the neutralized override is reported rather than swallowed. Any
+    other element opts out cleanly, with nothing to report.
+    """
+    keep, warning = _lane_keep_decision(lane, override, posture)
 
-
-def test_lane_keep_off_override_drops_prunable_cleanly():
-    """An ``off`` override of a non-floor prunable element drops it — no warning (real opt-out)."""
-    keep, warning = _lane_keep_decision({'class': 'prunable', 'tier': 'standard'}, 'off', 'standard')
-
-    assert keep is False
-    assert warning is None
-
-
-def test_lane_keep_minimal_override_force_keeps_under_every_posture():
-    """A ``minimal`` override force-keeps an otherwise-full element at minimal posture."""
-    keep, warning = _lane_keep_decision({'class': 'adversarial', 'tier': 'full'}, 'minimal', 'minimal')
-
-    assert keep is True
-    assert warning is None
+    assert keep is expected_keep
+    if warning_fragments:
+        assert warning is not None
+        for fragment in warning_fragments:
+            assert fragment in warning
+    else:
+        assert warning is None
 
 
 @pytest.mark.parametrize(
@@ -4902,7 +4848,7 @@ def test_read_execution_profile_reads_persisted_posture(plan_context):
 
 
 # =============================================================================
-# Compose-time step-resolution gate (deliverable 1)
+# Compose-time step-resolution gate
 #
 # `compose` resolves every FINAL emitted phase-5/6 step id and fails loud
 # (`status: error`, `error: unresolvable_step`) on the first that resolves to no

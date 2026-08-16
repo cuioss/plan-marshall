@@ -502,7 +502,6 @@ def test_cli_every_file_not_found_path_exits_zero_with_toon_error(tmp_path, monk
 # =============================================================================
 # Test: require_references rejects non-dict top-level JSON values
 # =============================================================================
-# Regression coverage for the gemini-code-assist review on PR #426:
 # require_references() must raise ValueError when references.json exists but
 # its top-level JSON value is not a JSON object. Without the isinstance check,
 # non-dict values (list, string, number, bool, null) silently pass through

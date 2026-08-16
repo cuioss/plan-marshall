@@ -6,38 +6,21 @@ Split from test_manage_execution_manifest.py — tier 2 direct-import tests for
 the validate path plus the CLI happy-path roundtrip.
 """
 
-import importlib.util
 import json
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script path for subprocess (CLI plumbing) tests.
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py')
 
-# Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime).
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+# Tier 2 direct imports, resolved by (bundle, skill, script).
+
+
+_mem = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_script'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None, f'Failed to load module spec for {filename}'
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mem = _load_module('_mem_script', 'manage-execution-manifest.py')
 cmd_compose = _mem.cmd_compose
 cmd_validate = _mem.cmd_validate
 cmd_step_params_get = _mem.cmd_step_params_get
@@ -49,7 +32,9 @@ DEFAULT_PHASE_6_STEPS = _mem.DEFAULT_PHASE_6_STEPS
 # Step-owner schema primitives live in _manifest_core (loaded directly; the
 # hyphenated entry does not re-export them). See _manifest_core.py § "Step
 # ownership".
-_core = _load_module('_mem_core', '_manifest_core.py')
+_core = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', '_manifest_core.py', module_name='_mem_core'
+)
 VALID_STEP_OWNERS = _core.VALID_STEP_OWNERS
 validate_step_owner = _core.validate_step_owner
 owner_of = _core.owner_of
@@ -59,7 +44,9 @@ ORCHESTRATOR_OWNED_STEPS = _core.ORCHESTRATOR_OWNED_STEPS
 # directly following the _manifest_core convention above). _check_ascending_order
 # asserts the composed phase_6.steps hold non-decreasing frontmatter order;
 # _resolve_step_order yields a step's frontmatter order (or None when unresolvable).
-_validation = _load_module('_mem_validation', '_manifest_validation.py')
+_validation = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', '_manifest_validation.py', module_name='_mem_validation'
+)
 _check_ascending_order = _validation._check_ascending_order
 _resolve_step_order = _validation._resolve_step_order
 

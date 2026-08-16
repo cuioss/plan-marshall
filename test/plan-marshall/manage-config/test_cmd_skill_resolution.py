@@ -8,9 +8,7 @@ list-finalize-steps commands defined in _cmd_skill_resolution.py.
 Tier 2 (direct import) tests with 1 subprocess test for CLI plumbing.
 """
 
-import importlib.util
 import json
-import sys
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
@@ -18,28 +16,17 @@ from unittest.mock import patch
 import pytest
 from _manage_config_fixtures import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+from conftest import PROJECT_ROOT, get_script_path, load_script_module, run_script
+
+_cmd_skill_domains = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_skill_domains.py', module_name='_cmd_skill_domains'
 )
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_cmd_skill_domains = _load_module('_cmd_skill_domains', '_cmd_skill_domains.py')
-_cmd_skill_resolution = _load_module('_cmd_skill_resolution', '_cmd_skill_resolution.py')
-_config_defaults = _load_module('_config_defaults', '_config_defaults.py')
+_cmd_skill_resolution = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_skill_resolution.py', module_name='_cmd_skill_resolution'
+)
+_config_defaults = load_script_module(
+    'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults'
+)
 
 cmd_get_skills_by_profile = _cmd_skill_resolution.cmd_get_skills_by_profile
 cmd_list_finalize_steps = _cmd_skill_resolution.cmd_list_finalize_steps
@@ -48,8 +35,6 @@ cmd_resolve_workflow_skill_extension = _cmd_skill_resolution.cmd_resolve_workflo
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 import file_ops  # noqa: E402
-
-from conftest import PROJECT_ROOT, get_script_path, run_script  # noqa: E402
 
 # =============================================================================
 # resolve-domain-skills Tests (Tier 2)
@@ -523,7 +508,7 @@ def test_list_finalize_steps_ordered_ascending_by_order(tmp_path):
 
 
 # =============================================================================
-# Order field discovery tests (deliverable 5)
+# Order field discovery tests
 # =============================================================================
 
 
