@@ -147,27 +147,34 @@ re-confirmed across every assertion in the three modules by three verification r
 `git diff --name-only origin/main...HEAD` includes seven `*.py` files — three scripts and four test
 modules ⇒ **Python changed, full `./pw verify` required and run.**
 
-Final gate at `c77cdf4`, read in full (`cmd_verify` returns early on any failed sub-step, so the
+Final gate at `8a91744`, read in full (`cmd_verify` returns early on any failed sub-step, so the
 printed summary proves all three ran):
 
 | Sub-step | Result |
 |---|---|
 | quality-gate | mypy clean (410 source files), `ruff … All checks passed!`, `SPDX-header check passed` |
 | test-compile | mypy clean (760 files) — the sub-step neither `quality-gate` nor `module-tests` performs |
-| module-tests | **20310 passed, 14 skipped**, zero `FAILED`/`ERROR` lines |
+| module-tests | **20313 passed, 14 skipped**, zero `FAILED`/`ERROR` lines |
 | Overall | `=== verify: SUCCESS ===` |
-
-Commits landing after that gate: the report rewrite and the round-4 fixes. The round-4 commit touches
-`*.py` and was preceded by its own clean `./pw quality-gate`; the report commits are Markdown-only, so
-no Python gate is owed for them.
 
 Per-commit gate: every commit touching `*.py` was preceded by a clean `./pw quality-gate`.
 
 ## Findings
 
-Four verification rounds. Each round targeted the **previous round's fixes** as a first-class surface,
-which is what caught most of these — three of the four rounds found that the prior round's fix had
-introduced or exposed a new defect. Recorded per instance.
+Five verification rounds plus two defects caught by the run itself. Each round targeted the
+**previous round's fixes** as a first-class surface, which is what caught most of these — three of the
+five rounds found that the prior round's fix had introduced or exposed a new defect. Recorded per
+instance.
+
+### Self-caught during implementation (2 findings — both fixed)
+
+Not surfaced by any verification round; found by testing the run's own work before dispatching.
+Recorded because a finding is a finding regardless of who found it.
+
+| # | Finding | Disposition |
+|---|---|---|
+| S1 | The first envelope matcher — a single `<tag>.*?</tag>` regex — was **quadratic on unmatched `<` markup**: every unmatched open tag rescanned to end-of-text before failing. Measured 0.515 s at 0.06 MB, extrapolating to minutes at the 2 MiB read budget — a hang in a pre-pass whose whole purpose is to be cheap | **Fixed** — single linear tokenize-and-pair pass; the same 2.24 MB input strips in 0.072 s |
+| S2 | The skip-reason discriminator explained the missing-file path's `no_signal: true` as "it kept zero turns" — the survivor-count semantics the verdict no longer uses. In a section the diff never touched | **Fixed** |
 
 ### Round 1 (10 findings — 9 fixed, 1 rejected)
 
@@ -210,7 +217,18 @@ introduced or exposed a new defect. Recorded per instance.
 | N9 | `doc/refactor/08-claude-coupling-inventory.md` cites coupling **by path**; the split left the harness recognisers unlisted | **Fixed** |
 | N10 | The `TASK_NOTIFICATION` fixture was an invented flat shape while the real nested one was present in the clone — D4(a) asks for real block shapes. No bug masked, but the nested-envelope-containing-prose case went unexercised | **Fixed** — real shape adopted |
 
-### Round 4
+### Round 4 (6 findings — all fixed)
+
+| # | Finding | Disposition |
+|---|---|---|
+| R4-1 | `test_partition_separates_residue_from_recovered_text` asserted the partition on an input where both halves are equal after stripping, so it **passed under an implementation returning the residue twice** — and that mutant admits any turn whose residue is a harness notice but which carries an envelope pair, the exact fail-toward-operator direction this plan closes | **Fixed** — the test now separates prose, envelope and command block three ways; verified by mutation to kill that mutant and two neighbours |
+| R4-2 | The aspect contract did not state the precedence rule round 3 introduced, and still said that being listed in `HARNESS_NOTICE_PREFIXES` was sufficient for a turn to be dropped. Both script docstrings defer to that document as normative, so it **is** the spec and it was behind the code | **Fixed** — precedence stated, with its bound and the check ordering |
+| R4-3 | Report said six `*.py` files; there are seven | **Fixed** |
+| R4-4 | Report conflated 91 tests with 91 assertions | **Fixed** — 94 tests, 207 assertions |
+| R4-5 | The coupling registry claimed `AskUserQuestion` lives only in the `_chat_*` modules; it is also in the reducer's `DECISION_MARKERS`, and that registry cites coupling by path | **Fixed** |
+| R4-6 | `test_extract_chat_signal_provenance.py` no longer tested provenance, which had moved to `test_chat_provenance.py` | **Fixed** — renamed to `test_extract_chat_signal_verdict.py` |
+
+### Round 5
 
 _Recorded below._
 
