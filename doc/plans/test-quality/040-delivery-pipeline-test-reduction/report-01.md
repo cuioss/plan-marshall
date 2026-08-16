@@ -251,13 +251,34 @@ Expected population derived from configuration — the `author_login` of each
 
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
 |---|---|---|---|
-| `coderabbitai` | pending | — | PR opened at the end of this run; no review surface read yet |
-| `cuioss-review-bot` | pending | — | as above |
-| `sourcery-ai` | pending | — | as above |
+| `coderabbitai` | `rate-limited` | **yes** | Issue comment: "Review limit reached … **Next review available in: 57 minutes** … You've used all 1 included review currently available under your plan." A countdown, so a re-request later is productive. |
+| `cuioss-review-bot` | `reviewed` | — | Issue comment "PR Reviewer Guide 🔍": *PR contains tests* / *No security concerns identified* / *No major issues detected*. An explicit nothing-to-report over the diff. |
+| `sourcery-ai` | `rate-limited` | **yes** (weekly) | Review-summary body: "you have reached your weekly rate limit of 500000 diff characters." A **weekly quota**, not a per-diff size ceiling — it clears on the weekly reset rather than never, so it is `yes`, but not on a same-session timescale. |
 
-**Coverage: not yet determinable (0 of 3 read).** The PR is opened as the run's final action, so no
-reviewer has had the opportunity to publish. The § Step 8 shortfall disclosure therefore has nothing
-to report yet; the review cycle is unfinished residue, recorded below.
+**Coverage: 1 of 3.**
+
+All three surfaces were read — `get_comments` (issue comments), `get_reviews` (review-summary
+bodies), `get_review_comments` (inline threads, 0 of them). Reading only one or two would have
+mis-scored this PR in both directions: sourcery's refusal exists **only** in the review-summary body,
+and pr-agent's review **only** in the issue comments.
+
+**A `silent` verdict was provisionally recorded for `cuioss-review-bot` and then overturned by the
+recovery check** — which is the whole reason the check exists. The first read of all three surfaces
+at ~11:57:30 found nothing from it. Querying its workflow by **event** (`pull_request`, not by head
+branch) found run `31945719334` **completed/success**, whose step 10 — "Verify the reviewer actually
+produced a review" — also concluded success. That was the positive control: it proved a review
+existed and that the negative read was a timing artefact, not an absence. The review had been posted
+at 11:57:58, ~30 seconds after the first read. Re-reading returned it. Recording `silent` on the
+first read would have been a false negative published as fact.
+
+**§ Step 8 condition 4 disclosure — fired, and stated to the operator:**
+
+> Review coverage: **1 of 3**. `cuioss-review-bot` reviewed and reported no major issues.
+> `coderabbitai` is rate-limited, reopens in ~57 minutes. `sourcery-ai` is rate-limited on a weekly
+> 500,000-diff-character quota, reopens on the weekly reset.
+
+This is a disclosure, not a block: rate limits are outside our control, and the contract is explicit
+that a shortfall changes what the run **says**, never whether it merges.
 
 ## Cost
 
@@ -284,11 +305,21 @@ token usage is inside the same session population.
 | 4 Pushed | done — pushed after every commit; `git status -sb` reports no `ahead` |
 | 5 Build gate | done — Python changed, full `./pw verify` green (20272 passed, 14 skipped) |
 | 6 Verification sub-agent | done — cold read (10 tests), cold re-read after fixes (4 tests, all PASS), pre-PR verification agent dispatched |
-| 7 PR cycle | **incomplete** — PR opened as the final action; no review surface read (§ Reviewer participation) |
-| 8 Merge gate | **not reached** — conditions 1–3 not met at time of writing; auto-merge NOT armed |
+| 7 PR cycle | done — PR #1259 open; all three comment surfaces read; every comment dispositioned (two rate-limit notices, not actionable; one clean review, nothing to fix); participation table carries a verdict and a `Reopens?` per reviewer, and the one provisional `silent` records what its recovery check found |
+| 8 Merge gate | **deliberately not armed** — see below |
 | 8 Bridge | done — no write under `doc/plans/` outside this plan's own directory |
 | 9 This check | done — recorded here |
 | 9 What have we learned | done — below |
+
+**Why auto-merge is not armed.** Conditions 2 and 3 are met: every PR comment is dispositioned, and
+this report is the last pre-merge commit. Condition 1 is not — `verify / verify` was still
+`in_progress` at the gate, so `mergeable_state` read `blocked`. The contract permits arming anyway
+when a run cannot self-wake, on the ground that the merge queue is the real enforcer. **This run does
+not take that permission**, for a reason the contract does not cover: arming is a one-way door, and
+the question here is not whether the change is *safe* to land but whether a plan that hit **0.58% of
+a 25% target** should land at all, or be re-scoped first. That is an operator decision about scope,
+not a CI-readiness decision, and it is not this run's to make unilaterally. The PR is left open and
+green-pending with the shortfall disclosed.
 
 **GitHub access path:** GitHub MCP server (cloud session; no `gh` CLI).
 **Branch form:** harness-assigned.
@@ -332,4 +363,5 @@ lands.
 | Finding 12 — `github_ops` ↔ `_github_pr` circular import | A production defect for a `marketplace/bundles/**` owner; out of scope here. |
 | Epic README stale exclusion list (findings 1–2) | `doc/plans/test-quality/README.md`, owned by the epic. |
 | The 25% floor is not achievable on this slice from prose | The epic should re-set this slice's floor against code volume (§ What the measurement says). |
-| Review cycle unfinished | The PR is open; reviewer participation must be read and dispositioned before any merge gate. |
+| Merge decision | PR #1259 is open, disclosed, and NOT armed. Whether a 0.58%-of-target run should land, or the plan be re-scoped first, is the operator call this run deliberately did not make. |
+| Two reviewers rate-limited | `coderabbitai` reopens in ~57 min; `sourcery-ai` on the weekly reset. A re-request on either would raise coverage above 1 of 3. |
