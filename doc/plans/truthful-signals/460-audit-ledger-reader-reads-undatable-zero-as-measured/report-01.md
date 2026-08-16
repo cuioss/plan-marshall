@@ -58,7 +58,7 @@ dicts compared **equal**, while a pre-patch sanity assertion confirmed the two r
 disagree on the affected ledger (`input_tokens` absent under the gate, `0` under the pre-fix reader), so
 the equality is a real result rather than two identical code paths.
 
-That instrument was **deliberately not committed**. It embeds a ~50-line copy of the pre-fix reader,
+That instrument was **deliberately not committed**. It embeds a whole copy of the pre-fix reader,
 which is exactly the stale-double hazard this lane warns about: once `_parse_dispatch_boundary_totals`
 moves, the copy silently diverges and the comparison stops testing what its name claims. The method and
 the result are recorded here instead; the file itself was disposable and is gone.
@@ -97,9 +97,9 @@ rather than emitting per-row states, so it has no `indeterminate_columns` to nam
 
 **One further consumer of the same claim was found beyond the diff and fixed in the same commit:**
 `.claude/skills/audit-archived-plan-retrospectives/checks/billing-composition.md` — the check's own
-interpretation guide — restated the claim twice, in two different consumer kinds: a prose paragraph
-("**The ledger's four context-load columns read three ways.**", line 34) and a bullet in the
-"Absent is not zero" reading-rules list enumerating only *unmeasured* and *unrecognised* as the
+interpretation guide — restated the claim twice, in two different consumer kinds: the prose
+paragraph opening "**The ledger's four context-load columns read three ways.**" under
+"Inputs the check reads", and a bullet in the "Absent is not zero" reading-rules list enumerating only *unmeasured* and *unrecognised* as the
 contributes-nothing cases. Both corrected. This is a sibling surface inside the same skill that the
 diff would otherwise never have opened.
 
@@ -114,9 +114,16 @@ became inaccurate; it did not, so the standard is left alone.
 
 ### D3 — regression tests
 
-Five tests in `test_audit_check_billing_composition_reconstruction.py`
-(`TestDispatchBoundaryZeroProvenance`), plus two cross-reader tests in
-`test_record_model_representability.py`, plus a new shared fixture.
+Five tests in a new module
+`test_audit_check_billing_composition_ledger_provenance.py` (`TestDispatchBoundaryZeroProvenance`),
+plus two cross-reader tests in `test_record_model_representability.py`, plus a new shared fixture.
+
+The new module exists because appending the cluster to
+`test_audit_check_billing_composition_reconstruction.py` carried it to 408 lines, past the 400-line
+module budget. Splitting by behaviour cluster into `test_{unit}_{cluster}.py` is what that standard
+prescribes and what this suite already does for `billing-composition` (`_emit`, `_reconstruction`,
+`_scoping`, `_under_counts`). The two modules are 253 and 178 lines, and the same 32 tests pass before
+and after the split.
 
 | Test | Direction | Pre-fix |
 |---|---|---|
@@ -134,10 +141,11 @@ first; that is unattainable for these two by construction, because the pre-fix r
 those zeros — the controls exist to stop an **over-correction**, and pre-fix code is not over-corrected.
 This report states that plainly rather than reporting three-of-three red. They were instead verified
 non-vacuous against a deliberate over-correction mutant (`if False:` in place of `if datable:`, so every
-zero is treated as undatable). Under that mutant **both controls fail**, along with three pre-existing
-tests including the cross-reader
-`test_unmeasured_fixture_reads_three_ways_in_the_audit_ledger_reader`. Mutant reverted; it was never
-committed. This is the stronger check of the two available: it proves the controls kill the failure
+zero is treated as undatable). Under that mutant **both controls fail** — as do the new
+`test_a_fingerprinted_row_does_not_date_its_neighbour` and two PRE-EXISTING tests that already pinned
+the measured-zero direction: `test_unmeasured_cells_are_omitted_while_measured_zeros_are_kept` and the
+cross-reader `test_unmeasured_fixture_reads_three_ways_in_the_audit_ledger_reader` (five failures in
+all). Mutant reverted; it was never committed. This is the stronger check of the two available: it proves the controls kill the failure
 mode they exist for, which red-against-pre-fix would not have shown.
 
 **The cross-reader pinning the plan preferred.** A new read-only fixture
@@ -156,10 +164,12 @@ observed rather than argued.
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD` reports six files, of which three are `*.py`
-(`audit.py`, and the two test modules) — **Python changed, so the gate took its full path.** The tree
-was confirmed clean (`git status --porcelain` empty) before the diff was taken, so the diff sees all
-the work.
+`git diff --name-only origin/main...HEAD` reports `*.py` changes in `audit.py`,
+`test_audit_check_billing_composition_reconstruction.py`, and
+`test_record_model_representability.py` — **Python changed, so the gate took its full path.** (Named
+rather than counted: this report is itself in the diff, so any total would go stale as it is written.)
+The tree was confirmed clean (`git status --porcelain` empty) before the diff was taken, so the diff
+sees all the work.
 
 `UV_HTTP_TIMEOUT=600 ./pw verify` → **`=== verify: SUCCESS ===`**, `20470 passed, 14 skipped` in
 417.56 s, over all six dimensions (mypy production 410 files, ruff, SPDX, plugin-doctor marketplace-wide,
