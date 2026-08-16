@@ -29,7 +29,7 @@ Each already distinguishes the two states it can return.
 
 | Site | State model |
 |---|---|
-| `script-shared/scripts/build/_references_core.py` → `compute_plan_branch_diff` | raises `CalledProcessError` on failure — never silently empty |
+| `manage-references/scripts/_references_core.py` → `compute_plan_branch_diff` | raises `CalledProcessError` on failure — never silently empty |
 | `plan-retrospective/scripts/_footprint_resolver.py` → `resolve_footprint` | `FOOTPRINT_UNRESOLVED` sentinel + `footprint_resolved()` predicate |
 | `manage-references/scripts/_cmd_compute_footprint.py` | the producer — writes `references.realized_footprint` while the worktree still exists |
 | `manage-references/scripts/manage-references.py` | CLI wiring for the producer |
