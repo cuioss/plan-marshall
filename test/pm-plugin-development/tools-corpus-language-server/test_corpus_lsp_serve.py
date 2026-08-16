@@ -25,6 +25,10 @@ from pathlib import Path
 
 from conftest import get_script_path
 
+sys.path.insert(0, str(get_script_path('pm-plugin-development', 'tools-corpus-language-server', 'corpus_lsp.py').parent))
+
+import corpus_lsp
+
 SCRIPT = get_script_path('pm-plugin-development', 'tools-corpus-language-server', 'corpus_lsp.py')
 
 ENABLED = {'code_intelligence': {'corpus_language_server': {'enabled': True}}}
@@ -97,3 +101,51 @@ class TestFramingSurvivesTheRealPipe:
         message = json.loads(stdout.split(b'\r\n\r\n', 1)[1])
         assert message['jsonrpc'] == '2.0'
         assert message['id'] == 1
+
+
+class TestBootstrapResolvesBothLayouts:
+    """The deployed cache is versioned; the source tree is flat.
+
+    `~/.claude/plugins/cache/{marketplace}/{bundle}/{version}/skills/...`
+    interposes a version segment that `marketplace/bundles/{bundle}/skills/...`
+    does not. A resolver that assumes either shape finds nothing in the other,
+    and because the imports it feeds are module-level that is a start-up crash,
+    not a degraded answer — the first implementation was flat-only and died with
+    `ModuleNotFoundError` in every installed project.
+    """
+
+    @staticmethod
+    def _bundle_stub(root: Path, bundle: str, skills: list[str]) -> None:
+        (root / bundle / '.claude-plugin').mkdir(parents=True, exist_ok=True)
+        (root / bundle / '.claude-plugin' / 'plugin.json').write_text('{"name": "x"}', encoding='utf-8')
+        for skill in skills:
+            (root / bundle / 'skills' / skill / 'scripts').mkdir(parents=True, exist_ok=True)
+
+    def test_resolves_a_flat_layout(self, tmp_path: Path) -> None:
+        self._bundle_stub(tmp_path, 'plan-marshall', ['tools-file-ops'])
+        resolved = corpus_lsp._resolve_script_dir(tmp_path, 'plan-marshall', 'tools-file-ops')
+        assert resolved == tmp_path / 'plan-marshall' / 'skills' / 'tools-file-ops' / 'scripts'
+
+    def test_resolves_a_versioned_layout(self, tmp_path: Path) -> None:
+        versioned = tmp_path / 'plan-marshall' / '0.1.62'
+        (versioned / 'skills' / 'tools-file-ops' / 'scripts').mkdir(parents=True)
+        resolved = corpus_lsp._resolve_script_dir(tmp_path, 'plan-marshall', 'tools-file-ops')
+        assert resolved == versioned / 'skills' / 'tools-file-ops' / 'scripts'
+
+    def test_prefers_the_newest_version(self, tmp_path: Path) -> None:
+        for version in ('0.1.9', '0.1.62'):
+            (tmp_path / 'plan-marshall' / version / 'skills' / 'tools-file-ops' / 'scripts').mkdir(parents=True)
+        resolved = corpus_lsp._resolve_script_dir(tmp_path, 'plan-marshall', 'tools-file-ops')
+        assert resolved is not None
+        assert resolved.parents[2].name == '0.1.62'
+
+    def test_absent_skill_resolves_to_none(self, tmp_path: Path) -> None:
+        self._bundle_stub(tmp_path, 'plan-marshall', [])
+        assert corpus_lsp._resolve_script_dir(tmp_path, 'plan-marshall', 'tools-file-ops') is None
+
+    def test_own_bundle_root_is_found_from_a_script_path(self) -> None:
+        """Anchoring works from this repository's own real layout."""
+        own = corpus_lsp._own_bundle_root(SCRIPT.resolve())
+        assert own is not None
+        assert own.name == 'pm-plugin-development'
+        assert (own / '.claude-plugin' / 'plugin.json').is_file()

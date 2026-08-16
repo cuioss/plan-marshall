@@ -32,9 +32,9 @@ comments from creeping back.
 
 Allowlist categories
 --------------------
-1. **Entry points the executor does not dispatch** — scripts that run before
-   ``.plan/execute-script.py`` exists, or outside it entirely, and so have no
-   injected ``PYTHONPATH`` either way (the executor generator, the
+1. **Entry points that run without the executor** — scripts that run before
+   ``.plan/execute-script.py`` exists, or outside it entirely (the executor
+   generator, the
    marshall-steward wizard scripts, the permission-fix wizard step and the
    permission chain it imports, the platform-runtime router and its Claude
    runtime, and the corpus language server, which an LSP client spawns
@@ -95,7 +95,7 @@ RULE_DESCRIPTOR = RuleDescriptor(
 # PYTHONPATH.
 _ALLOWLIST: frozenset[str] = frozenset(
     {
-        # 1. Entry points the executor does not dispatch (run before .plan/execute-script.py exists, or outside it)
+        # 1. Entry points that run without the executor (run before .plan/execute-script.py exists, or outside it)
         'plan-marshall/skills/tools-script-executor/scripts/generate_executor.py',
         'plan-marshall/skills/marshall-steward/scripts/bootstrap_plugin.py',
         'plan-marshall/skills/marshall-steward/scripts/determine_mode.py',

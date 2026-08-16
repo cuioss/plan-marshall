@@ -27,10 +27,10 @@ change). Recorded rather than claimed.
 | D0(a) | GATE — re-verify the asserted absence | **Done — claim partially REFUTED** | `c0d0209` |
 | D0(b) | GATE — protocol proposal, not a decision | **Done; operator then decided** | `c0d0209`, `24cb133` |
 | D1 | GATE — measure interactive latency | **Done — gate reframed, not tripped** | `c0d0209` |
-| D2 | The surface | Done — ⚠ see the Goal note below | `ebde4ea`, `25f42ef`, `616e63e`, `eec1405` |
+| D2 | The surface | Done — ⚠ see the Goal note below | see § Findings and the branch log |
 | D3 | Live broken-reference diagnostics | ⛔ **NOT DONE — hard gate unmet** | — |
-| D4 | Strictly opt-in, documented no-op | Done | `ebde4ea`, `25f42ef`, `eec1405` |
-| D5 | Documentation across three trees | Done | `eb5dc05`, `25f42ef`, `616e63e`, `eec1405` |
+| D4 | Strictly opt-in, documented no-op | Done | see § Findings and the branch log |
+| D5 | Documentation across three trees | Done | see § Findings and the branch log |
 
 ⛔ **The plan's Goal is only partially met, and the D-half of the operator's A + D decision is
 UNMET. Both are stated here rather than left to be inferred from the narrative.**
@@ -284,6 +284,19 @@ Per instance.
 | 43 | Sub-agent (round 3) | "round 1 NOT READY with 18 findings"; the table carries 17 round-1 rows | **Fixed** |
 | 44 | Sub-agent (round 3) | ⛔ **The report's largest silence** — the plan's Goal ("reachable from an editor") is only partially met and the D-half of the A+D decision ("must not ship without a consumer") is unmet, and no artifact said so | **Fixed** — stated explicitly under Deliverables, including that this is the failure mode D existed to prevent, reduced rather than prevented |
 | 45 | Sub-agent (round 3) | `plugin_json_gen.py`'s comment describes `lspServers` as declared in the committed manifest; a reader checking today finds none | **Fixed** — notes the declaration was subsequently withdrawn, and that the entry is deliberately kept |
+| 46 | Sub-agent (round 4) | ⛔ **HIGH, empirically demonstrated** — the `sys.path` bootstrap **failed in the deployed plugin cache**. That layout is versioned (`{bundle}/{version}/skills/…`, per `sync.py:553`) while the resolver assumed flat siblings, so no ancestor matched, the bootstrap returned silently, and `serve` died with `ModuleNotFoundError`. Because the imports are module-level this is a start-up crash, not a degraded answer — the surface was unreachable in **every installed project** | **Fixed** — resolution now handles flat *and* versioned layouts, anchored on the script's own bundle root. Reproduced the failure first, then verified all three trees (source, generated `target/`, versioned cache) plus the unconfigured no-op in the versioned tree |
+| 47 | My own test of the #46 fix | The versioned resolver picked by **lexical** sort, so `0.1.9` outranked `0.1.62` — it would have selected a stale bundle the moment a patch number passed single digits | **Fixed** — numeric version key; caught by a test written for the fix, not by review |
+| 48 | Sub-agent (round 4) | Four sites claimed the bootstrap "works identically in a deployed plugin cache" — false until #46 | **Fixed** — restated to name both layouts it now actually covers |
+| 49 | Sub-agent (round 4) | The `<bundle-root>` sentence in both docs omitted the cache's version segment, so the absolute path it told operators to build did not exist | **Fixed** — both docs name the version segment and say to copy the real path off disk |
+| 50 | Sub-agent (round 4) | Form 1 addressed "a plugin you control", but `${CLAUDE_PLUGIN_ROOT}` resolves to *that* plugin — so the form never works for the audience it names. Round 3 fixed "no destination" by naming a wrong one | **Fixed** — Form 1 is now scoped to this bundle's own manifest, with the travel cost of that choice stated |
+| 51 | Sub-agent (round 4) | Report row 40 claimed the stale pass count was removed; the Contract check still carried `20 117` | **Fixed** — the count is no longer restated outside § Build gate |
+| 52 | Sub-agent (round 4) | The Deliverables commits column had gone stale **again**, two rounds after row 41 fixed it | **Fixed by removing the column's contents** — a per-row commit list cannot survive a run that keeps committing; it now points at § Findings and the branch log |
+| 53 | Sub-agent (round 4) | Cost section stale in three ways (wall-clock derivation no longer computed, "four verify runs", "two sub-agents") | **Fixed** — restated as a commit-timestamp span with the reason no point estimate is given |
+| 54 | Sub-agent (round 4) | The reversal section, demoted in round 3, had become a **subsection of "Two constraints"** while calling itself the page's most important point | **Fixed** — restored to a peer section after both constraints |
+| 55 | Sub-agent (round 4) | The renamed allowlist category ("entry points the executor does not dispatch") was **false of the member that prompted it** — the executor does dispatch `preflight` and `query`; only `serve` is undispatched | **Fixed** — renamed to "entry points that run without the executor", true of every member, and the duplicated clause removed |
+| 56 | Sub-agent (round 4) | Row 34 attributed the stale sites to a test docstring; the phrase was in `corpus_lsp.py`, and the test docstring carried row 33's wording | **Fixed** — row 34 corrected |
+| 57 | Sub-agent (round 4) | The passthrough justification claimed an operator-added declaration "would hit the same path"; per the docs it would not | **Fixed** — narrowed to a declaration added back into a bundle manifest |
+| 58 | Sub-agent (round 4), cold read | Not a defect — but the two config blocks preceded the cost admonition, so a reader could copy before reading what it costs | **Fixed** — admonition moved above the blocks |
 | 21 | CI | _(none at time of writing — see Contract check)_ | — |
 
 **Round 1 verdict: NOT READY**, on three substantive defects (#6 blocking, #4 and #7 high) plus
@@ -293,6 +306,13 @@ documentation gaps. All fixed, and a second round dispatched.
 re-dispatch rule: #22 was *created by* round 1's own fix, invisible to every gate, and would have
 shipped a feature that did nothing in the deployed artifact. Fixing it made #23 live — the two had
 been masking each other — which forced the escalation that changed the surface's consumer story.
+
+**Round 4 verdict: NOT READY**, on a **demonstrated start-up failure** (#46): the bootstrap crashed in
+the versioned deployed cache, so the surface was unreachable in every installed project. ⭐ This is the
+round that vindicates driving the real entry point against real layouts rather than reading it — three
+prior rounds, a green `./pw verify`, and 75 passing tests all missed it, because every one of them
+exercised the *flat* tree. The fix's own test then caught a second defect I had introduced in it (#47,
+lexical version sort). All round-4 findings are fixed.
 
 **Round 3 verdict: NOT READY**, on one blocking (#32) and a sweep of what the reversal made stale.
 ⭐ Round 3 makes the same point one level up: a *reversal* is a change, and needs the same
@@ -334,12 +354,13 @@ on.
 
 - **Tokens:** not available to the agent in this session — the harness exposes no token counter to the
   running agent, so no figure is stated rather than an estimate being presented as a measurement.
-- **Wall-clock:** at least 2 h 32 min — the interval between the first commit (`8795719`,
-  18:44:44Z) and the report commit — and necessarily longer, since the run's first `git status`
-  precedes that commit by an unrecorded margin. Stated as a lower bound rather than a point
-  estimate, because the start instant was never recorded. Includes four full `./pw verify` runs
-  (~5 min each, from the runs' own pytest summaries) and two verification sub-agents (~9 min and
-  ~10 min, from the task-completion durations).
+- **Wall-clock:** the branch spans **2026-08-15T18:44:44Z** (first commit) to its last commit — over
+  **13 h** at the time of writing. ⚠ Stated as a span between commit timestamps rather than a run
+  duration: the run's start instant was never recorded, and the branch kept moving through four
+  verification rounds. Any point estimate written here is stale by the next round, which is why none
+  is given.
+- **Verification rounds:** four dispatched, four completed. One round-4 attempt died on a session
+  limit mid-check; it was re-dispatched from scratch and nothing from the aborted attempt was used.
 - **Population:** this single Claude Code cloud session's interactive usage. ⛔ **Not comparable to a
   plan-marshall `metrics.toon` total**, which counts an orchestrator-plus-agent dispatch tree under
   plan-marshall's own per-task billing boundary. This run has no dispatch tree (one sub-agent aside)
@@ -355,8 +376,8 @@ on.
 | 4 Implement | **Done** — every commit on the branch carries the trailer (verified across all of them); the count is not restated here because it moved after this table was first written |
 | 4 Per-commit gate | **Done** — every `*.py`-touching commit preceded by a clean gate (`ruff` passed, `mypy` clean, SPDX passed, plugin-doctor `issues[0]`) |
 | 4 Pushed | **Done** — pushed after every commit; no unpushed commit remains |
-| 5 Build gate | **Done** — Python changes present, so owed; `./pw verify` SUCCESS (20 117 passed) |
-| 6 Verification sub-agent | **Done** — round 1 NOT READY with 17 findings; all fixed or explicitly deferred; round 2 dispatched |
+| 5 Build gate | **Done** — Python changes present, so owed; `./pw verify` SUCCESS at every gate point; the pass count is not restated here because it rises with each verification round (see § Build gate) |
+| 6 Verification sub-agent | **Done** — four rounds. Rounds 1–3 each returned NOT READY (17, 2 and 9 substantive findings); round 4 returned NOT READY on a **demonstrated start-up failure in the deployed layout**. Every finding fixed, escalated-and-resolved, or explicitly deferred with a reason |
 | 7 PR cycle | See § Reviewer participation — the PR is opened after this commit, so participation is reported to the operator in-session |
 | 8 Merge gate | Conditions 1–3 driven after this commit; disclosure per § Step 8 condition 4 |
 | 8 Bridge | **Clean** — every write landed inside `doc/plans/code-intelligence-substrate/240-skill-lsp-server/`; no status file, ledger, or other plan's directory touched |

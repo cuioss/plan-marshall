@@ -91,7 +91,7 @@ Version-controlled rather than machine-local is deliberate, and is the same argu
 
 *Diagnostics stay withheld.* No diagnostic capability is advertised. The validator's unresolved set is presently about 97% false positives — documentation placeholders, foreign namespaces such as build-command and Maven coordinates, and notations whose third segment is a subcommand rather than a script. Advertising a diagnostic provider before that precision work lands would ship confidently wrong warnings at the substrate's most visible surface.
 
-=== The declaration is documented, not shipped
+== The declaration is documented, not shipped
 
 ⛔ The bundle manifest carries **no** `lspServers` declaration. The `SKILL.md` and the user page document the block; an operator adds it deliberately.
 

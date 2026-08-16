@@ -146,8 +146,9 @@ the placeholders are **plugin-scoped**: `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PR
 substituted for a plugin's own declared servers, so they carry no meaning in a general-purpose editor
 config. Use the form that matches where the declaration lives.
 
-**Form 1 — a Claude Code plugin manifest you control.** Goes in that plugin's
-`.claude-plugin/plugin.json` (inline) or a `.lsp.json` at its root:
+**Form 1 — this bundle's own manifest, in a checkout or fork you maintain.** Goes in
+`marketplace/bundles/pm-plugin-development/.claude-plugin/plugin.json` (inline) or a `.lsp.json` at
+that bundle's root:
 
 ```json
 "lspServers": {
@@ -164,9 +165,15 @@ config. Use the form that matches where the declaration lives.
 }
 ```
 
-⚠ `${CLAUDE_PLUGIN_ROOT}` resolves to the root of the plugin **whose manifest declares the server**.
-Declaring it from a *different* plugin than the one shipping this skill therefore resolves to the
-wrong tree — use Form 2's absolute path in that case.
+⚠ **`${CLAUDE_PLUGIN_ROOT}` resolves to the plugin whose manifest carries the declaration**, which is
+why Form 1 is scoped to *this* bundle's manifest and not to "a plugin you control" generally. Adding
+the block to some other plugin points the path at that plugin's tree, where the script does not exist.
+If you maintain a different plugin, use Form 2.
+
+⚠ Form 1 edits a tracked marketplace file, so it travels with the bundle: a rebuild regenerates the
+deployed manifest from it (the key is in the generator's passthrough set), and anyone installing your
+fork gets the server declared. That is the point, and it is also the cost — it re-introduces exactly
+the `.md` binding this bundle declines to ship by default.
 
 **Form 2 — any other LSP client** (Neovim, VS Code, Emacs, or a hand-rolled client). No placeholder
 expansion, so give real paths:
@@ -179,8 +186,11 @@ args:    /abs/path/to/<bundle-root>/pm-plugin-development/skills/tools-corpus-la
 filetypes/extensions: markdown (.md)
 ```
 
-`<bundle-root>` is wherever the bundles are on disk — `marketplace/bundles/` in a source checkout, or
-the plugin cache root in an installed one.
+`<bundle-root>` is wherever the bundles are on disk. In a source checkout that is
+`marketplace/bundles/`, so the path is `<checkout>/marketplace/bundles/pm-plugin-development/skills/…`.
+⚠ **An installed plugin cache interposes a version segment** —
+`~/.claude/plugins/cache/{marketplace}/pm-plugin-development/{version}/skills/…` — so copy the real
+path from disk rather than composing it from this template.
 
 ⛔ **This bundle deliberately does NOT ship that declaration**, and the reason is the one thing a
 static manifest cannot express. A plugin-declared server is started — and its extension claimed — the
@@ -204,8 +214,7 @@ diagnostic provider while D3 is gated.
 
 Because a client spawns the script **without** the executor, there is no injected `PYTHONPATH`. The
 script therefore bootstraps its own `sys.path` from its location up to the bundles root — the
-"entry points the executor does not dispatch" case the `sys-path-bootstrap` allowlist sanctions. It is layout-derived
-rather than hardcoded, so it resolves identically in the source tree and in a deployed plugin cache.
+"entry points that run without the executor" case the `sys-path-bootstrap` allowlist sanctions. It is layout-derived rather than hardcoded and handles **both** shapes the tree takes: the flat source layout and the **versioned** deployed cache (`{bundle}/{version}/skills/…`). Both are covered by tests, and a handshake was driven from each.
 
 ## Scripts
 

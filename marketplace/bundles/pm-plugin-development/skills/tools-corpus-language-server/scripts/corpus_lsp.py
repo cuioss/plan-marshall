@@ -41,48 +41,95 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+# The sibling skills whose ``scripts/`` directories this script imports from,
+# as (bundle, skill) pairs. Resolved at runtime, because the deployed layout is
+# not the source layout — see :func:`_bootstrap_sys_path`.
+_REQUIRED_SCRIPT_DIRS = (
+    ('pm-plugin-development', 'tools-marketplace-inventory'),
+    ('plan-marshall', 'tools-file-ops'),
+    ('plan-marshall', 'ref-toon-format'),
+    ('plan-marshall', 'script-shared'),
+    ('plan-marshall', 'manage-logging'),
+    ('plan-marshall', 'manage-run-config'),
+)
+
+
+def _version_key(name: str) -> tuple[int, ...]:
+    """Order a version directory numerically, not lexically.
+
+    ⚠ A plain string sort puts ``0.1.9`` above ``0.1.62``, which would pick a
+    stale bundle whenever the patch number passes single digits. Non-numeric
+    segments sort as ``-1`` so a malformed directory never outranks a real
+    version.
+    """
+    parts: list[int] = []
+    for segment in name.split('.'):
+        parts.append(int(segment) if segment.isdigit() else -1)
+    return tuple(parts)
+
+
+def _own_bundle_root(here: Path) -> Path | None:
+    """The nearest ancestor that is a bundle root (holds ``.claude-plugin/plugin.json``)."""
+    for ancestor in here.parents:
+        if (ancestor / '.claude-plugin' / 'plugin.json').is_file():
+            return ancestor
+    return None
+
+
+def _resolve_script_dir(root: Path, bundle: str, skill: str) -> Path | None:
+    """Find ``{bundle}/skills/{skill}/scripts`` under ``root``, flat or versioned.
+
+    ⚠ **Two layouts differ by exactly one path segment, and assuming either one
+    breaks the other.** The source tree keeps bundles as flat siblings
+    (``bundles/{bundle}/skills/...``); the deployed plugin cache interposes a
+    version (``{bundle}/{version}/skills/...``). Because the imports this feeds
+    are module-level, guessing wrong is a start-up crash rather than a degraded
+    answer — an earlier flat-only resolver failed with ``ModuleNotFoundError``
+    in every installed project.
+    """
+    direct = root / bundle / 'skills' / skill / 'scripts'
+    if direct.is_dir():
+        return direct
+    versioned = [c for c in root.glob(f'{bundle}/*/skills/{skill}/scripts') if c.is_dir()]
+    if not versioned:
+        return None
+    return max(versioned, key=lambda c: _version_key(c.parents[2].name))
+
 
 def _bootstrap_sys_path() -> None:
     """Put the sibling skills' ``scripts/`` directories on ``sys.path``.
 
     ⭐ **This script has two callers with different environments, and only one of
-    them is the executor.** Run as an executor verb it needs nothing: the
-    executor injects a ``PYTHONPATH`` covering every skill's ``scripts/``
-    directory. But the ``serve`` verb is spawned **directly by an LSP client**,
-    from a declaration an operator adds (no bundle ships one) — so the executor
-    is never in the picture and no ``PYTHONPATH`` is injected. That is the
-    "entry points the executor does not dispatch" case the ``sys-path-bootstrap``
-    allowlist sanctions.
+    them is the executor.** Run as an executor verb (``preflight`` / ``query``)
+    it needs nothing: the executor injects a ``PYTHONPATH`` covering every
+    skill's ``scripts/`` directory. But ``serve`` is spawned **directly by an LSP
+    client**, from a declaration an operator adds (no bundle ships one) — so the
+    executor is never in the picture and no ``PYTHONPATH`` is injected. That is
+    the "entry points that run without the executor" case the
+    ``sys-path-bootstrap`` allowlist sanctions.
 
-    Resolution walks up from this file to the bundles root (the ancestor holding
-    sibling bundle directories, each with a ``.claude-plugin/plugin.json``), so
-    it is layout-derived rather than hardcoded and works identically in the
-    source tree and in a deployed plugin cache, where bundles are likewise
-    siblings. Inserts are idempotent and additive, so running under the executor
-    as well is harmless.
+    Resolution is layout-derived rather than hardcoded, and covers **both** the
+    flat source tree and the **versioned** deployed cache. Anchoring on this
+    file's own bundle root and searching one and two levels above it finds the
+    sibling bundles in either shape. Inserts are idempotent and additive, so
+    running under the executor as well is harmless.
     """
-    here = Path(__file__).resolve()
-    bundles_root: Path | None = None
-    for ancestor in here.parents:
-        if (ancestor / 'pm-plugin-development' / '.claude-plugin' / 'plugin.json').is_file():
-            bundles_root = ancestor
-            break
-    if bundles_root is None:
+    own = _own_bundle_root(Path(__file__).resolve())
+    if own is None:
         return  # executor-provided PYTHONPATH is the only route; imports below decide
-    needed = [
-        bundles_root / 'pm-plugin-development' / 'skills' / 'tools-marketplace-inventory' / 'scripts',
-        bundles_root / 'plan-marshall' / 'skills' / 'tools-file-ops' / 'scripts',
-        bundles_root / 'plan-marshall' / 'skills' / 'ref-toon-format' / 'scripts',
-        bundles_root / 'plan-marshall' / 'skills' / 'script-shared' / 'scripts',
-        bundles_root / 'plan-marshall' / 'skills' / 'manage-logging' / 'scripts',
-        bundles_root / 'plan-marshall' / 'skills' / 'manage-run-config' / 'scripts',
-    ]
-    for directory in needed:
-        resolved = str(directory)
-        if directory.is_dir() and resolved not in sys.path:
-            sys.path.insert(0, resolved)
-
-
+    # Flat: siblings sit beside our bundle root. Versioned: our root is
+    # ``{bundle}/{version}``, so siblings sit one further level up.
+    search_roots = [own.parent]
+    if own.parent.parent != own.parent:
+        search_roots.append(own.parent.parent)
+    for bundle, skill in _REQUIRED_SCRIPT_DIRS:
+        for root in search_roots:
+            directory = _resolve_script_dir(root, bundle, skill)
+            if directory is not None:
+                resolved = str(directory)
+                if resolved not in sys.path:
+                    sys.path.insert(0, resolved)
+                break
 _bootstrap_sys_path()
 
 from _corpus_index import CorpusIndex, notation_at  # noqa: E402

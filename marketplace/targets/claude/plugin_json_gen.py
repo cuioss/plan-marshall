@@ -54,8 +54,8 @@ from marketplace.targets.claude.variant_emitter import (
 # deployed artifact, so the server it declared was never started by any client.
 # That declaration was subsequently withdrawn for unrelated reasons, so no bundle
 # currently ships one — the entry is kept deliberately, because the defect is in
-# the allowlist mechanism rather than in any one key, and an operator-added
-# declaration would hit the same path.
+# the allowlist mechanism rather than in any one key, and because a declaration
+# added back into a bundle manifest would need it again.
 PASSTHROUGH_FIELDS = (
     'name',
     'version',
