@@ -148,17 +148,17 @@ re-confirmed across every assertion in the six chat test modules by six verifica
 modules and the shared fixture helper (which pytest does not collect) ⇒ **Python changed, full
 `./pw verify` required and run.**
 
-Final gate at `ccbdbc4`, read in full (`cmd_verify` returns early on any failed sub-step, so the
+Final gate at `809022d`, read in full (`cmd_verify` returns early on any failed sub-step, so the
 printed summary proves all three ran):
 
 | Sub-step | Result |
 |---|---|
 | quality-gate | mypy clean (410 source files), `ruff … All checks passed!`, `SPDX-header check passed` |
 | test-compile | mypy clean (760 files) — the sub-step neither `quality-gate` nor `module-tests` performs |
-| module-tests | **20363 passed, 14 skipped**, zero `FAILED`/`ERROR` lines |
+| module-tests | **20371 passed, 14 skipped**, zero `FAILED`/`ERROR` lines |
 | Overall | `=== verify: SUCCESS ===` |
 
-Fifteen full `./pw verify` runs were performed across the run; this row is the last, at the commit named
+Sixteen full `./pw verify` runs were performed across the run; this row is the last, at the commit named
 above. Any commit landing after it is Markdown-only unless this line says otherwise.
 
 Per-commit gate: every commit touching `*.py` was preceded by a clean `./pw quality-gate`.
@@ -465,8 +465,8 @@ _Verdicts recorded below once the PR review cycle has run._
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
-- **Wall-clock:** one interactive cloud session; see the PR's commit timestamps. Fifteen full `./pw verify`
-  runs at ~6–8 minutes each, and eleven verification sub-agents.
+- **Wall-clock:** one interactive cloud session; see the PR's commit timestamps. Sixteen full `./pw verify`
+  runs at ~6–8 minutes each, and twelve verification sub-agents.
 - **Population:** this single Claude Code cloud session's usage as the harness counts it. ⛔ **Not
   comparable** to a plan-marshall `metrics.toon` total, which counts an orchestrator-plus-agent
   dispatch tree under plan-marshall's own per-task billing boundary. This run has no such boundary, so
@@ -483,7 +483,7 @@ _Verdicts recorded below once the PR review cycle has run._
 | 4 Per-commit gate | **Done** | Every commit touching `*.py` preceded by a clean direct `./pw quality-gate` — `ruff … All checks passed!`, `mypy … Success`, `SPDX-header check passed` |
 | 4 Pushed | **Done** | Pushed after every commit; `git status -sb` reports no `ahead` |
 | 5 Build gate | **Done** | Git-derived verdict (ten `*.py`) and full `./pw verify`, read in full rather than by exit code |
-| 6 Verification sub-agent | **Done** | Eleven rounds, each targeting the prior round's fixes; all findings and dispositions recorded above |
+| 6 Verification sub-agent | **Done** | Twelve rounds, each targeting the prior round's fixes; all findings and dispositions recorded above |
 | 7 PR cycle | See Reviewer participation |
 | 8 Merge gate | See **Merge gate** above |
 | 8 Bridge | **Done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory |
@@ -497,7 +497,7 @@ build step (§ Scope and precedence). Stated explicitly because two verification
 about it.
 
 One deviation from the contract, recorded rather than narrated as compliance: the contract's Step 6
-describes dispatching *a* verification sub-agent, and this run dispatched **eleven**. Each round was
+describes dispatching *a* verification sub-agent, and this run dispatched **twelve**. Each round was
 triggered by the previous round's fixes being a new, unreviewed surface — which the contract itself
 requires ("A verification pass that found a defect has not finished"). It is more than the minimum,
 not less.
