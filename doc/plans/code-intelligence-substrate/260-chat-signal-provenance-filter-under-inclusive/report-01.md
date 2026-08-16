@@ -111,7 +111,7 @@ raw turns, so they are extra transcript entries counted by `gate_decision_count`
 
 ### D4 — tests
 
-**Done.** 131 tests across five modules (33 + 21 + 17 + 7 + 53 collected), carrying 263 assertions.
+**Done.** 144 tests across six modules (31 + 10 + 21 + 17 + 12 + 53 collected), carrying 282 assertions.
 
 | Plan requirement | Test |
 |---|---|
@@ -140,11 +140,11 @@ signal".
 **The validation trap was respected.** No assertion validates by a retention ratio. Every test asserts
 the **classification of a known population of turns** — the plan's single most important verification
 instruction — and the ratio is treated as an output of the defect, not a check on it. Independently
-re-confirmed across every assertion in the five chat test modules by five verification rounds.
+re-confirmed across every assertion in the six chat test modules by six verification rounds.
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD` includes eight `*.py` files — three scripts, four test
+`git diff --name-only origin/main...HEAD` includes nine `*.py` files — three scripts, five test
 modules and the shared fixture helper (which pytest does not collect) ⇒ **Python changed, full
 `./pw verify` required and run.**
 
@@ -158,17 +158,17 @@ printed summary proves all three ran):
 | module-tests | **20350 passed, 14 skipped**, zero `FAILED`/`ERROR` lines |
 | Overall | `=== verify: SUCCESS ===` |
 
-Twelve full `./pw verify` runs were performed across the run; this row is the last, at the commit named
+Thirteen full `./pw verify` runs were performed across the run; this row is the last, at the commit named
 above. Any commit landing after it is Markdown-only unless this line says otherwise.
 
 Per-commit gate: every commit touching `*.py` was preceded by a clean `./pw quality-gate`.
 
 ## Findings
 
-Nine verification rounds plus two defects caught by the run itself — 100 findings, 98 fixed and 2 rejected with reason. Each round targeted the
-**previous round's fixes** as a first-class surface, which is what caught most of these — **eight of the
-nine** rounds found that the prior round's fix had introduced or exposed a new defect: rounds 2 through
-9. Only round 1 had no prior round to check. Recorded per instance.
+Ten verification rounds plus two defects caught by the run itself — 125 findings, 120 fixed, 3 accepted-and-disclosed and 2 rejected with reason. Each round targeted the
+**previous round's fixes** as a first-class surface, which is what caught most of these — **nine of the
+ten** rounds found that the prior round's fix had introduced or exposed a new defect: rounds 2 through
+10. Only round 1 had no prior round to check. Recorded per instance.
 
 ### Self-caught during implementation (2 findings — both fixed)
 
@@ -319,7 +319,7 @@ Classified **(a) behavioural**. Its value was in showing that the previous round
 | R8-7 | `decision_ids |= …` → `=` survived; no fixture placed a turn between a prompt and its answer, which is the normal case. Direction: under-counting | **Fixed** |
 | R8-8 | The heading-after-marker constraint the docstring states was unpinned | **Fixed** |
 | R8-9 | `_TAG_RE`'s attribute class unpinned; a looser pattern pairs `<a<b>` with `</a>` and empties the residue | **Fixed** |
-| R8-10 | Markdown-heading regex bounds unpinned (both directions, low realism) | Accepted here, **closed in round 9** — the acceptance under-described the class: one variant needs no skill body at all, only a `#`-prefixed non-heading line |
+| R8-10 | Markdown-heading regex bounds unpinned (both directions, low realism) | Accepted here; round 9 closed **one** variant and the disposition claimed the class. Round 10 found four more still live and closed them — see R10-4 |
 | R8-11 | Smaller survivors: `over_budget` boundary `>` vs `>=`, `errors='replace'`, the two role guards, within-turn decision order | Accepted here, **closed in round 9** — and the list was incomplete: it omitted the byte-measurement defect entirely |
 | R8-12 | "seven `*.py` files" survived at a second site. **R7-8 recorded Fixed; the fix reached one of two places** — third occurrence of the half-applied-fix pattern | **Fixed** |
 | R8-13 | "Eight full `./pw verify` runs" vs "Seven" — a fresh contradiction introduced by the very commit that fixed R7-7 | **Fixed** |
@@ -359,10 +359,49 @@ final sweep. Every surviving non-equivalent mutant it found is now closed rather
 | R9-16 | A merge-gate pointer named the wrong direction | **Fixed** |
 | R9-17 | Round 9's own git premise was wrong — HEAD had moved — because the sandbox served stale git state, as it had once before | **Noted** — every figure in that round was re-derived by redirecting output to files and reading them back |
 
-⭐ **This is where the loop converged.** Round 9 is the first round whose findings are all *closed*
-rather than partly accepted, and the sweep it triggered removed every surviving non-equivalent mutant
-across all three production modules. The defect that mattered most — R9-3, the byte measurement — had
-been invisible to eight prior rounds because no test in the suite used a non-ASCII character.
+⭐ **The defect that mattered most — R9-3, the byte measurement — had been invisible to eight prior
+rounds because no test in the suite used a non-ASCII character.**
+
+⛔ **This section previously claimed the sweep "removed every surviving non-equivalent mutant across
+all three production modules". That was false.** Round 10 enumerated 200 mutants and found 18
+non-equivalent survivors still standing. The narrower claim — that every mutant round 9 *found* was
+closed — was true, and overstating it into a whole-tree guarantee is precisely the over-claim this
+plan exists to remove. Round 10's row records what was actually closed.
+
+### Round 10 (25 findings — 22 fixed, 3 accepted and disclosed)
+
+The terminal check, asked one question: **are there zero surviving non-equivalent mutants?** It applied
+**200 mutants**, killed 174, and proved 8 of the 26 survivors equivalent — leaving **18
+non-equivalent**. The answer was *no*, and it falsified a claim this report had already made.
+
+| # | Finding | Disposition |
+|---|---|---|
+| R10-1 | ⛔ `if not positions:` → `is None` raised **`IndexError`** on `<a></a></a>`, aborting the pre-pass through `safe_main` as `internal_error` — **every operator turn in the transcript lost** | **Fixed** |
+| R10-2 | ⛔ Dropping `isinstance(block, dict)` in `extract_text` raised **`AttributeError`** on a stray non-dict block, same total loss. Its sibling guard in the gate scanner *was* pinned — one half of a pair, for the fourth time | **Fixed** |
+| R10-3 | ⛔ `encoding='utf-8'` → `'latin-1'` survived. Real transcripts store non-ASCII **raw** (`ensure_ascii=False`), but every fixture used `json.dumps` defaults, so **no test decoded a raw non-ASCII byte** — R9-3's blind spot one layer down. Yields mojibake and inflates `reduced_bytes` by 80 %, refusing a transcript that fits | **Fixed** |
+| R10-4 | Six live mutants inside `_MARKDOWN_HEADING_RE` alone — heading levels, the whitespace separator, the `^` anchor, the trailing `\S`. R8-10 accepted the class and R9 recorded it closed having fixed one | **Fixed** — all six |
+| R10-5 | `_SKILL_LOAD_MARKER` losing its trailing colon, and `find` → `rfind`, both survived | **Fixed** |
+| R10-6 | A self-closing `<command-args/>` recovered its own tag text as an instruction — over-counting | **Fixed** |
+| R10-7 | `errors='replace'` → `'ignore'` survived: silent content loss against a docstring that names the replacement character | **Fixed** |
+| R10-8 | `except FileNotFoundError` → `(FileNotFoundError, OSError)` survived. `FileNotFoundError` **is** an `OSError`, so the widened clause reports an unreadable transcript as an absent one — silently `no_signal: true` | **Fixed** |
+| R10-9 | The role type guard (`isinstance(role, str)`) unpinned — a numeric role inflated the raw and dropped denominators | **Fixed** |
+| R10-10 | `del stack[depth:]` → `depth+1:` recovers a `<command-args>` **nested inside** an outer envelope. Over-counting; 12 divergences in 60,000 fuzzed inputs | **Accepted** — requires a crafted nesting no harness emits; disclosed rather than closed |
+| R10-11 | `marker in text` → case-insensitive over-retains assistant context | **Accepted** — affects `reduced_turn_count`/`reduced_bytes` only; moves no operator counter and cannot change `no_signal` |
+| R10-12 | argparse `required=True` → `False` yields `TypeError` instead of a usage error | **Accepted** — both still exit non-zero; the CLI contract is unchanged in effect |
+| R10-13 | ⛔ The report claimed the round-9 sweep "removed every surviving non-equivalent mutant across all three production modules". **False — 18 survived.** The narrower claim was true; the generalisation was not | **Fixed** — corrected in place, quoting what it had said |
+| R10-14 | R8-10's disposition claimed round 9 closed the heading-regex class; round 9 closed one variant of six | **Fixed** |
+| R10-15 | Sub-agent count contradicted the round count at one of five sites — introduced by the commit that fixed the verify-run count, **R9-14's pattern verbatim** | **Fixed** |
+| R10-16 | `*.py` file count stale at **both** sites after `dd4f93e` added a module | **Fixed** |
+| R10-17 | The pinning docstring enumerated four of five constants, omitting `_SKILL_LOAD_MARKER`, which carried a live mutant — **R9-9's defect recurring** | **Fixed** — and the docstring now says plainly that nothing enforces the list's completeness |
+| R10-18 | A test docstring claimed to pin "whitespace AND text" while its witness established only the whitespace half | **Fixed** — the other half now has its own case |
+| R10-19 | `read_transcript_lines`' docstring states two contracts, neither pinned | **Fixed** — both now are |
+
+⭐ **What round 10 actually established.** Fourteen rounds of "fix what the finding names" had left two
+**crash paths** that would lose an entire transcript, and an encoding defect invisible to nine rounds
+because the whole suite was ASCII. It also caught this report asserting a whole-tree guarantee it had
+not earned — the same over-claim, in the same document, that the plan exists to remove from the code.
+The three accepted survivors are disclosed above with their reasons and their error directions; none
+can move an operator counter or change `no_signal`.
 
 ### Accepted, not fixed
 
@@ -394,7 +433,7 @@ _Verdicts recorded below once the PR review cycle has run._
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
-- **Wall-clock:** one interactive cloud session; see the PR's commit timestamps. Twelve full `./pw verify`
+- **Wall-clock:** one interactive cloud session; see the PR's commit timestamps. Thirteen full `./pw verify`
   runs at ~6–8 minutes each, and ten verification sub-agents.
 - **Population:** this single Claude Code cloud session's usage as the harness counts it. ⛔ **Not
   comparable** to a plan-marshall `metrics.toon` total, which counts an orchestrator-plus-agent
@@ -411,8 +450,8 @@ _Verdicts recorded below once the PR review cycle has run._
 | 4 Implement | **Done** | Every commit carries the `Co-Authored-By` trailer and no "Generated with" footer; deliverable paths staged explicitly, never `git add -A`; no lockfile churn reached a commit |
 | 4 Per-commit gate | **Done** | Every commit touching `*.py` preceded by a clean direct `./pw quality-gate` — `ruff … All checks passed!`, `mypy … Success`, `SPDX-header check passed` |
 | 4 Pushed | **Done** | Pushed after every commit; `git status -sb` reports no `ahead` |
-| 5 Build gate | **Done** | Git-derived verdict (eight `*.py`) and full `./pw verify`, read in full rather than by exit code |
-| 6 Verification sub-agent | **Done** | Nine rounds, each targeting the prior round's fixes; all findings and dispositions recorded above |
+| 5 Build gate | **Done** | Git-derived verdict (nine `*.py`) and full `./pw verify`, read in full rather than by exit code |
+| 6 Verification sub-agent | **Done** | Ten rounds, each targeting the prior round's fixes; all findings and dispositions recorded above |
 | 7 PR cycle | See Reviewer participation |
 | 8 Merge gate | See **Merge gate** above |
 | 8 Bridge | **Done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory |
@@ -426,7 +465,7 @@ build step (§ Scope and precedence). Stated explicitly because two verification
 about it.
 
 One deviation from the contract, recorded rather than narrated as compliance: the contract's Step 6
-describes dispatching *a* verification sub-agent, and this run dispatched **nine**. Each round was
+describes dispatching *a* verification sub-agent, and this run dispatched **ten**. Each round was
 triggered by the previous round's fixes being a new, unreviewed surface — which the contract itself
 requires ("A verification pass that found a defect has not finished"). It is more than the minimum,
 not less.
@@ -446,9 +485,9 @@ remedy, which closed the public constants and left the two private regexes carry
 (R9-1, R9-2). The contract's § Step 6 already says to sweep the previous round's fixes, and that
 instruction is what caught every one of them.
 
-But the contract offers no way to tell when the loop should **stop**. This run ran nine rounds. Rounds 6 through 9
+But the contract offers no way to tell when the loop should **stop**. This run ran ten rounds. Rounds 6 through 10
 were each dispatched with an explicit instruction to classify their findings as behavioural or
-records-only; all four returned **behavioural**, so the loop continued each time. Round 9 was asked a
+records-only; all five returned **behavioural**, so the loop continued each time. Round 9 was asked a
 sharper question — whether the previous round's *per-class* remedy had closed the class or only its
 named instances — and answered *partially*, which is what produced the final sweep. That
 classification was improvised for this run; nothing in the contract asks for it.

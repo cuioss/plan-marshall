@@ -106,6 +106,91 @@ class TestTranscriptReading:
         assert result['no_signal'] is True
 
 
+class TestDecoding:
+    def test_raw_non_ascii_bytes_decode_as_utf8(self):
+        """Real transcripts store non-ASCII raw, not `\\uXXXX`-escaped.
+
+        Claude Code writes its JSONL with `ensure_ascii=False`, so the bytes on
+        disk are UTF-8. Decoding them as latin-1 yields mojibake and inflates
+        `reduced_bytes`, which can refuse a transcript that fits. Every other
+        fixture here goes through `json.dumps` with the default
+        `ensure_ascii=True`, so nothing else in the suite decodes a raw
+        non-ASCII byte.
+        """
+        import json
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'session.jsonl'
+            line = json.dumps(
+                {'type': 'turn', 'message': {'role': 'user', 'content': '請修正這個過濾器'}},
+                ensure_ascii=False,
+            )
+            path.write_bytes(line.encode('utf-8') + b'\n')
+
+            result = _run(path)
+            assert result['reduced_transcript'] == 'user: 請修正這個過濾器'
+            assert result['operator_turn_count'] == 1
+
+    def test_an_undecodable_byte_becomes_the_replacement_character(self):
+        """The docstring names the replacement character, so it is pinned.
+
+        `errors='ignore'` would also keep the run alive while silently deleting
+        the byte, which is a different contract from the one documented.
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'session.jsonl'
+            payload = chat_turn('user', 'revert PLACEHOLDER that change').encode('utf-8')
+            path.write_bytes(payload.replace(b'PLACEHOLDER', b'\xe9') + b'\n')
+
+            result = _run(path)
+            assert result['status'] == 'success'
+            assert '\ufffd' in result['reduced_transcript']
+
+    def test_a_permission_error_is_not_reported_as_an_absent_transcript(self, monkeypatch):
+        """Only a MISSING file maps to `transcript_unavailable`.
+
+        `FileNotFoundError` is an `OSError`, so widening the except clause
+        would swallow every read failure and report an unreadable transcript as
+        an absent one — silently turning it into `no_signal: true` instead of
+        surfacing it.
+        """
+        import pytest
+
+        def _raise(_path):
+            raise PermissionError('locked')
+
+        monkeypatch.setattr(_mod, 'read_transcript_lines', _raise)
+        args = parse_ns(BUNDLE, SKILL, SCRIPT, 'run', '--transcript-path', '/nonexistent/x.jsonl')
+        with pytest.raises(PermissionError):
+            _mod.cmd_run(args)
+
+
+class TestContentBlockRobustness:
+    def test_a_non_dict_content_block_is_skipped(self):
+        """A stray non-dict block must not abort the extraction.
+
+        The sibling guard in the gate-decision scanner is pinned; this one
+        governs the text path, and without it a malformed block raises and the
+        whole aspect is lost.
+        """
+        content = [{'type': 'text', 'text': 'please revert that change'}, 'a stray string block']
+        assert _mod.extract_text(content) == 'please revert that change'
+
+    def test_a_non_string_role_is_not_a_turn(self):
+        """The role must be a string, not merely truthy.
+
+        A numeric role would otherwise be counted in `raw_turn_count` and in
+        the dropped denominator, skewing both.
+        """
+        import json
+
+        line = json.dumps({'type': 'turn', 'message': {'role': 1, 'content': 'hi'}})
+        assert _mod.parse_message(line) is None
+
+
 class TestRoleGuards:
     def test_a_tool_result_on_an_assistant_turn_is_not_a_gate_decision(self, tmp_path):
         """Only a `user` turn carries the operator's side of the channel."""
