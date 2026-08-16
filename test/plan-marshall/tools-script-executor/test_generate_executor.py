@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT
+from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT, get_scripts_dir
 
 
 @pytest.fixture()
@@ -33,10 +33,7 @@ def no_pm_dist_manifest(monkeypatch):
     monkeypatch.delenv('PM_DIST_MANIFEST', raising=False)
 
 # Path to the script
-SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts'
-)
+SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'tools-script-executor')
 GENERATE_SCRIPT = SCRIPTS_DIR / 'generate_executor.py'
 
 #: Fixed date used to name a "recent" global log fixture. Cleanup selects by

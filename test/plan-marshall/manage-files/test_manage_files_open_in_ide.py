@@ -20,7 +20,6 @@ Covers:
 """
 
 import ast
-import importlib.util
 import json
 import re
 from argparse import Namespace
@@ -29,21 +28,11 @@ from unittest import mock
 
 import pytest
 
+from conftest import get_scripts_dir, load_script_module
+
 # Tier 2 direct import - load hyphenated module
-_MANAGE_FILES_SCRIPT = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-files'
-    / 'scripts'
-    / 'manage-files.py'
-)
-_spec = importlib.util.spec_from_file_location('manage_files_open_in_ide', _MANAGE_FILES_SCRIPT)
-assert _spec is not None and _spec.loader is not None
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
+_MANAGE_FILES_SCRIPT = get_scripts_dir('plan-marshall', 'manage-files') / 'manage-files.py'
+_mod = load_script_module('plan-marshall', 'manage-files', 'manage-files.py', 'manage_files_open_in_ide')
 
 detect_ide = _mod.detect_ide
 build_launch_command = _mod.build_launch_command

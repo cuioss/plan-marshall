@@ -8,9 +8,7 @@ and list-providers (reading from marshal.json).
 Tier 2 (direct import) tests.
 """
 
-import importlib.util
 import json
-import sys
 from argparse import Namespace
 from pathlib import Path
 
@@ -19,24 +17,14 @@ import pytest
 from marketplace_paths import CLAUDE_DIR, PLUGIN_CACHE_SUBPATH
 
 import conftest  # noqa: F401
+from conftest import get_scripts_dir, load_script_module
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-providers'
-    / 'scripts'
-)
+_SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'manage-providers')
 
 
 def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    """Load a manage-providers script by (bundle, skill, file) identity."""
+    return load_script_module('plan-marshall', 'manage-providers', f'{filename}', name)
 
 
 _list_providers = _load_module('_list_providers_test', str(_SCRIPTS_DIR / '_list_providers.py'))

@@ -2,27 +2,16 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for build_format.py module."""
 
-import importlib.util
 import json
-from pathlib import Path
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'script-shared'
-    / 'scripts'
-    / 'build'
-)
+from conftest import get_scripts_dir, load_script_module
+
+_SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'script-shared') / 'build'
 
 
 def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    """Load a script-shared script by (bundle, skill, file) identity."""
+    return load_script_module('plan-marshall', 'script-shared', f'build/{filename}', name)
 
 
 _build_format_mod = _load_module('_build_format', '_build_format.py')

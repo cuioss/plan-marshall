@@ -8,28 +8,16 @@ shape (`status`, `detected`, `name`, `launcher_argv`, `platform`,
 `signal`) rather than the launch side-effect.
 """
 
-import importlib.util
 from argparse import Namespace
-from pathlib import Path
 from unittest import mock
 
 import pytest
 
+from conftest import get_scripts_dir, load_script_module
+
 # Tier 2 direct import - load hyphenated module
-_MANAGE_FILES_SCRIPT = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-files'
-    / 'scripts'
-    / 'manage-files.py'
-)
-_spec = importlib.util.spec_from_file_location('manage_files_detect_ide', _MANAGE_FILES_SCRIPT)
-assert _spec is not None and _spec.loader is not None
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
+_MANAGE_FILES_SCRIPT = get_scripts_dir('plan-marshall', 'manage-files') / 'manage-files.py'
+_mod = load_script_module('plan-marshall', 'manage-files', 'manage-files.py', 'manage_files_detect_ide')
 
 cmd_detect_ide = _mod.cmd_detect_ide
 MACOS_JETBRAINS_BUNDLE_IDS = _mod.MACOS_JETBRAINS_BUNDLE_IDS

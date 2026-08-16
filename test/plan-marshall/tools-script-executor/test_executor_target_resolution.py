@@ -20,12 +20,9 @@ from pathlib import Path
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT, _MARKETPLACE_SCRIPT_DIRS
+from conftest import MARKETPLACE_ROOT, _MARKETPLACE_SCRIPT_DIRS, get_scripts_dir
 
-SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts'
-)
+SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'tools-script-executor')
 GENERATE_SCRIPT = SCRIPTS_DIR / 'generate_executor.py'
 
 

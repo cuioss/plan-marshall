@@ -3,19 +3,11 @@
 
 import importlib
 import sys
-from pathlib import Path
+
+from conftest import get_scripts_dir
 
 # Add script path for imports
-_SCRIPT_DIR = (
-    Path(__file__).resolve().parents[3]
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'script-shared'
-    / 'scripts'
-    / 'build'
-)
+_SCRIPT_DIR = get_scripts_dir('plan-marshall', 'script-shared') / 'build'
 sys.path.insert(0, str(_SCRIPT_DIR))
 
 _wc = importlib.import_module('_warnings_classify')

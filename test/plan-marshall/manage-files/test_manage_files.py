@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for manage-files.py script."""
 
-import importlib.util
 import json
 import os
 import shutil
@@ -11,26 +10,14 @@ from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path, get_test_fixture_dir, run_script
+from conftest import get_script_path, get_scripts_dir, get_test_fixture_dir, load_script_module, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-files', 'manage-files.py')
 
 # Tier 2 direct imports - load hyphenated module via importlib
-_MANAGE_FILES_SCRIPT = str(
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-files'
-    / 'scripts'
-    / 'manage-files.py'
-)
-_spec = importlib.util.spec_from_file_location('manage_files', _MANAGE_FILES_SCRIPT)
-assert _spec is not None and _spec.loader is not None
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
+_MANAGE_FILES_SCRIPT = get_scripts_dir('plan-marshall', 'manage-files') / 'manage-files.py'
+_mod = load_script_module('plan-marshall', 'manage-files', 'manage-files.py', 'manage_files')
 
 cmd_read = _mod.cmd_read
 cmd_write = _mod.cmd_write
