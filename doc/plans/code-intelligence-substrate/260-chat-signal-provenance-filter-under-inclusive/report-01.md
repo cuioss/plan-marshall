@@ -111,7 +111,7 @@ raw turns, so they are extra transcript entries counted by `gate_decision_count`
 
 ### D4 — tests
 
-**Done.** 152 tests across six modules (34 + 10 + 21 + 17 + 17 + 53 collected), carrying 290 assertions.
+**Done.** 160 tests across six modules (34 + 14 + 22 + 17 + 20 + 53 collected), carrying 303 assertions.
 
 | Plan requirement | Test |
 |---|---|
@@ -140,7 +140,7 @@ signal".
 **The validation trap was respected.** No assertion validates by a retention ratio. Every test asserts
 the **classification of a known population of turns** — the plan's single most important verification
 instruction — and the ratio is treated as an output of the defect, not a check on it. Independently
-re-confirmed across every assertion in the six chat test modules by six verification rounds.
+re-confirmed across every assertion in the six chat test modules by every verification round that examined the tests.
 
 ## Build gate
 
@@ -165,10 +165,10 @@ Per-commit gate: every commit touching `*.py` was preceded by a clean `./pw qual
 
 ## Findings
 
-Eleven verification rounds plus two defects caught by the run itself — 138 findings, 134 fixed, 2 accepted-and-disclosed and 2 rejected with reason. Each round targeted the
-**previous round's fixes** as a first-class surface, which is what caught most of these — **ten of the
-eleven** rounds found that the prior round's fix had introduced or exposed a new defect: rounds 2
-through 11. Only round 1 had no prior round to check. Recorded per instance.
+Twelve verification rounds plus two defects caught by the run itself — 151 findings, 147 fixed, 2 accepted-and-disclosed and 2 rejected with reason. Each round targeted the
+**previous round's fixes** as a first-class surface, which is what caught most of these — **eleven of the
+twelve** rounds found that the prior round's fix had introduced or exposed a new defect: rounds 2
+through 12. Only round 1 had no prior round to check. Recorded per instance.
 
 ### Self-caught during implementation (2 findings — both fixed)
 
@@ -319,7 +319,7 @@ Classified **(a) behavioural**. Its value was in showing that the previous round
 | R8-7 | `decision_ids |= …` → `=` survived; no fixture placed a turn between a prompt and its answer, which is the normal case. Direction: under-counting | **Fixed** |
 | R8-8 | The heading-after-marker constraint the docstring states was unpinned | **Fixed** |
 | R8-9 | `_TAG_RE`'s attribute class unpinned; a looser pattern pairs `<a<b>` with `</a>` and empties the residue | **Fixed** |
-| R8-10 | Markdown-heading regex bounds unpinned (both directions, low realism) | Accepted here; round 9 closed **one** variant and the disposition claimed the class. Round 10 found four more still live and closed them — see R10-4 |
+| R8-10 | Markdown-heading regex bounds unpinned (both directions, low realism) | Accepted here; round 9 closed **one** variant and the disposition claimed the class. Round 10 found the rest — six live mutants in that one constant — and closed them all; see R10-4 |
 | R8-11 | Smaller survivors: `over_budget` boundary `>` vs `>=`, `errors='replace'`, the two role guards, within-turn decision order | Accepted here, **closed in round 9** — and the list was incomplete: it omitted the byte-measurement defect entirely |
 | R8-12 | "seven `*.py` files" survived at a second site. **R7-8 recorded Fixed; the fix reached one of two places** — third occurrence of the half-applied-fix pattern | **Fixed** |
 | R8-13 | "Eight full `./pw verify` runs" vs "Seven" — a fresh contradiction introduced by the very commit that fixed R7-7 | **Fixed** |
@@ -333,7 +333,7 @@ the finding rather than to the class. The remedy adopted here is a per-module *p
 pinned to their literals* test, so the next constant added is covered by construction rather than by
 someone remembering.
 
-### Round 9 (17 findings — 16 fixed, 1 noted)
+### Round 9 (17 findings — 16 fixed, 1 noted; the noted row is counted as fixed in the aggregate, since its remedy shipped)
 
 Asked a sharper question than its predecessors: **did round 8's per-class remedy close the class, or
 only the instances round 8 named?** It answered *partially*, and that answer is what produced the
@@ -368,7 +368,7 @@ non-equivalent survivors still standing. The narrower claim — that every mutan
 closed — was true, and overstating it into a whole-tree guarantee is precisely the over-claim this
 plan exists to remove. Round 10's row records what was actually closed.
 
-### Round 10 (25 findings — 22 fixed, 3 accepted and disclosed)
+### Round 10 (25 findings — 23 fixed, 2 accepted and disclosed)
 
 The terminal check, asked one question: **are there zero surviving non-equivalent mutants?** It applied
 **200 mutants**, killed 174, and proved 8 of the 26 survivors equivalent — leaving **18
@@ -396,7 +396,7 @@ non-equivalent**. The answer was *no*, and it falsified a claim this report had 
 | R10-18 | A test docstring claimed to pin "whitespace AND text" while its witness established only the whitespace half | **Fixed** — the other half now has its own case |
 | R10-19 | `read_transcript_lines`' docstring states two contracts, neither pinned | **Fixed** — both now are |
 
-⭐ **What round 10 actually established.** Fourteen rounds of "fix what the finding names" had left two
+⭐ **What round 10 actually established.** Nine rounds of "fix what the finding names" had left two
 **crash paths** that would lose an entire transcript, and an encoding defect invisible to nine rounds
 because the whole suite was ASCII. It also caught this report asserting a whole-tree guarantee it had
 not earned — the same over-claim, in the same document, that the plan exists to remove from the code.
@@ -434,6 +434,40 @@ counter. More importantly, it caught the report making a **third** false claim, 
 cataloguing the first two. The pattern is now unmistakable and is the substance of the contract
 proposal below: *the author is the party motivated to stop, so the stopping decision cannot be the
 author's.*
+
+### Round 12 (13 findings — all fixed)
+
+Ran under round 11's bytecode guard on all 240 mutations and answered the question that motivated it:
+**no earlier round's recorded kill was false.** The staleness trap was a real methodology risk that
+did not, in fact, conceal anything. It then found 14 non-equivalent survivors — 12 of them disclosed
+nowhere.
+
+| # | Finding | Disposition |
+|---|---|---|
+| R12-1 | The refusal-marker comparison made case-insensitive admits prose that merely quotes the wording — **over-counting**, raising `gate_decision_count` and flipping `no_signal`. **R11-5's identical mutant on the sibling module**: round 11 pinned the provenance-side comparison and left the gate-side one open. One half of a pair, for the **sixth** time | **Fixed** |
+| R12-2 | The residue join separator unpinned: `''.join` → `' '.join` splits a harness notice an envelope interrupts, so it stops matching its prefix and the turn scores as operator. **Over-counting**; 196 verdict divergences in 60k inputs | **Fixed** |
+| R12-3 | Three more `_TAG_RE` sub-classes unpinned — tag-start underscore, the close-slash quantifier, and the dotted name class. The last has **both** directions, including a non-allow-listed `<command-args.x>` recovering its inner text. R9-2's lesson was "per-site-not-per-class *inside a single constant*"; the constant still was not closed | **Fixed** |
+| R12-4 | `line.strip()` normalisation unpinned (4 mutants): a form feed is Python whitespace but not JSON whitespace, so without it a valid turn is dropped — under-counting | **Fixed** |
+| R12-5 | The **skipped** branch's `transcript_path` was unasserted — and R11-7's own prose claimed the reverse, saying that copy *was* asserted and the success copy was not. Round 11 pinned one half of a pair and recorded it as the other half | **Fixed** — both halves now asserted, and the false sentence corrected |
+| R12-6 | `allow_abbrev=False` unpinned at both parsers. ⚠ **My first attempt at this test was itself vacuous** — `parse_ns` intercepts at `main()`'s parse call and never exercises abbreviation, so the test passed under HEAD *and* under both mutants. Rewritten to drive the real CLI through a subprocess | **Fixed** — mutants verified killed only after the rewrite |
+| R12-7 | Round/sub-agent count inconsistent across **seven** sites, introduced by the commit whose message claimed "six sites checked". **Fifth recurrence** of this exact pattern | **Fixed** |
+| R12-8 | A contract-check row claimed all findings were "recorded above" when the round in question had no section yet | **Fixed** |
+| R12-9 | Round 10's header contradicted its own R10-10 row, its closing paragraph and the aggregate | **Fixed** |
+| R12-10 | "Fourteen rounds" contradicted the next line's "nine rounds" | **Fixed** |
+| R12-11 | Three different populations recorded for one defect class (four / six / one-of-six) | **Fixed** |
+| R12-12 | A round-7-era figure ("six verification rounds") never moved as the count grew | **Fixed** |
+| R12-13 | The aggregate had no slot for the "Noted" disposition — **R9-12's defect** for a new category | **Fixed** |
+
+⛔ **The loop does not converge, and this round is the proof.** Twelve rounds have now each found real
+defects in the previous round's work, including three vacuous tests I wrote *to close previously
+found gaps* — R12-6's is the third. Mutation space is effectively unbounded: every character class,
+quantifier and comparison is a candidate, so "no findings" is not a state this process reaches.
+
+**What is true at this commit, stated exactly:** every non-equivalent mutant *found across twelve
+rounds* is closed, except two that are accepted and individually characterised (R10-11, R10-12,
+neither able to move an operator counter). **A thirteenth round would very likely find more.** That is
+not a reason to keep going — it is the reason the stopping rule below has to be about the *class* of
+defect that remains, not about the absence of findings.
 
 ### Accepted, not fixed
 
@@ -506,7 +540,7 @@ not less.
 
 **One contract change is proposed, on evidence this run produced.**
 
-**The evidence.** Ten of eleven verification rounds found that the *previous round's fix* had introduced
+**The evidence.** Eleven of twelve verification rounds found that the *previous round's fix* had introduced
 or exposed a new defect, one per round: round 2 on round 1's `command-name` addition (R2-3); round 3 on
 round 2's `__all__`, which disowned its module's API (N1); round 4 on round 3's vacuous test, masking a
 live fail-toward-operator path (R4-1); round 5 on round 4's dangling rename reference (R5-1); round 6
@@ -519,18 +553,25 @@ six variants (R10-4, R10-14); and round 11 on round 10's own characterisation of
 which was false (R11-1). The contract's § Step 6 already says to sweep the previous round's fixes, and
 that instruction is what caught every one of them.
 
-But the contract offers no way to tell when the loop should **stop**. This run ran eleven rounds. Rounds 6 through 11
+But the contract offers no way to tell when the loop should **stop**. This run ran twelve rounds. Rounds 6 through 12
 were each dispatched with an explicit instruction to classify their findings as behavioural or
-records-only; all six returned **behavioural**, so the loop continued each time. Round 9 was asked a
+records-only; all seven returned **behavioural**, so the loop continued each time. Round 9 was asked a
 sharper question — whether the previous round's *per-class* remedy had closed the class or only its
 named instances — and answered *partially*, which is what produced the final sweep. That
 classification was improvised for this run; nothing in the contract asks for it.
 
-**The proposed change.** Add to § Step 6 a stated stopping rule — for example: *the loop may stop when
-a round's findings are confined to the run's own records and prose (report figures, docstrings,
-cross-references) with no finding touching production behaviour, and the run states that verdict
-explicitly in the report.* A round that finds a behavioural defect, however small, always earns
-another.
+**The proposed change.** Add to § Step 6 a stated stopping rule. The naive form — *stop when a round
+finds nothing behavioural* — is what this run tried, and twelve rounds later it has still not
+triggered, because mutation space is unbounded and every round finds something. The rule has to be
+about the **class** of what remains:
+
+> The loop may stop when a round's surviving findings are all (a) proved equivalent, or (b)
+> individually characterised as unable to affect the deliverable's decision output — each named in
+> the report with its witness and error direction. Anything that can still change the output earns
+> another round. The verdict is the **verifier's** to state, not the author's.
+
+That last clause is the load-bearing one: across twelve rounds the author was the party motivated to
+stop, and three of the tests written to close findings were themselves vacuous.
 
 **Why it is worth adding.** Without it, each run improvises the termination decision, and the two
 failure modes are opposite and both bad. Stopping too early ships defects: round 4 found a vacuous

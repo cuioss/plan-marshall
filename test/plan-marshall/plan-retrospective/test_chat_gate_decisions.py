@@ -140,6 +140,17 @@ class TestExtractGateDecisions:
         quoted = f'MARKERS = (\n    "{REFUSAL}",\n)\n'
         assert _mod.extract_gate_decisions(_result_block('tu_1', quoted), set()) == []
 
+    def test_refusal_matching_is_case_sensitive(self):
+        """The notices are verbatim harness strings, matched as written.
+
+        A case-insensitive compare admits prose that merely quotes the wording
+        in another case — a synthetic input raising `gate_decision_count` and
+        flipping `no_signal`. This is the gate-side twin of the provenance
+        notice comparison.
+        """
+        quoted = "the user doesn't want to proceed with this tool use — quoted in a doc"
+        assert _mod.extract_gate_decisions(_result_block('t', quoted), set()) == []
+
     def test_refusal_survives_a_leading_empty_block(self):
         """A multi-block payload puts a newline in front of the notice.
 

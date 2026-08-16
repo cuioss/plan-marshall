@@ -133,3 +133,33 @@ class TestRecogniserBoundaries:
         markup is something like a numbered placeholder.
         """
         assert _mod.is_operator_authored('<2>revert the rename</2>') is True
+
+    def test_the_residue_is_a_concatenation_not_a_join(self):
+        """Stripping an envelope must not insert a separator.
+
+        `strip_harness_envelopes` returns the residue in document order; adding
+        whitespace between the surviving fragments splits a harness notice that
+        an envelope interrupts, so it stops matching its prefix and the turn
+        scores as operator.
+        """
+        assert _mod.strip_harness_envelopes('Stop hook <a/>feedback:') == 'Stop hook feedback:'
+        assert _mod.is_operator_authored('Stop hook <a/>feedback:') is False
+
+    def test_a_tag_name_may_not_start_with_an_underscore(self):
+        """`<_x>` is prose, not an envelope."""
+        assert _mod.is_operator_authored('<_x>please revert that change</_x>') is True
+
+    def test_a_double_slash_close_tag_does_not_pair(self):
+        """`</​/a>` is malformed and must not close `<a>`."""
+        assert _mod.is_operator_authored('<a><//a>') is True
+
+    def test_a_dotted_tag_name_pairs_only_with_itself(self):
+        """Dots are part of the name, so `<a.b>` and `</a.c>` are not a pair.
+
+        Dropping the dot from the name class both breaks that pairing and lets
+        a non-allow-listed `<command-args.x>` recover its inner text as an
+        operator instruction.
+        """
+        assert _mod.is_operator_authored('<a.b>please revert</a.c>') is True
+        nested = '<command-args.x>please revert that change</command-args.x>'
+        assert _mod.is_operator_authored(nested) is False

@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from _plan_retrospective_fixtures import chat_turn  # noqa: E402
 
-from conftest import load_script_module, parse_ns  # noqa: E402
+from conftest import MARKETPLACE_ROOT, load_script_module, parse_ns, run_script  # noqa: E402
 
 _mod = load_script_module(
     'plan-marshall', 'plan-retrospective', 'extract-chat-signal.py', 'extract_chat_signal'
@@ -28,6 +28,7 @@ _mod = load_script_module(
 _gate = load_script_module('plan-marshall', 'plan-retrospective', '_chat_gate_decisions.py')
 
 BUNDLE, SKILL, SCRIPT = 'plan-marshall', 'plan-retrospective', 'extract-chat-signal.py'
+SCRIPT_PATH = MARKETPLACE_ROOT / BUNDLE / 'skills' / SKILL / 'scripts' / SCRIPT
 
 
 def _run(path: Path, *extra: str) -> dict:
@@ -220,6 +221,38 @@ class TestPayloadAndCliContract:
         path = _write(tmp_path, chat_turn('user', 'please revert that change'))
         result = _run(path)
         assert result['transcript_path'] == str(path)
+
+    def test_the_skipped_payload_carries_the_full_transcript_path(self, tmp_path):
+        """Its pair on the unavailable branch — both halves asserted."""
+        missing = tmp_path / 'absent.jsonl'
+        result = _run(missing)
+        assert result['reason'] == 'transcript_unavailable'
+        assert result['transcript_path'] == str(missing)
+
+    def test_flag_abbreviations_are_rejected(self, tmp_path):
+        """`allow_abbrev=False` is a script-architecture requirement.
+
+        Accepting `--transcript-pa` widens the CLI surface to prefixes the
+        contract does not publish. Driven through the real CLI: `parse_ns`
+        intercepts at `main()`'s parse call and never exercises abbreviation,
+        so it cannot discriminate this.
+        """
+        path = _write(tmp_path, chat_turn('user', 'please revert that change'))
+
+        full = run_script(SCRIPT_PATH, 'run', '--transcript-path', str(path))
+        assert full.success, full.stderr
+
+        abbreviated = run_script(SCRIPT_PATH, 'run', '--transcript-pa', str(path))
+        assert not abbreviated.success
+        assert run_script(SCRIPT_PATH, '--hel').returncode != 0
+
+    def test_a_form_feed_prefixed_line_still_parses(self):
+        """Lines are stripped of Python whitespace before decoding.
+
+        A form feed is Python whitespace but not JSON whitespace, so without
+        the strip the turn is dropped — under-counting.
+        """
+        assert _mod.parse_message('\x0c' + chat_turn('user', 'revert that')) is not None
 
     def test_a_non_integer_read_budget_is_rejected(self):
         """The budget is a byte count, so the parser must refuse a float."""
