@@ -11,11 +11,8 @@ rejected), and the TOON output contract for both success and error.
 """
 
 import json
-import sys
 
-from conftest import TEST_ROOT, get_script_path, run_script
-
-sys.path.insert(0, str(TEST_ROOT))
+from conftest import get_script_path, run_script
 
 from toon_parser import parse_toon  # noqa: E402
 
