@@ -14,39 +14,16 @@ Isolation: each test uses the ``plan_context`` fixture (tmp_path-scoped
 no cross-test contamination.
 """
 
-import importlib.util
 import json
-import sys
 from argparse import Namespace
 from pathlib import Path
 
 from _manage_config_fixtures import create_marshal_json
 
-_MANAGE_CONFIG_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
-)
+from conftest import load_script_module
 
-if str(_MANAGE_CONFIG_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_MANAGE_CONFIG_SCRIPTS_DIR))
-
-
-def _load_module(name: str, filename: str, scripts_dir: Path):
-    spec = importlib.util.spec_from_file_location(name, scripts_dir / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_cmd_coverage_mod = _load_module(
-    '_cmd_coverage', '_cmd_coverage.py', _MANAGE_CONFIG_SCRIPTS_DIR
+_cmd_coverage_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_coverage.py', module_name='_cmd_coverage'
 )
 cmd_coverage_read = _cmd_coverage_mod.cmd_coverage_read
 cmd_coverage_resolve = _cmd_coverage_mod.cmd_coverage_resolve

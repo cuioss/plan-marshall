@@ -13,42 +13,18 @@ dependency, so these tests need no ``plan_context`` fixture — they exercise
 the in-memory table directly.
 """
 
-import importlib.util
-import sys
-from pathlib import Path
 
 import pytest
 
-_MANAGE_CONFIG_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
-)
-
-if str(_MANAGE_CONFIG_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_MANAGE_CONFIG_SCRIPTS_DIR))
-
-
-def _load_module(name: str, filename: str, scripts_dir: Path):
-    spec = importlib.util.spec_from_file_location(name, scripts_dir / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
+from conftest import load_script_module
 
 # coverage_presets imports from _cmd_coverage at module load, so load the
 # dependency first under its canonical module name.
-_cmd_coverage_mod = _load_module(
-    '_cmd_coverage', '_cmd_coverage.py', _MANAGE_CONFIG_SCRIPTS_DIR
+_cmd_coverage_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_coverage.py', module_name='_cmd_coverage'
 )
-_coverage_presets_mod = _load_module(
-    'coverage_presets', 'coverage_presets.py', _MANAGE_CONFIG_SCRIPTS_DIR
+_coverage_presets_mod = load_script_module(
+    'plan-marshall', 'manage-config', 'coverage_presets.py', module_name='coverage_presets'
 )
 CoveragePresets = _coverage_presets_mod.CoveragePresets
 ALLOWED_THOROUGHNESS = _cmd_coverage_mod.ALLOWED_THOROUGHNESS
