@@ -53,37 +53,18 @@ non-vacuity case at the bottom of this file exists to prevent. A plan whose
 worktree could not be inspected has NOT demonstrated that no build was needed.
 """
 
-import importlib.util
 import json
 from argparse import Namespace
-from pathlib import Path
 
 from toon_parser import serialize_toon
 
-from conftest import PROJECT_ROOT
+from conftest import load_script_module
 
-_MANAGE_TASKS_SCRIPTS = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-tasks'
-    / 'scripts'
-)
-
-
-def _load_module(name: str, path: Path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_freshness = _load_module(
-    '_cmd_pre_commit_verify_freshness_plan31_regression',
-    _MANAGE_TASKS_SCRIPTS / '_cmd_pre_commit_verify_freshness.py',
+_freshness = load_script_module(
+    'plan-marshall',
+    'manage-tasks',
+    '_cmd_pre_commit_verify_freshness.py',
+    module_name='_cmd_pre_commit_verify_freshness_plan31_regression',
 )
 cmd_pre_commit_verify_freshness = _freshness.cmd_pre_commit_verify_freshness
 
