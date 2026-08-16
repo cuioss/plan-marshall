@@ -128,15 +128,19 @@ DEFAULT_READ_BUDGET_BYTES = 2 * 1024 * 1024
 _SKILL_LOAD_MARKER = 'Base directory for this skill:'
 _MARKDOWN_HEADING_RE = re.compile(r'^#{1,6}\s+\S', re.MULTILINE)
 
-# A harness-injected envelope: an XML-ish tag block. Matched GENERICALLY over
-# the tag name — the point of the pattern is that a wrapper introduced after
-# this file was written is still recognised, which is exactly what an
-# enumeration of known tag names cannot do. Self-closing tags count too.
-_HARNESS_ENVELOPE_RE = re.compile(
-    r'<(?P<tag>[A-Za-z][-\w.]*)(?:\s[^<>]*)?/>'
-    r'|<(?P<open>[A-Za-z][-\w.]*)(?:\s[^<>]*)?>.*?</(?P=open)\s*>',
-    re.DOTALL,
-)
+# One XML-ish tag. Envelopes are recognised GENERICALLY over the tag name —
+# the point being that a wrapper introduced after this file was written is
+# still recognised, which is exactly what an enumeration of known tag names
+# cannot do.
+#
+# ⚠ Deliberately matches ONE TAG, not a whole block. A single-regex
+# ``<tag>.*?</tag>`` pattern is quadratic on a transcript carrying unmatched
+# ``<`` markup: every unmatched open tag rescans to end-of-text before failing.
+# Measured at 0.5 s for 0.06 MB of unclosed tags, which extrapolates to minutes
+# at the 2 MiB read budget — a hang in a pre-pass whose whole purpose is to be
+# cheap. :func:`strip_harness_envelopes` pairs these tokens in a single linear
+# pass instead.
+_TAG_RE = re.compile(r'<(?P<close>/)?(?P<tag>[A-Za-z][-\w.]*)(?P<attrs>[^<>]*)>')
 
 # Verbatim harness re-entry notices. Unlike the envelopes above these carry no
 # tag to key on, so they are matched as literal prefixes of the residue.
@@ -218,8 +222,54 @@ def strip_harness_envelopes(text: str) -> str:
     harness routinely attaches an envelope to a genuine operator turn, so a
     turn is synthetic only when the residue is empty — not merely because an
     envelope is present.
+
+    Only a MATCHED pair is an envelope. An unmatched ``<tag>`` is left in the
+    residue, so stray markup in operator prose cannot swallow the rest of the
+    turn and silently reclassify it as synthetic.
+
+    Runs in one linear pass: tags are tokenized once and paired through a
+    stack, with an index from tag name to its open positions so a close tag
+    pairs in amortized constant time. No pattern ever rescans the text.
     """
-    return _HARNESS_ENVELOPE_RE.sub('', text)
+    stack: list[tuple[str, int]] = []
+    open_positions: dict[str, list[int]] = {}
+    envelopes: list[tuple[int, int]] = []
+
+    def _drop_above(depth: int) -> None:
+        """Discard stack entries at or above ``depth``, keeping the index in step."""
+        for tag, _ in stack[depth:]:
+            positions = open_positions.get(tag)
+            if positions:
+                positions.pop()
+        del stack[depth:]
+
+    for token in _TAG_RE.finditer(text):
+        tag = token.group('tag')
+        if token.group('close'):
+            positions = open_positions.get(tag)
+            if not positions:
+                continue  # An unmatched close tag is ordinary text.
+            depth = positions[-1]
+            start = stack[depth][1]
+            _drop_above(depth)
+            if not stack:
+                envelopes.append((start, token.end()))
+        elif token.group('attrs').endswith('/'):
+            if not stack:
+                envelopes.append((token.start(), token.end()))
+        else:
+            open_positions.setdefault(tag, []).append(len(stack))
+            stack.append((tag, token.start()))
+
+    if not envelopes:
+        return text
+    parts: list[str] = []
+    cursor = 0
+    for start, end in envelopes:
+        parts.append(text[cursor:start])
+        cursor = end
+    parts.append(text[cursor:])
+    return ''.join(parts)
 
 
 def is_reentry_notice(text: str) -> bool:

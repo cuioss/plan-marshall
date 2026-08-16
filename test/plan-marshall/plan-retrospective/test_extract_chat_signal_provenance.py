@@ -161,6 +161,39 @@ class TestOperatorAuthoredPredicate:
         assert _mod.is_signal_bearing('user', SYSTEM_REMINDER) is False
         assert _mod.is_signal_bearing('user', OPERATOR_TEXT) is True
 
+    def test_unmatched_open_tag_does_not_swallow_operator_prose(self):
+        """Only a MATCHED pair is an envelope.
+
+        Stray markup is ordinary text. If an unmatched ``<tag>`` opened an
+        envelope that ran to end-of-turn, operator prose following it would be
+        stripped and the turn silently reclassified as synthetic.
+        """
+        assert _mod.strip_harness_envelopes('<unclosed> keep this prose') == (
+            '<unclosed> keep this prose'
+        )
+        assert _mod.is_operator_authored('<unclosed> please revert that change') is True
+
+    def test_unmatched_close_tag_is_ordinary_text(self):
+        """A close tag with no open tag is prose, not an envelope."""
+        assert _mod.is_operator_authored('the build printed </error> — why?') is True
+
+    def test_envelope_stripping_is_linear_on_unmatched_markup(self):
+        """A transcript of unmatched ``<`` markup must not blow up the pre-pass.
+
+        Pairing each open tag with a scan to end-of-text is quadratic: measured
+        at 0.5 s for 0.06 MB, which extrapolates to minutes at the 2 MiB read
+        budget — a hang in a pre-pass whose whole purpose is to be cheap. The
+        budget below is deliberately loose; it fails on a return to quadratic
+        behaviour, not on ordinary machine variance.
+        """
+        import time
+
+        text = '<unclosed> filler text here ' * 80_000
+        assert len(text) > 2 * 1024 * 1024
+        started = time.perf_counter()
+        _mod.is_operator_authored(text)
+        assert time.perf_counter() - started < 10.0
+
 
 # ---------------------------------------------------------------------------
 # The gated-decision channel
