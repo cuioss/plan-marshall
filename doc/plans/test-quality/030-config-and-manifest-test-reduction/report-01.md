@@ -319,7 +319,57 @@ over the whole module. Neither the build gate nor the doctor can see either fail
 
 ## Reviewer participation
 
-_pending PR_
+**Population derived from configuration, not transcribed**: the `author_login` of each registry doc
+under `marketplace/bundles/plan-marshall/skills/automatic-review/standards/` — `coderabbit.md`
+(`coderabbitai`), `pr-agent.md` (`cuioss-review-bot`), `sourcery.md` (`sourcery-ai`).
+`bot-participation-contract.md` declares no `author_login` of its own and is not a reviewer.
+
+All THREE comment surfaces were read before the merge gate — `get_comments` (2 issue comments),
+`get_reviews` (1 review body), `get_review_comments` (0 threads, `totalCount: 0`). Each verdict below
+comes from a stored body, never from a check-run state.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
+|---|---|---|---|
+| `cuioss-review-bot` | `reviewed` | — | Issue comment `#issuecomment-5307460635`: "PR Reviewer Guide 🔍 — PR contains tests / **No security concerns identified** / **No major issues detected**". An explicit nothing-to-report over the diff. |
+| `coderabbitai` | `rate-limited` | **yes** | Issue comment `#issuecomment-5307455465`: "Review limit reached … **Next review available in: 20 minutes** … You've used all 1 included review currently available under your plan." A countdown, so the window reopens. |
+| `sourcery-ai` | `rate-limited` | **no** | Review body `#pullrequestreview-4946190393`: "your pull request is larger than the review limit of 150000 diff characters". A property of *this diff*, not of the clock — the same request never succeeds at this size. |
+
+**Coverage: 1 of 3.**
+
+⚠️ **Two reviewers refused this PR at the same moment for opposite reasons, and that is exactly what
+the `Reopens?` column exists to separate.** `coderabbitai` was on a 20-minute countdown that clears by
+itself; `sourcery-ai` hit a size ceiling that waiting can never clear, because a 60-file diff will
+always exceed 150,000 characters. Without the column the participation table would render the two
+identically, and a reader could not tell which — if either — was worth re-requesting.
+
+**The § Step 8 condition-4 disclosure fired**, in these words to the operator before auto-merge was
+armed: *"Review coverage: 1 of 3 — `cuioss-review-bot` reviewed and found nothing; `coderabbitai`
+rate-limited on a 20-minute countdown, reopens; `sourcery-ai` refused on a 150,000 diff-character size
+ceiling, does not reopen."* Per the contract this is a **disclosure, not a gate** — a rate limit is
+routine and outside this run's control, and blocking a landing behind a bot's quota is explicitly the
+wrong direction. The defect the rule closes is proceeding on partial coverage *silently*.
+
+No `silent` verdict arose, so no recovery check was needed: every expected reviewer published a body.
+`cuioss-review-bot`'s `pull_request` workflow run (`31947396706`) was located by **event**, not by head
+branch — a head-branch filter returns `total_count: 0` for `issue_comment`-triggered runs whether or
+not they exist, and this repository's `pr-agent` command runs are attributed to `main`.
+
+**Comment handling:** no comment was actionable. Two are refusal notices carrying no finding, and one
+is an explicit clean review. `get_review_comments` returned zero inline threads. Nothing required a
+fix or a reply.
+
+**Merge gate.** Conditions 2 (every comment handled) and 3 (report finalized and pushed as the last
+pre-merge commit) were met before arming. Condition 1 was **not** yet satisfied at arm time:
+`verify / verify` was still `in_progress` on head `4d208b16`, and `mergeable_state` read `blocked`.
+The operator directed the arm, and § Step 8's arm-and-hand-off rule covers it — on this merge-queue
+repository the queue admits a PR only when the ruleset's required contexts pass and re-verifies on
+`merge_group`, so arming while the required build runs defers the required-green gate to the queue
+rather than merging a red PR.
+
+**An earlier `verify / conclusion` failure is not a real failure.** Check run `95165509807` reported
+`failure` on head `787cb913` — a superseded SHA. The job ran 12:34:04 → 12:34:06 (two seconds) and
+failed at "Evaluate workflow result", the aggregator concluding on an upstream run my own next push
+had cancelled. `verify / gate` and `dependency-review` both concluded `success` on the current head.
 
 ## Cost
 
