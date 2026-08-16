@@ -148,17 +148,17 @@ re-confirmed across every assertion in the six chat test modules by six verifica
 modules and the shared fixture helper (which pytest does not collect) ⇒ **Python changed, full
 `./pw verify` required and run.**
 
-Final gate at `dd4f93e`, read in full (`cmd_verify` returns early on any failed sub-step, so the
+Final gate at `ccbdbc4`, read in full (`cmd_verify` returns early on any failed sub-step, so the
 printed summary proves all three ran):
 
 | Sub-step | Result |
 |---|---|
 | quality-gate | mypy clean (410 source files), `ruff … All checks passed!`, `SPDX-header check passed` |
 | test-compile | mypy clean (760 files) — the sub-step neither `quality-gate` nor `module-tests` performs |
-| module-tests | **20350 passed, 14 skipped**, zero `FAILED`/`ERROR` lines |
+| module-tests | **20363 passed, 14 skipped**, zero `FAILED`/`ERROR` lines |
 | Overall | `=== verify: SUCCESS ===` |
 
-Thirteen full `./pw verify` runs were performed across the run; this row is the last, at the commit named
+Fourteen full `./pw verify` runs were performed across the run; this row is the last, at the commit named
 above. Any commit landing after it is Markdown-only unless this line says otherwise.
 
 Per-commit gate: every commit touching `*.py` was preceded by a clean `./pw quality-gate`.
@@ -433,8 +433,8 @@ _Verdicts recorded below once the PR review cycle has run._
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
-- **Wall-clock:** one interactive cloud session; see the PR's commit timestamps. Thirteen full `./pw verify`
-  runs at ~6–8 minutes each, and ten verification sub-agents.
+- **Wall-clock:** one interactive cloud session; see the PR's commit timestamps. Fourteen full `./pw verify`
+  runs at ~6–8 minutes each, and eleven verification sub-agents.
 - **Population:** this single Claude Code cloud session's usage as the harness counts it. ⛔ **Not
   comparable** to a plan-marshall `metrics.toon` total, which counts an orchestrator-plus-agent
   dispatch tree under plan-marshall's own per-task billing boundary. This run has no such boundary, so
