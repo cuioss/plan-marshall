@@ -517,6 +517,17 @@ Give it, at minimum:
   fixtures. So the sweep covers **test fixtures and stubs (`*.py`), not only prose and docs**; name the
   consumer kinds a changed value can take and sweep for each in turn, which surfaces the restatements by
   construction rather than by luck;
+- when the change introduces a computed metric — a rate, a share, a total, a duration roll-up — the
+  instruction to test it at the boundaries of **its own** precision: one unit below its rounding
+  granularity, and the smallest value its producing format can express. **A fixture set that shares the
+  implementation's scale cannot see a scale defect.** An observed run's roll-up rounded to deciseconds
+  before dividing, so two `0.06 s` inputs each published `0.1 s` and **both reported 100 %**, while a
+  lone `0.04 s` call published `0.0 s`. Four verification rounds read that arithmetic — one of them
+  brute-forcing 3,970 corpora against a *different* property of the same function — and none used an
+  input below the rounding granularity, because every round inherited the whole- and tenth-second
+  fixtures of the change under review. The defect was invisible by construction, and it misreported
+  precisely the class the instrument existed to surface: a dominant-but-fast script is by definition one
+  with many small durations;
 - the instruction to report every gap it finds with file and symbol, and to state explicitly when a
   deliverable cannot be verified from the diff alone rather than assuming it passed;
 - the instruction that a clean verdict must name what it checked, so an empty finding list is
@@ -548,6 +559,14 @@ young, unreviewed, and not yet on anyone's list of consumers to grep for. So bef
   **especially any prose it added**, which no reviewer has yet seen.
 - Where the fix amended a shared or governing document, check every sibling surface that cites it. A
   cross-surface record made true for the surface you fixed can be made false for the one you did not.
+- List the fields, constants, and return keys the previous round **added**, and confirm each has a test
+  that fails if its documented behaviour regresses. An untested addition is the highest-risk item in the
+  round's own diff, because nothing but prose describes it — so the next round has only prose to check
+  it against, and prose is what goes wrong. An observed run added five fields in one round and gave four
+  of them pinning tests; the fifth is precisely the one whose docstring the next round got wrong, and the
+  error survived until the round after that. That same round's commit message had already made "with a
+  regression test that would have caught it" its stated standard, and then did not apply it to the field
+  it was itself adding.
 
 ⛔ **This is not the paragraph above it restated, and reading it as one is how the defect survives.**
 That one says *sweep what your fix made false elsewhere in the tree*; this one says *the fix's own new
@@ -562,6 +581,19 @@ rounds running while obeying the paragraph above:
 
 Each round swept the surface the *original* change touched and missed the surface the *previous
 round's fix* touched.
+
+**A fix that hardens one value is checked against every value that must hold the same property.** Both
+sweeps above look *outward* — what did this fix make false elsewhere in the tree. This one looks
+*inward*, at the fix's own diff: when a change guards, validates, normalises, or clamps one value, name
+the values that must hold that property alongside it and check each. A numerator and its denominator, a
+reader and its writer, a getter and its setter, both ends of a range. It is a narrower and far more
+mechanical question than the outward sweeps, and it catches what they structurally cannot. An observed
+run hardened one side of a rate against `None`, non-integer, and negative input and left the other side
+— one line away, part of the same expression — unguarded, so a null numerator raised `TypeError`
+instead of being classified as the recording gap the function existed to classify. **Four verification
+rounds read that line and none caught it**, because each saw a guard and confirmed that the guard was
+correct. The question every round was answering is "is this guard right?"; the question that finds the
+defect is "what else needs this guard?"
 
 **A rationale you *wrote* is a claim about code you may not have read.** The sweeps above both ask
 what your change made **false** — text that was true once and is not any more. This asks the other
@@ -1031,6 +1063,15 @@ that its artifact exists on disk:
 
 Any step that was skipped, or whose artifact is missing, is reported as **not done** — do not
 retroactively narrate it as complete. If a step can still be completed, complete it and re-check.
+
+**Re-verify every report claim about the working tree.** Claims about the *diff* are re-derived by the
+sweeps in § Step 6; claims about the *filesystem* are not — and the run's own build gate mutates the
+very tree the report describes. No gate can catch this, because the claim is about the filesystem
+rather than the code: the suite stays green while the sentence goes false. An observed report stated
+that `.plan/` carried only `marshal.json` and `project-architecture`, with no `logs/` and no `local/`.
+That was true when written; by the time the build gate had run, the same tree held
+`.plan/execute-script.py`, `.plan/temp/`, and a file under `.plan/local/logs/`. Only tree claims need
+this re-check — diff claims are already covered.
 
 ### What have we learned
 
