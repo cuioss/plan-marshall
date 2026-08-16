@@ -24,8 +24,9 @@ from pathlib import Path
 
 import _plan_parsing
 import pytest
+from _manage_metrics_fixtures import ns_generate
 
-from conftest import get_script_path
+from conftest import get_script_path, parse_ns
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
 
@@ -51,12 +52,16 @@ _outline_spec.loader.exec_module(manage_solution_outline)
 cmd_list_deliverables = manage_solution_outline.cmd_list_deliverables
 
 
-def _ns_generate(plan_id: str) -> Namespace:
-    return Namespace(plan_id=plan_id, command='generate', func=cmd_generate)
+def ns_list_deliverables(plan_id: str) -> Namespace:
+    """A ``list-deliverables`` namespace from manage-solution-outline.py's parser.
 
-
-def _ns_list_deliverables(plan_id: str) -> Namespace:
-    return Namespace(plan_id=plan_id, command='list-deliverables', func=cmd_list_deliverables)
+    The handler under test belongs to ``manage-solution-outline``, not to
+    ``manage-metrics``, so the namespace comes from that script's parser.
+    """
+    return parse_ns(
+        'plan-marshall', 'manage-solution-outline', 'manage-solution-outline.py',
+        'list-deliverables', '--plan-id', plan_id,
+    )
 
 
 def _recorded_row() -> dict:
@@ -138,7 +143,7 @@ def test_each_denominator_is_persisted_with_its_sampling_point(plan_context):
     _write_references(plan_dir, ['a.py', 'b.py', 'c.md'])
     _write_tasks(plan_dir, ['done', 'done', 'pending'])
 
-    result = cmd_generate(_ns_generate(plan_id))
+    result = cmd_generate(ns_generate(plan_id))
     assert result['status'] == 'success', result
 
     data = manage_metrics.read_metrics_raw(plan_id)
@@ -174,7 +179,7 @@ def test_generate_return_echoes_each_pair(plan_context):
     _write_references(plan_dir, ['only.py'])
     _write_tasks(plan_dir, ['done'])
 
-    result = cmd_generate(_ns_generate(plan_id))
+    result = cmd_generate(ns_generate(plan_id))
 
     assert result['deliverable_count'] == 2
     assert result['deliverable_count_sampling_point'] == 'generate_time'
@@ -204,7 +209,7 @@ def test_two_generations_of_the_same_plan_are_distinguishable_by_the_field(plan_
     _write_references(plan_dir, ['a.py'])
     _write_tasks(plan_dir, ['done', 'pending'])
 
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
     first = manage_metrics.read_metrics_raw(plan_id)
     first_count = first['files_modified']
     first_sampled_at = first['denominators_sampled_at']
@@ -212,7 +217,7 @@ def test_two_generations_of_the_same_plan_are_distinguishable_by_the_field(plan_
     # The plan advances: two more files are declared and the pending task closes.
     _write_references(plan_dir, ['a.py', 'b.py', 'c.py'])
     _write_tasks(plan_dir, ['done', 'done'])
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
     second = manage_metrics.read_metrics_raw(plan_id)
 
     # The counts genuinely moved — otherwise the distinguishability below would
@@ -244,7 +249,7 @@ def test_denominator_with_no_readable_source_is_absent_not_zero(plan_context):
     plan_id = 'denom-absent'
     _seed_phases(plan_id)
 
-    result = cmd_generate(_ns_generate(plan_id))
+    result = cmd_generate(ns_generate(plan_id))
     assert result['status'] == 'success', result
 
     data = manage_metrics.read_metrics_raw(plan_id)
@@ -266,7 +271,7 @@ def test_partially_determinable_denominators_persist_only_what_was_counted(plan_
     plan_dir = _seed_phases(plan_id)
     _write_outline(plan_dir, 3)
 
-    result = cmd_generate(_ns_generate(plan_id))
+    result = cmd_generate(ns_generate(plan_id))
 
     data = manage_metrics.read_metrics_raw(plan_id)
     assert data['deliverable_count'] == '3'
@@ -285,7 +290,7 @@ def test_malformed_source_is_absent_rather_than_defaulted(plan_context):
     plan_dir = _seed_phases(plan_id)
     (plan_dir / 'references.json').write_text('{ not json', encoding='utf-8')
 
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
 
     data = manage_metrics.read_metrics_raw(plan_id)
     assert 'files_modified' not in data
@@ -305,12 +310,12 @@ def test_stale_pair_is_removed_when_its_source_becomes_unreadable(plan_context):
     _write_outline(plan_dir, 2)
     _write_references(plan_dir, ['a.py', 'b.py'])
 
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
     assert manage_metrics.read_metrics_raw(plan_id)['files_modified'] == '2'
 
     # The source becomes unreadable between generations.
     (plan_dir / 'references.json').unlink()
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
 
     data = manage_metrics.read_metrics_raw(plan_id)
     assert 'files_modified' not in data
@@ -331,7 +336,7 @@ def test_zero_completed_tasks_over_a_real_population_is_counted_as_zero(plan_con
     plan_dir = _seed_phases(plan_id)
     _write_tasks(plan_dir, ['pending', 'pending'])
 
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
 
     data = manage_metrics.read_metrics_raw(plan_id)
     # A MEASURED zero is on the record as `0` — distinct from the absent case
@@ -354,7 +359,7 @@ def test_empty_affected_files_list_is_counted_as_zero(plan_context):
     plan_dir = _seed_phases(plan_id)
     _write_references(plan_dir, [])
 
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
 
     data = manage_metrics.read_metrics_raw(plan_id)
     assert data['files_modified'] == '0'
@@ -375,7 +380,7 @@ def test_references_json_without_an_affected_files_list_is_absent(plan_context):
         json.dumps({'base_branch': 'main'}), encoding='utf-8'
     )
 
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
 
     data = manage_metrics.read_metrics_raw(plan_id)
     assert 'files_modified' not in data
@@ -407,7 +412,7 @@ def test_readable_outline_with_no_deliverable_heading_is_counted_as_zero(
     plan_dir = _seed_phases(plan_id)
     (plan_dir / 'solution_outline.md').write_text(outline, encoding='utf-8')
 
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
 
     data = manage_metrics.read_metrics_raw(plan_id)
     assert data['deliverable_count'] == '0'
@@ -481,8 +486,8 @@ def test_deliverable_count_agrees_with_the_sibling_producer(plan_context, label)
     plan_dir = _seed_phases(plan_id)
     (plan_dir / 'solution_outline.md').write_text(outline, encoding='utf-8')
 
-    result = cmd_generate(_ns_generate(plan_id))
-    sibling = cmd_list_deliverables(_ns_list_deliverables(plan_id))
+    result = cmd_generate(ns_generate(plan_id))
+    sibling = cmd_list_deliverables(ns_list_deliverables(plan_id))
 
     if sibling['status'] == 'success':
         assert result['deliverable_count'] == sibling['deliverable_count']

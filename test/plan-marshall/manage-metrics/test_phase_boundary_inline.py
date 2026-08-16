@@ -33,9 +33,15 @@ The negative control (an unclosed phase still flips
 """
 
 import importlib.util
-from argparse import Namespace
 
 import pytest
+from _manage_metrics_fixtures import (
+    ns_end_phase,
+    ns_enrich,
+    ns_generate,
+    ns_phase_boundary,
+    ns_start_phase,
+)
 
 from conftest import get_script_path
 
@@ -105,7 +111,7 @@ def _run_inline_enrich(plan_id: str, monkeypatch, buckets: dict | None = None) -
         return dict(resolved), counters, 'success'
 
     monkeypatch.setattr(manage_metrics, '_run_normalized_tokens_op', _fake_op)
-    result: dict = cmd_enrich(Namespace(plan_id=plan_id, session_id='sess-inline'))
+    result: dict = cmd_enrich(ns_enrich(plan_id, 'sess-inline'))
     return result
 
 
@@ -143,56 +149,6 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
 # =============================================================================
 
 
-def _ns_start_phase(plan_id, phase):
-    return Namespace(plan_id=plan_id, phase=phase, command='start-phase', func=cmd_start_phase)
-
-
-def _ns_boundary(
-    plan_id,
-    prev_phase,
-    next_phase,
-    total_tokens=None,
-    duration_ms=None,
-    tool_uses=None,
-    retrospective_tokens=None,
-):
-    return Namespace(
-        plan_id=plan_id,
-        prev_phase=prev_phase,
-        next_phase=next_phase,
-        total_tokens=total_tokens,
-        duration_ms=duration_ms,
-        tool_uses=tool_uses,
-        retrospective_tokens=retrospective_tokens,
-        command='phase-boundary',
-        func=cmd_phase_boundary,
-    )
-
-
-def _ns_end_phase(
-    plan_id,
-    phase,
-    total_tokens=None,
-    duration_ms=None,
-    tool_uses=None,
-    retrospective_tokens=None,
-):
-    return Namespace(
-        plan_id=plan_id,
-        phase=phase,
-        total_tokens=total_tokens,
-        duration_ms=duration_ms,
-        tool_uses=tool_uses,
-        retrospective_tokens=retrospective_tokens,
-        command='end-phase',
-        func=cmd_end_phase,
-    )
-
-
-def _ns_generate(plan_id):
-    return Namespace(plan_id=plan_id, command='generate', func=cmd_generate)
-
-
 def _phase_block(content: str, phase: str) -> str:
     """Return the metrics.toon text block for a single [phase] section."""
     start = content.index(f'[{phase}]')
@@ -219,19 +175,19 @@ def _drive_full_six_phase_plan(plan_id: str) -> None:
     Every phase ends up with an `end_time`, so the plan is fully recorded.
     """
     # 1-init opens via the phase-1-init Step 3a self-record, then closes inline.
-    cmd_start_phase(_ns_start_phase(plan_id, '1-init'))
+    cmd_start_phase(ns_start_phase(plan_id, '1-init'))
     # Inline boundaries — usage flags OMITTED (no agent <usage> envelope).
-    cmd_phase_boundary(_ns_boundary(plan_id, prev_phase='1-init', next_phase='2-refine'))
-    cmd_phase_boundary(_ns_boundary(plan_id, prev_phase='2-refine', next_phase='3-outline'))
-    cmd_phase_boundary(_ns_boundary(plan_id, prev_phase='3-outline', next_phase='4-plan'))
+    cmd_phase_boundary(ns_phase_boundary(plan_id, prev_phase='1-init', next_phase='2-refine'))
+    cmd_phase_boundary(ns_phase_boundary(plan_id, prev_phase='2-refine', next_phase='3-outline'))
+    cmd_phase_boundary(ns_phase_boundary(plan_id, prev_phase='3-outline', next_phase='4-plan'))
     # Dispatched boundaries — usage data present.
     cmd_phase_boundary(
-        _ns_boundary(plan_id, prev_phase='4-plan', next_phase='5-execute', total_tokens=42000, tool_uses=15)
+        ns_phase_boundary(plan_id, prev_phase='4-plan', next_phase='5-execute', total_tokens=42000, tool_uses=15)
     )
     cmd_phase_boundary(
-        _ns_boundary(plan_id, prev_phase='5-execute', next_phase='6-finalize', total_tokens=88000, tool_uses=30)
+        ns_phase_boundary(plan_id, prev_phase='5-execute', next_phase='6-finalize', total_tokens=88000, tool_uses=30)
     )
-    cmd_end_phase(_ns_end_phase(plan_id, phase='6-finalize', total_tokens=31000, tool_uses=12))
+    cmd_end_phase(ns_end_phase(plan_id, phase='6-finalize', total_tokens=31000, tool_uses=12))
 
 
 # =============================================================================
@@ -244,7 +200,7 @@ def test_inline_init_refine_boundary_carries_end_time_marker(plan_context):
     omitted) reports every row as carrying its end_time marker."""
     _drive_full_six_phase_plan('inline-full')
 
-    result = cmd_generate(_ns_generate('inline-full'))
+    result = cmd_generate(ns_generate('inline-full'))
 
     assert result['status'] == 'success'
     # The inline close of 1-init stamps end_time like any other close.
@@ -266,7 +222,7 @@ def test_inline_init_phase_carries_total_tokens_after_enrich(plan_context, monke
     _drive_full_six_phase_plan('inline-init-row')
     enrich_result = _run_inline_enrich('inline-init-row', monkeypatch)
     assert enrich_result['enriched'] is True
-    cmd_generate(_ns_generate('inline-init-row'))
+    cmd_generate(ns_generate('inline-init-row'))
 
     content = (plan_context.plan_dir_for('inline-init-row') / 'work' / 'metrics.toon').read_text()
     init_block = _phase_block(content, '1-init')
@@ -288,7 +244,7 @@ def test_inline_init_phase_carries_total_tokens_after_enrich(plan_context, monke
 def test_inline_init_phase_absent_from_missing_end_time_list(plan_context):
     """1-init never appears under phases_missing_end_time despite carrying no usage data."""
     _drive_full_six_phase_plan('inline-not-unrecorded')
-    result = cmd_generate(_ns_generate('inline-not-unrecorded'))
+    result = cmd_generate(ns_generate('inline-not-unrecorded'))
 
     assert '1-init' not in result['phases_missing_end_time']
     # The persisted top-level keys agree with the returned values, and the
@@ -304,7 +260,7 @@ def test_recipe_inline_refine_outline_carry_total_tokens_after_enrich(plan_conte
     """The recipe-inline 2-refine / 3-outline phases carry a derived total_tokens after enrich."""
     _drive_full_six_phase_plan('inline-recipe')
     _run_inline_enrich('inline-recipe', monkeypatch)
-    result = cmd_generate(_ns_generate('inline-recipe'))
+    result = cmd_generate(ns_generate('inline-recipe'))
 
     assert result['any_phase_missing_end_time'] is False
     for phase in ('2-refine', '3-outline'):
@@ -324,7 +280,7 @@ def test_report_is_n_six_of_six_after_inline_enrich(plan_context, monkeypatch):
     """Every one of the six phases carries token data after inline enrich (n=6/6)."""
     _drive_full_six_phase_plan('inline-n6')
     _run_inline_enrich('inline-n6', monkeypatch)
-    result = cmd_generate(_ns_generate('inline-n6'))
+    result = cmd_generate(ns_generate('inline-n6'))
 
     assert result['any_phase_missing_end_time'] is False
     content = (plan_context.plan_dir_for('inline-n6') / 'work' / 'metrics.toon').read_text()
@@ -349,7 +305,7 @@ def test_enrich_does_not_overwrite_dispatched_phase_total(plan_context, monkeypa
     # four-field bucket for it; the derivation must NOT overwrite the real total.
     buckets = {'4-plan': {'input_tokens': 1, 'output_tokens': 1, 'billing_weighted_total': 2}}
     _run_inline_enrich('inline-explicit-wins', monkeypatch, buckets=buckets)
-    cmd_generate(_ns_generate('inline-explicit-wins'))
+    cmd_generate(ns_generate('inline-explicit-wins'))
 
     content = (plan_context.plan_dir_for('inline-explicit-wins') / 'work' / 'metrics.toon').read_text()
     plan_block = _phase_block(content, '4-plan')
@@ -370,15 +326,15 @@ def test_unclosed_phase_still_flips_missing_end_time(plan_context):
     phases_missing_end_time.
     """
     plan_id = 'inline-partial-neg'
-    cmd_start_phase(_ns_start_phase(plan_id, '1-init'))
-    cmd_phase_boundary(_ns_boundary(plan_id, prev_phase='1-init', next_phase='2-refine'))
-    cmd_phase_boundary(_ns_boundary(plan_id, prev_phase='2-refine', next_phase='3-outline'))
-    cmd_phase_boundary(_ns_boundary(plan_id, prev_phase='3-outline', next_phase='4-plan'))
-    cmd_phase_boundary(_ns_boundary(plan_id, prev_phase='4-plan', next_phase='5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '1-init'))
+    cmd_phase_boundary(ns_phase_boundary(plan_id, prev_phase='1-init', next_phase='2-refine'))
+    cmd_phase_boundary(ns_phase_boundary(plan_id, prev_phase='2-refine', next_phase='3-outline'))
+    cmd_phase_boundary(ns_phase_boundary(plan_id, prev_phase='3-outline', next_phase='4-plan'))
+    cmd_phase_boundary(ns_phase_boundary(plan_id, prev_phase='4-plan', next_phase='5-execute'))
     # 5-execute → 6-finalize opens 6-finalize but it is never closed (no end_time).
-    cmd_phase_boundary(_ns_boundary(plan_id, prev_phase='5-execute', next_phase='6-finalize'))
+    cmd_phase_boundary(ns_phase_boundary(plan_id, prev_phase='5-execute', next_phase='6-finalize'))
 
-    result = cmd_generate(_ns_generate(plan_id))
+    result = cmd_generate(ns_generate(plan_id))
 
     assert result['any_phase_missing_end_time'] is True
     assert result['phases_missing_end_time'] == ['6-finalize']
@@ -416,7 +372,7 @@ def test_inline_main_context_surfaced_on_mixed_finalize_phase(plan_context, monk
         },
     }
     _run_inline_enrich('inline-mixed-finalize', monkeypatch, buckets=buckets)
-    result = cmd_generate(_ns_generate('inline-mixed-finalize'))
+    result = cmd_generate(ns_generate('inline-mixed-finalize'))
 
     # #812: the timestamps-closed row keeps its end_time marker — attribution
     # never touches it.
@@ -446,7 +402,7 @@ def test_dispatched_phase_without_four_field_usage_has_no_inline_field(plan_cont
     # Feed enrich buckets ONLY for the inline early phases; 5-execute (dispatched
     # total_tokens=88000) receives no four-field usage.
     _run_inline_enrich('inline-no-fourfield', monkeypatch)
-    cmd_generate(_ns_generate('inline-no-fourfield'))
+    cmd_generate(ns_generate('inline-no-fourfield'))
 
     content = (plan_context.plan_dir_for('inline-no-fourfield') / 'work' / 'metrics.toon').read_text()
     exec_block = _phase_block(content, '5-execute')

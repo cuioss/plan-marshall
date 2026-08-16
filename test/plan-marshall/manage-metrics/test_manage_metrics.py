@@ -10,10 +10,19 @@ tests retained for CLI plumbing verification.
 
 import importlib.util
 import json
-from argparse import Namespace
 from pathlib import Path
 
 import pytest
+from _manage_metrics_fixtures import (
+    ns_accumulate,
+    ns_end_phase,
+    ns_enrich,
+    ns_generate,
+    ns_phase_boundary,
+    ns_record_dispatch_boundary,
+    ns_start_phase,
+    raw_ns,
+)
 
 from conftest import get_script_path, run_script  # noqa: I001
 
@@ -36,63 +45,6 @@ cmd_start_phase = manage_metrics.cmd_start_phase
 # =============================================================================
 # Helpers
 # =============================================================================
-
-
-def _ns_start_phase(plan_id: str, phase: str) -> Namespace:
-    """Build Namespace for start-phase command."""
-    return Namespace(plan_id=plan_id, phase=phase, command='start-phase', func=cmd_start_phase)
-
-
-def _ns_end_phase(
-    plan_id: str,
-    phase: str,
-    total_tokens: int | None = None,
-    duration_ms: int | None = None,
-    tool_uses: int | None = None,
-    retrospective_tokens: int | None = None,
-) -> Namespace:
-    """Build Namespace for end-phase command."""
-    return Namespace(
-        plan_id=plan_id,
-        phase=phase,
-        total_tokens=total_tokens,
-        duration_ms=duration_ms,
-        tool_uses=tool_uses,
-        retrospective_tokens=retrospective_tokens,
-        command='end-phase',
-        func=cmd_end_phase,
-    )
-
-
-def _ns_generate(plan_id: str) -> Namespace:
-    """Build Namespace for generate command."""
-    return Namespace(plan_id=plan_id, command='generate', func=cmd_generate)
-
-
-def _ns_enrich(plan_id: str, session_id: str) -> Namespace:
-    """Build Namespace for enrich command."""
-    return Namespace(plan_id=plan_id, session_id=session_id, command='enrich', func=cmd_enrich)
-
-
-def _ns_accumulate(
-    plan_id: str,
-    phase: str,
-    total_tokens: int | None = None,
-    tool_uses: int | None = None,
-    duration_ms: int | None = None,
-    retrospective_tokens: int | None = None,
-) -> Namespace:
-    """Build Namespace for accumulate-agent-usage command."""
-    return Namespace(
-        plan_id=plan_id,
-        phase=phase,
-        total_tokens=total_tokens,
-        tool_uses=tool_uses,
-        duration_ms=duration_ms,
-        retrospective_tokens=retrospective_tokens,
-        command='accumulate-agent-usage',
-        func=cmd_accumulate_agent_usage,
-    )
 
 
 def _pin_start_time_to_past(plan_id: str, phase: str) -> None:
@@ -195,7 +147,7 @@ def _unseeded_plan_dir(plan_context, plan_id: str) -> Path:
 
 def test_start_phase_records_timestamp(plan_context):
     """start-phase creates metrics.toon with phase start timestamp."""
-    result = cmd_start_phase(_ns_start_phase('metrics-start-01', '1-init'))
+    result = cmd_start_phase(ns_start_phase('metrics-start-01', '1-init'))
     assert result['status'] == 'success'
     assert result['phase'] == '1-init'
     assert 'start_time' in result
@@ -210,7 +162,9 @@ def test_start_phase_records_timestamp(plan_context):
 
 def test_start_phase_invalid_phase(plan_context):
     """start-phase rejects invalid phase names."""
-    result = cmd_start_phase(_ns_start_phase('metrics-start-02', 'invalid'))
+    result = cmd_start_phase(
+        raw_ns('start-phase', plan_id='metrics-start-02', phase='invalid')
+    )
     assert result['status'] == 'error'
     assert 'Invalid phase' in str(result.get('message', ''))
 
@@ -218,14 +172,14 @@ def test_start_phase_invalid_phase(plan_context):
 def test_start_phase_invalid_plan_id(plan_context):
     """start-phase rejects invalid plan IDs (sys.exit(1) from require_valid_plan_id)."""
     with pytest.raises(SystemExit) as exc_info:
-        cmd_start_phase(_ns_start_phase('../escape', '1-init'))
+        cmd_start_phase(ns_start_phase('../escape', '1-init'))
     assert exc_info.value.code == 0
 
 
 def test_start_phase_multiple_phases(plan_context):
     """start-phase can record multiple phases."""
-    cmd_start_phase(_ns_start_phase('metrics-start-03', '1-init'))
-    cmd_start_phase(_ns_start_phase('metrics-start-03', '2-refine'))
+    cmd_start_phase(ns_start_phase('metrics-start-03', '1-init'))
+    cmd_start_phase(ns_start_phase('metrics-start-03', '2-refine'))
 
     metrics_file = plan_context.plan_dir_for('metrics-start-03') / 'work' / 'metrics.toon'
     content = metrics_file.read_text()
@@ -240,8 +194,8 @@ def test_start_phase_multiple_phases(plan_context):
 
 def test_end_phase_computes_duration(plan_context):
     """end-phase computes wall-clock duration from start/end."""
-    cmd_start_phase(_ns_start_phase('metrics-end-01', '1-init'))
-    result = cmd_end_phase(_ns_end_phase('metrics-end-01', '1-init'))
+    cmd_start_phase(ns_start_phase('metrics-end-01', '1-init'))
+    result = cmd_end_phase(ns_end_phase('metrics-end-01', '1-init'))
     assert result['status'] == 'success'
     assert 'duration_seconds' in result
     assert float(str(result['duration_seconds'])) >= 0
@@ -249,14 +203,14 @@ def test_end_phase_computes_duration(plan_context):
 
 def test_end_phase_with_token_data(plan_context):
     """end-phase stores token data from Task agent notifications."""
-    cmd_start_phase(_ns_start_phase('metrics-end-02', '1-init'))
+    cmd_start_phase(ns_start_phase('metrics-end-02', '1-init'))
     # Pin start_time to the past so the wall span deterministically exceeds the
     # forwarded worked window — _clamp_worked_to_wall is then a no-op and the
     # forwarded 181681 ms flows through unclamped (the back-to-back wall span is
     # machine-dependent; see _pin_start_time_to_past).
     _pin_start_time_to_past('metrics-end-02', '1-init')
     result = cmd_end_phase(
-        _ns_end_phase('metrics-end-02', '1-init', total_tokens=25514, duration_ms=181681, tool_uses=23)
+        ns_end_phase('metrics-end-02', '1-init', total_tokens=25514, duration_ms=181681, tool_uses=23)
     )
     assert result['status'] == 'success'
     assert result['total_tokens'] == 25514
@@ -271,7 +225,7 @@ def test_end_phase_with_token_data(plan_context):
 
 def test_end_phase_without_start(plan_context):
     """end-phase works even if start-phase wasn't called (no duration computed from timestamps)."""
-    result = cmd_end_phase(_ns_end_phase('metrics-end-03', '2-refine', total_tokens=1000))
+    result = cmd_end_phase(ns_end_phase('metrics-end-03', '2-refine', total_tokens=1000))
     assert result['status'] == 'success'
     # No duration_seconds since no start_time
     assert 'duration_seconds' not in result
@@ -279,8 +233,8 @@ def test_end_phase_without_start(plan_context):
 
 def test_end_phase_no_optional_args(plan_context):
     """end-phase works without optional token data."""
-    cmd_start_phase(_ns_start_phase('metrics-end-04', '3-outline'))
-    result = cmd_end_phase(_ns_end_phase('metrics-end-04', '3-outline'))
+    cmd_start_phase(ns_start_phase('metrics-end-04', '3-outline'))
+    result = cmd_end_phase(ns_end_phase('metrics-end-04', '3-outline'))
     assert result['status'] == 'success'
     assert 'total_tokens' not in result
 
@@ -293,13 +247,13 @@ def test_end_phase_no_optional_args(plan_context):
 def test_generate_creates_metrics_md(plan_context):
     """generate creates metrics.md with the three-column phase breakdown table."""
     # Record two phases
-    cmd_start_phase(_ns_start_phase('metrics-gen-01', '1-init'))
-    cmd_end_phase(_ns_end_phase('metrics-gen-01', '1-init', total_tokens=25000, tool_uses=20))
-    cmd_start_phase(_ns_start_phase('metrics-gen-01', '2-refine'))
-    cmd_end_phase(_ns_end_phase('metrics-gen-01', '2-refine'))
+    cmd_start_phase(ns_start_phase('metrics-gen-01', '1-init'))
+    cmd_end_phase(ns_end_phase('metrics-gen-01', '1-init', total_tokens=25000, tool_uses=20))
+    cmd_start_phase(ns_start_phase('metrics-gen-01', '2-refine'))
+    cmd_end_phase(ns_end_phase('metrics-gen-01', '2-refine'))
 
     # Generate report
-    result = cmd_generate(_ns_generate('metrics-gen-01'))
+    result = cmd_generate(ns_generate('metrics-gen-01'))
     assert result['status'] == 'success'
     assert result['phases_recorded'] == 2
     assert result['total_tokens'] == 25000
@@ -352,9 +306,9 @@ def test_generate_three_column_header_order(plan_context):
     and deriving the expectation from the constant under test would assert only
     that the code equals itself.
     """
-    cmd_start_phase(_ns_start_phase('metrics-gen-cols', '1-init'))
-    cmd_end_phase(_ns_end_phase('metrics-gen-cols', '1-init', total_tokens=1000, tool_uses=3))
-    cmd_generate(_ns_generate('metrics-gen-cols'))
+    cmd_start_phase(ns_start_phase('metrics-gen-cols', '1-init'))
+    cmd_end_phase(ns_end_phase('metrics-gen-cols', '1-init', total_tokens=1000, tool_uses=3))
+    cmd_generate(ns_generate('metrics-gen-cols'))
 
     header = _phase_breakdown_header((plan_context.plan_dir_for('metrics-gen-cols') / 'metrics.md').read_text())
     cols = [c.strip() for c in header.strip('|').split('|')]
@@ -378,9 +332,9 @@ def test_tokens_column_header_names_a_default_not_a_single_population(plan_conte
     to stop making. The header must name the default AND signal that exceptions
     are marked.
     """
-    cmd_start_phase(_ns_start_phase('metrics-header-default', '1-init'))
-    cmd_end_phase(_ns_end_phase('metrics-header-default', '1-init', total_tokens=1000))
-    cmd_generate(_ns_generate('metrics-header-default'))
+    cmd_start_phase(ns_start_phase('metrics-header-default', '1-init'))
+    cmd_end_phase(ns_end_phase('metrics-header-default', '1-init', total_tokens=1000))
+    cmd_generate(ns_generate('metrics-header-default'))
 
     header = _phase_breakdown_header(
         (plan_context.plan_dir_for('metrics-header-default') / 'metrics.md').read_text()
@@ -421,7 +375,7 @@ def test_generate_worked_rollup_uses_max_not_sum(plan_context):
         },
     )
 
-    result = cmd_generate(_ns_generate('metrics-gen-worked'))
+    result = cmd_generate(ns_generate('metrics-gen-worked'))
     assert result['status'] == 'success'
     # worked = max(60s, 90s) = 90s; wall = 120s; idle = 30s.
     assert result['total_worked_seconds'] == 90.0
@@ -463,7 +417,7 @@ def test_worked_le_wall_invariant_holds_for_subagent_dispatching_phases(plan_con
         },
     )
 
-    result = cmd_generate(_ns_generate('metrics-invariant'))
+    result = cmd_generate(ns_generate('metrics-invariant'))
     assert result['status'] == 'success'
 
     toon = (plan_context.plan_dir_for('metrics-invariant') / 'work' / 'metrics.toon').read_text()
@@ -499,7 +453,7 @@ def test_generate_idle_residual_and_zero_clamp(plan_context):
         },
     )
 
-    result = cmd_generate(_ns_generate('metrics-gen-idle'))
+    result = cmd_generate(ns_generate('metrics-gen-idle'))
     assert result['status'] == 'success'
     toon = (plan_context.plan_dir_for('metrics-gen-idle') / 'work' / 'metrics.toon').read_text()
     # worked = max(100000, 50000) = 100000 ms; wall = 300000 ms; idle = 200000 ms.
@@ -521,7 +475,7 @@ def test_generate_total_row_sums_three_columns_independently(plan_context):
         },
     )
 
-    result = cmd_generate(_ns_generate('metrics-gen-total'))
+    result = cmd_generate(ns_generate('metrics-gen-total'))
     assert result['status'] == 'success'
     # worked total = 120 + 40 = 160 s; wall total = 200 + 100 = 300 s;
     # idle total = (200-120) + (100-40) = 80 + 60 = 140 s.
@@ -532,7 +486,7 @@ def test_generate_total_row_sums_three_columns_independently(plan_context):
 
 def test_generate_no_data(plan_context):
     """generate returns error when no metrics data exists."""
-    result = cmd_generate(_ns_generate('metrics-gen-02'))
+    result = cmd_generate(ns_generate('metrics-gen-02'))
     assert result['status'] == 'error'
     assert 'No metrics data' in str(result.get('message', ''))
 
@@ -541,10 +495,10 @@ def test_generate_all_six_phases(plan_context):
     """generate handles all 6 phases."""
     phases = ['1-init', '2-refine', '3-outline', '4-plan', '5-execute', '6-finalize']
     for phase in phases:
-        cmd_start_phase(_ns_start_phase('metrics-gen-03', phase))
-        cmd_end_phase(_ns_end_phase('metrics-gen-03', phase))
+        cmd_start_phase(ns_start_phase('metrics-gen-03', phase))
+        cmd_end_phase(ns_end_phase('metrics-gen-03', phase))
 
-    result = cmd_generate(_ns_generate('metrics-gen-03'))
+    result = cmd_generate(ns_generate('metrics-gen-03'))
     assert result['status'] == 'success'
     assert result['phases_recorded'] == 6
 
@@ -560,14 +514,14 @@ def test_generate_all_six_phases(plan_context):
 
 def test_enrich_missing_transcript(plan_context):
     """enrich returns gracefully when transcript is not found."""
-    result = cmd_enrich(_ns_enrich('metrics-enrich-01', 'nonexistent-session-id'))
+    result = cmd_enrich(ns_enrich('metrics-enrich-01', 'nonexistent-session-id'))
     assert result['status'] == 'success'
     assert result.get('enriched') is False
 
 
 def test_enrich_with_unknown_session(plan_context):
     """enrich handles unknown session ID gracefully."""
-    result = cmd_enrich(_ns_enrich('metrics-enrich-02', 'test-session-abc123'))
+    result = cmd_enrich(ns_enrich('metrics-enrich-02', 'test-session-abc123'))
     # Will be 'not found' since session doesn't exist in ~/.claude
     assert result['status'] == 'success'
 
@@ -579,9 +533,9 @@ def test_enrich_with_unknown_session(plan_context):
 
 def test_format_duration_seconds(plan_context):
     """Duration under 60s shows as seconds."""
-    cmd_start_phase(_ns_start_phase('metrics-fmt-01', '1-init'))
-    cmd_end_phase(_ns_end_phase('metrics-fmt-01', '1-init'))
-    cmd_generate(_ns_generate('metrics-fmt-01'))
+    cmd_start_phase(ns_start_phase('metrics-fmt-01', '1-init'))
+    cmd_end_phase(ns_end_phase('metrics-fmt-01', '1-init'))
+    cmd_generate(ns_generate('metrics-fmt-01'))
     md_content = (plan_context.plan_dir_for('metrics-fmt-01') / 'metrics.md').read_text()
     # Should contain some duration string (likely very small since start/end are near-instant)
     assert '1-init' in md_content
@@ -634,7 +588,7 @@ class TestAccumulateAgentUsage:
     def test_creates_file_when_absent(self, plan_context):
         """First call creates the per-phase accumulator file with the supplied totals."""
         result = cmd_accumulate_agent_usage(
-            _ns_accumulate('accum-create', '6-finalize', total_tokens=12345, tool_uses=7, duration_ms=8000)
+            ns_accumulate('accum-create', '6-finalize', total_tokens=12345, tool_uses=7, duration_ms=8000)
         )
         assert result['status'] == 'success'
         assert result['phase'] == '6-finalize'
@@ -656,13 +610,13 @@ class TestAccumulateAgentUsage:
     def test_sums_across_calls(self, plan_context):
         """Repeated calls sum the totals and increment the samples counter."""
         cmd_accumulate_agent_usage(
-            _ns_accumulate('accum-sum', '6-finalize', total_tokens=100, tool_uses=2, duration_ms=1000)
+            ns_accumulate('accum-sum', '6-finalize', total_tokens=100, tool_uses=2, duration_ms=1000)
         )
         cmd_accumulate_agent_usage(
-            _ns_accumulate('accum-sum', '6-finalize', total_tokens=250, tool_uses=5, duration_ms=2500)
+            ns_accumulate('accum-sum', '6-finalize', total_tokens=250, tool_uses=5, duration_ms=2500)
         )
         result = cmd_accumulate_agent_usage(
-            _ns_accumulate('accum-sum', '6-finalize', total_tokens=50, duration_ms=500)
+            ns_accumulate('accum-sum', '6-finalize', total_tokens=50, duration_ms=500)
         )
         assert result['total_tokens'] == 400
         assert result['tool_uses'] == 7  # third call omitted tool_uses → unchanged
@@ -671,8 +625,8 @@ class TestAccumulateAgentUsage:
 
     def test_phase_isolation(self, plan_context):
         """5-execute and 6-finalize accumulators do not collide."""
-        cmd_accumulate_agent_usage(_ns_accumulate('accum-iso', '5-execute', total_tokens=1000, tool_uses=10))
-        cmd_accumulate_agent_usage(_ns_accumulate('accum-iso', '6-finalize', total_tokens=2000, tool_uses=20))
+        cmd_accumulate_agent_usage(ns_accumulate('accum-iso', '5-execute', total_tokens=1000, tool_uses=10))
+        cmd_accumulate_agent_usage(ns_accumulate('accum-iso', '6-finalize', total_tokens=2000, tool_uses=20))
 
         five = (plan_context.plan_dir_for('accum-iso') / 'work' / 'metrics-accumulator-5-execute.toon').read_text()
         six = (plan_context.plan_dir_for('accum-iso') / 'work' / 'metrics-accumulator-6-finalize.toon').read_text()
@@ -683,16 +637,26 @@ class TestAccumulateAgentUsage:
 
     def test_invalid_phase_rejected(self, plan_context):
         """Unknown phase names produce a structured error response."""
-        result = cmd_accumulate_agent_usage(_ns_accumulate('accum-bad', 'not-a-phase', total_tokens=1))
+        result = cmd_accumulate_agent_usage(
+            raw_ns(
+                'accumulate-agent-usage',
+                plan_id='accum-bad',
+                phase='not-a-phase',
+                total_tokens=1,
+                tool_uses=None,
+                duration_ms=None,
+                retrospective_tokens=None,
+            )
+        )
         assert result['status'] == 'error'
         assert result['error'] == 'invalid_phase'
 
     def test_omitted_flags_leave_existing_totals_unchanged(self, plan_context):
         """A no-flag call still increments samples but leaves totals untouched."""
         cmd_accumulate_agent_usage(
-            _ns_accumulate('accum-noop', '6-finalize', total_tokens=42, tool_uses=3, duration_ms=999)
+            ns_accumulate('accum-noop', '6-finalize', total_tokens=42, tool_uses=3, duration_ms=999)
         )
-        result = cmd_accumulate_agent_usage(_ns_accumulate('accum-noop', '6-finalize'))
+        result = cmd_accumulate_agent_usage(ns_accumulate('accum-noop', '6-finalize'))
         assert result['total_tokens'] == 42
         assert result['tool_uses'] == 3
         assert result['duration_ms'] == 999
@@ -709,14 +673,14 @@ class TestEndPhaseAccumulatorFallback:
 
     def test_reads_accumulator_when_flags_absent(self, plan_context):
         """end-phase without flags pulls totals from work/metrics-accumulator-{phase}.toon."""
-        cmd_start_phase(_ns_start_phase('ep-fallback', '6-finalize'))
+        cmd_start_phase(ns_start_phase('ep-fallback', '6-finalize'))
         cmd_accumulate_agent_usage(
-            _ns_accumulate('ep-fallback', '6-finalize', total_tokens=5000, tool_uses=12, duration_ms=60000)
+            ns_accumulate('ep-fallback', '6-finalize', total_tokens=5000, tool_uses=12, duration_ms=60000)
         )
         # Pin start_time so the clamp is a deterministic no-op (see _pin_start_time_to_past).
         _pin_start_time_to_past('ep-fallback', '6-finalize')
 
-        result = cmd_end_phase(_ns_end_phase('ep-fallback', '6-finalize'))
+        result = cmd_end_phase(ns_end_phase('ep-fallback', '6-finalize'))
 
         assert result['status'] == 'success'
         assert result['total_tokens'] == 5000
@@ -730,13 +694,13 @@ class TestEndPhaseAccumulatorFallback:
 
     def test_explicit_flags_override_accumulator(self, plan_context):
         """Explicitly passed flags always win — accumulator does not double-count."""
-        cmd_start_phase(_ns_start_phase('ep-override', '6-finalize'))
+        cmd_start_phase(ns_start_phase('ep-override', '6-finalize'))
         cmd_accumulate_agent_usage(
-            _ns_accumulate('ep-override', '6-finalize', total_tokens=999, tool_uses=99, duration_ms=99999)
+            ns_accumulate('ep-override', '6-finalize', total_tokens=999, tool_uses=99, duration_ms=99999)
         )
 
         result = cmd_end_phase(
-            _ns_end_phase('ep-override', '6-finalize', total_tokens=12345, tool_uses=42, duration_ms=8000)
+            ns_end_phase('ep-override', '6-finalize', total_tokens=12345, tool_uses=42, duration_ms=8000)
         )
 
         assert result['total_tokens'] == 12345
@@ -745,15 +709,15 @@ class TestEndPhaseAccumulatorFallback:
 
     def test_partial_explicit_flags_use_accumulator_for_missing(self, plan_context):
         """end-phase fills only the omitted fields from the accumulator."""
-        cmd_start_phase(_ns_start_phase('ep-partial', '6-finalize'))
+        cmd_start_phase(ns_start_phase('ep-partial', '6-finalize'))
         cmd_accumulate_agent_usage(
-            _ns_accumulate('ep-partial', '6-finalize', total_tokens=7777, tool_uses=20, duration_ms=4000)
+            ns_accumulate('ep-partial', '6-finalize', total_tokens=7777, tool_uses=20, duration_ms=4000)
         )
         # Pin start_time so the clamp is a deterministic no-op (see _pin_start_time_to_past).
         _pin_start_time_to_past('ep-partial', '6-finalize')
 
         # Pass only --total-tokens; --tool-uses / --duration-ms must come from accumulator.
-        result = cmd_end_phase(_ns_end_phase('ep-partial', '6-finalize', total_tokens=10000))
+        result = cmd_end_phase(ns_end_phase('ep-partial', '6-finalize', total_tokens=10000))
 
         assert result['total_tokens'] == 10000
         metrics = (plan_context.plan_dir_for('ep-partial') / 'work' / 'metrics.toon').read_text()
@@ -764,8 +728,8 @@ class TestEndPhaseAccumulatorFallback:
 
     def test_no_accumulator_no_flags_records_timestamps_only(self, plan_context):
         """When neither accumulator nor flags are present, end-phase records timestamps only."""
-        cmd_start_phase(_ns_start_phase('ep-bare', '6-finalize'))
-        result = cmd_end_phase(_ns_end_phase('ep-bare', '6-finalize'))
+        cmd_start_phase(ns_start_phase('ep-bare', '6-finalize'))
+        result = cmd_end_phase(ns_end_phase('ep-bare', '6-finalize'))
         assert result['status'] == 'success'
         assert 'total_tokens' not in result
 
@@ -790,7 +754,7 @@ class TestRetrospectiveTokensAccumulatorCarry:
     def test_accumulate_records_retrospective_tokens(self, plan_context):
         """accumulate-agent-usage --retrospective-tokens lands in the accumulator file and result."""
         result = cmd_accumulate_agent_usage(
-            _ns_accumulate('retro-accum-create', '6-finalize', total_tokens=10000, retrospective_tokens=4000)
+            ns_accumulate('retro-accum-create', '6-finalize', total_tokens=10000, retrospective_tokens=4000)
         )
         assert result['status'] == 'success'
         assert result['retrospective_tokens'] == 4000
@@ -805,29 +769,29 @@ class TestRetrospectiveTokensAccumulatorCarry:
     def test_accumulate_sums_retrospective_tokens_across_calls(self, plan_context):
         """Repeated retrospective_tokens contributions sum like the other accumulator fields."""
         cmd_accumulate_agent_usage(
-            _ns_accumulate('retro-accum-sum', '6-finalize', retrospective_tokens=1500)
+            ns_accumulate('retro-accum-sum', '6-finalize', retrospective_tokens=1500)
         )
         result = cmd_accumulate_agent_usage(
-            _ns_accumulate('retro-accum-sum', '6-finalize', retrospective_tokens=2500)
+            ns_accumulate('retro-accum-sum', '6-finalize', retrospective_tokens=2500)
         )
         assert result['retrospective_tokens'] == 4000
 
     def test_accumulate_omitted_retrospective_tokens_stays_zero(self, plan_context):
         """A call without --retrospective-tokens leaves the running total at zero."""
         result = cmd_accumulate_agent_usage(
-            _ns_accumulate('retro-accum-omit', '6-finalize', total_tokens=500)
+            ns_accumulate('retro-accum-omit', '6-finalize', total_tokens=500)
         )
         assert result['retrospective_tokens'] == 0
 
     def test_end_phase_reads_retrospective_tokens_from_accumulator(self, plan_context):
         """end-phase without --retrospective-tokens pulls it from the accumulator file."""
-        cmd_start_phase(_ns_start_phase('retro-ep-fallback', '6-finalize'))
+        cmd_start_phase(ns_start_phase('retro-ep-fallback', '6-finalize'))
         cmd_accumulate_agent_usage(
-            _ns_accumulate('retro-ep-fallback', '6-finalize', total_tokens=8000, retrospective_tokens=3000)
+            ns_accumulate('retro-ep-fallback', '6-finalize', total_tokens=8000, retrospective_tokens=3000)
         )
         _pin_start_time_to_past('retro-ep-fallback', '6-finalize')
 
-        result = cmd_end_phase(_ns_end_phase('retro-ep-fallback', '6-finalize'))
+        result = cmd_end_phase(ns_end_phase('retro-ep-fallback', '6-finalize'))
 
         assert result['status'] == 'success'
         assert result['retrospective_tokens'] == 3000
@@ -838,14 +802,14 @@ class TestRetrospectiveTokensAccumulatorCarry:
 
     def test_end_phase_explicit_retrospective_tokens_overrides_accumulator(self, plan_context):
         """An explicit --retrospective-tokens flag wins over the accumulator value."""
-        cmd_start_phase(_ns_start_phase('retro-ep-override', '6-finalize'))
+        cmd_start_phase(ns_start_phase('retro-ep-override', '6-finalize'))
         cmd_accumulate_agent_usage(
-            _ns_accumulate('retro-ep-override', '6-finalize', retrospective_tokens=999)
+            ns_accumulate('retro-ep-override', '6-finalize', retrospective_tokens=999)
         )
         _pin_start_time_to_past('retro-ep-override', '6-finalize')
 
         result = cmd_end_phase(
-            _ns_end_phase('retro-ep-override', '6-finalize', retrospective_tokens=5000)
+            ns_end_phase('retro-ep-override', '6-finalize', retrospective_tokens=5000)
         )
 
         assert result['retrospective_tokens'] == 5000
@@ -856,8 +820,8 @@ class TestRetrospectiveTokensAccumulatorCarry:
 
     def test_end_phase_no_accumulator_no_flag_omits_retrospective_tokens(self, plan_context):
         """Without an accumulator value and without the flag, the field never appears."""
-        cmd_start_phase(_ns_start_phase('retro-ep-absent', '6-finalize'))
-        result = cmd_end_phase(_ns_end_phase('retro-ep-absent', '6-finalize', total_tokens=1000))
+        cmd_start_phase(ns_start_phase('retro-ep-absent', '6-finalize'))
+        result = cmd_end_phase(ns_end_phase('retro-ep-absent', '6-finalize', total_tokens=1000))
 
         assert result['status'] == 'success'
         assert 'retrospective_tokens' not in result
@@ -873,13 +837,13 @@ class TestRetrospectiveTokensAccumulatorCarry:
         A zero accumulator value must not be written (it is indistinguishable from
         'no retrospective ran').
         """
-        cmd_start_phase(_ns_start_phase('retro-ep-zero', '6-finalize'))
+        cmd_start_phase(ns_start_phase('retro-ep-zero', '6-finalize'))
         cmd_accumulate_agent_usage(
-            _ns_accumulate('retro-ep-zero', '6-finalize', total_tokens=5000, retrospective_tokens=0)
+            ns_accumulate('retro-ep-zero', '6-finalize', total_tokens=5000, retrospective_tokens=0)
         )
         _pin_start_time_to_past('retro-ep-zero', '6-finalize')
 
-        result = cmd_end_phase(_ns_end_phase('retro-ep-zero', '6-finalize'))
+        result = cmd_end_phase(ns_end_phase('retro-ep-zero', '6-finalize'))
 
         assert result['status'] == 'success'
         assert 'retrospective_tokens' not in result
@@ -890,14 +854,14 @@ class TestRetrospectiveTokensAccumulatorCarry:
 
     def test_phase_boundary_reads_retrospective_tokens_from_accumulator(self, plan_context):
         """phase-boundary closes the prev phase reading retrospective_tokens from its accumulator."""
-        cmd_start_phase(_ns_start_phase('retro-pb-fallback', '6-finalize'))
+        cmd_start_phase(ns_start_phase('retro-pb-fallback', '6-finalize'))
         cmd_accumulate_agent_usage(
-            _ns_accumulate('retro-pb-fallback', '6-finalize', total_tokens=7000, retrospective_tokens=2200)
+            ns_accumulate('retro-pb-fallback', '6-finalize', total_tokens=7000, retrospective_tokens=2200)
         )
         _pin_start_time_to_past('retro-pb-fallback', '6-finalize')
 
         result = manage_metrics.cmd_phase_boundary(
-            _ns_phase_boundary('retro-pb-fallback', prev_phase='6-finalize', next_phase='6-finalize')
+            ns_phase_boundary('retro-pb-fallback', prev_phase='6-finalize', next_phase='6-finalize')
         )
 
         assert result['status'] == 'success'
@@ -908,14 +872,14 @@ class TestRetrospectiveTokensAccumulatorCarry:
 
     def test_phase_boundary_explicit_retrospective_tokens_overrides_accumulator(self, plan_context):
         """An explicit --retrospective-tokens flag on phase-boundary wins over the accumulator."""
-        cmd_start_phase(_ns_start_phase('retro-pb-override', '5-execute'))
+        cmd_start_phase(ns_start_phase('retro-pb-override', '5-execute'))
         cmd_accumulate_agent_usage(
-            _ns_accumulate('retro-pb-override', '5-execute', retrospective_tokens=111)
+            ns_accumulate('retro-pb-override', '5-execute', retrospective_tokens=111)
         )
         _pin_start_time_to_past('retro-pb-override', '5-execute')
 
         result = manage_metrics.cmd_phase_boundary(
-            _ns_phase_boundary(
+            ns_phase_boundary(
                 'retro-pb-override',
                 prev_phase='5-execute',
                 next_phase='6-finalize',
@@ -935,14 +899,14 @@ class TestRetrospectiveTokensAccumulatorCarry:
         Symmetric with test_end_phase_zero_accumulator_omits_retrospective_tokens: a zero
         accumulator value must not be written to the closed phase row.
         """
-        cmd_start_phase(_ns_start_phase('retro-pb-zero', '6-finalize'))
+        cmd_start_phase(ns_start_phase('retro-pb-zero', '6-finalize'))
         cmd_accumulate_agent_usage(
-            _ns_accumulate('retro-pb-zero', '6-finalize', total_tokens=4000, retrospective_tokens=0)
+            ns_accumulate('retro-pb-zero', '6-finalize', total_tokens=4000, retrospective_tokens=0)
         )
         _pin_start_time_to_past('retro-pb-zero', '6-finalize')
 
         result = manage_metrics.cmd_phase_boundary(
-            _ns_phase_boundary('retro-pb-zero', prev_phase='6-finalize', next_phase='6-finalize')
+            ns_phase_boundary('retro-pb-zero', prev_phase='6-finalize', next_phase='6-finalize')
         )
 
         assert result['status'] == 'success'
@@ -1160,7 +1124,7 @@ class TestGenerateReconcilesDispatchBoundaries:
         )
         _write_dispatch_boundaries(plan_context, 'db-recon-under', '5-execute', [1_000_000, 1_000_000])
 
-        result = cmd_generate(_ns_generate('db-recon-under'))
+        result = cmd_generate(ns_generate('db-recon-under'))
         assert result['status'] == 'success'
         # The reconciled (larger) boundary sum feeds the Total.
         assert result['total_tokens'] == 2_000_000
@@ -1201,7 +1165,7 @@ class TestGenerateReconcilesDispatchBoundaries:
             },
         )
 
-        result = cmd_generate(_ns_generate('db-recon-noop'))
+        result = cmd_generate(ns_generate('db-recon-noop'))
         assert result['status'] == 'success'
         assert result['total_tokens'] == 50000
 
@@ -1230,7 +1194,7 @@ class TestGenerateReconcilesDispatchBoundaries:
         )
         _write_dispatch_boundaries(plan_context, 'db-recon-smaller', '5-execute', [10000])
 
-        result = cmd_generate(_ns_generate('db-recon-smaller'))
+        result = cmd_generate(ns_generate('db-recon-smaller'))
         assert result['status'] == 'success'
         # max(89000, 10000) = 89000 feeds the Total; no reconciliation occurs.
         assert result['total_tokens'] == 89000
@@ -1263,7 +1227,7 @@ class TestGenerateReconcilesAccumulator:
         """An unclosed 6-finalize row surfaces its accumulator totals after generate."""
         # Producer: seed the durable accumulator (subagent returns during finalize).
         cmd_accumulate_agent_usage(
-            _ns_accumulate(
+            ns_accumulate(
                 'recon-gen-unclosed', '6-finalize', total_tokens=12345, tool_uses=7, duration_ms=60000
             )
         )
@@ -1273,7 +1237,7 @@ class TestGenerateReconcilesAccumulator:
             {'phases': {'6-finalize': {'duration_seconds': 600}}},
         )
 
-        result = cmd_generate(_ns_generate('recon-gen-unclosed'))
+        result = cmd_generate(ns_generate('recon-gen-unclosed'))
         assert result['status'] == 'success'
 
         six = manage_metrics.read_metrics_raw('recon-gen-unclosed')['phases']['6-finalize']
@@ -1287,7 +1251,7 @@ class TestGenerateReconcilesAccumulator:
     def test_generate_preserves_explicit_row_over_divergent_accumulator(self, plan_context):
         """A token-closed row wins over a divergent accumulator (explicit-wins)."""
         cmd_accumulate_agent_usage(
-            _ns_accumulate(
+            ns_accumulate(
                 'recon-gen-explicit', '6-finalize', total_tokens=999, tool_uses=9, duration_ms=99999
             )
         )
@@ -1305,7 +1269,7 @@ class TestGenerateReconcilesAccumulator:
             },
         )
 
-        result = cmd_generate(_ns_generate('recon-gen-explicit'))
+        result = cmd_generate(ns_generate('recon-gen-explicit'))
         assert result['status'] == 'success'
 
         six = manage_metrics.read_metrics_raw('recon-gen-explicit')['phases']['6-finalize']
@@ -1316,7 +1280,7 @@ class TestGenerateReconcilesAccumulator:
     def test_generate_partial_row_folds_only_absent_fields(self, plan_context):
         """A row with an explicit total_tokens folds only the missing fields from the accumulator."""
         cmd_accumulate_agent_usage(
-            _ns_accumulate(
+            ns_accumulate(
                 'recon-gen-partial', '6-finalize', total_tokens=999, tool_uses=7, duration_ms=60000
             )
         )
@@ -1325,7 +1289,7 @@ class TestGenerateReconcilesAccumulator:
             {'phases': {'6-finalize': {'duration_seconds': 600, 'total_tokens': 50000}}},
         )
 
-        result = cmd_generate(_ns_generate('recon-gen-partial'))
+        result = cmd_generate(ns_generate('recon-gen-partial'))
         assert result['status'] == 'success'
 
         six = manage_metrics.read_metrics_raw('recon-gen-partial')['phases']['6-finalize']
@@ -1359,13 +1323,13 @@ class TestReconcileFloorKeepsPartiality:
         phases['6-finalize'] = {'duration_seconds': 600}
         manage_metrics.write_metrics('d3-reconcile-floor', {'phases': phases})
         cmd_accumulate_agent_usage(
-            _ns_accumulate(
+            ns_accumulate(
                 'd3-reconcile-floor', '6-finalize', total_tokens=54321, tool_uses=11, duration_ms=120000
             )
         )
 
         # The reconcile the retrospective performs before aspect 4 reads metrics.md.
-        result = cmd_generate(_ns_generate('d3-reconcile-floor'))
+        result = cmd_generate(ns_generate('d3-reconcile-floor'))
         assert result['status'] == 'success'
 
         # (1) The largest finalize phase now reads its FLOOR, not zero.
@@ -1486,7 +1450,7 @@ class TestEnrichDelegatesToRuntimeOp:
             },
         )
 
-        result = cmd_enrich(_ns_enrich('enrich-delegate-01', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))
+        result = cmd_enrich(ns_enrich('enrich-delegate-01', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))
 
         assert result['status'] == 'success'
         assert result['enriched'] is True
@@ -1510,7 +1474,7 @@ class TestEnrichDelegatesToRuntimeOp:
         manage_metrics.write_metrics('enrich-delegate-02', {'plan_id': 'enrich-delegate-02'})
         _patch_runtime_op(monkeypatch, status='no-op', per_phase=None, counters={})
 
-        result = cmd_enrich(_ns_enrich('enrich-delegate-02', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))
+        result = cmd_enrich(ns_enrich('enrich-delegate-02', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))
 
         assert result['status'] == 'success'
         assert result['enriched'] is False
@@ -1528,7 +1492,7 @@ class TestEnrichDelegatesToRuntimeOp:
 
         monkeypatch.setattr(manage_metrics.subprocess, 'run', _raise)
 
-        result = cmd_enrich(_ns_enrich('enrich-delegate-03', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))
+        result = cmd_enrich(ns_enrich('enrich-delegate-03', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))
 
         assert result['status'] == 'success'
         assert result['enriched'] is False
@@ -1560,7 +1524,7 @@ class TestEnrichDelegatesToRuntimeOp:
         )
 
         # Must not raise on the non-dict bucket.
-        result = cmd_enrich(_ns_enrich('enrich-delegate-04', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))
+        result = cmd_enrich(ns_enrich('enrich-delegate-04', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))
 
         assert result['status'] == 'success'
         phases = manage_metrics.read_metrics_raw('enrich-delegate-04')['phases']
@@ -1634,7 +1598,7 @@ class TestGenerateRendersFourFieldUsage:
             },
         )
 
-        result = cmd_generate(_ns_generate('gen-4f'))
+        result = cmd_generate(ns_generate('gen-4f'))
         assert result['status'] == 'success'
 
         md = (plan_context.plan_dir_for('gen-4f') / 'metrics.md').read_text()
@@ -1662,7 +1626,7 @@ class TestGenerateRendersFourFieldUsage:
             },
         )
 
-        result = cmd_generate(_ns_generate('gen-4f-absent'))
+        result = cmd_generate(ns_generate('gen-4f-absent'))
         assert result['status'] == 'success'
 
         md = (plan_context.plan_dir_for('gen-4f-absent') / 'metrics.md').read_text()
@@ -1687,7 +1651,7 @@ class TestGenerateRendersFourFieldUsage:
             },
         )
 
-        result = cmd_generate(_ns_generate('gen-4f-coexist'))
+        result = cmd_generate(ns_generate('gen-4f-coexist'))
         assert result['status'] == 'success'
         # total_tokens still flows to the Tokens column / Total tokens detail line.
         assert result['total_tokens'] == 50000
@@ -1745,7 +1709,7 @@ class TestExplorationCountersAbsentVsMeasuredZero:
             counters={'message_count': 1},
         )
 
-        assert cmd_enrich(_ns_enrich('expl-absent', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
+        assert cmd_enrich(ns_enrich('expl-absent', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
             'status'
         ] == 'success'
 
@@ -1753,7 +1717,7 @@ class TestExplorationCountersAbsentVsMeasuredZero:
         for field in manage_metrics._EXPLORATION_COUNTER_FIELDS:
             assert field not in five, f'absent counter {field} must not be persisted as 0'
 
-        cmd_generate(_ns_generate('expl-absent'))
+        cmd_generate(ns_generate('expl-absent'))
         md = (plan_dir / 'metrics.md').read_text()
         assert '- **Exploration tool calls**' not in md
         assert '- **Exploration result bytes**' not in md
@@ -1782,7 +1746,7 @@ class TestExplorationCountersAbsentVsMeasuredZero:
             counters={'message_count': 1, 'unclassified_tool_calls': 0},
         )
 
-        assert cmd_enrich(_ns_enrich('expl-zero', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
+        assert cmd_enrich(ns_enrich('expl-zero', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
             'status'
         ] == 'success'
 
@@ -1793,7 +1757,7 @@ class TestExplorationCountersAbsentVsMeasuredZero:
         # Counters the runtime did not supply stay absent even in this bucket.
         assert 'execute_tool_calls' not in five
 
-        cmd_generate(_ns_generate('expl-zero'))
+        cmd_generate(ns_generate('expl-zero'))
         md = (plan_dir / 'metrics.md').read_text()
         assert '- **Exploration tool calls**: 0' in md
         assert '- **Exploration result bytes**: 0' in md
@@ -1834,7 +1798,7 @@ class TestExplorationSubsourceRoundTrip:
             counters={'message_count': 1},
         )
 
-        assert cmd_enrich(_ns_enrich('sub-absent', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
+        assert cmd_enrich(ns_enrich('sub-absent', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
             'status'
         ] == 'success'
 
@@ -1843,7 +1807,7 @@ class TestExplorationSubsourceRoundTrip:
         for field in manage_metrics._EXPLORATION_SUBSOURCE_FIELDS:
             assert field not in five, f'absent sub-source {field} must not be persisted as 0'
 
-        cmd_generate(_ns_generate('sub-absent'))
+        cmd_generate(ns_generate('sub-absent'))
         md = (plan_dir / 'metrics.md').read_text()
         assert '- **Exploration index answerable bytes**' not in md
         assert '- **Exploration doc residency bytes**' not in md
@@ -1870,7 +1834,7 @@ class TestExplorationSubsourceRoundTrip:
             counters={'message_count': 1},
         )
 
-        assert cmd_enrich(_ns_enrich('sub-zero', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
+        assert cmd_enrich(ns_enrich('sub-zero', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
             'status'
         ] == 'success'
 
@@ -1878,7 +1842,7 @@ class TestExplorationSubsourceRoundTrip:
         for field in manage_metrics._EXPLORATION_SUBSOURCE_FIELDS:
             assert five[field] == 0, field
 
-        cmd_generate(_ns_generate('sub-zero'))
+        cmd_generate(ns_generate('sub-zero'))
         md = (plan_dir / 'metrics.md').read_text()
         assert '- **Exploration index answerable bytes**: 0' in md
         assert '- **Exploration doc residency bytes**: 0' in md
@@ -1916,7 +1880,7 @@ class TestExplorationSubsourceRoundTrip:
             counters={'message_count': 1},
         )
 
-        assert cmd_enrich(_ns_enrich('sub-split', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
+        assert cmd_enrich(ns_enrich('sub-split', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
             'status'
         ] == 'success'
 
@@ -1928,7 +1892,7 @@ class TestExplorationSubsourceRoundTrip:
         )
         assert persisted_sum == five['exploration_result_bytes']
 
-        cmd_generate(_ns_generate('sub-split'))
+        cmd_generate(ns_generate('sub-split'))
         md = (plan_dir / 'metrics.md').read_text()
         assert '- **Exploration index answerable bytes**: 700' in md
         assert '- **Exploration doc residency bytes**: 250' in md
@@ -1972,7 +1936,7 @@ class TestCacheReadAttributionRoundTrip:
             counters={'message_count': 1},
         )
 
-        assert cmd_enrich(_ns_enrich('attr-absent', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
+        assert cmd_enrich(ns_enrich('attr-absent', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
             'status'
         ] == 'success'
 
@@ -1981,7 +1945,7 @@ class TestCacheReadAttributionRoundTrip:
         for field in manage_metrics._CACHE_READ_ATTRIBUTION_FIELDS:
             assert field not in five, f'absent attribution field {field} must not be persisted as 0'
 
-        cmd_generate(_ns_generate('attr-absent'))
+        cmd_generate(ns_generate('attr-absent'))
         md = (plan_dir / 'metrics.md').read_text()
         assert '- **Cache read attributed exploration**' not in md
         assert '- **Unattributed cache_read tokens**' not in md
@@ -2009,7 +1973,7 @@ class TestCacheReadAttributionRoundTrip:
             counters={'message_count': 1},
         )
 
-        assert cmd_enrich(_ns_enrich('attr-zero', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
+        assert cmd_enrich(ns_enrich('attr-zero', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
             'status'
         ] == 'success'
 
@@ -2017,7 +1981,7 @@ class TestCacheReadAttributionRoundTrip:
         for field in manage_metrics._CACHE_READ_ATTRIBUTION_FIELDS:
             assert five[field] == 0, field
 
-        cmd_generate(_ns_generate('attr-zero'))
+        cmd_generate(ns_generate('attr-zero'))
         md = (plan_dir / 'metrics.md').read_text()
         assert '- **Cache read attributed exploration**: 0' in md
         # The cache_read residual names its DENOMINATOR (cache_read_input_tokens),
@@ -2057,7 +2021,7 @@ class TestCacheReadAttributionRoundTrip:
             counters={'message_count': 1},
         )
 
-        assert cmd_enrich(_ns_enrich('attr-split', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
+        assert cmd_enrich(ns_enrich('attr-split', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
             'status'
         ] == 'success'
 
@@ -2071,7 +2035,7 @@ class TestCacheReadAttributionRoundTrip:
         )
         assert persisted_sum == five['cache_read_input_tokens']
 
-        cmd_generate(_ns_generate('attr-split'))
+        cmd_generate(ns_generate('attr-split'))
         md = (plan_dir / 'metrics.md').read_text()
         assert '- **Cache read attributed exploration**: 800' in md
         assert '- **Cache read attributed work**: 150' in md
@@ -2128,7 +2092,7 @@ class TestTwoUnattributedPopulationsAreDistinguishable:
             counters={'message_count': 1},
         )
 
-        assert cmd_enrich(_ns_enrich('d1-emit', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
+        assert cmd_enrich(ns_enrich('d1-emit', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))[
             'status'
         ] == 'success'
 
@@ -2174,9 +2138,9 @@ class TestTwoUnattributedPopulationsAreDistinguishable:
             },
             counters={'message_count': 1},
         )
-        cmd_enrich(_ns_enrich('d1-render', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))
+        cmd_enrich(ns_enrich('d1-render', 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'))
 
-        cmd_generate(_ns_generate('d1-render'))
+        cmd_generate(ns_generate('d1-render'))
         md = (plan_dir / 'metrics.md').read_text()
 
         # The byte residual: names its quantity (bytes) and its denominator.
@@ -2221,7 +2185,7 @@ class TestReadCostDecomposition:
             },
         )
 
-        result = cmd_generate(_ns_generate('d3-persist'))
+        result = cmd_generate(ns_generate('d3-persist'))
         assert result['status'] == 'success'
 
         five = manage_metrics.read_metrics_raw('d3-persist')['phases']['5-execute']
@@ -2251,7 +2215,7 @@ class TestReadCostDecomposition:
             },
         )
 
-        cmd_generate(_ns_generate('d3-absent'))
+        cmd_generate(ns_generate('d3-absent'))
         phases = manage_metrics.read_metrics_raw('d3-absent')['phases']
         assert 'cache_read_per_tool_use' not in phases['3-outline']
         assert 'cache_read_per_tool_use' not in phases['5-execute']
@@ -2275,7 +2239,7 @@ class TestReadCostDecomposition:
             },
         )
 
-        cmd_generate(_ns_generate('d3-render'))
+        cmd_generate(ns_generate('d3-render'))
         md = (plan_context.plan_dir_for('d3-render') / 'metrics.md').read_text()
         assert '- **Read-cost decomposition**:' in md
         assert 'resident context per tool-use (10,000)' in md
@@ -2311,7 +2275,7 @@ class TestReadCostDecomposition:
         )
 
         # Must not raise (the old unconditional tool_uses read would KeyError here).
-        result = cmd_generate(_ns_generate('d3-stale'))
+        result = cmd_generate(ns_generate('d3-stale'))
         assert result['status'] == 'success'
 
         phases = manage_metrics.read_metrics_raw('d3-stale')['phases']
@@ -2365,7 +2329,7 @@ class TestGeneratePartialityFields:
         phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES[:5]}
         manage_metrics.write_metrics('partial-true-return', {'phases': phases})
 
-        result = cmd_generate(_ns_generate('partial-true-return'))
+        result = cmd_generate(ns_generate('partial-true-return'))
         assert result['status'] == 'success'
         assert result['any_phase_missing_end_time'] is True
         assert result['phases_missing_end_time'] == ['6-finalize']
@@ -2375,7 +2339,7 @@ class TestGeneratePartialityFields:
         phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES[:3]}
         manage_metrics.write_metrics('partial-types', {'phases': phases})
 
-        result = cmd_generate(_ns_generate('partial-types'))
+        result = cmd_generate(ns_generate('partial-types'))
         assert isinstance(result['any_phase_missing_end_time'], bool)
         assert isinstance(result['phases_missing_end_time'], list)
 
@@ -2384,7 +2348,7 @@ class TestGeneratePartialityFields:
         phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES}
         manage_metrics.write_metrics('partial-false-full', {'phases': phases})
 
-        result = cmd_generate(_ns_generate('partial-false-full'))
+        result = cmd_generate(ns_generate('partial-false-full'))
         assert result['status'] == 'success'
         assert result['any_phase_missing_end_time'] is False
         assert result['phases_missing_end_time'] == []
@@ -2396,7 +2360,7 @@ class TestGeneratePartialityFields:
         phases = {name: _recorded_phase_row() for name in recorded}
         manage_metrics.write_metrics('partial-order', {'phases': phases})
 
-        result = cmd_generate(_ns_generate('partial-order'))
+        result = cmd_generate(ns_generate('partial-order'))
         assert result['any_phase_missing_end_time'] is True
         expected = [name for name in manage_metrics.PHASE_NAMES if name not in recorded]
         assert result['phases_missing_end_time'] == expected
@@ -2414,7 +2378,7 @@ class TestGeneratePartialityFields:
         phases['4-plan'] = {'start_time': '2020-01-01T00:00:00+00:00', 'duration_seconds': 600}
         manage_metrics.write_metrics('partial-unclosed-row', {'phases': phases})
 
-        result = cmd_generate(_ns_generate('partial-unclosed-row'))
+        result = cmd_generate(ns_generate('partial-unclosed-row'))
         assert result['any_phase_missing_end_time'] is True
         assert result['phases_missing_end_time'] == ['4-plan']
 
@@ -2423,7 +2387,7 @@ class TestGeneratePartialityFields:
         phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES[:5]}
         manage_metrics.write_metrics('partial-toon', {'phases': phases})
 
-        cmd_generate(_ns_generate('partial-toon'))
+        cmd_generate(ns_generate('partial-toon'))
 
         # Parsed top-level keys (written before the first [phase] block).
         data = manage_metrics.read_metrics_raw('partial-toon')
@@ -2440,7 +2404,7 @@ class TestGeneratePartialityFields:
         phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES}
         manage_metrics.write_metrics('partial-toon-false', {'phases': phases})
 
-        cmd_generate(_ns_generate('partial-toon-false'))
+        cmd_generate(ns_generate('partial-toon-false'))
 
         data = manage_metrics.read_metrics_raw('partial-toon-false')
         assert data['any_phase_missing_end_time'] == 'false'
@@ -2470,7 +2434,7 @@ class TestGeneratePartialityFields:
         assert 'partial: false' in seeded
         assert 'unrecorded_phases: ' in seeded
 
-        cmd_generate(_ns_generate('partial-retired-drop'))
+        cmd_generate(ns_generate('partial-retired-drop'))
 
         data = manage_metrics.read_metrics_raw('partial-retired-drop')
         assert 'partial' not in data
@@ -2489,7 +2453,7 @@ class TestGeneratePartialityFields:
         phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES[:5]}
         manage_metrics.write_metrics('partial-md-marker', {'phases': phases})
 
-        cmd_generate(_ns_generate('partial-md-marker'))
+        cmd_generate(ns_generate('partial-md-marker'))
 
         md = (plan_context.plan_dir_for('partial-md-marker') / 'metrics.md').read_text()
         md_lines = md.splitlines()
@@ -2517,7 +2481,7 @@ class TestGeneratePartialityFields:
         phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES}
         manage_metrics.write_metrics('partial-md-none', {'phases': phases})
 
-        cmd_generate(_ns_generate('partial-md-none'))
+        cmd_generate(ns_generate('partial-md-none'))
 
         md = (plan_context.plan_dir_for('partial-md-none') / 'metrics.md').read_text()
         assert '> Phases missing an end_time boundary marker' not in md
@@ -2545,7 +2509,7 @@ class TestGenerateDenominatorFields:
             '## Deliverables\n\n### 1. First\n\n### 2. Second\n', encoding='utf-8'
         )
 
-        result = cmd_generate(_ns_generate('gen-denominator'))
+        result = cmd_generate(ns_generate('gen-denominator'))
 
         assert result['deliverable_count'] == 2
         assert result['deliverable_count_sampling_point'] == (
@@ -2563,7 +2527,7 @@ class TestGenerateDenominatorFields:
         phases = {name: _recorded_phase_row() for name in manage_metrics.PHASE_NAMES}
         manage_metrics.write_metrics('gen-denominator-absent', {'phases': phases})
 
-        result = cmd_generate(_ns_generate('gen-denominator-absent'))
+        result = cmd_generate(ns_generate('gen-denominator-absent'))
 
         assert result['status'] == 'success', result
         for name in ('deliverable_count', 'files_modified', 'tasks_completed'):
@@ -2592,9 +2556,9 @@ class TestCloseValueScopeDiscriminator:
         only close — so writing the lists would state a distinction the row does
         not have.
         """
-        cmd_start_phase(_ns_start_phase('vs-first', '5-execute'))
+        cmd_start_phase(ns_start_phase('vs-first', '5-execute'))
         _pin_start_time_to_past('vs-first', '5-execute')
-        cmd_end_phase(_ns_end_phase('vs-first', '5-execute', total_tokens=1000, tool_uses=4))
+        cmd_end_phase(ns_end_phase('vs-first', '5-execute', total_tokens=1000, tool_uses=4))
 
         row = manage_metrics.read_metrics_raw('vs-first')['phases']['5-execute']
         assert row['close_count'] == 1
@@ -2610,11 +2574,11 @@ class TestCloseValueScopeDiscriminator:
         the arithmetic it claims: `total_tokens` really is the SUM of the two
         closes' deltas, and `close_count` really is 2.
         """
-        cmd_start_phase(_ns_start_phase('vs-reentry', '5-execute'))
+        cmd_start_phase(ns_start_phase('vs-reentry', '5-execute'))
         _pin_start_time_to_past('vs-reentry', '5-execute')
-        cmd_end_phase(_ns_end_phase('vs-reentry', '5-execute', total_tokens=1000, tool_uses=4))
+        cmd_end_phase(ns_end_phase('vs-reentry', '5-execute', total_tokens=1000, tool_uses=4))
         # Loop-back: the same phase is closed a second time.
-        cmd_end_phase(_ns_end_phase('vs-reentry', '5-execute', total_tokens=250, tool_uses=1))
+        cmd_end_phase(ns_end_phase('vs-reentry', '5-execute', total_tokens=250, tool_uses=1))
 
         row = manage_metrics.read_metrics_raw('vs-reentry')['phases']['5-execute']
         assert row['close_count'] == 2
@@ -2643,10 +2607,10 @@ class TestCloseValueScopeDiscriminator:
         with the row's actual keys, so a timestamps-only close (the sanctioned
         inline recording mode) does not claim a `total_tokens` it never wrote.
         """
-        cmd_start_phase(_ns_start_phase('vs-timestamps', '2-refine'))
+        cmd_start_phase(ns_start_phase('vs-timestamps', '2-refine'))
         _pin_start_time_to_past('vs-timestamps', '2-refine')
-        cmd_end_phase(_ns_end_phase('vs-timestamps', '2-refine'))
-        cmd_end_phase(_ns_end_phase('vs-timestamps', '2-refine'))
+        cmd_end_phase(ns_end_phase('vs-timestamps', '2-refine'))
+        cmd_end_phase(ns_end_phase('vs-timestamps', '2-refine'))
 
         row = manage_metrics.read_metrics_raw('vs-timestamps')['phases']['2-refine']
         assert row['close_count'] == 2
@@ -2665,11 +2629,11 @@ class TestCloseValueScopeDiscriminator:
         drift from the writer's, so the bullet is asserted to carry the exact
         strings the row published.
         """
-        cmd_start_phase(_ns_start_phase('vs-md', '5-execute'))
+        cmd_start_phase(ns_start_phase('vs-md', '5-execute'))
         _pin_start_time_to_past('vs-md', '5-execute')
-        cmd_end_phase(_ns_end_phase('vs-md', '5-execute', total_tokens=1000, tool_uses=4))
-        cmd_end_phase(_ns_end_phase('vs-md', '5-execute', total_tokens=250, tool_uses=1))
-        cmd_generate(_ns_generate('vs-md'))
+        cmd_end_phase(ns_end_phase('vs-md', '5-execute', total_tokens=1000, tool_uses=4))
+        cmd_end_phase(ns_end_phase('vs-md', '5-execute', total_tokens=250, tool_uses=1))
+        cmd_generate(ns_generate('vs-md'))
 
         row = manage_metrics.read_metrics_raw('vs-md')['phases']['5-execute']
         md = (plan_context.plan_dir_for('vs-md') / 'metrics.md').read_text()
@@ -2718,7 +2682,7 @@ class TestGenerateReEntryMarker:
             },
         )
 
-        result = cmd_generate(_ns_generate('reentry-marker'))
+        result = cmd_generate(ns_generate('reentry-marker'))
         assert result['status'] == 'success'
         assert result['re_entered_phases'] == ['5-execute']
 
@@ -2753,7 +2717,7 @@ class TestGenerateReEntryMarker:
             },
         )
 
-        result = cmd_generate(_ns_generate('reentry-none'))
+        result = cmd_generate(ns_generate('reentry-none'))
         assert result['status'] == 'success'
         assert result['re_entered_phases'] == []
 
@@ -2781,7 +2745,7 @@ class TestGenerateReEntryMarker:
             },
         )
 
-        result = cmd_generate(_ns_generate('reentry-order'))
+        result = cmd_generate(ns_generate('reentry-order'))
         assert result['re_entered_phases'] == ['2-refine', '5-execute']
 
         md = (plan_context.plan_dir_for('reentry-order') / 'metrics.md').read_text()
@@ -2810,7 +2774,7 @@ class TestGenerateReEntryMarker:
             },
         )
 
-        result = cmd_generate(_ns_generate('reentry-legacy'))
+        result = cmd_generate(ns_generate('reentry-legacy'))
         assert result['re_entered_phases'] == []
 
         md = (plan_context.plan_dir_for('reentry-legacy') / 'metrics.md').read_text()
@@ -2821,44 +2785,6 @@ class TestGenerateReEntryMarker:
 # =============================================================================
 # Test: record-dispatch-boundary (Tier 2 - direct import)
 # =============================================================================
-
-
-def _ns_record_dispatch_boundary(
-    plan_id: str,
-    phase: str,
-    termination_cause: str,
-    total_tokens: int | None = None,
-    tool_uses: int | None = None,
-    duration_ms: int | None = None,
-    input_tokens: int | None = None,
-    output_tokens: int | None = None,
-    cache_read_input_tokens: int | None = None,
-    cache_creation_input_tokens: int | None = None,
-) -> Namespace:
-    """Build Namespace for record-dispatch-boundary command.
-
-    The four per-dispatch context-load fields (``input_tokens``,
-    ``output_tokens``, ``cache_read_input_tokens``,
-    ``cache_creation_input_tokens``) default to ``None`` so every existing call
-    site exercises the UNMEASURED path that ``cmd_record_dispatch_boundary``
-    applies when a flag is omitted — the column carries the ``unmeasured``
-    literal, never a ``0`` — while the legacy five columns keep their numeric
-    default and stay positionally unchanged.
-    """
-    return Namespace(
-        plan_id=plan_id,
-        phase=phase,
-        termination_cause=termination_cause,
-        total_tokens=total_tokens,
-        tool_uses=tool_uses,
-        duration_ms=duration_ms,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        cache_read_input_tokens=cache_read_input_tokens,
-        cache_creation_input_tokens=cache_creation_input_tokens,
-        command='record-dispatch-boundary',
-        func=cmd_record_dispatch_boundary,
-    )
 
 
 # The 5 newly added termination causes (3 phase-6 + 2 phase-4 outcomes) along
@@ -2942,7 +2868,7 @@ class TestRecordDispatchBoundaryAcceptsNewCauses:
         pdir = plan_context.plan_dir_for(plan_id)
         (pdir / 'status.json').write_text('{}', encoding='utf-8')
         result = cmd_record_dispatch_boundary(
-            _ns_record_dispatch_boundary(
+            ns_record_dispatch_boundary(
                 plan_id,
                 phase,
                 termination_cause=cause,
@@ -2976,7 +2902,7 @@ class TestRecordDispatchBoundaryAcceptsNewCauses:
         (pdir / 'status.json').write_text('{}', encoding='utf-8')
         for cause in ('step_complete', 'blocked_user_review', 'blocked_session_restart'):
             result = cmd_record_dispatch_boundary(
-                _ns_record_dispatch_boundary(plan_id, '6-finalize', termination_cause=cause)
+                ns_record_dispatch_boundary(plan_id, '6-finalize', termination_cause=cause)
             )
             assert result['status'] == 'success'
 
@@ -3000,7 +2926,7 @@ class TestRecordDispatchBoundaryAcceptsNewCauses:
         (pdir / 'status.json').write_text('{}', encoding='utf-8')
         for cause in ('task_batch_complete', 'agent_returned'):
             result = cmd_record_dispatch_boundary(
-                _ns_record_dispatch_boundary(plan_id, '4-plan', termination_cause=cause)
+                ns_record_dispatch_boundary(plan_id, '4-plan', termination_cause=cause)
             )
             assert result['status'] == 'success'
 
@@ -3031,7 +2957,7 @@ class TestRecordDispatchBoundaryAcceptsBudgetYield:
         pdir = plan_context.plan_dir_for(plan_id)
         (pdir / 'status.json').write_text('{}', encoding='utf-8')
         result = cmd_record_dispatch_boundary(
-            _ns_record_dispatch_boundary(
+            ns_record_dispatch_boundary(
                 plan_id,
                 '5-execute',
                 termination_cause='budget_yield',
@@ -3060,7 +2986,7 @@ class TestRecordDispatchBoundaryAcceptsBudgetYield:
         (pdir / 'status.json').write_text('{}', encoding='utf-8')
         for cause in ('budget_yield', 'clean_exit_queue_empty'):
             result = cmd_record_dispatch_boundary(
-                _ns_record_dispatch_boundary(plan_id, '5-execute', termination_cause=cause)
+                ns_record_dispatch_boundary(plan_id, '5-execute', termination_cause=cause)
             )
             assert result['status'] == 'success'
 
@@ -3081,8 +3007,11 @@ class TestRecordDispatchBoundaryRejectsInvalidCause:
     def test_invalid_cause_returns_invalid_termination_cause_error(self, plan_context):
         """An unknown cause produces status=error with error=invalid_termination_cause."""
         result = cmd_record_dispatch_boundary(
-            _ns_record_dispatch_boundary(
-                'rdb-invalid-cause', '6-finalize', termination_cause='not_a_real_cause'
+            raw_ns(
+                'record-dispatch-boundary',
+                plan_id='rdb-invalid-cause',
+                phase='6-finalize',
+                termination_cause='not_a_real_cause',
             )
         )
         assert result['status'] == 'error'
@@ -3092,8 +3021,11 @@ class TestRecordDispatchBoundaryRejectsInvalidCause:
     def test_legacy_unknown_value_still_rejected(self, plan_context):
         """The legacy fallback value 'unknown' was removed and must continue to reject."""
         result = cmd_record_dispatch_boundary(
-            _ns_record_dispatch_boundary(
-                'rdb-legacy-unknown', '6-finalize', termination_cause='unknown'
+            raw_ns(
+                'record-dispatch-boundary',
+                plan_id='rdb-legacy-unknown',
+                phase='6-finalize',
+                termination_cause='unknown',
             )
         )
         assert result['status'] == 'error'
@@ -3119,7 +3051,7 @@ class TestRecordDispatchBoundaryLegacyCausesStillPass:
         pdir = plan_context.plan_dir_for(plan_id)
         (pdir / 'status.json').write_text('{}', encoding='utf-8')
         result = cmd_record_dispatch_boundary(
-            _ns_record_dispatch_boundary(plan_id, '5-execute', termination_cause=cause)
+            ns_record_dispatch_boundary(plan_id, '5-execute', termination_cause=cause)
         )
         assert result['status'] == 'success'
         assert result['termination_cause'] == cause
@@ -3152,7 +3084,7 @@ class TestRecordDispatchBoundaryContextLoadColumns:
         pdir = plan_context.plan_dir_for(plan_id)
         (pdir / 'status.json').write_text('{}', encoding='utf-8')
         result = cmd_record_dispatch_boundary(
-            _ns_record_dispatch_boundary(
+            ns_record_dispatch_boundary(
                 plan_id,
                 '5-execute',
                 termination_cause='clean_exit_queue_empty',
@@ -3191,7 +3123,7 @@ class TestRecordDispatchBoundaryContextLoadColumns:
         pdir = plan_context.plan_dir_for(plan_id)
         (pdir / 'status.json').write_text('{}', encoding='utf-8')
         result = cmd_record_dispatch_boundary(
-            _ns_record_dispatch_boundary(
+            ns_record_dispatch_boundary(
                 plan_id,
                 '5-execute',
                 termination_cause='clean_exit_queue_empty',
@@ -3236,7 +3168,7 @@ class TestRecordDispatchBoundaryContextLoadColumns:
         pdir = plan_context.plan_dir_for(plan_id)
         (pdir / 'status.json').write_text('{}', encoding='utf-8')
         result = cmd_record_dispatch_boundary(
-            _ns_record_dispatch_boundary(
+            ns_record_dispatch_boundary(
                 plan_id,
                 '5-execute',
                 termination_cause='clean_exit_queue_empty',
@@ -3268,7 +3200,7 @@ class TestRecordDispatchBoundaryContextLoadColumns:
         pdir = plan_context.plan_dir_for(plan_id)
         (pdir / 'status.json').write_text('{}', encoding='utf-8')
         cmd_record_dispatch_boundary(
-            _ns_record_dispatch_boundary(
+            ns_record_dispatch_boundary(
                 plan_id, '5-execute', termination_cause='clean_exit_queue_empty'
             )
         )
@@ -3287,7 +3219,7 @@ class TestRecordDispatchBoundaryContextLoadColumns:
         pdir = plan_context.plan_dir_for(plan_id)
         (pdir / 'status.json').write_text('{}', encoding='utf-8')
         cmd_record_dispatch_boundary(
-            _ns_record_dispatch_boundary(
+            ns_record_dispatch_boundary(
                 plan_id,
                 '5-execute',
                 termination_cause='budget_yield',
@@ -3330,7 +3262,7 @@ class TestRecordDispatchBoundaryContextLoadColumns:
         pdir = plan_context.plan_dir_for(plan_id)
         (pdir / 'status.json').write_text('{}', encoding='utf-8')
         result = cmd_record_dispatch_boundary(
-            _ns_record_dispatch_boundary(
+            ns_record_dispatch_boundary(
                 plan_id,
                 '5-execute',
                 termination_cause='clean_exit_queue_empty',
@@ -3360,29 +3292,6 @@ class TestRecordDispatchBoundaryContextLoadColumns:
 # =============================================================================
 
 
-def _ns_phase_boundary(
-    plan_id: str,
-    prev_phase: str,
-    next_phase: str,
-    total_tokens: int | None = None,
-    tool_uses: int | None = None,
-    duration_ms: int | None = None,
-    retrospective_tokens: int | None = None,
-) -> Namespace:
-    """Build Namespace for phase-boundary command."""
-    return Namespace(
-        plan_id=plan_id,
-        prev_phase=prev_phase,
-        next_phase=next_phase,
-        total_tokens=total_tokens,
-        tool_uses=tool_uses,
-        duration_ms=duration_ms,
-        retrospective_tokens=retrospective_tokens,
-        command='phase-boundary',
-        func=manage_metrics.cmd_phase_boundary,
-    )
-
-
 class TestPlanDirGuardOnWriters:
     """Each plan-scoped writer returns ``plan_not_found`` for an uninitialised plan dir.
 
@@ -3401,22 +3310,22 @@ class TestPlanDirGuardOnWriters:
     # (label, callable building the result from an unseeded plan_id) for every
     # writer routed through _guard_plan_exists in manage-metrics.py.
     _GUARDED_WRITERS = [
-        ('start-phase', lambda pid: cmd_start_phase(_ns_start_phase(pid, '1-init'))),
-        ('end-phase', lambda pid: cmd_end_phase(_ns_end_phase(pid, '1-init'))),
-        ('generate', lambda pid: cmd_generate(_ns_generate(pid))),
+        ('start-phase', lambda pid: cmd_start_phase(ns_start_phase(pid, '1-init'))),
+        ('end-phase', lambda pid: cmd_end_phase(ns_end_phase(pid, '1-init'))),
+        ('generate', lambda pid: cmd_generate(ns_generate(pid))),
         (
             'phase-boundary',
             lambda pid: manage_metrics.cmd_phase_boundary(
-                _ns_phase_boundary(pid, '4-plan', '5-execute')
+                ns_phase_boundary(pid, '4-plan', '5-execute')
             ),
         ),
         (
             'accumulate-agent-usage',
             lambda pid: cmd_accumulate_agent_usage(
-                _ns_accumulate(pid, '5-execute', total_tokens=10)
+                ns_accumulate(pid, '5-execute', total_tokens=10)
             ),
         ),
-        ('enrich', lambda pid: cmd_enrich(_ns_enrich(pid, 'any-session'))),
+        ('enrich', lambda pid: cmd_enrich(ns_enrich(pid, 'any-session'))),
     ]
 
     @pytest.mark.parametrize(
@@ -3469,7 +3378,7 @@ class TestPlanDirGuardOnWriters:
         """
         plan_id = 'guard-positive-control'
         # Seeded via the autouse fixture (plan_id is not registered as unseeded).
-        result = cmd_start_phase(_ns_start_phase(plan_id, '1-init'))
+        result = cmd_start_phase(ns_start_phase(plan_id, '1-init'))
         assert result['status'] == 'success', result
         assert result['phase'] == '1-init'
 
@@ -4180,7 +4089,7 @@ def _run_enrich_with_buckets(plan_id: str, monkeypatch, buckets: dict) -> dict:
         return dict(buckets), counters, 'success'
 
     monkeypatch.setattr(manage_metrics, '_run_normalized_tokens_op', _fake_op)
-    result: dict = cmd_enrich(_ns_enrich(plan_id, 'sess-population'))
+    result: dict = cmd_enrich(ns_enrich(plan_id, 'sess-population'))
     return result
 
 
@@ -4210,8 +4119,8 @@ def test_enrich_labels_a_zero_dispatch_phase_as_inline(plan_context, monkeypatch
     field is what the second record removes.
     """
     plan_id = 'population-inline-only'
-    cmd_start_phase(_ns_start_phase(plan_id, '1-init'))
-    cmd_end_phase(_ns_end_phase(plan_id, '1-init'))
+    cmd_start_phase(ns_start_phase(plan_id, '1-init'))
+    cmd_end_phase(ns_end_phase(plan_id, '1-init'))
 
     assert _run_enrich_with_buckets(plan_id, monkeypatch, {'1-init': _INLINE_BUCKET})['enriched']
 
@@ -4229,8 +4138,8 @@ def test_enrich_labels_a_dispatched_plus_inline_phase_as_mixed(plan_context, mon
     consumer knows the dispatched figure does NOT cover the whole phase.
     """
     plan_id = 'population-mixed'
-    cmd_start_phase(_ns_start_phase(plan_id, '6-finalize'))
-    cmd_end_phase(_ns_end_phase(plan_id, '6-finalize', total_tokens=88000))
+    cmd_start_phase(ns_start_phase(plan_id, '6-finalize'))
+    cmd_end_phase(ns_end_phase(plan_id, '6-finalize', total_tokens=88000))
 
     _run_enrich_with_buckets(plan_id, monkeypatch, {'6-finalize': _INLINE_BUCKET})
 
@@ -4243,8 +4152,8 @@ def test_enrich_labels_a_dispatched_plus_inline_phase_as_mixed(plan_context, mon
 def test_enrich_labels_a_dispatch_only_phase_as_dispatched(plan_context, monkeypatch):
     """No inline attribution → the row is labelled dispatched and carries no inline field."""
     plan_id = 'population-dispatched'
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
-    cmd_end_phase(_ns_end_phase(plan_id, '5-execute', total_tokens=42000))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+    cmd_end_phase(ns_end_phase(plan_id, '5-execute', total_tokens=42000))
 
     _run_enrich_with_buckets(
         plan_id, monkeypatch, {'5-execute': {'cache_read_input_tokens': 250000}}
@@ -4267,8 +4176,8 @@ def test_repeated_enrich_keeps_an_inline_only_row_labelled_inline(plan_context, 
     single-run assertion proves nothing about the stamp a report actually reads.
     """
     plan_id = 'population-enrich-idempotent-inline'
-    cmd_start_phase(_ns_start_phase(plan_id, '1-init'))
-    cmd_end_phase(_ns_end_phase(plan_id, '1-init'))
+    cmd_start_phase(ns_start_phase(plan_id, '1-init'))
+    cmd_end_phase(ns_end_phase(plan_id, '1-init'))
 
     assert _run_enrich_with_buckets(plan_id, monkeypatch, {'1-init': _INLINE_BUCKET})['enriched']
     first = dict(_phase_row(plan_id, '1-init'))
@@ -4295,8 +4204,8 @@ def test_repeated_enrich_keeps_a_genuinely_mixed_row_labelled_mixed(plan_context
     first run and on every run after it.
     """
     plan_id = 'population-enrich-idempotent-mixed'
-    cmd_start_phase(_ns_start_phase(plan_id, '6-finalize'))
-    cmd_end_phase(_ns_end_phase(plan_id, '6-finalize', total_tokens=88000))
+    cmd_start_phase(ns_start_phase(plan_id, '6-finalize'))
+    cmd_end_phase(ns_end_phase(plan_id, '6-finalize', total_tokens=88000))
 
     _run_enrich_with_buckets(plan_id, monkeypatch, {'6-finalize': _INLINE_BUCKET})
     assert _phase_row(plan_id, '6-finalize')['total_tokens_population'] == (
@@ -4355,13 +4264,13 @@ def test_total_tokens_bullet_names_its_population(plan_context, population):
     population added later cannot render unlabelled and still pass.
     """
     plan_id = f'population-bullet-{population}'
-    cmd_start_phase(_ns_start_phase(plan_id, '4-plan'))
-    cmd_end_phase(_ns_end_phase(plan_id, '4-plan', total_tokens=31000))
+    cmd_start_phase(ns_start_phase(plan_id, '4-plan'))
+    cmd_end_phase(ns_end_phase(plan_id, '4-plan', total_tokens=31000))
     data = manage_metrics.read_metrics_raw(plan_id)
     data['phases']['4-plan']['total_tokens_population'] = population
     manage_metrics.write_metrics(plan_id, data)
 
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
     bullets = [line for line in report.splitlines() if line.startswith('- **Total tokens**:')]
@@ -4379,13 +4288,13 @@ def test_inline_phase_tokens_cell_and_annotation_declare_the_population(plan_con
     main-context population.
     """
     plan_id = 'population-render-inline'
-    cmd_start_phase(_ns_start_phase(plan_id, '1-init'))
-    cmd_end_phase(_ns_end_phase(plan_id, '1-init'))
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
-    cmd_end_phase(_ns_end_phase(plan_id, '5-execute', total_tokens=42000))
+    cmd_start_phase(ns_start_phase(plan_id, '1-init'))
+    cmd_end_phase(ns_end_phase(plan_id, '1-init'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+    cmd_end_phase(ns_end_phase(plan_id, '5-execute', total_tokens=42000))
 
     _run_enrich_with_buckets(plan_id, monkeypatch, {'1-init': _INLINE_BUCKET})
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
     init_row = next(line for line in report.splitlines() if line.startswith('| 1-init '))
@@ -4403,11 +4312,11 @@ def test_inline_phase_tokens_cell_and_annotation_declare_the_population(plan_con
 def test_mixed_phase_declares_its_excluded_inline_spend(plan_context, monkeypatch):
     """A mixed row is marked, and the annotation says the inline part is excluded."""
     plan_id = 'population-render-mixed'
-    cmd_start_phase(_ns_start_phase(plan_id, '6-finalize'))
-    cmd_end_phase(_ns_end_phase(plan_id, '6-finalize', total_tokens=88000))
+    cmd_start_phase(ns_start_phase(plan_id, '6-finalize'))
+    cmd_end_phase(ns_end_phase(plan_id, '6-finalize', total_tokens=88000))
 
     _run_enrich_with_buckets(plan_id, monkeypatch, {'6-finalize': _INLINE_BUCKET})
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
     finalize_row = next(line for line in report.splitlines() if line.startswith('| 6-finalize '))
@@ -4426,10 +4335,10 @@ def test_dispatched_only_report_carries_no_population_annotation(plan_context):
     annotates unconditionally, which would prove nothing about the discriminator.
     """
     plan_id = 'population-render-dispatched'
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
-    cmd_end_phase(_ns_end_phase(plan_id, '5-execute', total_tokens=42000))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+    cmd_end_phase(ns_end_phase(plan_id, '5-execute', total_tokens=42000))
 
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
     assert '> Tokens population:' not in report
@@ -4454,13 +4363,13 @@ def test_total_row_is_marked_when_an_inline_row_fed_the_sum(plan_context, monkey
     from the field name to the Total row.
     """
     plan_id = 'population-total-spans'
-    cmd_start_phase(_ns_start_phase(plan_id, '1-init'))
-    cmd_end_phase(_ns_end_phase(plan_id, '1-init'))
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
-    cmd_end_phase(_ns_end_phase(plan_id, '5-execute', total_tokens=42000))
+    cmd_start_phase(ns_start_phase(plan_id, '1-init'))
+    cmd_end_phase(ns_end_phase(plan_id, '1-init'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+    cmd_end_phase(ns_end_phase(plan_id, '5-execute', total_tokens=42000))
 
     _run_enrich_with_buckets(plan_id, monkeypatch, {'1-init': _INLINE_BUCKET})
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
     assert '(spans populations)' in _total_tokens_cell(report)
@@ -4478,17 +4387,17 @@ def test_total_row_is_unmarked_when_every_contributing_row_is_dispatched(plan_co
     discriminator driving it.
     """
     plan_id = 'population-total-single'
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
-    cmd_end_phase(_ns_end_phase(plan_id, '5-execute', total_tokens=42000))
-    cmd_start_phase(_ns_start_phase(plan_id, '6-finalize'))
-    cmd_end_phase(_ns_end_phase(plan_id, '6-finalize', total_tokens=88000))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+    cmd_end_phase(ns_end_phase(plan_id, '5-execute', total_tokens=42000))
+    cmd_start_phase(ns_start_phase(plan_id, '6-finalize'))
+    cmd_end_phase(ns_end_phase(plan_id, '6-finalize', total_tokens=88000))
 
     # 6-finalize is `mixed` — a dispatched cell whose row ALSO records inline
     # spend that the cell EXCLUDES. A mixed row therefore does NOT make the Total
     # cross-population, and the Total must stay unmarked despite a marker being
     # present in the table.
     _run_enrich_with_buckets(plan_id, monkeypatch, {'6-finalize': _INLINE_BUCKET})
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
     assert '(mixed)' in report, 'fixture must actually produce a marked row'
@@ -4516,8 +4425,8 @@ def test_inline_row_carrying_a_competing_dispatched_measure_renders_both_markers
     below can pass by accidentally rendering the excluded main-context measure.
     """
     plan_id = 'population-inline-competing-measure'
-    cmd_start_phase(_ns_start_phase(plan_id, '1-init'))
-    cmd_end_phase(_ns_end_phase(plan_id, '1-init'))
+    cmd_start_phase(ns_start_phase(plan_id, '1-init'))
+    cmd_end_phase(ns_end_phase(plan_id, '1-init'))
 
     bucket = dict(_INLINE_BUCKET, subagent_total_tokens=30000, subagent_samples=1)
     assert 30000 > _INLINE_SUM, 'the dispatched measure must be the strict maximum'
@@ -4533,7 +4442,7 @@ def test_inline_row_carrying_a_competing_dispatched_measure_renders_both_markers
     # genuinely dispatched measure is the only eligible one.
     assert manage_metrics._reconcile_dispatched_measures(row) == ('subagent_total_tokens', 30000)
 
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
     init_row = next(line for line in report.splitlines() if line.startswith('| 1-init '))
@@ -4561,11 +4470,11 @@ def test_four_message_usage_bullets_render_under_the_main_context_heading(
     the cache-read bullet uncovered.
     """
     plan_id = 'population-four-field-group'
-    cmd_start_phase(_ns_start_phase(plan_id, '2-refine'))
-    cmd_end_phase(_ns_end_phase(plan_id, '2-refine', total_tokens=42000))
+    cmd_start_phase(ns_start_phase(plan_id, '2-refine'))
+    cmd_end_phase(ns_end_phase(plan_id, '2-refine', total_tokens=42000))
 
     _run_enrich_with_buckets(plan_id, monkeypatch, {'2-refine': _INLINE_BUCKET})
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
     lines = report.splitlines()
 
@@ -4724,13 +4633,13 @@ def test_reconciliation_annotation_names_the_winning_measure(plan_context):
     naming the winner, so a reader could not tell which route produced the cell.
     """
     plan_id = 'reconcile-annotation'
-    cmd_start_phase(_ns_start_phase(plan_id, '4-plan'))
-    cmd_end_phase(_ns_end_phase(plan_id, '4-plan', total_tokens=439628))
+    cmd_start_phase(ns_start_phase(plan_id, '4-plan'))
+    cmd_end_phase(ns_end_phase(plan_id, '4-plan', total_tokens=439628))
     data = manage_metrics.read_metrics_raw(plan_id)
     data['phases']['4-plan']['subagent_total_tokens'] = 577452
     manage_metrics.write_metrics(plan_id, data)
 
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
     assert 'subagent_total_tokens 577,452' in report
@@ -4742,15 +4651,15 @@ def test_reconciliation_annotation_names_the_winning_measure(plan_context):
 def test_boundary_bullet_declares_coverage_and_drops_the_false_parenthetical(plan_context):
     """The bullet states its coverage instead of claiming an unearned max."""
     plan_id = 'reconcile-bullet'
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
-    cmd_end_phase(_ns_end_phase(plan_id, '5-execute', total_tokens=100000))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+    cmd_end_phase(ns_end_phase(plan_id, '5-execute', total_tokens=100000))
     data = manage_metrics.read_metrics_raw(plan_id)
     data['phases']['5-execute']['dispatch_boundary_total'] = 90000
     data['phases']['5-execute']['dispatch_boundary_rows_recorded'] = 2
     data['phases']['5-execute']['subagent_samples'] = 7
     manage_metrics.write_metrics(plan_id, data)
 
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
     bullet = next(
@@ -4770,8 +4679,8 @@ def test_boundary_bullet_declares_coverage_and_drops_the_false_parenthetical(pla
 def _seed_billing_phases(plan_id: str, billing_by_phase: dict[str, int]) -> None:
     """Record the given phases with tokens, then stamp a billing figure on each."""
     for phase in billing_by_phase:
-        cmd_start_phase(_ns_start_phase(plan_id, phase))
-        cmd_end_phase(_ns_end_phase(plan_id, phase, total_tokens=10000))
+        cmd_start_phase(ns_start_phase(plan_id, phase))
+        cmd_end_phase(ns_end_phase(plan_id, phase, total_tokens=10000))
     data = manage_metrics.read_metrics_raw(plan_id)
     for phase, billing in billing_by_phase.items():
         data['phases'][phase]['billing_weighted_total'] = billing
@@ -4783,7 +4692,7 @@ def test_generate_returns_total_billing_weighted(plan_context):
     plan_id = 'billing-return'
     _seed_billing_phases(plan_id, {'4-plan': 41003, '5-execute': 78000})
 
-    result = cmd_generate(_ns_generate(plan_id))
+    result = cmd_generate(ns_generate(plan_id))
 
     assert result['total_billing_weighted'] == 119003
     # The dispatched work total is the tokens sum, untouched by the cost figure.
@@ -4795,7 +4704,7 @@ def test_billing_column_is_rendered_with_its_own_total(plan_context):
     plan_id = 'billing-column'
     _seed_billing_phases(plan_id, {'4-plan': 41003, '5-execute': 78000})
 
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
     header = next(line for line in report.splitlines() if line.startswith('| Phase '))
@@ -4818,10 +4727,10 @@ def test_billing_total_carries_the_partiality_marker(plan_context):
     _seed_billing_phases(plan_id, {'4-plan': 41003})
     # A second recorded phase with NO billing figure — the column is 1/6, and the
     # phase itself renders `-`.
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
-    cmd_end_phase(_ns_end_phase(plan_id, '5-execute', total_tokens=10000))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+    cmd_end_phase(ns_end_phase(plan_id, '5-execute', total_tokens=10000))
 
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
     total_row = next(line for line in report.splitlines() if line.startswith('| **Total**'))
@@ -4843,7 +4752,7 @@ def test_billing_is_never_summed_into_the_tokens_total(plan_context):
     plan_id = 'billing-not-summed'
     _seed_billing_phases(plan_id, {'5-execute': 5_000_000})
 
-    result = cmd_generate(_ns_generate(plan_id))
+    result = cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
     assert result['total_tokens'] == 10000
@@ -4859,7 +4768,7 @@ def test_billing_bullet_states_the_measure_rather_than_apologising(plan_context)
     plan_id = 'billing-bullet'
     _seed_billing_phases(plan_id, {'5-execute': 78000})
 
-    cmd_generate(_ns_generate(plan_id))
+    cmd_generate(ns_generate(plan_id))
     report = (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
 
     bullet = next(

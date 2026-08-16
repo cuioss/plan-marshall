@@ -23,9 +23,13 @@ so it discriminates the two behaviours rather than passing under either.
 """
 
 import importlib.util
-from argparse import Namespace
 
 import pytest
+from _manage_metrics_fixtures import (
+    ns_generate,
+    ns_phase_boundary,
+    ns_start_phase,
+)
 
 from conftest import get_script_path
 
@@ -74,28 +78,6 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
 # =============================================================================
 # Namespace + parsing helpers
 # =============================================================================
-
-
-def _ns_start_phase(plan_id, phase):
-    return Namespace(plan_id=plan_id, phase=phase, command='start-phase', func=cmd_start_phase)
-
-
-def _ns_boundary(plan_id, prev_phase, next_phase, total_tokens=None, duration_ms=None, tool_uses=None):
-    return Namespace(
-        plan_id=plan_id,
-        prev_phase=prev_phase,
-        next_phase=next_phase,
-        total_tokens=total_tokens,
-        duration_ms=duration_ms,
-        tool_uses=tool_uses,
-        retrospective_tokens=None,
-        command='phase-boundary',
-        func=cmd_phase_boundary,
-    )
-
-
-def _ns_generate(plan_id):
-    return Namespace(plan_id=plan_id, command='generate', func=cmd_generate)
 
 
 def _phase_block(content: str, phase: str) -> str:
@@ -152,11 +134,11 @@ def _drive_loop_back_sequence(monkeypatch, plan_id: str) -> dict:
         monkeypatch.setattr(manage_metrics, 'now_utc_iso', lambda: timestamp)
 
     _at('2026-05-08T13:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
 
     # Entry 1 closes 5-execute (600 s active span) and opens 6-finalize.
     _at('2026-05-08T13:10:00+00:00')
-    first = cmd_phase_boundary(_ns_boundary(plan_id, '5-execute', '6-finalize', **_ENTRY_1))
+    first = cmd_phase_boundary(ns_phase_boundary(plan_id, '5-execute', '6-finalize', **_ENTRY_1))
     assert first['status'] == 'success'
     assert first['prev_close_count'] == 1
 
@@ -164,21 +146,21 @@ def _drive_loop_back_sequence(monkeypatch, plan_id: str) -> dict:
     # 5-execute.start_time to 13:20:00.
     _at('2026-05-08T13:20:00+00:00')
     loop_back = cmd_phase_boundary(
-        _ns_boundary(plan_id, '6-finalize', '5-execute', total_tokens=40_000, tool_uses=20, duration_ms=120_000)
+        ns_phase_boundary(plan_id, '6-finalize', '5-execute', total_tokens=40_000, tool_uses=20, duration_ms=120_000)
     )
     assert loop_back['status'] == 'success'
 
     # Entry 2 closes 5-execute a SECOND time (900 s active span from the
     # re-stamped start) and re-opens 6-finalize.
     _at('2026-05-08T13:35:00+00:00')
-    second = cmd_phase_boundary(_ns_boundary(plan_id, '5-execute', '6-finalize', **_ENTRY_2))
+    second = cmd_phase_boundary(ns_phase_boundary(plan_id, '5-execute', '6-finalize', **_ENTRY_2))
     assert second['status'] == 'success'
     assert second['prev_close_count'] == 2
 
     _at('2026-05-08T13:40:00+00:00')
     # Annotated explicitly: the entrypoint is importlib-loaded, so its cmd_* return
     # type is Any and returning it bare would trip mypy's no-any-return.
-    result: dict = cmd_generate(_ns_generate(plan_id))
+    result: dict = cmd_generate(ns_generate(plan_id))
     assert result['status'] == 'success'
     return result
 

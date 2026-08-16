@@ -24,6 +24,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from _manage_metrics_fixtures import (
+    ns_generate,
+    ns_record_dispatch_boundary,
+    ns_start_phase,
+)
 from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script
@@ -48,15 +53,14 @@ def _ns(
     tool_uses: int | None = None,
     duration_ms: int | None = None,
 ) -> Namespace:
-    return Namespace(
-        plan_id=plan_id,
-        phase=phase,
-        termination_cause=termination_cause,
+    """A ``record-dispatch-boundary`` namespace from the script's own parser."""
+    return ns_record_dispatch_boundary(
+        plan_id,
+        phase,
+        termination_cause,
         total_tokens=total_tokens,
         tool_uses=tool_uses,
         duration_ms=duration_ms,
-        command='record-dispatch-boundary',
-        func=cmd_record_dispatch_boundary,
     )
 
 
@@ -123,10 +127,8 @@ def test_generate_persists_the_recorded_row_count(plan_context):
     _seed_status_json(plan_dir)
     cmd_record_dispatch_boundary(_ns('disp-persist', total_tokens=1000))
     cmd_record_dispatch_boundary(_ns('disp-persist', total_tokens=2000))
-    manage_metrics.cmd_start_phase(
-        Namespace(plan_id='disp-persist', phase='5-execute', command='start-phase')
-    )
-    manage_metrics.cmd_generate(Namespace(plan_id='disp-persist', command='generate'))
+    manage_metrics.cmd_start_phase(ns_start_phase('disp-persist', '5-execute'))
+    manage_metrics.cmd_generate(ns_generate('disp-persist'))
 
     row = manage_metrics.read_metrics_raw('disp-persist')['phases']['5-execute']
 

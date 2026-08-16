@@ -12,9 +12,16 @@ Covers:
 
 import importlib.util
 import json
-from argparse import Namespace
 
 import pytest
+from _manage_metrics_fixtures import (
+    ns_accumulate,
+    ns_boundary_status,
+    ns_end_phase,
+    ns_generate,
+    ns_phase_boundary,
+    ns_start_phase,
+)
 
 from conftest import get_script_path
 
@@ -94,82 +101,6 @@ def _register_unseeded(plan_id: str) -> str:
     return plan_id
 
 
-def _ns_start_phase(plan_id, phase):
-    return Namespace(plan_id=plan_id, phase=phase, command='start-phase', func=cmd_start_phase)
-
-
-def _ns_boundary(
-    plan_id,
-    prev_phase,
-    next_phase,
-    total_tokens=None,
-    duration_ms=None,
-    tool_uses=None,
-    retrospective_tokens=None,
-):
-    return Namespace(
-        plan_id=plan_id,
-        prev_phase=prev_phase,
-        next_phase=next_phase,
-        total_tokens=total_tokens,
-        duration_ms=duration_ms,
-        tool_uses=tool_uses,
-        retrospective_tokens=retrospective_tokens,
-        command='phase-boundary',
-        func=cmd_phase_boundary,
-    )
-
-
-def _ns_end_phase(
-    plan_id,
-    phase,
-    total_tokens=None,
-    duration_ms=None,
-    tool_uses=None,
-    retrospective_tokens=None,
-):
-    return Namespace(
-        plan_id=plan_id,
-        phase=phase,
-        total_tokens=total_tokens,
-        duration_ms=duration_ms,
-        tool_uses=tool_uses,
-        retrospective_tokens=retrospective_tokens,
-        command='end-phase',
-        func=cmd_end_phase,
-    )
-
-
-def _ns_accumulate(
-    plan_id,
-    phase,
-    total_tokens=None,
-    tool_uses=None,
-    duration_ms=None,
-    retrospective_tokens=None,
-):
-    return Namespace(
-        plan_id=plan_id,
-        phase=phase,
-        total_tokens=total_tokens,
-        tool_uses=tool_uses,
-        duration_ms=duration_ms,
-        retrospective_tokens=retrospective_tokens,
-        command='accumulate-agent-usage',
-        func=cmd_accumulate_agent_usage,
-    )
-
-
-def _ns_boundary_status(plan_id, next_phase, prev_phase=None):
-    return Namespace(
-        plan_id=plan_id,
-        prev_phase=prev_phase,
-        next_phase=next_phase,
-        command='boundary-status',
-        func=cmd_boundary_status,
-    )
-
-
 def _phase_block(content: str, phase: str) -> str:
     """Return the metrics.toon text block for a single [phase] section."""
     start = content.index(f'[{phase}]')
@@ -202,10 +133,10 @@ def test_phase_boundary_records_end_and_start_atomically(plan_context, monkeypat
     frozen_now = manage_metrics.now_utc_iso()
     monkeypatch.setattr(manage_metrics, 'now_utc_iso', lambda: frozen_now)
 
-    cmd_start_phase(_ns_start_phase('boundary-basic', '1-init'))
+    cmd_start_phase(ns_start_phase('boundary-basic', '1-init'))
 
     result = cmd_phase_boundary(
-        _ns_boundary(
+        ns_phase_boundary(
             'boundary-basic',
             prev_phase='1-init',
             next_phase='2-refine',
@@ -244,9 +175,9 @@ def test_phase_boundary_records_end_and_start_atomically(plan_context, monkeypat
 
 def test_phase_boundary_generates_metrics_md(plan_context):
     """phase-boundary regenerates metrics.md as a side effect."""
-    cmd_start_phase(_ns_start_phase('boundary-generate', '1-init'))
+    cmd_start_phase(ns_start_phase('boundary-generate', '1-init'))
     result = cmd_phase_boundary(
-        _ns_boundary(
+        ns_phase_boundary(
             'boundary-generate',
             prev_phase='1-init',
             next_phase='2-refine',
@@ -266,8 +197,8 @@ def test_phase_boundary_generates_metrics_md(plan_context):
 
 def test_phase_boundary_optional_token_args_omitted(plan_context):
     """phase-boundary works with no token/duration/tool-uses flags (main-context phase)."""
-    cmd_start_phase(_ns_start_phase('boundary-no-tokens', '2-refine'))
-    result = cmd_phase_boundary(_ns_boundary('boundary-no-tokens', prev_phase='2-refine', next_phase='3-outline'))
+    cmd_start_phase(ns_start_phase('boundary-no-tokens', '2-refine'))
+    result = cmd_phase_boundary(ns_phase_boundary('boundary-no-tokens', prev_phase='2-refine', next_phase='3-outline'))
     assert result['status'] == 'success'
     # No prev_total_tokens since not provided
     assert 'prev_total_tokens' not in result
@@ -286,7 +217,7 @@ def test_phase_boundary_optional_token_args_omitted(plan_context):
 def test_phase_boundary_without_prev_start_records_end_only(plan_context):
     """phase-boundary tolerates a previous phase with no recorded start (no duration)."""
     # No start-phase called for 1-init
-    result = cmd_phase_boundary(_ns_boundary('boundary-no-start', prev_phase='1-init', next_phase='2-refine'))
+    result = cmd_phase_boundary(ns_phase_boundary('boundary-no-start', prev_phase='1-init', next_phase='2-refine'))
     assert result['status'] == 'success'
     # No prev_duration_seconds in the result since start_time was missing
     assert 'prev_duration_seconds' not in result
@@ -299,7 +230,7 @@ def test_phase_boundary_without_prev_start_records_end_only(plan_context):
 
 def test_phase_boundary_invalid_prev_phase_rejected(plan_context):
     """Invalid prev-phase name returns invalid_phase error."""
-    result = cmd_phase_boundary(_ns_boundary('boundary-bad-prev', prev_phase='nope', next_phase='2-refine'))
+    result = cmd_phase_boundary(ns_phase_boundary('boundary-bad-prev', prev_phase='nope', next_phase='2-refine'))
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_phase'
     assert 'prev_phase' in result['message']
@@ -307,7 +238,7 @@ def test_phase_boundary_invalid_prev_phase_rejected(plan_context):
 
 def test_phase_boundary_invalid_next_phase_rejected(plan_context):
     """Invalid next-phase name returns invalid_phase error."""
-    result = cmd_phase_boundary(_ns_boundary('boundary-bad-next', prev_phase='1-init', next_phase='nope'))
+    result = cmd_phase_boundary(ns_phase_boundary('boundary-bad-next', prev_phase='1-init', next_phase='nope'))
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_phase'
     assert 'next_phase' in result['message']
@@ -327,9 +258,9 @@ def test_phase_boundary_equivalent_to_three_call_sequence(plan_context, monkeypa
     frozen_now = manage_metrics.now_utc_iso()
     monkeypatch.setattr(manage_metrics, 'now_utc_iso', lambda: frozen_now)
 
-    cmd_start_phase(_ns_start_phase('boundary-equiv', '4-plan'))
+    cmd_start_phase(ns_start_phase('boundary-equiv', '4-plan'))
     result = cmd_phase_boundary(
-        _ns_boundary(
+        ns_phase_boundary(
             'boundary-equiv',
             prev_phase='4-plan',
             next_phase='5-execute',
@@ -374,7 +305,7 @@ def test_phase_boundary_backfills_1init_start_time_from_status_created(plan_cont
 
     # No cmd_start_phase call → metrics.toon has no 1-init.start_time.
     result = cmd_phase_boundary(
-        _ns_boundary('boundary-backfill-01', prev_phase='1-init', next_phase='2-refine')
+        ns_phase_boundary('boundary-backfill-01', prev_phase='1-init', next_phase='2-refine')
     )
     assert result['status'] == 'success'
 
@@ -390,7 +321,7 @@ def test_phase_boundary_backfills_1init_start_time_from_status_created(plan_cont
 
 def test_phase_boundary_preserves_existing_1init_start_time(plan_context):
     """1-init.start_time already present → cmd_phase_boundary does NOT overwrite it."""
-    cmd_start_phase(_ns_start_phase('boundary-backfill-02', '1-init'))
+    cmd_start_phase(ns_start_phase('boundary-backfill-02', '1-init'))
     # Override status.json.created with a value that would differ if backfill ran.
     plan_dir = plan_context.plan_dir_for('boundary-backfill-02')
     _seed_status_created(plan_dir, '1999-01-01T00:00:00+00:00')
@@ -404,7 +335,7 @@ def test_phase_boundary_preserves_existing_1init_start_time(plan_context):
     original_start = start_line.split('start_time:', 1)[1].strip()
     assert original_start != '1999-01-01T00:00:00+00:00'
 
-    cmd_phase_boundary(_ns_boundary('boundary-backfill-02', prev_phase='1-init', next_phase='2-refine'))
+    cmd_phase_boundary(ns_phase_boundary('boundary-backfill-02', prev_phase='1-init', next_phase='2-refine'))
 
     content_post = (plan_dir / 'work' / 'metrics.toon').read_text()
     # status.json.created stays UNUSED — the original start_time wins.
@@ -419,7 +350,7 @@ def test_phase_boundary_no_backfill_for_non_1init_prev_phase(plan_context):
     _seed_status_created(plan_dir, '2026-03-27T09:00:00+00:00')
 
     # Transition 2-refine → 3-outline without a prior start-phase.
-    cmd_phase_boundary(_ns_boundary('boundary-backfill-03', prev_phase='2-refine', next_phase='3-outline'))
+    cmd_phase_boundary(ns_phase_boundary('boundary-backfill-03', prev_phase='2-refine', next_phase='3-outline'))
 
     content = (plan_dir / 'work' / 'metrics.toon').read_text()
     # The status.json.created timestamp must not have leaked into the 2-refine row.
@@ -433,7 +364,7 @@ def test_phase_boundary_status_json_missing_no_exception(plan_context):
     """status.json missing → call succeeds, 1-init.start_time remains absent, no exception raised."""
     # Do NOT seed status.json. No prior cmd_start_phase either.
     result = cmd_phase_boundary(
-        _ns_boundary('boundary-backfill-04', prev_phase='1-init', next_phase='2-refine')
+        ns_phase_boundary('boundary-backfill-04', prev_phase='1-init', next_phase='2-refine')
     )
     assert result['status'] == 'success'
     # Backfill skipped silently → no start_time, no duration_seconds.
@@ -468,7 +399,7 @@ def test_phase_boundary_uses_real_1init_start_time_when_present(plan_context):
          between seed and end) — not years.
     """
     # Step 1: phase-1-init self-records 1-init.start_time.
-    start_res = cmd_start_phase(_ns_start_phase('boundary-real-seed', '1-init'))
+    start_res = cmd_start_phase(ns_start_phase('boundary-real-seed', '1-init'))
     seeded_start = start_res['start_time']
 
     # Step 2: status.json present with a far-past `created` that would
@@ -479,7 +410,7 @@ def test_phase_boundary_uses_real_1init_start_time_when_present(plan_context):
 
     # Step 3: fused phase-boundary call.
     result = cmd_phase_boundary(
-        _ns_boundary('boundary-real-seed', prev_phase='1-init', next_phase='2-refine')
+        ns_phase_boundary('boundary-real-seed', prev_phase='1-init', next_phase='2-refine')
     )
     assert result['status'] == 'success'
 
@@ -507,7 +438,7 @@ def test_phase_boundary_status_json_malformed_no_exception(plan_context):
     status_path.write_text('{this is not valid json', encoding='utf-8')
 
     result = cmd_phase_boundary(
-        _ns_boundary('boundary-backfill-05', prev_phase='1-init', next_phase='2-refine')
+        ns_phase_boundary('boundary-backfill-05', prev_phase='1-init', next_phase='2-refine')
     )
     assert result['status'] == 'success'
     content = (plan_dir / 'work' / 'metrics.toon').read_text()
@@ -534,7 +465,7 @@ def test_phase_boundary_clamps_worked_to_wall_for_1init_bootstrap(plan_context):
 
     # No prior start-phase; backfill from status.json.created.
     result = cmd_phase_boundary(
-        _ns_boundary(
+        ns_phase_boundary(
             'clamp-1init',
             prev_phase='1-init',
             next_phase='2-refine',
@@ -556,10 +487,10 @@ def test_phase_boundary_clamps_worked_to_wall_for_1init_bootstrap(plan_context):
 def test_end_phase_clamps_worked_to_wall(plan_context):
     """cmd_end_phase write site: the symmetric clamp bounds worked to wall."""
     # Start then immediately end (wall span ~0); forward a huge worked window.
-    cmd_start_phase(_ns_start_phase('clamp-end', '3-outline'))
+    cmd_start_phase(ns_start_phase('clamp-end', '3-outline'))
 
     result = cmd_end_phase(
-        _ns_end_phase('clamp-end', phase='3-outline', duration_ms=888_888_888)
+        ns_end_phase('clamp-end', phase='3-outline', duration_ms=888_888_888)
     )
 
     assert result['status'] == 'success'
@@ -581,7 +512,7 @@ def test_clamp_does_not_inflate_when_worked_below_wall(plan_context):
 
     # Small worked window (2 s) vs a multi-month wall span.
     cmd_phase_boundary(
-        _ns_boundary(
+        ns_phase_boundary(
             'clamp-below',
             prev_phase='1-init',
             next_phase='2-refine',
@@ -603,10 +534,10 @@ def test_clamp_does_not_inflate_when_worked_below_wall(plan_context):
 
 def test_retrospective_tokens_recorded_on_finalize_when_forwarded(plan_context):
     """--retrospective-tokens forwarded → recorded as a [6-finalize] sub-field."""
-    cmd_start_phase(_ns_start_phase('retro-attr', '6-finalize'))
+    cmd_start_phase(ns_start_phase('retro-attr', '6-finalize'))
 
     result = cmd_end_phase(
-        _ns_end_phase(
+        ns_end_phase(
             'retro-attr',
             phase='6-finalize',
             total_tokens=10000,
@@ -623,11 +554,11 @@ def test_retrospective_tokens_recorded_on_finalize_when_forwarded(plan_context):
 
 def test_retrospective_tokens_absent_when_not_forwarded(plan_context):
     """No --retrospective-tokens → the field is absent (no schema migration)."""
-    cmd_start_phase(_ns_start_phase('retro-absent', '6-finalize'))
+    cmd_start_phase(ns_start_phase('retro-absent', '6-finalize'))
 
     # total_tokens only, no retrospective attribution.
     result = cmd_end_phase(
-        _ns_end_phase('retro-absent', phase='6-finalize', total_tokens=10000)
+        ns_end_phase('retro-absent', phase='6-finalize', total_tokens=10000)
     )
 
     # default-absent: the field never appears.
@@ -662,11 +593,11 @@ def test_boundary_status_missing_when_next_phase_has_no_start(plan_context):
     --prev-phase, only the "current phase has no start" condition is evaluated.
     """
     # 1-init started + closed, but 2-refine never opened.
-    cmd_start_phase(_ns_start_phase('bs-missing-next', '1-init'))
-    cmd_phase_boundary(_ns_boundary('bs-missing-next', prev_phase='1-init', next_phase='2-refine'))
+    cmd_start_phase(ns_start_phase('bs-missing-next', '1-init'))
+    cmd_phase_boundary(ns_phase_boundary('bs-missing-next', prev_phase='1-init', next_phase='2-refine'))
 
     # On resume, the orchestrator is about to enter 3-outline, which has no start.
-    result = cmd_boundary_status(_ns_boundary_status('bs-missing-next', next_phase='3-outline'))
+    result = cmd_boundary_status(ns_boundary_status('bs-missing-next', next_phase='3-outline'))
 
     assert result['status'] == 'success'
     assert result['classification'] == 'missing'
@@ -682,11 +613,11 @@ def test_boundary_status_missing_when_prev_started_but_not_ended(plan_context):
     the paired phase-boundary closing it — the canonical half-stamped state.
     """
     # 1-init opened, but never closed (no phase-boundary), and 2-refine opened.
-    cmd_start_phase(_ns_start_phase('bs-missing-prev', '1-init'))
-    cmd_start_phase(_ns_start_phase('bs-missing-prev', '2-refine'))
+    cmd_start_phase(ns_start_phase('bs-missing-prev', '1-init'))
+    cmd_start_phase(ns_start_phase('bs-missing-prev', '2-refine'))
 
     result = cmd_boundary_status(
-        _ns_boundary_status('bs-missing-prev', prev_phase='1-init', next_phase='2-refine')
+        ns_boundary_status('bs-missing-prev', prev_phase='1-init', next_phase='2-refine')
     )
 
     assert result['status'] == 'success'
@@ -699,10 +630,10 @@ def test_boundary_status_missing_when_prev_started_but_not_ended(plan_context):
 def test_boundary_status_missing_reports_both_offending_fields(plan_context):
     """prev unclosed AND next unopened → both fields listed in missing_fields."""
     # 1-init opened, never closed; 2-refine never opened.
-    cmd_start_phase(_ns_start_phase('bs-missing-both', '1-init'))
+    cmd_start_phase(ns_start_phase('bs-missing-both', '1-init'))
 
     result = cmd_boundary_status(
-        _ns_boundary_status('bs-missing-both', prev_phase='1-init', next_phase='2-refine')
+        ns_boundary_status('bs-missing-both', prev_phase='1-init', next_phase='2-refine')
     )
 
     assert result['status'] == 'success'
@@ -720,11 +651,11 @@ def test_boundary_status_missing_reports_both_offending_fields(plan_context):
 def test_boundary_status_stamped_when_boundary_complete(plan_context):
     """prev has start+end AND next has start → classification 'stamped'."""
     # 1-init opened+closed (phase-boundary writes 1-init.end_time + 2-refine.start_time).
-    cmd_start_phase(_ns_start_phase('bs-stamped', '1-init'))
-    cmd_phase_boundary(_ns_boundary('bs-stamped', prev_phase='1-init', next_phase='2-refine'))
+    cmd_start_phase(ns_start_phase('bs-stamped', '1-init'))
+    cmd_phase_boundary(ns_phase_boundary('bs-stamped', prev_phase='1-init', next_phase='2-refine'))
 
     result = cmd_boundary_status(
-        _ns_boundary_status('bs-stamped', prev_phase='1-init', next_phase='2-refine')
+        ns_boundary_status('bs-stamped', prev_phase='1-init', next_phase='2-refine')
     )
 
     assert result['status'] == 'success'
@@ -737,9 +668,9 @@ def test_boundary_status_stamped_when_boundary_complete(plan_context):
 
 def test_boundary_status_stamped_when_prev_omitted_and_next_has_start(plan_context):
     """--prev-phase omitted + next has start_time → classification 'stamped'."""
-    cmd_start_phase(_ns_start_phase('bs-stamped-noprev', '3-outline'))
+    cmd_start_phase(ns_start_phase('bs-stamped-noprev', '3-outline'))
 
-    result = cmd_boundary_status(_ns_boundary_status('bs-stamped-noprev', next_phase='3-outline'))
+    result = cmd_boundary_status(ns_boundary_status('bs-stamped-noprev', next_phase='3-outline'))
 
     assert result['status'] == 'success'
     assert result['classification'] == 'stamped'
@@ -749,16 +680,16 @@ def test_boundary_status_stamped_when_prev_omitted_and_next_has_start(plan_conte
 
 def test_boundary_status_leaves_metrics_unchanged(plan_context):
     """boundary-status performs ZERO mutation of metrics.toon (read-only)."""
-    cmd_start_phase(_ns_start_phase('bs-readonly', '1-init'))
-    cmd_phase_boundary(_ns_boundary('bs-readonly', prev_phase='1-init', next_phase='2-refine'))
+    cmd_start_phase(ns_start_phase('bs-readonly', '1-init'))
+    cmd_phase_boundary(ns_phase_boundary('bs-readonly', prev_phase='1-init', next_phase='2-refine'))
 
     metrics_file = plan_context.plan_dir_for('bs-readonly') / 'work' / 'metrics.toon'
     before = metrics_file.read_text()
 
     # Run the detector across several boundary shapes — none may mutate the file.
-    cmd_boundary_status(_ns_boundary_status('bs-readonly', prev_phase='1-init', next_phase='2-refine'))
-    cmd_boundary_status(_ns_boundary_status('bs-readonly', next_phase='3-outline'))
-    cmd_boundary_status(_ns_boundary_status('bs-readonly', prev_phase='2-refine', next_phase='3-outline'))
+    cmd_boundary_status(ns_boundary_status('bs-readonly', prev_phase='1-init', next_phase='2-refine'))
+    cmd_boundary_status(ns_boundary_status('bs-readonly', next_phase='3-outline'))
+    cmd_boundary_status(ns_boundary_status('bs-readonly', prev_phase='2-refine', next_phase='3-outline'))
 
     after = metrics_file.read_text()
     assert before == after
@@ -776,10 +707,10 @@ def test_boundary_status_not_applicable_when_prev_phase_never_started(plan_conte
     side: the prev phase never ran, so there is no boundary to reconcile.
     """
     # Only 2-refine started; 1-init has no row at all.
-    cmd_start_phase(_ns_start_phase('bs-na', '2-refine'))
+    cmd_start_phase(ns_start_phase('bs-na', '2-refine'))
 
     result = cmd_boundary_status(
-        _ns_boundary_status('bs-na', prev_phase='1-init', next_phase='2-refine')
+        ns_boundary_status('bs-na', prev_phase='1-init', next_phase='2-refine')
     )
 
     assert result['status'] == 'success'
@@ -794,7 +725,7 @@ def test_boundary_status_prev_omitted_never_yields_not_applicable(plan_context):
     """When --prev-phase is omitted, not_applicable never applies — only the
     'next has no start' condition is evaluated, yielding 'missing'."""
     # Empty metrics: 3-outline has no start_time, no prev supplied.
-    result = cmd_boundary_status(_ns_boundary_status('bs-noprev-na', next_phase='3-outline'))
+    result = cmd_boundary_status(ns_boundary_status('bs-noprev-na', next_phase='3-outline'))
 
     assert result['status'] == 'success'
     assert result['classification'] == 'missing'
@@ -808,7 +739,7 @@ def test_boundary_status_prev_omitted_never_yields_not_applicable(plan_context):
 
 def test_boundary_status_invalid_next_phase_rejected(plan_context):
     """Invalid next-phase name returns invalid_phase error (no mutation)."""
-    result = cmd_boundary_status(_ns_boundary_status('bs-bad-next', next_phase='nope'))
+    result = cmd_boundary_status(ns_boundary_status('bs-bad-next', next_phase='nope'))
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_phase'
     assert 'next_phase' in result['message']
@@ -817,7 +748,7 @@ def test_boundary_status_invalid_next_phase_rejected(plan_context):
 def test_boundary_status_invalid_prev_phase_rejected(plan_context):
     """Invalid prev-phase name returns invalid_phase error (no mutation)."""
     result = cmd_boundary_status(
-        _ns_boundary_status('bs-bad-prev', prev_phase='nope', next_phase='2-refine')
+        ns_boundary_status('bs-bad-prev', prev_phase='nope', next_phase='2-refine')
     )
     assert result['status'] == 'error'
     assert result['error'] == 'invalid_phase'
@@ -827,7 +758,7 @@ def test_boundary_status_invalid_prev_phase_rejected(plan_context):
 def test_boundary_status_plan_not_found_when_unseeded(plan_context):
     """Guard fires: an unseeded plan returns plan_not_found before classification."""
     plan_id = _register_unseeded('bs-unseeded')
-    result = cmd_boundary_status(_ns_boundary_status(plan_id, next_phase='2-refine'))
+    result = cmd_boundary_status(ns_boundary_status(plan_id, next_phase='2-refine'))
     assert result['status'] == 'error'
     assert result['error'] == 'plan_not_found'
 
@@ -836,10 +767,6 @@ def test_boundary_status_plan_not_found_when_unseeded(plan_context):
 # Boundary monotonicity detector (D3): a finalize loop-back re-enters an earlier
 # phase, so a later phase's start_time precedes an earlier phase's end_time.
 # =============================================================================
-
-
-def _ns_generate(plan_id):
-    return Namespace(plan_id=plan_id, command='generate', func=cmd_generate)
 
 
 def test_generate_flags_loopback_non_monotonic_boundary(plan_context):
@@ -868,7 +795,7 @@ def test_generate_flags_loopback_non_monotonic_boundary(plan_context):
         },
     )
 
-    result = cmd_generate(_ns_generate('monotonic-loopback'))
+    result = cmd_generate(ns_generate('monotonic-loopback'))
     assert result['status'] == 'success'
     # 6-finalize is the offending phase (its start precedes 5-execute's end).
     assert result['boundary_monotonicity'] == ['6-finalize']
@@ -912,7 +839,7 @@ def test_generate_monotonic_boundaries_have_no_warning(plan_context):
         },
     )
 
-    result = cmd_generate(_ns_generate('monotonic-clean'))
+    result = cmd_generate(ns_generate('monotonic-clean'))
     assert result['status'] == 'success'
     assert result['boundary_monotonicity'] == []
 
@@ -973,10 +900,10 @@ def test_two_flag_closes_accumulate_all_five_fields(plan_context, monkeypatch):
 
     # --- Entry 1: 13:00:00 → 13:01:40 (100 s wall) ---
     _freeze_clock(monkeypatch, '2026-05-08T13:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T13:01:40+00:00')
     first = cmd_end_phase(
-        _ns_end_phase(
+        ns_end_phase(
             plan_id,
             phase='5-execute',
             total_tokens=1000,
@@ -991,10 +918,10 @@ def test_two_flag_closes_accumulate_all_five_fields(plan_context, monkeypatch):
 
     # --- Entry 2 (the loop-back): re-stamped start 14:00:00 → 14:03:20 (200 s) ---
     _freeze_clock(monkeypatch, '2026-05-08T14:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T14:03:20+00:00')
     second = cmd_end_phase(
-        _ns_end_phase(
+        ns_end_phase(
             plan_id,
             phase='5-execute',
             total_tokens=2000,
@@ -1028,10 +955,10 @@ def test_flag_close_accumulates_on_phase_boundary_writer_too(plan_context, monke
     plan_id = 'accum-boundary-writer'
 
     _freeze_clock(monkeypatch, '2026-05-08T13:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T13:01:40+00:00')
     first = cmd_phase_boundary(
-        _ns_boundary(
+        ns_phase_boundary(
             plan_id,
             prev_phase='5-execute',
             next_phase='6-finalize',
@@ -1044,10 +971,10 @@ def test_flag_close_accumulates_on_phase_boundary_writer_too(plan_context, monke
 
     # Loop-back: 6-finalize → 5-execute, then close 5-execute a second time.
     _freeze_clock(monkeypatch, '2026-05-08T14:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T14:03:20+00:00')
     second = cmd_phase_boundary(
-        _ns_boundary(
+        ns_phase_boundary(
             plan_id,
             prev_phase='5-execute',
             next_phase='6-finalize',
@@ -1080,19 +1007,19 @@ def test_accumulator_sourced_reclose_assigns_without_doubling(plan_context, monk
     accumulator must leave the row equal to the accumulator, not twice it.
     """
     plan_id = 'accum-source-assign'
-    cmd_accumulate_agent_usage(_ns_accumulate(plan_id, '5-execute', total_tokens=5000, tool_uses=3))
+    cmd_accumulate_agent_usage(ns_accumulate(plan_id, '5-execute', total_tokens=5000, tool_uses=3))
 
     _freeze_clock(monkeypatch, '2026-05-08T13:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T13:01:40+00:00')
-    first = cmd_end_phase(_ns_end_phase(plan_id, phase='5-execute'))
+    first = cmd_end_phase(ns_end_phase(plan_id, phase='5-execute'))
     assert first['accumulator_used'] is True
     assert _field(_read_block(plan_context, plan_id, '5-execute'), 'total_tokens') == '5000'
 
     _freeze_clock(monkeypatch, '2026-05-08T14:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T14:03:20+00:00')
-    second = cmd_end_phase(_ns_end_phase(plan_id, phase='5-execute'))
+    second = cmd_end_phase(ns_end_phase(plan_id, phase='5-execute'))
 
     block = _read_block(plan_context, plan_id, '5-execute')
     # ASSIGNED, not added — 10000 would be the double-count defect.
@@ -1114,18 +1041,18 @@ def test_mixed_flag_then_accumulator_close_assigns_cumulative_total(plan_context
     plan_id = 'accum-mixed-sequence'
 
     _freeze_clock(monkeypatch, '2026-05-08T13:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T13:01:40+00:00')
-    cmd_end_phase(_ns_end_phase(plan_id, phase='5-execute', total_tokens=1000, tool_uses=5))
+    cmd_end_phase(ns_end_phase(plan_id, phase='5-execute', total_tokens=1000, tool_uses=5))
     assert _field(_read_block(plan_context, plan_id, '5-execute'), 'total_tokens') == '1000'
 
     # The accumulator now holds the phase's cumulative figure.
-    cmd_accumulate_agent_usage(_ns_accumulate(plan_id, '5-execute', total_tokens=8000, tool_uses=9))
+    cmd_accumulate_agent_usage(ns_accumulate(plan_id, '5-execute', total_tokens=8000, tool_uses=9))
 
     _freeze_clock(monkeypatch, '2026-05-08T14:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T14:03:20+00:00')
-    cmd_end_phase(_ns_end_phase(plan_id, phase='5-execute'))
+    cmd_end_phase(ns_end_phase(plan_id, phase='5-execute'))
 
     block = _read_block(plan_context, plan_id, '5-execute')
     # Assigned from the accumulator — neither 1000 (replaced away) nor 9000 (added).
@@ -1144,14 +1071,14 @@ def test_close_count_increments_on_every_close(plan_context, monkeypatch):
     plan_id = 'accum-close-count'
 
     _freeze_clock(monkeypatch, '2026-05-08T13:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '4-plan'))
+    cmd_start_phase(ns_start_phase(plan_id, '4-plan'))
 
     for index, stamp in enumerate(
         ('2026-05-08T13:01:00+00:00', '2026-05-08T13:02:00+00:00', '2026-05-08T13:03:00+00:00'),
         start=1,
     ):
         _freeze_clock(monkeypatch, stamp)
-        result = cmd_end_phase(_ns_end_phase(plan_id, phase='4-plan'))
+        result = cmd_end_phase(ns_end_phase(plan_id, phase='4-plan'))
         assert result['close_count'] == index
 
     assert _field(_read_block(plan_context, plan_id, '4-plan'), 'close_count') == '3'
@@ -1161,9 +1088,9 @@ def test_single_close_records_close_count_of_one(plan_context, monkeypatch):
     """A phase closed exactly once carries close_count 1 (never absent, never 0)."""
     plan_id = 'accum-close-count-single'
     _freeze_clock(monkeypatch, '2026-05-08T13:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '4-plan'))
+    cmd_start_phase(ns_start_phase(plan_id, '4-plan'))
     _freeze_clock(monkeypatch, '2026-05-08T13:01:00+00:00')
-    cmd_end_phase(_ns_end_phase(plan_id, phase='4-plan'))
+    cmd_end_phase(ns_end_phase(plan_id, phase='4-plan'))
 
     assert _field(_read_block(plan_context, plan_id, '4-plan'), 'close_count') == '1'
 
@@ -1184,14 +1111,14 @@ def test_bare_second_close_adds_only_span_since_prior_end(plan_context, monkeypa
     plan_id = 'accum-anchor-prior-end'
 
     _freeze_clock(monkeypatch, '2026-05-08T13:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T13:01:40+00:00')
-    cmd_end_phase(_ns_end_phase(plan_id, phase='5-execute'))
+    cmd_end_phase(ns_end_phase(plan_id, phase='5-execute'))
     assert _field(_read_block(plan_context, plan_id, '5-execute'), 'duration_seconds') == '100.0'
 
     # No start-phase in between — the stale start_time must lose to prior end_time.
     _freeze_clock(monkeypatch, '2026-05-08T13:05:00+00:00')
-    cmd_end_phase(_ns_end_phase(plan_id, phase='5-execute'))
+    cmd_end_phase(ns_end_phase(plan_id, phase='5-execute'))
 
     block = _read_block(plan_context, plan_id, '5-execute')
     assert _field(block, 'duration_seconds') == '300.0'
@@ -1210,14 +1137,14 @@ def test_loopback_reentry_anchors_on_restamped_start_time(plan_context, monkeypa
     plan_id = 'accum-anchor-new-start'
 
     _freeze_clock(monkeypatch, '2026-05-08T13:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T13:01:40+00:00')
-    cmd_end_phase(_ns_end_phase(plan_id, phase='5-execute'))
+    cmd_end_phase(ns_end_phase(plan_id, phase='5-execute'))
 
     _freeze_clock(monkeypatch, '2026-05-08T14:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T14:03:20+00:00')
-    cmd_end_phase(_ns_end_phase(plan_id, phase='5-execute'))
+    cmd_end_phase(ns_end_phase(plan_id, phase='5-execute'))
 
     block = _read_block(plan_context, plan_id, '5-execute')
     assert _field(block, 'duration_seconds') == '300.0'
@@ -1230,9 +1157,9 @@ def test_first_close_duration_is_plain_end_minus_start(plan_context, monkeypatch
     """Negative control: a FIRST close is byte-identical to end_time - start_time."""
     plan_id = 'accum-first-close-span'
     _freeze_clock(monkeypatch, '2026-05-08T13:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '3-outline'))
+    cmd_start_phase(ns_start_phase(plan_id, '3-outline'))
     _freeze_clock(monkeypatch, '2026-05-08T13:02:30+00:00')
-    cmd_end_phase(_ns_end_phase(plan_id, phase='3-outline'))
+    cmd_end_phase(ns_end_phase(plan_id, phase='3-outline'))
 
     assert _field(_read_block(plan_context, plan_id, '3-outline'), 'duration_seconds') == '150.0'
 
@@ -1254,7 +1181,7 @@ def test_unparseable_prior_end_time_leaves_duration_untouched(plan_context, monk
     )
 
     _freeze_clock(monkeypatch, '2026-05-08T13:05:00+00:00')
-    result = cmd_end_phase(_ns_end_phase(plan_id, phase='5-execute'))
+    result = cmd_end_phase(ns_end_phase(plan_id, phase='5-execute'))
 
     assert result['status'] == 'success'
     # Untouched — not a partial value derived from a half-parsed anchor.
@@ -1284,15 +1211,15 @@ def test_reclose_clamps_summed_worked_to_accumulated_wall(plan_context, monkeypa
     plan_id = 'accum-clamp-ordering'
 
     _freeze_clock(monkeypatch, '2026-05-08T13:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T13:01:40+00:00')
-    cmd_end_phase(_ns_end_phase(plan_id, phase='5-execute', duration_ms=40_000))
+    cmd_end_phase(ns_end_phase(plan_id, phase='5-execute', duration_ms=40_000))
     assert _field(_read_block(plan_context, plan_id, '5-execute'), 'agent_duration_ms') == '40000'
 
     _freeze_clock(monkeypatch, '2026-05-08T14:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T14:01:40+00:00')
-    cmd_end_phase(_ns_end_phase(plan_id, phase='5-execute', duration_ms=500_000))
+    cmd_end_phase(ns_end_phase(plan_id, phase='5-execute', duration_ms=500_000))
 
     block = _read_block(plan_context, plan_id, '5-execute')
     assert _field(block, 'duration_seconds') == '200.0'
@@ -1307,14 +1234,14 @@ def test_reclose_does_not_inflate_worked_below_accumulated_wall(plan_context, mo
     plan_id = 'accum-clamp-below'
 
     _freeze_clock(monkeypatch, '2026-05-08T13:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T13:01:40+00:00')
-    cmd_end_phase(_ns_end_phase(plan_id, phase='5-execute', duration_ms=40_000))
+    cmd_end_phase(ns_end_phase(plan_id, phase='5-execute', duration_ms=40_000))
 
     _freeze_clock(monkeypatch, '2026-05-08T14:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T14:01:40+00:00')
-    cmd_end_phase(_ns_end_phase(plan_id, phase='5-execute', duration_ms=60_000))
+    cmd_end_phase(ns_end_phase(plan_id, phase='5-execute', duration_ms=60_000))
 
     block = _read_block(plan_context, plan_id, '5-execute')
     # 40 000 + 60 000 = 100 000, comfortably under the 200 000 ms accumulated wall.
@@ -1327,14 +1254,14 @@ def test_worked_stays_within_wall_after_reclose(plan_context, monkeypatch):
     plan_id = 'accum-invariant-reclose'
 
     _freeze_clock(monkeypatch, '2026-05-08T13:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T13:01:40+00:00')
-    cmd_end_phase(_ns_end_phase(plan_id, phase='5-execute', duration_ms=999_999_999))
+    cmd_end_phase(ns_end_phase(plan_id, phase='5-execute', duration_ms=999_999_999))
 
     _freeze_clock(monkeypatch, '2026-05-08T14:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T14:03:20+00:00')
-    cmd_end_phase(_ns_end_phase(plan_id, phase='5-execute', duration_ms=999_999_999))
+    cmd_end_phase(ns_end_phase(plan_id, phase='5-execute', duration_ms=999_999_999))
 
     block = _read_block(plan_context, plan_id, '5-execute')
     wall_s = float(_field(block, 'duration_seconds'))
@@ -1360,14 +1287,14 @@ def test_reentered_row_duration_diverges_from_timestamp_span(plan_context, monke
     plan_id = 'accum-divergence'
 
     _freeze_clock(monkeypatch, '2026-05-08T13:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T13:01:40+00:00')
-    cmd_end_phase(_ns_end_phase(plan_id, phase='5-execute'))
+    cmd_end_phase(ns_end_phase(plan_id, phase='5-execute'))
 
     _freeze_clock(monkeypatch, '2026-05-08T14:00:00+00:00')
-    cmd_start_phase(_ns_start_phase(plan_id, '5-execute'))
+    cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     _freeze_clock(monkeypatch, '2026-05-08T14:03:20+00:00')
-    cmd_end_phase(_ns_end_phase(plan_id, phase='5-execute'))
+    cmd_end_phase(ns_end_phase(plan_id, phase='5-execute'))
 
     block = _read_block(plan_context, plan_id, '5-execute')
     # start_time is the LATEST entry's start, not the first entry's.
