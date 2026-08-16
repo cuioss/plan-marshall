@@ -1,6 +1,6 @@
 # Run report — 040-delivery-pipeline-test-reduction (run 01)
 
-**Date (UTC):** 2026-08-16    **Branch:** `claude/delivery-pipeline-test-reduction-igiwmw`    **PR:** #1257    **Outcome:** partial
+**Date (UTC):** 2026-08-16    **Branch:** `claude/delivery-pipeline-test-reduction-igiwmw`    **PR:** #1259    **Outcome:** partial
 
 The line-reduction floor was **not** reached: the slice dropped **0.58%** against a stated **25%**
 floor. The operator was consulted at the point the shortfall became measurable and directed the run
