@@ -7,20 +7,17 @@ shared contract documented in build-api-reference.md. Ensures the unified
 API is actually consistent across Maven, Gradle, npm, and Python.
 """
 
-import importlib.util
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, load_script_module
 
 _BUNDLES_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
 
 
 def _load_module(name, filename, skill):
-    spec = importlib.util.spec_from_file_location(name, _BUNDLES_DIR / skill / 'scripts' / filename)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    """Load a build-skill script by (bundle, skill, file) identity."""
+    return load_script_module('plan-marshall', skill, filename, name)
 
 
 _gradle_execute_mod = _load_module('_gradle_execute', '_gradle_execute.py', 'build-gradle')

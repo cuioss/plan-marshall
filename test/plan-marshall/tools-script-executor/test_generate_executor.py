@@ -752,7 +752,7 @@ def test_marketplace_root_flag_anchors_discovery_to_supplied_path(outside_repo_d
     # the plugin cache when --marketplace-root is supplied.
     real_marketplace = str(MARKETPLACE_ROOT.resolve())
     plugin_cache = str(Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall')
-    real_cwd = str(Path(__file__).resolve().parents[3])  # project root
+    real_cwd = str(PROJECT_ROOT)  # project root
     for notation, path in mappings.items():
         assert not path.startswith(real_marketplace), (
             f'{notation} resolved to real marketplace {path}, not fake {fake_ws}'

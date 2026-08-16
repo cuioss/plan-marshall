@@ -28,9 +28,9 @@ from pathlib import Path
 
 from marketplace_bundles import select_live_version_dir
 
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, PROJECT_ROOT
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_REPO_ROOT = PROJECT_ROOT
 _BUNDLES_ROOT = _REPO_ROOT / 'marketplace' / 'bundles'
 _MARKER_NAME = '.orphaned_at'
 _SOURCE_GLOB = '**/skills/**/scripts/*.py'
