@@ -297,7 +297,8 @@ Per instance.
 | 56 | Sub-agent (round 4) | Row 34 attributed the stale sites to a test docstring; the phrase was in `corpus_lsp.py`, and the test docstring carried row 33's wording | **Fixed** — row 34 corrected |
 | 57 | Sub-agent (round 4) | The passthrough justification claimed an operator-added declaration "would hit the same path"; per the docs it would not | **Fixed** — narrowed to a declaration added back into a bundle manifest |
 | 58 | Sub-agent (round 4), cold read | Not a defect — but the two config blocks preceded the cost admonition, so a reader could copy before reading what it costs | **Fixed** — admonition moved above the blocks |
-| 21 | CI | _(none at time of writing — see Contract check)_ | — |
+| 21 | PR review — `cuioss-review-bot` | ⛔ **Real defect** — `read_message` passed a negative `Content-Length` straight to `stream.read()`. Python's `read(-1)` means *read to EOF*, so an invalid frame was **accepted as valid** (reproduced) and, on a live stdin that never closes, the server would block instead of answering. The truncation check could not catch it, since any real body length exceeds a negative one | **Fixed** — negative lengths rejected before the read, with three tests (accepted-invalid, stream-not-consumed, and zero-is-still-valid so the guard is not over-broad) |
+| 21b | CI | _(state at merge-gate time recorded in the Contract check)_ | — |
 
 **Round 1 verdict: NOT READY**, on three substantive defects (#6 blocking, #4 and #7 high) plus
 documentation gaps. All fixed, and a second round dispatched.

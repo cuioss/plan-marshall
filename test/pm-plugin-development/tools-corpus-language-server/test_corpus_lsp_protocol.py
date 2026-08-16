@@ -39,6 +39,29 @@ class TestFraming:
     def test_non_integer_content_length_yields_none(self) -> None:
         assert protocol.read_message(io.BytesIO(b'Content-Length: abc\r\n\r\n{}')) is None
 
+    def test_negative_content_length_yields_none(self) -> None:
+        """``read(-1)`` means read-to-EOF, so a negative length must be refused.
+
+        Left unchecked it swallows the rest of the stream: an invalid frame is
+        accepted as if valid, and on a live stdin that never closes the server
+        blocks instead of answering. The truncation check cannot catch it, since
+        any real body length exceeds a negative one.
+        """
+        body = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize'}).encode('utf-8')
+        assert protocol.read_message(io.BytesIO(b'Content-Length: -1\r\n\r\n' + body)) is None
+
+    def test_negative_content_length_does_not_consume_the_stream(self) -> None:
+        """The next frame must still be readable after a rejected negative one."""
+        good = framed({'jsonrpc': '2.0', 'id': 2, 'method': 'shutdown'})
+        stream = io.BytesIO(b'Content-Length: -5\r\n\r\n' + good)
+        assert protocol.read_message(stream) is None
+
+    def test_zero_content_length_is_not_rejected_as_negative(self) -> None:
+        """Zero is a valid length; only negatives are refused. An empty body is
+        still not a JSON object, so the result is None — but by the JSON check,
+        not by the sign check."""
+        assert protocol.read_message(io.BytesIO(b'Content-Length: 0\r\n\r\n')) is None
+
     def test_truncated_body_yields_none(self) -> None:
         assert protocol.read_message(io.BytesIO(b'Content-Length: 100\r\n\r\n{"a":1}')) is None
 

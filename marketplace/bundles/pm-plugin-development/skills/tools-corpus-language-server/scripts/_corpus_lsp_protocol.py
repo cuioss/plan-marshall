@@ -47,9 +47,19 @@ def read_message(stream: BinaryIO) -> dict[str, Any] | None:
         name, _, value = header.partition(':')
         if name.strip().lower() == 'content-length':
             try:
-                content_length = int(value.strip())
+                parsed = int(value.strip())
             except ValueError:
                 return None
+            # ⚠ A NEGATIVE length must be rejected, not passed through. Python's
+            # ``read(-1)`` means *read to EOF*, so a negative Content-Length would
+            # make the server swallow the rest of the stream — accepting a frame it
+            # should refuse, and, on a live stdin that never closes, blocking
+            # forever instead of answering. The length check below (``len(body) <
+            # content_length``) cannot catch it either, since any real length is
+            # greater than a negative one.
+            if parsed < 0:
+                return None
+            content_length = parsed
     if content_length is None:
         return None
     body = stream.read(content_length)
