@@ -1,6 +1,6 @@
 # Run report — 270-aggregate-cost-invisible-to-per-call-ceiling (run 01)
 
-**Date (UTC):** 2026-08-16 **Branch:** `claude/aggregate-cost-per-call-ceiling-wxrfms` **PR:** _pending_ **Outcome:** _pending_
+**Date (UTC):** 2026-08-16 **Branch:** `claude/aggregate-cost-per-call-ceiling-wxrfms` (harness-assigned) **PR:** [#1260](https://github.com/cuioss/plan-marshall/pull/1260) **Outcome:** completed — D2 and D4(a)/(c) delivered; D1 partial and D3 blocked on corpus availability, both as the plan directs
 
 ## Skills loaded
 
@@ -94,7 +94,7 @@ D1 could not establish **which** path is reducible, because the corpus that woul
 
 The plan's own fallback is explicit and was taken: *"If the only available reduction risks either contract, prefer observability alone and record why"*, and *"The observability half is the durable deliverable and must not be dropped if the reduction half shrinks or empties."*
 
-⇒ The **hard invariant is trivially preserved**: no change in this run touches the terminal-title / session-binding surface, the title-delivery-onto-the-delivering-channel fix, or the wait-mechanism stamp. The branch diff is 11 files, none of them in that surface.
+⇒ The **hard invariant is trivially preserved**: no change in this run touches the terminal-title / session-binding surface, the title-delivery-onto-the-delivering-channel fix, or the wait-mechanism stamp. The branch diff is 15 files, none of them in that surface.
 
 ### D4 — tests — **(a) DELIVERED, (b) N/A, (c) DELIVERED**
 
@@ -125,14 +125,15 @@ The cross-plan assertion is the sharper of the two, because it fails **against a
 
 Also pinned: `test_cross_plan_ceiling_constant_unchanged` (the cross-plan copy of the same ceiling, which no test previously covered — every other test reads it dynamically, so lowering it failed nothing), `test_slow_call_count_still_fires_at_the_ceiling`, and `test_rollup_rows_are_informational_not_genuine_signals`.
 
-**Test count.** Re-derived by AST at the moment of this claim, not carried forward from an earlier round — **33 test functions added**, 0 removed:
+**Test count.** Re-derived by AST at the moment of this claim against the **current** `origin/main` (which no longer contains the decomposed monolith), not carried forward from an earlier round — **37 test functions added**, 0 removed:
 
 | File | added |
 |---|---|
-| `test/plan-marshall/plan-retrospective/test_analyze_logs.py` | 24 (78 → 102) |
-| `test/plan-marshall/audit-archived-plan-retrospectives/test_audit_checks.py` | 9 (439 → 448) |
+| `test/plan-marshall/plan-retrospective/test_analyze_logs.py` | 27 (78 → 105) |
+| `test/plan-marshall/audit-archived-plan-retrospectives/test_audit_check_global_log_analysis_cost_rollup.py` | 9 (new module) |
+| `test/plan-marshall/audit-archived-plan-retrospectives/test_audit.py` | 1 (81 → 82, the era-stamp mirror) |
 
-Plus **2 pre-existing tests modified**: `test_block_carries_summary_lines_and_genuine_count` (the block now carries an informational row) and `test_thresholds_table_carries_every_documented_constant` (a new documented threshold).
+Plus **2 pre-existing tests modified**, now in the homes #1258's decomposition gave them: `test_block_carries_summary_lines_and_genuine_count` (the block now carries an informational row) and `test_thresholds_table_carries_every_documented_constant` (a new documented threshold).
 
 ⚠ The unit is **test functions**, counted by parsing the AST. It is **not** the number of cases pytest collects — parametrised tests expand — so a reader running the suite will see a larger number and the two are not comparable.
 
@@ -140,9 +141,9 @@ Plus **2 pre-existing tests modified**: `test_block_carries_summary_lines_and_ge
 
 `git diff --name-only origin/main...HEAD -- '*.py'` → **non-empty** (`analyze-logs.py`, `audit.py`, and two test modules) ⇒ full `./pw verify` required and run.
 
-⚠ **A defect in this run, recorded rather than hidden:** the first derivation of this diff was taken **before** `git fetch origin main` and was therefore against a stale `origin/main`, returning ~250 files spanning the whole repository. The Step 2 fetch had been skipped. Re-derived after fetching, and again at the moment of this claim: **11 files, of which 4 are `*.py`** (the branch has grown by four verification rounds since that first derivation, which reported 9). A stale ref makes the build-gate predicate over-fire rather than under-fire, so it did not weaken the gate — but the diff it produced was not the branch's diff, and every conclusion drawn from it would have been wrong.
+⚠ **A defect in this run, recorded rather than hidden:** the first derivation of this diff was taken **before** `git fetch origin main` and was therefore against a stale `origin/main`, returning ~250 files spanning the whole repository. The Step 2 fetch had been skipped. Re-derived after fetching, and again at the moment of this claim: **15 files, of which 7 are `*.py`** (the branch grew through four verification rounds, a PR-review fix, and the merge that resolved #1258's decomposition; the first derivation reported 9). A stale ref makes the build-gate predicate over-fire rather than under-fire, so it did not weaken the gate — but the diff it produced was not the branch's diff, and every conclusion drawn from it would have been wrong.
 
-**Result, from the run at the final code commit (`5dc5c67`): `=== verify: SUCCESS ===` — 20305 passed, 14 skipped, 357.92 s.** The gate was re-run after every verification round; earlier rounds recorded 20291 and 20301 as the test set grew. All three sub-steps ran: quality-gate (`ruff … All checks passed!`, `mypy … Success: no issues found in 408 source files`, `SPDX-header check passed`, plugin-doctor `issues[0]`), test-compile (`mypy(test)` 760 files), and module-tests.
+**Result, from the run at the final code commit (`46fadcd`): `=== verify: SUCCESS ===` — 20309 passed, 14 skipped, 353.51 s.** The gate was re-run after every verification round, after the merge that resolved #1258's decomposition, and after the PR-review fix; earlier runs recorded 20291, 20301, 20305 and 20306 as the test set and the base grew. All three sub-steps ran: quality-gate (`ruff … All checks passed!`, `mypy … Success: no issues found in 408 source files`, `SPDX-header check passed`, plugin-doctor `issues[0]`), test-compile (`mypy(test)` 760 files), and module-tests.
 
 A per-commit `./pw quality-gate` was run and read clean before the implementation commit. No `uv.lock` churn: `git status --porcelain` was empty after the build, and deliverable paths were staged explicitly (never `git add -A`).
 
@@ -263,7 +264,7 @@ Two things follow, both recorded rather than smoothed over:
 ## Cost
 
 - **Tokens:** not available to the agent in this session — the harness does not expose a token counter to the running agent, so no figure is stated rather than an estimated one.
-- **Wall-clock:** not precisely available for the run as a whole. The measured components are the `./pw verify` gate, run once per verification round — **405.61 s**, **353.72 s**, **357.92 s** and a final pass — plus several `./pw quality-gate` calls. Each figure is the pytest-reported duration of that run; they are not summable into a run total, because the agent's own wall-clock between them is not instrumented.
+- **Wall-clock:** not precisely available for the run as a whole. The measured components are the six `./pw verify` runs — **405.61 s**, **353.72 s**, **357.92 s**, **354.17 s**, **356.96 s**, **353.51 s** — plus several `./pw quality-gate` calls. Each figure is the pytest-reported duration of that run; they are not summable into a run total, because the agent's own wall-clock between them is not instrumented.
 - **Population:** these figures count **this single Claude Code cloud session**, as the harness counts it. ⛔ **NOT comparable to a plan-marshall `metrics.toon` total**, which counts the orchestrator-plus-agent dispatch tree under plan-marshall's own per-task billing boundary — a boundary a single interactive cloud session does not share. The figures cannot be made comparable here, so no ratio against any such total is offered.
 
 ## Contract check (Step 9)
@@ -283,7 +284,7 @@ Two things follow, both recorded rather than smoothed over:
 | 5 Build gate | **Done** | Git-derived verdict and outcome in § Build gate. Full `./pw verify` re-run after every verification round and after the merge resolution. |
 | 6 Verification sub-agent | **Done — four rounds** | 52 findings with dispositions in § Findings. Two rejected with reasons recorded (#19, #21). |
 | 7 PR cycle | **Done** | PR #1260. Every comment dispositioned (finding #53 fixed; the two quota notices are not actionable). All **three** comment surfaces read (`get_comments`, `get_reviews`, `get_review_comments`) — the review-summary surface carried Sourcery's notice and nothing else would have shown it. Participation table carries a verdict **and** a `Reopens?` value per reviewer; the `silent` verdict records what its recovery check found. |
-| 8 Merge gate | See § Step 8 disclosure below | Conditions 1–3 met before arming. |
+| 8 Merge gate | **Done** | Conditions 1–3 met before arming; this report is the last pre-merge commit. **The § Step 8 condition-4 shortfall disclosure fired**, and is stated verbatim in the § Reviewer participation section and to the operator: *review coverage 1 of 3 — `cuioss-review-bot` reviewed (after recovery) and its finding is fixed; `coderabbitai` rate-limited, reopens on a per-developer quota; `sourcery-ai` rate-limited on a weekly diff-character quota.* A shortfall is disclosed, never merged on silently, and never blocked on. |
 | 8 Bridge | **Done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory. The merge commit brought in another plan's directory as ordinary merge content, not as a write by this run. |
 | 9 This check | **Done** | This table. |
 | 9 What have we learned | **Done** | Two proposals below, presented to the operator and **not** self-approved. |
