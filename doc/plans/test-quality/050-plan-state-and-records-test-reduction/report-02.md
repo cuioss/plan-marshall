@@ -1,6 +1,6 @@
 # Run report — 050-plan-state-and-records-test-reduction (run 02)
 
-**Date (UTC):** 2026-08-16 **Branch:** `claude/test-quality-plan-execution-evap45` **PR:** _(§ Reviewer participation)_ **Outcome:** completed
+**Date (UTC):** 2026-08-16 **Branch:** `claude/test-quality-plan-execution-evap45` **PR:** [#1266](https://github.com/cuioss/plan-marshall/pull/1266) **Outcome:** completed
 
 This run does **not** execute the plan's deliverables. It closes the findings run 01 recorded as
 **"recorded, not fixed"**, on operator instruction ("fix all the findings"). The plan's own residue —
