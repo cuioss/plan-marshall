@@ -4,19 +4,10 @@
 
 from pathlib import Path
 
+import _build_result as _build_result_mod
 import pytest
 from file_ops import get_build_results_dir
 from marketplace_paths import NO_PLAN_SENTINEL
-
-from conftest import load_script_module
-
-
-def _load_module(name, filename):
-    """Load a script-shared script by (bundle, skill, file) identity."""
-    return load_script_module('plan-marshall', 'script-shared', f'build/{filename}', name)
-
-
-_build_result_mod = _load_module('_build_result', '_build_result.py')
 
 ERROR_BUILD_FAILED = _build_result_mod.ERROR_BUILD_FAILED
 ERROR_EXECUTION_FAILED = _build_result_mod.ERROR_EXECUTION_FAILED

@@ -22,9 +22,7 @@ from conftest import load_script_module
 sys.path.insert(0, str(Path(__file__).parent))
 
 
-_providers_core = load_script_module(
-    'plan-marshall', 'manage-providers', '_providers_core.py', '_providers_core'
-)
+import _providers_core  # noqa: E402
 _cred_edit = load_script_module('plan-marshall', 'manage-providers', '_cred_edit.py', '_cred_edit')
 
 apply_extra_passthrough = _providers_core.apply_extra_passthrough

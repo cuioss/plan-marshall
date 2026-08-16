@@ -8,15 +8,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from conftest import load_script_module
-
-
-def _load_module(name, filename):
-    """Load a script-shared script by (bundle, skill, file) identity."""
-    return load_script_module('plan-marshall', 'script-shared', f'build/{filename}', name)
-
-
-_build_parse_mod = _load_module('_build_parse', '_build_parse.py')
+import _build_parse as _build_parse_mod
 
 MODE_ACTIONABLE = _build_parse_mod.MODE_ACTIONABLE
 MODE_ERRORS = _build_parse_mod.MODE_ERRORS
