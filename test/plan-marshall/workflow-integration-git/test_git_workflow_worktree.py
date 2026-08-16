@@ -182,7 +182,7 @@ class TestEnsureWorktreePlanLocalReal:
         """A pre-existing ``.plan/local`` symlink (a worktree created by an older
         symlinking revision, or manual intervention) is unlinked and replaced by a
         real directory — mkdir(exist_ok=True) alone would leave the symlink in
-        place, violating the fully-REAL guarantee (PR #557 review)."""
+        place, violating the fully-REAL guarantee."""
         worktree = tmp_path / 'wt'
         (worktree / '.plan').mkdir(parents=True)
         main_local = tmp_path / 'main' / '.plan' / 'local'

@@ -697,8 +697,8 @@ class TestNarrativeContract:
         # All three registered enrich subcommands must be cited. The top-level
         # `--project-dir {worktree_path}` flag is interposed between the
         # `architecture` script token and the subcommand (top-level flags
-        # precede the subcommand — lesson 2026-07-07-20-001), so pin the
-        # subcommand tokens rather than an `architecture <subcommand>` adjacency.
+        # precede the subcommand), so pin the subcommand tokens rather than an
+        # `architecture <subcommand>` adjacency.
         assert 'enrich module' in standard_text
         assert 'enrich package' in standard_text
         assert 'enrich skills-by-profile' in standard_text

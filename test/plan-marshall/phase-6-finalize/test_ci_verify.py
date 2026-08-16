@@ -656,7 +656,7 @@ def test_jobs_file_written_with_normalized_checks(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Fail-closed hardening (PR #849 review) — status_fn error short-circuit,
+# Fail-closed hardening — status_fn error short-circuit,
 # malformed-checks guard, empty-conclusion fail-closed, '0' PR-number catch.
 # ---------------------------------------------------------------------------
 

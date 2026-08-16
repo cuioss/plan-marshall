@@ -1012,9 +1012,9 @@ def test_main_without_project_dir_leaves_cwd_untouched(tmp_path, monkeypatch):
 # format_checks_toon — Go zero-value timestamp regression
 # =============================================================================
 #
-# Regression for the lesson-2026-04-19-14-007 bug: a SKIPPED check with
-# `0001-01-01T00:00:00Z` timestamps used to leak ~63.9-billion-second
-# `elapsed_sec` values into the TOON aggregate. Contract after the fix:
+# A SKIPPED check carrying Go zero-value `0001-01-01T00:00:00Z` timestamps
+# must not leak ~63.9-billion-second `elapsed_sec` values into the TOON
+# aggregate. The contract:
 #
 #   (a) aggregate elapsed_sec is bounded by a 24h ceiling
 #   (b) SKIPPED row (with Go zero-value timestamps) has NO `elapsed_sec` key

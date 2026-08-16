@@ -3,8 +3,7 @@
 # ruff: noqa: I001, E402
 """Tests for the manage-ci-artifacts persistence layer.
 
-Lesson-2026-05-18-16-001 deliverable 7 success criteria pinned by this
-file:
+The persistence contract pinned by this file:
 
 1. ``persist`` writes ``artifacts/ci-runs/{run_id}/`` containing one
    ``.log`` per job plus a ``manifest.toon`` enumerating every job.

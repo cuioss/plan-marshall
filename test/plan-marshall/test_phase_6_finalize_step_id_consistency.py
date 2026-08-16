@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001, E402
-"""Regression coverage for the phase-6-finalize step-ID consistency contract
-introduced by deliverable 2 of plan
-``target-claude-staleness-silently-halts-phase-6-en`` (lesson
-``2026-05-20-08-005``).
+"""The phase-6-finalize step-ID consistency contract.
 
-The bug: ``marshal.json``'s phase-6-finalize manifest lists project steps
+The failure it guards: ``marshal.json``'s phase-6-finalize manifest lists project steps
 under fully-qualified IDs (``project:finalize-step-pre-submission-
 self-review``, ``project:finalize-step-plugin-doctor``), but the recording
 side was inconsistent — the ``pre-submission-self-review`` workflow doc
@@ -24,9 +21,8 @@ These tests pin the end-to-end contract:
    against a prefixed recorded entry — no ``PhaseStepsIncomplete``.
 3. ``_capture_phase_steps_complete`` correctly raises ``PhaseStepsIncomplete``
    when the manifest declares a prefixed required step but the recorded
-   entry is keyed by the bare suffix — the regression that originally bit
-   lesson ``2026-05-20-08-005``. Reverting deliverable 2's fix on any of
-   the wrappers re-introduces this exact failure mode.
+   entry is keyed by the bare suffix. Dropping the canonical
+   ``mark-step-done`` call on any wrapper re-introduces this failure mode.
 4. The renderer's exact-then-strip-prefix lookup helper (specified in
    ``output-template.md`` § Emission step 5) returns the bare entry when
    the manifest carries a ``project:`` prefixed key and the recorded
@@ -160,7 +156,7 @@ def test_phase_steps_complete_fails_when_required_prefixed_but_recorded_bare(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """The exact failure mode that bit lesson ``2026-05-20-08-005``.
+    """A prefixed requirement recorded under its bare suffix fails the check.
 
     ``required-steps.md`` lists ``project:finalize-step-pre-submission-self-
     review`` (prefixed), but the recorded entry on
@@ -284,10 +280,11 @@ def test_renderer_lookup_strips_project_prefix_on_miss() -> None:
 
 
 def test_finalize_step_wrappers_mark_step_done_calls_present() -> None:
-    """Structural regression: removing the canonical ``mark-step-done --step
-    project:finalize-step-{name}`` calls re-introduces the lesson
-    ``2026-05-20-08-005`` defect (renderer emits ``<missing display_detail>``
-    or handshake raises ``PhaseStepsIncomplete``).
+    """Both sources carry the canonical ``mark-step-done --step
+    project:finalize-step-{name}`` invocation.
+
+    Removing either one makes the renderer emit ``<missing display_detail>``
+    or the handshake raise ``PhaseStepsIncomplete``.
 
     Two sources MUST each carry at least one ``mark-step-done --step
     project:finalize-step-{name}`` invocation:

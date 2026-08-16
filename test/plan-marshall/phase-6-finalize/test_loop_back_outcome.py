@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""End-to-end contract tests for the ``loop_back`` outcome (TASK-2).
+"""End-to-end contract tests for the ``loop_back`` outcome.
 
-These tests pin the four invariants documented in the lesson-2026-05-05-23-002
-deliverable:
+These tests pin four invariants:
 
 1. The producer-consumer FIX path records ``--outcome loop_back`` (not
    ``done``) on the ``automatic-review`` step, and the persisted shape on

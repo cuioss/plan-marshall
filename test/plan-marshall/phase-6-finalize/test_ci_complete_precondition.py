@@ -537,24 +537,19 @@ def test_default_timeout_matches_documented_ceiling():
 
 
 # ---------------------------------------------------------------------------
-# Test 6 — regression guard: invoking the script via the executor notation
-# with a deliberately scrubbed PYTHONPATH must still succeed. This pins the
-# fix for lesson 2026-05-18-11-001: the prior underscore-prefixed helper
-# carried an in-script ``sys.path`` self-bootstrap block that resolved the
-# script-shared directory by walking parents of ``__file__``. When the
-# script was relocated (e.g., when run from the plugin cache at
-# ``target/claude/`` or from ``~/.claude/plugins/cache/`` rather than from
-# the source tree), the parent-arithmetic landed one level too high and
-# imports of ``toon_parser`` / ``marketplace_paths`` failed.
+# Test 6 — invoking the script via the executor notation with a deliberately
+# scrubbed PYTHONPATH must still succeed. The helper carries no in-script
+# ``sys.path`` self-bootstrap and trusts the executor proxy to inject
+# PYTHONPATH; a self-bootstrap that resolves script-shared by walking parents
+# of ``__file__`` lands one level too high whenever the script runs from the
+# plugin cache rather than the source tree, and ``toon_parser`` /
+# ``marketplace_paths`` imports then fail.
 #
-# The corrected helper drops the self-bootstrap entirely and trusts the
-# executor proxy to inject PYTHONPATH. This test exercises that contract
-# explicitly: it strips PYTHONPATH from the subprocess environment and
-# invokes the executor with the documented notation. If the helper ever
-# regrows a self-bootstrap that hard-codes parent traversal, this test
-# would only mask the regression; the companion
-# :func:`test_source_script_has_no_self_bootstrap` test below pins the
-# absence of the legacy bootstrap pattern at the source-text level.
+# This test strips PYTHONPATH from the subprocess environment and invokes the
+# executor with the documented notation. A regrown self-bootstrap would mask
+# the regression here, so the companion
+# :func:`test_source_script_has_no_self_bootstrap` pins its absence at the
+# source-text level.
 # ---------------------------------------------------------------------------
 
 
@@ -657,14 +652,12 @@ def test_source_script_has_no_self_bootstrap():
             f'{_SOURCE_SCRIPT_PATH}. The renamed helper MUST rely on the '
             'executor proxy to inject PYTHONPATH; in-script sys.path '
             'mutation breaks when the script is relocated under '
-            'target/claude/ or the plugin cache. See lesson '
-            '2026-05-18-11-001.'
+            'target/claude/ or the plugin cache.'
         )
 
 
 # ---------------------------------------------------------------------------
-# Lesson-2026-05-18-16-001 deliverable 5 — failing_checks + wait_outcome
-# forwarding through the precondition resolver.
+# failing_checks + wait_outcome forwarding through the precondition resolver.
 # ---------------------------------------------------------------------------
 
 
@@ -1355,11 +1348,10 @@ def test_resolve_skips_writeback_when_duration_absent(plan_context):
 
 # ---------------------------------------------------------------------------
 # Fixture-driven tests — feed each representative ``ci checks wait`` TOON
-# stdout through ``parse_toon`` and the resolver. Closes the test gap that
-# lesson 2026-05-24-14-001 ("Mock-only unit tests cannot reproduce the live
-# failure mode") identified: the existing seam-based tests pin the post-
-# parse contract but never exercise parse_toon → resolve(). The fixtures
-# live under test/plan-marshall/phase-6-finalize/fixtures/ci-wait/.
+# stdout through ``parse_toon`` and the resolver. The seam-based tests pin the
+# post-parse contract but never exercise parse_toon → resolve(), which a
+# mock-only test cannot reach. The fixtures live under
+# test/plan-marshall/phase-6-finalize/fixtures/ci-wait/.
 # ---------------------------------------------------------------------------
 
 
@@ -1427,19 +1419,16 @@ def _run_fixture_through_resolver(fixture_path, plan_id):
 
 
 def test_fixture_dir_present():
-    """The fixture set composed by deliverable 2 (plus the stress fixtures
-    added under the phase-5-execute Q-Gate finding e2c3ee re-direction) must
-    be present.
+    """Every declared fixture — the base captures plus the six stressor
+    categories (a-f) — is present on disk.
 
-    The Q-Gate finding called for widening the fixture set with the six
-    stressor categories (a-f) the original 9 captures didn't cover. The
-    `check-name-special-chars` and `failing-checks-with-colon-names` fixtures
-    surfaced a live bug in `parse_toon`'s `_parse_uniform_array` key/value
-    detection heuristic — fixed in TASK-004.
+    The set is pinned exactly, so a fixture added without updating this list,
+    or removed while still referenced, fails here rather than silently
+    narrowing what the fixture-driven tests below cover.
     """
     assert _FIXTURE_DIR.is_dir(), f'Fixture directory missing: {_FIXTURE_DIR}'
     expected = {
-        # Original 9 fixtures from deliverable 2 (TASK-002).
+        # Base captures.
         'green-success.toon',
         'failure-with-failing-checks.toon',
         'no-checks.toon',
@@ -1464,10 +1453,12 @@ def test_fixture_dir_present():
 
 
 def test_fixture_green_success_resolves_to_success(plan_context):
-    """The exact regression case from PR #454 — green fixture must classify
-    as ``wait_succeeded / ci_final_status: success``. This is the headline
-    mis-classification the lesson identifies; if this test fails, the
-    parse-and-extract pipeline is broken."""
+    """An all-green fixture classifies as ``wait_succeeded`` /
+    ``ci_final_status: success``.
+
+    This is the headline mis-classification risk: a failure here means the
+    parse-and-extract pipeline is broken.
+    """
     fixture = _FIXTURE_DIR / 'green-success.toon'
     plan_id = 'ci-fixture-green-success'
     result = _run_fixture_through_resolver(fixture, plan_id)
@@ -1570,14 +1561,12 @@ def test_fixture_timeout_deadline_exceeded_resolves_to_timeout(plan_context):
 #   (e) Very large `checks[N]` blocks (>50 rows)
 #   (f) SKIPPED + CANCELLED + NEUTRAL conclusion combinations
 #
-# (b) and the companion `failing-checks-with-colon-names` fixture surfaced
-# a live bug: `parse_toon`'s `_parse_uniform_array` key/value detection
-# heuristic at the prior `re.match(r'^[a-zA-Z_][\w_]*\s*:', content)` line
-# treated tab-separated rows whose first column contained `:` (e.g.
-# `lint:strict`, `coverage:enforce`) as a new key/value pair and broke
-# out of the array — silently truncating downstream rows. TASK-004 fixed
-# this by adding `\t not in content` to the heuristic; these tests pin
-# the corrected behaviour.
+# (b) and the companion `failing-checks-with-colon-names` fixture guard the
+# `_parse_uniform_array` key/value detection heuristic: a tab-separated row
+# whose first column contains `:` (e.g. `lint:strict`, `coverage:enforce`)
+# must NOT be read as a new key/value pair, which would break out of the
+# array and silently truncate downstream rows. The `\t not in content`
+# clause is what keeps the two apart.
 # ---------------------------------------------------------------------------
 
 
@@ -1596,11 +1585,11 @@ def test_fixture_check_name_special_chars_preserves_all_rows():
     the bug-trigger colon (`lint:strict`, `coverage = 95%`) — must NOT
     short-circuit the inline-table parse.
 
-    Before the TASK-004 fix, the parser's key/value detection heuristic
-    treated `lint:strict\\tcompleted\\t...` as a new key/value pair after
-    `.strip()` left the colon at offset 4, breaking out of the array and
-    silently truncating downstream rows. This test pins the fix by feeding
-    the raw fixture through `parse_toon` directly and asserting the full
+    A key/value detection heuristic that ignores tabs reads
+    `lint:strict\\tcompleted\\t...` as a new key/value pair once `.strip()`
+    leaves the colon at offset 4, breaks out of the array, and silently
+    truncates downstream rows. This test feeds the raw fixture through
+    `parse_toon` directly and asserts the full
     row count is preserved.
     """
     fixture = _FIXTURE_DIR / 'check-name-special-chars.toon'

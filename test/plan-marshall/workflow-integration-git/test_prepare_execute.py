@@ -15,7 +15,7 @@ Contract under test (solution_outline.md §4):
   state WHOLLY on main (never half-moved) and returns ``status: error``.
 * **cwd invariant** — the script never mutates the process cwd.
 
-Isolation (test-isolation lessons 2026-06-02-12-001/002/003): every test runs
+Isolation: every test runs
 against an isolated ``PLAN_BASE_DIR`` staged under ``tmp_path`` with cwd pinned
 to a stable location; ``cmd_worktree_create`` is stubbed so no real
 ``git worktree add`` runs and the suite never contends for the real ``.plan/``

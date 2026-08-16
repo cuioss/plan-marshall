@@ -450,7 +450,7 @@ class TestRebaseToMissingTarget:
 
 
 # ---------------------------------------------------------------------------
-# Deliverable 2 — stale-local-base regression (related lesson 2026-06-03-13-001)
+# Stale-local-base regression
 # ---------------------------------------------------------------------------
 
 

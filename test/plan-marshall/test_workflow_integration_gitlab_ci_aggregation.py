@@ -3,8 +3,7 @@
 """Tests for gitlab_ops.py CI conclusion-state aggregation.
 
 Mirror of test_workflow_integration_github_ci_aggregation.py for the GitLab
-provider. Locks the canonical job-status → partition mapping established in
-lesson-2026-05-18-16-001 deliverable 4:
+provider. Locks the canonical job-status → partition mapping:
 
     non-failing : success | skipped | manual
     failing     : failed | canceled | <unknown future status>
@@ -197,13 +196,13 @@ def test_derive_failed_plus_running_returns_pending():
 
 
 # =============================================================================
-# Lesson regression — equivalent to PR #410's [success, success, success, skipped] shape
+# Mixed pass-and-skip aggregation
 # =============================================================================
 
 
-def test_lesson_regression_three_successes_one_skipped_is_success():
-    """Lesson-2026-05-18-16-001: the GitLab mirror of PR #410's CI shape
-    ``[success, success, success, skipped]`` MUST aggregate to ``success``.
+def test_three_successes_one_skipped_is_success():
+    """The GitLab mirror: ``[success, success, success, skipped]`` aggregates
+    to ``success``.
 
     Before the fix the legacy STATUS_MAP at lines ~711-714 / ~850-853 also
     silently mis-bucketed success-plus-skipped via fall-through.

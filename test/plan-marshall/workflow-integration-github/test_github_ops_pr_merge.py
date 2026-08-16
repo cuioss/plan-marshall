@@ -10,10 +10,9 @@ After the refactor:
 * No local git state (checkout, ``git branch -D``) may be touched by this
   handler — that is the caller's responsibility.
 
-The regression guard for the lesson-2026-04-17-19-002 fork exercises the
-worktree scenario that broke with ``gh pr merge --delete-branch``: here the
-merge must finish cleanly and the branch delete must round-trip purely
-through the REST leaf, never through local git.
+The worktree fork exercises the scenario ``gh pr merge --delete-branch``
+cannot serve: the merge must finish cleanly and the branch delete must
+round-trip purely through the REST leaf, never through local git.
 """
 
 import argparse
@@ -56,8 +55,8 @@ def _install_probe(
     Returns a capture dict recording the ``(owner, repo, branch)`` the probe was
     called with plus a call count, so tests can assert base-branch specificity.
     The four-tuple return shape ``(discriminator, detail, error, merge_method)``
-    mirrors the production ``_probe_merge_queue_state`` signature exactly (lesson
-    2026-07-09-14-001: fixtures must mirror the production data shape). By
+    mirrors the production ``_probe_merge_queue_state`` signature exactly, so a
+    green fixture cannot diverge from the production data shape. By
     default the probe reports ``eligible_unconfigured`` with ``merge_method=None``
     so the preflight proceeds to the normal merge path unchanged.
     """
@@ -398,16 +397,16 @@ def test_pr_merge_without_delete_branch_leaves_branch_untouched(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Regression: lesson-2026-04-17-19-002 — worktree error case
+# Worktree error case
 # ---------------------------------------------------------------------------
 
 
 def test_pr_merge_delete_branch_does_not_touch_local_git(monkeypatch):
-    """Regression for lesson-2026-04-17-19-002.
+    """``--delete-branch`` deletes the head remotely, never through local git.
 
-    The original bug: ``gh pr merge --delete-branch`` drove a local ``git
-    checkout`` + ``git branch -D`` against the *caller's* cwd, which in an
-    isolated worktree tried to delete the branch that was still checked out
+    A local ``git checkout`` + ``git branch -D`` against the *caller's* cwd —
+    which is what ``gh pr merge --delete-branch`` does — in an isolated
+    worktree tries to delete the branch that is still checked out
     in the worktree itself and aborted with a checkout error. The refactor
     removes the ``--delete-branch`` pass-through entirely, so ``gh pr merge``
     runs clean and the remote branch is deleted via a pure REST call.
@@ -703,9 +702,7 @@ def _capture_branch_delete_run_gh(returncode: int = 0, stderr: str = ''):
 
 
 def test_branch_delete_url_encodes_slash_in_branch_name(monkeypatch):
-    """Regression: PR #256 review (gemini-code-assist).
-
-    Branch names containing ``/`` must be URL-encoded into a single path
+    """Branch names containing ``/`` are URL-encoded into a single path
     segment — ``feature/x`` → ``feature%2Fx`` — otherwise the REST path
     becomes ``/git/refs/heads/feature/x`` which GitHub interprets as
     ``refs/heads/feature`` + an extra ``/x`` segment (malformed ref path).

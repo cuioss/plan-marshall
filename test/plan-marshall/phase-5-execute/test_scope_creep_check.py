@@ -221,7 +221,7 @@ def test_plan_dir_resolved_via_plan_base_dir(plan_with_refs, monkeypatch, capsys
 
     No patching of any plan-dir resolver: the fixture sets PLAN_BASE_DIR so
     ``get_plan_dir('scope-creep-test')`` resolves to the fixture's plan dir,
-    where references.json + TASK-001.json already live. A residual over the
+    where references.json and a task record already live. A residual over the
     default threshold confirms the resolved dir was read.
     """
     extras = [f'extra/{i}.py' for i in range(6)]

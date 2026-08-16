@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for github_ops.py CI conclusion-state aggregation.
 
-Locks the canonical conclusion → partition mapping established in
-lesson-2026-05-18-16-001 deliverable 1:
+Locks the canonical conclusion → partition mapping:
 
     non-failing : SUCCESS | SKIPPED | NEUTRAL
     failing     : FAILURE | TIMED_OUT | CANCELLED | ACTION_REQUIRED |
@@ -292,13 +291,14 @@ def test_derive_failure_plus_in_progress_returns_pending():
 
 
 # =============================================================================
-# PR #410 regression — the originating shape of lesson-2026-05-18-16-001
+# Mixed pass-and-skip aggregation
 # =============================================================================
 
 
-def test_pr_410_regression_three_successes_one_skipped_is_success():
-    """Lesson-2026-05-18-16-001: PR #410's CI shape ``[success, success, success, skipped]``
-    MUST aggregate to ``success`` (not ``failure``, not ``mixed``).
+def test_three_successes_one_skipped_is_success():
+    """``[success, success, success, skipped]`` aggregates to ``success``.
+
+    Not ``failure``, and not ``mixed``.
 
     Before the fix the legacy ``mixed`` fall-through interpreted any non-pass /
     non-skip conclusion as failure, but it also silently routed
@@ -354,7 +354,7 @@ def test_ci_status_returns_success_for_all_passing(monkeypatch):
 
 
 def test_ci_status_returns_success_for_pass_plus_skipped(monkeypatch):
-    """The PR #410 regression at the cmd_ci_status call site."""
+    """Pass-plus-skipped aggregates to success at the cmd_ci_status call site."""
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
     payload = (
         '['
@@ -422,7 +422,10 @@ def _ci_wait_args(pr_number=42, timeout=5, interval=0):
 
 
 def test_ci_wait_final_status_success_for_pass_plus_skipped(monkeypatch):
-    """PR #410 regression at the cmd_ci_wait call site — the precondition source."""
+    """Pass-plus-skipped aggregates to success at the cmd_ci_wait call site.
+
+    This call site is the precondition source.
+    """
     monkeypatch.setattr(github_ops, 'check_auth', _ok_auth)
     _noop_sleep(monkeypatch)
 
