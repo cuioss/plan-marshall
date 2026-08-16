@@ -188,7 +188,8 @@ def is_operator_authored(text: str) -> bool:
 
     Non-whitespace text recovered from an operator-bearing envelope settles the
     question on its own; whitespace alone is not content, so a blank
-    ``<command-args>`` leaves the turn to be judged on its residue. The notice check runs on the residue, and the residue carries that
+    ``<command-args>`` leaves the turn to be judged on its residue.
+    The notice check runs on the residue, and the residue carries that
     recovered text, so a turn opening with a harness notice and continuing into
     a slash command would otherwise be discarded — taking the operator's
     instruction with it.

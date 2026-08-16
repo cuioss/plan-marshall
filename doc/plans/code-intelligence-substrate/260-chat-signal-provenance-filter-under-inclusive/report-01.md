@@ -111,7 +111,7 @@ raw turns, so they are extra transcript entries counted by `gate_decision_count`
 
 ### D4 — tests
 
-**Done.** 111 tests across four modules (26 + 16 + 16 + 53 collected), carrying 226 assertions.
+**Done.** 114 tests across four modules (26 + 19 + 16 + 53 collected), carrying 232 assertions.
 
 | Plan requirement | Test |
 |---|---|
@@ -144,7 +144,7 @@ re-confirmed across every assertion in the three modules by three verification r
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD` includes seven `*.py` files — three scripts, three test
+`git diff --name-only origin/main...HEAD` includes eight `*.py` files — three scripts, four test
 modules and the shared fixture helper (which pytest does not collect) ⇒ **Python changed, full
 `./pw verify` required and run.**
 
@@ -162,10 +162,10 @@ Per-commit gate: every commit touching `*.py` was preceded by a clean `./pw qual
 
 ## Findings
 
-Six verification rounds plus two defects caught by the run itself — 53 findings, 51 fixed and 2 rejected with reason. Each round targeted the
-**previous round's fixes** as a first-class surface, which is what caught most of these — **four** of the
-six rounds found that the prior round's fix had introduced or exposed a new defect (rounds 2, 3, 4 and
-5). Recorded per instance.
+Seven verification rounds plus two defects caught by the run itself — 68 findings, 66 fixed and 2 rejected with reason. Each round targeted the
+**previous round's fixes** as a first-class surface, which is what caught most of these — **six of the
+seven** rounds found that the prior round's fix had introduced or exposed a new defect: rounds 2, 3, 4,
+5, 6 and 7. Only round 1 had no prior round to check. Recorded per instance.
 
 ### Self-caught during implementation (2 findings — both fixed)
 
@@ -229,25 +229,6 @@ Recorded because a finding is a finding regardless of who found it.
 | R4-5 | The coupling registry claimed `AskUserQuestion` lives only in the `_chat_*` modules; it is also in the reducer's `DECISION_MARKERS`, and that registry cites coupling by path | **Fixed** |
 | R4-6 | `test_extract_chat_signal_provenance.py` no longer tested provenance, which had moved to `test_chat_provenance.py` | **Fixed** — renamed to `test_extract_chat_signal_verdict.py` |
 
-### Round 6 (11 findings — all fixed)
-
-Scoped to the previous commit and asked to classify its own findings as behavioural vs. records-only.
-It classified **(a) behavioural**, so the loop continued rather than terminating here.
-
-| # | Finding | Disposition |
-|---|---|---|
-| R6-1 | `head = text.lstrip()` in `extract_gate_decisions` was unpinned and **not** an equivalent mutant. `flatten_tool_result` joins multi-block payloads with `\n`, so a leading empty block shifts a refusal notice off position zero; without the tolerance the decision is lost — under-counting operator signal, driving the verdict toward a false `no_signal: true`. The identical `lstrip()` on the provenance side *was* pinned; this run pinned one half of a pair | **Fixed** — mutant verified killed |
-| R6-2 | `if not text.strip():` in the same function was likewise unpinned and non-equivalent: a whitespace-only `AskUserQuestion` payload would count as a gate decision — the same defect class R5-2 had just closed on the provenance side | **Fixed** — mutant verified killed |
-| R6-3 | `flatten_tool_result`'s block-list branch had **zero** coverage (module at 76%); no test referenced the function, and the only fixture passed a bare string. That gap is what made R6-1 and R6-2 reachable rather than exotic | **Fixed** — new `test_chat_gate_decisions.py`, 16 tests |
-| R6-4 | The newly pinned non-whitespace rule was stated nowhere normative: the contract still said recovered text settles the question, unqualified. **The same defect as R4-2, reintroduced by the commit that fixed its neighbour** | **Fixed** — contract and docstring both qualified |
-| R6-5 | The report's aggregate finding count contradicted its own section sub-totals | **Fixed** |
-| R6-6 | `test_extract_chat_signal.py` line figure invalidated by the same commit that wrote it (566/+11 → 567/+12) | **Fixed** |
-| R6-7 | "twelve boundary tests" for `parse_turn`; there are ten, and there always were | **Fixed** |
-| R6-8 | The "what have we learned" evidence list attributed the quadratic hang and the self-poisoning counter to "the previous round's fix", though one was self-caught and the other was round 1. The same section then cited two round-5 rows as "rounds 4 and 5", and contradicted itself about round 4 across consecutive paragraphs | **Fixed** |
-| R6-9 | "three of the five rounds" understated — at least four rounds found a defect in the prior round's fix | **Fixed** |
-| R6-10 | `**PR:** _see Residue_` and the merge-gate contract row pointed at a Residue section containing neither | **Fixed** |
-| R6-11 | The build-gate record named a gate that pre-dated HEAD | **Fixed** — re-gated at HEAD |
-
 ### Round 5 (6 findings — 5 fixed, 1 rejected)
 
 | # | Finding | Disposition |
@@ -271,11 +252,72 @@ read the precedence correctly, round 5 did not. That the record was ambiguous en
 readers is itself the signal, so the Contract check below now states the disposition explicitly
 instead of leaving it to inference.
 
+### Round 6 (11 findings — 9 fixed at the time, 2 recorded fixed before they were)
+
+Scoped to the previous commit and asked to classify its own findings as behavioural vs. records-only.
+It classified **(a) behavioural**, so the loop continued rather than terminating here.
+
+| # | Finding | Disposition |
+|---|---|---|
+| R6-1 | `head = text.lstrip()` in `extract_gate_decisions` was unpinned and **not** an equivalent mutant. `flatten_tool_result` joins multi-block payloads with `\n`, so a leading empty block shifts a refusal notice off position zero; without the tolerance the decision is lost — under-counting operator signal, driving the verdict toward a false `no_signal: true`. The identical `lstrip()` on the provenance side *was* pinned; this run pinned one half of a pair | **Fixed** — mutant verified killed |
+| R6-2 | `if not text.strip():` in the same function was likewise unpinned and non-equivalent: a whitespace-only `AskUserQuestion` payload would count as a gate decision — the same defect class R5-2 had just closed on the provenance side | **Fixed** — mutant verified killed |
+| R6-3 | `flatten_tool_result`'s block-list branch had **zero** coverage (module at 76%); no test referenced the function, and the only fixture passed a bare string. That gap is what made R6-1 and R6-2 reachable rather than exotic | **Fixed** — new `test_chat_gate_decisions.py`, 16 tests |
+| R6-4 | The newly pinned non-whitespace rule was stated nowhere normative: the contract still said recovered text settles the question, unqualified. **The same defect as R4-2, reintroduced by the commit that fixed its neighbour** | **Fixed** — contract and docstring both qualified |
+| R6-5 | The report's aggregate finding count contradicted its own section sub-totals | **Fixed** |
+| R6-6 | `test_extract_chat_signal.py` line figure invalidated by the same commit that wrote it (566/+11 → 567/+12) | **Fixed** |
+| R6-7 | "twelve boundary tests" for `parse_turn`; there are ten, and there always were | **Fixed** |
+| R6-8 | The "what have we learned" evidence list attributed the quadratic hang and the self-poisoning counter to "the previous round's fix", though one was self-caught and the other was round 1. The same section then cited two round-5 rows as "rounds 4 and 5", and contradicted itself about round 4 across consecutive paragraphs | **Fixed** |
+| R6-9 | "three of the five rounds" understated — at least four rounds found a defect in the prior round's fix | **Fixed** |
+| R6-10 | `**PR:** _see Residue_` and the merge-gate contract row pointed at a Residue section containing neither | **Fixed** |
+| R6-11 | The build-gate record named a gate that pre-dated HEAD | **Fixed** — re-gated at HEAD |
+
+⛔ **Two of these dispositions were recorded as fixed when they were not.** R6-10's pointers were
+re-aimed at a section that does not exist, and R6-11's build-gate record was never re-pointed at HEAD
+at all. Round 7 caught both. This is the failure the contract warns about specifically — *"a findings
+table recording a disposition the artifacts contradict … is the one a re-dispatch is least likely to
+catch, because the verifier reads the code rather than the record"* — and it happened here twice in
+one table. Both are genuinely fixed in the round-7 commit.
+
+### Round 7 (15 findings — all fixed)
+
+Scoped to round 6's commit; classified **(a) behavioural** again, so the loop continued.
+
+| # | Finding | Disposition |
+|---|---|---|
+| R7-1 | `test_non_tool_result_blocks_are_ignored` was **vacuous for the guard it names**: its fixture carried no `content` key, so the block was dropped by the emptiness check one line later. Removing the type guard left the suite green. Direction: over-counting — a non-`tool_result` block raising `gate_decision_count` | **Fixed** — witness now carries a payload |
+| R7-2 | `decision_tool_use_ids`' `tool_use` type guard unpinned; both blocks in the test set `type='tool_use'`, so only `name` discriminated. A differently-typed block bearing the same name would contribute a spurious id | **Fixed** |
+| R7-3 | `test_every_refusal_marker_is_recognised` **iterated the constant under test**, so it shrank with the tuple: deleting or mistyping markers 2 and 3 left the suite green while real refusals stopped being recognised. Direction: under-counting, toward a false `no_signal: true`. ⭐ **This plan's own thesis — "a named list is a sample" — turned on the plan's own tests** | **Fixed** — markers named as literals, with the constant asserted against them |
+| R7-4 | `OPERATOR_DECISION_TOOL` was referenced only symbolically, so renaming it left the suite green while the entire gated-decision correlation silently died | **Fixed** — pinned to the literal and cross-checked against the reducer's copy |
+| R7-5 | `test_non_list_content_yields_no_ids` killed no mutant: a bare string is iterable, so the per-block dict filter carried it, not the list guard | **Fixed** — non-iterable and dict witnesses |
+| R7-6 | `isinstance(use_id, str)` unpinned; an unhashable id would raise and abort the whole reduction. The sibling guard was pinned — one half of a pair again | **Fixed** |
+| R7-7 | The build-gate record still named a gate three commits behind HEAD. **R6-11 recorded this "Fixed" when the commit never touched the section** | **Fixed** — re-gated at HEAD |
+| R7-8 | "seven `*.py` files" was eight | **Fixed** |
+| R7-9 | The PR and merge-gate pointers resolved to a section that does not exist. **R6-10 recorded this "Fixed"; the fix made it worse** — previously it pointed at a real section lacking the content | **Fixed** — a Merge gate section now exists and carries both |
+| R7-10 | "four of the six rounds" undercounted; the report's own rows show six of seven | **Fixed** |
+| R7-11 | The what-have-we-learned evidence cited instances spanning three rounds to support a "four rounds" claim, and named a different round set than the Findings header | **Fixed** — one instance per round, both statements reconciled |
+| R7-12 | The round count contradicted itself three ways across the document (six / five / four) | **Fixed** |
+| R7-13 | Round 6 was placed before round 5 in a per-round record | **Fixed** |
+| R7-14 | Round 6's header claimed all 11 fixed; two were not | **Fixed** |
+| R7-15 | The round-6 docstring edit left a 134-character line in a docstring wrapping at ~78; `E501` is in ruff's ignore list, so nothing caught it | **Fixed** |
+
 ### Accepted, not fixed
 
 | Item | Reason |
 |---|---|
 | `test_extract_chat_signal.py` is 567 lines, over the 400-line `test-module-line-budget` | **Pre-existing** (555 at merge-base). This run added 12 lines to it while splitting the *new* tests into modules that are within budget. The rule is warning-severity and does not gate the build, and 316 test modules in this tree already exceed it. Splitting a pre-existing over-budget module is unrelated maintenance the plan did not request — carried to Residue |
+
+## Merge gate
+
+**PR:** _filled in when the PR is opened; this section is the single place the run records it._
+
+Conditions per the lane contract:
+
+1. **Required contexts green on the head SHA** — read from GitHub's own computation over the ruleset
+   (`mergeable_state`), never from a ruleset-config call, which is unreachable on the cloud MCP path.
+2. **Every PR comment handled** — fixed, or answered on the thread.
+3. **This report finalized and pushed** as the last pre-merge commit, before auto-merge is armed:
+   arming locks the branch, and a report finalized afterwards can never reach this PR.
+4. **Review-coverage shortfall disclosed** — a disclosure, not a gate; see Reviewer participation.
 
 ## Reviewer participation
 
@@ -288,8 +330,8 @@ _Verdicts recorded below once the PR review cycle has run._
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
-- **Wall-clock:** one interactive cloud session; see the PR's commit timestamps. Four `./pw verify`
-  runs at ~6–8 minutes each, and four verification sub-agents.
+- **Wall-clock:** one interactive cloud session; see the PR's commit timestamps. Seven full `./pw verify`
+  runs at ~6–8 minutes each, and seven verification sub-agents.
 - **Population:** this single Claude Code cloud session's usage as the harness counts it. ⛔ **Not
   comparable** to a plan-marshall `metrics.toon` total, which counts an orchestrator-plus-agent
   dispatch tree under plan-marshall's own per-task billing boundary. This run has no such boundary, so
@@ -306,7 +348,7 @@ _Verdicts recorded below once the PR review cycle has run._
 | 4 Per-commit gate | **Done** | Every commit touching `*.py` preceded by a clean direct `./pw quality-gate` — `ruff … All checks passed!`, `mypy … Success`, `SPDX-header check passed` |
 | 4 Pushed | **Done** | Pushed after every commit; `git status -sb` reports no `ahead` |
 | 5 Build gate | **Done** | Git-derived verdict (seven `*.py`) and full `./pw verify`, read in full rather than by exit code |
-| 6 Verification sub-agent | **Done** | Five rounds, each targeting the prior round's fixes; all findings and dispositions recorded above |
+| 6 Verification sub-agent | **Done** | Seven rounds, each targeting the prior round's fixes; all findings and dispositions recorded above |
 | 7 PR cycle | See Reviewer participation |
 | 8 Merge gate | See **Merge gate** below |
 | 8 Bridge | **Done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory |
@@ -320,7 +362,7 @@ build step (§ Scope and precedence). Stated explicitly because two verification
 about it.
 
 One deviation from the contract, recorded rather than narrated as compliance: the contract's Step 6
-describes dispatching *a* verification sub-agent, and this run dispatched **five**. Each round was
+describes dispatching *a* verification sub-agent, and this run dispatched **seven**. Each round was
 triggered by the previous round's fixes being a new, unreviewed surface — which the contract itself
 requires ("A verification pass that found a defect has not finished"). It is more than the minimum,
 not less.
@@ -329,17 +371,19 @@ not less.
 
 **One contract change is proposed, on evidence this run produced.**
 
-**The evidence.** Four of six verification rounds found that the *previous round's fix* had introduced
-or exposed a new defect: a vacuous test masking a live fail-toward-operator path (R4-1), an `__all__`
-that disowned its module's API (N1), a notice check that vetoed an instruction the operator typed
-(N3), a spec left behind by its own code — twice, R4-2 and again R6-4 in the very commit that fixed
-R4-2's neighbour. The contract's § Step 6 already says to sweep the previous round's fixes, and that
-instruction is what caught every one of them.
+**The evidence.** Six of seven verification rounds found that the *previous round's fix* had introduced
+or exposed a new defect, one per round: round 2 on round 1's `command-name` addition (R2-3); round 3 on
+round 2's `__all__`, which disowned its module's API (N1); round 4 on round 3's vacuous test, masking a
+live fail-toward-operator path (R4-1); round 5 on round 4's dangling rename reference (R5-1); round 6
+on round 5's rule pinned in a test but never written into the spec (R6-4); and round 7 on round 6's
+two dispositions recorded as fixed before they were (R7-7, R7-9). The contract's § Step 6 already says
+to sweep the previous round's fixes, and that instruction is what caught every one of them.
 
-But the contract offers no way to tell when the loop should **stop**. This run ran six rounds. Round 6
-was dispatched with an explicit instruction to classify its findings as behavioural or records-only,
-and it returned **behavioural** — three unpinned non-equivalent mutants in a module sitting at 76%
-coverage — so the loop continued. That classification was improvised for this run; nothing in the
+But the contract offers no way to tell when the loop should **stop**. This run ran seven rounds. Rounds 6 and 7
+were each dispatched with an explicit instruction to classify their findings as behavioural or
+records-only; both returned **behavioural** — round 6 found three unpinned non-equivalent mutants in a
+module sitting at 76% coverage, round 7 found five more in the test module round 6 had just written —
+so the loop continued both times. That classification was improvised for this run; nothing in the
 contract asks for it.
 
 **The proposed change.** Add to § Step 6 a stated stopping rule — for example: *the loop may stop when
@@ -350,8 +394,10 @@ another.
 
 **Why it is worth adding.** Without it, each run improvises the termination decision, and the two
 failure modes are opposite and both bad. Stopping too early ships defects: round 4 found a vacuous
-test masking a live fail-toward-operator path, so stopping at round 3 would have shipped it, and round
-6 found three unpinned non-equivalent mutants, so stopping at round 5 would have shipped those.
+test masking a live fail-toward-operator path, so stopping at round 3 would have shipped it; round 6
+found three unpinned non-equivalent mutants, so stopping at round 5 would have shipped those; and
+round 7 found that two round-6 dispositions were recorded as fixed before they were, so stopping at
+round 6 would have shipped a report that misdescribed its own artifacts.
 Looping too long burns budget re-checking prose. A stated rule makes the decision reviewable instead
 of a matter of the run's judgement — and this run's own experience is that the rule has to be applied
 by the *verifier*, not the author, since the author is the party motivated to stop.

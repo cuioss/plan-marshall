@@ -72,7 +72,28 @@ class TestDecisionToolUseIds:
         assert _mod.decision_tool_use_ids(content) == set()
 
     def test_non_list_content_yields_no_ids(self):
-        assert _mod.decision_tool_use_ids('a string') == set()
+        """A non-list payload has no blocks to scan.
+
+        The witnesses are deliberately non-iterable and dict-shaped: a bare
+        string is iterable, so it is filtered by the per-block dict check
+        rather than by the list guard, and cannot discriminate.
+        """
+        assert _mod.decision_tool_use_ids(None) == set()
+        assert _mod.decision_tool_use_ids({'type': 'tool_use', 'id': 'x'}) == set()
+
+    def test_only_tool_use_blocks_are_scanned(self):
+        """The block type narrows the scan, independently of the tool name.
+
+        A differently-typed block bearing the same name must not contribute an
+        id — a spurious id makes any later result answering it register as a
+        gate decision.
+        """
+        content = [{
+            'type': 'mcp_tool_use',
+            'name': _mod.OPERATOR_DECISION_TOOL,
+            'id': 'mcp_1',
+        }]
+        assert _mod.decision_tool_use_ids(content) == set()
 
 
 class TestExtractGateDecisions:
@@ -120,10 +141,54 @@ class TestExtractGateDecisions:
         assert _mod.extract_gate_decisions(blocks, set()) == []
 
     def test_non_tool_result_blocks_are_ignored(self):
-        content = [{'type': 'text', 'text': REFUSAL}]
+        """The block TYPE decides, not whether a payload happens to be present.
+
+        The witness carries a `content` key so it would flatten to a refusal
+        under a missing type guard; a block without one is dropped by the
+        emptiness check instead and cannot tell the two apart.
+        """
+        content = [{'type': 'text', 'text': 'hello', 'content': REFUSAL}]
         assert _mod.extract_gate_decisions(content, set()) == []
 
+    def test_unhashable_tool_use_id_is_not_a_decision(self):
+        """A malformed id must not abort the reduction.
+
+        Membership-testing an unhashable id raises, which would take down the
+        whole transcript rather than skipping one block.
+        """
+        blocks = _result_block(['not', 'hashable'], 'Option A')
+        assert _mod.extract_gate_decisions(blocks, {'tu_ask'}) == []
+
     def test_every_refusal_marker_is_recognised(self):
-        for marker in _mod.OPERATOR_REFUSAL_MARKERS:
+        """Each marker is named as a literal, never read back from the constant.
+
+        Iterating `OPERATOR_REFUSAL_MARKERS` would make the test shrink with the
+        tuple: deleting an entry, or mistyping one, would leave it green while a
+        real refusal stopped being recognised — under-counting operator signal
+        toward a false `no_signal: true`. That is this plan's own thesis applied
+        to its own tests: a loop over the list under test cannot detect the list
+        changing.
+        """
+        expected = (
+            "The user doesn't want to proceed with this tool use",
+            "The user doesn't want to take this action right now",
+            '[Request interrupted by user',
+        )
+        assert _mod.OPERATOR_REFUSAL_MARKERS == expected
+        for marker in expected:
             payload = f'{marker} — the rest of the notice'
             assert _mod.extract_gate_decisions(_result_block('t', payload), set()) == [payload]
+
+    def test_the_decision_tool_name_is_the_harness_literal(self):
+        """The tool name is the entire structural correlation for this channel.
+
+        Every other reference is symbolic, so a rename or typo would silently
+        disable gated-decision recovery with the suite still green. Pinned to
+        the literal, and to the reducer's own copy of it, so the two cannot
+        drift apart.
+        """
+        assert _mod.OPERATOR_DECISION_TOOL == 'AskUserQuestion'
+        reducer = load_script_module(
+            'plan-marshall', 'plan-retrospective', 'extract-chat-signal.py', 'extract_chat_signal'
+        )
+        assert _mod.OPERATOR_DECISION_TOOL in reducer.DECISION_MARKERS
