@@ -16,7 +16,10 @@ technical blocker.** Run 01 spent its budget on D1, D3's preamble half, D4's pro
 never started B6. Run 01's report said so — *"empty because the sweep did not run … not because every
 call site converted"* — and this run is that sweep.
 
-The seam was available the whole time: every script probed here exposes one.
+The seam was available the whole time **for the scripts this sweep converts** — every one of those
+exposes a reachable parser. It is NOT true of every script in the slice: the exception table below
+records 27 call sites whose scripts expose no seam at all, and those were probed rather than assumed.
+An earlier draft of this sentence claimed the stronger thing and contradicted its own table.
 
 ## Deliverable
 
@@ -136,6 +139,9 @@ this run did not touch `test_extension_discovery.py`.
 | G3 | B6 survey | `script-shared`'s build CLI modules (`_build_cli.py`, `_build_execute_factory.py`) expose **no parser seam** — no `main()`, no published builder | **Recorded, not fixed** — production code is out of scope for a test-refactoring plan. 14 call sites are blocked on it; a published `build_parser()` would unblock all 14 |
 | G4 | B6 survey | `manage-providers`' `_list_providers.py` / `_cred_*.py` are module-level entry points with no parser seam | **Recorded** — 12 call sites |
 | G5 | B6 conversion | The production `handle_write` already carries `store = getattr(args, 'store', 'plans')` — a defensive default that exists *because* callers hand-build namespaces missing it | **Recorded as evidence for B6**, not changed |
+| G6 | PR review (`coderabbitai`) | `test_separator_default_type` is named and commented "separator **defaults** to work log type … without `--type`", but passed `type='work'` explicitly — so it never exercised the default and a regression in that default would pass. **Pre-existing**: the hand-built namespace at `8872700` already hard-coded it, and the conversion faithfully preserved it | **Fixed** — `--type` is now omitted, so the parser's own default (`'work'`, confirmed by probe) selects the log. This is only fixable *because* of B6: with a hand-built namespace there is no default to fall back to, so the test had to state one. 88 tests pass |
+| G7 | PR review (`coderabbitai`) | This report's own § "Why B6 did not run" claimed *"every script probed here exposes one [seam]"*, contradicting its own exception table, which records 27 sites whose scripts expose none | **Fixed** — the claim is narrowed to the scripts the sweep converts, and points at the table for the rest |
+| G8 | PR review (`coderabbitai`) | This report's prose subtotals said 14 `script-shared` sites and 26 seam-blocked; the table's rows total **15** and **27** | **Fixed** in `f4bf557`, before the review arrived — the subtotals are now a table computed from the rows rather than eyeballed prose |
 
 ## Reviewer participation
 

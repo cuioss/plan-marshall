@@ -252,8 +252,9 @@ def test_separator_default_type(plan_context):
     # Write an entry
     handle_write(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'work', '--plan-id', 'log-separator-default', '--level', 'INFO', '--message', 'Test entry'))
 
-    # Add separator without --type (default is work)
-    result = handle_separator(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'separator', '--type', 'work', '--plan-id', 'log-separator-default'))
+    # Omit --type so the parser's own default selects the log, which is the
+    # contract this test pins.
+    result = handle_separator(parse_ns('plan-marshall', 'manage-logging', 'manage-logging.py', 'separator', '--plan-id', 'log-separator-default'))
     assert result is None, 'handle_separator returns None'
 
     log_content = read_log_file(plan_dir, 'work')
