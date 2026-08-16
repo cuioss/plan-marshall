@@ -28,15 +28,27 @@ cost). That is a real deviation from Step 1 and is reported as such, not narrate
 
 ## Deliverables
 
-### D1 — Decompose `test_audit_checks.py` — **COMPLETE** (commit `d7a4586`)
+### D1 — Decompose `test_audit_checks.py` — **SUBSTANTIALLY DONE, one done-when clause unmet** (commit `d7a4586`, prose restored in `e0bfab2`)
 
 The plan's own guidance: *"If the run's budget is tight, decomposing `test_audit_checks.py` correctly
 and reporting the check-to-module map is worth more than every other deliverable combined."* It was
 done first, as a pure move, in its own commit.
 
 `test_audit_checks.py` (8,705 lines, 92 top-level classes) became **49 modules**, each named for the
-audit check it covers, plus `_audit_fixtures.py` (29 shared helpers). The directory went from 3
-modules to 51.
+audit check it covers, plus `_audit_fixtures.py`. The directory went from 3 modules to 51.
+
+**⚠ D1's done-when is not fully met.** It requires *"no module in that directory exceeds the
+budget"*. The 49 new modules all comply (largest: 286 lines), but the pre-existing sibling
+`test_audit.py` is **1,500 lines** and untouched. Splitting it is D4 work — and it is the same file
+that holds the five checks the by-reading check could not map. Reported as unmet rather than deferred
+silently.
+
+**Unit for the fixture-module count, since a bare number here is ambiguous:** `_audit_fixtures.py`
+carries **32 module-level names** — 26 functions and 6 constants. Of those, **3 are the loader triple**
+(`_AUDIT_SCRIPT`, `_load_audit`, `audit`), leaving **29 shared staging helpers** (25 functions + 4
+constants). Earlier text in this report said "29 shared helpers" without naming the unit; the
+independent verifier read it as a function count and flagged it as wrong. Both counts are correct
+under their own unit; only the unit was missing.
 
 **Verified as a pure move, three independent ways:**
 
@@ -48,6 +60,30 @@ modules to 51.
 
 The coverage figures are identical down to the partial-branch count, which is stronger evidence than
 the item count alone: the same lines and the same branches execute.
+
+An **independent AST comparison** by the pre-PR verification sub-agent confirms it at a finer grain
+than this run measured: 92/92 classes, 446/446 test methods, and **zero diffs** in method bodies
+(`ast.unparse`, docstring-stripped), method docstrings, class docstrings, bases, decorators,
+signatures, class-level statements, 46/46 module-level helper functions, and 16/16 constants — each in
+exactly one module, none duplicated. Collection node-id **sets** (not merely counts) are byte-identical
+between `origin/main` and HEAD.
+
+**But the move was not pure in prose, and that is a real defect in a commit labelled a pure move.**
+The same verifier found **162 column-0 comments dropped**. Most were `# ====` banners (52) or bare `#`
+(9), and most narrative reappears as per-module docstrings — but **eight rationale blocks survived
+nowhere**, and each stated a fixture invariant or a cross-reference rather than history: why
+`_LEDGER_NOTATION_MAVEN` is Maven rather than pyproject (it proves the single-tool blindness closed);
+why `_CONCRETE_REQUEST` passes S5 concreteness (so S5/S1 do not fire and the other signals drive the
+counterfactual); why `_NON_BREAKING_COMPAT` is non-breaking; the case-insensitive matching rule and
+machine-readable-identity note on the shipping-partition constants; the `data-format.md`
+cross-reference on `_LEDGER_HEADER`; the 11-line table mapping each upstream check to the structured
+result shape the synthesis critic consumes; and the inline-phase coupling stating that the check takes
+its carve-out **from the recorder** and carries no inline branch of its own.
+
+**All eight are restored** in `e0bfab2`, each placed beside the symbol it explains (the ledger-notation
+rationale split across two files, because the two constants themselves split — the pyproject one is
+shared, the Maven one module-local). This is exactly the invariant-versus-history failure D5's cold
+read exists to catch, found here in D1 instead.
 
 **The gating HYPOTHESIS the plan required settling before the first move** — *"every assertion belongs
 to exactly one identifiable check, so the decomposition is a clean partition"* — **CONFIRMED**, and
@@ -315,6 +351,16 @@ Recorded per instance.
 | 27 | D5 cold read | Two tests in the same role captioned "negative control" and "positive control" | **Fixed** — both are positive controls |
 | 28 | D5 cold read | `detect_outcome_for_diffed_tasks` name and return key say *diff*; selector is `status == 'done'` | **Recorded, not fixed** — resolving it needs `_analyze_logs.py`, a `marketplace/bundles/**` file out of scope. Possible production defect |
 | 29 | D5 cold read | `plan_id = 'mark-step-legacy-force'` reused by two tests | **Recorded** — safe under current `plan_context` isolation; would misreport as a canonicalization bug if that weakens |
+| 30 | Verification sub-agent | D1's move dropped 162 column-0 comments; **8 rationale blocks** (fixture invariants and cross-references, not history) survive nowhere | **Fixed** (`e0bfab2`) — each restored beside the symbol it explains |
+| 31 | Verification sub-agent | `test_assert_step_recorded.py` docstring tense-broken across a leftover wrap | **Fixed** (`e0bfab2`) |
+| 32 | Verification sub-agent | `test_dispatch_termination_cause_regression.py` half-stripped: `D1:` vs `D2 (Defect 2):`, "fixes" with no antecedent, `TASK-001` citation left | **Fixed** (`e0bfab2`) |
+| 33 | Verification sub-agent | `test_merge_authorization.py` docstrings open `D5(a):`/`D5(b):` — deliverable ids left with no expansion after the strip removed their anchor | **Fixed** (`e0bfab2`) |
+| 34 | Verification sub-agent | `test_manage_metrics.py::test_legacy_unknown_value_still_rejected` — "was removed" narration under-stripped | **Fixed** (`e0bfab2`) |
+| 35 | Verification sub-agent | `doc/plans/test-quality/README.md:71-72` describes `test_audit_checks.py` as live | **Recorded, deliberately not fixed** — shared epic brief read concurrently by `030`–`080`; outside this plan's surface |
+| 36 | Verification sub-agent | `findings-test-corpus-review.md:92-96` likewise | **Recorded, deliberately not fixed** — same reason |
+| 37 | Verification sub-agent | Report said "29 shared helpers" without naming the unit | **Fixed** — unit stated: 32 module-level names, 29 shared staging helpers, 3 loader names |
+| 38 | Verification sub-agent | D1's done-when ("no module in that directory exceeds the budget") unmet: `test_audit.py` is 1,500 lines | **Accepted** — D1 downgraded in this report from COMPLETE to substantially-done-with-one-clause-unmet |
+| 39 | Verification sub-agent | Commit `984c257`'s message says "66 to 25"; tool says 24 at HEAD | **Recorded** — message is immutable; report carries the re-derived figure |
 
 ### D5 cold-read verification (the plan's required "By reading — cold read")
 
@@ -381,7 +427,61 @@ for the corpus — module docstring stating the binding, every non-obvious test 
 and the concrete fail-open scenario it forecloses, every control labelled as a control. *"If the other
 four modules were held to this standard, [six of the findings] would not exist."*
 
-_(Independent pre-PR verification sub-agent findings are appended below.)_
+### Independent pre-PR verification (contract Step 6)
+
+Dispatched read-only against the plan's requirements rather than the diff's apparent intent. It wrote
+its own AST comparison scripts rather than reading, which is why it caught what this run's own checks
+did not.
+
+**Confirmed:**
+
+| Check | Verdict |
+|---|---|
+| D1 a pure move at code level | **YES** — zero diffs across every AST dimension; node-id sets byte-identical |
+| `sys.modules['audit_under_test']` single registration | **CONFIRMED** — one writer, no other reader; neighbours use distinct keys (`audit_anchors_under_test`, `era_stamp_fill`) |
+| No undeclared collateral change | **CONFIRMED** — 89 test files + 2 doc files; the doc files are the lane's own plan-directory lifecycle. Zero touches to `test/conftest.py`, `test/_shared/**`, `marketplace/bundles/**`, or `audit.py` |
+| `parse_ns` conversions faithful | **CONFIRMED** field-by-field against the retired shapes; no default changed a test's meaning |
+| Doctor figures | **Independently re-measured and matching this report exactly** |
+| No new basename collisions | **CONFIRMED** across the whole tree |
+
+On the one structural `parse_ns` change it went further than this run did: `_ns_dispatch` used to
+leave an omitted context-load column as an **absent attribute**, where the new builder supplies
+`None`. The verifier traced `cmd_record_dispatch_boundary`'s read to `getattr(args, column, None)`
+(`manage-metrics.py` ~2666) and confirmed absent and `None` are the same input — so the UNMEASURED
+path the docstring claims is genuinely exercised. That closes the one place the conversion could have
+changed behaviour.
+
+**It also found what this run missed** — the 162 dropped comments (above) and four prose defects in
+the D5 commit, all fixed in `e0bfab2`:
+
+| Defect | Fix |
+|---|---|
+| `test_assert_step_recorded.py` — "must not break … **or** the entry … **shadowed**": tense-broken across a leftover mid-clause wrap | rewritten as a present-tense consequence |
+| `test_dispatch_termination_cause_regression.py` — half-stripped: `D1:` beside `D2 (Defect 2):`, a title citing "fixes" with no antecedent, and a `TASK-001` citation left in place | module docstring rewritten as two named properties |
+| `test_merge_authorization.py` — docstrings still opening `D5(a):` / `D5(b):`, deliverable ids now with **no expansion anywhere**, because the strip removed the anchor beside them | replaced with the rule names ("The lapse rule", "The re-grant rule") |
+| `test_manage_metrics.py` — "The legacy fallback value 'unknown' **was removed**": superseded-behaviour narration | rewritten, and now states why the handler-level check exists |
+
+**Two stale cross-document references — recorded, deliberately NOT fixed:**
+
+- `doc/plans/test-quality/README.md:71-72` and `findings-test-corpus-review.md:92-96` both describe
+  `test_audit_checks.py` as a live ~8,700-line / ~90-class module. It no longer exists.
+- **Why not fixed:** both are the epic's shared scoping briefs, read concurrently by plans `030`–`080`.
+  The plan's own constraint — *"a reduction plan never edits a directory outside its own list"* — and
+  the collision risk the epic README itself warns about both point the same way. The verifier reached
+  the same conclusion independently and reported rather than prescribed. **For the epic owner**, not
+  for this PR.
+
+**What the verifier explicitly did NOT check**, recorded so a reader does not over-read its clean
+verdict: it did not run `./pw verify` (it ran pytest over the slice and `ruff` over three directories),
+did not re-measure coverage, did not audit whether the D5 cold-read dispatch happened as specified, and
+did not independently re-derive the per-class check map. **This run covers the first two**: `./pw
+verify` is green whole-tree (20,272 passed), and coverage was measured on both sides via a temporary
+`origin/main` worktree.
+
+**One discrepancy it caught that cannot be fixed:** commit `984c257`'s message says the prose count
+went "66 to 25". The tool says 24 at HEAD, and the message was written when the figure was 25 — before
+the cold-read repair cleared one more. The message is immutable history; this report carries the
+re-derived figure.
 
 ## Reviewer participation
 
