@@ -17,8 +17,9 @@ Either flag is the orchestrator's signal to fall back to the Tier-2 WARNING
 finding (``reason: transcript_too_large``). A missing transcript yields
 ``status: skipped, reason: transcript_unavailable``.
 
-Provenance classification and the two operator-signal counters are covered by
-``test_extract_chat_signal_provenance.py``.
+Provenance classification is covered by ``test_chat_provenance.py``; the two
+operator-signal counters and the routing verdict by
+``test_extract_chat_signal_verdict.py``.
 """
 
 from __future__ import annotations

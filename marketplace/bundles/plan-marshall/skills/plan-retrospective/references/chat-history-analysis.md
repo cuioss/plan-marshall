@@ -68,7 +68,7 @@ The classes below were derived by running the reducer over real session transcri
 
 #### The residual gap — envelope-less injections
 
-**The structural guarantee covers tag-wrapped injections only.** A harness turn that carries *no envelope* — the stop-hook feedback notice is the observed case — leaves full residue and is counted as an operator turn unless its exact wording is listed in `HARNESS_NOTICE_PREFIXES`. For that class the filter is back to an enumeration, and therefore back to being a sample. Listing a notice is necessary but **not sufficient** for the turn to be dropped: a turn that also yields operator-bearing text is kept, per the precedence rule above.
+**The structural guarantee covers tag-wrapped injections only.** A harness turn that carries *no envelope* — the stop-hook feedback notice is the observed case — leaves full residue and is counted as an operator turn unless its exact wording is listed in `HARNESS_NOTICE_PREFIXES`. For that class the filter is back to an enumeration, and therefore back to being a sample. For a turn that **opens with** a listed notice, being listed is necessary but not sufficient — one that also yields operator-bearing text is kept, per the precedence rule above. Within the envelope-less class itself, being listed is what drops the turn.
 
 This is published rather than papered over because the plan's own thesis is that a named list is a sample: an inventory that hid an observed miss would repeat the defect it documents. A new envelope-less notice is a false *operator* — the direction that inflates the verdict — so this list is the one part of the mechanism that needs updating when the harness adds a shape.
 

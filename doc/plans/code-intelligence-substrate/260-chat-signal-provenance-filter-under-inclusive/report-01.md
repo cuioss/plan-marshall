@@ -111,7 +111,7 @@ raw turns, so they are extra transcript entries counted by `gate_decision_count`
 
 ### D4 — tests
 
-**Done.** 94 tests across three modules (25 + 16 + 53 collected), carrying 207 assertions.
+**Done.** 95 tests across three modules (26 + 16 + 53 collected), carrying 209 assertions.
 
 | Plan requirement | Test |
 |---|---|
@@ -144,8 +144,9 @@ re-confirmed across every assertion in the three modules by three verification r
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD` includes seven `*.py` files — three scripts and four test
-modules ⇒ **Python changed, full `./pw verify` required and run.**
+`git diff --name-only origin/main...HEAD` includes seven `*.py` files — three scripts, three test
+modules and the shared fixture helper (which pytest does not collect) ⇒ **Python changed, full
+`./pw verify` required and run.**
 
 Final gate at `8a91744`, read in full (`cmd_verify` returns early on any failed sub-step, so the
 printed summary proves all three ran):
@@ -161,7 +162,7 @@ Per-commit gate: every commit touching `*.py` was preceded by a clean `./pw qual
 
 ## Findings
 
-Five verification rounds plus two defects caught by the run itself. Each round targeted the
+Five verification rounds plus two defects caught by the run itself — 36 findings, 34 fixed and 2 rejected with reason. Each round targeted the
 **previous round's fixes** as a first-class surface, which is what caught most of these — three of the
 five rounds found that the prior round's fix had introduced or exposed a new defect. Recorded per
 instance.
@@ -228,15 +229,34 @@ Recorded because a finding is a finding regardless of who found it.
 | R4-5 | The coupling registry claimed `AskUserQuestion` lives only in the `_chat_*` modules; it is also in the reducer's `DECISION_MARKERS`, and that registry cites coupling by path | **Fixed** |
 | R4-6 | `test_extract_chat_signal_provenance.py` no longer tested provenance, which had moved to `test_chat_provenance.py` | **Fixed** — renamed to `test_extract_chat_signal_verdict.py` |
 
-### Round 5
+### Round 5 (6 findings — 5 fixed, 1 rejected)
 
-_Recorded below._
+| # | Finding | Disposition |
+|---|---|---|
+| R5-1 | The round-4 rename left the sibling module's back-pointer dangling: `test_extract_chat_signal.py`'s docstring named a file that no longer exists, and merged two modules' concerns into one sentence | **Fixed** |
+| R5-2 | Mutating `if operator_bearing.strip():` to `if operator_bearing:` survived all 94 tests, and is **not** an equivalent mutant — 3,868 divergences over 26,174 inputs, every one `False → True`. A whitespace-only `<command-args>` (what `/compact ` produces) would be admitted as operator signal | **Fixed** — assertion added pinning that recovered text must be non-whitespace; mutant verified killed |
+| R5-3 | "Listing a notice is necessary but **not sufficient**" was scoped to the envelope-less class, and within *that* class listing **is** sufficient — the counterexample requires an envelope. The rule was right, the scope word wrong | **Fixed** |
+| R5-4 | The report called the four changed test-tree files "test modules"; one is the shared fixture helper, which pytest does not collect | **Fixed** |
+| R5-5 | "797 collected test modules" was the on-disk count; 793 collect (`collect_ignore` excludes 4) | **Fixed** — denominator dropped rather than restated |
+| R5-6 | Claimed the report must record that a local `/sync-plugin-cache` is owed, per `CLAUDE.md` | **Rejected** — see below |
+
+**R5-6 rejected, with reason.** `CLAUDE.md` § Standalone Plan Lane does say a lane plan editing
+`marketplace/bundles/` "records in its run report that a local sync is owed", but the `cloud-plan-lane`
+skill overrides it explicitly: *"A cloud run **neither performs nor owes** a sync"*, and its Step 9
+table repeats that a cloud run "**never owes**" one. `CLAUDE.md` itself designates the skill as the
+complete working contract, and the plan's first-instruction block states the contract wins on
+disagreement. So the report's silence is correct.
+
+⚠ Worth noting that **two verification rounds reached opposite conclusions on this point** — round 3
+read the precedence correctly, round 5 did not. That the record was ambiguous enough to split two
+readers is itself the signal, so the Contract check below now states the disposition explicitly
+instead of leaving it to inference.
 
 ### Accepted, not fixed
 
 | Item | Reason |
 |---|---|
-| `test_extract_chat_signal.py` is 566 lines, over the 400-line `test-module-line-budget` | **Pre-existing** (555 at merge-base). This run added 11 lines to it while splitting the *new* tests into modules that are within budget. The rule is warning-severity and does not gate the build, and 316 of the tree's 797 collected test modules already exceed it. Splitting a pre-existing over-budget module is unrelated maintenance the plan did not request — carried to Residue |
+| `test_extract_chat_signal.py` is 566 lines, over the 400-line `test-module-line-budget` | **Pre-existing** (555 at merge-base). This run added 11 lines to it while splitting the *new* tests into modules that are within budget. The rule is warning-severity and does not gate the build, and 316 test modules in this tree already exceed it. Splitting a pre-existing over-budget module is unrelated maintenance the plan did not request — carried to Residue |
 
 ## Reviewer participation
 
@@ -258,12 +278,80 @@ _Verdicts recorded below once the PR review cycle has run._
 
 ## Contract check (Step 9)
 
-_Recorded below._
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **Done** | Named above; loaded by bundle path (plugin absent in this session) |
+| 2 Branch | **Done** | `claude/chat-signal-provenance-filter-agmptk` — **harness-assigned, kept as-is**, and on `origin` before the first edit |
+| 3 Plan directory | **Done** | `doc/plans/code-intelligence-substrate/260-chat-signal-provenance-filter-under-inclusive/plan.md`, opening with the first-instruction block (present on arrival; no repair needed) |
+| 4 Implement | **Done** | Every commit carries the `Co-Authored-By` trailer and no "Generated with" footer; deliverable paths staged explicitly, never `git add -A`; no lockfile churn reached a commit |
+| 4 Per-commit gate | **Done** | Every commit touching `*.py` preceded by a clean direct `./pw quality-gate` — `ruff … All checks passed!`, `mypy … Success`, `SPDX-header check passed` |
+| 4 Pushed | **Done** | Pushed after every commit; `git status -sb` reports no `ahead` |
+| 5 Build gate | **Done** | Git-derived verdict (seven `*.py`) and full `./pw verify`, read in full rather than by exit code |
+| 6 Verification sub-agent | **Done** | Five rounds, each targeting the prior round's fixes; all findings and dispositions recorded above |
+| 7 PR cycle | See Reviewer participation |
+| 8 Merge gate | See Residue |
+| 8 Bridge | **Done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory |
+| 9 This check | **Done** | This table |
+| 9 What have we learned | **Done** | Below |
+
+**GitHub access path:** the GitHub MCP server (no `gh` CLI in this cloud session).
+**Branch form:** harness-assigned `claude/*`, kept per the contract's resumability rule.
+**Plugin cache sync:** **not owed.** A cloud run neither performs nor owes one — it is a machine-local
+build step (§ Scope and precedence). Stated explicitly because two verification rounds disagreed
+about it.
+
+One deviation from the contract, recorded rather than narrated as compliance: the contract's Step 6
+describes dispatching *a* verification sub-agent, and this run dispatched **five**. Each round was
+triggered by the previous round's fixes being a new, unreviewed surface — which the contract itself
+requires ("A verification pass that found a defect has not finished"). It is more than the minimum,
+not less.
 
 ## What have we learned (Step 9)
 
-_Recorded below._
+**One contract change is proposed, on evidence this run produced.**
+
+**The evidence.** Three of five verification rounds found that the *previous round's fix* had
+introduced or exposed a new defect — a quadratic hang, a self-poisoning counter, a vacuous test, an
+`__all__` that disowned its module's API, and a spec left behind by the code. The contract's § Step 6
+already says to sweep the previous round's fixes, and that instruction is what caught them. But the
+contract offers no way to tell when the loop should **stop**. This run ran five rounds; rounds 4 and 5
+returned progressively smaller findings (a dangling docstring reference, a denominator off by four),
+and nothing in the contract distinguishes "keep going, the surface is still hot" from "this is now
+costing more than it returns".
+
+**The proposed change.** Add to § Step 6 a stated stopping rule — for example: *the loop may stop when
+a round's findings are confined to the run's own records and prose (report figures, docstrings,
+cross-references) with no finding touching production behaviour, and the run states that verdict
+explicitly in the report.* A round that finds a behavioural defect, however small, always earns
+another.
+
+**Why it is worth adding.** Without it, each run improvises the termination decision, and the two
+failure modes are opposite and both bad: stopping while behavioural defects are still surfacing (round
+4 found a vacuous test masking a live fail-toward-operator path — stopping at round 3 would have
+shipped it), or looping indefinitely on prose. A stated rule makes the decision reviewable instead of
+a matter of the run's judgement.
+
+**Not self-approved.** Per § Step 9 this is presented to the operator and NOT applied here; it would
+ship as its own `chore/` branch touching only the skill, without `skip-bot-review`. It is deliberately
+kept out of this PR: two changes with different review audiences in one diff means neither is read
+properly.
 
 ## Residue
 
-_Recorded below._
+- **`test_extract_chat_signal.py` is 566 lines**, over the warning-level 400-line
+  `test-module-line-budget` (555 at merge-base; this branch added 11). Pre-existing and unrelated to
+  the plan's brief — a follow-up should split it by behaviour cluster, as this run did for the modules
+  it created.
+- **`parse_turn` has no production caller** (round-1 F10, rejected). Retained as a documented parsing
+  seam with twelve boundary tests. A future run may decide to fold it into `parse_message` +
+  `extract_text`; recorded so the question is not re-opened from scratch.
+- **The envelope-less notice class remains an enumeration.** `HARNESS_NOTICE_PREFIXES` is a sample by
+  construction, and a new tagless harness notice is a false *operator* until it is added — the
+  direction that inflates the verdict. Published as a residual gap in the aspect contract. Closing it
+  properly needs a structural signal the transcript does not currently carry.
+- **The plan's "zero operator turns survived" case was not re-witnessed.** In the one reachable
+  transcript the genuine operator turn did survive. Carried forward from the plan, not confirmed here.
+- **The `<command-args>`-plus-notice co-occurrence is unwitnessed.** The precedence rule that handles
+  it is correct and tested, but no reachable transcript exhibits the shape; verified across 158 user
+  turns, zero occurrences.
+- **The contract-change proposal above** awaits an operator decision and its own PR.

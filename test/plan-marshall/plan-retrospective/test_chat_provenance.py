@@ -227,6 +227,19 @@ class TestOperatorBearingEnvelopes:
         """
         assert _mod.is_operator_authored(f'{SYSTEM_REMINDER}\n{STOP_HOOK_NOTICE}') is False
 
+    def test_whitespace_only_command_args_is_not_operator_signal(self):
+        """Recovered text must be non-whitespace, not merely present.
+
+        `/compact ` yields an args block holding only whitespace. Admitting a
+        turn on the mere presence of the block would let a harness notice
+        carrying an empty command block read as operator — fail-toward-
+        operator, the direction this predicate exists to close.
+        """
+        assert _mod.is_operator_authored('<command-args>   </command-args>') is False
+        assert _mod.is_operator_authored(
+            f'{STOP_HOOK_NOTICE}\n<command-args>  </command-args>'
+        ) is False
+
     def test_a_skill_body_carrying_a_command_block_is_still_synthetic(self):
         """The skill-load check runs BEFORE the recovered-text early return.
 
